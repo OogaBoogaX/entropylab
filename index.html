@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en"><head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="referrer" content="no-referrer"><meta property="og:title" content="EntropyLab"><title>EntropyLab</title><meta name="application-name" content="EntropyLab"><meta name="application-version" content="v0.1.3"><meta name="theme-color" content="#000000"><meta name="apple-mobile-web-app-title" content="EntropyLab"><meta name="apple-mobile-web-app-status-bar-style" content="black"><style>:is([id*='google_ads_iframe'],[id*='taboola-'],.taboolaHeight,.taboola-placeholder,#top-ad,#credential_picker_container,#credentials-picker-container,#credential_picker_iframe,#onetap_google_intermediate_iframe,[id*='google-one-tap-iframe'],#google-one-tap-popup-container,.google-one-tap__module,.google-one-tap-modal-div,.adthrive-auto-injected-player-container,.adthrive[id^="cls-video-container"]:has(.adthrive-auto-injected-player-container),#amp_floatingAdDiv,#ez-content-blocker-container) {display:none!important;min-height:0!important;height:0!important;}</style><style id="btc-calc-style">:root {
+<meta http-equiv="content-type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://www.google.com; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="referrer" content="no-referrer"><meta property="og:title" content="EntropyLab"><title>EntropyLab</title><meta name="application-name" content="EntropyLab"><meta name="application-version" content="v0.1.3"><meta name="theme-color" content="#000000"><meta name="apple-mobile-web-app-title" content="EntropyLab"><meta name="apple-mobile-web-app-status-bar-style" content="black"><style>:is([id*='google_ads_iframe'],[id*='taboola-'],.taboolaHeight,.taboola-placeholder,#top-ad,#credential_picker_container,#credentials-picker-container,#credential_picker_iframe,#onetap_google_intermediate_iframe,[id*='google-one-tap-iframe'],#google-one-tap-popup-container,.google-one-tap__module,.google-one-tap-modal-div,.adthrive-auto-injected-player-container,.adthrive[id^="cls-video-container"]:has(.adthrive-auto-injected-player-container),#amp_floatingAdDiv,#ez-content-blocker-container) {display:none!important;min-height:0!important;height:0!important;}</style><style id="btc-calc-style">:root {
   color-scheme: dark;
   --bg: #000000;
   --surface: #141414;
@@ -634,7 +634,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
       <strong>Beta software — not independently reviewed:</strong> EntropyLab is experimental and should be used only for testing. Do not rely on it to secure real bitcoin, and never test with funds you cannot afford to lose.
     </aside>
     <aside class="online-warning no-print" id="online-warning" role="alert" hidden>
-      <strong>Online version:</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab-0.1.3.html" download="entropylab-0.1.3.html">Download EntropyLab</a> and run the HTML file offline on a trusted, air-gapped computer.
+      <strong>⚠️ Online version: ⚠️</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab-0.1.3.html" download="entropylab-0.1.3.html">Download EntropyLab</a> and run the HTML file offline on a trusted, air-gapped computer.
     </aside>
     <header>
       <div>
@@ -4831,9 +4831,38 @@ hodlInitWorkspace();hodlSeedInitialManagers();hodlInitKeyManager();hodlInitMsigM
   const isLocalPreview = (
     location.protocol === "file:" || /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname)
   ) && new URLSearchParams(location.search).get("online-preview") === "1";
-  if (!isHostedOnline && !isLocalPreview) return;
+  const onlineWarning = document.getElementById("online-warning");
 
-  document.getElementById("online-warning")?.removeAttribute("hidden");
+  const hideOnlineWarning = () => {
+    if (onlineWarning) onlineWarning.hidden = true;
+  };
+  const checkInternetConnection = async () => {
+    if (!navigator.onLine) {
+      hideOnlineWarning();
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      await fetch("https://www.google.com/generate_204", {
+        mode: "no-cors",
+        cache: "no-store",
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+        signal: controller.signal
+      });
+      if (onlineWarning) onlineWarning.hidden = false;
+    } catch {
+      hideOnlineWarning();
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  checkInternetConnection();
+
+  if (!isHostedOnline && !isLocalPreview) return;
 
   const brandMark = document.getElementById("online-brand-mark");
   if (brandMark) {

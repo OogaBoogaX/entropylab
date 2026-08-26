@@ -4,9 +4,38 @@
   const isLocalPreview = (
     location.protocol === "file:" || /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname)
   ) && new URLSearchParams(location.search).get("online-preview") === "1";
-  if (!isHostedOnline && !isLocalPreview) return;
+  const onlineWarning = document.getElementById("online-warning");
 
-  document.getElementById("online-warning")?.removeAttribute("hidden");
+  const hideOnlineWarning = () => {
+    if (onlineWarning) onlineWarning.hidden = true;
+  };
+  const checkInternetConnection = async () => {
+    if (!navigator.onLine) {
+      hideOnlineWarning();
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      await fetch("https://www.google.com/generate_204", {
+        mode: "no-cors",
+        cache: "no-store",
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+        signal: controller.signal
+      });
+      if (onlineWarning) onlineWarning.hidden = false;
+    } catch {
+      hideOnlineWarning();
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  checkInternetConnection();
+
+  if (!isHostedOnline && !isLocalPreview) return;
 
   const brandMark = document.getElementById("online-brand-mark");
   if (brandMark) {
