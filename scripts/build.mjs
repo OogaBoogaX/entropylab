@@ -36,6 +36,7 @@ const jsMain = read("js/vendor.js") + read("js/app.js");
 const jsOnline = read("js/online.js");
 const jsEnhanced = read("js/enhanced-inputs.js");
 const jsRepeat = read("js/repeat-inputs.js");
+const jsBryanMode = read("js/bryan-mode.js");
 
 let html = template
   .replace("/*@@CSS@@*/", () => css)
@@ -43,6 +44,7 @@ let html = template
   .replace("/*@@JS_ONLINE@@*/", () => jsOnline)
   .replace("/*@@JS_ENHANCED@@*/", () => jsEnhanced)
   .replace("/*@@JS_REPEAT@@*/", () => jsRepeat)
+  .replace("/*@@JS_BRYAN_MODE@@*/", () => jsBryanMode)
   .split("{{VERSION}}").join(version);
 
 for (const leftover of html.match(/\/\*@@|{{VERSION}}/g) || []) {

@@ -272,6 +272,12 @@ header { padding: 8px 0 16px; }
   background: color-mix(in oklab, var(--danger) 14%, var(--surface)); color: var(--fg); line-height: 1.5;
 }
 .beta-warning strong { color: var(--danger); }
+.bryan-mode-control {
+  display: flex; align-items: center; gap: 8px; width: fit-content; margin: 0 0 12px;
+  padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); color: var(--fg); font-weight: 700; cursor: pointer;
+}
+.bryan-mode-control input { margin: 0; accent-color: var(--accent); }
 @media print {
   :root {
     color-scheme: light;
