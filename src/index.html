@@ -1,24 +1,27 @@
 <!DOCTYPE html>
 <html lang="en"><head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="referrer" content="no-referrer"><meta property="og:title" content="EntropyLab"><title>EntropyLab</title><meta name="application-name" content="EntropyLab"><meta name="application-version" content="v{{VERSION}}"><meta name="theme-color" content="#000000"><meta name="apple-mobile-web-app-title" content="EntropyLab"><meta name="apple-mobile-web-app-status-bar-style" content="black"><style>:is([id*='google_ads_iframe'],[id*='taboola-'],.taboolaHeight,.taboola-placeholder,#top-ad,#credential_picker_container,#credentials-picker-container,#credential_picker_iframe,#onetap_google_intermediate_iframe,[id*='google-one-tap-iframe'],#google-one-tap-popup-container,.google-one-tap__module,.google-one-tap-modal-div,.adthrive-auto-injected-player-container,.adthrive[id^="cls-video-container"]:has(.adthrive-auto-injected-player-container),#amp_floatingAdDiv,#ez-content-blocker-container) {display:none!important;min-height:0!important;height:0!important;}</style><style id="btc-calc-style">/*@@CSS@@*/</style></head><body><!--$--><div id="btc-calc" class="min-h-dvh bg-[#10110e]">
+<meta http-equiv="content-type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src 'self' data:; img-src 'self' data:; style-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-inline'">
   <div class="wrap">
+    <section id="quote-section" class="card" aria-live="polite" style="margin-bottom:12px;">
+      <p id="random-quote" style="font-size:1.05rem; font-weight:600; margin:0;">&nbsp;</p>
+    </section>
     <aside class="beta-warning no-print" role="alert">
       <strong>Beta software — not independently reviewed:</strong> EntropyLab is experimental and should be used only for testing. Do not rely on it to secure real bitcoin, and never test with funds you cannot afford to lose.
     </aside>
     <aside class="online-warning no-print" id="online-warning" role="alert" hidden>
-      <strong>Online version:</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab-{{VERSION}}.html" download="entropylab-{{VERSION}}.html">Download EntropyLab</a> and run the HTML file offline on a trusted, air-gapped computer.
+      <strong>Online version:</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab-{{VERSION}}.html" download="entropylab-{{VERSION}}.html">Download the offline copy</a>.
     </aside>
     <header>
       <div>
         <div class="kicker">EntropyLab v{{VERSION}} · Offline · No entropy RNG · You provide the entropy</div>
-        <div class="header-title-row"><img class="online-brand-mark" id="online-brand-mark" data-online-src="assets/entropylab_dark.png" alt="" aria-hidden="true" hidden><h1>EntropyLab — Air-Gapped Bitcoin Calculator</h1></div>
+        <div class="header-title-row"><img class="online-brand-mark" id="online-brand-mark" data-online-src="assets/entropylab_dark.png" alt="" aria-hidden="true" hidden><h1>EntropyLab — Air-Gapped Bitcoin Key Calculator</h1></div>
         <p class="muted">This file never generates wallet entropy. Save it to USB and open it on a computer that never goes online.</p>
         <div class="download-controls no-print">
           <label class="version-picker">Version
             <select class="version-select" aria-label="EntropyLab version"><option value="entropylab-{{VERSION}}.html" selected>v{{VERSION}} (Latest)</option></select>
           </label>
           <a class="btn secondary download-html" href="entropylab-{{VERSION}}.html" download="entropylab-{{VERSION}}.html">Download EntropyLab</a>
-          <a class="btn secondary github-repo-link" href="https://github.com/w-s-bitcoin/entropylab" target="_blank" rel="noopener noreferrer" aria-label="View the EntropyLab GitHub repository in a new tab">View on GitHub</a>
+          <a class="btn secondary github-repo-link" href="https://github.com/w-s-bitcoin/entropylab" target="_blank" rel="noopener noreferrer" aria-label="View the EntropyLab GitHub repository in a new tab">Repository</a>
         </div>
       </div>
     </header>
@@ -31,14 +34,14 @@
  the seed on this air-gapped machine. Carry only addresses and the xpub
 online.</p>
     </section>
-    <div class="row no-print segmented-control" id="workspace"><button class="tab active" aria-pressed="true">Key Derivation</button><button class="tab" aria-pressed="false">Multi Signature</button><button class="tab" aria-pressed="false">PSBT / Nonce</button></div>
+    <div class="row no-print segmented-control" id="workspace"><button class="tab active" aria-pressed="true">Key Derivation</button><button class="tab" aria-pressed="false">Multi Signature</button><button class="tab" aria-pressed="false">PSBT</button></div>
     <section class="key-manager no-print" id="key-manager">
-      <div class="key-manager-head"><h2>Keys</h2><div class="add-item-control"><button class="btn secondary add-key" id="add-key" type="button" aria-label="Add key" aria-describedby="add-key-tooltip">+</button><span class="add-item-tooltip" id="add-key-tooltip" role="tooltip">Add another key</span></div></div>
+      <div class="key-manager-head"><h2>Keys</h2><div class="add-item-control"><button class="btn secondary add-key" id="add-key" type="button" aria-label="Add key" aria-describedby="add-key-tooltip">+</button></div>
       <div class="key-tabs" id="key-tabs" role="tablist" aria-label="Keys"></div>
     </section>
     <section class="card no-print" id="calc-card" role="tabpanel" hidden>
       <div class="key-panel-head">
-        <div class="row segmented-control" id="modes"><button class="tab active" aria-pressed="true">Dice rolls</button><button class="tab" aria-pressed="false">Hex or binary</button><button class="tab" aria-pressed="false">Seed phrase</button><button class="tab" aria-pressed="false">Private key</button></div>
+        <div class="row segmented-control" id="modes"><button class="tab active" aria-pressed="true">Dice rolls</button><button class="tab" aria-pressed="false">Hex or binary</button><button class="tab" aria-pressed="false">Import seed</button></div>
         <button class="btn delete-key" id="delete-key" type="button" aria-label="Delete current key" disabled>Delete Key</button>
       </div>
       <section class="seed-length-control" id="seed-length" aria-labelledby="seed-length-label">
@@ -75,8 +78,8 @@ the first five dice of a word are skipped (reroll). After 23 words, pick
       </label>
       <p class="label" id="dice-label">Dice rolls (faces 1–6 only)</p>
       <p class="muted" id="dice-help">Base 10 [0-9] hashes the original roll string, matching COLDCARD and SeedSigner. Dice [1-6] converts each 6 to 0 before hashing, matching the method used by Keystone.</p>
-      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" aria-hidden="true"></pre><textarea id="dice" placeholder="e.g. 415263415263…" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="dice-help dice-meta"></textarea></div>
-      <div class="dice-input-pad with-coin"><button type="button" data-d="1">1</button><button type="button" data-d="3">3</button><button type="button" data-d="5">5</button><button type="button" class="coin-button" data-d="H" data-coin="heads" disabled title="Heads and Tails are available in BitBox-style mode.">Heads (1–3)</button><button type="button" data-d="2">2</button><button type="button" data-d="4">4</button><button type="button" data-d="6">6</button><button type="button" class="coin-button" data-d="T" data-coin="tails" disabled title="Heads and Tails are available in BitBox-style mode.">Tails (4–6)</button></div>
+      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" aria-hidden="true"></pre><textarea id="dice" placeholder="e.g. 415263415263…" inputmode="numeric" autocapitalize="off" spellcheck="false"></textarea>
+      <div class="dice-input-pad with-coin"><button type="button" data-d="1">1</button><button type="button" data-d="2">2</button><button type="button" data-d="3">3</button><button type="button" data-d="4">4</button><button type="button" data-d="5">5</button><button type="button" data-d="6">6</button></div>
       <p class="muted" id="dice-meta">0 of 99 recommended rolls · 0.0 bits estimated · 24-word seed</p>
       <div id="dice-words" class="dice-word-grid" aria-label="24 seed-word slots"></div>
       <div id="last-words" class="row" style="margin-top:8px"></div>
@@ -98,7 +101,7 @@ the first five dice of a word are skipped (reroll). After 23 words, pick
       <div class="key-settings" id="key-settings">
         <div class="key-settings-row">
           <label class="field" id="script-type-field">Script type
-            <select id="script-type"><option value="bip44">Legacy · BIP44</option><option value="bip49">Nested SegWit · BIP49</option><option value="bip84" selected="selected">Native SegWit · BIP84</option><option value="bip86">Taproot · BIP86</option></select>
+            <select id="script-type"><option value="bip44">Legacy · BIP44</option><option value="bip49">Nested SegWit · BIP49</option><option value="bip84" selected="selected">Native SegWit · BIP84</option></select>
           </label>
           <label class="field">Network
             <select id="network"><option value="mainnet" disabled="disabled">Bitcoin mainnet</option><option value="testnet" selected="selected">Testnet (practice)</option></select>
@@ -130,7 +133,7 @@ the first five dice of a word are skipped (reroll). After 23 words, pick
       <p class="err" id="error"></p>
     </section>
     <section class="key-manager no-print" id="msig-manager" hidden="">
-      <div class="key-manager-head"><h2>Multisigs</h2><div class="add-item-control"><button class="btn secondary add-key" id="add-msig" type="button" aria-label="Add multisig" aria-describedby="add-msig-tooltip">+</button><span class="add-item-tooltip" id="add-msig-tooltip" role="tooltip">Add another multisig</span></div></div>
+      <div class="key-manager-head"><h2>Multisigs</h2><div class="add-item-control"><button class="btn secondary add-key" id="add-msig" type="button" aria-label="Add multisig" aria-describedby="add-msig-tooltip">+</button></div>
       <div class="key-tabs" id="msig-tabs" role="tablist" aria-label="Multisigs"></div>
     </section>
     <section class="card no-print" id="msig-card" role="tabpanel" hidden="">
@@ -146,7 +149,7 @@ needs the number of signatures you choose, on real signing devices.</p>
           <select id="msig-m"><option value="1">1</option><option value="2" selected="selected">2</option><option value="3">All 3</option></select>
         </label>
         <label class="field" style="margin:0;flex:1">People / devices (n)
-          <select id="msig-n"><option value="2">2</option><option value="3" selected="selected">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option><option value="15">15</option></select>
+          <select id="msig-n"><option value="2">2</option><option value="3" selected="selected">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select>
         </label>
         <label class="field" style="margin:0;flex:1">Network
           <select id="msig-network"><option value="mainnet" disabled="disabled">Bitcoin mainnet</option><option value="testnet" selected="selected">Testnet (practice)</option></select>
@@ -162,7 +165,7 @@ needs the number of signatures you choose, on real signing devices.</p>
         <span><strong>Nested SegWit</strong><span class="desc">Addresses start with 3. Older wallets. BIP48 script type 1.</span></span></label>
       <label class="choice"><input type="radio" name="msig-script" value="p2sh">
         <span><strong>Legacy</strong><span class="desc">Addresses start with 3. Bare P2SH using matching depth-2 BIP45 cosigner-branch exports.</span></span></label>
-      <div id="msig-keys" class="msig-keys"><label class="field">Co-signer 1 multisig extended public key<textarea id="msig-x-0" placeholder="xpub / tpub / Ypub / Zpub / Upub / Vpub" autocomplete="off" spellcheck="false"></textarea></label><label class="field">Co-signer 2 multisig extended public key<textarea id="msig-x-1" placeholder="xpub / tpub / Ypub / Zpub / Upub / Vpub" autocomplete="off" spellcheck="false"></textarea></label><label class="field">Co-signer 3 multisig extended public key<textarea id="msig-x-2" placeholder="xpub / tpub / Ypub / Zpub / Upub / Vpub" autocomplete="off" spellcheck="false"></textarea></label></div>
+      <div id="msig-keys" class="msig-keys"><label class="field">Co-signer 1 multisig extended public key<textarea id="msig-x-0" placeholder="xpub / tpub / Ypub / Zpub / Upub / Vpub" autocomplete="off"></textarea></label></div>
       <p class="hint ok" id="msig-hint">Spending will need 2 of these 3 keys. Receiving needs none of the private keys.</p>
       <div class="row current-item-actions">
         <button class="btn primary" id="msig-go" type="button">Build Multisig</button>
@@ -173,7 +176,7 @@ needs the number of signatures you choose, on real signing devices.</p>
     <section class="card no-print" id="psbt-card" role="tabpanel" hidden>
       <div class="kicker">Inspect first. Sign elsewhere.</div>
       <h2>Read a PSBT. Check its ECDSA nonces.</h2>
-      <p class="muted psbt-intro">Inspecting a PSBT v0 does not require a private key. EntropyLab can show outputs, PSBT-provided input amounts and fees, signatures, and repeated ECDSA nonce values. Loading a matching key additionally checks whether supported signatures match plain RFC 6979; a mismatch alone is not evidence of a compromised signer.</p>
+      <p class="muted psbt-intro">Inspecting a PSBT v0 does not require a private key. EntropyLab can show outputs, PSBT-provided input amounts and fees, signatures, and repeated ECDSA nonce values.</p>
       <label class="field">PSBT v0 (base64 or hex)
         <textarea id="psbt-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </label>
@@ -198,18 +201,48 @@ needs the number of signatures you choose, on real signing devices.</p>
       <p class="muted" id="psbt-session" aria-live="polite">No session key. Inspect-only mode.</p>
       <p class="err" id="psbt-error" role="alert"></p>
       <div id="psbt-out" aria-live="polite"></div>
-      <p class="muted">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      <p class="muted">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page when finished.</p>
     </section>
     <div id="out"></div>
     <section class="card muted">
       <h3 class="sources-heading">Sources</h3>
-      <p>Ian Coleman BIP39: <a href="https://github.com/iancoleman/bip39">github.com/iancoleman/bip39</a> — pull <code>bip39-standalone.html</code> from Releases, or <code>src/js/index.js</code>, <code>entropy.js</code>, <code>jsbip39.js</code>, <code>wordlist_english.js</code>.</p>
-      <p>bitaddress.org: <a href="https://github.com/pointbiz/bitaddress.org">github.com/pointbiz/bitaddress.org</a> — pull <code>bitaddress.org.html</code>, or <code>src/ninja.key.js</code>, <code>ninja.detailwallet.js</code>, <code>ninja.paperwallet.js</code>, <code>bitcoinjs-lib.eckey.js</code>.</p>
+      <p>Ian Coleman BIP39: <a href="https://github.com/iancoleman/bip39">github.com/iancoleman/bip39</a> — pull <code>bip39-standalone.html</code> from Releases, or <code>src/js/index.js</code>.</p>
+      <p>bitaddress.org: <a href="https://github.com/pointbiz/bitaddress.org">github.com/pointbiz/bitaddress.org</a> — pull <code>bitaddress.org.html</code>, or <code>src/ninja.key.js</code>, etc.</p>
       <p>BitBox02 diceware: <a href="https://blog.bitbox.swiss/en/roll-the-dice-generate-your-own-seed/">roll-the-dice-generate-your-own-seed</a> — lookup table is the BIP39 English list in order.</p>
-      <p>D++ D8 &amp; D16 method: <a href="https://thesimplestbitcoinbook.net/wp-content/uploads/2023/09/Roll-Your-Own-Seed-Phrase-PDF.pdf">Roll Your Own Bitcoin Seed Phrase</a> — the published 24-word workflow uses one D8 and two D16 rolls per word, then a final D8.</p>
+      <p>D++ D8 &amp; D16 method: <a href="https://thesimplestbitcoinbook.net/wp-content/uploads/2023/09/Roll-Your-Own-Seed-Phrase-PDF.pdf">Roll Your Own Bitcoin Seed Phrase</a> — the published method for D++.</p>
     </section>
   </div>
 </div><!--/$--><script id="btc-calc-script">/*@@JS_MAIN@@*/</script>
 <script>/*@@JS_ONLINE@@*/</script>
 <script>/*@@JS_ENHANCED@@*/</script>
-<script>/*@@JS_REPEAT@@*/</script></body></html>
+<script>/*@@JS_REPEAT@@*/</script>
+<script>
+// Random quote + simulated <blink> behaviour
+(function(){
+  const quotes = [
+    "Placeholder quote 1.",
+    "Placeholder quote 2.",
+    "Placeholder quote 3."
+  ];
+  // Pick a random quote
+  const chosen = quotes[Math.floor(Math.random() * quotes.length)];
+  const qEl = document.getElementById('random-quote');
+  if(!qEl) return;
+  // Create a span that will 'blink' and insert into the quote element
+  const blinkSpan = document.createElement('span');
+  blinkSpan.className = 'sim-blink';
+  blinkSpan.textContent = chosen;
+  // Clear any placeholder content and append
+  qEl.textContent = '';
+  qEl.appendChild(blinkSpan);
+  // Simulate the deprecated <blink> tag by toggling visibility.
+  // Respect prefers-reduced-motion by avoiding rapid blinking when set.
+  const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(prefersReduced) return; // don't blink for users who requested reduced motion
+  let visible = true;
+  setInterval(() => {
+    blinkSpan.style.visibility = visible ? 'hidden' : 'visible';
+    visible = !visible;
+  }, 700);
+})();
+</script></body></html>
