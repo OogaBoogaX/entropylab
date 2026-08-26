@@ -74,14 +74,16 @@ directly):
 
 The version is declared once in `package.json` and substituted into the
 output at build time. After changing anything in `src/`, run `npm run build`
-and commit the regenerated files; CI verifies that the committed output is
-reproducible. To remove generated files, run `npm run clean`.
+and commit the regenerated files; CI runs the test suite (`npm test`) and
+verifies that the committed output is reproducible. To remove generated
+files, run `npm run clean`.
 
 ## Project structure
 
 ```
 ├── assets/                 Static assets (logo, favicon)
 ├── scripts/build.mjs       Zero-dependency build script
+├── test/network-check.test.mjs  Tests for the network-check module (npm test)
 ├── src/
 │   ├── index.html          HTML template (markup and document head)
 │   ├── css/styles.css      Application styles
@@ -89,6 +91,7 @@ reproducible. To remove generated files, run `npm run clean`.
 │       ├── vendor.js       Bundled third-party crypto (noble, scure, bip39)
 │       ├── app.js          Application logic
 │       ├── online.js       Hosted-site behavior and version picker
+│       ├── network-check.js Network adapter detection and warning
 │       ├── enhanced-inputs.js
 │       └── repeat-inputs.js
 ├── index.html              Compiled application (generated, committed)

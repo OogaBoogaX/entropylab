@@ -34,6 +34,7 @@ const template = read("index.html");
 const css = read("css/styles.css");
 const jsMain = read("js/vendor.js") + read("js/app.js");
 const jsOnline = read("js/online.js");
+const jsNetwork = read("js/network-check.js");
 const jsEnhanced = read("js/enhanced-inputs.js");
 const jsRepeat = read("js/repeat-inputs.js");
 
@@ -41,6 +42,7 @@ let html = template
   .replace("/*@@CSS@@*/", () => css)
   .replace("/*@@JS_MAIN@@*/", () => jsMain)
   .replace("/*@@JS_ONLINE@@*/", () => jsOnline)
+  .replace("/*@@JS_NETWORK@@*/", () => jsNetwork)
   .replace("/*@@JS_ENHANCED@@*/", () => jsEnhanced)
   .replace("/*@@JS_REPEAT@@*/", () => jsRepeat)
   .split("{{VERSION}}").join(version);

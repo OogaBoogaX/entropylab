@@ -26,6 +26,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Run tests
+        run: npm test
+
       - name: Build static site
         run: npm run build
 

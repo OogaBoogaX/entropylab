@@ -8,6 +8,9 @@ var vr=[16,20,24,28,32],Rc={0:"00",1:"01",2:"10",3:"11",4:"0",5:"1"};function kr
     <aside class="online-warning no-print" id="online-warning" role="alert" hidden>
       <strong>Online version:</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab-{{VERSION}}.html" download="entropylab-{{VERSION}}.html">Download EntropyLab</a> and run the HTML file offline on a trusted, air-gapped computer.
     </aside>
+    <aside class="network-warning no-print" id="network-warning" role="alert" hidden>
+      <strong>Network detected:</strong> This computer has an active network adapter — it is online and possibly connected to the internet. Do not enter wallet secrets here; disconnect from all networks (Wi-Fi and Ethernet) and use this file on an air-gapped computer.
+    </aside>
     <header>
       <div>
         <div class="kicker">EntropyLab v{{VERSION}} \xB7 Offline \xB7 No entropy RNG \xB7 You provide the entropy</div>

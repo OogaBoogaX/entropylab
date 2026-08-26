@@ -267,6 +267,11 @@ header { padding: 8px 0 16px; }
 }
 .online-warning strong { color: var(--danger); }
 .online-warning a { font-weight: 700; white-space: nowrap; }
+.network-warning {
+  margin: 0 0 18px; padding: 14px 16px; border: 1px solid var(--ok); border-radius: 10px;
+  background: color-mix(in oklab, var(--ok) 12%, var(--surface)); color: var(--fg); line-height: 1.5;
+}
+.network-warning strong { color: var(--ok); }
 .beta-warning {
   margin: 0 0 12px; padding: 14px 16px; border: 1px solid var(--danger); border-radius: 10px;
   background: color-mix(in oklab, var(--danger) 14%, var(--surface)); color: var(--fg); line-height: 1.5;
