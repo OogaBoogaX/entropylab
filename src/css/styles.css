@@ -136,8 +136,6 @@ label.field { display: block; margin-top: var(--space-component); font-size: 14p
   .choice-grid.three-up { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 .dice-input-pad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: var(--space-control); }
-.dice-input-pad.dice-digits { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.dice-input-pad.dice-digits .coin-button { grid-column: 1 / -1; }
 .dice-input-pad.with-coin { grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 3fr); }
 .dice-input-pad.dplus {
   grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -171,10 +169,9 @@ label.field { display: block; margin-top: var(--space-component); font-size: 14p
 }
 .dice-input-pad.dplus-pad { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .dice-input-pad.seed-pad { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-.dice-input-pad.key-pad { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.dice-input-pad.key-pad { grid-template-columns: repeat(8, minmax(0, 1fr)); }
 .dice-input-pad.seed-pad button, .dice-input-pad.key-pad button { padding-inline: 6px; white-space: nowrap; }
 .dice-input-pad.key-pad button { font-size: 13px; }
-.dice-input-pad.key-pad .pad-wide { white-space: normal; }
 
 @media (max-width: 639px) {
   .dice-input-pad.dplus {

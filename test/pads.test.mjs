@@ -18,10 +18,10 @@ test("the shuffle helper is defined once with unbiased cryptographic randomness"
 test("pads render in logical order by default and shuffle only when opted in", () => {
   // Every pad guards shuffling behind the hodlPadShuffle flag.
   assert.match(app, /dplusPad=\(hodlPadShuffle\?hodlShuffle\(dplusFaces\):dplusFaces\)/);
-  assert.match(app, /\$\{\(hodlPadShuffle\?hodlShuffle\(\[1,2,3,4,5,6\]\):\[1,2,3,4,5,6\]\)\.map/);
+  assert.match(app, /let diceFaces=hodlPadShuffle\?hodlShuffle\(\[1,3,5,2,4,6\]\):\[1,3,5,2,4,6\]/);
   assert.match(app, /entropyCharacters=binary\?\["0","1"\]:\(hodlPadShuffle\?hodlShuffle\(\[\.\.\."0123456789ABCDEF"\]\):\[\.\.\."0123456789ABCDEF"\]\)/);
   assert.match(app, /\$\{\(hodlPadShuffle\?hodlShuffle\(\[\.\.\."abcdefghijklmnopqrstuvwxyz"\]\):\[\.\.\."abcdefghijklmnopqrstuvwxyz"\]\)\.map/);
-  assert.match(app, /\$\{\(hodlPadShuffle\?hodlShuffle\(\[\.\.\."123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"\]\):\[\.\.\."123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"\]\)\.map/);
+  assert.match(app, /\$\{\(hodlPadShuffle\?hodlShuffle\(keyCharacters\):keyCharacters\)\.map/);
 });
 
 test("shuffle is opt-in via a checkbox on every entropy pad", () => {
@@ -35,14 +35,18 @@ test("shuffle is opt-in via a checkbox on every entropy pad", () => {
   assert.doesNotMatch(app, /data-pad-shuffle/);
 });
 
-test("dice pad shuffles only digits 1-6 while Heads/Tails stay fixed and separate", () => {
-  assert.match(app, /dice-digits">\$\{\(hodlPadShuffle\?hodlShuffle\(\[1,2,3,4,5,6\]\):\[1,2,3,4,5,6\]\)\.map/);
-  // Coin buttons are appended after the digits, never part of the shuffle.
+test("dice pad keeps the original with-coin layout and shuffles only digits 1-6", () => {
+  // Same layout as the static template: digit slots 1,3,5 / 2,4,6 with
+  // Heads/Tails fixed in the wide right-hand column.
+  assert.match(app, /let diceFaces=hodlPadShuffle\?hodlShuffle\(\[1,3,5,2,4,6\]\):\[1,3,5,2,4,6\]/);
   const dicePad = app.match(/let dicePad=ge==="dplus"[\s\S]*?<\/div>`;/)[0];
-  const shuffleEnd = dicePad.indexOf("}).join()");
-  assert.ok(shuffleEnd < dicePad.indexOf('data-d="H"'), "Heads button must follow the shuffled digits");
-  assert.ok(shuffleEnd < dicePad.indexOf('data-d="T"'), "Tails button must follow the shuffled digits");
-  assert.match(css, /\.dice-input-pad\.dice-digits \.coin-button \{ grid-column: 1 \/ -1; \}/);
+  assert.match(dicePad, /dice-input-pad with-coin/);
+  assert.ok(dicePad.indexOf("slice(0,3)") < dicePad.indexOf('data-d="H"'), "Heads button must follow the first digit row");
+  assert.ok(dicePad.indexOf('data-d="H"') < dicePad.indexOf("slice(3)"), "second digit row must follow Heads");
+  assert.ok(dicePad.indexOf("slice(3)") < dicePad.indexOf('data-d="T"'), "Tails button must follow the second digit row");
+  assert.doesNotMatch(app, /dice-digits/);
+  assert.doesNotMatch(css, /dice-digits/);
+  assert.match(css, /\.dice-input-pad\.with-coin \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\) minmax\(0, 3fr\); \}/);
 });
 
 test("pads reshuffle in place after each keypress when shuffle is enabled", () => {
@@ -52,7 +56,7 @@ test("pads reshuffle in place after each keypress when shuffle is enabled", () =
   assert.match(app, /hodlInsertDiceControl\(input,button\);if\(!button\.dataset\.coin\)hodlShufflePadButtons\(button\.parentElement,"\[data-d\]:not\(\[data-coin\]\)"\)/);
   assert.match(app, /hodlInsertEntropyControl\(entropyInput,button\);hodlShufflePadButtons\(button\.parentElement,"\[data-entropy-digit\]"\)/);
   assert.match(app, /hodlInsertEntropyControl\(seedInput,button\);hodlShufflePadButtons\(button\.parentElement,"\[data-vk-character\]"\)/);
-  assert.match(app, /hodlInsertEntropyControl\(keyInput,button\);hodlShufflePadButtons\(button\.parentElement,"\[data-vk-character\]:not\(\.pad-wide\)"\)/);
+  assert.match(app, /hodlInsertEntropyControl\(keyInput,button\);hodlShufflePadButtons\(button\.parentElement,"\[data-vk-character\]"\)/);
   // The in-place shuffle preserves non-matching siblings (coins, wide keys).
   assert.match(app, /let positions=buttons\.map\(button=>\[\.\.\.container\.children\]\.indexOf\(button\)\),order=hodlShuffle\(\[\.\.\.buttons\.keys\(\)\]\)/);
   assert.match(app, /buttons\.forEach\(button=>button\.remove\(\)\)/);
@@ -67,17 +71,34 @@ test("hex pad groups rows 0-7 then 8-F and reuses the existing keypad styles", (
 test("seed phrase and private key modes keep fixed on-screen pads", () => {
   assert.match(app, /<div class="dice-input-pad seed-pad" role="group" aria-label="Seed phrase keyboard">/);
   assert.match(app, /<div class="dice-input-pad key-pad" role="group" aria-label="Private key keyboard">/);
-  assert.match(app, /class="pad-wide" data-vk-character="0" aria-label="Insert 0">0 \(hex only\)/);
+  assert.doesNotMatch(app, /pad-wide/);
   assert.match(app, /button\.dataset\.entropyDigit\|\|button\.dataset\.vkCharacter/);
 });
 
+test("private key pad cycles numbers, lowercase, and uppercase next to the shuffle toggle", () => {
+  assert.match(app, /hodlKeyCharset==="upper"\?\[\.\.\."ABCDEFGHJKLMNPQRSTUVWXYZ"\]:hodlKeyCharset==="lower"\?\[\.\.\."abcdefghijkmnopqrstuvwxyz"\]/);
+  assert.match(app, /hodlKeyCharset=hodlKeyCharset==="number"\?"lower":hodlKeyCharset==="lower"\?"upper":"number"/);
+  assert.match(app, /<button type="button" class="pad-shuffle-toggle" id="key-charset-cycle"/);
+  // The cycle button sits right after the Shuffle pad keys toggle.
+  const keyForm = app.match(/Private key format[\s\S]*?hodlBindKeyFields\(\)/)[0];
+  assert.ok(keyForm.indexOf('id="pad-shuffle-toggle"') < keyForm.indexOf('id="key-charset-cycle"'), "cycle button must follow the shuffle toggle");
+});
+
+test("private key pad offers the 0 key only for the WIF/hex format", () => {
+  // 0 is not a base58 digit, so minikey and brain wallet pads omit it.
+  assert.match(app, /keyKind==="wif-or-hex"\?\[\.\.\."0123456789"\]:\[\.\.\."123456789"\]/);
+  // Switching the private key format re-renders the pad so the 0 key follows the format.
+  assert.match(app, /input\[name="kk"\]'\)\.forEach\(radio=>radio\.addEventListener\("change",\(\)=>\{hodlCaptureKey\(\);hodlRenderKeyForm\(\)/);
+});
+
 test("pad styles cover the toggle and per-layout grids", () => {
-  for (const selector of [".pad-shuffle-toggle", ".seed-pad", ".key-pad", ".dplus-pad", ".hex-keypad", ".dice-digits"]) {
+  for (const selector of [".pad-shuffle-toggle", ".seed-pad", ".key-pad", ".dplus-pad", ".hex-keypad", ".with-coin"]) {
     assert.ok(css.includes(selector), `missing ${selector} styles`);
   }
   assert.match(css, /\.dice-input-pad\.seed-pad \{ grid-template-columns: repeat\(6, minmax\(0, 1fr\)\); \}/);
-  assert.match(css, /\.dice-input-pad\.key-pad \{ grid-template-columns: repeat\(4, minmax\(0, 1fr\)\); \}/);
+  assert.match(css, /\.dice-input-pad\.key-pad \{ grid-template-columns: repeat\(8, minmax\(0, 1fr\)\); \}/);
   assert.doesNotMatch(css, /\.pad-toolbar/);
+  assert.doesNotMatch(css, /pad-wide/);
 });
 
 test("the shuffle helper is present in the compiled application", () => {

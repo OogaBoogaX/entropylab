@@ -19,7 +19,8 @@ Official website: [entropylab.online](https://entropylab.online)
   binary, seed phrase, and private key) in a fixed logical order, each with an
   opt-in "Shuffle pad keys" checkbox. When enabled, the character keys are
   reshuffled after every keypress; the dice Heads/Tails buttons always stay
-  fixed.
+  fixed. The private key pad cycles between numbers, lowercase, and uppercase
+  letters, and offers the base58-invalid 0 key only for WIF/hex keys.
 - Derives BIP39 seeds, BIP32 extended keys, wallet fingerprints, addresses,
   and Bitcoin Core-compatible descriptors.
 - Supports legacy, nested SegWit, native SegWit, and Taproot single-signature
