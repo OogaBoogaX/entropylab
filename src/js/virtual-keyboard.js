@@ -6,13 +6,26 @@
 // predictable across entries.
 (() => {
   const layouts = {
-    dice: { label: "dice rolls", keys: "123456", space: false },
-    dplus: { label: "D++ rolls", keys: "1234567890ABCDEF", space: false },
-    "dplus-numbered": { label: "D++ rolls", keys: "123456789ABCDEFG", space: false },
-    hex: { label: "hexadecimal entropy", keys: "0123456789ABCDEF", space: false },
-    bin: { label: "binary entropy", keys: "01", space: false },
-    seed: { label: "seed phrase", keys: "abcdefghijklmnopqrstuvwxyz", space: true },
-    key: { label: "private key", keys: "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz", space: true }
+    dice: { label: "dice rolls", keys: "123456", columns: 2 },
+    dplus: { label: "D++ rolls", keys: "1234567890ABCDEF", columns: 4, dplus: true },
+    "dplus-numbered": { label: "D++ rolls", keys: "123456789ABCDEFG", columns: 4, dplus: true },
+    hex: { label: "hexadecimal entropy", keys: "0123456789ABCDEF", columns: 4 },
+    bin: {
+      label: "binary entropy",
+      keys: [
+        { character: "0", text: "Heads (0)", aria: "Enter Heads as binary 0", className: "coin-button" },
+        { character: "1", text: "Tails (1)", aria: "Enter Tails as binary 1", className: "coin-button" }
+      ]
+    },
+    seed: { label: "seed phrase", keys: "abcdefghijklmnopqrstuvwxyz", columns: 6, space: true },
+    key: { label: "private key", keys: "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz", columns: 4, space: true }
+  };
+
+  const entry = (definition, index) => {
+    const detail = typeof definition === "string"
+      ? { character: definition, text: definition, aria: `Insert ${definition}` }
+      : definition;
+    return { className: "", ...detail, index };
   };
 
   const enhanced = new WeakSet();
@@ -70,12 +83,18 @@
   const makeKey = (className, text, ariaLabel, onPress) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `vk-key ${className}`;
+    button.className = `vk-key ${className}`.trim();
     button.textContent = text;
     button.setAttribute("aria-label", ariaLabel);
     holdFocus(button);
     button.onclick = onPress;
     return button;
+  };
+
+  const dplusLabel = (character) => {
+    if (character === "G") return { text: "16 (G)", aria: "Numbered D16 face 16, entered as G" };
+    const decimal = Number.parseInt(character, 16);
+    return { text: decimal >= 10 ? `${decimal} (${character})` : character, aria: `D16 face ${character}` };
   };
 
   const enhance = (field) => {
@@ -106,13 +125,17 @@
     panel.setAttribute("aria-label", `On-screen keyboard for the ${layout.label} field`);
 
     const grid = document.createElement("div");
-    grid.className = "vk-grid";
+    grid.className = "vk-grid dice-input-pad";
+    if (layout.columns) grid.style.setProperty("--vk-columns", String(layout.columns));
     const renderKeys = (order) => {
-      grid.replaceChildren(...order.map((character) =>
-        makeKey("vk-character", character, `Insert ${character}`, () => insertText(field, character))
-      ));
+      grid.replaceChildren(...order.map((definition, index) => {
+        const key = layout.dplus && typeof definition === "string"
+          ? { character: definition, ...dplusLabel(definition), className: "dplus" }
+          : entry(definition, index);
+        return makeKey(key.className, key.text, key.aria, () => insertText(field, key.character));
+      }));
     };
-    let order = layout.keys.split("");
+    let order = [...layout.keys];
     renderKeys(order);
 
     const setOpen = (open) => {

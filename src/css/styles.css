@@ -175,12 +175,9 @@ label.field { display: block; margin-top: var(--space-component); font-size: 14p
   border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
 }
 .vk-panel[hidden] { display: none; }
-.vk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
-.vk-key {
-  min-height: 44px; padding: 0 6px;
-  font-family: var(--mono); font-size: 16px;
-  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg);
-}
+.vk-grid.dice-input-pad { grid-template-columns: repeat(var(--vk-columns), minmax(0, 1fr)); grid-template-rows: none; grid-auto-flow: row; margin-top: 0; }
+.vk-grid.dice-input-pad button { padding-inline: 6px; white-space: nowrap; }
+.vk-key { min-height: 44px; }
 .vk-key:hover { border-color: var(--accent); }
 .vk-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .vk-controls .vk-key { flex: 1 1 auto; padding: 0 14px; font-family: var(--sans); font-size: 14px; }
