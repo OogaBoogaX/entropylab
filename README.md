@@ -16,8 +16,9 @@ Official website: [entropylab.online](https://entropylab.online)
 - Accepts dice rolls, coin flips, hexadecimal entropy, BIP39 seed phrases,
   extended keys, WIF keys, raw private keys, and Casascius mini private keys.
 - Provides on-screen input pads for every entropy field (dice, D++, hex,
-  binary, seed phrase, and private key), each with a Shuffle control that
-  reorders the keys on every press.
+  binary, seed phrase, and private key) in a fixed logical order, each with an
+  opt-in "Shuffle pad keys" checkbox that randomizes the character-key order
+  (dice Heads/Tails buttons always stay fixed).
 - Derives BIP39 seeds, BIP32 extended keys, wallet fingerprints, addresses,
   and Bitcoin Core-compatible descriptors.
 - Supports legacy, nested SegWit, native SegWit, and Taproot single-signature

@@ -136,6 +136,8 @@ label.field { display: block; margin-top: var(--space-component); font-size: 14p
   .choice-grid.three-up { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 .dice-input-pad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: var(--space-control); }
+.dice-input-pad.dice-digits { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dice-input-pad.dice-digits .coin-button { grid-column: 1 / -1; }
 .dice-input-pad.with-coin { grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 3fr); }
 .dice-input-pad.dplus {
   grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -156,13 +158,13 @@ label.field { display: block; margin-top: var(--space-component); font-size: 14p
 .dice-input-pad button:disabled {
   cursor: not-allowed; opacity: 0.38; color: var(--muted); border-color: var(--border);
 }
-.pad-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--space-control); }
-.pad-toolbar button {
-  flex: 1 1 auto; min-height: 44px; padding: 0 14px;
-  font-size: 14px; border: 1px solid var(--border); border-radius: 8px;
-  background: var(--surface-2); color: var(--fg);
+.pad-shuffle-toggle {
+  display: inline-flex; align-items: center; gap: 9px; min-height: 44px;
+  margin-top: var(--space-control); padding: 9px 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-2); color: var(--fg); font-size: 14px; font-weight: 600; cursor: pointer;
 }
-.pad-toolbar button:hover { color: var(--accent); }
+.pad-shuffle-toggle input { margin: 0; }
 .dice-input-pad.hex-keypad, .dice-input-pad.dplus-pad, .dice-input-pad.seed-pad, .dice-input-pad.key-pad {
   grid-template-columns: repeat(var(--pad-columns, 4), minmax(0, 1fr));
   grid-template-rows: none; grid-auto-flow: row;
