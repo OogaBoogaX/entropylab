@@ -15,6 +15,9 @@ Official website: [entropylab.online](https://entropylab.online)
 
 - Accepts dice rolls, coin flips, hexadecimal entropy, BIP39 seed phrases,
   extended keys, WIF keys, raw private keys, and Casascius mini private keys.
+- Offers on-screen keypads for entering dice rolls, hex or binary entropy,
+  seed phrases, and private keys, with an optional mode that shuffles the
+  keys after every click to resist keyloggers and click-position loggers.
 - Derives BIP39 seeds, BIP32 extended keys, wallet fingerprints, addresses,
   and Bitcoin Core-compatible descriptors.
 - Supports legacy, nested SegWit, native SegWit, and Taproot single-signature
@@ -49,7 +52,9 @@ a trusted air-gapped computer for sensitive operations.
 EntropyLab does not generate wallet entropy. The optional BitBox Heads/Tails
 controls use browser randomness only to choose an equivalent displayed die
 face: 1–3 all mean Heads and 4–6 all mean Tails, so that numeric choice does not
-change the resulting BitBox entropy. Wallet security still depends on the
+change the resulting BitBox entropy. When key shuffling is enabled, browser
+randomness is also used only to reorder the on-screen keys; it never affects
+the entered value. Wallet security still depends on the
 quality and secrecy of the entropy, seed phrase, passphrase, or private key
 supplied by the user.
 

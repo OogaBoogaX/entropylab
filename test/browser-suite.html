@@ -184,6 +184,57 @@
     await until(() => !document.getElementById("calc-card").hidden, "key workspace");
   });
 
+  await test("on-screen keypads enter values and shuffle without moving fixed keys", async () => {
+    const digits = (pad) => [...pad.querySelectorAll("[data-entropy-digit]")].map((b) => b.dataset.entropyDigit).sort().join("");
+    await chooseMode("Seed phrase");
+    const seed = await until(() => document.getElementById("seed"), "seed input");
+    const seedPanel = document.querySelector(".virtual-keyboard-panel");
+    assert(seedPanel && seedPanel.hidden, "Seed keyboard should be hidden by default");
+    document.getElementById("show-keyboard").click();
+    assert(!seedPanel.hidden, "Seed keyboard should show after the toggle");
+    const seedPad = document.querySelector(".seed-keyboard");
+    assert(seedPad && seedPad.children.length === 28, "Seed keyboard should have 26 letters plus Space and Backspace");
+    input(seed, "");
+    for (const letter of ["a", "b", "a"]) seedPad.querySelector('[data-entropy-digit="' + letter + '"]').click();
+    equal(seed.value, "aba");
+    seedPad.querySelector('[data-pad-action="backspace"]').click();
+    equal(seed.value, "ab");
+    seedPad.querySelector('[data-entropy-digit=" "]').click();
+    equal(seed.value, "ab ");
+    const before = digits(seedPad);
+    document.getElementById("pad-shuffle").click();
+    seedPad.querySelector('[data-entropy-digit="c"]').click();
+    equal(seed.value, "ab c");
+    equal(digits(seedPad), before);
+    equal(seedPad.children.length, 28);
+    assert(seedPad.children[26].dataset.entropyDigit === " " && seedPad.children[27].dataset.padAction === "backspace", "Space and Backspace moved");
+    input(seed, "");
+    document.getElementById("pad-shuffle").click();
+    equal([...seedPad.querySelectorAll("[data-entropy-digit]")].map((b) => b.dataset.entropyDigit).join(""), "abcdefghijklmnopqrstuvwxyz ");
+    document.getElementById("show-keyboard").click();
+    assert(seedPanel.hidden, "Seed keyboard should hide again");
+    await chooseMode("Private key");
+    const key = await until(() => document.getElementById("key"), "key input");
+    input(key, "");
+    assert(document.querySelector(".virtual-keyboard-panel").hidden, "Key keyboard should be hidden by default");
+    document.getElementById("show-keyboard").click();
+    document.querySelector('.key-keyboard [data-entropy-digit="5"]').click();
+    equal(key.value, "5");
+    input(key, "");
+    document.getElementById("show-keyboard").click();
+    await chooseMode("Dice rolls");
+    const dice = await until(() => document.getElementById("dice"), "dice input");
+    input(dice, "");
+    document.getElementById("pad-shuffle").click();
+    const dicePad = document.querySelector(".dice-input-pad");
+    dicePad.querySelector('[data-d="1"]').click();
+    equal(dice.value, "1");
+    equal(dicePad.children.length, 8);
+    assert(dicePad.children[3].dataset.coin === "heads" && dicePad.children[7].dataset.coin === "tails", "Coin buttons moved");
+    input(dice, "");
+    document.getElementById("pad-shuffle").click();
+  });
+
   await test("a known BIP39 wallet can be derived through the UI", async () => {
     document.querySelector('[data-seed-words="12"]').click();
     await chooseMode("Hex");

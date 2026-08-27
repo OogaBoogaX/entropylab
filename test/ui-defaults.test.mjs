@@ -182,3 +182,13 @@ test("top banners share one consistent gap", () => {
     /\.beta-warning, \.online-warning, \.network-warning\s*\{[^}]*margin: 0 0 12px;/s,
   );
 });
+
+test("every entropy form has a click keypad with an optional shuffle", () => {
+  assert.match(app, /padShuffle:!1,showKeyboard:!1/);
+  assert.match(app, /class="virtual-keyboard-panel" \$\{hodlKeyboardVisible\(\)\?"":"hidden"\}/);
+  assert.match(app, /class="coin-button pad-fixed" data-d="H"/);
+  assert.match(app, /class="coin-button pad-fixed" data-d="T"/);
+  assert.match(app, /hodlKeyboardPanel\(\[\.\.\."abcdefghijklmnopqrstuvwxyz"\],"seed-keyboard"/);
+  assert.match(app, /hodlKeyboardPanel\(\[\.\.\."0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"\],"key-keyboard"/);
+  assert.match(css, /\.dice-input-pad\.virtual-keyboard \{/);
+});
