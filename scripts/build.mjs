@@ -37,7 +37,6 @@ const jsOnline = read("js/online.js");
 const jsNetwork = read("js/network-check.js");
 const jsEnhanced = read("js/enhanced-inputs.js");
 const jsRepeat = read("js/repeat-inputs.js");
-const jsKeyboard = read("js/virtual-keyboard.js");
 
 let html = template
   .replace("/*@@CSS@@*/", () => css)
@@ -46,7 +45,6 @@ let html = template
   .replace("/*@@JS_NETWORK@@*/", () => jsNetwork)
   .replace("/*@@JS_ENHANCED@@*/", () => jsEnhanced)
   .replace("/*@@JS_REPEAT@@*/", () => jsRepeat)
-  .replace("/*@@JS_KEYBOARD@@*/", () => jsKeyboard)
   .split("{{VERSION}}").join(version);
 
 for (const leftover of html.match(/\/\*@@|{{VERSION}}/g) || []) {
