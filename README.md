@@ -15,6 +15,9 @@ Official website: [entropylab.online](https://entropylab.online)
 
 - Accepts dice rolls, coin flips, hexadecimal entropy, BIP39 seed phrases,
   extended keys, WIF keys, raw private keys, and Casascius mini private keys.
+- Offers an optional on-screen virtual keyboard for every entropy input field
+  (dice, D++, hex, binary, seed phrase, and private key), toggled by a small
+  keyboard glyph, with a Shuffle control that reorders the keys on each press.
 - Derives BIP39 seeds, BIP32 extended keys, wallet fingerprints, addresses,
   and Bitcoin Core-compatible descriptors.
 - Supports legacy, nested SegWit, native SegWit, and Taproot single-signature
@@ -90,6 +93,7 @@ files, run `npm run clean`.
 │   ├── browser.test.mjs              Headless-Firefox integration harness
 │   ├── network-check.test.mjs        Tests for the network-check module
 │   ├── ui-defaults.test.mjs          UI defaults and markup invariants
+│   ├── virtual-keyboard.test.mjs     On-screen keyboard invariants
 │   └── validate.test.mjs             Source and security invariants
 ├── src/
 │   ├── index.html          HTML template (markup and document head)
@@ -100,7 +104,8 @@ files, run `npm run clean`.
 │       ├── online.js       Hosted-site behavior and version picker
 │       ├── network-check.js Network adapter detection and warning
 │       ├── enhanced-inputs.js
-│       └── repeat-inputs.js
+│       ├── repeat-inputs.js
+│       └── virtual-keyboard.js On-screen keyboards for entropy fields
 ├── index.html              Compiled application (generated, committed)
 ├── entropylab-*.html       Versioned copy of the compiled application
 ├── versions.json           Version manifest for the hosted version picker
