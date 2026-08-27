@@ -944,7 +944,7 @@ function hodlInsertDiceControl(input,button,update=hodlUpdateDice){
   let caret=start+inserted.length;input.focus({preventScroll:!0});input.setSelectionRange(caret,caret);hodlSanitizeDiceInput(input);update()
 }
 function hodlInsertEntropyControl(input,button){
-  let inserted=button.dataset.entropyDigit||"";if(!input||!inserted)return;
+  let inserted=button.dataset.entropyDigit||button.dataset.vkCharacter||"";if(!input||!inserted)return;
   let start=Number.isInteger(input.selectionStart)?input.selectionStart:input.value.length,end=Number.isInteger(input.selectionEnd)?input.selectionEnd:start;
   input.focus({preventScroll:!0});input.setRangeText(inserted,start,end,"end");input.dispatchEvent(new InputEvent("input",{bubbles:!0,inputType:"insertText",data:inserted}))
 }
@@ -1192,11 +1192,11 @@ function hodlSetSeedLength(words){
 function hodlRenderKeyForm(){
   let config=hodlSeedConfig();hodlUpdateSeedLengthControl();
   if(Ne==="dice"){
-    let dplusFaces=["1","2","3","4","5","6","7","8","9","A","B","C","D","E","F",hodlDPlusNumberedD16?"G":"0"],dplusPad=dplusFaces.map(face=>{let decimal=face==="G"?16:Number.parseInt(face,16),label=decimal>=10?`${decimal} (${face})`:face,aria=face==="G"?"Numbered D16 face 16, entered as G":`D16 face ${face}${decimal>=10?`, decimal ${decimal}`:""}`;return`<button type="button" data-d="${face}" aria-label="${aria}">${label}</button>`}).join("");
+    let dplusFaces=["1","2","3","4","5","6","7","8","9","A","B","C","D","E","F",hodlDPlusNumberedD16?"G":"0"],dplusPad=hodlShuffle(dplusFaces).map(face=>{let decimal=face==="G"?16:Number.parseInt(face,16),label=decimal>=10?`${decimal} (${face})`:face,aria=face==="G"?"Numbered D16 face 16, entered as G":`D16 face ${face}${decimal>=10?`, decimal ${decimal}`:""}`;return`<button type="button" data-d="${face}" aria-label="${aria}">${label}</button>`}).join("");
     let diceLabel=ge==="dplus"?(config.words===24?"D++ rolls (D8, D16, D16; then a final D8)":"D++ rolls (D8, D16, D16)"):ge==="bitbox"?"Dice rolls (1–4, then coin / 6th die)":"Dice rolls (faces 1–6 only)";
     let diceHelp=ge==="dplus"?`For each of the first ${config.partialWords} words, enter the D8 face (1–8), then both D16 faces (${hodlDPlusNumberedD16?"1–9 or A–G; G represents 16 and maps to D++ face 0":"0–9 or A–F, following the custom D++ die"}). Each three-character group is positional: an invalid face stays in its original slot until you correct it. ${config.words===24?"The final D8 roll selects one of the eight checksum-valid 24th words.":`Then choose 1 of ${config.candidates} checksum-valid final words from the dropdown using your own offline randomness.`} Letters are stored as uppercase.`:ge==="bitbox"?`${config.partialWords} lookup-table words fill one slot at a time, then choose a confirmed final checksum word. Use 1–4 for the first five rolls. On the sixth, Heads inserts an equivalent face from 1–3 and Tails inserts one from 4–6; that numeric choice does not add entropy.`:ge==="coleman"?`Every rolled 6 becomes 0 before the complete digit string is hashed with SHA-256. This Dice [1-6] method matches the method used by Keystone. Any nonempty count produces a phrase, but use at least ${config.hashRolls} fair rolls before relying on it.`:`The original dice digit string is hashed with SHA-256. This Base 10 [0-9] method matches COLDCARD and SeedSigner. Any nonempty count produces a phrase, but use at least ${config.hashRolls} fair rolls before relying on it.`;
     let dicePlaceholder=ge==="dplus"?`e.g. ${hodlDPlusNumberedD16?"1GG":"100"} 2AF …${config.words===24?" then final D8":""}`:ge==="bitbox"?"111111 222224…":"e.g. 415263415263…";
-    let dicePad=ge==="dplus"?`<div class="dice-input-pad dplus">${dplusPad}</div>`:`<div class="dice-input-pad with-coin">${[1,3,5].map(face=>`<button type="button" data-d="${face}">${face}</button>`).join("")}<button type="button" class="coin-button" data-d="H" data-coin="heads">Heads (1–3)</button>${[2,4,6].map(face=>`<button type="button" data-d="${face}">${face}</button>`).join("")}<button type="button" class="coin-button" data-d="T" data-coin="tails">Tails (4–6)</button></div>`;
+    let dicePad=ge==="dplus"?`<div class="dice-input-pad dplus">${dplusPad}</div>`:`<div class="dice-input-pad with-coin">${hodlShuffle([1,3,5,2,4,6]).map(face=>`<button type="button" data-d="${face}">${face}</button>`).join("")}<button type="button" class="coin-button" data-d="H" data-coin="heads">Heads (1–3)</button><button type="button" class="coin-button" data-d="T" data-coin="tails">Tails (4–6)</button></div>`;
     let dplusConvention=ge==="dplus"?`<label class="seed-autocomplete-toggle"><input type="checkbox" id="dplus-numbered-d16" ${hodlDPlusNumberedD16?"checked":""} /><span>Use a numbered D16 (1–16) <span class="seed-autocomplete-note">(enter 10–16 as A–G; G maps to D++ face 0)</span></span></label>`:"";
     at.innerHTML=`
       <p class="label">How to turn rolls into a ${config.words}-word seed</p>
@@ -1217,12 +1217,14 @@ function hodlRenderKeyForm(){
       <p class="label" id="dice-label">${diceLabel}</p>
       <p class="muted" id="dice-help">${diceHelp}</p>
       ${dplusConvention}
-      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" aria-hidden="true"></pre><textarea id="dice" data-vk="${ge==="dplus"?(hodlDPlusNumberedD16?"dplus-numbered":"dplus"):"dice"}" placeholder="${dicePlaceholder}" aria-describedby="dice-help dice-meta"></textarea></div>
+      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" aria-hidden="true"></pre><textarea id="dice" placeholder="${dicePlaceholder}" aria-describedby="dice-help dice-meta"></textarea></div>
       ${dicePad}
+      <div class="pad-toolbar"><button type="button" data-pad-shuffle>Shuffle</button></div>
       <p class="muted" id="dice-meta" aria-live="polite"></p>
       <div id="dice-words" class="dice-word-grid" aria-label="${config.words} seed-word slots"></div><div id="last-words" class="row" style="margin-top:8px"></div>`;
     let input=document.getElementById("dice");input.dataset.previousValue=input.value;
     at.querySelectorAll("[data-d]").forEach(button=>{button.onclick=()=>hodlInsertDiceControl(input,button)});
+    let shuffleButton=at.querySelector("[data-pad-shuffle]");if(shuffleButton)shuffleButton.onclick=()=>{hodlCaptureKey();hodlRenderKeyForm();hodlRestoreFormFields(hodlKeys[hodlActiveKey]);hodlUpdateDice()};
     input.oninput=()=>{if(ge!=="dplus")hodlTrackDiceInputEdit(input);else delete input.hodlDiceBeforeInput;hodlSanitizeDiceInput(input);hodlUpdateDice()};input.onscroll=()=>hodlSyncDiceHighlight(input);
     let dplusToggle=document.getElementById("dplus-numbered-d16");if(dplusToggle)dplusToggle.onchange=()=>{
       let state=hodlKeys[hodlActiveKey],selectionStart=input.selectionStart??input.value.length,selectionEnd=input.selectionEnd??selectionStart,selectionDirection=input.selectionDirection||"none",translated=hodlTranslateDPlusD16Notation(input.value);
@@ -1240,7 +1242,7 @@ function hodlRenderKeyForm(){
     hodlBindKeyFields();return
   }
   if(Ne==="hex"){
-    let binary=hodlEntropyFormat==="bin",inputId=binary?"bin":"hex",entropyCharacters=binary?["0","1"]:[..."0123456789ABCDEF"],entropyPad=`<div class="dice-input-pad dplus entropy-keypad${binary?" binary-keypad":""}" role="group" aria-label="${binary?"Binary":"Hexadecimal"} keypad">${entropyCharacters.map(character=>`<button type="button"${binary?' class="coin-button"':""} data-entropy-digit="${character}" aria-label="${binary?character==="0"?"Enter Heads as binary 0":"Enter Tails as binary 1":`Enter hexadecimal ${character}`}">${binary?character==="0"?"Heads (0)":"Tails (1)":character}</button>`).join("")}</div>`;
+    let binary=hodlEntropyFormat==="bin",inputId=binary?"bin":"hex",entropyCharacters=binary?["0","1"]:[..."0123456789ABCDEF"],entropyPad=`<div class="dice-input-pad dplus entropy-keypad${binary?" binary-keypad":""}" role="group" aria-label="${binary?"Binary":"Hexadecimal"} keypad">${hodlShuffle(entropyCharacters).map(character=>`<button type="button"${binary?' class="coin-button"':""} data-entropy-digit="${character}" aria-label="${binary?character==="0"?"Enter Heads as binary 0":"Enter Tails as binary 1":`Enter hexadecimal ${character}`}">${binary?character==="0"?"Heads (0)":"Tails (1)":character}</button>`).join("")}</div>`;
     at.innerHTML=`
       <p class="label">Entropy format</p>
       <div class="choice-grid">
@@ -1253,8 +1255,9 @@ function hodlRenderKeyForm(){
       </div>
       <p class="label" id="entropy-input-label">${binary?`Binary entropy (coin flips) for a ${config.words}-word seed`:`Hexadecimal entropy for a ${config.words}-word seed`}</p>
       <p class="muted" id="entropy-input-help">${binary?`Spaces are added every 11 bits. Each complete group fills one BIP39 word; the checksum-derived final word appears at ${config.bits} bits.`:`Each hex character contributes four bits. Seed-word cards fill as enough bits arrive; the checksum-derived final word appears at exactly ${config.hexChars} characters.`} No generator — enter entropy you already created.</p>
-      <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" id="entropy-input-highlight" aria-hidden="true"></pre><textarea id="${inputId}" data-vk="${inputId}" placeholder="${binary?`Exactly ${config.bits} zeros and ones`:`${config.hexChars} hex characters for a ${config.words}-word seed`}" aria-labelledby="entropy-input-label" aria-describedby="entropy-input-help entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>
+      <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" id="entropy-input-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${binary?`Exactly ${config.bits} zeros and ones`:`${config.hexChars} hex characters for a ${config.words}-word seed`}" aria-labelledby="entropy-input-label" aria-describedby="entropy-input-help entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>
       ${entropyPad}
+      <div class="pad-toolbar"><button type="button" data-pad-shuffle>Shuffle</button></div>
       <p class="muted" id="entropy-meta" aria-live="polite"></p>
       <div id="entropy-words" class="dice-word-grid" aria-label="${config.words} seed-word slots"></div>`;
     at.querySelectorAll('input[name="entropy-format"]').forEach(radio=>{radio.onchange=()=>{
@@ -1263,11 +1266,11 @@ function hodlRenderKeyForm(){
       hodlInvalidateLiveKeyResult();let error=document.getElementById("error");if(error)error.textContent="";
       hodlRenderKeyForm();hodlRestoreFormFields(state);hodlUpdateSeedLengthControl();hodlQueueMasterFingerprintPreview(0)
     }});
-    hodlBindKeyFields();let entropyInput=document.getElementById(inputId);if(entropyInput)at.querySelectorAll("[data-entropy-digit]").forEach(button=>{button.onclick=()=>hodlInsertEntropyControl(entropyInput,button)});return
+    hodlBindKeyFields();let entropyInput=document.getElementById(inputId);if(entropyInput){at.querySelectorAll("[data-entropy-digit]").forEach(button=>{button.onclick=()=>hodlInsertEntropyControl(entropyInput,button)});let shuffleButton=at.querySelector("[data-pad-shuffle]");if(shuffleButton)shuffleButton.onclick=()=>{hodlCaptureKey();hodlRenderKeyForm();hodlRestoreFormFields(hodlKeys[hodlActiveKey])}}return
   }
   if(Ne==="seed"){
     let autocompleteEnabled=Boolean(hodlKeys[hodlActiveKey]?.seedAutocomplete);
-    at.innerHTML=`<p class="label">Your ${config.words}-word seed phrase</p><p class="muted" id="seed-help">Enter exactly ${config.words} English BIP39 words. You can also paste an extended key here; the selected phrase length does not apply to extended keys. With ${config.partialWords} compatible diceware words, choose the final checksum word below.</p><label class="seed-autocomplete-toggle"><input type="checkbox" id="seed-autocomplete" ${autocompleteEnabled?"checked":""} /><span>Autocomplete BIP39 words <span class="seed-autocomplete-note">(2+ letters normally; 1+ for a unique checksum word)</span></span></label><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" aria-hidden="true"></pre><textarea id="seed" data-vk="seed" placeholder="Enter exactly ${config.words} BIP39 words" aria-describedby="seed-help seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div><p class="muted" id="seed-meta" aria-live="polite"></p><div id="last-words" class="row" style="margin-top:8px"></div>`;
+    at.innerHTML=`<p class="label">Your ${config.words}-word seed phrase</p><p class="muted" id="seed-help">Enter exactly ${config.words} English BIP39 words. You can also paste an extended key here; the selected phrase length does not apply to extended keys. With ${config.partialWords} compatible diceware words, choose the final checksum word below.</p><label class="seed-autocomplete-toggle"><input type="checkbox" id="seed-autocomplete" ${autocompleteEnabled?"checked":""} /><span>Autocomplete BIP39 words <span class="seed-autocomplete-note">(2+ letters normally; 1+ for a unique checksum word)</span></span></label><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" aria-hidden="true"></pre><textarea id="seed" placeholder="Enter exactly ${config.words} BIP39 words" aria-describedby="seed-help seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div><p class="muted" id="seed-meta" aria-live="polite"></p><div id="last-words" class="row" style="margin-top:8px"></div><div class="dice-input-pad seed-pad" role="group" aria-label="Seed phrase keyboard">${hodlShuffle([..."abcdefghijklmnopqrstuvwxyz"]).map(character=>`<button type="button" data-vk-character="${character}" aria-label="Insert ${character}">${character}</button>`).join("")}</div><div class="pad-toolbar"><button type="button" data-pad-shuffle>Shuffle</button></div>`;
     let input=document.getElementById("seed"),update=()=>{
       let rawValue=input.value,value=rawValue.trim(),meta=W("#seed-meta"),picker=W("#last-words"),analysis=hodlRenderSeedInputState(input,config.words);
       if(hodlLooksExtendedKey(value)){let status=hodlSinglesigImportStatus(value,hodlSelectedNetwork(document.getElementById("network")));picker.innerHTML="";meta.textContent=status.message;meta.className="muted "+(status.ok?"ok":"err");return}
@@ -1286,7 +1289,7 @@ function hodlRenderKeyForm(){
       meta.textContent=`${progress} \u00b7 ${remaining} remaining`;meta.className="muted"
     };
     let toggle=document.getElementById("seed-autocomplete");toggle.onchange=()=>{let state=hodlKeys[hodlActiveKey];if(state)state.seedAutocomplete=toggle.checked};
-    input.oninput=event=>{hodlApplyFilteredInput(input,hodlFilterSeed);hodlAutocompleteSeedInput(input,event);update()};input.onscroll=()=>hodlSyncDiceHighlight(input);input.onfocus=update;input.onblur=update;hodlBindKeyFields();update();return
+    input.oninput=event=>{hodlApplyFilteredInput(input,hodlFilterSeed);hodlAutocompleteSeedInput(input,event);update()};input.onscroll=()=>hodlSyncDiceHighlight(input);input.onfocus=update;input.onblur=update;let shuffleButton=at.querySelector("[data-pad-shuffle]");if(shuffleButton)shuffleButton.onclick=()=>{hodlCaptureKey();hodlRenderKeyForm();hodlRestoreFormFields(hodlKeys[hodlActiveKey])};let seedInput=input;at.querySelectorAll("[data-vk-character]").forEach(button=>{button.onclick=()=>hodlInsertEntropyControl(seedInput,button)});hodlBindKeyFields();update();return
   }
   at.innerHTML=`
     <p class="label">Private key format</p>
@@ -1297,8 +1300,10 @@ function hodlRenderKeyForm(){
     </div>
     <p class="label" id="private-key-input-label">Private key or recovery passphrase</p>
     <p class="muted" id="private-key-input-help">Enter the value matching the selected format. Brain wallets are for recovery only.</p>
-    <textarea id="key" data-vk="key" placeholder="K… / L… / 5… / 64-character hex / mini key" aria-labelledby="private-key-input-label" aria-describedby="private-key-input-help"></textarea>`;
-  hodlBindKeyFields()
+    <textarea id="key" placeholder="K… / L… / 5… / 64-character hex / mini key" aria-labelledby="private-key-input-label" aria-describedby="private-key-input-help"></textarea>
+    <div class="dice-input-pad key-pad" role="group" aria-label="Private key keyboard">${hodlShuffle([..."123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"]).map(character=>`<button type="button" data-vk-character="${character}" aria-label="Insert ${character}">${character}</button>`).join("")}<button type="button" class="pad-wide" data-vk-character="0" aria-label="Insert 0">0 (hex only)</button></div>
+    <div class="pad-toolbar"><button type="button" data-pad-shuffle>Shuffle</button></div>`;
+  let keyInput=document.getElementById("key");at.querySelectorAll("[data-vk-character]").forEach(button=>{button.onclick=()=>hodlInsertEntropyControl(keyInput,button)});let shuffleButton=at.querySelector("[data-pad-shuffle]");if(shuffleButton)shuffleButton.onclick=()=>{hodlCaptureKey();hodlRenderKeyForm();hodlRestoreFormFields(hodlKeys[hodlActiveKey])};hodlBindKeyFields()
 }
 function hodlUpdateDice(){
   let input=document.getElementById("dice");if(!input)return;let wordsBox=document.getElementById("dice-words"),picker=document.getElementById("last-words"),config=hodlSeedConfig(),inputState=hodlRenderDiceInputState(input),invalidStatus=inputState.invalidCount?` \u00b7 ${inputState.invalidCount} invalid input${inputState.invalidCount===1?"":"s"} highlighted`:"";if(ge!=="bitbox"&&inputState.coinDerivedCount)invalidStatus+=` \u00b7 coin-button digits are BitBox-only`;

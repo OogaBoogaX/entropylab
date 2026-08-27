@@ -156,32 +156,23 @@ label.field { display: block; margin-top: var(--space-component); font-size: 14p
 .dice-input-pad button:disabled {
   cursor: not-allowed; opacity: 0.38; color: var(--muted); border-color: var(--border);
 }
-.vk-wrap { position: relative; margin-top: var(--space-control); }
-.vk-wrap > textarea, .vk-wrap > .dice-input-shell { margin-top: 0; }
-.vk-wrap textarea, .vk-wrap .dice-input-highlight { padding-right: 44px; }
-.vk-toggle {
-  position: absolute; top: 6px; right: 6px; z-index: 2;
-  width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: var(--surface-2); color: var(--muted); font-size: 15px; line-height: 1;
+.pad-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--space-control); }
+.pad-toolbar button {
+  flex: 1 1 auto; min-height: 44px; padding: 0 14px;
+  font-size: 14px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); color: var(--fg);
 }
-.vk-toggle:hover { color: var(--fg); }
-.vk-toggle[aria-expanded="true"] {
-  background: var(--selection-accent); color: var(--selection-fg); border-color: var(--selection-accent);
+.pad-toolbar button:hover { color: var(--accent); }
+.dice-input-pad.hex-keypad, .dice-input-pad.dplus-pad, .dice-input-pad.seed-pad, .dice-input-pad.key-pad {
+  grid-template-columns: repeat(var(--pad-columns, 4), minmax(0, 1fr));
+  grid-template-rows: none; grid-auto-flow: row;
 }
-.vk-panel {
-  margin-top: var(--space-control); padding: 10px;
-  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
-}
-.vk-panel[hidden] { display: none; }
-.vk-grid.dice-input-pad { grid-template-columns: repeat(var(--vk-columns), minmax(0, 1fr)); grid-template-rows: none; grid-auto-flow: row; margin-top: 0; }
-.vk-grid.dice-input-pad button { padding-inline: 6px; white-space: nowrap; }
-.vk-key { min-height: 44px; }
-.vk-key:hover { border-color: var(--accent); }
-.vk-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.vk-controls .vk-key { flex: 1 1 auto; padding: 0 14px; font-family: var(--sans); font-size: 14px; }
-.vk-controls .vk-space { flex-grow: 3; font-family: var(--mono); }
+.dice-input-pad.dplus-pad { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.dice-input-pad.seed-pad { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.dice-input-pad.key-pad { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.dice-input-pad.seed-pad button, .dice-input-pad.key-pad button { padding-inline: 6px; white-space: nowrap; }
+.dice-input-pad.key-pad button { font-size: 13px; }
+.dice-input-pad.key-pad .pad-wide { white-space: normal; }
 
 @media (max-width: 639px) {
   .dice-input-pad.dplus {
