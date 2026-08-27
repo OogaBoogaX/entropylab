@@ -1223,7 +1223,7 @@ function hodlRenderKeyForm(){
       <p class="muted" id="dice-meta" aria-live="polite"></p>
       <div id="dice-words" class="dice-word-grid" aria-label="${config.words} seed-word slots"></div><div id="last-words" class="row" style="margin-top:8px"></div>`;
     let input=document.getElementById("dice");input.dataset.previousValue=input.value;
-    at.querySelectorAll("[data-d]").forEach(button=>{button.onclick=()=>hodlInsertDiceControl(input,button)});
+    at.querySelectorAll("[data-d]").forEach(button=>{button.onclick=()=>{hodlInsertDiceControl(input,button);if(!button.dataset.coin)hodlShufflePadButtons(button.parentElement,"[data-d]:not([data-coin])")}});
     let shuffleToggle=at.querySelector("#pad-shuffle-toggle");if(shuffleToggle)shuffleToggle.onchange=()=>{hodlCaptureKey();let state=hodlKeys[hodlActiveKey];hodlPadShuffle=shuffleToggle.checked;if(state)state.padShuffle=hodlPadShuffle;hodlRenderKeyForm();hodlRestoreFormFields(state);hodlUpdateDice()};
     input.oninput=()=>{if(ge!=="dplus")hodlTrackDiceInputEdit(input);else delete input.hodlDiceBeforeInput;hodlSanitizeDiceInput(input);hodlUpdateDice()};input.onscroll=()=>hodlSyncDiceHighlight(input);
     let dplusToggle=document.getElementById("dplus-numbered-d16");if(dplusToggle)dplusToggle.onchange=()=>{
@@ -1266,7 +1266,7 @@ function hodlRenderKeyForm(){
       hodlInvalidateLiveKeyResult();let error=document.getElementById("error");if(error)error.textContent="";
       hodlRenderKeyForm();hodlRestoreFormFields(state);hodlUpdateSeedLengthControl();hodlQueueMasterFingerprintPreview(0)
     }});
-    hodlBindKeyFields();let entropyInput=document.getElementById(inputId);if(entropyInput){at.querySelectorAll("[data-entropy-digit]").forEach(button=>{button.onclick=()=>hodlInsertEntropyControl(entropyInput,button)});let shuffleToggle=at.querySelector("#pad-shuffle-toggle");if(shuffleToggle)shuffleToggle.onchange=()=>{hodlCaptureKey();let state=hodlKeys[hodlActiveKey];hodlPadShuffle=shuffleToggle.checked;if(state)state.padShuffle=hodlPadShuffle;hodlRenderKeyForm();hodlRestoreFormFields(state)}}return
+    hodlBindKeyFields();let entropyInput=document.getElementById(inputId);if(entropyInput){at.querySelectorAll("[data-entropy-digit]").forEach(button=>{button.onclick=()=>{hodlInsertEntropyControl(entropyInput,button);hodlShufflePadButtons(button.parentElement,"[data-entropy-digit]")}});let shuffleToggle=at.querySelector("#pad-shuffle-toggle");if(shuffleToggle)shuffleToggle.onchange=()=>{hodlCaptureKey();let state=hodlKeys[hodlActiveKey];hodlPadShuffle=shuffleToggle.checked;if(state)state.padShuffle=hodlPadShuffle;hodlRenderKeyForm();hodlRestoreFormFields(state)}}return
   }
   if(Ne==="seed"){
     let autocompleteEnabled=Boolean(hodlKeys[hodlActiveKey]?.seedAutocomplete);
@@ -1289,7 +1289,7 @@ function hodlRenderKeyForm(){
       meta.textContent=`${progress} \u00b7 ${remaining} remaining`;meta.className="muted"
     };
     let toggle=document.getElementById("seed-autocomplete");toggle.onchange=()=>{let state=hodlKeys[hodlActiveKey];if(state)state.seedAutocomplete=toggle.checked};
-    input.oninput=event=>{hodlApplyFilteredInput(input,hodlFilterSeed);hodlAutocompleteSeedInput(input,event);update()};input.onscroll=()=>hodlSyncDiceHighlight(input);input.onfocus=update;input.onblur=update;let shuffleToggle=at.querySelector("#pad-shuffle-toggle");if(shuffleToggle)shuffleToggle.onchange=()=>{hodlCaptureKey();let state=hodlKeys[hodlActiveKey];hodlPadShuffle=shuffleToggle.checked;if(state)state.padShuffle=hodlPadShuffle;hodlRenderKeyForm();hodlRestoreFormFields(state)};let seedInput=input;at.querySelectorAll("[data-vk-character]").forEach(button=>{button.onclick=()=>hodlInsertEntropyControl(seedInput,button)});hodlBindKeyFields();update();return
+    input.oninput=event=>{hodlApplyFilteredInput(input,hodlFilterSeed);hodlAutocompleteSeedInput(input,event);update()};input.onscroll=()=>hodlSyncDiceHighlight(input);input.onfocus=update;input.onblur=update;let shuffleToggle=at.querySelector("#pad-shuffle-toggle");if(shuffleToggle)shuffleToggle.onchange=()=>{hodlCaptureKey();let state=hodlKeys[hodlActiveKey];hodlPadShuffle=shuffleToggle.checked;if(state)state.padShuffle=hodlPadShuffle;hodlRenderKeyForm();hodlRestoreFormFields(state)};let seedInput=input;at.querySelectorAll("[data-vk-character]").forEach(button=>{button.onclick=()=>{hodlInsertEntropyControl(seedInput,button);hodlShufflePadButtons(button.parentElement,"[data-vk-character]")}});hodlBindKeyFields();update();return
   }
   at.innerHTML=`
     <p class="label">Private key format</p>
@@ -1303,7 +1303,15 @@ function hodlRenderKeyForm(){
     <textarea id="key" placeholder="K… / L… / 5… / 64-character hex / mini key" aria-labelledby="private-key-input-label" aria-describedby="private-key-input-help"></textarea>
     <div class="dice-input-pad key-pad" role="group" aria-label="Private key keyboard">${(hodlPadShuffle?hodlShuffle([..."123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"]):[..."123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"]).map(character=>`<button type="button" data-vk-character="${character}" aria-label="Insert ${character}">${character}</button>`).join("")}<button type="button" class="pad-wide" data-vk-character="0" aria-label="Insert 0">0 (hex only)</button></div>
     <label class="pad-shuffle-toggle"><input type="checkbox" id="pad-shuffle-toggle" ${hodlPadShuffle?"checked":""} /><span>Shuffle pad keys <span class="seed-autocomplete-note">(reorders the character keys)</span></span></label>`;
-  let keyInput=document.getElementById("key");at.querySelectorAll("[data-vk-character]").forEach(button=>{button.onclick=()=>hodlInsertEntropyControl(keyInput,button)});let shuffleToggle=at.querySelector("#pad-shuffle-toggle");if(shuffleToggle)shuffleToggle.onchange=()=>{hodlCaptureKey();let state=hodlKeys[hodlActiveKey];hodlPadShuffle=shuffleToggle.checked;if(state)state.padShuffle=hodlPadShuffle;hodlRenderKeyForm();hodlRestoreFormFields(state)};hodlBindKeyFields()
+  let keyInput=document.getElementById("key");at.querySelectorAll("[data-vk-character]").forEach(button=>{button.onclick=()=>{hodlInsertEntropyControl(keyInput,button);hodlShufflePadButtons(button.parentElement,"[data-vk-character]:not(.pad-wide)")}});let shuffleToggle=at.querySelector("#pad-shuffle-toggle");if(shuffleToggle)shuffleToggle.onchange=()=>{hodlCaptureKey();let state=hodlKeys[hodlActiveKey];hodlPadShuffle=shuffleToggle.checked;if(state)state.padShuffle=hodlPadShuffle;hodlRenderKeyForm();hodlRestoreFormFields(state)};hodlBindKeyFields()
+}
+function hodlShufflePadButtons(container,selector){
+  if(!hodlPadShuffle||!container)return;
+  let buttons=[...container.querySelectorAll(selector)];
+  if(buttons.length<2)return;
+  let positions=buttons.map(button=>[...container.children].indexOf(button)),order=hodlShuffle([...buttons.keys()]);
+  buttons.forEach(button=>button.remove());
+  positions.forEach((position,slotIndex)=>container.insertBefore(buttons[order[slotIndex]],container.children[position]??null));
 }
 function hodlUpdateDice(){
   let input=document.getElementById("dice");if(!input)return;let wordsBox=document.getElementById("dice-words"),picker=document.getElementById("last-words"),config=hodlSeedConfig(),inputState=hodlRenderDiceInputState(input),invalidStatus=inputState.invalidCount?` \u00b7 ${inputState.invalidCount} invalid input${inputState.invalidCount===1?"":"s"} highlighted`:"";if(ge!=="bitbox"&&inputState.coinDerivedCount)invalidStatus+=` \u00b7 coin-button digits are BitBox-only`;

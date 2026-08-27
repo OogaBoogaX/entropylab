@@ -45,6 +45,20 @@ test("dice pad shuffles only digits 1-6 while Heads/Tails stay fixed and separat
   assert.match(css, /\.dice-input-pad\.dice-digits \.coin-button \{ grid-column: 1 \/ -1; \}/);
 });
 
+test("pads reshuffle in place after each keypress when shuffle is enabled", () => {
+  assert.match(app, /function hodlShufflePadButtons\(container,selector\)/);
+  assert.match(app, /if\(!hodlPadShuffle\|\|!container\)return/);
+  // Dice digits shuffle after a digit press; coin presses do not trigger it.
+  assert.match(app, /hodlInsertDiceControl\(input,button\);if\(!button\.dataset\.coin\)hodlShufflePadButtons\(button\.parentElement,"\[data-d\]:not\(\[data-coin\]\)"\)/);
+  assert.match(app, /hodlInsertEntropyControl\(entropyInput,button\);hodlShufflePadButtons\(button\.parentElement,"\[data-entropy-digit\]"\)/);
+  assert.match(app, /hodlInsertEntropyControl\(seedInput,button\);hodlShufflePadButtons\(button\.parentElement,"\[data-vk-character\]"\)/);
+  assert.match(app, /hodlInsertEntropyControl\(keyInput,button\);hodlShufflePadButtons\(button\.parentElement,"\[data-vk-character\]:not\(\.pad-wide\)"\)/);
+  // The in-place shuffle preserves non-matching siblings (coins, wide keys).
+  assert.match(app, /let positions=buttons\.map\(button=>\[\.\.\.container\.children\]\.indexOf\(button\)\),order=hodlShuffle\(\[\.\.\.buttons\.keys\(\)\]\)/);
+  assert.match(app, /buttons\.forEach\(button=>button\.remove\(\)\)/);
+  assert.match(app, /positions\.forEach\(\(position,slotIndex\)=>container\.insertBefore\(buttons\[order\[slotIndex\]\],container\.children\[position\]\?\?null\)\)/);
+});
+
 test("hex pad groups rows 0-7 then 8-F and reuses the existing keypad styles", () => {
   assert.match(app, /entropyCharacters=binary\?\["0","1"\]:\(hodlPadShuffle\?hodlShuffle\(\[\.\.\."0123456789ABCDEF"\]\):\[\.\.\."0123456789ABCDEF"\]\)/);
   assert.match(app, /dice-input-pad dplus entropy-keypad\$\{binary\?" binary-keypad":""\}/);
