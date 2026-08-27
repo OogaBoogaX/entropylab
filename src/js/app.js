@@ -1217,7 +1217,7 @@ function hodlRenderKeyForm(){
       <p class="label" id="dice-label">${diceLabel}</p>
       <p class="muted" id="dice-help">${diceHelp}</p>
       ${dplusConvention}
-      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" aria-hidden="true"></pre><textarea id="dice" placeholder="${dicePlaceholder}" aria-describedby="dice-help dice-meta"></textarea></div>
+      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" aria-hidden="true"></pre><textarea id="dice" data-vk="${ge==="dplus"?(hodlDPlusNumberedD16?"dplus-numbered":"dplus"):"dice"}" placeholder="${dicePlaceholder}" aria-describedby="dice-help dice-meta"></textarea></div>
       ${dicePad}
       <p class="muted" id="dice-meta" aria-live="polite"></p>
       <div id="dice-words" class="dice-word-grid" aria-label="${config.words} seed-word slots"></div><div id="last-words" class="row" style="margin-top:8px"></div>`;
@@ -1253,7 +1253,7 @@ function hodlRenderKeyForm(){
       </div>
       <p class="label" id="entropy-input-label">${binary?`Binary entropy (coin flips) for a ${config.words}-word seed`:`Hexadecimal entropy for a ${config.words}-word seed`}</p>
       <p class="muted" id="entropy-input-help">${binary?`Spaces are added every 11 bits. Each complete group fills one BIP39 word; the checksum-derived final word appears at ${config.bits} bits.`:`Each hex character contributes four bits. Seed-word cards fill as enough bits arrive; the checksum-derived final word appears at exactly ${config.hexChars} characters.`} No generator — enter entropy you already created.</p>
-      <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" id="entropy-input-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${binary?`Exactly ${config.bits} zeros and ones`:`${config.hexChars} hex characters for a ${config.words}-word seed`}" aria-labelledby="entropy-input-label" aria-describedby="entropy-input-help entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>
+      <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" id="entropy-input-highlight" aria-hidden="true"></pre><textarea id="${inputId}" data-vk="${inputId}" placeholder="${binary?`Exactly ${config.bits} zeros and ones`:`${config.hexChars} hex characters for a ${config.words}-word seed`}" aria-labelledby="entropy-input-label" aria-describedby="entropy-input-help entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>
       ${entropyPad}
       <p class="muted" id="entropy-meta" aria-live="polite"></p>
       <div id="entropy-words" class="dice-word-grid" aria-label="${config.words} seed-word slots"></div>`;
@@ -1267,7 +1267,7 @@ function hodlRenderKeyForm(){
   }
   if(Ne==="seed"){
     let autocompleteEnabled=Boolean(hodlKeys[hodlActiveKey]?.seedAutocomplete);
-    at.innerHTML=`<p class="label">Your ${config.words}-word seed phrase</p><p class="muted" id="seed-help">Enter exactly ${config.words} English BIP39 words. You can also paste an extended key here; the selected phrase length does not apply to extended keys. With ${config.partialWords} compatible diceware words, choose the final checksum word below.</p><label class="seed-autocomplete-toggle"><input type="checkbox" id="seed-autocomplete" ${autocompleteEnabled?"checked":""} /><span>Autocomplete BIP39 words <span class="seed-autocomplete-note">(2+ letters normally; 1+ for a unique checksum word)</span></span></label><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" aria-hidden="true"></pre><textarea id="seed" placeholder="Enter exactly ${config.words} BIP39 words" aria-describedby="seed-help seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div><p class="muted" id="seed-meta" aria-live="polite"></p><div id="last-words" class="row" style="margin-top:8px"></div>`;
+    at.innerHTML=`<p class="label">Your ${config.words}-word seed phrase</p><p class="muted" id="seed-help">Enter exactly ${config.words} English BIP39 words. You can also paste an extended key here; the selected phrase length does not apply to extended keys. With ${config.partialWords} compatible diceware words, choose the final checksum word below.</p><label class="seed-autocomplete-toggle"><input type="checkbox" id="seed-autocomplete" ${autocompleteEnabled?"checked":""} /><span>Autocomplete BIP39 words <span class="seed-autocomplete-note">(2+ letters normally; 1+ for a unique checksum word)</span></span></label><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" aria-hidden="true"></pre><textarea id="seed" data-vk="seed" placeholder="Enter exactly ${config.words} BIP39 words" aria-describedby="seed-help seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div><p class="muted" id="seed-meta" aria-live="polite"></p><div id="last-words" class="row" style="margin-top:8px"></div>`;
     let input=document.getElementById("seed"),update=()=>{
       let rawValue=input.value,value=rawValue.trim(),meta=W("#seed-meta"),picker=W("#last-words"),analysis=hodlRenderSeedInputState(input,config.words);
       if(hodlLooksExtendedKey(value)){let status=hodlSinglesigImportStatus(value,hodlSelectedNetwork(document.getElementById("network")));picker.innerHTML="";meta.textContent=status.message;meta.className="muted "+(status.ok?"ok":"err");return}
@@ -1297,7 +1297,7 @@ function hodlRenderKeyForm(){
     </div>
     <p class="label" id="private-key-input-label">Private key or recovery passphrase</p>
     <p class="muted" id="private-key-input-help">Enter the value matching the selected format. Brain wallets are for recovery only.</p>
-    <textarea id="key" placeholder="K… / L… / 5… / 64-character hex / mini key" aria-labelledby="private-key-input-label" aria-describedby="private-key-input-help"></textarea>`;
+    <textarea id="key" data-vk="key" placeholder="K… / L… / 5… / 64-character hex / mini key" aria-labelledby="private-key-input-label" aria-describedby="private-key-input-help"></textarea>`;
   hodlBindKeyFields()
 }
 function hodlUpdateDice(){

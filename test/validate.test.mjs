@@ -39,6 +39,7 @@ const requiredFiles = [
   "src/js/network-check.js",
   "src/js/enhanced-inputs.js",
   "src/js/repeat-inputs.js",
+  "src/js/virtual-keyboard.js",
   ".github/workflows/ci-cd.yml",
 ];
 

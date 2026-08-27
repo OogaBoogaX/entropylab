@@ -158,6 +158,36 @@ label.field { display: block; margin-top: var(--space-component); font-size: 14p
 .dice-input-pad button:disabled {
   cursor: not-allowed; opacity: 0.38; color: var(--muted); border-color: var(--border);
 }
+.vk-wrap { position: relative; margin-top: var(--space-control); }
+.vk-wrap > textarea, .vk-wrap > .dice-input-shell { margin-top: 0; }
+.vk-wrap textarea, .vk-wrap .dice-input-highlight { padding-right: 44px; }
+.vk-toggle {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); color: var(--muted); font-size: 15px; line-height: 1;
+}
+.vk-toggle:hover { color: var(--fg); }
+.vk-toggle[aria-expanded="true"] {
+  background: var(--selection-accent); color: var(--selection-fg); border-color: var(--selection-accent);
+}
+.vk-panel {
+  margin-top: var(--space-control); padding: 10px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
+}
+.vk-panel[hidden] { display: none; }
+.vk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.vk-key {
+  min-height: 44px; padding: 0 6px;
+  font-family: var(--mono); font-size: 16px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg);
+}
+.vk-key:hover { border-color: var(--accent); }
+.vk-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.vk-controls .vk-key { flex: 1 1 auto; padding: 0 14px; font-family: var(--sans); font-size: 14px; }
+.vk-controls .vk-space { flex-grow: 3; font-family: var(--mono); }
+
 @media (max-width: 639px) {
   .dice-input-pad.dplus {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4231,7 +4261,7 @@ function hodlRenderKeyForm(){
       <p class="label" id="dice-label">${diceLabel}</p>
       <p class="muted" id="dice-help">${diceHelp}</p>
       ${dplusConvention}
-      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" aria-hidden="true"></pre><textarea id="dice" placeholder="${dicePlaceholder}" aria-describedby="dice-help dice-meta"></textarea></div>
+      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" aria-hidden="true"></pre><textarea id="dice" data-vk="${ge==="dplus"?(hodlDPlusNumberedD16?"dplus-numbered":"dplus"):"dice"}" placeholder="${dicePlaceholder}" aria-describedby="dice-help dice-meta"></textarea></div>
       ${dicePad}
       <p class="muted" id="dice-meta" aria-live="polite"></p>
       <div id="dice-words" class="dice-word-grid" aria-label="${config.words} seed-word slots"></div><div id="last-words" class="row" style="margin-top:8px"></div>`;
@@ -4267,7 +4297,7 @@ function hodlRenderKeyForm(){
       </div>
       <p class="label" id="entropy-input-label">${binary?`Binary entropy (coin flips) for a ${config.words}-word seed`:`Hexadecimal entropy for a ${config.words}-word seed`}</p>
       <p class="muted" id="entropy-input-help">${binary?`Spaces are added every 11 bits. Each complete group fills one BIP39 word; the checksum-derived final word appears at ${config.bits} bits.`:`Each hex character contributes four bits. Seed-word cards fill as enough bits arrive; the checksum-derived final word appears at exactly ${config.hexChars} characters.`} No generator — enter entropy you already created.</p>
-      <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" id="entropy-input-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${binary?`Exactly ${config.bits} zeros and ones`:`${config.hexChars} hex characters for a ${config.words}-word seed`}" aria-labelledby="entropy-input-label" aria-describedby="entropy-input-help entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>
+      <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" id="entropy-input-highlight" aria-hidden="true"></pre><textarea id="${inputId}" data-vk="${inputId}" placeholder="${binary?`Exactly ${config.bits} zeros and ones`:`${config.hexChars} hex characters for a ${config.words}-word seed`}" aria-labelledby="entropy-input-label" aria-describedby="entropy-input-help entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>
       ${entropyPad}
       <p class="muted" id="entropy-meta" aria-live="polite"></p>
       <div id="entropy-words" class="dice-word-grid" aria-label="${config.words} seed-word slots"></div>`;
@@ -4281,7 +4311,7 @@ function hodlRenderKeyForm(){
   }
   if(Ne==="seed"){
     let autocompleteEnabled=Boolean(hodlKeys[hodlActiveKey]?.seedAutocomplete);
-    at.innerHTML=`<p class="label">Your ${config.words}-word seed phrase</p><p class="muted" id="seed-help">Enter exactly ${config.words} English BIP39 words. You can also paste an extended key here; the selected phrase length does not apply to extended keys. With ${config.partialWords} compatible diceware words, choose the final checksum word below.</p><label class="seed-autocomplete-toggle"><input type="checkbox" id="seed-autocomplete" ${autocompleteEnabled?"checked":""} /><span>Autocomplete BIP39 words <span class="seed-autocomplete-note">(2+ letters normally; 1+ for a unique checksum word)</span></span></label><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" aria-hidden="true"></pre><textarea id="seed" placeholder="Enter exactly ${config.words} BIP39 words" aria-describedby="seed-help seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div><p class="muted" id="seed-meta" aria-live="polite"></p><div id="last-words" class="row" style="margin-top:8px"></div>`;
+    at.innerHTML=`<p class="label">Your ${config.words}-word seed phrase</p><p class="muted" id="seed-help">Enter exactly ${config.words} English BIP39 words. You can also paste an extended key here; the selected phrase length does not apply to extended keys. With ${config.partialWords} compatible diceware words, choose the final checksum word below.</p><label class="seed-autocomplete-toggle"><input type="checkbox" id="seed-autocomplete" ${autocompleteEnabled?"checked":""} /><span>Autocomplete BIP39 words <span class="seed-autocomplete-note">(2+ letters normally; 1+ for a unique checksum word)</span></span></label><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" aria-hidden="true"></pre><textarea id="seed" data-vk="seed" placeholder="Enter exactly ${config.words} BIP39 words" aria-describedby="seed-help seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div><p class="muted" id="seed-meta" aria-live="polite"></p><div id="last-words" class="row" style="margin-top:8px"></div>`;
     let input=document.getElementById("seed"),update=()=>{
       let rawValue=input.value,value=rawValue.trim(),meta=W("#seed-meta"),picker=W("#last-words"),analysis=hodlRenderSeedInputState(input,config.words);
       if(hodlLooksExtendedKey(value)){let status=hodlSinglesigImportStatus(value,hodlSelectedNetwork(document.getElementById("network")));picker.innerHTML="";meta.textContent=status.message;meta.className="muted "+(status.ok?"ok":"err");return}
@@ -4311,7 +4341,7 @@ function hodlRenderKeyForm(){
     </div>
     <p class="label" id="private-key-input-label">Private key or recovery passphrase</p>
     <p class="muted" id="private-key-input-help">Enter the value matching the selected format. Brain wallets are for recovery only.</p>
-    <textarea id="key" placeholder="K… / L… / 5… / 64-character hex / mini key" aria-labelledby="private-key-input-label" aria-describedby="private-key-input-help"></textarea>`;
+    <textarea id="key" data-vk="key" placeholder="K… / L… / 5… / 64-character hex / mini key" aria-labelledby="private-key-input-label" aria-describedby="private-key-input-help"></textarea>`;
   hodlBindKeyFields()
 }
 function hodlUpdateDice(){
@@ -5623,5 +5653,158 @@ function hodlFormatRecoverySheet(text) {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopRepeating();
   });
+})();
+</script><script>
+// Optional on-screen virtual keyboards for the entropy input fields.
+// Any field marked with data-vk="<layout>" gets a small keyboard glyph that
+// toggles an on-screen keyboard for pointer-based entry. A Shuffle control
+// reorders the character keys on every press so key positions do not stay
+// predictable across entries.
+(() => {
+  const layouts = {
+    dice: { label: "dice rolls", keys: "123456", space: false },
+    dplus: { label: "D++ rolls", keys: "1234567890ABCDEF", space: false },
+    "dplus-numbered": { label: "D++ rolls", keys: "123456789ABCDEFG", space: false },
+    hex: { label: "hexadecimal entropy", keys: "0123456789ABCDEF", space: false },
+    bin: { label: "binary entropy", keys: "01", space: false },
+    seed: { label: "seed phrase", keys: "abcdefghijklmnopqrstuvwxyz", space: true },
+    key: { label: "private key", keys: "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz", space: true }
+  };
+
+  const enhanced = new WeakSet();
+
+  const randomBelow = (max) => {
+    const buffer = new Uint32Array(1);
+    const limit = Math.floor(0x100000000 / max) * max;
+    do {
+      crypto.getRandomValues(buffer);
+    } while (buffer[0] >= limit);
+    return buffer[0] % max;
+  };
+
+  const shuffled = (values) => {
+    const result = [...values];
+    for (let index = result.length - 1; index > 0; index--) {
+      const swap = randomBelow(index + 1);
+      [result[index], result[swap]] = [result[swap], result[index]];
+    }
+    return result;
+  };
+
+  const insertText = (target, text) => {
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? start;
+    target.setRangeText(text, start, end, "end");
+    target.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      composed: true,
+      inputType: "insertText",
+      data: text
+    }));
+  };
+
+  const deleteBackward = (target) => {
+    let start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? start;
+    if (start === end) {
+      if (start === 0) return;
+      start -= 1;
+    }
+    target.setRangeText("", start, end, "start");
+    target.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      composed: true,
+      inputType: "deleteContentBackward",
+      data: null
+    }));
+  };
+
+  const holdFocus = (button) => {
+    button.addEventListener("pointerdown", (event) => event.preventDefault());
+  };
+
+  const makeKey = (className, text, ariaLabel, onPress) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `vk-key ${className}`;
+    button.textContent = text;
+    button.setAttribute("aria-label", ariaLabel);
+    holdFocus(button);
+    button.onclick = onPress;
+    return button;
+  };
+
+  const enhance = (field) => {
+    if (enhanced.has(field)) return;
+    const layout = layouts[field.dataset.vk];
+    if (!layout || !field.parentNode) return;
+    enhanced.add(field);
+
+    const host = field.closest(".dice-input-shell") || field;
+    const wrap = document.createElement("div");
+    wrap.className = "vk-wrap";
+    host.before(wrap);
+    wrap.appendChild(host);
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "vk-toggle";
+    toggle.textContent = "⌨︎";
+    toggle.title = "Toggle the on-screen keyboard";
+    toggle.setAttribute("aria-label", `Toggle the on-screen keyboard for the ${layout.label} field`);
+    toggle.setAttribute("aria-expanded", "false");
+    holdFocus(toggle);
+
+    const panel = document.createElement("div");
+    panel.className = "vk-panel";
+    panel.hidden = true;
+    panel.setAttribute("role", "group");
+    panel.setAttribute("aria-label", `On-screen keyboard for the ${layout.label} field`);
+
+    const grid = document.createElement("div");
+    grid.className = "vk-grid";
+    const renderKeys = (order) => {
+      grid.replaceChildren(...order.map((character) =>
+        makeKey("vk-character", character, `Insert ${character}`, () => insertText(field, character))
+      ));
+    };
+    let order = layout.keys.split("");
+    renderKeys(order);
+
+    const setOpen = (open) => {
+      panel.hidden = !open;
+      toggle.setAttribute("aria-expanded", String(open));
+      wrap.classList.toggle("vk-open", open);
+    };
+    toggle.onclick = () => setOpen(panel.hidden);
+
+    const controls = document.createElement("div");
+    controls.className = "vk-controls";
+    if (layout.space) {
+      controls.appendChild(makeKey("vk-space", "Space", "Insert a space", () => insertText(field, " ")));
+    }
+    controls.append(
+      makeKey("vk-backspace", "⌫", "Delete the previous character", () => deleteBackward(field)),
+      makeKey("vk-shuffle", "Shuffle", "Shuffle the key order", () => {
+        order = shuffled(order);
+        renderKeys(order);
+      }),
+      makeKey("vk-done", "Done", "Hide the on-screen keyboard", () => setOpen(false))
+    );
+
+    panel.append(grid, controls);
+    wrap.append(toggle, panel);
+  };
+
+  const enhanceWithin = (node) => {
+    if (!(node instanceof Element)) return;
+    if (node.matches("[data-vk]")) enhance(node);
+    node.querySelectorAll("[data-vk]").forEach(enhance);
+  };
+
+  document.querySelectorAll("[data-vk]").forEach(enhance);
+  new MutationObserver((records) => {
+    records.forEach((record) => record.addedNodes.forEach(enhanceWithin));
+  }).observe(document.body, { childList: true, subtree: true });
 })();
 </script></body></html>

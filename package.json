@@ -9,7 +9,7 @@
     "build": "node scripts/build.mjs",
     "clean": "node scripts/build.mjs --clean",
     "test": "node --test test/*.test.mjs",
-    "test:ci": "node --test test/network-check.test.mjs test/ui-defaults.test.mjs test/validate.test.mjs test/descriptor.test.mjs test/seedqr.test.mjs",
+    "test:ci": "node --test test/network-check.test.mjs test/ui-defaults.test.mjs test/validate.test.mjs test/descriptor.test.mjs test/seedqr.test.mjs test/virtual-keyboard.test.mjs",
     "test:network": "node --test test/network-check.test.mjs",
     "test:ui": "node --test test/ui-defaults.test.mjs",
     "test:invariants": "node --test test/validate.test.mjs",
