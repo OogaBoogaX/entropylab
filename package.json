@@ -10,7 +10,7 @@
     "build": "node scripts/build.mjs",
     "clean": "node scripts/build.mjs --clean",
     "test": "node --test test/*.test.mjs",
-    "test:ci": "node --test test/network-check.test.mjs test/browser-check.test.mjs test/ui-defaults.test.mjs test/validate.test.mjs test/descriptor.test.mjs test/seedqr.test.mjs test/cards.test.mjs test/copy-seed.test.mjs test/number-bases.test.mjs test/seed-numbers.test.mjs test/psbt-low-r.test.mjs test/psbt-metadata.test.mjs test/secret-clear.test.mjs test/sqlite-writer.test.mjs test/wallet-export.test.mjs test/psbt-anti-exfil.test.mjs test/address-match.test.mjs test/psbt-nonce-reuse.test.mjs test/lifehash.test.mjs",
+    "test:ci": "node --test test/network-check.test.mjs test/browser-check.test.mjs test/ui-defaults.test.mjs test/validate.test.mjs test/descriptor.test.mjs test/seedqr.test.mjs test/cards.test.mjs test/copy-seed.test.mjs test/number-bases.test.mjs test/seed-numbers.test.mjs test/dplus.test.mjs test/psbt-low-r.test.mjs test/psbt-metadata.test.mjs test/secret-clear.test.mjs test/sqlite-writer.test.mjs test/wallet-export.test.mjs test/psbt-anti-exfil.test.mjs test/address-match.test.mjs test/psbt-nonce-reuse.test.mjs test/lifehash.test.mjs",
     "test:network": "node --test test/network-check.test.mjs",
     "test:browser-check": "node --test test/browser-check.test.mjs",
     "test:ui": "node --test test/ui-defaults.test.mjs",

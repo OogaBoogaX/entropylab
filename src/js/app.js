@@ -1847,9 +1847,9 @@ function hodlDPlusStepBits(step) {
 function hodlDPlusStepLabel(step) {
   return step === "d8" ? "D8" : step === "d16" ? "D16" : "a coin flip";
 }
-function hodlDPlusStepValue(step, face) {
+function hodlDPlusStepValue(step, face, numberedD16 = false) {
   if (step === "d8") return /^[1-8]$/.test(face) ? Number(face) - 1 : null;
-  if (step === "d16") return hodlDPlusD16Value(face);
+  if (step === "d16") return hodlDPlusD16Value(face, numberedD16);
   return /^[1-8]$/.test(face) ? (Number(face) >= 5 ? 1 : 0) : null;
 }
 function hodlDPlusFinalSteps(words = Pt) {
@@ -1875,13 +1875,14 @@ function hodlDPlusStepChecksumLabel(step) {
 // The roll turns each position in the final-word spec into a numbered pick:
 // d8 carries three bits (faces 1-8), d16 four bits (faces 0-F / 1-16), and a
 // coin one bit (faces 1-4 Tails, 5-8 Heads).
-function hodlDPlusD16Value(face) {
+function hodlDPlusD16Value(face, numberedD16 = false) {
   let normalized = String(face ?? "").toUpperCase();
+  if (numberedD16) return /^(?:[1-9]|1[0-6])$/.test(normalized) ? Number(normalized) % 16 : null;
   return /^[0-9A-F]$/.test(normalized) ? Number.parseInt(normalized, 16) : null
 }
 // Single tokenizer shared by the parser and the input sanitiser so the two can
 // never disagree about where one roll ends and the next begins.
-function hodlDPlusTokens(value) {
+function hodlDPlusTokens(value, numberedD16 = false) {
   let text = String(value ?? ""),
     entries = [],
     index = 0;
@@ -1889,6 +1890,16 @@ function hodlDPlusTokens(value) {
     let character = String.fromCodePoint(text.codePointAt(index));
     if (/[\s,;|]/.test(character)) {
       index += character.length;
+      continue
+    }
+    if (numberedD16) {
+      let start = index;
+      while (index < text.length) {
+        let tokenCharacter = String.fromCodePoint(text.codePointAt(index));
+        if (/[\s,;|]/.test(tokenCharacter)) break;
+        index += tokenCharacter.length
+      }
+      entries.push({ face: text.slice(start, index).toUpperCase(), start, end: index });
       continue
     }
     entries.push({
@@ -1900,6 +1911,31 @@ function hodlDPlusTokens(value) {
   }
   return entries
 }
+function hodlConvertDPlusNotation(value, targetWords, fromNumbered, toNumbered) {
+  let entries = hodlDPlusTokens(value, fromNumbered), config = hodlSeedConfig(targetWords), rolled = config.partialWords * 3, finalSteps = hodlDPlusFinalSteps(config.words), converted = [];
+  for (let index = 0; index < entries.length; index++) {
+    let step = index < rolled ? index % 3 === 0 ? "d8" : "d16" : finalSteps[index - rolled];
+    if (!step) return null;
+    let face = entries[index].face;
+    if (step === "d16") {
+      let numeric = hodlDPlusD16Value(face, fromNumbered);
+      if (numeric === null) return null;
+      face = toNumbered ? String(numeric || 16) : numeric.toString(16).toUpperCase()
+    } else if (!/^[1-8]$/.test(face)) return null;
+    converted.push(face)
+  }
+  if (toNumbered) return converted.join(" ");
+  return converted.map((face, index) => `${(index && index < rolled && index % 3 === 0) || index === rolled ? " " : ""}${face}`).join("")
+}
+function hodlDPlusConvertedOffset(value, offset, converted, fromNumbered, toNumbered) {
+  let source = hodlDPlusTokens(value, fromNumbered), target = hodlDPlusTokens(converted, toNumbered), position = Math.max(0, Math.min(Number(offset) || 0, String(value).length)), boundary = 0;
+  for (let index = 0; index < source.length; index++) {
+    if (position <= source[index].start) break;
+    boundary = index + 1;
+    if (position < source[index].end) break
+  }
+  return boundary >= target.length ? converted.length : target[boundary].start
+}
 function hodlDPlusRolls(value, targetWords = Pt, numberedD16 = hodlDPlusNumberedD16) {
   let config = hodlSeedConfig(targetWords),
     rolledTarget = config.partialWords,
@@ -1908,7 +1944,7 @@ function hodlDPlusRolls(value, targetWords = Pt, numberedD16 = hodlDPlusNumbered
     rejectedD8 = 0,
     rejectedD16 = 0,
     acceptedCharacters = [];
-  entries = hodlDPlusTokens(value);
+  entries = hodlDPlusTokens(value, numberedD16);
   let rolledEntries = entries.slice(0, rolledCharacterTarget),
     wordSlots = Array(rolledTarget).fill(""),
     groups = [],
@@ -1918,7 +1954,7 @@ function hodlDPlusRolls(value, targetWords = Pt, numberedD16 = hodlDPlusNumbered
   for (let groupIndex = 0; groupIndex < rolledTarget; groupIndex++) {
     let tokens = rolledEntries.slice(groupIndex * 3, groupIndex * 3 + 3);
     if (!tokens.length) break;
-    let validity = tokens.map((token, position) => position === 0 ? /^[1-8]$/.test(token.face) : hodlDPlusD16Value(token.face) !== null);
+    let validity = tokens.map((token, position) => position === 0 ? /^[1-8]$/.test(token.face) : hodlDPlusD16Value(token.face, numberedD16) !== null);
     tokens.forEach((token, position) => {
       if (validity[position]) {
         acceptedCharacters.push(token.face);
@@ -1933,7 +1969,7 @@ function hodlDPlusRolls(value, targetWords = Pt, numberedD16 = hodlDPlusNumbered
     });
     let complete = tokens.length === 3, valid = complete && validity.every(Boolean), word = "";
     if (valid) {
-      let wordIndex = (Number(tokens[0].face) - 1) * 256 + hodlDPlusD16Value(tokens[1].face) * 16 + hodlDPlusD16Value(tokens[2].face);
+      let wordIndex = (Number(tokens[0].face) - 1) * 256 + hodlDPlusD16Value(tokens[1].face, numberedD16) * 16 + hodlDPlusD16Value(tokens[2].face, numberedD16);
       word = Ae[wordIndex];
       wordSlots[groupIndex] = word;
     }
@@ -1957,7 +1993,7 @@ function hodlDPlusRolls(value, targetWords = Pt, numberedD16 = hodlDPlusNumbered
     finalInfo = finalSteps.map((step, position) => {
       let entry = entries[rolledCharacterTarget + position] || null, value = "";
       if (entry) {
-        let picked = hodlDPlusStepValue(step, entry.face);
+        let picked = hodlDPlusStepValue(step, entry.face, numberedD16);
         if (picked !== null) {
           value = entry.face;
           acceptedCharacters.push(entry.face);
@@ -1986,7 +2022,7 @@ function hodlDPlusRolls(value, targetWords = Pt, numberedD16 = hodlDPlusNumbered
       let info = finalInfo[position];
       if (!info.entry) { waiting = `checksum-${info.step}`; break; }
       if (info.value === "") { waiting = "correction"; break; }
-      finalIndex = finalIndex * (info.step === "d8" ? 8 : info.step === "d16" ? 16 : 2) + hodlDPlusStepValue(info.step, info.entry.face);
+      finalIndex = finalIndex * (info.step === "d8" ? 8 : info.step === "d16" ? 16 : 2) + hodlDPlusStepValue(info.step, info.entry.face, numberedD16);
       if (position === finalSteps.length - 1) { waiting = "complete"; complete = true; }
     }
   }
@@ -2166,6 +2202,7 @@ function hodlDPlusAllowedCharacters(seed, numberedD16) {
 
 function hodlDPlusSeparator(index, seed, numberedD16) {
   if (index === 0) return "";
+  if (numberedD16) return " ";
   let rolled = seed.partialWords * 3,
     wordBoundary = index < rolled ? index % 3 === 0 : index === rolled;
   return wordBoundary ? " " : ""
@@ -2181,7 +2218,7 @@ function hodlSanitizeDPlusInput(input, targetWords = Pt, numberedD16 = hodlDPlus
     kept = "";
   for (let character of raw)
     if (allowed.test(character) || /[\s,;|]/.test(character)) kept += character;
-  let tokens = hodlDPlusTokens(kept).map(entry => entry.face);
+  let tokens = hodlDPlusTokens(kept, numberedD16).map(entry => entry.face);
   // significantEnds[k] is the offset in `clean` just after its k-th roll character,
   // which is how the caret is carried across reformatting.
   let clean = "",
@@ -2193,6 +2230,7 @@ function hodlSanitizeDPlusInput(input, targetWords = Pt, numberedD16 = hodlDPlus
       significantEnds.push(clean.length)
     }
   });
+  if (numberedD16 && tokens.length && /[\s,;|]$/.test(kept)) clean += " ";
   let countSignificant = value => {
       let count = 0;
       for (let character of String(value))
@@ -2200,8 +2238,13 @@ function hodlSanitizeDPlusInput(input, targetWords = Pt, numberedD16 = hodlDPlus
       return count
     },
     total = significantEnds.length - 1;
-  let cleanSelectionStart = significantEnds[Math.min(countSignificant(raw.slice(0, selectionStart)), total)] ?? clean.length;
-  let cleanSelectionEnd = significantEnds[Math.min(countSignificant(raw.slice(0, selectionEnd)), total)] ?? clean.length;
+  let mapSelection = offset => {
+    let mapped = significantEnds[Math.min(countSignificant(raw.slice(0, offset)), total)] ?? clean.length;
+    if (numberedD16 && offset > 0 && /[\s,;|]/.test(raw[offset - 1]) && clean[mapped] === " ") mapped += 1;
+    return mapped
+  };
+  let cleanSelectionStart = mapSelection(selectionStart);
+  let cleanSelectionEnd = mapSelection(selectionEnd);
   let changed = raw !== clean;
   input.dataset.previousValue = clean;
   delete input.hodlDiceBeforeInput;
@@ -2220,6 +2263,10 @@ function hodlInsertDiceControl(input, button, update = hodlUpdateDice) {
     return;
   }
   let start = Number.isInteger(input.selectionStart) ? input.selectionStart : input.value.length, end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : start;
+  if (ge === "dplus" && hodlDPlusNumberedD16) {
+    if (start > 0 && !/[\s,;|]/.test(input.value[start - 1])) inserted = ` ${inserted}`;
+    if (end < input.value.length && !/[\s,;|]/.test(input.value[end])) inserted += " ";
+  }
   delete input.hodlDiceBeforeInput;
   if (ge !== "dplus") hodlRebaseDiceCoinPositions(start, end, inserted.length, Boolean(button.dataset.coin));
   input.value = input.value.slice(0, start) + inserted + input.value.slice(end);
@@ -2383,7 +2430,7 @@ function hodlUpdateDiceButtons(input, analysis) {
         coinTurn = turn === "checksum-coin",
         correcting = turn === "correction",
         value = String(button.dataset.d || "").toUpperCase();
-      disabled = turn === "complete" || turn === "last-word" || correcting || (coinTurn || isD8 ? !/^[1-8]$/.test(value) : hodlDPlusD16Value(value) === null);
+      disabled = turn === "complete" || turn === "last-word" || correcting || (coinTurn || isD8 ? !/^[1-8]$/.test(value) : hodlDPlusD16Value(value, hodlDPlusNumberedD16) === null);
       if (turn === "complete") reason = "The rolled words and final checksum rolls are complete.";
       else if (turn === "last-word") reason = `All ${hodlSeedConfig().partialWords} rolled words are complete. Choose the final checksum word below.`;
       else if (correcting) reason = "Correct the highlighted invalid result in its existing D++ position before continuing.";
@@ -3953,13 +4000,14 @@ function hodlRenderKeyForm() {
     let dplusFaces = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F", "0"],
       dplusPad = dplusFaces.map(face => {
         let decimal = face === "0" ? 16 : Number.parseInt(face, 16),
-          label = hodlDPlusNumberedD16 && decimal >= 10 ? `<span class="dplus-key-face">${face}</span><span class="dplus-key-decimal">${decimal}</span>` : face,
-          aria = hodlDPlusNumberedD16 ? `D16 result ${decimal}, entered as ${face}` : `D16 result ${face}${/^[A-F]$/.test(face)?`, decimal ${decimal}`:""}`;
-        return `<button type="button" data-d="${face}" aria-label="${aria}">${label}</button>`
+          entered = hodlDPlusNumberedD16 ? String(decimal) : face,
+          label = hodlDPlusNumberedD16 ? String(decimal) : face,
+          aria = hodlDPlusNumberedD16 ? `D16 result ${decimal}` : `D16 result ${face}${/^[A-F]$/.test(face)?`, decimal ${decimal}`:""}`;
+        return `<button type="button" data-d="${entered}" aria-label="${aria}">${label}</button>`
       }).join("");
     let diceLabel = ge === "dplus" ? `D++ rolls (D8, D16, D16; then ${hodlDPlusFinalDescription(config.words)})` : ge === "bitbox" ? "Dice rolls (1\u20134, then a 6th die interpreted as a coin flip)" : "Dice rolls (faces 1\u20136 only)";
     let diceHelp = ge === "dplus" ? `For each of the first ${config.partialWords} words, enter the D8 result, then both D16 results. ${hodlDPlusFinalHelp(config.words)}` : ge === "bitbox" ? `${config.partialWords} lookup-table words fill one slot at a time, then choose a confirmed final checksum word. Use 1\u20134 for the first five rolls (if you get 5 or 6, roll again). The sixth roll is treated as the coin: 1–3 is Heads, 4–6 is Tails. Or flip a real coin!` : ge === "coleman" ? `Every rolled 6 becomes 0 before the complete digit string is hashed with SHA-256. This Dice [1-6] method matches the method used by Keystone. Any nonempty count produces a phrase, but use at least ${config.hashRolls} fair rolls before relying on it.` : `The original dice digit string is hashed with SHA-256. This Base 10 [0-9] method matches COLDCARD and SeedSigner. Any nonempty count produces a phrase, but use at least ${config.hashRolls} fair rolls before relying on it.`;
-    let dicePlaceholder = ge === "dplus" ? "100 2AF…" : ge === "bitbox" ? "111111 222224\u2026" : "415263415263\u2026";
+    let dicePlaceholder = ge === "dplus" ? hodlDPlusNumberedD16 ? "1 16 16 2 10 15…" : "100 2AF…" : ge === "bitbox" ? "111111 222224\u2026" : "415263415263\u2026";
     let dicePad = ge === "dplus" ? `<div class="dice-input-pad dplus">${dplusPad}</div>` : `<div class="dice-input-pad faces-1-6">${[1,2,3,4,5,6].map(face=>`<button type="button" data-d="${face}">${face}</button>`).join("")}</div>`;
     let dplusConvention = ge === "dplus" ? `<p class="label" id="dplus-die-label">Which type of D16 dice are you rolling?</p><div class="card-suit-pad dplus-die-pad" id="dplus-die" role="group" aria-labelledby="dplus-die-label"><button type="button" class="${hodlDPlusNumberedD16?"":"active"}" data-dplus-die="hex" aria-pressed="${hodlDPlusNumberedD16?"false":"true"}"><strong>Hex</strong> \xB7 0\u2013F</button><button type="button" class="${hodlDPlusNumberedD16?"active":""}" data-dplus-die="numbered" aria-pressed="${hodlDPlusNumberedD16?"true":"false"}"><strong>Decimal</strong> \xB7 1\u201316</button></div>` : "";
     at.innerHTML = `
@@ -4002,10 +4050,19 @@ function hodlRenderKeyForm() {
       dplusButton.onclick = () => {
         let numbered = dplusButton.dataset.dplusDie === "numbered";
         if (numbered === hodlDPlusNumberedD16) return;
+        let converted = hodlConvertDPlusNotation(input.value, config.words, hodlDPlusNumberedD16, numbered);
+        if (converted === null) {
+          let error = document.getElementById("error");
+          if (error) error.textContent = "Correct the invalid or ambiguous D++ roll before changing D16 notation.";
+          return
+        }
         let state = hodlKeys[hodlActiveKey],
           selectionStart = input.selectionStart ?? input.value.length,
           selectionEnd = input.selectionEnd ?? selectionStart,
           selectionDirection = input.selectionDirection || "none";
+        selectionStart = hodlDPlusConvertedOffset(input.value, selectionStart, converted, hodlDPlusNumberedD16, numbered);
+        selectionEnd = hodlDPlusConvertedOffset(input.value, selectionEnd, converted, hodlDPlusNumberedD16, numbered);
+        input.value = converted;
         hodlDPlusNumberedD16 = numbered;
         if (state) {
           state.dplusNumberedD16 = hodlDPlusNumberedD16;

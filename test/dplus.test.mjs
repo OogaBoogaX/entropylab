@@ -52,13 +52,20 @@ const api = new Function(
   var Pt = 24;
   ${loadVariable("hodlSeedLengths", "hodlEntropyFormats")}
   ${loadVariableBeforeFunction("hodlDPlusFinalSpecs", "hodlDPlusStepBits")}
-  ${["hodlSeedConfig", "hodlDPlusStepBits", "hodlDPlusStepLabel", "hodlDPlusStepValue", "hodlDPlusFinalSteps", "hodlDPlusFinalDescription", "hodlDPlusFinalHelp", "hodlDPlusStepChecksumLabel", "hodlDPlusD16Value", "hodlDPlusTokens", "Rn", "Mt", "hodlTargetLastWords", "hodlComputeTargetLastWords", "mi", "hodlDPlusRolls", "hodlValidateTargetMnemonic", "hodlSeedCountStatus"].map(loadSlice).join("\n")}
+  ${["hodlSeedConfig", "hodlDPlusStepBits", "hodlDPlusStepLabel", "hodlDPlusStepValue", "hodlDPlusFinalSteps", "hodlDPlusFinalDescription", "hodlDPlusFinalHelp", "hodlDPlusStepChecksumLabel", "hodlDPlusD16Value", "hodlDPlusTokens", "hodlConvertDPlusNotation", "hodlDPlusConvertedOffset", "hodlDPlusAllowedCharacters", "hodlDPlusSeparator", "hodlSanitizeDPlusInput", "Rn", "Mt", "hodlTargetLastWords", "hodlComputeTargetLastWords", "mi", "hodlDPlusRolls", "hodlValidateTargetMnemonic", "hodlSeedCountStatus"].map(loadSlice).join("\n")}
   var hodlLastWordCache = new Map();
   var hodlBip39WordSet = new Set(Ae);
   var hodlBip39WordIndex = new Map(Ae.map((word, index) => [word, index]));
-  return { hodlDPlusRolls, hodlDPlusFinalSteps, hodlDPlusFinalDescription, hodlDPlusFinalHelp, hodlValidateTargetMnemonic, hodlSeedConfig };
+  return { hodlDPlusRolls, hodlDPlusFinalSteps, hodlDPlusFinalDescription, hodlDPlusFinalHelp, hodlConvertDPlusNotation, hodlDPlusConvertedOffset, hodlSanitizeDPlusInput, hodlValidateTargetMnemonic, hodlSeedConfig };
   `,
 )(Ae, Pn, Z);
+
+const updateButtons = new Function(`
+  var ge = "dplus", hodlDPlusNumberedD16 = true;
+  ${loadSlice("hodlDPlusD16Value")}
+  ${loadSlice("hodlUpdateDiceButtons")}
+  return hodlUpdateDiceButtons;
+`)();
 
 const SIZES = [12, 15, 18, 21, 24];
 
@@ -105,6 +112,106 @@ test("D++ reports the next required roll through every phase", () => {
   parsed = api.hodlDPlusRolls("10E".repeat(11) + "G", 12, false);
   assert.equal(parsed.waiting, "correction");
   assert.equal(parsed.firstInvalid.final, true);
+});
+
+test("decimal D16 tokens preserve multi-digit physical rolls", () => {
+  const parsed = api.hodlDPlusRolls("1 16 16", 12, true);
+  assert.equal(parsed.groups[0].word, "abandon");
+  assert.deepEqual(parsed.groups[0].faces, ["1", "16", "16"]);
+  assert.equal(parsed.entries.length, 3);
+});
+
+test("decimal and hexadecimal D16 transcripts select identical mnemonics", () => {
+  for (const words of SIZES) {
+    const config = api.hodlSeedConfig(words);
+    const steps = api.hodlDPlusFinalSteps(words);
+    const hexFinal = steps.map((step) => step === "d16" ? "0" : "1").join("");
+    const decimalFinal = steps.map((step) => step === "d16" ? "16" : "1").join(" ");
+    const hex = api.hodlDPlusRolls("100".repeat(config.partialWords) + hexFinal, words, false);
+    const decimal = api.hodlDPlusRolls(`${Array(config.partialWords).fill("1 16 16").join(" ")} ${decimalFinal}`, words, true);
+    assert.equal(decimal.complete, true, `${words}: decimal transcript incomplete`);
+    assert.deepEqual(decimal.wordSlots, hex.wordSlots, `${words}: partial words differ`);
+    assert.equal(decimal.finalWord, hex.finalWord, `${words}: final word differs`);
+  }
+});
+
+test("decimal D16 counts values 10 through 16 as one physical roll each", () => {
+  for (let face = 10; face <= 16; face++) {
+    const parsed = api.hodlDPlusRolls(`1 ${face} 16`, 12, true);
+    assert.equal(parsed.entries.length, 3, face);
+    assert.equal(parsed.groups[0].complete, true, face);
+    assert.equal(parsed.groups[0].valid, true, face);
+  }
+});
+
+test("incomplete decimal transcripts cannot enable derivation", () => {
+  const config = api.hodlSeedConfig(12);
+  const parsed = api.hodlDPlusRolls(Array(config.partialWords).fill("1 16 16").join(" "), 12, true);
+  assert.equal(parsed.allRolledValid, true);
+  assert.equal(parsed.complete, false);
+  assert.equal(parsed.waiting, "checksum-d8");
+});
+
+test("decimal D16 rejects zero, 17, and hexadecimal letters as whole rolls", () => {
+  for (const face of ["0", "17", "A"]) {
+    const parsed = api.hodlDPlusRolls(`1 ${face} 16`, 12, true);
+    assert.equal(parsed.groups[0].valid, false, face);
+    assert.equal(parsed.rejectedD16, 1, face);
+    assert.equal(parsed.entries.length, 3, face);
+    assert.equal(parsed.firstInvalid.face, face, face);
+  }
+});
+
+test("switching D16 notation translates the represented rolls", () => {
+  assert.equal(api.hodlConvertDPlusNotation("100 2AF", 12, false, true), "1 16 16 2 10 15");
+  assert.equal(api.hodlConvertDPlusNotation("1 16 16 2 10 15", 12, true, false), "100 2AF");
+  assert.equal(api.hodlConvertDPlusNotation("1 17 16", 12, true, false), null);
+});
+
+test("decimal sanitizing preserves a typed delimiter and its caret side", () => {
+  const input = {
+    value: "1,",
+    selectionStart: 2,
+    selectionEnd: 2,
+    selectionDirection: "none",
+    dataset: {},
+    setSelectionRange(start, end, direction) {
+      this.selectionStart = start;
+      this.selectionEnd = end;
+      this.selectionDirection = direction;
+    },
+  };
+  assert.equal(api.hodlSanitizeDPlusInput(input, 12, true), true);
+  assert.equal(input.value, "1 ");
+  assert.equal(input.selectionStart, 2);
+  input.value += "16";
+  input.selectionStart = input.selectionEnd = input.value.length;
+  api.hodlSanitizeDPlusInput(input, 12, true);
+  assert.equal(input.value, "1 16");
+});
+
+test("decimal D16 keypad keeps multi-digit faces enabled", () => {
+  const buttons = ["0", "10", "11", "12", "13", "14", "15", "16"].map((value) => ({
+    dataset: { d: value },
+    classList: { toggle() {} },
+    querySelector() { return null; },
+    replaceChildren() {},
+    hidden: false,
+    disabled: false,
+    title: "",
+  }));
+  const pad = { querySelectorAll() { return buttons; } };
+  const form = { querySelector() { return pad; } };
+  const input = { closest() { return form; } };
+  updateButtons(input, { dplus: { waiting: "d16-first" } });
+  assert.equal(buttons[0].disabled, true);
+  for (const button of buttons.slice(1)) assert.equal(button.disabled, false, button.dataset.d);
+});
+
+test("notation conversion maps caret positions to roll boundaries", () => {
+  const decimal = api.hodlConvertDPlusNotation("100", 12, false, true);
+  assert.deepEqual([0, 1, 2, 3].map((offset) => api.hodlDPlusConvertedOffset("100", offset, decimal, false, true)), [0, 2, 5, 7]);
+  assert.deepEqual([0, 2, 5, 7].map((offset) => api.hodlDPlusConvertedOffset(decimal, offset, "100", true, false)), [0, 1, 2, 3]);
 });
 
 test("D++ picks a candidate with the same index the spec maps to", () => {
