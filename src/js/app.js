@@ -1881,10 +1881,30 @@ function hodlDPlusD16Value(face) {
 }
 // Single tokenizer shared by the parser and the input sanitiser so the two can
 // never disagree about where one roll ends and the next begins.
-function hodlDPlusTokens(value) {
+function hodlDPlusTokens(value, numberedD16 = false) {
   let text = String(value ?? ""),
     entries = [],
     index = 0;
+  if (numberedD16) {
+    // Decimal D16: each non-separator chunk is one roll. Normalise 1-9 to
+    // themselves, 10-15 to A-F, 16 to 0. Out-of-range or non-numeric chunks
+    // keep their original face but are flagged invalid so the downstream
+    // pipeline surfaces them via invalidRanges.
+    for (const match of text.matchAll(/[^\s,;|]+/g)) {
+      let start = match.index,
+        chunk = match[0],
+        end = start + chunk.length,
+        parsed = Number.parseInt(chunk, 10),
+        face,
+        invalid = false;
+      if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 9) face = String(parsed);
+      else if (Number.isFinite(parsed) && parsed >= 10 && parsed <= 15) face = "ABCDEF"[parsed - 10];
+      else if (Number.isFinite(parsed) && parsed === 16) face = "0";
+      else { face = chunk.toUpperCase(); invalid = true; }
+      entries.push({ face, start, end, invalid });
+    }
+    return entries;
+  }
   while (index < text.length) {
     let character = String.fromCodePoint(text.codePointAt(index));
     if (/[\s,;|]/.test(character)) {
@@ -1908,7 +1928,7 @@ function hodlDPlusRolls(value, targetWords = Pt, numberedD16 = hodlDPlusNumbered
     rejectedD8 = 0,
     rejectedD16 = 0,
     acceptedCharacters = [];
-  entries = hodlDPlusTokens(value);
+  entries = hodlDPlusTokens(value, numberedD16);
   let rolledEntries = entries.slice(0, rolledCharacterTarget),
     wordSlots = Array(rolledTarget).fill(""),
     groups = [],
@@ -1918,7 +1938,7 @@ function hodlDPlusRolls(value, targetWords = Pt, numberedD16 = hodlDPlusNumbered
   for (let groupIndex = 0; groupIndex < rolledTarget; groupIndex++) {
     let tokens = rolledEntries.slice(groupIndex * 3, groupIndex * 3 + 3);
     if (!tokens.length) break;
-    let validity = tokens.map((token, position) => position === 0 ? /^[1-8]$/.test(token.face) : hodlDPlusD16Value(token.face) !== null);
+    let validity = tokens.map((token, position) => token.invalid ? false : (position === 0 ? /^[1-8]$/.test(token.face) : hodlDPlusD16Value(token.face) !== null));
     tokens.forEach((token, position) => {
       if (validity[position]) {
         acceptedCharacters.push(token.face);
