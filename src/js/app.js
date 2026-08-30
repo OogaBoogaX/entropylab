@@ -395,7 +395,7 @@ ec.innerHTML = `
       <button type="button" class="beta-warning-dismiss" id="beta-warning-dismiss" aria-label="Dismiss the beta software warning"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </aside>
     <aside class="online-warning no-print" id="online-warning" role="alert" hidden>
-      <div class="online-warning-text"><strong>Online version</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab.html" download="entropylab.html">Download EntropyLab</a> and run the HTML file offline on a trusted, air-gapped computer.</div>
+      <div class="online-warning-text"><strong>Online version</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab.html" download="entropylab.html">Download EntropyLab</a> and run the HTML file offline on a trusted, air-gapped computer. On iPhone, Safari users can choose Share → Add to Home Screen → Open as Web App; after the first load, disconnect all networks before reopening it. Cached availability is not proof of an air gap.</div>
       <button type="button" class="online-warning-dismiss" id="online-warning-dismiss" aria-label="Dismiss the online version warning"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </aside>
     <!-- TODO: This copy is being kept for the network-detected modal that will

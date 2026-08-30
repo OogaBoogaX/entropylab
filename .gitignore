@@ -5,6 +5,7 @@ node_modules/
 
 # Build output: compiled by CI and committed back after merges to main.
 /entropylab.html
+/service-worker.js
 /SHA256SUMS.txt
 /versions.json
 

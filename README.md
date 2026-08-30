@@ -61,6 +61,26 @@ wallet or signing device before receiving funds.
 
 To build the HTML file yourself, see [Building from source](#building-from-source).
 
+### iPhone home-screen app
+
+On iPhone, open [entropylab.online](https://entropylab.online) in Safari, then
+choose **Share → Add to Home Screen → Open as Web App → Add**. Keep the page
+open until its first load completes. The hosted app stores the self-contained
+calculator in a versioned browser cache so the Home Screen app can reopen when
+the phone has no network connection.
+
+Before entering any seed phrase, private key, or other secret wallet material,
+disconnect every network available to the phone, reopen EntropyLab from the
+Home Screen, and confirm that the header reports **Offline**. A cached page is
+not proof of an air gap: the status is based on browser network signals, and the
+hosted worker checks for application updates whenever the app is opened while
+connected. Clearing Safari website data or removing the Home Screen app may
+remove the cached copy.
+
+For sensitive or long-term use, the recommended path remains the downloaded,
+verified `entropylab.html` on a dedicated air-gapped computer. The downloaded
+file is still self-contained and never registers the hosted service worker.
+
 ### Verifying the download
 
 Every merge to `rock` publishes a `SHA256SUMS.txt` checksum manifest for

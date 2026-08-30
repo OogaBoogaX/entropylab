@@ -25,8 +25,9 @@ if (!/^\d+(?:\.\d+)*$/.test(version)) {
   fail(`Invalid version in package.json: ${version}`);
 }
 const appFile = "entropylab.html";
+const workerFile = "service-worker.js";
 
-for (const name of [appFile, "assets/favicon.png", "assets/entropylab_dark.png"]) {
+for (const name of [appFile, "manifest.webmanifest", "service-worker.js", "assets/favicon.png", "assets/entropylab_dark.png", "assets/pwa-icon-180.png", "assets/pwa-icon-192.png", "assets/pwa-icon-512.png"]) {
   const path = join(repoDir, name);
   if (!existsSync(path) || statSync(path).size === 0) {
     fail(`Site artifact is missing or empty: ${name}\nRun 'npm run build' first.`);
@@ -54,5 +55,18 @@ const walk = (dir, prefix) => {
   }
 };
 walk(join(repoDir, "assets"), "assets");
+
+// The built page and worker must identify the same immutable cache candidate.
+// A mismatch could leave an installed iPhone app serving stale wallet code.
+const html = readFileSync(join(repoDir, appFile), "utf8");
+const worker = readFileSync(join(repoDir, workerFile), "utf8");
+const htmlPwaVersion = html.match(/service-worker\.js\?v=([0-9a-f]{16})/i)?.[1];
+const workerPwaVersion = worker.match(/const VERSION = "([0-9a-f]{16})"/)?.[1];
+if (!htmlPwaVersion || htmlPwaVersion !== workerPwaVersion) {
+  fail("Generated HTML and service worker do not share the same PWA version.");
+}
+if (html.includes("{{PWA_VERSION}}") || worker.includes("{{PWA_VERSION}}")) {
+  fail("Unresolved PWA version token in generated site artifact.");
+}
 
 console.log(`Verified site artifact for v${version} (${appFile}, assets/).`);

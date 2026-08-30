@@ -19,6 +19,19 @@ material. Its security posture rests on the following model:
 
 - The tool is self-contained and designed for offline, air-gapped use. It does
   not intentionally transmit sensitive data to any server.
+- The hosted site registers a service worker only on the exact HTTPS
+  `entropylab.online` or `www.entropylab.online` origin. It stores only the
+  self-contained application entry points in a content-versioned cache so an
+  iPhone Home Screen web app can reopen without a network. Navigation is served
+  only from that current named cache; the worker has no network fallback,
+  background sync, push, or notification handling. When the app is opened
+  while connected, the browser checks the hosted worker for an update and may
+  replace the cached application. Cached availability and the browser's
+  Offline label are not proof of a physical air gap.
+- The downloaded `entropylab.html` remains the recommended path for sensitive
+  use. It is one self-contained file, does not register the hosted service
+  worker from `file://` or another host, and should be verified before transfer
+  to a dedicated computer that is disconnected from every network.
 - EntropyLab's own secp256k1 curve operations (public-key derivation, ECDSA
   signing and verification in PSBT inspection, curve point math) run on
   bitcoin-core/libsecp256k1 (the library securing Bitcoin Core), compiled to

@@ -8,6 +8,7 @@
 // serve the same application. The output is byte-for-byte reproducible from
 // the sources and the version declared in package.json.
 import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
@@ -23,18 +24,20 @@ if (!/^\d+(?:\.\d+)*$/.test(version)) {
 }
 
 const appFile = "entropylab.html";
+const workerFile = "service-worker.js";
 const generated = () =>
-  [appFile, ...readdirSync(root).filter((name) =>
+  [appFile, workerFile, ...readdirSync(root).filter((name) =>
     /^entropylab-\d+(?:\.\d+)*\.html$/.test(name)
   )];
 
 if (process.argv.includes("--clean")) {
   for (const name of generated()) rmSync(join(root, name), { force: true });
-  console.log("Removed generated files (entropylab.html, entropylab-*.html)");
+  console.log("Removed generated files (entropylab.html, service-worker.js, entropylab-*.html)");
   process.exit(0);
 }
 
 const template = read("index.html");
+const workerTemplate = read("service-worker.js");
 const css = read("css/styles.css");
 // The header logo is inlined as SVG markup so the downloaded file shows it
 // without reaching for assets/ (which only exists on the hosted site). The
@@ -87,7 +90,19 @@ let html = template
   .replace("/*@@JS_REPEAT@@*/", () => jsRepeat)
   .split("{{VERSION}}").join(version);
 
-for (const leftover of html.match(/\/\*@@|{{VERSION}}/g) || []) {
+// The hosted service-worker URL must change whenever the self-contained app
+// or its offline shell changes, even while several commits share one package
+// version. Hashing the pre-token artifact avoids a self-referential digest.
+const pwaVersion = createHash("sha256")
+  .update(html)
+  .update(readFileSync(join(root, "manifest.webmanifest")))
+  .update(workerTemplate)
+  .digest("hex")
+  .slice(0, 16);
+html = html.split("{{PWA_VERSION}}").join(pwaVersion);
+const worker = workerTemplate.split("{{PWA_VERSION}}").join(pwaVersion);
+
+for (const leftover of `${html}\n${worker}`.match(/\/\*@@|{{(?:VERSION|PWA_VERSION)}}/g) || []) {
   throw new Error(`Unreplaced build token in output: ${leftover}`);
 }
 
@@ -95,6 +110,8 @@ for (const leftover of html.match(/\/\*@@|{{VERSION}}/g) || []) {
 for (const name of generated()) rmSync(join(root, name), { force: true });
 
 writeFileSync(join(root, appFile), html);
+writeFileSync(join(root, workerFile), worker);
 
 console.log(`Built EntropyLab v${version}`);
 console.log(`  ${appFile} (${Buffer.byteLength(html, "utf8")} bytes)`);
+console.log(`  ${workerFile} (${Buffer.byteLength(worker, "utf8")} bytes)`);
