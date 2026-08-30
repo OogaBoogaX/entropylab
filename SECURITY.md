@@ -46,6 +46,11 @@ material. Its security posture rests on the following model:
   supplied entropy and says to use it only for testing. Users who intend to
   secure funds must meet the displayed roll/card recommendation and verify
   their procedure independently.
+- Card deck backup is a deterministic encoding of BIP39 entropy as a
+  without-replacement deal. Cards never loads it by switching tabs. Restoring
+  it requires an explicit Show stacked deck or Restore a stacked-deck backup
+  action. Hashed card transcripts, Ian Coleman, and camera-signer card
+  schemes are different encodings and will not reproduce the same seed.
 - The single-file design inlines all scripts (`script-src 'unsafe-inline'`),
   and the secp256k1 WebAssembly module adds `wasm-unsafe-eval` to the
   content security policy: Chromium and WebKit engines refuse to compile a

@@ -412,6 +412,19 @@ label.field { display: block; margin-top: var(--space-component); font-size: 14p
 }
 .cards-reshuffle[hidden] { display: none; }
 .cards-reshuffle strong { color: var(--accent); }
+.card-deck-source {
+  margin: 12px 0 4px; padding: 0; border: none; background: transparent;
+}
+.card-deck-source .label { margin-top: 0; }
+.card-deck-source-row {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px;
+}
+.card-deck-source select { margin: 0; flex: 1 1 16rem; min-width: 0; }
+.card-deck-source-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.card-deck-source.is-active {
+  margin: 12px 0 8px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border);
+}
 .dealt-card {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   width: 44px; height: 60px; border: 1px solid var(--border); border-radius: 6px;

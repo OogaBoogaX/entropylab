@@ -32,6 +32,10 @@ Official website: [entropylab.online](https://entropylab.online)
   separate as well; conventional script choices restore their standard purpose,
   while pasted co-signer origins auto-detect and must agree with the selected
   purpose.
+- Encodes a derived BIP39 seed as a unique without-replacement card order
+  (Card deck backup). On Cards, that order is shown only after you select the
+  derived key and click Show stacked deck. It is not a hashed card transcript
+  and will not match Ian Coleman.
 - Inspects PSBT v0 transactions, reports PSBT-provided amounts and fees, checks
   for repeated ECDSA nonces from the same public key, verifies optional Jade
   anti-exfil (sign-to-contract) transcripts without a key, and can compare supported

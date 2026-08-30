@@ -1526,7 +1526,7 @@ function hodlSingleWalletData(wallet) {
 }
 function hodlHdWalletData(wallet) {
   let privateFields = [];
-  if (wallet.mnemonic) privateFields.push(hodlSeedPhraseField(`Your seed phrase \xB7 ${wallet.mnemonic.trim().split(/\s+/).length} words`, wallet.mnemonic), hodlSeedQrExport(wallet.mnemonic, { passphraseUsed: wallet.passphraseUsed, entropyHex: wallet.entropyHex }));
+  if (wallet.mnemonic) privateFields.push(hodlSeedPhraseField(`Your seed phrase \xB7 ${wallet.mnemonic.trim().split(/\s+/).length} words`, wallet.mnemonic), hodlSeedQrExport(wallet.mnemonic, { passphraseUsed: wallet.passphraseUsed, entropyHex: wallet.entropyHex }), hodlDeckBackupExport(wallet.mnemonic, { entropyHex: wallet.entropyHex }));
   if (wallet.entropyHex) privateFields.push(Ee("BIP39 entropy hex", wallet.entropyHex));
   if (wallet.seedHex) privateFields.push(Ee("Master seed hex", wallet.seedHex));
   if (wallet.rootXprv) privateFields.push(Ee(`Root ${wallet.rootPrivateLabel || cr[wallet.network].x.prvName}`, wallet.rootXprv));
@@ -1680,6 +1680,11 @@ Oo = function(wallet, revealPrivate) {
       lines.push("", "YOUR SEED PHRASE", wallet.mnemonic);
       let seedQrDigits = hodlSeedQrDigits(wallet.mnemonic);
       if (seedQrDigits) lines.push("", "SEEDQR DIGITS", seedQrDigits);
+      try {
+        let deckTranscript = hodlDeckBackupCardsFromWallet(wallet.mnemonic, wallet.entropyHex).join(" ");
+        if (deckTranscript) lines.push("", "CARD DECK BACKUP", deckTranscript);
+      } catch {
+      }
     }
     if (wallet.entropyHex) lines.push("", "BIP39 ENTROPY HEX", wallet.entropyHex);
     if (wallet.seedHex) lines.push("", "MASTER SEED HEX (BIP39 PBKDF2, 512 bits)", wallet.seedHex);
@@ -2221,6 +2226,134 @@ function hodlSeedQrExport(mnemonic, options = {}) {
   } catch {
   }
   return `<details class="wallet-advanced"><summary>SeedQR</summary><p class="muted">Scan into a camera signer. This is the seed.${passNote}</p><div class="seed-qr-pair"><div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="SeedQR">${Xs(digits, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">SeedQR. Numeric.</p><p class="muted">Compatible with: SeedSigner, Krux, Jade, Passport, Coldcard Q.</p><p class="muted mono">${$t(digits)}</p></div>${compact}</div></details>`;
+}
+function hodlDeckBackupCardsFromWallet(mnemonic, entropyHex) {
+  let bytes;
+  if (entropyHex) bytes = M.decode(String(entropyHex).replace(/\s/g, "").toLowerCase());
+  else bytes = Er(String(mnemonic ?? "").trim(), Ae);
+  return hodlEncodeEntropyAsDeck(bytes);
+}
+function hodlDeckBackupExport(mnemonic, options = {}) {
+  let words = String(mnemonic ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length || !Ge) return "";
+  let cards;
+  try {
+    cards = hodlDeckBackupCardsFromWallet(words.join(" "), options.entropyHex);
+  } catch {
+    return "";
+  }
+  let needed = hodlCardNeeded(words.length), first = cards.slice(0, needed.first), extra = cards.slice(needed.first);
+  let faces = `<p class="dealt-shuffle-label">First shuffle \xB7 ${first.length} cards</p>${first.map(hodlDealtCardMarkup).join("")}` + (extra.length ? `<p class="dealt-shuffle-label">Second shuffle \xB7 ${extra.length} cards</p>${extra.map(hodlDealtCardMarkup).join("")}` : "");
+  return `<details class="wallet-advanced"><summary>Card deck backup</summary><p class="muted">Stack a standard deck in this order. On Cards, choose this key and click Show stacked deck. This is not a hashed card transcript and will not match Ian Coleman method.</p><div class="dealt-cards deck-backup-cards">${faces}</div>${Ee("Card deck transcript", cards.join(" "))}</details>`;
+}
+function hodlKeyEntropySourceLabel(state) {
+  if (!state) return "Unknown source";
+  if (state.mode === "dice") return { coldcard: "Hashed dice (Coldcard & SeedSigner)", coleman: "Hashed dice (Keystone)", bitbox: "BitBox diceware", dplus: "D++ dice" }[state.diceMethod] || "Dice rolls";
+  if (state.mode === "cards") return state.cardMethod === "direct" ? "Direct card word selection" : state.cardMethod === "deck" ? "Stacked-deck backup" : "Hashed card transcript";
+  if (state.mode === "hex") return "Number bases";
+  if (state.mode === "seed") return "Seed phrase";
+  if (state.mode === "key") return "Private key";
+  return "Derived key";
+}
+function hodlDeckBackupSources() {
+  return hodlKeys.map((state, index) => {
+    let mnemonic = state?.result?.mnemonic;
+    if (!mnemonic) return null;
+    let words = String(mnemonic).trim().split(/\s+/).filter(Boolean).length;
+    if (!hodlSeedLengths[words]) return null;
+    return { index, name: state.name || `Key ${state.number}`, label: hodlKeyEntropySourceLabel(state.derivedSource || state), words, mnemonic, entropyHex: state.result.entropyHex || "" };
+  }).filter(Boolean);
+}
+function hodlDeckBackupSourceMarkup(state, deck) {
+  let sources = hodlDeckBackupSources(), selected = Number.isInteger(state?.cardDeckSource?.index) ? state.cardDeckSource.index : "", options = [`<option value="">Select a derived key</option>`].concat(sources.map((source) => `<option value="${source.index}"${source.index === selected ? " selected" : ""}>${$t(`${source.name} \xB7 ${source.label} \xB7 ${source.words} words`)}</option>`)).join("");
+  let source = deck ? state?.cardDeckSource : null;
+  let banner = source ? `<p class="muted"><strong>Stacked-deck backup, not hashed cards.</strong> Loaded from ${$t(source.name)}, derived from ${$t(source.label)} (${source.words} words). Clear backup view to deal cards as entropy.</p>` : "";
+  let dirty = Boolean(String(state?.fields?.cards ?? "").trim()) && !deck;
+  return `<aside class="card-deck-source${deck ? " is-active" : ""}" id="card-deck-source-panel">
+      <p class="label">Stacked deck from a derived key <span class="seed-autocomplete-note">Turn an existing seed into a card-order backup</span></p>
+      ${banner}
+      <div class="card-deck-source-row">
+        <select id="card-deck-source" aria-label="Derived key" ${sources.length ? "" : "disabled"}>${sources.length ? options : `<option value="">No derived seed in this session</option>`}</select>
+        <div class="card-deck-source-actions">
+          <button type="button" id="card-deck-load" ${sources.length ? "" : "disabled"}>Show stacked deck</button>
+          <button type="button" id="card-deck-restore"${deck ? " hidden" : ""}>Restore a stacked-deck backup on this tab</button>
+          <button type="button" id="card-deck-clear"${deck ? "" : " hidden"}>Clear backup view</button>
+        </div>
+      </div>
+      ${dirty ? `<label class="seed-autocomplete-toggle"><input type="checkbox" id="card-deck-replace" /><span><strong>Replace the cards currently on this tab</strong></span></label>` : ""}
+    </aside>`;
+}
+function hodlApplyDeckBackupView(source, cards, stash) {
+  let state = hodlKeys[hodlActiveKey];
+  if (!state) return;
+  hodlCaptureKey();
+  state.cardDeckStash = stash ?? state.fields.cards ?? "";
+  state.cardMethod = "deck";
+  state.cardDeckSource = source;
+  state.showCards = true;
+  state.fields.cards = Array.isArray(cards) ? cards.join(" ") : String(cards ?? "");
+  state.targetWords = source.words || state.targetWords;
+  hodlCardMethod = "deck";
+  Pt = hodlSeedLengths[Number(state.targetWords)] ? Number(state.targetWords) : Pt;
+  hodlRenderKeyForm();
+  hodlRestoreFormFields(state);
+  hodlUpdateSeedLengthControl();
+  hodlQueueMasterFingerprintPreview(0);
+}
+function hodlClearDeckBackupView() {
+  let state = hodlKeys[hodlActiveKey];
+  if (!state) return;
+  hodlCaptureKey();
+  let restored = state.cardDeckStash ?? "";
+  state.cardMethod = "hashed";
+  state.cardDeckSource = null;
+  state.cardDeckStash = "";
+  state.fields.cards = restored;
+  hodlCardMethod = "hashed";
+  hodlRenderKeyForm();
+  hodlRestoreFormFields(state);
+  hodlQueueMasterFingerprintPreview(0);
+}
+function hodlSyncDeckBackupLoad() {
+  let load = document.getElementById("card-deck-load"), select = document.getElementById("card-deck-source"), replace = document.getElementById("card-deck-replace"), input = document.getElementById("cards");
+  if (!load) return;
+  let chosen = Boolean(select?.value), dirty = Boolean(input?.value.trim()) && hodlCardMethod !== "deck", allowed = chosen && (!dirty || replace?.checked);
+  load.disabled = !allowed;
+}
+function hodlBindDeckBackupSource() {
+  hodlSyncDeckBackupLoad();
+  if (at.hodlDeckBackupBound) return;
+  at.hodlDeckBackupBound = true;
+  at.addEventListener("change", (event) => {
+    if (event.target?.id === "card-deck-source" || event.target?.id === "card-deck-replace") hodlSyncDeckBackupLoad();
+  });
+  at.addEventListener("input", (event) => {
+    if (event.target?.id === "cards") hodlSyncDeckBackupLoad();
+  });
+  at.addEventListener("click", (event) => {
+    let button = event.target?.closest("button");
+    if (!button) return;
+    let input = document.getElementById("cards"), select = document.getElementById("card-deck-source"), replace = document.getElementById("card-deck-replace"), state = hodlKeys[hodlActiveKey];
+    if (button.id === "card-deck-load") {
+      let source = hodlDeckBackupSources().find((item) => String(item.index) === String(select?.value));
+      if (!source) return;
+      if (input?.value.trim() && hodlCardMethod !== "deck" && !replace?.checked) return;
+      let cards;
+      try {
+        cards = hodlDeckBackupCardsFromWallet(source.mnemonic, source.entropyHex);
+      } catch (error) {
+        W("#error").textContent = error.message || "Could not encode a stacked-deck backup for that key.";
+        return;
+      }
+      hodlApplyDeckBackupView(source, cards, input?.value ?? "");
+      return;
+    }
+    if (button.id === "card-deck-restore") {
+      hodlApplyDeckBackupView({ index: hodlActiveKey, name: state?.name || "this key", label: "cards entered on this tab", words: hodlSeedConfig().words, local: true }, input?.value ?? "", input?.value ?? "");
+      return;
+    }
+    if (button.id === "card-deck-clear") hodlClearDeckBackupView();
+  });
 }
 var hodlSeedLengths = Object.freeze({
   12: Object.freeze({ words: 12, bits: 128, bytes: 16, hexChars: 32, hashRolls: 50, partialWords: 11, candidates: 128 }),
@@ -3129,6 +3262,70 @@ function hodlCardWithoutReplacementBits(count) {
   for (let i = 0; i < n; i++) bits += Math.log2(52 - i);
   return bits;
 }
+function hodlCanonicalDeck() {
+  let deck = [];
+  for (let suit of hodlCardSuits) for (let rank of hodlCardRanks) deck.push(rank + suit.code);
+  return deck;
+}
+function hodlEntropyByteWords(bytes) {
+  let length = bytes instanceof Uint8Array ? bytes.length : 0;
+  for (let words of [12, 15, 18, 21, 24]) if (hodlSeedConfig(words).bytes === length) return words;
+  return 0;
+}
+function hodlEntropyBytesToBigInt(bytes) {
+  let value = 0n;
+  for (let index = 0; index < bytes.length; index++) value = (value << 8n) + BigInt(bytes[index]);
+  return value;
+}
+function hodlBigIntToEntropyBytes(value, length) {
+  if (value < 0n) throw new Error("Deck backup entropy cannot be negative.");
+  let bytes = new Uint8Array(length);
+  for (let index = length - 1; index >= 0; index--) {
+    bytes[index] = Number(value & 255n);
+    value >>= 8n;
+  }
+  if (value !== 0n) throw new Error("Deck backup entropy does not fit the selected phrase length.");
+  return bytes;
+}
+function hodlEncodeEntropyAsDeck(bytes) {
+  let words = hodlEntropyByteWords(bytes);
+  if (!words) throw new Error("Deck backup needs 16, 20, 24, 28, or 32 bytes of BIP39 entropy.");
+  let needed = hodlCardNeeded(words), value = hodlEntropyBytesToBigInt(bytes), cards = [], remaining = hodlCanonicalDeck();
+  for (let index = 0; index < needed.first; index++) {
+    let radix = BigInt(remaining.length), digit = Number(value % radix);
+    value /= radix;
+    cards.push(remaining[digit]);
+    remaining.splice(digit, 1);
+  }
+  if (needed.extra) {
+    remaining = hodlCanonicalDeck();
+    for (let index = 0; index < needed.extra; index++) {
+      let radix = BigInt(remaining.length), digit = Number(value % radix);
+      value /= radix;
+      cards.push(remaining[digit]);
+      remaining.splice(digit, 1);
+    }
+  }
+  if (value !== 0n) throw new Error("BIP39 entropy does not fit the recommended card deal.");
+  return cards;
+}
+function hodlDecodeDeckToEntropy(cards, targetWords = Pt) {
+  let config = hodlSeedConfig(targetWords), needed = hodlCardNeeded(config.words), required = needed.first + needed.extra;
+  if (!Array.isArray(cards) || cards.length !== required) return { ok: false, error: `Deck backup needs exactly ${required} cards for a ${config.words}-word seed.` };
+  let value = 0n, place = 1n, remaining = hodlCanonicalDeck();
+  for (let index = 0; index < cards.length; index++) {
+    if (index === needed.first) remaining = hodlCanonicalDeck();
+    let digit = remaining.indexOf(cards[index]);
+    if (digit < 0) return { ok: false, error: `Do not repeat a card in the same shuffle. Repeated: ${cards[index]}.` };
+    value += BigInt(digit) * place;
+    place *= BigInt(remaining.length);
+    remaining.splice(digit, 1);
+  }
+  let max = 1n << BigInt(config.bits);
+  if (value >= max) return { ok: false, error: `This deal is not an EntropyLab deck backup for a ${config.words}-word seed.` };
+  let bytes = hodlBigIntToEntropyBytes(value, config.bytes);
+  return { ok: true, bytes, hex: M.encode(bytes) };
+}
 function hodlNormalizeCardToken(token) {
   let value = String(token ?? "").trim().toUpperCase().replace(/\u2660/g, "S").replace(/\u2665/g, "H").replace(/\u2666/g, "D").replace(/\u2663/g, "C");
   if (value.startsWith("10")) value = "T" + value.slice(2);
@@ -3210,6 +3407,19 @@ function hodlCardsEntropy(value, targetWords = Pt, coleman = false) {
   if (parsed.cards.length > required) notes.push(`All ${parsed.cards.length} cards, including extras, are included in the hash.`);
   let digest = Z(new TextEncoder().encode(hashInput)), bytes = digest.slice(0, config.bytes);
   return { ok: true, bytes, hex: M.encode(bytes), bits: config.bits, sourceBits: parsed.bits, method: coleman ? "ian-coleman-cards-sha256" : "cards-sha256", notes, warnings, parsed, hashInput };
+}
+function hodlDeckBackupEntropy(value, targetWords = Pt) {
+  let config = hodlSeedConfig(targetWords), notes = [], warnings = [], parsed = hodlParseCards(value, config.words);
+  if (parsed.invalid.length) return { ok: false, error: `Cards use rank then suit, like AS, 10H, or TD. Ignored: ${parsed.invalid.slice(0, 8).join(" ")}`, notes, warnings, parsed };
+  if (parsed.duplicates.length) return { ok: false, error: `Do not repeat a card in the same shuffle. Repeated: ${parsed.duplicates[0]}.`, notes, warnings, parsed };
+  let required = parsed.needed.first + parsed.needed.extra;
+  if (parsed.cards.length < required) return { ok: false, error: `Deck backup needs ${required - parsed.cards.length} more card${required - parsed.cards.length === 1 ? "" : "s"} (${parsed.cards.length} of ${required}).`, notes, warnings, parsed };
+  if (parsed.cards.length > required) return { ok: false, error: `Deck backup uses exactly ${required} cards. Remove ${parsed.cards.length - required} extra card${parsed.cards.length - required === 1 ? "" : "s"}.`, notes, warnings, parsed };
+  let decoded = hodlDecodeDeckToEntropy(parsed.cards, config.words);
+  if (!decoded.ok) return { ok: false, error: decoded.error, notes, warnings, parsed };
+  notes.push(`${required} card${required === 1 ? "" : "s"} restore the ${config.bits}-bit BIP39 entropy as a mixed-radix deck order, least-significant digit first.`);
+  notes.push("Canonical remaining order is Spades, Hearts, Clubs, Diamonds, Ace through King. This is not a SHA-256 transcript and will not match hashed cards or Ian Coleman.");
+  return { ok: true, bytes: decoded.bytes, hex: decoded.hex, bits: config.bits, sourceBits: config.bits, method: "cards-deck-backup", notes, warnings, parsed };
 }
 function hodlCardSelectionState(cards, needed, selectedSuit = "", selectedRank = "") {
   let currentShuffle = cards.length < needed.first ? cards : cards.slice(needed.first), used = new Set(currentShuffle), available = [];
@@ -3369,12 +3579,14 @@ function hodlUpdateDirectCards() {
 function hodlSelectedCardsEntropy(targetWords = Pt) {
   let input = document.getElementById(hodlCardMethod === "direct" ? "direct-cards" : "cards");
   if (!input) return { ok: false, error: "Card input is unavailable." };
-  return hodlCardMethod === "direct" ? hodlDirectCardsEntropy(input.value, targetWords) : hodlCardsEntropy(input.value, targetWords, hodlCardColemanSymbols);
+  if (hodlCardMethod === "direct") return hodlDirectCardsEntropy(input.value, targetWords);
+  if (hodlCardMethod === "deck") return hodlDeckBackupEntropy(input.value, targetWords);
+  return hodlCardsEntropy(input.value, targetWords, hodlCardColemanSymbols);
 }
 function hodlUpdateCards() {
   let input = document.getElementById("cards");
   if (!input) return;
-  let config = hodlSeedConfig(), parsed = hodlRenderCardInputState(input, config.words), required = parsed.needed.first + parsed.needed.extra, entropy = hodlCardsEntropy(input.value, config.words, hodlCardColemanSymbols), showCards = document.getElementById("show-cards")?.checked === true;
+  let config = hodlSeedConfig(), parsed = hodlRenderCardInputState(input, config.words), required = parsed.needed.first + parsed.needed.extra, deck = hodlCardMethod === "deck", entropy = deck ? hodlDeckBackupEntropy(input.value, config.words) : hodlCardsEntropy(input.value, config.words, hodlCardColemanSymbols), showCards = document.getElementById("show-cards")?.checked === true;
   let selection = hodlCardSelectionState(parsed.cards, parsed.needed, hodlCardSuit, hodlCardRank);
   hodlCardSuit = selection.suit;
   hodlCardRank = selection.rank;
@@ -3397,11 +3609,17 @@ function hodlUpdateCards() {
   }
   let wordsBox = document.getElementById("dice-words"), preview = [];
   try {
-    if (parsed.cards.length && !parsed.invalid.length && !parsed.duplicates.length && !parsed.pending) preview = _n(Z(new TextEncoder().encode(hodlCardsHashInput(parsed.cards, hodlCardColemanSymbols))).slice(0, config.bytes)).split(" ");
+    if (parsed.cards.length && !parsed.invalid.length && !parsed.duplicates.length && !parsed.pending) {
+      if (deck) {
+        if (entropy.ok) preview = _n(entropy.bytes).split(" ");
+      } else preview = _n(Z(new TextEncoder().encode(hodlCardsHashInput(parsed.cards, hodlCardColemanSymbols))).slice(0, config.bytes)).split(" ");
+    }
   } catch {
   }
-  hodlRenderDiceWordGrid(wordsBox, preview, config.words, parsed.cards.length < required);
-  let meta = W("#cards-meta"), missing = Math.max(0, required - parsed.cards.length), extra = Math.max(0, parsed.cards.length - required), status = !parsed.cards.length ? `0 of ${required} recommended cards \xB7 0.0 bits estimated \xB7 Hashed card transcript` : missing ? `${parsed.cards.length} of ${required} recommended cards \xB7 ${parsed.bits.toFixed(1)} bits estimated \xB7 seed available for testing \xB7 ${missing} more recommended` : `${parsed.cards.length} card${parsed.cards.length === 1 ? "" : "s"} \xB7 ${parsed.bits.toFixed(1)} bits estimated \xB7 ready to derive${extra ? ` \xB7 all ${extra} extra card${extra === 1 ? " is" : "s are"} included` : ""}`;
+  hodlRenderDiceWordGrid(wordsBox, preview, config.words, deck ? !entropy.ok : parsed.cards.length < required);
+  let meta = W("#cards-meta"), missing = Math.max(0, required - parsed.cards.length), extra = Math.max(0, parsed.cards.length - required), status;
+  if (deck) status = !parsed.cards.length ? `0 of ${required} backup cards \xB7 mixed-radix deck order` : missing ? `${parsed.cards.length} of ${required} backup cards \xB7 complete deal required to restore` : extra ? `${parsed.cards.length} cards \xB7 remove ${extra} extra card${extra === 1 ? "" : "s"}` : entropy.ok ? `${required} cards \xB7 deck backup ready to derive` : entropy.error;
+  else status = !parsed.cards.length ? `0 of ${required} recommended cards \xB7 0.0 bits estimated \xB7 Hashed card transcript` : missing ? `${parsed.cards.length} of ${required} recommended cards \xB7 ${parsed.bits.toFixed(1)} bits estimated \xB7 seed available for testing \xB7 ${missing} more recommended` : `${parsed.cards.length} card${parsed.cards.length === 1 ? "" : "s"} \xB7 ${parsed.bits.toFixed(1)} bits estimated \xB7 ready to derive${extra ? ` \xB7 all ${extra} extra card${extra === 1 ? " is" : "s are"} included` : ""}`;
   if (config.words === 24 && parsed.cards.length >= 52 && missing) status += parsed.cards.length === 52 ? ` \xB7 shuffle again, then deal 6 more` : ` \xB7 second shuffle ${parsed.cards.length - 52} of 6`;
   if (parsed.pending) status += ` \xB7 finish ${parsed.pending.token} with a suit`;
   if (parsed.invalidEntries.length - (parsed.pending ? 1 : 0) > 0) {
@@ -3458,6 +3676,9 @@ function hodlValidateTargetMnemonic(value, targetWords = Pt) {
 }
 function hodlNormalizeSeedMethod(method) {
   return method === "numbers" ? "numbers" : "words";
+}
+function hodlNormalizeCardMethod(method) {
+  return method === "direct" || method === "deck" ? method : "hashed";
 }
 function hodlFilterSeedNumbers(value, zeroIndexed = false) {
   let clean = String(value ?? "").replace(/[^0-9\s]/g, "").replace(/\s+/g, " ");
@@ -4634,19 +4855,20 @@ function hodlRenderKeyForm() {
     return;
   }
   if (Ne === "cards") {
-    let state = hodlKeys[hodlActiveKey], needed = hodlCardNeeded(config.words), showCards = Boolean(state?.showCards), direct = hodlCardMethod === "direct";
+    let state = hodlKeys[hodlActiveKey], needed = hodlCardNeeded(config.words), showCards = Boolean(state?.showCards), direct = hodlCardMethod === "direct", deck = hodlCardMethod === "deck";
     if (!direct) hodlCardSuit = hodlCardRank = "";
     let suitPad = hodlCardSuits.map((suit) => `<button type="button" class="card-suit${suit.red ? " is-red" : ""}" data-card-suit="${suit.code}" aria-label="${suit.label}" aria-pressed="false">${suit.symbol}</button>`).join("");
     let rankPad = direct ? hodlDirectCardRanks.map((rank) => `<button type="button" data-direct-card-rank="${rank}" aria-label="Enter rank ${rank}">${rank}</button>`).join("") : hodlCardRanks.map((rank) => `<button type="button" data-card-rank="${rank}" aria-label="${rank === "T" ? "10" : rank}">${rank === "T" ? "10" : rank}</button>`).join("");
-    let inputId = direct ? "direct-cards" : "cards", inputLabel = direct ? "Rank-only draw transcript" : "Card transcript", inputHelp = direct ? `For each of the first ${config.partialWords} words, shuffle and draw from A\u20138 three times, then A\u20134 once. Each four-character group selects one word; spaces separate the groups. The shorter final group supplies the remaining entropy bits, and EntropyLab calculates the BIP39 checksum bits.` : `Each valid card updates a deterministic test seed. For real security, ${config.words === 24 ? "deal all 52 unique cards, shuffle again, then deal 6 more" : `deal ${needed.first} unique cards without putting them back`}. SHA-256 hashes the ASCII transcript (AS 2C TD).`, placeholder = direct ? "A284 37A2 \u2026" : hodlCardColemanSymbols ? "A\u2660 2\u2663 10\u2665 T\u2666\u2026" : "AS 2C 10H TD\u2026";
+    let inputId = direct ? "direct-cards" : "cards", inputLabel = direct ? "Rank-only draw transcript" : "Card transcript", inputHelp = direct ? `For each of the first ${config.partialWords} words, shuffle and draw from A\u20138 three times, then A\u20134 once. Each four-character group selects one word; spaces separate the groups. The shorter final group supplies the remaining entropy bits, and EntropyLab calculates the BIP39 checksum bits.` : deck ? `Deal the backup in order without replacement. ${config.words === 24 ? "52 unique cards, shuffle again, then 6 more" : `${needed.first} unique cards`}. EntropyLab decodes that mixed-radix order into BIP39 entropy. Incomplete deals do not produce a test seed, and hashed transcripts will not restore.` : `Each valid card updates a deterministic test seed. For real security, ${config.words === 24 ? "deal all 52 unique cards, shuffle again, then deal 6 more" : `deal ${needed.first} unique cards without putting them back`}. SHA-256 hashes the ASCII transcript (AS 2C TD).`, placeholder = direct ? "A284 37A2 \u2026" : hodlCardColemanSymbols && !deck ? "A\u2660 2\u2663 10\u2665 T\u2666\u2026" : "AS 2C 10H TD\u2026";
     at.innerHTML = `
-      <p class="label">How to turn cards into a ${config.words}-word seed</p>
+      ${deck ? "" : `<p class="label">How to turn cards into a ${config.words}-word seed</p>
       <div class="choice-grid">
-        <label class="choice"><input type="radio" name="card-method" value="hashed" ${direct ? "" : "checked"} /><span><strong>Hashed card transcript</strong><span class="desc">Deal unique rank-and-suit cards without replacement. SHA-256 hashes the complete transcript; ${config.words === 24 ? "58 cards across two shuffles are recommended" : `${needed.first} cards are recommended`}.</span></span></label>
+        <label class="choice"><input type="radio" name="card-method" value="hashed" ${!direct && !deck ? "checked" : ""} /><span><strong>Hashed card transcript</strong><span class="desc">Deal unique rank-and-suit cards without replacement. SHA-256 hashes the complete transcript; ${config.words === 24 ? "58 cards across two shuffles are recommended" : `${needed.first} cards are recommended`}.</span></span></label>
         <label class="choice"><input type="radio" name="card-method" value="direct" ${direct ? "checked" : ""} /><span><strong>Direct word selection</strong><span class="desc">Ignore suits. Reshuffle and draw A\u20138, A\u20138, A\u20138, then A\u20134 for each full word. Finish with the shorter rank sequence shown for the checksum-valid final word.</span></span></label>
-      </div>
+      </div>`}
+      ${direct ? "" : hodlDeckBackupSourceMarkup(state, deck)}
       <p class="muted" id="cards-help">${inputHelp}</p>
-      ${direct ? "" : `<label class="seed-autocomplete-toggle seed-zero-index-toggle"><input type="checkbox" id="cards-ian-coleman" ${hodlCardColemanSymbols ? "checked" : ""} /><span><strong>Match Ian Coleman method</strong> <span class="seed-autocomplete-note">(show and hash A\u2660 2\u2663 instead of AS 2C)</span></span></label>`}
+      ${direct || deck ? "" : `<label class="seed-autocomplete-toggle seed-zero-index-toggle"><input type="checkbox" id="cards-ian-coleman" ${hodlCardColemanSymbols ? "checked" : ""} /><span><strong>Match Ian Coleman method</strong> <span class="seed-autocomplete-note">(show and hash A\u2660 2\u2663 instead of AS 2C)</span></span></label>`}
       <label class="field" id="cards-input-label" for="${inputId}">${inputLabel}</label>
       <div class="dice-input-shell cards-input-shell"><pre class="dice-input-highlight" id="cards-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${placeholder}" autocomplete="off" spellcheck="false" autocapitalize="characters" aria-labelledby="cards-input-label" aria-describedby="cards-help cards-meta"></textarea></div>
       ${hodlSeedMetaRowMarkup("cards-meta")}
@@ -4664,7 +4886,7 @@ function hodlRenderKeyForm() {
     };
     input.oninput = () => {
       if (!direct) hodlCardSuit = hodlCardRank = "";
-      hodlApplyFilteredInput(input, direct ? hodlFilterDirectCards : (value) => hodlFilterCards(value, hodlCardColemanSymbols));
+      hodlApplyFilteredInput(input, direct ? hodlFilterDirectCards : (value) => hodlFilterCards(value, hodlCardColemanSymbols && !deck));
       direct ? hodlUpdateDirectCards() : hodlUpdateCards();
     };
     input.onscroll = () => hodlSyncDiceHighlight(input);
@@ -4673,8 +4895,10 @@ function hodlRenderKeyForm() {
         if (state) {
           state.fields[direct ? "directCards" : "cards"] = input.value;
           state.cardMethod = radio.value;
+          state.cardDeckSource = null;
+          state.cardDeckStash = "";
         }
-        hodlCardMethod = radio.value;
+        hodlCardMethod = hodlNormalizeCardMethod(radio.value);
         hodlInvalidateLiveKeyResult();
         hodlRenderKeyForm();
         hodlRestoreFormFields(state);
@@ -4722,6 +4946,7 @@ function hodlRenderKeyForm() {
       hodlUpdateCards();
     };
     hodlBindKeyFields();
+    if (!direct) hodlBindDeckBackupSource();
     direct ? hodlUpdateDirectCards() : hodlUpdateCards();
     return;
   }
@@ -5440,6 +5665,7 @@ function hodlInvalidateLiveKeyResult() {
   if (!state) return;
   state.result = null;
   state.reveal = false;
+  state.derivedSource = null;
   re = null;
   Ge = false;
   dr.innerHTML = "";
@@ -5452,6 +5678,7 @@ function hodlInitMasterFingerprintPreview() {
   panel.addEventListener("input", (event) => {
     let id = event.target?.id;
     if (!["pass", "dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "cards", "direct-cards"].includes(id)) return;
+    if (event.target?.hodlRestoring) return;
     if (id === "pass") {
       let state = hodlKeys[hodlActiveKey];
       if (state) state.fields.pass = pass.value;
@@ -5468,7 +5695,7 @@ function hodlInitMasterFingerprintPreview() {
     hodlQueueMasterFingerprintPreview();
   });
   panel.addEventListener("click", event => {
-    let target = event.target instanceof Element ? event.target.closest("#modes button, [data-seed-words], [data-d], [data-lw], [data-card-suit], [data-card-rank], [data-direct-card-rank], #card-undo") : null;
+    let target = event.target instanceof Element ? event.target.closest("[data-seed-words], [data-d], [data-lw], [data-card-suit], [data-card-rank], [data-direct-card-rank], #card-undo") : null;
     if (!target) return;
     hodlInvalidateLiveKeyResult();
     hodlQueueMasterFingerprintPreview();
@@ -5559,6 +5786,8 @@ async function hodlCalculateKey(progress) {
     if (re?.network !== network) throw new Error(`The supplied key is for ${re.network}, but Network is set to ${network}.`);
     Ge = false;
     hodlSetSelectedScriptType(scriptType);
+    let state = hodlKeys[hodlActiveKey];
+    if (state && re?.mnemonic) state.derivedSource = { mode: Ne, diceMethod: ge, cardMethod: hodlCardMethod, seedMethod: hodlSeedMethod };
     tc();
     hodlFocusWalletResult();
     hodlCaptureKey();
@@ -7480,7 +7709,7 @@ function hodlPrivateKeyValues(fields) {
 }
 function hodlNewKeyState(name, keyId, keyNumber) {
   let id = keyId ?? hodlNextKeyId++, number = keyNumber ?? hodlNextKeyNumber++;
-  return { id, number, color: hodlKeyColor(id), name: name || hodlDefaultKeyName(number), mode: "dice", diceMethod: "coldcard", cardMethod: "hashed", seedMethod: "words", seedZeroIndexed: false, cardColemanSymbols: false, entropyFormat: "bin", syncNumberBases: false, numberBaseSyncSource: "", numberBasesSynced: false, seedAutocomplete: false, passphraseBip39Words: false, brainWalletTrim: false, showCards: false, showDiceFairness: false, targetWords: 24, diceCoinPositions: [], lastWord: "", dplusLastWord: "", result: null, reveal: false, accountId: "bip84", error: "", fields: { pass: "", script: "bip84", purpose: "84", coinType: "0", network: "mainnet", account: "0", addressStart: "0", addressRange: "5", dice: "", dplusDice: "", hex: "", bin: "", base4: "", base8: "", base32: "", base64: "", cards: "", directCards: "", seed: "", seedNumbers: "", key: "", keyKind: "wif", privateKeys: { wif: "", "hex-key": "", minikey: "", brain: "" } } };
+  return { id, number, color: hodlKeyColor(id), name: name || hodlDefaultKeyName(number), mode: "dice", diceMethod: "coldcard", cardMethod: "hashed", seedMethod: "words", seedZeroIndexed: false, cardColemanSymbols: false, entropyFormat: "bin", syncNumberBases: false, numberBaseSyncSource: "", numberBasesSynced: false, seedAutocomplete: false, passphraseBip39Words: false, brainWalletTrim: false, showCards: false, showDiceFairness: false, cardDeckSource: null, cardDeckStash: "", derivedSource: null, targetWords: 24, diceCoinPositions: [], lastWord: "", dplusLastWord: "", result: null, reveal: false, accountId: "bip84", error: "", fields: { pass: "", script: "bip84", purpose: "84", coinType: "0", network: "mainnet", account: "0", addressStart: "0", addressRange: "5", dice: "", dplusDice: "", hex: "", bin: "", base4: "", base8: "", base32: "", base64: "", cards: "", directCards: "", seed: "", seedNumbers: "", key: "", keyKind: "wif", privateKeys: { wif: "", "hex-key": "", minikey: "", brain: "" } } };
 }
 function hodlRestoreFormFields(state) {
   if (!state) return;
@@ -7653,7 +7882,7 @@ function hodlRestoreKey() {
   }
   Ne = state.mode;
   ge = state.diceMethod;
-  hodlCardMethod = state.cardMethod === "direct" ? "direct" : "hashed";
+  hodlCardMethod = hodlNormalizeCardMethod(state.cardMethod);
   hodlSeedMethod = hodlNormalizeSeedMethod(state.seedMethod);
   hodlSeedZeroIndexed = Boolean(state.seedZeroIndexed);
   hodlCardColemanSymbols = Boolean(state.cardColemanSymbols);

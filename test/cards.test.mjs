@@ -70,6 +70,23 @@ const hodlCardsEntropy = new Function(
 )(hodlSeedConfig, hodlParseCards, Z, TextEncoder, M, hodlCardsHashInput);
 const hodlCardRanks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"];
 const hodlCardSuits = [{ code: "S" }, { code: "H" }, { code: "C" }, { code: "D" }];
+const hodlCanonicalDeck = new Function("hodlCardSuits", "hodlCardRanks", `${loadSlice("hodlCanonicalDeck")}; return hodlCanonicalDeck;`)(hodlCardSuits, hodlCardRanks);
+const hodlEntropyByteWords = new Function("hodlSeedConfig", `${loadSlice("hodlEntropyByteWords")}; return hodlEntropyByteWords;`)(hodlSeedConfig);
+const hodlEntropyBytesToBigInt = new Function(`${loadSlice("hodlEntropyBytesToBigInt")}; return hodlEntropyBytesToBigInt;`)();
+const hodlBigIntToEntropyBytes = new Function(`${loadSlice("hodlBigIntToEntropyBytes")}; return hodlBigIntToEntropyBytes;`)();
+const hodlEncodeEntropyAsDeck = new Function(
+  "hodlEntropyByteWords", "hodlCardNeeded", "hodlEntropyBytesToBigInt", "hodlCanonicalDeck",
+  `${loadSlice("hodlEncodeEntropyAsDeck")}; return hodlEncodeEntropyAsDeck;`,
+)(hodlEntropyByteWords, hodlCardNeeded, hodlEntropyBytesToBigInt, hodlCanonicalDeck);
+const Pt = 24;
+const hodlDecodeDeckToEntropy = new Function(
+  "hodlSeedConfig", "hodlCardNeeded", "hodlCanonicalDeck", "hodlBigIntToEntropyBytes", "M", "Pt",
+  `${loadSlice("hodlDecodeDeckToEntropy")}; return hodlDecodeDeckToEntropy;`,
+)(hodlSeedConfig, hodlCardNeeded, hodlCanonicalDeck, hodlBigIntToEntropyBytes, M, Pt);
+const hodlDeckBackupEntropy = new Function(
+  "hodlSeedConfig", "hodlParseCards", "hodlDecodeDeckToEntropy",
+  `${loadSlice("hodlDeckBackupEntropy")}; return hodlDeckBackupEntropy;`,
+)(hodlSeedConfig, hodlParseCards, hodlDecodeDeckToEntropy);
 const hodlCardSelectionState = new Function(
   "hodlCardRanks", "hodlCardSuits",
   `${loadSlice("hodlCardSelectionState")}; return hodlCardSelectionState;`,
@@ -354,4 +371,73 @@ test("direct cards enforce the rank set for the current draw", () => {
   const finalDraw = hodlParseDirectCards(`${Array(44).fill("A").join(" ")} A A 3`, 12);
   assert.equal(finalDraw.invalidEntries.at(-1).max, 2);
   assert.equal(hodlDirectCardsEntropy("A", 24).ok, false);
+});
+
+function entropyBytes(length, fill) {
+  return Uint8Array.from({ length }, (_, index) => typeof fill === "function" ? fill(index) : fill);
+}
+
+test("canonical deck is 52 unique cards, Spades through Diamonds, Ace through King", () => {
+  const deck = hodlCanonicalDeck();
+  assert.equal(deck.length, 52);
+  assert.equal(deck[0], "AS");
+  assert.equal(deck[12], "KS");
+  assert.equal(deck[13], "AH");
+  assert.equal(deck[51], "KD");
+  assert.equal(new Set(deck).size, 52);
+});
+
+test("zero entropy encodes as the leading cards of the canonical remaining order", () => {
+  const cards = hodlEncodeEntropyAsDeck(entropyBytes(16, 0));
+  assert.deepEqual(cards, hodlCanonicalDeck().slice(0, 25));
+  const decoded = hodlDecodeDeckToEntropy(cards, 12);
+  assert.equal(decoded.ok, true);
+  assert.deepEqual([...decoded.bytes], Array(16).fill(0));
+});
+
+test("deck backup round-trips BIP39 entropy for every phrase length", () => {
+  for (const words of [12, 15, 18, 21, 24]) {
+    const config = hodlSeedConfig(words);
+    const needed = hodlCardNeeded(words);
+    for (const bytes of [
+      entropyBytes(config.bytes, 0),
+      entropyBytes(config.bytes, 255),
+      entropyBytes(config.bytes, (index) => (index * 17 + 3) & 255),
+    ]) {
+      const cards = hodlEncodeEntropyAsDeck(bytes);
+      assert.equal(cards.length, needed.first + needed.extra, `${words}-word card count`);
+      const decoded = hodlDecodeDeckToEntropy(cards, words);
+      assert.equal(decoded.ok, true, `${words}-word decode`);
+      assert.deepEqual([...decoded.bytes], [...bytes]);
+      const restored = hodlDeckBackupEntropy(cards.join(" "), words);
+      assert.equal(restored.ok, true, `${words}-word restore`);
+      assert.equal(restored.method, "cards-deck-backup");
+      assert.deepEqual([...restored.bytes], [...bytes]);
+      assert.equal(entropyToMnemonic(restored.bytes, Ae), entropyToMnemonic(bytes, Ae));
+    }
+  }
+});
+
+test("a hashed card transcript is not a valid deck backup", () => {
+  const bytes = entropyBytes(16, (index) => (index * 17 + 3) & 255);
+  const cards = hodlEncodeEntropyAsDeck(bytes);
+  const hashed = hodlCardsEntropy(cards.join(" "), 12);
+  assert.equal(hashed.ok, true);
+  assert.notDeepEqual([...hashed.bytes], [...bytes]);
+});
+
+test("deck backup rejects incomplete, extra, and out-of-range deals", () => {
+  const short = hodlDeckBackupEntropy("AS 2C TD", 12);
+  assert.equal(short.ok, false);
+  assert.match(short.error, /more card/);
+  const complete = hodlEncodeEntropyAsDeck(entropyBytes(16, 1));
+  const extra = hodlDeckBackupEntropy(`${complete.join(" ")} KD`, 12);
+  assert.equal(extra.ok, false);
+  assert.match(extra.error, /exactly 25 cards/);
+  const overflow = [];
+  let remaining = hodlCanonicalDeck();
+  for (let i = 0; i < 25; i++) overflow.push(remaining.pop());
+  const decoded = hodlDecodeDeckToEntropy(overflow, 12);
+  assert.equal(decoded.ok, false);
+  assert.match(decoded.error, /not an EntropyLab deck backup/);
 });

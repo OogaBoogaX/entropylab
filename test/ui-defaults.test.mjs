@@ -168,7 +168,7 @@ test("hashed cards can match Ian Coleman's suit-symbol SHA-256 transcript", () =
   assert.match(appSource, /show and hash A\\u2660 2\\u2663 instead of AS 2C/);
   assert.match(appSource, /function hodlCardsHashInput\(cards, coleman = false\)/);
   assert.match(appSource, /transcript\.replace\(\/C\/g, "\\u2663"\)\.replace\(\/D\/g, "\\u2666"\)\.replace\(\/H\/g, "\\u2665"\)\.replace\(\/S\/g, "\\u2660"\)/);
-  assert.match(appSource, /hodlFilterCards\(value, hodlCardColemanSymbols\)/);
+  assert.match(appSource, /hodlFilterCards\(value, hodlCardColemanSymbols && !deck\)/);
   assert.match(appSource, /input\.value = hodlFilterCards\(input\.value, hodlCardColemanSymbols\)/);
 });
 
@@ -221,6 +221,7 @@ test("card undo uses the keyboard delete icon and one rank-grid column", () => {
 test("Cards offers isolated hashed and direct word-selection methods", () => {
   assert.match(app, /name="card-method" value="hashed"/);
   assert.match(app, /name="card-method" value="direct"/);
+  assert.doesNotMatch(app, /name="card-method" value="deck"/);
   assert.match(app, />Direct word selection</);
   assert.match(appSource, /fields: \{[^}]*cards: "", directCards: ""/);
   assert.match(appSource, /direct \? "" : `<div class="card-suit-pad"/);
@@ -232,6 +233,17 @@ test("Cards offers isolated hashed and direct word-selection methods", () => {
   assert.match(appSource, /<aside class="cards-reshuffle" id="cards-reshuffle" hidden><\/aside>\s*<div class="dealt-cards" id="dealt-cards"/);
   assert.match(appSource, /Shuffle \$\{hodlDirectCardSetLabel\(parsed\.expectedMax\)\} \(any suit\) before the \$\{parsed\.entries\.length \? "next" : "first"\} draw\./);
   assert.doesNotMatch(appSource, /Shuffle before the next draw\./);
+  assert.match(appSource, /function hodlEncodeEntropyAsDeck\(bytes\)/);
+  assert.match(appSource, /function hodlDeckBackupExport\(/);
+  assert.match(appSource, /function hodlDeckBackupExport\([\s\S]*?if \(!words\.length \|\| !Ge\) return "";/);
+  assert.match(appSource, /<summary>Card deck backup<\/summary>/);
+  assert.match(appSource, /function hodlDeckBackupSourceMarkup\(/);
+  assert.match(appSource, /id="card-deck-load"/);
+  assert.match(appSource, /Replace the cards currently on this tab/);
+  assert.match(appSource, /Stacked-deck backup, not hashed cards/);
+  assert.match(appSource, /Turn an existing seed into a card-order backup/);
+  assert.match(appSource, /class="card-deck-source-row"/);
+  assert.match(appSource, /state\.showCards = true;/);
 });
 
 test("hashed card buttons begin unselected and order suits Spades, Hearts, Clubs, Diamonds", () => {
