@@ -39,6 +39,25 @@ test("optional BIP39 passphrase placeholders explain that blank means none", () 
   }
 });
 
+test("BIP85 details disclosure sits beside Derive Wallet", () => {
+  assert.match(template, /id="go"[^>]*>Derive Wallet<\/button>[\s\S]*?class="btn primary bip85-toggle"[^>]*aria-controls="bip85-details">Derive BIP85 Seed<\/button>/);
+  assert.match(appSource, /id="go"[^>]*>Derive Wallet<\/button>[\s\S]*?class="btn primary bip85-toggle"[^>]*aria-controls="bip85-details">Derive BIP85 Seed<\/button>/);
+  assert.match(appSource, /id="bip85-details" hidden[^>]*>\s*<h3[^>]*>BIP85 deterministic entropy<\/h3>/);
+  assert.match(appSource, /m\/83696968'\/39'\/0'\/\$\{words\}'\/\$\{index\}'/);
+  assert.match(appSource, /function hodlBip85Mnemonic\(rootXprv, words, index\)/);
+  assert.match(appSource, /hmac\(sha512, new TextEncoder\(\)\.encode\("bip-entropy-from-k"\), child\.privateKey\)/);
+  assert.match(appSource, /id="bip85-length"/);
+  assert.match(appSource, /id="bip85-index"/);
+  assert.match(appSource, /max="2147483647"/);
+  assert.match(appSource, /const hodlBip85MaxIndex = 2147483647/);
+  assert.match(appSource, /Math\.min\(hodlBip85MaxIndex, Math\.max\(0, Math\.trunc\(value\)\)\)/);
+  assert.match(appSource, /Original seedphrase:/);
+  assert.match(appSource, /Passphrase:/);
+  assert.match(appSource, /W\("#bip85-toggle"\)\.onclick/);
+  assert.match(appSource, /function hodlCloseBip85Details\(\)/);
+  assert.match(appSource, /hodlCloseBip85Details\(\);\s*return hodlHandleDerivationButton\("key", hodlCalculateKey\)/);
+});
+
 test("every enabled button uses orange and black momentary press feedback", () => {
   assert.match(css, /button:not\(:disabled\):active \{[\s\S]*?background: var\(--selection-accent\) !important;[\s\S]*?color: var\(--selection-fg\) !important;[\s\S]*?border-color: var\(--selection-accent\) !important;/);
   assert.match(css, /button:not\(:disabled\):active \* \{ color: inherit !important; \}/);

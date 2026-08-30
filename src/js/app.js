@@ -1,4 +1,6 @@
 import { sha256 as Z } from "@noble/hashes/sha2.js";
+import { sha512 } from "@noble/hashes/sha2.js";
+import { hmac } from "@noble/hashes/hmac.js";
 import { ripemd160 } from "@noble/hashes/legacy.js";
 // secp256k1 operations run in the libsecp256k1 WebAssembly module; the facade
 // is a drop-in for the noble/curves surface this file uses (see
@@ -502,8 +504,32 @@ ec.innerHTML = `
       <div class="row key-action-row current-item-actions">
         <button class="btn primary" id="go" disabled aria-disabled="true">Derive Wallet</button>
         <div class="derive-progress" id="derive-progress" role="progressbar" aria-label="Wallet derivation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
+        <button class="btn primary bip85-toggle" id="bip85-toggle" type="button" aria-expanded="false" aria-controls="bip85-details">Derive BIP85 Seed</button>
         <button class="btn clear-current-action" id="wipe" type="button" disabled aria-disabled="true">Clear Current Key</button>
       </div>
+      <aside class="bip85-details" id="bip85-details" hidden aria-labelledby="bip85-heading">
+        <h3 id="bip85-heading">BIP85 deterministic entropy</h3>
+        <p>BIP85 derives an independent child mnemonic from the generated BIP32 master key.<br>The same seed, passphrase, length, and index always produce the same result.</p>
+        <dl class="bip85-detail-list">
+          <div><dt>BIP39 English mnemonic</dt><dd><code id="bip85-path">m/83696968'/39'/0'/24'/0'</code></dd></div>
+          <div><dt>Application</dt><dd><code>39'</code> (BIP39)</dd></div>
+          <div><dt>Output</dt><dd>New 12- or 24-word BIP39 mnemonic</dd></div>
+        </dl>
+        <div class="bip85-controls">
+          <label class="field">BIP85 Mnemonic Length
+            <select id="bip85-length"><option value="12">12 words</option><option value="24" selected>24 words</option></select>
+          </label>
+          <label class="field">BIP85 Index
+            <input id="bip85-index" type="number" min="0" max="2147483647" step="1" value="0" inputmode="numeric" aria-describedby="bip85-index-help">
+            <span class="field-note" id="bip85-index-help">Allowed range: 0–2,147,483,647</span>
+          </label>
+        </div>
+        <p class="bip85-source" id="bip85-source" hidden></p>
+        <div class="bip85-output" id="bip85-output" hidden aria-live="polite" aria-atomic="true">
+          <p class="label">Derived BIP85 seedphrase</p><code id="bip85-mnemonic"></code>
+        </div>
+        <p class="muted">This uses only entropy you provided. Keep the original seedphrase and passphrase separate and secure; the BIP85 mnemonic is a new wallet secret.</p>
+      </aside>
       <p class="err" id="error"></p>
     </section>
     <section class="key-manager no-print" id="msig-manager" hidden>
@@ -650,8 +676,67 @@ hodlKeyModes.forEach((e) => {
 document.querySelectorAll("#seed-length [data-seed-words]").forEach((button) => {
   button.onclick = () => hodlSetSeedLength(Number(button.dataset.seedWords));
 });
-W("#go").onclick = () => hodlHandleDerivationButton("key", hodlCalculateKey);
+W("#go").onclick = () => {
+  hodlCloseBip85Details();
+  return hodlHandleDerivationButton("key", hodlCalculateKey);
+};
 W("#wipe").onclick = hodlWipeActiveKey;
+W("#bip85-toggle").onclick = () => {
+  let button = W("#bip85-toggle"), details = W("#bip85-details"), open = details.hidden;
+  details.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+  if (open) hodlRenderBip85();
+};
+function hodlCloseBip85Details() {
+  let button = document.getElementById("bip85-toggle"), details = document.getElementById("bip85-details");
+  if (!button || !details) return;
+  details.hidden = true;
+  button.setAttribute("aria-expanded", "false");
+}
+function hodlBip85Mnemonic(rootXprv, words, index) {
+  if (!rootXprv) throw new Error("BIP85 requires a generated seed phrase, not a watch-only key.");
+  let child = Gt.fromExtendedKey(rootXprv).derive(`m/83696968'/39'/0'/${words}'/${index}'`);
+  if (!child.privateKey) throw new Error("BIP85 requires private key material.");
+  let entropy = hmac(sha512, new TextEncoder().encode("bip-entropy-from-k"), child.privateKey);
+  return bi(entropy.slice(0, words === 12 ? 16 : 32), Ae);
+}
+const hodlBip85MaxIndex = 2147483647;
+function hodlNormalizeBip85Index(event) {
+  let input = event.currentTarget, value = input.valueAsNumber;
+  if (Number.isFinite(value)) {
+    let normalized = Math.min(hodlBip85MaxIndex, Math.max(0, Math.trunc(value)));
+    if (input.value !== String(normalized)) input.value = String(normalized);
+  }
+  hodlRenderBip85();
+}
+function hodlRenderBip85() {
+  let length = document.getElementById("bip85-length"), index = document.getElementById("bip85-index"), path = document.getElementById("bip85-path"), source = document.getElementById("bip85-source"), output = document.getElementById("bip85-output"), mnemonic = document.getElementById("bip85-mnemonic");
+  if (!length || !index || !path || !source || !output || !mnemonic) return;
+  let words = Number(length.value), childIndex = Number(index.value);
+  path.textContent = `m/83696968'/39'/0'/${words}'/${Number.isInteger(childIndex) && childIndex >= 0 ? childIndex : 0}'`;
+  source.hidden = true;
+  output.hidden = true;
+  mnemonic.textContent = "";
+  let sourceMnemonic = re?.mnemonic || hodlFingerprintMnemonic(), rootXprv = re?.rootXprv || null, passphrase = document.getElementById("pass")?.value || "";
+  if (!sourceMnemonic || ![12, 24].includes(words) || !Number.isSafeInteger(childIndex) || childIndex < 0 || childIndex > hodlBip85MaxIndex) return;
+  try {
+    if (!rootXprv) {
+      let seed = wi(sourceMnemonic, passphrase);
+      try {
+        rootXprv = Gt.fromMasterSeed(seed).privateExtendedKey;
+      } finally {
+        seed.fill(0);
+      }
+    }
+    source.textContent = `Original seedphrase: ${sourceMnemonic} · Passphrase: ${passphrase || "(none)"}`;
+    source.hidden = false;
+    mnemonic.textContent = hodlBip85Mnemonic(rootXprv, words, childIndex);
+    output.hidden = false;
+  } catch {
+  }
+}
+document.getElementById("bip85-length")?.addEventListener("change", hodlRenderBip85);
+document.getElementById("bip85-index")?.addEventListener("input", hodlNormalizeBip85Index);
 function W(e) {
   let t = e.startsWith("#") ? e.slice(1) : e, r = document.getElementById(t);
   if (!r) throw new Error(t);
@@ -5445,6 +5530,7 @@ function hodlInvalidateLiveKeyResult() {
   dr.innerHTML = "";
   hodlStopDerivation("key");
   hodlResetDerivationProgress("key");
+  hodlRenderBip85();
 }
 function hodlInitMasterFingerprintPreview() {
   let panel = document.getElementById("calc-card"), pass = document.getElementById("pass");
@@ -5562,12 +5648,14 @@ async function hodlCalculateKey(progress) {
     tc();
     hodlFocusWalletResult();
     hodlCaptureKey();
+    hodlRenderBip85();
     return true;
   } catch (error) {
     if (error instanceof HodlDerivationCancelledError) throw error;
     re = null;
     W("#error").textContent = error instanceof Error ? error.message : "Could not derive wallet";
     dr.innerHTML = "";
+    hodlRenderBip85();
     hodlCaptureKey();
     return false;
   }

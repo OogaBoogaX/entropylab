@@ -600,6 +600,25 @@ td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; fon
 /* Square it off against the 40px header controls; the shared keyboard-toggle
    base is 44px wide and stays that way everywhere else in the app. */
 .download-controls .theme-toggle { flex: 0 0 40px; width: 40px; align-self: center; }
+.bip85-details { margin-top: 16px; padding: 20px; border: 1px solid color-mix(in oklab, var(--accent) 42%, var(--border)); border-radius: 14px; background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 7%, var(--surface)), var(--surface)); box-shadow: 0 10px 28px color-mix(in srgb, #000 24%, transparent); }
+.bip85-details h3 { margin: 0 0 8px; color: var(--accent); font-size: 18px; letter-spacing: .01em; }
+.bip85-details > p:first-of-type { max-width: 760px; margin: 0 0 16px; line-height: 1.55; }
+.bip85-details p { margin: 0 0 10px; }
+.bip85-details p:last-child { margin-bottom: 0; }
+.bip85-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0; padding-top: 16px; border-top: 1px solid var(--border); }
+.bip85-controls .field { margin: 0; }
+.bip85-source { overflow-wrap: anywhere; margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in oklab, var(--bg) 72%, var(--surface)); color: var(--muted); font-family: var(--mono); font-size: 12px; line-height: 1.55; }
+.bip85-output { margin-top: 12px; padding: 15px 16px; border: 1px solid var(--ok); border-radius: 10px; background: color-mix(in oklab, var(--ok) 7%, var(--bg)); box-shadow: inset 3px 0 var(--ok); }
+.bip85-output .label { margin: 0 0 5px; }
+.bip85-output code { display: block; overflow-wrap: anywhere; color: var(--fg); font-size: 14px; line-height: 1.7; }
+.bip85-detail-list { display: grid; gap: 7px; margin: 12px 0; }
+.bip85-detail-list > div { display: grid; grid-template-columns: minmax(150px, 0.7fr) minmax(0, 1.3fr); gap: 12px; }
+.bip85-detail-list > div + div { padding-top: 7px; border-top: 1px solid color-mix(in oklab, var(--border) 65%, transparent); }
+.bip85-detail-list dt { color: var(--muted); }
+.bip85-detail-list dd { margin: 0; }
+@media (max-width: 520px) {
+  .bip85-controls { grid-template-columns: 1fr; }
+}
 .theme-toggle svg { display: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .theme-toggle[data-theme-mode="dark"] .theme-icon-dark, .theme-toggle[data-theme-mode="light"] .theme-icon-light { display: block; }
 .btn:is(.download-html, .save-recovery-sheet, .save-wallet-dat) {

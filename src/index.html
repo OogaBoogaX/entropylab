@@ -163,8 +163,32 @@ words, pick one of the checksum words.</span></span>
       <div class="row key-action-row current-item-actions">
         <button class="btn primary" id="go" disabled aria-disabled="true">Derive Wallet</button>
         <div class="derive-progress" id="derive-progress" role="progressbar" aria-label="Wallet derivation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
+        <button class="btn primary bip85-toggle" id="bip85-toggle" type="button" aria-expanded="false" aria-controls="bip85-details">Derive BIP85 Seed</button>
         <button class="btn clear-current-action" id="wipe" type="button" disabled aria-disabled="true">Clear Current Key</button>
       </div>
+      <aside class="bip85-details" id="bip85-details" hidden aria-labelledby="bip85-heading">
+        <h3 id="bip85-heading">BIP85 deterministic entropy</h3>
+        <p>BIP85 derives an independent child mnemonic from the generated BIP32 master key.<br>The same seed, passphrase, length, and index always produce the same result.</p>
+        <dl class="bip85-detail-list">
+          <div><dt>BIP39 English mnemonic</dt><dd><code id="bip85-path">m/83696968'/39'/0'/24'/0'</code></dd></div>
+          <div><dt>Application</dt><dd><code>39'</code> (BIP39)</dd></div>
+          <div><dt>Output</dt><dd>New 12- or 24-word BIP39 mnemonic</dd></div>
+        </dl>
+        <div class="bip85-controls">
+          <label class="field">BIP85 Mnemonic Length
+            <select id="bip85-length"><option value="12">12 words</option><option value="24" selected>24 words</option></select>
+          </label>
+          <label class="field">BIP85 Index
+            <input id="bip85-index" type="number" min="0" max="2147483647" step="1" value="0" inputmode="numeric" aria-describedby="bip85-index-help">
+            <span class="field-note" id="bip85-index-help">Allowed range: 0–2,147,483,647</span>
+          </label>
+        </div>
+        <p class="bip85-source" id="bip85-source" hidden></p>
+        <div class="bip85-output" id="bip85-output" hidden aria-live="polite" aria-atomic="true">
+          <p class="label">Derived BIP85 seedphrase</p><code id="bip85-mnemonic"></code>
+        </div>
+        <p class="muted">This uses only entropy you provided. Keep the original seedphrase and passphrase separate and secure; the BIP85 mnemonic is a new wallet secret.</p>
+      </aside>
       <p class="err" id="error"></p>
     </section>
     <section class="key-manager no-print" id="msig-manager" hidden="">
