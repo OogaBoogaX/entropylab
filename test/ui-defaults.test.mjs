@@ -905,3 +905,13 @@ test("card suit glyphs have explicit local symbol-font fallbacks (issue #104)", 
   assert.doesNotMatch(css, /@font-face|\.woff2?|fonts\.googleapis|fonts\.gstatic/);
   assert.doesNotMatch(template, /@font-face|\.woff2?|fonts\.googleapis|fonts\.gstatic/);
 });
+
+test("custom selects move the native select out of its label so iOS never opens the native picker (#121)", () => {
+  const enhanced = read("src/js/enhanced-inputs.js");
+  assert.match(enhanced, /select\.closest\("label"\)\?\.after\(select\)/);
+  assert.match(enhanced, /select\.tabIndex = -1/);
+  // WebKit forwards an option click to the label's control after the option is removed; cancel it.
+  assert.match(enhanced, /item\.onclick = \(event\) => \{\s*event\.preventDefault\(\);/);
+  // The label now controls the trigger, so a label click must not be treated as an outside click.
+  assert.match(enhanced, /!root\.contains\(event\.target\) && !root\.closest\("label"\)\?\.contains\(event\.target\)/);
+});

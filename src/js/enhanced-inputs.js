@@ -40,6 +40,8 @@
     root.append(button, list);
     select.after(root);
     roots.add(root);
+    select.closest("label")?.after(select);
+    select.tabIndex = -1;
 
     const sync = () => {
       const selected = select.options[select.selectedIndex] || select.options[0];
@@ -53,7 +55,8 @@
         item.setAttribute("aria-selected", String(option.value === select.value));
         item.disabled = option.disabled;
         item.textContent = option.textContent;
-        item.onclick = () => {
+        item.onclick = (event) => {
+          event.preventDefault();
           select.value = option.value;
           select.dispatchEvent(new Event("change", { bubbles: true }));
           sync();
@@ -113,7 +116,7 @@
 
   document.addEventListener("click", (event) => {
     roots.forEach((root) => {
-      if (!root.contains(event.target)) close(root);
+      if (!root.contains(event.target) && !root.closest("label")?.contains(event.target)) close(root);
     });
   });
 })();
