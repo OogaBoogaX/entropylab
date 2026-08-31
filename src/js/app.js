@@ -9058,7 +9058,7 @@ function hodlCreateKeyIcon(color) {
   return span;
 }
 function hodlCreateMsigIcon() {
-  let ns = "http://www.w3.org/2000/svg", darkest = "#4b4f55", middle = "#888d94", span = document.createElement("span"), svg = document.createElementNS(ns, "svg");
+  let ns = "http://www.w3.org/2000/svg", darkest = "var(--ds-gray-500)", middle = "var(--ds-gray-700)", span = document.createElement("span"), svg = document.createElementNS(ns, "svg");
   span.className = "multisig-tab-icon";
   span.setAttribute("aria-hidden", "true");
   svg.setAttribute("viewBox", "0 -4 49 40");
@@ -9076,7 +9076,7 @@ function hodlCreateMsigIcon() {
   ring.setAttribute("stroke-linecap", "round");
   ring.setAttribute("stroke-linejoin", "round");
   svg.appendChild(ring);
-  [["key-back", darkest, -28], ["key-middle", middle, 0], ["key-front", "#d1d4d8", 28]].forEach(([part, fill, angle]) => {
+  [["key-back", darkest, -28], ["key-middle", middle, 0], ["key-front", "var(--ds-gray-1000)", 28]].forEach(([part, fill, angle]) => {
     let path = document.createElementNS(ns, "path");
     path.setAttribute("data-part", part);
     path.setAttribute("d", hodlKeySilhouette);

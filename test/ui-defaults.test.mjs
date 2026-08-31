@@ -39,11 +39,54 @@ test("optional BIP39 passphrase placeholders explain that blank means none", () 
   }
 });
 
-test("every enabled button uses orange and black momentary press feedback", () => {
-  assert.match(css, /button:not\(:disabled\):active \{[\s\S]*?background: var\(--selection-accent\) !important;[\s\S]*?color: var\(--selection-fg\) !important;[\s\S]*?border-color: var\(--selection-accent\) !important;/);
+// Geist keeps no orange in its interface palette: the primary action is the
+// inverted gray-1000 button, so a press now moves against whatever ground the
+// control already carries instead of flooding every button with one brand
+// colour. The invariant the orange assertion protected is unchanged — every
+// enabled button gives momentary press feedback and disabled ones are left out.
+test("every enabled button uses the same momentary press feedback", () => {
+  assert.match(css, /button:not\(:disabled\):active \{[\s\S]*?background: var\(--press-bg\) !important;[\s\S]*?color: var\(--press-fg\) !important;[\s\S]*?border-color: var\(--press-border\) !important;/);
   assert.match(css, /button:not\(:disabled\):active \* \{ color: inherit !important; \}/);
-  assert.equal(/--selection-accent: #ff9900;/.test(css), true);
-  assert.equal(/--selection-fg: #000000;/.test(css), true);
+  // Follow the indirection: a token that names a step which is never declared
+  // is invalid at computed-value time, and `background: var(--press-bg)` would
+  // silently fall back to transparent with the suite still green.
+  for (const token of ["--press-bg", "--press-fg", "--press-border"]) {
+    const step = css.match(new RegExp(`:root \\{[^}]*${token}: var\\((--ds-[a-z0-9-]+)\\)`, "s"))?.[1];
+    assert.ok(step, `${token} does not name a Geist step`);
+    assert.match(css, new RegExp(`:root \\{[^}]*${step}:`, "s"), `${step} is never declared`);
+  }
+  // A control already carrying the inverted fill has nowhere to step to — the
+  // light theme's mid greys carry neither label colour at 4.5:1 — so it gives
+  // the fill back for the duration of the press.
+  assert.match(css, /\.tab\.active, \.btn\.primary \{[\s\S]*?--press-bg: var\(--ds-background-100\); --press-fg: var\(--ds-gray-1000\); --press-border: var\(--ds-gray-1000\);/);
+  assert.match(css, /--selection-accent: var\(--ds-gray-1000\);/);
+  assert.match(css, /--selection-fg: var\(--ds-background-100\);/);
+});
+
+test("the key and account tab strips opt out of the shared tab hover border", () => {
+  // Both strips compose their class list at runtime as "tab key-tab" /
+  // "tab account-tab", so the shared .tab hover reaches them — invisible to a
+  // grep of the stylesheet. They are borderless until selected, when they fuse
+  // with the card below, so a hover border would draw an edge on three sides.
+  assert.match(appSource, /className = "tab key-tab"/);
+  assert.match(appSource, /className = "tab account-tab"/);
+  for (const tab of ["key-tab", "account-tab"]) {
+    assert.match(
+      css,
+      new RegExp(`\\.${tab} \\{[^}]*border: 1px solid transparent;[^}]*--hover-border: transparent;`, "s"),
+      `.${tab} does not neutralise the shared hover border`,
+    );
+  }
+});
+
+test("the multisig keychain icon draws itself from the Geist grey scale", () => {
+  // It used three fixed greys and was near-invisible on the light tab strip.
+  // The steps have to resolve, or the SVG presentation attributes are invalid
+  // and every silhouette falls back to black on the dark theme's black tab.
+  const used = [...appSource.matchAll(/"var\((--ds-gray-[0-9]+)\)"/g)].map((m) => m[1]);
+  assert.deepEqual(used, ["--ds-gray-500", "--ds-gray-700", "--ds-gray-1000"]);
+  assert.doesNotMatch(appSource, /#4b4f55|#888d94|#d1d4d8/);
+  for (const step of used) assert.match(css, new RegExp(`:root \\{[^}]*${step}:`, "s"));
 });
 
 test("wallet coin type indexes enable and default to mainnet", () => {
@@ -105,7 +148,8 @@ test("key and multisig derivation use an indexed address window with an estimate
   assert.match(css, /\.wallet-table \{[\s\S]*?max-height: 252px;[\s\S]*?overflow: auto;/);
   assert.match(css, /\.wallet-table \{[\s\S]*?overscroll-behavior: contain;/);
   assert.match(css, /\.wallet-table tbody tr:not\(\.address-virtual-spacer\) \{ height: 34px; \}/);
-  assert.match(css, /\.derive-progress-bar \{[\s\S]*?background: linear-gradient/);
+  // Geist rejects decorative gradients, so the fill is one flat accent.
+  assert.match(css, /\.derive-progress-bar \{[\s\S]*?background: var\(--accent\);/);
   assert.match(appSource, /function hodlCreateDerivationTracker\(progress, control\)/);
   assert.match(appSource, /label\.innerHTML = `\$\{hodlCopiedIconMarkup\(\)\}<span>Done<\/span>`/);
   assert.match(appSource, /async function hodlAddressRowsWithProgress/);
@@ -709,7 +753,8 @@ test("multisig threshold labels describe signatures and keys", () => {
   assert.match(css, /\.msig-threshold-number\s*\{[^}]*appearance: textfield[^}]*text-align: center/s);
   assert.match(css, /\.msig-threshold-labels label\s*\{[^}]*flex-direction: column[^}]*justify-content: flex-end;/s);
   assert.match(css, /\.msig-threshold-track span\s*\{[^}]*background: var\(--selection-accent\)/s);
-  assert.match(css, /\.msig-threshold-thumb\s*\{[^}]*background: linear-gradient\(#858585, #5f5f5f\)/s);
+  // The handle was a bevelled, gradient-filled knob; Geist draws it flat.
+  assert.match(css, /\.msig-threshold-thumb\s*\{[^}]*background: var\(--fg\)/s);
   assert.match(css, /--msig-slider-inset: 14px/);
   assert.match(css, /\.msig-threshold-control\s*\{[^}]*margin: var\(--space-control\) 0 0/s);
   assert.match(css, /\.msig-threshold-labels\s*\{[^}]*margin: var\(--space-section\) 18px 0/s);
@@ -991,6 +1036,22 @@ test("header theme toggle cycles dark, light, and OS themes without a flash", ()
   assert.match(appSource, /hodlInitSecretFieldAutoClear\(\);\s*hodlInitTheme\(\);/);
   assert.match(css, /:root\[data-theme="light"\] \{\s*color-scheme: light;/);
   assert.match(css, /@media print \{\s*:root, :root\[data-theme\] \{/);
+  // Paper resolves through the same Geist steps as the screen, so the print
+  // block has to declare every colour step the light theme does. A step added
+  // to one and forgotten in the other resolves to the dark value on paper —
+  // the exact regression the print block was rewritten to fix.
+  const block = (start) => {
+    const at = css.indexOf(start);
+    assert.ok(at >= 0, `missing block: ${start}`);
+    return css.slice(at, css.indexOf("\n  }", at) + 1 || css.indexOf("\n}", at) + 1);
+  };
+  const steps = (text) =>
+    new Set([...text.matchAll(/(--ds-(?:background|gray|blue|red|amber|green)-[a-z0-9-]+):/g)].map((m) => m[1]));
+  const lightSteps = steps(block(':root[data-theme="light"] {'));
+  const printSteps = steps(block("@media print {"));
+  assert.ok(lightSteps.size > 25, `the light theme declares only ${lightSteps.size} Geist steps`);
+  const missing = [...lightSteps].filter((step) => !printSteps.has(step));
+  assert.deepEqual(missing, [], `@media print is missing ${missing.join(", ")}`);
   assert.match(css, /\.download-controls \.theme-toggle \{ flex: 0 0 40px; width: 40px; align-self: center; \}/);
 });
 
@@ -1027,11 +1088,17 @@ test("the site header is fixed, carries the logo, and holds the version, downloa
   assert.match(css, /:root\[data-theme="light"\] \.site-title \{ color: #000000; \}/);
   assert.match(css, /@media \(max-width: 719px\) \{[\s\S]*?\.site-title \{ font-size: 19px; \}/);
   assert.match(css, /\.site-version \{[^}]*flex: 0 0 auto; display: inline-flex; align-items: baseline; gap: 6px;/s);
-  // The version echoes the kicker's accent and weight, but stays far below its
-  // display tracking, which reads as spread-out in a row of controls.
-  assert.match(css, /\.site-version \{[^}]*text-transform: uppercase; color: var\(--accent\); font-weight: 600;/s);
-  const tracking = (rule) => Number(css.match(new RegExp(`${rule} \\{[^}]*letter-spacing: ([\\d.]+)em`, "s"))?.[1]);
-  assert.ok(tracking("\\.site-version") < tracking("\\.kicker") / 2, "the header version kept the kicker's display tracking");
+  // The version is metadata, so it takes the secondary text colour rather than
+  // the interactive one.
+  assert.match(css, /\.site-version \{[^}]*text-transform: uppercase; color: var\(--muted\); font-weight: 600;/s);
+  // Geist names the all-caps, letter-spaced eyebrow as an anti-pattern, so the
+  // kicker gave up both. The version tag and the status tag keep their capitals:
+  // both are chips in the header bar rather than overlines above a title.
+  // The positive match anchors the negative one — without it, deleting .kicker
+  // outright would satisfy the doesNotMatch.
+  assert.match(css, /^\.kicker \{[^}]*font-size: 13px;/m);
+  assert.doesNotMatch(css, /\.kicker \{[^}]*(?:text-transform|letter-spacing)/);
+  assert.match(css, /\.site-version \{[^}]*letter-spacing: 0\.04em;/s);
   // The uppercase stops at the version string, so its "v" prefix stays lower
   // case in the label the build stamps.
   assert.match(css, /\.site-version-number \{[^}]*text-transform: none;/);

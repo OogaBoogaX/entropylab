@@ -139,10 +139,16 @@ test("the status tag ships online, sits in the header, and is wired to the build
   // Green when offline, bright red when online, carried by the text alone.
   assert.match(css, /\.network-status\[data-state="offline"\] \{ color: var\(--ok-bright\); \}/);
   assert.match(css, /\.network-status\[data-state="online"\] \{ color: var\(--danger-bright\); \}/);
-  // Both themes have to define these, or one of them falls back to nothing.
+  // Both themes have to resolve these, or one of them falls back to nothing.
+  // They now name a Geist step rather than a hex, so follow the indirection one
+  // hop and check the step itself is declared in both blocks.
+  const lightStart = css.indexOf(':root[data-theme="light"] {');
+  const light = css.slice(lightStart, css.indexOf("\n}", lightStart));
   for (const token of ["--danger-bright", "--ok-bright"]) {
-    assert.match(css, new RegExp(":root \\{[^}]*" + token + ":", "s"));
-    assert.match(css, new RegExp(':root\\[data-theme="light"\\] \\{[^}]*' + token + ":", "s"));
+    const step = css.match(new RegExp(":root \\{[^}]*" + token + ": var\\((--ds-[a-z0-9-]+)\\)", "s"))?.[1];
+    assert.ok(step, `${token} does not name a Geist step in the dark theme`);
+    assert.match(css, new RegExp(":root \\{[^}]*" + step + ":", "s"));
+    assert.match(light, new RegExp(step + ":"), `${step} is missing from the light theme`);
   }
   // letter-spacing leaves a trailing gap after the last letter; the indent puts
   // a matching one in front so the word sits centred in its own box.

@@ -1444,6 +1444,20 @@
     await until(() => renderedRows().at(-1)?.querySelector("th")?.textContent.trim() === "36", "last virtualized address row");
     assert(renderedRows().length <= 24, "The virtualized table accumulated rows while scrolling");
     equal(scroller.scrollTop > 0, true, "The address table did not retain a continuous scroll position");
+    // The scroller sizes its spacers from hodlAddressVirtualRowHeight, so a row
+    // that renders taller than that constant makes the list drift under the
+    // scrollbar. Only a rendered measurement catches it: a cell's own leading
+    // wins over the row's, and the source-text assertions on both the constant
+    // and the CSS height still match while the rows are the wrong size.
+    for (const table of document.querySelectorAll(".wallet-table")) {
+      for (const row of table.querySelectorAll("tbody tr:not(.address-virtual-spacer)")) {
+        const height = row.getBoundingClientRect().height;
+        assert(
+          Math.abs(height - 34) < 1,
+          `An address row rendered ${height.toFixed(2)}px against the scroller's 34px constant`,
+        );
+      }
+    }
 
     input(range, "5");
     derive.click();
