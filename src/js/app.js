@@ -580,12 +580,15 @@ ec.innerHTML = `
     </div>
   </div>
   <div class="wrap">
-    <aside class="beta-warning no-print" id="beta-warning" role="alert">
-      <div class="beta-warning-text"><strong>Beta software</strong> EntropyLab is experimental and should only be used for testing and educational purposes.</div>
-      <button type="button" class="beta-warning-dismiss" id="beta-warning-dismiss" aria-label="Dismiss the beta software warning"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    <aside class="project-banner beta-warning no-print" id="beta-warning" role="alert" data-variant="warning">
+      <svg class="project-banner-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4M12 17.5h.01"/></svg>
+      <p class="project-banner-label beta-warning-text">EntropyLab is beta software, for testing and education only.</p>
+      <a class="project-banner-action" href="https://github.com/w-s-bitcoin/entropylab/blob/rock/SECURITY.md" target="_blank" rel="noopener noreferrer">Read the Risks</a>
     </aside>
-    <aside class="online-warning no-print" id="online-warning" role="alert" hidden>
-      <div class="online-warning-text"><strong>Online version</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab.html" download="entropylab.html">Download EntropyLab</a> and run the HTML file offline on a trusted, air-gapped computer.</div>
+    <aside class="project-banner online-warning no-print" id="online-warning" role="alert" data-variant="error" hidden>
+      <svg class="project-banner-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4M12 17.5h.01"/></svg>
+      <p class="project-banner-label online-warning-text">This device is online, so any seed phrase or private key typed here can leak.</p>
+      <a class="project-banner-action" href="entropylab.html" download="entropylab.html">Download for Offline Use</a>
     </aside>
     <!-- TODO: This copy is being kept for the network-detected modal that will
          replace the banner. Verbatim, with the lead-in as the modal's title:
@@ -9608,9 +9611,14 @@ function hodlSeedInitialManagers() {
   }
 }
 var hodlWorkspaceTabs = [["calc", "Key Derivation"], ["bip85", "BIP-85"], ["msig", "Multi Signature"], ["sp", "Silent Payments"], ["psbt", "PSBT / Nonce"], ["psbted", "PSBT Editor"]];
-// The switcher reads as a videogame settings menu at every width: a
-// hamburger bar that drops the menu down over the tool. The is-open class
-// opens and closes the dropdown.
+// Above hodlWorkspaceRailWidth the switcher is a rail pinned to the left of the
+// page; below it, a hamburger bar that drops the menu down over the tool. The
+// is-open class opens and closes that dropdown. The stylesheet's @media rule
+// holds the same number, and a test holds the two together: the rail hides the
+// toggle, so an open state carried across the line would leave aria-expanded
+// asserting a control the user can no longer see.
+var hodlWorkspaceRailWidth = 1280;
+var hodlWorkspaceRailQuery = matchMedia(`(min-width: ${hodlWorkspaceRailWidth}px)`);
 function hodlSetWorkspaceMenuOpen(open) {
   W("#workspace").classList.toggle("is-open", open);
   W("#workspace-menu-toggle").setAttribute("aria-expanded", String(open));
@@ -9654,6 +9662,9 @@ function hodlInitWorkspace() {
       hodlSetWorkspaceMenuOpen(false);
       toggle.focus();
     }
+  });
+  hodlWorkspaceRailQuery.addEventListener("change", (event) => {
+    if (event.matches) hodlSetWorkspaceMenuOpen(false);
   });
   hodlInitMsig();
   hodlInitPsbt();
@@ -9763,26 +9774,6 @@ function hodlApplyTheme(mode) {
   let meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = light ? "#ffffff" : "#000000";
 }
-// The dismissal is remembered in localStorage, the same site-settings store as
-// the theme and the beta disclaimer, keyed to this build's version: every new
-// release warns again. When storage is unavailable (file:// origins, private
-// modes) the banner simply returns on every load, which is the safe direction
-// for a wallet tool. Re-hiding it on a later visit belongs to the inline head
-// script, which runs before first paint; boot is far too late to avoid a
-// flash, so this only has to handle the click.
-var hodlBetaBannerStorageKey = "entropylab-beta-banner-dismissed";
-function hodlInitBetaWarningDismiss() {
-  let banner = document.getElementById("beta-warning");
-  let dismiss = document.getElementById("beta-warning-dismiss");
-  if (!banner || !dismiss) return;
-  dismiss.onclick = () => {
-    try {
-      localStorage.setItem(hodlBetaBannerStorageKey, "{{VERSION}}");
-    } catch (e) {
-    }
-    banner.hidden = true;
-  };
-}
 function hodlInitTheme() {
   hodlApplyTheme(hodlReadThemeMode());
   let toggle = document.getElementById("theme-toggle");
@@ -9884,7 +9875,6 @@ function hodlBoot() {
   hodlInitClearActionState();
   hodlInitSecretFieldAutoClear();
   hodlInitTheme();
-  hodlInitBetaWarningDismiss();
   hodlInitMasterFingerprintPreview();
   hodlInitDerivationControls();
   hodlInitAddressBenchmark();

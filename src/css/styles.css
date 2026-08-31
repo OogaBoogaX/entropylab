@@ -107,6 +107,7 @@
   --space-lede: 48px; /* the widest seam: where the pitch ends and the tool begins */
   --site-header-height: 52px; /* .header-button height plus 6px above and below */
   --site-header-pad: 16px; /* the bar's side padding; the status tag aligns to it */
+  --rail-width: 240px; /* the workspace rail, and the offset the page takes for it */
   --site-min-width: 320px; /* the narrowest layout we lay out for: below this the page scrolls */
   /* Geist Sans covers prose, headings, labels, tables and numerals; Geist Mono
      is reserved for code and identifiers. Both stand in as the platform face.
@@ -788,46 +789,47 @@ td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; fon
 .custom-select-option:focus-visible { background: var(--ds-gray-alpha-200); outline-offset: -2px; }
 .custom-select-option[aria-selected="true"] { background: var(--ds-blue-100); color: var(--accent); }
 .custom-select-option:disabled { background: transparent; color: var(--faint); cursor: not-allowed; opacity: .48; }
-.beta-warning, .online-warning {
-  margin: 0 0 12px; padding: 14px 16px; border: 1px solid; border-radius: var(--ds-radius);
-  color: var(--fg); line-height: 1.5;
+/* Geist's Project Banner: one row of icon, one sentence, and the control that
+   resolves the state. It is not dismissible — a state you can dismiss without
+   resolving is a Note, not a banner — so neither of these carries a close
+   control, and the variant rather than the wording carries the severity.
+   Being online is the critical state and takes the error variant; being a beta
+   build is an exceptional one and takes warning, so the two never compete. */
+.project-banner {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 0 12px; padding: 10px 14px; border: 1px solid; border-radius: var(--ds-radius);
+  color: var(--fg); font-size: 14px; line-height: 20px;
 }
-.beta-warning, .online-warning {
-  border-color: var(--danger); background: var(--ds-red-100);
+.project-banner[data-variant="warning"] { border-color: var(--ds-amber-400); background: var(--ds-amber-100); }
+.project-banner[data-variant="error"] { border-color: var(--ds-red-400); background: var(--ds-red-100); }
+.project-banner-icon { flex: none; }
+.project-banner[data-variant="warning"] .project-banner-icon { color: var(--warn); }
+.project-banner[data-variant="error"] .project-banner-icon { color: var(--danger); }
+.project-banner-label { flex: 1; min-width: 0; margin: 0; }
+/* The call to action is the banner's only control, so it reads as a button
+   rather than as a link inside the sentence. */
+.project-banner-action {
+  flex: none; display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: var(--ds-radius-small);
+  background: var(--surface); color: var(--fg);
+  font-size: 14px; font-weight: 500; line-height: 20px; text-decoration: none; white-space: nowrap;
 }
-.online-warning a { font-weight: 600; white-space: nowrap; }
-/* The banners are rows: the message takes the slack, a control column (only
-   the beta banner carries one) does not. The noscript notice carries no
-   control and stays a plain block, but its label is wrapped like the others
-   so it takes the same treatment. */
-#beta-warning, #online-warning { display: flex; align-items: flex-start; gap: 12px; }
+.project-banner-action:hover { background: var(--ds-gray-alpha-200); border-color: var(--border-hover); }
+/* The noscript notice takes the same row with no action in it: there is no
+   JavaScript running to answer one, and no route it could offer. */
 /* The author display wins over the UA [hidden] rule, so restate it. */
 #beta-warning[hidden], #online-warning[hidden] { display: none; }
-/* A banner dismissed on an earlier visit must never paint. The inline head
-   script sets this attribute before first paint, so the row is gone from the
-   first frame instead of flashing until the application boots. */
-:root[data-beta-banner-dismissed] #beta-warning { display: none; }
-.beta-warning-text, .online-warning-text { flex: 1; }
-/* line-height 1 so the label sits where the padding puts it: the banner's 1.5
-   would add half its leading above the caps as invisible space. The gap down
-   to the sentence is then an explicit margin. */
-.beta-warning-text strong, .online-warning-text strong {
-  display: block; margin-bottom: 4px; line-height: 1; text-transform: uppercase;
-  color: var(--danger-bright);
+/* Below the rail's breakpoint the banner stacks: a nowrap action beside a
+   sentence would otherwise force the row wider than the phone. */
+@media (max-width: 599px) {
+  /* Only the action drops to a second line. The label's basis is the row less
+     the icon and its gap, so icon and sentence exactly fill the first line and
+     the action has to wrap; an auto basis let a long sentence push itself onto
+     a line of its own and orphan the icon above it. */
+  .project-banner { flex-wrap: wrap; }
+  .project-banner-label { flex: 1 1 calc(100% - 28px); }
+  .project-banner-action { margin-left: 28px; }
 }
-.beta-warning-dismiss {
-  /* Negative margins pull the control out of the banner padding so it sits
-     up in the corner rather than level with the first line of text. */
-  flex: none; display: grid; place-items: center; width: 32px; height: 32px;
-  margin: -6px -8px 0 0; padding: 0; border: 0; border-radius: var(--ds-radius-small);
-  background: none; color: #ffffff; cursor: pointer;
-}
-/* White reads against the dark banner, but the light theme tints the same
-   banner pale, so the glyph takes the theme's near-black foreground there.
-   Both explicit light and system-light land on this attribute. */
-:root[data-theme="light"] .beta-warning-dismiss { color: var(--fg); }
-.beta-warning-dismiss:hover { background: var(--ds-red-200); }
-.beta-warning-dismiss:focus-visible { outline: 2px solid var(--ds-focus-color); outline-offset: 2px; }
 .disclaimer-overlay {
   position: fixed; inset: 0; z-index: 200; display: grid; place-items: center;
   padding: 24px; box-sizing: border-box; background: rgb(0 0 0 / 55%);
@@ -973,6 +975,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   box-shadow: var(--ds-shadow-menu);
 }
 .workspace.is-open .workspace-menu { display: grid; }
+
 .workspace-menu .tab {
   display: flex; align-items: center; margin: 0; border: 1px solid transparent;
   border-radius: var(--ds-radius-small); background: transparent; color: var(--muted);
@@ -985,6 +988,50 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 .workspace-menu .tab:focus-visible {
   outline: 2px solid var(--ds-focus-color); outline-offset: 2px;
+}
+/* Above this width the switcher stops being a dropdown and becomes a rail
+   pinned to the viewport's left edge, under the header. app.js holds the same
+   number in hodlWorkspaceRailWidth so the open state resets on the same line
+   the layout changes; a test holds the two together. Below it the hamburger
+   and its panel are unchanged.
+
+   The breakpoint is not a taste: the rail costs the content column its own
+   width plus a gutter, so it may only appear once the page can pay for it
+   without the column ending up narrower than the 968px it has without a rail.
+   At 1280 the column is 993px and climbs to the full 1000px by ~1288, so
+   widening the window never narrows the tool. Screen only — the rail is
+   .no-print, and a print box wide enough to match this query would otherwise
+   keep its 240px gutter as a blank margin. */
+@media screen and (min-width: 1280px) {
+  .workspace {
+    position: fixed; top: var(--site-header-height); left: 0; bottom: 0; z-index: 30;
+    width: var(--rail-width); margin: 0; padding: 16px 12px;
+    border-right: 1px solid var(--border-soft); background: var(--bg);
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  .workspace-menu-toggle { display: none; }
+  /* The rail leaves the flow, taking the seam it used to hold between the
+     pitch and the tool with it, so whatever follows it carries that seam. */
+  .wrap > .workspace + * { margin-top: var(--space-lede); }
+  /* In the rail the menu is the whole control: no panel, no lift, no overlay. */
+  .workspace-menu {
+    position: static; display: grid; padding: 0;
+    border: 0; border-radius: 0; background: none; box-shadow: none;
+  }
+  .workspace-menu .tab { min-height: 36px; }
+  /* The header spans the whole shell rather than centring on a measure the
+     content no longer shares, so the lockup and the status tag sit at the
+     page's left edge, above the rail, instead of adrift between the two. */
+  .site-header-inner { max-width: none; }
+  .workspace-menu .tab:is(.active, [aria-pressed="true"]) {
+    background: var(--ds-gray-alpha-200); border-color: transparent; color: var(--fg);
+  }
+  /* The page gives the rail its width and then keeps its own measure centred in
+     what is left, so the content column is the same 1000px it always was. */
+  .wrap {
+    max-width: none; margin-left: var(--rail-width);
+    padding-inline: max(16px, calc((100% - var(--rail-width) - 1000px) / 2));
+  }
 }
 .segmented-control {
   display: flex; align-items: stretch; flex-wrap: wrap; gap: 0; max-width: 100%; isolation: isolate;

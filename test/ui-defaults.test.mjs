@@ -818,10 +818,7 @@ test("private alternate account exports are visible without an accordion", () =>
 test("top banners share one consistent gap", () => {
   // The network banner left the group for the header status tag; the beta
   // banner, the no-JS notice, and the hosted-site warning still share the gap.
-  assert.match(
-    css,
-    /\.beta-warning, \.online-warning\s*\{[^}]*margin: 0 0 12px;/s,
-  );
+  assert.match(css, /\.project-banner \{[^}]*margin: 0 0 12px;/s);
   // The title block that used to follow them is gone, so the banners' 12px now
   // collapses into the leading card's own 16px.
   assert.match(css, /\.card \{[^}]*margin: 16px 0; \}/);
@@ -833,13 +830,18 @@ test("the beta notice sits at the top of the page as a banner", () => {
     const live = markup.slice(wrapper).replace(/<!--[\s\S]*?-->/g, "");
     // It is a load-time warning again, so it keeps the alert role and leads
     // the wrap, ahead of the hosted-site warning and the pitch card.
-    assert.match(live, /<aside class="beta-warning no-print" id="beta-warning" role="alert">\s*<div class="beta-warning-text"><strong>Beta software<\/strong> EntropyLab is experimental and should only be used for testing and educational purposes\.<\/div>/);
+    // Geist's Project Banner shape: an icon, one sentence in sentence case, and
+    // the control that resolves the state. The severity lives in the variant,
+    // not in an uppercase lead-in.
+    assert.match(live, /<aside class="project-banner beta-warning no-print" id="beta-warning" role="alert" data-variant="warning">/);
+    assert.match(live, /<p class="project-banner-label beta-warning-text">EntropyLab is beta software, for testing and education only\.<\/p>/);
+    assert.match(live, /<a class="project-banner-action"[^>]*>Read the Risks<\/a>/);
     assert.ok(
-      live.indexOf("<strong>Beta software") < live.indexOf('id="online-warning"'),
+      live.indexOf('id="beta-warning"') < live.indexOf('id="online-warning"'),
       "the beta banner must precede the online warning",
     );
     assert.ok(
-      live.indexOf("<strong>Beta software") < live.indexOf('class="kicker"'),
+      live.indexOf('id="beta-warning"') < live.indexOf('class="kicker"'),
       "the beta banner must precede the pitch card",
     );
     // The closing footer disclaimer is gone; the only other .beta-warning is
@@ -849,93 +851,67 @@ test("the beta notice sits at the top of the page as a banner", () => {
   assert.doesNotMatch(css, /\.site-footer|\.fine-print/);
 });
 
-test("the beta banner carries a dismiss control in a narrow right-hand column", () => {
-  // Both markups ship the control: the static template renders before boot,
-  // and the runtime template replaces it once the application takes over.
+// A Geist project banner is not dismissible: a state that can be cleared
+// without being resolved belongs in a Note, not a banner. Both of these state
+// something about the running build that only leaving that state resolves, so
+// the close controls and the two localStorage keys behind them are gone. The
+// assertions below are the inverse of the ones they replace — they exist so
+// that re-adding a close control to a safety warning has to be a deliberate act.
+test("the project banners cannot be dismissed", () => {
   for (const markup of [template, app]) {
-    assert.match(
-      markup,
-      /<button type="button" class="beta-warning-dismiss" id="beta-warning-dismiss" aria-label="Dismiss the beta software warning">/,
-      "the dismiss button must ship in both markups",
-    );
-    // The label sits after the message, so the column reads last.
-    assert.ok(
-      markup.indexOf('class="beta-warning-text"') < markup.indexOf('class="beta-warning-dismiss"'),
-      "the dismiss column must follow the warning text",
-    );
+    assert.doesNotMatch(markup, /beta-warning-dismiss|online-warning-dismiss/);
+    assert.doesNotMatch(markup, /Dismiss the (?:beta software|online version) warning/);
   }
-  // The banner is a row: the message takes the slack, the control does not.
-  assert.match(css, /#beta-warning, #online-warning \{ display: flex; align-items: flex-start; gap: 12px; \}/);
-  assert.match(css, /\.beta-warning-text, \.online-warning-text \{ flex: 1; \}/);
-  assert.match(css, /\.beta-warning-dismiss \{[^}]*flex: none;[^}]*\}/s);
-  // White on the dark banner, near-black on the light theme's pale one: the
-  // glyph must stay legible in both.
-  assert.match(css, /\.beta-warning-dismiss \{[^}]*color: #ffffff;[^}]*\}/s);
-  assert.match(css, /:root\[data-theme="light"\] \.beta-warning-dismiss \{ color: var\(--fg\); \}/);
-  // The author display would otherwise beat the user agent's [hidden] rule
-  // and the dismissed banner would stay on screen.
+  assert.doesNotMatch(css, /-dismiss\b/);
+  assert.doesNotMatch(css, /data-beta-banner-dismissed/);
+  assert.doesNotMatch(`${template}\n${appSource}\n${online}`, /entropylab-(?:beta-banner|online-warning)-dismissed/);
+  assert.doesNotMatch(appSource, /hodlInitBetaWarningDismiss|hodlBetaBannerStorageKey/);
+  // Nothing may hide a banner except the attribute its reveal logic owns.
   assert.match(css, /#beta-warning\[hidden\], #online-warning\[hidden\] \{ display: none; \}/);
-  // Only the dismissible banner uppercases its label; the noscript notice
-  // shares .beta-warning and must keep its sentence casing.
-  assert.match(css, /\.beta-warning-text strong, \.online-warning-text strong \{[^}]*line-height: 1; text-transform: uppercase;\s*color: var\(--danger-bright\);[^}]*\}/s);
-  // The label takes the banner's own size: a smaller one read as a caption
-  // rather than the sentence's lead-in.
-  assert.doesNotMatch(css, /\.beta-warning-text strong, \.online-warning-text strong \{[^}]*font-size/s);
-  assert.doesNotMatch(css, /\.beta-warning strong \{[^}]*text-transform/);
-  // Boot wires the control, and the click hides the banner outright.
-  assert.match(appWhitespace, /function hodlInitBetaWarningDismiss\(\)\{/);
-  assert.match(appWhitespace, /hodlInitBetaWarningDismiss\(\)/);
-  assert.match(app, /getElementById\("beta-warning-dismiss"\)/);
-  assert.match(app, /banner\.hidden\s*=\s*!0|banner\.hidden\s*=\s*true/);
-  // The dismissal outlives a reload, keyed to the build version so every
-  // release warns again, and wrapped so a storage-less origin still boots.
-  assert.match(app, /"entropylab-beta-banner-dismissed"/);
-  assert.match(appWhitespace, /try\{localStorage\.setItem\(hodlBetaBannerStorageKey,"\{\{VERSION\}\}"\)\}catch/);
-  // Re-hiding on a later visit runs before first paint, not at boot: the
-  // application waits on the WebAssembly module, so a banner hidden there
-  // would paint first and flash. The inline head script sets the attribute
-  // and the stylesheet keeps the row out of the very first frame.
-  assert.match(
-    template,
-    /try\{if\(localStorage\.getItem\("entropylab-beta-banner-dismissed"\)==="\{\{VERSION\}\}"\)document\.documentElement\.dataset\.betaBannerDismissed=""\}catch\(e\)\{\}/,
-  );
-  assert.ok(
-    template.indexOf("betaBannerDismissed") < template.indexOf("<body"),
-    "the pre-paint check must ship in the head",
-  );
-  assert.match(css, /:root\[data-beta-banner-dismissed\] #beta-warning \{ display: none; \}/);
-  // Boot must not be the thing that hides an already-dismissed banner.
-  assert.doesNotMatch(appWhitespace, /localStorage\.getItem\(hodlBetaBannerStorageKey\)/);
 });
 
-test("the online and noscript warnings are titled like the beta banner", () => {
+test("the project banner is a row of icon, one sentence, and the resolving control", () => {
+  assert.match(css, /\.project-banner \{[^}]*display: flex; align-items: center; gap: 12px;/s);
+  assert.match(css, /\.project-banner-label \{[^}]*flex: 1;/s);
+  assert.match(css, /\.project-banner-action \{[^}]*flex: none;/s);
+  // Severity is carried by the variant, never by the wording. Being online is
+  // the critical state and takes error; a beta build is an exceptional one and
+  // takes warning, so the two never read as equals.
+  assert.match(css, /\.project-banner\[data-variant="warning"\] \{ border-color: var\(--ds-amber-400\); background: var\(--ds-amber-100\); \}/);
+  assert.match(css, /\.project-banner\[data-variant="error"\] \{ border-color: var\(--ds-red-400\); background: var\(--ds-red-100\); \}/);
+  for (const markup of [template, app]) {
+    assert.match(markup, /id="beta-warning"[^>]*data-variant="warning"/);
+    assert.match(markup, /id="online-warning"[^>]*data-variant="error"/);
+  }
+  // No uppercase lead-in survives: the label is one sentence in sentence case.
+  assert.doesNotMatch(`${template}\n${app}`, /<strong>(?:Online version|JavaScript is required|Beta software)<\/strong>/);
+});
+
+test("the online and noscript banners name their impact and their way out", () => {
   // The online warning ships in both markups; the noscript notice is static
   // only, because the application root it would live in is replaced at boot.
   for (const markup of [template, app]) {
     assert.match(
       markup,
-      /<div class="online-warning-text"><strong>Online version<\/strong> Do not enter seed phrases/,
-      "the online warning must carry its label in a wrapper",
+      /<p class="project-banner-label online-warning-text">This device is online, so any seed phrase or private key typed here can leak\.<\/p>/,
     );
-    // The hosted-site warning is permanent: no dismiss control anywhere.
-    assert.doesNotMatch(
+    // The call to action is the thing that resolves the state: taking the file
+    // and running it off the network.
+    assert.match(
       markup,
-      /online-warning-dismiss/,
-      "the online warning must not carry a dismiss control",
+      /<a class="project-banner-action" href="entropylab\.html" download="entropylab\.html">Download for Offline Use<\/a>/,
     );
   }
-  assert.match(template, /<div class="beta-warning-text"><strong>JavaScript is required<\/strong> EntropyLab performs wallet/);
-  // No lead-in colons anywhere: the label is a line of its own now.
-  assert.doesNotMatch(`${template}\n${app}`, /<strong>(Online version|JavaScript is required|Beta software):<\/strong>/);
+  assert.match(template, /<p class="project-banner-label beta-warning-text">JavaScript is required: EntropyLab derives keys locally/);
   // The noscript notice carries no control: there is no JavaScript running to
-  // answer one. It takes the label treatment and nothing else.
+  // answer one, and no route it could offer.
   const noscript = template.slice(template.indexOf("<noscript>"), template.indexOf("</noscript>"));
-  assert.doesNotMatch(noscript, /-dismiss/, "the noscript notice cannot carry a scripted control");
-  // The hosted-site warning is permanent: the reveal unit must not read or
-  // write storage, so every visit warns again.
+  assert.doesNotMatch(noscript, /project-banner-action/);
+  assert.match(noscript, /<svg class="project-banner-icon"/);
+  // The unit that reveals the banner owns its visibility, and now has nothing
+  // else to decide: online means shown.
   assert.match(online, /getElementById\("online-warning"\)\?\.removeAttribute\("hidden"\)/);
-  assert.doesNotMatch(online, /localStorage/, "the online warning must not touch storage");
-  assert.doesNotMatch(css, /\.online-warning-dismiss/);
+  assert.doesNotMatch(online, /localStorage/);
 });
 
 test("the beta disclaimer gates the page as a modal until accepted", () => {
@@ -1072,7 +1048,7 @@ test("the site header is fixed, carries the logo, and holds the version, downloa
     // The wrapper opens on the beta banner; the static template follows with
     // a no-JS notice the runtime page has no need of. Both then carry the
     // conditional warnings, which start hidden.
-    assert.match(live, /<div class="wrap">\s*<aside class="beta-warning no-print" id="beta-warning" role="alert">[\s\S]*?<\/aside>\s*(?:<noscript>[\s\S]*?<\/noscript>\s*)?(?:<aside[^>]*online-warning[\s\S]*?<\/aside>\s*)*<section class="card">/);
+    assert.match(live, /<div class="wrap">\s*<aside class="project-banner beta-warning no-print" id="beta-warning"[^>]*>[\s\S]*?<\/aside>\s*(?:<noscript>[\s\S]*?<\/noscript>\s*)?(?:<aside[^>]*online-warning[\s\S]*?<\/aside>\s*)*<section class="card">/);
     assert.doesNotMatch(markup.slice(wrapper), /<header>|download-controls/);
   }
   assert.doesNotMatch(css, /^header (\{|h1)/m);
@@ -1324,7 +1300,7 @@ test("Silent Payments sits between Multi Signature and PSBT / Nonce", () => {
   assert.match(css, /#sp-card\[hidden\]/);
 });
 
-test("the workspace switcher is a hamburger dropdown menu at every width", () => {
+test("the workspace switcher is a rail on wide screens and a hamburger below", () => {
   // The switcher is a nav holding a hamburger toggle and the menu it
   // controls; it is no longer one of the segmented controls.
   assert.match(template, /<nav class="workspace no-print" id="workspace">/);
@@ -1335,12 +1311,68 @@ test("the workspace switcher is a hamburger dropdown menu at every width", () =>
   assert.match(template, /<button type="button" class="workspace-menu-toggle" id="workspace-menu-toggle" aria-expanded="false" aria-controls="workspace-menu">/);
   assert.match(template, /<span class="workspace-menu-current" id="workspace-menu-current">Key Derivation<\/span>/);
   assert.match(template, /<div class="workspace-menu" id="workspace-menu" role="group" aria-label="Workspace">/);
-  // The menu hides until toggled. There is no wide-screen sidebar layout:
-  // the same dropdown serves every width and the page keeps its single
-  // 1000px measure.
+  // Below the rail's breakpoint the dropdown is unchanged: hidden until toggled.
   assert.match(css, /\.workspace-menu \{[^}]*position: absolute;[^}]*display: none;/s);
   assert.match(css, /\.workspace\.is-open \.workspace-menu \{ display: grid; \}/);
-  assert.doesNotMatch(css, /min-width: 1024px|max-width: 1260px|tool-shell|tool-content/);
+  // A wide-screen sidebar was tried once (166dc46) and reverted (d7d5bec) for
+  // widening the page to 1260px and giving up its single measure; the guard
+  // that stood here forbade its return by name. That decision was reversed
+  // deliberately, and the rail answers the original objection instead of
+  // repeating it: it is pinned to the viewport rather than wrapped around the
+  // content, and it may not appear until the page can pay for it.
+  //
+  // The block is extracted by matching braces rather than by a lazy regex, so
+  // an assertion cannot be satisfied by a rule that merely appears somewhere
+  // after the @media line — including outside it, where a fixed 240px rail
+  // would swallow a phone viewport whole.
+  const mediaBlock = (condition) => {
+    const at = css.indexOf(`@media ${condition} {`);
+    assert.ok(at >= 0, `missing @media ${condition}`);
+    let depth = 0;
+    for (let i = css.indexOf("{", at); i < css.length; i++) {
+      if (css[i] === "{") depth++;
+      else if (css[i] === "}" && --depth === 0) return css.slice(at, i + 1);
+    }
+    throw new Error(`unterminated @media ${condition}`);
+  };
+  const rail = mediaBlock("screen and (min-width: 1280px)");
+  assert.match(rail, /\.workspace \{\s*position: fixed;/);
+  assert.match(rail, /\.workspace-menu-toggle \{ display: none; \}/);
+  assert.match(rail, /\.wrap \{[^}]*margin-left: var\(--rail-width\);/s);
+  assert.match(rail, /padding-inline: max\(16px, calc\(\(100% - var\(--rail-width\) - 1000px\) \/ 2\)\);/);
+  // The rail leaves the flow and would take the pitch-to-tool seam with it.
+  assert.match(rail, /\.wrap > \.workspace \+ \* \{ margin-top: var\(--space-lede\); \}/);
+  // The header stops centring on a measure the content no longer shares.
+  assert.match(rail, /\.site-header-inner \{ max-width: none; \}/);
+  // Print never sees the rail, so it must never pay the rail's gutter either.
+  assert.doesNotMatch(css, /@media \(min-width: 1280px\)/);
+  assert.doesNotMatch(css, /max-width: 1260px|tool-shell|tool-content/);
+  // The breakpoint is arithmetic, not taste. The rail costs the column its own
+  // width plus a 16px gutter each side, so it may only switch on once the
+  // column it leaves is at least the 968px the page has without a rail:
+  // 1280 - 240 - 32 = 1008 of layout, and 993px of column at the narrowest.
+  const railWidth = Number(css.match(/--rail-width: (\d+)px;/)?.[1]);
+  const breakpoint = Number(css.match(/@media screen and \(min-width: (\d+)px\)/)?.[1]);
+  const noRailColumn = 1000 - 2 * 16;
+  assert.ok(
+    breakpoint - railWidth - 2 * 16 >= noRailColumn,
+    `the rail switches on at ${breakpoint}px, where it would leave ${breakpoint - railWidth - 32}px against the ${noRailColumn}px the page has without it`,
+  );
+  // One breakpoint owns the layout and the open state. The rail hides the
+  // toggle, so an is-open carried across the line would leave aria-expanded
+  // describing a control the user can no longer see.
+  assert.equal(
+    Number(appSource.match(/var hodlWorkspaceRailWidth = (\d+);/)?.[1]),
+    breakpoint,
+    "the JS rail breakpoint drifted from the stylesheet's",
+  );
+  assert.match(appSource, /matchMedia\(`\(min-width: \$\{hodlWorkspaceRailWidth\}px\)`\)/);
+  assert.match(appSource, /hodlWorkspaceRailQuery\.addEventListener\("change", \(event\) => \{\s*if \(event\.matches\) hodlSetWorkspaceMenuOpen\(false\);/);
+  assert.equal(
+    (css.match(/@media screen and \(min-width: 1280px\)/g) || []).length,
+    1,
+    "the rail must be owned by exactly one breakpoint",
+  );
   assert.doesNotMatch(appSource, /matchMedia\("\(min-width: 1024px\)"\)/);
   assert.doesNotMatch(`${template}${appSource}`, /tool-shell|tool-content/);
   // Menu entries keep the app's orange active state.

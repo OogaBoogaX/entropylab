@@ -293,7 +293,7 @@ const spawnBrowser = (engine, { profile, url, logPath, cwd }) => {
         "--no-default-browser-check",
         "--disable-gpu",
         "--disable-dev-shm-usage",
-        "--window-size=1280,800",
+        "--window-size=1600,900",
         `--user-data-dir=${profile}`,
         url,
       ];

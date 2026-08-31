@@ -138,13 +138,16 @@
     // Parked with the rest of the banners; restore them and this asserts the
     // hosted build lights the warning up again.
     assert(!warning || !warning.hidden, "Online warning was not displayed");
-    // Titled like the beta banner above it, but permanent: no dismiss control.
-    const label = warning.querySelector(".online-warning-text strong");
-    assert(label, "Online warning is missing its label wrapper");
-    assert(!document.getElementById("online-warning-dismiss"), "Online warning must not carry a dismiss control");
+    // A project banner: icon, one sentence, and the control that resolves the
+    // state. No close control, and the severity is in the variant not the copy.
+    const label = warning.querySelector(".project-banner-label");
+    const action = warning.querySelector(".project-banner-action");
+    const icon = warning.querySelector(".project-banner-icon");
+    assert(label && action && icon, "Online banner is missing its icon, label, or call to action");
+    assert(!warning.querySelector("button"), "A project banner must not carry a dismiss control");
+    assert(warning.dataset.variant === "error", "Being online is the critical state and takes the error variant");
     const labelStyle = getComputedStyle(label);
-    assert(labelStyle.textTransform === "uppercase", "Online warning label is not uppercase");
-    assert(labelStyle.display === "block", "Online warning label does not sit on its own line");
+    assert(labelStyle.textTransform === "none", "The banner label must stay in sentence case");
     // The logo paints over the status tag's halo, not under it.
     const mark = document.querySelector(".site-logo");
     const tag = document.getElementById("network-status");
@@ -154,10 +157,25 @@
         "The status tag stacks above the header logo",
       );
     }
-    const beta = document.querySelector(".beta-warning-text strong");
-    if (beta) {
-      assert(labelStyle.color === getComputedStyle(beta).color, "The two banner labels are different colours");
+    // The two banners must not read as equals: the online one is the critical
+    // state, so its variant has to differ from the beta build's.
+    const betaBanner = document.getElementById("beta-warning");
+    if (betaBanner) {
+      assert(
+        betaBanner.dataset.variant !== warning.dataset.variant,
+        "Both banners claim the same severity",
+      );
     }
+    // The action sits at the banner's trailing edge and is vertically centred
+    // on the sentence, not hung in a corner the way the close control was.
+    const box = warning.getBoundingClientRect();
+    const cta = action.getBoundingClientRect();
+    assert(Math.abs(cta.right - box.right) < 20, "The call to action is not at the banner's trailing edge");
+    assert(
+      Math.abs((cta.top + cta.height / 2) - (box.top + box.height / 2)) < 4,
+      "The call to action is not centred against the label",
+    );
+    assert(action.getAttribute("href") === "entropylab.html", "The call to action does not offer the offline download");
     // The warning is permanent, so nothing about it may live in storage.
     assert(
       localStorage.getItem("entropylab-online-warning-dismissed") === null,
@@ -670,53 +688,134 @@
     );
   });
 
-  await test("the beta banner's dismiss control clears the banner from the page", () => {
-    const banner = document.getElementById("beta-warning");
-    const dismiss = document.getElementById("beta-warning-dismiss");
-    assert(banner && dismiss && banner.contains(dismiss), "Beta banner dismiss control is missing");
-    try {
-      // A narrow column at the banner's top right: hard against the right
-      // edge, and nearer the top than the banner's own vertical middle.
-      const box = banner.getBoundingClientRect();
-      const button = dismiss.getBoundingClientRect();
-      assert(button.width <= box.width / 4, "Dismiss column is not narrow");
-      assert(Math.abs(button.right - box.right) < 12, "Dismiss control is not at the banner's right edge");
-      assert(button.top < box.top + box.height / 2, "Dismiss control is not near the banner's top");
-      // Each theme is named rather than assumed: which one the page opens in
-      // now follows the operating system, so neither is the ambient default.
-      const theme = document.documentElement.dataset.theme;
-      try {
-        delete document.documentElement.dataset.theme;
-        assert(getComputedStyle(dismiss).color === "rgb(255, 255, 255)", "Dismiss icon is not white in the dark theme");
-        // The light theme tints the banner pale, so white would vanish there.
-        document.documentElement.dataset.theme = "light";
-        const light = getComputedStyle(dismiss).color;
-        assert(light !== "rgb(255, 255, 255)", "Dismiss icon stayed white in the light theme");
-        const [r, g, b] = light.match(/\d+/g).map(Number);
-        assert(r < 60 && g < 60 && b < 60, `Dismiss icon is not near-black in the light theme (${light})`);
-      } finally {
-        if (theme) document.documentElement.dataset.theme = theme;
-        else delete document.documentElement.dataset.theme;
-      }
-      assert(getComputedStyle(banner).display !== "none", "Beta banner did not start visible");
-      dismiss.click();
-      assert(getComputedStyle(banner).display === "none", "Beta banner survived its dismiss control");
-      // The choice is remembered for this build, so a reload does not bring
-      // the banner back until the next release.
+  await test("the workspace switcher is a rail above its breakpoint and a dropdown below", () => {
+    const nav = document.querySelector(".workspace");
+    const toggle = document.getElementById("workspace-menu-toggle");
+    const menu = document.getElementById("workspace-menu");
+    const card = document.querySelector(".wrap > .card");
+    assert(nav && toggle && menu && card, "The workspace switcher is missing a part");
+    // The harness runs wide enough for the rail, so the rail is measured live
+    // and the dropdown is checked against the parsed stylesheet rather than
+    // asserted inside a branch that never executes.
+    const wide = matchMedia("(min-width: 1280px)").matches;
+    assert(wide, "The harness viewport no longer reaches the rail's breakpoint");
+    assert(getComputedStyle(nav).position === "fixed", "The rail is not pinned to the viewport");
+    assert(getComputedStyle(toggle).display === "none", "The hamburger survived into the rail");
+    assert(getComputedStyle(menu).display === "grid", "The rail's menu is not open");
+    assert(Math.round(nav.getBoundingClientRect().left) === 0, "The rail is not at the viewport's left edge");
+    assert(
+      card.getBoundingClientRect().left >= nav.getBoundingClientRect().right,
+      "The content column runs under the rail",
+    );
+    // The objection that reverted the last sidebar was the lost measure. Two
+    // halves: the column reaches the page's own 1000px, and — the part the
+    // first attempt got wrong — the rail never costs the tool width, so the
+    // column is never narrower than the 968px it has with no rail at all.
+    const column = card.getBoundingClientRect().width;
+    assert(column <= 1000.5, `The content column is ${column}px, wider than the page's 1000px measure`);
+    assert(column >= 968, `The rail cost the tool width: ${column}px against the 968px it has without one`);
+    // The header spans the shell in rail mode, so the lockup and the status tag
+    // sit at the page's left edge rather than adrift between rail and column.
+    const headerInner = document.querySelector(".site-header-inner");
+    assert(
+      Math.round(headerInner.getBoundingClientRect().left) === 0,
+      "The header is still centred on a measure the content no longer shares",
+    );
+    // The rail leaves the flow, so the seam it used to hold has to survive.
+    const next = nav.nextElementSibling;
+    if (next) {
       assert(
-        localStorage.getItem("entropylab-beta-banner-dismissed") === document.querySelector(".site-version-number").textContent.replace(/^v/, ""),
-        "Dismissal was not persisted against this build's version",
+        Math.round(parseFloat(getComputedStyle(next).marginTop)) === 48,
+        "The pitch-to-tool seam vanished with the rail",
       );
-      // A visit after a dismissal never paints the banner: the inline head
-      // script stamps the root before first paint and the stylesheet keeps
-      // the row out of the first frame, rather than boot removing it later.
-      banner.hidden = false;
-      document.documentElement.dataset.betaBannerDismissed = "";
-      assert(getComputedStyle(banner).display === "none", "The pre-paint attribute did not hide the banner");
+    }
+    // The dropdown half, from the parsed stylesheet: its rules must sit outside
+    // any media block, or a narrow viewport would get no switcher at all.
+    const flat = [];
+    const walk = (rules, media) => {
+      for (const rule of rules) {
+        if (rule.cssRules && rule.conditionText !== undefined) walk(rule.cssRules, rule.conditionText);
+        else if (rule.selectorText) flat.push({ sel: rule.selectorText, css: rule.style.cssText, media });
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      try { walk(sheet.cssRules, null); } catch (e) { /* cross-origin sheets have none here */ }
+    }
+    const base = flat.find((r) => r.sel === ".workspace-menu" && r.media === null);
+    assert(base, "The dropdown's own rule is not outside every media block");
+    assert(/position:\s*absolute/.test(base.css), "The dropdown is not absolutely positioned below the rail");
+    assert(/display:\s*none/.test(base.css), "The dropdown does not start closed below the rail");
+    const railRules = flat.filter((r) => r.media && r.media.includes("1280"));
+    assert(
+      railRules.some((r) => r.sel === ".workspace-menu-toggle" && /display:\s*none/.test(r.css)),
+      "The hamburger is hidden outside the rail's own media block",
+    );
+    assert(
+      railRules.some((r) => r.sel === ".workspace" && /position:\s*fixed/.test(r.css)),
+      "The rail is pinned outside its own media block",
+    );
+    assert(
+      railRules.every((r) => /\bscreen\b/.test(r.media)),
+      "The rail's media block is not scoped to screen, so print keeps its gutter",
+    );
+  });
+
+  await test("the beta banner states its severity without a close control", () => {
+    const banner = document.getElementById("beta-warning");
+    assert(banner, "Beta banner is missing");
+    // Non-dismissible by design: a state a user can clear without resolving it
+    // belongs in a Note. Nothing in the banner may end the warning.
+    assert(!banner.querySelector("button"), "The beta banner grew a dismiss control");
+    assert(banner.dataset.variant === "warning", "A beta build is an exceptional state, not a critical one");
+    assert(getComputedStyle(banner).display !== "none", "Beta banner did not start visible");
+    const icon = banner.querySelector(".project-banner-icon");
+    const label = banner.querySelector(".project-banner-label");
+    const action = banner.querySelector(".project-banner-action");
+    assert(icon && label && action, "Beta banner is missing its icon, label, or call to action");
+    // One row: the icon leads, the sentence takes the slack, the action closes.
+    const iconBox = icon.getBoundingClientRect();
+    const labelBox = label.getBoundingClientRect();
+    const actionBox = action.getBoundingClientRect();
+    assert(iconBox.right <= labelBox.left + 1, "The icon does not lead the sentence");
+    assert(labelBox.right <= actionBox.left + 1, "The action does not follow the sentence");
+    assert(labelBox.width > actionBox.width, "The sentence must take the slack, not the action");
+    // The icon carries the variant's colour while the sentence stays in the
+    // body colour, so the severity is never encoded in the wording.
+    // Not merely "a different colour": the icon has to be the token its own
+    // variant names, or a warning could paint its severity in the info blue.
+    const expected = getComputedStyle(document.documentElement)
+      .getPropertyValue(banner.dataset.variant === "error" ? "--danger" : "--warn").trim();
+    const probe = document.createElement("span");
+    probe.style.color = expected;
+    document.body.appendChild(probe);
+    try {
+      assert(
+        getComputedStyle(icon).color === getComputedStyle(probe).color,
+        `The ${banner.dataset.variant} icon is ${getComputedStyle(icon).color}, not its variant's colour`,
+      );
     } finally {
-      delete document.documentElement.dataset.betaBannerDismissed;
-      localStorage.removeItem("entropylab-beta-banner-dismissed");
-      banner.hidden = false;
+      probe.remove();
+    }
+    assert(
+      getComputedStyle(icon).color !== getComputedStyle(label).color,
+      "The icon does not stand apart from the sentence",
+    );
+    // Both themes: the banner ground and its text have to stay legible.
+    const theme = document.documentElement.dataset.theme;
+    try {
+      for (const mode of ["dark", "light"]) {
+        if (mode === "dark") delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = "light";
+        const ground = getComputedStyle(banner).backgroundColor;
+        assert(ground !== "rgba(0, 0, 0, 0)", `Beta banner has no ground in the ${mode} theme`);
+        assert(
+          getComputedStyle(label).color !== ground,
+          `Beta banner label matches its ground in the ${mode} theme`,
+        );
+      }
+    } finally {
+      if (theme) document.documentElement.dataset.theme = theme;
+      else delete document.documentElement.dataset.theme;
     }
   });
 

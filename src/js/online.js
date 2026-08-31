@@ -6,7 +6,8 @@
   ) && new URLSearchParams(location.search).get("online-preview") === "1";
   if (!isHostedOnline && !isLocalPreview) return;
 
-  // The hosted site always warns: the banner cannot be dismissed.
+  // The hosted site always warns: a Geist project banner is not dismissible,
+  // and the only thing that clears this one is running the file off the network.
   document.getElementById("online-warning")?.removeAttribute("hidden");
 })();
 
