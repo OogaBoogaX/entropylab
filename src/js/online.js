@@ -9,9 +9,3 @@
   // The hosted site always warns: the banner cannot be dismissed.
   document.getElementById("online-warning")?.removeAttribute("hidden");
 })();
-
-function hodlFormatRecoverySheet(text) {
-  const lines = text.split("\n");
-  if (lines[1] !== "ENTROPYLAB V{{VERSION}}") lines.splice(1, 0, "ENTROPYLAB V{{VERSION}}");
-  return lines.join("\n");
-}

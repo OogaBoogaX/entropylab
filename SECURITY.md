@@ -52,7 +52,7 @@ material. Its security posture rests on the following model:
   fallback; a host that cannot run the module is treated as broken.
 - Secret byte buffers are overwritten after use, on a best-effort basis. The
   WASM bindings zero every linear-memory buffer before freeing it
-  (`secp_free`/`psbt_free` use volatile writes) and erase their own secret
+  (`el_free`/`psbt_free` use volatile writes) and erase their own secret
   temporaries — private keys, seeds, chain codes, mnemonics, passphrases,
   signing nonces, and HMAC/PBKDF2 blocks. The JavaScript layer zeroes the
   `Uint8Array`s it is done with (`.fill(0)`, `HDKey.wipePrivateData()`),

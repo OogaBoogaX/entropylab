@@ -30,16 +30,16 @@ function slice(name) {
 }
 
 const source = [
-  `import { hex as M } from "../src/js/coders.js";`,
+  `import { hex as hodlHex } from "../src/js/coders.js";`,
   `import { matchOwnership, pathLabel } from "../src/js/ownership.js";`,
   `import { addressFor, addressFromScript } from "../src/js/addresses.js";`,
   "let hodlPsbtHd = null;",
   "export function hodlSetSession(key) { hodlPsbtHd = key; }",
-  slice("Us"),
+  slice("hodlFingerprintHex"),
   slice("hodlEq"),
   slice("hodlFind"),
   slice("hodlAddr"),
-  slice("pf"),
+  slice("hodlAddressOrThrow"),
   slice("hodlAddressesEqual"),
   slice("hodlDeclaredOutput"),
   slice("hodlOwnershipWarning"),
@@ -68,7 +68,7 @@ const u32le = (n) => {
   return b;
 };
 // BIP174 record values: the master fingerprint as its raw 4 bytes (big-endian
-// display order, what M.encode reproduces) then little-endian path indices.
+// display order, what hodlHex.encode reproduces) then little-endian path indices.
 const u32be = (n) => {
   const b = new Uint8Array(4);
   new DataView(b.buffer).setUint32(0, n >>> 0, false);

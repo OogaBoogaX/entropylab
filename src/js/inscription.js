@@ -253,7 +253,7 @@ export function parseWitness(bytes) {
   }
 }
 
-function taprootScriptFromWitness(stack) {
+function taprootWitnessScriptCandidates(stack) {
   if (!stack.length) return [];
   const items = stack.slice();
   if (items[items.length - 1][0] === 0x50) items.pop();
@@ -269,7 +269,7 @@ export function scriptsFromPsbtInput(entries) {
       scripts.push({ source: "tap-leaf", script: entry.val.slice(0, entry.val.length - 1) });
     } else if (entry.type === 8 && entry.val) {
       const stack = parseWitness(entry.val);
-      for (const script of taprootScriptFromWitness(stack)) scripts.push({ source: "final-witness", script });
+      for (const script of taprootWitnessScriptCandidates(stack)) scripts.push({ source: "final-witness", script });
     } else if (entry.type === 5 && entry.val) {
       scripts.push({ source: "witness-script", script: entry.val });
     } else if (entry.type === 7 && entry.val) {

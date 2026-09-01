@@ -67,7 +67,7 @@ export class HDKey {
     versions = validateVersions(versions);
     if (!(seed instanceof Uint8Array)) throw new Error("seed must be a Uint8Array");
     if (8 * seed.length < 128 || 8 * seed.length > 512) {
-      throw new RangeError("HDKey: seed length must be between 128 and 512 bits; 256 bits is advised, got " + seed.length);
+      throw new RangeError("HDKey: seed length must be between 128 and 512 bits; 256 bits is advised, got " + 8 * seed.length + " bits");
     }
     const body = withInput(seed, (p) => withOutput(78, (out) => wasm().el_hd_master(p, seed.length, out)));
     if (!body) throw new Error("HDKey: master key derivation failed (invalid key material)");
@@ -115,7 +115,7 @@ export class HDKey {
   }
 
   constructor(opt) {
-    if (!opt || typeof opt !== "object") throw new Error("HDKey.constructor must not be called directly");
+    if (!opt || typeof opt !== "object") throw new Error("HDKey: constructor requires an options object");
     const depth = opt.depth ?? 0;
     const index = opt.index ?? 0;
     const parentFingerprint = opt.parentFingerprint ?? 0;
@@ -249,13 +249,13 @@ export class HDKey {
     let code, body;
     try {
       ({ code, body } = withInput(input, (p) => {
-        const outPtr = wasm().secp_alloc(78);
+        const outPtr = wasm().el_alloc(78);
         try {
           const fn = this._privateKey ? "el_hd_ckd_priv" : "el_hd_ckd_pub";
           const produced = wasm()[fn](p, index >>> 0, outPtr);
           return { code: produced, body: produced === 78 ? heap().slice(outPtr, outPtr + 78) : null };
         } finally {
-          wasm().secp_free(outPtr, 78);
+          wasm().el_free(outPtr, 78);
         }
       }));
     } finally {

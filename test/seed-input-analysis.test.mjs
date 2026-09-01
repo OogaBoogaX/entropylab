@@ -52,10 +52,10 @@ const source = [
   importLine("hashes"),
   importLine("bip39"),
   importLine("bip39-english"),
-  app.match(/^const Ae = .*$/m)[0],
+  app.match(/^const hodlBip39Wordlist = .*$/m)[0],
   between("var hodlSeedLengths", "});"),
   between("var hodlBip39WordSet", ";"),
-  "var Pt = 24;",
+  "var hodlTargetWordCount = 24;",
   ...[
     "hodlSeedConfig",
     "hodlLooksExtendedKey",

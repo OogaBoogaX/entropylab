@@ -55,5 +55,8 @@ export function hodlCompareSchnorrNonces(rValues, hodlEq) {
       if (a.input !== b.input) possible.push([a, b]);
     }
   }
+  // `reused` stays empty: definite nonce reuse needs EC point math, which the
+  // ECDSA comparison (hodlCompareNonces) already performs; here we only flag
+  // possible cross-input R-value sharing.
   return { reused: [], possible };
 }

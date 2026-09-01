@@ -40,7 +40,7 @@ const nfkd = (value) => {
 // single ASCII space and no token carries whitespace of its own.
 const WORD_COUNTS = [12, 15, 18, 21, 24];
 const SINGLE_ASCII_SPACES = /^\S+( \S+)*$/;
-const canonicalWords = (phrase) => SINGLE_ASCII_SPACES.test(phrase) && WORD_COUNTS.includes(phrase.split(" ").length);
+const isCanonicalPhrase = (phrase) => SINGLE_ASCII_SPACES.test(phrase) && WORD_COUNTS.includes(phrase.split(" ").length);
 
 const entropyToMnemonic = (entropy, wordlist = bip39English) => {
   if (!(entropy instanceof Uint8Array) || ![16, 20, 24, 28, 32].includes(entropy.length)) {
@@ -55,7 +55,7 @@ const entropyToMnemonic = (entropy, wordlist = bip39English) => {
 const mnemonicToEntropy = (mnemonic, wordlist = bip39English) => {
   if (wordlist !== bip39English) throw new Error("Only the BIP39 English wordlist is supported.");
   const text = nfkd(mnemonic);
-  if (!canonicalWords(text)) throw new Error("Invalid mnemonic");
+  if (!isCanonicalPhrase(text)) throw new Error("Invalid mnemonic");
   const phrase = textEncoder.encode(text);
   try {
     const out = withInput(phrase, (p) => withOutput(ENTROPY_CAP, (o) => wasm().el_bip39_mnemonic_to_entropy(p, phrase.length, o, ENTROPY_CAP)));
@@ -70,7 +70,7 @@ const validateMnemonic = (mnemonic, wordlist = bip39English) => {
   if (wordlist !== bip39English) return false;
   try {
     const text = nfkd(mnemonic);
-    if (!canonicalWords(text)) return false;
+    if (!isCanonicalPhrase(text)) return false;
     const phrase = textEncoder.encode(text);
     try {
       return withInput(phrase, (p) => wasm().el_bip39_validate(p, phrase.length)) === 1;

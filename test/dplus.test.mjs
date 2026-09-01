@@ -6,8 +6,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { wordlist as Ae } from "@scure/bip39/wordlists/english.js";
-import { validateMnemonic as Pn } from "@scure/bip39";
+import { wordlist as hodlBip39Wordlist } from "@scure/bip39/wordlists/english.js";
+import { validateMnemonic as hodlIsValidMnemonic } from "@scure/bip39";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
@@ -43,22 +43,22 @@ function loadVariableBeforeFunction(name, terminator) {
   return app.slice(start, end);
 }
 
-const Z = (input) => new Uint8Array(createHash("sha256").update(input).digest());
+const hodlSha256 = (input) => new Uint8Array(createHash("sha256").update(input).digest());
 const api = new Function(
-  "Ae",
-  "Pn",
-  "Z",
+  "hodlBip39Wordlist",
+  "hodlIsValidMnemonic",
+  "hodlSha256",
   `
-  var Pt = 24;
+  var hodlTargetWordCount = 24;
   ${loadVariable("hodlSeedLengths", "hodlEntropyFormats")}
   ${loadVariableBeforeFunction("hodlDPlusFinalSpecs", "hodlDPlusStepBits")}
-  ${["hodlSeedConfig", "hodlDPlusStepBits", "hodlDPlusStepLabel", "hodlDPlusStepValue", "hodlDPlusFinalSteps", "hodlDPlusFinalDescription", "hodlDPlusFinalHelp", "hodlDPlusStepChecksumLabel", "hodlDPlusD16Value", "hodlDPlusTokens", "Rn", "Mt", "hodlTargetLastWords", "hodlComputeTargetLastWords", "mi", "hodlDPlusRolls", "hodlValidateTargetMnemonic", "hodlSeedCountStatus"].map(loadSlice).join("\n")}
+  ${["hodlSeedConfig", "hodlDPlusStepBits", "hodlDPlusStepLabel", "hodlDPlusStepValue", "hodlDPlusFinalSteps", "hodlDPlusFinalDescription", "hodlDPlusFinalHelp", "hodlDPlusStepChecksumLabel", "hodlDPlusD16Value", "hodlDPlusTokens", "hodlNormalizeMnemonicText", "hodlValidateMnemonic", "hodlTargetLastWords", "hodlComputeTargetLastWords", "hodlBitBoxLookupWord", "hodlDPlusRolls", "hodlValidateTargetMnemonic", "hodlSeedCountStatus"].map(loadSlice).join("\n")}
   var hodlLastWordCache = new Map();
-  var hodlBip39WordSet = new Set(Ae);
-  var hodlBip39WordIndex = new Map(Ae.map((word, index) => [word, index]));
+  var hodlBip39WordSet = new Set(hodlBip39Wordlist);
+  var hodlBip39WordIndex = new Map(hodlBip39Wordlist.map((word, index) => [word, index]));
   return { hodlDPlusRolls, hodlDPlusFinalSteps, hodlDPlusFinalDescription, hodlDPlusFinalHelp, hodlValidateTargetMnemonic, hodlSeedConfig };
   `,
-)(Ae, Pn, Z);
+)(hodlBip39Wordlist, hodlIsValidMnemonic, hodlSha256);
 
 const SIZES = [12, 15, 18, 21, 24];
 

@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { entropyToMnemonic as _n } from "@scure/bip39";
-import { wordlist as Ae } from "@scure/bip39/wordlists/english.js";
+import { wordlist as hodlBip39Wordlist } from "@scure/bip39/wordlists/english.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
@@ -37,20 +37,19 @@ function loadVariable(name, nextName) {
   return app.slice(start, end);
 }
 
-const Z = (input) => new Uint8Array(createHash("sha256").update(input).digest());
-const M = { encode: (bytes) => Buffer.from(bytes).toString("hex") };
+const hodlSha256 = (input) => new Uint8Array(createHash("sha256").update(input).digest());
+const hodlHex = { encode: (bytes) => Buffer.from(bytes).toString("hex") };
 const api = new Function(
-  "_n",
-  "Ae",
-  "Z",
-  "M",
+  "hodlBip39Wordlist",
+  "hodlSha256",
+  "hodlHex",
   `
-  var Pt = 24;
+  var hodlTargetWordCount = 24;
   ${loadVariable("hodlSeedLengths", "hodlEntropyFormats")}
-  ${["hodlSeedConfig", "kr", "hodlDiceEntropy", "hodlIanColemanDiceString", "Br" ].map(loadSlice).join("\n")}
-  return { hodlDiceEntropy, hodlSeedConfig, kr };
+  ${["hodlSeedConfig", "hodlDiceEntropyBits", "hodlDiceEntropy", "hodlIanColemanDiceString", "hodlSplitDiceString" ].map(loadSlice).join("\n")}
+  return { hodlDiceEntropy, hodlSeedConfig, hodlDiceEntropyBits };
   `,
-)(_n, Ae, Z, M);
+)(hodlBip39Wordlist, hodlSha256, hodlHex);
 
 const SIZES = [12, 15, 18, 21, 24];
 const METHODS = ["coldcard", "coleman"];
@@ -60,7 +59,7 @@ test("hashed-dice recommendation exactly reaches the entropy bits", () => {
   for (const words of SIZES) {
     const config = api.hodlSeedConfig(words);
     assert.equal(config.hashRolls, expected[words], `${words}: recommendation off`);
-    assert.ok(api.kr(config.hashRolls - 1) < config.bits, `${words}: shorter input still reaches ${config.bits} bits`);
+    assert.ok(api.hodlDiceEntropyBits(config.hashRolls - 1) < config.bits, `${words}: shorter input still reaches ${config.bits} bits`);
   }
 });
 
@@ -72,7 +71,7 @@ test("hashed dice derive a full mnemonic for every target size and method", () =
       const entropy = api.hodlDiceEntropy(rolls, method, words);
       assert.equal(entropy.ok, true, `${words}, ${method}: not ok`);
       assert.equal(entropy.bytes.length, config.bytes, `${words}, ${method}`);
-      const mnemonic = _n(entropy.bytes, Ae);
+      const mnemonic = _n(entropy.bytes, hodlBip39Wordlist);
       assert.equal(mnemonic.split(" ").length, words, `${words}, ${method}: ${mnemonic}`);
     }
   }

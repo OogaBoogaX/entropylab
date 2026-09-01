@@ -1,17 +1,31 @@
 // The two shipped UI IIFEs with no other Node-level coverage: online.js
-// (hosted-preview warning banner — always on and never dismissible — and
-// recovery-sheet version stamping) and repeat-inputs.js (the hold-to-repeat
-// state machine behind the on-screen keyboards).
+// (hosted-preview warning banner — always on and never dismissible) and
+// repeat-inputs.js (the hold-to-repeat state machine behind the on-screen
+// keyboards). Also covers app.js's recovery-sheet version stamping.
 // Run with `npm test`.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
 const onlineSource = readFileSync(join(rootDir, "..", "src/js/online.js"), "utf8");
 const repeatSource = readFileSync(join(rootDir, "..", "src/js/repeat-inputs.js"), "utf8");
+const appSource = readFileSync(join(rootDir, "..", "src/js/app.js"), "utf8");
+
+// Slice one self-contained function out of app.js (the bundle cannot be
+// evaluated wholesale in Node).
+function appSlice(name) {
+  const start = appSource.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, name);
+  let depth = 0;
+  for (let index = appSource.indexOf("{", start); index < appSource.length; index++) {
+    if (appSource[index] === "{") depth++;
+    else if (appSource[index] === "}" && --depth === 0) return appSource.slice(start, index + 1);
+  }
+  throw new Error(`Could not extract ${name}`);
+}
 
 // ── online.js ────────────────────────────────────────────────────────────────
 
@@ -44,11 +58,8 @@ function onlineHarness({ hostname, protocol = "https:", search = "", stored = nu
     },
   };
   const location = { hostname, protocol, search };
-  const formatRecoverySheet = new Function("location", "document", "localStorage", `${source}; return hodlFormatRecoverySheet;`)(
-    location,
-    document,
-    storage,
-  );
+  new Function("location", "document", "localStorage", source)(location, document, storage);
+  const formatRecoverySheet = new Function(`${appSlice("hodlFormatRecoverySheet").split("{{VERSION}}").join(VERSION)}; return hodlFormatRecoverySheet;`)();
   return { calls, banner, dismiss, formatRecoverySheet };
 }
 

@@ -28,7 +28,7 @@ import {
   encodeXprv,
   hardenedPath,
   isValidSecp256k1Secret,
-  parseHardenedIndex,
+  parseChildIndex,
   truncateEntropy,
   wipeBip85Result,
   wipeBytes
@@ -167,8 +167,8 @@ test("range checks reject values the BIP does not define", () => {
   assert.throws(() => deriveHex(root, { numBytes: 65 }), /16 to 64/);
   assert.throws(() => derivePwdBase64(root, { length: 19 }), /20 to 86/);
   assert.throws(() => derivePwdBase85(root, { length: 9 }), /10 to 80/);
-  assert.throws(() => parseHardenedIndex(-1), /0 to 2147483647/);
-  assert.throws(() => parseHardenedIndex(INDEX_MAX + 1), /0 to 2147483647/);
+  assert.throws(() => parseChildIndex(-1), /0 to 2147483647/);
+  assert.throws(() => parseChildIndex(INDEX_MAX + 1), /0 to 2147483647/);
   assert.throws(() => deriveApplication(root, { app: "rsa" }), /Unknown BIP-85 application/);
 });
 

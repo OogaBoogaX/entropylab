@@ -20,7 +20,7 @@ test("page lifecycle clearing replaces every cached key and clears PSBT private 
   assert.match(lifecycle, /if \(id !== "privateKeys"\) fields\[id\] = ""/);
   assert.match(lifecycle, /state\.result\s*=\s*null/);
   assert.match(lifecycle, /return state\.isLab \? hodlNewLabState\(\) : hodlNewKeyState\(state\.name, state\.id, state\.number\)/);
-  assert.match(lifecycle, /re\s*=\s*null[\s\S]*Ge\s*=\s*false[\s\S]*ft\s*=\s*""[\s\S]*hodlDiceCoinPositions\s*=\s*\[\]/);
+  assert.match(lifecycle, /hodlWalletResult\s*=\s*null[\s\S]*hodlRevealPrivate\s*=\s*false[\s\S]*hodlPickedLastWord\s*=\s*""[\s\S]*hodlDiceCoinPositions\s*=\s*\[\]/);
   assert.match(lifecycle, /addEventListener\("pagehide", clearSecretFields\)/);
   assert.match(lifecycle, /event\.persisted\) clearSecretFields\(\)/);
 });

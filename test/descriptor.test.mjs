@@ -66,7 +66,7 @@ function loadSlice(startNeedle, endNeedle, extra) {
 const originPath = loadSlice(
   "function hodlFilterXpub",
   "function hodlParseMultisigCosigner",
-  "const hodlMaxPurpose = 2147483647;\nconst Rs = (network) => network === 'mainnet' ? 0 : 1;\nexport { hodlFilterXpub, hodlNormalizeOriginPath, hodlParseKeyOrigin, hodlOriginPathIndexes, hodlOriginMatchesParsedKey, hodlMultisigPurposeIndex, hodlOriginScriptError, hodlMultisigAccountNumber, hodlSummarizeMultisigAccounts, hodlMultisigAccountWarning, hodlMultisigOriginScriptKind, hodlMultisigScriptEvidence, hodlSummarizeMultisigScriptKinds };",
+  "const hodlMaxPurpose = 2147483647;\nconst hodlCoinTypeFromNetwork = (network) => network === 'mainnet' ? 0 : 1;\nexport { hodlFilterXpub, hodlNormalizeOriginPath, hodlParseKeyOrigin, hodlOriginPathIndexes, hodlOriginMatchesParsedKey, hodlMultisigPurposeIndex, hodlOriginScriptError, hodlMultisigAccountNumber, hodlSummarizeMultisigAccounts, hodlMultisigAccountWarning, hodlMultisigOriginScriptKind, hodlMultisigScriptEvidence, hodlSummarizeMultisigScriptKinds };",
 );
 const {
   hodlFilterXpub,
@@ -92,15 +92,15 @@ const CHECKSUM_CHARSET = ${JSON.stringify(CHECKSUM_CHARSET)};
 ${descsumPolymod.toString()}
 ${descsumExpand.toString()}
 ${independentChecksum.toString()}
-function Le(body){return body+"#"+independentChecksum(body)}
-export { hodlStripDescriptorChecksum, hodlWatchOnlyMultipathDescriptor, Le };
+function hodlDescriptorWithChecksum(body){return body+"#"+independentChecksum(body)}
+export { hodlStripDescriptorChecksum, hodlWatchOnlyMultipathDescriptor, hodlDescriptorWithChecksum };
 `;
 const multipathPath = loadSlice(
   "function hodlStripDescriptorChecksum",
   "function hodlDescriptorQrSvg",
   checksumPrelude,
 );
-const { hodlWatchOnlyMultipathDescriptor, Le } = await import(pathToFileURL(multipathPath).href);
+const { hodlWatchOnlyMultipathDescriptor, hodlDescriptorWithChecksum } = await import(pathToFileURL(multipathPath).href);
 unlinkSync(multipathPath);
 test("filter keeps descriptor origin punctuation", () => {
   const raw = "[73c5da0a/48h/1h/0h/2h]tpubABC";
@@ -228,7 +228,7 @@ test("multisig script type is inferred from SLIP-132 prefixes and key origins", 
 test("BIP389 multipath recomputes the checksum", () => {
   const body =
     "wpkh([73c5da0a/84h/1h/0h]tpubDC5FSn4cz1dG9u1ytfDkCUmpJdbive4LmiYBiShpJcCshz45L7Ab3UyQwKDgEQb7b4yQ4Nv68wS4TibDkS1PYtzTszwrX2k4t5mGx8fS3x3/0/*)";
-  const receive = Le(body);
+  const receive = hodlDescriptorWithChecksum(body);
   assert.equal(receive, `${body}#${independentChecksum(body)}`);
   const wallet = hodlWatchOnlyMultipathDescriptor(receive);
   assert.match(wallet, /\/<0;1>\/\*/);
@@ -238,7 +238,7 @@ test("BIP389 multipath recomputes the checksum", () => {
 
 test("BIP45 multipath keeps the co-signer branch before receive and change", () => {
   const body = "sh(sortedmulti(2,[73c5da0a/45h]xpubABC/0/0/*,[b8688df1/45h]xpubDEF/0/0/*))";
-  const wallet = hodlWatchOnlyMultipathDescriptor(Le(body));
+  const wallet = hodlWatchOnlyMultipathDescriptor(hodlDescriptorWithChecksum(body));
   assert.match(wallet, /\[73c5da0a\/45h\]xpubABC\/0\/<0;1>\/\*/);
   assert.match(wallet, /\[b8688df1\/45h\]xpubDEF\/0\/<0;1>\/\*/);
   assert.equal(wallet.includes("/0/0/*"), false);
@@ -246,7 +246,7 @@ test("BIP45 multipath keeps the co-signer branch before receive and change", () 
 
 test("BIP87 multipath uses its account key's receive and change branches", () => {
   const body = "sh(sortedmulti(1,[73c5da0a/87h/0h/4h]xpubABC/0/*))";
-  const wallet = hodlWatchOnlyMultipathDescriptor(Le(body));
+  const wallet = hodlWatchOnlyMultipathDescriptor(hodlDescriptorWithChecksum(body));
   assert.match(wallet, /\[73c5da0a\/87h\/0h\/4h\]xpubABC\/<0;1>\/\*/);
   assert.equal(wallet.includes("/0/0/*"), false);
 });
@@ -254,7 +254,7 @@ test("BIP87 multipath uses its account key's receive and change branches", () =>
 test("originated 2-of-3 payload keeps fingerprints and fits a static QR", () => {
   const receive =
     "wsh(sortedmulti(2,[73c5da0a/48h/1h/0h/2h]tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ/0/*,[b8688df1/48h/1h/0h/2h]tpubDEfobrrtptRTbKf4gysDhoabneABDTAcdj3Vbn4XwPsLE2pmqpizSPRG6zHsbAMuiSgWmWPsYCLHTKTPpyrGJ5rAoTpKoQNZcxodiPf2tSJ/0/*,[3f635a63/48h/1h/0h/2h]tpubDFPtPArj4GzBEFHohegg1Xatrc1Fi9oSox5LzuSRX91miwQxuUrEpBxpvDRsmZYJKYFhgdK3UStsjC8JKXfUbMinjFqiEM4uNwzVaCaHpys/0/*))";
-  const wallet = hodlWatchOnlyMultipathDescriptor(Le(receive));
+  const wallet = hodlWatchOnlyMultipathDescriptor(hodlDescriptorWithChecksum(receive));
   assert.match(wallet, /\[73c5da0a\/48h\/1h\/0h\/2h\]/);
   assert.match(wallet, /\[b8688df1\/48h\/1h\/0h\/2h\]/);
   assert.match(wallet, /\[3f635a63\/48h\/1h\/0h\/2h\]/);
@@ -267,7 +267,7 @@ test("originated 2-of-3 payload keeps fingerprints and fits a static QR", () => 
 test("taproot watch-only descriptor uses NUMS internal key and sortedmulti_a", () => {
   const body =
     "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,sortedmulti_a(2,[73c5da0a/86h/0h/0h]xpubABC/0/*,[b8688df1/86h/0h/0h]xpubDEF/0/*))";
-  const wallet = hodlWatchOnlyMultipathDescriptor(Le(body));
+  const wallet = hodlWatchOnlyMultipathDescriptor(hodlDescriptorWithChecksum(body));
   assert.match(wallet, /^tr\(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,sortedmulti_a\(/);
   assert.match(wallet, /\[73c5da0a\/86h\/0h\/0h\]xpubABC\/<0;1>\/\*/);
   assert.match(wallet, /\[b8688df1\/86h\/0h\/0h\]xpubDEF\/<0;1>\/\*/);
@@ -278,14 +278,14 @@ test("taproot watch-only descriptor uses NUMS internal key and sortedmulti_a", (
 test("BIP48 script-path taproot origins keep the 3h leaf before receive and change", () => {
   const body =
     "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,sortedmulti_a(1,[73c5da0a/48h/0h/0h/3h]xpubABC/0/*))";
-  const wallet = hodlWatchOnlyMultipathDescriptor(Le(body));
+  const wallet = hodlWatchOnlyMultipathDescriptor(hodlDescriptorWithChecksum(body));
   assert.match(wallet, /\[73c5da0a\/48h\/0h\/0h\/3h\]xpubABC\/<0;1>\/\*/);
 });
 
 test("listed-order watch-only descriptor keeps multi() key order", () => {
   const body =
     "wsh(multi(2,[73c5da0a/48h/1h/0h/2h]tpubABC/0/*,[b8688df1/48h/1h/0h/2h]tpubDEF/0/*))";
-  const wallet = hodlWatchOnlyMultipathDescriptor(Le(body));
+  const wallet = hodlWatchOnlyMultipathDescriptor(hodlDescriptorWithChecksum(body));
   assert.match(wallet, /wsh\(multi\(2,/);
   assert.match(wallet, /\[73c5da0a\/48h\/1h\/0h\/2h\]tpubABC\/<0;1>\/\*/);
   assert.match(wallet, /\[b8688df1\/48h\/1h\/0h\/2h\]tpubDEF\/<0;1>\/\*/);
@@ -295,7 +295,7 @@ test("listed-order watch-only descriptor keeps multi() key order", () => {
 test("listed-order taproot descriptor keeps multi_a() key order", () => {
   const body =
     "tr(50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0,multi_a(2,[73c5da0a/86h/0h/0h]xpubABC/0/*,[b8688df1/86h/0h/0h]xpubDEF/0/*))";
-  const wallet = hodlWatchOnlyMultipathDescriptor(Le(body));
+  const wallet = hodlWatchOnlyMultipathDescriptor(hodlDescriptorWithChecksum(body));
   assert.match(wallet, /multi_a\(2,/);
   assert.equal(wallet.includes("sortedmulti_a"), false);
   assert.match(wallet, /\[73c5da0a\/86h\/0h\/0h\]xpubABC\/<0;1>\/\*/);

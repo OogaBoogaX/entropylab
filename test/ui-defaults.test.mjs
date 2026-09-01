@@ -94,7 +94,7 @@ test("key and multisig derivation use an indexed address window with an estimate
   assert.match(appSource, /Math\.min\(hodlMaxAddressRange, hodlMaxAddressIndex - start \+ 1\)/);
   assert.match(appSource, /if \(\/\^\\d\+\$\/\.test\(rangeRaw\)[^\n]*range > maximum\) rangeInput\.value = String\(maximum\)/);
   assert.match(appSource, /Max \$\{maximum\.toLocaleString\(\)\}/);
-  assert.match(appSource, /for \(let index = startIndex; index < startIndex \+ o; index\+\+\)/);
+  assert.match(appSource, /for \(let index = startIndex; index < startIndex \+ count; index\+\+\)/);
   assert.match(appSource, /function hodlInitAddressBenchmark\(\)/);
   assert.match(appSource, /requestIdleCallback\(run, \{ timeout: 750 \}\)/);
   assert.match(appSource, /var hodlAddressVirtualThreshold = 24, hodlAddressVirtualRowHeight = 34, hodlAddressVirtualOverscan = 6/);
@@ -135,7 +135,7 @@ test("key and multisig derivation select one or two address branches", () => {
   assert.match(appSource, /function hodlReadBranchWindow\(prefix = "", mark = true\)/);
   assert.match(appSource, /function hodlAddressBranchLabel\(branch\)/);
   assert.match(appSource, /branch: Boolean\(fields\.branchHarden\)/);
-  assert.match(appSource, /hodlPathIndex\(chain, branchHardened\)/);
+  assert.match(appSource, /hodlPathComponent\(chain, branchHardened\)/);
   assert.match(appSource, /Hardened address branches cannot be derived from the supplied multisig extended public keys/);
   assert.match(appSource, /branch === 0 \? "Receive" : branch === 1 \? "Change" : `Custom branch \$\{branch\}`/);
   assert.match(appSource, /progress\.setTotal\(count \* branchRange\)/);
@@ -175,7 +175,7 @@ test("direct dice and card methods expose manual BIP39 calculations before copyi
   assert.match(appSource, /id="show-manual-calculations"/);
   assert.match(appSource, /id="dice-manual-calculations" class="manual-calculations-container"/);
   assert.match(appSource, /id="cards-manual-calculations" class="manual-calculations-container"/);
-  assert.match(appSource, /function hodlManualCalculationMarkup\(method, value, targetWords = Pt\)/);
+  assert.match(appSource, /function hodlManualCalculationMarkup\(method, value, targetWords = hodlTargetWordCount\)/);
   assert.match(appSource, /hodlRenderManualCalculations\("dice-manual-calculations",\s*"dplus"/);
   assert.match(appSource, /hodlRenderManualCalculations\("dice-manual-calculations",\s*"bitbox"/);
   assert.match(appSource, /hodlRenderManualCalculations\("cards-manual-calculations",\s*"cards"/);
@@ -199,7 +199,7 @@ test("Seed phrase offers one-based or zero-based BIP39 word-number entry", () =>
   assert.match(appSource, /0–2047 instead of the default 1–2048/);
   assert.match(appSource, /function hodlTranslateSeedNumberIndex\(value, toZeroIndexed\)/);
   assert.match(appSource, /function hodlSeedNumberCanInsertDigit\(input, digit, zeroIndexed = hodlSeedZeroIndexed\)/);
-  assert.match(appSource, /function hodlAutocompleteSeedNumberInput\(input, event, targetWords = Pt, zeroIndexed = hodlSeedZeroIndexed\)/);
+  assert.match(appSource, /function hodlAutocompleteSeedNumberInput\(input, event, targetWords = hodlTargetWordCount, zeroIndexed = hodlSeedZeroIndexed\)/);
   assert.match(appSource, /number <= 204 \|\| number > maximum/);
   assert.match(appSource, /class="dice-input-pad seed-number-pad"/);
   assert.match(appSource, /\[0, 1, 2, 3, 4, 5, 6, 7, 8, 9\]/);
@@ -230,11 +230,11 @@ test("Number bases offers exact Base 2, 4, 8, 16, Crockford Base32, and Base64-a
   }
   assert.match(app, /alphabet:"0123456789ABCDEFGHJKMNPQRSTVWXYZ"/);
   assert.match(app, /alphabet:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\+\/"/);
-  assert.match(app, /function hodlNumberBaseEntropy\(value,format,targetWords=Pt\)/);
-  assert.match(app, /function hodlNumberBasePreviewWords\(value,format,targetWords=Pt\)/);
-  assert.match(app, /function hodlNumberBaseValueFromBytes\(bytes,format,targetWords=Pt\)/);
+  assert.match(app, /function hodlNumberBaseEntropy\(value,format,targetWords=hodlTargetWordCount\)/);
+  assert.match(app, /function hodlNumberBasePreviewWords\(value,format,targetWords=hodlTargetWordCount\)/);
+  assert.match(app, /function hodlNumberBaseValueFromBytes\(bytes,format,targetWords=hodlTargetWordCount\)/);
   assert.match(app, /id="show-number-base-calculations"/);
-  assert.match(app, /function hodlBinaryCalculationRows\(value,targetWords=Pt\)/);
+  assert.match(app, /function hodlBinaryCalculationRows\(value,targetWords=hodlTargetWordCount\)/);
   assert.match(app, /id="number-base-calculations" class="number-base-calculations-panel"/);
   assert.match(appSource, /id="global-sync-host"/);
   assert.doesNotMatch(appSource, /global-sync-hash-host/);
@@ -320,17 +320,17 @@ test("seed phrase mode has a lowercase Jade-style on-screen keyboard", () => {
   assert.match(app, /function hodlCycleSeedKeyboardLayout\(keyboard,button\)/);
   assert.match(app, /function hodlSetSeedKeyboardLayout\(keyboard,button,next\)/);
   assert.match(app, /order=\["lower","upper","number"\]/);
-  assert.match(app, /function hodlSeedKeyboardCanEnterCharacter\(input,key,targetWords=Pt\)/);
-  assert.match(app, /hodlBip39WordIndex=new Map\(Ae\.map\(\(word,index\)=>\[word,index\]\)\)/);
+  assert.match(app, /function hodlSeedKeyboardCanEnterCharacter\(input,key,targetWords=hodlTargetWordCount\)/);
+  assert.match(app, /hodlBip39WordIndex=new Map\(hodlBip39Wordlist\.map\(\(word,index\)=>\[word,index\]\)\)/);
   assert.match(app, /hodlLastWordCache=new Map(?:\(\))?/);
-  assert.match(app, /function hodlComputeTargetLastWords\(words,targetWords=Pt\)/);
+  assert.match(app, /function hodlComputeTargetLastWords\(words,targetWords=hodlTargetWordCount\)/);
   assert.match(app, /missingEntropyBits=config\.bits-prefixBits\.length/);
   assert.match(app, /for\(let suffix=0;suffix<2\*\*missingEntropyBits;suffix\+\+\)/);
   assert.match(app, /let finalContext=analysis\.finalContext,validation=/);
   assert.match(app, /options=context\.candidates/);
-  assert.match(app, /function hodlSeedKeyboardCanEnterSpace\(input,targetWords=Pt\)/);
+  assert.match(app, /function hodlSeedKeyboardCanEnterSpace\(input,targetWords=hodlTargetWordCount\)/);
   assert.match(app, /words\.length<config\.words&&words\.every\(word=>hodlBip39WordSet\.has\(word\)\)/);
-  assert.match(app, /function hodlUpdateSeedKeyboardKeys\(input,targetWords=Pt\)/);
+  assert.match(app, /function hodlUpdateSeedKeyboardKeys\(input,targetWords=hodlTargetWordCount\)/);
   // The seed keyboard doubles as the passphrase keyboard while that field has
   // focus, so the key-state update takes whichever keyboard is asking.
   assert.match(app, /function hodlUpdatePassphraseKeyboardKeys\(input,keyboardId="passphrase-keyboard"\)/);
@@ -392,7 +392,7 @@ test("seed phrase mode has a lowercase Jade-style on-screen keyboard", () => {
   assert.match(app, /hodlKeyboardMarkup\(!0,"private key","private-keyboard",!0\)/);
   assert.doesNotMatch(app, /hodlKeyboardMarkup\(!0\)/);
   assert.match(app, /function hodlRenderPassphraseKeyboard\(\)/);
-  assert.match(app, /keyMode=Ne==="key",hdBrain=hodlBrainHdActive\(\),privateKey=keyMode,passphrase=!keyMode\|\|hdBrain/);
+  assert.match(app, /keyMode=hodlKeyMode==="key",hdBrain=hodlBrainHdActive\(\),privateKey=keyMode,passphrase=!keyMode\|\|hdBrain/);
   // Where the seed keyboard exists it already follows focus into the passphrase
   // box, so no second on-screen keyboard is rendered underneath it.
   assert.match(app, /shared=passphrase&&!!document\.getElementById\("seed-keyboard"\),ownToggle=passphrase&&!shared&&!hdBrain,enabled=!shared/);
@@ -447,7 +447,7 @@ test("seed phrase mode has a lowercase Jade-style on-screen keyboard", () => {
   assert.match(css, /\.passphrase-bip39-options \{[^}]*flex: 1 1 auto[^}]*gap: var\(--space-control\)/s);
   assert.match(css, /\.passphrase-bip39-toggle, \.passphrase-autocomplete-toggle \{[^}]*width: 100%[^}]*margin-top: 0/s);
   assert.match(css, /\.passphrase-keyboard-host \.seed-keyboard \{ margin-top: var\(--space-control\); margin-right: auto; margin-left: 0; \}/);
-  assert.match(css, /\.seed-keyboard-toggle\s*\{[^}]*width: 44px[^}]*min-height: 44px[^}]*height: auto/s);
+  assert.match(css, /\.seed-keyboard-toggle,\s*\.theme-toggle\s*\{[^}]*width: 44px[^}]*min-height: 44px[^}]*height: auto/s);
   assert.match(css, /\.seed-keyboard-toggle svg \{[^}]*width: 30px[^}]*height: 22px/s);
   assert.match(css, /\.seed-keyboard-icon-case \{[^}]*fill: none[^}]*stroke: currentColor/s);
   assert.match(css, /\.seed-keyboard\s*\{[^}]*gap: 4px[^}]*max-width: 640px[^}]*margin: var\(--space-control\) auto 0 0[^}]*padding: 7px 8px/s);
@@ -501,7 +501,7 @@ test("one editable derivation path replaces schemes and accepts arbitrary depth"
   assert.match(appSource, /function hodlParseCustomDerivationPath\(value\)/);
   assert.match(appSource, /function hodlReadVisibleDerivationPath\(mark = true\)/);
   assert.match(appSource, /\.\.\.existing\.slice\(3\)/);
-  assert.match(appSource, /accountPath = derivationPlan\?\.accountPath \|\| Ao/);
+  assert.match(appSource, /accountPath = derivationPlan\?\.accountPath \|\| hodlAccountPath/);
 });
 
 test("advanced derivation indexes constrain and restore hardening suffixes", () => {
@@ -529,7 +529,7 @@ test("derivation indexes keep adjacent Harden controls with safe defaults", () =
   assert.match(appSource, /function hodlReadHardening\(prefix = ""\)/);
   assert.match(appSource, /function hodlSyncDerivationPrime\(input\)/);
   assert.match(appSource, /prime\.dataset\.indexValue = String\(input\.value \?\? ""\)/);
-  assert.match(appSource, /hodlPathIndex\(e\.purpose, hardening\.purpose\)/);
+  assert.match(appSource, /hodlPathComponent\(e\.purpose, hardening\.purpose\)/);
   assert.match(appSource, /Hardened address indexes cannot be derived from multisig extended public keys/);
 });
 
@@ -539,12 +539,12 @@ test("multisig script type and placeholders follow detected co-signer exports", 
     assert.match(markup, /id="msig-script-warning" role="status" hidden/);
     assert.match(markup, /id="msig-go"[^>]*aria-describedby="msig-script-warning"/);
   }
-  assert.match(template, /placeholder="\[fingerprint\/48h\/0h\/0h\/2h\]Zpub…"/);
-  assert.match(app, /function hodlMultisigKeyPlaceholder\(kind,network,purpose,coinType=Rs\(network\),hardening=/);
+  assert.match(template, /placeholder="\[fingerprint\/48h\/0h\/0h\/2h\]xpub…"/);
+  assert.match(app, /function hodlMultisigKeyPlaceholder\(kind,network,purpose,coinType=hodlCoinTypeFromNetwork\(network\),hardening=/);
   assert.match(appWhitespace, /kind==="p2sh"&&purpose===45\)return`\[fingerprint\/\$\{purposeStep\}\]\$\{testnet\?"tpub":"xpub"\}(?:…|\\u2026)`/);
   assert.match(appWhitespace, /kind==="p2sh"\|\|purpose===87\)return`\[fingerprint\/\$\{purposeStep\}\/\$\{coin\}\/\$\{account\}\]\$\{testnet\?"tpub":"xpub"\}(?:…|\\u2026)`/);
-  assert.match(app, /testnet\?"Upub":"Ypub"/);
-  assert.match(app, /testnet\?"Vpub":"Zpub"/);
+  assert.match(appWhitespace, /kind==="p2sh-p2wsh"\)return`\[fingerprint\/\$\{purposeStep\}\/\$\{coin\}\/\$\{account\}\/1h\]\$\{testnet\?"tpub":"xpub"\}(?:…|\\u2026)`/);
+  assert.match(appWhitespace, /kind==="p2wsh"\)return`\[fingerprint\/\$\{purposeStep\}\/\$\{coin\}\/\$\{account\}\/2h\]\$\{testnet\?"tpub":"xpub"\}(?:…|\\u2026)`/);
   assert.match(appWhitespace, /kind==="p2tr"\)return`\[fingerprint\/\$\{purposeStep\}\/\$\{coin\}\/\$\{account\}\]\$\{testnet\?"tpub":"xpub"\}(?:…|\\u2026)`/);
   assert.match(app, /function hodlMultisigPurposeIndex\(origin\)/);
   assert.match(app, /function hodlUpdateMsigPurposeDetection\(\)/);
@@ -556,19 +556,19 @@ test("multisig script type and placeholders follow detected co-signer exports", 
 });
 
 test("key derivation shows the relevant paste-ready multisig co-signer exports", () => {
-  assert.match(app, /function hodlBuildMultisigCosignerExports\(root,network,accountIndex,masterFingerprint,coinType=Rs\(network\)\)/);
+  assert.match(app, /function hodlBuildMultisigCosignerExports\(root,network,accountIndex,masterFingerprint,coinType=hodlCoinTypeFromNetwork\(network\)\)/);
   assert.match(appWhitespace, /accountId:"bip44",kind:"p2sh",standard:"bip45",label:"Legacy (?:·|\\xB7) BIP45 (?:·|\\xB7) No account",family:"x",accountPath:"m\/45'",originPath:"45h"/);
   assert.match(appWhitespace, /accountId:"bip44",kind:"p2sh",standard:"bip87",label:`Legacy (?:·|\\xB7) BIP87 (?:·|\\xB7) Account \$\{accountIndex\}`,family:"x",accountPath:`m\/87'\/\$\{coinType\}'\/\$\{accountIndex\}'`,originPath:`87h\/\$\{coinType\}h\/\$\{accountIndex\}h`/);
-  assert.match(appWhitespace, /accountId:"bip49",kind:"p2sh-p2wsh",label:"Nested SegWit (?:·|\\xB7) BIP48",family:"y",scriptIndex:1/);
-  assert.match(appWhitespace, /accountId:"bip84",kind:"p2wsh",label:"Native SegWit (?:·|\\xB7) BIP48",family:"z",scriptIndex:2/);
+  assert.match(appWhitespace, /accountId:"bip49",kind:"p2sh-p2wsh",label:"Nested SegWit (?:·|\\xB7) BIP48",family:"x",scriptIndex:1/);
+  assert.match(appWhitespace, /accountId:"bip84",kind:"p2wsh",label:"Native SegWit (?:·|\\xB7) BIP48",family:"x",scriptIndex:2/);
   assert.match(appWhitespace, /accountId:"bip86",kind:"p2tr",label:"Taproot (?:·|\\xB7) BIP86",family:"x"/);
   assert.match(app, /accountPath=definition\.accountPath\|\|`m\/48'\/\$\{coinType\}'\/\$\{accountIndex\}'\/\$\{definition\.scriptIndex\}'`/);
   assert.match(app, /value:`\[\$\{masterFingerprint\}\/\$\{originPath\}\]\$\{publicKey\}`/);
   assert.match(app, /multisigCosignerExports:root\.privateKey\?hodlBuildMultisigCosignerExports\(root,network,accountIndex,masterFingerprint,coinType\):\[\]/);
   assert.match(app, /function hodlRenderMultisigCosignerExport\(exports,accountId\)/);
   assert.match(app, /exports\.filter\(candidate=>candidate\.accountId===accountId\)/);
-  assert.match(appWhitespace, /items\.map\(item=>ye\(`Multisig co-signer \$\{item\.prefix\} · \$\{item\.label\}`,item\.value\)\)\.join\(""\)/);
-  assert.match(app, /\$\{hodlSlip132WatchFields\(account,re\)\}\s*\$\{hodlImportedCoreRecoveryExport\(re,account\)\}\s*\$\{hodlRenderMultisigCosignerExport\(re\.multisigCosignerExports,account\.def\.id\)\}/);
+  assert.match(appWhitespace, /items\.map\(item=>hodlPublicFieldHtml\(`Multisig co-signer \$\{item\.prefix\} · \$\{item\.label\}`,item\.value\)\)\.join\(""\)/);
+  assert.match(app, /\$\{hodlSlip132WatchFields\(account,hodlWalletResult\)\}\s*\$\{hodlImportedCoreRecoveryExport\(hodlWalletResult,account\)\}\s*\$\{hodlRenderMultisigCosignerExport\(hodlWalletResult.multisigCosignerExports,account\.def\.id\)\}/);
   assert.doesNotMatch(`${app}\n${css}`, /account-multisig-exports/);
   assert.match(app, /Legacy P2SH requires the depth-1 BIP45 purpose key at m\/45h/);
   assert.match(app, /suffix=bip45\?`\/0\/\$\{branch\}\/\*`:`\/\$\{branch\}\/\*`/);
@@ -779,17 +779,17 @@ test("multisig consistently uses derive for its heading and action", () => {
   assert.match(app, /let\{network,coinType,count,addressStart,branchStart,branchRange,n,m,kind,purpose,hardening,legacyStandard,nodes,xpubs,keyTokens,accountSummary,accountWarning\}=hodlValidatedMsigInputs\(\)/);
 });
 
-test("key and multisig add controls stay pinned to the right of their tab strips", () => {
-  assert.match(css, /\.key-tab-strip \{ display: flex; align-items: center; min-width: 0; margin-top: 0; gap: 4px; \}/);
+test("Station add controls stay pinned to the right of their tab strips", () => {
+  assert.match(css, /\.key-tab-strip \{ display: flex; align-items: flex-end; min-width: 0; margin-top: 12px; \}/);
   assert.match(css, /\.key-tabs \{\s*display: flex;[^}]*flex: 1 1 auto; min-width: 0;/s);
   assert.match(css, /\.add-item-control \{ position: relative; display: inline-flex; flex: 0 0 auto; \}/);
 });
 
-test("the delete control reads as unavailable on the Lab tab", () => {
-  // Both strips ship it disabled: a fresh page holds only Lab, and app.js
-  // keeps minus unavailable while Lab is selected.
+test("the delete control reads as unavailable on a Station tab", () => {
+  // All three strips ship it disabled: a fresh page holds only the bench,
+  // and app.js keeps minus unavailable while that bench is selected.
   for (const markup of [template, appSource]) {
-    for (const id of ["delete-key", "delete-msig"]) {
+    for (const id of ["delete-key", "delete-bip85", "delete-msig"]) {
       assert.match(
         markup,
         new RegExp(`<button class="add-key remove-key" id="${id}"[^>]*disabled`),
@@ -999,12 +999,14 @@ test("the online and noscript warnings are titled like the beta banner", () => {
 });
 
 test("the beta disclaimer gates the page as a modal until accepted", () => {
-  // The overlay sits in the static template after the #btc-calc root: the
-  // application boot replaces that root's contents, so the gate must live
-  // outside it — and outside the runtime template — to survive boot.
-  const marker = template.indexOf("<!--/$-->");
+  // The overlay sits in the static template after the #btc-calc root (whose
+  // last child is the page footer): the application boot replaces that root's
+  // contents, so the gate must live outside it — and outside the runtime
+  // template — to survive boot.
+  const rootAt = template.indexOf('<div id="btc-calc">');
+  const footerAt = template.indexOf('<footer class="page-footer');
   const overlayAt = template.indexOf('<div class="disclaimer-overlay');
-  assert.ok(marker >= 0 && overlayAt > marker, "the disclaimer overlay must follow the #btc-calc root");
+  assert.ok(rootAt >= 0 && footerAt > rootAt && overlayAt > footerAt, "the disclaimer overlay must follow the #btc-calc root");
   assert.ok(overlayAt < template.indexOf("/*@@JS_BROWSER_CHECK@@*/"), "the disclaimer overlay must ship before the scripts");
   assert.doesNotMatch(appSource, /beta-disclaimer/, "the runtime template must not carry the disclaimer");
   // It starts hidden: the reveal is scripted, so a no-JavaScript host never
@@ -1070,7 +1072,7 @@ test("the layout has a 320px floor that the fixed header shares", () => {
 
 test("header theme toggle cycles dark, light, and OS themes without a flash", () => {
   for (const markup of [template, app]) {
-    assert.match(markup, /class="seed-keyboard-toggle theme-toggle header-button" id="theme-toggle" data-theme-mode="dark" aria-label="Theme: dark\. Switch to light"/);
+    assert.match(markup, /class="theme-toggle header-button" id="theme-toggle" data-theme-mode="dark" aria-label="Theme: dark\. Switch to light"/);
   }
   assert.match(template, /<script>\(function\(\)\{try\{var m=localStorage\.getItem\("entropylab-theme"\)/);
   assert.match(app, /var hodlThemeModes=\["dark","light"\],hodlThemeStorageKey="entropylab-theme"/);
@@ -1250,6 +1252,8 @@ test("seed-length selector offers all five BIP39 sizes", () => {
 
 test("D++ uses the published hexadecimal D16 transcript without a notation toggle", () => {
   assert.match(appSource, /let dplusFaces = \["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"\]/);
+  assert.match(appSource, /D\+\+ rolls \(D8, D16, D16; then/);
+  assert.doesNotMatch(appSource, /D\+\+ rolls \(D8 1\\u20138, D16 0\\u2013F/);
   assert.match(appSource, /D8 labeled 1\\u20138 and two hexadecimal D16 dice labeled 0\\u2013F/);
   assert.match(appSource, /100 selects abandon and 8FF selects zoo/);
   assert.doesNotMatch(appSource, /data-dplus-die|hodlDPlusNumberedD16|dplusNumberedD16|Decimal D16/);
@@ -1268,8 +1272,8 @@ test("dice rolls hide Pearson chi-squared fairness behind a text expand button",
   assert.match(app, /function hodlSetDiceFairnessOpen\(open\)/);
   assert.match(app, /function hodlChiSquaredCdf\(/);
   assert.match(app, /function hodlDiceFairnessAssess\(rolls,\s*labels,\s*title\)/);
-  assert.match(app, /function hodlRenderDiceFairness\(value,\s*method,\s*targetWords\s*=\s*Pt\)/);
-  assert.match(app, /hodlRenderDiceFairness\(input\.value,\s*ge,\s*config\.words\)/);
+  assert.match(app, /function hodlRenderDiceFairness\(value,\s*method,\s*targetWords\s*=\s*hodlTargetWordCount\)/);
+  assert.match(app, /hodlRenderDiceFairness\(input\.value,\s*hodlDiceMethod,\s*config\.words\)/);
   assert.match(app, /showDiceFairness:!1/);
   assert.match(app, /Looks pretty fair/);
   assert.match(app, /Looks biased/);
@@ -1306,7 +1310,7 @@ test("virtual keypads never focus the field on touch so the mobile keyboard stay
   assert.match(body("hodlPlaceCaret"), /document\.activeElement === input/);
   // Every keypad routes pointerdown through the shared binder; no pad focuses the input directly.
   assert.doesNotMatch(appSource, /pointerdown", \(event\) => \{\s*event\.preventDefault\(\);\s*\w+\.focus\(/);
-  for (const call of ['at.querySelectorAll("[data-d]")', 'at.querySelectorAll("[data-entropy-digit]")', 'at.querySelectorAll("[data-direct-card-rank], #card-undo")', 'pad.querySelectorAll("button")', 'keyboard.querySelectorAll("button")']) {
+  for (const call of ['hodlFormEl.querySelectorAll("[data-d]")', 'hodlFormEl.querySelectorAll("[data-entropy-digit]")', 'hodlFormEl.querySelectorAll("[data-direct-card-rank], #card-undo")', 'pad.querySelectorAll("button")', 'keyboard.querySelectorAll("button")']) {
     assert.ok(appSource.includes(`hodlBindKeypadPointer(${call}`), `${call} keypad is bound`);
   }
 });
@@ -1345,13 +1349,13 @@ test("PSBT Editor tab follows PSBT / Nonce and wires the rust-bitcoin editor", (
   assert.match(css, /#psbted-card\[hidden\]/);
 });
 
-test("BIP-85 entry point sits beside Derive Wallet and opens the BIP-85 tab", () => {
+test("BIP-85 entry point sits beside Derive Key and opens the BIP-85 tab", () => {
   for (const markup of [template, appSource]) {
-    assert.match(markup, /id="go"[^>]*>Derive Wallet<\/button>[\s\S]*?id="bip85-open"[^>]*>Derive BIP-85 child<\/button>[\s\S]*?id="wipe"/);
+    assert.match(markup, /id="go"[^>]*>Derive Key<\/button>[\s\S]*?id="bip85-open"[^>]*>Derive BIP-85 child<\/button>[\s\S]*?id="wipe"/);
   }
   assert.match(appSource, /getElementById\("bip85-open"\)/);
   assert.match(appSource, /open\.onclick = \(\) => \{\s*hodlShowWorkspace\("bip85"\)/);
-  assert.match(appSource, /open\.onclick[\s\S]*?hodlUseActiveKeyForBip85\(\)/);
+  assert.match(appSource, /open\.onclick[\s\S]*?hodlPickBip85SessionKey\(hodlKeys\[hodlActiveKey\]\)/);
 });
 
 test("Silent Payments sits between Multi Signature and PSBT / Nonce", () => {
@@ -1368,6 +1372,23 @@ test("Silent Payments sits between Multi Signature and PSBT / Nonce", () => {
     assert.match(markup, /BIP-352/);
   }
   assert.match(css, /#sp-card\[hidden\]/);
+});
+
+test("Silent Payments has a connected SP Station with a monochrome coin-and-signal icon", () => {
+  assert.match(appSource, /function hodlCreateSilentPaymentsIcon\(\) \{/);
+  assert.match(appSource, /span\.className = "key-tab-icon key-tab-lab-icon silent-payments-icon bench-tab-icon"/);
+  assert.match(appSource, /\[\["signal-inner",[\s\S]*?\["signal-outer",/);
+  assert.match(appSource, /rim\.setAttribute\("data-part", "coin-rim"\)/);
+  assert.match(appSource, /ridge\.setAttribute\("data-part", "coin-ridge"\)/);
+  assert.doesNotMatch(appSource, /let inset = document\.createElementNS/);
+  assert.match(appSource, /function hodlInitSpBench\(\) \{/);
+  assert.match(appSource, /label\.textContent = "SP Station";/);
+  assert.match(appSource, /button\.append\(hodlCreateSilentPaymentsIcon\(\), label\);/);
+  for (const markup of [template, appSource]) {
+    assert.match(markup, /id="sp-manager"/);
+    assert.match(markup, /id="sp-tabs"/);
+  }
+  assert.doesNotMatch(template, /aria-label="Silent Payments"><span class="workspace-tab-icon/);
 });
 
 test("the workspace switcher keeps every tool on screen as a tab strip", () => {
@@ -1389,12 +1410,12 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   // One swaps for the other at the width the header drops its own labels.
   assert.match(css, /\.workspace-tab-short \{ display: none; \}/);
   assert.match(css, /@media \(max-width: 719px\) \{[\s\S]*?\.workspace-tab-full \{ display: none; \}\s*\.workspace-tab-short \{ display: inline; \}/);
-  assert.match(appSource, /button\.firstChild\.textContent = label;\s*button\.lastChild\.textContent = short;/);
+  assert.match(appSource, /fullLabel\.textContent = label;\s*shortLabel\.textContent = short;/);
   // Hidden text leaves the accessibility tree, so the full name is stated on
   // the tab itself and assistive tech hears it at every width.
   assert.match(appSource, /button\.setAttribute\("aria-label", label\);/);
   for (const full of ["Keys", "BIP-85", "Multi Signature", "Silent Payments", "PSBT / Nonce"]) {
-    assert.ok(template.includes(`aria-label="${full}"><span class="workspace-tab-full">${full}</span>`), `${full} tab needs its accessible name`);
+    assert.match(template, new RegExp(`aria-label="${full.replace("/", "\\/")}">[\\s\\S]*?<span class="workspace-tab-full">${full.replace("/", "\\/")}</span>`), `${full} tab needs its accessible name`);
   }
   // A tablist owes arrow keys; the key and multisig strips already answer them.
   assert.match(appSource, /function hodlWorkspaceTabKeydown\(event, index\) \{/);
@@ -1444,8 +1465,8 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   assert.match(appSource, /strip\.setAttribute\("role", "tablist"\);/);
   assert.match(appSource, /button\.onclick = \(\) => hodlShowWorkspace\(id\);/);
   assert.match(appSource, /hodlInitTabDrag\(strip\);/);
-  assert.match(appSource, /\[\.\.\.W\("#workspace-tabs"\)\.querySelectorAll\("\[data-workspace\]"\)\]\.forEach/);
-  assert.match(appSource, /hodlRevealTab\(W\("#workspace-tabs"\)/);
+  assert.match(appSource, /\[\.\.\.hodlElement\("#workspace-tabs"\)\.querySelectorAll\("\[data-workspace\]"\)\]\.forEach/);
+  assert.match(appSource, /hodlRevealTab\(hodlElement\("#workspace-tabs"\)/);
   // A hint points at tools past the right edge. It tracks what is still out
   // there rather than merely whether the strip scrolls, so it clears once the
   // end is reached, and it is decorative: the tabs are the real route.
@@ -1473,11 +1494,12 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   assert.match(css, /\.workspace-more\[hidden\] \{ display: none; \}/);
 });
 
-test("Lab stays put and a derived key opens a fingerprint tab with a summary", () => {
+test("Key Station stays put and a derived key opens a fingerprint tab with a summary", () => {
   assert.match(appSource, /function hodlNewLabState\(\) \{/);
-  assert.match(appSource, /hodlNewKeyState\("Key Lab", 0, 0\)/);
-  assert.match(appSource, /name = state\.isLab \? "Key Lab"/);
-  assert.match(appSource, /source\.querySelectorAll\("svg"\)\.forEach\(\(svg\) => span\.appendChild\(svg\.cloneNode\(true\)\)\)/);
+  assert.match(appSource, /hodlNewKeyState\("Key Station", 0, 0\)/);
+  assert.match(appSource, /name = state\.isLab \? "Key Station"/);
+  assert.match(appSource, /path\.setAttribute\("d", hodlKeySilhouette\)/);
+  assert.match(css, /\.key-tab-icon\.key-tab-lab-icon \{[^}]*color: var\(--muted\);/s);
   assert.match(appSource, /function hodlCommitDerivedKey\(\) \{/);
   assert.match(appSource, /function hodlSelectLab\(\) \{/);
   assert.match(appSource, /function hodlSyncKeyResultView\(\) \{/);
@@ -1491,11 +1513,15 @@ test("Lab stays put and a derived key opens a fingerprint tab with a summary", (
     assert.match(markup, /id="key-lab"/);
     assert.match(markup, /id="key-edit-inputs"/);
     assert.match(markup, /id="key-summary-path"/);
-    assert.match(markup, /Open the lab to derive another key/);
+    assert.match(markup, /Open Key Station to derive another key/);
   }
   assert.match(appSource, /function hodlSnapshotKeySummary\(/);
   assert.match(appSource, /state\.createdScript = hodlKeySummaryScript\(state\)/);
   assert.match(appSource, /state\.createdPath = hodlKeySummaryPath\(state\)/);
+  assert.match(appSource, /function hodlFillLabFromKey\(source\) \{/);
+  assert.match(appSource, /function hodlEditKeyInputs\(\) \{/);
+  assert.match(appSource, /hodlSelectKey\(hodlFillLabFromKey\(hodlKeys\[hodlActiveKey\]\)\)/);
+  assert.match(appSource, /if \(edit\) edit\.onclick = hodlEditKeyInputs;/);
   assert.match(css, /#calc-card\.is-result-view #modes/);
   assert.match(css, /#calc-card:not\(\.is-result-view\) #out/);
 });
@@ -1509,33 +1535,85 @@ test("derived key results put private recovery before script type and addresses"
   assert.match(appSource, /id="account-address-heading">Addresses/);
   assert.match(appSource, /Verify the first selected address on another trusted wallet or signing device before accepting bitcoin\./);
   assert.doesNotMatch(appSource, /id="account-receive-heading">Receive/);
-  assert.match(appSource, /if \(state\) state\.reveal = Ge;/);
+  assert.match(appSource, /if \(state\) state\.reveal = hodlRevealPrivate;/);
   assert.match(appSource, /hodlBindWalletResultActions\(\);/);
 });
 
-test("multisig co-signer rows can pick a session key or paste a public key", () => {
+test("every MS Station co-signer row can pick any session key, and key reuse offers a derivation path", () => {
+  for (const markup of [template, appSource]) {
+    assert.doesNotMatch(markup, /msig-station-key-source/);
+    assert.doesNotMatch(markup, /id="msig-session-keys"/);
+    assert.doesNotMatch(markup, /id="msig-reuse-session-keys"/);
+    assert.doesNotMatch(markup, /id="msig-session-key-status"/);
+  }
   assert.match(appSource, /function hodlSessionMsigKeys\(\) \{/);
   assert.match(appSource, /function hodlMatchingMsigExport\(result\) \{/);
   assert.match(appSource, /function hodlSyncMsigKeyAvatar\(row\) \{/);
   assert.match(appSource, /chips\.className = "msig-session-keys"/);
   assert.match(appSource, /button\.className = "msig-session-key"/);
+  assert.match(appSource, /function hodlPickMsigSessionKey\(state, row\) \{/);
+  assert.match(appSource, /button\.onclick = \(\) => hodlPickMsigSessionKey\(state, row\)/);
   assert.match(appSource, /hodlFillKeyTabLifehash\(image, fingerprint\)/);
   assert.match(appSource, /hodlRefreshMsigSessionPickers\(\)/);
+  // Reusing a key for another co-signer must come with a derivation path so
+  // every slot derives distinct public keys in the descriptor.
+  assert.match(appSource, /className = "msig-key-reuse"/);
+  assert.match(appSource, /function hodlSyncMsigKeyReuse\(row\) \{/);
+  assert.match(appSource, /function hodlMsigSuggestedDerivationPath\(parsed, row\) \{/);
+  assert.match(appSource, /function hodlStripMsigKeyPath\(value\) \{/);
+  assert.match(appSource, /function hodlMsigBaseKeyId\(parsed\) \{/);
+  assert.match(appSource, /Append a different derivation path so this co-signer derives a different public key in the descriptor\./);
+  assert.match(appSource, /parsed\.derivationPath = parsedOrigin\.derivationPath \|\| ""/);
+  assert.match(appSource, /must be unhardened \(like \/1\); hardened steps cannot be derived from an extended public key/);
+  assert.match(appSource, /function hodlMsigDerivedNode\(parsed\) \{/);
+  assert.match(appSource, /let node = hodlMsigDerivedNode\(parsed\);\s*return hodlHex\.encode\(node\.publicKey\)/);
+  assert.match(appSource, /\]\$\{canonical\}\$\{parsed\.derivationPath \? "\/" \+ parsed\.derivationPath : ""\}/);
+  assert.doesNotMatch(appSource, /hodlMsigKeyTarget|reuseSessionKeys/);
+  assert.match(css, /\.msig-session-keys \{/);
   assert.match(css, /\.msig-session-key \{/);
+  assert.match(css, /\.msig-session-key\.active/);
+  assert.match(css, /\.msig-key-reuse \{/);
   assert.match(css, /\.msig-key-ident \{/);
 });
 
-test("Multisig Lab stays put and a derived wallet opens its own results tab", () => {
+test("BIP-85 and SP Stations can bring in compatible Key Station roots", () => {
+  for (const markup of [template, appSource]) {
+    assert.match(markup, /id="bip85-session-keys"/);
+    assert.match(markup, /id="sp-session-keys"/);
+    assert.match(markup, /Bring in a key from Key Station/);
+    assert.doesNotMatch(markup, /id="bip85-use-calc"/);
+    assert.doesNotMatch(markup, /id="sp-use-calc"/);
+  }
+  assert.match(appSource, /function hodlSessionHdRootKeys\(\) \{/);
+  assert.match(appSource, /state\.result\?\.kind === "hd" && \(state\.result\.mnemonic \|\| state\.result\.rootXprv\)/);
+  assert.match(appSource, /function hodlFillStationKeyPicker\(id, selectedSource, onSelect\) \{/);
+  assert.match(appSource, /hodlFillKeyTabLifehash\(image, fingerprint\)/);
+  assert.match(appSource, /function hodlPickBip85SessionKey\(state\) \{/);
+  assert.match(appSource, /function hodlPickSpSessionKey\(state\) \{/);
+  assert.match(appSource, /document\.getElementById\("bip85-key"\)\.value = rootXprv;/);
+  assert.match(appSource, /document\.getElementById\("sp-key"\)\.value = state\.result\?\.mnemonic \|\| state\.result\?\.rootXprv \|\| "";/);
+  assert.match(appSource, /document\.getElementById\("sp-pass"\)\.value = state\.result\?\.mnemonic \? state\.fields\?\.pass \|\| "" : "";/);
+  assert.match(appSource, /document\.getElementById\("bip85-key"\)\.addEventListener\("input"/);
+  assert.match(appSource, /document\.getElementById\("sp-key"\)\.addEventListener\("input", detachStationKey\)/);
+  assert.match(css, /\.session-key-picker \{ display: flex; flex-wrap: wrap; gap: 8px; \}/);
+  assert.match(css, /\.session-key-option\.active \{ border-color: var\(--accent\); \}/);
+});
+
+test("MS Station stays put and a derived wallet opens its own results tab", () => {
   assert.match(appSource, /function hodlNewMsigLabState\(\) \{/);
-  assert.match(appSource, /hodlNewMsigState\("Multisig Lab", 0, 0\)/);
-  assert.match(appSource, /name = state\.isLab \? "Multisig Lab"/);
-  assert.match(appSource, /button\.append\(state\.isLab \? hodlCreateLabIcon\(\) : hodlCreateMsigIcon\(\), label\)/);
+  assert.match(appSource, /hodlNewMsigState\("MS Station", 0, 0\)/);
+  assert.match(appSource, /name = state\.isLab \? "MS Station"/);
+  assert.match(appSource, /button\.append\(hodlCreateMsigIcon\(state\.isLab\), label\)/);
   assert.match(appSource, /function hodlCommitDerivedMsig\(\) \{/);
   assert.match(appSource, /function hodlSelectMsigLab\(\) \{/);
   assert.match(appSource, /hodlMsigs\.push\(hodlNewMsigLabState\(\)\)/);
   assert.match(appSource, /hodlCommitDerivedMsig\(\)/);
   assert.match(appSource, /out\.innerHTML = `/);
   assert.match(appSource, /function hodlAddMsig\(\) \{\s*hodlSelectMsigLab\(\);/s);
+  assert.match(appSource, /function hodlFillMsigLabFromWallet\(source\) \{/);
+  assert.match(appSource, /function hodlEditMsigInputs\(\) \{/);
+  assert.match(appSource, /hodlSelectMsig\(hodlFillMsigLabFromWallet\(hodlMsigs\[hodlActiveMsig\]\)\)/);
+  assert.match(appSource, /if \(edit\) edit\.onclick = hodlEditMsigInputs;/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="msig-summary"/);
     assert.match(markup, /id="msig-lab"/);
@@ -1546,11 +1624,36 @@ test("Multisig Lab stays put and a derived wallet opens its own results tab", ()
   assert.match(css, /#msig-card\.is-result-view \.msig-lab/);
 });
 
-test("session wallets are chips under the tool strip, not a second folder of tabs", () => {
-  assert.match(css, /\.key-manager \{ margin: 0 0 16px;/);
-  assert.doesNotMatch(css, /\.key-tab \{[^}]*border-radius: 10px 10px 0 0;/s);
-  assert.match(css, /\.key-tab \{[^}]*border-radius: 10px;/s);
-  assert.match(css, /\.key-tab\.active, \.key-tab-editing \{[^}]*border-color: var\(--accent\);/s);
-  assert.match(css, /#calc-card:not\(\[hidden\]\), #msig-card:not\(\[hidden\]\) \{[^}]*border-radius: 20px;/s);
+test("BIP-85 Station retains each child in a LifeHash fingerprint tab", () => {
+  for (const markup of [template, appSource]) {
+    assert.match(markup, /id="bip85-manager"/);
+    assert.match(markup, /id="bip85-tabs"/);
+    assert.match(markup, /id="add-bip85"/);
+    assert.match(markup, /id="delete-bip85"/);
+    assert.match(markup, /id="bip85-bench"/);
+  }
+  assert.match(appSource, /function hodlNewBip85BenchState\(\) \{/);
+  assert.match(appSource, /name: "BIP-85 Station"/);
+  assert.match(appSource, /function hodlCreateBip85Tab\(index\) \{/);
+  assert.match(appSource, /if \(state\.isLab\) button\.append\(hodlCreateBip85BenchIcon\(\), label\)/);
+  assert.match(appSource, /function hodlCreateBip85BenchIcon\(\) \{/);
+  assert.match(appSource, /\["seed", "M12 1\.75/);
+  assert.match(appSource, /\["left-leaf",/);
+  assert.match(appSource, /\["right-leaf",/);
+  assert.match(css, /\.bench-tab-icon,[\s\S]*?width: 18px; height: 18px;[\s\S]*?color: var\(--muted\);/);
+  assert.match(appSource, /hodlFillKeyTabLifehash\(image, state\.fingerprint\)/);
+  assert.match(appSource, /hodlBip85Children\.push\(state\)/);
+  assert.match(appSource, /function hodlDeleteActiveBip85\(\) \{[\s\S]*wipeBip85Result\(state\.result\)/);
+  assert.match(appSource, /state\.reveal = hodlBip85Reveal/);
+  assert.match(css, /#bip85-card:not\(\[hidden\]\)/);
+});
+
+test("session wallets use folder tabs that merge into the card", () => {
+  assert.match(css, /\.key-manager \{ margin: 14px 0 -1px;/);
+  assert.match(css, /\.key-tab \{[^}]*border-radius: 10px 10px 0 0;/s);
+  assert.match(css, /\.key-tab\.active, \.key-tab-editing \{[^}]*border-bottom-color: var\(--surface\);/s);
+  assert.match(css, /#calc-card:not\(\[hidden\]\), #msig-card:not\(\[hidden\]\), #bip85-card:not\(\[hidden\]\), #sp-card:not\(\[hidden\]\) \{[^}]*border-radius: 0 0 20px 20px;/s);
   assert.match(css, /\.workspace-tab \{[^}]*border-radius: 10px 10px 0 0;/s);
+  assert.match(appSource, /let lifehash = tab\.querySelector\("\.key-tab-lifehash"\);/);
+  assert.doesNotMatch(appSource, /editor\.append\(hodlCreateKeyIcon\(state\.color\), input\)/);
 });

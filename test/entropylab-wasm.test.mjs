@@ -37,7 +37,7 @@ test("committed WASM artifact is intact (sha256 in module header matches payload
   const source = readFileSync(join(root, "src/js/entropylab-wasm-b64.js"), "utf8");
   const declared = source.match(/wasm sha256: ([0-9a-f]{64})/);
   assert.ok(declared, "module header carries the wasm sha256");
-  const b64 = source.match(/export const ENTROPOLAB_WASM_B64 =\s*"([A-Za-z0-9+/=]+)";/);
+  const b64 = source.match(/export const ENTROPYLAB_WASM_B64 =\s*"([A-Za-z0-9+/=]+)";/);
   assert.ok(b64, "module exports the base64 payload");
   const actual = createHash("sha256").update(Buffer.from(b64[1], "base64")).digest("hex");
   assert.equal(actual, declared[1]);

@@ -6,8 +6,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { wordlist as Ae } from "@scure/bip39/wordlists/english.js";
-import { validateMnemonic as Pn } from "@scure/bip39";
+import { wordlist as hodlBip39Wordlist } from "@scure/bip39/wordlists/english.js";
+import { validateMnemonic as hodlIsValidMnemonic } from "@scure/bip39";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
@@ -37,21 +37,21 @@ function loadVariable(name, nextName) {
   return app.slice(start, end);
 }
 
-const Z = (input) => new Uint8Array(createHash("sha256").update(input).digest());
+const hodlSha256 = (input) => new Uint8Array(createHash("sha256").update(input).digest());
 const api = new Function(
-  "Ae",
-  "Pn",
-  "Z",
+  "hodlBip39Wordlist",
+  "hodlIsValidMnemonic",
+  "hodlSha256",
   `
-  var Pt = 24;
+  var hodlTargetWordCount = 24;
   ${loadVariable("hodlSeedLengths", "hodlEntropyFormats")}
-  ${["hodlSeedConfig", "mi", "hodlTargetLastWords", "hodlComputeTargetLastWords", "Rn", "Mt", "hodlBitBoxRolls", "hodlValidateTargetMnemonic", "hodlSeedCountStatus"].map(loadSlice).join("\n")}
+  ${["hodlSeedConfig", "hodlBitBoxLookupWord", "hodlTargetLastWords", "hodlComputeTargetLastWords", "hodlNormalizeMnemonicText", "hodlValidateMnemonic", "hodlBitBoxRolls", "hodlValidateTargetMnemonic", "hodlSeedCountStatus"].map(loadSlice).join("\n")}
   var hodlLastWordCache = new Map();
-  var hodlBip39WordSet = new Set(Ae);
-  var hodlBip39WordIndex = new Map(Ae.map((word, index) => [word, index]));
-  return { hodlBitBoxRolls, hodlTargetLastWords, hodlValidateTargetMnemonic, hodlSeedConfig, mi };
+  var hodlBip39WordSet = new Set(hodlBip39Wordlist);
+  var hodlBip39WordIndex = new Map(hodlBip39Wordlist.map((word, index) => [word, index]));
+  return { hodlBitBoxRolls, hodlTargetLastWords, hodlValidateTargetMnemonic, hodlSeedConfig, hodlBitBoxLookupWord };
   `,
-)(Ae, Pn, Z);
+)(hodlBip39Wordlist, hodlIsValidMnemonic, hodlSha256);
 
 const SIZES = [12, 15, 18, 21, 24];
 
@@ -104,7 +104,7 @@ test("every dice combination lands on the table's BIP39-order index", () => {
     for (let d5 = 1; d5 <= 4; d5++) {
       for (const coin of [0, 1]) {
         const index = (d1 - 1) * 512 + (d2 - 1) * 128 + (d3 - 1) * 32 + (d4 - 1) * 8 + (d5 - 1) * 2 + coin;
-        assert.equal(api.mi([d1, d2, d3, d4, d5], coin), Ae[index], `${d1}${d2}${d3}${d4}${d5} coin ${coin}`);
+        assert.equal(api.hodlBitBoxLookupWord([d1, d2, d3, d4, d5], coin), hodlBip39Wordlist[index], `${d1}${d2}${d3}${d4}${d5} coin ${coin}`);
       }
     }
   }

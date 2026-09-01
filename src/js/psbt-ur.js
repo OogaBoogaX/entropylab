@@ -44,7 +44,7 @@ export function hodlBytewordsDecode(text) {
   const raw = String(text).trim().toLowerCase();
   if (!raw) throw new Error("Empty Bytewords.");
   let bytes;
-  if (/^[a-z]{4}(?:[\s-]+[a-z]{4})+$/.test(raw) || (/^[a-z]{4}$/.test(raw) && raw.length === 4)) {
+  if (/^[a-z]{4}(?:[\s-]+[a-z]{4})+$/.test(raw) || /^[a-z]{4}$/.test(raw)) {
     const words = raw.split(/[\s-]+/).filter(Boolean);
     bytes = Uint8Array.from(words, (word) => {
       if (!WORD_AT.has(word)) throw new Error("Unknown Byteword: " + word);
@@ -130,11 +130,7 @@ export function hodlUrParsePart(raw) {
   const seq = match[2] ? Number(match[2]) : 1;
   const count = match[3] ? Number(match[3]) : 1;
   const payload = hodlBytewordsDecode(match[4].replace(/-/g, ""));
-  if (seq < 1 || count < 1 || seq > count && match[2]) {
-    if (match[2] && seq > count) {
-      return { type, seq, count, payload, fountain: true };
-    }
-  }
+  // A sequence number past the part count marks a multi-part fountain code.
   return { type, seq, count, payload, fountain: Boolean(match[2] && seq > count) };
 }
 

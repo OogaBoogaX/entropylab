@@ -35,12 +35,12 @@ function importLine(module) {
   return match[0].replace(`"./${module}.js"`, `"../src/js/${module}.js"`);
 }
 
-// The WIF codec (sr) and the secp256k1 group order (ff) live in one var
+// The WIF codec (hodlBase58Check) and the secp256k1 group order (ff) live in one var
 // statement; keep the app's own declarations rather than restating them.
-const srStart = app.indexOf("var sr = ");
-assert.ok(srStart >= 0, "var sr declaration");
+const srStart = app.indexOf("var hodlBase58Check = ");
+assert.ok(srStart >= 0, "var hodlBase58Check declaration");
 const srEnd = app.indexOf(";\n", srStart);
-assert.ok(srEnd > srStart, "var sr statement end");
+assert.ok(srEnd > srStart, "var hodlBase58Check statement end");
 
 const source = [
   importLine("hashes"),
@@ -49,10 +49,10 @@ const source = [
   importLine("base58"),
   app.slice(srStart, srEnd + 1),
   ...[
-    "Ls",
-    "hf",
-    "$o",
-    "Ns",
+    "hodlDecodeWif",
+    "hodlAssertPrivateKey",
+    "hodlIsMiniKey",
+    "hodlDecodeMiniKey",
     "hodlBrainWalletPassphrase",
     "hodlDecodeMiniPrivateKey",
     "hodlDetectPrivateKeyKind",

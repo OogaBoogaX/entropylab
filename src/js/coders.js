@@ -3,8 +3,8 @@
 // These are byte shufflings, not cryptography — they carry no keys and make
 // no decisions. They replace the @scure/base hex/base64 coders the app used
 // (Base58Check and bech32m, which do carry checksums, live in the WASM:
-// base58.js and bech32.js). The API shape matches @scure/base's coders so
-// call sites read the same.
+// base58.js and bech32.js). The API shape matches the @scure/base coders the
+// app used (note base64 only needs `encode` here, so no `decode` is defined).
 
 const HEX_ALPHABET = "0123456789abcdef";
 

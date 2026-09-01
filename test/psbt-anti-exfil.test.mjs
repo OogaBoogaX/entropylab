@@ -30,20 +30,20 @@ function loadSlice(name) {
   return app.slice(start, end);
 }
 
-const M = {
+const hodlHex = {
   encode: (bytes) => Buffer.from(bytes).toString("hex"),
   decode: (hex) => Uint8Array.from(Buffer.from(hex, "hex")),
 };
-const Z = (bytes) => Uint8Array.from(createHash("sha256").update(Buffer.from(bytes)).digest());
+const hodlSha256 = (bytes) => Uint8Array.from(createHash("sha256").update(Buffer.from(bytes)).digest());
 
 const hodlTaggedSha256 = new Function(
-  "Z",
+  "hodlSha256",
   `${loadSlice("hodlTaggedSha256")}; return hodlTaggedSha256;`,
-)(Z);
+)(hodlSha256);
 const hodlParseAntiExfil = new Function(
-  "M",
+  "hodlHex",
   `${loadSlice("hodlParseAntiExfil")}; return hodlParseAntiExfil;`,
-)(M);
+)(hodlHex);
 
 test("PSBT copy mentions Jade anti-exfil transcript checks", () => {
   assert.match(template, /Optional Jade anti-exfil transcripts/);
@@ -98,8 +98,8 @@ test("rejects uncompressed opening and incomplete transcripts", () => {
 });
 
 test("tagged s2c/ecdsa/point hash matches secp256k1-zkp over opening||rho", () => {
-  const host = M.decode("11".repeat(32));
-  const opening = M.decode("02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27");
+  const host = hodlHex.decode("11".repeat(32));
+  const opening = hodlHex.decode("02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27");
   const tweak = hodlTaggedSha256("s2c/ecdsa/point", opening, host);
   assert.equal(
     Buffer.from(tweak).toString("hex"),
@@ -123,7 +123,7 @@ test("malformed anti-exfil transcript is try/caught so parse errors cannot wipe 
   );
   assert.match(
     render,
-    /if\s*\(\s*transcriptError\s*\)\s*html\.push\("<p class='psbt-warn'><strong>Jade anti-exfil transcript not used:<\/strong> "\s*\+\s*\$t\(\s*transcriptError\s*\)\s*\+\s*"<\/p>"\)/,
+    /if\s*\(\s*transcriptError\s*\)\s*html\.push\("<p class='psbt-warn'><strong>Jade anti-exfil transcript not used:<\/strong> "\s*\+\s*hodlEscapeHtml\(\s*transcriptError\s*\)\s*\+\s*"<\/p>"\)/,
   );
 });
 

@@ -1,5 +1,5 @@
 
-// Minimal SQLite 3 database file writer ("emulator").
+// Minimal SQLite 3 database file writer.
 //
 // Produces a complete, standards-compliant SQLite database file in memory —
 // the format Bitcoin Core uses for descriptor wallet wallet.dat files. It
@@ -112,8 +112,8 @@ var hodlSqliteWriter = (() => {
 
   // A cell payload beyond these sizes would need overflow pages, which this
   // writer intentionally does not support (wallet records are ~500 bytes max).
-  const maxInlinePayload = (index) =>
-    index ? Math.floor(((PAGE_SIZE - 12) * 64) / 255) - 23 : PAGE_SIZE - 35;
+  const maxInlinePayload = (isIndex) =>
+    isIndex ? Math.floor(((PAGE_SIZE - 12) * 64) / 255) - 23 : PAGE_SIZE - 35;
 
   const tableLeafCell = (rowid, record) => concat(varint(record.length), varint(rowid), record);
   const indexLeafCell = (record) => concat(varint(record.length), record);
@@ -130,8 +130,8 @@ var hodlSqliteWriter = (() => {
   // Table interior cells carry only a rowid bound; index interior cells carry
   // a full divider record, which SQLite MOVES out of the leaf (an index b-tree
   // holds every record exactly once across leaf and interior pages).
-  const buildBTree = ({ cells, index }) => {
-    const limit = maxInlinePayload(index);
+  const buildBTree = ({ cells, isIndex }) => {
+    const limit = maxInlinePayload(isIndex);
     for (const cell of cells) {
       if (cell.payload.length > limit) {
         throw new Error(`sqlite cell payload ${cell.payload.length} exceeds inline limit ${limit}`);
@@ -142,7 +142,7 @@ var hodlSqliteWriter = (() => {
     let current = [];
     let used = leafHeader;
     for (const cell of cells) {
-      const encoded = index ? indexLeafCell(cell.payload) : tableLeafCell(cell.rowid, cell.payload);
+      const encoded = isIndex ? indexLeafCell(cell.payload) : tableLeafCell(cell.rowid, cell.payload);
       const need = encoded.length + 2;
       if (current.length > 0 && used + need > PAGE_SIZE) {
         leaves.push(current);
@@ -162,7 +162,7 @@ var hodlSqliteWriter = (() => {
       const interiorCells = [];
       for (let i = 0; i < leaves.length - 1; i++) {
         let key;
-        if (index) {
+        if (isIndex) {
           // The divider record is promoted out of the leaf into the parent.
           if (leaves[i].length < 2) throw new Error("sqlite writer: index leaf too small to divide");
           key = { payload: leaves[i].pop().cell.payload };
@@ -176,7 +176,7 @@ var hodlSqliteWriter = (() => {
       }
       interior = interiorCells;
     }
-    return { leaves, interior, index };
+    return { leaves, interior, isIndex };
   };
 
   // --- page rendering -------------------------------------------------------
@@ -255,9 +255,7 @@ var hodlSqliteWriter = (() => {
       const cells = rows.map(({ rowid, columns }) => ({ rowid, payload: encodeRecord(columns) }));
       const tree = buildBTree({
         cells,
-        index: false,
-        leafCellKey: (leaf) => leaf[leaf.length - 1].cell.rowid,
-        interiorCellKey: (leaf) => ({ rowid: leaf[leaf.length - 1].cell.rowid }),
+        isIndex: false,
       });
       let indexTree = null;
       if (table.primaryKey !== undefined && table.primaryKey !== null) {
@@ -266,9 +264,7 @@ var hodlSqliteWriter = (() => {
           .sort((a, b) => bytewiseCompare(a.key, b.key) || (a.rowid - b.rowid));
         indexTree = buildBTree({
           cells: indexCells,
-          index: true,
-          leafCellKey: (leaf) => leaf[leaf.length - 1].cell.payload,
-          interiorCellKey: (leaf) => ({ payload: leaf[leaf.length - 1].cell.payload }),
+          isIndex: true,
         });
       }
       return { table, tree, indexTree };
@@ -287,7 +283,7 @@ var hodlSqliteWriter = (() => {
       // Root at rootPage, leaves at rootPage+1 .. rootPage+leafCount.
       const leafPages = tree.leaves.map((leaf, i) => rootPage + 1 + i);
       const interiorCells = tree.interior.map((cell, i) => ({
-        encoded: tree.index
+        encoded: tree.isIndex
           ? indexInteriorCell(leafPages[i], cell.key.payload)
           : tableInteriorCell(leafPages[i], cell.key.rowid),
       }));

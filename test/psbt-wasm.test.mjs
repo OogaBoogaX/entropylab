@@ -262,6 +262,21 @@ test("unknown and proprietary pairs round-trip with decodes", () => {
   assert.equal(fresh.outputs[0].at(-1).key, "2a");
 });
 
+test("output 0x07 is named and decoded as PSBT_OUT_TAP_BIP32_DERIVATION (BIP-371)", () => {
+  const doc = inspectValid();
+  const xonly = "22".repeat(32);
+  const leafHash = "11".repeat(32);
+  const value = "01" + leafHash + "aabbccdd" + "00000080"; // 1 leaf hash, fingerprint, one hardened path element
+  doc.outputs[0].push({ key: "07" + xonly, value });
+  const fresh = psbtInspectDoc(rebuild(doc));
+  const pair = fresh.outputs[0].at(-1);
+  assert.equal(pair.name, "PSBT_OUT_TAP_BIP32_DERIVATION");
+  assert.equal(pair.decoded.xonly, xonly);
+  assert.deepEqual(pair.decoded.leafHashes, [leafHash]);
+  assert.equal(pair.decoded.fingerprint, "aabbccdd");
+  assert.equal(pair.decoded.path, "m/0'");
+});
+
 test("the unsigned transaction pair is regenerated, not passed through", () => {
   const doc = inspectValid();
   doc.globals[0].value = "ff".repeat(32); // corrupt the passed-through pair

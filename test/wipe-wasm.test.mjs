@@ -22,12 +22,12 @@ const psbtBinary = new Uint8Array(Buffer.from(PSBT_WASM_B64, "base64"));
 const psbtWasm = new WebAssembly.Instance(new WebAssembly.Module(psbtBinary), {}).exports;
 const psbtHeap = () => new Uint8Array(psbtWasm.memory.buffer);
 
-test("secp_free zeroes the linear-memory buffer before deallocating it", () => {
+test("el_free zeroes the linear-memory buffer before deallocating it", () => {
   const wasm = wasmExports();
   const secret = pattern(64, 7);
-  const ptr = wasm.secp_alloc(secret.length);
+  const ptr = wasm.el_alloc(secret.length);
   heap().set(secret, ptr);
-  wasm.secp_free(ptr, secret.length);
+  wasm.el_free(ptr, secret.length);
   assert.deepEqual([...heap().slice(ptr, ptr + secret.length)], new Array(secret.length).fill(0));
 });
 
@@ -41,7 +41,7 @@ test("psbt_free zeroes the linear-memory buffer before deallocating it", () => {
 
 test("both WASM allocators support exact-size repeated and zero-length lifecycles", () => {
   const allocators = [
-    { alloc: wasmExports().secp_alloc, free: wasmExports().secp_free, memory: heap },
+    { alloc: wasmExports().el_alloc, free: wasmExports().el_free, memory: heap },
     { alloc: psbtWasm.psbt_alloc, free: psbtWasm.psbt_free, memory: psbtHeap },
   ];
   for (const { alloc, free, memory } of allocators) {
@@ -115,7 +115,7 @@ test("the Rust free functions wipe before deallocating (source guard)", () => {
   // source so a future edit cannot quietly drop the wipe.
   assert.match(
     read("entropylab-wasm/src/lib.rs"),
-    /fn secp_free\(ptr: \*mut u8, len: usize\) \{\s*(?:\/\/[^\n]*\n\s*(?:\/\/[^\n]*\n\s*)*)?wipe\(ptr, len\);/,
+    /fn el_free\(ptr: \*mut u8, len: usize\) \{\s*(?:\/\/[^\n]*\n\s*(?:\/\/[^\n]*\n\s*)*)?wipe\(ptr, len\);/,
   );
   assert.match(
     read("psbt-wasm/src/lib.rs"),
@@ -153,7 +153,9 @@ test("app derivation paths wipe seeds, roots, and per-address keys (source guard
   assert.match(bip85Wipe, /hodlBip85Root\.wipePrivateData\(\)/, "the BIP-85 root must be wiped, not a getter copy");
   const spWipe = app.slice(app.indexOf("function hodlSpWipeKeys()"), app.indexOf("function hodlSpWipeMem"));
   assert.match(spWipe, /hodlSpHd\.wipePrivateData\(\)/, "the Silent Payments root must be wiped, not a getter copy");
-  const ar = app.slice(app.indexOf("function ar("), app.indexOf("function Po("));
-  assert.match(ar, /c\.fill\(0\)/, "the BIP39 seed must be wiped after master derivation");
-  assert.match(ar, /a\.wipePrivateData\(\)/, "the master root node must be wiped after the wallet is built");
+  const mnemonicPath = app.slice(app.indexOf("async function hodlMnemonicWalletWithProgress("), app.indexOf("async function hodlEntropyWalletWithProgress("));
+  assert.match(mnemonicPath, /seed\.fill\(0\)/, "the BIP39 seed must be wiped after master derivation");
+  assert.match(mnemonicPath, /root\.wipePrivateData\(\)/, "the master root node must be wiped after the wallet is built");
+  const entropyPath = app.slice(app.indexOf("async function hodlEntropyWalletWithProgress("), app.indexOf("async function hodlImportedWalletWithProgress("));
+  assert.match(entropyPath, /entropy\.bytes\.fill\(0\)/, "the entropy bytes must be wiped once the mnemonic exists");
 });

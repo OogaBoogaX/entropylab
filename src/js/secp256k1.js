@@ -17,7 +17,8 @@ export const secp256k1Ready = wasmReady;
 
 const ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
 const ORDER_HALF = ORDER >> 1n;
-// The generator point, compressed. Fixed published constant (BIP-340/327).
+// The generator point, compressed. Fixed published constant (SEC 2; also the
+// BIP-340 generator).
 const GENERATOR_COMPRESSED = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 
 const hexToBytes = (hex) => {
@@ -123,7 +124,7 @@ class Point {
   }
   static fromBytes(bytes) {
     requireReady();
-    const normalized = withInput(bytes, (p) => withOutput(65, (out) => wasm().secp_point_validate(p, bytes.length, out, 1)));
+    const normalized = withInput(bytes, (p) => withOutput(65, (out) => wasm().secp_point_parse_serialize(p, bytes.length, out, 1)));
     if (!normalized) throw new Error("Invalid public key encoding: not a secp256k1 point.");
     return new Point(normalized);
   }
@@ -133,7 +134,7 @@ class Point {
   toBytes(compressed = true) {
     if (compressed) return this.#compressed.slice();
     requireReady();
-    return withInput(this.#compressed, (p) => withOutput(65, (out) => wasm().secp_point_validate(p, 33, out, 0)));
+    return withInput(this.#compressed, (p) => withOutput(65, (out) => wasm().secp_point_parse_serialize(p, 33, out, 0)));
   }
   add(other) {
     requireReady();

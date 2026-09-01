@@ -33,10 +33,12 @@ const crates = [
     dir: "entropylab-wasm",
     wasm: "entropylab_wasm.wasm",
     out: "src/js/entropylab-wasm-b64.js",
-    symbol: "ENTROPOLAB_WASM_B64",
-    blurb: `// libsecp256k1 v0.4.1 (vendored by secp256k1-sys 0.10.1 via secp256k1 0.29.1)
-// and bitcoin_hashes 0.14.101 (see entropylab-wasm/Cargo.lock) compiled to
-// WebAssembly from entropylab-wasm/ with the pinned Rust 1.95.0 toolchain.
+    symbol: "ENTROPYLAB_WASM_B64",
+    blurb: `// libsecp256k1 v0.4.1 (vendored by secp256k1-sys 0.10.1 via secp256k1 0.29.1),
+// bitcoin_hashes 0.14.101, rust-bitcoin 0.32.11, rust-bip39 2.2.2,
+// base58ck 0.1.101, and bech32 0.11.1 (see entropylab-wasm/Cargo.lock)
+// compiled to WebAssembly from entropylab-wasm/ with the pinned Rust 1.95.0
+// toolchain.
 //`,
   },
   {

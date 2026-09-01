@@ -33,7 +33,7 @@ function loadVariable(name, nextName) {
 
 const api = new Function(
   `
-  var Pt = 24;
+  var hodlTargetWordCount = 24;
   var hodlDiceCoinPositions = [];
   ${loadVariable("hodlSeedLengths", "hodlEntropyFormats")}
   ${[

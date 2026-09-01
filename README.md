@@ -337,7 +337,7 @@ To remove generated files, run `npm run clean`.
 │       ├── coders.js         hex/base64 byte coders (no cryptography)
 │       ├── sqlite-writer.js Minimal SQLite database file writer
 │       ├── wallet-export.js Bitcoin Core wallet.dat descriptor export
-│       ├── online.js       Hosted-site behavior and header version label
+│       ├── online.js       Hosted-site online warning
 │       ├── network-check.js Network adapter detection and warning
 │       ├── browser-check.js Startup browser sanity checks and kill-screen
 │       ├── enhanced-inputs.js

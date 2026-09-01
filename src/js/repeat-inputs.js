@@ -1,4 +1,6 @@
-
+// Hold-to-repeat key auto-repeat for the on-screen keypads: holding a keypad
+// button repeats its character insertion (after a delay, then an interval)
+// through the beforeinput/input pipeline of the focused text control.
 (() => {
   const repeatableInputTypes = new Set(["text", "search", "tel", "url", "password"]);
   const repeatDelay = 350;

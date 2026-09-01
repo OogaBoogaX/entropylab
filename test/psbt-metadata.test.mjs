@@ -33,7 +33,7 @@ const p2wsh = (script) => concat(Uint8Array.of(0, 32), sha256(script));
 const p2sh = (script) => concat(Uint8Array.of(0xa9, 0x14), hash160(script), Uint8Array.of(0x87));
 
 const hodlInputScriptCode = new Function(
-  "hodlFind", "hodlEq", "p2shScript", "Os", "p2wshScript",
+  "hodlFind", "hodlEq", "p2shScript", "hodlConcatBytes", "p2wshScript",
   `${loadSlice("hodlInputScriptCode")}; return hodlInputScriptCode;`,
 )(
   (entries, type) => entries.filter((entry) => entry.type === type),

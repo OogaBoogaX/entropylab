@@ -73,7 +73,7 @@ const reduceScalar = (value) => {
   return n;
 };
 
-const pointFromCompressed = (bytes) => Point.fromBytes(bytes);
+const pointFromBytes = (bytes) => Point.fromBytes(bytes);
 const pointFromXOnly = (xonly) => {
   if (!(xonly instanceof Uint8Array) || xonly.length !== 32) throw new Error("X-only public key must be 32 bytes.");
   const compressed = new Uint8Array(33);
@@ -170,7 +170,7 @@ const compressedPointOrNull = (bytes) => {
 };
 
 export function extractInputPubKey(vin) {
-  const prevout = vinPrevout(vin);
+  const prevout = vinPrevoutScript(vin);
   const scriptSig = vin.scriptSig instanceof Uint8Array ? vin.scriptSig : hexToBytes(vin.scriptSig || "");
   const witness = Array.isArray(vin.witness) ? vin.witness : parseWitnessHex(vin.txinwitness || "");
   if (isP2pkh(prevout)) {
@@ -250,8 +250,8 @@ export function decodeSilentPaymentAddress(address, expectedHrp) {
   return {
     hrp,
     version,
-    scan: pointFromCompressed(payload.slice(0, 33)),
-    spend: pointFromCompressed(payload.slice(33, 66)),
+    scan: pointFromBytes(payload.slice(0, 33)),
+    spend: pointFromBytes(payload.slice(33, 66)),
   };
 }
 
@@ -341,21 +341,23 @@ export function formatSpDescriptor(keyExpression, origin) {
   return `sp(${keyExpression})`;
 }
 
-export function p2trAddressFromXonly(xonlyHex, network = "mainnet") {
-  const xonly = typeof xonlyHex === "string" ? hexToBytes(xonlyHex) : xonlyHex;
-  if (xonly.length !== 32) throw new Error("Taproot output key must be 32 bytes.");
+export function p2trAddressFromXonly(xonly, network = "mainnet") {
+  const key = typeof xonly === "string" ? hexToBytes(xonly) : xonly;
+  if (key.length !== 32) throw new Error("Taproot output key must be 32 bytes.");
   const hrp = network === "mainnet" ? "bc" : "tb";
-  return bech32mEncode(hrp, [1, ...toWords(xonly)]);
+  return bech32mEncode(hrp, [1, ...toWords(key)]);
 }
 
-const vinPrevout = (vin) => (vin.prevout instanceof Uint8Array ? vin.prevout : hexToBytes(typeof vin.prevout === "string" ? vin.prevout : vin.prevout.scriptPubKey.hex));
+// The prevout's scriptPubKey bytes (BIP352 input-key eligibility tests the
+// script type), not the txid/vout pair "prevout" means elsewhere.
+const vinPrevoutScript = (vin) => (vin.prevout instanceof Uint8Array ? vin.prevout : hexToBytes(typeof vin.prevout === "string" ? vin.prevout : vin.prevout.scriptPubKey.hex));
 
 const normalizeVin = (vin) => ({
   txid: vin.txid,
   vout: vin.vout,
   scriptSig: vin.scriptSig || "",
   txinwitness: vin.txinwitness || "",
-  prevout: vinPrevout(vin),
+  prevout: vinPrevoutScript(vin),
   private_key: vin.private_key,
 });
 

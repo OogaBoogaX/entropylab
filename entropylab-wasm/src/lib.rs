@@ -1,8 +1,11 @@
-//! WebAssembly bindings to libsecp256k1 and bitcoin_hashes for EntropyLab.
+//! WebAssembly bindings to libsecp256k1, bitcoin_hashes, rust-bitcoin,
+//! rust-bip39, base58ck, and bech32 for EntropyLab.
 //!
 //! Every secp256k1 curve operation and every cryptographic hash in the app
-//! goes through this library (the JS facades are src/js/secp256k1.js and
-//! src/js/hashes.js, both over the shared loader src/js/entropylab-wasm.js).
+//! goes through this library, along with BIP32/BIP39/address/transaction
+//! work (the JS facades — secp256k1.js, hashes.js, hdkey.js, bip39.js,
+//! base58.js, addresses.js, bech32.js, tx.js — all share the loader
+//! src/js/entropylab-wasm.js).
 //! The boundary is deliberately narrow: scalars and hashes cross as fixed
 //! 32-byte buffers, public points as their SEC serialization (33 bytes
 //! compressed / 65 uncompressed), ECDSA signatures as 64-byte compact
@@ -45,19 +48,20 @@ fn ctx() -> &'static Secp256k1<secp256k1::All> {
 }
 
 /// Allocates `len` zero-filled bytes of linear memory for JS to fill. Pair
-/// with `secp_free`. The box owns exactly `len` bytes, so the deallocation
-/// layout is reproducible from `len` alone.
+/// with `el_free`. The box owns exactly `len` bytes, so the deallocation
+/// layout is reproducible from `len` alone. The `el_` prefix matches every
+/// other export: this is the crate-wide allocator, not curve-specific.
 #[no_mangle]
-pub extern "C" fn secp_alloc(len: usize) -> *mut u8 {
+pub extern "C" fn el_alloc(len: usize) -> *mut u8 {
     Box::into_raw(vec![0u8; len].into_boxed_slice()) as *mut u8
 }
 
 /// # Safety
-/// `ptr` must come from `secp_alloc` and `len` must be exactly the length
+/// `ptr` must come from `el_alloc` and `len` must be exactly the length
 /// passed there: the box is reconstructed from `len` alone, so any other
 /// length deallocates with the wrong layout.
 #[no_mangle]
-pub unsafe extern "C" fn secp_free(ptr: *mut u8, len: usize) {
+pub unsafe extern "C" fn el_free(ptr: *mut u8, len: usize) {
     // Zero the buffer before deallocation: inputs can carry private keys,
     // seeds, mnemonics, or passphrases, and freed linear memory must not
     // retain them for a later allocation to expose.
@@ -150,10 +154,11 @@ fn write_serialized(pk: &PublicKey, out: *mut u8, compressed: bool) -> i32 {
     }
 }
 
-/// Validates a SEC-encoded point and re-serializes it into `out`. Returns
-/// 33/65, or -1 if the encoding is not a valid curve point.
+/// Validates a SEC-encoded point and re-serializes it into `out` (33 or 65
+/// bytes per `compressed`). Returns the serialized length, or -1 if the
+/// encoding is not a valid curve point.
 #[no_mangle]
-pub unsafe extern "C" fn secp_point_validate(
+pub unsafe extern "C" fn secp_point_parse_serialize(
     input: *const u8,
     input_len: usize,
     out: *mut u8,
@@ -446,8 +451,8 @@ pub unsafe extern "C" fn el_b58check_decode(input: *const u8, input_len: usize, 
 // ── BIP32 (bitcoin::bip32) ──────────────────────────────────────────────────
 // A node crosses the boundary as its 78-byte BIP32 serialization with the
 // mainnet version bytes (xprv/xpub); the JS side owns SLIP-132 re-versioning
-// exactly as before. Derivation returns 0 on success, 1 for the
-// retry-with-next-index verdict BIP32 mandates for an invalid I_L or child
+// exactly as before. Derivation returns 78 (bytes written) on success, 1 for
+// the retry-with-next-index verdict BIP32 mandates for an invalid I_L or child
 // (rust-bitcoin's own ckd_* `expect` on these statistically-unreachable
 // branches; the previous JS implementation retried, so we keep that contract
 // and never panic), and -1 for hard errors.
@@ -509,8 +514,10 @@ pub unsafe extern "C" fn el_hd_ckd_priv(node: *const u8, index: u32, out: *mut u
     let result = 'ckd: {
         let il: &[u8] = &hmac[..32];
         let child_key = if il.iter().all(|b| *b == 0) {
-            // I_L == 0 leaves the key unchanged (allowed; only an invalid
-            // child below would trigger the retry).
+            // I_L == 0: BIP32 says retry with the next index, but we keep the
+            // parent key unchanged to match the previous JS implementation
+            // and to avoid rust-bitcoin's panic paths (statistically
+            // unreachable).
             parent.private_key
         } else {
             let mut tweak = match SecretKey::from_slice(il) {
@@ -565,6 +572,8 @@ pub unsafe extern "C" fn el_hd_ckd_pub(node: *const u8, index: u32, out: *mut u8
     let hmac = Hmac::<sha512::Hash>::from_engine(engine);
     let il: &[u8] = &hmac[..32];
     let child_point = if il.iter().all(|b| *b == 0) {
+        // I_L == 0: same deliberate deviation as el_hd_ckd_priv — keep the
+        // parent point rather than retrying, and never panic.
         parent.public_key
     } else {
         let tweak = match SecretKey::from_slice(il) {
@@ -704,8 +713,8 @@ use bitcoin::key::XOnlyPublicKey;
 use bitcoin::script::PushBytesBuf;
 use bitcoin::{Network, PublicKey as BtcPublicKey, ScriptBuf};
 
-unsafe fn net(net: u8) -> Option<Network> {
-    match net {
+fn network_from_selector(sel: u8) -> Option<Network> {
+    match sel {
         0 => Some(Network::Bitcoin),
         1 => Some(Network::Testnet),
         _ => None,
@@ -871,7 +880,7 @@ pub unsafe extern "C" fn el_script_multisig_tr(m: u32, pubs: *const u8, pubs_len
 /// script types (the caller falls back to showing the script hex).
 #[no_mangle]
 pub unsafe extern "C" fn el_addr_from_script(script: *const u8, len: usize, net_sel: u8, out: *mut u8, cap: usize) -> i32 {
-    let network = match net(net_sel) {
+    let network = match network_from_selector(net_sel) {
         Some(network) => network,
         None => return -1,
     };

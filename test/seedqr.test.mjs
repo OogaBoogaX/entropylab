@@ -5,14 +5,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { wordlist as Ae } from "@scure/bip39/wordlists/english.js";
+import { wordlist as hodlBip39Wordlist } from "@scure/bip39/wordlists/english.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const read = (path) => readFileSync(join(root, "..", path), "utf8");
 const app = read("src/js/app.js");
-assert.equal(Ae.length, 2048);
-assert.equal(Ae[0], "abandon");
-assert.equal(Ae[2047], "zoo");
+assert.equal(hodlBip39Wordlist.length, 2048);
+assert.equal(hodlBip39Wordlist[0], "abandon");
+assert.equal(hodlBip39Wordlist[2047], "zoo");
 
 function loadSlice(name) {
   const start = app.indexOf(`function ${name}(`);
@@ -33,11 +33,11 @@ function loadSlice(name) {
   return app.slice(start, end);
 }
 
-const hodlSeedQrDigits = new Function("Ae", `${loadSlice("hodlSeedQrDigits")}; return hodlSeedQrDigits;`)(Ae);
+const hodlSeedQrDigits = new Function("hodlBip39Wordlist", `${loadSlice("hodlSeedQrDigits")}; return hodlSeedQrDigits;`)(hodlBip39Wordlist);
 
 function compactBytesFromMnemonic(mnemonic) {
   const words = mnemonic.trim().split(/\s+/);
-  const bits = words.map((word) => Ae.indexOf(word).toString(2).padStart(11, "0")).join("");
+  const bits = words.map((word) => hodlBip39Wordlist.indexOf(word).toString(2).padStart(11, "0")).join("");
   const checksumBits = words.length === 12 ? 4 : 8;
   const entropyBits = bits.slice(0, -checksumBits);
   const bytes = [];
@@ -70,7 +70,7 @@ test("CompactSeedQR bytes are BIP39 entropy without checksum", () => {
   const bytes = compactBytesFromMnemonic(SPEC_12);
   assert.equal(bytes.length, 16);
   const hex = bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  const hodlCompactSeedQrBytes = new Function("M", `${loadSlice("hodlCompactSeedQrBytes")}; return hodlCompactSeedQrBytes;`)({
+  const hodlCompactSeedQrBytes = new Function("hodlHex", `${loadSlice("hodlCompactSeedQrBytes")}; return hodlCompactSeedQrBytes;`)({
     decode(value) {
       const out = [];
       for (let i = 0; i < value.length; i += 2) out.push(Number.parseInt(value.slice(i, i + 2), 16));

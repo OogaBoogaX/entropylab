@@ -1,4 +1,5 @@
-
+// Replaces <select> elements with custom dropdown listboxes (the only form
+// controls this file touches — text/number inputs are handled elsewhere).
 (() => {
   const enhanced = new WeakSet();
   const roots = new Set();

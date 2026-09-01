@@ -71,18 +71,20 @@ export function scriptPushes(script) {
   return pushes;
 }
 
-function sigFromBytes(bytes, input) {
+function sigFromBytes(bytes, inputIndex) {
   if (!looksLikeDerSig(bytes)) return null;
   const hasSighash = bytes.length === 2 + bytes[1] + 1;
   const der = hasSighash ? bytes.slice(0, -1) : bytes;
-  const sighash = hasSighash ? bytes[bytes.length - 1] : 1;
-  return { input, der, sighash, raw: bytes, pubkey: null };
+  // No sighash byte appended to the DER => the sighash type is unknown here,
+  // not SIGHASH_ALL; do not invent one.
+  const sighash = hasSighash ? bytes[bytes.length - 1] : null;
+  return { input: inputIndex, der, sighash, raw: bytes, pubkey: null };
 }
 
-function collectSigs(items, input, signatures) {
+function collectSigs(items, inputIndex, signatures) {
   let pending = null;
   for (const item of items) {
-    const sig = sigFromBytes(item, input);
+    const sig = sigFromBytes(item, inputIndex);
     if (sig) {
       if (pending) signatures.push(pending);
       pending = sig;
@@ -151,12 +153,12 @@ export function parseRawTx(bytes) {
   if (bytes[4] === 0x00 && bytes.length > 5 && bytes[5] !== 0x01) throw new Error("Unknown witness flag.");
   const cap = bytes.length * 2 + 65536;
   const { code, body } = withInput(bytes, (p) => {
-    const outPtr = wasm().secp_alloc(cap);
+    const outPtr = wasm().el_alloc(cap);
     try {
       const produced = wasm().el_tx_parse(p, bytes.length, outPtr, cap);
       return { code: produced, body: produced > 0 ? heap().slice(outPtr, outPtr + produced) : null };
     } finally {
-      wasm().secp_free(outPtr, cap);
+      wasm().el_free(outPtr, cap);
     }
   });
   if (code === -2) throw new Error("Transaction contains trailing bytes.");
@@ -205,7 +207,7 @@ export function inscriptionHints(tx) {
     const scripts = [input.scriptSig, ...(input.witness || [])].filter(Boolean);
     for (const script of scripts) {
       if (containsOrdEnvelope(script)) {
-        hits.push({ input: index, bytes: script.length });
+        hits.push({ input: index, scriptBytes: script.length });
         break;
       }
     }

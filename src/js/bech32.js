@@ -11,7 +11,7 @@ import { heap, wasmExports as wasm, withInput } from "./entropylab-wasm.js";
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-const HRP_CAP = 16; // "sp" / "tsp" / "spscan" / "spspend" / "bc" / "tb"
+const HRP_CAP = 16; // "sp" / "tsp" / "spscan" / "spspend" / "tspscan" / "tspspend" / "bc" / "tb"
 const WORDS_CAP = 1024;
 const STRING_CAP = 1024;
 
@@ -53,12 +53,12 @@ export const bech32mEncode = (hrp, words) => {
   const wordBytes = Uint8Array.from(words);
   const out = withInput(hrpBytes, (h) =>
     withInput(wordBytes, (w) => {
-      const outPtr = wasm().secp_alloc(STRING_CAP);
+      const outPtr = wasm().el_alloc(STRING_CAP);
       try {
         const length = wasm().el_bech32m_encode(h, hrpBytes.length, w, wordBytes.length, outPtr, STRING_CAP);
         return length < 0 ? null : textDecoder.decode(heap().slice(outPtr, outPtr + length));
       } finally {
-        wasm().secp_free(outPtr, STRING_CAP);
+        wasm().el_free(outPtr, STRING_CAP);
       }
     })
   );
@@ -73,8 +73,8 @@ export const bech32mDecode = (text) => {
   if (typeof text !== "string" || !text) return null;
   const bytes = textEncoder.encode(text);
   return withInput(bytes, (p) => {
-    const hrpPtr = wasm().secp_alloc(HRP_CAP);
-    const wordsPtr = wasm().secp_alloc(WORDS_CAP);
+    const hrpPtr = wasm().el_alloc(HRP_CAP);
+    const wordsPtr = wasm().el_alloc(WORDS_CAP);
     try {
       const packed = wasm().el_bech32m_decode(p, bytes.length, hrpPtr, HRP_CAP, wordsPtr, WORDS_CAP);
       if (packed < 0) return null;
@@ -85,8 +85,8 @@ export const bech32mDecode = (text) => {
         words: Array.from(heap().slice(wordsPtr, wordsPtr + wordCount)),
       };
     } finally {
-      wasm().secp_free(hrpPtr, HRP_CAP);
-      wasm().secp_free(wordsPtr, WORDS_CAP);
+      wasm().el_free(hrpPtr, HRP_CAP);
+      wasm().el_free(wordsPtr, WORDS_CAP);
     }
   });
 };

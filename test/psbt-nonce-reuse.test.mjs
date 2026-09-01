@@ -29,10 +29,10 @@ function loadSlice(name) {
 }
 
 const hodlEq = new Function(`${loadSlice("hodlEq")}; return hodlEq;`)();
-const hodlPubId = new Function(
+const hodlCompressedPubkey = new Function(
   "hodlPointFrom",
   "hodlPointBytes",
-  `${loadSlice("hodlPubId")}; return hodlPubId;`,
+  `${loadSlice("hodlCompressedPubkey")}; return hodlCompressedPubkey;`,
 )(
   () => {
     throw new Error("no curve");
@@ -66,8 +66,8 @@ function derFromR(rBytes, padded = false) {
 }
 
 test("compressed and uncompressed encodings of G compare as the same key", () => {
-  const compressed = hodlPubId(G_COMPRESSED);
-  const uncompressed = hodlPubId(G_UNCOMPRESSED);
+  const compressed = hodlCompressedPubkey(G_COMPRESSED);
+  const uncompressed = hodlCompressedPubkey(G_UNCOMPRESSED);
   assert.equal(compressed.length, 33);
   assert.equal(uncompressed.length, 33);
   assert.ok(hodlEq(compressed, uncompressed));
@@ -75,7 +75,7 @@ test("compressed and uncompressed encodings of G compare as the same key", () =>
 });
 
 test("a different point with the same x is not treated as the same key", () => {
-  assert.equal(hodlEq(hodlPubId(G_COMPRESSED), hodlPubId(OTHER)), false);
+  assert.equal(hodlEq(hodlCompressedPubkey(G_COMPRESSED), hodlCompressedPubkey(OTHER)), false);
 });
 
 test("same key compressed vs uncompressed with the same r is reused nonce", () => {
@@ -83,8 +83,8 @@ test("same key compressed vs uncompressed with the same r is reused nonce", () =
   const z1 = rOf("01".repeat(32));
   const z2 = rOf("02".repeat(32));
   const scan = hodlCompareNonces([
-    { input: 0, r, pubkey: hodlPubId(G_COMPRESSED), sighash: z1, valid: true },
-    { input: 1, r, pubkey: hodlPubId(G_UNCOMPRESSED), sighash: z2, valid: true },
+    { input: 0, r, pubkey: hodlCompressedPubkey(G_COMPRESSED), sighash: z1, valid: true },
+    { input: 1, r, pubkey: hodlCompressedPubkey(G_UNCOMPRESSED), sighash: z2, valid: true },
   ]);
   assert.equal(scan.reused.length, 1);
   assert.equal(scan.possible.length, 0);
@@ -95,8 +95,8 @@ test("different keys with the same r are not same-key reuse", () => {
   const z1 = rOf("01".repeat(32));
   const z2 = rOf("02".repeat(32));
   const scan = hodlCompareNonces([
-    { input: 0, r, pubkey: hodlPubId(G_COMPRESSED), sighash: z1, valid: true },
-    { input: 1, r, pubkey: hodlPubId(OTHER), sighash: z2, valid: true },
+    { input: 0, r, pubkey: hodlCompressedPubkey(G_COMPRESSED), sighash: z1, valid: true },
+    { input: 1, r, pubkey: hodlCompressedPubkey(OTHER), sighash: z2, valid: true },
   ]);
   assert.equal(scan.reused.length, 0);
   assert.equal(scan.possible.length, 0);
@@ -118,8 +118,8 @@ test("garbage signatures do not yield an r value", () => {
 test("same r without reconstructed digests is possible reuse, not a clean miss", () => {
   const r = rOf("aa".repeat(32));
   const scan = hodlCompareNonces([
-    { input: 0, r, pubkey: hodlPubId(G_COMPRESSED), sighash: null, valid: null },
-    { input: 1, r, pubkey: hodlPubId(G_UNCOMPRESSED), sighash: null, valid: null },
+    { input: 0, r, pubkey: hodlCompressedPubkey(G_COMPRESSED), sighash: null, valid: null },
+    { input: 1, r, pubkey: hodlCompressedPubkey(G_UNCOMPRESSED), sighash: null, valid: null },
   ]);
   assert.equal(scan.reused.length, 0);
   assert.equal(scan.possible.length, 1);
@@ -141,7 +141,7 @@ test("render suppresses a clean verdict when a signature cannot be inspected", (
     render,
     /else if\s*\(uninspected\)\s*html\.push\("<p class='psbt-warn'><strong>Incomplete nonce coverage\.<\/strong>/,
   );
-  assert.match(render, /hodlPubId\(signature\.pubkey\)/);
+  assert.match(render, /hodlCompressedPubkey\(signature\.pubkey\)/);
   assert.match(render, /hodlDerRLoose\(signature\.der\)/);
   assert.match(render, /hodlCompareNonces\(rValues\)/);
   assert.match(app, /A clean verdict is not issued when a signature cannot be inspected/);

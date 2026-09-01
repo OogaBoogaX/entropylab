@@ -2,7 +2,8 @@
 // Browser sanity check: runs a quick barrage of smoke tests at startup to
 // confirm this host can run EntropyLab's wallet math correctly. Every check
 // covers a platform feature the application depends on: a secure context,
-// the CSPRNG (locked cryptographic dependencies), BigInt arithmetic (key derivation and the SQLite
+// the CSPRNG (a broken generator that repeats bytes would silently reuse key
+// material), BigInt arithmetic (key derivation and the SQLite
 // writer), UTF-8 TextEncoder/TextDecoder (hashing entropy input and writing
 // wallet.dat), NFKD string normalization (BIP39 passphrases), and WebAssembly
 // (the secp256k1 curve engine). The
@@ -77,7 +78,6 @@
         if (typeof "".normalize !== "function") return false;
         // BIP39 passphrases are NFKD-normalized: U+00E9 must decompose
         // into e + U+0301. Escapes keep file re-encoding from breaking this.
-        // escapes so file re-encoding cannot silently break the comparison.
         return "\u00e9".normalize("NFKD") === "e\u0301";
       },
     },

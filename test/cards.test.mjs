@@ -58,17 +58,17 @@ const hodlParseCards = new Function(
   "hodlCardsHashInput",
   `${loadSlice("hodlParseCards")}; return hodlParseCards;`,
 )(hodlCardNeeded, hodlNormalizeCardToken, hodlCardWithoutReplacementBits, hodlCardsHashInput);
-const Z = (input) => new Uint8Array(createHash("sha256").update(input).digest());
-const M = { encode: (bytes) => Buffer.from(bytes).toString("hex") };
+const hodlSha256 = (input) => new Uint8Array(createHash("sha256").update(input).digest());
+const hodlHex = { encode: (bytes) => Buffer.from(bytes).toString("hex") };
 const hodlCardsEntropy = new Function(
   "hodlSeedConfig",
   "hodlParseCards",
-  "Z",
+  "hodlSha256",
   "TextEncoder",
-  "M",
+  "hodlHex",
   "hodlCardsHashInput",
   `${loadSlice("hodlCardsEntropy")}; return hodlCardsEntropy;`,
-)(hodlSeedConfig, hodlParseCards, Z, TextEncoder, M, hodlCardsHashInput);
+)(hodlSeedConfig, hodlParseCards, hodlSha256, TextEncoder, hodlHex, hodlCardsHashInput);
 const hodlCardRanks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"];
 const hodlCardSuits = [{ code: "S" }, { code: "H" }, { code: "C" }, { code: "D" }];
 const hodlCardSelectionState = new Function(
@@ -77,8 +77,8 @@ const hodlCardSelectionState = new Function(
 )(hodlCardRanks, hodlCardSuits);
 const hodlToggleCardChoice = new Function(`${loadSlice("hodlToggleCardChoice")}; return hodlToggleCardChoice;`)();
 const hodlSetInputValueAtEnd = (input, value, focused) => new Function("document", `${loadSlice("hodlPlaceCaret")}; ${loadSlice("hodlSetInputValueAtEnd")}; return hodlSetInputValueAtEnd;`)({ activeElement: focused ? input : null })(input, value);
-const Ae = Object.freeze(bip39English);
-const hodlBip39WordIndex = new Map(Ae.map((word, index) => [word, index]));
+const hodlBip39Wordlist = Object.freeze(bip39English);
+const hodlBip39WordIndex = new Map(hodlBip39Wordlist.map((word, index) => [word, index]));
 function hodlTargetLastWords(value, targetWords) {
   const config = hodlSeedConfig(targetWords);
   const words = value.split(/\s+/).filter(Boolean);
@@ -91,8 +91,8 @@ function hodlTargetLastWords(value, targetWords) {
     const entropyBits = prefixBits + suffix.toString(2).padStart(missingEntropyBits, "0");
     const bytes = new Uint8Array(config.bytes);
     for (let index = 0; index < bytes.length; index++) bytes[index] = Number.parseInt(entropyBits.slice(index * 8, index * 8 + 8), 2);
-    const checksum = Z(bytes)[0] >> 8 - checksumBits;
-    candidates.push(Ae[suffix * 2 ** checksumBits + checksum]);
+    const checksum = hodlSha256(bytes)[0] >> 8 - checksumBits;
+    candidates.push(hodlBip39Wordlist[suffix * 2 ** checksumBits + checksum]);
   }
   return { candidates };
 }
@@ -105,13 +105,13 @@ const hodlDirectCardRankValue = new Function(`${loadSlice("hodlDirectCardRankVal
 const hodlDirectCardSeparator = new Function("hodlSeedConfig", "hodlDirectCardFinalRadices", `${loadSlice("hodlDirectCardSeparator")}; return hodlDirectCardSeparator;`)(hodlSeedConfig, hodlDirectCardFinalRadices);
 const hodlFilterDirectCards = new Function("hodlDirectCardSeparator", `${loadSlice("hodlFilterDirectCards")}; return hodlFilterDirectCards;`)(hodlDirectCardSeparator);
 const hodlParseDirectCards = new Function(
-  "hodlSeedConfig", "hodlDirectCardSteps", "hodlDirectCardRankValue", "hodlDirectCardFinalRadices", "hodlTargetLastWords", "Ae",
+  "hodlSeedConfig", "hodlDirectCardSteps", "hodlDirectCardRankValue", "hodlDirectCardFinalRadices", "hodlTargetLastWords", "hodlBip39Wordlist",
   `${loadSlice("hodlParseDirectCards")}; return hodlParseDirectCards;`,
-)(hodlSeedConfig, hodlDirectCardSteps, hodlDirectCardRankValue, hodlDirectCardFinalRadices, hodlTargetLastWords, Ae);
+)(hodlSeedConfig, hodlDirectCardSteps, hodlDirectCardRankValue, hodlDirectCardFinalRadices, hodlTargetLastWords, hodlBip39Wordlist);
 const hodlDirectCardsEntropy = new Function(
-  "hodlParseDirectCards", "Pn", "Ae", "Er", "M",
+  "hodlParseDirectCards", "hodlIsValidMnemonic", "hodlBip39Wordlist", "hodlMnemonicToEntropy", "hodlHex",
   `${loadSlice("hodlDirectCardsEntropy")}; return hodlDirectCardsEntropy;`,
-)(hodlParseDirectCards, validateMnemonic, Ae, mnemonicToEntropy, M);
+)(hodlParseDirectCards, validateMnemonic, hodlBip39Wordlist, mnemonicToEntropy, hodlHex);
 
 const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"];
 const SUITS = ["S", "H", "C", "D"];
@@ -183,7 +183,7 @@ test("24-word extra cards may repeat the first shuffle", () => {
 test("hashed transcript is SHA-256 of the displayed ASCII codes", () => {
   const transcript = "As 2c Td";
   const digest = createHash("sha256").update(transcript, "utf8").digest("hex");
-  assert.match(app, /Z\(new TextEncoder\(\)\.encode\(hashInput\)\)/);
+  assert.match(app, /hodlSha256\(new TextEncoder\(\)\.encode\(hashInput\)\)/);
   assert.equal(hodlParseCards("AS 2C TD", 12).hashInput, transcript);
   assert.equal(hodlParseCards("as 2c td", 12).hashInput, transcript);
   assert.equal(hodlFilterCards("as 2c td"), "As 2c Td ");
@@ -344,7 +344,7 @@ test("direct-card final draws adapt to every BIP39 phrase length", () => {
     const result = hodlDirectCardsEntropy(transcript, words);
     assert.equal(result.ok, true, `${words}-word direct result`);
     assert.equal(result.bytes.length, config.bytes);
-    assert.equal(validateMnemonic(result.mnemonic, Ae), true);
+    assert.equal(validateMnemonic(result.mnemonic, hodlBip39Wordlist), true);
   }
 });
 

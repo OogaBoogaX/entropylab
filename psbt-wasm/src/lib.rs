@@ -88,8 +88,9 @@ unsafe fn wipe(ptr: *mut u8, len: usize) {
 }
 
 /// Copies the last error message into `out` (two-call convention: null `out`
-/// returns the required capacity). Returns the byte length, or 0 when there is
-/// no error.
+/// returns the required capacity). Returns the byte length, 0 when there is
+/// no error, or -1 (and a fresh "buffer too small" error) when `out` is
+/// too small.
 #[no_mangle]
 pub unsafe extern "C" fn psbt_last_error(out: *mut u8, out_cap: usize) -> i32 {
     let len = LAST_ERROR.with(|slot| slot.borrow().len());
@@ -435,7 +436,7 @@ fn decode_pair(kind: &str, pair: &RawPair, tx: &Transaction, input_index: Option
         ("output", 0x02) => "PSBT_OUT_BIP32_DERIVATION",
         ("output", 0x05) => "PSBT_OUT_TAP_INTERNAL_KEY",
         ("output", 0x06) => "PSBT_OUT_TAP_TREE",
-        ("output", 0x07) => "PSBT_OUT_BIP32_DERIVATION",
+        ("output", 0x07) => "PSBT_OUT_TAP_BIP32_DERIVATION",
         ("output", 0xfc) => "PSBT_OUT_PROPRIETARY",
         ("output", _) => "PSBT_OUT_UNKNOWN",
         _ => "PSBT_UNKNOWN",
@@ -652,7 +653,10 @@ fn pair_json(kind: &str, pair: &RawPair, tx: &Transaction, input_index: Option<u
     view
 }
 
-fn input_value(pair: &RawPair, tx: &Transaction, input_index: usize) -> Option<u64> {
+/// The prevout amount this pair claims for the input at `input_index`, and
+/// only when this pair is that input's (witness or verified non-witness) UTXO
+/// declaration; None otherwise.
+fn claimed_prevout_amount(pair: &RawPair, tx: &Transaction, input_index: usize) -> Option<u64> {
     match pair.key[0] {
         0x01 if pair.key.len() == 1 && pair.value.len() >= 8 => {
             Some(u64::from_le_bytes(pair.value[..8].try_into().unwrap()))
@@ -692,18 +696,18 @@ fn inspect(bytes: &[u8]) -> Result<String, String> {
         })).collect::<Vec<_>>(),
     });
 
-    let mut known = 0u64;
+    let mut known_in_sats = 0u64;
     let mut known_inputs = 0usize;
     for (index, pairs) in raw.inputs.iter().enumerate() {
-        if let Some(amount) = pairs.iter().find_map(|p| input_value(p, tx, index)) {
-            known += amount;
+        if let Some(amount) = pairs.iter().find_map(|p| claimed_prevout_amount(p, tx, index)) {
+            known_in_sats += amount;
             known_inputs += 1;
         }
     }
     let out_sum: u64 = tx.output.iter().map(|o| o.value.to_sat()).sum();
     let fee = if known_inputs == tx.input.len() {
-        if known >= out_sum {
-            json!({ "known": true, "sats": known - out_sum })
+        if known_in_sats >= out_sum {
+            json!({ "known": true, "sats": known_in_sats - out_sum })
         } else {
             json!({ "known": true, "sats": Value::Null, "error": "outputs exceed claimed inputs" })
         }
@@ -711,7 +715,7 @@ fn inspect(bytes: &[u8]) -> Result<String, String> {
         json!({ "known": false })
     };
 
-    let validity = match Psbt::deserialize(bytes) {
+    let rust_bitcoin_error = match Psbt::deserialize(bytes) {
         Ok(_) => Value::Null,
         Err(e) => Value::String(e.to_string()),
     };
@@ -722,10 +726,10 @@ fn inspect(bytes: &[u8]) -> Result<String, String> {
         "globals": raw.globals.iter().map(|p| pair_json("global", p, tx, None)).collect::<Vec<_>>(),
         "inputs": raw.inputs.iter().enumerate().map(|(n, map)| map.iter().map(|p| pair_json("input", p, tx, Some(n))).collect::<Vec<_>>()).collect::<Vec<_>>(),
         "outputs": raw.outputs.iter().map(|map| map.iter().map(|p| pair_json("output", p, tx, None)).collect::<Vec<_>>()).collect::<Vec<_>>(),
-        "totalIn": if known_inputs == tx.input.len() { json!(known) } else { Value::Null },
+        "totalIn": if known_inputs == tx.input.len() { json!(known_in_sats) } else { Value::Null },
         "totalOut": out_sum,
         "fee": fee,
-        "rustBitcoinError": validity,
+        "rustBitcoinError": rust_bitcoin_error,
     });
     let text = serde_json::to_string(&doc).map_err(|e| format!("JSON encode failed: {e}"))?;
     if text.len() > MAX_JSON_BYTES {

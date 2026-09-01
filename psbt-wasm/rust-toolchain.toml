@@ -1,5 +1,7 @@
-# Pinned so `npm run build:wasm` produces byte-identical output locally and in
-# CI (the workflow diffs the regenerated artifact against the committed one).
+# Pinned so `npm run build:wasm` builds with the same Rust locally and in CI.
+# CI rebuilds the artifact from source and runs its test suite (the artifact
+# is committed back after merges; byte identity across machines is not
+# asserted because the C side compiles with the runner's clang).
 [toolchain]
 channel = "1.95.0"
 targets = ["wasm32-unknown-unknown"]

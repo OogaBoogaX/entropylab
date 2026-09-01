@@ -100,6 +100,18 @@ test("parseRawTx reads a segwit one-in one-out transaction", () => {
   assert.equal(sigs[0].pubkey.length, 33);
 });
 
+test("a bare DER signature with no sighash byte reports an unknown sighash", () => {
+  const der = Uint8Array.of(
+    0x30, 0x44,
+    0x02, 0x20, ...new Uint8Array(31).fill(0), 1,
+    0x02, 0x20, ...new Uint8Array(31).fill(0), 1,
+  );
+  const sigs = extractEcdsaSignatures({ inputs: [{ scriptSig: new Uint8Array(), witness: [der, Uint8Array.of(2, ...new Uint8Array(32).fill(3))] }] });
+  assert.equal(sigs.length, 1);
+  assert.equal(sigs[0].sighash, null, "no sighash byte present, so none may be reported");
+  assert.deepEqual([...sigs[0].der], [...der], "the whole item is DER when no sighash byte trails it");
+});
+
 test("trailing bytes are rejected", () => {
   const spk = concat(Uint8Array.of(0x51));
   const tx = concat(
@@ -161,7 +173,7 @@ test("app inspects raw transactions and labels outputs", () => {
   assert.match(app, /addressFromScript/);
   assert.match(app, /not in this wallet/);
   assert.match(app, /No output belongs to this session wallet/);
-  assert.match(app, /script " \+ M\.encode\(script\)/);
+  assert.match(app, /script " \+ hodlHex\.encode\(script\)/);
   assert.doesNotMatch(app, /debug fp=/);
   for (const markup of [app, template]) {
     assert.match(markup, /Read a PSBT or a signed transaction/);

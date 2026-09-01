@@ -6,17 +6,18 @@ export const OWNERSHIP_GAP = 50;
 export const OWNERSHIP_ACCOUNTS = 3;
 
 const SCRIPT_TYPES = [
-  { id: "bip44", script: "p2pkh", purpose: 44 },
-  { id: "bip49", script: "p2sh-p2wpkh", purpose: 49 },
-  { id: "bip84", script: "p2wpkh", purpose: 84 },
-  { id: "bip86", script: "p2tr", purpose: 86 },
+  { id: "bip44", scriptType: "p2pkh", purpose: 44 },
+  { id: "bip49", scriptType: "p2sh-p2wpkh", purpose: 49 },
+  { id: "bip84", scriptType: "p2wpkh", purpose: 84 },
+  { id: "bip86", scriptType: "p2tr", purpose: 86 },
 ];
 
 function coinType(network) {
   return network === "testnet" ? 1 : 0;
 }
 
-function bytesToHex(bytes) {
+// Accepts raw bytes or a hex string; always returns canonical lowercase hex.
+function toHex(bytes) {
   if (!bytes) return "";
   if (typeof bytes === "string") return bytes.replace(/^0x/i, "").toLowerCase();
   const arr = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
@@ -25,27 +26,28 @@ function bytesToHex(bytes) {
   return hex;
 }
 
-function taggedTapTweak(pubkey) {
-  // p2tr script is OP_1 || 32-byte x-only output key. We still prefer scure when it works.
+// Drop the parity byte of a compressed pubkey to get the x-only internal key;
+// p2trKeyScript applies the BIP86 tweak to it.
+function xOnlyFromCompressed(pubkey) {
   return pubkey.slice(1);
 }
 
-function scriptFor(script, pubkey, network) {
+function scriptFor(scriptType, pubkey, network) {
   const compressed = pubkey.length === 33 ? pubkey : null;
   try {
-    if (script === "p2pkh") return p2pkhScript(compressed || pubkey);
-    if (script === "p2wpkh") return compressed ? p2wpkhScript(compressed) : null;
-    if (script === "p2sh-p2wpkh") return compressed ? p2shP2wpkhScript(compressed) : null;
-    if (script === "p2tr") return p2trKeyScript(taggedTapTweak(compressed || pubkey));
+    if (scriptType === "p2pkh") return p2pkhScript(compressed || pubkey);
+    if (scriptType === "p2wpkh") return compressed ? p2wpkhScript(compressed) : null;
+    if (scriptType === "p2sh-p2wpkh") return compressed ? p2shP2wpkhScript(compressed) : null;
+    if (scriptType === "p2tr") return p2trKeyScript(xOnlyFromCompressed(compressed || pubkey));
   } catch {
     return null;
   }
   return null;
 }
 
-function addressFor(script, pubkey, network) {
+function addressFor(scriptType, pubkey, network) {
   try {
-    return addressForType(script, pubkey, network);
+    return addressForType(scriptType, pubkey, network);
   } catch {
     return null;
   }
@@ -61,8 +63,8 @@ export function normalizeAddress(value) {
   return text;
 }
 
-export function addressFromPubkey(script, pubkey, network) {
-  return addressFor(script, pubkey, network);
+export function addressFromPubkey(scriptType, pubkey, network) {
+  return addressFor(scriptType, pubkey, network);
 }
 
 function remember(map, address, meta) {
@@ -74,14 +76,14 @@ function remember(map, address, meta) {
 }
 
 function record(map, definition, pubkey, network, extra) {
-  const scriptBytes = scriptFor(definition.script, pubkey, network);
+  const scriptBytes = scriptFor(definition.scriptType, pubkey, network);
   if (!scriptBytes) return;
-  const address = addressFor(definition.script, pubkey, network);
+  const address = addressFor(definition.scriptType, pubkey, network);
   remember(map, address, {
     ...extra,
-    script: definition.script,
+    scriptType: definition.scriptType,
     bip: definition.id,
-    scriptHex: bytesToHex(scriptBytes),
+    scriptHex: toHex(scriptBytes),
     address: address || "",
   });
 }
@@ -174,7 +176,7 @@ export function indexHdKey(root, network, options = {}) {
 export function matchOwnership(map, addressOrScript) {
   if (!map || !map.size) return { state: "no-session" };
   if (addressOrScript instanceof Uint8Array) {
-    const hit = map.get(bytesToHex(addressOrScript));
+    const hit = map.get(toHex(addressOrScript));
     if (hit) return { state: "ours", ...hit };
     return { state: "external", searched: map.size };
   }

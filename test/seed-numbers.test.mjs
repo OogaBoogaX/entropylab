@@ -21,8 +21,8 @@ function loadSlice(name) {
   throw new Error(`Could not load ${name}`);
 }
 
-const Ae = Object.freeze(bip39English);
-const hodlBip39WordIndex = new Map(Ae.map((word, index) => [word, index]));
+const hodlBip39Wordlist = Object.freeze(bip39English);
+const hodlBip39WordIndex = new Map(hodlBip39Wordlist.map((word, index) => [word, index]));
 const hodlSeedLengths = {
   12: { words: 12, bits: 128, bytes: 16, partialWords: 11, candidates: 128 },
   15: { words: 15, bits: 160, bytes: 20, partialWords: 14, candidates: 64 },
@@ -31,12 +31,12 @@ const hodlSeedLengths = {
   24: { words: 24, bits: 256, bytes: 32, partialWords: 23, candidates: 8 },
 };
 const hodlSeedConfig = (words = 24) => hodlSeedLengths[words];
-const Pn = validateMnemonic;
-const Rn = (value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+const hodlIsValidMnemonic = validateMnemonic;
+const hodlNormalizeMnemonicText = (value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 const hodlLooksExtendedKey = () => false;
 const hodlFilterSeedNumbers = new Function(`${loadSlice("hodlFilterSeedNumbers")}; return hodlFilterSeedNumbers;`)();
-const hodlParseSeedNumbers = new Function("hodlSeedConfig", "Ae", "Pn", `${loadSlice("hodlParseSeedNumbers")}; return hodlParseSeedNumbers;`)(hodlSeedConfig, Ae, Pn);
-const hodlSeedWordsToNumbers = new Function("hodlLooksExtendedKey", "Rn", "hodlBip39WordIndex", `${loadSlice("hodlSeedWordsToNumbers")}; return hodlSeedWordsToNumbers;`)(hodlLooksExtendedKey, Rn, hodlBip39WordIndex);
+const hodlParseSeedNumbers = new Function("hodlSeedConfig", "hodlBip39Wordlist", "hodlIsValidMnemonic", `${loadSlice("hodlParseSeedNumbers")}; return hodlParseSeedNumbers;`)(hodlSeedConfig, hodlBip39Wordlist, hodlIsValidMnemonic);
+const hodlSeedWordsToNumbers = new Function("hodlLooksExtendedKey", "hodlNormalizeMnemonicText", "hodlBip39WordIndex", `${loadSlice("hodlSeedWordsToNumbers")}; return hodlSeedWordsToNumbers;`)(hodlLooksExtendedKey, hodlNormalizeMnemonicText, hodlBip39WordIndex);
 const hodlSeedNumbersToWords = new Function("hodlParseSeedNumbers", `${loadSlice("hodlSeedNumbersToWords")}; return hodlSeedNumbersToWords;`)(hodlParseSeedNumbers);
 const hodlTranslateSeedNumberIndex = new Function(`${loadSlice("hodlTranslateSeedNumberIndex")}; return hodlTranslateSeedNumberIndex;`)();
 const hodlSeedNumberCanInsertDigit = new Function(`${loadSlice("hodlSeedNumberCanInsertDigit")}; return hodlSeedNumberCanInsertDigit;`)();
@@ -97,7 +97,7 @@ test("a complete numbered phrase follows normal BIP39 checksum validation", () =
   const phrase = `${Array(11).fill("abandon").join(" ")} about`;
   const oneBased = `${Array(11).fill("1").join(" ")} 4`;
   const zeroBased = `${Array(11).fill("0").join(" ")} 3`;
-  assert.equal(validateMnemonic(phrase, Ae), true);
+  assert.equal(validateMnemonic(phrase, hodlBip39Wordlist), true);
   assert.equal(hodlParseSeedNumbers(oneBased, 12, false).complete, true);
   assert.equal(hodlParseSeedNumbers(zeroBased, 12, true).complete, true);
   assert.equal(hodlSeedNumbersToWords(oneBased, false, 12), phrase);

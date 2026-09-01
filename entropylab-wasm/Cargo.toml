@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 license = "Unlicense"
-description = "WebAssembly bindings to libsecp256k1 and bitcoin_hashes for EntropyLab (built by CI, committed as src/js/entropylab-wasm-b64.js)"
+description = "WebAssembly bindings to libsecp256k1, bitcoin_hashes, rust-bitcoin, rust-bip39, base58ck, and bech32 for EntropyLab (built by CI, committed as src/js/entropylab-wasm-b64.js)"
 
 [lib]
 crate-type = ["cdylib"]

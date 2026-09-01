@@ -125,7 +125,9 @@ var hodlWalletExport = (() => {
     return hash >= 0 ? descriptor.slice(0, hash) : descriptor;
   };
 
-  const EXTENDED_KEY_PATTERN = /((?:xpub|tpub|ypub|upub|zpub|vpub|npub|xprv|tprv|yprv|uprv|zprv|vprv|nprv)[1-9A-HJ-NP-Za-km-z]{90,})/;
+  // SLIP-132 single-signature prefixes (plus generic xpub/xprv); Bitcoin has
+  // no base58 "npub"/"nprv" extended keys (that spelling is Nostr's bech32).
+  const EXTENDED_KEY_PATTERN = /((?:xpub|tpub|ypub|upub|zpub|vpub|xprv|tprv|yprv|uprv|zprv|vprv)[1-9A-HJ-NP-Za-km-z]{90,})/;
   const extractExtendedKey = (descriptor, label) => {
     const match = descriptor.match(EXTENDED_KEY_PATTERN);
     if (!match) throw new Error(`wallet.dat export: no extended key found in ${label} descriptor`);

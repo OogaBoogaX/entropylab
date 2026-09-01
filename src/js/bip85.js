@@ -24,7 +24,7 @@ export const BIP85_APPS = Object.freeze({
   PWD_BASE85: 707785
 });
 export const BIP39_LANGUAGE_ENGLISH = 0;
-export const BIP39_WORD_BYTES = Object.freeze({ 12: 16, 15: 20, 18: 24, 21: 28, 24: 32 });
+export const BIP39_ENTROPY_BYTES_BY_WORD_COUNT = Object.freeze({ 12: 16, 15: 20, 18: 24, 21: 28, 24: 32 });
 export const HEX_BYTES_MIN = 16;
 export const HEX_BYTES_MAX = 64;
 export const PWD_BASE64_MIN = 20;
@@ -48,7 +48,9 @@ export function wipeBytes(bytes) {
   return bytes;
 }
 
-export function parseHardenedIndex(value, label = "index") {
+// Parses a plain (unhardened) BIP32 child index; the caller applies the
+// hardening. Passing an already-hardened value (>= 2^31) is rejected.
+export function parseChildIndex(value, label = "index") {
   let n = typeof value === "number" ? value : Number(String(value ?? "").trim());
   if (!Number.isInteger(n) || n < INDEX_MIN || n > INDEX_MAX) throw new Error(`${label} must be an integer from ${INDEX_MIN} to ${INDEX_MAX}.`);
   return n;
@@ -56,7 +58,7 @@ export function parseHardenedIndex(value, label = "index") {
 
 export function hardenedPath(indices) {
   if (!Array.isArray(indices) || !indices.length) throw new Error("BIP-85 path needs at least one hardened index.");
-  return "m/" + indices.map((value, i) => `${parseHardenedIndex(value, `path[${i}]`)}'`).join("/");
+  return "m/" + indices.map((value, i) => `${parseChildIndex(value, `path[${i}]`)}'`).join("/");
 }
 
 export function bip85Path(app, ...rest) {
@@ -157,10 +159,10 @@ function result(fields) {
 
 export function deriveBip39(root, { words = 24, index = 0, language = BIP39_LANGUAGE_ENGLISH } = {}) {
   let wordCount = Number(words);
-  let bytes = BIP39_WORD_BYTES[wordCount];
+  let bytes = BIP39_ENTROPY_BYTES_BY_WORD_COUNT[wordCount];
   if (!bytes) throw new Error("BIP-85 BIP39 children are 12, 15, 18, 21, or 24 English words.");
   if (language !== BIP39_LANGUAGE_ENGLISH) throw new Error("This version derives English BIP-39 children only (language code 0').");
-  let path = bip85Path(BIP85_APPS.BIP39, language, wordCount, parseHardenedIndex(index));
+  let path = bip85Path(BIP85_APPS.BIP39, language, wordCount, parseChildIndex(index));
   let digest = deriveBip85Entropy(root, path);
   try {
     let entropy = truncateEntropy(digest, bytes);
@@ -178,7 +180,7 @@ export function deriveBip39(root, { words = 24, index = 0, language = BIP39_LANG
 }
 
 export function deriveWif(root, { index = 0, testnet = false } = {}) {
-  let path = bip85Path(BIP85_APPS.WIF, parseHardenedIndex(index));
+  let path = bip85Path(BIP85_APPS.WIF, parseChildIndex(index));
   let digest = deriveBip85Entropy(root, path);
   try {
     let entropy = truncateEntropy(digest, 32);
@@ -196,7 +198,7 @@ export function deriveWif(root, { index = 0, testnet = false } = {}) {
 }
 
 export function deriveXprv(root, { index = 0, testnet = false } = {}) {
-  let path = bip85Path(BIP85_APPS.XPRV, parseHardenedIndex(index));
+  let path = bip85Path(BIP85_APPS.XPRV, parseChildIndex(index));
   let digest = deriveBip85Entropy(root, path);
   let chainCode = digest.slice(0, 32), privateKey = digest.slice(32);
   try {
@@ -221,7 +223,7 @@ export function deriveXprv(root, { index = 0, testnet = false } = {}) {
 export function deriveHex(root, { numBytes = 32, index = 0 } = {}) {
   let size = Number(numBytes);
   if (!Number.isInteger(size) || size < HEX_BYTES_MIN || size > HEX_BYTES_MAX) throw new Error(`HEX children are ${HEX_BYTES_MIN} to ${HEX_BYTES_MAX} bytes.`);
-  let path = bip85Path(BIP85_APPS.HEX, size, parseHardenedIndex(index));
+  let path = bip85Path(BIP85_APPS.HEX, size, parseChildIndex(index));
   let digest = deriveBip85Entropy(root, path);
   try {
     let entropy = truncateEntropy(digest, size);
@@ -241,7 +243,7 @@ export function deriveHex(root, { numBytes = 32, index = 0 } = {}) {
 export function derivePwdBase64(root, { length = 21, index = 0 } = {}) {
   let size = Number(length);
   if (!Number.isInteger(size) || size < PWD_BASE64_MIN || size > PWD_BASE64_MAX) throw new Error(`BASE64 passwords are ${PWD_BASE64_MIN} to ${PWD_BASE64_MAX} characters.`);
-  let path = bip85Path(BIP85_APPS.PWD_BASE64, size, parseHardenedIndex(index));
+  let path = bip85Path(BIP85_APPS.PWD_BASE64, size, parseChildIndex(index));
   let entropy = deriveBip85Entropy(root, path);
   let encoded = base64Coder.encode(entropy).replace(/\s+/g, "");
   return result({
@@ -257,7 +259,7 @@ export function derivePwdBase64(root, { length = 21, index = 0 } = {}) {
 export function derivePwdBase85(root, { length = 12, index = 0 } = {}) {
   let size = Number(length);
   if (!Number.isInteger(size) || size < PWD_BASE85_MIN || size > PWD_BASE85_MAX) throw new Error(`BASE85 passwords are ${PWD_BASE85_MIN} to ${PWD_BASE85_MAX} characters.`);
-  let path = bip85Path(BIP85_APPS.PWD_BASE85, size, parseHardenedIndex(index));
+  let path = bip85Path(BIP85_APPS.PWD_BASE85, size, parseChildIndex(index));
   let entropy = deriveBip85Entropy(root, path);
   return result({
     app: "pwd-base85",

@@ -34,14 +34,14 @@ function loadVariable(name, nextName) {
   return app.slice(start, end);
 }
 
-const Z = (input) => new Uint8Array(createHash("sha256").update(input).digest());
+const hodlSha256 = (input) => new Uint8Array(createHash("sha256").update(input).digest());
 
 const api = new Function(
-  "_n",
-  "Ae",
-  "Z",
+  "hodlEntropyToMnemonic",
+  "hodlBip39Wordlist",
+  "hodlSha256",
   `
-  var Pt = 24;
+  var hodlTargetWordCount = 24;
   var hodlDiceCoinPositions = [];
   ${loadVariable("hodlSeedLengths", "hodlEntropyFormats")}
   ${loadVariable("hodlEntropyFormats", "hodlBip39WordSet")}
@@ -56,7 +56,7 @@ const api = new Function(
     "hodlAnalyzeEntropyInput",
     "hodlAnalyzeDiceInput",
     "hodlIanColemanDiceString",
-    "Br",
+    "hodlSplitDiceString",
     "hodlNumberBasePreviewWords",
     "hodlBinaryPreviewWords",
     "hodlHexPreviewWords",
@@ -71,9 +71,9 @@ const api = new Function(
     setCoinPositions: (positions) => { hodlDiceCoinPositions = positions; },
   };
   `,
-// The app calls its own one-argument encoder; adapt scure's two-argument form
-// so the comparison stays a differential against the app's bit math.
-)((bytes) => entropyToMnemonic(bytes, wordlist), wordlist, Z);
+// The app calls the two-argument encoder with its frozen wordlist; forward the
+// arguments so the comparison stays a differential against the app's bit math.
+)((bytes, words) => entropyToMnemonic(bytes, words), wordlist, hodlSha256);
 
 const { hodlNumberBasePreviewWords, hodlBinaryPreviewWords, hodlHexPreviewWords, hodlDicePreviewWords } = api;
 
@@ -114,7 +114,7 @@ test("binary previews match the mnemonic of the same bits", () => {
 });
 
 test("the dice preview hashes exactly the accepted rolls, matching scure", () => {
-  const reference = (rolls) => entropyToMnemonic(Z(new TextEncoder().encode(rolls)).slice(0, 32), wordlist).split(" ");
+  const reference = (rolls) => entropyToMnemonic(hodlSha256(new TextEncoder().encode(rolls)).slice(0, 32), wordlist).split(" ");
   assert.deepEqual(hodlDicePreviewWords("1".repeat(99), "coldcard", 24), reference("1".repeat(99)));
   // The preview hashes whatever is present, even below the recommended count.
   assert.deepEqual(hodlDicePreviewWords("1".repeat(50), "coldcard", 24), reference("1".repeat(50)));

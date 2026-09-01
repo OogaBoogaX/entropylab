@@ -279,13 +279,14 @@ textarea { display: block; min-height: 96px; letter-spacing: 0.08em; }
 .passphrase-input-shell .dice-input-highlight { white-space: pre; overflow-wrap: normal; word-break: normal; letter-spacing: 0; }
 .passphrase-bip39-status { margin: var(--space-control) 0 0; font-weight: 400; }
 .passphrase-keyboard-host .seed-keyboard { margin-top: var(--space-control); margin-right: auto; margin-left: 0; }
-.seed-keyboard-toggle {
+/* The theme toggle shares this button chrome; it is not a keyboard toggle. */
+.seed-keyboard-toggle, .theme-toggle {
   display: grid; place-items: center; flex: 0 0 44px; width: 44px; min-height: 44px; height: auto; padding: 5px;
   border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--muted);
 }
-.seed-keyboard-toggle:hover { color: var(--fg); border-color: var(--faint); }
+.seed-keyboard-toggle:hover, .theme-toggle:hover { color: var(--fg); border-color: var(--faint); }
 .seed-keyboard-toggle[aria-expanded="true"] { color: var(--selection-accent); border-color: var(--selection-accent); }
-.seed-keyboard-toggle:focus-visible { outline: 2px solid var(--selection-accent); outline-offset: 2px; }
+.seed-keyboard-toggle:focus-visible, .theme-toggle:focus-visible { outline: 2px solid var(--selection-accent); outline-offset: 2px; }
 .seed-keyboard-toggle svg { display: block; width: 30px; height: 22px; }
 .seed-keyboard-icon-case { fill: none; stroke: currentColor; stroke-width: 2.5; }
 .seed-keyboard-icon-keys { fill: currentColor; }
@@ -936,7 +937,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .tool-intro[hidden] { display: none; }
 .tool-intro h2 { margin: 5px 0 8px; }
 .tool-intro > .muted { max-width: 760px; margin: 0; }
-.key-lab[hidden], .key-summary[hidden], .msig-lab[hidden] { display: none; }
+.key-lab[hidden], .key-summary[hidden], .msig-lab[hidden], .bip85-bench[hidden] { display: none; }
 #calc-card.is-result-view #modes,
 #calc-card:not(.is-result-view) #out,
 #msig-card:not(.is-result-view) #msig-out { display: none; }
@@ -954,16 +955,25 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .key-summary-path { font-family: var(--mono); word-break: break-all; }
 .key-tab-lifehash { width: 22px; height: 22px; border-radius: 4px; image-rendering: pixelated; background: #fff; }
 .key-tab.is-lab { font-weight: 700; }
-.key-tab-lab-icon { width: 18px; height: 22px; padding: 0; color: inherit; }
+.key-tab-lab-icon { width: 16px; height: 16px; padding: 0; color: var(--muted); }
 .key-tab-lab-icon svg { display: block; width: 100%; height: 100%; }
-.key-tab-lab-icon .site-logo-light { display: none; }
-:root[data-theme="light"] .key-tab-lab-icon .site-logo-dark { display: none; }
-:root[data-theme="light"] .key-tab-lab-icon .site-logo-light { display: block; }
 .key-result { margin-top: 16px; }
 .key-result-scripts-label { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .key-result-main { margin-top: 8px; padding: 16px 16px 20px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); }
 .key-result .wallet-result-messages { margin: 0 0 16px; }
 .account-receive-section { margin-top: 0; }
+.station-key-source { margin: 0 0 20px; }
+#sp-modes + .station-key-source { margin-top: 20px; }
+.station-key-source > .label { margin: 0 0 8px; }
+.station-key-source > .field-note { display: block; margin: 8px 0 0; }
+.session-key-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.session-key-picker[hidden] { display: none; }
+.session-key-option {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-2); color: var(--fg); font-family: var(--mono); font-size: 13px; cursor: pointer;
+}
+.session-key-option.active { border-color: var(--accent); }
 .msig-session-keys { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
 .msig-session-keys[hidden] { display: none; }
 .msig-session-key {
@@ -972,6 +982,15 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   background: var(--surface-2); color: var(--fg); font-family: var(--mono); font-size: 13px; cursor: pointer;
 }
 .msig-session-key.active { border-color: var(--accent); color: var(--fg); }
+.msig-key-reuse {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 0;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: color-mix(in oklab, var(--surface-2) 70%, var(--bg));
+}
+.msig-key-reuse[hidden] { display: none; }
+.msig-key-reuse-note { flex: 1 1 100%; margin: 0; }
+.msig-key-reuse-control { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.msig-key-reuse-path { width: 90px; font-family: var(--mono); }
 .msig-key-ident { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
 .msig-key-ident[hidden] { display: none; }
 .msig-key-ident-fp { font-family: var(--mono); font-size: 13px; letter-spacing: 0.04em; }
@@ -1005,7 +1024,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .segmented-control.is-stacked > .tab:last-child { border-radius: 0 0 8px 8px; }
 .segmented-control.is-stacked > .tab:only-child { border-radius: 8px; }
 #msig-card[hidden], #calc-card[hidden], #psbt-card[hidden], #psbted-card[hidden], #bip85-card[hidden], #sp-card[hidden] { display: none !important; }
-#calc-card:not([hidden]), #msig-card:not([hidden]) { margin-top: 0; border-radius: 20px; position: relative; z-index: 1; }
+#calc-card:not([hidden]), #msig-card:not([hidden]), #bip85-card:not([hidden]), #sp-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
 .psbt-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
 @media (min-width: 720px) {
   .psbt-grid { grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); }
@@ -1443,7 +1462,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   .msig-threshold-number { flex: 0 0 auto; width: 56px !important; min-width: 56px; height: 40px; min-height: 40px !important; font-size: 16px; }
   .msig-threshold-ticks { font-size: 9px; }
 }
-.psbt-intro { margin: var(--space-control) 0 0; }
+.tool-intro-note { margin: var(--space-control) 0 0; }
 .psbt-grid { margin-top: var(--space-component); }
 .psbt-grid > .field, .psbt-grid > div > .field:first-child { margin-top: 0; }
 .psbt-actions { margin-top: var(--space-component); }
@@ -1459,12 +1478,13 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .bip85-actions { margin-top: var(--space-component); }
 .bip85-notes { margin: var(--space-component) 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 #bip85-out { margin-top: var(--space-component); }
+#bip85-card.is-result-view #bip85-out { margin-top: 0; }
 #bip85-out .wallet-private-section { margin-top: 0; }
 #psbt-session { margin: var(--space-control) 0 0; }
-.key-manager { margin: 0 0 16px; position: relative; z-index: 2; }
+.key-manager { margin: 14px 0 -1px; position: relative; z-index: 2; }
 .key-manager-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .key-manager-head h2 { margin: 0; }
-.key-tab-strip { display: flex; align-items: center; min-width: 0; margin-top: 0; gap: 4px; }
+.key-tab-strip { display: flex; align-items: flex-end; min-width: 0; margin-top: 12px; }
 .add-key {
   width: 36px; min-width: 36px; min-height: 44px; padding: 0; border: 0; border-radius: 0;
   background: transparent; box-shadow: none; color: var(--muted); font-size: 28px; line-height: 1; cursor: pointer;
@@ -1472,7 +1492,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .add-key:not(:disabled):hover { background: transparent; color: var(--accent); }
 .add-key:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
 .add-key:not(:disabled):active { background: transparent; color: var(--accent); }
-/* The minus is disabled while a single key or multisig is all there is. It
+/* The minus is disabled while a Station tab is selected. It
    drops to the border tone, which sits close to its ground in either theme,
    and stops answering hover, so nothing about it invites a click. Disabled
    controls are exempt from the contrast floor, and the state is on the
@@ -1499,7 +1519,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 @media (prefers-reduced-motion: reduce) { .add-item-tooltip { transition: none; } }
 .key-tabs {
-  display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; height: auto; min-height: 44px; margin-top: 0; position: relative; z-index: 2;
+  display: flex; align-items: flex-end; gap: 0; flex: 1 1 auto; min-width: 0; height: 50px; margin-top: 0; position: relative; z-index: 2;
   overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain;
   scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; cursor: grab;
 }
@@ -1507,15 +1527,19 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .key-tabs.dragging, .key-tabs.dragging .key-tab { cursor: grabbing; user-select: none; }
 .key-tab {
   position: relative; display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
-  width: max-content; max-width: none; min-height: 44px; padding: 6px 12px; white-space: nowrap;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--muted); font-weight: 600;
+  width: max-content; max-width: none; min-height: 44px; padding: 0 14px; white-space: nowrap;
+  border: 1px solid transparent; border-radius: 10px 10px 0 0; background: transparent; color: var(--muted);
 }
-.key-tab:not(.active):hover { background: color-mix(in oklab, var(--surface-2) 70%, var(--bg)); color: var(--fg); }
+.key-tab:not(.active):hover { background: color-mix(in oklab, var(--surface-2) 60%, transparent); color: var(--fg); }
+.key-tab:not(.active)::after {
+  content: ""; position: absolute; top: 12px; right: -1px; width: 1px; height: 20px; background: var(--border);
+}
+.key-tab:last-child::after, .key-tab:has(+ .key-tab.active)::after { display: none; }
 .key-tab.active, .key-tab-editing {
-  background: var(--surface); color: var(--fg); border-color: var(--accent);
+  background: var(--surface); color: var(--fg); border-color: var(--border); border-bottom-color: var(--surface);
 }
 .key-tab.is-lab { font-weight: 700; }
-.key-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.key-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 .account-tabs {
   display: flex; align-items: flex-end; gap: 0; height: 50px; margin: 14px 0 -1px;
   position: relative; z-index: 2; overflow-x: auto; overflow-y: hidden;
@@ -1677,10 +1701,15 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 .key-tab-icon { display: inline-flex; flex: 0 0 auto; width: 16px; height: 16px; color: var(--key-color); }
 .key-tab-icon svg { display: block; width: 16px; height: 16px; }
-.key-tab-lab-icon { display: inline-flex; width: 18px; height: 22px; }
+.key-tab-icon.key-tab-lab-icon { display: inline-flex; width: 16px; height: 16px; color: var(--muted); }
 .key-tab-lab-icon svg { width: 100%; height: 100%; }
 .multisig-tab-icon { display: inline-flex; flex: 0 0 auto; width: 28px; height: 23px; margin-left: -5px; }
 .multisig-tab-icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.bench-tab-icon,
+.multisig-tab-icon.bench-tab-icon {
+  flex: 0 0 18px; width: 18px; height: 18px; margin-left: 0; padding: 0; color: var(--muted);
+}
+.bench-tab-icon svg { display: block; width: 100%; height: 100%; }
 .key-tab-label { display: inline-block; white-space: nowrap; }
 .key-tab-editing { height: 44px; }
 .key-tabs .key-tab-editing input.key-tab-name-input {

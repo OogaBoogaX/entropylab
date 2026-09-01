@@ -17,28 +17,24 @@ import { sha256 } from "@noble/hashes/sha2.js";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
 
-// Extract the app's real identity function and run it against real HDKey
+// Extract the app's real identity functions and run them against real HDKey
 // nodes, so the test exercises the shipped comparison rather than a copy.
-function loadIdentityFn() {
-  const start = app.indexOf("function hodlCanonicalMultisigKey(");
-  assert.ok(start >= 0, "hodlCanonicalMultisigKey");
+function loadFunctionSource(name) {
+  const start = app.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, name);
   let depth = 0;
-  let end = -1;
   for (let i = app.indexOf("{", start); i < app.length; i++) {
     if (app[i] === "{") depth++;
-    else if (app[i] === "}") {
-      depth--;
-      if (depth === 0) {
-        end = i + 1;
-        break;
-      }
-    }
+    else if (app[i] === "}" && --depth === 0) return app.slice(start, i + 1);
   }
-  assert.ok(end > start, "hodlCanonicalMultisigKey end");
+  throw new Error(`unterminated ${name}`);
+}
+
+function loadIdentityFn() {
   const path = join(root, "test", `.msig-identity-${Math.random().toString(16).slice(2)}.mjs`);
   writeFileSync(
     path,
-    `import { hex as M } from "@scure/base";\n${app.slice(start, end)}\nexport { hodlCanonicalMultisigKey };\n`,
+    `import { hex as hodlHex } from "@scure/base";\n${loadFunctionSource("hodlMsigDerivedNode")}\n${loadFunctionSource("hodlCanonicalMultisigKey")}\nexport { hodlCanonicalMultisigKey };\n`,
   );
   return path;
 }
@@ -110,12 +106,26 @@ test("legitimately distinct account keys stay distinct", () => {
   assert.notEqual(identityOf(first), identityOf(HDKey.fromMasterSeed(seed).derive("m/48'/0'/1'/2'")));
 });
 
+test("one account key under different appended derivation paths is distinct co-signers", () => {
+  const node = HDKey.fromMasterSeed(seed).derive("m/48'/0'/0'/2'");
+  // Reusing a key requires the appended path, and the same path twice is
+  // still the same co-signer.
+  assert.notEqual(hodlCanonicalMultisigKey({ node }), hodlCanonicalMultisigKey({ node, derivationPath: "1" }));
+  assert.notEqual(hodlCanonicalMultisigKey({ node, derivationPath: "1" }), hodlCanonicalMultisigKey({ node, derivationPath: "2" }));
+  assert.equal(hodlCanonicalMultisigKey({ node, derivationPath: "1" }), hodlCanonicalMultisigKey({ node, derivationPath: "1" }));
+  // The identity matches the account key derived through the path directly.
+  assert.equal(hodlCanonicalMultisigKey({ node, derivationPath: "1" }), identityOf(node.derive("m/1")));
+  assert.equal(hodlCanonicalMultisigKey({ node, derivationPath: "1/2" }), identityOf(node.derive("m/1/2")));
+});
+
 test("both duplicate checks and the final script guard use derivation identity", () => {
   // Field-level and final validation compare hodlCanonicalMultisigKey output.
   assert.match(app, /function hodlDuplicateMultisigKey\(ta, parsed\) \{\s*let canonical = hodlCanonicalMultisigKey\(parsed\)/);
   assert.match(app, /canonical = hodlCanonicalMultisigKey\(parsed\);\s*if \(xpubs\.includes\(canonical\)\) throw new Error\(`Co-signer \$\{index \+ 1\} duplicates an earlier co-signer/);
   // Final defense: a generated script never contains a repeated public key.
-  assert.match(app, /new Set\(publicKeys\.map\(M\.encode\)\)\.size !== publicKeys\.length/);
+  assert.match(app, /new Set\(publicKeys\.map\(hodlHex\.encode\)\)\.size !== publicKeys\.length/);
+  // Identity follows the node derived through any appended co-signer path.
+  assert.match(app, /let node = hodlMsigDerivedNode\(parsed\), canonical = hodlCanonicalMultisigKey\(parsed\)/);
   // Identity ignores the reserialized extended key (which carries metadata).
   const start = app.indexOf("function hodlCanonicalMultisigKey(");
   const end = app.indexOf("function hodlDuplicateMultisigKey", start);

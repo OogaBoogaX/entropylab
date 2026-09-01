@@ -5,17 +5,17 @@
 // Every facade that talks to the WASM (secp256k1.js, hashes.js, ...) imports
 // the helpers here so the module is decoded and instantiated exactly once.
 // The boundary helpers copy inputs into linear memory for the duration of
-// one call and copy outputs back out; secp_free zeroes each buffer before
+// one call and copy outputs back out; el_free zeroes each buffer before
 // deallocating it, so nothing secret is left behind in linear memory.
 //
 // Loading: browsers refuse to compile a module this size synchronously on
 // the main thread, so in the browser instantiation is async and app boot
 // waits on wasmReady. Node (the test suite) has no such limit, so there the
 // module is initialized synchronously at import time.
-import { ENTROPOLAB_WASM_B64 } from "./entropylab-wasm-b64.js";
+import { ENTROPYLAB_WASM_B64 } from "./entropylab-wasm-b64.js";
 
 const wasmBytes = (() => {
-  const binary = atob(ENTROPOLAB_WASM_B64);
+  const binary = atob(ENTROPYLAB_WASM_B64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
@@ -47,22 +47,23 @@ export const heap = () => new Uint8Array(wasmExports().memory.buffer);
 // Copies `input` into WASM memory for the duration of `fn(pointer)`.
 export const withInput = (input, fn) => {
   const wasm = wasmExports();
-  const ptr = wasm.secp_alloc(input.length);
+  const ptr = wasm.el_alloc(input.length);
   heap().set(input, ptr);
   try {
     return fn(ptr);
   } finally {
-    wasm.secp_free(ptr, input.length);
+    wasm.el_free(ptr, input.length);
   }
 };
-// Runs `fn(outPointer)`, returning the `length` bytes the call produced.
+// Runs `fn(outPointer)`, returning the bytes the call produced, or null when
+// the call reports an error (a negative length).
 export const withOutput = (capacity, fn) => {
   const wasm = wasmExports();
-  const ptr = wasm.secp_alloc(capacity);
+  const ptr = wasm.el_alloc(capacity);
   try {
     const length = fn(ptr);
     return length < 0 ? null : heap().slice(ptr, ptr + length);
   } finally {
-    wasm.secp_free(ptr, capacity);
+    wasm.el_free(ptr, capacity);
   }
 };

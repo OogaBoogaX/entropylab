@@ -28,12 +28,12 @@ function loadSlice(name) {
   return app.slice(start, end);
 }
 
-const Z = (input) => new Uint8Array(createHash("sha256").update(input).digest());
+const hodlSha256 = (input) => new Uint8Array(createHash("sha256").update(input).digest());
 const helpers = new Function(
-  "Z",
+  "hodlSha256",
   "TextEncoder",
   `${loadSlice("hodlBrainWalletPassphrase")};${loadSlice("hodlBrainWalletPrivateKey")};return { hodlBrainWalletPassphrase, hodlBrainWalletPrivateKey };`,
-)(Z, TextEncoder);
+)(hodlSha256, TextEncoder);
 
 test("brain-wallet recovery hashes exact text by default", () => {
   const passphrase = " recovery phrase \t\n";
@@ -56,10 +56,10 @@ test("exact mode accepts whitespace while trim mode rejects an empty result", ()
 });
 
 const lab = new Function(
-  "Z",
-  "M",
+  "hodlSha256",
+  "hodlHex",
   `${loadSlice("hodlBrainLabEntropy")};return { hodlBrainLabEntropy };`,
-)(Z, { encode: (bytes) => Buffer.from(bytes).toString("hex") });
+)(hodlSha256, { encode: (bytes) => Buffer.from(bytes).toString("hex") });
 
 test("brain-wallet lab hashes exact UTF-8 text as 256-bit BIP39 entropy", () => {
   const text = " recovery phrase \t\n";
@@ -102,8 +102,8 @@ test("the brain-wallet HD output has no silent fingerprint or mnemonic preview p
   assert.match(app, /name="bo" value="hd"/);
   // The private-key mode never previews a fingerprint or mnemonic, which now
   // covers the HD brain output too.
-  assert.match(app, /if \(Ne === "key"\) \{\s*preview\.hidden = true;/);
-  assert.match(app, /24 words appear only after Derive Wallet/);
+  assert.match(app, /if \(hodlKeyMode === "key"\) \{\s*preview\.hidden = true;/);
+  assert.match(app, /24 words appear only after Derive Key/);
   assert.match(app, /Acknowledge the lab warning before deriving/);
   assert.doesNotMatch(loadSlice("hodlBrainLabEntropy"), /localStorage/);
 });

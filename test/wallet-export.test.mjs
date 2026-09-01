@@ -402,9 +402,9 @@ test("template, build script, and app wiring ship the export", () => {
   assert.match(app, /id="save"[^>]*>\$\{downloadLabel\}<\/button>\s*\$\{hodlWalletDatControl\(privateSheet\)\}/);
   assert.match(app, /hodlSaveRecoveryControl\s*\(\s*\)\s*\{\s*return\s*`<div class="wallet-data-actions no-print">[^`]*\$\{hodlWalletDatControl\(\s*(?:false|!1)\s*\)\}/);
   assert.match(app, /id="download-wallet-dat"[^>]*>\$\{hodlWalletExport\.walletDatButtonLabel\(includePrivate\)\}/);
-  assert.match(app, /hodlWalletExport\.hasDescriptors\(re\)/);
-  assert.match(app, /hodlWalletExport\.buildWalletDat\(\s*re\s*,\s*Ge\s*,\s*hodlWalletDatDeps\(\s*\)\s*,\s*creationTime\s*\)/);
-  assert.match(app, /hodlWalletExport\.walletDatFilename\(re, Ge\)/);
+  assert.match(app, /hodlWalletExport\.hasDescriptors\(hodlWalletResult\)/);
+  assert.match(app, /hodlWalletExport\.buildWalletDat\(\s*hodlWalletResult\s*,\s*hodlRevealPrivate\s*,\s*hodlWalletDatDeps\(\s*\)\s*,\s*creationTime\s*\)/);
+  assert.match(app, /hodlWalletExport\.walletDatFilename\(hodlWalletResult, hodlRevealPrivate\)/);
   assert.match(app, /document\.getElementById\("download-wallet-dat"\)/);
   assert.match(css, /\.save-wallet-dat/);
 });
@@ -459,24 +459,24 @@ const document = {
   getElementById: (id) => elements.get(id) ?? null,
   querySelectorAll: (selector) => [...elements.values()].filter((element) => element.matches?.(selector)),
 };
-let re = null, Ge = false, hodlWalletDatBirthday = "genesis";
-const tr = (bytes) => sha256(bytes);
-const Cs = descriptorChecksum;
-const sr = { decode: b58checkDecode };
-const le = (text, version) => {
+let hodlWalletResult = null, hodlRevealPrivate = false, hodlWalletDatBirthday = "genesis";
+const hodlSha256 = (bytes) => sha256(bytes);
+const hodlDescriptorChecksum = descriptorChecksum;
+const hodlBase58Check = { decode: b58checkDecode };
+const hodlReversionExtendedKey = (text, version) => {
   const raw = b58checkDecode(text).slice();
   raw[0] = (version >>> 24) & 255; raw[1] = (version >>> 16) & 255; raw[2] = (version >>> 8) & 255; raw[3] = version & 255;
   return b58checkEncode(raw);
 };
-const cr = { mainnet: { x: { pub: 0x0488b21e } } };
-const Gt = { fromExtendedKey: (text) => hdNodeFrom(b58checkDecode(text)) };
-const xe = { getPublicKey: (secret) => publicKeyForPrivate(secret) };
+const hodlExtendedKeyVersions = { mainnet: { x: { pub: 0x0488b21e } } };
+const hodlHDKey = { fromExtendedKey: (text) => hdNodeFrom(b58checkDecode(text)) };
+const hodlSecp256k1 = { getPublicKey: (secret) => publicKeyForPrivate(secret) };
 function hodlBindAddressMatch(){}
 ${extract("function hodlPrivateDataControls", "function hodlWalletMessages")}
 ${extract("function hodlWalletDatDeps", "function hodlFocusWalletResult")}
 ${sqliteSrc}
 ${walletSrc}
-const setResult = (value, flag) => { re = value; Ge = flag; };
+const setResult = (value, flag) => { hodlWalletResult = value; hodlRevealPrivate = flag; };
 const setWalletDatBirthday = (value) => { hodlWalletDatBirthday = value; };
 export { captured, elements, hodlPrivateDataControls, hodlSaveRecoveryControl, hodlDownloadWalletDat, hodlBindWalletResultActions, setResult, setWalletDatBirthday };
 `;
@@ -566,7 +566,7 @@ test("the wallet.dat control offers the birthday choice with genesis as the safe
   assert.match(html, /wallet-dat-birthday-help/);
   assert.match(html, /rescanblockchain 0/);
   // The app reset keeps a stale "new keys" choice out of later derivations.
-  assert.match(app, /function hodlCalculateKey\(progress\) \{\s*W\("#error"\)\.textContent = "";\s*\n?[^}]*hodlWalletDatBirthday = "genesis";/);
+  assert.match(app, /function hodlCalculateKey\(progress\) \{\s*hodlElement\("#error"\)\.textContent = "";\s*\n?[^}]*hodlWalletDatBirthday = "genesis";/);
   assert.match(app, /hodlWalletDatBirthday === "now" \? Math\.floor\(Date\.now\(\) \/ 1000\) : 0/);
 });
 

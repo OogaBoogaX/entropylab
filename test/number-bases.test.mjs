@@ -26,8 +26,8 @@ function loadVariable(name, nextName) {
 }
 
 const api = new Function(
-  "M",
-  `var Pt=24; var Ae=Array.from({length:2048},(_,index)=>String(index));
+  "hodlHex",
+  `var hodlTargetWordCount=24; var hodlBip39Wordlist=Array.from({length:2048},(_,index)=>String(index));
 ${loadVariable("hodlSeedLengths", "hodlEntropyFormats")}
 ${loadVariable("hodlEntropyFormats", "hodlBip39WordSet")}
 ${loadSlice("hodlSeedConfig")}

@@ -91,9 +91,10 @@ const hodlLifeHash = (() => {
 
   // --- Colour ---------------------------------------------------------------
   const clamp01 = (n) => Math.max(Math.min(n, 1), 0);
-  const lerpTo = (a, b, t) => t * (b - a) + a;
-  const lerpFrom = (fromA, fromB, t) => (fromA - t) / (fromA - fromB);
-  const lerp = (fromA, fromB, toC, toD, t) => lerpTo(toC, toD, lerpFrom(fromA, fromB, t));
+  // interpolate is a plain lerp; lerpFraction is its inverse (value -> 0..1 fraction).
+  const interpolate = (a, b, t) => t * (b - a) + a;
+  const lerpFraction = (fromA, fromB, t) => (fromA - t) / (fromA - fromB);
+  const lerp = (fromA, fromB, toC, toD, t) => interpolate(toC, toD, lerpFraction(fromA, fromB, t));
   const modulo = (a, b) => ((a % b) + b) % b;
 
   const rgb = (r, g, b) => ({ r, g, b });
@@ -187,7 +188,7 @@ const hodlLifeHash = (() => {
   const buildFracGrid = (history) => {
     const frac = new Array(SIZE * SIZE).fill(0);
     for (let i = 0; i < history.length; i += 1) {
-      const f = clamp01(lerpFrom(0, history.length, i + 1));
+      const f = clamp01(lerpFraction(0, history.length, i + 1));
       const data = history[i];
       for (let p = 0; p < SIZE * SIZE; p += 1) {
         if ((data[p >> 3] & (128 >> (p & 7))) !== 0) frac[p] = f;
@@ -195,7 +196,7 @@ const hodlLifeHash = (() => {
     }
     // version2 normalises the frac range to [0, 1].
     const min = Math.min(...frac), max = Math.max(...frac);
-    if (max > min) for (let p = 0; p < SIZE * SIZE; p += 1) frac[p] = lerpFrom(min, max, frac[p]);
+    if (max > min) for (let p = 0; p < SIZE * SIZE; p += 1) frac[p] = lerpFraction(min, max, frac[p]);
     return frac;
   };
 

@@ -63,11 +63,11 @@ test("global sync replaces the old workspace and number-base-only sync features"
 
 test("hashed methods publish one way without being overwritten", () => {
   const classify = loadSlice("hodlGlobalSyncIsHashedMode");
-  assert.match(classify, /ge === "coldcard" \|\| ge === "coleman"/);
+  assert.match(classify, /hodlDiceMethod === "coldcard" \|\| hodlDiceMethod === "coleman"/);
   assert.match(classify, /hodlCardMethod === "hashed"/);
   assert.match(classify, /kind === "minikey" \|\| kind === "brain"/);
   const current = loadSlice("hodlGlobalSyncCurrentBits");
-  assert.match(current, /hodlDiceEntropy\(value, ge, config\.words\)/);
+  assert.match(current, /hodlDiceEntropy\(value, hodlDiceMethod, config\.words\)/);
   assert.match(current, /hodlCardsEntropy\(value, config\.words, hodlCardColemanSymbols\)/);
   assert.match(current, /hodlBrainWalletPrivateKey\(value, hodlBrainWalletTrimEnabled\(\)\)/);
   const apply = loadSlice("hodlApplyGlobalSync");
@@ -84,7 +84,7 @@ test("hashed methods publish one way without being overwritten", () => {
 test("BitBox direct input is isolated from hashed dice input", () => {
   assert.match(app, /bitboxDice: ""/);
   assert.match(app, /previousMethod === "bitbox" \? "bitboxDice" : "dice"/);
-  assert.match(app, /ge === "bitbox" \? state\.fields\.bitboxDice/);
+  assert.match(app, /hodlDiceMethod === "bitbox" \? state\.fields\.bitboxDice/);
 });
 
 test("pads and pickers that skip bubbling input events still trigger the sync", () => {

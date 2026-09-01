@@ -33,7 +33,7 @@ test("indexSingleKey covers every script type plus the uncompressed legacy form"
   for (const [script, address] of Object.entries(KEY1_MAINNET)) {
     const hit = matchOwnership(map, address);
     assert.equal(hit.state, "ours", `${script} address must be recognized`);
-    assert.equal(hit.script, script === "p2pkhUncompressed" ? "p2pkh" : script);
+    assert.equal(hit.scriptType, script === "p2pkhUncompressed" ? "p2pkh" : script);
     assert.equal(hit.role, "key");
     assert.equal(hit.index, null);
     assert.equal(hit.path, script === "p2pkhUncompressed" ? "session key (uncompressed)" : "session key");
@@ -58,7 +58,7 @@ test("matchOwnership recognizes outputs by raw script, not just address strings"
   const map = indexSingleKey(KEY1, "mainnet", secp256k1.getPublicKey);
   const byBytes = matchOwnership(map, Buffer.from(KEY1_P2WPKH_SCRIPT, "hex"));
   assert.equal(byBytes.state, "ours");
-  assert.equal(byBytes.script, "p2wpkh");
+  assert.equal(byBytes.scriptType, "p2wpkh");
   const byText = matchOwnership(map, `  script ${KEY1_P2WPKH_SCRIPT.slice(0, 8)} ${KEY1_P2WPKH_SCRIPT.slice(8)}  `);
   assert.equal(byText.state, "ours", "the script form tolerates whitespace");
   const upper = matchOwnership(map, KEY1_MAINNET.p2wpkh.toUpperCase());

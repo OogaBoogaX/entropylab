@@ -784,6 +784,7 @@
     tabs.forEach((tab, i) => {
       assert(tab.getAttribute("aria-label") === names[i], `Tab ${i} should be named "${names[i]}"`);
     });
+    assert(!document.querySelector('#workspace [data-workspace="sp"] .silent-payments-icon'), "Silent Payments icon should not be in the workspace tab");
     const start = document.querySelector('#workspace [data-workspace="calc"]');
     try {
       start.focus();
@@ -805,6 +806,20 @@
       document.querySelector('#workspace [data-workspace="calc"]').click();
       await until(() => !document.getElementById("key-manager").hidden, "key workspace");
     }
+  });
+  await test("Silent Payments opens a connected SP Station with its monochrome icon", async () => {
+    document.querySelector('#workspace [data-workspace="sp"]').click();
+    await until(() => !document.getElementById("sp-card").hidden, "Silent Payments workspace");
+    const manager = document.getElementById("sp-manager"), bench = document.getElementById("sp-tab-bench");
+    assert(manager && !manager.hidden, "SP Station manager should be visible");
+    assert(bench && bench.textContent.includes("SP Station"), "SP Station tab is missing or mislabeled");
+    const icon = bench.querySelector(".silent-payments-icon");
+    assert(icon, "SP Station tab is missing its icon");
+    equal(icon.querySelectorAll('[data-part^="signal-"]').length, 2, "SP Station icon should have two signal arcs");
+    equal(icon.querySelectorAll('[data-part="coin-ridge"]').length, 5, "SP Station coin should have a restrained ridged rim");
+    assert(!icon.querySelector('ellipse[fill="none"]'), "SP Station coin face should not have a hole");
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("key-manager").hidden, "key workspace");
   });
   await test("the tool strip advertises tools that are off its right edge", async () => {
     const strip = document.getElementById("workspace-tabs");
@@ -1549,6 +1564,103 @@
     );
   });
 
+  await test("BIP-85 keeps its Station and opens each child in a LifeHash fingerprint tab", async () => {
+    const bip85Workspace = document.querySelector('#workspace [data-workspace="bip85"]');
+    const keyWorkspace = document.querySelector('#workspace [data-workspace="calc"]');
+    bip85Workspace.click();
+    await until(() => !document.getElementById("bip85-manager").hidden, "BIP-85 Station");
+    const tabs = document.getElementById("bip85-tabs");
+    equal(tabs.children.length, 1, "BIP-85 did not start with only its Station");
+    assert(tabs.children[0].textContent.includes("BIP-85 Station"), "BIP-85 Station tab is mislabeled");
+    assert(tabs.children[0].querySelector(".bip85-bench-icon"), "BIP-85 bench tab is missing its seedling icon");
+    equal(tabs.children[0].querySelectorAll(".bip85-bench-icon [data-part=seed]").length, 1, "BIP-85 bench icon should have one seed");
+
+    const parentKey = document.querySelector("#bip85-session-keys .session-key-option");
+    assert(parentKey, "BIP-85 Station did not offer the compatible Key Station key");
+    parentKey.click();
+    assert(!document.getElementById("bip85-error").textContent, "The active key could not be loaded for BIP-85");
+    assert(/^[xt]prv/.test(document.getElementById("bip85-key").value), "BIP-85 Station did not populate the selected root xprv/tprv");
+    document.getElementById("bip85-index").value = "0";
+    document.getElementById("bip85-go").click();
+    await until(() => tabs.children.length === 2 && document.querySelector("#bip85-out #bip85-private-heading"), "first BIP-85 child tab");
+    const firstTab = tabs.children[1];
+    assert(/^[0-9a-f]{8}$/.test(firstTab.querySelector(".key-tab-label")?.textContent || ""), "The first BIP-85 child tab did not show an XFP");
+    await until(() => !firstTab.querySelector(".key-tab-lifehash")?.hidden, "first BIP-85 child LifeHash");
+    assert(document.querySelector("#bip85-out .wallet-data-fields")?.textContent.includes("Master fingerprint"), "The BIP39 child did not identify its master fingerprint");
+    assert(!document.getElementById("delete-bip85").disabled, "The child delete control did not become available");
+
+    document.getElementById("add-bip85").click();
+    await until(() => !document.getElementById("bip85-bench").hidden, "BIP-85 bench after plus");
+    assert(!document.getElementById("bip85-out").textContent.trim(), "Returning to the bench left a child result visible");
+    input(document.getElementById("bip85-index"), "1");
+    document.getElementById("bip85-go").click();
+    await until(() => tabs.children.length === 3 && document.querySelector("#bip85-out #bip85-private-heading"), "second BIP-85 child tab");
+    assert(tabs.children[2].querySelector(".key-tab-lifehash"), "The second BIP-85 child tab is missing its LifeHash target");
+    document.getElementById("delete-bip85").click();
+    await until(() => tabs.children.length === 2, "selected BIP-85 child deletion");
+    assert(!document.getElementById("delete-bip85").disabled, "The remaining child was not selected after deletion");
+
+    keyWorkspace.click();
+    await until(() => !document.getElementById("key-manager").hidden, "key workspace after BIP-85 test");
+  });
+
+  await test("SP Station can bring in a compatible Key Station root", async () => {
+    document.querySelector('#workspace [data-workspace="sp"]').click();
+    await until(() => !document.getElementById("sp-manager").hidden, "SP Station");
+    const key = document.querySelector("#sp-session-keys .session-key-option");
+    assert(key, "SP Station did not offer the compatible Key Station key");
+    key.click();
+    assert(document.querySelector("#sp-session-keys .session-key-option.active"), "The selected SP Station key was not marked active");
+    assert(document.getElementById("sp-key").value.trim(), "SP Station did not populate the selected session key");
+    assert(document.getElementById("sp-session").textContent.includes("Session key from"), "SP Station did not load the selected key");
+    assert(!document.getElementById("sp-error").textContent, "SP Station rejected a compatible Key Station key");
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("key-manager").hidden, "key workspace after SP Station test");
+  });
+
+  await test("MS Station offers every Key Station key on each co-signer and a derivation path for reuse", async () => {
+    document.querySelector('#workspace [data-workspace="msig"]').click();
+    await until(() => !document.getElementById("msig-manager").hidden, "MS Station");
+    assert(!document.getElementById("msig-session-keys"), "MS Station kept the global key picker above the co-signers");
+    const rows = [...document.querySelectorAll("#msig-keys .msig-key-row")];
+    assert(rows.length >= 2, "MS Station did not start with at least two co-signer rows");
+    const rowOption = (row) => row.querySelector(".msig-session-keys .msig-session-key");
+    assert(rows.every((row) => rowOption(row)), "A co-signer row did not offer the compatible Key Station key");
+
+    const first = document.getElementById("msig-x-0");
+    rowOption(rows[0]).click();
+    assert(first.value.trim(), "The first co-signer row did not populate from its own picker");
+    assert(!rows[0].querySelector(".msig-key-ident").hidden, "The selected key identity was not shown above its co-signer input");
+    assert(rowOption(rows[0]).classList.contains("active"), "The picked key was not marked active on the first row");
+
+    // Every key stays selectable on every other row; picking the same key
+    // again offers a derivation path so its descriptor public keys differ.
+    const second = document.getElementById("msig-x-1");
+    const secondOption = rowOption(rows[1]);
+    assert(secondOption, "An assigned key disappeared from the second row's picker");
+    const secondFingerprint = secondOption.dataset.fingerprint;
+    secondOption.click();
+    assert(second.value.trim(), "The second co-signer row did not populate the reused key");
+    const reusePanel = rows[1].querySelector(".msig-key-reuse");
+    assert(reusePanel && !reusePanel.hidden, "Reusing a key did not offer a derivation path on the second row");
+    assert(reusePanel.querySelector(".msig-key-reuse-note").textContent.includes("Co-signer 1"), "The reuse note did not name the other co-signer");
+    const reusePath = reusePanel.querySelector(".msig-key-reuse-path");
+    assert(reusePath.value === "1", `The suggested derivation path was not /1 (got ${reusePath.value || "blank"})`);
+    assert(reusePanel.querySelector(".msig-key-reuse-clear").hidden, "Remove path showed before a path was applied");
+    reusePanel.querySelector(".msig-key-reuse-apply").click();
+    assert(/\/1$/.test(second.value), "Apply path did not append /1 to the reused co-signer key");
+    assert(rows[1].querySelector(".msig-key-reuse-note").textContent.includes("/1"), "The reuse note did not confirm the applied path");
+    assert(!reusePanel.querySelector(".msig-key-reuse-clear").hidden, "Remove path did not appear once a path was applied");
+    assert(second.value.includes(secondFingerprint), "The reused key origin changed when the path was applied");
+    reusePanel.querySelector(".msig-key-reuse-clear").click();
+    assert(!/\/1$/.test(second.value), "Remove path did not strip the appended derivation path");
+
+    input(first, "");
+    input(second, "");
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("key-manager").hidden, "key workspace after MS Station picker test");
+  });
+
   await test("a custom arbitrary-depth account path drives the derived addresses and descriptors", async () => {
     input(document.getElementById("branch-range"), "1");
     input(document.getElementById("address-range"), "1");
@@ -1624,8 +1736,8 @@
     derive.click();
     equal(derive.textContent.trim(), "Stopping…", "The Stop button did not acknowledge the cancellation request");
     assert(Math.abs(derive.getBoundingClientRect().width - deriveWidth) < 0.5, "The Stopping button changed width");
-    await until(() => derive.textContent.trim() === "Derive Wallet", "restored Derive Wallet button");
-    assert(!derive.disabled, "Derive Wallet did not become available again after stopping");
+    await until(() => derive.textContent.trim() === "Derive Key", "restored Derive Key button");
+    assert(!derive.disabled, "Derive Key did not become available again after stopping");
     const stoppedProgress = document.getElementById("derive-progress");
     assert(stoppedProgress.hidden, "The progress indicator remained visible after cancellation");
     equal(stoppedProgress.getAttribute("aria-valuenow"), "0", "Cancellation did not reset progress");
@@ -1669,7 +1781,7 @@
     equal(multisigDerive.title, "A derivation is already running.", "The disabled multisig derive button did not explain why");
     await until(() => Number(document.getElementById("derive-progress").getAttribute("aria-valuenow")) > 0, "derivation progress before editing");
     input(start, "8");
-    await until(() => derive.textContent.trim() === "Derive Wallet", "restored Derive Wallet button after editing");
+    await until(() => derive.textContent.trim() === "Derive Key", "restored Derive Key button after editing");
     assert(!document.getElementById("error").textContent, "Cancelling via an edit was shown as a derivation error");
     assert(!document.querySelector("#acct .account-result-card"), "An edited derivation published a stale wallet");
     const progress = document.getElementById("derive-progress");
@@ -1705,7 +1817,7 @@
       "Native SegWit BIP48 co-signer export",
     );
     const bip48Export = bip48Row.querySelector(".mono")?.textContent.trim();
-    assert(/^\[[0-9a-f]{8}\/48h\/1h\/0h\/2h\]Vpub/.test(bip48Export || ""), "BIP48 testnet origin or account key is wrong");
+    assert(/^\[[0-9a-f]{8}\/48h\/1h\/0h\/2h\]tpub/.test(bip48Export || ""), "BIP48 testnet origin or account key is wrong");
 
     document.querySelector('#workspace [data-workspace="msig"]').click();
     await until(() => !document.getElementById("msig-card").hidden, "multisig workspace");
