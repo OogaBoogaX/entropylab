@@ -6,7 +6,9 @@
 // to rock after each merge so the file stays downloadable. The Pages workflow
 // copies it to a deployment-only index.html so both / and /entropylab.html
 // serve the same application. The output is byte-for-byte reproducible from
-// the sources and the version declared in package.json.
+// the sources, the version declared in package.json, and the commit the
+// build is cut from (stamped into the footer).
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -21,6 +23,19 @@ const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).ver
 
 if (!/^\d+(?:\.\d+)*$/.test(version)) {
   throw new Error(`Invalid version in package.json: ${version}`);
+}
+
+// The footer identifies the exact source revision the build was cut from; a
+// build from a snapshot without git metadata stamps "unknown".
+const commit = (() => {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  } catch {
+    return "unknown";
+  }
+})();
+if (!/^(?:[0-9a-f]{40}|unknown)$/.test(commit)) {
+  throw new Error(`Unexpected git commit id: ${commit}`);
 }
 
 const appFile = "entropylab.html";
@@ -90,6 +105,10 @@ let html = template
   .replace("/*@@JS_REPEAT@@*/", () => jsRepeat)
   .split("{{VERSION}}").join(version);
 
+html = html
+  .split("{{COMMIT}}").join(commit)
+  .split("{{COMMIT_SHORT}}").join(commit === "unknown" ? "unknown" : commit.slice(0, 7));
+
 // The hosted service-worker URL must change whenever the self-contained app
 // or its offline shell changes, even while several commits share one package
 // version. Hashing the pre-token artifact avoids a self-referential digest.
@@ -102,7 +121,7 @@ const pwaVersion = createHash("sha256")
 html = html.split("{{PWA_VERSION}}").join(pwaVersion);
 const worker = workerTemplate.split("{{PWA_VERSION}}").join(pwaVersion);
 
-for (const leftover of `${html}\n${worker}`.match(/\/\*@@|{{(?:VERSION|PWA_VERSION)}}/g) || []) {
+for (const leftover of `${html}\n${worker}`.match(/\/\*@@|{{(?:VERSION|PWA_VERSION|COMMIT|COMMIT_SHORT)}}/g) || []) {
   throw new Error(`Unreplaced build token in output: ${leftover}`);
 }
 

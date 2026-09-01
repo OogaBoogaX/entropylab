@@ -332,13 +332,21 @@ const hodlLifeHash = (() => {
     return { width: w, height: h, data: out };
   };
 
-  // The app identifies keys by their 8-hex-digit master fingerprint; LifeHash
-  // hashes the canonical string form, matching LifeHash.info and wallets.
-  const fromFingerprint = (fingerprintHex, moduleSize) =>
-    fromDigestSha256OfString(String(fingerprintHex).toLowerCase(), moduleSize);
+  // The app identifies keys by their 8-hex-digit master fingerprint. The raw
+  // fingerprint bytes are hashed — not their hex string form — matching
+  // Sparrow (toucan's LifeHashIcon.setHex hashes hexToBytes(fingerprint)), so
+  // the same fingerprint shows the same icon across wallets. Note this
+  // deliberately differs from lifehash.info, which hashes the string.
+  const fromFingerprint = async (fingerprintHex, moduleSize) =>
+    fromDigest(await sha256(hexToBytes(String(fingerprintHex))), moduleSize);
 
-  const fromDigestSha256OfString = async (text, moduleSize) =>
-    fromDigest(await sha256(new TextEncoder().encode(text)), moduleSize);
+  // Case-insensitive (mixed-case hex decodes to the same bytes).
+  const hexToBytes = (hex) => {
+    if (hex.length % 2 !== 0 || /[^0-9a-f]/i.test(hex)) throw new Error("LifeHash fingerprint must be even-length hex.");
+    const out = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < out.length; i += 1) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    return out;
+  };
 
   return { fromDigest, fromFingerprint, _internals: { runGameOfLife, buildFracGrid, selectGradient, renderColors, encodePng, makeBitEnumerator } };
 })();

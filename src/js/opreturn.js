@@ -1,9 +1,15 @@
-// OP_RETURN detector for EntropyLab.
-// Parses nulldata outputs in a PSBT. Does not create data-carrier outputs.
+// OP_RETURN detector (and builder) for EntropyLab.
+// Parses nulldata outputs in a PSBT, and constructs the minimal-push
+// nulldata scripts the PSBT editor's output-script builder emits.
 const OP_RETURN = 0x6a;
 const OP_PUSHDATA1 = 0x4c;
 const OP_PUSHDATA2 = 0x4d;
 const OP_PUSHDATA4 = 0x4e;
+
+// Consensus caps a script at 10,000 bytes; the builder refuses earlier than
+// that only through this limit, not through the 80-byte standardness policy
+// (the editor is a construction tool, not a mempool).
+const MAX_SCRIPT_SIZE = 10000;
 
 const bytesToHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 
@@ -71,6 +77,44 @@ function hintPushes(pushes) {
     if (/^RSKBLOCK/i.test(head)) return "rsk-prefix";
   }
   return null;
+}
+
+// Minimal data-push encoding, the inverse of the push reader above: the
+// smallest legal opcode for the payload length (direct up to 75 bytes, then
+// PUSHDATA1 / PUSHDATA2). PUSHDATA4 is never needed under the script cap.
+export function encodeDataPush(data) {
+  if (!(data instanceof Uint8Array)) throw new Error("A data push needs bytes.");
+  let head;
+  if (data.length <= 0x4b) head = Uint8Array.of(data.length);
+  else if (data.length <= 0xff) head = Uint8Array.of(OP_PUSHDATA1, data.length);
+  else if (data.length <= 0xffff) head = Uint8Array.of(OP_PUSHDATA2, data.length & 0xff, data.length >> 8);
+  else throw new Error("A data push holds at most 65,535 bytes.");
+  const out = new Uint8Array(head.length + data.length);
+  out.set(head);
+  out.set(data, head.length);
+  return out;
+}
+
+// Builds an OP_RETURN script carrying the given payloads (one push each).
+// A zero-payload call produces the bare OP_RETURN. The result stays under
+// the consensus script-size cap; burning policy is the caller's concern.
+export function buildOpReturnScript(pushes) {
+  const list = Array.isArray(pushes) ? pushes : [pushes];
+  let size = 1;
+  const parts = [Uint8Array.of(OP_RETURN)];
+  for (const push of list) {
+    const encoded = encodeDataPush(push);
+    size += encoded.length;
+    parts.push(encoded);
+  }
+  if (size > MAX_SCRIPT_SIZE) throw new Error("The script would exceed the 10,000-byte maximum script size.");
+  const script = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) {
+    script.set(part, offset);
+    offset += part.length;
+  }
+  return script;
 }
 
 export function parseOpReturn(script) {

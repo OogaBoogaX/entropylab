@@ -349,8 +349,30 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
       - name: Run number-base tests
         run: npm run test:number-bases
+
+  # ── Fuzz: differential check of the shipped LifeHash against the ──────────
+  # official `lifehash` package. The fuzzer has its own locked dependency tree
+  # under fuzzing/ (the app's package.json stays untouched) and is
+  # deterministic — a failure reproduces locally with the logged FUZZ_SEED.
+
+  fuzz-lifehash:
+    name: Fuzz · LifeHash vs official implementation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install locked fuzzing dependencies
+        run: npm ci --ignore-scripts --prefix fuzzing
+      - name: Run the LifeHash differential fuzzer
+        run: npm --prefix fuzzing run fuzz:lifehash
 
   # ── Artifact: commit the tested site after merges to rock ────────────────
   # Gated on every behavioral job (unit, browser, structural, WASM), then
@@ -362,7 +384,7 @@ jobs:
   artifact:
     name: Artifact · commit tested site after merge
     if: github.ref == 'refs/heads/rock' && github.event_name == 'push'
-    needs: [build, verify, test-ci, test-browser, build-wasm]
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -427,7 +449,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     if: github.ref == 'refs/heads/rock' && github.event_name != 'pull_request'
-    needs: [build, verify, test-ci, test-browser, build-wasm]
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

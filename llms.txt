@@ -16,7 +16,7 @@ EntropyLab is a single HTML file with no runtime dependencies. It is designed to
 - Optional global entropy sync keeps direct dice, cards, number bases, BIP39 words/numbers, and private-key encodings aligned live. Hashed inputs update those methods in one direction and are never overwritten by non-hashed edits. Off by default.
 - SLIP-132 display is prefix-swap only. Shows as-pasted, Bitcoin Core xpub/xprv (or tpub/tprv), and descriptor. SLIP form only when path/script match. No Taproot prefix. Testnet t/u/v/U/V.
 - Exports a Bitcoin Core wallet.dat (watch-only by default) with all derived descriptors imported.
-- Runs startup sanity checks on the host browser and refuses to render if they fail.
+- Runs startup sanity checks on the host browser and refuses to render if they fail. Lockdown Mode blocks WebAssembly; exclude the site in Safari or use Firefox on an air-gapped computer. No JS secp256k1 fallback.
 
 ## Links
 

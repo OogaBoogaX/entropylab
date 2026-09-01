@@ -780,7 +780,7 @@
     const tabs = [...strip.querySelectorAll("[data-workspace]")];
     assert(tabs.length === 6, `Expected six tool tabs, found ${tabs.length}`);
     // The visible label may be abbreviated; the accessible name never is.
-    const names = ["Key Derivation", "BIP-85", "Multi Signature", "Silent Payments", "PSBT / Nonce", "PSBT Editor"];
+    const names = ["Keys", "BIP-85", "Multi Signature", "Silent Payments", "PSBT / Nonce", "PSBT Editor"];
     tabs.forEach((tab, i) => {
       assert(tab.getAttribute("aria-label") === names[i], `Tab ${i} should be named "${names[i]}"`);
     });
@@ -1159,7 +1159,7 @@
     await until(() => !document.getElementById("calc-card").hidden, "key workspace");
   });
 
-  await test("PSBT editor decodes, edits, and re-serializes a BIP-174 vector", async () => {
+  await test("PSBT editor decodes, edits, and rebuilds a BIP-174 vector live", async () => {
     // BIP-174 valid vector 2 (rust-bitcoin's valid_vector_2): two inputs —
     // a finalized P2PKH scriptSig and a nested P2WPKH — and two outputs.
     const vector = "cHNidP8BAKACAAAAAqsJSaCMWvfEm4IS9Bfi8Vqz9cM9zxU4IagTn4d6W3vkAAAAAAD+////qwlJoIxa98SbghL0F+LxWrP1wz3PFTghqBOfh3pbe+QBAAAAAP7///8CYDvqCwAAAAAZdqkUdopAu9dAy+gdmI5x3ipNXHE5ax2IrI4kAAAAAAAAGXapFG9GILVT+glechue4O/p+gOcykWXiKwAAAAAAAEHakcwRAIgR1lmF5fAGwNrJZKJSGhiGDR9iYZLcZ4ff89X0eURZYcCIFMJ6r9Wqk2Ikf/REf3xM286KdqGbX+EhtdVRs7tr5MZASEDXNxh/HupccC1AaZGoqg7ECy0OIEhfKaC3Ibi1z+ogpIAAQEgAOH1BQAAAAAXqRQ1RebjO4MsRwUPJNPuuTycA5SLx4cBBBYAFIXRNTfy4mVAWjTbr6nj3aAfuCMIAAAA";
@@ -1172,13 +1172,17 @@
     assert(outText().includes("PSBT_IN_WITNESS_UTXO"), "typed pair names missing");
     assert(outText().includes("100000000 sats"), "witness utxo amount missing");
     assert(outText().includes("parses under rust-bitcoin"), "rust-bitcoin verdict missing");
+    // The loaded PSBT builds at once: result text and QR without a click.
+    assert((document.getElementById("psbted-result-b64") || {}).value.startsWith("cHNidP8B"), "result did not follow the load");
+    assert(document.querySelector("#psbted-qr-code svg"), "QR did not follow the load");
     const valueInput = document.querySelector("[data-txout-val='0']");
     input(valueInput, "199901000");
-    document.getElementById("psbted-build").click();
-    await until(() => (document.getElementById("psbted-result-b64") || {}).value || document.getElementById("psbted-error").textContent, "editor rebuild");
-    equal(document.getElementById("psbted-error").textContent, "", "editor rebuild failed");
+    // Live editing: the input event itself rebuilds — there is no Re-serialize.
+    await until(() => outText().includes("199901000") || document.getElementById("psbted-error").textContent, "live rebuild");
+    equal(document.getElementById("psbted-error").textContent, "", "live rebuild failed");
     const edited = document.getElementById("psbted-result-b64").value;
     assert(edited.startsWith("cHNidP8B") && edited !== vector, "edited PSBT missing or unchanged");
+    assert(!document.getElementById("psbted-build"), "the Re-serialize button is gone");
     assert(outText().includes("199901000"), "edited amount was not re-decoded");
     input(box, '<img src=x onerror="window.__browserTestInjected=true">');
     document.getElementById("psbted-load").click();
@@ -1275,8 +1279,9 @@
     area.value = longValue.slice(0, -2) + "cd";
     document.getElementById("exp-apply").click();
     assert(overlay.hidden, "Apply did not close the overlay");
-    document.getElementById("psbted-build").click();
-    await until(() => (document.getElementById("psbted-result-hex") || {}).value || document.getElementById("psbted-error").textContent, "editor rebuild");
+    // Applying the overlay edit rebuilds live; wait for the result hex to
+    // carry the edited value.
+    await until(() => (document.getElementById("psbted-result-hex") || { value: "" }).value.includes(longValue.slice(0, -2) + "cd") || document.getElementById("psbted-error").textContent, "editor rebuild");
     equal(document.getElementById("psbted-error").textContent, "", "editor rebuild failed");
     assert(document.getElementById("psbted-result-hex").value.includes(longValue.slice(0, -2) + "cd"), "overlay edit did not reach the rebuilt PSBT");
     // A long key truncates read-only and Escape closes the overlay. The table
@@ -1358,19 +1363,17 @@
     const lit = document.querySelectorAll("#psbted-out .psbted-viz-line.is-open");
     equal(lit.length, 1, "open box's connector not highlighted");
     assert(lit[0].classList.contains("psbted-viz-line-in"), "wrong connector highlighted");
-    // Edit the witness UTXO's claimed amount in the panel (3,900,000 sats LE)
-    // and re-serialize: the diagram re-decodes the new claim.
+    // Edit the witness UTXO's claimed amount in the panel (3,900,000 sats
+    // LE): the live rebuild re-decodes the new claim into the diagram.
     const claim = panel.querySelector('.psbted-value[data-kind="input"][data-map="1"][data-pair="0"]');
     input(claim, "60823b000000000017a9143545e6e33b832c47050f24d3eeb93c9c03948bc787");
-    document.getElementById("psbted-build").click();
-    await until(() => (document.getElementById("psbted-result-b64") || {}).value || document.getElementById("psbted-error").textContent, "editor rebuild");
-    equal(document.getElementById("psbted-error").textContent, "", "editor rebuild failed");
+    await until(() => document.querySelector("#psbted-out .psbted-viz").textContent.includes("3\u202f900\u202f000 sats") || document.getElementById("psbted-error").textContent, "live rebuild of the claim");
+    equal(document.getElementById("psbted-error").textContent, "", "live rebuild failed");
     assert(document.querySelector("#psbted-out .psbted-viz").textContent.includes("3\u202f900\u202f000 sats"), "edited claim was not re-decoded into the diagram");
     assert(document.getElementById("psbted-viz-detail"), "panel did not stay open across the rebuild");
     // The output boxes edit the unsigned transaction inline (WYSIWYG).
     const sats = document.querySelector('.psbted-viz [data-txout-val="0"]');
     input(sats, "199902000");
-    document.getElementById("psbted-build").click();
     await until(() => document.getElementById("psbted-error").textContent === "" && document.querySelector('.psbted-viz [data-txout-val="0"]').value === "199902000" ? true : document.getElementById("psbted-error").textContent, "inline amount rebuild");
     equal(document.getElementById("psbted-error").textContent, "", "inline amount rebuild failed");
     // × puts the map back into the sections list.
@@ -1768,17 +1771,17 @@
     equal(multisigAddressRange.max, "10000", "Moving away from the multisig address-index limit did not restore the normal range maximum");
     const deriveMultisig = await until(() => !document.getElementById("msig-go").disabled && document.getElementById("msig-go"), "1-of-1 BIP87 derive button");
     deriveMultisig.click();
-    await until(() => document.querySelector("#out .account-result-card") || document.getElementById("msig-error").textContent, "1-of-1 BIP87 result");
+    await until(() => document.querySelector("#msig-out .account-result-card") || document.getElementById("msig-error").textContent, "1-of-1 BIP87 result");
     assert(!document.getElementById("msig-error").textContent, "1-of-1 BIP87 derivation failed");
     const multisigProgress = await until(() => document.getElementById("msig-derive-progress").classList.contains("is-complete") && document.getElementById("msig-derive-progress"), "completed multisig progress");
     assert(!multisigProgress.hidden, "Completed multisig progress did not remain visible");
     equal(multisigProgress.getAttribute("aria-valuenow"), "100", "Multisig progress did not reach 100%");
     assert(multisigProgress.querySelector(".derive-progress-label")?.textContent.includes("Done"), "Completed multisig progress did not show Done");
-    const resultText = document.getElementById("out").textContent;
+    const resultText = document.getElementById("msig-out").textContent;
     assert(resultText.includes("1-of-1 multisig · Purpose 87h"), "Result did not identify purpose 87 separately from script type");
     assert(resultText.includes("/87h/1h/0h") && resultText.includes("/<0;1>/*"), "BIP87 wallet descriptor paths are wrong");
     assert(resultText.includes("Receive address #11"), "The multisig receive QR did not use the starting address index");
-    const multisigReceiveRows = document.querySelectorAll('#out [data-address-table="msig-receive"] tbody tr');
+    const multisigReceiveRows = document.querySelectorAll('#msig-out [data-address-table="msig-receive"] tbody tr');
     equal(multisigReceiveRows.length, 5, "The requested multisig receive address range was not rendered");
     equal(multisigReceiveRows[0].querySelector("th")?.textContent.trim(), "11", "The multisig receive table did not start at the requested index");
 
@@ -1786,10 +1789,10 @@
     input(multisigBranchRange, "1");
     input(multisigAddressRange, "1");
     deriveMultisig.click();
-    await until(() => document.querySelector('#out [data-address-table="msig-branch-2"]'), "custom multisig branch result");
-    assert(!document.querySelector('#out [data-address-table="msig-receive"]'), "An unselected multisig Receive table was rendered");
-    assert(!document.querySelector('#out [data-address-table="msig-change"]'), "An unselected multisig Change table was rendered");
-    assert(document.querySelector("#out .account-address-lead h4")?.textContent.includes("Custom branch 2 address #11"), "The custom multisig branch QR label was unclear");
+    await until(() => document.querySelector('#msig-out [data-address-table="msig-branch-2"]'), "custom multisig branch result");
+    assert(!document.querySelector('#msig-out [data-address-table="msig-receive"]'), "An unselected multisig Receive table was rendered");
+    assert(!document.querySelector('#msig-out [data-address-table="msig-change"]'), "An unselected multisig Change table was rendered");
+    assert(document.querySelector("#msig-out .account-address-lead h4")?.textContent.includes("Custom branch 2 address #11"), "The custom multisig branch QR label was unclear");
     input(multisigBranchStart, "0");
     input(multisigBranchRange, "2");
     input(multisigAddressRange, "5");
@@ -1808,12 +1811,12 @@
     equal(multisigPurpose.value, "69420", "A custom co-signer purpose was not auto-detected");
     const deriveCustomMultisig = await until(() => !document.getElementById("msig-go").disabled && document.getElementById("msig-go"), "custom-purpose multisig derive button");
     deriveCustomMultisig.click();
-    await until(() => document.getElementById("out").textContent.includes("Purpose 69420h") || document.getElementById("msig-error").textContent, "custom-purpose multisig result");
+    await until(() => document.getElementById("msig-out").textContent.includes("Purpose 69420h") || document.getElementById("msig-error").textContent, "custom-purpose multisig result");
     assert(
       !document.getElementById("msig-error").textContent,
       `Custom-purpose multisig derivation failed: ${document.getElementById("msig-error").textContent}`,
     );
-    assert(document.getElementById("out").textContent.includes("/69420h/1h/0h/2h"), "Custom multisig purpose was not preserved in the descriptor origin");
+    assert(document.getElementById("msig-out").textContent.includes("/69420h/1h/0h/2h"), "Custom multisig purpose was not preserved in the descriptor origin");
 
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("calc-card").hidden, "key workspace");
@@ -1874,6 +1877,15 @@
     assert(target.origin === location.origin && target.pathname.endsWith("/" + currentFile), "HTML export target is wrong");
     // The served bytes are verified by the Node harness instead: the app's
     // CSP (connect-src 'none') deliberately forbids an in-page fetch.
+  });
+
+  await test("the footer stamps version, commit, and a LifeHash of the commit", async () => {
+    const footer = await until(() => document.querySelector(".page-footer"), "page footer");
+    assert(/v\d+\.\d+\.\d+/.test(footer.textContent), "version missing from the footer");
+    assert(/commit [0-9a-f]{7}/.test(footer.textContent), "short commit missing from the footer");
+    const image = footer.querySelector(".page-footer-lifehash");
+    assert(/^[0-9a-f]{40}$/.test(image.dataset.commit), "full commit missing from the footer image");
+    await until(() => !image.hidden && image.src.startsWith("data:image/png"), "footer LifeHash");
   });
 
   await test("hosted application makes only expected same-origin connections", () => {

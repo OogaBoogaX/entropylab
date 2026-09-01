@@ -94,13 +94,18 @@ button:not(:disabled):active {
   border-color: var(--selection-accent) !important;
 }
 button:not(:disabled):active * { color: inherit !important; }
-.wrap { max-width: 1000px; margin: 0 auto; padding: calc(var(--site-header-height) + 20px) 16px 64px; }
+/* No bottom padding: the closing footer supplies the page's last band of
+   space itself, so it sits flush with the bottom of the document. */
+.wrap { max-width: 1000px; margin: 0 auto; padding: calc(var(--site-header-height) + 20px) 16px 0; }
 .kicker { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 20px; margin: 16px 0; }
 /* Major seam above the closing Sources card. It collapses with the previous
    card's 16px, so the larger value wins rather than the two adding up. The seam
    below the marketing card lives on #workspace and is deliberately wider. */
-.sources { margin-top: var(--space-major); }
+/* It keeps .card for its padding and seam, but not the surface: the closing
+   reference list reads as the page's own bottom matter rather than one more
+   panel. Padding stays, so its text still aligns with the cards above. */
+.sources { margin-top: var(--space-major); background: none; border: 0; }
 .warn { background: color-mix(in oklab, var(--danger) 12%, var(--bg)); border-color: color-mix(in oklab, var(--danger) 40%, var(--border)); }
 .muted { color: var(--muted); font-size: 14px; line-height: 1.5; }
 /* The pitch is a set of discrete claims rather than prose, so it reads as a
@@ -108,6 +113,16 @@ button:not(:disabled):active * { color: inherit !important; }
    bottom one lets the card's own padding close it out. */
 .pitch-list { display: grid; gap: 7px; margin: var(--space-component) 0 0; padding-left: 20px; }
 .sources-heading { color: var(--fg); font-size: 1.17rem; }
+/* One step dimmer than the .muted it carries for its size and leading, so
+   the closing line sits behind the sources it follows. The emoji row is the
+   one thing in it worth reading, so it keeps its own size and spaces itself
+   off the two text rows. */
+.page-footer { margin-top: var(--space-lede); padding: 24px 0; border-top: 1px solid var(--border); text-align: center; color: var(--faint); }
+.page-footer-emoji { font-size: 1.5em; line-height: 1; margin: 6px 0; }
+/* The build stamp: version, short commit, and the commit's LifeHash as a
+   small inline identicon next to the hash it visualizes. */
+.page-footer-build code { font-family: var(--mono); }
+.page-footer-lifehash { vertical-align: -0.25em; margin-left: 4px; border-radius: 3px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; }
 .tab, .btn {
   min-height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--border);
@@ -822,6 +837,7 @@ td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; fon
 .sanity-failure-table th { color: var(--muted); font-weight: 600; }
 .sanity-failure-table td:last-child { color: var(--danger); font-weight: 700; }
 .sanity-failure-advice { margin: 0; color: var(--muted); font-size: 14px; }
+.sanity-failure-advice + .sanity-failure-advice { margin-top: 10px; }
 @media print {
   :root, :root[data-theme] {
     color-scheme: light;
@@ -920,8 +936,52 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .tool-intro[hidden] { display: none; }
 .tool-intro h2 { margin: 5px 0 8px; }
 .tool-intro > .muted { max-width: 760px; margin: 0; }
+.key-lab[hidden], .key-summary[hidden], .msig-lab[hidden] { display: none; }
+#calc-card.is-result-view #modes,
+#calc-card:not(.is-result-view) #out,
+#msig-card:not(.is-result-view) #msig-out { display: none; }
+#msig-card.is-result-view .msig-lab { display: none; }
+.key-summary {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px;
+  background: color-mix(in oklab, var(--surface-2) 70%, var(--bg));
+}
+.key-summary-lifehash { flex: 0 0 auto; width: 48px; height: 48px; border-radius: 8px; image-rendering: pixelated; background: #fff; }
+.key-summary-lifehash[hidden] { display: none; }
+.key-summary-text { flex: 1 1 auto; min-width: 0; }
+.key-summary-fingerprint { display: block; font-family: var(--mono); font-weight: 700; letter-spacing: 0.04em; color: var(--fg); }
+.key-summary-meta { margin: 2px 0 0; color: var(--muted); font-size: 13px; line-height: 1.35; }
+.key-summary-path { font-family: var(--mono); word-break: break-all; }
+.key-tab-lifehash { width: 22px; height: 22px; border-radius: 4px; image-rendering: pixelated; background: #fff; }
+.key-tab.is-lab { font-weight: 700; }
+.key-tab-lab-icon { width: 18px; height: 22px; padding: 0; color: inherit; }
+.key-tab-lab-icon svg { display: block; width: 100%; height: 100%; }
+.key-tab-lab-icon .site-logo-light { display: none; }
+:root[data-theme="light"] .key-tab-lab-icon .site-logo-dark { display: none; }
+:root[data-theme="light"] .key-tab-lab-icon .site-logo-light { display: block; }
+.key-result { margin-top: 16px; }
+.key-result-scripts-label { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.key-result-main { margin-top: 8px; padding: 16px 16px 20px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); }
+.key-result .wallet-result-messages { margin: 0 0 16px; }
+.account-receive-section { margin-top: 0; }
+.msig-session-keys { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.msig-session-keys[hidden] { display: none; }
+.msig-session-key {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-2); color: var(--fg); font-family: var(--mono); font-size: 13px; cursor: pointer;
+}
+.msig-session-key.active { border-color: var(--accent); color: var(--fg); }
+.msig-key-ident { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.msig-key-ident[hidden] { display: none; }
+.msig-key-ident-fp { font-family: var(--mono); font-size: 13px; letter-spacing: 0.04em; }
+#msig-keys .msig-key-row > .field { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
 .workspace-panel > :first-child { margin-top: 0; }
 .workspace-panel > :last-child { margin-bottom: 0; }
+/* Inside the panel a card closes on its own bottom edge. Whatever follows
+   brings its own 16px top margin (they collapsed to one 16px before), so the
+   only thing this drops is the gap left above the panel's bottom padding. */
+.workspace-panel .card { margin-bottom: 0; }
 .segmented-control {
   display: flex; align-items: stretch; flex-wrap: wrap; gap: 0; max-width: 100%; isolation: isolate;
 }
@@ -945,7 +1005,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .segmented-control.is-stacked > .tab:last-child { border-radius: 0 0 8px 8px; }
 .segmented-control.is-stacked > .tab:only-child { border-radius: 8px; }
 #msig-card[hidden], #calc-card[hidden], #psbt-card[hidden], #psbted-card[hidden], #bip85-card[hidden], #sp-card[hidden] { display: none !important; }
-#calc-card:not([hidden]), #msig-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
+#calc-card:not([hidden]), #msig-card:not([hidden]) { margin-top: 0; border-radius: 20px; position: relative; z-index: 1; }
 .psbt-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
 @media (min-width: 720px) {
   .psbt-grid { grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); }
@@ -968,30 +1028,52 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .psbted-map > h3 { margin: 0 0 4px; font-size: 15px; }
 .psbted-txhead { display: flex; flex-wrap: wrap; gap: 0 16px; margin-bottom: 4px; }
 .psbted-txhead label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.psbted-txhead input { width: 11em; }
 .psbted-pairs { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 13px; table-layout: fixed; }
 .psbted-pairs th, .psbted-pairs td { text-align: left; padding: 4px 8px 4px 0; vertical-align: top; overflow-wrap: anywhere; }
 .psbted-pairs th { font-weight: 600; color: var(--muted); }
-/* The input/output index is a small integer (a transaction can hold at most
-   ~150,000 of either), so keep that column header-sized and leave the room
-   to the txid / value / script columns. */
-.psbted-pairs .psbted-idx { width: 4.5em; }
+/* The tables are fixed-layout, so the header row sets the column widths and
+   every unspecified column shares what is left. Keep the utility columns
+   (row index, delete button) snug and size the numeric columns near their
+   real maxima — sequences are 10 digits, prevout indexes ~6, output values
+   stay under ~2.1e15 sats (16 digits) — so the room lands on the txid,
+   scriptPubKey, key and value columns that actually carry data. */
+.psbted-pairs .psbted-idx { width: 2.5em; }
+.psbted-pairs .psbted-col-del { width: 2.4em; }
+.psbted-txins .psbted-col-vout { width: 9ch; }
+.psbted-txins .psbted-col-seq { width: 15ch; }
+.psbted-txouts .psbted-col-val { width: 20ch; }
+.psbted-kv .psbted-col-field { width: 15em; }
 .psbted-pairs .psbted-name, .psbted-pairs .psbted-hex { font-family: var(--mono); font-size: 12px; }
-.psbted-pairs input, .psbted-add input, .psbted-add select { margin-top: 0; padding: 6px 8px; border-radius: 6px; font-size: 12px; }
-.psbted-pairs .psbted-num { min-width: 90px; }
-/* Size the tx-table number fields near their real maxima — output values
-   stay under ~2.1e15 sats (16 digits), sequences are 10 digits, prevout
-   indexes ~6 — so "sats" fits on the input's line and the wide columns go
-   to the txid and scriptPubKey fields. */
-.psbted-pairs input[data-txout-val] { width: 19ch; }
-.psbted-pairs input[data-txin-seq] { width: 13ch; }
-.psbted-pairs input[data-txin-vout] { width: 9ch; }
+/* Compact, data-table density: the fields fill their column and drop the
+   global control sizing (full width comes from the fixed cell, not the
+   field's own rule). */
+.psbted-pairs input, .psbted-add input, .psbted-add select { margin-top: 0; padding: 6px 8px; border-radius: 6px; font-size: 12px; min-height: 0; }
+.psbted-pairs .psbted-num { min-width: 0; }
 /* The decoded address under a scriptPubKey (and in a map section's "Pays"
    line) is one long unbroken bech32 string: wrap it anywhere so it can
    never overflow the cell or the card. */
 .psbted-addr { display: block; margin-top: 2px; overflow-wrap: anywhere; }
+/* The output-script builder sits inside the scriptPubKey cell under the hex
+   field: the text input takes the column's room, the mode select and the Set
+   button stay compact at its right. */
+.psbted-build { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; margin-top: 4px; }
+.psbted-build input, .psbted-build select { margin-top: 0; padding: 6px 8px; border-radius: 6px; font-size: 12px; min-height: 0; }
+.psbted-build select { width: auto; }
+.psbted-build .btn { min-height: 0; padding: 6px 10px; }
+/* The edited PSBT as a QR follows every successful rebuild; while the
+   fields do not build, the last valid build (text and QR) stays, dimmed. */
+.psbted-qr-block { margin: 12px 0 4px; }
+.psbted-qr { padding: 12px; }
+.psbted-qr svg { width: 240px; height: 240px; }
+.psbted-stale { opacity: 0.55; }
 .psbted-map > p { overflow-wrap: anywhere; }
 .psbted-del { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--danger); cursor: pointer; padding: 4px 10px; font-size: 14px; line-height: 1; }
 .psbted-add { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 2fr) auto; gap: 8px; align-items: center; margin: 4px 0 14px; }
+/* The Add input / Add output controls are single natural-width buttons, not
+   the pair grid, so they read as actions rather than a form row. */
+.psbted-add-el { margin: 4px 0 14px; }
+.psbted-add-el .btn { min-height: 0; padding: 6px 12px; }
 @media (max-width: 720px) {
   .psbted-add { grid-template-columns: minmax(0, 1fr); }
 }
@@ -1112,14 +1194,16 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 .master-fingerprint-heading { flex: 0 0 100%; margin: 0 0 -4px; }
 .master-fingerprint-card {
-  flex: 0 1 180px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border);
+  flex: 0 1 180px; min-width: 0; display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px; column-gap: 8px; row-gap: 2px;
+  align-items: center; padding: 10px 12px; border: 1px solid var(--border);
   border-radius: 10px; background: var(--surface-2);
   transition: background-color .16s ease, border-color .16s ease;
 }
 /* The fixed-size frame stays present while the fingerprint is unavailable, so
    resolving a LifeHash never changes the card height or shifts nearby fields. */
 .master-fingerprint-lifehash-frame {
-  float: right; display: block; width: 40px; height: 40px; margin-left: 8px;
+  grid-column: 2; grid-row: 1 / span 2; display: block; width: 40px; height: 40px;
   border: 1px solid var(--border); border-radius: 4px; overflow: hidden; background: transparent;
 }
 .master-fingerprint-lifehash {
@@ -1127,11 +1211,11 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 .master-fingerprint-lifehash[hidden] { display: none; }
 .master-fingerprint-label {
-  display: block; color: var(--muted); font-size: 12px; line-height: 1.35;
+  grid-column: 1; min-width: 0; color: var(--muted); font-size: 12px; line-height: 1.35;
   transition: color .16s ease, opacity .16s ease;
 }
 .master-fingerprint-value {
-  display: block; min-height: 1.25em; margin-top: 4px; color: var(--fg); font-family: var(--mono);
+  grid-column: 1; min-width: 0; min-height: 1.25em; overflow: hidden; color: var(--fg); font-family: var(--mono);
   font-size: 16px; font-weight: 700; line-height: 1.25; letter-spacing: .08em; white-space: nowrap;
   transition: color .16s ease, opacity .16s ease;
 }
@@ -1205,18 +1289,10 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   .key-settings-row { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 520px) {
-  .master-fingerprint-preview { gap: 8px; }
-  .master-fingerprint-card { flex: 1 1 0; padding: 9px; }
-  .master-fingerprint-label { font-size: 11px; }
-  .master-fingerprint-value { font-size: 14px; }
-  .master-fingerprint-arrow { font-size: 22px; }
-}
-@media (max-width: 360px) {
-  .master-fingerprint-preview { gap: 5px; }
-  .master-fingerprint-card { padding: 8px 7px; }
-  .master-fingerprint-label { font-size: 10px; }
-  .master-fingerprint-value { font-size: 13px; letter-spacing: .04em; }
-  .master-fingerprint-arrow { font-size: 18px; }
+  .master-fingerprint-preview { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .master-fingerprint-heading { margin: 0; }
+  .master-fingerprint-card { padding: 10px 12px; }
+  .master-fingerprint-arrow { justify-self: center; transform: rotate(90deg); font-size: 22px; }
 }
 .last-word-field { flex: 1 1 260px; max-width: 420px; margin-top: 0 !important; }
 .last-word-field .custom-select-list {
@@ -1385,17 +1461,23 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 #bip85-out { margin-top: var(--space-component); }
 #bip85-out .wallet-private-section { margin-top: 0; }
 #psbt-session { margin: var(--space-control) 0 0; }
-.key-manager { margin: 14px 0 -1px; position: relative; z-index: 2; }
+.key-manager { margin: 0 0 16px; position: relative; z-index: 2; }
 .key-manager-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .key-manager-head h2 { margin: 0; }
-.key-tab-strip { display: flex; align-items: flex-end; min-width: 0; margin-top: 12px; }
+.key-tab-strip { display: flex; align-items: center; min-width: 0; margin-top: 0; gap: 4px; }
 .add-key {
   width: 36px; min-width: 36px; min-height: 44px; padding: 0; border: 0; border-radius: 0;
   background: transparent; box-shadow: none; color: var(--muted); font-size: 28px; line-height: 1; cursor: pointer;
 }
-.add-key:hover { background: transparent; color: var(--accent); }
+.add-key:not(:disabled):hover { background: transparent; color: var(--accent); }
 .add-key:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
-.add-key:active { background: transparent; color: var(--accent); }
+.add-key:not(:disabled):active { background: transparent; color: var(--accent); }
+/* The minus is disabled while a single key or multisig is all there is. It
+   drops to the border tone, which sits close to its ground in either theme,
+   and stops answering hover, so nothing about it invites a click. Disabled
+   controls are exempt from the contrast floor, and the state is on the
+   element for assistive tech besides. */
+.add-key:disabled { color: var(--border); cursor: not-allowed; }
 .add-item-control { position: relative; display: inline-flex; flex: 0 0 auto; }
 .add-item-tooltip {
   position: absolute; top: calc(100% + 10px); right: 0; z-index: 10; width: max-content; max-width: min(240px, calc(100vw - 32px));
@@ -1417,7 +1499,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 @media (prefers-reduced-motion: reduce) { .add-item-tooltip { transition: none; } }
 .key-tabs {
-  display: flex; align-items: flex-end; gap: 0; flex: 1 1 auto; min-width: 0; height: 50px; margin-top: 0; position: relative; z-index: 2;
+  display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; height: auto; min-height: 44px; margin-top: 0; position: relative; z-index: 2;
   overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain;
   scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; cursor: grab;
 }
@@ -1425,18 +1507,15 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .key-tabs.dragging, .key-tabs.dragging .key-tab { cursor: grabbing; user-select: none; }
 .key-tab {
   position: relative; display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
-  width: max-content; max-width: none; min-height: 44px; padding: 0 14px; white-space: nowrap;
-  border: 1px solid transparent; border-radius: 10px 10px 0 0; background: transparent; color: var(--muted);
+  width: max-content; max-width: none; min-height: 44px; padding: 6px 12px; white-space: nowrap;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--muted); font-weight: 600;
 }
-.key-tab:not(.active):hover { background: color-mix(in oklab, var(--surface-2) 60%, transparent); color: var(--fg); }
-.key-tab:not(.active)::after {
-  content: ""; position: absolute; top: 12px; right: -1px; width: 1px; height: 20px; background: var(--border);
-}
-.key-tab:last-child::after, .key-tab:has(+ .key-tab.active)::after { display: none; }
+.key-tab:not(.active):hover { background: color-mix(in oklab, var(--surface-2) 70%, var(--bg)); color: var(--fg); }
 .key-tab.active, .key-tab-editing {
-  background: var(--surface); color: var(--fg); border-color: var(--border); border-bottom-color: var(--surface);
+  background: var(--surface); color: var(--fg); border-color: var(--accent);
 }
-.key-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.key-tab.is-lab { font-weight: 700; }
+.key-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .account-tabs {
   display: flex; align-items: flex-end; gap: 0; height: 50px; margin: 14px 0 -1px;
   position: relative; z-index: 2; overflow-x: auto; overflow-y: hidden;
@@ -1459,7 +1538,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 .account-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 #acct .account-result-card {
-  margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1;
+  margin-top: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
 }
 .wallet-data-card { padding: 24px; }
 .wallet-data-intro { max-width: none; }
@@ -1585,9 +1664,21 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   .account-private-section { padding: 14px; }
   .wallet-data-actions { align-items: stretch; }
   .wallet-data-actions > * { width: 100%; justify-content: center; }
+  /* The tools' closing button groups wrap into ragged lines here, each control
+     only as wide as its label. Give every child the whole row so the group
+     stacks as one block, the way .wallet-data-actions above already does.
+     Listed after .psbted-actions so the editor's flex-end alignment gives way. */
+  .current-item-actions,
+  .bip85-actions,
+  .psbt-actions { align-items: stretch; }
+  .current-item-actions > *,
+  .bip85-actions > *,
+  .psbt-actions > * { width: 100%; justify-content: center; }
 }
 .key-tab-icon { display: inline-flex; flex: 0 0 auto; width: 16px; height: 16px; color: var(--key-color); }
 .key-tab-icon svg { display: block; width: 16px; height: 16px; }
+.key-tab-lab-icon { display: inline-flex; width: 18px; height: 22px; }
+.key-tab-lab-icon svg { width: 100%; height: 100%; }
 .multisig-tab-icon { display: inline-flex; flex: 0 0 auto; width: 28px; height: 23px; margin-left: -5px; }
 .multisig-tab-icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .key-tab-label { display: inline-block; white-space: nowrap; }

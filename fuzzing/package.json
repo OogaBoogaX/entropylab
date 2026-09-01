@@ -1,0 +1,15 @@
+{
+  "name": "entropylab-fuzzing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Differential fuzzers: reference implementations (iancoleman/bip39, AndreasGassmann/lifehash) vs EntropyLab outputs. Separate dependency tree from the app; the app's package.json is untouched.",
+  "license": "Unlicense",
+  "scripts": {
+    "fuzz:lifehash": "node lifehash/fuzz.mjs"
+  },
+  "dependencies": {
+    "jsdom": "26.1.0",
+    "lifehash": "1.0.0"
+  }
+}

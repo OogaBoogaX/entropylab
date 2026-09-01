@@ -4,16 +4,21 @@
 // inspection document, applies edits to it, and asks the WASM to rebuild.
 //
 // Editing model: the document returned by psbtInspectDoc is the editable
-// state. Transaction-field and pair-value edits update the document in place
-// and stay pending until "Re-serialize" validates them; structural edits
-// (add/remove pair) round-trip through the WASM immediately so the table
-// always shows rust-bitcoin's decode of a valid file. The unsigned
-// transaction pair (global key 00) is regenerated from the transaction
-// section on every build, so it is never edited directly.
+// state, and editing is live: every keystroke, pair change and structural
+// edit rebuilds through the WASM on the spot, and the tables re-render from
+// rust-bitcoin's fresh decode (focus returns to the field being typed).
+// While the current fields do not build, the error shows and the last valid
+// build is kept below, marked stale. The unsigned transaction pair (global
+// key 00) is regenerated from the transaction section on every build, so it
+// is never edited directly.
 import { Address as BtcAddress, NETWORK as BTC_MAINNET, TEST_NETWORK as BTC_TESTNET, OutScript } from "@scure/btc-signer";
+import { renderSVG as renderQrSvg } from "uqr";
 import { psbtInspectDoc, psbtBuildBytes, psbtWasmReady } from "./psbt-wasm.js";
 import { expandableHtml, EXPAND_LIMIT, initExpandable } from "./expandable.js";
 import { psbtVizHtml } from "./psbt-viz.js";
+import { parseOpReturn } from "./opreturn.js";
+import { buildOutputScript } from "./script-builder.js";
+import { hodlUrEncodePsbt } from "./psbt-ur.js";
 
 const hexToBytes = (hex) => {
   if (!/^(?:[0-9a-f]{2})*$/i.test(hex)) throw new Error("Invalid hexadecimal input.");
@@ -52,12 +57,37 @@ export const psbtBytesFromText = (raw) => {
   return bytes;
 };
 
+// Accepts the raw bytes of an uploaded file. Wallets (Sparrow, Coldcard, …)
+// save a PSBT as a binary .psbt file, which starts with the "psbt\xff" magic;
+// a text export ("Copy PSBT" or a hex dump saved to disk) decodes through
+// the same rules and bounds as the paste box.
+export const psbtBytesFromUpload = (bytes) => {
+  if (!(bytes instanceof Uint8Array) || !bytes.length) throw new Error("Choose a PSBT file to upload.");
+  if (bytes.length > 5e6) throw new Error("This PSBT is too large to edit safely.");
+  const PSBT_MAGIC = [0x70, 0x73, 0x62, 0x74, 0xff]; // "psbt\xff"
+  if (bytes.length >= PSBT_MAGIC.length && PSBT_MAGIC.every((byte, index) => bytes[index] === byte)) return bytes;
+  return psbtBytesFromText(new TextDecoder().decode(bytes));
+};
+
 export const satsToBtc = (sats) => {
   let value = BigInt(sats), negative = value < 0n;
   if (negative) value = -value;
   const whole = value / 100000000n, fraction = value % 100000000n;
   return (negative ? "-" : "") + whole.toString() + "." + fraction.toString().padStart(8, "0");
 };
+
+// How the edited PSBT is shown as a QR: small files fit one static code
+// carrying the base64 text; larger ones become an animated ur:crypto-psbt
+// sequence (BCR-2020-005 — Sparrow, SeedSigner and Coldcard Q scan those).
+// The UR fragments are uppercased so the QR encodes in the denser
+// alphanumeric mode; UR parsing lowercases before decoding.
+export const PSBT_QR_STATIC_MAX_BYTES = 800;
+export const psbtQrPlan = (bytes) => {
+  if (bytes.length <= PSBT_QR_STATIC_MAX_BYTES) return { mode: "static", text: base64Encode(bytes) };
+  return { mode: "ur", parts: hodlUrEncodePsbt(bytes, { maxBytes: 200 }).map((part) => part.toUpperCase()) };
+};
+
+const QR_OPTIONS = { ecc: "M", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" };
 
 const escapeHtml = (text) =>
   String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -73,6 +103,40 @@ const addressFor = (scriptHex, network) => {
   } catch {
     return null;
   }
+};
+
+// One-line decode of a data-carrier (OP_RETURN) output for its row in the
+// transaction table: payload as UTF-8 text when it decodes, hex otherwise,
+// plus the protocol hint the inspector also reports. Invalid hex (a field
+// being typed) and non-OP_RETURN scripts return null, leaving the row's
+// usual address/asm fallback untouched. A non-zero value on a data-carrier
+// output burns those sats; the row says so and takes the warning tone.
+export const opReturnSummary = (scriptHex, valueSats = 0) => {
+  let parsed;
+  try {
+    parsed = parseOpReturn(hexToBytes(scriptHex));
+  } catch {
+    return null;
+  }
+  if (!parsed) return null;
+  const burn = Number(valueSats) > 0;
+  const parts = [
+    parsed.error
+      ? `OP_RETURN · malformed: ${parsed.error}`
+      : `OP_RETURN · ${parsed.payloadBytes} byte${parsed.payloadBytes === 1 ? "" : "s"}`,
+  ];
+  if (parsed.hint) parts.push(parsed.hint);
+  if (!parsed.error && parsed.payloadBytes) {
+    let text = null;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(parsed.payload);
+    } catch {
+      // Not UTF-8: the hex branch below shows the payload.
+    }
+    parts.push(text !== null ? `“${text.length > 80 ? `${text.slice(0, 80)}…` : text}”` : `hex ${bytesToHex(parsed.payload.slice(0, 40))}${parsed.payloadBytes > 40 ? "…" : ""}`);
+  }
+  if (burn) parts.push(`burns ${valueSats} sats — unspendable`);
+  return { text: parts.join(" · "), burn };
 };
 
 // Per-map key types offered by the "add pair" control: [type byte, name,
@@ -203,19 +267,22 @@ export const initPsbtEditor = () => {
 
   let doc = null; // inspect document being edited; null when nothing is loaded
   let resultBytes = null; // last successfully built PSBT
+  let stale = false; // true while the current fields do not build; resultBytes is then the last valid build
+  let qrTimer = null; // animation timer of the UR fragment QR, when running
   // Which flow-diagram part is open ({ kind: "input"|"output", index } for a
   // box or { kind: "tx" } for the middle transaction box); its fields render
   // in the panel under the diagram instead of inline.
   let selected = null;
 
   initExpandable();
-  // Edits saved in the expandable editor window are pending field edits,
-  // exactly like typing in the plain value inputs (validated on Re-serialize).
+  // Edits saved in the expandable editor window are field edits, exactly
+  // like typing in the plain value inputs: they rebuild live.
   out.addEventListener("expandable:apply", (event) => {
     if (!doc) return;
     const { kind, map, pair } = event.target.dataset;
     if (kind === undefined || pair === undefined) return;
     (kind === "global" ? doc.globals : kind === "input" ? doc.inputs[map] : doc.outputs[map])[Number(pair)].value = event.detail.text.trim();
+    liveRebuild();
   });
 
   const setError = (message) => {
@@ -247,8 +314,8 @@ export const initPsbtEditor = () => {
     const options = PAIR_TYPES[kind]
       .map(([type, name, hint]) => `<option value="${type}" title="keydata: ${escapeHtml(hint)}">${name}</option>`)
       .join("");
-    return `<table class="psbted-pairs">
-      <thead><tr><th>Field</th><th>Key (hex)</th><th>Value (hex)</th><th>Decoded</th><th></th></tr></thead>
+    return `<table class="psbted-pairs psbted-kv">
+      <thead><tr><th class="psbted-col-field">Field</th><th>Key (hex)</th><th>Value (hex)</th><th>Decoded</th><th class="psbted-col-del"></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="5" class="muted">No pairs in this map.</td></tr>`}</tbody>
     </table>
     <div class="psbted-add">
@@ -260,6 +327,10 @@ export const initPsbtEditor = () => {
   };
 
   const render = () => {
+    // The result box is recreated here, so any running QR animation dies
+    // with it; renderResult restarts it for the current build.
+    clearInterval(qrTimer);
+    qrTimer = null;
     if (!doc) {
       out.innerHTML = "";
       return;
@@ -274,6 +345,9 @@ export const initPsbtEditor = () => {
       ? `<span class="psbted-note-warn">rust-bitcoin reports: ${escapeHtml(doc.rustBitcoinError)}</span>`
       : `<span class="psbted-note-ok">parses under rust-bitcoin</span>`;
 
+    // The last remaining input carries no delete control: a zero-input
+    // unsigned transaction cannot round-trip through BIP-174 serialization,
+    // so rust-bitcoin would reject the rebuild.
     const inputRows = tx.inputs
       .map(
         (input, index) => `<tr>
@@ -281,17 +355,21 @@ export const initPsbtEditor = () => {
           <td><input class="psbted-txid" data-txin="${index}" value="${escapeHtml(input.txid)}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Input ${index} previous txid (hex)"></td>
           <td><input class="psbted-num" data-txin-vout="${index}" value="${escapeHtml(String(input.vout))}" inputmode="numeric" aria-label="Input ${index} prevout index"></td>
           <td><input class="psbted-num" data-txin-seq="${index}" value="${escapeHtml(String(input.sequence))}" inputmode="numeric" aria-label="Input ${index} sequence"></td>
+          <td>${tx.inputs.length > 1 ? `<button type="button" class="psbted-del" data-txin-del="${index}" aria-label="Delete input ${index}">×</button>` : ""}</td>
         </tr>`
       )
       .join("");
     const outputRows = tx.outputs
       .map((output, index) => {
         const addr = addressFor(output.scriptPubKey, network.value);
+        const opret = addr ? null : opReturnSummary(output.scriptPubKey, output.value);
         return `<tr>
           <td>${index}</td>
-          <td><input class="psbted-num" data-txout-val="${index}" value="${escapeHtml(String(output.value))}" inputmode="numeric" aria-label="Output ${index} value in sats"> sats</td>
+          <td><input class="psbted-num" data-txout-val="${index}" value="${escapeHtml(String(output.value))}" inputmode="numeric" aria-label="Output ${index} value in sats"></td>
           <td><input class="psbted-txid" data-txout-script="${index}" value="${escapeHtml(output.scriptPubKey)}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Output ${index} scriptPubKey (hex)">
-            <span class="muted psbted-addr">${escapeHtml(addr || output.asm || "")}</span></td>
+            <span class="${opret?.burn ? "psbted-note-warn" : "muted"} psbted-addr">${escapeHtml(addr || opret?.text || output.asm || "")}</span>
+            <span class="psbted-build"><input data-build-script="${index}" placeholder="address · OP_… ASM · 0x raw hex · text" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Build output ${index} scriptPubKey from an address, ASM, or OP_RETURN text"><select data-build-mode="${index}" aria-label="Output ${index} script builder mode"><option value="auto" selected>Auto-detect</option><option value="opreturn-text">OP_RETURN text</option><option value="opreturn-hex">OP_RETURN hex</option><option value="asm">Script ASM</option></select><button type="button" class="btn secondary" data-build-apply="${index}">Set script</button></span></td>
+          <td><button type="button" class="psbted-del" data-txout-del="${index}" aria-label="Delete output ${index}">×</button></td>
         </tr>`;
       })
       .join("");
@@ -313,8 +391,10 @@ export const initPsbtEditor = () => {
           <label>Version <input class="psbted-num" id="psbted-tx-version" value="${escapeHtml(String(tx.version))}" inputmode="numeric"></label>
           <label>Locktime <input class="psbted-num" id="psbted-tx-locktime" value="${escapeHtml(String(tx.locktime))}" inputmode="numeric"></label>
         </div>
-        <table class="psbted-pairs"><thead><tr><th class="psbted-idx">Input</th><th>Previous txid</th><th>vout</th><th>sequence</th></tr></thead><tbody>${inputRows}</tbody></table>
-        <table class="psbted-pairs"><thead><tr><th class="psbted-idx">Output</th><th>Value</th><th>scriptPubKey</th></tr></thead><tbody>${outputRows}</tbody></table>
+        <table class="psbted-pairs psbted-txins"><thead><tr><th class="psbted-idx">#</th><th>Previous txid</th><th class="psbted-col-vout">vout</th><th class="psbted-col-seq">sequence</th><th class="psbted-col-del"></th></tr></thead><tbody>${inputRows}</tbody></table>
+        <div class="psbted-add-el"><button type="button" class="btn secondary" data-tx-add="input">Add input</button></div>
+        <table class="psbted-pairs psbted-txouts"><thead><tr><th class="psbted-idx">#</th><th class="psbted-col-val">Value (sats)</th><th>scriptPubKey</th><th class="psbted-col-del"></th></tr></thead><tbody>${outputRows}</tbody></table>
+        <div class="psbted-add-el"><button type="button" class="btn secondary" data-tx-add="output">Add output</button></div>
       </section>`;
     const isSelected = (kind, index) => selected && selected.kind === kind && (kind === "tx" || selected.index === index);
     const inputSections = doc.inputs.map((_, index) => (isSelected("input", index) ? "" : mapSection("input", index))).join("");
@@ -331,7 +411,7 @@ export const initPsbtEditor = () => {
 
     out.innerHTML = `
       <p class="psbt-kv"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · ${tx.inputs.length} input(s) · ${tx.outputs.length} output(s) · fee ${fee} · ${verdict}</p>
-      <p class="muted" id="psbted-status" aria-live="polite">${resultBytes ? "The fields below show rust-bitcoin's decode of the current PSBT." : "Field edits are validated when you re-serialize."}</p>
+      <p class="muted" id="psbted-status" aria-live="polite">${stale ? "The fields do not build right now — see the error above; the result below is the last valid build." : "Every edit rebuilds the PSBT immediately; the fields show rust-bitcoin's decode of the current build."}</p>
 
       ${psbtVizHtml(doc, network.value, selected)}
       ${detail}
@@ -342,9 +422,6 @@ export const initPsbtEditor = () => {
       ${inputSections}
       ${outputSections}
 
-      <div class="row psbt-actions">
-        <button class="btn primary" id="psbted-build" type="button">Re-serialize PSBT</button>
-      </div>
       <div id="psbted-result"></div>`;
 
     bind();
@@ -353,27 +430,82 @@ export const initPsbtEditor = () => {
   const renderResult = () => {
     const box = document.getElementById("psbted-result");
     if (!box) return;
+    clearInterval(qrTimer);
+    qrTimer = null;
     if (!resultBytes) {
       box.innerHTML = "";
       return;
     }
     const b64 = base64Encode(resultBytes);
     const hex = bytesToHex(resultBytes);
+    box.classList.toggle("psbted-stale", stale);
     box.innerHTML = `
+      ${stale ? `<p class="psbted-note-warn" id="psbted-stale-note">The fields do not build right now — this is the last valid build.</p>` : ""}
       <p class="psbt-ok">Rebuilt PSBT is accepted by rust-bitcoin (${resultBytes.length} bytes).</p>
       <label class="field">Edited PSBT (base64)<textarea id="psbted-result-b64" readonly spellcheck="false">${escapeHtml(b64)}</textarea></label>
       <div class="row psbt-actions">
         <button class="btn secondary" id="psbted-copy-b64" type="button">Copy base64</button>
         <button class="btn secondary" id="psbted-copy-hex" type="button">Copy hex</button>
+        <button class="btn secondary" id="psbted-download" type="button">Download .psbt</button>
         <button class="btn secondary" id="psbted-reload" type="button">Load edited PSBT into the editor</button>
       </div>
-      <label class="field">Edited PSBT (hex)<textarea id="psbted-result-hex" readonly spellcheck="false">${escapeHtml(hex)}</textarea></label>`;
+      <label class="field">Edited PSBT (hex)<textarea id="psbted-result-hex" readonly spellcheck="false">${escapeHtml(hex)}</textarea></label>
+      <div class="psbted-qr-block">
+        <div class="qr psbted-qr" id="psbted-qr-code"></div>
+        <p class="muted" id="psbted-qr-note"></p>
+      </div>`;
     $("psbted-copy-b64").onclick = () => navigator.clipboard?.writeText(b64).catch(() => {});
     $("psbted-copy-hex").onclick = () => navigator.clipboard?.writeText(hex).catch(() => {});
     $("psbted-reload").onclick = () => {
       text.value = b64;
       loadFromText();
     };
+    // The binary download round-trips with wallet software: Sparrow and
+    // Coldcard read the .psbt file this produces.
+    $("psbted-download").onclick = () => {
+      const url = URL.createObjectURL(new Blob([resultBytes], { type: "application/octet-stream" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "edited.psbt";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    setupQr();
+  };
+
+  // The QR under the result: one static code for small PSBTs, an animated
+  // ur:crypto-psbt sequence (cycled here) for larger ones.
+  const setupQr = () => {
+    const target = document.getElementById("psbted-qr-code");
+    const note = document.getElementById("psbted-qr-note");
+    if (!target || !note || !resultBytes) return;
+    const plan = psbtQrPlan(resultBytes);
+    if (plan.mode === "static") {
+      target.innerHTML = renderQrSvg(plan.text, QR_OPTIONS);
+      target.setAttribute("aria-label", "Edited PSBT as a base64 QR code");
+      note.textContent = "Static QR: the edited PSBT as base64.";
+      return;
+    }
+    let frame = 0;
+    const draw = () => {
+      target.innerHTML = renderQrSvg(plan.parts[frame], QR_OPTIONS);
+      note.textContent = `Animated UR crypto-psbt · part ${frame + 1} of ${plan.parts.length} — Sparrow, SeedSigner and Coldcard Q scan these.`;
+      frame = (frame + 1) % plan.parts.length;
+    };
+    target.setAttribute("aria-label", "Edited PSBT as an animated UR crypto-psbt QR sequence");
+    draw();
+    qrTimer = setInterval(draw, 600);
+  };
+
+  // Marks the intact result panel as the last valid build — used when a
+  // keystroke left the fields in a state that does not build, so the QR and
+  // text of the last good build stay visible instead of vanishing.
+  const markResultStale = () => {
+    const box = document.getElementById("psbted-result");
+    if (!box || !resultBytes) return;
+    box.classList.add("psbted-stale");
+    if (!document.getElementById("psbted-stale-note"))
+      box.insertAdjacentHTML("afterbegin", '<p class="psbted-note-warn" id="psbted-stale-note">The fields do not build right now — this is the last valid build.</p>');
   };
 
   // The mempool.space-style connectors: a bezier from every input box into
@@ -418,22 +550,74 @@ export const initPsbtEditor = () => {
   });
 
   // Builds + re-inspects the working document. On success the editor is
-  // re-rendered from rust-bitcoin's fresh decode; on failure the working
-  // document is kept as-is and the error is shown.
-  const rebuild = () => {
+  // re-rendered from rust-bitcoin's fresh decode; when the rebuild was
+  // triggered by typing (restoreFocus), focus and the caret return to the
+  // field being edited, so a successful keystroke never interrupts typing.
+  const rebuild = ({ restoreFocus = false } = {}) => {
+    const focus = restoreFocus ? captureFocus() : null;
     const fresh = psbtBuildBytes(psbtEditorBuildDoc(doc));
     const decoded = psbtInspectDoc(fresh);
     doc = decoded;
     resultBytes = fresh;
+    stale = false;
     setError("");
     render();
     renderResult();
+    if (focus) restoreFocusState(focus);
+  };
+
+  // The live path for field edits: every keystroke attempts a rebuild. On
+  // failure the working document and the rendered fields stay exactly as
+  // they are (typing continues undisturbed), the error shows, and the last
+  // valid build below is marked stale.
+  const liveRebuild = () => {
+    try {
+      rebuild({ restoreFocus: true });
+    } catch (exception) {
+      stale = resultBytes !== null;
+      setError(exception.message || String(exception));
+      markResultStale();
+    }
+  };
+
+  // Identifies the field being edited across a re-render: its id, its
+  // pair-value coordinates, or its data-attribute, plus the caret.
+  const captureFocus = () => {
+    const el = document.activeElement;
+    if (!el || !out.contains(el)) return null;
+    let selector = null;
+    if (el.id) selector = `#${el.id}`;
+    else if (el.classList?.contains("psbted-value")) selector = `input[data-kind="${el.dataset.kind}"][data-map="${el.dataset.map}"][data-pair="${el.dataset.pair}"]`;
+    else {
+      for (const attr of ["data-txin", "data-txin-vout", "data-txin-seq", "data-txout-val", "data-txout-script", "data-build-script", "data-build-mode", "data-add-type", "data-add-key", "data-add-val"]) {
+        const value = el.getAttribute?.(attr);
+        if (value !== null && value !== undefined) {
+          selector = `[${attr}="${value}"]`;
+          break;
+        }
+      }
+    }
+    if (!selector) return null;
+    return { selector, start: el.selectionStart, end: el.selectionEnd };
+  };
+
+  const restoreFocusState = (focus) => {
+    const el = out.querySelector(focus.selector);
+    if (!el) return;
+    el.focus();
+    try {
+      // The rebuilt decode may have normalized the value (007 → 7); clamp
+      // the caret into the new length.
+      el.setSelectionRange(Math.min(focus.start, el.value.length), Math.min(focus.end, el.value.length));
+    } catch {
+      // Not a text input: focus alone is enough.
+    }
   };
 
   const showBuildError = (exception) => {
+    stale = resultBytes !== null;
     setError(exception.message || String(exception));
-    const box = document.getElementById("psbted-result");
-    if (box) box.innerHTML = "";
+    renderResult(); // no valid build yet clears the box; otherwise it shows the last valid build as stale
   };
 
   const loadFromText = () => {
@@ -441,13 +625,23 @@ export const initPsbtEditor = () => {
     selected = null;
     try {
       doc = psbtInspectDoc(psbtBytesFromText(text.value));
-      resultBytes = null;
-      render();
     } catch (exception) {
       doc = null;
       resultBytes = null;
+      stale = false;
       render();
       setError(exception.message || String(exception));
+      return;
+    }
+    resultBytes = null;
+    stale = false;
+    // The loaded PSBT builds at once, so the result text and QR appear
+    // without an extra click.
+    try {
+      rebuild();
+    } catch (exception) {
+      render();
+      showBuildError(exception);
     }
   };
 
@@ -468,33 +662,113 @@ export const initPsbtEditor = () => {
   };
 
   const bind = () => {
-    $("psbted-build").onclick = () => {
-      setError("");
-      try {
-        rebuild();
-      } catch (exception) {
-        showBuildError(exception);
-      }
-    };
-
-    // Transaction fields update the working document only; they stay pending
-    // until Re-serialize (so partial hex never loses focus mid-edit).
-    $("psbted-tx-version").addEventListener("input", (event) => (doc.tx.version = event.target.value.trim()));
-    $("psbted-tx-locktime").addEventListener("input", (event) => (doc.tx.locktime = event.target.value.trim()));
+    // Transaction fields update the working document and rebuild on every
+    // keystroke; a state that does not build keeps the fields as they are
+    // (partial hex never loses focus mid-edit) and shows the error live.
+    $("psbted-tx-version").addEventListener("input", (event) => {
+      doc.tx.version = event.target.value.trim();
+      liveRebuild();
+    });
+    $("psbted-tx-locktime").addEventListener("input", (event) => {
+      doc.tx.locktime = event.target.value.trim();
+      liveRebuild();
+    });
     out.querySelectorAll("[data-txin]").forEach((input) =>
-      input.addEventListener("input", () => (doc.tx.inputs[Number(input.dataset.txin)].txid = input.value.trim()))
+      input.addEventListener("input", () => {
+        doc.tx.inputs[Number(input.dataset.txin)].txid = input.value.trim();
+        liveRebuild();
+      })
     );
     out.querySelectorAll("[data-txin-vout]").forEach((input) =>
-      input.addEventListener("input", () => (doc.tx.inputs[Number(input.dataset.txinVout)].vout = input.value.trim()))
+      input.addEventListener("input", () => {
+        doc.tx.inputs[Number(input.dataset.txinVout)].vout = input.value.trim();
+        liveRebuild();
+      })
     );
     out.querySelectorAll("[data-txin-seq]").forEach((input) =>
-      input.addEventListener("input", () => (doc.tx.inputs[Number(input.dataset.txinSeq)].sequence = input.value.trim()))
+      input.addEventListener("input", () => {
+        doc.tx.inputs[Number(input.dataset.txinSeq)].sequence = input.value.trim();
+        liveRebuild();
+      })
     );
     out.querySelectorAll("[data-txout-val]").forEach((input) =>
-      input.addEventListener("input", () => (doc.tx.outputs[Number(input.dataset.txoutVal)].value = input.value.trim()))
+      input.addEventListener("input", () => {
+        doc.tx.outputs[Number(input.dataset.txoutVal)].value = input.value.trim();
+        liveRebuild();
+      })
     );
     out.querySelectorAll("[data-txout-script]").forEach((input) =>
-      input.addEventListener("input", () => (doc.tx.outputs[Number(input.dataset.txoutScript)].scriptPubKey = input.value.trim()))
+      input.addEventListener("input", () => {
+        doc.tx.outputs[Number(input.dataset.txoutScript)].scriptPubKey = input.value.trim();
+        liveRebuild();
+      })
+    );
+
+    // Structural edits to the transaction itself: an added input/output gets
+    // its (empty) key-value map at the same index, so the document the WASM
+    // checks always has one map per tx element. Like pair add/remove, the
+    // change round-trips through rust-bitcoin immediately; on rejection the
+    // working document is kept. The detail panel closes because box indices
+    // may shift.
+    out.querySelectorAll("[data-tx-add]").forEach((button) =>
+      button.addEventListener("click", () => {
+        setError("");
+        selected = null;
+        mutate((draft) => {
+          if (button.dataset.txAdd === "input") {
+            draft.tx.inputs.push({ txid: "0".repeat(64), vout: 0, scriptSig: "", sequence: 4294967295 });
+            draft.inputs.push([]);
+          } else {
+            draft.tx.outputs.push({ value: 0, scriptPubKey: "" });
+            draft.outputs.push([]);
+          }
+        });
+      })
+    );
+    out.querySelectorAll("[data-txin-del]").forEach((button) =>
+      button.addEventListener("click", () => {
+        const index = Number(button.dataset.txinDel);
+        selected = null;
+        mutate((draft) => {
+          draft.tx.inputs.splice(index, 1);
+          draft.inputs.splice(index, 1);
+        });
+      })
+    );
+    out.querySelectorAll("[data-txout-del]").forEach((button) =>
+      button.addEventListener("click", () => {
+        const index = Number(button.dataset.txoutDel);
+        selected = null;
+        mutate((draft) => {
+          draft.tx.outputs.splice(index, 1);
+          draft.outputs.splice(index, 1);
+        });
+      })
+    );
+
+    // The output-script builder writes its result into the output's
+    // scriptPubKey field — exactly as if the user had typed the hex — and
+    // the live rebuild validates it on the spot. Builder errors (bad
+    // address, unknown ASM token) show inline.
+    const applyBuiltScript = (index) => {
+      const text = out.querySelector(`[data-build-script="${index}"]`)?.value ?? "";
+      const mode = out.querySelector(`[data-build-mode="${index}"]`)?.value ?? "auto";
+      try {
+        const built = buildOutputScript(text, { network: network.value, mode });
+        doc.tx.outputs[Number(index)].scriptPubKey = built.scriptHex;
+        liveRebuild();
+      } catch (exception) {
+        setError(exception.message || String(exception));
+      }
+    };
+    out.querySelectorAll("[data-build-apply]").forEach((button) => button.addEventListener("click", () => applyBuiltScript(button.dataset.buildApply)));
+    out.querySelectorAll("[data-build-script]").forEach((input) =>
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          applyBuiltScript(input.dataset.buildScript);
+        }
+      })
     );
 
     // Flow-diagram boxes (and the middle transaction box) toggle the detail
@@ -525,6 +799,7 @@ export const initPsbtEditor = () => {
       input.addEventListener("input", () => {
         const { kind, map, pair } = input.dataset;
         (kind === "global" ? doc.globals : kind === "input" ? doc.inputs[map] : doc.outputs[map])[Number(pair)].value = input.value.trim();
+        liveRebuild();
       })
     );
     out.querySelectorAll(".psbted-del").forEach((button) =>
@@ -569,9 +844,27 @@ export const initPsbtEditor = () => {
   load.onclick = () => {
     psbtWasmReady.then(loadFromText).catch((exception) => setError(exception.message || String(exception)));
   };
+  // File upload is a second load path for the same loader: Sparrow & co. save
+  // the PSBT as raw binary; a text export decodes through the paste rules.
+  // The textarea mirrors the upload (as base64) so the loaded bytes and the
+  // "edited PSBT" reload path stay visible.
+  const file = $("psbted-file");
+  $("psbted-upload").onclick = () => file.click();
+  file.addEventListener("change", () => {
+    const chosen = file.files?.[0];
+    file.value = ""; // picking the same file again must fire change again
+    if (!chosen) return;
+    psbtWasmReady
+      .then(async () => {
+        text.value = base64Encode(psbtBytesFromUpload(new Uint8Array(await chosen.arrayBuffer())));
+        loadFromText();
+      })
+      .catch((exception) => setError(exception.message || String(exception)));
+  });
   $("psbted-wipe").onclick = () => {
     doc = null;
     resultBytes = null;
+    stale = false;
     selected = null;
     text.value = "";
     setError("");

@@ -695,7 +695,11 @@ test("the master fingerprint cards reserve a compact empty square for each LifeH
   assert.match(app, /hodlLifeHash\.fromFingerprint\(value\)/);
   assert.match(appSource, /imageNode\.hidden = true;\s*imageNode\.removeAttribute\("src"\);/);
   assert.match(appSource, /imageNode\.src = url;\s*imageNode\.hidden = false;/);
+  assert.match(css, /\.master-fingerprint-card \{[^}]*display: grid;/);
   assert.match(css, /\.master-fingerprint-lifehash-frame \{[^}]*width: 40px; height: 40px;/);
+  assert.doesNotMatch(css, /\.master-fingerprint-lifehash-frame \{[^}]*float: right;/);
+  assert.match(css, /\.master-fingerprint-value \{[^}]*overflow: hidden;/);
+  assert.match(css, /\.master-fingerprint-preview \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: 8px; \}/);
   // Crisp pixels per the LifeHash presentation guidance.
   assert.match(css, /\.master-fingerprint-lifehash \{[^}]*image-rendering: pixelated;/);
 });
@@ -776,9 +780,31 @@ test("multisig consistently uses derive for its heading and action", () => {
 });
 
 test("key and multisig add controls stay pinned to the right of their tab strips", () => {
-  assert.match(css, /\.key-tab-strip \{ display: flex; align-items: flex-end; min-width: 0; margin-top: 12px; \}/);
+  assert.match(css, /\.key-tab-strip \{ display: flex; align-items: center; min-width: 0; margin-top: 0; gap: 4px; \}/);
   assert.match(css, /\.key-tabs \{\s*display: flex;[^}]*flex: 1 1 auto; min-width: 0;/s);
   assert.match(css, /\.add-item-control \{ position: relative; display: inline-flex; flex: 0 0 auto; \}/);
+});
+
+test("the delete control reads as unavailable on the Lab tab", () => {
+  // Both strips ship it disabled: a fresh page holds only Lab, and app.js
+  // keeps minus unavailable while Lab is selected.
+  for (const markup of [template, appSource]) {
+    for (const id of ["delete-key", "delete-msig"]) {
+      assert.match(
+        markup,
+        new RegExp(`<button class="add-key remove-key" id="${id}"[^>]*disabled`),
+        `${id} must ship disabled`,
+      );
+    }
+  }
+  assert.match(appSource, /function hodlSyncKeyDeleteButton\(\) \{[\s\S]*?button\.disabled = !state \|\| state\.isLab;/);
+  assert.match(appSource, /function hodlSyncMsigDeleteButton\(\) \{[\s\S]*?button\.disabled = !state \|\| state\.isLab;/);
+  // Disabled, it drops off the muted tone the live plus keeps.
+  assert.match(css, /\.add-key:disabled \{ color: var\(--border\); cursor: not-allowed; \}/);
+  assert.match(css, /\.add-key \{[^}]*color: var\(--muted\);/s);
+  // And it never lights up under the pointer: both accent states exclude it.
+  assert.match(css, /\.add-key:not\(:disabled\):hover \{ background: transparent; color: var\(--accent\); \}/);
+  assert.match(css, /\.add-key:not\(:disabled\):active \{ background: transparent; color: var\(--accent\); \}/);
 });
 
 test("seed-entry tools keep a square keyboard toggle and a block note on narrow screens", () => {
@@ -792,6 +818,21 @@ test("multisig heading spans beneath the delete action on narrow screens", () =>
   assert.match(
     css,
     /@media \(max-width: 520px\)[\s\S]*\.key-panel-head \{ display: grid; grid-template-columns: minmax\(0, 1fr\) auto; \}[\s\S]*\.key-panel-head > div:first-child \{ grid-column: 1 \/ -1; grid-row: 2; width: 100%; \}[\s\S]*\.key-panel-head > \.delete-key \{ grid-column: 2; grid-row: 1; justify-self: end; \}/,
+  );
+});
+
+test("the tools' closing button groups stack full width on narrow screens", () => {
+  // Wrapped, each control is only as wide as its label and the group reads as
+  // ragged lines. Below 520px every child takes the whole row instead.
+  assert.match(
+    css,
+    /@media \(max-width: 520px\)[\s\S]*\.current-item-actions,\s*\.bip85-actions,\s*\.psbt-actions \{ align-items: stretch; \}[\s\S]*\.current-item-actions > \*,\s*\.bip85-actions > \*,\s*\.psbt-actions > \* \{ width: 100%; justify-content: center; \}/,
+  );
+  // .psbted-actions pins the editor's row to flex-end, so the stacking rule has
+  // to follow it to win on order.
+  assert.ok(
+    css.indexOf(".psbt-actions > *") > css.indexOf(".psbted-actions { align-items: flex-end; }"),
+    "the narrow-screen stack must follow .psbted-actions so its alignment wins",
   );
 });
 
@@ -832,6 +873,40 @@ test("the beta notice sits at the top of the page as a banner", () => {
     assert.doesNotMatch(live, /site-footer|fine-print/);
   }
   assert.doesNotMatch(css, /\.site-footer|\.fine-print/);
+});
+
+test("the page closes on a footer in both markups", () => {
+  // Not the removed beta fine print: a plain closing line that ships in the
+  // static template and the runtime template alike, and stays off paper. The
+  // build stamp (version, commit, LifeHash of the commit) rides the footer;
+  // the build tokens are stamped by scripts/build.mjs.
+  for (const markup of [template, app]) {
+    // esbuild escapes the emoji and the middots when it minifies the
+    // runtime template, so the two markups carry the same characters in two
+    // spellings.
+    assert.match(
+      markup,
+      /<footer class="page-footer muted no-print"><div>Team Ooga Booga<\/div><div class="page-footer-emoji">(?:🪨|\\u\{1FAA8\}) (?:🔥|\\u\{1F525\}) (?:🎲|\\u\{1F3B2\}) (?:🍌|\\u\{1F34C\})<\/div><div>Since 964013 (?:·|\\x[Bb]7|\\u00[Bb]7) <span class="page-footer-build">v\{\{VERSION\}\} (?:·|\\x[Bb]7|\\u00[Bb]7) commit <code>\{\{COMMIT_SHORT\}\}<\/code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" alt="LifeHash of the build commit" hidden><\/span><\/div><\/footer>/,
+    );
+    // It closes the wrap, so nothing of the page follows it.
+    assert.ok(
+      markup.indexOf('class="page-footer') > markup.indexOf('class="card muted sources"'),
+      "the footer must follow the sources card",
+    );
+  }
+  // The wrap gives up its bottom padding so the footer's own padding is the
+  // page's last band of space; a top border draws the seam above it.
+  // The widest seam in the page opens above it, wider than the major seam the
+  // sources card takes, so the closing line reads as its own band.
+  assert.match(css, /\.page-footer \{ margin-top: var\(--space-lede\); padding: 24px 0; border-top: 1px solid var\(--border\); text-align: center; color: var\(--faint\);/);
+  // .muted would otherwise colour it: the footer rule has to win on order.
+  assert.ok(
+    css.indexOf(".page-footer {") > css.indexOf(".muted {"),
+    "the footer rule must follow .muted so its colour wins",
+  );
+  // The emoji row outgrows the two text rows it sits between.
+  assert.match(css, /\.page-footer-emoji \{[^}]*font-size: 1\.5em;/);
+  assert.doesNotMatch(css, /\.wrap \{[^}]*16px 64px/);
 });
 
 test("the beta banner carries a dismiss control in a narrow right-hand column", () => {
@@ -1069,7 +1144,7 @@ test("the site header is fixed, carries the logo, and holds the version, downloa
   // markup is the only source, and the app makes no runtime requests.
   assert.doesNotMatch(online, /fetch\s*\(|site-version|innerHTML/);
   // Content clears the fixed header on screen, and reclaims the space in print.
-  assert.match(css, /\.wrap \{ max-width: 1000px; margin: 0 auto; padding: calc\(var\(--site-header-height\) \+ 20px\) 16px 64px; \}/);
+  assert.match(css, /\.wrap \{ max-width: 1000px; margin: 0 auto; padding: calc\(var\(--site-header-height\) \+ 20px\) 16px 0; \}/);
   assert.match(css, /@media print \{[\s\S]*?\.wrap \{ padding-top: 20px; \}/);
   assert.match(css, /html \{[^}]*scroll-padding-top: calc\(var\(--site-header-height\) \+ 12px\)/);
   // Every header control is one height, and the bar is sized to match it.
@@ -1099,7 +1174,8 @@ test("the seam into the tool is wider than the page's other major seams", () => 
   // The strip is the panel's top edge now, so the tool seam is above the tabs
   // and there is no gap below them to collapse with anything.
   assert.match(css, /\.workspace \{ position: relative; margin: var\(--space-lede\) 0 0; \}/);
-  assert.match(css, /\.sources \{ margin-top: var\(--space-major\); \}/);
+  // The card's surface comes off it: no background, no border, padding kept.
+  assert.match(css, /\.sources \{ margin-top: var\(--space-major\); background: none; border: 0; \}/);
   for (const markup of [template, app]) {
     assert.match(markup, /<section class="card muted sources">/);
   }
@@ -1235,8 +1311,8 @@ test("virtual keypads never focus the field on touch so the mobile keyboard stay
   }
 });
 
-test("workspace tabs place BIP-85 between Key Derivation and Multi Signature", () => {
-  assert.match(appSource, /\["calc", "Key Derivation", "Keys"\], \["bip85", "BIP-85", "BIP85"\], \["msig", "Multi Signature", "MultiSig"\], \["sp", "Silent Payments", "SP"\], \["psbt", "PSBT \/ Nonce", "PSBT"\], \["psbted", "PSBT Editor", "Editor"\]/);
+test("workspace tabs place BIP-85 between Keys and Multi Signature", () => {
+  assert.match(appSource, /\["calc", "Keys", "Keys"\], \["bip85", "BIP-85", "BIP85"\], \["msig", "Multi Signature", "MultiSig"\], \["sp", "Silent Payments", "SP"\], \["psbt", "PSBT \/ Nonce", "PSBT"\], \["psbted", "PSBT Editor", "Editor"\]/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="bip85-card"/);
     assert.match(markup, /id="bip85-go"/);
@@ -1279,9 +1355,9 @@ test("BIP-85 entry point sits beside Derive Wallet and opens the BIP-85 tab", ()
 });
 
 test("Silent Payments sits between Multi Signature and PSBT / Nonce", () => {
-  const order = /Key Derivation[\s\S]*Multi Signature[\s\S]*Silent Payments[\s\S]*PSBT \/ Nonce/;
+  const order = /Keys[\s\S]*Multi Signature[\s\S]*Silent Payments[\s\S]*PSBT \/ Nonce/;
   assert.match(template, order);
-  assert.match(appSource, /\["calc", "Key Derivation", "Keys"\], \["bip85", "BIP-85", "BIP85"\], \["msig", "Multi Signature", "MultiSig"\], \["sp", "Silent Payments", "SP"\], \["psbt", "PSBT \/ Nonce", "PSBT"\], \["psbted", "PSBT Editor", "Editor"\]/);
+  assert.match(appSource, /\["calc", "Keys", "Keys"\], \["bip85", "BIP-85", "BIP85"\], \["msig", "Multi Signature", "MultiSig"\], \["sp", "Silent Payments", "SP"\], \["psbt", "PSBT \/ Nonce", "PSBT"\], \["psbted", "PSBT Editor", "Editor"\]/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="sp-card"/);
     assert.match(markup, /id="sp-key"/);
@@ -1303,7 +1379,7 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   assert.match(template, /<div class="workspace-tabs" id="workspace-tabs" role="tablist" aria-label="Tool">/);
   // All five tools ship in the static markup, each with a full name and the
   // short form narrow screens show instead.
-  for (const [full, short] of [["Key Derivation", "Keys"], ["BIP-85", "BIP85"], ["Multi Signature", "MultiSig"], ["Silent Payments", "SP"], ["PSBT / Nonce", "PSBT"], ["PSBT Editor", "Editor"]]) {
+  for (const [full, short] of [["Keys", "Keys"], ["BIP-85", "BIP85"], ["Multi Signature", "MultiSig"], ["Silent Payments", "SP"], ["PSBT / Nonce", "PSBT"], ["PSBT Editor", "Editor"]]) {
     assert.ok(
       template.includes(`<span class="workspace-tab-full">${full}</span><span class="workspace-tab-short">${short}</span>`),
       `${full} is missing from the workspace strip`,
@@ -1317,7 +1393,7 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   // Hidden text leaves the accessibility tree, so the full name is stated on
   // the tab itself and assistive tech hears it at every width.
   assert.match(appSource, /button\.setAttribute\("aria-label", label\);/);
-  for (const full of ["Key Derivation", "BIP-85", "Multi Signature", "Silent Payments", "PSBT / Nonce"]) {
+  for (const full of ["Keys", "BIP-85", "Multi Signature", "Silent Payments", "PSBT / Nonce"]) {
     assert.ok(template.includes(`aria-label="${full}"><span class="workspace-tab-full">${full}</span>`), `${full} tab needs its accessible name`);
   }
   // A tablist owes arrow keys; the key and multisig strips already answer them.
@@ -1348,6 +1424,10 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
     assert.match(markup, /<div class="workspace-panel" id="workspace-panel">/);
   }
   assert.match(css, /\.workspace-panel \{[^}]*border: 1px solid var\(--border\); border-radius: 0 0 20px 20px;/s);
+  // Cards in the panel close on their own edge; the page's other cards, the
+  // pitch and the sources among them, keep the shared 16px both ways.
+  assert.match(css, /\.workspace-panel \.card \{ margin-bottom: 0; \}/);
+  assert.match(css, /\.card \{[^}]*margin: 16px 0; \}/);
   // Every tool panel lives inside it, and the closing Sources card does not.
   for (const markup of [template, appSource]) {
     const panel = markup.slice(markup.indexOf('<div class="workspace-panel"'), markup.indexOf('class="card muted sources"'));
@@ -1391,4 +1471,86 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   assert.match(appSource, /new ResizeObserver\(hodlSyncWorkspaceOverflow\)\.observe\(strip\);/);
   assert.match(css, /\.workspace-more \{[^}]*position: absolute; right: 0; bottom: 100%;/s);
   assert.match(css, /\.workspace-more\[hidden\] \{ display: none; \}/);
+});
+
+test("Lab stays put and a derived key opens a fingerprint tab with a summary", () => {
+  assert.match(appSource, /function hodlNewLabState\(\) \{/);
+  assert.match(appSource, /hodlNewKeyState\("Key Lab", 0, 0\)/);
+  assert.match(appSource, /name = state\.isLab \? "Key Lab"/);
+  assert.match(appSource, /source\.querySelectorAll\("svg"\)\.forEach\(\(svg\) => span\.appendChild\(svg\.cloneNode\(true\)\)\)/);
+  assert.match(appSource, /function hodlCommitDerivedKey\(\) \{/);
+  assert.match(appSource, /function hodlSelectLab\(\) \{/);
+  assert.match(appSource, /function hodlSyncKeyResultView\(\) \{/);
+  assert.match(appSource, /hodlKeys\.push\(hodlNewLabState\(\)\)/);
+  assert.match(appSource, /hodlCommitDerivedKey\(\)/);
+  assert.match(appSource, /button\.id = state\.isLab \? "key-tab-lab"/);
+  assert.match(appSource, /function hodlAddKey\(\) \{\s*hodlSelectLab\(\);/s);
+  assert.match(appSource, /button\.disabled = !state \|\| state\.isLab;/);
+  for (const markup of [template, appSource]) {
+    assert.match(markup, /id="key-summary"/);
+    assert.match(markup, /id="key-lab"/);
+    assert.match(markup, /id="key-edit-inputs"/);
+    assert.match(markup, /id="key-summary-path"/);
+    assert.match(markup, /Open the lab to derive another key/);
+  }
+  assert.match(appSource, /function hodlSnapshotKeySummary\(/);
+  assert.match(appSource, /state\.createdScript = hodlKeySummaryScript\(state\)/);
+  assert.match(appSource, /state\.createdPath = hodlKeySummaryPath\(state\)/);
+  assert.match(css, /#calc-card\.is-result-view #modes/);
+  assert.match(css, /#calc-card:not\(\.is-result-view\) #out/);
+});
+
+test("derived key results put private recovery before script type and addresses", () => {
+  assert.match(appSource, /\$\{hodlHdWalletData\(t\)\}[\s\S]*id="acct-tabs-label">Script type[\s\S]*id="acct"/);
+  assert.match(appSource, /id="wallet-private-heading">Private recovery material/);
+  assert.match(appSource, /These values can recreate or spend from the wallet\. Reveal them only while this file is running offline on an air-gapped computer\./);
+  assert.match(appSource, /id="account-private-heading">Private account material/);
+  assert.match(appSource, /id="account-watch-heading">Watch-only wallet data/);
+  assert.match(appSource, /id="account-address-heading">Addresses/);
+  assert.match(appSource, /Verify the first selected address on another trusted wallet or signing device before accepting bitcoin\./);
+  assert.doesNotMatch(appSource, /id="account-receive-heading">Receive/);
+  assert.match(appSource, /if \(state\) state\.reveal = Ge;/);
+  assert.match(appSource, /hodlBindWalletResultActions\(\);/);
+});
+
+test("multisig co-signer rows can pick a session key or paste a public key", () => {
+  assert.match(appSource, /function hodlSessionMsigKeys\(\) \{/);
+  assert.match(appSource, /function hodlMatchingMsigExport\(result\) \{/);
+  assert.match(appSource, /function hodlSyncMsigKeyAvatar\(row\) \{/);
+  assert.match(appSource, /chips\.className = "msig-session-keys"/);
+  assert.match(appSource, /button\.className = "msig-session-key"/);
+  assert.match(appSource, /hodlFillKeyTabLifehash\(image, fingerprint\)/);
+  assert.match(appSource, /hodlRefreshMsigSessionPickers\(\)/);
+  assert.match(css, /\.msig-session-key \{/);
+  assert.match(css, /\.msig-key-ident \{/);
+});
+
+test("Multisig Lab stays put and a derived wallet opens its own results tab", () => {
+  assert.match(appSource, /function hodlNewMsigLabState\(\) \{/);
+  assert.match(appSource, /hodlNewMsigState\("Multisig Lab", 0, 0\)/);
+  assert.match(appSource, /name = state\.isLab \? "Multisig Lab"/);
+  assert.match(appSource, /button\.append\(state\.isLab \? hodlCreateLabIcon\(\) : hodlCreateMsigIcon\(\), label\)/);
+  assert.match(appSource, /function hodlCommitDerivedMsig\(\) \{/);
+  assert.match(appSource, /function hodlSelectMsigLab\(\) \{/);
+  assert.match(appSource, /hodlMsigs\.push\(hodlNewMsigLabState\(\)\)/);
+  assert.match(appSource, /hodlCommitDerivedMsig\(\)/);
+  assert.match(appSource, /out\.innerHTML = `/);
+  assert.match(appSource, /function hodlAddMsig\(\) \{\s*hodlSelectMsigLab\(\);/s);
+  for (const markup of [template, appSource]) {
+    assert.match(markup, /id="msig-summary"/);
+    assert.match(markup, /id="msig-lab"/);
+    assert.match(markup, /id="msig-out"/);
+    assert.match(markup, /id="msig-edit-inputs"/);
+  }
+  assert.match(css, /#msig-card:not\(\.is-result-view\) #msig-out/);
+  assert.match(css, /#msig-card\.is-result-view \.msig-lab/);
+});
+
+test("session wallets are chips under the tool strip, not a second folder of tabs", () => {
+  assert.match(css, /\.key-manager \{ margin: 0 0 16px;/);
+  assert.doesNotMatch(css, /\.key-tab \{[^}]*border-radius: 10px 10px 0 0;/s);
+  assert.match(css, /\.key-tab \{[^}]*border-radius: 10px;/s);
+  assert.match(css, /\.key-tab\.active, \.key-tab-editing \{[^}]*border-color: var\(--accent\);/s);
+  assert.match(css, /#calc-card:not\(\[hidden\]\), #msig-card:not\(\[hidden\]\) \{[^}]*border-radius: 20px;/s);
+  assert.match(css, /\.workspace-tab \{[^}]*border-radius: 10px 10px 0 0;/s);
 });

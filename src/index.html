@@ -43,7 +43,7 @@
         <li>Keep your private keys offline.</li>
       </ul>
     </section>
-    <nav class="workspace no-print" id="workspace"><button type="button" class="workspace-more" id="workspace-more" aria-controls="workspace-tabs" aria-label="Scroll the tool list to see more tools" hidden>More tools<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button><div class="workspace-tabs" id="workspace-tabs" role="tablist" aria-label="Tool"><button type="button" class="workspace-tab active" role="tab" aria-selected="true" aria-label="Key Derivation"><span class="workspace-tab-full">Key Derivation</span><span class="workspace-tab-short">Keys</span></button><button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="BIP-85"><span class="workspace-tab-full">BIP-85</span><span class="workspace-tab-short">BIP85</span></button><button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Multi Signature"><span class="workspace-tab-full">Multi Signature</span><span class="workspace-tab-short">MultiSig</span></button><button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Silent Payments"><span class="workspace-tab-full">Silent Payments</span><span class="workspace-tab-short">SP</span></button><button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="PSBT / Nonce"><span class="workspace-tab-full">PSBT / Nonce</span><span class="workspace-tab-short">PSBT</span></button><button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="PSBT Editor"><span class="workspace-tab-full">PSBT Editor</span><span class="workspace-tab-short">Editor</span></button></div></nav>
+    <nav class="workspace no-print" id="workspace"><button type="button" class="workspace-more" id="workspace-more" aria-controls="workspace-tabs" aria-label="Scroll the tool list to see more tools" hidden>More tools<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button><div class="workspace-tabs" id="workspace-tabs" role="tablist" aria-label="Tool"><button type="button" class="workspace-tab active" role="tab" aria-selected="true" aria-label="Keys"><span class="workspace-tab-full">Keys</span><span class="workspace-tab-short">Keys</span></button><button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="BIP-85"><span class="workspace-tab-full">BIP-85</span><span class="workspace-tab-short">BIP85</span></button><button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Multi Signature"><span class="workspace-tab-full">Multi Signature</span><span class="workspace-tab-short">MultiSig</span></button><button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Silent Payments"><span class="workspace-tab-full">Silent Payments</span><span class="workspace-tab-short">SP</span></button><button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="PSBT / Nonce"><span class="workspace-tab-full">PSBT / Nonce</span><span class="workspace-tab-short">PSBT</span></button><button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="PSBT Editor"><span class="workspace-tab-full">PSBT Editor</span><span class="workspace-tab-short">Editor</span></button></div></nav>
     <div class="workspace-panel" id="workspace-panel">
       <div class="tool-intro" id="calc-tool-intro">
         <div class="kicker">Your entropy enters the lab</div>
@@ -51,10 +51,21 @@
         <p class="muted calc-intro">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
       </div>
       <section class="key-manager no-print" id="key-manager">
-      <div class="key-tab-strip"><div class="key-tabs" id="key-tabs" role="tablist" aria-label="Keys"></div><div class="add-item-control"><button class="add-key" id="add-key" type="button" aria-label="Add key" aria-describedby="add-key-tooltip">+</button><span class="add-item-tooltip" id="add-key-tooltip" role="tooltip">Add another key</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-key" type="button" aria-label="Delete current key" aria-describedby="delete-key-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-key-tooltip" role="tooltip">Delete this key</span></div></div>
+      <div class="key-tab-strip"><div class="key-tabs" id="key-tabs" role="tablist" aria-label="Keys"></div><div class="add-item-control"><button class="add-key" id="add-key" type="button" aria-label="Open the lab to derive another key" aria-describedby="add-key-tooltip">+</button><span class="add-item-tooltip" id="add-key-tooltip" role="tooltip">Open the lab to derive another key</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-key" type="button" aria-label="Delete current key" aria-describedby="delete-key-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-key-tooltip" role="tooltip">Delete this key</span></div></div>
     </section>
     <section class="card no-print" id="calc-card" role="tabpanel" hidden>
       <div class="row segmented-control" id="modes"><button class="tab active" aria-pressed="true">Dice rolls</button><button class="tab" aria-pressed="false">Cards</button><button class="tab" aria-pressed="false">Number bases</button><button class="tab" aria-pressed="false">Seed phrase</button><button class="tab" aria-pressed="false">Private key</button><button class="tab" aria-pressed="false">Brain wallet — lab</button></div>
+      <div class="key-summary" id="key-summary" hidden>
+        <img class="key-summary-lifehash" id="key-summary-lifehash" width="48" height="48" alt="" hidden>
+        <div class="key-summary-text">
+          <code class="key-summary-fingerprint" id="key-summary-fingerprint"></code>
+          <p class="key-summary-meta" id="key-summary-method"></p>
+          <p class="key-summary-meta" id="key-summary-script"></p>
+          <p class="key-summary-meta key-summary-path" id="key-summary-path"></p>
+        </div>
+        <button class="btn secondary" id="key-edit-inputs" type="button">Edit input</button>
+      </div>
+      <div class="key-lab" id="key-lab">
       <section class="seed-length-control" id="seed-length" aria-labelledby="seed-length-label">
         <p class="label" id="seed-length-label">Seed phrase length</p>
         <div class="row seed-length-options segmented-control" role="group" aria-label="Seed phrase length">
@@ -180,6 +191,8 @@ words, pick one of the checksum words.</span></span>
         <button class="btn clear-current-action" id="wipe" type="button" disabled aria-disabled="true">Clear Current Key</button>
       </div>
       <p class="err" id="error"></p>
+      </div>
+      <div id="out"></div>
     </section>
     <div class="tool-intro" id="bip85-tool-intro" hidden>
         <div class="kicker">One seed. Many children.</div>
@@ -243,9 +256,18 @@ words, pick one of the checksum words.</span></span>
         <p class="muted msig-intro">Combine extended public keys into a multisignature wallet. Paste each key origin and extended public key as exported by its signer: <span class="mono">[fingerprint/48h/0h/0h/2h]xpub…</span>. Private keys are not needed. The derived addresses can receive bitcoin, and spending requires the configured number of signatures.</p>
       </div>
       <section class="key-manager no-print" id="msig-manager" hidden="">
-      <div class="key-tab-strip"><div class="key-tabs" id="msig-tabs" role="tablist" aria-label="Multisigs"></div><div class="add-item-control"><button class="add-key" id="add-msig" type="button" aria-label="Add multisig" aria-describedby="add-msig-tooltip">+</button><span class="add-item-tooltip" id="add-msig-tooltip" role="tooltip">Add another multisig</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-msig" type="button" aria-label="Delete current multisig" aria-describedby="delete-msig-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-msig-tooltip" role="tooltip">Delete this multisig</span></div></div>
+      <div class="key-tab-strip"><div class="key-tabs" id="msig-tabs" role="tablist" aria-label="Multisigs"></div><div class="add-item-control"><button class="add-key" id="add-msig" type="button" aria-label="Open the lab to derive another multisig" aria-describedby="add-msig-tooltip">+</button><span class="add-item-tooltip" id="add-msig-tooltip" role="tooltip">Open the lab to derive another multisig</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-msig" type="button" aria-label="Delete current multisig" aria-describedby="delete-msig-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-msig-tooltip" role="tooltip">Delete this multisig</span></div></div>
     </section>
     <section class="card no-print" id="msig-card" role="tabpanel" hidden="">
+      <div class="key-summary" id="msig-summary" hidden>
+        <div class="key-summary-text">
+          <code class="key-summary-fingerprint" id="msig-summary-policy"></code>
+          <p class="key-summary-meta" id="msig-summary-script"></p>
+          <p class="key-summary-meta" id="msig-summary-network"></p>
+        </div>
+        <button class="btn secondary" id="msig-edit-inputs" type="button">Edit input</button>
+      </div>
+      <div class="msig-lab" id="msig-lab">
       <div class="msig-threshold-labels">
         <label for="msig-m-number"><span>Signatures needed to spend (m)</span><input class="msig-threshold-number" id="msig-m-number" type="number" min="1" max="15" step="1" value="2" inputmode="numeric" aria-describedby="msig-threshold-help"></label>
         <label for="msig-n-number"><span>Total signing keys (n)</span><input class="msig-threshold-number" id="msig-n-number" type="number" min="1" max="15" step="1" value="3" inputmode="numeric" aria-describedby="msig-threshold-help"></label>
@@ -330,6 +352,8 @@ words, pick one of the checksum words.</span></span>
         <button class="btn clear-current-action" id="msig-wipe" type="button" disabled aria-disabled="true">Clear Current Multisig</button>
       </div>
       <p class="err" id="msig-error"></p>
+      </div>
+      <div id="msig-out"></div>
     </section>
     <div class="tool-intro" id="sp-tool-intro" hidden>
         <div class="kicker">BIP-352 · reusable address, unique outputs</div>
@@ -442,7 +466,7 @@ words, pick one of the checksum words.</span></span>
     <div class="tool-intro" id="psbted-tool-intro" hidden>
         <div class="kicker">Full-fidelity editor. Sign elsewhere.</div>
         <h2>Edit a PSBT, field by field.</h2>
-        <p class="muted psbt-intro">A BIP-174 editor in the spirit of bip174.org, backed by rust-bitcoin compiled to WebAssembly. A transaction-flow diagram in the manner of mempool.space leads: one box per input and output with its claimed amount, address or script template, and signing status. Activating a box opens that key-value map in a panel under the diagram, output amounts edit directly in their boxes, and every key-value pair of the global, per-input and per-output maps is shown with a typed decode (BIP-174 and BIP-371 taproot fields) and stays editable as raw hex; the unsigned transaction's version, locktime, input prevouts/sequences and output amounts/scripts get structured fields. Adding or removing a pair re-validates the file immediately; Re-serialize validates the pending field edits and produces the new PSBT. PSBT v0 only; unknown and proprietary pairs round-trip untouched. Editing never signs anything.</p>
+        <p class="muted psbt-intro">A BIP-174 editor in the spirit of bip174.org, backed by rust-bitcoin compiled to WebAssembly. A transaction-flow diagram in the manner of mempool.space leads: one box per input and output with its claimed amount, address or script template, and signing status. Activating a box opens that key-value map in a panel under the diagram, output amounts edit directly in their boxes, and every key-value pair of the global, per-input and per-output maps is shown with a typed decode (BIP-174 and BIP-371 taproot fields) and stays editable as raw hex; the unsigned transaction's version, locktime, input prevouts/sequences and output amounts/scripts get structured fields. Every edit rebuilds the file through rust-bitcoin as you type — the fields always show its decode of the current build — and the result follows live as base64, hex, a downloadable .psbt and a QR code (a single static code, or an animated ur:crypto-psbt sequence for larger files). A binary .psbt file as saved by Sparrow, Coldcard or another wallet uploads directly. PSBT v0 only; unknown and proprietary pairs round-trip untouched. Editing never signs anything.</p>
       </div>
       <section class="card no-print" id="psbted-card" role="tabpanel" hidden>
       <label class="field">PSBT v0 (base64 or hex)
@@ -450,6 +474,8 @@ words, pick one of the checksum words.</span></span>
       </label>
       <div class="row psbt-actions psbted-actions">
         <button class="btn primary" id="psbted-load" type="button">Load PSBT</button>
+        <button class="btn secondary" id="psbted-upload" type="button">Upload .psbt file</button>
+        <input type="file" id="psbted-file" accept=".psbt,.txt,.hex" hidden>
         <button class="btn secondary" id="psbted-wipe" type="button">Clear editor</button>
         <label class="field psbted-network-field">Address network
           <select id="psbted-network"><option value="mainnet" selected="selected">Bitcoin mainnet</option><option value="testnet">Testnet (practice)</option></select>
@@ -459,7 +485,6 @@ words, pick one of the checksum words.</span></span>
       <div id="psbted-out" aria-live="polite"></div>
       <p class="muted">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
     </section>
-    <div id="out"></div>
     </div>
     <section class="card muted sources">
       <h3 class="sources-heading">Sources</h3>
@@ -473,6 +498,7 @@ words, pick one of the checksum words.</span></span>
       <p>BIP-352 Silent Payments: <a href="https://github.com/bitcoin/bips/blob/master/bip-0352.mediawiki" target="_blank" rel="noopener noreferrer">bips/bip-0352</a> — reusable <code>sp1q…</code> addresses and unique taproot outputs. Descriptors: <a href="https://github.com/bitcoin/bips/blob/master/bip-0392.mediawiki" target="_blank" rel="noopener noreferrer">BIP-392</a>.</p>
       <p>Inscription envelopes: <a href="https://docs.ordinals.com/inscriptions.html" target="_blank" rel="noopener noreferrer">docs.ordinals.com/inscriptions</a> — <code>OP_FALSE OP_IF "ord"</code> parser only. This tool does not create inscriptions or number sats.</p>
     </section>
+    <footer class="page-footer muted no-print"><div>Team Ooga Booga</div><div class="page-footer-emoji">🪨 🔥 🎲 🍌</div><div>Since 964013 · <span class="page-footer-build">v{{VERSION}} · commit <code>{{COMMIT_SHORT}}</code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="{{COMMIT}}" width="20" height="20" alt="LifeHash of the build commit" hidden></span></div></footer>
   </div>
 </div><!--/$--><div class="disclaimer-overlay no-print" id="beta-disclaimer" role="alertdialog" aria-modal="true" aria-labelledby="beta-disclaimer-title" aria-describedby="beta-disclaimer-text" hidden>
   <div class="disclaimer-card">

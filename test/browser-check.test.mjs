@@ -215,6 +215,9 @@ test("a wrong UTF-8 decoding kills the page", () => {
 test("missing WebAssembly kills the page", () => {
   const { body } = loadModule({ webAssemblyImpl: undefined });
   assertPageKilled(body, ["WebAssembly (secp256k1 engine)"]);
+  assert.match(body.innerHTML, /Lockdown Mode block WebAssembly/);
+  assert.match(body.innerHTML, /page-menu button/);
+  assert.match(body.innerHTML, /turn off Lockdown Mode for this website/);
 });
 
 test("a CSP or engine that refuses WebAssembly compilation kills the page", () => {
@@ -227,6 +230,14 @@ test("a CSP or engine that refuses WebAssembly compilation kills the page", () =
   };
   const { body } = loadModule({ webAssemblyImpl });
   assertPageKilled(body, ["WebAssembly (secp256k1 engine)"]);
+  assert.match(body.innerHTML, /Lockdown Mode/);
+});
+
+test("a non-WASM failure keeps the generic air-gap advice", () => {
+  const { body } = loadModule({ secure: false });
+  assertPageKilled(body, ["Secure browser context"]);
+  assert.doesNotMatch(body.innerHTML, /Lockdown Mode/);
+  assert.match(body.innerHTML, /Firefox on a trusted, air-gapped computer/);
 });
 
 test("missing String.normalize kills the page", () => {
@@ -285,6 +296,7 @@ test("the build inlines the module and the failure screen is styled", () => {
     ".sanity-failure-table {",
     ".sanity-failure-table th, .sanity-failure-table td {",
     ".sanity-failure-advice {",
+    ".sanity-failure-advice + .sanity-failure-advice {",
   ]) {
     assert.ok(css.includes(selector), `styles.css is missing ${selector}`);
   }

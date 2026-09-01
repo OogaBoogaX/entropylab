@@ -47,6 +47,9 @@ material. Its security posture rests on the following model:
   runner's copy back to the repository, the same flow as the site artifact.
    Cross-machine byte identity is not claimed — the C side compiles with the
    builder's clang, and build-host paths are remapped out of the binary.
+  iOS/macOS Lockdown Mode disables WebAssembly. Exclude the site in Safari
+  or use a host that can compile WASM. There is no JavaScript secp256k1
+  fallback; a host that cannot run the module is treated as broken.
 - Secret byte buffers are overwritten after use, on a best-effort basis. The
   WASM bindings zero every linear-memory buffer before freeing it
   (`secp_free`/`psbt_free` use volatile writes) and erase their own secret

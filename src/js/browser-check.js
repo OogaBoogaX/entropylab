@@ -106,6 +106,13 @@
   // Kill the page: replace everything with the centered failure report.
   // Check names are trusted literals defined above, never user input.
   const rows = failed.map((name) => `<tr><td>${name}</td><td>Failed</td></tr>`).join("");
+  const wasmFailed = failed.includes("WebAssembly (secp256k1 engine)");
+  // Lockdown Mode (iPhone, iPad, Mac) disables WebAssembly. There is no JS
+  // secp256k1 fallback: wallet math is libsecp256k1 compiled to WASM.
+  const advice = wasmFailed
+    ? `<p class="sanity-failure-advice">iPhone, iPad, and Mac Lockdown Mode block WebAssembly. This calculator needs it for secp256k1.</p>
+    <p class="sanity-failure-advice">In Safari: tap the page-menu button in the address bar, tap More, turn off Lockdown Mode for this website, then reload. Or open the saved HTML in Firefox on a trusted air-gapped computer. Do not enter seed material until every check passes.</p>`
+    : `<p class="sanity-failure-advice">Open this file in a current, mainstream browser such as Firefox on a trusted, air-gapped computer.</p>`;
   document.body.innerHTML = `
 <main class="sanity-failure">
   <div class="sanity-failure-card" role="alert">
@@ -116,7 +123,7 @@
       <thead><tr><th>Startup sanity check</th><th>Result</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <p class="sanity-failure-advice">Open this file in a current, mainstream browser such as Firefox on a trusted, air-gapped computer.</p>
+    ${advice}
   </div>
 </main>`;
 })();
