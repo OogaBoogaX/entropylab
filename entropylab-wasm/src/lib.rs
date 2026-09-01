@@ -18,8 +18,8 @@
 //! library never generates randomness: signing is RFC 6979 with caller-fixed
 //! extra entropy, exactly as before.
 //!
-//! Secret hygiene: every buffer JS allocates through `secp_alloc` is zeroed
-//! by `secp_free` before deallocation, and the secret temporaries below
+//! Secret hygiene: every buffer JS allocates through `el_alloc` is zeroed
+//! by `el_free` before deallocation, and the secret temporaries below
 //! (private keys, seeds, chain codes, mnemonics, passphrases, tweaks, and the
 //! intermediate HMAC/PBKDF2 blocks) are overwritten in place before they go
 //! out of scope. `SecretKey`/`Scalar` use libsecp256k1's own
@@ -412,7 +412,7 @@ pub unsafe extern "C" fn el_pbkdf2_hmac_sha512(
 #[no_mangle]
 pub unsafe extern "C" fn el_b58check_encode(input: *const u8, input_len: usize, out: *mut u8, cap: usize) -> i32 {
     // The payload can be a WIF or extended private key; the encoded string is
-    // then secret too, so both the boundary buffer (secp_free) and this
+    // then secret too, so both the boundary buffer (el_free) and this
     // temporary copy are wiped.
     let mut encoded = base58ck::encode_check(read(input, input_len));
     let len = encoded.len();
@@ -1108,7 +1108,7 @@ mod tests {
     use super::*;
 
     // The allocator pair must round-trip exact sizes, including zero length:
-    // secp_free reconstructs a Box<[u8]> whose layout comes from `len` alone,
+    // el_free reconstructs a Box<[u8]> whose layout comes from `len` alone,
     // so a capacity mismatch corrupts the host allocator. The wasm suite
     // (test/wipe-wasm.test.mjs) pins this behavior in the artifact; this test
     // makes the same lifecycle checkable on the host — `cargo test`, or
@@ -1117,7 +1117,7 @@ mod tests {
     fn alloc_free_round_trips_exact_sizes() {
         for len in [0usize, 1, 2, 15, 16, 31, 32, 255, 256, 4096] {
             for cycle in 0..8u8 {
-                let ptr = secp_alloc(len);
+                let ptr = el_alloc(len);
                 assert!(!ptr.is_null());
                 unsafe {
                     for i in 0..len {
@@ -1125,7 +1125,7 @@ mod tests {
                         assert_eq!(ptr.add(i).read(), 0);
                         ptr.add(i).write_volatile(cycle ^ i as u8);
                     }
-                    secp_free(ptr, len);
+                    el_free(ptr, len);
                 }
             }
         }
