@@ -780,7 +780,7 @@ test("multisig consistently uses derive for its heading and action", () => {
 });
 
 test("key and multisig add controls stay pinned to the right of their tab strips", () => {
-  assert.match(css, /\.key-tab-strip \{ display: flex; align-items: center; min-width: 0; margin-top: 0; gap: 4px; \}/);
+  assert.match(css, /\.key-tab-strip \{ display: flex; align-items: flex-end; min-width: 0; margin-top: 12px; \}/);
   assert.match(css, /\.key-tabs \{\s*display: flex;[^}]*flex: 1 1 auto; min-width: 0;/s);
   assert.match(css, /\.add-item-control \{ position: relative; display: inline-flex; flex: 0 0 auto; \}/);
 });
@@ -1528,11 +1528,12 @@ test("Multisig Lab stays put and a derived wallet opens its own results tab", ()
   assert.match(css, /#msig-card\.is-result-view \.msig-lab/);
 });
 
-test("session wallets are chips under the tool strip, not a second folder of tabs", () => {
-  assert.match(css, /\.key-manager \{ margin: 0 0 16px;/);
-  assert.doesNotMatch(css, /\.key-tab \{[^}]*border-radius: 10px 10px 0 0;/s);
-  assert.match(css, /\.key-tab \{[^}]*border-radius: 10px;/s);
-  assert.match(css, /\.key-tab\.active, \.key-tab-editing \{[^}]*border-color: var\(--accent\);/s);
-  assert.match(css, /#calc-card:not\(\[hidden\]\), #msig-card:not\(\[hidden\]\) \{[^}]*border-radius: 20px;/s);
+test("session wallets use folder tabs that merge into the card", () => {
+  assert.match(css, /\.key-manager \{ margin: 14px 0 -1px;/);
+  assert.match(css, /\.key-tab \{[^}]*border-radius: 10px 10px 0 0;/s);
+  assert.match(css, /\.key-tab\.active, \.key-tab-editing \{[^}]*border-bottom-color: var\(--surface\);/s);
+  assert.match(css, /#calc-card:not\(\[hidden\]\), #msig-card:not\(\[hidden\]\) \{[^}]*border-radius: 0 0 20px 20px;/s);
   assert.match(css, /\.workspace-tab \{[^}]*border-radius: 10px 10px 0 0;/s);
+  assert.match(appSource, /let lifehash = tab\.querySelector\("\.key-tab-lifehash"\);/);
+  assert.doesNotMatch(appSource, /editor\.append\(hodlCreateKeyIcon\(state\.color\), input\)/);
 });

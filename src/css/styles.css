@@ -1001,7 +1001,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .segmented-control.is-stacked > .tab:last-child { border-radius: 0 0 8px 8px; }
 .segmented-control.is-stacked > .tab:only-child { border-radius: 8px; }
 #msig-card[hidden], #calc-card[hidden], #psbt-card[hidden], #psbted-card[hidden], #bip85-card[hidden], #sp-card[hidden] { display: none !important; }
-#calc-card:not([hidden]), #msig-card:not([hidden]) { margin-top: 0; border-radius: 20px; position: relative; z-index: 1; }
+#calc-card:not([hidden]), #msig-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
 .psbt-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
 @media (min-width: 720px) {
   .psbt-grid { grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); }
@@ -1435,10 +1435,10 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 #bip85-out { margin-top: var(--space-component); }
 #bip85-out .wallet-private-section { margin-top: 0; }
 #psbt-session { margin: var(--space-control) 0 0; }
-.key-manager { margin: 0 0 16px; position: relative; z-index: 2; }
+.key-manager { margin: 14px 0 -1px; position: relative; z-index: 2; }
 .key-manager-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .key-manager-head h2 { margin: 0; }
-.key-tab-strip { display: flex; align-items: center; min-width: 0; margin-top: 0; gap: 4px; }
+.key-tab-strip { display: flex; align-items: flex-end; min-width: 0; margin-top: 12px; }
 .add-key {
   width: 36px; min-width: 36px; min-height: 44px; padding: 0; border: 0; border-radius: 0;
   background: transparent; box-shadow: none; color: var(--muted); font-size: 28px; line-height: 1; cursor: pointer;
@@ -1473,7 +1473,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 @media (prefers-reduced-motion: reduce) { .add-item-tooltip { transition: none; } }
 .key-tabs {
-  display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; height: auto; min-height: 44px; margin-top: 0; position: relative; z-index: 2;
+  display: flex; align-items: flex-end; gap: 0; flex: 1 1 auto; min-width: 0; height: 50px; margin-top: 0; position: relative; z-index: 2;
   overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain;
   scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; cursor: grab;
 }
@@ -1481,15 +1481,19 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .key-tabs.dragging, .key-tabs.dragging .key-tab { cursor: grabbing; user-select: none; }
 .key-tab {
   position: relative; display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
-  width: max-content; max-width: none; min-height: 44px; padding: 6px 12px; white-space: nowrap;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--muted); font-weight: 600;
+  width: max-content; max-width: none; min-height: 44px; padding: 0 14px; white-space: nowrap;
+  border: 1px solid transparent; border-radius: 10px 10px 0 0; background: transparent; color: var(--muted);
 }
-.key-tab:not(.active):hover { background: color-mix(in oklab, var(--surface-2) 70%, var(--bg)); color: var(--fg); }
+.key-tab:not(.active):hover { background: color-mix(in oklab, var(--surface-2) 60%, transparent); color: var(--fg); }
+.key-tab:not(.active)::after {
+  content: ""; position: absolute; top: 12px; right: -1px; width: 1px; height: 20px; background: var(--border);
+}
+.key-tab:last-child::after, .key-tab:has(+ .key-tab.active)::after { display: none; }
 .key-tab.active, .key-tab-editing {
-  background: var(--surface); color: var(--fg); border-color: var(--accent);
+  background: var(--surface); color: var(--fg); border-color: var(--border); border-bottom-color: var(--surface);
 }
 .key-tab.is-lab { font-weight: 700; }
-.key-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.key-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 .account-tabs {
   display: flex; align-items: flex-end; gap: 0; height: 50px; margin: 14px 0 -1px;
   position: relative; z-index: 2; overflow-x: auto; overflow-y: hidden;
