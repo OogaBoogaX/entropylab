@@ -499,7 +499,7 @@ jobs:
         id: ghcr-image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
-      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         if: (github.ref == 'refs/heads/rock' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && inputs.release-docker)
         with:
           registry: ghcr.io
