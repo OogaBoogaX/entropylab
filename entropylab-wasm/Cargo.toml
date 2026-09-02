@@ -26,6 +26,11 @@ bitcoin = { version = "=0.32.11", default-features = false, features = ["std", "
 # implementation did), so the unicode-normalization tables stay out of the
 # artifact.
 bip39 = { version = "=2.2.2", default-features = false }
+# rust-miniscript: output descriptors (BIP380-386, BIP389 multipath) and the
+# multi/sortedmulti/multi_a multisig fragments. Taproot sortedmulti_a is
+# layered on top in src/descriptor.rs (derived, sorted as x-only bytes, and
+# rewritten to the multi_a it denotes).
+miniscript = { version = "=13.1.0", default-features = false, features = ["std"] }
 base58ck = { version = "=0.1.101", default-features = false, features = ["std"] }
 # rust-bitcoin's bech32 crate, used directly for the word-level bech32m the
 # BIP352 silent-payment code needs (extended length limit).

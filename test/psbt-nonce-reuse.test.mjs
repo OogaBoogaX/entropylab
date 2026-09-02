@@ -144,5 +144,5 @@ test("render suppresses a clean verdict when a signature cannot be inspected", (
   assert.match(render, /hodlCompressedPubkey\(signature\.pubkey\)/);
   assert.match(render, /hodlDerRLoose\(signature\.der\)/);
   assert.match(render, /hodlCompareNonces\(rValues\)/);
-  assert.match(app, /A clean verdict is not issued when a signature cannot be inspected/);
+  assert.match(app, /RFC 6979 comparison currently covers/);
 });

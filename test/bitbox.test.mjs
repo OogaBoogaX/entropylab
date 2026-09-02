@@ -45,7 +45,7 @@ const api = new Function(
   `
   var hodlTargetWordCount = 24;
   ${loadVariable("hodlSeedLengths", "hodlEntropyFormats")}
-  ${["hodlSeedConfig", "hodlBitBoxLookupWord", "hodlTargetLastWords", "hodlComputeTargetLastWords", "hodlNormalizeMnemonicText", "hodlValidateMnemonic", "hodlBitBoxRolls", "hodlValidateTargetMnemonic", "hodlSeedCountStatus"].map(loadSlice).join("\n")}
+  ${["hodlNote", "hodlSeedConfig", "hodlBitBoxLookupWord", "hodlTargetLastWords", "hodlComputeTargetLastWords", "hodlNormalizeMnemonicText", "hodlValidateMnemonic", "hodlBitBoxRolls", "hodlValidateTargetMnemonic", "hodlSeedCountStatus"].map(loadSlice).join("\n")}
   var hodlLastWordCache = new Map();
   var hodlBip39WordSet = new Set(hodlBip39Wordlist);
   var hodlBip39WordIndex = new Map(hodlBip39Wordlist.map((word, index) => [word, index]));

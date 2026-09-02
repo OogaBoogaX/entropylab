@@ -103,7 +103,6 @@ test("uniform d6 rolls look fair once the minimum is reached", () => {
   assert.equal(report.cdf, 0);
   assert.equal(report.enough, true);
   assert.equal(report.verdict.id, "fair");
-  assert.equal(report.verdict.label, "Looks pretty fair");
   assert.deepEqual(report.counts.map((face) => face.count), [5, 5, 5, 5, 5, 5]);
 });
 
@@ -112,7 +111,6 @@ test("a constant face is reported as biased", () => {
   assert.ok(report.chi > 40);
   assert.ok(report.cdf > 0.999);
   assert.equal(report.verdict.id, "biased");
-  assert.equal(report.verdict.label, "Looks biased");
 });
 
 test("too few rolls withhold the fairness verdict", () => {
@@ -181,7 +179,7 @@ test("fairness UI stays collapsed until the Die Distribution / Fairness Analysis
   assert.match(app, /id="dice-fairness-toggle"/);
   assert.match(app, /class="dice-fairness-toggle"/);
   assert.match(app, /data-dice-fairness-glyph/);
-  assert.match(app, / Die Distribution \/ Fairness Analysis<\/button>/);
+  assert.match(app, /hodlT\("dice.fairness.toggle"\)/);
   assert.match(app, /function hodlSetDiceFairnessOpen\(open\)/);
   assert.match(app, /panel\.hidden = !open/);
   assert.match(app, /showDiceFairness: false/);

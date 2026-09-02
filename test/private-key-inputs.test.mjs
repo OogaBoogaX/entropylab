@@ -47,8 +47,11 @@ const source = [
   importLine("secp256k1"),
   importLine("coders"),
   importLine("base58"),
+  importLine("i18n"),
   app.slice(srStart, srEnd + 1),
   ...[
+    "hodlNote",
+    "hodlError",
     "hodlDecodeWif",
     "hodlAssertPrivateKey",
     "hodlIsMiniKey",

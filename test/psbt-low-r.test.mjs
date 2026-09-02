@@ -37,7 +37,7 @@ test("PSBT copy mentions Bitcoin Core-style low-r grinding", () => {
   assert.match(app, /plain RFC 6979 or Bitcoin Core-style low-r grinding/);
   assert.match(app, /hodlRfc6979Compare\(\s*sighash\s*,\s*privateKey\s*,\s*parts\.r\s*\)/);
   assert.match(app, /extraEntropy\s*:\s*hodlLe32Counter\(\s*n\s*\)/);
-  assert.match(app, /including Bitcoin Core-style low-r grinding/);
+  assert.match(app, /RFC 6979 comparison currently covers/);
 });
 
 test("little-endian 32-byte grind counter matches Bitcoin Core extra entropy", () => {

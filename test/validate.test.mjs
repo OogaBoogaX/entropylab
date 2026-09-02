@@ -205,7 +205,7 @@ test("every gate and publication path consumes the single tested candidate (issu
     assert.doesNotMatch(section, /^\s+run: npm run build\s*$/m, `${job} must not rebuild the wallet HTML`);
   }
   // The repository artifact cannot be committed when unit or browser tests fail.
-  assert.match(workflow, /^\s{2}artifact:\n(?:.|\n)*?^\s{4}needs: \[build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash\]$/m);
+  assert.match(workflow, /^\s{2}artifact:\n(?:.|\n)*?^\s{4}needs: \[build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-msig\]$/m);
 });
 
 test("third-party actions are immutable and deployment is test-gated", () => {
@@ -217,7 +217,7 @@ test("third-party actions are immutable and deployment is test-gated", () => {
   // fresh build, and block both the artifact commit and the Pages deploy.
   assert.match(workflow, /^\s{2}build-wasm:\n(?:.|\n)*?npm run build:wasm\n/m);
   assert.deepEqual(wasmGateProblems(workflow), []);
-  assert.match(workflow, /^\s{2}deploy:\n(?:.|\n)*?^\s{4}needs: \[build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash\]$/m);
+  assert.match(workflow, /^\s{2}deploy:\n(?:.|\n)*?^\s{4}needs: \[build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-msig\]$/m);
 });
 
 // The build-wasm gate only guards the crate if (a) the job rebuilds the

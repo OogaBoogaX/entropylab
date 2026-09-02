@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { entropyToMnemonic as _n } from "@scure/bip39";
 import { wordlist as hodlBip39Wordlist } from "@scure/bip39/wordlists/english.js";
+import { t as hodlT } from "../src/js/i18n.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
@@ -43,13 +44,14 @@ const api = new Function(
   "hodlBip39Wordlist",
   "hodlSha256",
   "hodlHex",
+  "hodlT",
   `
   var hodlTargetWordCount = 24;
   ${loadVariable("hodlSeedLengths", "hodlEntropyFormats")}
-  ${["hodlSeedConfig", "hodlDiceEntropyBits", "hodlDiceEntropy", "hodlIanColemanDiceString", "hodlSplitDiceString" ].map(loadSlice).join("\n")}
+  ${["hodlNote", "hodlSeedConfig", "hodlDiceEntropyBits", "hodlDiceEntropy", "hodlIanColemanDiceString", "hodlSplitDiceString" ].map(loadSlice).join("\n")}
   return { hodlDiceEntropy, hodlSeedConfig, hodlDiceEntropyBits };
   `,
-)(hodlBip39Wordlist, hodlSha256, hodlHex);
+)(hodlBip39Wordlist, hodlSha256, hodlHex, hodlT);
 
 const SIZES = [12, 15, 18, 21, 24];
 const METHODS = ["coldcard", "coleman"];

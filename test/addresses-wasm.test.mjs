@@ -5,7 +5,7 @@
 // Three layers of assurance:
 //  1. Fixed, independently published constants (the generator-point legacy
 //     address, the BIP173/BIP350 reference address, the BIP86 first address,
-//     the BIP433 P2A address).
+//     and the BIP433 P2A address).
 //  2. Differential checks against @scure/btc-signer and @scure/base (pinned,
 //     previously the implementation).
 //  3. Round-trips through the existing PSBT/descriptors suites exercise these
@@ -17,7 +17,7 @@ import { NETWORK, TEST_NETWORK, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-sig
 import { bech32m } from "@scure/base";
 import { base58checkEncode, base58checkDecode } from "../src/js/base58.js";
 import { bech32mDecode, bech32mEncode, fromWords, toWords } from "../src/js/bech32.js";
-import { addressFor, addressFromScript, multisigScript, multisigTrScript, p2pkhScript, p2shP2wpkhScript, p2shScript, p2trKeyScript, p2trLeafScript, p2wpkhScript, p2wshScript } from "../src/js/addresses.js";
+import { addressFor, addressFromScript, descriptorDerive, multisigScript, multisigTrScript, p2pkhScript, p2shP2wpkhScript, p2shScript, p2trKeyScript, p2trLeafScript, p2wpkhScript, p2wshScript } from "../src/js/addresses.js";
 import { hex, base64 } from "../src/js/coders.js";
 import { hash160 } from "../src/js/hashes.js";
 
@@ -118,6 +118,64 @@ test("bech32m word-level encode/decode matches @scure/base including >90 chars",
   // bad checksum -> null (decodeUnsafe-style), not a throw
   const tampered = ours.slice(0, -2) + (ours.endsWith("q") ? "p" : "q");
   assert.equal(bech32mDecode(tampered), null);
+});
+
+// ── descriptorDerive: rust-miniscript through the WASM boundary ──────────────
+
+test("descriptorDerive derives the app taproot multisig (sortedmulti_a)", () => {
+  // Same keys and NUMS internal key as the msig-address-kinds vectors.
+  const keys = [G_COMPRESSED, hexToBytes("02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"), hexToBytes("02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9")];
+  const inner = (list) => list.map((k) => bytesToHex(k.slice(1))).join(",");
+  const sorted = descriptorDerive(`tr(${bytesToHex(NUMS)},sortedmulti_a(2,${inner(keys)}))`, 0, "mainnet");
+  assert.equal(sorted.address, "bc1pm5jn9xnjz3v9xm7jjw2yheajy92pps5fdazdpfnmvzfymu787hhs2vktyy");
+  // sortedmulti_a ignores the written order; multi_a is defined by it.
+  const reversed = [...keys].reverse();
+  assert.equal(descriptorDerive(`tr(${bytesToHex(NUMS)},sortedmulti_a(2,${inner(reversed)}))`, 0, "mainnet").scriptHex, sorted.scriptHex);
+  assert.notEqual(descriptorDerive(`tr(${bytesToHex(NUMS)},multi_a(2,${inner(reversed)}))`, 0, "mainnet").scriptHex, sorted.scriptHex);
+});
+
+test("descriptorDerive: xpub descriptors and raw-key descriptors agree", async () => {
+  // The two paths to a multisig address must never drift: deriving the
+  // branch descriptor's xpubs in the crate equals deriving the child keys
+  // (hdkey.js, BIP32-vector-tested) and evaluating the raw-key descriptor.
+  const { HDKey } = await import("../src/js/hdkey.js");
+  const cosigners = [
+    "[73c5da0a/48h/1h/0h/2h]tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ",
+    "[b8688df1/48h/1h/0h/2h]tpubDEfobrrtptRTbKf4gysDhoabneABDTAcdj3Vbn4XwPsLE2pmqpizSPRG6zHsbAMuiSgWmWPsYCLHTKTPpyrGJ5rAoTpKoQNZcxodiPf2tSJ",
+    "[3f635a63/48h/1h/0h/2h]tpubDFPtPArj4GzBEFHohegg1Xatrc1Fi9oSox5LzuSRX91miwQxuUrEpBxpvDRsmZYJKYFhgdK3UStsjC8JKXfUbMinjFqiEM4uNwzVaCaHpys",
+  ];
+  const branchDescriptor = `wsh(sortedmulti(2,${cosigners.map((c) => `${c}/0/*`).join(",")}))`;
+  for (const index of [0, 1, 7]) {
+    const fromXpubs = descriptorDerive(branchDescriptor, index, "testnet");
+    const rawKeys = cosigners.map((c) => HDKey.fromExtendedKey(c.slice(c.indexOf("]") + 1), { private: 0x04358394, public: 0x043587cf }).derive(`m/0/${index}`).publicKey);
+    const fromRawKeys = descriptorDerive(`wsh(sortedmulti(2,${rawKeys.map((k) => bytesToHex(k)).join(",")}))`, 0, "testnet");
+    assert.equal(fromXpubs.address, fromRawKeys.address, `index ${index}`);
+    assert.equal(fromXpubs.scriptHex, fromRawKeys.scriptHex, `index ${index}`);
+    assert.deepEqual(fromXpubs.pubkeys, fromRawKeys.pubkeys, `index ${index}`);
+    assert.match(fromXpubs.address, /^tb1q/);
+  }
+  // The Taproot flow (BIP87-style origins, x-only keys under the NUMS
+  // internal key) agrees the same way, with sortedmulti_a doing the sort.
+  const taprootDescriptor = `tr(${bytesToHex(NUMS)},sortedmulti_a(2,${cosigners.map((c) => `${c}/1/*`).join(",")}))`;
+  for (const index of [0, 3]) {
+    const fromXpubs = descriptorDerive(taprootDescriptor, index, "testnet");
+    const rawKeys = cosigners.map((c) => HDKey.fromExtendedKey(c.slice(c.indexOf("]") + 1), { private: 0x04358394, public: 0x043587cf }).derive(`m/1/${index}`).publicKey);
+    const fromRawKeys = descriptorDerive(`tr(${bytesToHex(NUMS)},sortedmulti_a(2,${rawKeys.map((k) => bytesToHex(k.slice(1))).join(",")}))`, 0, "testnet");
+    assert.equal(fromXpubs.address, fromRawKeys.address, `taproot index ${index}`);
+    assert.equal(fromXpubs.scriptHex, fromRawKeys.scriptHex, `taproot index ${index}`);
+    assert.match(fromXpubs.address, /^tb1p/);
+  }
+});
+
+test("descriptorDerive verifies a supplied #checksum and refuses multipath", () => {
+  const body = `tr(${bytesToHex(NUMS)},sortedmulti_a(2,${bytesToHex(G_COMPRESSED.slice(1))},${bytesToHex(hexToBytes("02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5").slice(1))}))`;
+  const good = descriptorDerive(body, 0, "mainnet");
+  // rfjlk7yv is the BIP380 checksum of this exact body (the app's Le agrees).
+  const checksummed = descriptorDerive(`${body}#rfjlk7yv`, 0, "mainnet");
+  assert.equal(checksummed.scriptHex, good.scriptHex);
+  assert.throws(() => descriptorDerive(`${body}#qqqqqqqq`, 0, "mainnet"), /Invalid output descriptor/);
+  assert.throws(() => descriptorDerive("wpkh(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/<0;1>/*)", 0, "mainnet"), /Invalid output descriptor/);
+  assert.throws(() => descriptorDerive(body, 0, "regtest"), /Unknown Bitcoin network/);
 });
 
 test("base58check and coders match @scure/base", async () => {

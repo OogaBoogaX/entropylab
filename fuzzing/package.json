@@ -3,12 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Differential fuzzers: reference implementations (iancoleman/bip39, AndreasGassmann/lifehash) vs EntropyLab outputs. Separate dependency tree from the app; the app's package.json is untouched.",
+  "description": "Differential fuzzers: reference implementations (iancoleman/bip39, AndreasGassmann/lifehash, scure) vs EntropyLab outputs. Separate dependency tree from the app; the app's package.json is untouched.",
   "license": "Unlicense",
   "scripts": {
-    "fuzz:lifehash": "node lifehash/fuzz.mjs"
+    "fuzz:lifehash": "node lifehash/fuzz.mjs",
+    "fuzz:msig": "node msig/fuzz.mjs"
   },
   "dependencies": {
+    "@scure/bip32": "2.4.0",
+    "@scure/btc-signer": "2.4.0",
     "jsdom": "26.1.0",
     "lifehash": "1.0.0"
   }

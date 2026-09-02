@@ -82,9 +82,22 @@ for (const [network, families] of Object.entries(hodlExtendedKeyVersions)) for (
   hodlExtendedKeyPrefixTable.push({ network, family, scope: "singlesig", private: false, ver: entry.pub, name: entry.pubName });
   hodlExtendedKeyPrefixTable.push({ network, family, scope: "singlesig", private: true, ver: entry.prv, name: entry.prvName });
 }
+const en = JSON.parse(readFileSync(join(root, "src/locales/en.json"), "utf8"));
+const hodlT = (key, vars) => {
+  let text = en[key] || key;
+  if (vars) text = text.replace(/\{(\w+)\}/g, (_, n) => (vars[n] == null ? `{${n}}` : String(vars[n])));
+  return text;
+};
+const hodlNote = (key, vars) => (vars == null ? { key } : { key, vars });
+const hodlError = (key, vars) => {
+  const err = new Error(hodlT(key, vars));
+  err.hodlSpec = vars == null ? { key } : { key, vars };
+  return err;
+};
+const hodlFormatNote = (message) => (message && typeof message === "object" && typeof message.key === "string" ? hodlT(message.key, message.vars) : String(message ?? ""));
 const hodlReversionExtendedKey = new Function("hodlBase58Check", `${loadFunction("hodlReversionExtendedKey")}; return hodlReversionExtendedKey;`)(hodlBase58Check);
 const hodlReadExtendedKeyVersion = new Function("hodlBase58Check", `${loadFunction("hodlReadExtendedKeyVersion")}; return hodlReadExtendedKeyVersion;`)(hodlBase58Check);
-const hodlParseExtendedKey = new Function("hodlBase58Check", "hodlReadExtendedKeyVersion", "hodlReversionExtendedKey", "hodlExtendedKeyPrefixTable", "hodlHDKey", "hodlExtendedKeyVersions", `let hodlParseExtendedKey; ${extract("hodlParseExtendedKey = function(value)", "function hodlAccountExportFamily")}; return hodlParseExtendedKey;`)(hodlBase58Check, hodlReadExtendedKeyVersion, hodlReversionExtendedKey, hodlExtendedKeyPrefixTable, HDKey, hodlExtendedKeyVersions);
+const hodlParseExtendedKey = new Function("hodlBase58Check", "hodlReadExtendedKeyVersion", "hodlReversionExtendedKey", "hodlExtendedKeyPrefixTable", "hodlHDKey", "hodlExtendedKeyVersions", "hodlError", `let hodlParseExtendedKey; ${extract("hodlParseExtendedKey = function(value)", "function hodlAccountExportFamily")}; return hodlParseExtendedKey;`)(hodlBase58Check, hodlReadExtendedKeyVersion, hodlReversionExtendedKey, hodlExtendedKeyPrefixTable, HDKey, hodlExtendedKeyVersions, hodlError);
 
 const hodlAccountExportFamily = new Function(`${loadFunction("hodlAccountExportFamily")}; return hodlAccountExportFamily;`)();
 const hodlSerializeExtendedKey = new Function("hodlReversionExtendedKey", "hodlExtendedKeyVersions", `${loadFunction("hodlSerializeExtendedKey")}; return hodlSerializeExtendedKey;`)(hodlReversionExtendedKey, hodlExtendedKeyVersions);
@@ -103,7 +116,8 @@ const hodlScriptTypes = [
   { id: "bip49", label: "Nested SegWit", bip: "BIP49", script: "p2sh-p2wpkh" },
   { id: "bip84", label: "Native SegWit", bip: "BIP84", script: "p2wpkh" },
 ];
-const hodlSinglesigScriptMismatch = new Function("hodlScriptTypes", `${loadFunction("hodlSinglesigScriptMismatch")}; return hodlSinglesigScriptMismatch;`)(hodlScriptTypes);
+const hodlScriptUiLabel = new Function("hodlT", `${loadFunction("hodlScriptUiLabel")}; return hodlScriptUiLabel;`)(hodlT);
+const hodlSinglesigScriptMismatch = new Function("hodlScriptTypes", "hodlNote", "hodlScriptUiLabel", `${loadFunction("hodlSinglesigScriptMismatch")}; return hodlSinglesigScriptMismatch;`)(hodlScriptTypes, hodlNote, hodlScriptUiLabel);
 const hodlImportedCoreRecoveryData = new Function("hodlDescriptorWithChecksum", "hodlScriptDescriptor", `${loadFunction("hodlImportedCoreRecoveryData")}; return hodlImportedCoreRecoveryData;`)(hodlDescriptorWithChecksum, hodlScriptDescriptor);
 
 // Official BIP84 test vector ("abandon" x11 + "about", account m/84'/0'/0').
@@ -161,7 +175,7 @@ test("all single-signature SLIP-132 public prefixes preserve payload and expose 
     assert.match(data.descriptor, family === "y" ? /^sh\(wpkh\(/ : /^wpkh\(/);
     assert.equal(data.descriptor.slice(-8), descriptorChecksum(data.descriptor.slice(0, data.descriptor.lastIndexOf("#"))));
     assert.equal(hodlSinglesigScriptMismatch(parsed, scriptId), "");
-    assert.match(hodlSinglesigScriptMismatch(parsed, scriptId === "bip49" ? "bip84" : "bip44"), /indicates.*selected.*derive/i);
+    assert.match(hodlFormatNote(hodlSinglesigScriptMismatch(parsed, scriptId === "bip49" ? "bip84" : "bip44")), /indicates.*selected.*derive/i);
   }
 });
 
@@ -182,7 +196,7 @@ test("Core recovery descriptor stays on conventional receive/change branches", (
 test("SLIP-132 script mismatch warning is explicit but matching settings are quiet", () => {
   const parsed = hodlParseExtendedKey(ZPUB);
   assert.equal(hodlSinglesigScriptMismatch(parsed, "bip84"), "");
-  assert.match(hodlSinglesigScriptMismatch(parsed, "bip44"), /zpub indicates Native SegWit.*selected Legacy.*derive Native SegWit/i);
+  assert.match(hodlFormatNote(hodlSinglesigScriptMismatch(parsed, "bip44")), /zpub indicates Native SegWit.*selected Legacy.*derive Native SegWit/i);
 });
 
 test("generic xpub imports do not claim a script type or duplicate a Core export", () => {

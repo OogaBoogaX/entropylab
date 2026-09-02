@@ -566,7 +566,7 @@ test("the wallet.dat control offers the birthday choice with genesis as the safe
   assert.match(html, /wallet-dat-birthday-help/);
   assert.match(html, /rescanblockchain 0/);
   // The app reset keeps a stale "new keys" choice out of later derivations.
-  assert.match(app, /function hodlCalculateKey\(progress\) \{\s*hodlElement\("#error"\)\.textContent = "";\s*\n?[^}]*hodlWalletDatBirthday = "genesis";/);
+  assert.match(app, /function hodlCalculateKey\(progress\) \{\s*hodlSetWorkspaceError\("key", null\);\s*\n?[^}]*hodlWalletDatBirthday = "genesis";/);
   assert.match(app, /hodlWalletDatBirthday === "now" \? Math\.floor\(Date\.now\(\) \/ 1000\) : 0/);
 });
 

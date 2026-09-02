@@ -258,8 +258,12 @@ var hodlWalletExport = (() => {
     return fingerprint ? `entropylab-${fingerprint}-${base}.dat` : `${base}.dat`;
   };
 
-  const walletDatButtonLabel = (includePrivate = false) =>
-    includePrivate ? "Download wallet.dat with secrets (xprvs)" : "Download watch-only wallet.dat";
+  const walletDatButtonLabel = (includePrivate = false) => {
+    const t = globalThis.hodlT;
+    return includePrivate
+      ? (t ? t("walletdat.downloadPrivate") : "Download wallet.dat with secrets (xprvs)")
+      : (t ? t("walletdat.downloadWatch") : "Download watch-only wallet.dat");
+  };
 
   return {
     walletDescriptorUnits,

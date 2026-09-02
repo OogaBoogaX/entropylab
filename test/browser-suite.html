@@ -4,6 +4,12 @@
   const state = window.__entropyLabTest;
   const crypto = window.__entropyLabCrypto;
   const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+  // Seed length is a dropdown now, so drive it the way a choice does.
+  const chooseSeedWords = (words) => {
+    const select = document.getElementById("seed-length-select");
+    select.value = String(words);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  };
   const until = async (predicate, description, timeout = 15000) => {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
@@ -60,10 +66,13 @@
         .map((entry) => entry.name)
         .filter((url) => /^(https?|wss?):/i.test(url));
       assert(external.length === 0, "Offline mode loaded a network resource: " + external.join(", "));
-      const label = document.querySelector(".site-version");
-      assert(label, "Header version label is missing");
-      equal(label.textContent.replace(/\s+/g, " ").trim(), currentVersion + " (Latest)");
-      assert(!label.querySelector("a"), "Offline version label offered a link");
+      const build = document.querySelector(".page-footer-build");
+      assert(build, "Footer build stamp is missing");
+      assert(
+        build.textContent.includes(currentVersion),
+        "Footer build stamp does not carry this build's version",
+      );
+      assert(!build.querySelector("a"), "Offline build stamp offered a link");
     });
     await test("offline host passes the startup sanity-check barrage", () => {
       const root = document.documentElement;
@@ -194,12 +203,85 @@
     assert(external.length === 0, "External network activity: " + external.join(", "));
     const manifestRequests = observed.filter((url) => /versions\.json$/.test(new URL(url, location.href).pathname));
     assert(manifestRequests.length === 0, "A version manifest was fetched: " + manifestRequests.join(", "));
-    const label = document.querySelector(".site-version");
-    equal(label.textContent.replace(/\s+/g, " ").trim(), currentVersion + " (Latest)");
-    assert(!label.querySelector("a"), "The static version label links nowhere");
+    const build = document.querySelector(".page-footer-build");
+    assert(build.textContent.includes(currentVersion), "The footer build stamp names this build");
+    assert(!build.querySelector("a"), "The static build stamp links nowhere");
     // The logo and the favicon travel inside the document, so neither is fetched.
     const imageRequests = observed.filter((url) => /\/assets\/(entropylab_(dark|light)|logo-(dark|light)|favicon)\.png$/.test(new URL(url, location.href).pathname));
     assert(imageRequests.length === 0, "Hosted mode fetched an inlined image: " + imageRequests.join(", "));
+  });
+
+  await test("header network picker switches the defaults every tool uses", async () => {
+    const picker = document.getElementById("network-picker");
+    const button = document.getElementById("network-picker-button");
+    const menu = document.getElementById("network-picker-menu");
+    const label = document.getElementById("network-picker-label");
+    assert(picker && button && menu && label, "Header network picker is missing");
+    assert(menu.hidden && button.getAttribute("aria-expanded") === "false", "Network menu did not start closed");
+    equal(label.textContent, "Bitcoin", "Network picker did not start on Bitcoin");
+    equal(picker.dataset.network, "mainnet", "Network picker did not tag mainnet");
+    button.click();
+    assert(!menu.hidden && button.getAttribute("aria-expanded") === "true", "Network menu did not open");
+    const testnet = menu.querySelector('[data-network="testnet"]');
+    assert(testnet && testnet.getAttribute("role") === "menuitemradio", "Testnet option is missing");
+    testnet.click();
+    equal(label.textContent, "Testnet", "Network picker did not switch to Testnet");
+    equal(picker.dataset.network, "testnet", "Network picker did not tag testnet");
+    assert(menu.hidden, "Network menu stayed open after a pick");
+    // Every tool's own network control follows the header's choice, through
+    // the control's ordinary events.
+    equal(document.getElementById("network").value, "1'", "Keys coin type did not follow the header network");
+    assert(document.getElementById("derivation-path").value.startsWith("m/84'/1'/0'"), `Derivation path did not follow: ${document.getElementById("derivation-path").value}`);
+    assert(document.getElementById("network-help").textContent.includes("Testnet"), "Coin type help did not follow the header network");
+    equal(document.getElementById("msig-network").value, "1", "Multisig coin type did not follow the header network");
+    for (const id of ["sp-network", "psbt-network", "psbted-network"]) {
+      equal(document.getElementById(id).value, "testnet", id + " did not follow the header network");
+    }
+    // Signet and regtest are their own picks, but they share the testnet
+    // formats, so every tool's network control stays on testnet for them.
+    for (const network of ["signet", "regtest"]) {
+      button.click();
+      menu.querySelector(`[data-network="${network}"]`).click();
+      equal(label.textContent, network === "signet" ? "Signet" : "Regtest", "Network picker did not switch to " + network);
+      equal(picker.dataset.network, network, "Network picker did not tag " + network);
+      equal(document.getElementById("network").value, "1'", "Keys coin type did not follow " + network);
+      equal(document.getElementById("msig-network").value, "1", "Multisig coin type did not follow " + network);
+      for (const id of ["sp-network", "psbt-network", "psbted-network"]) {
+        equal(document.getElementById(id).value, "testnet", id + " did not follow " + network);
+      }
+    }
+    button.click();
+    menu.querySelector('[data-network="mainnet"]').click();
+    equal(label.textContent, "Bitcoin", "Network picker did not switch back to Bitcoin");
+    equal(document.getElementById("network").value, "0'", "Keys coin type did not restore mainnet");
+    assert(document.getElementById("derivation-path").value.startsWith("m/84'/0'/0'"), "Derivation path did not restore mainnet");
+    equal(document.getElementById("msig-network").value, "0", "Multisig coin type did not restore mainnet");
+    for (const id of ["sp-network", "psbt-network", "psbted-network"]) {
+      equal(document.getElementById(id).value, "mainnet", id + " did not restore mainnet");
+    }
+    // Escape closes the menu without a choice, and nothing is ever stored.
+    button.click();
+    assert(!menu.hidden, "Network menu did not reopen");
+    button.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert(menu.hidden && button.getAttribute("aria-expanded") === "false", "Escape did not close the network menu");
+    assert(!Object.keys(localStorage).some((key) => /network/i.test(key)), "The network choice must not persist to storage");
+  });
+
+  await test("language and form dropdowns use the network picker's caret styling", async () => {
+    const networkButton = document.getElementById("network-picker-button");
+    const languageButton = document.querySelector(".locale-control .custom-select-button");
+    assert(networkButton && languageButton, "The network or language dropdown is missing");
+    const networkStyle = getComputedStyle(networkButton), languageStyle = getComputedStyle(languageButton);
+    equal(languageStyle.minHeight, networkStyle.minHeight, "Language dropdown height differs from Network");
+    equal(languageStyle.backgroundColor, networkStyle.backgroundColor, "Language dropdown background differs from Network");
+    equal(languageStyle.borderRadius, networkStyle.borderRadius, "Language dropdown radius differs from Network");
+    const networkCaret = networkButton.querySelector(".network-picker-chevron path");
+    const customCarets = [...document.querySelectorAll(".custom-select-chevron")];
+    assert(networkCaret && customCarets.length > 0, "Dropdown carets are missing");
+    customCarets.forEach((caret, index) => {
+      equal(caret.tagName, "svg", `Dropdown ${index} still uses a text triangle`);
+      equal(caret.querySelector("path")?.getAttribute("d"), networkCaret.getAttribute("d"), `Dropdown ${index} caret differs from Network`);
+    });
   });
 
   await test("limited private-key prefixes replace the full keypad until selected", async () => {
@@ -445,7 +527,7 @@
   });
 
   await test("all six number bases preserve the same exact entropy", async () => {
-    document.querySelector('[data-seed-words="12"]').click();
+    chooseSeedWords(12);
     await chooseMode("Number bases");
     const cases = [
       ["bin", 128, "0"],
@@ -488,7 +570,7 @@
     input(base32, `o${"0".repeat(27)}`);
     await wait(0);
     assert(base32.value.startsWith("0") && !document.getElementById("go").disabled, "Crockford O alias did not normalize to 0");
-    document.querySelector('[data-seed-words="24"]').click();
+    chooseSeedWords(24);
     const base32For24 = await until(() => document.getElementById("base32"), "24-word Base32 input");
     input(base32For24, "0".repeat(51));
     assert(document.getElementById("entropy-meta").textContent.includes("coin flip 1 of 1 · Heads (0) or Tails (1)"), "Base32 progress did not switch to coin-flip guidance");
@@ -513,7 +595,7 @@
   });
 
   await test("global entropy sync follows partial direct input and supports one-way hashed input", async () => {
-    document.querySelector('[data-seed-words="12"]').click();
+    chooseSeedWords(12);
     await chooseMode("Number bases");
     document.querySelector('input[name="entropy-format"][value="bin"]').click();
     const binary = await until(() => document.getElementById("bin"), "global-sync binary input");
@@ -525,6 +607,11 @@
 
     await chooseMode("Dice rolls");
     document.querySelector('input[name="dm"][value="dplus"]').click();
+    const dplusProgress = document.getElementById("dice-meta");
+    const dplusRange = dplusProgress.querySelector(".sr-only");
+    assert(/D8 roll|D16 roll/.test(dplusProgress.textContent) && /^ \([01]–[8F]\)$/.test(dplusRange?.textContent || ""), "D++ progress lost its accessible next-roll range");
+    assert([...dplusProgress.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).every((node) => !/[01]–[8F]/.test(node.textContent)), "D++ progress left the face range in the visible narrow-screen line");
+    assert(document.getElementById("dice-help").textContent.includes("D8 face from 1–8") && document.getElementById("dice-help").textContent.includes("D16 faces from 0–F"), "D++ input guidance lost its face ranges");
     equal(document.getElementById("dice").value, "1", "Three bits did not emit the first complete D++ D8 result");
     document.querySelector('input[name="dm"][value="bitbox"]').click();
     equal(document.getElementById("dice").value, "1", "BitBox emitted a second die before four bits were available");
@@ -618,7 +705,7 @@
   });
 
   await test("Base64 uses the shared case, number, and symbol keyboard", async () => {
-    document.querySelector('[data-seed-words="24"]').click();
+    chooseSeedWords(24);
     await chooseMode("Number bases");
     document.querySelector('input[name="entropy-format"][value="base64"]').click();
     const base64 = await until(() => document.getElementById("base64"), "Base64 input");
@@ -670,10 +757,13 @@
 
   await test("theme toggle flips between dark and light and opens the way the system asks", async () => {
     const toggle = document.getElementById("theme-toggle");
-    const controls = document.querySelector(".download-controls");
+    const links = document.querySelector(".page-footer-links");
     const background = () => getComputedStyle(document.body).backgroundColor;
-    assert(toggle && controls.contains(toggle), "Theme toggle is missing from the download controls");
-    assert(Math.abs(toggle.getBoundingClientRect().right - controls.getBoundingClientRect().right) < 1, "Theme toggle is not at the right edge of its row");
+    assert(toggle && links && links.contains(toggle), "Theme toggle is missing from the footer control row");
+    assert(links.lastElementChild === toggle, "Theme toggle is not the last control in the footer row");
+    // It closes the page now; the header bar keeps only Download and the picker.
+    assert(!document.querySelector(".download-controls").contains(toggle), "Theme toggle is still in the header bar");
+    assert(links.querySelector(".github-repo-link"), "The repository link did not move to the footer with it");
     // Two icons, because there are two states to show.
     assert(toggle.querySelectorAll("svg").length === 2, "Theme toggle should carry exactly two icons");
     assert(!toggle.querySelector(".theme-icon-system"), "Theme toggle still carries the retired system icon");
@@ -778,9 +868,9 @@
   await test("tool tabs answer the arrow keys and name themselves in full", async () => {
     const strip = document.getElementById("workspace-tabs");
     const tabs = [...strip.querySelectorAll("[data-workspace]")];
-    assert(tabs.length === 6, `Expected six tool tabs, found ${tabs.length}`);
+    assert(tabs.length === 5, `Expected five tool tabs, found ${tabs.length}`);
     // The visible label may be abbreviated; the accessible name never is.
-    const names = ["Keys", "BIP-85", "Multi Signature", "Silent Payments", "PSBT / Nonce", "PSBT Editor"];
+    const names = ["Keys", "BIP-85", "Multi Signature", "Silent Payments", "PSBT"];
     tabs.forEach((tab, i) => {
       assert(tab.getAttribute("aria-label") === names[i], `Tab ${i} should be named "${names[i]}"`);
     });
@@ -793,15 +883,26 @@
       await until(() => !document.getElementById("bip85-card").hidden, "BIP-85 to open on ArrowRight");
       assert(document.activeElement === tabs[1], "Focus should follow the arrow key");
       assert(tabs[1].getAttribute("aria-selected") === "true", "The reached tab should be selected");
-      // End jumps to the last tool, Home returns to the first.
+      // End jumps to the last tool, the unified PSBT workspace.
       tabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
-      await until(() => !document.getElementById("psbted-card").hidden, "End to reach the last tool");
-      assert(document.activeElement === tabs[5], "End should move focus to the last tab");
-      tabs[5].dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+      await until(() => !document.getElementById("psbt-card").hidden, "End to reach the PSBT tool");
+      assert(document.activeElement === tabs[4], "End should move focus to the last tab");
+      const psbtTabs = [...document.querySelectorAll("#psbt-tool-tabs [data-psbt-tool]")];
+      equal(psbtTabs.length, 2, "PSBT should expose exactly two internal tabs");
+      equal(psbtTabs.map((tab) => tab.textContent.trim()).join("|"), "PSBT / Nonce|PSBT Editor");
+      psbtTabs[0].focus();
+      psbtTabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      await until(() => !document.getElementById("psbted-card").hidden, "ArrowRight to open PSBT Editor");
+      assert(document.activeElement === psbtTabs[1], "Focus should follow the PSBT subtab arrow key");
+      psbtTabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+      await until(() => !document.getElementById("psbt-card").hidden, "ArrowLeft to open PSBT / Nonce");
+      assert(document.activeElement === psbtTabs[0], "Focus should return to PSBT / Nonce");
+      // Home returns to the first top-level tool.
+      tabs[4].dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
       await until(() => document.activeElement === tabs[0], "Home to return to the first tab");
       // Left from the first wraps round to the last.
       tabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
-      await until(() => document.activeElement === tabs[5], "ArrowLeft to wrap to the last tab");
+      await until(() => document.activeElement === tabs[4], "ArrowLeft to wrap to the last tab");
     } finally {
       document.querySelector('#workspace [data-workspace="calc"]').click();
       await until(() => !document.getElementById("key-manager").hidden, "key workspace");
@@ -818,6 +919,83 @@
     equal(icon.querySelectorAll('[data-part^="signal-"]').length, 2, "SP Station icon should have two signal arcs");
     equal(icon.querySelectorAll('[data-part="coin-ridge"]').length, 5, "SP Station coin should have a restrained ridged rim");
     assert(!icon.querySelector('ellipse[fill="none"]'), "SP Station coin face should not have a hole");
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("key-manager").hidden, "key workspace");
+  });
+  await test("Key Station methods are one dropdown carrying every method's mark", async () => {
+    const modes = document.getElementById("modes");
+    const select = document.getElementById("key-mode-select");
+    assert(select && modes.contains(select), "The method select is missing from #modes");
+    assert(!modes.querySelector(".tab"), "The segmented method row should be gone at every width");
+    equal([...select.options].map((option) => option.value).join(","), "dice,cards,hex,seed,key");
+    equal(select.getAttribute("aria-labelledby"), "key-method-label");
+    equal(document.getElementById("key-method-label").textContent, "Method");
+    const root = modes.querySelector(".custom-select");
+    assert(root, "The method select was not upgraded to the shared dropdown");
+    const button = root.querySelector(".custom-select-button");
+    const labels = { dice: "Dice rolls", cards: "Cards", hex: "Number bases", seed: "Seed phrase", key: "Private key" };
+    // Earlier tests leave their own method selected, so read the state rather
+    // than assuming the page opened on dice.
+    const opening = select.value;
+    assert(button.querySelector(".key-method-icon svg"), "The closed control is missing the chosen method's mark");
+    assert(button.textContent.includes(labels[opening]), "The closed control does not name the chosen method");
+    button.click();
+    await wait(25);
+    const options = [...root.querySelectorAll(".custom-select-option")];
+    equal(options.length, 5);
+    options.forEach((option, index) => {
+      assert(option.querySelector(".key-method-icon svg"), `Option ${index} is missing its SVG mark`);
+      assert(option.textContent.trim().length > 0, `Option ${index} is missing its label`);
+    });
+    assert(options[1].querySelector('[data-part="card-front"]'), "Cards mark is missing its opaque front card");
+    // Choosing a method drives the same state the button row used to.
+    options[1].click();
+    await wait(60);
+    equal(select.value, "cards");
+    assert(button.textContent.includes(labels.cards), "The closed control did not follow the choice");
+    // The front card masks the rear one against whatever surface it is drawn
+    // on: the closed control's ground, and the selected row's tint.
+    equal(
+      getComputedStyle(button.querySelector('[data-part="card-front"]')).fill,
+      getComputedStyle(button).backgroundColor,
+      "Front card does not mask the rear card on the closed control",
+    );
+    button.click();
+    await wait(25);
+    const selectedRow = root.querySelector('.custom-select-option[aria-selected="true"]');
+    equal(
+      getComputedStyle(selectedRow.querySelector('[data-part="card-front"]')).fill,
+      getComputedStyle(selectedRow).backgroundColor,
+      "Front card does not mask the rear card on the selected row",
+    );
+    button.click();
+    await wait(25);
+    // And a change from the application side moves the control back.
+    select.value = opening;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await wait(60);
+    assert(button.textContent.includes(labels[opening]), "The control did not follow a programmatic change");
+  });
+  await test("Station icons preserve their intended responsive footprints", async () => {
+    const stations = [
+      ["calc", "#key-tab-lab .bench-tab-icon", 18, 18],
+      ["bip85", "#bip85-tab-lab .bench-tab-icon", 18, 18],
+      ["msig", "#msig-tab-lab .bench-tab-icon", 21, 24],
+      ["sp", "#sp-tab-bench .bench-tab-icon", 18, 18],
+    ];
+    let stationColor = "";
+    for (const [workspace, selector, expectedWidth, expectedHeight] of stations) {
+      document.querySelector(`#workspace [data-workspace="${workspace}"]`).click();
+      const icon = await until(() => {
+        const candidate = document.querySelector(selector);
+        return candidate?.getClientRects().length ? candidate : null;
+      }, `${workspace} Station icon`);
+      const box = icon.getBoundingClientRect();
+      assert(Math.abs(box.height - expectedHeight) < 0.5, `${workspace} Station icon has the wrong decorative height`);
+      assert(Math.abs(box.width - expectedWidth) < 0.5, `${workspace} Station icon has the wrong optical width`);
+      if (!stationColor) stationColor = getComputedStyle(icon).color;
+      else equal(getComputedStyle(icon).color, stationColor);
+    }
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("key-manager").hidden, "key workspace");
   });
@@ -892,7 +1070,7 @@
       // The choice is remembered for this build, so a reload does not bring
       // the banner back until the next release.
       assert(
-        localStorage.getItem("entropylab-beta-banner-dismissed") === document.querySelector(".site-version-number").textContent.replace(/^v/, ""),
+        localStorage.getItem("entropylab-beta-banner-dismissed") === currentVersion.replace(/^v/, ""),
         "Dismissal was not persisted against this build's version",
       );
       // A visit after a dismissal never paints the banner: the inline head
@@ -1163,8 +1341,14 @@
     document.querySelector('#workspace [data-workspace="msig"]').click();
     const xpub = await until(() => document.querySelector("#msig-keys textarea"), "multisig input");
     input(xpub, payload + "tpub123");
-    assert(!/[<>="']/.test(xpub.value), "Dangerous characters remained in multisig input");
+    // The co-signer field keeps the multipath characters < > ; so a pasted
+    // descriptor step like /<0;1>/* reaches the parser unmangled; a textarea
+    // value is inert text, so the meaningful assertion is that no markup ran.
+    // (Every row carries a hidden lifehash <img>, so an img query is useless.)
+    assert(window.__browserTestInjected !== true, "Multisig input injected markup");
+    assert(!/[="]/.test(xpub.value), "Dangerous characters remained in multisig input");
     document.querySelector('#workspace [data-workspace="psbt"]').click();
+    document.querySelector('#psbt-tool-tabs [data-psbt-tool="nonce"]').click();
     const psbt = await until(() => document.getElementById("psbt-text"), "PSBT input");
     input(psbt, payload);
     document.getElementById("psbt-go").click();
@@ -1178,7 +1362,9 @@
     // BIP-174 valid vector 2 (rust-bitcoin's valid_vector_2): two inputs —
     // a finalized P2PKH scriptSig and a nested P2WPKH — and two outputs.
     const vector = "cHNidP8BAKACAAAAAqsJSaCMWvfEm4IS9Bfi8Vqz9cM9zxU4IagTn4d6W3vkAAAAAAD+////qwlJoIxa98SbghL0F+LxWrP1wz3PFTghqBOfh3pbe+QBAAAAAP7///8CYDvqCwAAAAAZdqkUdopAu9dAy+gdmI5x3ipNXHE5ax2IrI4kAAAAAAAAGXapFG9GILVT+glechue4O/p+gOcykWXiKwAAAAAAAEHakcwRAIgR1lmF5fAGwNrJZKJSGhiGDR9iYZLcZ4ff89X0eURZYcCIFMJ6r9Wqk2Ikf/REf3xM286KdqGbX+EhtdVRs7tr5MZASEDXNxh/HupccC1AaZGoqg7ECy0OIEhfKaC3Ibi1z+ogpIAAQEgAOH1BQAAAAAXqRQ1RebjO4MsRwUPJNPuuTycA5SLx4cBBBYAFIXRNTfy4mVAWjTbr6nj3aAfuCMIAAAA";
-    document.querySelector('#workspace [data-workspace="psbted"]').click();
+    document.querySelector('#workspace [data-workspace="psbt"]').click();
+    document.querySelector('#psbt-tool-tabs [data-psbt-tool="editor"]').click();
+    await until(() => !document.getElementById("psbted-card").hidden, "PSBT editor tab");
     const box = await until(() => document.getElementById("psbted-text"), "PSBT editor input");
     input(box, vector);
     document.getElementById("psbted-load").click();
@@ -1214,6 +1400,8 @@
     // with "Coin type must be a whole number".
     const vector = "cHNidP8BAKACAAAAAqsJSaCMWvfEm4IS9Bfi8Vqz9cM9zxU4IagTn4d6W3vkAAAAAAD+////qwlJoIxa98SbghL0F+LxWrP1wz3PFTghqBOfh3pbe+QBAAAAAP7///8CYDvqCwAAAAAZdqkUdopAu9dAy+gdmI5x3ipNXHE5ax2IrI4kAAAAAAAAGXapFG9GILVT+glechue4O/p+gOcykWXiKwAAAAAAAEHakcwRAIgR1lmF5fAGwNrJZKJSGhiGDR9iYZLcZ4ff89X0eURZYcCIFMJ6r9Wqk2Ikf/REf3xM286KdqGbX+EhtdVRs7tr5MZASEDXNxh/HupccC1AaZGoqg7ECy0OIEhfKaC3Ibi1z+ogpIAAQEgAOH1BQAAAAAXqRQ1RebjO4MsRwUPJNPuuTycA5SLx4cBBBYAFIXRNTfy4mVAWjTbr6nj3aAfuCMIAAAA";
     document.querySelector('#workspace [data-workspace="psbt"]').click();
+    document.querySelector('#psbt-tool-tabs [data-psbt-tool="nonce"]').click();
+    await until(() => !document.getElementById("psbt-card").hidden, "PSBT / Nonce tab");
     const box = await until(() => document.getElementById("psbt-text"), "PSBT input");
     input(box, vector);
     document.getElementById("psbt-go").click();
@@ -1258,7 +1446,9 @@
 
   await test("PSBT editor truncates long fields and the overlay edits them", async () => {
     const vector = "cHNidP8BAKACAAAAAqsJSaCMWvfEm4IS9Bfi8Vqz9cM9zxU4IagTn4d6W3vkAAAAAAD+////qwlJoIxa98SbghL0F+LxWrP1wz3PFTghqBOfh3pbe+QBAAAAAP7///8CYDvqCwAAAAAZdqkUdopAu9dAy+gdmI5x3ipNXHE5ax2IrI4kAAAAAAAAGXapFG9GILVT+glechue4O/p+gOcykWXiKwAAAAAAAEHakcwRAIgR1lmF5fAGwNrJZKJSGhiGDR9iYZLcZ4ff89X0eURZYcCIFMJ6r9Wqk2Ikf/REf3xM286KdqGbX+EhtdVRs7tr5MZASEDXNxh/HupccC1AaZGoqg7ECy0OIEhfKaC3Ibi1z+ogpIAAQEgAOH1BQAAAAAXqRQ1RebjO4MsRwUPJNPuuTycA5SLx4cBBBYAFIXRNTfy4mVAWjTbr6nj3aAfuCMIAAAA";
-    document.querySelector('#workspace [data-workspace="psbted"]').click();
+    document.querySelector('#workspace [data-workspace="psbt"]').click();
+    document.querySelector('#psbt-tool-tabs [data-psbt-tool="editor"]').click();
+    await until(() => !document.getElementById("psbted-card").hidden, "PSBT editor tab");
     const box = await until(() => document.getElementById("psbted-text"), "PSBT editor input");
     input(box, vector);
     document.getElementById("psbted-load").click();
@@ -1327,7 +1517,9 @@
   await test("PSBT editor flow diagram opens, edits, and re-decodes a map", async () => {
     // Same BIP-174 valid vector 2 as the editor cases above.
     const vector = "cHNidP8BAKACAAAAAqsJSaCMWvfEm4IS9Bfi8Vqz9cM9zxU4IagTn4d6W3vkAAAAAAD+////qwlJoIxa98SbghL0F+LxWrP1wz3PFTghqBOfh3pbe+QBAAAAAP7///8CYDvqCwAAAAAZdqkUdopAu9dAy+gdmI5x3ipNXHE5ax2IrI4kAAAAAAAAGXapFG9GILVT+glechue4O/p+gOcykWXiKwAAAAAAAEHakcwRAIgR1lmF5fAGwNrJZKJSGhiGDR9iYZLcZ4ff89X0eURZYcCIFMJ6r9Wqk2Ikf/REf3xM286KdqGbX+EhtdVRs7tr5MZASEDXNxh/HupccC1AaZGoqg7ECy0OIEhfKaC3Ibi1z+ogpIAAQEgAOH1BQAAAAAXqRQ1RebjO4MsRwUPJNPuuTycA5SLx4cBBBYAFIXRNTfy4mVAWjTbr6nj3aAfuCMIAAAA";
-    document.querySelector('#workspace [data-workspace="psbted"]').click();
+    document.querySelector('#workspace [data-workspace="psbt"]').click();
+    document.querySelector('#psbt-tool-tabs [data-psbt-tool="editor"]').click();
+    await until(() => !document.getElementById("psbted-card").hidden, "PSBT editor tab");
     const box = await until(() => document.getElementById("psbted-text"), "PSBT editor input");
     input(box, vector);
     document.getElementById("psbted-load").click();
@@ -1437,7 +1629,7 @@
   });
 
   await test("a known BIP39 wallet can be derived through the UI", async () => {
-    document.querySelector('[data-seed-words="12"]').click();
+    chooseSeedWords(12);
     await chooseMode("Number bases");
     document.querySelector('input[name="entropy-format"][value="hex"]').click();
     const hex = await until(() => document.getElementById("hex"), "hex input");
@@ -1618,26 +1810,42 @@
     await until(() => !document.getElementById("key-manager").hidden, "key workspace after SP Station test");
   });
 
-  await test("MS Station offers every Key Station key on each co-signer and a derivation path for reuse", async () => {
+  await test("MS Station restores its Key Station import section and safely controls key reuse", async () => {
     document.querySelector('#workspace [data-workspace="msig"]').click();
     await until(() => !document.getElementById("msig-manager").hidden, "MS Station");
-    assert(!document.getElementById("msig-session-keys"), "MS Station kept the global key picker above the co-signers");
-    const rows = [...document.querySelectorAll("#msig-keys .msig-key-row")];
+    const globalPicker = document.getElementById("msig-session-keys");
+    const reuseToggle = document.getElementById("msig-reuse-session-keys");
+    assert(globalPicker, "MS Station is missing the global Key Station picker");
+    assert(reuseToggle && !reuseToggle.checked, "MS Station key reuse was not opt-in");
+    assert(document.querySelector(".msig-station-key-source .label")?.textContent.includes("Bring in a key from Key Station"), "MS Station is missing the restored key import heading");
+    let rows = [...document.querySelectorAll("#msig-keys .msig-key-row")];
     assert(rows.length >= 2, "MS Station did not start with at least two co-signer rows");
     const rowOption = (row) => row.querySelector(".msig-session-keys .msig-session-key");
+    rows.forEach((row) => input(row.querySelector("textarea"), ""));
+    rows = [...document.querySelectorAll("#msig-keys .msig-key-row")];
     assert(rows.every((row) => rowOption(row)), "A co-signer row did not offer the compatible Key Station key");
 
+    const globalOption = globalPicker.querySelector(".session-key-option");
+    assert(globalOption, "MS Station did not offer the compatible key in its global picker");
+    globalOption.click();
+    rows = [...document.querySelectorAll("#msig-keys .msig-key-row")];
     const first = document.getElementById("msig-x-0");
-    rowOption(rows[0]).click();
-    assert(first.value.trim(), "The first co-signer row did not populate from its own picker");
-    assert(!rows[0].querySelector(".msig-key-ident").hidden, "The selected key identity was not shown above its co-signer input");
+    assert(first.value.trim(), "The global Key Station picker did not populate the first co-signer row");
+    const identity = document.querySelector("#msig-keys .msig-key-row .msig-key-ident");
+    assert(identity && !identity.hidden, "The selected key identity was not shown above its co-signer input");
+    rows = [...document.querySelectorAll("#msig-keys .msig-key-row")];
     assert(rowOption(rows[0]).classList.contains("active"), "The picked key was not marked active on the first row");
+    assert(!rowOption(rows[1]), "An assigned key remained available on another row while reuse was off");
+    assert(globalPicker.hidden, "An assigned key remained in the global picker while reuse was off");
 
-    // Every key stays selectable on every other row; picking the same key
+    // Opting into reuse keeps the key selectable on every row. Picking it
     // again offers a derivation path so its descriptor public keys differ.
+    reuseToggle.click();
+    rows = [...document.querySelectorAll("#msig-keys .msig-key-row")];
+    assert(!globalPicker.hidden && globalPicker.querySelector(".session-key-option"), "Enabling reuse did not restore the global key choice");
     const second = document.getElementById("msig-x-1");
     const secondOption = rowOption(rows[1]);
-    assert(secondOption, "An assigned key disappeared from the second row's picker");
+    assert(secondOption, "Enabling reuse did not restore the assigned key on another co-signer row");
     const secondFingerprint = secondOption.dataset.fingerprint;
     secondOption.click();
     assert(second.value.trim(), "The second co-signer row did not populate the reused key");
@@ -1655,8 +1863,9 @@
     reusePanel.querySelector(".msig-key-reuse-clear").click();
     assert(!/\/1$/.test(second.value), "Remove path did not strip the appended derivation path");
 
-    input(first, "");
-    input(second, "");
+    input(document.getElementById("msig-x-0"), "");
+    input(document.getElementById("msig-x-1"), "");
+    if (reuseToggle.checked) reuseToggle.click();
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("key-manager").hidden, "key workspace after MS Station picker test");
   });
@@ -1930,6 +2139,87 @@
     );
     assert(document.getElementById("msig-out").textContent.includes("/69420h/1h/0h/2h"), "Custom multisig purpose was not preserved in the descriptor origin");
 
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("calc-card").hidden, "key workspace");
+  });
+
+  await test("multisig Edit input restores the wallet's pasted keys and settings in the lab", async () => {
+    // Fixed public test vector: seed 0x01…01 at m/48'/0'/0'/2'. Nothing secret.
+    const decorated = "[932f8b09/48h/0h/0h/2h]xpub6ESghgmLD5FuqvXEbeiDS5WDT7nrbkcQHVGCcatqeMSqgeH7MjExsH6wnbgo5DU8bUUGGhQf9D8DwjHRBaGTq2VzbzHsQZMWPdcETmmbLAr/0/*";
+    document.querySelector('#workspace [data-workspace="msig"]').click();
+    await until(() => !document.getElementById("msig-card").hidden, "multisig workspace");
+    [...document.querySelectorAll("#msig-tabs button")].find((button) => button.id === "msig-tab-lab").click();
+    const wipe = document.getElementById("msig-wipe");
+    if (!wipe.disabled) wipe.click();
+    const script = document.getElementById("msig-script-type");
+    script.value = "p2wsh";
+    script.dispatchEvent(new Event("change", { bubbles: true }));
+    input(document.getElementById("msig-network"), "0");
+    input(document.getElementById("msig-n-number"), "1");
+    input(document.getElementById("msig-x-0"), decorated);
+    const walletTabs = () => [...document.querySelectorAll("#msig-tabs button")].filter((button) => button.id !== "msig-tab-lab");
+    const committedBefore = walletTabs().length;
+    const go = await until(() => !document.getElementById("msig-go").disabled && document.getElementById("msig-go"), "decorated-paste multisig derive button");
+    go.click();
+    await until(() => document.querySelector("#msig-out .account-result-card") || document.getElementById("msig-error").textContent, "decorated-paste multisig result");
+    assert(!document.getElementById("msig-error").textContent, `Decorated-paste multisig derivation failed: ${document.getElementById("msig-error").textContent}`);
+    assert(document.getElementById("msig-lab").hidden, "Deriving a multisig did not switch to the result view");
+    equal(walletTabs().length, committedBefore + 1, "Deriving did not commit exactly one new wallet tab");
+    document.getElementById("msig-edit-inputs").click();
+    await until(() => !document.getElementById("msig-lab").hidden && document.getElementById("msig-x-0")?.value, "lab restored with the wallet's inputs");
+    equal(document.getElementById("msig-x-0").value, decorated, "Edit input did not restore the exact co-signer paste, descriptor-path suffix included");
+    equal(document.getElementById("msig-n").value, "1", "Edit input did not restore the key count");
+    equal(document.getElementById("msig-m").value, "1", "Edit input did not restore the threshold");
+    // The committed wallet keeps its result while its inputs sit in the lab.
+    walletTabs().at(-1).click();
+    await until(() => document.querySelector("#msig-out .account-result-card"), "wallet result after editing its inputs");
+    assert(document.getElementById("msig-lab").hidden, "Selecting the wallet did not return to its result view");
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("calc-card").hidden, "key workspace");
+  });
+
+  await test("multisig honors deep trailing paths and decodes the BIP type from key origins", async () => {
+    // Fixed public test vectors: seeds 0x01…01 and 0x07…07. Nothing secret.
+    const deepKey = "[932f8b09/48h/0h/0h/2h]xpub6ESghgmLD5FuqvXEbeiDS5WDT7nrbkcQHVGCcatqeMSqgeH7MjExsH6wnbgo5DU8bUUGGhQf9D8DwjHRBaGTq2VzbzHsQZMWPdcETmmbLAr/0/0/20/*";
+    const bip84Key = "[63969fb2/84h/0h/0h]xpub6CiYiNEkeCVkJJNmhDHaZrcDNY8bv4pnAepV4uBLPB7qFYsMDGP4QHLbRquL5LNPv3KyNXXdDE3XkAMc7xKRT8vGVF2bkWn8qZTi7LYF6s4";
+    document.querySelector('#workspace [data-workspace="msig"]').click();
+    await until(() => !document.getElementById("msig-card").hidden, "multisig workspace");
+    [...document.querySelectorAll("#msig-tabs button")].find((button) => button.id === "msig-tab-lab").click();
+    const wipe = document.getElementById("msig-wipe");
+    if (!wipe.disabled) wipe.click();
+    const script = document.getElementById("msig-script-type");
+    script.value = "p2wsh";
+    script.dispatchEvent(new Event("change", { bubbles: true }));
+    input(document.getElementById("msig-network"), "0");
+    input(document.getElementById("msig-n-number"), "1");
+    input(document.getElementById("msig-x-0"), deepKey);
+    const go = await until(() => !document.getElementById("msig-go").disabled && document.getElementById("msig-go"), "deep-path multisig derive button");
+    go.click();
+    await until(() => document.querySelector("#msig-out .account-result-card") || document.getElementById("msig-error").textContent, "deep-path multisig result");
+    assert(!document.getElementById("msig-error").textContent, `Deep-path multisig derivation failed: ${document.getElementById("msig-error").textContent}`);
+    const deepText = document.getElementById("msig-out").textContent;
+    // The trailing path is honored, with the multipath branches below it.
+    assert(deepText.includes("/0/0/20/<0;1>/*"), "Deep-path multipath descriptor did not land below the honored path");
+    assert(deepText.includes("/0/0/20/0/*"), "Receive branch descriptor lost the honored path");
+    assert(deepText.includes("bc1qtal46hvfmlmgelphpg0pe5j6s7yaxln4xhk8404pemgfmzjfccaqghcv8k"), "Deep-path receive address is wrong");
+    assert(!deepText.includes("bc1q8h2zxs3hf44y85mswmvh08hvzxkwyesayacxrmhwut538r4f85cqh40fwz"), "Deep-path derive ignored the honored path");
+    // A BIP84 account key as co-signer: the origin path decodes the BIP type.
+    document.getElementById("msig-edit-inputs").click();
+    await until(() => !document.getElementById("msig-lab").hidden && document.getElementById("msig-x-0")?.value, "lab restored for the BIP84 co-signer");
+    input(document.getElementById("msig-x-0"), "");
+    script.value = "p2sh";
+    script.dispatchEvent(new Event("change", { bubbles: true }));
+    equal(document.getElementById("msig-script-type").value, "p2sh", "script type moved without a co-signer key");
+    input(document.getElementById("msig-x-0"), bip84Key);
+    await until(() => document.getElementById("msig-script-type").value === "p2wsh", "script type decoded from the m/84h origin");
+    equal(document.getElementById("msig-purpose").value, "84", "BIP84 purpose was not decoded from the origin");
+    const go84 = await until(() => !document.getElementById("msig-go").disabled && document.getElementById("msig-go"), "BIP84 multisig derive button");
+    go84.click();
+    await until(() => document.querySelector("#msig-out .account-result-card") || document.getElementById("msig-error").textContent, "BIP84 multisig result");
+    assert(!document.getElementById("msig-error").textContent, `BIP84 co-signer derivation failed: ${document.getElementById("msig-error").textContent}`);
+    const bip84Text = document.getElementById("msig-out").textContent;
+    assert(bip84Text.includes("[63969fb2/84h/0h/0h]xpub6CiYiNEkeCVkJJNmhDHaZrcDNY8bv4pnAepV4uBLPB7qFYsMDGP4QHLbRquL5LNPv3KyNXXdDE3XkAMc7xKRT8vGVF2bkWn8qZTi7LYF6s4/<0;1>/*"), "BIP84 multipath descriptor is wrong");
+    assert(bip84Text.includes("bc1qfsyehfm2cq6e7wdyed74tkq06yl4dcy5n2fael2vl63jv3dj9v3sluw4wt"), "BIP84 co-signer receive address is wrong");
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("calc-card").hidden, "key workspace");
   });

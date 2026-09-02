@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { entropyToMnemonic, mnemonicToEntropy, validateMnemonic } from "@scure/bip39";
 import { wordlist as bip39English } from "@scure/bip39/wordlists/english.js";
+import { t as hodlT } from "../src/js/i18n.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
@@ -67,8 +68,9 @@ const hodlCardsEntropy = new Function(
   "TextEncoder",
   "hodlHex",
   "hodlCardsHashInput",
-  `${loadSlice("hodlCardsEntropy")}; return hodlCardsEntropy;`,
-)(hodlSeedConfig, hodlParseCards, hodlSha256, TextEncoder, hodlHex, hodlCardsHashInput);
+  "hodlT",
+  `${loadSlice("hodlNote")}; ${loadSlice("hodlCardsEntropy")}; return hodlCardsEntropy;`,
+)(hodlSeedConfig, hodlParseCards, hodlSha256, TextEncoder, hodlHex, hodlCardsHashInput, hodlT);
 const hodlCardRanks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"];
 const hodlCardSuits = [{ code: "S" }, { code: "H" }, { code: "C" }, { code: "D" }];
 const hodlCardSelectionState = new Function(
@@ -99,8 +101,8 @@ function hodlTargetLastWords(value, targetWords) {
 const hodlDirectCardFinalRadices = new Function("hodlSeedConfig", `${loadSlice("hodlDirectCardFinalRadices")}; return hodlDirectCardFinalRadices;`)(hodlSeedConfig);
 const hodlDirectCardSteps = new Function("hodlSeedConfig", "hodlDirectCardFinalRadices", `${loadSlice("hodlDirectCardSteps")}; return hodlDirectCardSteps;`)(hodlSeedConfig, hodlDirectCardFinalRadices);
 const hodlDirectCardSetLabel = new Function(`${loadSlice("hodlDirectCardSetLabel")}; return hodlDirectCardSetLabel;`)();
-const hodlDirectCardInstruction = new Function("hodlDirectCardSetLabel", `${loadSlice("hodlDirectCardInstruction")}; return hodlDirectCardInstruction;`)(hodlDirectCardSetLabel);
-const hodlHashedCardInstruction = new Function(`${loadSlice("hodlHashedCardInstruction")}; return hodlHashedCardInstruction;`)();
+const hodlDirectCardInstruction = new Function("hodlDirectCardSetLabel", "hodlT", `${loadSlice("hodlDirectCardInstruction")}; return hodlDirectCardInstruction;`)(hodlDirectCardSetLabel, hodlT);
+const hodlHashedCardInstruction = new Function("hodlT", `${loadSlice("hodlHashedCardInstruction")}; return hodlHashedCardInstruction;`)(hodlT);
 const hodlDirectCardRankValue = new Function(`${loadSlice("hodlDirectCardRankValue")}; return hodlDirectCardRankValue;`)();
 const hodlDirectCardSeparator = new Function("hodlSeedConfig", "hodlDirectCardFinalRadices", `${loadSlice("hodlDirectCardSeparator")}; return hodlDirectCardSeparator;`)(hodlSeedConfig, hodlDirectCardFinalRadices);
 const hodlFilterDirectCards = new Function("hodlDirectCardSeparator", `${loadSlice("hodlFilterDirectCards")}; return hodlFilterDirectCards;`)(hodlDirectCardSeparator);
@@ -109,9 +111,9 @@ const hodlParseDirectCards = new Function(
   `${loadSlice("hodlParseDirectCards")}; return hodlParseDirectCards;`,
 )(hodlSeedConfig, hodlDirectCardSteps, hodlDirectCardRankValue, hodlDirectCardFinalRadices, hodlTargetLastWords, hodlBip39Wordlist);
 const hodlDirectCardsEntropy = new Function(
-  "hodlParseDirectCards", "hodlIsValidMnemonic", "hodlBip39Wordlist", "hodlMnemonicToEntropy", "hodlHex",
-  `${loadSlice("hodlDirectCardsEntropy")}; return hodlDirectCardsEntropy;`,
-)(hodlParseDirectCards, validateMnemonic, hodlBip39Wordlist, mnemonicToEntropy, hodlHex);
+  "hodlParseDirectCards", "hodlIsValidMnemonic", "hodlBip39Wordlist", "hodlMnemonicToEntropy", "hodlHex", "hodlT",
+  `${loadSlice("hodlNote")}; ${loadSlice("hodlDirectCardsEntropy")}; return hodlDirectCardsEntropy;`,
+)(hodlParseDirectCards, validateMnemonic, hodlBip39Wordlist, mnemonicToEntropy, hodlHex, hodlT);
 
 const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"];
 const SUITS = ["S", "H", "C", "D"];
@@ -213,8 +215,9 @@ test("one valid card produces a deterministic testing seed", () => {
   assert.equal(entropy.ok, true);
   assert.equal(entropy.bytes.length, 32);
   assert.equal(entropy.parsed.cards.length, 1);
-  assert.match(entropy.warnings.join(" "), /Only 1 of 58 recommended cards/);
-  assert.match(entropy.warnings.join(" "), /Use only for testing/);
+  assert.equal(entropy.warnings[0]?.key, "note.fewCards");
+  assert.equal(entropy.warnings[0]?.vars?.have, 1);
+  assert.equal(entropy.warnings[0]?.vars?.need, 58);
   assert.equal(hodlCardsEntropy("AS AS", 24).ok, false);
   assert.equal(hodlCardsEntropy("ZZ", 24).ok, false);
 });

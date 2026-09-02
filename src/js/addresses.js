@@ -7,11 +7,19 @@
 // bare and taproot multisig leaf scripts, and script -> address rendering
 // (which returns null for unknown templates, like the previous fallback that
 // showed the script hex). Networks are "mainnet" | "testnet".
+//
+// descriptorDerive is the rust-miniscript side of the crate: it parses an
+// output descriptor (BIP380-386 key expressions, xpubs and xprvs included),
+// derives the child at `index`, and returns the address, the scriptPubKey
+// hex, and the derived keys (compressed hex) so callers can enforce
+// key-distinctness policies of their own.
 import { wasmExports as wasm, withInput, withOutput } from "./entropylab-wasm.js";
 
 const textDecoder = new TextDecoder();
+const textEncoder = new TextEncoder();
 const SCRIPT_CAP = 4096; // every script the app builds is far smaller
 const ADDRESS_CAP = 128; // a v1 bech32m address is <= 74 chars for known templates
+const DESCRIPTOR_CAP = 4096; // address + scriptPubKey hex + 15 multisig keys is ~1.2 KB
 
 const netOf = (network) => {
   if (network === "mainnet") return 0;
@@ -119,6 +127,25 @@ export const addressFromScript = (script, network) => {
     withOutput(ADDRESS_CAP, (o) => wasm().el_addr_from_script(p, script.length, net, o, ADDRESS_CAP))
   );
   return out ? textDecoder.decode(out) : null;
+};
+
+// Evaluates an output descriptor at a child index: the address (null when
+// the template has none, e.g. bare scripts), the scriptPubKey hex, and the
+// derived participant keys (compressed hex, descriptor order; multisig
+// sortedmulti/multi_a keys are pre-sort). Multipath (<0;1>) descriptors are
+// refused: one call derives one output — pass a single branch. A present
+// #checksum is verified by the crate. Throws on any parse or derivation
+// failure, exactly like the script builders above return null/throw.
+export const descriptorDerive = (descriptor, index, network) => {
+  if (!Number.isSafeInteger(index) || index < 0 || index > 2147483647) throw new Error("Descriptor derivation index must be 0 to 2,147,483,647.");
+  const bytes = textEncoder.encode(String(descriptor ?? ""));
+  const net = netOf(network);
+  const record = withInput(bytes, (p) =>
+    withOutput(DESCRIPTOR_CAP, (out) => wasm().el_desc_derive(p, bytes.length, index, net, out, DESCRIPTOR_CAP))
+  );
+  if (!record) throw new Error("Invalid output descriptor, or it cannot be derived at this index.");
+  const [address, scriptHex, keys] = textDecoder.decode(record).split("\n");
+  return { address: address || null, scriptHex, pubkeys: keys ? keys.split(",") : [] };
 };
 
 // One-call helpers for the four single-signature templates, mirroring how the

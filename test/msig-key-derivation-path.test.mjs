@@ -59,7 +59,9 @@ const hodlReadExtendedKeyVersion = new Function("hodlBase58Check", `${loadFuncti
 const hodlParseExtendedKey = new Function("hodlBase58Check", "hodlReadExtendedKeyVersion", "hodlReversionExtendedKey", "hodlExtendedKeyPrefixTable", "hodlHDKey", "hodlExtendedKeyVersions", `let hodlParseExtendedKey; ${extract("hodlParseExtendedKey = function(value)", "function hodlAccountExportFamily")}; return hodlParseExtendedKey;`)(hodlBase58Check, hodlReadExtendedKeyVersion, hodlReversionExtendedKey, hodlExtendedKeyPrefixTable, HDKey, hodlExtendedKeyVersions);
 const hodlNormalizeOriginPath = new Function(`${loadFunction("hodlNormalizeOriginPath")}; return hodlNormalizeOriginPath;`)();
 const hodlParseKeyOrigin = new Function("hodlNormalizeOriginPath", `${loadFunction("hodlParseKeyOrigin")}; return hodlParseKeyOrigin;`)(hodlNormalizeOriginPath);
-const hodlParseMultisigCosigner = new Function("hodlParseKeyOrigin", "hodlParseExtendedKey", `${loadFunction("hodlParseMultisigCosigner")}; return hodlParseMultisigCosigner;`)(hodlParseKeyOrigin, hodlParseExtendedKey);
+const hodlStripDescriptorChecksum = new Function(`${loadFunction("hodlStripDescriptorChecksum")}; return hodlStripDescriptorChecksum;`)();
+const hodlDescriptorKeyExpressions = new Function("hodlStripDescriptorChecksum", `${loadFunction("hodlDescriptorKeyExpressions")}; return hodlDescriptorKeyExpressions;`)(hodlStripDescriptorChecksum);
+const hodlParseMultisigCosigner = new Function("hodlParseKeyOrigin", "hodlParseExtendedKey", "hodlDescriptorKeyExpressions", `${loadFunction("hodlParseMultisigCosigner")}; return hodlParseMultisigCosigner;`)(hodlParseKeyOrigin, hodlParseExtendedKey, hodlDescriptorKeyExpressions);
 const hodlSerializeExtendedKey = new Function("hodlReversionExtendedKey", "hodlExtendedKeyVersions", `${loadFunction("hodlSerializeExtendedKey")}; return hodlSerializeExtendedKey;`)(hodlReversionExtendedKey, hodlExtendedKeyVersions);
 const hodlMultisigKeyToken = new Function("hodlSerializeExtendedKey", `${loadFunction("hodlMultisigKeyToken")}; return hodlMultisigKeyToken;`)(hodlSerializeExtendedKey);
 const hodlMsigDerivedNode = new Function(`${loadFunction("hodlMsigDerivedNode")}; return hodlMsigDerivedNode;`)();
@@ -90,8 +92,10 @@ test("a path after the extended key parses and lands in the descriptor token", (
 test("a pasted descriptor key tail is a branch wildcard, not a co-signer path", () => {
   assert.equal(hodlParseMultisigCosigner(`${EXPORT}/0/*`).derivationPath, "");
   assert.equal(hodlParseMultisigCosigner(`${EXPORT}/<0;1>/*`).derivationPath, "");
-  // …but a fixed step before the wildcard is the app's own suffix round-trip.
-  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/1/0/*`).derivationPath, "1");
+  // Two or more steps ahead of the wildcard are the signer's fixed path and
+  // are preserved in full — only a sole branch step (/0/* above) drops.
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/1/0/*`).derivationPath, "1/0");
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/0/0/20/*`).derivationPath, "0/0/20");
 });
 
 test("hardened or out-of-range path steps are rejected with a clear error", () => {

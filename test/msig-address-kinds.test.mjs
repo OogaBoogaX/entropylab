@@ -6,7 +6,9 @@
 // address. The facade suites tested p2trLeafScript directly and passed; only
 // running the app's own function through the app's own import line catches
 // it. So the slice below keeps app.js's real import statements and never
-// injects the helpers.
+// injects the helpers. hodlMsigAddr now builds a descriptor from the keys
+// and evaluates it through rust-miniscript in the WASM crate
+// (descriptorDerive), which is what this suite exercises end to end.
 // Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -41,7 +43,7 @@ function importLine(module) {
 const source = [
   importLine("addresses"),
   importLine("coders"),
-  ...["hodlCmpBytes", "hodlTaprootNumsKey", "hodlXOnlyPubkey", "hodlMsigAddr"].map(slice),
+  ...["hodlTaprootNumsKey", "hodlXOnlyPubkey", "hodlMsigAddr"].map(slice),
   "export { hodlMsigAddr, hodlTaprootNumsKey };",
 ].join("\n");
 

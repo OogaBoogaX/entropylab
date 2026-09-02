@@ -36,6 +36,7 @@ const source = [
   importLine("hashes"),
   importLine("secp256k1"),
   importLine("coders"),
+  importLine("i18n"),
   ...["hodlTaggedSha256", "hodlBytesToBig", "hodlPointFrom", "hodlPointBytes", "hodlEq", "hodlLe32Counter", "hodlIsLowR", "hodlRfc6979Compare", "hodlAntiExfilCommitOk"].map(slice),
   "export { hodlRfc6979Compare, hodlAntiExfilCommitOk };",
 ].join("\n");

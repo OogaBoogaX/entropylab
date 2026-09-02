@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { t as hodlT } from "../src/js/i18n.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
@@ -47,6 +48,7 @@ ${loadSlice("hodlNumberBaseValueFromBytes")}
 ${loadSlice("hodlBinaryDigits")}
 ${loadSlice("hodlGroupedBinary")}
 ${loadSlice("hodlAnalyzeEntropyInput")}
+${loadSlice("hodlNote")}
 ${loadSlice("hodlNumberBaseEntropy")}
 return {hodlEntropyFormats,hodlEntropyFormatConfig,hodlFilterNumberBase,hodlAnalyzeEntropyInput,hodlNumberBaseEntropy,hodlNumberBaseValueFromBytes,hodlNumberBaseCalculationRows,hodlBinaryCalculationRows,hodlNumberBaseBinaryConversionMarkup};`,
 )({ encode: (bytes) => Buffer.from(bytes).toString("hex") });
@@ -113,7 +115,9 @@ test("Base 8 uses a mixed-radix final character and Base32 switches to coin flip
   assert.equal(base8.remainderBits, 2);
   assert.equal(base8.finalCharacters, "0123");
   assert.equal(api.hodlAnalyzeEntropyInput(`${"0".repeat(42)}4`, "base8", 12).finalInvalid, true);
-  assert.match(api.hodlNumberBaseEntropy(`${"0".repeat(42)}4`, "base8", 12).error, /final Octal character contributes only 2 bits and must be one of 0, 1, 2, 3/);
+  const octalError = api.hodlNumberBaseEntropy(`${"0".repeat(42)}4`, "base8", 12).error;
+  assert.equal(octalError.key, "error.hexFinalMixed");
+  assert.match(hodlT(octalError.key, octalError.vars), /final Octal character contributes only 2 bits and must be one of 0, 1, 2, 3/);
 
   const base32 = api.hodlEntropyFormatConfig("base32", 24);
   assert.equal(base32.remainderBits, 1);

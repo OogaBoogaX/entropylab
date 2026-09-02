@@ -16,9 +16,10 @@
   const setStatus = (online) => {
     const tag = document.getElementById(TAG_ID);
     if (!tag) return;
+    const t = globalThis.hodlT;
     tag.dataset.state = online ? "online" : "offline";
-    tag.textContent = online ? "Online" : "Offline";
-    tag.setAttribute("aria-label", online ? "Network status: online" : "Network status: offline");
+    tag.textContent = t ? t(online ? "network.online" : "network.offline") : (online ? "Online" : "Offline");
+    tag.setAttribute("aria-label", t ? t(online ? "network.onlineAria" : "network.offlineAria") : (online ? "Network status: online" : "Network status: offline"));
   };
 
   const checkNetwork = () => {

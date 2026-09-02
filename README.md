@@ -32,19 +32,27 @@ Official website: [entropylab.online](https://entropylab.online)
   A custom mode accepts an arbitrary-depth BIP32 account path, keeps Bitcoin
   network selection explicit, and appends the selected branch and address
   ranges. Typing `h` or `'` after a preset index enables its Harden control.
-- Supports numeric coin-type and account indexes for single-signature and
-  multisignature derivation. Purpose, coin type, and account indexes are
-  hardened by default; the starting address index is unhardened by default.
-  Each can be changed independently. Coin type 0 uses Bitcoin Mainnet, coin
-  type 1 uses Bitcoin Testnet, and custom indexes retain Mainnet address
-  serialization. Hardened address children require private key material and
-  therefore cannot be derived from multisig co-signer xpubs.
-  PSBT address rendering separately supports Mainnet and Testnet.
+ - Supports numeric coin-type and account indexes for single-signature and
+   multisignature derivation. Purpose, coin type, and account indexes are
+   hardened by default; the starting address index is unhardened by default.
+   Each can be changed independently. Coin type 0 uses Bitcoin Mainnet, coin
+   type 1 uses Bitcoin Testnet, and custom indexes retain Mainnet address
+   serialization. Hardened address children require private key material and
+   therefore cannot be derived from multisig co-signer xpubs.
+   PSBT address rendering separately supports Mainnet and Testnet. A network
+   picker in the header (the Bitcoin-orange coin next to the network name)
+   shows the network every tool is set to and switches it — address formats,
+   extended key versions, WIF prefixes, and coin-type defaults all follow, and
+   each menu entry spells out the checks its choice implies. Nothing connects
+   anywhere: the choice only picks formats, and a tool's own advanced fields
+   can still override it. Every load starts on Mainnet again.
 - Derives watch-only multisignature wallets from extended public keys without
   requiring private keys. Multisig script type and purpose are separate as
   well; conventional script choices restore their standard purpose, while
   pasted co-signer origins auto-detect and must agree with the selected path
-  indexes and hardening choices.
+  indexes and hardening choices. Addresses are derived from the exported
+  output descriptor itself by rust-miniscript (in the WASM crate), so the two
+  cannot drift.
 - Inspects PSBT v0 transactions, reports PSBT-provided amounts and fees, checks
   for repeated ECDSA nonces from the same public key — including signatures
   carried by finalized scriptSig/witness fields, which are decoded and analyzed
@@ -253,10 +261,13 @@ EntropyLab's cryptography — secp256k1 curve operations (public-key
 derivation, ECDSA signing and verification in PSBT inspection, curve point
 math), hashes (SHA-256, SHA-512, RIPEMD-160, HMAC-SHA-512,
 PBKDF2-HMAC-SHA-512), BIP32 extended-key derivation, BIP39 mnemonics,
-Base58Check and bech32m encoding, and address/script construction
+Base58Check and bech32m encoding, output descriptor evaluation
+(BIP380-386; taproot `sortedmulti_a` is layered on top), and
+address/script construction
 (p2pkh/p2sh/p2wpkh/p2tr, bare and taproot multisig) — runs on rust-bitcoin's
 `secp256k1` crate (libsecp256k1 v0.4.1 vendored by secp256k1-sys 0.10.1),
-`bitcoin`, `bitcoin_hashes`, `base58ck`, `bech32`, and `bip39`, compiled to
+`bitcoin`, `bitcoin_hashes`, `base58ck`, `bech32`, `bip39`, and
+`miniscript`, compiled to
 WebAssembly from the pinned Rust crate in `entropylab-wasm/` (exact crate
 versions in `entropylab-wasm/Cargo.lock`, toolchain pinned by
 `rust-toolchain.toml`) via the facades in `src/js/secp256k1.js`,
@@ -306,7 +317,7 @@ To remove generated files, run `npm run clean`.
 │   ├── build.mjs           Locked-dependency esbuild and HTML assembly
 │   ├── build-wasm.mjs      crypto WASM rebuild (npm run build:wasm)
 │   └── verify-site.mjs     Site artifact verification (npm run verify)
-├── entropylab-wasm/        Pinned Rust crate: libsecp256k1 + bitcoin_hashes -> WebAssembly bindings
+├── entropylab-wasm/        Pinned Rust crate: rust-bitcoin + rust-miniscript -> WebAssembly bindings
 ├── test/
 │   ├── browser-instrumentation.html  In-page browser test hooks
 │   ├── browser-suite.html            In-page browser test suite
@@ -332,7 +343,7 @@ To remove generated files, run `npm run clean`.
 │       ├── bip39.js          BIP39 mnemonic facade over the WASM module (scure-shaped API)
 │       ├── bip39-english.js  Canonical 2048-word English list (UI data)
 │       ├── base58.js         Base58Check facade over the WASM module
-│       ├── addresses.js      Script/address facade over the WASM module
+│       ├── addresses.js      Script/address/descriptor facade over the WASM module
 │       ├── bech32.js         bech32m facade over the WASM module (BIP352)
 │       ├── coders.js         hex/base64 byte coders (no cryptography)
 │       ├── sqlite-writer.js Minimal SQLite database file writer

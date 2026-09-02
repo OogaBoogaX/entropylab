@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
 const template = readFileSync(join(root, "..", "src/index.html"), "utf8");
+const en = readFileSync(join(root, "..", "src/locales/en.json"), "utf8");
 
 function loadSlice(name) {
   const start = app.indexOf(`function ${name}(`);
@@ -52,9 +53,9 @@ test("PSBT copy mentions Jade anti-exfil transcript checks", () => {
   assert.match(app, /id="psbt-ax-transcript"/);
   assert.match(app, /hodlAntiExfilCommitOk\(\s*parts\.r\s*,\s*opening\s*,\s*transcript\.host\s*\)/);
   assert.match(app, /s2c\/ecdsa\/point/);
-  assert.match(app, /Matches Jade anti-exfil \(sign-to-contract\)/);
-  assert.match(app, /BitBox anti-klepto is a different construction/);
-  assert.match(app, /QR \/ sign_psbt Jade does not run it yet/);
+  assert.match(app, /hodlT\("psbt.jadeMatch"\)/);
+  assert.match(app, /RFC 6979 comparison currently covers/);
+  assert.match(en, /QR \/ sign_psbt Jade does not run it yet/);
 });
 
 test("empty transcript is inspect-only (no anti-exfil check)", () => {
@@ -111,7 +112,7 @@ test("anti-exfil commit check is try/caught so a bad opening cannot wipe the PSB
   assert.match(app, /else\s+try\s*\{\s*if\s*\(\s*hodlAntiExfilCommitOk\(\s*parts\.r\s*,\s*opening\s*,\s*transcript\.host\s*\)\s*\)/);
   assert.match(
     app,
-    /catch\s*\(\s*exception\s*\)\s*\{\s*message\s*=\s*"Could not verify Jade anti-exfil: "\s*\+\s*\(\s*exception\.message\s*\|\|\s*String\s*\(\s*exception\s*\)\s*\)\s*;\s*className\s*=\s*"psbt-warn"\s*;?\s*\}/,
+    /catch\s*\(\s*exception\s*\)\s*\{\s*message\s*=\s*hodlT\(\s*"psbt.jadeVerifyFail"\s*,\s*\{\s*error:\s*exception\.message\s*\|\|\s*String\s*\(\s*exception\s*\)\s*\}\s*\)\s*;\s*className\s*=\s*"psbt-warn"\s*;?\s*\}/,
   );
 });
 

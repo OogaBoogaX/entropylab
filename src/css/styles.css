@@ -16,6 +16,13 @@
   --ok-bright: #22c55e; /* a true green: --ok sits closer to olive than the status tag wants */
   --blue: #6f9fca;
   --warn: #c9a44a;
+  /* The Bitcoin Core icon's orange. Both themes share it: it is a brand
+   * signal (mainnet = real coins), not a surface colour. */
+  --bitcoin: #f7931a;
+  /* The other Bitcoin Core network colours, shared across themes for the
+   * same reason: green testnet, purple signet. Regtest reuses --faint. */
+  --testnet: #22c55e;
+  --signet: #a855f7;
   --paper: #f3efe4;
   --playing-card-bg: #292929;
   --playing-card-fg: #eeeeee;
@@ -123,6 +130,20 @@ button:not(:disabled):active * { color: inherit !important; }
    small inline identicon next to the hash it visualizes. */
 .page-footer-build code { font-family: var(--mono); }
 .page-footer-lifehash { vertical-align: -0.25em; margin-left: 4px; border-radius: 3px; }
+/* A fourth row closes the footer: the repository link and the theme toggle,
+   which used to crowd the header bar. Off the bar they are no longer squeezed
+   to 40px, so both take the app's standard 44px target and the link keeps its
+   label at every width. */
+.page-footer-links { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin-top: 14px; }
+.page-footer-links > a { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.page-footer-links .github-repo-link {
+  border-color: color-mix(in oklab, var(--blue) 65%, var(--border));
+  background: color-mix(in oklab, var(--blue) 14%, var(--surface)); color: var(--blue);
+}
+.page-footer-links .github-repo-link:hover {
+  background: color-mix(in oklab, var(--blue) 23%, var(--surface)); color: var(--fg);
+}
+.page-footer-links .github-repo-link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; }
 .tab, .btn {
   min-height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--border);
@@ -139,6 +160,7 @@ button:not(:disabled):active * { color: inherit !important; }
   background: var(--selection-accent); border-color: var(--selection-accent); color: var(--selection-fg);
 }
 .btn.secondary { background: var(--surface-2); color: var(--fg); }
+.btn.secondary:disabled { cursor: not-allowed; opacity: .52; color: var(--muted); }
 textarea, select,
 input:not([type="radio"]):not([type="checkbox"]) {
   width: 100%; min-height: 44px; margin-top: var(--space-control); padding: 10px 12px;
@@ -178,10 +200,20 @@ textarea { display: block; min-height: 96px; letter-spacing: 0.08em; }
 .seed-autocomplete-note { color: var(--muted); font-weight: 400; }
 .seed-entry-tools { display: flex; align-items: stretch; gap: var(--space-control); margin-top: var(--space-component); }
 .seed-entry-tools .seed-autocomplete-toggle { flex: 1 1 auto; margin-top: 0; }
-.global-sync-host { margin-top: var(--space-component); }
+/* Tighter to the dropdown above than to the section below: the control reads
+   as part of the method it qualifies, and the 8px off the top is given back
+   under the explanation. */
+.global-sync-host { margin-top: var(--space-control); padding-bottom: var(--space-control); }
 .global-sync-host[hidden] { display: none; }
-.global-sync-row { display: flex; align-items: stretch; gap: var(--space-control); }
-.global-sync-toggle { flex: 1 1 auto; margin-top: 0; }
+/* Two rows: the switch and its title, then the explanation under both. The
+   shared toggle chrome is a bordered chip elsewhere; here the control reads as
+   part of the card, so it gives up the box and keeps the 44px target. */
+.global-sync-row { display: block; }
+.global-sync-head { display: flex; align-items: center; gap: var(--space-control); }
+.global-sync-toggle { flex: 1 1 auto; min-height: 32px; margin-top: 0; padding: 0; border: 0; background: none; }
+/* The title carries the same weight and colour as the Method label above it. */
+.global-sync-toggle .label { margin: 0; }
+.global-sync-note { display: block; margin: 0; font-size: 13px; line-height: 1.45; }
 .global-sync-status {
   display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
   color: var(--ok); font-size: 13px; font-weight: 600; white-space: nowrap;
@@ -649,16 +681,6 @@ td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; fon
    stops short of both ends: the wordmark wants the full contrast. */
 .site-title { flex: 0 0 auto; font-family: var(--display); font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: #ffffff; white-space: nowrap; }
 :root[data-theme="light"] .site-title { color: #000000; }
-/* The build stamps this version beside the logo. It takes the
-   kicker's accent and weight, but not its display tracking: this sits in a
-   dense row of controls rather than above a title. */
-.site-version {
-  flex: 0 0 auto; display: inline-flex; align-items: baseline; gap: 6px; margin-left: 6px; white-space: nowrap;
-  font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); font-weight: 600;
-}
-/* Version strings opt out of the uppercase, so the "v" prefix stays lowercase
-   wherever one appears in the label. */
-.site-version-number { text-transform: none; font-variant-numeric: tabular-nums; }
 /* Straddles the header's bottom rule so the rule runs into its two edges and
    the tag reads as speared by it, and sits at the bar's left edge, under the
    logo and wordmark. Hanging below the control row is what lets it hold that
@@ -684,6 +706,62 @@ td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; fon
 }
 .network-status[data-state="offline"] { color: var(--ok-bright); }
 .network-status[data-state="online"] { color: var(--danger-bright); }
+/* The network picker rides the bar's action row, between the GitHub link and
+   the theme toggle: it states what the tools are set to the way the version
+   states what build they are. The button takes the secondary header-control
+   look, with the Bitcoin Core icon's coin beside the network's name — the
+   same convention mempool.space uses in its network switcher. The coin takes
+   the colour Core gives the network: yellow mainnet, green testnet, purple
+   signet, grey regtest. */
+.network-picker { position: relative; flex: 0 0 auto; }
+.network-picker-button {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); color: var(--fg); font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.network-picker-button:hover { border-color: var(--accent); }
+.network-picker-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Sized with the download and GitHub marks either side of it, which are
+   both 18px; the SVG's own 16px attribute leaves the coin reading small
+   against them, label or no label. */
+.network-picker-glyph { display: block; flex: 0 0 auto; width: 18px; height: 18px; }
+.network-picker-coin { fill: var(--bitcoin); }
+.network-picker[data-network="testnet"] .network-picker-coin { fill: var(--testnet); }
+.network-picker[data-network="signet"] .network-picker-coin { fill: var(--signet); }
+.network-picker[data-network="regtest"] .network-picker-coin { fill: var(--faint); }
+.network-picker-b { fill: #ffffff; }
+.network-picker-chevron { color: var(--accent); transition: transform 120ms ease; }
+.network-picker-button[aria-expanded="true"] .network-picker-chevron { transform: rotate(180deg); }
+/* Right-anchored: the button sits at the bar's right edge, so the menu opens
+   leftward into the page instead of past the viewport. */
+.network-picker-menu {
+  position: absolute; z-index: 100; top: calc(100% + 6px); right: 0; width: 340px;
+  max-width: calc(100vw - 2 * var(--site-header-pad));
+  padding: 6px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface-2); box-shadow: 0 16px 36px rgb(0 0 0 / 55%);
+}
+.network-picker-title {
+  margin: 6px 10px 4px; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--accent); font-weight: 600;
+}
+.network-picker-option {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 10px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--fg);
+  text-align: left; cursor: pointer;
+}
+/* Each option carries its network's coin, the mempool.space switcher
+   convention: yellow mainnet, green testnet, purple signet, grey regtest. */
+.network-picker-option-glyph { flex: 0 0 auto; margin-top: 3px; }
+.network-picker-option-coin { fill: var(--bitcoin); }
+.network-picker-option[data-network="testnet"] .network-picker-option-coin { fill: var(--testnet); }
+.network-picker-option[data-network="signet"] .network-picker-option-coin { fill: var(--signet); }
+.network-picker-option[data-network="regtest"] .network-picker-option-coin { fill: var(--faint); }
+.network-picker-option:hover, .network-picker-option:focus-visible { background: color-mix(in oklab, var(--accent) 14%, var(--surface-2)); outline: none; }
+.network-picker-option[aria-checked="true"] { background: color-mix(in oklab, var(--accent) 20%, var(--surface-2)); }
+.network-picker-option[aria-checked="true"] strong { color: var(--accent); }
+.network-picker-option-text { font-size: 14px; }
+.network-picker-option-desc { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.network-picker-note { margin: 6px 10px 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
 /* min-width: 0 lets the row shrink on narrow screens rather than pushing the
    controls out of the bar. */
 .download-controls { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
@@ -699,10 +777,21 @@ td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; fon
    glyphs land a pixel low next to a symmetric icon. This nudge is optical, not
    layout: it moves the ink, not the box. */
 .control-label { position: relative; top: -1px; }
-.download-controls .btn:is(.download-html, .github-repo-link) { flex: 0 0 auto; }
-/* Square it off against the 40px header controls; the shared keyboard-toggle
-   base is 44px wide and stays that way everywhere else in the app. */
-.download-controls .theme-toggle { flex: 0 0 40px; width: 40px; align-self: center; }
+.download-controls .download-html { flex: 0 0 auto; }
+.locale-control { display: flex; align-items: center; flex: 0 0 auto; }
+.locale-select {
+  min-height: 40px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--fg); font-size: 13px; font-weight: 600; letter-spacing: 0.04em;
+}
+.locale-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* enhanced-inputs.js swaps the select for a custom listbox whose form chrome
+   (44px minimum, control margin, mono face) would bulge out of the 52px bar.
+   In the header the generated control wears the header-button sizing instead. */
+.locale-control .custom-select { flex: 0 0 auto; width: auto; margin-top: 0; font-family: inherit; font-size: 14px; }
+.locale-control .custom-select-button {
+  min-height: 40px; padding: 0 12px; border-radius: 8px; gap: 7px;
+  background: var(--surface-2); color: var(--fg); font-weight: 600; letter-spacing: 0.04em;
+}
 .theme-toggle svg { display: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .theme-toggle[data-theme-mode="dark"] .theme-icon-dark, .theme-toggle[data-theme-mode="light"] .theme-icon-light { display: block; }
 .btn:is(.download-html, .save-recovery-sheet, .save-wallet-dat) {
@@ -714,14 +803,6 @@ td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; fon
 }
 .btn:is(.download-html, .save-recovery-sheet, .save-wallet-dat):focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
 .github-mark { flex: 0 0 auto; }
-.download-controls .github-repo-link {
-  border-color: color-mix(in oklab, var(--blue) 65%, var(--border));
-  background: color-mix(in oklab, var(--blue) 14%, var(--surface)); color: var(--blue);
-}
-.download-controls .github-repo-link:hover {
-  background: color-mix(in oklab, var(--blue) 23%, var(--surface)); color: var(--fg);
-}
-.download-controls .github-repo-link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .custom-select-native {
   position: absolute !important; width: 1px !important; height: 1px !important; min-height: 0 !important;
   margin: 0 !important; padding: 0 !important; opacity: 0; pointer-events: none; overflow: hidden;
@@ -733,7 +814,11 @@ td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; fon
   background: var(--bg); color: var(--fg); text-align: left; cursor: pointer;
 }
 .custom-select-button:hover, .custom-select.open .custom-select-button { border-color: var(--accent); }
-.custom-select-chevron { color: var(--accent); font-size: 12px; transition: transform 120ms ease; }
+.custom-select-chevron {
+  display: block; flex: 0 0 auto; width: 12px; height: 12px;
+  fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+  color: var(--accent); transition: transform 120ms ease;
+}
 .custom-select.open .custom-select-chevron { transform: rotate(180deg); }
 .custom-select-list {
   position: absolute; z-index: 100; top: calc(100% + 6px); left: 0; right: 0; max-height: 260px;
@@ -966,6 +1051,9 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 #sp-modes + .station-key-source { margin-top: 20px; }
 .station-key-source > .label { margin: 0 0 8px; }
 .station-key-source > .field-note { display: block; margin: 8px 0 0; }
+.msig-key-reuse-toggle { margin-top: 12px; }
+.msig-station-key-source #msig-session-key-status:empty { display: none; }
+.msig-station-key-source + .msig-threshold-labels { margin-top: 0; }
 .session-key-picker { display: flex; flex-wrap: wrap; gap: 8px; }
 .session-key-picker[hidden] { display: none; }
 .session-key-option {
@@ -1001,6 +1089,8 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
    brings its own 16px top margin (they collapsed to one 16px before), so the
    only thing this drops is the gap left above the panel's bottom padding. */
 .workspace-panel .card { margin-bottom: 0; }
+.psbt-tool-tabs { margin: 0 0 var(--space-component); }
+.psbt-tool-tabs[hidden] { display: none; }
 .segmented-control {
   display: flex; align-items: stretch; flex-wrap: wrap; gap: 0; max-width: 100%; isolation: isolate;
 }
@@ -1017,6 +1107,30 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .segmented-control > .tab:focus-visible {
   z-index: 2; outline: 2px solid color-mix(in oklab, var(--selection-accent) 72%, var(--fg)); outline-offset: 2px;
 }
+/* The Cards mark's front face masks the rear one, so it has to carry whatever
+   surface it is drawn on: the closed control's ground, the list's, and the
+   tints the selected and hovered rows take. */
+.key-mode-select .custom-select-button { --key-method-card-bg: var(--bg); }
+.key-mode-select .custom-select-list { --key-method-card-bg: var(--surface-2); }
+.key-mode-select .custom-select-option:hover,
+.key-mode-select .custom-select-option:focus-visible { --key-method-card-bg: color-mix(in oklab, var(--accent) 14%, var(--surface-2)); }
+.key-mode-select .custom-select-option[aria-selected="true"] { --key-method-card-bg: color-mix(in oklab, var(--accent) 20%, var(--surface-2)); }
+.key-method-icon {
+  display: inline-flex; flex: 0 0 18px; width: 18px; height: 18px; color: currentColor;
+}
+.key-method-icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
+/* The method picker, in the Script type control's chrome that
+   enhanced-inputs.js builds: the mark sits ahead of the label in the button
+   and in every option. */
+.key-mode-select > .label { margin: 0 0 8px; }
+.key-mode-select .custom-select, .seed-length-select .custom-select { margin-top: 0; }
+/* Half the card, sharing the right edge with the Script type control below:
+   that field is one of two grid columns, so the gap comes off this width too.
+   Below the header breakpoint these go full width while that row is still two
+   columns, so they part company there. */
+.key-mode-select, .seed-length-select { width: calc(50% - var(--space-component) / 2); }
+.key-mode-select .custom-select-option { display: flex; align-items: center; gap: 8px; }
+.key-mode-select .custom-select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .segmented-control.is-stacked { flex-direction: column; flex-wrap: nowrap; width: 100%; }
 .segmented-control.is-stacked > .tab { width: 100%; flex: 1 1 auto; }
 .segmented-control.is-stacked > .tab + .tab { margin-block-start: -1px; }
@@ -1200,7 +1314,6 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .seed-length-control[hidden] { display: none !important; }
 .seed-length-control .label { margin: 0 0 8px; }
 .seed-length-control .muted { margin: var(--space-control) 0 0; }
-.seed-length-options { align-items: center; }
 .key-form { margin-top: var(--space-section); }
 .key-form > :first-child { margin-top: 0; }
 .key-form > .muted { margin: var(--space-control) 0 0; }
@@ -1356,6 +1469,15 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .derive-progress-label svg { display: block; width: 14px; height: 14px; }
 @media (prefers-reduced-motion: reduce) { .derive-progress-bar { transition: none; } }
 .msig-keys textarea { min-height: 72px; }
+/* The Paste descriptor panel is the multisig tool's details/summary
+   expandable, styled like the derivation tool's Advanced block. */
+.msig-import { margin-top: var(--space-section); padding-top: var(--space-component); border-top: 1px solid var(--border); }
+.msig-import summary { width: fit-content; color: var(--muted); font-weight: 700; cursor: pointer; }
+.msig-import summary:hover { color: var(--fg); }
+.msig-import summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 3px; }
+.msig-import[open] summary { margin-bottom: var(--space-component); color: var(--fg); }
+.msig-import textarea { min-height: 72px; }
+.msig-import .btn { margin-top: var(--space-control); }
 .msig-intro { margin: var(--space-control) 0 0; }
 .msig-threshold-control {
   --msig-slider-inset: 14px;
@@ -1657,25 +1779,37 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 @media (max-width: 719px) {
   :root { --site-header-pad: 12px; }
   .control-label { display: none; }
+  /* The Station's dropdowns take the whole card from the same width the bar's
+     controls collapse at, so the page changes shape in one step. */
+  .key-mode-select, .seed-length-select { width: 100%; }
+  /* Icon-only in the row, square against the 40px theme toggle it sits
+     beside: the picker keeps its place among the header controls rather than
+     dropping out of the bar, and the coin's colour still carries the network.
+     .network-picker stays position: relative so the menu anchors to it. */
+  .network-picker { flex: 0 0 40px; }
+  .network-picker-label, .network-picker-chevron { display: none; }
+  .network-picker-button { width: 40px; padding: 0; justify-content: center; }
   /* Short tool names here: the strip is the page's only horizontal scroll, so
      fitting more of it on screen matters more than the fuller wording. */
   .workspace-tab-full { display: none; }
   .workspace-tab-short { display: inline; }
   /* Icon-only: square them off against the 40px theme toggle. */
-  .download-controls .btn:is(.download-html, .github-repo-link) { flex: 0 0 40px; width: 40px; padding: 0; justify-content: center; }
+  .download-controls .download-html { flex: 0 0 40px; width: 40px; padding: 0; justify-content: center; }
+  /* The footer link loses its label with the rest, so it squares off against
+     the 44px toggle beside it rather than keeping a button's side padding. */
+  .page-footer-links .github-repo-link { flex: 0 0 44px; width: 44px; padding: 0; justify-content: center; }
   /* The wordmark gives back the width the icon-only buttons still need. */
   .site-title { font-size: 19px; }
   .download-controls { gap: 6px; }
-  /* Only the version number itself survives on narrow screens. */
-  .site-version-tag { display: none; }
 }
 /* Below the common 412/414px Android widths the lockup is the last thing with
    give left in the bar, the controls being fixed-width icons by now. Taking it
    down a step buys back roughly the width the row is short of at 320px, and
-   costs less than dropping an item. */
+   costs less than dropping an item. The controls close up by 2px here too, the
+   network picker having taken a fourth slot in the row. */
 @media (max-width: 400px) {
   .site-title { font-size: 17px; }
-  .site-version { font-size: 11px; margin-left: 2px; }
+  .download-controls { gap: 4px; }
 }
 @media (max-width: 520px) {
   .key-panel-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
@@ -1705,11 +1839,14 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .key-tab-lab-icon svg { width: 100%; height: 100%; }
 .multisig-tab-icon { display: inline-flex; flex: 0 0 auto; width: 28px; height: 23px; margin-left: -5px; }
 .multisig-tab-icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.bench-tab-icon,
+.key-tab-icon.key-tab-lab-icon.bench-tab-icon,
 .multisig-tab-icon.bench-tab-icon {
   flex: 0 0 18px; width: 18px; height: 18px; margin-left: 0; padding: 0; color: var(--muted);
 }
-.bench-tab-icon svg { display: block; width: 100%; height: 100%; }
+.bench-tab-icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
+/* The MS ring does not shrink its Station mark: normalize the key cluster to
+   an 18px core. SP deliberately keeps its original compact 18px whole mark. */
+.multisig-tab-icon.bench-tab-icon { flex-basis: 21px; width: 21px; height: 24px; }
 .key-tab-label { display: inline-block; white-space: nowrap; }
 .key-tab-editing { height: 44px; }
 .key-tabs .key-tab-editing input.key-tab-name-input {

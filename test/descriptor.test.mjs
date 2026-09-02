@@ -8,6 +8,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+const en = JSON.parse(readFileSync(join(root, "src/locales/en.json"), "utf8"));
+function specText(value) {
+  if (value == null || value === "") return "";
+  if (typeof value === "string") return value;
+  if (value && typeof value.key === "string") {
+    let text = en[value.key] || value.key;
+    if (value.vars) text = text.replace(/\{(\w+)\}/g, (_, n) => (value.vars[n] == null ? `{${n}}` : String(value.vars[n])));
+    return text;
+  }
+  return String(value);
+}
 
 function extract(startNeedle, endNeedle) {
   const start = app.indexOf(startNeedle);
@@ -66,7 +77,22 @@ function loadSlice(startNeedle, endNeedle, extra) {
 const originPath = loadSlice(
   "function hodlFilterXpub",
   "function hodlParseMultisigCosigner",
-  "const hodlMaxPurpose = 2147483647;\nconst hodlCoinTypeFromNetwork = (network) => network === 'mainnet' ? 0 : 1;\nexport { hodlFilterXpub, hodlNormalizeOriginPath, hodlParseKeyOrigin, hodlOriginPathIndexes, hodlOriginMatchesParsedKey, hodlMultisigPurposeIndex, hodlOriginScriptError, hodlMultisigAccountNumber, hodlSummarizeMultisigAccounts, hodlMultisigAccountWarning, hodlMultisigOriginScriptKind, hodlMultisigScriptEvidence, hodlSummarizeMultisigScriptKinds };",
+  `import { readFileSync } from "node:fs";
+const en = JSON.parse(readFileSync(${JSON.stringify(join(root, "src/locales/en.json"))}));
+function hodlT(key, vars) {
+  let text = en[key] || key;
+  if (vars) text = text.replace(/\\{(\\w+)\\}/g, (_, n) => (vars[n] == null ? "{" + n + "}" : String(vars[n])));
+  return text;
+}
+function hodlNote(key, vars) { return vars == null ? { key } : { key, vars }; }
+function hodlError(key, vars) {
+  const err = new Error(hodlT(key, vars));
+  err.hodlSpec = vars == null ? { key } : { key, vars };
+  return err;
+}
+const hodlMaxPurpose = 2147483647;
+const hodlCoinTypeFromNetwork = (network) => network === 'mainnet' ? 0 : 1;
+export { hodlFilterXpub, hodlNormalizeOriginPath, hodlParseKeyOrigin, hodlOriginPathIndexes, hodlOriginMatchesParsedKey, hodlMultisigPurposeIndex, hodlOriginScriptError, hodlMultisigAccountNumber, hodlSummarizeMultisigAccounts, hodlMultisigAccountWarning, hodlMultisigOriginScriptKind, hodlMultisigScriptEvidence, hodlSummarizeMultisigScriptKinds };`,
 );
 const {
   hodlFilterXpub,
@@ -106,6 +132,8 @@ test("filter keeps descriptor origin punctuation", () => {
   const raw = "[73c5da0a/48h/1h/0h/2h]tpubABC";
   assert.equal(hodlFilterXpub(raw), raw);
   assert.equal(hodlFilterXpub("[73c5da0a/48'/1'/0'/2']tpubABC"), "[73c5da0a/48'/1'/0'/2']tpubABC");
+  // A trailing wildcard survives the field filter so the parser can see it.
+  assert.equal(hodlFilterXpub(`${raw}/0/*`), `${raw}/0/*`);
 });
 
 test("origin parse normalizes apostrophes and strips /0/*", () => {
@@ -119,6 +147,34 @@ test("origin parse normalizes apostrophes and strips /0/*", () => {
   assert.equal(hodlParseKeyOrigin("tpubABC").origin, null);
 });
 
+test("origin parse tolerates branch wildcards and lone trailing slashes as decoration", () => {
+  const body = "[73c5da0a/48h/1h/0h/2h]tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
+  const bare = hodlParseKeyOrigin(body);
+  for (const suffix of ["/0/*", "/<0;1>/*", "/", "/0/*/"]) {
+    const parsed = hodlParseKeyOrigin(body + suffix);
+    assert.equal(parsed.key, bare.key, `suffix ${suffix} was not fully stripped`);
+    assert.deepEqual(parsed.origin, bare.origin, `suffix ${suffix} changed the origin`);
+    assert.equal(parsed.derivationPath, "", `suffix ${suffix} must not become a derivation path`);
+  }
+});
+
+test("origin parse honors a trailing numeric path, with or without decoration", () => {
+  const body = "[73c5da0a/48h/1h/0h/2h]tpubDFH9dgzveyD8zTbPUFuLrGmCydNvxehyNdUXKJAQN8x4aZ4j6UZqGfnqFrD4NqyaTVGKbvEW54tsvPTK2UoSbCC1PJY8iCNiwTL3RWZEheQ";
+  assert.equal(hodlParseKeyOrigin(body + "/0/1/0").derivationPath, "0/1/0");
+  // A trailing slash alone is decoration; the path ahead of it still applies.
+  assert.equal(hodlParseKeyOrigin(body + "/0/1/0/").derivationPath, "0/1/0");
+  // A sole step ahead of the wildcard is the branch marker; two or more
+  // steps are the signer's fixed path and are preserved in full.
+  assert.equal(hodlParseKeyOrigin(body + "/1/0/*").derivationPath, "1/0");
+  assert.equal(hodlParseKeyOrigin(body + "/0/0/20/*").derivationPath, "0/0/20");
+  assert.equal(hodlParseKeyOrigin(body + "/0/0/20/<0;1>/*").derivationPath, "0/0/20");
+  // Malformed shapes fail loudly instead of being mangled.
+  assert.throws(() => hodlParseKeyOrigin(body + "/0/*/1"), /wildcard/);
+  assert.throws(() => hodlParseKeyOrigin(body + "/0/foo/1"), /Trailing path steps/);
+  assert.throws(() => hodlParseKeyOrigin(body + "/0/1/<0;1>/<2;3>"), /Only one multipath/);
+  assert.throws(() => hodlParseKeyOrigin(body + "/0/<0;1>/2"), /must be the last trailing path step/);
+});
+
 test("placeholder fingerprint 00000000 is rejected", () => {
   assert.throws(
     () => hodlParseKeyOrigin("[00000000/48h/1h/0h/2h]tpubABC"),
@@ -130,17 +186,17 @@ test("origin path must match key depth and script", () => {
   const origin = { fingerprint: "73c5da0a", path: "48h/1h/0h/2h" };
   const mock = { depth: 4, childNumber: 0x80000002 };
   assert.equal(hodlOriginMatchesParsedKey(origin, mock), "");
-  assert.match(hodlOriginMatchesParsedKey({ fingerprint: "73c5da0a", path: "48h/1h/0h" }, mock), /steps/);
+  assert.match(specText(hodlOriginMatchesParsedKey({ fingerprint: "73c5da0a", path: "48h/1h/0h" }, mock)), /steps/);
   assert.equal(hodlOriginScriptError(origin, "p2wsh", "testnet", 48), "");
   assert.equal(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "48h/0h/0h/2h" }, "p2wsh", "mainnet", 48), "");
-  assert.match(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "48h/0h/0h/2h" }, "p2wsh", "testnet", 48), /1h/);
+  assert.match(specText(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "48h/0h/0h/2h" }, "p2wsh", "testnet", 48)), /1h/);
   assert.equal(hodlOriginMatchesParsedKey({ fingerprint: "73c5da0a", path: "45h" }, { depth: 1, childNumber: 0x8000002d }), "");
   assert.equal(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "45h" }, "p2sh", "mainnet", 45), "");
-  assert.match(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "45h/0" }, "p2sh", "mainnet", 45), /without an account/);
+  assert.match(specText(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "45h/0" }, "p2sh", "mainnet", 45)), /without an account/);
   const bip87 = { fingerprint: "73c5da0a", path: "87h/0h/7h" };
   assert.equal(hodlOriginMatchesParsedKey(bip87, { depth: 3, childNumber: 0x80000007 }), "");
   assert.match(
-    hodlOriginScriptError({ fingerprint: "73c5da0a", path: "45h" }, "p2sh", "mainnet", 87),
+    specText(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "45h" }, "p2sh", "mainnet", 87)),
     /87h/,
   );
   assert.equal(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "86h/0h/0h" }, "p2tr", "mainnet", 86), "");
@@ -162,7 +218,7 @@ test("multisig account is derived from BIP48 and BIP87 origins", () => {
     () => hodlMultisigAccountNumber({ path: "48h/0h/7/2h" }, "p2wsh", 48),
     /must be hardened/,
   );
-  assert.match(hodlOriginScriptError({ path: "48h/0h/7/2h" }, "p2wsh", "mainnet", 48), /must be hardened/);
+  assert.match(specText(hodlOriginScriptError({ path: "48h/0h/7/2h" }, "p2wsh", "mainnet", 48)), /must be hardened/);
 });
 
 test("multisig account summary reports mismatched accounts as mixed", () => {
@@ -172,7 +228,7 @@ test("multisig account summary reports mismatched accounts as mixed", () => {
 
   const mixed = hodlSummarizeMultisigAccounts([7, 2, 7, 4]);
   assert.deepEqual(mixed, { account: null, accounts: [2, 4, 7], consistent: false, mixed: true });
-  assert.match(hodlMultisigAccountWarning(mixed), /do not match \(2, 4, 7\).*shown as Mixed/);
+  assert.match(specText(hodlMultisigAccountWarning(mixed)), /do not match \(2, 4, 7\).*shown as Mixed/);
 });
 
 test("multisig script type is inferred from SLIP-132 prefixes and key origins", () => {
@@ -184,7 +240,13 @@ test("multisig script type is inferred from SLIP-132 prefixes and key origins", 
   assert.equal(hodlMultisigOriginScriptKind({ path: "48h/0h/0h/2h" }), "p2wsh");
   assert.equal(hodlMultisigOriginScriptKind({ path: "86h/0h/0h" }), "p2tr");
   assert.equal(hodlMultisigOriginScriptKind({ path: "48h/0h/0h/3h" }), null);
-  assert.equal(hodlMultisigOriginScriptKind({ path: "84h/0h/0h" }), null);
+  // The singlesig BIPs map to their multisig script type at account depth;
+  // an unrecognized purpose selects nothing and stays custom.
+  assert.equal(hodlMultisigOriginScriptKind({ path: "84h/0h/0h" }), "p2wsh");
+  assert.equal(hodlMultisigOriginScriptKind({ path: "49h/0h/0h" }), "p2sh-p2wsh");
+  assert.equal(hodlMultisigOriginScriptKind({ path: "44h/0h/0h" }), "p2sh");
+  assert.equal(hodlMultisigOriginScriptKind({ path: "84h/0h/0h/2h" }), null);
+  assert.equal(hodlMultisigOriginScriptKind({ path: "69420h/0h/0h" }), null);
   assert.equal(hodlMultisigPurposeIndex({ path: "45h" }), 45);
   assert.equal(hodlMultisigPurposeIndex({ path: "69420h/0h/0h/2h" }), 69420);
   assert.equal(hodlMultisigPurposeIndex({ path: "48/0h/0h/2h" }), 48);

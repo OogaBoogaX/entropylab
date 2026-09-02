@@ -172,7 +172,6 @@ test("the status tag ships online, sits in the header, and is wired to the build
   // in the header has to be dropped to make room for it.
   const narrow = css.slice(css.indexOf("@media (max-width: 719px)"));
   assert.doesNotMatch(narrow, /\.network-status \{/);
-  assert.doesNotMatch(narrow, /\.site-version \{ display: none; \}/);
   // The old banner's rules went with the banner.
   assert.doesNotMatch(css, /\.network-warning/);
 });

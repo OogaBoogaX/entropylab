@@ -8,6 +8,17 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
+const en = JSON.parse(readFileSync(join(root, "..", "src/locales/en.json"), "utf8"));
+function hodlT(key, vars) {
+  let text = en[key] || key;
+  if (vars) text = text.replace(/\{(\w+)\}/g, (_, n) => (vars[n] == null ? `{${n}}` : String(vars[n])));
+  return text;
+}
+function hodlError(key, vars) {
+  const err = new Error(hodlT(key, vars));
+  err.hodlSpec = vars == null ? { key } : { key, vars };
+  return err;
+}
 
 function loadSlice(name) {
   const start = app.indexOf(`function ${name}(`);
@@ -32,8 +43,9 @@ const hodlSha256 = (input) => new Uint8Array(createHash("sha256").update(input).
 const helpers = new Function(
   "hodlSha256",
   "TextEncoder",
+  "hodlError",
   `${loadSlice("hodlBrainWalletPassphrase")};${loadSlice("hodlBrainWalletPrivateKey")};return { hodlBrainWalletPassphrase, hodlBrainWalletPrivateKey };`,
-)(hodlSha256, TextEncoder);
+)(hodlSha256, TextEncoder, hodlError);
 
 test("brain-wallet recovery hashes exact text by default", () => {
   const passphrase = " recovery phrase \t\n";
@@ -58,8 +70,9 @@ test("exact mode accepts whitespace while trim mode rejects an empty result", ()
 const lab = new Function(
   "hodlSha256",
   "hodlHex",
+  "hodlNote",
   `${loadSlice("hodlBrainLabEntropy")};return { hodlBrainLabEntropy };`,
-)(hodlSha256, { encode: (bytes) => Buffer.from(bytes).toString("hex") });
+)(hodlSha256, { encode: (bytes) => Buffer.from(bytes).toString("hex") }, (key, vars) => hodlT(key, vars));
 
 test("brain-wallet lab hashes exact UTF-8 text as 256-bit BIP39 entropy", () => {
   const text = " recovery phrase \t\n";
@@ -103,7 +116,9 @@ test("the brain-wallet HD output has no silent fingerprint or mnemonic preview p
   // The private-key mode never previews a fingerprint or mnemonic, which now
   // covers the HD brain output too.
   assert.match(app, /if \(hodlKeyMode === "key"\) \{\s*preview\.hidden = true;/);
-  assert.match(app, /24 words appear only after Derive Key/);
-  assert.match(app, /Acknowledge the lab warning before deriving/);
+  assert.match(app, /hodlT\("note\.brainLabEmpty", \{ derive: hodlT\("action\.derive"\) \}\)/);
+  assert.match(en["note.brainLabEmpty"], /24 words appear only after \{derive\}/);
+  assert.match(app, /hodlError\("error\.brainAck"\)/);
+  assert.match(en["error.brainAck"], /Acknowledge the lab warning before deriving/);
   assert.doesNotMatch(loadSlice("hodlBrainLabEntropy"), /localStorage/);
 });

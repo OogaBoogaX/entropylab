@@ -25,6 +25,7 @@ const CRATE_EXPORTS = [
   "el_bip39_mnemonic_to_entropy",
   "el_bip39_validate",
   "el_bip39_word_at",
+  "el_desc_derive",
   "el_hash160",
   "el_hd_ckd_priv",
   "el_hd_ckd_pub",
