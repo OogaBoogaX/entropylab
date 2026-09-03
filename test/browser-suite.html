@@ -1331,7 +1331,10 @@
     // no passphrase.
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("key-manager").hidden, "key workspace");
+    // Clicking the already-selected tab opens its rename editor. Deleting it
+    // must not let the editor's blur handler resurrect the removed key.
     [...document.querySelectorAll("#key-tabs .key-tab")].find((tab) => tab.textContent.includes("c55401c7")).click();
+    await until(() => document.querySelector("#key-tabs .key-tab-name-input"), "the key rename field before deletion");
     await until(() => !document.getElementById("delete-key").disabled, "Delete current key to enable");
     document.getElementById("delete-key").click();
     await until(() => [...document.querySelectorAll("#key-tabs .key-tab")].every((tab) => !tab.textContent.includes("c55401c7")), "the derived key to be deleted");
@@ -1574,6 +1577,8 @@
     assert(!pageTabsRoot.children[0].classList.contains("is-default"), "a renamed page should keep its full label at narrow widths");
     pageTabsRoot.children[1].click();
     assert(body.value.includes("second page note"), "switching pages should restore Page 2's note");
+    pageTabsRoot.children[1].click();
+    await until(() => pageTabsRoot.querySelector(".key-tab-name-input"), "the page rename field before deletion");
     document.getElementById("delete-journal-page").click();
     equal(pageTabsRoot.children.length, 1, "minus should remove the selected page");
     equal(pageTabsRoot.children[0].querySelector(".journal-page-tab-full").textContent, "Field notes", "deletion should select the nearest surviving page");

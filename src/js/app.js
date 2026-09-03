@@ -11392,7 +11392,10 @@ function hodlBeginKeyRename(index) {
   input.setAttribute("aria-label", "Rename " + previous);
   input.setAttribute("aria-controls", "calc-card");
   let finish = (commit, focus) => {
-    if (!editor.isConnected) return;
+    // Removing a focused tab can fire blur while the tab strip is being
+    // rebuilt. Do not let that stale editor recreate a tab for a state that
+    // has already been removed or replaced.
+    if (!editor.isConnected || hodlKeys[index] !== state) return;
     let name = input.value.trim().replace(/\s+/g, " ");
     let renamed = commit && name && name !== previous && !hodlKeyNameTaken(name, index);
     if (renamed) {
@@ -11820,7 +11823,7 @@ function hodlBeginMsigRename(index) {
   input.setAttribute("aria-label", "Rename " + previous);
   input.setAttribute("aria-controls", "msig-card");
   let finish = (commit, focus) => {
-    if (!editor.isConnected) return;
+    if (!editor.isConnected || hodlMsigs[index] !== state) return;
     let name = input.value.trim().replace(/\s+/g, " ");
     let renamed = commit && name && name !== previous && !hodlMsigNameTaken(name, index);
     if (renamed) {
@@ -12230,7 +12233,7 @@ function hodlBeginJournalPageRename(index) {
   input.setAttribute("aria-label", "Rename " + previous);
   input.setAttribute("aria-controls", "journal-page-panel");
   let finish = (commit, focus) => {
-    if (!editor.isConnected) return;
+    if (!editor.isConnected || hodlJournal.pages[index] !== page) return;
     let name = input.value.trim().replace(/\s+/g, " ");
     let renamed = commit && name && name !== previous && !hodlJournalPageNameTaken(name, index);
     if (renamed) {
