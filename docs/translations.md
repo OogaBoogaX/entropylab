@@ -10,9 +10,12 @@ npm run i18n:check
 
 `i18n:sync` copies English into the inline HTML fallbacks for `data-i18n`,
 `data-i18n-html`, `data-i18n-aria`, `data-i18n-placeholder`, `data-i18n-title`,
-and `data-i18n-alt`. It also checks literal `hodlT()`, `hodlTText()`, and `hodlTAttr()`
-references. CI runs the read-only check, so the catalog and fallback markup
-cannot drift.
+and `data-i18n-alt`. It also validates direct and conditional `hodlT()`,
+`hodlTText()`, and `hodlTAttr()` keys. Dynamic prefix construction is rejected;
+deferred `hodlNote()` and `hodlError()` keys receive the same checks.
+Variable-only calls are reported as requiring behavioral coverage and warn at
+runtime if they resolve to a missing English key. CI runs the read-only check,
+so the catalog and fallback markup cannot drift.
 
 The wiring check rejects new hardcoded text. `scripts/i18n-unwired.json` is the
 temporary inventory of older interface text that still needs keys in the next
@@ -39,8 +42,12 @@ verify production behavior with a freshly built `entropylab.html`.
 
 Run `npm run i18n:status` to list missing and stale keys. Staleness is reported
 for translation work but does not block an English-only feature pull request.
-Malformed source records, unknown keys, unsafe markup, changed placeholders,
-and catalog control characters do fail CI.
+When a feature removes an English key, old locale values are reported as
+obsolete and made inert in the build; translation automation can later remove
+each value and its source hash together. This lets feature PRs add, change, and
+remove interface elements without editing every locale. Malformed source
+records, unsafe markup, changed placeholders, and catalog control characters
+do fail CI.
 
 ## Updating a translation
 

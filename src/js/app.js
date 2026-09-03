@@ -68,6 +68,9 @@ import {
 } from "./journal.js";
 import { keyVaultIdentity, parseKeyVault, serializeKeyVault } from "./keymanager.js";
 const hodlBip39Wordlist = Object.freeze(bip39English);
+function hodlUnknownI18nKey(prefix, value) {
+  return `${prefix}.${String(value)}`;
+}
 function hodlNote(key, vars) {
   return vars == null ? { key } : { key, vars };
 }
@@ -1282,6 +1285,15 @@ hodlRootEl.innerHTML = `
 if (/^(www\.)?entropylab\.online$/i.test(location.hostname)) document.getElementById("online-warning")?.removeAttribute("hidden");
 var hodlKeyModes = ["dice", "cards", "hex", "seed", "key"], hodlBrainLabAck = { scalar: false, hd: false }, hodlCardRanks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"], hodlDirectCardRanks = ["A", "2", "3", "4", "5", "6", "7", "8"], hodlCardSuits = [{ code: "S", symbol: "♠", label: "Spades", red: false }, { code: "H", symbol: "♥", label: "Hearts", red: true }, { code: "C", symbol: "♣", label: "Clubs", red: false }, { code: "D", symbol: "♦", label: "Diamonds", red: true }], hodlCardSuit = "", hodlCardRank = "", hodlCardMethod = "hashed", hodlSeedMethod = "words", hodlSeedZeroIndexed = false, hodlCardColemanSymbols = false, hodlKeyMode = "dice", hodlDiceMethod = "coldcard", hodlTargetWordCount = 24, hodlEntropyFormat = "hex", hodlDiceCoinPositions = [], hodlPickedLastWord = "", hodlWalletResult = null, hodlRevealPrivate = false, hodlWalletDatBirthday = "genesis", hodlModesEl = hodlElement("#modes"), hodlFormEl = hodlElement("#form"), hodlOutEl = hodlElement("#out");
 var hodlManualCalculationsOpen = false;
+function hodlKeyModeLabel(mode) {
+  if (mode === "dice") return hodlTText("mode.dice");
+  if (mode === "cards") return hodlTText("mode.cards");
+  if (mode === "hex") return hodlTText("mode.hex");
+  if (mode === "seed") return hodlTText("mode.seed");
+  if (mode === "key") return hodlTText("mode.key");
+  if (mode === "brain-lab") return hodlTText("mode.brain-lab");
+  return hodlTText(hodlUnknownI18nKey("mode", mode));
+}
 function hodlCreateKeyMethodIcon(mode) {
   let ns = "http://www.w3.org/2000/svg", span = document.createElement("span"), svg = document.createElementNS(ns, "svg");
   let add = (tag, attributes) => {
@@ -1330,7 +1342,7 @@ hodlKeyModeSelectEl.setAttribute("aria-labelledby", "key-method-label");
 hodlKeyModes.forEach((mode) => {
   let option = document.createElement("option");
   option.value = mode;
-  option.textContent = hodlTText(`mode.${mode}`);
+  option.textContent = hodlKeyModeLabel(mode);
   option.selected = mode === hodlKeyMode;
   hodlKeyModeSelectEl.appendChild(option);
 });
@@ -2352,7 +2364,11 @@ function hodlScriptUiLabel(definition) {
   return definition.id === "bip44" ? hodlTText("script.legacy") : definition.id === "bip49" ? hodlTText("script.nested") : definition.id === "bip84" ? hodlTText("script.native") : definition.id === "bip86" ? hodlTText("script.taproot") : definition.label;
 }
 function hodlScriptBeginner(definition) {
-  return hodlTText(`script.beginner.${definition.id}`);
+  if (definition.id === "bip44") return hodlTText("script.beginner.bip44");
+  if (definition.id === "bip49") return hodlTText("script.beginner.bip49");
+  if (definition.id === "bip84") return hodlTText("script.beginner.bip84");
+  if (definition.id === "bip86") return hodlTText("script.beginner.bip86");
+  return hodlTText(hodlUnknownI18nKey("script.beginner", definition.id));
 }
 function hodlReadPurpose(mark = true) {
   return hodlReadDerivationIndex(document.getElementById("purpose"), "Purpose", mark);
@@ -2928,6 +2944,69 @@ var hodlEntropyFormats = Object.freeze({
   base32: Object.freeze({ id: "base32", base: 32, bitsPerDigit: 5, alphabet: "0123456789ABCDEFGHJKMNPQRSTVWXYZ", label: "Crockford Base32", shortLabel: "Base32", unit: "characters", method: "base32", binaryRemainder: true }),
   base64: Object.freeze({ id: "base64", base: 64, bitsPerDigit: 6, alphabet: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", label: "Base64 (RFC 4648 alphabet)", shortLabel: "Base64", unit: "characters", method: "base64", binaryRemainder: true })
 });
+function hodlHexFormatLabel(id) {
+  if (id === "bin") return hodlT("hex.format.bin");
+  if (id === "base4") return hodlT("hex.format.base4");
+  if (id === "base8") return hodlT("hex.format.base8");
+  if (id === "hex") return hodlT("hex.format.hex");
+  if (id === "base32") return hodlT("hex.format.base32");
+  if (id === "base64") return hodlT("hex.format.base64");
+  return hodlT(hodlUnknownI18nKey("hex.format", id));
+}
+function hodlHexFormatText(id) {
+  if (id === "bin") return hodlTText("hex.format.bin");
+  if (id === "base4") return hodlTText("hex.format.base4");
+  if (id === "base8") return hodlTText("hex.format.base8");
+  if (id === "hex") return hodlTText("hex.format.hex");
+  if (id === "base32") return hodlTText("hex.format.base32");
+  if (id === "base64") return hodlTText("hex.format.base64");
+  return hodlTText(hodlUnknownI18nKey("hex.format", id));
+}
+function hodlHexDescription(id) {
+  if (id === "bin") return hodlT("hex.desc.bin");
+  if (id === "base4") return hodlT("hex.desc.base4");
+  if (id === "base8") return hodlT("hex.desc.base8");
+  if (id === "hex") return hodlT("hex.desc.hex");
+  if (id === "base32") return hodlT("hex.desc.base32");
+  if (id === "base64") return hodlT("hex.desc.base64");
+  return hodlT(hodlUnknownI18nKey("hex.desc", id));
+}
+function hodlHexShortLabel(id) {
+  if (id === "bin") return hodlTText("hex.short.bin");
+  if (id === "base4") return hodlTText("hex.short.base4");
+  if (id === "base8") return hodlTText("hex.short.base8");
+  if (id === "hex") return hodlTText("hex.short.hex");
+  if (id === "base32") return hodlTText("hex.short.base32");
+  if (id === "base64") return hodlTText("hex.short.base64");
+  return hodlTText(hodlUnknownI18nKey("hex.short", id));
+}
+function hodlHexUnitLabel(id) {
+  if (id === "bin") return hodlTText("hex.unit.bin");
+  if (id === "base4") return hodlTText("hex.unit.base4");
+  if (id === "base8") return hodlTText("hex.unit.base8");
+  if (id === "hex") return hodlTText("hex.unit.hex");
+  if (id === "base32") return hodlTText("hex.unit.base32");
+  if (id === "base64") return hodlTText("hex.unit.base64");
+  return hodlTText(hodlUnknownI18nKey("hex.unit", id));
+}
+function hodlHexShortNote(id) {
+  if (id === "bin") return hodlNote("hex.short.bin");
+  if (id === "base4") return hodlNote("hex.short.base4");
+  if (id === "base8") return hodlNote("hex.short.base8");
+  if (id === "hex") return hodlNote("hex.short.hex");
+  if (id === "base32") return hodlNote("hex.short.base32");
+  if (id === "base64") return hodlNote("hex.short.base64");
+  return hodlNote(hodlUnknownI18nKey("hex.short", id));
+}
+function hodlHexUnitNote(id) {
+  if (id === "bin") return hodlNote("hex.unit.bin");
+  if (id === "base4") return hodlNote("hex.unit.base4");
+  if (id === "base8") return hodlNote("hex.unit.base8");
+  if (id === "hex") return hodlNote("hex.unit.hex");
+  if (id === "base32") return hodlNote("hex.unit.base32");
+  if (id === "base64") return hodlNote("hex.unit.base64");
+  return hodlNote(hodlUnknownI18nKey("hex.unit", id));
+}
 var hodlBip39WordSet = new Set(hodlBip39Wordlist), hodlBip39WordIndex = new Map(hodlBip39Wordlist.map((word, index) => [word, index])), hodlLastWordCache = /* @__PURE__ */ new Map();
 var hodlOnScreenKeyboardOpen = false;
 function hodlSeedConfig(words = hodlTargetWordCount) {
@@ -3274,6 +3353,13 @@ function hodlDiceFairnessVerdict(cdf, enough) {
   if (cdf < 0.9) return { id: "unsure", tone: "warn" };
   return { id: "biased", tone: "danger" };
 }
+function hodlDiceFairnessVerdictLabel(id) {
+  if (id === "need-more") return hodlT("dice.fairness.verdict.need-more");
+  if (id === "fair") return hodlT("dice.fairness.verdict.fair");
+  if (id === "unsure") return hodlT("dice.fairness.verdict.unsure");
+  if (id === "biased") return hodlT("dice.fairness.verdict.biased");
+  return hodlT(hodlUnknownI18nKey("dice.fairness.verdict", id));
+}
 function hodlDiceFairnessFaceLabel(label) {
   if (label === "Heads") return hodlTText("dice.fairness.heads");
   if (label === "Tails") return hodlTText("dice.fairness.tails");
@@ -3358,7 +3444,7 @@ function hodlDiceFairnessMarkup(reports) {
       let hot = report.enough && report.expected > 0 && Math.abs(face.count - report.expected) >= 2 * Math.sqrt(report.expected);
       return `<div class="dice-fairness-face${hot ? " is-hot" : ""}"><span class="dice-fairness-label">${hodlEscapeHtml(hodlDiceFairnessFaceLabel(face.label))}</span><span class="dice-fairness-track"><span class="dice-fairness-bar" style="width:${(face.count / peak * 100).toFixed(1)}%"></span>${report.expected > 0 ? `<span class="dice-fairness-expected" style="left:${(report.expected / peak * 100).toFixed(1)}%"></span>` : ""}</span><span class="dice-fairness-count">${face.count}</span></div>`;
     }).join("");
-    return `<section class="dice-fairness-test" data-tone="${report.verdict.tone}"><div class="dice-fairness-head"><strong>${hodlT("dice.fairness.verdict." + report.verdict.id)}</strong><span>${hodlT(report.n === 1 ? "dice.fairness.headStatsOne" : "dice.fairness.headStats", { chi: hodlFormatFairnessNumber(report.chi), df: report.df, n: report.n })}</span></div><p class="dice-fairness-note">${hodlEscapeHtml(hodlDiceFairnessNote(report))}</p><div class="dice-fairness-faces" data-sides="${report.sides}">${faces}</div></section>`;
+    return `<section class="dice-fairness-test" data-tone="${report.verdict.tone}"><div class="dice-fairness-head"><strong>${hodlDiceFairnessVerdictLabel(report.verdict.id)}</strong><span>${hodlT(report.n === 1 ? "dice.fairness.headStatsOne" : "dice.fairness.headStats", { chi: hodlFormatFairnessNumber(report.chi), df: report.df, n: report.n })}</span></div><p class="dice-fairness-note">${hodlEscapeHtml(hodlDiceFairnessNote(report))}</p><div class="dice-fairness-faces" data-sides="${report.sides}">${faces}</div></section>`;
   }).join("");
 }
 function hodlDiceFairnessIsOpen() {
@@ -3793,14 +3879,14 @@ function hodlDiceEntropy(value, method, targetWords = hodlTargetWordCount) {
 }
 function hodlNumberBaseEntropy(value, format, targetWords = hodlTargetWordCount) {
   let meta = hodlEntropyFormatConfig(format, targetWords), analysis = hodlAnalyzeEntropyInput(value, meta.id, meta.seed.words), notes = [], warnings = [];
-  if (!analysis.count) return { ok: false, error: { key: "error.hexEmpty", vars: { digits: meta.digits, unit: hodlTText(`hex.unit.${meta.id}`), words: meta.seed.words } }, notes, warnings };
-  if (analysis.invalidCharacterCount) return { ok: false, error: { key: analysis.invalidCharacterCount === 1 ? "error.hexInvalidOne" : "error.hexInvalidMany", vars: { label: hodlTText(`hex.short.${meta.id}`), n: analysis.invalidCharacterCount } }, notes, warnings };
-  if (analysis.finalInvalid) return { ok: false, error: meta.binaryRemainder ? { key: meta.remainderBits === 1 ? "error.hexFinalBit" : "error.hexFinalBits", vars: { n: meta.remainderBits, label: hodlTText(`hex.short.${meta.id}`) } } : { key: meta.remainderBits === 1 ? "error.hexFinalMixedOne" : "error.hexFinalMixed", vars: { label: hodlTText(`hex.short.${meta.id}`), n: meta.remainderBits, chars: [...meta.finalCharacters].join(", ") } }, notes, warnings };
-  if (analysis.count !== meta.digits) return { ok: false, error: { key: "error.hexCount", vars: { words: meta.seed.words, digits: meta.digits, unit: hodlTText(`hex.unit.${meta.id}`), bits: meta.seed.bits, have: analysis.count } }, notes, warnings };
+  if (!analysis.count) return { ok: false, error: { key: "error.hexEmpty", vars: { digits: meta.digits, unit: hodlHexUnitLabel(meta.id), words: meta.seed.words } }, notes, warnings };
+  if (analysis.invalidCharacterCount) return { ok: false, error: { key: analysis.invalidCharacterCount === 1 ? "error.hexInvalidOne" : "error.hexInvalidMany", vars: { label: hodlHexShortLabel(meta.id), n: analysis.invalidCharacterCount } }, notes, warnings };
+  if (analysis.finalInvalid) return { ok: false, error: meta.binaryRemainder ? { key: meta.remainderBits === 1 ? "error.hexFinalBit" : "error.hexFinalBits", vars: { n: meta.remainderBits, label: hodlHexShortLabel(meta.id) } } : { key: meta.remainderBits === 1 ? "error.hexFinalMixedOne" : "error.hexFinalMixed", vars: { label: hodlHexShortLabel(meta.id), n: meta.remainderBits, chars: [...meta.finalCharacters].join(", ") } }, notes, warnings };
+  if (analysis.count !== meta.digits) return { ok: false, error: { key: "error.hexCount", vars: { words: meta.seed.words, digits: meta.digits, unit: hodlHexUnitLabel(meta.id), bits: meta.seed.bits, have: analysis.count } }, notes, warnings };
   let bits = hodlNumberBaseBits(value, meta.id, meta.seed.words), bytes = new Uint8Array(meta.seed.bytes);
   for (let index = 0; index < bytes.length; index++) bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
-  notes.push(hodlNote("note.numberBaseEntropy", { digits: meta.digits, unit: hodlNote(`hex.unit.${meta.id}`), bits: meta.seed.bits, label: hodlNote(`hex.short.${meta.id}`) }));
-  if (meta.remainderBits) notes.push(meta.binaryRemainder ? hodlNote(meta.remainderBits === 1 ? "note.numberBaseRemainderBit" : "note.numberBaseRemainderBits", { full: meta.fullDigits, label: hodlNote(`hex.short.${meta.id}`), n: meta.remainderBits }) : hodlNote(meta.remainderBits === 1 ? "note.numberBaseMixedOne" : "note.numberBaseMixed", { n: meta.remainderBits, chars: [...meta.finalCharacters].join(", ") }));
+  notes.push(hodlNote("note.numberBaseEntropy", { digits: meta.digits, unit: hodlHexUnitNote(meta.id), bits: meta.seed.bits, label: hodlHexShortNote(meta.id) }));
+  if (meta.remainderBits) notes.push(meta.binaryRemainder ? hodlNote(meta.remainderBits === 1 ? "note.numberBaseRemainderBit" : "note.numberBaseRemainderBits", { full: meta.fullDigits, label: hodlHexShortNote(meta.id), n: meta.remainderBits }) : hodlNote(meta.remainderBits === 1 ? "note.numberBaseMixedOne" : "note.numberBaseMixed", { n: meta.remainderBits, chars: [...meta.finalCharacters].join(", ") }));
   notes.push(hodlNote("note.bip39EntropyLength", { bits: meta.seed.bits, words: meta.seed.words }));
   return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: meta.seed.bits, sourceBits: meta.seed.bits, method: meta.method, notes, warnings };
 }
@@ -5662,7 +5748,7 @@ function hodlUpdateEntropyInput(input, format, targetWords = hodlTargetWordCount
     button.hidden = Boolean(coinPhase && !binary);
     button.classList.toggle("coin-button", coinPhase && binary);
     button.textContent = coinPhase && binary ? digit === "0" ? hodlTText("hex.heads") : hodlTText("hex.tails") : digit;
-    button.setAttribute("aria-label", coinPhase && binary ? digit === "0" ? hodlTText("hex.headsAria") : hodlTText("hex.tailsAria") : hodlTText("hex.enterDigit", { shortLabel: hodlTText(`hex.short.${definition.id}`), character: digit }));
+    button.setAttribute("aria-label", coinPhase && binary ? digit === "0" ? hodlTText("hex.headsAria") : hodlTText("hex.tailsAria") : hodlTText("hex.enterDigit", { shortLabel: hodlHexShortLabel(definition.id), character: digit }));
     button.title = finalRestricted ? coinPhase ? hodlTText("hex.bitsTitle", { n: definition.remainderBits }) : hodlTText("hex.finalChars", { chars: [...definition.finalCharacters].join(", ") }) : "";
   });
   return analysis;
@@ -5976,9 +6062,9 @@ function hodlRenderKeyForm() {
     let state = hodlKeys[hodlActiveKey], format = hodlEntropyFormatConfig(hodlEntropyFormat, config.words), inputId = format.id;
     let descriptions = { bin: "Use one 0 or 1 for each coin flip.", base4: "Each digit contributes exactly two bits; useful with a fair four-sided source.", base8: "Each octal digit contributes three bits.", hex: "Each hexadecimal character contributes four bits.", base32: "Uses the unambiguous Crockford alphabet, then switches to coin flips for any remaining bits; O becomes 0 and I or L becomes 1.", base64: "Uses the case-sensitive RFC 4648 alphabet with + and /, then switches to coin flips for any remaining bits." };
     let formatChoices = ["bin", "base4", "base8", "hex", "base32", "base64"].map((id) => {
-      return `<label class="choice"><input type="radio" name="entropy-format" value="${id}" ${format.id === id ? "checked" : ""} /><span><strong>${hodlT(`hex.format.${id}`)}</strong><span class="desc">${hodlT(`hex.desc.${id}`)}</span></span></label>`;
+      return `<label class="choice"><input type="radio" name="entropy-format" value="${id}" ${format.id === id ? "checked" : ""} /><span><strong>${hodlHexFormatLabel(id)}</strong><span class="desc">${hodlHexDescription(id)}</span></span></label>`;
     }).join("");
-    let formatLabel = hodlTText(`hex.format.${format.id}`), formatShort = hodlTText(`hex.short.${format.id}`), formatUnit = hodlTText(`hex.unit.${format.id}`);
+    let formatLabel = hodlHexFormatText(format.id), formatShort = hodlHexShortLabel(format.id), formatUnit = hodlHexUnitLabel(format.id);
     let entropyPad = format.id === "base64" ? "" : `<div class="dice-input-pad entropy-keypad entropy-keypad-${format.id}" role="group" aria-label="${hodlTAttr("hex.keypadAria", { label: formatLabel })}">${[...format.alphabet].map((character) => `<button type="button"${format.id === "bin" ? ' class="coin-button"' : ""} data-entropy-digit="${character}" aria-label="${format.id === "bin" ? character === "0" ? hodlTAttr("hex.headsAria") : hodlTAttr("hex.tailsAria") : hodlTAttr("hex.enterDigit", { shortLabel: formatShort, character })}">${format.id === "bin" ? character === "0" ? hodlT("hex.heads") : hodlT("hex.tails") : character}</button>`).join("")}</div>`;
     let remainderHelp = format.remainderBits ? format.binaryRemainder ? hodlT("hex.remainderBinary", { fullDigits: format.fullDigits, shortLabel: formatShort, n: format.remainderBits }) : hodlT("hex.remainderMixed", { n: format.remainderBits, chars: [...format.finalCharacters].join(", ") }) : "", base64Tools = format.id === "base64" ? `<div class="seed-entry-tools base64-entry-tools">${hodlBase64KeyboardToggleMarkup()}</div>` : "", base64Keyboard = format.id === "base64" ? hodlBase64KeyboardMarkup() : "";
     hodlFormEl.innerHTML = `
@@ -14315,7 +14401,12 @@ function hodlInitNetworkPicker() {
   let options = [...menu.querySelectorAll("[data-network]")];
   let render = () => {
     let key = ["mainnet", "testnet", "signet", "regtest"].includes(hodlNetworkChoice) ? hodlNetworkChoice : "mainnet";
-    let name = hodlTText(`networkPicker.name.${key}`);
+    let name;
+    if (key === "mainnet") name = hodlTText("networkPicker.name.mainnet");
+    else if (key === "testnet") name = hodlTText("networkPicker.name.testnet");
+    else if (key === "signet") name = hodlTText("networkPicker.name.signet");
+    else if (key === "regtest") name = hodlTText("networkPicker.name.regtest");
+    else name = hodlTText(hodlUnknownI18nKey("networkPicker.name", key));
     root.dataset.network = hodlNetworkChoice;
     label.textContent = name;
     button.setAttribute("aria-label", hodlTText("networkPicker.buttonAria", { network: name }));
@@ -14518,7 +14609,7 @@ function hodlApplyLocale() {
     button.setAttribute("aria-label", hodlTText(label));
   });
   [...hodlKeyModeSelectEl.options].forEach((option) => {
-    option.textContent = hodlTText(`mode.${option.value}`);
+    option.textContent = hodlKeyModeLabel(option.value);
   });
   hodlKeyModeSelectEl.dispatchEvent(new Event("entropylab:sync-select"));
   if (hodlNetworkPickerRender) hodlNetworkPickerRender();

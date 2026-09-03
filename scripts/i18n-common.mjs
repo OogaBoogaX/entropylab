@@ -10,6 +10,7 @@ export function i18nSourceHash(value) {
 export function i18nLocaleStatus(english, catalog, sidecar) {
   const missing = [];
   const stale = [];
+  const obsolete = [];
   const problems = [];
 
   for (const key of Object.keys(english)) {
@@ -17,10 +18,8 @@ export function i18nLocaleStatus(english, catalog, sidecar) {
   }
 
   for (const key of Object.keys(catalog)) {
-    if (!Object.hasOwn(english, key)) {
-      problems.push(`catalog key ${key} does not exist in en.json`);
-      continue;
-    }
+    const current = Object.hasOwn(english, key);
+    if (!current) obsolete.push(key);
     if (!Object.hasOwn(sidecar, key)) {
       problems.push(`no source hash for translated key ${key}`);
       continue;
@@ -30,13 +29,12 @@ export function i18nLocaleStatus(english, catalog, sidecar) {
       problems.push(`malformed source hash for ${key}`);
       continue;
     }
-    if (hash !== i18nSourceHash(english[key])) stale.push(key);
+    if (current && hash !== i18nSourceHash(english[key])) stale.push(key);
   }
 
   for (const key of Object.keys(sidecar)) {
     if (!Object.hasOwn(catalog, key)) problems.push(`source hash ${key} has no translated catalog value`);
-    else if (!Object.hasOwn(english, key)) problems.push(`source hash ${key} does not exist in en.json`);
   }
 
-  return { missing, stale, problems };
+  return { missing, stale, obsolete, problems };
 }

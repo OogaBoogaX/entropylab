@@ -75,7 +75,9 @@ for (const code of i18nLocaleCodes) {
   const sidecar = JSON.parse(read(`locales/.sources/${code}.json`));
   const status = i18nLocaleStatus(englishCatalog, catalog, sidecar);
   if (status.problems.length) throw new Error(`Invalid ${code} translation source state:\n${status.problems.join("\n")}`);
-  staleTranslations[code] = status.stale;
+  // Keys removed from English are inert immediately. Translation automation
+  // can later remove each old locale value and source hash together.
+  staleTranslations[code] = [...status.stale, ...status.obsolete];
 }
 // The header logo is inlined as SVG markup so the downloaded file shows it
 // without reaching for assets/ (which only exists on the hosted site). The

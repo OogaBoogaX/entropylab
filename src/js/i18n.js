@@ -21,6 +21,7 @@ export const hodlLocaleMeta = Object.freeze({
 const hodlLocaleHtmlCatalogs = { en: hodlSanitizeCatalog(en), es: hodlSanitizeCatalog(es), pt: hodlSanitizeCatalog(pt), fr: hodlSanitizeCatalog(fr), de: hodlSanitizeCatalog(de) };
 const hodlLocaleTextCatalogs = { en: hodlSanitizeTextCatalog(en), es: hodlSanitizeTextCatalog(es), pt: hodlSanitizeTextCatalog(pt), fr: hodlSanitizeTextCatalog(fr), de: hodlSanitizeTextCatalog(de) };
 const hodlStaleLocaleKeys = globalThis.__entropyLabStaleTranslations || {};
+const hodlReportedMissingEnglishKeys = new Set();
 let hodlLocale = "en";
 let hodlLocaleListener = null;
 
@@ -53,7 +54,12 @@ function hodlCatalogValue(catalogs, key) {
   let catalog = catalogs[hodlLocale] || catalogs.en;
   let text = catalog[key];
   if (typeof text !== "string" || !text || hodlTranslationIsStale(hodlLocale, key)) text = catalogs.en[key];
-  return typeof text === "string" ? text : key;
+  if (typeof text === "string") return text;
+  if (!hodlReportedMissingEnglishKeys.has(key)) {
+    hodlReportedMissingEnglishKeys.add(key);
+    console.warn(`Missing English translation key: ${key}`);
+  }
+  return key;
 }
 
 function hodlInterpolate(text, vars, render) {

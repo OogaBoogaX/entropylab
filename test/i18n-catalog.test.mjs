@@ -59,14 +59,18 @@ for (const code of locales) {
     const catalog = readJson(join(root, "src/locales", `${code}.json`));
     const problems = [];
     const missing = [];
+    const obsolete = [];
     for (const key of Object.keys(catalog)) {
-      if (!(key in en)) { problems.push(`${code} ${key}: not an English key`); continue; }
-      problems.push(...problemsWith(code, key, catalog[key], en[key]));
+      const current = Object.hasOwn(en, key);
+      if (!current) obsolete.push(key);
+      problems.push(...problemsWith(code, key, catalog[key], current ? en[key] : undefined));
+      if (!current) continue;
       const ratio = catalog[key].length / Math.max(en[key].length, 1);
       if (en[key].length >= 20 && (ratio < 0.3 || ratio > 3)) console.warn(`i18n length warning: ${code} ${key} is ${ratio.toFixed(1)}x the English`);
     }
     for (const key of Object.keys(en)) if (!(key in catalog)) missing.push(key);
     if (missing.length) console.warn(`i18n: ${code} is missing ${missing.length} key(s); they fall back to English`);
+    if (obsolete.length) console.warn(`i18n: ${code} has ${obsolete.length} obsolete key(s); automation will remove them`);
     assert.deepEqual(problems, []);
   });
 

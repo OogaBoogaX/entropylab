@@ -149,10 +149,137 @@ function catalogValue(catalog, keyAttr, vars, fileName, token, references, probl
   return interpolate(catalog[key], vars);
 }
 
+function firstCallArgument(source, openParen) {
+  let parens = 0, brackets = 0, braces = 0;
+  for (let index = openParen + 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '"' || char === "'" || char === "`") {
+      const quote = char;
+      for (index += 1; index < source.length; index += 1) {
+        if (source[index] === "\\") index += 1;
+        else if (source[index] === quote) break;
+      }
+      continue;
+    }
+    if (char === "/" && source[index + 1] === "/") {
+      const end = source.indexOf("\n", index + 2);
+      index = end === -1 ? source.length : end;
+      continue;
+    }
+    if (char === "/" && source[index + 1] === "*") {
+      const end = source.indexOf("*/", index + 2);
+      index = end === -1 ? source.length : end + 1;
+      continue;
+    }
+    if (char === "(") parens += 1;
+    else if (char === ")") {
+      if (!parens && !brackets && !braces) return source.slice(openParen + 1, index);
+      parens -= 1;
+    } else if (char === "[") brackets += 1;
+    else if (char === "]") brackets -= 1;
+    else if (char === "{") braces += 1;
+    else if (char === "}") braces -= 1;
+    else if (char === "," && !parens && !brackets && !braces) return source.slice(openParen + 1, index);
+  }
+  return null;
+}
+
+function matchingOuterParen(expression) {
+  let depth = 0;
+  for (let index = 0; index < expression.length; index += 1) {
+    const char = expression[index];
+    if (char === '"' || char === "'" || char === "`") {
+      const quote = char;
+      for (index += 1; index < expression.length; index += 1) {
+        if (expression[index] === "\\") index += 1;
+        else if (expression[index] === quote) break;
+      }
+      continue;
+    }
+    if (char === "(") depth += 1;
+    else if (char === ")" && --depth === 0) return index;
+  }
+  return -1;
+}
+
+function topLevelConditional(expression) {
+  let parens = 0, brackets = 0, braces = 0, question = -1, nested = 0;
+  for (let index = 0; index < expression.length; index += 1) {
+    const char = expression[index];
+    if (char === '"' || char === "'" || char === "`") {
+      const quote = char;
+      for (index += 1; index < expression.length; index += 1) {
+        if (expression[index] === "\\") index += 1;
+        else if (expression[index] === quote) break;
+      }
+      continue;
+    }
+    if (char === "(") parens += 1;
+    else if (char === ")") parens -= 1;
+    else if (char === "[") brackets += 1;
+    else if (char === "]") brackets -= 1;
+    else if (char === "{") braces += 1;
+    else if (char === "}") braces -= 1;
+    else if (!parens && !brackets && !braces && char === "?" && expression[index - 1] !== "?" && expression[index + 1] !== "?" && expression[index + 1] !== ".") {
+      if (question === -1) question = index;
+      else nested += 1;
+    } else if (!parens && !brackets && !braces && char === ":" && question !== -1) {
+      if (nested) nested -= 1;
+      else return [question, index];
+    }
+  }
+  return null;
+}
+
+function staticKeyCandidates(expression) {
+  expression = expression.trim();
+  while (expression.startsWith("(") && matchingOuterParen(expression) === expression.length - 1) {
+    expression = expression.slice(1, -1).trim();
+  }
+  const literal = /^(["'])([^"']+)\1$/.exec(expression);
+  if (literal) return [{ value: literal[2], prefix: false }];
+  const template = /^`([A-Za-z0-9._-]+)`$/.exec(expression);
+  if (template) return [{ value: template[1], prefix: false }];
+  const conditional = topLevelConditional(expression);
+  if (conditional) {
+    return [
+      ...staticKeyCandidates(expression.slice(conditional[0] + 1, conditional[1])),
+      ...staticKeyCandidates(expression.slice(conditional[1] + 1)),
+    ];
+  }
+  const concatenated = /^(["'])([A-Za-z0-9._-]*\.)\1\s*\+/.exec(expression);
+  if (concatenated) return [{ value: concatenated[2], prefix: true }];
+  const interpolated = /^`([A-Za-z0-9._-]*\.)\$\{/.exec(expression);
+  if (interpolated) return [{ value: interpolated[1], prefix: true }];
+  return [];
+}
+
+function collectStaticCallReferences(source, catalog, fileName, references, unvalidatedCalls, problems) {
+  for (const call of source.matchAll(/\b(?:hodlT(?:Text|Attr)?|hodlNote|hodlError)\s*\(/g)) {
+    const openParen = call.index + call[0].lastIndexOf("(");
+    const argument = firstCallArgument(source, openParen);
+    if (argument === null) {
+      problems.push(`${fileName}: unterminated translation helper call at byte ${call.index}`);
+      continue;
+    }
+    const candidates = staticKeyCandidates(argument);
+    if (!candidates.length) unvalidatedCalls.push(`${fileName}: byte ${call.index}: ${argument.trim().replace(/\s+/g, " ").slice(0, 120)}`);
+    for (const candidate of candidates) {
+      if (candidate.prefix) {
+        problems.push(`${fileName}: hodlT dynamic key prefix must enumerate complete English keys: ${candidate.value}`);
+      } else {
+        references.add(candidate.value);
+        if (typeof catalog[candidate.value] !== "string") problems.push(`${fileName}: hodlT references unknown English key ${candidate.value}`);
+      }
+    }
+  }
+}
+
 export function syncI18nSource(source, catalog, { fileName = "source", javascriptTemplate = false } = {}) {
   const tokens = i18nMarkupTokens(source);
   const replacements = [];
   const references = new Set();
+  const unvalidatedCalls = [];
   const problems = [];
 
   for (let index = 0; index < tokens.length; index += 1) {
@@ -189,10 +316,7 @@ export function syncI18nSource(source, catalog, { fileName = "source", javascrip
     }
   }
 
-  for (const match of source.matchAll(/\bhodlT(?:Text|Attr)?\(\s*(["'])([^"']+)\1(?=\s*[,)]\s*)/g)) {
-    references.add(match[2]);
-    if (typeof catalog[match[2]] !== "string") problems.push(`${fileName}: hodlT references unknown English key ${match[2]}`);
-  }
+  collectStaticCallReferences(source, catalog, fileName, references, unvalidatedCalls, problems);
 
   replacements.sort((a, b) => b.start - a.start || b.end - a.end);
   for (let index = 1; index < replacements.length; index += 1) {
@@ -204,7 +328,7 @@ export function syncI18nSource(source, catalog, { fileName = "source", javascrip
   if (!problems.length) {
     for (const replacement of replacements) output = output.slice(0, replacement.start) + replacement.value + output.slice(replacement.end);
   }
-  return { output, references: [...references].sort(), problems, changed: output !== source };
+  return { output, references: [...references].sort(), unvalidatedCalls, problems, changed: output !== source };
 }
 
 export function runI18nSync(argv = process.argv.slice(2)) {
@@ -215,6 +339,7 @@ export function runI18nSync(argv = process.argv.slice(2)) {
     const path = join(root, file);
     const source = readFileSync(path, "utf8");
     const result = syncI18nSource(source, catalog, { fileName: file, javascriptTemplate: file.endsWith(".js") });
+    if (result.unvalidatedCalls.length) console.warn(`${file}: ${result.unvalidatedCalls.length} runtime-derived translation key call(s) require behavioral coverage.`);
     for (const problem of result.problems) console.error(problem);
     if (result.problems.length) { failed = true; continue; }
     if (check && result.changed) {

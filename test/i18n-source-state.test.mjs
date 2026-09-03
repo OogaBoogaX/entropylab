@@ -23,6 +23,7 @@ test("locale status separates missing and stale work from invalid sidecars", () 
   assert.deepEqual(i18nLocaleStatus(english, catalog, sidecar), {
     missing: ["missing"],
     stale: ["changed"],
+    obsolete: [],
     problems: [],
   });
 });
@@ -34,26 +35,36 @@ test("one changed English value becomes stale independently in each language", (
   const currentSources = { changed: i18nSourceHash("New"), unchanged: i18nSourceHash("Same") };
 
   assert.deepEqual(i18nLocaleStatus(english, catalog, oldSources), {
-    missing: [], stale: ["changed"], problems: [],
+    missing: [], stale: ["changed"], obsolete: [], problems: [],
   });
   assert.deepEqual(i18nLocaleStatus(english, catalog, currentSources), {
-    missing: [], stale: [], problems: [],
+    missing: [], stale: [], obsolete: [], problems: [],
   });
 });
 
-test("locale status rejects missing, malformed, unknown, and orphaned source records", () => {
+test("locale status rejects missing, malformed, and orphaned source records", () => {
   const status = i18nLocaleStatus(
     { good: "Good", noHash: "No hash" },
     { good: "Bien", noHash: "Sin hash", unknown: "Unknown" },
     { good: "bad", orphan: i18nSourceHash("Orphan") },
   );
   assert.deepEqual(status.stale, []);
+  assert.deepEqual(status.obsolete, ["unknown"]);
   assert.deepEqual(status.problems, [
     "malformed source hash for good",
     "no source hash for translated key noHash",
-    "catalog key unknown does not exist in en.json",
+    "no source hash for translated key unknown",
     "source hash orphan has no translated catalog value",
   ]);
+});
+
+test("removed English keys become valid obsolete work for later cleanup", () => {
+  const status = i18nLocaleStatus(
+    { current: "Current" },
+    { current: "Actual", removed: "Anterior" },
+    { current: i18nSourceHash("Current"), removed: i18nSourceHash("Removed") },
+  );
+  assert.deepEqual(status, { missing: [], stale: [], obsolete: ["removed"], problems: [] });
 });
 
 test("marking a translation updates only the named source hashes in catalog order", () => {
@@ -62,7 +73,7 @@ test("marking a translation updates only the named source hashes in catalog orde
   const oldOne = i18nSourceHash("Old one");
   const marked = markTranslationSources(english, catalog, { one: oldOne }, ["two"]);
   assert.deepEqual(marked, { one: oldOne, two: i18nSourceHash("Two") });
-  assert.deepEqual(i18nLocaleStatus(english, catalog, marked), { missing: [], stale: ["one"], problems: [] });
+  assert.deepEqual(i18nLocaleStatus(english, catalog, marked), { missing: [], stale: ["one"], obsolete: [], problems: [] });
 });
 
 test("marking refuses unknown or untranslated keys", () => {
@@ -100,11 +111,34 @@ test("sync rejects unknown keys and missing attribute fallbacks without modifyin
   assert.match(result.problems[1], /needs an existing placeholder fallback/);
 });
 
-test("sync validates literal references through every global translation helper", () => {
-  const source = `hodlT("rich"); hodlTText("plain"); hodlTAttr("attribute"); hodlTText("unknown")`;
-  const result = syncI18nSource(source, { rich: "Rich", plain: "Plain", attribute: "Attribute" });
-  assert.deepEqual(result.references, ["attribute", "plain", "rich", "unknown"]);
+test("sync validates immediate and deferred translation helpers", () => {
+  const source = `hodlT("rich"); hodlTText("plain"); hodlTAttr("attribute"); hodlNote("note"); hodlError("error"); hodlTText("unknown")`;
+  const result = syncI18nSource(source, { rich: "Rich", plain: "Plain", attribute: "Attribute", note: "Note", error: "Error" });
+  assert.deepEqual(result.references, ["attribute", "error", "note", "plain", "rich", "unknown"]);
   assert.deepEqual(result.problems, ["source: hodlT references unknown English key unknown"]);
+});
+
+test("sync validates every statically visible ternary branch", () => {
+  const source = [
+    `hodlTText(flag ? "known.one" : nested ? "known.two" : "typo.branch")`,
+    `hodlTText(runtimeKey)`,
+    `hodlTText(kind === "condition.with.dots" ? "known.one" : "known.two")`,
+  ].join("; ");
+  const catalog = { "known.one": "One", "known.two": "Two" };
+  const result = syncI18nSource(source, catalog);
+  assert.deepEqual(result.references, ["known.one", "known.two", "typo.branch"]);
+  assert.equal(result.unvalidatedCalls.length, 1);
+  assert.match(result.unvalidatedCalls[0], /runtimeKey/);
+  assert.deepEqual(result.problems, ["source: hodlT references unknown English key typo.branch"]);
+
+});
+
+test("sync rejects dynamic prefixes that cannot prove every complete key", () => {
+  const catalog = { "known.one": "One", "known.two": "Two" };
+  for (const source of [`hodlT("known." + id)`, "hodlTAttr(`known.${id}`)"]) {
+    const result = syncI18nSource(source, catalog);
+    assert.deepEqual(result.problems, ["source: hodlT dynamic key prefix must enumerate complete English keys: known."]);
+  }
 });
 
 test("the committed sources contain only known literal references and generated fallbacks", () => {
@@ -114,6 +148,16 @@ test("the committed sources contain only known literal references and generated 
     assert.deepEqual(result.problems, []);
     assert.equal(result.output, source, `${file}: run npm run i18n:sync`);
     assert.ok(result.references.length > 0, file);
+  }
+});
+
+test("computed-key call sites enumerate every current English alternative", () => {
+  const source = readFileSync(join(root, "src/js/app.js"), "utf8");
+  for (const key of ["dice.fairness.verdict.fair", "note.importedDetectedPrivate", "cards.meta.hashedReadyOne", "note.numberBaseEntropy"]) {
+    const withoutKey = { ...en };
+    delete withoutKey[key];
+    const result = syncI18nSource(source, withoutKey, { fileName: "src/js/app.js", javascriptTemplate: true });
+    assert.ok(result.problems.some((problem) => problem.includes(key)), `${key} was not statically validated`);
   }
 });
 

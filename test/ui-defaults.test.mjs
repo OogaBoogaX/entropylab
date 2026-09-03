@@ -125,7 +125,9 @@ test("the header network picker sets the network every tool defaults to", () => 
   // The option names and the button's accessible name come from the locale
   // catalogs so the whole header follows the selected language.
   assert.match(appSource, /let key = \["mainnet", "testnet", "signet", "regtest"\]\.includes\(hodlNetworkChoice\) \? hodlNetworkChoice : "mainnet"/);
-  assert.match(appSource, /let name = hodlTText\(`networkPicker\.name\.\$\{key\}`\)/);
+  for (const key of ["mainnet", "testnet", "signet", "regtest"]) {
+    assert.ok(appSource.includes(`"networkPicker.name.${key}"`), `networkPicker.name.${key} must be an explicit source reference`);
+  }
   assert.match(appSource, /button\.setAttribute\("aria-label", hodlTText\("networkPicker\.buttonAria", \{ network: name \}\)\)/);
   assert.match(appSource, /option\.dataset\.network === hodlNetworkChoice/);
   assert.match(appSource, /function hodlApplyNetworkDefault\(network\)/);
@@ -334,7 +336,7 @@ test("hashed cards can match Ian Coleman's suit-symbol SHA-256 transcript", () =
 });
 
 test("Number bases offers exact Base 2, 4, 8, 16, Crockford Base32, and Base64-alphabet input", () => {
-  assert.match(appSource, /hodlTText\(`mode\.\$\{mode\}`\)/);
+  assert.match(appSource, /function hodlKeyModeLabel\(mode\)/);
   assert.doesNotMatch(template, />Hex or binary<\/button>/);
   assert.ok(app.includes('formatChoices=["bin","base4","base8","hex","base32","base64"]'));
   assert.match(app, /name="entropy-format" value="\$\{id\}"/);
@@ -772,7 +774,7 @@ test("multisig separates script type from purpose and keeps the Legacy BIP87 sho
     assert.match(markup, /id="msig-legacy-account-toggle" hidden/);
     assert.match(markup, /id="msig-legacy-bip87" type="checkbox"/);
     assert.match(markup, />Use standardized BIP87 accounts</);
-    assert.match(markup, /m\/87'\/coin'\/account'/);
+    assert.match(markup, /m\/87(?:'|&#39;)\/coin(?:'|&#39;)\/account(?:'|&#39;)/);
   }
   assert.match(css, /\.msig-legacy-account-toggle\[hidden\] \{ display: none !important; \}/);
   assert.match(appSource, /if \(toggle\) toggle\.hidden = kind === "p2tr"/);
@@ -940,7 +942,7 @@ test("the Key Station method picker is one dropdown carrying every method's mark
   assert.match(css, /\.key-mode-select > \.label \{ margin: 0 0 8px; \}/);
   assert.doesNotMatch(template, /Brain wallet — lab/);
   // The labels live in the locale catalogs; the dropdown reads their text view.
-  assert.match(appSource, /option\.textContent = hodlTText\(`mode\.\$\{mode\}`\);/);
+  assert.match(appSource, /option\.textContent = hodlKeyModeLabel\(mode\);/);
   for (const mode of ["dice", "cards", "hex", "seed", "key"]) {
     assert.ok(en[`mode.${mode}`]?.length > 0, `mode.${mode} label is missing from the English catalog`);
   }

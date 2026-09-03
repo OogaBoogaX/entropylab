@@ -20,12 +20,11 @@ test("English catalog is the source of truth and has no empty strings", () => {
   }
 });
 
-test("non-English catalogs contain only non-empty English keys", () => {
+test("non-English catalogs contain only non-empty strings", () => {
   for (const code of hodlLocaleCodes) {
     if (code === "en") continue;
     const catalog = readLocale(code);
     for (const key of Object.keys(catalog)) {
-      assert.ok(Object.hasOwn(en, key), `${code} unknown key ${key}`);
       assert.equal(typeof catalog[key], "string", `${code} ${key}`);
       assert.ok(catalog[key].length > 0, `${code} ${key}`);
     }
@@ -36,8 +35,16 @@ test("t interpolates placeholders and falls back to English", () => {
   hodlSetLocale("en", false);
   assert.equal(t("seedLength.words", { n: 12 }), "12 words");
   assert.equal(tHtml("error.origin.multipathLast"), hodlSanitizeCatalogHtml(en["error.origin.multipathLast"]));
-  assert.equal(t("missing.key"), "missing.key");
-  assert.equal(tHtml("missing.key"), "missing.key");
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (message) => warnings.push(message);
+  try {
+    assert.equal(t("missing.key"), "missing.key");
+    assert.equal(tHtml("missing.key"), "missing.key");
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(warnings, ["Missing English translation key: missing.key"]);
 });
 
 test("locale allowlist rejects unknown codes", () => {
@@ -78,6 +85,27 @@ test("a source hash marked stale makes both catalog views fall back to English",
     assert.equal(staleModule.hodlLocaleIsComplete("es"), false);
   } finally {
     delete globalThis.__entropyLabStaleTranslations;
+  }
+});
+
+test("a removed English key cannot reactivate an obsolete locale value", async () => {
+  const key = "seedLength.words";
+  const saved = en[key];
+  const warnings = [];
+  const originalWarn = console.warn;
+  delete en[key];
+  globalThis.__entropyLabStaleTranslations = { es: [key] };
+  console.warn = (message) => warnings.push(message);
+  try {
+    const obsoleteModule = await import(`../src/js/i18n.js?obsolete=${Date.now()}`);
+    obsoleteModule.hodlSetLocale("es", false);
+    assert.equal(obsoleteModule.t(key, { n: 12 }), key);
+    assert.equal(obsoleteModule.tHtml(key, { n: 12 }), key);
+    assert.deepEqual(warnings, [`Missing English translation key: ${key}`]);
+  } finally {
+    console.warn = originalWarn;
+    delete globalThis.__entropyLabStaleTranslations;
+    en[key] = saved;
   }
 });
 

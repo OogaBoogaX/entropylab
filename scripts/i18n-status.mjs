@@ -25,9 +25,10 @@ export function printI18nStatus(argv = process.argv.slice(2)) {
   let invalid = false;
   for (const code of requestedLocales(argv)) {
     const status = readI18nStatus(code);
-    console.log(`${code}: ${status.missing.length} missing, ${status.stale.length} stale`);
+    console.log(`${code}: ${status.missing.length} missing, ${status.stale.length} stale, ${status.obsolete.length} obsolete`);
     if (status.missing.length) console.log(`  missing: ${status.missing.join(", ")}`);
     if (status.stale.length) console.log(`  stale: ${status.stale.join(", ")}`);
+    if (status.obsolete.length) console.log(`  obsolete: ${status.obsolete.join(", ")}`);
     for (const problem of status.problems) console.error(`  invalid: ${problem}`);
     invalid ||= status.problems.length > 0;
   }
