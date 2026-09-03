@@ -59,6 +59,7 @@
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Multi Signature"><span class="workspace-tab-full">Multi Signature</span><span class="workspace-tab-short">MultiSig</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Silent Payments"><span class="workspace-tab-full">Silent Payments</span><span class="workspace-tab-short">SP</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="PSBT"><span class="workspace-tab-full">PSBT</span><span class="workspace-tab-short">PSBT</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Journal"><span class="workspace-tab-full">Journal</span><span class="workspace-tab-short">Journal</span></button>
       </div>
     </nav>
     <div class="workspace-panel" id="workspace-panel">
@@ -201,6 +202,7 @@ words, pick one of the checksum words.</span></span>
         <button class="btn primary" id="go" disabled aria-disabled="true">Derive Key</button>
         <div class="derive-progress" id="derive-progress" role="progressbar" aria-label="Key derivation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
         <button class="btn secondary" id="bip85-open" type="button">Derive BIP-85 child</button>
+        <button class="btn secondary" id="journal-open" type="button">Save to Journal</button>
         <button class="btn clear-current-action" id="wipe" type="button" disabled aria-disabled="true">Clear Current Key</button>
       </div>
       <p class="err" id="error"></p>
@@ -475,15 +477,24 @@ words, pick one of the checksum words.</span></span>
       <div id="sp-out" aria-live="polite"></div>
       <p class="muted">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
     </section>
-    <div class="psbt-tool-tabs segmented-control no-print" id="psbt-tool-tabs" role="tablist" aria-label="PSBT tools" hidden>
-      <button class="tab active" id="psbt-nonce-tab" type="button" role="tab" aria-selected="true" aria-controls="psbt-card" data-psbt-tool="nonce">PSBT / Nonce</button>
-      <button class="tab" id="psbt-editor-tab" type="button" role="tab" aria-selected="false" aria-controls="psbted-card" data-psbt-tool="editor">PSBT Editor</button>
-    </div>
     <div class="tool-intro" id="psbt-tool-intro" hidden>
         <div class="kicker">Inspect first. Sign elsewhere.</div>
         <h2>Read a PSBT or a signed transaction.</h2>
         <p class="muted tool-intro-note">Inspecting a PSBT v0 or a raw Bitcoin transaction does not require a private key. EntropyLab can show outputs, PSBT-provided input amounts and fees, signatures, and repeated ECDSA nonce values. Optional Jade anti-exfil transcripts (host nonce ρ and signer opening R) are checked without a key. Every input's declared sighash policy and each signature's appended sighash byte are also decoded without a key; anything other than exact SIGHASH_ALL is a blocking warning. Finalized taproot witnesses and tap-leaf scripts are scanned for inscription envelopes (OP_FALSE OP_IF "ord"); this does not number sats or fetch content from the chain. Loading a matching key additionally labels which outputs belong to this wallet (change vs receive vs not yours) and checks whether supported signatures match plain RFC 6979 or Bitcoin Core-style low-r grinding; a mismatch alone is not evidence of a compromised signer.</p>
       </div>
+    <div class="tool-intro" id="psbted-tool-intro" hidden>
+        <div class="kicker">Full-fidelity editor. Sign elsewhere.</div>
+        <h2>Edit a PSBT, field by field.</h2>
+        <p class="muted tool-intro-note">A BIP-174 editor in the spirit of bip174.org, backed by rust-bitcoin compiled to WebAssembly. A transaction-flow diagram in the manner of mempool.space leads: one box per input and output with its claimed amount, address or script template, and signing status. Activating a box opens that key-value map in a panel under the diagram, output amounts edit directly in their boxes, and every key-value pair of the global, per-input and per-output maps is shown with a typed decode (BIP-174 and BIP-371 taproot fields) and stays editable as raw hex; the unsigned transaction's version, locktime, input prevouts/sequences and output amounts/scripts get structured fields. Every edit rebuilds the file through rust-bitcoin as you type — the fields always show its decode of the current build — and the result follows live as base64, hex, a downloadable .psbt and a QR code (a single static code, or an animated ur:crypto-psbt sequence for larger files). A binary .psbt file as saved by Sparrow, Coldcard or another wallet uploads directly. PSBT v0 only; unknown and proprietary pairs round-trip untouched. Editing never signs anything.</p>
+      </div>
+    <section class="key-manager no-print" id="psbt-manager" hidden>
+      <div class="key-tab-strip">
+        <div class="key-tabs" id="psbt-tool-tabs" role="tablist" aria-label="PSBT stations">
+          <button class="tab key-tab is-lab active" id="psbt-nonce-tab" type="button" role="tab" aria-selected="true" aria-controls="psbt-card" data-psbt-tool="nonce">PSBT / Nonce</button>
+          <button class="tab key-tab is-lab" id="psbt-editor-tab" type="button" role="tab" aria-selected="false" aria-controls="psbted-card" data-psbt-tool="editor">PSBT Editor</button>
+        </div>
+      </div>
+    </section>
       <section class="card no-print" id="psbt-card" role="tabpanel" hidden>
       <label class="field">PSBT v0 or raw transaction (base64 or hex)
         <textarea id="psbt-text" placeholder="cHNidP8B… or 020000000001…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
@@ -515,11 +526,6 @@ words, pick one of the checksum words.</span></span>
       <div id="psbt-out" aria-live="polite"></div>
       <p class="muted">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
     </section>
-    <div class="tool-intro" id="psbted-tool-intro" hidden>
-        <div class="kicker">Full-fidelity editor. Sign elsewhere.</div>
-        <h2>Edit a PSBT, field by field.</h2>
-        <p class="muted tool-intro-note">A BIP-174 editor in the spirit of bip174.org, backed by rust-bitcoin compiled to WebAssembly. A transaction-flow diagram in the manner of mempool.space leads: one box per input and output with its claimed amount, address or script template, and signing status. Activating a box opens that key-value map in a panel under the diagram, output amounts edit directly in their boxes, and every key-value pair of the global, per-input and per-output maps is shown with a typed decode (BIP-174 and BIP-371 taproot fields) and stays editable as raw hex; the unsigned transaction's version, locktime, input prevouts/sequences and output amounts/scripts get structured fields. Every edit rebuilds the file through rust-bitcoin as you type — the fields always show its decode of the current build — and the result follows live as base64, hex, a downloadable .psbt and a QR code (a single static code, or an animated ur:crypto-psbt sequence for larger files). A binary .psbt file as saved by Sparrow, Coldcard or another wallet uploads directly. PSBT v0 only; unknown and proprietary pairs round-trip untouched. Editing never signs anything.</p>
-      </div>
       <section class="card no-print" id="psbted-card" role="tabpanel" hidden>
       <label class="field">PSBT v0 (base64 or hex)
         <textarea id="psbted-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
@@ -537,6 +543,151 @@ words, pick one of the checksum words.</span></span>
       <div id="psbted-out" aria-live="polite"></div>
       <p class="muted">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
     </section>
+    <div class="tool-intro" id="journal-tool-intro" hidden>
+        <div class="kicker">Your rolls, on paper you control.</div>
+        <h2>Entropy Journal</h2>
+        <p class="muted tool-intro-note journal-intro">An encrypted notebook of entropy you already produced — dice, coins, hex, brain-wallet text, or a seed. The file stays on your machine and opens with a password you choose. Encryption is a pure function of the password and the entries — nothing is generated for you. This is not a password manager and does not invent entropy.</p>
+      </div>
+    <div class="tool-intro" id="journal-notes-tool-intro" hidden>
+        <div class="kicker">Write it down. Stamp the clock. Download to keep it.</div>
+        <h2>Notepad</h2>
+        <p class="muted tool-intro-note">Freeform notes for this sitting, each stamped with this computer's date and time. Nothing is stored in the browser. Closing the page discards the notes unless you download them.</p>
+      </div>
+    <div class="tool-intro" id="journal-state-tool-intro" hidden>
+        <div class="kicker">What this sitting derived.</div>
+        <h2>Session state</h2>
+        <p class="muted tool-intro-note">A text summary of every key, multisig, BIP-85 child, and calculator payload currently in this page. Capture replaces the text; you can edit it before downloading. Private recovery material is omitted unless you tick the box — the same rule as the recovery sheet.</p>
+      </div>
+    <div class="tool-intro" id="journal-log-tool-intro" hidden>
+        <div class="kicker">A trace, not a memoir.</div>
+        <h2>Session log</h2>
+        <p class="muted tool-intro-note">An append-only record of what this page did — tool switches, derives, captures, errors — so a later bug report has a clock and a fingerprint instead of a guess. Seed phrases, xprvs, and typed secrets are not written here. Last 400 events. This computer's clock.</p>
+      </div>
+    <section class="key-manager no-print" id="journal-manager" hidden>
+      <div class="key-tab-strip">
+        <div class="key-tabs" id="journal-tool-tabs" role="tablist" aria-label="Journal stations">
+          <button class="tab key-tab is-lab active" id="journal-book-tab" type="button" role="tab" aria-selected="true" aria-controls="journal-card" data-journal-tool="book">Journal</button>
+          <button class="tab key-tab is-lab" id="journal-notes-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-notes-card" data-journal-tool="notes">Notepad</button>
+          <button class="tab key-tab is-lab" id="journal-state-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-state-card" data-journal-tool="state">Session state</button>
+          <button class="tab key-tab is-lab" id="journal-log-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-log-card" data-journal-tool="log">Session log</button>
+        </div>
+      </div>
+    </section>
+      <section class="card no-print" id="journal-card" role="tabpanel" hidden>
+      <div id="journal-locked-panel">
+        <div class="row segmented-control" id="journal-gate-modes" role="group" aria-label="Journal start">
+          <button type="button" class="tab active" data-journal-gate="create" aria-pressed="true">Create</button>
+          <button type="button" class="tab" data-journal-gate="open" aria-pressed="false">Open file</button>
+        </div>
+        <div id="journal-create-panel">
+          <label class="field">Password for the journal
+            <input id="journal-create-password" type="password" placeholder="At least 12 characters" autocomplete="new-password">
+            <span class="field-note">A long passphrase you can picture beats a short clever one. There is no recovery: lose the password and the file stays sealed.</span>
+          </label>
+          <label class="field">Confirm the password
+            <input id="journal-create-confirm" type="password" placeholder="Enter the same password again" autocomplete="new-password">
+          </label>
+          <div class="row bip85-actions">
+            <button class="btn primary" id="journal-create" type="button">Create journal</button>
+          </div>
+        </div>
+        <div id="journal-open-panel" hidden>
+          <label class="field">Encrypted journal file
+            <input id="journal-file" type="file" accept=".json,application/json">
+          </label>
+          <label class="field">Password for the journal
+            <input id="journal-open-password" type="password" placeholder="The password used when this file was created" autocomplete="off">
+          </label>
+          <div class="row bip85-actions">
+            <button class="btn primary" id="journal-unlock" type="button">Open journal</button>
+          </div>
+        </div>
+      </div>
+      <div id="journal-work-panel" hidden>
+        <div class="journal-status" id="journal-status">
+          <img class="journal-status-lifehash" id="journal-lifehash" width="48" height="48" alt="" hidden>
+          <div>
+            <p class="journal-status-title" id="journal-status-title">Journal unlocked</p>
+            <p class="muted" id="journal-status-note">No entries yet. Save the encrypted file after you add one.</p>
+          </div>
+        </div>
+        <div class="row bip85-actions journal-toolbar">
+          <label class="field journal-search-field">Search labels
+            <input id="journal-search" type="search" placeholder="Filter by label" autocomplete="off">
+          </label>
+          <button class="btn primary" id="journal-add" type="button">Add entry</button>
+          <button class="btn secondary" id="journal-save" type="button">Save file</button>
+          <button class="btn secondary" id="journal-lock" type="button">Lock</button>
+        </div>
+        <div id="journal-list" class="journal-list" aria-live="polite"></div>
+        <div id="journal-editor" class="journal-editor" hidden>
+          <label class="field">Method
+            <select id="journal-method">
+              <option value="dice" selected>Dice rolls</option>
+              <option value="coin">Coin flips</option>
+              <option value="hex">Hex</option>
+              <option value="brain">Brain-wallet text</option>
+              <option value="seed">Manual seed</option>
+              <option value="cards">Playing cards</option>
+            </select>
+          </label>
+          <label class="field">Raw rolls or input
+            <textarea id="journal-input" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+            <span class="field-note">Stored exactly as entered.</span>
+          </label>
+          <label class="field">BIP39 seed or passphrase
+            <textarea id="journal-phrase" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          </label>
+          <label class="field">Label
+            <input id="journal-label" type="text" maxlength="120" autocomplete="off">
+          </label>
+          <label class="field">Notes (optional)
+            <textarea id="journal-entry-notes" spellcheck="true"></textarea>
+          </label>
+          <label class="field">Session wallet (optional)
+            <select id="journal-wallet"><option value="">None</option></select>
+          </label>
+          <div class="row bip85-actions">
+            <button class="btn primary" id="journal-commit" type="button">Save entry</button>
+            <button class="btn secondary" id="journal-use-calc" type="button">Use active key</button>
+            <button class="btn secondary" id="journal-cancel" type="button">Cancel</button>
+          </div>
+        </div>
+        <div id="journal-view" hidden></div>
+      </div>
+      <p class="err" id="journal-error" role="alert"></p>
+      <p class="muted">The journal lives in this page until you save the encrypted file. Anyone with that file and the journal password can read every entry. Memory clearing is best-effort; close the page before reconnecting the computer.</p>
+    </section>
+      <section class="card no-print" id="journal-notes-card" role="tabpanel" hidden>
+      <p class="muted">Notes stay in this page only. Download them if they need to outlive this sitting.</p>
+      <div id="journal-notes"></div>
+      <div class="row psbt-actions">
+        <button class="btn primary" id="journal-note-add" type="button">Add note</button>
+        <button class="btn secondary" id="journal-notes-download" type="button">Download notes</button>
+      </div>
+    </section>
+      <section class="card no-print" id="journal-state-card" role="tabpanel" hidden>
+      <p class="muted">Capture walks the current stations and writes a snapshot you can edit. Recapture replaces the text.</p>
+      <label class="choice"><input type="checkbox" id="journal-state-private">
+        <span><strong>Include private recovery material</strong>
+        <span class="desc">Same rule as the recovery sheet. Off by default. The file is then a secret — treat the download like a seed backup.</span></span>
+      </label>
+      <div class="row psbt-actions">
+        <button class="btn primary" id="journal-state-capture" type="button">Capture this session</button>
+        <button class="btn secondary" id="journal-state-download" type="button">Download snapshot</button>
+      </div>
+      <label class="field">Session snapshot
+        <textarea id="journal-state-text" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Capture this session to fill this field. Edit freely afterward."></textarea>
+      </label>
+    </section>
+      <section class="card no-print" id="journal-log-card" role="tabpanel" hidden>
+      <p class="muted">Download this with a bug report. It names tools and fingerprints, not seeds.</p>
+      <pre class="journal-log" id="journal-log-out" aria-live="polite">No events yet.</pre>
+      <div class="row psbt-actions">
+        <button class="btn primary" id="journal-log-download" type="button">Download log</button>
+        <button class="btn secondary" id="journal-log-clear" type="button">Clear log</button>
+      </div>
+    </section>
     </div>
     <section class="card muted sources">
       <h3 class="sources-heading">Sources</h3>
@@ -547,10 +698,11 @@ words, pick one of the checksum words.</span></span>
       <p>Die Distribution / Fairness Analysis (Pearson’s χ²): <a href="https://rpg.stackexchange.com/questions/70802/how-can-i-test-whether-a-die-is-fair" target="_blank" rel="noopener noreferrer">How can I test whether a die is fair?</a> — live check while entering rolls, following the <a href="https://dicefairness.johnellmore.com/" target="_blank" rel="noopener noreferrer">Dice Fairness Tester</a> thresholds.</p>
       <p>Jade anti-exfil (sign-to-contract): <a href="https://blog.blockstream.com/anti-exfil-stopping-key-exfiltration/" target="_blank" rel="noopener noreferrer">Anti-Exfil: Stopping Key Exfiltration</a> — secp256k1-zkp <code>ecdsa_s2c</code> / <code>anti_exfil_host_verify</code>.</p>
       <p>BIP-85 deterministic entropy: <a href="https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki" target="_blank" rel="noopener noreferrer">bip-0085.mediawiki</a> — HMAC-SHA512 of a fully hardened child; English BIP-39 / WIF / XPRV / HEX / password applications match COLDCARD.</p>
+      <p>Entropy Journal: AES-256-GCM from a typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. No relays, no accounts, no localStorage for secrets.</p>
       <p>BIP-352 Silent Payments: <a href="https://github.com/bitcoin/bips/blob/master/bip-0352.mediawiki" target="_blank" rel="noopener noreferrer">bips/bip-0352</a> — reusable <code>sp1q…</code> addresses and unique taproot outputs. Descriptors: <a href="https://github.com/bitcoin/bips/blob/master/bip-0392.mediawiki" target="_blank" rel="noopener noreferrer">BIP-392</a>.</p>
       <p>Inscription envelopes: <a href="https://docs.ordinals.com/inscriptions.html" target="_blank" rel="noopener noreferrer">docs.ordinals.com/inscriptions</a> — <code>OP_FALSE OP_IF "ord"</code> parser only. This tool does not create inscriptions or number sats.</p>
     </section>
-    <footer class="page-footer muted no-print"><div>Team Ooga Booga</div><div class="page-footer-emoji">🪨 🔥 🎲 🍌</div><div>Since 964013 · <span class="page-footer-build">v{{VERSION}} · commit <code>{{COMMIT_SHORT}}</code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="{{COMMIT}}" width="20" height="20" alt="LifeHash of the build commit" hidden></span></div><div class="page-footer-links"><a class="btn secondary github-repo-link" href="https://github.com/w-s-bitcoin/entropylab" target="_blank" rel="noopener noreferrer" aria-label="View the EntropyLab GitHub repository in a new tab"><svg class="github-mark" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="control-label">GitHub</span></a><button type="button" class="theme-toggle" id="theme-toggle" data-theme-mode="dark" aria-label="Theme: dark. Switch to light"><svg class="theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><svg class="theme-icon-light" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button></div></footer>
+    <footer class="page-footer muted no-print"><div>Team Ooga Booga</div><div class="page-footer-emoji">🪨 🔥 🎲 🍌</div><div>Since 964013 · <span class="page-footer-build">v{{VERSION}} · commit <code>{{COMMIT_SHORT}}</code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="{{COMMIT}}" width="20" height="20" alt="LifeHash of the build commit" hidden></span></div><div class="page-footer-links"><a class="btn secondary github-repo-link" href="https://github.com/OogaBoogaX/entropylab" target="_blank" rel="noopener noreferrer" aria-label="View the EntropyLab GitHub repository in a new tab"><svg class="github-mark" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="control-label">GitHub</span></a><button type="button" class="theme-toggle" id="theme-toggle" data-theme-mode="dark" aria-label="Theme: dark. Switch to light"><svg class="theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><svg class="theme-icon-light" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button></div></footer>
   </div>
 </div><div class="disclaimer-overlay no-print" id="beta-disclaimer" role="alertdialog" aria-modal="true" aria-labelledby="beta-disclaimer-title" aria-describedby="beta-disclaimer-text" hidden>
   <div class="disclaimer-card">

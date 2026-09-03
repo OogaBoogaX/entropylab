@@ -7,6 +7,7 @@ node_modules/
 /entropylab.html
 /service-worker.js
 /SHA256SUMS.txt
+/CID.txt
 /versions.json
 
 # Rust build output (the wasm artifacts are committed as src/js/*-wasm-b64.js)

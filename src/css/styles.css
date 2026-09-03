@@ -1089,8 +1089,6 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
    brings its own 16px top margin (they collapsed to one 16px before), so the
    only thing this drops is the gap left above the panel's bottom padding. */
 .workspace-panel .card { margin-bottom: 0; }
-.psbt-tool-tabs { margin: 0 0 var(--space-component); }
-.psbt-tool-tabs[hidden] { display: none; }
 .segmented-control {
   display: flex; align-items: stretch; flex-wrap: wrap; gap: 0; max-width: 100%; isolation: isolate;
 }
@@ -1138,7 +1136,45 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .segmented-control.is-stacked > .tab:last-child { border-radius: 0 0 8px 8px; }
 .segmented-control.is-stacked > .tab:only-child { border-radius: 8px; }
 #msig-card[hidden], #calc-card[hidden], #psbt-card[hidden], #psbted-card[hidden], #bip85-card[hidden], #sp-card[hidden] { display: none !important; }
-#calc-card:not([hidden]), #msig-card:not([hidden]), #bip85-card:not([hidden]), #sp-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
+#calc-card:not([hidden]), #msig-card:not([hidden]), #bip85-card:not([hidden]), #sp-card:not([hidden]), #psbt-card:not([hidden]), #psbted-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
+#journal-card[hidden], #journal-notes-card[hidden], #journal-state-card[hidden], #journal-log-card[hidden] { display: none !important; }
+#journal-card:not([hidden]), #journal-notes-card:not([hidden]), #journal-state-card:not([hidden]), #journal-log-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
+#journal-locked-panel[hidden], #journal-work-panel[hidden], #journal-create-panel[hidden], #journal-open-panel[hidden], #journal-editor[hidden], #journal-view[hidden] { display: none; }
+.journal-intro { margin: var(--space-control) 0 0; }
+.journal-status { display: flex; align-items: center; gap: 14px; margin-bottom: var(--space-component); }
+.journal-status-lifehash { width: 48px; height: 48px; border-radius: 8px; image-rendering: pixelated; flex: 0 0 auto; }
+.journal-status-title { margin: 0; font-weight: 700; }
+.journal-toolbar { align-items: flex-end; flex-wrap: wrap; }
+.journal-search-field { flex: 1 1 12rem; min-width: 12rem; margin-top: 0; }
+.journal-list { display: grid; gap: 8px; margin-top: var(--space-component); }
+.journal-item {
+  display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 4px 12px; align-items: center;
+  width: 100%; text-align: left; padding: 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg); color: inherit; cursor: pointer;
+}
+.journal-item:hover { border-color: var(--accent); }
+.journal-item-lifehash { width: 32px; height: 32px; border-radius: 6px; image-rendering: pixelated; grid-row: span 2; }
+.journal-item-label { font-weight: 700; }
+.journal-item-meta { color: var(--muted); font-size: 13px; }
+.journal-empty { color: var(--muted); margin: var(--space-component) 0 0; }
+.journal-editor { margin-top: var(--space-component); }
+#journal-view { margin-top: var(--space-component); }
+.journal-note {
+  margin: 0 0 14px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
+}
+.journal-note-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.journal-note-at {
+  width: auto; flex: 1 1 auto; min-width: 0; min-height: 0; margin-top: 0; padding: 6px 10px;
+  letter-spacing: 0; font-size: 13px;
+}
+.journal-note-head .btn { flex: 0 0 auto; min-height: 0; padding: 6px 10px; }
+.journal-note-body { min-height: 88px; margin-top: 0; letter-spacing: 0; }
+.journal-log {
+  font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
+  margin: 0 0 14px; padding: 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface-2); max-height: 420px; overflow: auto;
+}
+#journal-state-text { min-height: 280px; letter-spacing: 0; font-size: 13px; }
 .psbt-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
 @media (min-width: 720px) {
   .psbt-grid { grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); }

@@ -101,6 +101,19 @@ Official website: [entropylab.online](https://entropylab.online)
   root xprv, including labeled codes, BIP-392 `spscan` / `spspend` descriptors,
   sender taproot outputs from pasted vin JSON, and receiver verification of
   pasted x-only outputs. This is a calculator: it does not scan the chain.
+- A session **Journal** (last workspace tab) holds an encrypted **Entropy
+  Journal** notebook, a notepad stamped with this computer's date and time,
+  an editable summary of everything derived in this sitting, and a debug log
+  of tool switches and derives (fingerprints, not seeds). The notebook keeps
+  entropy the user already produced — dice, coins, hex, brain-wallet text, or
+  a seed — under AES-256-GCM; the key is PBKDF2-SHA-256 (600,000 rounds) of a
+  password the user chooses, with the salt derived from the password itself
+  and the IV HMAC-SHA-256 of the plaintext, so the file is a pure function of
+  password and entries and no CSPRNG is ever called. One JSON file the user
+  downloads and loads back. Nothing is stored in the browser; download a file
+  to keep it. Closing the page discards the sitting. The notebook is a
+  calculator companion, not a password manager: it only stores material the
+  user generated themselves.
 - Runs a quick barrage of startup sanity checks on the host browser (secure
   context, CSPRNG, BigInt, UTF-8 encoding, NFKD, and WebAssembly). If any
   check fails, the page is replaced with a failure report listing the failed
@@ -137,7 +150,7 @@ Official website: [entropylab.online](https://entropylab.online)
 
 Download the self-contained `entropylab.html` from the
 [official website](https://entropylab.online) or the
-[releases page](https://github.com/w-s-bitcoin/entropylab/releases), transfer it to a trusted
+[releases page](https://github.com/OogaBoogaX/entropylab/releases), transfer it to a trusted
 computer, disconnect that computer from all networks, and open the file in a
 modern browser. For sensitive wallet material, use a dedicated air-gapped
 machine and verify important addresses and descriptors with an independent
@@ -170,20 +183,42 @@ file is still self-contained and never registers the hosted service worker.
 ### Verifying the download
 
 Every merge to `rock` publishes a `SHA256SUMS.txt` checksum manifest for
-`entropylab.html` (committed next to it in this repository) and a
-[GitHub artifact attestation](https://github.com/w-s-bitcoin/entropylab/attestations)
+`entropylab.html` (committed next to it in this repository), a matching
+`CID.txt` (CIDv1 raw sha2-256 of those same bytes), and a
+[GitHub artifact attestation](https://github.com/OogaBoogaX/entropylab/attestations)
 for the exact bytes built by CI. After downloading, verify both:
 
 ```sh
 sha256sum -c SHA256SUMS.txt
-gh attestation verify entropylab.html -R w-s-bitcoin/entropylab
+gh attestation verify entropylab.html -R OogaBoogaX/entropylab
 ```
+
+The CID is a self-describing name for the SHA-256, not a second hash. The
+calculator never talks to IPFS. To store or fetch the file on a **local**
+node without GitHub or `entropylab.online` DNS:
+
+```sh
+ipfs block put --cid-codec=raw --allow-big-block entropylab.html   # pin the bytes you already verified
+ipfs get -o entropylab.html "$(cut -d' ' -f1 CID.txt)"             # retrieve by CID
+sha256sum -c SHA256SUMS.txt
+```
+
+`ipfs add` (UnixFS chunking) produces a different CID; that is expected.
+Public gateways may refuse a multi-megabyte raw block — a local node is the
+intended path. Never open a gateway URL as the wallet origin. Do not put
+seeds or other private material on IPFS.
 
 The attestation is keyless (Sigstore) and bound to this repository's release
 workflow, so it authenticates the artifact independently of the hosting
 account. The checksum manifest alone only detects accidental corruption —
-always pair it with the attestation or with your own rebuild from source,
-which is byte-for-byte reproducible.
+always pair it with the attestation or reproduce the build from reviewed
+source. For a given Git revision, `npm run build` deterministically assembles
+`entropylab.html` from committed inputs, including the committed WASM modules;
+the revision to check out is stamped in the generated file. Rebuilding those
+modules from their Rust/C sources (`npm run build:wasm`) is separate, and its
+output is not currently asserted to be byte-identical across machines. CI
+still rebuilds the modules from source and runs the WASM binding tests against
+the fresh build (see [Building from source](#building-from-source)).
 
 An online version is available at [entropylab.online](https://entropylab.online)
 for convenient access. Do not enter seed phrases, private keys, or other secret
@@ -316,6 +351,7 @@ To remove generated files, run `npm run clean`.
 ├── scripts/
 │   ├── build.mjs           Locked-dependency esbuild and HTML assembly
 │   ├── build-wasm.mjs      crypto WASM rebuild (npm run build:wasm)
+│   ├── cid.mjs             CIDv1 raw sha2-256 name for the release HTML
 │   └── verify-site.mjs     Site artifact verification (npm run verify)
 ├── entropylab-wasm/        Pinned Rust crate: rust-bitcoin + rust-miniscript -> WebAssembly bindings
 ├── test/
@@ -335,6 +371,7 @@ To remove generated files, run `npm run clean`.
 │   ├── css/styles.css      Application styles
 │   └── js/
 │       ├── app.js          Application logic and explicit package imports
+│       ├── journal.js      Encrypted entropy notebook, session notepad, snapshot, and debug log
 │       ├── secp256k1.js    Curve facade over the WASM module (noble-shaped API)
 │       ├── entropylab-wasm.js Shared WASM module loader
 │       ├── entropylab-wasm-b64.js Generated WASM artifact (committed; build:wasm)

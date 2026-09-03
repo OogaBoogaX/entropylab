@@ -34,6 +34,7 @@ const requiredFiles = [
   "assets/entropylab-darkmode.png",
   "assets/entropylab-social.png",
   "scripts/build.mjs",
+  "scripts/cid.mjs",
   "scripts/verify-site.mjs",
   "test/validate.test.mjs",
   "test/browser.test.mjs",
@@ -46,6 +47,7 @@ const requiredFiles = [
   "src/css/styles.css",
   "src/js/app.js",
   "src/js/psbt-editor.js",
+  "src/js/journal.js",
   "src/js/psbt-wasm.js",
   "src/js/psbt-wasm-b64.js",
   "src/js/bip85.js",
@@ -62,6 +64,8 @@ const requiredFiles = [
   "test/browser-check.test.mjs",
   "test/psbt-metadata.test.mjs",
   "test/secret-clear.test.mjs",
+  "test/cid.test.mjs",
+  "test/journal.test.mjs",
   "test/wipe-wasm.test.mjs",
   ".github/workflows/ci-cd.yml",
 ];
@@ -118,6 +122,7 @@ test("security-sensitive crypto libraries resolve to a single locked version", (
 test("Node scripts and test files parse", () => {
   const nodeFiles = [
     "scripts/build.mjs",
+    "scripts/cid.mjs",
     "scripts/verify-site.mjs",
     ...readdirSync(join(root, "test")).filter((name) => name.endsWith(".mjs")).map((name) => `test/${name}`),
   ];
@@ -180,6 +185,7 @@ test("the release build attests the wallet artifact and ships a checksum manifes
   const workflow = read(".github/workflows/ci-cd.yml");
   const build = workflow.match(/^  build:\n(?:.|\n)*?(?=^  [a-z-]+:)/m)?.[0] ?? "";
   assert.match(build, /sha256sum entropylab\.html > SHA256SUMS\.txt/, "build must generate SHA256SUMS.txt");
+  assert.match(build, /node scripts\/cid\.mjs entropylab\.html > CID\.txt/, "build must generate CID.txt from the same HTML");
   assert.match(build, /actions\/attest-build-provenance@[0-9a-f]{40}/, "build must attest entropylab.html");
   assert.match(build, /subject-path: entropylab\.html/, "the attestation subject is the wallet HTML");
   assert.match(build, /attestations: write/, "attestation requires the attestations permission");
@@ -187,7 +193,23 @@ test("the release build attests the wallet artifact and ships a checksum manifes
   assert.match(build, /if: github\.ref == 'refs\/heads\/rock' && github\.event_name == 'push'\n\s*uses: actions\/attest-build-provenance/);
   const artifact = workflow.match(/^  artifact:\n(?:.|\n)*?(?=^  [a-z-]+:)/m)?.[0] ?? "";
   assert.match(artifact, /SHA256SUMS\.txt/, "the committed artifact includes the checksum manifest");
-  assert.match(read("README.md"), /gh attestation verify entropylab\.html -R w-s-bitcoin\/entropylab/);
+  assert.match(artifact, /CID\.txt/, "the committed artifact includes the IPFS CID name");
+  assert.match(read("README.md"), /gh attestation verify entropylab\.html -R OogaBoogaX\/entropylab/);
+  assert.match(read("README.md"), /ipfs block put --cid-codec=raw --allow-big-block/);
+});
+
+test("repository links follow the Team Ooga Booga ownership", () => {
+  for (const path of ["README.md", "CONTRIBUTING.md", "SECURITY.md", "llms.txt", "src/index.html", "src/js/app.js"]) {
+    assert.doesNotMatch(read(path), /github\.com\/(?:w-s-bitcoin|Team-Ooga-Booga)\/entropylab/, `${path} still links through a former owner`);
+  }
+  assert.match(read("src/index.html"), /https:\/\/github\.com\/OogaBoogaX\/entropylab/);
+});
+
+test("the GHCR image name is normalized for mixed-case organization logins", () => {
+  const workflow = read(".github/workflows/ci-cd.yml");
+  assert.match(workflow, /id: ghcr-image\n\s+run: echo "name=ghcr\.io\/\$\{GITHUB_REPOSITORY,,\}" >> "\$GITHUB_OUTPUT"/);
+  assert.match(workflow, /\$\{\{ steps\.ghcr-image\.outputs\.name \}\}:latest/);
+  assert.doesNotMatch(workflow, /ghcr\.io\/\$\{\{ github\.repository \}\}/);
 });
 
 test("every gate and publication path consumes the single tested candidate (issue #93)", () => {

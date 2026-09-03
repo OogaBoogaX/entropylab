@@ -4,7 +4,7 @@
 
 Only the most recent release receives security fixes. Users are encouraged to
 always use the latest version, available from the
-[releases page](https://github.com/w-s-bitcoin/entropylab/releases) and the
+[releases page](https://github.com/OogaBoogaX/entropylab/releases) and the
 [official website](https://entropylab.online).
 
 | Version | Supported          |
@@ -78,6 +78,29 @@ material. Its security posture rests on the following model:
   does not render inscription media, assign sat numbers, or contact an indexer.
 - OP_RETURN detection is a parser of output scripts. It does not create
   data-carrier outputs, assign protocol meaning, or contact an indexer.
+- The published `CID.txt` is CIDv1 (raw, sha2-256) of the release
+  `entropylab.html` — the same digest as `SHA256SUMS.txt`, written as an IPFS
+  name. The calculator never speaks IPFS: no node, no gateway, no IPNS, no
+  `fetch`. Retrieving the file by CID is an online-machine step; verify
+  `SHA256SUMS.txt` before moving the HTML onto an air-gapped computer. Do not
+  publish seeds, xprvs, or other private material to IPFS.
+- The session Journal (notepad, session snapshot, session log) lives only in
+  this page's memory. It is never written to `localStorage`, IndexedDB, or the
+  network. Closing or hiding the page discards it with the other secret
+  fields. Downloaded notes or snapshots are files the user chose to keep. The
+  log records tool names, timestamps, and fingerprints — not seed phrases,
+  xprvs, or typed secrets.
+- The Entropy Journal notebook is an encrypted notebook of entropy the user
+  already produced, not a password manager and not a key generator. The
+  AES-256-GCM key is PBKDF2-SHA-256 (600,000 rounds) of a password the user
+  types, with the salt derived from the password itself; the IV is
+  HMAC-SHA-256 of the plaintext under a second derived key. The file is
+  therefore a deterministic function of the password and the entries — the
+  journal never calls a CSPRNG. The trade-off is brute-force cost: anyone
+  holding the file can test passwords at 600,000 SHA-256 rounds per guess, so
+  the password needs real length. The plaintext never goes to localStorage,
+  IndexedDB, or the network. Anyone with the file and the journal password
+  can read every entry.
 - Low-entropy dice and card transcripts are accepted intentionally so the
   calculator can be used for deterministic tests, demonstrations, and
   recovery experiments. EntropyLab does not claim that hashing a short input
@@ -110,7 +133,7 @@ material. Its security posture rests on the following model:
 ## Reporting a Vulnerability
 
 Please report suspected security issues privately through
-[GitHub Security Advisories](https://github.com/w-s-bitcoin/entropylab/security/advisories/new)
+[GitHub Security Advisories](https://github.com/OogaBoogaX/entropylab/security/advisories/new)
 rather than opening a public issue. If private reporting is unavailable, reach
 the maintainers through the [official website](https://entropylab.online).
 

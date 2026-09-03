@@ -15,6 +15,7 @@ test("page lifecycle clearing replaces every cached key and clears PSBT private 
   assert.match(lifecycle, /hodlPsbtWipeMem\(\)/);
   assert.match(lifecycle, /hodlBip85WipeMem\(\)/);
   assert.match(lifecycle, /hodlSpWipeMem\(\)/);
+  assert.match(lifecycle, /hodlJournalWipeMem\(\)/);
   assert.match(lifecycle, /hodlKeys\s*=\s*hodlKeys\.map\(\(state\)\s*=>\s*\{/);
   assert.match(lifecycle, /privateKeys\[kind\]\s*=\s*""/);
   assert.match(lifecycle, /if \(id !== "privateKeys"\) fields\[id\] = ""/);
@@ -45,6 +46,17 @@ test("BIP-85 parent and derived-child fields are explicitly cleared", () => {
   assert.match(lifecycle, /getElementById\("bip85-key"\)/);
   assert.match(lifecycle, /bip85Key\.value\s*=\s*""/);
   assert.match(lifecycle, /bip85Out\.innerHTML\s*=\s*""/);
+});
+
+test("Entropy Journal password, entries, and encrypted session are explicitly cleared", () => {
+  // The lifecycle's hodlJournalWipeMem clears both the session notepad and the
+  // encrypted notebook (keys, document, and every notebook field).
+  assert.match(lifecycle, /hodlJournalWipeMem\(\)/);
+  assert.match(app, /function hodlJournalWipeMem\(\) \{[\s\S]*?hodlJournalWipeNotebook\(\)[\s\S]*?hodlJournalClearFields\(\)/);
+  assert.match(app, /journal-create-password/);
+  assert.match(app, /journal-input/);
+  assert.match(app, /journal-phrase/);
+  assert.match(app, /journal-entry-notes/);
 });
 
 test("Silent Payments session key and passphrase fields are explicitly cleared", () => {

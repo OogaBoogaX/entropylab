@@ -13,13 +13,15 @@ EntropyLab is a single HTML file with no runtime dependencies. It is designed to
 - Edits PSBT v0 files field by field (bip174.org-style): every global/input/output key-value pair decoded and editable, structured transaction fields, and rust-bitcoin-validated re-serialization. A mempool.space-style flow diagram (clickable input/output/transaction boxes joined by bezier connectors, inline output amounts) doubles as the editing surface. Never signs.
 - Derives BIP-85 child entropy from a BIP32 root: English BIP-39, WIF, XPRV, HEX, and Base64/Base85 passwords.
 - Derives BIP-352 Silent Payment addresses, labeled codes, and BIP-392 descriptors; computes sender taproot outputs and verifies pasted outputs offline. Does not scan the chain.
+- Session Journal (last tab): encrypted entropy notebook (AES-256-GCM; key is PBKDF2-SHA-256 600,000 rounds of a typed password, IV is HMAC-SHA-256 of the plaintext — fully deterministic, no CSPRNG; one downloaded JSON file), stamped notepad, editable snapshot of derived keys/multisigs/BIP-85/SP/PSBT in this sitting, and a debug log of tool switches and derives (fingerprints, not seeds). RAM-only; download to keep.
 - Optional global entropy sync keeps direct dice, cards, number bases, BIP39 words/numbers, and private-key encodings aligned live. Hashed inputs update those methods in one direction and are never overwritten by non-hashed edits. Off by default.
 - SLIP-132 display is prefix-swap only. Shows as-pasted, Bitcoin Core xpub/xprv (or tpub/tprv), and descriptor. SLIP form only when path/script match. No Taproot prefix. Testnet t/u/v/U/V.
 - Exports a Bitcoin Core wallet.dat (watch-only by default) with all derived descriptors imported.
 - Runs startup sanity checks on the host browser and refuses to render if they fail. Lockdown Mode blocks WebAssembly; exclude the site in Safari or use Firefox on an air-gapped computer. No JS secp256k1 fallback.
+- Each release publishes SHA256SUMS.txt and CID.txt (CIDv1 raw sha2-256 of the same bytes). The app never talks to IPFS; fetch by CID is an online local-node step, then verify the checksum, then air-gap.
 
 ## Links
 
 - Site: https://entropylab.online/
-- Source: https://github.com/w-s-bitcoin/entropylab
-- Releases: https://github.com/w-s-bitcoin/entropylab/releases
+- Source: https://github.com/OogaBoogaX/entropylab
+- Releases: https://github.com/OogaBoogaX/entropylab/releases

@@ -64,7 +64,7 @@ browser test that asserts this must stay green.
   `entropylab.html`).
 
 ```sh
-git clone https://github.com/w-s-bitcoin/entropylab.git && cd entropylab
+git clone https://github.com/OogaBoogaX/entropylab.git && cd entropylab
 node --version   # >= 20.19
 npm ci
 npm run build    # src/ → entropylab.html

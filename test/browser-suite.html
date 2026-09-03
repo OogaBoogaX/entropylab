@@ -868,9 +868,9 @@
   await test("tool tabs answer the arrow keys and name themselves in full", async () => {
     const strip = document.getElementById("workspace-tabs");
     const tabs = [...strip.querySelectorAll("[data-workspace]")];
-    assert(tabs.length === 5, `Expected five tool tabs, found ${tabs.length}`);
+    assert(tabs.length === 6, `Expected six tool tabs, found ${tabs.length}`);
     // The visible label may be abbreviated; the accessible name never is.
-    const names = ["Keys", "BIP-85", "Multi Signature", "Silent Payments", "PSBT"];
+    const names = ["Keys", "BIP-85", "Multi Signature", "Silent Payments", "PSBT", "Journal"];
     tabs.forEach((tab, i) => {
       assert(tab.getAttribute("aria-label") === names[i], `Tab ${i} should be named "${names[i]}"`);
     });
@@ -883,13 +883,38 @@
       await until(() => !document.getElementById("bip85-card").hidden, "BIP-85 to open on ArrowRight");
       assert(document.activeElement === tabs[1], "Focus should follow the arrow key");
       assert(tabs[1].getAttribute("aria-selected") === "true", "The reached tab should be selected");
-      // End jumps to the last tool, the unified PSBT workspace.
+      // End jumps to the last tool, Journal, whose default station is the encrypted notebook.
       tabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
-      await until(() => !document.getElementById("psbt-card").hidden, "End to reach the PSBT tool");
-      assert(document.activeElement === tabs[4], "End should move focus to the last tab");
+      await until(() => !document.getElementById("journal-card").hidden, "End to reach the Journal tool");
+      assert(document.activeElement === tabs[5], "End should move focus to the last tab");
+      const journalTabs = [...document.querySelectorAll("#journal-tool-tabs [data-journal-tool]")];
+      equal(journalTabs.length, 4, "Journal should expose exactly four internal tabs");
+      equal(journalTabs.map((tab) => tab.textContent.trim()).join("|"), "Journal|Notepad|Session state|Session log");
+      const journalManager = document.getElementById("journal-manager");
+      assert(journalManager && !journalManager.hidden, "Journal station tabs should be visible inside the Journal tool");
+      journalTabs.forEach((tab) => assert(tab.classList.contains("key-tab"), "Journal stations should use folder-style Key Station tabs"));
+      equal(getComputedStyle(document.getElementById("journal-card")).borderTopLeftRadius, "0px", "The active Journal station card should join its folder tab");
+      journalTabs[0].focus();
+      journalTabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      await until(() => !document.getElementById("journal-notes-card").hidden, "ArrowRight to open Notepad");
+      assert(document.activeElement === journalTabs[1], "Focus should follow the Journal subtab arrow key");
+      journalTabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      await until(() => !document.getElementById("journal-state-card").hidden, "ArrowRight to open Session state");
+      journalTabs[2].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      await until(() => !document.getElementById("journal-log-card").hidden, "ArrowRight to open Session log");
+      journalTabs[3].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+      await until(() => !document.getElementById("journal-state-card").hidden, "ArrowLeft to open Session state");
+      assert(document.activeElement === journalTabs[2], "Focus should return to Session state");
+      // PSBT stays a workspace of its own, with station tabs inside it.
+      document.querySelector('#workspace [data-workspace="psbt"]').click();
+      await until(() => !document.getElementById("psbt-card").hidden, "PSBT tool");
       const psbtTabs = [...document.querySelectorAll("#psbt-tool-tabs [data-psbt-tool]")];
       equal(psbtTabs.length, 2, "PSBT should expose exactly two internal tabs");
       equal(psbtTabs.map((tab) => tab.textContent.trim()).join("|"), "PSBT / Nonce|PSBT Editor");
+      const psbtManager = document.getElementById("psbt-manager");
+      assert(psbtManager && !psbtManager.hidden, "PSBT station tabs should be visible inside the PSBT tool");
+      psbtTabs.forEach((tab) => assert(tab.classList.contains("key-tab"), "PSBT stations should use folder-style Key Station tabs"));
+      equal(getComputedStyle(document.getElementById("psbt-card")).borderTopLeftRadius, "0px", "The active PSBT station card should join its folder tab");
       psbtTabs[0].focus();
       psbtTabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
       await until(() => !document.getElementById("psbted-card").hidden, "ArrowRight to open PSBT Editor");
@@ -898,15 +923,43 @@
       await until(() => !document.getElementById("psbt-card").hidden, "ArrowLeft to open PSBT / Nonce");
       assert(document.activeElement === psbtTabs[0], "Focus should return to PSBT / Nonce");
       // Home returns to the first top-level tool.
-      tabs[4].dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+      tabs[5].dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
       await until(() => document.activeElement === tabs[0], "Home to return to the first tab");
       // Left from the first wraps round to the last.
       tabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
-      await until(() => document.activeElement === tabs[4], "ArrowLeft to wrap to the last tab");
+      await until(() => document.activeElement === tabs[5], "ArrowLeft to wrap to the last tab");
     } finally {
+      document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
       document.querySelector('#workspace [data-workspace="calc"]').click();
       await until(() => !document.getElementById("key-manager").hidden, "key workspace");
     }
+  });
+  await test("Journal notepad stamps notes, session state captures, and the log omits secrets", async () => {
+    document.querySelector('#workspace [data-workspace="journal"]').click();
+    // Earlier tests can leave Journal on Session state or Session log; pick
+    // Notepad explicitly so this case does not depend on that leftover.
+    document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
+    await until(() => !document.getElementById("journal-notes-card").hidden, "Journal notepad");
+    document.getElementById("journal-note-add").click();
+    const body = await until(() => document.querySelector(".journal-note-body"), "a note field");
+    body.value = "kitchen table dice";
+    body.dispatchEvent(new Event("input", { bubbles: true }));
+    const at = document.querySelector(".journal-note-at");
+    assert(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(at.value), "note should be stamped with this computer's clock");
+    document.querySelector('#journal-tool-tabs [data-journal-tool="state"]').click();
+    await until(() => !document.getElementById("journal-state-card").hidden, "session state");
+    document.getElementById("journal-state-capture").click();
+    const snap = document.getElementById("journal-state-text").value;
+    assert(/ENTROPYLAB SESSION STATE/.test(snap), "capture should write a snapshot");
+    assert(!/kitchen table dice/.test(snap), "notes are not the session snapshot");
+    document.querySelector('#journal-tool-tabs [data-journal-tool="log"]').click();
+    await until(() => !document.getElementById("journal-log-card").hidden, "session log");
+    const log = document.getElementById("journal-log-out").textContent;
+    assert(/note-add/.test(log), "log should record the new note");
+    assert(/capture/.test(log), "log should record the snapshot");
+    assert(!/kitchen table dice/.test(log), "log must not copy the note body");
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("key-manager").hidden, "key workspace");
   });
   await test("Silent Payments opens a connected SP Station with its monochrome icon", async () => {
     document.querySelector('#workspace [data-workspace="sp"]').click();
@@ -1009,10 +1062,18 @@
     assert(!hint.hasAttribute("aria-hidden"), "An interactive control must not be hidden from assistive tech");
     assert(hint.getAttribute("aria-label"), "The hint needs a label naming what it does");
     const width = strip.style.maxWidth;
+    const wrap = document.querySelector(".wrap");
+    const wrapMax = wrap.style.maxWidth;
     try {
       // Wide enough for every tab: nothing is out of reach, so no hint.
+      // The wrap is 1000px; adding a tool can overflow that, so the test
+      // gives the strip a known wide parent rather than assuming the page.
+      wrap.style.maxWidth = "1600px";
+      strip.style.maxWidth = "";
+      strip.scrollLeft = 0;
       await until(() => hint.hidden, "the hint to stay hidden when every tool fits");
       // Squeeze the strip until tabs overflow.
+      wrap.style.maxWidth = wrapMax;
       strip.style.maxWidth = "180px";
       await until(() => !hint.hidden, "the hint to appear once tools overflow");
       assert(/more tools/i.test(hint.textContent), "The hint should name what is off-screen");
@@ -1031,6 +1092,7 @@
         "A single click should land at the far right, not part of the way",
       );
     } finally {
+      wrap.style.maxWidth = wrapMax;
       strip.style.maxWidth = width;
       strip.scrollLeft = 0;
     }
