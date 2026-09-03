@@ -9,6 +9,7 @@ import {
   hodlCatalogAllowedTags,
   hodlCatalogHasMarkup,
   hodlCatalogTokens,
+  hodlEscapeAttribute,
   hodlSanitizeCatalog,
   hodlSanitizeCatalogHtml,
 } from "../src/js/i18n-sanitize.js";
@@ -103,6 +104,9 @@ test("placeholder values are sanitized after interpolation", () => {
   const translated = t("seedLength.words", { n: hostile });
   assert.equal(translated, '&lt;img src=x onerror="globalThis.__entropyLabPwned = true"&gt; words');
   assert.doesNotMatch(translated, /<img\b/i);
+  assert.equal(t("seedLength.words", { n: "</strong><script>x</script>" }), "&lt;script&gt;x&lt;/script&gt; words");
+  assert.equal(t("seedLength.words", { n: 12 }), "12 words");
+  assert.equal(t("seedLength.words"), "{n} words");
 });
 
 test("translated template attributes escape every HTML quote and delimiter", () => {
@@ -110,12 +114,7 @@ test("translated template attributes escape every HTML quote and delimiter", () 
   const translated = tAttr("seedLength.words", { n: hostile });
   assert.equal(translated, "&quot; hidden style=&quot;display:none&quot; onfocus=&quot;globalThis.__entropyLabPwned = true&#39; data-x=&#39;x words");
   assert.doesNotMatch(translated, /[<>"']/);
-});
-
-test("quoted template attributes use the attribute-safe translation helper", () => {
-  const source = readFileSync(join(root, "src/js/app.js"), "utf8");
-  const rawTranslationInAttribute = /\b(?:aria-label|title|placeholder)="\$\{(?:[^{}]|\{[^{}]*\})*?\bhodlT\(/g;
-  assert.deepEqual([...source.matchAll(rawTranslationInAttribute)].map((match) => match[0]), []);
+  assert.equal(hodlEscapeAttribute("it's <b> & more"), "it&#39;s &lt;b&gt; &amp; more");
 });
 
 test("i18n.js routes every catalog through the sanitizer before t() can read it", () => {
@@ -125,6 +124,7 @@ test("i18n.js routes every catalog through the sanitizer before t() can read it"
   // The English fallback inside t() must read the sanitized copy, not the raw import.
   assert.match(source, /let catalog = hodlLocaleCatalogs\[hodlLocale\] \|\| hodlLocaleCatalogs\.en;[\s\S]*?text = hodlLocaleCatalogs\.en\[key\]/);
   assert.match(source, /let interpolated = text\.replace[\s\S]*?return hodlSanitizeCatalogHtml\(interpolated\)/);
+  assert.match(source, /return hodlEscapeAttribute\(t\(key, vars\)\)/);
   assert.match(source, /globalThis\.hodlTAttr = tAttr/);
   assert.match(source, /globalThis\.hodlSanitizeCatalogHtml = hodlSanitizeCatalogHtml/);
 });

@@ -3,7 +3,7 @@ import es from "../locales/es.json" with { type: "json" };
 import pt from "../locales/pt.json" with { type: "json" };
 import fr from "../locales/fr.json" with { type: "json" };
 import de from "../locales/de.json" with { type: "json" };
-import { hodlSanitizeCatalog, hodlSanitizeCatalogHtml } from "./i18n-sanitize.js";
+import { hodlEscapeAttribute, hodlSanitizeCatalog, hodlSanitizeCatalogHtml } from "./i18n-sanitize.js";
 
 export const hodlLocaleCodes = Object.freeze(["en", "es", "pt", "fr", "de"]);
 export const hodlLocaleStorageKey = "entropylab-locale";
@@ -51,13 +51,7 @@ export function t(key, vars) {
 }
 
 export function tAttr(key, vars) {
-  return t(key, vars).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[character]);
+  return hodlEscapeAttribute(t(key, vars));
 }
 if (typeof globalThis !== "undefined") {
   globalThis.hodlT = t;

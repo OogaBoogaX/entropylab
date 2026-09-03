@@ -3390,25 +3390,41 @@
     host.innerHTML = intro;
     assert(host.querySelector("span.mono"), "Allowlisted catalog markup did not render");
 
-    // Placeholders are untrusted too. Sanitizing only the catalog before
-    // substitution would let a hostile variable create executable markup.
-    delete window.__entropyLabPwned;
-    const placeholderAttack = '<img src=x onerror="window.__entropyLabPwned = true">';
-    host.innerHTML = window.hodlT("seedLength.words", { n: placeholderAttack });
-    assert(!host.querySelector("img"), "An interpolated img element reached innerHTML");
-    assert(host.textContent.includes(placeholderAttack), "The rejected placeholder markup was not kept as visible text");
-    assert(window.__entropyLabPwned !== true, "An interpolated placeholder executed script");
+  });
 
-    // Translation text used inside quoted template attributes needs its own
-    // encoding boundary so quotes cannot break out into new attributes.
-    const attributeAttack = '" hidden style="display:none" onfocus="window.__entropyLabPwned = true';
-    host.innerHTML = `<input aria-label="${window.hodlTAttr("seedLength.words", { n: attributeAttack })}">`;
-    const input = host.querySelector("input");
-    assert(input, "The attribute test input was not created");
-    equal(input.getAttribute("aria-label"), `${attributeAttack} words`);
-    assert(!input.hasAttribute("hidden"), "A translated quote created a hidden attribute");
-    assert(!input.hasAttribute("style"), "A translated quote created a style attribute");
-    assert(!input.hasAttribute("onfocus"), "A translated quote created an event handler attribute");
+  await test("a hostile translation inside an attribute cannot add attributes", () => {
+    assert(typeof window.hodlTAttr === "function", "hodlTAttr is not exposed");
+    delete window.__entropyLabPwned;
+    const hostile = '" hidden style="display:none" onmouseover="window.__entropyLabPwned = true" x="';
+    const host = document.createElement("div");
+    host.innerHTML = `<div class="probe" aria-label="${window.hodlTAttr("seedLength.words", { n: hostile })}">a</div>`
+      + `<span class="probe" title="${window.hodlTAttr("seedLength.words", { n: hostile })}">b</span>`
+      + `<input class="probe" placeholder="${window.hodlTAttr("seedLength.words", { n: hostile })}">`;
+    const probes = host.querySelectorAll(".probe");
+    equal(probes.length, 3);
+    for (const probe of probes) {
+      assert(!probe.hasAttribute("hidden"), probe.tagName + " gained a hidden attribute");
+      assert(!probe.hasAttribute("style"), probe.tagName + " gained a style attribute");
+      assert(!probe.hasAttribute("x"), probe.tagName + " gained an attribute named x");
+      assert(![...probe.attributes].some((attribute) => /^on/i.test(attribute.name)), probe.tagName + " gained an event handler");
+      equal(probe.attributes.length, 2);
+    }
+    equal(host.querySelector("div").getAttribute("aria-label"), hostile + " words");
+    equal(host.querySelector("span").getAttribute("title"), hostile + " words");
+    equal(host.querySelector("input").getAttribute("placeholder"), hostile + " words");
+    probes[1].dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    assert(window.__entropyLabPwned !== true, "An attribute value executed script");
+  });
+
+  await test("a hostile placeholder value stays visible text and creates no element", () => {
+    delete window.__entropyLabPwned;
+    const hostile = '<img src=x onerror="window.__entropyLabPwned = true">';
+    const host = document.createElement("div");
+    host.innerHTML = window.hodlT("seedLength.words", { n: hostile });
+    assert(!host.querySelector("img"), "A variable created an element");
+    assert(!host.querySelector("[onerror]"), "A variable created an event handler");
+    equal(host.textContent, hostile + " words");
+    assert(window.__entropyLabPwned !== true, "A variable executed script");
   });
 
   report("online-results.txt");

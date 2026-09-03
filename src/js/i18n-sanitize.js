@@ -114,6 +114,19 @@ export function hodlSanitizeCatalogHtml(value) {
   return output;
 }
 
+// Catalog text placed inside a quoted attribute in an HTML template needs a
+// separate encoding boundary: the markup allowlist intentionally leaves plain
+// text, including quotes, unchanged.
+export function hodlEscapeAttribute(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
+}
+
 export function hodlSanitizeCatalog(catalog) {
   let clean = {};
   for (let [key, value] of Object.entries(catalog ?? {})) clean[key] = typeof value === "string" ? hodlSanitizeCatalogHtml(value) : value;
