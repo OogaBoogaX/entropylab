@@ -281,6 +281,17 @@
     });
   });
 
+  await test("runtime-owned startup prose still comes from the current catalog", () => {
+    const locale = document.getElementById("locale-select");
+    locale.value = "de";
+    locale.dispatchEvent(new Event("change", { bubbles: true }));
+    for (const id of ["bip85-session", "sp-session"]) {
+      assert(document.getElementById(id).textContent.includes("⟦I18N⟧"), `${id} bypassed the pseudo catalog`);
+    }
+    locale.value = "en";
+    locale.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
   await test("limited private-key prefixes replace the full keypad until selected", async () => {
     await chooseMode("Private key");
     const privateKey = await until(() => document.getElementById("key"), "private-key input");
@@ -975,10 +986,22 @@
       assert(journalGlobalDownload.disabled && journalGlobalClear.disabled, "Clearing should disable the Journal-wide actions again");
       document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
       const encryptedJournalInput = document.getElementById("journal-file");
+      let oversizedJournalRead = false;
+      Object.defineProperty(encryptedJournalInput, "files", { configurable: true, value: [{
+        size: 2 * 1024 * 1024 + 1,
+        text() {
+          oversizedJournalRead = true;
+          return Promise.resolve(encryptedJournalText);
+        },
+      }] });
+      encryptedJournalInput.dispatchEvent(new Event("change", { bubbles: true }));
+      await until(() => document.getElementById("journal-error").textContent.includes("2 MiB"), "oversized Journal rejection");
+      assert(!oversizedJournalRead, "An oversized Journal must be rejected before its contents are read");
       Object.defineProperty(encryptedJournalInput, "files", { configurable: true, value: [new File([encryptedJournalText], "entropylab-journal.json", { type: "application/json" })] });
       encryptedJournalInput.dispatchEvent(new Event("change", { bubbles: true }));
       input(document.getElementById("journal-open-password"), journalPassword);
-      await wait(250);
+      // Click immediately: opening must await the asynchronous File.text()
+      // started by the change handler instead of racing it.
       document.getElementById("journal-unlock").click();
       await until(() => !document.getElementById("journal-notes-card").hidden || document.getElementById("journal-error").textContent, "successful Journal file open result");
       assert(!document.getElementById("journal-notes-card").hidden, `Opening the encrypted Journal failed: ${document.getElementById("journal-error").textContent}`);
@@ -2308,6 +2331,7 @@
     equal(document.getElementById("psbted-error").textContent, "", "live rebuild failed");
     const edited = document.getElementById("psbted-result-b64").value;
     assert(edited.startsWith("cHNidP8B") && edited !== vector, "edited PSBT missing or unchanged");
+    state.localePreservationPsbt = edited;
     assert(!document.getElementById("psbted-build"), "the Re-serialize button is gone");
     assert(outText().includes("199901000"), "edited amount was not re-decoded");
     input(box, '<img src=x onerror="window.__browserTestInjected=true">');
@@ -3370,6 +3394,175 @@
     // The logo and the favicon travel inside the document, so neither is fetched.
     const imageRequests = observed.filter((url) => /\/assets\/(entropylab_(dark|light)|logo-(dark|light)|favicon)\.png$/.test(new URL(url, location.href).pathname));
     assert(imageRequests.length === 0, "Hosted mode fetched an inlined image: " + imageRequests.join(", "));
+  });
+
+  await test("locale changes preserve live results while the surrounding interface changes", async () => {
+    const locale = document.getElementById("locale-select");
+    const setLocale = (code) => {
+      locale.value = code;
+      locale.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const runtimeValues = (element) => {
+      const nodes = [element, ...element.querySelectorAll("*")];
+      return {
+        code: nodes.filter((node) => node.matches("code")).map((node) => node.textContent),
+        mono: nodes.filter((node) => node.matches(".mono") && !node.matches(".secret-placeholder") && !node.querySelector(".secret-placeholder")).map((node) => node.textContent),
+        controls: nodes.filter((node) => node.matches("input, textarea, select")).map((control) => control.value),
+        journalItems: nodes.filter((node) => node.matches(".journal-item")).map((node) => node.textContent),
+      };
+    };
+    const runtimeOwned = [...document.querySelectorAll("[data-runtime-owned]")];
+    assert(runtimeOwned.length, "No runtime-owned output boundaries were found");
+    assert(runtimeOwned.every((element) => element.id), "A runtime-owned output has no stable source id");
+    equal(new Set(runtimeOwned.map((element) => element.id)).size, runtimeOwned.length);
+    assert(typeof state.applyStaticI18n === "function", "The browser harness cannot invoke the static locale sweep");
+    const probes = runtimeOwned.map((owner, index) => {
+      const probe = document.createElement("span");
+      probe.setAttribute("data-i18n", "action.derive");
+      probe.textContent = `runtime-probe-${index}`;
+      owner.appendChild(probe);
+      return probe;
+    });
+    state.applyStaticI18n(document);
+    probes.forEach((probe, index) => {
+      equal(probe.textContent, `runtime-probe-${index}`, `${runtimeOwned[index].id} was entered by the static locale sweep`);
+      probe.remove();
+    });
+    const assertLiveResultPreserved = (kind, id) => {
+      const element = document.getElementById(id);
+      const expected = runtimeValues(element);
+      const observed = kind === "Journal"
+        ? expected.journalItems.length > 0
+        : [...expected.code, ...expected.mono, ...expected.controls].some(Boolean);
+      assert(observed, `No real ${kind} runtime output was observed before its locale-preservation check`);
+      setLocale("de");
+      equal(JSON.stringify(runtimeValues(element)), JSON.stringify(expected));
+      setLocale("en");
+      equal(JSON.stringify(runtimeValues(element)), JSON.stringify(expected));
+    };
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await chooseMode("Number bases");
+    document.querySelector('input[name="entropy-format"][value="hex"]').click();
+    input(document.getElementById("hex"), vectors[0].entropy);
+    const preservationScriptType = document.getElementById("script-type");
+    preservationScriptType.value = "bip84";
+    preservationScriptType.dispatchEvent(new Event("change", { bubbles: true }));
+    input(document.getElementById("derivation-path"), "m/84'/0'/0'/0/0");
+    input(document.getElementById("branch-start"), "0");
+    input(document.getElementById("branch-range"), "1");
+    input(document.getElementById("address-start"), "0");
+    input(document.getElementById("address-range"), "1");
+    input(document.getElementById("pass"), "");
+    const preservationDerive = await until(() => !document.getElementById("go").disabled && document.getElementById("go"), "locale-preservation key derivation");
+    preservationDerive.click();
+    await until(() => document.getElementById("out").textContent.trim() || document.getElementById("error").textContent, "live key output for locale preservation");
+    assert(!document.getElementById("error").textContent, `Locale-preservation key derivation failed: ${document.getElementById("error").textContent}`);
+    assertLiveResultPreserved("key", "out");
+    document.getElementById("journal-open").click();
+    await until(() => !document.getElementById("journal-editor").hidden, "Journal entry editor for locale preservation");
+    input(document.getElementById("journal-label"), "Locale preservation entry");
+    document.getElementById("journal-commit").click();
+    await until(() => document.querySelector("#journal-list .journal-item"), "live Journal entry for locale preservation");
+    assertLiveResultPreserved("Journal", "journal-list");
+    document.querySelector('#workspace [data-workspace="msig"]').click();
+    for (const tab of document.querySelectorAll('#msig-tabs [id^="msig-tab-"]:not(#msig-tab-lab)')) {
+      tab.click();
+      await wait(0);
+      if (document.getElementById("msig-out").textContent.trim()) break;
+    }
+    assert(document.getElementById("msig-out").textContent.trim(), "No completed MS Station result is available for locale preservation");
+    assertLiveResultPreserved("wallet", "msig-out");
+    assert(state.localePreservationPsbt, "The locale-preservation test has no validated PSBT fixture");
+    document.querySelector('#workspace [data-workspace="psbt"]').click();
+    document.querySelector('#psbt-tool-tabs [data-psbt-tool="editor"]').click();
+    input(document.getElementById("psbted-text"), state.localePreservationPsbt);
+    document.getElementById("psbted-load").click();
+    await until(() => document.querySelector("#psbted-out .psbted-pairs"), "live PSBT output for locale preservation");
+    assertLiveResultPreserved("PSBT", "psbted-out");
+    const inputSnapshot = () => ({
+      psbtInputs: [document.getElementById("psbt-text")?.value, document.getElementById("psbted-text")?.value],
+      journalState: document.getElementById("journal-state-text")?.value,
+    });
+    setLocale("en");
+    const englishBip85Status = document.getElementById("bip85-session").textContent;
+    const englishSpStatus = document.getElementById("sp-session").textContent;
+    assert(!englishBip85Status.includes("No parent loaded"), "The BIP-85 locale test needs a loaded parent status");
+    assert(!englishSpStatus.includes("No session key"), "The Silent Payments locale test needs a loaded session status");
+    const expectedInputs = inputSnapshot();
+    const expectedLog = document.getElementById("journal-log-out")?.textContent || "";
+    const assertPreserved = () => {
+      equal(JSON.stringify(inputSnapshot()), JSON.stringify(expectedInputs));
+      assert(document.getElementById("journal-log-out")?.textContent.includes(expectedLog), "Locale change replaced existing Journal log entries");
+    };
+    const englishChrome = document.getElementById("go").textContent;
+    setLocale("de");
+    const pseudoChrome = document.getElementById("go").textContent;
+    assert(pseudoChrome.includes("⟦I18N⟧") && pseudoChrome !== englishChrome, "The pseudo locale did not change surrounding chrome");
+    assert(document.getElementById("bip85-session").textContent.includes("⟦I18N⟧") && document.getElementById("bip85-session").textContent !== englishBip85Status, "The loaded BIP-85 status did not follow the locale");
+    assert(document.getElementById("sp-session").textContent.includes("⟦I18N⟧") && document.getElementById("sp-session").textContent !== englishSpStatus, "The loaded Silent Payments status did not follow the locale");
+    assertPreserved();
+    setLocale("fr");
+    const frenchChrome = document.getElementById("go").textContent;
+    assert(frenchChrome !== pseudoChrome && frenchChrome !== englishChrome, "The French locale did not change surrounding chrome");
+    assertPreserved();
+    setLocale("en");
+    equal(document.getElementById("go").textContent, englishChrome);
+    assertPreserved();
+    setLocale("de");
+    document.getElementById("bip85-wipe").click();
+    assert(document.getElementById("bip85-session").textContent.includes("⟦I18N⟧"), "The cleared BIP-85 status bypassed the current locale");
+    document.getElementById("sp-wipe").click();
+    assert(document.getElementById("sp-session").textContent.includes("⟦I18N⟧"), "The cleared Silent Payments status bypassed the current locale");
+    document.getElementById("journal-lock").click();
+    assert(document.getElementById("journal-status-note").textContent.includes("⟦I18N⟧"), "The locked Journal status bypassed the current locale");
+    assert(document.querySelector("#journal-keymanager-panel .journal-keymanager-empty")?.textContent.includes("⟦I18N⟧"), "The empty Journal Key Manager state bypassed the current locale");
+  });
+
+  await test("every live static translation marker reaches its final DOM context", () => {
+    const locale = document.getElementById("locale-select");
+    locale.value = "de";
+    locale.dispatchEvent(new Event("change", { bubbles: true }));
+    const pseudoOpen = "⟦I18N⟧";
+    const failures = [];
+    const identity = (element) => {
+      const parts = [];
+      for (let current = element; current && current !== document.documentElement; current = current.parentElement) {
+        let part = current.localName;
+        if (current.id) part += `#${current.id}`;
+        else if (current.classList.length) part += `.${current.classList[0]}`;
+        parts.unshift(part);
+      }
+      return parts.slice(-4).join(" > ");
+    };
+    const contexts = [
+      ["data-i18n", (element) => element.textContent],
+      ["data-i18n-html", (element) => element.textContent],
+      ["data-i18n-aria", (element) => element.getAttribute("aria-label")],
+      ["data-i18n-aria-placeholder", (element) => element.getAttribute("aria-placeholder")],
+      ["data-i18n-placeholder", (element) => element.getAttribute("placeholder")],
+      ["data-i18n-title", (element) => element.getAttribute("title")],
+      ["data-i18n-alt", (element) => element.getAttribute("alt")],
+      ["data-i18n-copy-label", (element) => element.getAttribute("data-copy-label")],
+      ["data-i18n-copied-label", (element) => element.getAttribute("data-copied-label")],
+    ];
+    for (const [marker, rendered] of contexts) {
+      for (const element of document.querySelectorAll(`[${marker}]`)) {
+        const key = element.getAttribute(marker);
+        const expectedMarkers = String(state.pseudoCatalog[key] || "").split(pseudoOpen).length - 1;
+        if (!expectedMarkers) continue;
+        const actualMarkers = String(rendered(element) || "").split(pseudoOpen).length - 1;
+        if (actualMarkers < expectedMarkers) {
+          failures.push(`${identity(element)}: ${marker}=${JSON.stringify(key)} rendered ${actualMarkers}/${expectedMarkers} markers in ${JSON.stringify(rendered(element))}`);
+        }
+      }
+    }
+    const unsafeRuntime = [...document.querySelectorAll("[data-runtime-owned], [data-runtime-owned] *")].filter((element) => (
+      [...element.attributes].some((attribute) => attribute.name === "data-i18n" || attribute.name.startsWith("data-i18n-"))
+    ));
+    assert(!unsafeRuntime.length, `Runtime-owned output contains translation markers: ${unsafeRuntime.map(identity).join(", ")}`);
+    locale.value = "en";
+    locale.dispatchEvent(new Event("change", { bubbles: true }));
+    assert(!failures.length, `Static translation marker failures:\n${failures.join("\n")}`);
   });
 
   await test("catalog markup is rebuilt from the allowlist before it can reach innerHTML", () => {

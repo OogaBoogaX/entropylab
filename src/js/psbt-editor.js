@@ -20,6 +20,7 @@ import { psbtVizHtml } from "./psbt-viz.js";
 import { parseOpReturn } from "./opreturn.js";
 import { buildOutputScript } from "./script-builder.js";
 import { hodlUrEncodePsbt } from "./psbt-ur.js";
+import { t as hodlTText } from "./i18n.js";
 
 const hexToBytes = (hex) => {
   if (!/^(?:[0-9a-f]{2})*$/i.test(hex)) throw new Error("Invalid hexadecimal input.");
@@ -620,17 +621,17 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     const plan = psbtQrPlan(resultBytes);
     if (plan.mode === "static") {
       target.innerHTML = renderQrSvg(plan.text, QR_OPTIONS);
-      target.setAttribute("aria-label", "Edited PSBT as a base64 QR code");
-      note.textContent = "Static QR: the edited PSBT as base64.";
+      target.setAttribute("aria-label", hodlTText("psbted.qr.staticAria"));
+      note.textContent = hodlTText("psbted.qr.staticNote");
       return;
     }
     let frame = 0;
     const draw = () => {
       target.innerHTML = renderQrSvg(plan.parts[frame], QR_OPTIONS);
-      note.textContent = `Animated UR crypto-psbt · part ${frame + 1} of ${plan.parts.length} — Sparrow, SeedSigner and Coldcard Q scan these.`;
+      note.textContent = hodlTText("psbted.qr.animatedNote", { part: frame + 1, total: plan.parts.length });
       frame = (frame + 1) % plan.parts.length;
     };
-    target.setAttribute("aria-label", "Edited PSBT as an animated UR crypto-psbt QR sequence");
+    target.setAttribute("aria-label", hodlTText("psbted.qr.animatedAria"));
     draw();
     qrTimer = setInterval(draw, 600);
   };
@@ -642,8 +643,13 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     const box = document.getElementById("psbted-result");
     if (!box || !resultBytes) return;
     box.classList.add("psbted-stale");
-    if (!document.getElementById("psbted-stale-note"))
-      box.insertAdjacentHTML("afterbegin", '<p class="psbted-note-warn" id="psbted-stale-note">The fields do not build right now — this is the last valid build.</p>');
+    if (!document.getElementById("psbted-stale-note")) {
+      const note = document.createElement("p");
+      note.className = "psbted-note-warn";
+      note.id = "psbted-stale-note";
+      note.textContent = hodlTText("psbted.status.staleBuild");
+      box.prepend(note);
+    }
   };
 
   // The mempool.space-style connectors: a bezier from every input box into

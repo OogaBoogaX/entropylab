@@ -1,11 +1,30 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hodlEscapeAttribute, hodlSanitizeCatalogHtml } from "../src/js/i18n-sanitize.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const sourceFiles = ["src/index.html", "src/js/app.js"];
 const voidElements = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+const translationSourcePattern = /(?:<[A-Za-z][^>]*\bdata-i18n(?:-[a-z-]+)?\b|\bhodlT(?:Text|Attr)?\s*\(|\bhodlNote\s*\(|\bhodlError\s*\()/;
+
+function filesBelow(directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? filesBelow(path) : [path];
+  });
+}
+
+export function repositoryUiSourceFiles(base = root) {
+  return filesBelow(join(base, "src"))
+    .filter((path) => /\.(?:html|js)$/.test(path) && !/-wasm-b64\.js$/.test(path))
+    .map((path) => relative(base, path).replaceAll("\\", "/"))
+    .sort();
+}
+
+export function i18nSourceFiles(base = root) {
+  return repositoryUiSourceFiles(base)
+    .filter((file) => translationSourcePattern.test(readFileSync(join(base, file), "utf8")));
+}
 
 function findTagEnd(source, start) {
   let quote = "";
@@ -340,7 +359,7 @@ export function runI18nSync(argv = process.argv.slice(2)) {
   const check = argv.includes("--check");
   const catalog = JSON.parse(readFileSync(join(root, "src/locales/en.json"), "utf8"));
   let failed = false;
-  for (const file of sourceFiles) {
+  for (const file of i18nSourceFiles()) {
     const path = join(root, file);
     const source = readFileSync(path, "utf8");
     const result = syncI18nSource(source, catalog, { fileName: file, javascriptTemplate: file.endsWith(".js") });

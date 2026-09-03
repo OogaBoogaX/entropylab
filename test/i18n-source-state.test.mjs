@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { i18nLocaleStatus, i18nSourceHash } from "../scripts/i18n-common.mjs";
 import { markTranslationSources } from "../scripts/i18n-mark.mjs";
-import { i18nMarkupTokens, syncI18nSource } from "../scripts/i18n-sync.mjs";
-import { collectRepositoryUnwired, collectUnwiredMarkup, i18nRuntimeOwnedIds } from "../scripts/i18n-wiring.mjs";
+import { i18nMarkupTokens, i18nSourceFiles, repositoryUiSourceFiles, syncI18nSource } from "../scripts/i18n-sync.mjs";
+import { collectAnnotatedShellFragments, collectRepositoryUnwired, collectUnannotatedStaticShells, collectUnwiredMarkup, i18nRuntimeAttribute } from "../scripts/i18n-wiring.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const en = JSON.parse(readFileSync(join(root, "src/locales/en.json"), "utf8"));
@@ -150,12 +151,30 @@ test("sync requires static variable bindings to match catalog placeholders exact
 });
 
 test("the committed sources contain only known literal references and generated fallbacks", () => {
-  for (const [file, javascriptTemplate] of [["src/index.html", false], ["src/js/app.js", true]]) {
+  const files = i18nSourceFiles();
+  assert.ok(files.includes("src/index.html"));
+  assert.ok(files.includes("src/js/app.js"));
+  for (const file of files) {
     const source = readFileSync(join(root, file), "utf8");
-    const result = syncI18nSource(source, en, { fileName: file, javascriptTemplate });
+    const result = syncI18nSource(source, en, { fileName: file, javascriptTemplate: file.endsWith(".js") });
     assert.deepEqual(result.problems, []);
     assert.equal(result.output, source, `${file}: run npm run i18n:sync`);
     assert.ok(result.references.length > 0, file);
+  }
+});
+
+test("source discovery follows new and removed nested UI files without an inventory", () => {
+  const directory = mkdtempSync(join(tmpdir(), "entropylab-i18n-sources-"));
+  try {
+    mkdirSync(join(directory, "src", "feature"), { recursive: true });
+    writeFileSync(join(directory, "src", "index.html"), "<main data-i18n=\"heading\">Heading</main>");
+    writeFileSync(join(directory, "src", "feature", "panel.js"), "root.innerHTML = `<p data-i18n=\"body\">Body</p>`;");
+    writeFileSync(join(directory, "src", "feature", "plain.js"), "export const value = 1;");
+    writeFileSync(join(directory, "src", "feature", "payload-wasm-b64.js"), "hodlT(\"must.not.scan.generated.payload\")");
+    assert.deepEqual(repositoryUiSourceFiles(directory), ["src/feature/panel.js", "src/feature/plain.js", "src/index.html"]);
+    assert.deepEqual(i18nSourceFiles(directory), ["src/feature/panel.js", "src/index.html"]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 
@@ -176,6 +195,43 @@ test("the wiring scan notices new hardcoded text and attributes", () => {
   ]);
 });
 
+test("runtime ownership is source-local and cannot hide source content", () => {
+  assert.deepEqual(collectUnwiredMarkup(`<p id="live" ${i18nRuntimeAttribute}></p>`, "fixture"), []);
+  assert.ok(collectUnwiredMarkup(`<p id="live" ${i18nRuntimeAttribute}>Hidden copy</p>`, "fixture").some((entry) => entry.includes("contains source text")));
+  const hidden = collectUnwiredMarkup(`<section id="too-wide" ${i18nRuntimeAttribute}><button>Hidden static action</button></section>`, "fixture");
+  assert.ok(hidden.some((entry) => entry.includes("contains static markup")));
+  const conflicting = collectUnwiredMarkup(`<p id="live" ${i18nRuntimeAttribute} data-i18n="key">Fallback</p>`, "fixture");
+  assert.ok(conflicting.some((entry) => entry.includes("cannot also carry a translation marker")));
+  assert.ok(collectUnwiredMarkup(`<p ${i18nRuntimeAttribute}>Fallback</p>`, "fixture").some((entry) => entry.includes("needs an id")));
+  assert.ok(collectUnwiredMarkup(`<input id="live" ${i18nRuntimeAttribute}>`, "fixture").some((entry) => entry.includes("cannot be self-closing")));
+});
+
+test("static-shell regions are discovered by annotation rather than filename", () => {
+  const source = `const root = document.querySelector("main"); /* i18n-static-shell */ root.innerHTML = \`<p>New words</p>\`;`;
+  const fragments = collectAnnotatedShellFragments(source, "src/js/new-feature.js");
+  assert.equal(fragments.length, 1);
+  assert.deepEqual(collectUnwiredMarkup(fragments[0].markup, fragments[0].label), ["src/js/new-feature.js#static-shell-1:p:text:New words"]);
+  assert.throws(() => collectAnnotatedShellFragments(`/* i18n-static-shell */ const copy = \`<p>Bypass</p>\`;`, "bad.js"), /must immediately annotate/);
+  assert.throws(() => collectAnnotatedShellFragments(`/* i18n-static-shell */ root.innerHTML = \`<p>${"${copy}"}</p>\`;`, "bad.js"), /cannot contain interpolation/);
+  assert.throws(() => collectAnnotatedShellFragments("/* i18n-static-shell */ root.innerHTML = `<p>Never closed", "bad.js"), /unterminated/);
+});
+
+test("new static innerHTML assignments cannot opt out of shell wiring", () => {
+  assert.deepEqual(collectUnannotatedStaticShells("root.innerHTML = `<p>Bypass</p>`;", "new.js"), [
+    "new.js:1: static innerHTML literal needs an immediate /* i18n-static-shell */ annotation",
+  ]);
+  assert.deepEqual(collectUnannotatedStaticShells("/* i18n-static-shell */ root.innerHTML = `<p>Checked</p>`;", "new.js"), []);
+  assert.deepEqual(collectUnannotatedStaticShells("root.innerHTML = `<p>${runtime}</p>`;", "runtime.js"), []);
+  assert.deepEqual(collectUnannotatedStaticShells("root.innerHTML = '';", "clear.js"), []);
+  assert.ok(collectUnannotatedStaticShells("root.innerHTML = '<p>Bypass</p>';", "quoted.js").length);
+  assert.ok(collectUnannotatedStaticShells('root.innerHTML = ("<p>Parenthesized bypass</p>");', "parenthesized.js").length);
+  assert.ok(collectUnannotatedStaticShells('root.innerHTML = "<p>Leading literal</p>" + runtime;', "concatenated.js").length);
+  assert.ok(collectUnannotatedStaticShells('root.innerHTML = runtime + "<p>Trailing literal bypass</p>";', "trailing-concatenated.js").length);
+  assert.ok(collectUnannotatedStaticShells('root.outerHTML = "<p>Outer bypass</p>";', "outer.js").length);
+  assert.ok(collectUnannotatedStaticShells('root.insertAdjacentHTML("beforeend", "<p>Adjacent bypass</p>");', "adjacent.js").length);
+  assert.deepEqual(collectUnannotatedStaticShells('root.insertAdjacentHTML("beforeend", `<p>${runtime}</p>`);', "adjacent-runtime.js"), []);
+});
+
 test("wired elements can be added and removed without updating an element inventory", () => {
   const catalog = { existing: "Existing", added: "Added" };
   for (const source of [
@@ -193,7 +249,7 @@ test("the committed sources have no unwired static-shell text", () => {
 });
 
 test("plain-text i18n markers never own child elements", () => {
-  for (const file of ["src/index.html", "src/js/app.js"]) {
+  for (const file of i18nSourceFiles()) {
     const stack = [];
     const problems = [];
     for (const token of i18nMarkupTokens(readFileSync(join(root, file), "utf8"))) {
@@ -212,12 +268,13 @@ test("plain-text i18n markers never own child elements", () => {
   }
 });
 
-test("static translation never overwrites runtime-owned output", () => {
+test("runtime-owned outputs are discovered from source instead of a permanent id list", () => {
   const tokens = i18nMarkupTokens(readFileSync(join(root, "src/js/app.js"), "utf8"));
-  for (const id of i18nRuntimeOwnedIds) {
-    const token = tokens.find((entry) => entry.attributes.get("id")?.value === id);
-    assert.ok(token, id);
-    assert.equal(token.attributes.has("data-i18n"), false, id);
-    assert.equal(token.attributes.has("data-i18n-html"), false, id);
+  const runtime = tokens.filter((token) => token.attributes.has(i18nRuntimeAttribute));
+  assert.ok(runtime.length > 0);
+  for (const token of runtime) {
+    const id = token.attributes.get("id")?.value;
+    assert.ok(id, `${token.name} runtime boundary has no id`);
+    assert.equal([...token.attributes.keys()].some((name) => name === "data-i18n" || name.startsWith("data-i18n-")), false, id);
   }
 });

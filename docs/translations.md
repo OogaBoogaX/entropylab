@@ -17,14 +17,32 @@ Variable-only calls are reported as requiring behavioral coverage and warn at
 runtime if they resolve to a missing English key. CI runs the read-only check,
 so the catalog and fallback markup cannot drift.
 
-The wiring check re-parses the current interface source on every CI run and
-rejects hardcoded interface text, including translated attributes. It does not
-keep an approved list or a fixed element count: wired elements can be added or
-removed normally. New copy must be added to `en.json` and wired at the same
-time.
-Elements whose text is owned and repeatedly replaced by runtime state are
-explicitly excluded from the static wiring pass so a locale change cannot
-replace a live result with its startup fallback.
+The sync and wiring checks discover current HTML and JavaScript sources under
+`src/` on every run. Static JavaScript shell templates carry the local
+`/* i18n-static-shell */` annotation; elements inside a shell are checked
+structurally without an approved list, fixed element count, or committed
+inventory. Wired elements can be added or removed normally. New copy must be
+added to `en.json` and wired at the same time.
+Every non-empty, interpolation-free `innerHTML` or `outerHTML` literal must
+carry that annotation, so adding a static panel in a new or existing JavaScript
+file cannot silently opt out of the gate. Static `insertAdjacentHTML` literals
+are rejected in favor of translated DOM text or an annotated assignment.
+Interpolated runtime renderers remain behaviorally tested output rather than
+static shell.
+
+Leaf containers repeatedly replaced by runtime state carry
+`data-runtime-owned` in their source markup. The wiring gate rejects using that
+marker on source text or child markup, on a container without an ID, or together
+with a translation marker. These containers must be empty in the static shell
+and populated only by the owning runtime renderer. The locale sweep never
+writes inside such a boundary: an already-rendered result remains in the
+language in which it was created until that feature renders it again. The
+browser suite independently generates a pseudo-locale from the current
+`en.json`, checks every current translation marker in its final text, HTML, or
+attribute context with the browser's own parser, rejects translation markers
+injected into runtime output, and proves every currently declared runtime
+boundary plus observed key, wallet, PSBT, and Journal data survive locale
+changes.
 
 Keys under `literal.*` are technical values such as paths, symbols, protocol
 identifiers, and build metadata. They are copied unchanged by translation

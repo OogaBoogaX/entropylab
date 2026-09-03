@@ -18,9 +18,25 @@ export const hodlLocaleMeta = Object.freeze({
 // Every catalog is rebuilt from the markup allowlist once, here. Plain DOM
 // sinks and HTML sinks use separate sanitized views so neither has to guess its
 // output context or re-sanitize after placeholder substitution.
-const hodlLocaleHtmlCatalogs = { en: hodlSanitizeCatalog(en), es: hodlSanitizeCatalog(es), pt: hodlSanitizeCatalog(pt), fr: hodlSanitizeCatalog(fr), de: hodlSanitizeCatalog(de) };
-const hodlLocaleTextCatalogs = { en: hodlSanitizeTextCatalog(en), es: hodlSanitizeTextCatalog(es), pt: hodlSanitizeTextCatalog(pt), fr: hodlSanitizeTextCatalog(fr), de: hodlSanitizeTextCatalog(de) };
-const hodlStaleLocaleKeys = globalThis.__entropyLabStaleTranslations || {};
+// The pseudo catalog is compiled only into the browser harness build, and is
+// reachable only from its test document. The release build replaces the flag
+// with false so the minifier removes every __entropyLabTest reference.
+const hodlTestCatalogAllowed = typeof document === "undefined" || globalThis.location?.pathname.endsWith("/browser-tests.html");
+const hodlTestPseudoCatalog = (typeof __ENTROPYLAB_TEST_HOOKS__ === "undefined" || __ENTROPYLAB_TEST_HOOKS__) && hodlTestCatalogAllowed
+  ? globalThis.__entropyLabTest?.pseudoCatalog
+  : undefined;
+const hodlRawLocaleCatalogs = {
+  en,
+  es,
+  pt,
+  fr,
+  de: hodlTestPseudoCatalog && typeof hodlTestPseudoCatalog === "object" ? hodlTestPseudoCatalog : de,
+};
+const hodlLocaleHtmlCatalogs = Object.fromEntries(Object.entries(hodlRawLocaleCatalogs).map(([code, catalog]) => [code, hodlSanitizeCatalog(catalog)]));
+const hodlLocaleTextCatalogs = Object.fromEntries(Object.entries(hodlRawLocaleCatalogs).map(([code, catalog]) => [code, hodlSanitizeTextCatalog(catalog)]));
+const hodlStaleLocaleKeys = hodlTestPseudoCatalog
+  ? { ...(globalThis.__entropyLabStaleTranslations || {}), de: [] }
+  : (globalThis.__entropyLabStaleTranslations || {});
 const hodlReportedMissingEnglishKeys = new Set();
 let hodlLocale = "en";
 let hodlLocaleListener = null;
@@ -91,34 +107,41 @@ if (typeof globalThis !== "undefined") {
   globalThis.hodlSanitizeCatalogHtml = hodlSanitizeCatalogHtml;
 }
 
+function hodlStaticI18nElements(root, selector) {
+  return [...root.querySelectorAll(selector)].filter((el) => !el.closest?.("[data-runtime-owned]"));
+}
+
 export function hodlApplyStaticI18n(root = document) {
-  root.querySelectorAll("[data-i18n]").forEach((el) => {
+  hodlStaticI18nElements(root, "[data-i18n]").forEach((el) => {
     el.textContent = t(el.getAttribute("data-i18n"), hodlI18nVars(el));
   });
-  root.querySelectorAll("[data-i18n-html]").forEach((el) => {
+  hodlStaticI18nElements(root, "[data-i18n-html]").forEach((el) => {
     el.innerHTML = tHtml(el.getAttribute("data-i18n-html"), hodlI18nVars(el));
   });
-  root.querySelectorAll("[data-i18n-aria]").forEach((el) => {
+  hodlStaticI18nElements(root, "[data-i18n-aria]").forEach((el) => {
     el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria"), hodlI18nVars(el)));
   });
-  root.querySelectorAll("[data-i18n-aria-placeholder]").forEach((el) => {
+  hodlStaticI18nElements(root, "[data-i18n-aria-placeholder]").forEach((el) => {
     el.setAttribute("aria-placeholder", t(el.getAttribute("data-i18n-aria-placeholder"), hodlI18nVars(el)));
   });
-  root.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+  hodlStaticI18nElements(root, "[data-i18n-placeholder]").forEach((el) => {
     el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder"), hodlI18nVars(el)));
   });
-  root.querySelectorAll("[data-i18n-title]").forEach((el) => {
+  hodlStaticI18nElements(root, "[data-i18n-title]").forEach((el) => {
     el.setAttribute("title", t(el.getAttribute("data-i18n-title"), hodlI18nVars(el)));
   });
-  root.querySelectorAll("[data-i18n-alt]").forEach((el) => {
+  hodlStaticI18nElements(root, "[data-i18n-alt]").forEach((el) => {
     el.setAttribute("alt", t(el.getAttribute("data-i18n-alt"), hodlI18nVars(el)));
   });
-  root.querySelectorAll("[data-i18n-copy-label]").forEach((el) => {
+  hodlStaticI18nElements(root, "[data-i18n-copy-label]").forEach((el) => {
     el.setAttribute("data-copy-label", t(el.getAttribute("data-i18n-copy-label"), hodlI18nVars(el)));
   });
-  root.querySelectorAll("[data-i18n-copied-label]").forEach((el) => {
+  hodlStaticI18nElements(root, "[data-i18n-copied-label]").forEach((el) => {
     el.setAttribute("data-copied-label", t(el.getAttribute("data-i18n-copied-label"), hodlI18nVars(el)));
   });
+}
+if ((typeof __ENTROPYLAB_TEST_HOOKS__ === "undefined" || __ENTROPYLAB_TEST_HOOKS__) && hodlTestCatalogAllowed && globalThis.__entropyLabTest && typeof globalThis.__entropyLabTest === "object") {
+  globalThis.__entropyLabTest.applyStaticI18n = hodlApplyStaticI18n;
 }
 
 function hodlI18nVars(el) {

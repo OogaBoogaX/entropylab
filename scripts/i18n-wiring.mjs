@@ -1,17 +1,10 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { i18nMarkupTokens } from "./i18n-sync.mjs";
+import { i18nMarkupTokens, repositoryUiSourceFiles } from "./i18n-sync.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-export const i18nRuntimeOwnedIds = Object.freeze([
-  "bip85-path",
-  "bip85-session",
-  "sp-session",
-  "journal-status-title",
-  "journal-status-note",
-  "journal-log-out",
-]);
+export const i18nRuntimeAttribute = "data-runtime-owned";
 
 function spaces(value) {
   return value.replace(/[^\r\n]/g, " ");
@@ -58,9 +51,15 @@ export function collectUnwiredMarkup(fragment, label = "markup", { ignoredIds = 
   let cursor = 0;
 
   function recordText(value) {
-    if (!stack.length || stack.some((frame) => frame.covered || frame.ignored)) return;
+    if (!stack.length) return;
     const text = normalized(value);
     if (!text) return;
+    const runtimeOwner = stack.findLast((frame) => frame.runtime);
+    if (runtimeOwner) {
+      entries.push(`${label}:${stack.map((frame) => frame.identity).slice(-3).join("/")}: ${i18nRuntimeAttribute} boundary ${runtimeOwner.identity} contains source text`);
+      return;
+    }
+    if (stack.some((frame) => frame.covered || frame.ignored)) return;
     entries.push(`${label}:${stack.map((frame) => frame.identity).slice(-3).join("/")}:text:${text}`);
   }
 
@@ -75,14 +74,23 @@ export function collectUnwiredMarkup(fragment, label = "markup", { ignoredIds = 
       continue;
     }
 
-    const ancestorReplaced = stack.some((frame) => frame.rich || frame.ignored);
+    const runtimeOwner = stack.findLast((frame) => frame.runtime);
+    const ancestorReplaced = stack.some((frame) => frame.rich || frame.ignored || frame.runtime);
     const tokenPath = pathOf(stack, token);
+    if (runtimeOwner) entries.push(`${label}:${tokenPath}: ${i18nRuntimeAttribute} boundary ${runtimeOwner.identity} contains static markup`);
     if (!ancestorReplaced) {
       for (const [attribute, marker] of [["aria-label", "data-i18n-aria"], ["aria-placeholder", "data-i18n-aria-placeholder"], ["placeholder", "data-i18n-placeholder"], ["title", "data-i18n-title"], ["alt", "data-i18n-alt"], ["data-copy-label", "data-i18n-copy-label"], ["data-copied-label", "data-i18n-copied-label"]]) {
         const value = normalized(token.attributes.get(attribute)?.value ?? "");
         if (value && !token.attributes.has(marker)) entries.push(`${label}:${tokenPath}:@${attribute}:${value}`);
       }
     }
+
+    const runtime = token.attributes.has(i18nRuntimeAttribute);
+    if (runtime && !token.attributes.get("id")?.value) entries.push(`${label}:${tokenPath}: ${i18nRuntimeAttribute} boundary needs an id`);
+    if (runtime && [...token.attributes.keys()].some((name) => name === "data-i18n" || name.startsWith("data-i18n-"))) {
+      entries.push(`${label}:${tokenPath}: ${i18nRuntimeAttribute} boundary cannot also carry a translation marker`);
+    }
+    if (runtime && token.selfClosing) entries.push(`${label}:${tokenPath}: ${i18nRuntimeAttribute} boundary cannot be self-closing`);
 
     if (!token.selfClosing) {
       const rich = token.attributes.has("data-i18n-html");
@@ -91,6 +99,7 @@ export function collectUnwiredMarkup(fragment, label = "markup", { ignoredIds = 
         identity: identity(token),
         rich,
         covered: rich || token.attributes.has("data-i18n"),
+        runtime,
         ignored: ignoredIdSet.has(token.attributes.get("id")?.value) || token.name === "svg" || token.name === "script" || token.name === "style",
       });
     }
@@ -101,35 +110,147 @@ export function collectUnwiredMarkup(fragment, label = "markup", { ignoredIds = 
 
 function templateEnd(source, start) {
   for (let index = start; index < source.length; index += 1) {
+    if (source[index] === "$" && source[index + 1] === "{") {
+      let slashes = 0;
+      for (let before = index - 1; before >= start && source[before] === "\\"; before -= 1) slashes += 1;
+      if (slashes % 2 === 0) return { interpolation: index };
+    }
     if (source[index] !== "`") continue;
     let slashes = 0;
     for (let before = index - 1; before >= start && source[before] === "\\"; before -= 1) slashes += 1;
-    if (slashes % 2 === 0) return index;
+    if (slashes % 2 === 0) return { end: index };
   }
-  return -1;
+  return {};
+}
+
+export function collectAnnotatedShellFragments(source, label) {
+  const marker = "/* i18n-static-shell */";
+  const fragments = [];
+  let cursor = 0;
+  while ((cursor = source.indexOf(marker, cursor)) !== -1) {
+    const assignmentStart = cursor + marker.length;
+    const templateStart = source.indexOf("`", assignmentStart);
+    if (templateStart === -1 || !/^\s*[A-Za-z_$][\w$]*\.(?:innerHTML|outerHTML)\s*=\s*$/.test(source.slice(assignmentStart, templateStart))) {
+      throw new Error(`${label}: ${marker} must immediately annotate an element HTML template assignment.`);
+    }
+    const boundary = templateEnd(source, templateStart + 1);
+    if (boundary.interpolation !== undefined) throw new Error(`${label}: annotated static-shell template cannot contain interpolation.`);
+    const end = boundary.end;
+    if (end === undefined) throw new Error(`${label}: annotated static-shell template is unterminated.`);
+    fragments.push({ label: `${label}#static-shell-${fragments.length + 1}`, markup: source.slice(templateStart + 1, end) });
+    cursor = end + 1;
+  }
+  return fragments;
+}
+
+// A static HTML literal is a shell whether or not its author remembered
+// the annotation. Require the source-local marker so a new panel cannot bypass
+// the structural wiring gate merely by living in a new file. Interpolated
+// renderers remain runtime output and are covered by their behavioral tests.
+export function collectUnannotatedStaticShells(source, label) {
+  const entries = [];
+  const assignment = /\.(innerHTML|outerHTML)\s*=\s*\(*\s*([`"'])/g;
+  for (const match of source.matchAll(assignment)) {
+    const location = `${label}:${source.slice(0, match.index).split(/\r?\n/).length}`;
+    const sink = match[1];
+    const quote = match[2];
+    const start = match.index + match[0].length;
+    let end;
+    if (quote === "`") {
+      const boundary = templateEnd(source, start);
+      if (boundary.interpolation !== undefined) continue;
+      end = boundary.end;
+    } else {
+      for (let index = start; index < source.length; index += 1) {
+        if (source[index] === "\\") index += 1;
+        else if (source[index] === quote) {
+          end = index;
+          break;
+        }
+      }
+    }
+    if (end === undefined) {
+      entries.push(`${location}: unterminated static ${sink} literal`);
+      continue;
+    }
+    if (!normalized(source.slice(start, end))) continue;
+    const before = source.slice(0, match.index);
+    if (!/\/\* i18n-static-shell \*\/\s*[A-Za-z_$][\w$]*$/.test(before)) {
+      entries.push(`${location}: static ${sink} literal needs an immediate /* i18n-static-shell */ annotation`);
+    }
+  }
+  const trailingLiteral = /\.(innerHTML|outerHTML)\s*=\s*(?!\(*\s*[`"'])[^;\r\n]+?\+\s*\(*\s*([`"'])/g;
+  for (const match of source.matchAll(trailingLiteral)) {
+    const location = `${label}:${source.slice(0, match.index).split(/\r?\n/).length}`;
+    const quote = match[2];
+    const start = match.index + match[0].length;
+    let end;
+    if (quote === "`") {
+      const boundary = templateEnd(source, start);
+      if (boundary.interpolation !== undefined) continue;
+      end = boundary.end;
+    } else {
+      for (let index = start; index < source.length; index += 1) {
+        if (source[index] === "\\") index += 1;
+        else if (source[index] === quote) {
+          end = index;
+          break;
+        }
+      }
+    }
+    if (end === undefined) entries.push(`${location}: unterminated static ${match[1]} concatenation literal`);
+    else if (normalized(source.slice(start, end))) entries.push(`${location}: static ${match[1]} text after a dynamic concatenation requires behavioral translation coverage`);
+  }
+  const adjacent = /\.insertAdjacentHTML\s*\(\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*,\s*\(*\s*([`"'])/g;
+  for (const match of source.matchAll(adjacent)) {
+    const location = `${label}:${source.slice(0, match.index).split(/\r?\n/).length}`;
+    const quote = match[1];
+    const start = match.index + match[0].length;
+    let end;
+    if (quote === "`") {
+      const boundary = templateEnd(source, start);
+      if (boundary.interpolation !== undefined) continue;
+      end = boundary.end;
+    } else {
+      for (let index = start; index < source.length; index += 1) {
+        if (source[index] === "\\") index += 1;
+        else if (source[index] === quote) {
+          end = index;
+          break;
+        }
+      }
+    }
+    if (end === undefined) {
+      entries.push(`${location}: unterminated static insertAdjacentHTML literal`);
+    } else if (normalized(source.slice(start, end))) {
+      entries.push(`${location}: static insertAdjacentHTML literals are forbidden; use translated DOM text or an annotated HTML assignment`);
+    }
+  }
+  return entries;
 }
 
 export function collectRepositoryUnwired() {
-  const indexSource = readFileSync(join(root, "src/index.html"), "utf8");
-  const bodyOpen = /<body\b[^>]*>/i.exec(indexSource);
-  const bodyClose = indexSource.toLowerCase().lastIndexOf("</body>");
-  if (!bodyOpen || bodyClose === -1) throw new Error("src/index.html has no complete body element.");
-  const bodyStart = bodyOpen.index + bodyOpen[0].length;
-
-  const appSource = readFileSync(join(root, "src/js/app.js"), "utf8");
-  const marker = "hodlRootEl.innerHTML = `";
-  const appStart = appSource.indexOf(marker);
-  if (appStart === -1) throw new Error("src/js/app.js has no root HTML template.");
-  const templateStart = appStart + marker.length;
-  const appEnd = templateEnd(appSource, templateStart);
-  if (appEnd === -1) throw new Error("src/js/app.js has an unterminated root HTML template.");
-
-  return [
-    // The source template's #btc-calc is a no-flash placeholder replaced by
-    // app.js. The runtime root template below is the copy that must be wired.
-    ...collectUnwiredMarkup(indexSource.slice(bodyStart, bodyClose), "src/index.html", { ignoredIds: ["btc-calc"] }),
-    ...collectUnwiredMarkup(appSource.slice(templateStart, appEnd), "src/js/app.js#root-template", { ignoredIds: i18nRuntimeOwnedIds }),
-  ].sort();
+  const entries = [];
+  let annotatedShells = 0;
+  for (const file of repositoryUiSourceFiles()) {
+    const source = readFileSync(join(root, file), "utf8");
+    if (extname(file) === ".js") entries.push(...collectUnannotatedStaticShells(source, file));
+    for (const fragment of collectAnnotatedShellFragments(source, file)) {
+      annotatedShells += 1;
+      entries.push(...collectUnwiredMarkup(fragment.markup, fragment.label));
+    }
+    if (extname(file) === ".html") {
+      const bodyOpen = /<body\b[^>]*>/i.exec(source);
+      const bodyClose = source.toLowerCase().lastIndexOf("</body>");
+      if (!bodyOpen || bodyClose === -1) throw new Error(`${file} has no complete body element.`);
+      // #btc-calc is the no-flash source copy replaced by the annotated
+      // application shell. Scanning both would report every element twice.
+      entries.push(...collectUnwiredMarkup(source.slice(bodyOpen.index + bodyOpen[0].length, bodyClose), file, { ignoredIds: ["btc-calc"] }));
+      continue;
+    }
+  }
+  if (!annotatedShells) throw new Error("No /* i18n-static-shell */ source region was found.");
+  return entries.sort();
 }
 
 export function runI18nWiring() {

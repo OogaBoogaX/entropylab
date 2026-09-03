@@ -269,10 +269,10 @@ function hodlDerivationPathDisplay(accountPath, branchWindow, addressWindow, har
   return `${branchPath}/${hodlPathComponent(addressWindow.start, hardening.address)}`;
 }
 function hodlDerivationPathRangeMessage(branchWindow, addressWindow) {
-  if (branchWindow.range > 1 && addressWindow.range > 1) return "Multiple address branches and indexes selected · path shown through the account level.";
-  if (branchWindow.range > 1) return "Multiple address branches selected · path shown through the account level.";
-  if (addressWindow.range > 1) return "Multiple address indexes selected · path shown through the address branch.";
-  return "Exact BIP32 address path · edit directly to use a custom path";
+  if (branchWindow.range > 1 && addressWindow.range > 1) return hodlTText("derivation.pathRange.multipleBranchesAndIndexes");
+  if (branchWindow.range > 1) return hodlTText("derivation.pathRange.multipleBranches");
+  if (addressWindow.range > 1) return hodlTText("derivation.pathRange.multipleIndexes");
+  return hodlTText("shell.derivationPathHelpText");
 }
 function hodlReadVisibleDerivationPath(mark = true) {
   let input = document.getElementById("derivation-path"), parsed;
@@ -491,6 +491,7 @@ function hodlQrSvg(e, t = "#111111", r = "#ffffff") {
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabCrypto = { entropyToMnemonic: (hex) => hodlEntropyToMnemonic(hodlHex.decode(hex), hodlBip39Wordlist), mnemonicToEntropy: (mnemonic) => hodlHex.encode(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist)), mnemonicToSeed: (mnemonic, passphrase) => hodlHex.encode(hodlMnemonicToSeed(mnemonic, passphrase)), validateMnemonic: (mnemonic) => hodlValidateMnemonic(mnemonic).ok, masterXprv: (mnemonic, passphrase) => hodlHDKey.fromMasterSeed(hodlMnemonicToSeed(mnemonic, passphrase)).privateExtendedKey, privateKeyInputIsValid: () => hodlPrivateKeyInputIsValid(), computeTargetLastWords: (words, targetWords) => hodlComputeTargetLastWords(words, targetWords), clearLastWordCache: () => hodlLastWordCache.clear(), validateTargetMnemonic: (value, targetWords) => hodlValidateTargetMnemonic(value, targetWords), bruteTargetLastWords: (value) => hodlLastWordCandidates(value) };
 var hodlRootEl = document.getElementById("btc-calc");
 if (!hodlRootEl) throw new Error("#app missing");
+/* i18n-static-shell */
 hodlRootEl.innerHTML = `
   <div class="site-header no-print">
     <div class="site-header-inner">
@@ -567,7 +568,7 @@ hodlRootEl.innerHTML = `
         <div class="seed-length-select">
           <select id="seed-length-select" aria-labelledby="seed-length-label"><option value="12" data-i18n="seedLength.words" data-i18n-vars='{"n":12}'>12 words</option><option value="15" data-i18n="seedLength.words" data-i18n-vars='{"n":15}'>15 words</option><option value="18" data-i18n="seedLength.words" data-i18n-vars='{"n":18}'>18 words</option><option value="21" data-i18n="seedLength.words" data-i18n-vars='{"n":21}'>21 words</option><option value="24" selected="selected" data-i18n="seedLength.words" data-i18n-vars='{"n":24}'>24 words</option></select>
         </div>
-        <p class="muted" id="seed-length-help" data-i18n="shell.seedLengthHelpText">24 words use 256 bits of BIP39 entropy.</p>
+        <p class="muted" id="seed-length-help" data-runtime-owned></p>
       </section>
       <div id="form" class="key-form"></div>
       <div class="passphrase-field" id="passphrase-field">
@@ -652,7 +653,7 @@ hodlRootEl.innerHTML = `
       </div>
       <p class="err" id="error"></p>
       </div>
-      <div id="out"></div>
+      <div id="out" data-runtime-owned></div>
     </section>
       <div class="tool-intro" id="vanity-tool-intro" hidden>
         <div class="kicker" data-i18n="vanity.intro.kicker">Same key, same counter, same address</div>
@@ -739,7 +740,7 @@ hodlRootEl.innerHTML = `
         </div>
         <p class="muted" id="vanity-status" aria-live="polite" data-i18n="vanity.status.idle">Idle. No range has been ground this session.</p>
         <p class="err" id="vanity-error" role="alert"></p>
-        <div id="vanity-out" aria-live="polite"></div>
+        <div id="vanity-out" aria-live="polite" data-runtime-owned></div>
         <p class="muted" data-i18n="vanity.sessionNote">Found passphrases remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </section>
       <div class="tool-intro" id="bip85-tool-intro" hidden>
@@ -796,15 +797,15 @@ hodlRootEl.innerHTML = `
           <span class="field-note" id="bip85-pwdlen-help" data-i18n="shell.base642086Base851080">Base64: 20–86. Base85: 10–80.</span>
         </label>
       </div>
-      <p class="muted bip85-path-row"><span data-i18n="result.tablePath">Path</span> <code id="bip85-path">m/83696968'/39'/0'/24'/0'</code></p>
+      <p class="muted bip85-path-row"><span data-i18n="result.tablePath">Path</span> <code id="bip85-path" data-runtime-owned></code></p>
       <div class="row bip85-actions">
         <button class="btn primary" id="bip85-go" type="button" data-i18n="shell.deriveChild">Derive child</button>
         <button class="btn secondary" id="bip85-wipe" type="button" data-i18n="shell.clearParentSession">Clear parent session</button>
       </div>
-      <p class="muted" id="bip85-session" aria-live="polite">No parent loaded. Choose a Key Station key, or paste a root xprv.</p>
+      <p class="muted" id="bip85-session" aria-live="polite" data-runtime-owned></p>
       <p class="err" id="bip85-error" role="alert"></p>
       </div>
-      <div id="bip85-out" aria-live="polite"></div>
+      <div id="bip85-out" aria-live="polite" data-runtime-owned></div>
       <p class="muted" data-i18n="shell.bip85CardPText">Derived children remain in this page only. Anyone with the parent seed, passphrase, application, and index can reproduce them. Memory clearing is best-effort; close the page before reconnecting the computer.</p>
     </section>
       <div class="tool-intro" id="msig-tool-intro" hidden>
@@ -929,7 +930,7 @@ hodlRootEl.innerHTML = `
       </div>
       <p class="err" id="msig-error"></p>
       </div>
-      <div id="msig-out"></div>
+      <div id="msig-out" data-runtime-owned></div>
     </section>
     <div class="tool-intro" id="sp-tool-intro" hidden>
         <div class="kicker" data-i18n="shell.bip352ReusableAddressUniqueOutputs">BIP-352 · reusable address, unique outputs</div>
@@ -969,7 +970,7 @@ hodlRootEl.innerHTML = `
       <div class="row psbt-actions">
         <button class="btn secondary" id="sp-wipe" type="button" data-i18n="psbt.wipe">End session / clear fields</button>
       </div>
-      <p class="muted" id="sp-session" aria-live="polite">No session key. Receive and verify need a seed or root xprv.</p>
+      <p class="muted" id="sp-session" aria-live="polite" data-runtime-owned></p>
       <div id="sp-receive">
         <label class="field"><span data-i18n="shell.label">Label</span> <code data-i18n="literal.bip32RootPath">m</code>
           <input id="sp-label" type="number" min="0" max="4294967295" step="1" inputmode="numeric" placeholder="blank = unlabeled · 0 = change (do not hand out)" data-i18n-placeholder="shell.spLabelPlaceholder">
@@ -1007,7 +1008,7 @@ hodlRootEl.innerHTML = `
         </div>
       </div>
       <p class="err" id="sp-error" role="alert"></p>
-      <div id="sp-out" aria-live="polite"></div>
+      <div id="sp-out" aria-live="polite" data-runtime-owned></div>
       <p class="muted" data-i18n="psbt.sessionNote">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
     </section>
     <div class="tool-intro-stack" id="psbt-tool-intros" hidden>
@@ -1055,7 +1056,7 @@ hodlRootEl.innerHTML = `
       </div>
       <p class="muted" id="psbt-session" aria-live="polite" data-i18n="psbt.noSession">No session key. Inspect-only mode.</p>
       <p class="err" id="psbt-error" role="alert"></p>
-      <div id="psbt-out" aria-live="polite"></div>
+      <div id="psbt-out" aria-live="polite" data-runtime-owned></div>
       <p class="muted" data-i18n="psbt.sessionNote">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
     </section>
       <section class="card no-print" id="psbted-card" role="tabpanel" hidden>
@@ -1069,7 +1070,7 @@ hodlRootEl.innerHTML = `
         <button class="btn secondary" id="psbted-wipe" type="button" data-i18n="shell.clearEditor">Clear editor</button>
       </div>
       <p class="err" id="psbted-error" role="alert"></p>
-      <div id="psbted-out" aria-live="polite"></div>
+      <div id="psbted-out" aria-live="polite" data-runtime-owned></div>
       <section class="psbted-compare" id="psbted-compare">
         <h3 data-i18n="psbted.compare.heading">Compare with another PSBT</h3>
         <p class="muted" data-i18n="psbted.compare.help">Paste a second PSBT to see what changed relative to the one in the editor. The comparison reads the decoded contents, so reordered maps are not a difference; transaction, signing-state, and metadata changes are reported separately. It describes differences only — it does not judge whether a change is safe.</p>
@@ -1081,7 +1082,7 @@ hodlRootEl.innerHTML = `
           <button class="btn secondary" id="psbted-compare-clear" type="button" data-i18n="psbted.compare.clear">Clear comparison</button>
         </div>
         <p class="err" id="psbted-compare-error" role="alert"></p>
-        <div id="psbted-compare-out" aria-live="polite"></div>
+        <div id="psbted-compare-out" aria-live="polite" data-runtime-owned></div>
       </section>
       <p class="muted" data-i18n="shell.psbtedCardPText">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
     </section>
@@ -1139,8 +1140,8 @@ hodlRootEl.innerHTML = `
         <div class="journal-status" id="journal-status">
           <img class="journal-status-lifehash" id="journal-lifehash" width="48" height="48" alt="" hidden>
           <div>
-            <p class="journal-status-title" id="journal-status-title">Journal unlocked</p>
-            <p class="muted" id="journal-status-note">No entries yet. Save the encrypted file after you add one.</p>
+            <p class="journal-status-title" id="journal-status-title" data-runtime-owned></p>
+            <p class="muted" id="journal-status-note" data-runtime-owned></p>
           </div>
         </div>
         <div class="row bip85-actions journal-toolbar">
@@ -1151,7 +1152,7 @@ hodlRootEl.innerHTML = `
           <button class="btn secondary" id="journal-save" type="button" data-i18n="shell.saveFile">Save file</button>
           <button class="btn secondary" id="journal-lock" type="button" data-i18n="shell.lock">Lock</button>
         </div>
-        <div id="journal-list" class="journal-list" aria-live="polite"></div>
+        <div id="journal-list" class="journal-list" aria-live="polite" data-runtime-owned></div>
         <div id="journal-editor" class="journal-editor" hidden>
           <label class="field"><span data-i18n="keys.methodLabel">Method</span>
             <select id="journal-method">
@@ -1185,7 +1186,7 @@ hodlRootEl.innerHTML = `
             <button class="btn secondary" id="journal-cancel" type="button" data-i18n="shell.cancel">Cancel</button>
           </div>
         </div>
-        <div id="journal-view" hidden></div>
+        <div id="journal-view" hidden data-runtime-owned></div>
       </div>
       <p class="err" id="journal-error" role="alert"></p>
       <p class="muted" data-i18n="shell.journalCardPText">The journal lives in this page until you save the encrypted file. Anyone with that file and the journal password can read every entry. Memory clearing is best-effort; close the page before reconnecting the computer.</p>
@@ -1214,26 +1215,26 @@ hodlRootEl.innerHTML = `
         <button class="btn secondary journal-upload-action journal-file-button" id="journal-notes-upload" type="button" aria-label="Upload notebook" data-i18n-aria="journal.notes.upload" title="Upload notebook" data-i18n-title="journal.notes.upload"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 17V5M7 10l5-5 5 5M5 21h14"/></svg><span class="control-label" data-i18n="journal.notes.uploadShort">Upload</span></button>
         <input id="journal-notes-file" type="file" accept=".json,.txt,application/json,text/plain" hidden>
       </div>
-      <p class="muted journal-notes-status" id="journal-notes-status" role="status" aria-live="polite"></p>
+      <p class="muted journal-notes-status" id="journal-notes-status" role="status" aria-live="polite" data-runtime-owned></p>
     </section>
       <section class="card no-print" id="journal-keymanager-card" role="tabpanel" hidden>
       <div class="journal-section-intro" id="journal-keymanager-tool-intro">
-        <div class="kicker">Keys on paper you control.</div>
-        <h2>Key manager</h2>
-        <p class="muted tool-intro-note">Collect derived Key Station keys in one encrypted <code>.elkeys</code> file. Imported keys stay here until you explicitly load one into Key Station. The file uses this Journal's password and never leaves your machine.</p>
+        <div class="kicker" data-i18n="journal.keyManager.kicker">Keys on paper you control.</div>
+        <h2 data-i18n="workspace.journalKeyManager">Key manager</h2>
+        <p class="muted tool-intro-note" data-i18n-html="journal.keyManager.intro" data-i18n-vars='{"extension":".elkeys"}'>Collect derived Key Station keys in one encrypted <code>.elkeys</code> file. Imported keys stay here until you explicitly load one into Key Station. The file uses this Journal&#39;s password and never leaves your machine.</p>
       </div>
-      <div class="key-tab-strip journal-keymanager-tab-strip"><div class="key-tabs" id="journal-keymanager-tabs" role="tablist" aria-label="Managed keys"></div></div>
-      <div class="journal-keymanager-panel" id="journal-keymanager-panel"></div>
+      <div class="key-tab-strip journal-keymanager-tab-strip"><div class="key-tabs" id="journal-keymanager-tabs" role="tablist" aria-label="Managed keys" data-i18n-aria="journal.keyManager.tabsAria"></div></div>
+      <div class="journal-keymanager-panel" id="journal-keymanager-panel" data-runtime-owned></div>
       <section class="journal-keymanager-ignored" id="journal-keymanager-ignored" hidden>
-        <h3>Ignored keys</h3>
-        <div class="journal-keymanager-ignored-list" id="journal-keymanager-ignored-list"></div>
+        <h3 data-i18n="journal.keyManager.ignored">Ignored keys</h3>
+        <div class="journal-keymanager-ignored-list" id="journal-keymanager-ignored-list" data-runtime-owned></div>
       </section>
       <div class="row psbt-actions journal-file-actions journal-keymanager-file-actions">
-        <div class="journal-download-options"><button class="btn secondary journal-download-action journal-file-button" id="journal-keymanager-download" type="button" aria-label="Download managed keys" title="Download managed keys"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Download keys</span></button><span class="journal-keymanager-encryption-note">Encrypted with the Journal password</span></div>
-        <button class="btn secondary journal-upload-action journal-file-button" id="journal-keymanager-upload" type="button" aria-label="Upload managed keys" title="Upload managed keys"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 17V5M7 10l5-5 5 5M5 21h14"/></svg><span class="control-label">Upload</span></button>
+        <div class="journal-download-options"><button class="btn secondary journal-download-action journal-file-button" id="journal-keymanager-download" type="button" aria-label="Download managed keys" data-i18n-aria="journal.keyManager.download" title="Download managed keys" data-i18n-title="journal.keyManager.download"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label" data-i18n="journal.keyManager.downloadShort">Download keys</span></button><span class="journal-keymanager-encryption-note" data-i18n="journal.keyManager.encryption">Encrypted with the Journal password</span></div>
+        <button class="btn secondary journal-upload-action journal-file-button" id="journal-keymanager-upload" type="button" aria-label="Upload managed keys" data-i18n-aria="journal.keyManager.upload" title="Upload managed keys" data-i18n-title="journal.keyManager.upload"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 17V5M7 10l5-5 5 5M5 21h14"/></svg><span class="control-label" data-i18n="journal.keyManager.uploadShort">Upload</span></button>
         <input id="journal-keymanager-file" type="file" accept=".elkeys,.json,application/json" hidden>
       </div>
-      <p class="muted journal-keymanager-status" id="journal-keymanager-status" role="status" aria-live="polite"></p>
+      <p class="muted journal-keymanager-status" id="journal-keymanager-status" role="status" aria-live="polite" data-runtime-owned></p>
     </section>
       <section class="card no-print" id="journal-state-card" role="tabpanel" hidden>
       <div class="journal-section-intro" id="journal-state-tool-intro">
@@ -1260,7 +1261,7 @@ hodlRootEl.innerHTML = `
         <p class="muted tool-intro-note" data-i18n="shell.journalLogToolIntroPText">An append-only record of meaningful dashboard actions — tool and station changes, calculations, safe settings, copies, file actions, clears, and errors — so a later bug report has a clock and a fingerprint instead of a guess. Seed phrases, xprvs, note bodies, filenames, PSBT bytes, and typed secrets are not written here. Last 400 events. This computer's clock.</p>
       </div>
       <p class="muted" data-i18n="shell.journalLogCardPText">Download this with a bug report. It names tools and fingerprints, not seeds.</p>
-      <div class="journal-log-wrap"><pre class="journal-log" id="journal-log-out" aria-live="polite">No events yet.</pre><button class="seed-phrase-copy journal-log-copy" id="journal-log-copy" type="button" aria-label="Copy session log" data-i18n-aria="journal.log.copy" title="Copy session log" data-i18n-title="journal.log.copy" data-copy-label="Copy session log" data-i18n-copy-label="journal.log.copy" data-copied-label="Session log copied" data-i18n-copied-label="journal.log.copied"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button></div>
+      <div class="journal-log-wrap"><pre class="journal-log" id="journal-log-out" aria-live="polite" data-runtime-owned></pre><button class="seed-phrase-copy journal-log-copy" id="journal-log-copy" type="button" aria-label="Copy session log" data-i18n-aria="journal.log.copy" title="Copy session log" data-i18n-title="journal.log.copy" data-copy-label="Copy session log" data-i18n-copy-label="journal.log.copy" data-copied-label="Session log copied" data-i18n-copied-label="journal.log.copied"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1 2-2V6a2 2 0 0 1 2-2h2"/></svg></button></div>
       <div class="row psbt-actions journal-log-actions">
         <div class="journal-download-options"><button class="btn secondary journal-download-action journal-file-button" id="journal-log-download" type="button" aria-label="Download session log" data-i18n-aria="journal.log.download" title="Download session log" data-i18n-title="journal.log.download"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label" data-i18n="journal.log.download">Download session log</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-log-encrypt" type="checkbox" checked><span data-i18n="journal.download.encrypt">Use journal password to encrypt</span></label></div>
         <button class="btn clear-current-action" id="journal-log-clear" type="button" data-i18n="shell.clearLog">Clear log</button>
@@ -2093,7 +2094,7 @@ function hodlWalletDatControl(includePrivate) {
   // keys created at this moment and skips past history (faster, and reveals
   // no older activity to anyone who later sees the file). If a loaded wallet
   // looks empty, repair it with Bitcoin Core's `rescanblockchain 0`.
-  return `<label class="wallet-dat-birthday">${typeof globalThis.hodlT === "function" ? globalThis.hodlT("walletdat.birthday") : "Wallet birthday"} <select data-wallet-dat-birthday aria-describedby="wallet-dat-birthday-help"><option value="genesis"${hodlWalletDatBirthday === "genesis" ? " selected" : ""}>${typeof globalThis.hodlT === "function" ? globalThis.hodlT("walletdat.genesis") : "Recovering keys \xB7 scan from genesis"}</option><option value="now"${hodlWalletDatBirthday === "now" ? " selected" : ""}>${typeof globalThis.hodlT === "function" ? globalThis.hodlT("walletdat.now") : "New keys \xB7 created today"}</option></select></label><button class="btn secondary save-wallet-dat" id="download-wallet-dat" type="button" aria-describedby="recovery-sheet-disclosure wallet-dat-birthday-help">${hodlWalletExport.walletDatButtonLabel(includePrivate)}</button><p class="muted wallet-dat-birthday-help" id="wallet-dat-birthday-help">${typeof globalThis.hodlT === "function" ? globalThis.hodlT("walletdat.help") : "Bitcoin Core only auto-scans history back to the birthday. Choose \u201CNew keys\u201D only for entropy created right now; recovering older keys with today's birthday can look empty until you run <code>rescanblockchain 0</code> in Bitcoin Core."}</p>`;
+  return `<label class="wallet-dat-birthday">${typeof globalThis.hodlT === "function" ? globalThis.hodlT("walletdat.birthday") : "Wallet birthday"} <select data-wallet-dat-birthday aria-describedby="wallet-dat-birthday-help"><option value="genesis"${hodlWalletDatBirthday === "genesis" ? " selected" : ""}>${typeof globalThis.hodlT === "function" ? globalThis.hodlT("walletdat.genesis") : "Recovering keys \xB7 scan from genesis"}</option><option value="now"${hodlWalletDatBirthday === "now" ? " selected" : ""}>${typeof globalThis.hodlT === "function" ? globalThis.hodlT("walletdat.now") : "New keys \xB7 created today"}</option></select></label><button class="btn secondary save-wallet-dat" id="download-wallet-dat" type="button" aria-describedby="recovery-sheet-disclosure wallet-dat-birthday-help">${hodlWalletExport.walletDatButtonLabel(includePrivate)}</button><p class="muted wallet-dat-birthday-help" id="wallet-dat-birthday-help">${typeof globalThis.hodlT === "function" ? globalThis.hodlT("walletdat.help", { rescanCommand: globalThis.hodlT("literal.rescanblockchainCommand") }) : "Bitcoin Core only auto-scans history back to the birthday. Choose \u201CNew keys\u201D only for entropy created right now; recovering older keys with today's birthday can look empty until you run <code>rescanblockchain 0</code> in Bitcoin Core."}</p>`;
 }
 function hodlSaveRecoveryControl() {
   return `<div class="wallet-data-actions no-print"><button class="btn secondary save-recovery-sheet" id="save" type="button">${typeof globalThis.hodlT === "function" ? globalThis.hodlT("result.saveWatch") : "Save watch-only sheet"}</button>${hodlWalletDatControl(false)}</div>`;
@@ -2121,9 +2122,9 @@ function hodlSingleWalletData(wallet) {
       </div>
       ${hodlPrivateDataControls("single-private-description", "single")}
       <div class="wallet-data-fields">
-        ${hodlPrivateFieldHtml(hodlTText("result.wifCompressed"), wallet.wifCompressed)}
-        ${hodlPrivateFieldHtml(hodlTText("result.wifUncompressed"), wallet.wifUncompressed)}
-        ${hodlPrivateFieldHtml(hodlTText("result.hexPrivate"), wallet.privHex)}
+        ${hodlPrivateFieldHtml(hodlT("result.wifCompressed"), wallet.wifCompressed)}
+        ${hodlPrivateFieldHtml(hodlT("result.wifUncompressed"), wallet.wifUncompressed)}
+        ${hodlPrivateFieldHtml(hodlT("result.hexPrivate"), wallet.privHex)}
         ${miniKey}
       </div>
     </section>
@@ -2133,14 +2134,14 @@ function hodlSingleWalletData(wallet) {
         <p class="muted">${hodlT("result.singlePublicDesc")}</p>
       </div>
       <div class="wallet-data-fields">
-        ${hodlPublicFieldHtml(hodlTText("result.pubkeyCompressed"), wallet.pubkeyCompressed)}
-        ${hodlPublicFieldHtml(hodlTText("result.pubkeyUncompressed"), wallet.pubkeyUncompressed)}
+        ${hodlPublicFieldHtml(hodlT("result.pubkeyCompressed"), wallet.pubkeyCompressed)}
+        ${hodlPublicFieldHtml(hodlT("result.pubkeyUncompressed"), wallet.pubkeyUncompressed)}
         <h4 class="wallet-data-subtitle">${hodlT("result.addresses")}</h4>
-        ${hodlPublicFieldHtml(hodlTText("result.legacyUncompressed"), wallet.p2pkhUncompressed)}
-        ${hodlPublicFieldHtml(hodlTText("result.legacyCompressed"), wallet.p2pkhCompressed)}
-        ${hodlPublicFieldHtml(hodlTText("script.nested"), wallet.p2shP2wpkh)}
-        ${hodlPublicFieldHtml(hodlTText("script.native"), wallet.p2wpkh)}
-        ${hodlPublicFieldHtml(hodlTText("script.taproot"), wallet.p2tr)}
+        ${hodlPublicFieldHtml(hodlT("result.legacyUncompressed"), wallet.p2pkhUncompressed)}
+        ${hodlPublicFieldHtml(hodlT("result.legacyCompressed"), wallet.p2pkhCompressed)}
+        ${hodlPublicFieldHtml(hodlT("script.nested"), wallet.p2shP2wpkh)}
+        ${hodlPublicFieldHtml(hodlT("script.native"), wallet.p2wpkh)}
+        ${hodlPublicFieldHtml(hodlT("script.taproot"), wallet.p2tr)}
         <h4 class="wallet-data-subtitle">${hodlT("result.nativeQr")}</h4>
         <div class="qr" aria-label="${hodlTAttr("result.nativeQrAria")}">${hodlQrSvg(wallet.p2wpkh)}</div>
       </div>
@@ -2398,20 +2399,22 @@ function hodlCoinTypeNetworkLabel(coinType) {
 }
 function hodlUpdateCoinTypeHelp(input = document.getElementById("network"), help = document.getElementById("network-help")) {
   if (!help) return;
-  let label = "Custom";
+  let label = hodlTText("network.customShort");
   try {
     label = hodlCoinTypeNetworkLabel(hodlReadCoinType(input, false));
   } catch {
   }
   let prefix = input?.id?.startsWith("msig-") ? "msig-" : "", hardened = hodlReadHardening(prefix).coinType;
-  help.textContent = `Coin type index · ${label} · ${hardened ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
+  help.textContent = hodlTText(hardened ? "network.helpDynamic" : "network.helpDynamicUnhardened", { label });
 }
 function hodlUpdateHardeningHelp(prefix = "") {
   let hardening = hodlReadHardening(prefix), purpose = document.getElementById(`${prefix}purpose-help`), account = document.getElementById(`${prefix}account-help`), branch = document.getElementById(`${prefix}branch-start-help`), start = document.getElementById(`${prefix}address-start-help`);
-  if (purpose) purpose.textContent = `Purpose index · ${hardening.purpose ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
-  if (account && !(prefix && document.getElementById(`${prefix}account`)?.dataset.state === "not-applicable")) account.textContent = prefix ? `Account index · ${hardening.account ? "Hardened" : "Unhardened"} · Derived from co-signer key origins.` : `Account index · ${hardening.account ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
-  if (branch) branch.textContent = `First address branch to derive · 0 is Receive · 1 is Change · ${hardening.branch ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
-  if (start) start.textContent = `First address index to derive · ${hardening.address ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
+  if (purpose) purpose.textContent = hodlTText(hardening.purpose ? "purpose.help" : "purpose.helpUnhardened");
+  if (account && !(prefix && document.getElementById(`${prefix}account`)?.dataset.state === "not-applicable")) account.textContent = hodlTText(prefix
+    ? hardening.account ? "msig.accountHelpDerived" : "msig.accountHelpDerivedUnhardened"
+    : hardening.account ? "account.help" : "account.helpUnhardened");
+  if (branch) branch.textContent = hodlTText(hardening.branch ? "derivation.branchStartHelpHardened" : "shell.branchStartHelpText");
+  if (start) start.textContent = hodlTText(hardening.address ? "derivation.addressStartHardened" : "derivation.addressStart", { branches: hodlTText("derivation.branch.receiveInline") });
   hodlUpdateCoinTypeHelp(document.getElementById(`${prefix}network`), document.getElementById(`${prefix}network-help`));
 }
 function hodlSelectedScriptType() {
@@ -2545,6 +2548,15 @@ function hodlReadBranchWindow(prefix = "", mark = true) {
 function hodlAddressBranchSummary(branches) {
   return branches.map(hodlAddressBranchLabel).join(" and ");
 }
+function hodlAddressBranchUiLabel(branch, inline = false) {
+  if (Number(branch) === 0) return hodlTText(inline ? "derivation.branch.receiveInline" : "derivation.branch.receive");
+  if (Number(branch) === 1) return hodlTText(inline ? "derivation.branch.changeInline" : "derivation.branch.change");
+  return hodlTText(inline ? "derivation.branch.customInline" : "derivation.branch.custom", { n: branch });
+}
+function hodlAddressBranchUiSummary(branches, inline = false) {
+  let labels = branches.map((branch) => hodlAddressBranchUiLabel(branch, inline));
+  return labels.length === 2 ? hodlTText("derivation.joinTwo", { a: labels[0], b: labels[1] }) : labels[0] || "";
+}
 function hodlSyncAddressRangeLimit(prefix = "") {
   let startInput = document.getElementById(`${prefix}address-start`), rangeInput = document.getElementById(`${prefix}address-range`);
   if (!rangeInput) return hodlMaxAddressRange;
@@ -2584,14 +2596,17 @@ function hodlUpdateAddressEstimate(prefix = "") {
   let maximum = hodlSyncAddressRangeLimit(prefix), branchMaximum = hodlSyncBranchRangeLimit(prefix);
   try {
     let { range } = hodlReadAddressWindow(prefix, false), { branches } = hodlReadBranchWindow(prefix, false), hardening = hodlReadHardening(prefix), keyCount = prefix ? Math.max(1, Number(document.getElementById("msig-n")?.value) || 1) : (hodlImportedExtendedKeyDepth() ?? 0) > 0 ? 1 : 4;
-    let branchLabels = hodlAddressBranchSummary(branches), addressCopies = branches.map((branch) => `${range.toLocaleString()} ${hodlAddressBranchLabel(branch).toLowerCase()}`).join(" and ");
-    branchHelp.textContent = `Derives ${branchLabels} ${hardening.branch ? "hardened " : ""}${branches.length === 1 ? "branch" : "branches"} · Max ${branchMaximum}`;
-    startHelp.textContent = `First ${branchLabels.toLowerCase()} index to derive · ${hardening.address ? "Hardened" : "Unhardened"} · 0 to 2,147,483,647`;
-    help.textContent = `Derives ${addressCopies} ${range * branches.length === 1 ? "address" : "addresses"} · Max ${maximum.toLocaleString()}`;
-    estimate.textContent = hodlAddressBenchmarkMs == null ? "Measuring this device\u2026" : `Estimated derivation time on this device: ${hodlFormatAddressEstimate(hodlAddressBenchmarkMs * range * branches.length * keyCount)}.`;
+    let branchLabels = hodlAddressBranchUiSummary(branches), inlineBranchLabels = hodlAddressBranchUiSummary(branches, true), addressCopies = branches.map((branch) => hodlTText("derivation.addressCopy", { count: range.toLocaleString(), branch: hodlAddressBranchUiLabel(branch, true) }));
+    if (addressCopies.length === 2) addressCopies = [hodlTText("derivation.joinTwo", { a: addressCopies[0], b: addressCopies[1] })];
+    branchHelp.textContent = hodlTText(branches.length === 1
+      ? hardening.branch ? "derivation.branchRange.oneHardened" : "derivation.branchRange.one"
+      : hardening.branch ? "derivation.branchRange.manyHardened" : "derivation.branchRange.many", { branches: branchLabels, max: branchMaximum });
+    startHelp.textContent = hodlTText(hardening.address ? "derivation.addressStartHardened" : "derivation.addressStart", { branches: inlineBranchLabels });
+    help.textContent = hodlTText(range * branches.length === 1 ? "derivation.addressRange.one" : "derivation.addressRange.many", { copies: addressCopies[0], max: maximum.toLocaleString() });
+    estimate.textContent = hodlAddressBenchmarkMs == null ? hodlTText("estimate.measuring") : hodlTText("estimate.time", { time: hodlFormatAddressEstimate(hodlAddressBenchmarkMs * range * branches.length * keyCount) });
   } catch (error) {
-    branchHelp.textContent = "Choose one or two valid address branches.";
-    help.textContent = "Choose a valid address range.";
+    branchHelp.textContent = hodlTText("derivation.branchRangeInvalid");
+    help.textContent = hodlTText("derivation.addressRangeInvalid");
     estimate.textContent = error.message;
   }
 }
@@ -7586,7 +7601,7 @@ function hodlUpdateMsigAccount() {
   if (kind === "p2sh" && purpose === 45) {
     field.value = "";
     hodlSyncDerivationPrime(field);
-    field.placeholder = "Not applicable";
+    field.placeholder = hodlTText("msig.accountNa");
     field.dataset.state = "not-applicable";
     if (help) help.textContent = hodlTText("msig.accountHelpNa");
     if (warning) {
@@ -7605,13 +7620,16 @@ function hodlUpdateMsigAccount() {
     }
   }
   let summary = hodlSummarizeMultisigAccounts(accountNumbers), message = hodlMultisigAccountWarning(summary);
-  field.value = summary.mixed ? "Mixed" : summary.account == null ? "" : String(summary.account);
+  field.value = summary.mixed ? hodlTText("msig.accountMixedValue") : summary.account == null ? "" : String(summary.account);
   hodlSyncDerivationPrime(field);
-  field.placeholder = "Derived from keys";
+  field.placeholder = hodlTText("msig.accountPlaceholder");
   field.dataset.state = summary.mixed ? "mixed" : summary.account == null ? "empty" : "account";
   if (help) {
-    let mode = hardening.account ? "Hardened" : "Unhardened";
-    help.textContent = summary.mixed ? `Account index · ${mode} · Co-signer key origins use different account numbers.` : summary.account == null ? `Account index · ${mode} · Derived from co-signer key origins.` : `Account index · ${mode} · Derived from the co-signer account paths.`;
+    help.textContent = hodlTText(summary.mixed
+      ? hardening.account ? "msig.accountHelpMixedFull" : "msig.accountHelpMixedFullUnhardened"
+      : summary.account == null
+        ? hardening.account ? "msig.accountHelpDerived" : "msig.accountHelpDerivedUnhardened"
+        : hardening.account ? "msig.accountHelpPathsFull" : "msig.accountHelpPathsUnhardened");
   }
   if (warning) {
 
@@ -8009,7 +8027,7 @@ function hodlCreateMsigSessionKeyButton(option, className, active, onSelect, ari
 function hodlPickMsigSessionKey(state, row = hodlMsigNextKeyRow()) {
   let ta = row?.querySelector("textarea"), status = document.getElementById("msig-session-key-status");
   if (!ta) {
-    if (status) status.textContent = "All co-signer inputs are filled. Focus or clear an input before choosing another key.";
+    if (status) status.textContent = hodlTText("msig.session.allFilled");
     return;
   }
   let value = hodlMatchingMsigExport(state.result);
@@ -8021,7 +8039,7 @@ function hodlPickMsigSessionKey(state, row = hodlMsigNextKeyRow()) {
   ta.value = value;
   ta.dispatchEvent(new Event("input"));
   let position = [...document.querySelectorAll("#msig-keys .msig-key-row")].indexOf(row) + 1;
-  if (status) status.textContent = `Added ${state.result?.masterFingerprint || state.name} to co-signer ${position}.`;
+  if (status) status.textContent = hodlTText("msig.session.added", { name: state.result?.masterFingerprint || state.name, position });
 }
 function hodlStripMsigKeyPath(value) {
   return String(value ?? "").trim().replace(/\/(?:<\d+(?:;\d+)*>|\d+)\/\*$/, "").replace(/(\/\d+[hH']?)+$/, "");
@@ -8088,8 +8106,13 @@ function hodlRefreshMsigSessionPickers() {
     available.forEach((option) => {
       globalBox.appendChild(hodlCreateMsigSessionKeyButton(option, "session-key-option", Boolean(option.baseId) && used.has(option.baseId), () => hodlPickMsigSessionKey(option.state), (fingerprint) => `Add Key Station key ${fingerprint} to the next co-signer input`));
     });
-    if (status && !status.textContent && options.length && !available.length) status.textContent = "All compatible Key Station keys are assigned. Enable key reuse to keep them available.";
-    if (status && (!options.length || available.length) && status.textContent.startsWith("All compatible")) status.textContent = "";
+    if (status && !status.textContent && options.length && !available.length) {
+      status.textContent = hodlTText("msig.session.allAssigned");
+      status.dataset.i18nState = "all-assigned";
+    } else if (status?.dataset.i18nState === "all-assigned" && (!options.length || available.length)) {
+      status.textContent = "";
+      delete status.dataset.i18nState;
+    }
   }
   document.querySelectorAll("#msig-keys .msig-key-row").forEach((row) => {
     let box = row.querySelector(".msig-session-keys"), parsed = hodlParseMsigRowKey(row), currentBaseId = parsed ? hodlMsigBaseKeyId(parsed) : "", usedElsewhere = hodlMsigUsedBaseKeyIds(row);
@@ -9236,7 +9259,7 @@ function hodlInitPsbt() {
     if (event.persisted) clearSecretFields();
   });
 }
-var hodlBip85Root = null, hodlBip85Note = "No parent loaded. Choose a Key Station key, or paste a root xprv.", hodlBip85Source = "", hodlBip85Result = null, hodlBip85Reveal = false, hodlBip85Testnet = false, hodlBip85Children = [], hodlActiveBip85 = -1, hodlNextBip85ChildId = 1;
+var hodlBip85Root = null, hodlBip85Note = hodlNote("bip85.status.noParent"), hodlBip85Source = "", hodlBip85Result = null, hodlBip85Reveal = false, hodlBip85Testnet = false, hodlBip85Children = [], hodlActiveBip85 = -1, hodlNextBip85ChildId = 1;
 function hodlBip85WipeParent() {
   if (hodlBip85Root) try {
     hodlBip85Root.wipePrivateData();
@@ -9245,7 +9268,7 @@ function hodlBip85WipeParent() {
   hodlBip85Root = null;
   hodlBip85Source = "";
   hodlBip85Testnet = false;
-  hodlBip85Note = "No parent loaded. Choose a Key Station key, or paste a root xprv.";
+  hodlBip85Note = hodlNote("bip85.status.noParent");
 }
 function hodlBip85WipeMem() {
   let wiped = /* @__PURE__ */ new Set();
@@ -9267,7 +9290,7 @@ function hodlBip85WipeMem() {
   hodlBip85Root = null;
   hodlBip85Source = "";
   hodlBip85Testnet = false;
-  hodlBip85Note = "No parent loaded. Choose a Key Station key, or paste a root xprv.";
+  hodlBip85Note = hodlNote("bip85.status.noParent");
 }
 function hodlNewBip85BenchState() {
   return { isLab: true, id: 0, name: "BIP-85 Station", result: null, reveal: false, fingerprint: "", fingerprintKind: "" };
@@ -9371,7 +9394,7 @@ function hodlBip85LoadXprv(text) {
   hodlBip85Root = node;
   hodlBip85Testnet = /^[tuvn]prv/i.test(value);
   hodlBip85Source = "manual";
-  hodlBip85Note = "Parent: pasted root " + (hodlBip85Testnet ? "tprv" : "xprv") + ". Kept in page memory only.";
+  hodlBip85Note = hodlNote("bip85.status.pastedRoot", { prefix: hodlBip85Testnet ? "tprv" : "xprv" });
 }
 function hodlUseKeyForBip85(state) {
   if (!state || !state.result) throw new Error("Derive a key in Key Station first, then return to BIP-85 Station.");
@@ -9385,11 +9408,12 @@ function hodlUseKeyForBip85(state) {
       hodlWipeBytes(seed);
     }
     hodlBip85Testnet = false;
-    hodlBip85Note = "Parent: " + (state.name || "Key Station key") + (result.passphraseUsed || (state.fields.pass || "").length ? " with BIP-39 passphrase (COLDCARD does the same \u2014 children differ without it)." : ".") + " Kept in page memory only.";
+    let name = state.name || hodlNote("bip85.status.keyStationKey");
+    hodlBip85Note = hodlNote(result.passphraseUsed || (state.fields.pass || "").length ? "bip85.status.sessionSeedPassphrase" : "bip85.status.sessionSeed", { name });
   } else if (result.kind === "hd" && result.rootXprv) {
     hodlBip85Root = hodlHDKey.fromExtendedKey(hodlParseExtendedKey(result.rootXprv).xkey);
     hodlBip85Testnet = result.network === "testnet";
-    hodlBip85Note = "Parent: root xprv from " + (state.name || "Key Station key") + ". Kept in page memory only.";
+    hodlBip85Note = hodlNote("bip85.status.sessionRoot", { name: state.name || hodlNote("bip85.status.keyStationKey") });
   } else if (result.kind === "hd") throw new Error("This Key Station key is not a BIP32 root. Import the original seed or root xprv.");
   else throw new Error("BIP-85 needs an HD root. This Key Station key is a single private key.");
   hodlBip85Source = "key:" + state.id;
@@ -9402,7 +9426,7 @@ function hodlPickBip85SessionKey(state) {
     let rootXprv = state.result?.rootXprv || hodlBip85Root?.privateExtendedKey;
     if (!rootXprv) throw new Error("This Key Station key does not expose a BIP32 root xprv/tprv.");
     document.getElementById("bip85-key").value = rootXprv;
-    document.getElementById("bip85-session").textContent = hodlBip85Note;
+    document.getElementById("bip85-session").textContent = hodlFormatNote(hodlBip85Note);
   } catch (exception) {
     if (error) error.textContent = exception.message || String(exception);
   }
@@ -9412,10 +9436,10 @@ function hodlCopyBip85Child(button) {
   let phrase = button?.dataset.phrase;
   if (!phrase || button.disabled) return;
   let done = () => {
-    button.textContent = "Copied derived child";
+    button.textContent = hodlTText("bip85.copy.copied");
     clearTimeout(button.hodlCopiedTimer);
     button.hodlCopiedTimer = setTimeout(() => {
-      if (button.isConnected) button.textContent = "Copy derived child";
+      if (button.isConnected) button.textContent = hodlTText("bip85.copy.child");
     }, 1600);
   };
   let fallback = () => {
@@ -9601,7 +9625,7 @@ function hodlRunBip85() {
     result = null;
     hodlBip85Reveal = false;
     hodlJournalLog("derive", fingerprint.value);
-    if (session) session.textContent = hodlBip85Note;
+    if (session) session.textContent = hodlFormatNote(hodlBip85Note);
     hodlRenderBip85Tabs();
     hodlSyncBip85View();
   } catch (exception) {
@@ -9614,6 +9638,7 @@ function hodlRunBip85() {
 function hodlInitBip85() {
   let go = document.getElementById("bip85-go");
   if (!go) return;
+  document.getElementById("bip85-session").textContent = hodlFormatNote(hodlBip85Note);
   if (!hodlBip85Children.length) {
     hodlBip85Children.push(hodlNewBip85BenchState());
     hodlActiveBip85 = 0;
@@ -9628,7 +9653,7 @@ function hodlInitBip85() {
     if (!hodlBip85Source.startsWith("key:")) return;
     hodlBip85WipeParent();
     hodlBip85Source = document.getElementById("bip85-key").value.trim() ? "manual" : "";
-    document.getElementById("bip85-session").textContent = hodlBip85Source ? "Manual root key entered. It will be validated when you derive a child." : hodlBip85Note;
+    document.getElementById("bip85-session").textContent = hodlFormatNote(hodlBip85Source ? hodlNote("bip85.status.manualEntered") : hodlBip85Note);
     hodlRefreshStationKeyPickers();
   });
   go.onclick = hodlRunBip85;
@@ -9636,7 +9661,7 @@ function hodlInitBip85() {
     hodlBip85WipeParent();
     document.getElementById("bip85-key").value = "";
     document.getElementById("bip85-error").textContent = "";
-    document.getElementById("bip85-session").textContent = "Parent session cleared (best effort). Derived child tabs remain until deleted.";
+    document.getElementById("bip85-session").textContent = hodlTText("bip85.status.cleared");
     hodlRefreshStationKeyPickers();
   };
   for (let id of ["bip85-app", "bip85-index", "bip85-words", "bip85-bytes", "bip85-pwdlen"]) {
@@ -9670,7 +9695,7 @@ function hodlRunPsbt() {
   }
 }
 
-var hodlSpHd = null, hodlSpKeys = null, hodlSpNote = "No session key. Receive and verify need a seed or root xprv.", hodlSpMode = "receive", hodlSpReveal = false, hodlSpSource = "";
+var hodlSpHd = null, hodlSpKeys = null, hodlSpNote = hodlNote("sp.status.noSession"), hodlSpMode = "receive", hodlSpReveal = false, hodlSpSource = "";
 function hodlSpWipeKeys() {
   if (hodlSpKeys) {
     try { hodlSpKeys.scanPriv && hodlSpKeys.scanPriv.fill(0); } catch {}
@@ -9682,7 +9707,7 @@ function hodlSpWipeKeys() {
   }
   hodlSpHd = null;
   hodlSpSource = "";
-  hodlSpNote = "No session key. Receive and verify need a seed or root xprv.";
+  hodlSpNote = hodlNote("sp.status.noSession");
 }
 function hodlSpWipeMem() {
   hodlSpWipeKeys();
@@ -9709,7 +9734,7 @@ function hodlSpLoadKey(text, passphrase) {
     if (parsed.node.depth !== 0) throw new Error("Silent Payments needs a BIP32 root private key (depth 0), not an account xprv.");
     hodlSpHd = parsed.node;
     hodlSpSource = "manual";
-    hodlSpNote = `Session key: root ${parsed.prefix}. Kept in page memory only.`;
+    hodlSpNote = hodlNote("sp.status.manualRoot", { prefix: parsed.prefix });
     return;
   }
   let mnemonic = hodlValidateMnemonic(value);
@@ -9724,7 +9749,7 @@ function hodlSpLoadKey(text, passphrase) {
     seed.fill(0);
   }
   hodlSpSource = "manual";
-  hodlSpNote = "Session key: BIP39 seed" + (passphrase ? " + passphrase" : "") + ". Kept in page memory only.";
+  hodlSpNote = hodlNote(passphrase ? "sp.status.manualSeedPassphrase" : "sp.status.manualSeed");
 }
 function hodlSpUseKey(state) {
   if (!state || !state.result) throw new Error("Derive a key in Key Station first, then return to SP Station.");
@@ -9733,10 +9758,10 @@ function hodlSpUseKey(state) {
   if (result.kind === "hd" && result.mnemonic) {
     let seed = hodlMnemonicToSeed(result.mnemonic, state.fields.pass || "");
     try { hodlSpHd = hodlHDKey.fromMasterSeed(seed); } finally { seed.fill(0); }
-    hodlSpNote = "Session key from " + (state.name || "Key Station key") + " (BIP39 seed). Kept in page memory only.";
+    hodlSpNote = hodlNote("sp.status.sessionSeed", { name: state.name || hodlNote("sp.status.keyStationKey") });
   } else if (result.kind === "hd" && result.rootXprv) {
     hodlSpHd = hodlHDKey.fromExtendedKey(hodlParseExtendedKey(result.rootXprv).xkey);
-    hodlSpNote = "Session key from " + (state.name || "Key Station key") + " (root xprv). Kept in page memory only.";
+    hodlSpNote = hodlNote("sp.status.sessionRoot", { name: state.name || hodlNote("sp.status.keyStationKey") });
   } else throw new Error("SP Station needs the Key Station key's seed or root xprv. Account-level and single keys cannot derive m/352'.");
   hodlSpSource = "key:" + state.id;
 }
@@ -9747,7 +9772,7 @@ function hodlPickSpSessionKey(state) {
     hodlSpUseKey(state);
     document.getElementById("sp-key").value = state.result?.mnemonic || state.result?.rootXprv || "";
     document.getElementById("sp-pass").value = state.result?.mnemonic ? state.fields?.pass || "" : "";
-    document.getElementById("sp-session").textContent = hodlSpNote;
+    document.getElementById("sp-session").textContent = hodlFormatNote(hodlSpNote);
   } catch (exception) {
     if (error) error.textContent = exception.message || String(exception);
   }
@@ -9760,7 +9785,7 @@ function hodlSpEnsureHd() {
     hodlRefreshStationKeyPickers();
   }
   if (!hodlSpHd || !hodlSpHd.privateKey) throw new Error("Choose a compatible Key Station key, or enter a BIP39 seed or root xprv.");
-  document.getElementById("sp-session").textContent = hodlSpNote;
+  document.getElementById("sp-session").textContent = hodlFormatNote(hodlSpNote);
 }
 function hodlSpDeriveSessionKeys() {
   hodlSpEnsureHd();
@@ -9890,7 +9915,7 @@ function hodlRenderSpSend() {
   for (const recipient of recipients) decodeSilentPaymentAddress(recipient.address, hrp);
   let result = createSilentPaymentOutputs(hodlSpParseVins(document.getElementById("sp-send-vins")?.value), recipients, { hrp });
   if (!result.outputs.length) {
-    document.getElementById("sp-out").innerHTML = `<p class="psbt-warn">No silent payment outputs. Eligible inputs may be missing, the private-key sum may be zero, or a scan-key group exceeded K<sub>max</sub> = 2323.</p>`;
+  document.getElementById("sp-out").innerHTML = `<p class="psbt-warn">${hodlT("sp.noEligibleOutputs")}</p>`;
     return;
   }
   let network = hodlSpNetwork();
@@ -9910,7 +9935,7 @@ function hodlRenderSpVerify() {
     labels,
   });
   if (!result.outputs.length) {
-    document.getElementById("sp-out").innerHTML = `<p class="muted">No matching silent payment outputs for this scan key and label set.</p>`;
+    document.getElementById("sp-out").innerHTML = `<p class="muted">${hodlT("sp.noMatchingOutputs")}</p>`;
     return;
   }
   let network = hodlSpNetwork();
@@ -9941,12 +9966,13 @@ function hodlRunSp() {
 }
 function hodlInitSp() {
   if (!document.getElementById("sp-card")) return;
+  document.getElementById("sp-session").textContent = hodlFormatNote(hodlSpNote);
   hodlRefreshStationKeyPickers();
   let detachStationKey = () => {
     if (!hodlSpSource.startsWith("key:")) return;
     hodlSpWipeKeys();
     hodlSpSource = document.getElementById("sp-key").value.trim() ? "manual" : "";
-    document.getElementById("sp-session").textContent = hodlSpSource ? "Manual session key entered. It will be validated when you use this Station." : hodlSpNote;
+    document.getElementById("sp-session").textContent = hodlFormatNote(hodlSpSource ? hodlNote("sp.status.manualEntered") : hodlSpNote);
     hodlRefreshStationKeyPickers();
   };
   document.getElementById("sp-key").addEventListener("input", detachStationKey);
@@ -9969,7 +9995,7 @@ function hodlInitSp() {
     if (account) account.value = "0";
     document.getElementById("sp-out").innerHTML = "";
     document.getElementById("sp-error").textContent = "";
-    document.getElementById("sp-session").textContent = "Session ended and accessible fields were cleared (best effort).";
+    document.getElementById("sp-session").textContent = hodlTText("sp.status.cleared");
     hodlRefreshStationKeyPickers();
   };
   document.getElementById("sp-out").addEventListener("click", (event) => {
@@ -10563,7 +10589,7 @@ function hodlKeyManagerRender() {
   if (!states.length) {
     let empty = document.createElement("p");
     empty.className = "journal-keymanager-empty";
-    empty.textContent = "No derived keys are available. Derive a key in Key Station or upload an encrypted .elkeys file.";
+    empty.textContent = hodlTText("journal.keyManager.empty");
     panel.appendChild(empty);
     hodlKeyManagerRenderIgnored();
     return;
@@ -12497,14 +12523,14 @@ function hodlRefreshJournalKeyPicker() {
   if (!select) return;
   let placeholder = document.createElement("option"), keys = (hodlKeys || []).filter((state) => !state.isLab && /^[0-9a-f]{8}$/i.test(state.result?.masterFingerprint || ""));
   placeholder.value = "";
-  placeholder.textContent = "Insert key";
+  placeholder.textContent = hodlTText("journal.format.insertKey");
   placeholder.selected = true;
   placeholder.dataset.customSelectPlaceholder = "true";
   select.replaceChildren(placeholder);
   if (!keys.length) {
     let empty = document.createElement("option");
     empty.value = "";
-    empty.textContent = "No derived keys yet";
+    empty.textContent = hodlTText("journal.format.noKeys");
     empty.disabled = true;
     select.appendChild(empty);
   } else keys.forEach((state) => {
@@ -12970,7 +12996,7 @@ function hodlJournalNotesKeydown(event, field) {
 }
 function hodlRenderJournalLog() {
   let out = document.getElementById("journal-log-out");
-  if (out) out.textContent = hodlJournalFormatLog(hodlJournal.log);
+  if (out) out.textContent = hodlJournal.log.length ? hodlJournalFormatLog(hodlJournal.log) : hodlTText("journal.log.empty");
 }
 function hodlJournalRefreshSessionState() {
   let includePrivate = Boolean(document.getElementById("journal-state-private")?.checked);
@@ -13031,7 +13057,7 @@ function hodlScheduleJournalStateRefresh() {
 }
 // The encrypted entropy notebook gates the Journal tools and keeps its
 // document and Web Crypto keys apart from the session notepad.
-var hodlJournalKeys = null, hodlJournalDoc = null, hodlJournalFileText = "", hodlJournalDirty = false, hodlJournalGate = "create", hodlJournalReveal = false, hodlJournalEditingId = null, hodlJournalDeleteArmed = false;
+var hodlJournalKeys = null, hodlJournalDoc = null, hodlJournalFileRead = Promise.resolve(""), hodlJournalDirty = false, hodlJournalGate = "create", hodlJournalReveal = false, hodlJournalEditingId = null, hodlJournalDeleteArmed = false;
 function hodlJournalError(message) {
   let error = document.getElementById("journal-error");
   if (error) error.textContent = message || "";
@@ -13043,7 +13069,7 @@ function hodlJournalWipeNotebook() {
   // bytes are the verify digest; nulling dereferences the keys themselves.
   if (hodlJournalKeys) hodlJournalWipeBytes(hodlJournalKeys.verify);
   hodlJournalKeys = null;
-  hodlJournalFileText = "";
+  hodlJournalFileRead = Promise.resolve("");
   hodlJournalDirty = false;
   hodlJournalReveal = false;
   hodlJournalEditingId = null;
@@ -13203,6 +13229,8 @@ function hodlJournalShowWork() {
     button.setAttribute("aria-disabled", String(!unlocked));
   }
   let note = document.getElementById("journal-status-note");
+  let title = document.getElementById("journal-status-title");
+  if (title) title.textContent = hodlTText("journal.status.unlocked");
   if (note) note.textContent = hodlJournalNoteText();
   hodlJournalFillLifehash(document.getElementById("journal-lifehash"), hodlJournalKeys?.verify);
   hodlJournalRenderList();
@@ -13376,8 +13404,14 @@ async function hodlJournalCreate() {
 async function hodlJournalUnlock() {
   hodlJournalError("");
   try {
-    if (!hodlJournalFileText) throw new Error("Choose an encrypted journal file first.");
-    let opened = await hodlJournalOpenDocument(hodlJournalFileText, document.getElementById("journal-open-password")?.value || "");
+    let selectedText;
+    while (true) {
+      let pending = hodlJournalFileRead;
+      selectedText = await pending;
+      if (pending === hodlJournalFileRead) break;
+    }
+    if (!selectedText) throw new Error("Choose an encrypted journal file first.");
+    let opened = await hodlJournalOpenDocument(selectedText, document.getElementById("journal-open-password")?.value || "");
     hodlKeyManagerReset();
     hodlJournalWipeNotebook();
     hodlJournalKeys = opened.keys;
@@ -13385,7 +13419,7 @@ async function hodlJournalUnlock() {
     hodlJournalDirty = false;
     document.getElementById("journal-open-password").value = "";
     document.getElementById("journal-file").value = "";
-    hodlJournalFileText = "";
+    hodlJournalFileRead = Promise.resolve("");
     hodlJournalHideEditor();
     hodlJournalShowWork();
     hodlShowJournalTool("notes");
@@ -13457,10 +13491,11 @@ function hodlJournalLock() {
   hodlJournalShowWork();
   hodlSyncJournalTool();
   hodlJournalLog("journal-lock");
-  document.getElementById("journal-status-note").textContent = "Journal locked. Password and entries were cleared (best effort).";
+  document.getElementById("journal-status-note").textContent = hodlTText("journal.status.locked");
 }
 function hodlInitJournalNotebook() {
   if (!document.getElementById("journal-create")) return;
+  document.getElementById("journal-log-out").textContent = hodlTText("journal.log.empty");
   for (let id of ["journal-create-password", "journal-create-confirm"]) {
     document.getElementById(id)?.addEventListener("input", hodlSyncJournalCreatePasswordValidation);
   }
@@ -13472,7 +13507,18 @@ function hodlInitJournalNotebook() {
   document.getElementById("journal-file")?.addEventListener("change", async (event) => {
     hodlJournalError("");
     let file = event.target.files?.[0];
-    hodlJournalFileText = file ? await file.text() : "";
+    if (file && file.size > 2 * 1024 * 1024) {
+      hodlJournalFileRead = Promise.resolve("");
+      hodlJournalError("That journal is larger than the 2 MiB import limit.");
+      return;
+    }
+    let pending = file ? file.text() : Promise.resolve("");
+    hodlJournalFileRead = pending;
+    try {
+      await pending;
+    } catch (error) {
+      if (pending === hodlJournalFileRead) hodlJournalError(error?.message || "The journal file could not be read.");
+    }
   });
   document.getElementById("journal-add")?.addEventListener("click", () => {
     hodlJournalError("");
@@ -13534,7 +13580,7 @@ function hodlJournalWipeMem() {
   hodlJournalApplyPageStyle();
   hodlJournalSetStatus("");
   let log = document.getElementById("journal-log-out");
-  if (log) log.textContent = "No events yet.";
+  if (log) log.textContent = hodlTText("journal.log.empty");
 }
 // The switcher keeps every tool on screen as a folder-tab strip that scrolls
 // when it must, in the shape the Keys section uses for its own tabs.
@@ -14171,14 +14217,15 @@ function hodlInitWorkspace() {
   hint.className = "workspace-more";
   hint.id = "workspace-more";
   hint.setAttribute("aria-controls", "workspace-tabs");
-  hint.setAttribute("aria-label", "Scroll the tool list to see more tools");
+  hint.setAttribute("aria-label", hodlTText("workspace.moreToolsAria"));
   hint.hidden = true;
-  hint.innerHTML = `More tools<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h13M13 6l6 6-6 6"/></svg>`;
+  /* i18n-static-shell */
+  hint.innerHTML = `<span data-i18n="workspace.moreTools">More tools</span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h13M13 6l6 6-6 6"/></svg>`;
   let strip = document.createElement("div");
   strip.className = "workspace-tabs";
   strip.id = "workspace-tabs";
   strip.setAttribute("role", "tablist");
-  strip.setAttribute("aria-label", "Tool");
+  strip.setAttribute("aria-label", hodlTText("workspace.toolsAria"));
   hodlWorkspaceTabs.forEach(([id, label, short], index) => {
     let button = document.createElement("button"), active = hodlWorkspace === id;
     button.type = "button";
@@ -14517,7 +14564,7 @@ function hodlInitSecretFieldAutoClear() {
     if (bip85Key) bip85Key.value = "";
     if (bip85Out) bip85Out.innerHTML = "";
     if (bip85Error) bip85Error.textContent = "";
-    if (bip85Session) bip85Session.textContent = hodlBip85Note;
+    if (bip85Session) bip85Session.textContent = hodlFormatNote(hodlBip85Note);
     hodlRenderBip85Tabs();
     hodlSyncBip85View();
     let spKey = document.getElementById("sp-key"), spPass = document.getElementById("sp-pass");
@@ -14528,7 +14575,7 @@ function hodlInitSecretFieldAutoClear() {
     let spOut = document.getElementById("sp-out"), spError = document.getElementById("sp-error"), spSession = document.getElementById("sp-session");
     if (spOut) spOut.innerHTML = "";
     if (spError) spError.textContent = "";
-    if (spSession) spSession.textContent = hodlSpNote;
+    if (spSession) spSession.textContent = hodlFormatNote(hodlSpNote);
     let spRecipients = document.getElementById("sp-recipients"), spVerifyVins = document.getElementById("sp-verify-vins"), spVerifyOutputs = document.getElementById("sp-verify-outputs"), spLabel = document.getElementById("sp-label");
     if (spRecipients) spRecipients.value = "";
     if (spVerifyVins) spVerifyVins.value = "";
@@ -14629,6 +14676,11 @@ function hodlApplyLocale() {
   hodlUpdateMsigHint();
   hodlUpdateMsigScriptDetection();
   hodlUpdateMsigAccount();
+  if (!hodlBip85Source && !hodlBip85Root) hodlBip85Note = hodlNote("bip85.status.noParent");
+  document.getElementById("bip85-session").textContent = hodlFormatNote(hodlBip85Note);
+  if (!hodlSpSource && !hodlSpHd && !hodlSpKeys) hodlSpNote = hodlNote("sp.status.noSession");
+  document.getElementById("sp-session").textContent = hodlFormatNote(hodlSpNote);
+  if (!hodlJournal.log.length) hodlRenderJournalLog();
   if (hodlWalletResult?.kind === "msig") hodlShowMsig();
   else if (hodlWalletResult) hodlRefreshKeyResult();
   hodlRefreshPsbtLocale();

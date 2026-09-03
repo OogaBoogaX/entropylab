@@ -88,6 +88,48 @@ test("a source hash marked stale makes both catalog views fall back to English",
   }
 });
 
+test("the browser pseudo locale is not disabled by a real locale's stale keys", async () => {
+  const key = "action.derive";
+  globalThis.__ENTROPYLAB_TEST_HOOKS__ = true;
+  globalThis.__entropyLabTest = { pseudoCatalog: { ...en, [key]: "⟦I18N⟧derive⟦/I18N⟧" } };
+  globalThis.__entropyLabStaleTranslations = { de: [key] };
+  try {
+    const pseudoModule = await import(`../src/js/i18n.js?pseudo-stale=${Date.now()}`);
+    pseudoModule.hodlSetLocale("de", false);
+    assert.equal(pseudoModule.t(key), "⟦I18N⟧derive⟦/I18N⟧");
+  } finally {
+    delete globalThis.__ENTROPYLAB_TEST_HOOKS__;
+    delete globalThis.__entropyLabTest;
+    delete globalThis.__entropyLabStaleTranslations;
+  }
+});
+
+test("the production document path cannot activate the browser pseudo catalog", async () => {
+  const key = "action.derive";
+  const savedDocument = globalThis.document;
+  const savedLocation = globalThis.location;
+  globalThis.__ENTROPYLAB_TEST_HOOKS__ = true;
+  globalThis.__entropyLabTest = { pseudoCatalog: { ...en, [key]: "pseudo-production-bypass" } };
+  globalThis.document = {
+    documentElement: {},
+    getElementById() { return null; },
+    querySelectorAll() { return []; },
+  };
+  globalThis.location = { pathname: "/entropylab.html" };
+  try {
+    const productionModule = await import(`../src/js/i18n.js?production-hook=${Date.now()}`);
+    productionModule.hodlSetLocale("de", false);
+    assert.notEqual(productionModule.t(key), "pseudo-production-bypass");
+  } finally {
+    if (savedDocument === undefined) delete globalThis.document;
+    else globalThis.document = savedDocument;
+    if (savedLocation === undefined) delete globalThis.location;
+    else globalThis.location = savedLocation;
+    delete globalThis.__ENTROPYLAB_TEST_HOOKS__;
+    delete globalThis.__entropyLabTest;
+  }
+});
+
 test("a removed English key cannot reactivate an obsolete locale value", async () => {
   const key = "seedLength.words";
   const saved = en[key];
@@ -161,4 +203,25 @@ test("static translations preserve build values passed through data variables", 
   hodlApplyStaticI18n(root);
   assert.equal(elements[0].textContent, "v0.1.3 · commit");
   assert.equal(elements[1].textContent, "0123abc");
+});
+
+test("the static locale sweep cannot overwrite a runtime-owned subtree", () => {
+  const runtime = {
+    innerHTML: "<code>live-wallet-result</code>",
+    getAttribute(name) { return name === "data-i18n-html" ? "msig.intro" : null; },
+    closest(selector) { return selector === "[data-runtime-owned]" ? this : null; },
+  };
+  const runtimeAttribute = {
+    getAttribute(name) { return name === "data-i18n-title" ? "header.downloadAria" : null; },
+    closest(selector) { return selector === "[data-runtime-owned]" ? runtime : null; },
+    setAttribute() { throw new Error("runtime-owned attribute was overwritten"); },
+  };
+  const root = { querySelectorAll(selector) {
+    if (selector === "[data-i18n-html]") return [runtime];
+    if (selector === "[data-i18n-title]") return [runtimeAttribute];
+    return [];
+  } };
+  hodlSetLocale("es", false);
+  hodlApplyStaticI18n(root);
+  assert.equal(runtime.innerHTML, "<code>live-wallet-result</code>");
 });

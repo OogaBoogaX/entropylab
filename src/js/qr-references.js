@@ -91,6 +91,7 @@ export const initQrReferences = () => {
   overlayEl.hidden = true;
   overlayEl.setAttribute("role", "dialog");
   overlayEl.setAttribute("aria-modal", "true");
+  /* i18n-static-shell */
   overlayEl.innerHTML = `<div class="qr-ref-card"></div>`;
   document.body.append(overlayEl);
 

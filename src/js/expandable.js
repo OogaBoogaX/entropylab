@@ -62,15 +62,16 @@ export const initExpandable = () => {
   overlay.className = "exp-overlay no-print";
   overlay.id = "exp-overlay";
   overlay.hidden = true;
+  /* i18n-static-shell */
   overlay.innerHTML = `
     <div class="exp-card" role="dialog" aria-modal="true" aria-labelledby="exp-title">
       <p class="exp-title" id="exp-title"></p>
       <p class="exp-meta muted" id="exp-meta"></p>
       <textarea id="exp-text" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       <div class="row exp-actions">
-        <button class="btn secondary" id="exp-copy" type="button">Copy</button>
-        <button class="btn primary" id="exp-apply" type="button">Apply</button>
-        <button class="btn secondary" id="exp-close" type="button">Close</button>
+        <button class="btn secondary" id="exp-copy" type="button" data-i18n="expandable.copy">Copy</button>
+        <button class="btn primary" id="exp-apply" type="button" data-i18n="expandable.apply">Apply</button>
+        <button class="btn secondary" id="exp-close" type="button" data-i18n="expandable.close">Close</button>
       </div>
     </div>`;
   document.body.append(overlay);

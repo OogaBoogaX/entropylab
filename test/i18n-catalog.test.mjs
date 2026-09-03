@@ -60,6 +60,11 @@ test("literal and entity-spelled invisible controls are rejected", () => {
   }
 });
 
+test("technical literal values cannot be translated", () => {
+  assert.deepEqual(literalProblems("es", "literal.path", "ruta", "m/0'"), ["es literal.path: literal values must match English exactly"]);
+  assert.deepEqual(literalProblems("es", "shell.pathLabel", "Ruta", "Path"), []);
+});
+
 test("stale translations need not match a changed English source shape", () => {
   const english = { key: "New <code>{command}</code>" };
   const catalog = { key: "Alte Übersetzung" };
@@ -67,11 +72,6 @@ test("stale translations need not match a changed English source shape", () => {
   const stale = new Set(i18nLocaleStatus(english, catalog, sidecar).stale);
   assert.ok(stale.has("key"));
   assert.deepEqual(problemsWith("xx", "key", catalog.key, stale.has("key") ? undefined : english.key), []);
-});
-
-test("technical literal values cannot be translated", () => {
-  assert.deepEqual(literalProblems("es", "literal.path", "ruta", "m/0'"), ["es literal.path: literal values must match English exactly"]);
-  assert.deepEqual(literalProblems("es", "shell.pathLabel", "Ruta", "Path"), []);
 });
 
 for (const code of locales) {
@@ -88,7 +88,7 @@ for (const code of locales) {
       const source = current && !stale.has(key) ? en[key] : undefined;
       problems.push(...problemsWith(code, key, catalog[key], source));
       if (!current) continue;
-      problems.push(...literalProblems(code, key, catalog[key], en[key]));
+      if (!stale.has(key)) problems.push(...literalProblems(code, key, catalog[key], en[key]));
       const ratio = catalog[key].length / Math.max(en[key].length, 1);
       if (en[key].length >= 20 && (ratio < 0.3 || ratio > 3)) console.warn(`i18n length warning: ${code} ${key} is ${ratio.toFixed(1)}x the English`);
     }

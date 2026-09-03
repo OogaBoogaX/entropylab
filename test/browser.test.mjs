@@ -28,6 +28,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { hodlCatalogTokens } from "../src/js/i18n-sanitize.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -181,12 +182,38 @@ const appVersion = JSON.parse(read("package.json")).version;
 const appFile = "entropylab.html";
 const appSource = join(root, appFile);
 
+// The browser wiring sweep replaces one real locale with a generated catalog.
+// Every rendered text segment is delimited, while allowlisted catalog markup
+// remains markup. Reading en.json here means catalog changes need no fixture or
+// checked-in inventory update.
+const pseudoOpen = "⟦I18N⟧";
+const pseudoClose = "⟦/I18N⟧";
+const pseudoCatalog = Object.fromEntries(
+  Object.entries(JSON.parse(read("src/locales/en.json"))).map(([key, value]) => {
+    if (key.startsWith("literal.")) return [key, value];
+    let codeDepth = 0;
+    const pseudoValue = hodlCatalogTokens(value).map((token) => {
+      if (token.text === undefined) {
+        if (token.name === "code") codeDepth += token.closing ? -1 : 1;
+        return token.raw;
+      }
+      if (codeDepth > 0) return token.text;
+      return token.text.split(/(\{\w+\})/g).map((part) => (
+        /^\{\w+\}$/.test(part) ? part : part.replace(/\p{L}+/gu, (word) => `${pseudoOpen}${word}${pseudoClose}`)
+      )).join("");
+    }).join("");
+    return [key, pseudoValue];
+  }),
+);
+
 // Stage the site exactly the way scripts/build.mjs publishes it (the compiled
 // entropylab.html), and add the instrumented test document. Shared by every
 // engine so all browsers test the identical bytes.
 const stageWorkDir = () => {
   const workDir = mkdtempSync(join(stagingBase(), "entropylab-browser-"));
   const siteDir = join(workDir, "site");
+  const releaseHtml = read(appFile);
+  assert.equal(releaseHtml.includes(pseudoOpen) || releaseHtml.includes(pseudoClose), false, "release artifact contains pseudo-locale sentinels");
   mkdirSync(join(siteDir, "assets"), { recursive: true });
   // The served download target stays the exact release artifact, so the
   // export check below keeps proving the download link serves the release.
@@ -199,7 +226,8 @@ const stageWorkDir = () => {
   // is identical to the release except for that one compiled-in statement.
   execFileSync(process.execPath, [join(root, "scripts/build.mjs"), "--test-hooks", "--out", workDir], { stdio: "inherit" });
   const appHtml = readFileSync(join(workDir, appFile), "utf8");
-  const instrumentation = read("test/browser-instrumentation.html");
+  const instrumentation = read("test/browser-instrumentation.html")
+    .replace("/*@@I18N_PSEUDO_CATALOG@@*/", JSON.stringify(pseudoCatalog));
   const suite = read("test/browser-suite.html");
 
   // Inject the test instrumentation before the application stylesheet.

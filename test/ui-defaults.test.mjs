@@ -208,7 +208,7 @@ test("key and multisig derivation use an indexed address window with an estimate
   assert.match(appSource, /function hodlSyncAddressRangeLimit\(prefix = ""\)/);
   assert.match(appSource, /Math\.min\(hodlMaxAddressRange, hodlMaxAddressIndex - start \+ 1\)/);
   assert.match(appSource, /if \(\/\^\\d\+\$\/\.test\(rangeRaw\)[^\n]*range > maximum\) rangeInput\.value = String\(maximum\)/);
-  assert.match(appSource, /Max \$\{maximum\.toLocaleString\(\)\}/);
+  assert.match(appSource, /\{ copies: addressCopies\[0\], max: maximum\.toLocaleString\(\) \}/);
   assert.match(appSource, /for \(let index = startIndex; index < startIndex \+ count; index\+\+\)/);
   assert.match(appSource, /function hodlInitAddressBenchmark\(\)/);
   assert.match(appSource, /requestIdleCallback\(run, \{ timeout: 750 \}\)/);
@@ -868,7 +868,7 @@ test("multisig account is displayed as a disabled value derived from key origins
     assert.match(markup, /id="msig-account-warning" role="status" hidden/);
   }
   assert.match(app, /function hodlUpdateMsigAccount\(\)/);
-  assert.match(app, /field\.value=summary\.mixed\?"Mixed"/);
+  assert.match(app, /field\.value=summary\.mixed\?hodlTText\("msig\.accountMixedValue"\)/);
   assert.match(app, /account:accountSummary\.account/);
   assert.match(app, /accountMixed:accountSummary\.mixed/);
 });
@@ -1708,7 +1708,7 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
     assert.match(markup, /id="journal-state-private"/);
     assert(markup.indexOf('id="journal-state-text"') < markup.indexOf('id="journal-state-download"'), "Session state download should follow the live snapshot");
     assert.match(markup, /class="btn secondary journal-download-action journal-file-button" id="journal-state-download"[^>]*aria-label="Download session state"[^>]*>[\s\S]*?<span class="control-label"[^>]*>Download session state<\/span><\/button>/);
-    assert.match(markup, /<div class="journal-log-wrap"><pre class="journal-log" id="journal-log-out"[^>]*>No events yet\.<\/pre><button class="seed-phrase-copy journal-log-copy" id="journal-log-copy"[^>]*aria-label="Copy session log"[^>]*><svg[^>]*><rect class="seed-copy-icon-clip"[^>]*\/><path class="seed-copy-icon-board"[^>]*\/><\/svg><\/button><\/div>/);
+    assert.match(markup, /<div class="journal-log-wrap"><pre class="journal-log" id="journal-log-out"[^>]*>(?:No events yet\.)?<\/pre><button class="seed-phrase-copy journal-log-copy" id="journal-log-copy"[^>]*aria-label="Copy session log"[^>]*><svg[^>]*><rect class="seed-copy-icon-clip"[^>]*\/><path class="seed-copy-icon-board"[^>]*\/><\/svg><\/button><\/div>/);
     assert.match(markup, /class="btn secondary journal-download-action journal-file-button" id="journal-log-download"[^>]*aria-label="Download session log"[^>]*>[\s\S]*?<span class="control-label"[^>]*>Download session log<\/span><\/button>/);
     assert.match(markup, /class="btn clear-current-action" id="journal-log-clear"[^>]*>Clear log<\/button>/);
     assert.match(markup, /class="row psbt-actions journal-log-actions"/);
@@ -1717,6 +1717,7 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
   assert.match(appSource, /data-journal-tool="keymanager"[^>]*data-i18n="workspace\.journalKeyManager"[^>]*>Key manager/);
   assert.match(appSource, /data-journal-tool="state"[^>]*data-i18n="workspace\.journalState"[^>]*>Session state/);
   assert.match(appSource, /data-journal-tool="log"[^>]*data-i18n="workspace\.journalLog"[^>]*>Session log/);
+  assert.match(appSource, /document\.getElementById\("journal-log-out"\)\.textContent = hodlTText\("journal\.log\.empty"\)/);
   assert.match(css, /#journal-card\[hidden\]/);
   assert.match(css, /#journal-notes-card\[hidden\]/);
   assert.match(css, /#journal-keymanager-card\[hidden\]/);
@@ -1942,7 +1943,7 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
     for (const id of ["calc-card", "bip85-card", "msig-card", "sp-card", "psbt-card", "journal-card", "journal-notes-card", "journal-keymanager-card", "journal-state-card", "journal-log-card"]) {
       assert.ok(panel.includes(`id="${id}"`), `${id} must sit inside the workspace panel`);
     }
-    assert.ok(panel.includes('<div id="out">'), "the results region must sit inside the workspace panel");
+    assert.match(panel, /<div id="out"[^>]*>/, "the results region must sit inside the workspace panel");
   }
   // Overflow scrolls instead of wrapping or hiding, so more tools still fit.
   assert.match(css, /\.workspace-tabs \{[^}]*overflow-x: auto;/s);
@@ -1964,7 +1965,7 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   // decorative span: an interactive element must not be hidden from the
   // accessibility tree.
   assert.match(template, /<button type="button" class="workspace-more" id="workspace-more" aria-controls="workspace-tabs" aria-label="Scroll the tool list to see more tools" hidden>/);
-  assert.match(appSource, /hint\.setAttribute\("aria-label", "Scroll the tool list to see more tools"\);/);
+  assert.match(appSource, /hint\.setAttribute\("aria-label", hodlTText\("workspace\.moreToolsAria"\)\);/);
   assert.doesNotMatch(appSource, /hint\.setAttribute\("aria-hidden"/);
   // One click finishes the journey: the label promises the remaining tools and
   // clears at the end, so stopping short would read as a broken control.
@@ -2189,7 +2190,7 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
     assert.match(markup, /<button class="btn clear-current-action" id="vanity-wipe" type="button" disabled aria-disabled="true"[^>]*>Clear results<\/button>/);
     assert.match(markup, /<p class="muted" id="vanity-status" aria-live="polite"[^>]*>/);
     assert.match(markup, /<p class="err" id="vanity-error" role="alert"><\/p>/);
-    assert.match(markup, /<div id="vanity-out" aria-live="polite"><\/div>/);
+    assert.match(markup, /<div id="vanity-out" aria-live="polite"[^>]*><\/div>/);
     // The passphrase warning is part of the card, not a docs afterthought.
     assert.match(markup, /A vanity passphrase is a BIP39 passphrase/);
     // No typed salt, no brain-wallet convention: the grind runs on a key.

@@ -147,9 +147,11 @@ test("translated template attributes escape every HTML quote and delimiter", () 
 
 test("i18n.js routes every catalog through the sanitizer before t() can read it", () => {
   const source = readFileSync(join(root, "src/js/i18n.js"), "utf8");
-  assert.match(source, /const hodlLocaleHtmlCatalogs = \{ en: hodlSanitizeCatalog\(en\), es: hodlSanitizeCatalog\(es\), pt: hodlSanitizeCatalog\(pt\), fr: hodlSanitizeCatalog\(fr\), de: hodlSanitizeCatalog\(de\) \}/);
-  assert.match(source, /const hodlLocaleTextCatalogs = \{ en: hodlSanitizeTextCatalog\(en\), es: hodlSanitizeTextCatalog\(es\), pt: hodlSanitizeTextCatalog\(pt\), fr: hodlSanitizeTextCatalog\(fr\), de: hodlSanitizeTextCatalog\(de\) \}/);
-  assert.match(source, /export function tHtml[\s\S]*?hodlEscapeHtmlText/);
+  assert.match(source, /const hodlLocaleHtmlCatalogs = Object\.fromEntries\(Object\.entries\(hodlRawLocaleCatalogs\)\.map\(\(\[code, catalog\]\) => \[code, hodlSanitizeCatalog\(catalog\)\]\)\)/);
+  assert.match(source, /const hodlLocaleTextCatalogs = Object\.fromEntries\(Object\.entries\(hodlRawLocaleCatalogs\)\.map\(\(\[code, catalog\]\) => \[code, hodlSanitizeTextCatalog\(catalog\)\]\)\)/);
+  assert.match(source, /location\?\.pathname\.endsWith\("\/browser-tests\.html"\)/);
+  assert.match(source, /export function t\(key, vars\) \{\s*return hodlInterpolate\(hodlCatalogValue\(hodlLocaleTextCatalogs, key\), vars, String\)/);
+  assert.match(source, /export function tHtml\(key, vars\) \{\s*return hodlInterpolate\(hodlCatalogValue\(hodlLocaleHtmlCatalogs, key\), vars, hodlEscapeHtmlText\)/);
   assert.doesNotMatch(source, /hodlSanitizeCatalogHtml\(interpolated\)/);
   assert.match(source, /return hodlEscapeAttribute\(t\(key, vars\)\)/);
   assert.match(source, /globalThis\.hodlT = tHtml/);
