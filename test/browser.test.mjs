@@ -394,9 +394,18 @@ const runEngine = (engine, staging, port) => async () => {
     console.log(`All ${counter} cryptographic and browser integration checks passed in ${engine.label}.`);
   } finally {
     for (const browser of browsers) {
-      browser.kill("SIGKILL");
+      if (process.platform === "win32" && browser.pid) {
+        // Chromium and Edge keep profile-locking child processes after their
+        // launcher exits. Terminate only the process tree this test spawned;
+        // otherwise a completely successful suite can fail while deleting its
+        // private temporary profile.
+        const stopped = spawnSync("taskkill", ["/PID", String(browser.pid), "/T", "/F"], { stdio: "ignore" });
+        if (stopped.status !== 0 && browser.exitCode === null) browser.kill("SIGKILL");
+      } else {
+        browser.kill("SIGKILL");
+      }
     }
-    // Windows keeps browser profile files locked briefly after SIGKILL; give
+    // Windows can keep profile files locked briefly after termination; give
     // the handles time to release before the workdir is removed.
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
