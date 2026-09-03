@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import en from "../src/locales/en.json" with { type: "json" };
-import { hodlApplyStaticI18n, hodlCompleteLocales, hodlGetLocale, hodlLocaleCodes, hodlLocaleIsComplete, hodlNormalizeLocale, t, hodlSetLocale } from "../src/js/i18n.js";
+import es from "../src/locales/es.json" with { type: "json" };
+import { hodlApplyStaticI18n, hodlCompleteLocales, hodlGetLocale, hodlLocaleCodes, hodlLocaleIsComplete, hodlNormalizeLocale, t, tHtml, hodlSetLocale } from "../src/js/i18n.js";
+import { hodlSanitizeCatalogHtml } from "../src/js/i18n-sanitize.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const readLocale = (code) => JSON.parse(readFileSync(join(root, "src/locales", `${code}.json`), "utf8"));
@@ -33,7 +35,9 @@ test("non-English catalogs contain only non-empty English keys", () => {
 test("t interpolates placeholders and falls back to English", () => {
   hodlSetLocale("en", false);
   assert.equal(t("seedLength.words", { n: 12 }), "12 words");
+  assert.equal(tHtml("error.origin.multipathLast"), hodlSanitizeCatalogHtml(en["error.origin.multipathLast"]));
   assert.equal(t("missing.key"), "missing.key");
+  assert.equal(tHtml("missing.key"), "missing.key");
 });
 
 test("locale allowlist rejects unknown codes", () => {
@@ -49,12 +53,28 @@ test("every known locale stays selectable while individual keys fall back", () =
   hodlSetLocale("en", false);
 });
 
-test("a source hash marked stale makes the shipped catalog fall back to English", async () => {
-  globalThis.__entropyLabStaleTranslations = { es: ["seedLength.words"] };
+test("a missing translation falls back through both sanitized catalog views", async () => {
+  const key = "error.origin.multipathLast";
+  const saved = es[key];
+  delete es[key];
+  try {
+    const missingModule = await import(`../src/js/i18n.js?missing=${Date.now()}`);
+    missingModule.hodlSetLocale("es", false);
+    assert.equal(missingModule.t(key), en[key]);
+    assert.equal(missingModule.tHtml(key), hodlSanitizeCatalogHtml(en[key]));
+    assert.equal(missingModule.hodlLocaleIsComplete("es"), false);
+  } finally {
+    es[key] = saved;
+  }
+});
+
+test("a source hash marked stale makes both catalog views fall back to English", async () => {
+  globalThis.__entropyLabStaleTranslations = { es: ["seedLength.words", "error.origin.multipathLast"] };
   try {
     const staleModule = await import(`../src/js/i18n.js?stale=${Date.now()}`);
     staleModule.hodlSetLocale("es", false);
     assert.equal(staleModule.t("seedLength.words", { n: 12 }), "12 words");
+    assert.equal(staleModule.tHtml("error.origin.multipathLast"), hodlSanitizeCatalogHtml(en["error.origin.multipathLast"]));
     assert.equal(staleModule.hodlLocaleIsComplete("es"), false);
   } finally {
     delete globalThis.__entropyLabStaleTranslations;

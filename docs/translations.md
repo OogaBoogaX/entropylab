@@ -10,7 +10,7 @@ npm run i18n:check
 
 `i18n:sync` copies English into the inline HTML fallbacks for `data-i18n`,
 `data-i18n-html`, `data-i18n-aria`, `data-i18n-placeholder`, `data-i18n-title`,
-and `data-i18n-alt`. It also checks literal `hodlT()` and `hodlTAttr()`
+and `data-i18n-alt`. It also checks literal `hodlT()`, `hodlTText()`, and `hodlTAttr()`
 references. CI runs the read-only check, so the catalog and fallback markup
 cannot drift.
 

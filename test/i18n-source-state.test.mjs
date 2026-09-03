@@ -27,6 +27,20 @@ test("locale status separates missing and stale work from invalid sidecars", () 
   });
 });
 
+test("one changed English value becomes stale independently in each language", () => {
+  const english = { changed: "New", unchanged: "Same" };
+  const catalog = { changed: "Traduit", unchanged: "Même" };
+  const oldSources = { changed: i18nSourceHash("Old"), unchanged: i18nSourceHash("Same") };
+  const currentSources = { changed: i18nSourceHash("New"), unchanged: i18nSourceHash("Same") };
+
+  assert.deepEqual(i18nLocaleStatus(english, catalog, oldSources), {
+    missing: [], stale: ["changed"], problems: [],
+  });
+  assert.deepEqual(i18nLocaleStatus(english, catalog, currentSources), {
+    missing: [], stale: [], problems: [],
+  });
+});
+
 test("locale status rejects missing, malformed, unknown, and orphaned source records", () => {
   const status = i18nLocaleStatus(
     { good: "Good", noHash: "No hash" },
@@ -84,6 +98,13 @@ test("sync rejects unknown keys and missing attribute fallbacks without modifyin
   assert.equal(result.problems.length, 2);
   assert.match(result.problems[0], /unknown English key unknown/);
   assert.match(result.problems[1], /needs an existing placeholder fallback/);
+});
+
+test("sync validates literal references through every global translation helper", () => {
+  const source = `hodlT("rich"); hodlTText("plain"); hodlTAttr("attribute"); hodlTText("unknown")`;
+  const result = syncI18nSource(source, { rich: "Rich", plain: "Plain", attribute: "Attribute" });
+  assert.deepEqual(result.references, ["attribute", "plain", "rich", "unknown"]);
+  assert.deepEqual(result.problems, ["source: hodlT references unknown English key unknown"]);
 });
 
 test("the committed sources contain only known literal references and generated fallbacks", () => {

@@ -189,7 +189,7 @@ export function syncI18nSource(source, catalog, { fileName = "source", javascrip
     }
   }
 
-  for (const match of source.matchAll(/\bhodlT(?:Attr)?\(\s*(["'])([^"']+)\1(?=\s*[,)]\s*)/g)) {
+  for (const match of source.matchAll(/\bhodlT(?:Text|Attr)?\(\s*(["'])([^"']+)\1(?=\s*[,)]\s*)/g)) {
     references.add(match[2]);
     if (typeof catalog[match[2]] !== "string") problems.push(`${fileName}: hodlT references unknown English key ${match[2]}`);
   }

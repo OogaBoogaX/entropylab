@@ -34,7 +34,7 @@ export function hodlNormalizeLocale(code) {
 
 export function hodlLocaleIsComplete(code) {
   code = hodlNormalizeLocale(code);
-  let catalog = hodlLocaleTextCatalogs[hodlNormalizeLocale(code)];
+  let catalog = hodlLocaleTextCatalogs[code];
   if (!catalog) return false;
   return Object.keys(en).every((key) => typeof catalog[key] === "string" && catalog[key].length > 0 && !hodlTranslationIsStale(code, key));
 }
