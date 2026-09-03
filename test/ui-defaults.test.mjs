@@ -2270,7 +2270,7 @@ test("Card Backup asks only for the inputs its direction needs", () => {
   assert.match(card, /<p class="err" id="card-backup-error" role="alert" hidden>/);
   assert.match(card, /<div id="card-backup-output" aria-live="polite" hidden>/);
   assert.match(appSource, /const wipeResults = \(\) => \{[\s\S]*?output\.innerHTML = "";[\s\S]*?output\.hidden = true;[\s\S]*?error\.hidden = true;[\s\S]*?\};/);
-  assert.match(appSource, /run\.textContent = encode \? "Encode" : "Recover";\s*wipeResults\(\);/);
+  assert.match(appSource, /run\.textContent = encode \? "Encode" : "Recover";(?:\s*picResync\([^)]*\);)*\s*wipeResults\(\);/);
   // Encode output separates the visual card grid from the plain text codes:
   // the tiles sit in their own bordered box, and the deck-as-text is a
   // visually distinct block below it with a copy button; decode just shows
@@ -2278,7 +2278,8 @@ test("Card Backup asks only for the inputs its direction needs", () => {
   assert.match(appSource, /const renderDeck = \(deckStr\) =>/);
   assert.match(appSource, /hodlDealtCardMarkup\(card\)/);
   assert.match(appSource, /class="cb-codes"/);
-  assert.match(appSource, /class="btn secondary cb-copy" data-copy=/);
+  assert.match(appSource, /class="seed-phrase-copy cb-copy" data-copy=.*aria-label="Copy deck codes"/);
+  assert.match(appSource, /hodlClipboardIconMarkup\(\)/);
   assert.match(appSource, /const copyDeck = \(button\) =>/);
   assert.match(appSource, /output\.addEventListener\("click", \(event\) => \{[\s\S]*?\.closest\("\.cb-copy"\)/);
   assert.match(appSource, /output\.innerHTML = html/);
@@ -2287,6 +2288,29 @@ test("Card Backup asks only for the inputs its direction needs", () => {
   assert.match(css, /\.cb-deck \{ display: flex; flex-wrap: wrap; gap: 6px; padding: 12px; border: 1px solid var\(--border\); border-radius: 12px/);
   assert.match(css, /\.cb-text \{ display: flex; align-items: stretch; gap: 8px; margin-top: 20px; \}/);
   assert.match(css, /\.cb-copy\.is-copied/);
+  // Recovery also offers a click-to-build picker (rank + suit buttons, like the
+  // Keys tab "cards" method) that writes the deck transcript, in addition to
+  // typing it; both directions are hidden in encode.
+  assert.match(card, /<div class="cb-pick" id="card-backup-first-pick" hidden>/);
+  assert.match(card, /<div class="cb-pick" id="card-backup-second-pick" hidden>/);
+  assert.match(card, /id="card-backup-first-suits"/);
+  assert.match(card, /id="card-backup-first-ranks"/);
+  assert.match(card, /id="card-backup-second-suits"/);
+  assert.match(card, /id="card-backup-second-ranks"/);
+  assert.match(card, /id="card-backup-first-dealt"/);
+  assert.match(card, /id="card-backup-second-dealt"/);
+  assert.match(appSource, /const buildPads = \(\) =>/);
+  assert.match(appSource, /const picCommit = \(key\) =>/);
+  assert.match(appSource, /data-cb-suit=.*data-cb-card-suit=/);
+  assert.match(appSource, /data-cb-rank=.*data-cb-card-rank=/);
+  assert.match(appSource, /\.picked\.pop\(\); picRender\(key\); \};/);
+  assert.match(appSource, /getElementById\("card-backup-first-pick"\)\.hidden = encode/);
+  assert.match(css, /\.cb-pick \{ margin-top: var\(--space-control\); \}/);
+  assert.match(css, /\.cb-pick\[hidden\] \{ display: none; \}/);
+  assert.match(appSource, /const locked = Boolean\(p\.suit\) && p\.suit !== suit/);
+  assert.match(appSource, /const locked = Boolean\(p\.rank\) && p\.rank !== rank/);
+  assert.match(appSource, /card-backup-mnemonic.*card-backup-deck.*card-backup-second.*card-backup-passphrase/);
+  assert.match(appSource, /cardBackupOutput = document\.getElementById\("card-backup-output"\)/);
 });
 
 test("the private recovery section lists the BIP39 passphrase beside the seed phrase", () => {

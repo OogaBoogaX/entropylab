@@ -1793,8 +1793,12 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .cb-pos { font-size: 9px; color: var(--muted); font-family: var(--mono); }
 .cb-text { display: flex; align-items: stretch; gap: 8px; margin-top: 20px; }
 .cb-text .cb-codes { flex: 1 1 auto; display: block; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--fg); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; word-break: break-word; white-space: pre-wrap; }
-.cb-text .btn.cb-copy { flex: 0 0 auto; align-self: flex-end; }
+.cb-text .cb-copy { flex: 0 0 auto; align-self: flex-end; }
 .cb-copy.is-copied, .cb-copy.is-copied:not(:disabled):hover { color: var(--ok); border-color: var(--ok); }
+.cb-pick { margin-top: var(--space-control); }
+.cb-pick[hidden] { display: none; }
+.cb-pick-dealt { margin-top: 12px; min-height: 38px; }
+
 @media (min-width: 720px) {
   .bip85-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .bip85-grid > .field { margin-top: 0; }
