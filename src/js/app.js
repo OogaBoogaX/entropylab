@@ -45,6 +45,7 @@ import { tHtml as hodlT, t as hodlTText, tAttr as hodlTAttr, hodlInitLocale, hod
 import { hodlSanitizeCatalogHtml } from "./i18n-sanitize.js";
 import hodlShellHtml from "../shell.html";
 import { hodlKeyModeLabels, hodlNetworkNames, hodlHexFormatLabels, hodlScriptBeginnerTexts, hodlFairnessVerdictLabels } from "./i18n-labels.js";
+import { addressQrButtonHtml as hodlAddressQrButton, initAddressQr as hodlInitAddressQr } from "./address-qr.js";
 import {
   METHOD_LABELS as hodlJournalMethodLabels,
   PASSWORD_MIN_LENGTH as hodlJournalPasswordMinLength,
@@ -1157,7 +1158,7 @@ function hodlBindAddressMatch() {
 }
 var hodlAddressVirtualThreshold = 24, hodlAddressVirtualRowHeight = 34, hodlAddressVirtualOverscan = 6;
 function hodlAddressTableRows(rows, includeWif = false, rowOffset = 0) {
-  return rows.map((row, offset) => `<tr aria-rowindex="${rowOffset + offset + 2}"><th scope="row">${row.index}</th><td>${hodlEscapeHtml(hodlDisplayDerivationPath(row.path))}</td><td>${hodlEscapeHtml(row.address)}</td>${includeWif ? `<td>${hodlPrivateValue(row.wif, "mono table-private-field-value")}</td>` : ""}</tr>`).join("");
+  return rows.map((row, offset) => `<tr aria-rowindex="${rowOffset + offset + 2}"><th scope="row">${row.index}</th><td>${hodlEscapeHtml(hodlDisplayDerivationPath(row.path))}</td><td><span class="addr-text">${hodlEscapeHtml(row.address)}</span>${hodlAddressQrButton(row.address, hodlT("Address #{n}", { n: row.index }))}</td>${includeWif ? `<td>${hodlPrivateValue(row.wif, "mono table-private-field-value")}</td>` : ""}</tr>`).join("");
 }
 function hodlAddressVirtualSpacer(height, columns) {
   return height > 0 ? `<tr class="address-virtual-spacer" aria-hidden="true"><td colspan="${columns}" style="height:${height}px"></td></tr>` : "";
@@ -13786,6 +13787,7 @@ function hodlApplyLocale() {
 }
 function hodlBoot() {
   hodlInitWorkspace();
+  hodlInitAddressQr(hodlQrSvg);
   hodlInitDefaultTabStates();
   hodlInitKeyManager();
   hodlInitMsigManager();

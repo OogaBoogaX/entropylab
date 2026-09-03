@@ -1566,6 +1566,29 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .qr-ref-url { margin: 16px 0 0; font-size: 12px; overflow-wrap: anywhere; word-break: break-all; }
 .qr-ref-hint { margin: 12px 0 0; }
 .qr-ref-actions { margin-top: var(--space-component); justify-content: center; }
+/* Per-address QR: compact button in each address-table row, one shared overlay. */
+.addr-text { overflow-wrap: anywhere; }
+.addr-qr {
+  margin-left: 6px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 6px;
+  background: transparent; color: var(--muted); font: inherit; font-size: 10px;
+  letter-spacing: 0.05em; cursor: pointer; vertical-align: middle;
+}
+.addr-qr:hover { color: var(--fg); }
+.addr-qr:focus-visible { outline: 2px solid var(--selection-accent); outline-offset: 1px; }
+.addr-qr-overlay {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center;
+  padding: 24px; box-sizing: border-box; background: rgb(0 0 0 / 55%);
+}
+.addr-qr-overlay[hidden] { display: none; }
+.addr-qr-card {
+  width: min(340px, 100%); padding: 20px; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--surface); text-align: center;
+  box-shadow: 0 16px 36px rgb(0 0 0 / 55%);
+}
+.addr-qr-title { margin: 0 0 var(--space-control); font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+.addr-qr-image svg { width: 220px; height: 220px; }
+.addr-qr-address { margin: var(--space-control) 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.addr-qr-actions { margin-top: var(--space-component); justify-content: center; }
 .sp-result, .sp-output { margin-top: var(--space-component); }
 .sp-qr { width: min(220px, 100%); margin: var(--space-control) 0; }
 .sp-qr svg { width: 100%; height: auto; display: block; background: #fff; border-radius: 8px; }
