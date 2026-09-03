@@ -20,21 +20,29 @@ export const hodlLocaleMeta = Object.freeze({
 // output context or re-sanitize after placeholder substitution.
 const hodlLocaleHtmlCatalogs = { en: hodlSanitizeCatalog(en), es: hodlSanitizeCatalog(es), pt: hodlSanitizeCatalog(pt), fr: hodlSanitizeCatalog(fr), de: hodlSanitizeCatalog(de) };
 const hodlLocaleTextCatalogs = { en: hodlSanitizeTextCatalog(en), es: hodlSanitizeTextCatalog(es), pt: hodlSanitizeTextCatalog(pt), fr: hodlSanitizeTextCatalog(fr), de: hodlSanitizeTextCatalog(de) };
+const hodlStaleLocaleKeys = globalThis.__entropyLabStaleTranslations || {};
 let hodlLocale = "en";
 let hodlLocaleListener = null;
+
+function hodlTranslationIsStale(code, key) {
+  return Array.isArray(hodlStaleLocaleKeys[code]) && hodlStaleLocaleKeys[code].includes(key);
+}
 
 export function hodlNormalizeLocale(code) {
   return hodlLocaleCodes.includes(code) ? code : "en";
 }
 
 export function hodlLocaleIsComplete(code) {
+  code = hodlNormalizeLocale(code);
   let catalog = hodlLocaleTextCatalogs[hodlNormalizeLocale(code)];
   if (!catalog) return false;
-  return Object.keys(en).every((key) => typeof catalog[key] === "string" && catalog[key].length > 0);
+  return Object.keys(en).every((key) => typeof catalog[key] === "string" && catalog[key].length > 0 && !hodlTranslationIsStale(code, key));
 }
 
 export function hodlCompleteLocales() {
-  return hodlLocaleCodes.filter((code) => code === "en" || hodlLocaleIsComplete(code));
+  // Kept under its original name for callers from the first i18n release.
+  // A partial catalog remains selectable because t() falls back per key.
+  return hodlLocaleCodes;
 }
 
 export function hodlGetLocale() {
@@ -44,7 +52,7 @@ export function hodlGetLocale() {
 function hodlCatalogValue(catalogs, key) {
   let catalog = catalogs[hodlLocale] || catalogs.en;
   let text = catalog[key];
-  if (typeof text !== "string" || !text) text = catalogs.en[key];
+  if (typeof text !== "string" || !text || hodlTranslationIsStale(hodlLocale, key)) text = catalogs.en[key];
   return typeof text === "string" ? text : key;
 }
 
@@ -90,6 +98,12 @@ export function hodlApplyStaticI18n(root = document) {
   root.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
     el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder"), hodlI18nVars(el)));
   });
+  root.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    el.setAttribute("title", t(el.getAttribute("data-i18n-title"), hodlI18nVars(el)));
+  });
+  root.querySelectorAll("[data-i18n-alt]").forEach((el) => {
+    el.setAttribute("alt", t(el.getAttribute("data-i18n-alt"), hodlI18nVars(el)));
+  });
 }
 
 function hodlI18nVars(el) {
@@ -119,7 +133,6 @@ function hodlWriteStoredLocale(code) {
 
 export function hodlSetLocale(code, persist = true) {
   let next = hodlNormalizeLocale(code);
-  if (!hodlLocaleIsComplete(next)) next = "en";
   hodlLocale = next;
   if (typeof document !== "undefined") {
     document.documentElement.lang = hodlLocaleMeta[next].htmlLang;

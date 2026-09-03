@@ -19,6 +19,7 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
+import { i18nLocaleCodes, i18nLocaleStatus } from "./i18n-common.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const SRC = join(root, "src");
@@ -67,6 +68,15 @@ if (process.argv.includes("--clean")) {
 const template = read("index.html");
 const workerTemplate = read("service-worker.js");
 const css = read("css/styles.css");
+const englishCatalog = JSON.parse(read("locales/en.json"));
+const staleTranslations = {};
+for (const code of i18nLocaleCodes) {
+  const catalog = JSON.parse(read(`locales/${code}.json`));
+  const sidecar = JSON.parse(read(`locales/.sources/${code}.json`));
+  const status = i18nLocaleStatus(englishCatalog, catalog, sidecar);
+  if (status.problems.length) throw new Error(`Invalid ${code} translation source state:\n${status.problems.join("\n")}`);
+  staleTranslations[code] = status.stale;
+}
 // The header logo is inlined as SVG markup so the downloaded file shows it
 // without reaching for assets/ (which only exists on the hosted site). The
 // empty span is replaced in the template and in the runtime header template.
@@ -92,7 +102,12 @@ const jsMain = buildSync({
   target: "es2022",
   legalComments: "none",
   charset: "utf8",
-  define: { __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false" },
+  // Stale translations stay committed for review, but the shipped app treats
+  // them as missing and uses the current English value instead.
+  define: {
+    __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false",
+    "globalThis.__entropyLabStaleTranslations": JSON.stringify(staleTranslations),
+  },
 }).outputFiles[0].text.split(siteLogoSpan).join(siteLogo);
 const jsSqliteWriter = read("js/sqlite-writer.js");
 const jsWalletExport = read("js/wallet-export.js");

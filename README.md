@@ -488,6 +488,9 @@ npm run verify              # verify the site artifact (entropylab.html, assets)
 npm run ci                  # run the CI test subset, build, and verify in order
 ```
 
+Interface copy is English-first. See [Translations](docs/translations.md) for
+the catalog sync, partial-language fallback, source-hash, and review workflow.
+
 GitHub Actions builds the site first, then runs the same test steps for pull
 requests and pushes to `rock`, stages the verified site (`entropylab.html`,
 `assets/`) and deploys it to GitHub Pages. After a merge to

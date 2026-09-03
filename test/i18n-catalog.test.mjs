@@ -4,11 +4,12 @@
 // omit English keys — missing and stale keys fall back to English at runtime
 // and are reported here, not failed.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { hodlCatalogAllowedTags, hodlCatalogHasControlCharacters, hodlCatalogTagAllowed, hodlCatalogTokens } from "../src/js/i18n-sanitize.js";
+import { i18nLocaleStatus } from "../scripts/i18n-common.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const locales = ["es", "pt", "fr", "de"];
@@ -69,17 +70,13 @@ for (const code of locales) {
     assert.deepEqual(problems, []);
   });
 
-  test(`${code}: the source-hash sidecar, when present, matches the catalog`, () => {
+  test(`${code}: the source-hash sidecar covers exactly the translated keys`, () => {
     const path = join(root, "src/locales/.sources", `${code}.json`);
-    if (!existsSync(path)) return;
     const sidecar = readJson(path);
     const catalog = readJson(join(root, "src/locales", `${code}.json`));
-    const problems = [];
-    for (const [key, hash] of Object.entries(sidecar)) {
-      if (!(key in en)) problems.push(`${code} sidecar ${key}: not an English key`);
-      if (!/^[0-9a-f]{64}$/.test(String(hash))) problems.push(`${code} sidecar ${key}: malformed hash`);
-    }
-    for (const key of Object.keys(catalog)) if (!(key in sidecar)) problems.push(`${code} sidecar: no hash for translated key ${key}`);
-    assert.deepEqual(problems, []);
+    const status = i18nLocaleStatus(en, catalog, sidecar);
+    if (status.missing.length) console.warn(`i18n: ${code} is missing ${status.missing.length} key(s); they fall back to English`);
+    if (status.stale.length) console.warn(`i18n: ${code} has ${status.stale.length} stale key(s); they fall back to English`);
+    assert.deepEqual(status.problems, []);
   });
 }
