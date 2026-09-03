@@ -53,6 +53,8 @@
   "workspace.journalNotes": "Bloc-notes",
   "workspace.journalState": "État de session",
   "workspace.journalLog": "Journal de session",
+  "workspace.scriptpubkey": "ScriptPubKey",
+  "workspace.scriptpubkeyShort": "Script",
   "keys.heading": "Clés",
   "keys.tabsAria": "Clés",
   "keys.addAria": "Ajouter une clé",

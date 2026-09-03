@@ -11223,10 +11223,13 @@ function hodlShowWorkspace(id) {
   document.getElementById("msig-card").hidden = true;
   document.getElementById("bip85-card").hidden = id !== "bip85";
   document.getElementById("sp-card").hidden = id !== "sp";
+  const scriptpubkeyCard = document.getElementById("scriptpubkey-card");
+  if (scriptpubkeyCard) scriptpubkeyCard.hidden = id !== "scriptpubkey";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
-  ["bip85", "sp", "msig", "calc"].forEach((tool) => {
-    document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
+  ["bip85", "sp", "msig", "calc", "scriptpubkey"].forEach((tool) => {
+    const intro = document.getElementById(`${tool}-tool-intro`);
+    if (intro) intro.hidden = id !== tool;
   });
   hodlSyncPsbtTool();
   hodlSyncJournalTool();
@@ -11344,7 +11347,7 @@ function hodlInitDefaultTabStates() {
 }
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "workspace.key", "workspace.keyShort"], ["bip85", "workspace.bip85", "workspace.bip85Short"], ["msig", "workspace.msig", "workspace.msigShort"], ["sp", "workspace.sp", "workspace.spShort"], ["psbt", "workspace.psbt", "workspace.psbtShort"], ["journal", "workspace.journal", "workspace.journalShort"]];
+var hodlWorkspaceTabs = [["calc", "workspace.key", "workspace.keyShort"], ["bip85", "workspace.bip85", "workspace.bip85Short"], ["msig", "workspace.msig", "workspace.msigShort"], ["sp", "workspace.sp", "workspace.spShort"], ["psbt", "workspace.psbt", "workspace.psbtShort"], ["scriptpubkey", "workspace.scriptpubkey", "workspace.scriptpubkeyShort"], ["journal", "workspace.journal", "workspace.journalShort"]];
 var hodlPsbtTool = "nonce";
 function hodlSyncPsbtTool() {
   let visible = hodlWorkspace === "psbt",

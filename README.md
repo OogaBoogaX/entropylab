@@ -66,6 +66,12 @@ Official website: [entropylab.online](https://entropylab.online)
 - Accepts a fully signed raw Bitcoin transaction (hex or base64) in the same
   inspector: outputs, extracted ECDSA nonces, and inscription-envelope hints.
   Fee and RFC 6979 cannot be checked without previous outputs.
+- Provides a standalone offline **scriptPubKey inspector** for pasted output
+  script hex and ordinary Bitcoin addresses. It classifies supported output
+  templates, distinguishes valid non-addressable scripts from invalid input,
+  derives the corresponding scriptPubKey or address where supported, and can
+  compare both representations by their script bytes. It does not inspect
+  wallet ownership, spendability, or the blockchain.
 - With a session seed, root xprv, WIF, or hex key, labels each output as
   change, receive, or not in this wallet (accounts 0–2, 50 receive + 50
   change, all four script types). A two-or-more-output transaction with no
@@ -381,6 +387,7 @@ To remove generated files, run `npm run clean`.
 │       ├── addresses.js      Script/address/descriptor facade over the WASM module
 │       ├── bech32.js         bech32m facade over the WASM module (BIP352)
 │       ├── coders.js         hex/base64 byte coders (no cryptography)
+│       ├── scriptpubkey-inspector.js Standalone output-script inspection and address comparison
 │       ├── sqlite-writer.js Minimal SQLite database file writer
 │       ├── wallet-export.js Bitcoin Core wallet.dat descriptor export
 │       ├── online.js       Hosted-site online warning

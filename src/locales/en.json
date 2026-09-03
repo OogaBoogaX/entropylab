@@ -48,6 +48,8 @@
   "workspace.spShort": "SP",
   "workspace.psbtShort": "PSBT",
   "workspace.psbtedShort": "Editor",
+  "workspace.scriptpubkey": "ScriptPubKey",
+  "workspace.scriptpubkeyShort": "Script",
   "workspace.journal": "Journal",
   "workspace.journalShort": "Journal",
   "workspace.journalNotes": "Notepad",

@@ -69,8 +69,13 @@ const favicon = readFileSync(join(root, "assets/favicon.png")).toString("base64"
 const faviconSvg = read("assets/favicon.svg").trim()
   .replace(/\s+/g, " ")
   .replace(/[#<>"%]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+const jsMainSource = `import "./scriptpubkey-inspector.js";\n${read("js/app.js")}`;
 const jsMain = buildSync({
-  entryPoints: [join(SRC, "js/app.js")],
+  stdin: {
+    contents: jsMainSource,
+    resolveDir: join(SRC, "js"),
+    sourcefile: "app.js",
+  },
   bundle: true,
   minify: true,
   write: false,

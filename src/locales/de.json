@@ -53,6 +53,8 @@
   "workspace.journalNotes": "Notizblock",
   "workspace.journalState": "Sitzungsstatus",
   "workspace.journalLog": "Sitzungsprotokoll",
+  "workspace.scriptpubkey": "ScriptPubKey",
+  "workspace.scriptpubkeyShort": "Script",
   "keys.heading": "Schlüssel",
   "keys.tabsAria": "Schlüssel",
   "keys.addAria": "Schlüssel hinzufügen",
