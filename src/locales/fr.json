@@ -55,6 +55,8 @@
   "workspace.journalNotes": "Bloc-notes",
   "workspace.journalState": "État de session",
   "workspace.journalLog": "Journal de session",
+  "workspace.cardBackup": "Sauvegarde par cartes",
+  "workspace.cardBackupShort": "Cartes",
   "keys.heading": "Clés",
   "keys.tabsAria": "Clés",
   "keys.addAria": "Ajouter une clé",

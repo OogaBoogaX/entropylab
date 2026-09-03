@@ -27,6 +27,7 @@ import { addressFor, addressFromScript, descriptorDerive, p2shP2wpkhScript, p2sh
 import { base58checkDecode, base58checkEncode } from "./base58.js";
 import { HDKey as hodlHDKey } from "./hdkey.js";
 import { entropyToMnemonic as hodlEntropyToMnemonic, mnemonicToEntropy as hodlMnemonicToEntropy, mnemonicToSeedSync as hodlMnemonicToSeed, validateMnemonic as hodlIsValidMnemonic } from "./bip39.js";
+import { encodeMnemonicToDeck as hodlEncodeMnemonicToDeck, decodeDeckToMnemonic as hodlDecodeDeckToMnemonic } from "./card-backup.js";
 import { wordlist as bip39English } from "./bip39-english.js";
 // The PSBT editor (its own workspace tab) drives the rust-bitcoin WASM
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
@@ -644,6 +645,37 @@ hodlRootEl.innerHTML = `
       </div>
       <div id="out"></div>
     </section>
+      <div class="tool-intro" id="card-backup-tool-intro" hidden>
+        <div class="kicker">A physical order. A reversible backup.</div>
+        <h2>Card Backup</h2>
+        <p class="muted tool-intro-note">Convert a BIP39 mnemonic into a deterministic order of ordinary playing cards, or recover it from that order. This is a reversible encoding, not the existing cards-to-SHA-256 entropy method.</p>
+      </div>
+      <section class="card no-print" id="card-backup-card" role="tabpanel" hidden>
+        <p class="muted">Use one standard 52-card deck for 12, 15, 18, or 21 words. A 24-word mnemonic needs the complete first deck plus the first 6 cards of a second shuffled deck; the remaining second-deck cards are fixed by the published method.</p>
+        <div class="choice-grid">
+          <label class="choice"><input type="radio" name="card-backup-direction" value="encode" checked><span><strong>Mnemonic to cards</strong><span class="desc">Create the physical backup order.</span></span></label>
+          <label class="choice"><input type="radio" name="card-backup-direction" value="decode"><span><strong>Cards to mnemonic</strong><span class="desc">Recover and verify the mnemonic.</span></span></label>
+        </div>
+        <label class="field">Mnemonic length
+          <select id="card-backup-words"><option value="12">12 words</option><option value="15">15 words</option><option value="18">18 words</option><option value="21">21 words</option><option value="24">24 words</option></select>
+        </label>
+        <label class="field" id="card-backup-mnemonic-label">BIP39 mnemonic
+          <textarea id="card-backup-mnemonic" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Enter a valid BIP39 mnemonic"></textarea>
+        </label>
+        <label class="field" id="card-backup-deck-label" hidden>First deck, in order
+          <textarea id="card-backup-deck" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AS 2H ..."></textarea>
+        </label>
+        <label class="field" id="card-backup-second-label" hidden>Second deck, in order (required for 24 words)
+          <textarea id="card-backup-second" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AS 2H ..."></textarea>
+        </label>
+        <label class="field">Optional BIP39 passphrase (never stored in the cards)
+          <input id="card-backup-passphrase" type="password" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="field-note">The passphrase is not recoverable from a finite deck. Keep it separately. The result shows a short verification marker.</p>
+        <div class="row bip85-actions"><button class="btn primary" id="card-backup-run" type="button">Encode</button><button class="btn clear-current-action" id="card-backup-clear" type="button">Clear</button></div>
+        <p class="err" id="card-backup-error" role="alert"></p>
+        <pre class="journal-log" id="card-backup-output" aria-live="polite"></pre>
+      </section>
       <div class="tool-intro" id="vanity-tool-intro" hidden>
         <div class="kicker">Same key, same counter, same address</div>
         <h2>Grind a vanity address</h2>
@@ -11374,9 +11406,10 @@ function hodlShowWorkspace(id) {
   document.getElementById("bip85-card").hidden = id !== "bip85";
   document.getElementById("sp-card").hidden = id !== "sp";
   document.getElementById("vanity-card").hidden = id !== "vanity";
+  document.getElementById("card-backup-card").hidden = id !== "card-backup";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
-  ["bip85", "sp", "msig", "calc", "vanity"].forEach((tool) => {
+  ["bip85", "sp", "msig", "calc", "vanity", "card-backup"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
   hodlSyncPsbtTool();
@@ -11408,6 +11441,40 @@ function hodlShowWorkspace(id) {
     hodlQueueSegmentedControlSync();
     hodlWorkspaceScrollFrame = 0;
   });
+}
+function hodlInitCardBackup() {
+  const run = document.getElementById("card-backup-run");
+  if (!run) return;
+  const direction = () => document.querySelector('input[name="card-backup-direction"]:checked')?.value || "encode";
+  const sync = () => {
+    const encode = direction() === "encode";
+    document.getElementById("card-backup-mnemonic-label").hidden = !encode;
+    document.getElementById("card-backup-deck-label").hidden = encode;
+    document.getElementById("card-backup-second-label").hidden = encode;
+    run.textContent = encode ? "Encode" : "Recover";
+  };
+  document.querySelectorAll('input[name="card-backup-direction"]').forEach((input) => input.onchange = sync);
+  run.onclick = () => {
+    const output = document.getElementById("card-backup-output"), error = document.getElementById("card-backup-error");
+    error.textContent = "";
+    try {
+      if (direction() === "encode") {
+        const result = hodlEncodeMnemonicToDeck(document.getElementById("card-backup-mnemonic").value, document.getElementById("card-backup-passphrase").value);
+        output.textContent = `Words: ${result.words}\nPassphrase marker: ${result.passphraseMarker}\n\nFirst deck:\n${result.deck}${result.secondDeck ? `\n\nSecond deck:\n${result.secondDeck}` : ""}`;
+      } else {
+        const result = hodlDecodeDeckToMnemonic(document.getElementById("card-backup-deck").value, document.getElementById("card-backup-second").value, document.getElementById("card-backup-passphrase").value, Number(document.getElementById("card-backup-words").value));
+        output.textContent = `Words: ${result.words}\nPassphrase marker: ${result.passphraseMarker}\n\nMnemonic:\n${result.mnemonic}`;
+      }
+    } catch (exception) {
+      output.textContent = "";
+      error.textContent = exception.message || String(exception);
+    }
+  };
+  document.getElementById("card-backup-clear").onclick = () => {
+    ["card-backup-mnemonic", "card-backup-deck", "card-backup-second", "card-backup-passphrase", "card-backup-output", "card-backup-error"].forEach((id) => document.getElementById(id).value = "");
+    document.getElementById("card-backup-output").textContent = "";
+  };
+  sync();
 }
 function hodlInitTabDrag(box) {
   let pointerId = null, startX = 0, startScroll = 0, moved = false, suppressClick = false;
@@ -11500,7 +11567,7 @@ function hodlInitDefaultTabStates() {
 }
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "workspace.key", "workspace.keyShort"], ["vanity", "workspace.vanity", "workspace.vanityShort"], ["bip85", "workspace.bip85", "workspace.bip85Short"], ["msig", "workspace.msig", "workspace.msigShort"], ["sp", "workspace.sp", "workspace.spShort"], ["psbt", "workspace.psbt", "workspace.psbtShort"], ["journal", "workspace.journal", "workspace.journalShort"]];
+var hodlWorkspaceTabs = [["calc", "workspace.key", "workspace.keyShort"], ["vanity", "workspace.vanity", "workspace.vanityShort"], ["bip85", "workspace.bip85", "workspace.bip85Short"], ["msig", "workspace.msig", "workspace.msigShort"], ["sp", "workspace.sp", "workspace.spShort"], ["card-backup", "workspace.cardBackup", "workspace.cardBackupShort"], ["psbt", "workspace.psbt", "workspace.psbtShort"], ["journal", "workspace.journal", "workspace.journalShort"]];
 var hodlPsbtTool = "nonce";
 function hodlSyncPsbtTool() {
   let visible = hodlWorkspace === "psbt",
@@ -13597,6 +13664,7 @@ function hodlInitWorkspace() {
   hodlInitPsbt();
   initPsbtEditor();
   hodlInitBip85();
+  hodlInitCardBackup();
   hodlInitVanity();
   hodlInitSp();
 }

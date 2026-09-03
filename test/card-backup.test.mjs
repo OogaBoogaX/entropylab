@@ -1,0 +1,39 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { encodeMnemonicToDeck, decodeDeckToMnemonic, DECK, PREFIX_SIZE } from "../src/js/card-backup.js";
+import { entropyToMnemonic, bip39English } from "../src/js/bip39.js";
+
+const MNEMONICS = Object.fromEntries([[12, 16], [15, 20], [18, 24], [21, 28], [24, 32]].map(([words, bytes]) => [words, entropyToMnemonic(Uint8Array.from({ length: bytes }, (_, index) => (index * 37 + 11) & 255), bip39English)]));
+
+for (const [words, mnemonic] of Object.entries(MNEMONICS)) {
+  test(`card backup round-trips ${words} words`, () => {
+    const encoded = encodeMnemonicToDeck(mnemonic, "correct horse battery staple");
+    assert.equal(encoded.words, Number(words));
+    assert.equal(encoded.deck.split(" ").length, 52);
+    assert.equal(new Set(encoded.deck.split(" ")).size, 52);
+    if (Number(words) === 24) {
+      assert.equal(encoded.secondDeck.split(" ").length, 52);
+      assert.equal(encoded.secondDeck.split(" ").slice(0, PREFIX_SIZE).length, PREFIX_SIZE);
+    } else assert.equal(encoded.secondDeck, "");
+    const decoded = decodeDeckToMnemonic(encoded.deck, encoded.secondDeck, "correct horse battery staple", Number(words));
+    assert.equal(decoded.mnemonic, mnemonic);
+    assert.equal(decoded.passphraseMarker, encoded.passphraseMarker);
+  });
+}
+
+test("the zero 24-word vector is two canonical decks", () => {
+  const encoded = encodeMnemonicToDeck(entropyToMnemonic(new Uint8Array(32), bip39English));
+  assert.equal(encoded.deck, DECK.join(" "));
+  assert.equal(encoded.secondDeck, DECK.join(" "));
+});
+
+test("one deck cannot be mistaken for a 24-word backup", () => {
+  assert.throws(() => decodeDeckToMnemonic(DECK.join(" "), "", "", 24), /24 words requires/);
+});
+
+test("passphrase marker changes without exposing the passphrase", () => {
+  const encoded = encodeMnemonicToDeck(MNEMONICS[12], "one");
+  const other = encodeMnemonicToDeck(MNEMONICS[12], "two");
+  assert.notEqual(encoded.passphraseMarker, other.passphraseMarker);
+  assert.doesNotMatch(encoded.deck, /one/);
+});

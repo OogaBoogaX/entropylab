@@ -1567,7 +1567,7 @@ test("virtual keypads never focus the field on touch so the mobile keyboard stay
 });
 
 test("workspace tabs place Vanity between Keys and BIP-85", () => {
-  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
+  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["card-backup", "workspace\.cardBackup", "workspace\.cardBackupShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="bip85-card"/);
     assert.match(markup, /id="bip85-go"/);
@@ -1814,7 +1814,7 @@ test("BIP-85 stays available as a workspace without a duplicate Key Station acti
 test("Silent Payments sits between Multi Signature and PSBT / Nonce", () => {
   const order = /Keys[\s\S]*Multi Signature[\s\S]*Silent Payments[\s\S]*aria-label="PSBT"/;
   assert.match(template, order);
-  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
+  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["card-backup", "workspace\.cardBackup", "workspace\.cardBackupShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="sp-card"/);
     assert.match(markup, /id="sp-key"/);
@@ -2165,7 +2165,7 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
   // The tab rides the same show/hide plumbing as every other tool, and
   // leaving the tab stops the grind instead of grinding unseen.
   assert.match(appSource, /getElementById\("vanity-card"\)\.hidden = id !== "vanity"/);
-  assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity"\]\.forEach/);
+  assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity", "card-backup"\]\.forEach/);
   assert.match(appSource, /else if \(hodlWorkspace === "vanity"\) hodlVanityCancel\(\);/);
   assert.match(appSource, /function hodlInitWorkspace\(\) \{[\s\S]*?hodlInitVanity\(\);/);
   // The workers spawn only from the button handler; nothing starts on boot,

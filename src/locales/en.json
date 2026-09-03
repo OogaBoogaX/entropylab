@@ -55,6 +55,8 @@
   "workspace.journalNotes": "Notepad",
   "workspace.journalState": "Session state",
   "workspace.journalLog": "Session log",
+  "workspace.cardBackup": "Card Backup",
+  "workspace.cardBackupShort": "Cards",
   "keys.heading": "Keys",
   "keys.tabsAria": "Keys",
   "keys.addAria": "Add key",

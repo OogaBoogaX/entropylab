@@ -21,6 +21,13 @@ Official website: [entropylab.online](https://entropylab.online)
   the same hash as a secp256k1 scalar). Strength is the entropy of the text, not
   the word count. Derive Wallet is required; the lab does not preview the
   mnemonic while typing.
+ - The **Card Backup** workspace reversibly encodes a valid English BIP39
+   mnemonic as a deterministic order of playing cards and decodes it again.
+   One deck supports 12, 15, 18, and 21 words; 24 words require the complete
+   first deck plus six cards from a second deck. The word count must be recorded
+   with one-deck backups. An arbitrary BIP39 passphrase is never encoded in the
+   cards and must be preserved separately; the workspace provides only a short
+   verification marker.
 - Derives BIP39 seeds, BIP32 extended keys, wallet fingerprints, addresses,
   and Bitcoin Core-compatible descriptors. Each master fingerprint is shown
   next to its deterministic [LifeHash](https://lifehash.info) icon so two
