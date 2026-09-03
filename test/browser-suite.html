@@ -3367,6 +3367,30 @@
     assert(imageRequests.length === 0, "Hosted mode fetched an inlined image: " + imageRequests.join(", "));
   });
 
+  await test("catalog markup is rebuilt from the allowlist before it can reach innerHTML", () => {
+    // The catalogs are the one place translated text can carry markup into
+    // the page. Whatever a catalog says, only allowlisted elements may survive,
+    // and nothing in a catalog value may ever execute.
+    const sanitize = window.hodlSanitizeCatalogHtml;
+    assert(typeof sanitize === "function", "The catalog sanitizer is not exposed");
+    delete window.__entropyLabPwned;
+    const hostile = '<img src=x onerror="window.__entropyLabPwned = true">Hi <strong>there</strong>, <span class="mono">m/84\'</span> <span onclick="window.__entropyLabPwned = true">x</span><a href="javascript:window.__entropyLabPwned = true">go</a>';
+    const host = document.createElement("div");
+    host.innerHTML = sanitize(hostile);
+    assert(!host.querySelector("img"), "An img element survived the sanitizer");
+    assert(!host.querySelector("[onclick], [onerror]"), "An event handler attribute survived the sanitizer");
+    assert(!host.querySelector("a"), "A link with a javascript: href survived the sanitizer");
+    equal(host.querySelector("strong")?.textContent, "there");
+    equal(host.querySelector("span.mono")?.textContent, "m/84'");
+    assert(host.textContent.includes('<img src=x onerror="window.__entropyLabPwned = true">'), "The rejected tag was not kept as visible text");
+    assert(window.__entropyLabPwned !== true, "A catalog value executed script");
+    // Legitimate catalog markup still renders as markup after sanitizing.
+    const intro = window.hodlT("msig.intro");
+    assert(/<span class="mono">/.test(intro), "Allowlisted catalog markup was stripped");
+    host.innerHTML = intro;
+    assert(host.querySelector("span.mono"), "Allowlisted catalog markup did not render");
+  });
+
   report("online-results.txt");
 })();
 </script>

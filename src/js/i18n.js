@@ -3,6 +3,7 @@ import es from "../locales/es.json" with { type: "json" };
 import pt from "../locales/pt.json" with { type: "json" };
 import fr from "../locales/fr.json" with { type: "json" };
 import de from "../locales/de.json" with { type: "json" };
+import { hodlSanitizeCatalog, hodlSanitizeCatalogHtml } from "./i18n-sanitize.js";
 
 export const hodlLocaleCodes = Object.freeze(["en", "es", "pt", "fr", "de"]);
 export const hodlLocaleStorageKey = "entropylab-locale";
@@ -14,7 +15,10 @@ export const hodlLocaleMeta = Object.freeze({
   de: { htmlLang: "de", label: "Deutsch", short: "DE" },
 });
 
-const hodlLocaleCatalogs = { en, es, pt, fr, de };
+// Every catalog is rebuilt from the markup allowlist once, here, so nothing
+// downstream — t(), the data-i18n-html branch, or a template that interpolates
+// hodlT() into innerHTML — can ever see a raw catalog value.
+const hodlLocaleCatalogs = { en: hodlSanitizeCatalog(en), es: hodlSanitizeCatalog(es), pt: hodlSanitizeCatalog(pt), fr: hodlSanitizeCatalog(fr), de: hodlSanitizeCatalog(de) };
 let hodlLocale = "en";
 let hodlLocaleListener = null;
 
@@ -37,14 +41,17 @@ export function hodlGetLocale() {
 }
 
 export function t(key, vars) {
-  let catalog = hodlLocaleCatalogs[hodlLocale] || en;
+  let catalog = hodlLocaleCatalogs[hodlLocale] || hodlLocaleCatalogs.en;
   let text = catalog[key];
-  if (typeof text !== "string" || !text) text = en[key];
+  if (typeof text !== "string" || !text) text = hodlLocaleCatalogs.en[key];
   if (typeof text !== "string") return key;
   if (!vars) return text;
   return text.replace(/\{(\w+)\}/g, (_, name) => (vars[name] == null ? `{${name}}` : String(vars[name])));
 }
-if (typeof globalThis !== "undefined") globalThis.hodlT = t;
+if (typeof globalThis !== "undefined") {
+  globalThis.hodlT = t;
+  globalThis.hodlSanitizeCatalogHtml = hodlSanitizeCatalogHtml;
+}
 
 export function hodlApplyStaticI18n(root = document) {
   root.querySelectorAll("[data-i18n]").forEach((el) => {
