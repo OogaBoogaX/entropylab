@@ -2243,7 +2243,7 @@ test("Card Backup asks only for the inputs its direction needs", () => {
   assert.doesNotMatch(card, /card-backup-words|Mnemonic length/);
   assert.match(card, /id="card-backup-mnemonic-label">BIP39 mnemonic/);
   assert.match(card, /id="card-backup-deck-label" hidden/);
-  assert.match(card, /id="card-backup-second-label" hidden[^>]*>\s*Second deck[^<]*only for a 24-word backup/);
+  assert.match(card, /id="card-backup-second-label" hidden[^>]*>\s*Second deck, first 6 cards/);
   // The direction radios swap exactly the three field groups.
   assert.match(appSource, /getElementById\("card-backup-card"\)\.hidden = id !== "card-backup"/);
   assert.match(appSource, /document\.getElementById\("card-backup-mnemonic-label"\)\.hidden = !encode/);
@@ -2253,9 +2253,25 @@ test("Card Backup asks only for the inputs its direction needs", () => {
   // Result and error boxes start hidden and reveal only with content;
   // switching direction or clearing wipes them back out of sight.
   assert.match(card, /<p class="err" id="card-backup-error" role="alert" hidden>/);
-  assert.match(card, /<pre class="journal-log" id="card-backup-output" aria-live="polite" hidden>/);
-  assert.match(appSource, /const wipeResults = \(\) => \{[\s\S]*?output\.hidden = true;[\s\S]*?error\.hidden = true;[\s\S]*?\};/);
+  assert.match(card, /<div id="card-backup-output" aria-live="polite" hidden>/);
+  assert.match(appSource, /const wipeResults = \(\) => \{[\s\S]*?output\.innerHTML = "";[\s\S]*?output\.hidden = true;[\s\S]*?error\.hidden = true;[\s\S]*?\};/);
   assert.match(appSource, /run\.textContent = encode \? "Encode" : "Recover";\s*wipeResults\(\);/);
+  // Encode output separates the visual card grid from the plain text codes:
+  // the tiles sit in their own bordered box, and the deck-as-text is a
+  // visually distinct block below it with a copy button; decode just shows
+  // the mnemonic as text.
+  assert.match(appSource, /const renderDeck = \(deckStr\) =>/);
+  assert.match(appSource, /hodlDealtCardMarkup\(card\)/);
+  assert.match(appSource, /class="cb-codes"/);
+  assert.match(appSource, /class="btn secondary cb-copy" data-copy=/);
+  assert.match(appSource, /const copyDeck = \(button\) =>/);
+  assert.match(appSource, /output\.addEventListener\("click", \(event\) => \{[\s\S]*?\.closest\("\.cb-copy"\)/);
+  assert.match(appSource, /output\.innerHTML = html/);
+  assert.match(appSource, /output\.innerHTML = `<p>Words: \$\{result\.words\}/);
+  assert.match(css, /#card-backup-card #card-backup-output \{ margin-top: var\(--space-control\); display: flex; flex-direction: column; gap: 18px; \}/);
+  assert.match(css, /\.cb-deck \{ display: flex; flex-wrap: wrap; gap: 6px; padding: 12px; border: 1px solid var\(--border\); border-radius: 12px/);
+  assert.match(css, /\.cb-text \{ display: flex; align-items: stretch; gap: 8px; margin-top: 20px; \}/);
+  assert.match(css, /\.cb-copy\.is-copied/);
 });
 
 test("the private recovery section lists the BIP39 passphrase beside the seed phrase", () => {

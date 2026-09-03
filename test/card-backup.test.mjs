@@ -24,6 +24,27 @@ for (const [words, mnemonic] of Object.entries(MNEMONICS)) {
   });
 }
 
+test("24-word backup round-trips with just the 6-card prefix", () => {
+  const encoded = encodeMnemonicToDeck(MNEMONICS[24], "passphrase");
+  const prefix = encoded.secondDeck.split(" ").slice(0, PREFIX_SIZE).join(" ");
+  const decoded = decodeDeckToMnemonic(encoded.deck, prefix, "passphrase");
+  assert.equal(decoded.words, 24);
+  assert.equal(decoded.mnemonic, MNEMONICS[24]);
+});
+
+test("second deck rejects fewer than 6 cards", () => {
+  const encoded = encodeMnemonicToDeck(MNEMONICS[24]);
+  const short = encoded.secondDeck.split(" ").slice(0, 5).join(" ");
+  assert.throws(() => decodeDeckToMnemonic(encoded.deck, short), /6 cards|52/);
+});
+
+test("full second deck with a wrong tail is rejected", () => {
+  const encoded = encodeMnemonicToDeck(MNEMONICS[24]);
+  const cards = encoded.secondDeck.split(" ");
+  const tampered = [...cards.slice(0, PREFIX_SIZE), ...cards.slice(PREFIX_SIZE).reverse()].join(" ");
+  assert.throws(() => decodeDeckToMnemonic(encoded.deck, tampered), /canonical tail/);
+});
+
 test("recovery needs no length choice: sizes stay disjoint", () => {
   const decks = Object.entries(MNEMONICS)
     .filter(([words]) => Number(words) !== 24)

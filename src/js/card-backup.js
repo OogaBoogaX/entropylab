@@ -116,12 +116,19 @@ export function decodeDeckToMnemonic(deck, secondDeck = "", passphrase = "", wor
   let number, detected;
   if (secondDeck) {
     const second = normalizeDeck(secondDeck);
-    if (second.length !== 52 || new Set(second).size !== 52) throw new Error("The second deck must contain all 52 distinct cards.");
-    const prefix = second.slice(0, PREFIX_SIZE);
+    let prefix;
+    if (second.length === PREFIX_SIZE) {
+      prefix = second;
+    } else if (second.length === 52) {
+      if (new Set(second).size !== 52) throw new Error("The second deck must contain all 52 distinct cards.");
+      prefix = second.slice(0, PREFIX_SIZE);
+      const canonicalTail = DECK.filter((card) => !prefix.includes(card));
+      if (second.slice(PREFIX_SIZE).some((card, index) => card !== canonicalTail[index])) throw new Error("The second deck tail is not the canonical tail for this backup.");
+    } else {
+      throw new Error("The second deck must be 6 cards (prefix) or all 52.");
+    }
     number = rankPermutation(first) * PREFIX_SPACE + rankPermutation(prefix);
     if (number >= (1n << 256n)) throw new Error("This card backup is outside the BIP39 24-word range.");
-    const canonicalTail = DECK.filter((card) => !prefix.includes(card));
-    if (second.slice(PREFIX_SIZE).some((card, index) => card !== canonicalTail[index])) throw new Error("The second deck tail is not the canonical tail for this backup.");
     detected = 24;
   } else {
     const fit = rankToWords(rankPermutation(first));

@@ -662,8 +662,8 @@ hodlRootEl.innerHTML = `
         <label class="field" id="card-backup-deck-label" hidden>First deck, in order
           <textarea id="card-backup-deck" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AS 2H ..."></textarea>
         </label>
-        <label class="field" id="card-backup-second-label" hidden>Second deck, in order (only for a 24-word backup; leave empty otherwise)
-          <textarea id="card-backup-second" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AS 2H ..."></textarea>
+        <label class="field" id="card-backup-second-label" hidden>Second deck, first 6 cards (24 words only; leave empty otherwise)
+          <textarea id="card-backup-second" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AS 2H 3C ..."></textarea>
         </label>
         <label class="field">Optional BIP39 passphrase (never stored in the cards)
           <input id="card-backup-passphrase" type="password" autocomplete="off" spellcheck="false">
@@ -671,7 +671,7 @@ hodlRootEl.innerHTML = `
         <p class="field-note">The passphrase is not recoverable from a finite deck. Keep it separately. The result shows a short verification marker.</p>
         <div class="row bip85-actions"><button class="btn primary" id="card-backup-run" type="button">Encode</button><button class="btn clear-current-action" id="card-backup-clear" type="button">Clear</button></div>
         <p class="err" id="card-backup-error" role="alert" hidden></p>
-        <pre class="journal-log" id="card-backup-output" aria-live="polite" hidden></pre>
+        <div id="card-backup-output" aria-live="polite" hidden></div>
       </section>
       <div class="tool-intro" id="vanity-tool-intro" hidden>
         <div class="kicker">Same key, same counter, same address</div>
@@ -11445,7 +11445,7 @@ function hodlInitCardBackup() {
   const direction = () => document.querySelector('input[name="card-backup-direction"]:checked')?.value || "encode";
   const wipeResults = () => {
     const output = document.getElementById("card-backup-output"), error = document.getElementById("card-backup-error");
-    output.textContent = ""; output.hidden = true;
+    output.innerHTML = ""; output.hidden = true;
     error.textContent = ""; error.hidden = true;
   };
   const sync = () => {
@@ -11456,6 +11456,46 @@ function hodlInitCardBackup() {
     run.textContent = encode ? "Encode" : "Recover";
     wipeResults();
   };
+  const renderDeck = (deckStr) => {
+    const cards = deckStr.split(" ");
+    const tiles = cards.map((card, i) => `<span class="cb-tile"><span class="cb-pos">${i + 1}</span>${hodlDealtCardMarkup(card)}</span>`).join("");
+    return `<div class="cb-deck">${tiles}</div><div class="cb-text"><div class="cb-codes" aria-label="Deck as text">${hodlEscapeHtml(deckStr)}</div><button type="button" class="btn secondary cb-copy" data-copy="${hodlEscapeHtml(deckStr)}">Copy</button></div>`;
+  };
+  const copyDeck = (button) => {
+    const value = button.dataset.copy;
+    if (!value) return;
+    const done = () => {
+      button.classList.add("is-copied");
+      button.textContent = "Copied";
+      clearTimeout(button.hodlCopyTimer);
+      button.hodlCopyTimer = setTimeout(() => {
+        button.classList.remove("is-copied");
+        button.textContent = "Copy";
+      }, 1400);
+    };
+    const fallback = () => {
+      const field = document.createElement("textarea");
+      field.value = value;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.left = "-9999px";
+      document.body.appendChild(field);
+      field.select();
+      try {
+        document.execCommand("copy");
+        done();
+      } finally {
+        field.remove();
+      }
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") navigator.clipboard.writeText(value).then(done).catch(fallback);
+    else fallback();
+  };
+  const output = document.getElementById("card-backup-output");
+  output.addEventListener("click", (event) => {
+    const button = event.target.closest(".cb-copy");
+    if (button) copyDeck(button);
+  });
   document.querySelectorAll('input[name="card-backup-direction"]').forEach((input) => input.onchange = sync);
   run.onclick = () => {
     const output = document.getElementById("card-backup-output"), error = document.getElementById("card-backup-error");
@@ -11463,10 +11503,17 @@ function hodlInitCardBackup() {
     try {
       if (direction() === "encode") {
         const result = hodlEncodeMnemonicToDeck(document.getElementById("card-backup-mnemonic").value, document.getElementById("card-backup-passphrase").value);
-        output.textContent = `Words: ${result.words}\nPassphrase marker: ${result.passphraseMarker}\n\nFirst deck:\n${result.deck}${result.secondDeck ? `\n\nSecond deck:\n${result.secondDeck}` : ""}`;
+        let html = `<p>Words: ${result.words} · Passphrase marker: ${result.passphraseMarker}</p>`;
+        html += `<p><strong>First deck</strong></p>${renderDeck(result.deck)}`;
+        if (result.secondDeck) {
+          const prefix = result.secondDeck.split(" ").slice(0, 6).join(" ");
+          html += `<p><strong>Second deck</strong> — first 6 cards carry the backup.</p>${renderDeck(prefix)}`;
+          html += `<p class="muted">The remaining 46 cards follow the fixed canonical order of a standard deck minus these 6.</p>`;
+        }
+        output.innerHTML = html;
       } else {
         const result = hodlDecodeDeckToMnemonic(document.getElementById("card-backup-deck").value, document.getElementById("card-backup-second").value, document.getElementById("card-backup-passphrase").value);
-        output.textContent = `Words: ${result.words}\nPassphrase marker: ${result.passphraseMarker}\n\nMnemonic:\n${result.mnemonic}`;
+        output.innerHTML = `<p>Words: ${result.words} · Passphrase marker: ${result.passphraseMarker}</p><p><strong>Mnemonic</strong></p><pre style="margin:0;white-space:pre-wrap">${hodlEscapeHtml(result.mnemonic)}</pre>`;
       }
       output.hidden = false;
     } catch (exception) {
