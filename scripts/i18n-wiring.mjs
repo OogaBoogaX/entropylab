@@ -1,10 +1,9 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { i18nMarkupTokens } from "./i18n-sync.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const baselinePath = join(root, "scripts/i18n-unwired.json");
 export const i18nRuntimeOwnedIds = Object.freeze([
   "bip85-path",
   "bip85-session",
@@ -133,27 +132,14 @@ export function collectRepositoryUnwired() {
   ].sort();
 }
 
-export function runI18nWiring(argv = process.argv.slice(2)) {
+export function runI18nWiring() {
   const current = collectRepositoryUnwired();
-  if (argv.includes("--write-baseline")) {
-    writeFileSync(baselinePath, `${JSON.stringify(current, null, 2)}\n`);
-    console.log(current.length
-      ? `Recorded ${current.length} legacy unwired strings.`
-      : "All static-shell UI text is wired.");
+  if (!current.length) {
+    console.log("All static-shell UI text is wired.");
     return;
   }
-  const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
-  if (JSON.stringify(current) === JSON.stringify(baseline)) {
-    console.log(current.length
-      ? `No new hardcoded UI text (${current.length} legacy entries remain).`
-      : "All static-shell UI text is wired.");
-    return;
-  }
-  const expected = new Set(baseline);
-  const actual = new Set(current);
-  for (const entry of current) if (!expected.has(entry)) console.error(`New unwired text: ${entry}`);
-  for (const entry of baseline) if (!actual.has(entry)) console.error(`Baseline entry changed or was wired: ${entry}`);
-  console.error("Wire new English through en.json; the committed unwired inventory must remain empty.");
+  for (const entry of current) console.error(`Unwired text: ${entry}`);
+  console.error("Wire every current English string through en.json; no hardcoded static-shell text is allowed.");
   process.exitCode = 1;
 }
 

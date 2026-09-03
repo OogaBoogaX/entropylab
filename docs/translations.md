@@ -17,9 +17,11 @@ Variable-only calls are reported as requiring behavioral coverage and warn at
 runtime if they resolve to a missing English key. CI runs the read-only check,
 so the catalog and fallback markup cannot drift.
 
-The wiring check rejects hardcoded interface text, including translated
-attributes. `scripts/i18n-unwired.json` is intentionally empty and must stay
-empty. New copy must be added to `en.json` and wired at the same time.
+The wiring check re-parses the current interface source on every CI run and
+rejects hardcoded interface text, including translated attributes. It does not
+keep an approved list or a fixed element count: wired elements can be added or
+removed normally. New copy must be added to `en.json` and wired at the same
+time.
 Elements whose text is owned and repeatedly replaced by runtime state are
 explicitly excluded from the static wiring pass so a locale change cannot
 replace a live result with its startup fallback.

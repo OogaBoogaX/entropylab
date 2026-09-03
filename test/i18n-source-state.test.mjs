@@ -169,16 +169,26 @@ test("computed-key call sites enumerate every current English alternative", () =
   }
 });
 
-test("the wiring inventory notices new hardcoded text and attributes", () => {
+test("the wiring scan notices new hardcoded text and attributes", () => {
   assert.deepEqual(collectUnwiredMarkup(`<p>New words</p><input placeholder="Type here"><p data-i18n="known">Known</p>`, "fixture"), [
     "fixture:input:@placeholder:Type here",
     "fixture:p:text:New words",
   ]);
 });
 
+test("wired elements can be added and removed without updating an element inventory", () => {
+  const catalog = { existing: "Existing", added: "Added" };
+  for (const source of [
+    `<section><p data-i18n="existing">Existing</p></section>`,
+    `<section><p data-i18n="existing">Existing</p><button data-i18n="added">Added</button></section>`,
+    `<section></section>`,
+  ]) {
+    assert.deepEqual(collectUnwiredMarkup(source, "fixture"), []);
+    assert.deepEqual(syncI18nSource(source, catalog).problems, []);
+  }
+});
+
 test("the committed sources have no unwired static-shell text", () => {
-  const baseline = JSON.parse(readFileSync(join(root, "scripts/i18n-unwired.json"), "utf8"));
-  assert.deepEqual(baseline, []);
   assert.deepEqual(collectRepositoryUnwired(), []);
 });
 
