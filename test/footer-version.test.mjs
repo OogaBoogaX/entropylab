@@ -27,9 +27,12 @@ test("the build stamps the commit tokens from git, with a snapshot fallback", ()
 });
 
 test("both footers carry the build stamp and the LifeHash target", () => {
-  for (const markup of [read("src/index.html"), read("src/js/app.js")]) {
-    assert.match(markup, /<span class="page-footer-build">v\{\{VERSION\}\} · commit <code>\{\{COMMIT_SHORT\}\}<\/code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" alt="LifeHash of the build commit" hidden><\/span>/);
-  }
+  assert.match(read("src/index.html"), /<span class="page-footer-build">v\{\{VERSION\}\} · commit <code>\{\{COMMIT_SHORT\}\}<\/code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" alt="LifeHash of the build commit" hidden><\/span>/);
+
+  const app = read("src/js/app.js");
+  assert.match(app, /data-i18n="shell\.footerVersionCommit" data-i18n-vars='\{"version":"\{\{VERSION\}\}"\}'>v\{\{VERSION\}\} · commit/);
+  assert.match(app, /data-i18n="literal\.footerCommitShort" data-i18n-vars='\{"commit":"\{\{COMMIT_SHORT\}\}"\}'>\{\{COMMIT_SHORT\}\}/);
+  assert.match(app, /<img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" alt="LifeHash of the build commit" hidden data-i18n-alt="shell\.lifehashOfTheBuildCommit">/);
 });
 
 test("the app renders the commit LifeHash on page load, only for a real commit", () => {

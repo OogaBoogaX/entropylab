@@ -495,7 +495,7 @@ hodlRootEl.innerHTML = `
   <div class="site-header no-print">
     <div class="site-header-inner">
       <span class="site-logo" aria-hidden="true"></span>
-      <span class="site-title">EntropyLab</span>
+      <span class="site-title" data-i18n="literal.brandName">EntropyLab</span>
       <span class="network-status" id="network-status" data-state="online" role="status" aria-label="Network status: online" data-i18n="network.online" data-i18n-aria="network.onlineAria">Online</span>
       <div class="download-controls">
         <a class="btn secondary download-html header-button" href="entropylab.html" download="entropylab.html" aria-label="Download EntropyLab" data-i18n-aria="header.downloadAria"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label" data-i18n="header.download">Download</span></a>
@@ -510,7 +510,7 @@ hodlRootEl.innerHTML = `
             <p class="network-picker-note" data-i18n="networkPicker.note">This page never connects to any network — the choice sets the address formats, key versions, and checks the tools run with. A tool's own advanced fields can still override it.</p>
           </div>
         </div>
-        <label class="locale-control"><span class="sr-only" data-i18n="locale.label">Language</span><select id="locale-select" class="header-button locale-select" aria-label="Language" data-i18n-aria="locale.label"><option value="en">EN</option></select></label>
+        <label class="locale-control"><span class="sr-only" data-i18n="locale.label">Language</span><select id="locale-select" class="header-button locale-select" aria-label="Language" data-i18n-aria="locale.label"><option value="en" data-i18n="literal.englishLocaleCode">EN</option></select></label>
       </div>
     </div>
   </div>
@@ -520,7 +520,7 @@ hodlRootEl.innerHTML = `
       <button type="button" class="beta-warning-dismiss" id="beta-warning-dismiss" aria-label="Dismiss the beta software warning" data-i18n-aria="beta.dismissAria"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </aside>
     <aside class="online-warning no-print" id="online-warning" role="alert" hidden>
-      <div class="online-warning-text"><strong>Online version</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab.html" download="entropylab.html">Download EntropyLab</a> and run the HTML file offline on a trusted, air-gapped computer. On iPhone, Safari users can choose Share → Add to Home Screen → Open as Web App; after the first load, disconnect all networks before reopening it. Cached availability is not proof of an air gap.</div>
+      <div class="online-warning-text"><strong data-i18n="shell.onlineVersion">Online version</strong> <span data-i18n="shell.onlineWarningSecrets">Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device.</span> <a href="entropylab.html" download="entropylab.html" data-i18n="header.downloadAria">Download EntropyLab</a> <span data-i18n="shell.onlineWarningOfflineInstructions">and run the HTML file offline on a trusted, air-gapped computer. On iPhone, Safari users can choose Share → Add to Home Screen → Open as Web App; after the first load, disconnect all networks before reopening it. Cached availability is not proof of an air gap.</span></div>
     </aside>
     <!-- TODO: This copy is being kept for the network-detected modal that will
          replace the banner. Verbatim, with the lead-in as the modal's title:
@@ -529,8 +529,8 @@ hodlRootEl.innerHTML = `
          secrets here; disconnect from all networks (Wi-Fi and Ethernet) and use
          this file on an air-gapped computer." -->
     <section class="card">
-      <div class="kicker">Run Offline \xB7 Bring your own entropy</div>
-      <h1>Hold or receive bitcoin without a signing device.</h1>
+      <div class="kicker" data-i18n="pitch.kicker">Run Offline · Bring your own entropy</div>
+      <h1 data-i18n="pitch.title">Hold or receive bitcoin without a signing device.</h1>
       <ul class="pitch-list muted">
         <li data-i18n="pitch.li1">Save this air-gapped bitcoin calculator to a removable drive and open it on a computer that never goes online.</li>
         <li data-i18n="pitch.li2">Turn dice rolls or a seed you already have into receive addresses.</li>
@@ -541,12 +541,12 @@ hodlRootEl.innerHTML = `
     <nav class="workspace no-print" id="workspace"></nav>
       <div class="workspace-panel" id="workspace-panel">
       <div class="tool-intro" id="calc-tool-intro">
-        <div class="kicker">Your entropy enters the lab</div>
-        <h2>Create. Derive. Verify.</h2>
-        <p class="muted calc-intro">Turn entropy you bring \u2014 dice rolls, playing cards, a number in any base, a seed phrase, or a private key \u2014 into a BIP-39 seed, then derive its master fingerprint, extended public keys, and receive addresses. The dice methods match COLDCARD, SeedSigner, Keystone, and BitBox, so the same rolls reproduce the same seed on those signers. This does not invent entropy \u2014 it is a calculator, and nothing leaves this page.</p>
+        <div class="kicker" data-i18n="shell.yourEntropyEntersTheLab">Your entropy enters the lab</div>
+        <h2 data-i18n="shell.createDeriveVerify">Create. Derive. Verify.</h2>
+        <p class="muted calc-intro" data-i18n="shell.calcToolIntroPText">Turn entropy you bring — dice rolls, playing cards, a number in any base, a seed phrase, or a private key — into a BIP-39 seed, then derive its master fingerprint, extended public keys, and receive addresses. The dice methods match COLDCARD, SeedSigner, Keystone, and BitBox, so the same rolls reproduce the same seed on those signers. This does not invent entropy — it is a calculator, and nothing leaves this page.</p>
       </div>
       <section class="key-manager no-print" id="key-manager">
-      <div class="key-tab-strip"><div class="key-tabs" id="key-tabs" role="tablist" aria-label="Keys"></div><div class="add-item-control"><button class="add-key" id="add-key" type="button" aria-label="Open Key Station to derive another key" aria-describedby="add-key-tooltip">+</button><span class="add-item-tooltip" id="add-key-tooltip" role="tooltip">Open Key Station to derive another key</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-key" type="button" aria-label="Delete current key" aria-describedby="delete-key-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-key-tooltip" role="tooltip">Delete this key</span></div></div>
+      <div class="key-tab-strip"><div class="key-tabs" id="key-tabs" role="tablist" aria-label="Keys" data-i18n-aria="keys.tabsAria"></div><div class="add-item-control"><button class="add-key" id="add-key" type="button" aria-label="Open Key Station to derive another key" aria-describedby="add-key-tooltip" data-i18n-aria="shell.addKeyAriaLabel" data-i18n="literal.plus">+</button><span class="add-item-tooltip" id="add-key-tooltip" role="tooltip" data-i18n="shell.addKeyAriaLabel">Open Key Station to derive another key</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-key" type="button" aria-label="Delete current key" aria-describedby="delete-key-tooltip" disabled data-i18n-aria="keys.deleteAria" data-i18n="literal.minus">−</button><span class="add-item-tooltip" id="delete-key-tooltip" role="tooltip" data-i18n="shell.deleteThisKey">Delete this key</span></div></div>
     </section>
     <section class="card no-print" id="calc-card" role="tabpanel" hidden>
       <div class="key-mode-select" id="modes"><p class="label" id="key-method-label" data-i18n="keys.methodLabel">Method</p></div>
@@ -558,7 +558,7 @@ hodlRootEl.innerHTML = `
           <p class="key-summary-meta" id="key-summary-script"></p>
           <p class="key-summary-meta key-summary-path" id="key-summary-path"></p>
         </div>
-        <button class="btn secondary" id="key-edit-inputs" type="button">Edit input</button>
+        <button class="btn secondary" id="key-edit-inputs" type="button" data-i18n="shell.editInput">Edit input</button>
       </div>
       <div class="key-lab" id="key-lab">
       <div class="global-sync-host" id="global-sync-host"></div>
@@ -567,7 +567,7 @@ hodlRootEl.innerHTML = `
         <div class="seed-length-select">
           <select id="seed-length-select" aria-labelledby="seed-length-label"><option value="12" data-i18n="seedLength.words" data-i18n-vars='{"n":12}'>12 words</option><option value="15" data-i18n="seedLength.words" data-i18n-vars='{"n":15}'>15 words</option><option value="18" data-i18n="seedLength.words" data-i18n-vars='{"n":18}'>18 words</option><option value="21" data-i18n="seedLength.words" data-i18n-vars='{"n":21}'>21 words</option><option value="24" selected="selected" data-i18n="seedLength.words" data-i18n-vars='{"n":24}'>24 words</option></select>
         </div>
-        <p class="muted" id="seed-length-help">24 words use 256 bits of BIP39 entropy.</p>
+        <p class="muted" id="seed-length-help" data-i18n="shell.seedLengthHelpText">24 words use 256 bits of BIP39 entropy.</p>
       </section>
       <div id="form" class="key-form"></div>
       <div class="passphrase-field" id="passphrase-field">
@@ -584,7 +584,7 @@ hodlRootEl.innerHTML = `
           <span class="master-fingerprint-label" data-i18n="fingerprint.base">Base seed</span>
           <code class="master-fingerprint-value" id="base-master-fingerprint"></code>
         </div>
-        <span class="master-fingerprint-arrow is-disabled" id="master-fingerprint-arrow" aria-hidden="true">\u2192</span>
+        <span class="master-fingerprint-arrow is-disabled" id="master-fingerprint-arrow" aria-hidden="true" data-i18n="literal.rightArrow">→</span>
         <div class="master-fingerprint-card master-fingerprint-derived is-disabled" id="passphrase-master-fingerprint-card" role="group" data-state="unavailable" aria-label="With passphrase master fingerprint unavailable" data-i18n-aria="fingerprint.passUnavailable">
           <span class="master-fingerprint-lifehash-frame" aria-hidden="true"><img class="master-fingerprint-lifehash" id="passphrase-master-fingerprint-lifehash" alt="" width="96" height="96" hidden /></span>
           <span class="master-fingerprint-label" data-i18n="fingerprint.passphrase">With passphrase</span>
@@ -593,227 +593,227 @@ hodlRootEl.innerHTML = `
       </div>
       <div class="key-settings" id="key-settings">
         <div class="key-settings-row">
-          <label class="field" id="script-type-field">Script type
-            <select id="script-type"><option value="bip44">Legacy</option><option value="bip49">Nested SegWit</option><option value="bip84" selected>Native SegWit</option><option value="bip86">Taproot</option></select>
+          <label class="field" id="script-type-field"><span data-i18n="scriptType.label">Script type</span>
+            <select id="script-type"><option value="bip44" data-i18n="script.legacy">Legacy</option><option value="bip49" data-i18n="script.nested">Nested SegWit</option><option value="bip84" selected data-i18n="script.native">Native SegWit</option><option value="bip86" data-i18n="script.taproot">Taproot</option></select>
           </label>
-          <label class="field derivation-path-field" id="derivation-path-field">Derivation path
+          <label class="field derivation-path-field" id="derivation-path-field"><span data-i18n="shell.derivationPath">Derivation path</span>
             <input id="derivation-path" type="text" value="m/84'/0'/0'/0/0" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="derivation-path-help">
-            <span class="field-note" id="derivation-path-help">Exact BIP32 address path · edit directly to use a custom path</span>
+            <span class="field-note" id="derivation-path-help" data-i18n="shell.derivationPathHelpText">Exact BIP32 address path · edit directly to use a custom path</span>
           </label>
         </div>
         <details class="derivation-advanced" id="derivation-advanced">
-          <summary>Advanced entry</summary>
+          <summary data-i18n="shell.advancedEntry">Advanced entry</summary>
           <div class="derivation-advanced-fields">
             <div class="key-settings-row" id="purpose-network-settings">
-              <div class="field" id="purpose-field"><label for="purpose">Purpose</label>
-                <div class="derivation-index-control"><span class="derivation-index-value"><input id="purpose" type="text" inputmode="numeric" value="84'" aria-describedby="purpose-help"></span><label class="derivation-harden"><input id="purpose-harden" type="checkbox" checked><span>Harden</span></label></div>
-                <span class="field-note" id="purpose-help">Purpose index \xB7 Hardened \xB7 0 to 2,147,483,647</span>
+              <div class="field" id="purpose-field"><label for="purpose" data-i18n="purpose.label">Purpose</label>
+                <div class="derivation-index-control"><span class="derivation-index-value"><input id="purpose" type="text" inputmode="numeric" value="84'" aria-describedby="purpose-help"></span><label class="derivation-harden"><input id="purpose-harden" type="checkbox" checked><span data-i18n="shell.harden">Harden</span></label></div>
+                <span class="field-note" id="purpose-help" data-i18n="purpose.help">Purpose index · Hardened · 0 to 2,147,483,647</span>
               </div>
-              <div class="field network-field"><label for="network">Network</label>
-                <div class="derivation-index-control"><span class="derivation-index-value"><input id="network" type="text" inputmode="numeric" value="0'" aria-describedby="network-help"></span><label class="derivation-harden"><input id="network-harden" type="checkbox" checked><span>Harden</span></label></div>
-                <span class="field-note" id="network-help">Coin type index \xB7 Mainnet \xB7 Hardened \xB7 0 to 2,147,483,647</span>
+              <div class="field network-field"><label for="network" data-i18n="network.label">Network</label>
+                <div class="derivation-index-control"><span class="derivation-index-value"><input id="network" type="text" inputmode="numeric" value="0'" aria-describedby="network-help"></span><label class="derivation-harden"><input id="network-harden" type="checkbox" checked><span data-i18n="shell.harden">Harden</span></label></div>
+                <span class="field-note" id="network-help" data-i18n="network.help">Coin type index · Mainnet · Hardened · 0 to 2,147,483,647</span>
               </div>
             </div>
             <div class="key-settings-row" id="account-address-settings">
-              <div class="field" id="account-field"><label for="account">Account</label>
-                <div class="derivation-index-control"><span class="derivation-index-value"><input id="account" type="text" inputmode="numeric" value="0'" aria-describedby="account-help"></span><label class="derivation-harden"><input id="account-harden" type="checkbox" checked><span>Harden</span></label></div>
-                <span class="field-note" id="account-help">Account index \xB7 Hardened \xB7 0 to 2,147,483,647</span>
+              <div class="field" id="account-field"><label for="account" data-i18n="account.label">Account</label>
+                <div class="derivation-index-control"><span class="derivation-index-value"><input id="account" type="text" inputmode="numeric" value="0'" aria-describedby="account-help"></span><label class="derivation-harden"><input id="account-harden" type="checkbox" checked><span data-i18n="shell.harden">Harden</span></label></div>
+                <span class="field-note" id="account-help" data-i18n="account.help">Account index · Hardened · 0 to 2,147,483,647</span>
               </div>
             </div>
             <div class="key-settings-row address-branch-settings" id="address-branch-settings">
-              <div class="field"><label for="branch-start" id="branch-start-label">Starting address branch</label>
-                <div class="derivation-index-control"><span class="derivation-index-value"><input id="branch-start" type="text" inputmode="numeric" value="0" aria-describedby="branch-start-help"></span><label class="derivation-harden"><input id="branch-start-harden" type="checkbox"><span>Harden</span></label></div>
-                <span class="field-note" id="branch-start-help">First address branch to derive \xB7 0 is Receive \xB7 1 is Change \xB7 Unhardened \xB7 0 to 2,147,483,647</span>
+              <div class="field"><label for="branch-start" id="branch-start-label" data-i18n="shell.startingAddressBranch">Starting address branch</label>
+                <div class="derivation-index-control"><span class="derivation-index-value"><input id="branch-start" type="text" inputmode="numeric" value="0" aria-describedby="branch-start-help"></span><label class="derivation-harden"><input id="branch-start-harden" type="checkbox"><span data-i18n="shell.harden">Harden</span></label></div>
+                <span class="field-note" id="branch-start-help" data-i18n="shell.branchStartHelpText">First address branch to derive · 0 is Receive · 1 is Change · Unhardened · 0 to 2,147,483,647</span>
               </div>
-              <label class="field">Address branch range
+              <label class="field"><span data-i18n="shell.addressBranchRange">Address branch range</span>
                 <input id="branch-range" type="number" min="1" max="2" step="1" inputmode="numeric" value="1" aria-describedby="branch-range-help">
-                <span class="field-note" id="branch-range-help">Derives Receive branch \xB7 Max 2</span>
+                <span class="field-note" id="branch-range-help" data-i18n="shell.derivesReceiveBranchMax2">Derives Receive branch · Max 2</span>
               </label>
             </div>
             <div class="key-settings-row address-range-settings" id="address-range-settings">
-              <div class="field"><label for="address-start" id="address-start-label">Starting address index</label>
-                <div class="derivation-index-control"><span class="derivation-index-value"><input id="address-start" type="text" inputmode="numeric" value="0" aria-describedby="address-start-help"></span><label class="derivation-harden"><input id="address-start-harden" type="checkbox"><span>Harden</span></label></div>
-                <span class="field-note" id="address-start-help">First receive index to derive \xB7 Unhardened \xB7 0 to 2,147,483,647</span>
+              <div class="field"><label for="address-start" id="address-start-label" data-i18n="addressStart.label">Starting address index</label>
+                <div class="derivation-index-control"><span class="derivation-index-value"><input id="address-start" type="text" inputmode="numeric" value="0" aria-describedby="address-start-help"></span><label class="derivation-harden"><input id="address-start-harden" type="checkbox"><span data-i18n="shell.harden">Harden</span></label></div>
+                <span class="field-note" id="address-start-help" data-i18n="shell.addressStartHelpText">First receive index to derive · Unhardened · 0 to 2,147,483,647</span>
               </div>
-              <label class="field">Address range
+              <label class="field"><span data-i18n="addressRange.label">Address range</span>
                 <input id="address-range" type="number" min="1" max="10000" step="1" inputmode="numeric" value="1" aria-describedby="address-range-help">
-                <span class="field-note" id="address-range-help">Derives 1 receive address \xB7 Max 10,000</span>
+                <span class="field-note" id="address-range-help" data-i18n="shell.addressRangeHelpText">Derives 1 receive address · Max 10,000</span>
               </label>
             </div>
           </div>
         </details>
       </div>
-      <p class="field-note address-estimate derivation-estimate" id="address-estimate" role="status">Measuring this device\u2026</p>
+      <p class="field-note address-estimate derivation-estimate" id="address-estimate" role="status" data-i18n="estimate.measuring">Measuring this device…</p>
       <div class="row key-action-row current-item-actions">
-        <button class="btn primary" id="go" disabled aria-disabled="true">Derive Key</button>
-        <div class="derive-progress" id="derive-progress" role="progressbar" aria-label="Key derivation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
-        <button class="btn secondary" id="journal-open" type="button">Save to Journal</button>
-        <button class="btn clear-current-action" id="wipe" type="button" disabled aria-disabled="true">Clear Current Key</button>
+        <button class="btn primary" id="go" disabled aria-disabled="true" data-i18n="action.derive">Derive Key</button>
+        <div class="derive-progress" id="derive-progress" role="progressbar" aria-label="Key derivation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden data-i18n-aria="shell.keyDerivationProgress"><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label" data-i18n="literal.zeroPercent">0%</span></div>
+        <button class="btn secondary" id="journal-open" type="button" data-i18n="shell.saveToJournal">Save to Journal</button>
+        <button class="btn clear-current-action" id="wipe" type="button" disabled aria-disabled="true" data-i18n="action.clearKey">Clear Current Key</button>
       </div>
       <p class="err" id="error"></p>
       </div>
       <div id="out"></div>
     </section>
       <div class="tool-intro" id="vanity-tool-intro" hidden>
-        <div class="kicker">Same key, same counter, same address</div>
-        <h2>Grind a vanity address</h2>
-        <p class="muted tool-intro-note">Pick a Key Station key and turn one of its dials. Passphrase grind extends the key's BIP39 passphrase with counter characters (base-62 over a-zA-Z0-9 in odometer order: "aaa…", "aab…"); derivation grind keeps the passphrase and steps through account indexes. Every candidate is derived the standard way — PBKDF2 seed, BIP32 path — in a dedicated WebAssembly module, one Web Worker per CPU core, and its address of the selected type (including BIP-352 Silent Payment codes) is checked against your prefix. This invents no entropy: same key and counter always reproduce the same address, so every result replays by hand, and Update key writes the winning passphrase or account back to the key it came from.</p>
+        <div class="kicker" data-i18n="vanity.intro.kicker">Same key, same counter, same address</div>
+        <h2 data-i18n="vanity.intro.heading">Grind a vanity address</h2>
+        <p class="muted tool-intro-note" data-i18n="vanity.intro.body">Pick a Key Station key and turn one of its dials. Passphrase grind extends the key's BIP39 passphrase with counter characters (base-62 over a-zA-Z0-9 in odometer order: "aaa…", "aab…"); derivation grind keeps the passphrase and steps through account indexes. Every candidate is derived the standard way — PBKDF2 seed, BIP32 path — in a dedicated WebAssembly module, one Web Worker per CPU core, and its address of the selected type (including BIP-352 Silent Payment codes) is checked against your prefix. This invents no entropy: same key and counter always reproduce the same address, so every result replays by hand, and Update key writes the winning passphrase or account back to the key it came from.</p>
       </div>
       <section class="card no-print" id="vanity-card" role="tabpanel" hidden>
         <div class="wallet-result-messages" role="note">
           <ul>
-            <li class="is-warning">A vanity passphrase is a BIP39 passphrase: the seed words alone no longer recover the wallet. After Update key, record the passphrase with the same care as the words.</li>
-            <li>Matching is Bitcoin mainnet, at the key's first receive address (its own purpose, account, branch, and address index). Update key re-derives the key, so the Keys tab, its exports, and the Journal show the vanity wallet.</li>
+            <li class="is-warning" data-i18n="vanity.warning.passphraseBackup">A vanity passphrase is a BIP39 passphrase: the seed words alone no longer recover the wallet. After Update key, record the passphrase with the same care as the words.</li>
+            <li data-i18n="vanity.warning.network">Matching is Bitcoin mainnet, at the key's first receive address (its own purpose, account, branch, and address index). Update key re-derives the key, so the Keys tab, its exports, and the Journal show the vanity wallet.</li>
           </ul>
         </div>
         <div class="station-key-source">
-          <p class="label">Bring in a key from Key Station</p>
-          <div class="session-key-picker" id="vanity-session-keys" role="group" aria-label="Key Station keys" hidden></div>
-          <p class="field-note" id="vanity-session-note">Derive a key on the Keys tab first — the grinder searches that key's passphrase or account index. A key with seed words supports both methods; a root-xprv key supports the derivation grind only.</p>
+          <p class="label" data-i18n="vanity.source.bringKey">Bring in a key from Key Station</p>
+          <div class="session-key-picker" id="vanity-session-keys" role="group" aria-label="Key Station keys" data-i18n-aria="vanity.source.keysAria" hidden></div>
+          <p class="field-note" id="vanity-session-note" data-i18n="vanity.source.note">Derive a key on the Keys tab first — the grinder searches that key's passphrase or account index. A key with seed words supports both methods; a root-xprv key supports the derivation grind only.</p>
         </div>
         <div class="vanity-source" id="vanity-source" hidden>
           <div class="vanity-source-head">
-            <span class="vanity-source-kicker">Selected key</span>
+            <span class="vanity-source-kicker" data-i18n="vanity.source.selectedKey">Selected key</span>
             <span class="vanity-source-key"><img class="key-tab-lifehash" id="vanity-source-lifehash" width="22" height="22" alt="" hidden><code id="vanity-source-name"></code></span>
             <span class="muted" id="vanity-source-kind"></span>
           </div>
-          <label class="field" for="vanity-pass">Starting passphrase <span class="vanity-source-from" id="vanity-pass-from"></span></label>
-          <input id="vanity-pass" readonly autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="No passphrase — the key uses its seed words alone" aria-describedby="vanity-pass-note">
+          <label class="field" for="vanity-pass"><span data-i18n="vanity.source.startingPassphrase">Starting passphrase</span> <span class="vanity-source-from" id="vanity-pass-from"></span></label>
+          <input id="vanity-pass" readonly autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="No passphrase — the key uses its seed words alone" data-i18n-placeholder="vanity.source.noPassphrase" aria-describedby="vanity-pass-note">
           <span class="field-note" id="vanity-pass-note"></span>
         </div>
         <div class="vanity-grid">
-          <label class="field">Method
+          <label class="field"><span data-i18n="vanity.method.label">Method</span>
             <select id="vanity-method">
-              <option value="passphrase" selected="selected">Passphrase grind</option>
-              <option value="derivation">Derivation grind</option>
+              <option value="passphrase" selected="selected" data-i18n="vanity.method.passphrase">Passphrase grind</option>
+              <option value="derivation" data-i18n="vanity.method.derivation">Derivation grind</option>
             </select>
-            <span class="field-note" id="vanity-method-help">Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for this key.</span>
+            <span class="field-note" id="vanity-method-help" data-i18n="vanity.method.help">Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for this key.</span>
           </label>
-          <label class="field">Address type
+          <label class="field"><span data-i18n="vanity.script.label">Address type</span>
             <select id="vanity-script">
-              <option value="p2pkh">Legacy P2PKH · 1…</option>
-              <option value="p2sh-p2wpkh">Nested SegWit P2SH-P2WPKH · 3…</option>
-              <option value="p2wpkh" selected="selected">Native SegWit P2WPKH · bc1q…</option>
-              <option value="p2tr">Taproot P2TR · bc1p…</option>
-              <option value="sp">Silent Payments BIP-352 · sp1qq…</option>
+              <option value="p2pkh" data-i18n="literal.vanityP2pkh">Legacy P2PKH · 1…</option>
+              <option value="p2sh-p2wpkh" data-i18n="literal.vanityP2shP2wpkh">Nested SegWit P2SH-P2WPKH · 3…</option>
+              <option value="p2wpkh" selected="selected" data-i18n="literal.vanityP2wpkh">Native SegWit P2WPKH · bc1q…</option>
+              <option value="p2tr" data-i18n="literal.vanityP2tr">Taproot P2TR · bc1p…</option>
+              <option value="sp" data-i18n="literal.vanitySilentPayments">Silent Payments BIP-352 · sp1qq…</option>
             </select>
           </label>
-          <label class="field">Address prefix
-            <input id="vanity-prefix" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="bc1q…" aria-describedby="vanity-prefix-help">
-            <span class="field-note" id="vanity-prefix-help">Native SegWit P2WPKH prefix, starts with “bc1q”. Live-filtered to lowercase bech32 characters; each free character multiplies the work by ~32.</span>
+          <label class="field"><span data-i18n="vanity.prefix.label">Address prefix</span>
+            <input id="vanity-prefix" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="bc1q…" data-i18n-placeholder="literal.vanityPrefixPlaceholder" aria-describedby="vanity-prefix-help">
+            <span class="field-note" id="vanity-prefix-help" data-i18n="vanity.prefix.help">Native SegWit P2WPKH prefix, starts with “bc1q”. Live-filtered to lowercase bech32 characters; each free character multiplies the work by ~32.</span>
           </label>
         </div>
         <div class="vanity-grid">
-          <label class="field" data-vanity-method="passphrase">Passphrase length
+          <label class="field" data-vanity-method="passphrase"><span data-i18n="vanity.passphraseLength.label">Passphrase length</span>
             <input id="vanity-length" type="number" min="1" max="32" step="1" inputmode="numeric" value="8" aria-describedby="vanity-length-help">
-            <span class="field-note" id="vanity-length-help">Counter characters a-zA-Z0-9 appended after the starting passphrase. 62^10 counters fill the 64-bit counter; longer passphrases grind their low range.</span>
+            <span class="field-note" id="vanity-length-help" data-i18n="vanity.passphraseLength.help">Counter characters a-zA-Z0-9 appended after the starting passphrase. 62^10 counters fill the 64-bit counter; longer passphrases grind their low range.</span>
           </label>
-          <label class="field" data-vanity-method="passphrase">Start counter
+          <label class="field" data-vanity-method="passphrase"><span data-i18n="vanity.counterStart.label">Start counter</span>
             <input id="vanity-start" inputmode="numeric" autocomplete="off" spellcheck="false" value="0" aria-describedby="vanity-start-help">
-            <span class="field-note" id="vanity-start-help">First counter tried. Counter 0 is "aaa…".</span>
+            <span class="field-note" id="vanity-start-help" data-i18n="vanity.counterStart.help">First counter tried. Counter 0 is "aaa…".</span>
           </label>
-          <label class="field" data-vanity-method="passphrase">Range size
+          <label class="field" data-vanity-method="passphrase"><span data-i18n="vanity.range.label">Range size</span>
             <input id="vanity-count" inputmode="numeric" autocomplete="off" spellcheck="false" value="1000000" aria-describedby="vanity-count-help">
-            <span class="field-note" id="vanity-count-help">Candidates to grind. After a run, Start continues where the range ended.</span>
+            <span class="field-note" id="vanity-count-help" data-i18n="vanity.range.help">Candidates to grind. After a run, Start continues where the range ended.</span>
           </label>
-          <label class="field" data-vanity-method="derivation" hidden>Start account
+          <label class="field" data-vanity-method="derivation" hidden><span data-i18n="vanity.accountStart.label">Start account</span>
             <input id="vanity-account-start" inputmode="numeric" autocomplete="off" spellcheck="false" value="0" aria-describedby="vanity-account-start-help">
-            <span class="field-note" id="vanity-account-start-help">First BIP32 account index tried (0 to 2,147,483,647). Each match is an account index holding the vanity address.</span>
+            <span class="field-note" id="vanity-account-start-help" data-i18n="vanity.accountStart.help">First BIP32 account index tried (0 to 2,147,483,647). Each match is an account index holding the vanity address.</span>
           </label>
-          <label class="field" data-vanity-method="derivation" hidden>Accounts to try
+          <label class="field" data-vanity-method="derivation" hidden><span data-i18n="vanity.accountCount.label">Accounts to try</span>
             <input id="vanity-account-count" inputmode="numeric" autocomplete="off" spellcheck="false" value="100000" aria-describedby="vanity-account-count-help">
-            <span class="field-note" id="vanity-account-count-help">Account indexes to grind. After a run, Start account continues where the range ended.</span>
+            <span class="field-note" id="vanity-account-count-help" data-i18n="vanity.accountCount.help">Account indexes to grind. After a run, Start account continues where the range ended.</span>
           </label>
-          <label class="field">Workers
+          <label class="field"><span data-i18n="vanity.workers.label">Workers</span>
             <input id="vanity-workers" type="number" min="1" max="64" step="1" inputmode="numeric" value="1" aria-describedby="vanity-workers-help">
-            <span class="field-note" id="vanity-workers-help">One per CPU core is fastest; defaults to this device's core count.</span>
+            <span class="field-note" id="vanity-workers-help" data-i18n="vanity.workers.help">One per CPU core is fastest; defaults to this device's core count.</span>
           </label>
         </div>
         <p class="muted" id="vanity-estimate" aria-live="polite"></p>
         <div class="row current-item-actions">
-          <button class="btn primary" id="vanity-go" type="button">Start grinding</button>
-          <div class="derive-progress" id="vanity-progress" role="progressbar" aria-label="Vanity grinding progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
-          <button class="btn secondary" id="vanity-stop" type="button" disabled>Stop</button>
-          <button class="btn secondary" id="vanity-first" type="button" aria-pressed="false" title="Stop grinding as soon as the first match is found">Stop on first find</button>
-          <button class="btn clear-current-action" id="vanity-wipe" type="button" disabled aria-disabled="true">Clear results</button>
+          <button class="btn primary" id="vanity-go" type="button" data-i18n="vanity.action.start">Start grinding</button>
+          <div class="derive-progress" id="vanity-progress" role="progressbar" aria-label="Vanity grinding progress" data-i18n-aria="vanity.progress.aria" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label" data-i18n="literal.zeroPercent">0%</span></div>
+          <button class="btn secondary" id="vanity-stop" type="button" disabled data-i18n="vanity.action.stop">Stop</button>
+          <button class="btn secondary" id="vanity-first" type="button" aria-pressed="false" title="Stop grinding as soon as the first match is found" data-i18n-title="vanity.action.firstTitle" data-i18n="vanity.action.first">Stop on first find</button>
+          <button class="btn clear-current-action" id="vanity-wipe" type="button" disabled aria-disabled="true" data-i18n="vanity.action.clear">Clear results</button>
         </div>
-        <p class="muted" id="vanity-status" aria-live="polite">Idle. No range has been ground this session.</p>
+        <p class="muted" id="vanity-status" aria-live="polite" data-i18n="vanity.status.idle">Idle. No range has been ground this session.</p>
         <p class="err" id="vanity-error" role="alert"></p>
         <div id="vanity-out" aria-live="polite"></div>
-        <p class="muted">Found passphrases remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+        <p class="muted" data-i18n="vanity.sessionNote">Found passphrases remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </section>
       <div class="tool-intro" id="bip85-tool-intro" hidden>
-        <div class="kicker">One seed. Many children.</div>
-        <h2>Derive BIP-85 child entropy</h2>
-        <p class="muted bip85-intro">Deterministic child seeds, keys, and passwords from a Key Station BIP32 root. Same parent, application, and index always reproduce the same child. This does not invent entropy \u2014 it is a calculator. English BIP-39 children match COLDCARD.</p>
+        <div class="kicker" data-i18n="shell.oneSeedManyChildren">One seed. Many children.</div>
+        <h2 data-i18n="shell.deriveBip85ChildEntropy">Derive BIP-85 child entropy</h2>
+        <p class="muted bip85-intro" data-i18n="shell.bip85ToolIntroPText">Deterministic child seeds, keys, and passwords from a Key Station BIP32 root. Same parent, application, and index always reproduce the same child. This does not invent entropy — it is a calculator. English BIP-39 children match COLDCARD.</p>
       </div>
       <section class="key-manager no-print" id="bip85-manager" hidden>
-        <div class="key-tab-strip"><div class="key-tabs" id="bip85-tabs" role="tablist" aria-label="BIP-85 child seeds"></div><div class="add-item-control"><button class="add-key" id="add-bip85" type="button" aria-label="Open BIP-85 Station to derive another child" aria-describedby="add-bip85-tooltip">+</button><span class="add-item-tooltip" id="add-bip85-tooltip" role="tooltip">Open BIP-85 Station</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-bip85" type="button" aria-label="Delete current BIP-85 child" aria-describedby="delete-bip85-tooltip" disabled>\u2212</button><span class="add-item-tooltip" id="delete-bip85-tooltip" role="tooltip">Delete this BIP-85 child</span></div></div>
+        <div class="key-tab-strip"><div class="key-tabs" id="bip85-tabs" role="tablist" aria-label="BIP-85 child seeds" data-i18n-aria="shell.bip85ChildSeeds"></div><div class="add-item-control"><button class="add-key" id="add-bip85" type="button" aria-label="Open BIP-85 Station to derive another child" aria-describedby="add-bip85-tooltip" data-i18n-aria="shell.addBip85AriaLabel" data-i18n="literal.plus">+</button><span class="add-item-tooltip" id="add-bip85-tooltip" role="tooltip" data-i18n="shell.openBip85Station">Open BIP-85 Station</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-bip85" type="button" aria-label="Delete current BIP-85 child" aria-describedby="delete-bip85-tooltip" disabled data-i18n-aria="shell.deleteCurrentBip85Child" data-i18n="literal.minus">−</button><span class="add-item-tooltip" id="delete-bip85-tooltip" role="tooltip" data-i18n="shell.deleteThisBip85Child">Delete this BIP-85 child</span></div></div>
       </section>
       <section class="card no-print" id="bip85-card" role="tabpanel" hidden>
       <div class="bip85-bench" id="bip85-bench">
       <div class="station-key-source">
-        <p class="label">Bring in a key from Key Station</p>
-        <div class="session-key-picker" id="bip85-session-keys" role="group" aria-label="Compatible Key Station keys" hidden></div>
-        <p class="field-note">Choose a compatible HD-root key from this session, or paste a root extended private key below.</p>
+        <p class="label" data-i18n="shell.bip85BenchPText">Bring in a key from Key Station</p>
+        <div class="session-key-picker" id="bip85-session-keys" role="group" aria-label="Compatible Key Station keys" hidden data-i18n-aria="shell.compatibleKeyStationKeys"></div>
+        <p class="field-note" data-i18n="shell.bip85BenchPText2">Choose a compatible HD-root key from this session, or paste a root extended private key below.</p>
       </div>
-      <label class="field">Root xprv (optional)
-        <textarea id="bip85-key" placeholder="Paste a root xprv or tprv" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      <label class="field"><span data-i18n="shell.rootXprvOptional">Root xprv (optional)</span>
+        <textarea id="bip85-key" placeholder="Paste a root xprv or tprv" spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="shell.pasteARootXprvOrTprv"></textarea>
       </label>
       <div class="bip85-grid">
-        <label class="field">Application
+        <label class="field"><span data-i18n="shell.application">Application</span>
           <select id="bip85-app">
-            <option value="bip39" selected>BIP-39 mnemonic (English)</option>
-            <option value="wif">HD-seed WIF</option>
-            <option value="xprv">XPRV (BIP-32)</option>
-            <option value="hex">HEX</option>
-            <option value="pwd-base64">Password \xB7 Base64</option>
-            <option value="pwd-base85">Password \xB7 Base85</option>
+            <option value="bip39" selected data-i18n="shell.bip39MnemonicEnglish">BIP-39 mnemonic (English)</option>
+            <option value="wif" data-i18n="shell.hdSeedWif">HD-seed WIF</option>
+            <option value="xprv" data-i18n="shell.xprvBip32">XPRV (BIP-32)</option>
+            <option value="hex" data-i18n="shell.hex">HEX</option>
+            <option value="pwd-base64" data-i18n="shell.passwordBase64">Password · Base64</option>
+            <option value="pwd-base85" data-i18n="shell.passwordBase85">Password · Base85</option>
           </select>
         </label>
-        <label class="field">Index
+        <label class="field"><span data-i18n="shell.index">Index</span>
           <input id="bip85-index" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0" aria-describedby="bip85-index-help">
-          <span class="field-note" id="bip85-index-help">Hardened child index \xB7 0 to 2,147,483,647. COLDCARD defaults to 0\u20139,999.</span>
+          <span class="field-note" id="bip85-index-help" data-i18n="shell.bip85IndexHelpText">Hardened child index · 0 to 2,147,483,647. COLDCARD defaults to 0–9,999.</span>
         </label>
       </div>
       <div class="bip85-grid" id="bip85-app-options">
-        <label class="field" id="bip85-words-field">Word count
+        <label class="field" id="bip85-words-field"><span data-i18n="shell.wordCount">Word count</span>
           <select id="bip85-words">
-            <option value="12">12 words \xB7 128 bits</option>
-            <option value="15">15 words \xB7 160 bits</option>
-            <option value="18">18 words \xB7 192 bits</option>
-            <option value="21">21 words \xB7 224 bits</option>
-            <option value="24" selected>24 words \xB7 256 bits</option>
+            <option value="12" data-i18n="shell.12Words128Bits">12 words · 128 bits</option>
+            <option value="15" data-i18n="shell.15Words160Bits">15 words · 160 bits</option>
+            <option value="18" data-i18n="shell.18Words192Bits">18 words · 192 bits</option>
+            <option value="21" data-i18n="shell.21Words224Bits">21 words · 224 bits</option>
+            <option value="24" selected data-i18n="shell.24Words256Bits">24 words · 256 bits</option>
           </select>
-          <span class="field-note">English wordlist only (language 0'). COLDCARD menus offer 12, 18, and 24.</span>
+          <span class="field-note" data-i18n="shell.bip85WordsFieldSpanText">English wordlist only (language 0'). COLDCARD menus offer 12, 18, and 24.</span>
         </label>
-        <label class="field" id="bip85-bytes-field" hidden>Hex bytes
+        <label class="field" id="bip85-bytes-field" hidden><span data-i18n="shell.hexBytes">Hex bytes</span>
           <input id="bip85-bytes" type="number" min="16" max="64" step="1" inputmode="numeric" value="32" aria-describedby="bip85-bytes-help">
-          <span class="field-note" id="bip85-bytes-help">16 to 64 bytes. COLDCARD offers 32 and 64.</span>
+          <span class="field-note" id="bip85-bytes-help" data-i18n="shell.bip85BytesHelpText">16 to 64 bytes. COLDCARD offers 32 and 64.</span>
         </label>
-        <label class="field" id="bip85-pwdlen-field" hidden>Password length
+        <label class="field" id="bip85-pwdlen-field" hidden><span data-i18n="shell.passwordLength">Password length</span>
           <input id="bip85-pwdlen" type="number" min="10" max="86" step="1" inputmode="numeric" value="21" aria-describedby="bip85-pwdlen-help">
-          <span class="field-note" id="bip85-pwdlen-help">Base64: 20\u201386. Base85: 10\u201380.</span>
+          <span class="field-note" id="bip85-pwdlen-help" data-i18n="shell.base642086Base851080">Base64: 20–86. Base85: 10–80.</span>
         </label>
       </div>
-      <p class="muted bip85-path-row">Path <code id="bip85-path">m/83696968'/39'/0'/24'/0'</code></p>
+      <p class="muted bip85-path-row"><span data-i18n="result.tablePath">Path</span> <code id="bip85-path">m/83696968'/39'/0'/24'/0'</code></p>
       <div class="row bip85-actions">
-        <button class="btn primary" id="bip85-go" type="button">Derive child</button>
-        <button class="btn secondary" id="bip85-wipe" type="button">Clear parent session</button>
+        <button class="btn primary" id="bip85-go" type="button" data-i18n="shell.deriveChild">Derive child</button>
+        <button class="btn secondary" id="bip85-wipe" type="button" data-i18n="shell.clearParentSession">Clear parent session</button>
       </div>
       <p class="muted" id="bip85-session" aria-live="polite">No parent loaded. Choose a Key Station key, or paste a root xprv.</p>
       <p class="err" id="bip85-error" role="alert"></p>
       </div>
       <div id="bip85-out" aria-live="polite"></div>
-      <p class="muted">Derived children remain in this page only. Anyone with the parent seed, passphrase, application, and index can reproduce them. Memory clearing is best-effort; close the page before reconnecting the computer.</p>
+      <p class="muted" data-i18n="shell.bip85CardPText">Derived children remain in this page only. Anyone with the parent seed, passphrase, application, and index can reproduce them. Memory clearing is best-effort; close the page before reconnecting the computer.</p>
     </section>
       <div class="tool-intro" id="msig-tool-intro" hidden>
-        <div class="kicker">Multiple keys, one wallet</div>
-        <h2>Derive a multisig wallet</h2>
+        <div class="kicker" data-i18n="msig.kicker">Multiple keys, one wallet</div>
+        <h2 data-i18n="msig.title">Derive a multisig wallet</h2>
         <p class="muted msig-intro" data-i18n-html="msig.intro">Combine extended public keys into a multisignature wallet. Paste each key origin and extended public key as exported by its signer: <span class=mono>[fingerprint/48h/0h/0h/2h]xpub…</span>. A descriptor holding one co-signer key works too; split a full multisig descriptor into one key per field. A trailing branch step such as <span class=mono>/0/*</span> is accepted and ignored — the receive/change branches and address indexes are derived for you. A longer trailing path such as <span class=mono>/0/20</span> or <span class=mono>/0/0/20/*</span> is honored as descriptor key derivation in full: the co-signer&#39;s public keys derive through it, and the exported descriptor carries it before the branch step. Private keys are not needed. The derived addresses can receive bitcoin, and spending requires the configured number of signatures.</p>
       </div>
       <section class="key-manager no-print" id="msig-manager" hidden>
-      <div class="key-tab-strip"><div class="key-tabs" id="msig-tabs" role="tablist" aria-label="Multisigs"></div><div class="add-item-control"><button class="add-key" id="add-msig" type="button" aria-label="Open MS Station to derive another multisig" aria-describedby="add-msig-tooltip">+</button><span class="add-item-tooltip" id="add-msig-tooltip" role="tooltip">Open MS Station</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-msig" type="button" aria-label="Delete current multisig" aria-describedby="delete-msig-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-msig-tooltip" role="tooltip">Delete this multisig</span></div></div>
+      <div class="key-tab-strip"><div class="key-tabs" id="msig-tabs" role="tablist" aria-label="Multisigs" data-i18n-aria="msig.tabsAria"></div><div class="add-item-control"><button class="add-key" id="add-msig" type="button" aria-label="Open MS Station to derive another multisig" aria-describedby="add-msig-tooltip" data-i18n-aria="shell.addMsigAriaLabel" data-i18n="literal.plus">+</button><span class="add-item-tooltip" id="add-msig-tooltip" role="tooltip" data-i18n="shell.openMsStation">Open MS Station</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-msig" type="button" aria-label="Delete current multisig" aria-describedby="delete-msig-tooltip" disabled data-i18n-aria="msig.deleteAria" data-i18n="literal.minus">−</button><span class="add-item-tooltip" id="delete-msig-tooltip" role="tooltip" data-i18n="shell.deleteThisMultisig">Delete this multisig</span></div></div>
     </section>
     <section class="card no-print" id="msig-card" role="tabpanel" hidden>
       <div class="key-summary" id="msig-summary" hidden>
@@ -822,16 +822,16 @@ hodlRootEl.innerHTML = `
           <p class="key-summary-meta" id="msig-summary-script"></p>
           <p class="key-summary-meta" id="msig-summary-network"></p>
         </div>
-        <button class="btn secondary" id="msig-edit-inputs" type="button">Edit input</button>
+        <button class="btn secondary" id="msig-edit-inputs" type="button" data-i18n="shell.editInput">Edit input</button>
       </div>
       <div class="msig-lab" id="msig-lab">
       <div class="station-key-source msig-station-key-source">
-        <p class="label">Bring in a key from Key Station</p>
-        <div class="session-key-picker" id="msig-session-keys" role="group" aria-label="Compatible Key Station keys" hidden></div>
-        <p class="field-note">Choose a compatible HD-root key from this session, or paste a co-signer extended public key below.</p>
+        <p class="label" data-i18n="shell.bip85BenchPText">Bring in a key from Key Station</p>
+        <div class="session-key-picker" id="msig-session-keys" role="group" aria-label="Compatible Key Station keys" hidden data-i18n-aria="shell.compatibleKeyStationKeys"></div>
+        <p class="field-note" data-i18n="shell.msigLabPText">Choose a compatible HD-root key from this session, or paste a co-signer extended public key below.</p>
         <label class="choice msig-key-reuse-toggle">
           <input id="msig-reuse-session-keys" type="checkbox">
-          <span><strong>Allow key reuse</strong><span class="desc">Keep selected Key Station keys available for more than one co-signer input. Reused keys need different derivation paths.</span></span>
+          <span><strong data-i18n="shell.allowKeyReuse">Allow key reuse</strong><span class="desc" data-i18n="shell.msigLabSpanText">Keep selected Key Station keys available for more than one co-signer input. Reused keys need different derivation paths.</span></span>
         </label>
         <p class="field-note" id="msig-session-key-status" aria-live="polite"></p>
       </div>
@@ -848,13 +848,13 @@ hodlRootEl.innerHTML = `
           <input class="msig-threshold-range" id="msig-m" type="range" min="1" max="15" step="1" value="2" aria-label="Signatures needed to spend (m)" data-i18n-aria="msig.mLabel" aria-describedby="msig-threshold-help">
           <input class="msig-threshold-range" id="msig-n" type="range" min="1" max="15" step="1" value="3" aria-label="Total signing keys (n)" data-i18n-aria="msig.nLabel" aria-describedby="msig-threshold-help">
         </div>
-        <div class="msig-threshold-ticks" id="msig-threshold-ticks" aria-hidden="true"><span style="--msig-tick-position:0%">1</span><span style="--msig-tick-position:12.5%">2</span><span style="--msig-tick-position:25%">3</span><span style="--msig-tick-position:37.5%">4</span><span style="--msig-tick-position:50%">5</span><span style="--msig-tick-position:62.5%">6</span><span style="--msig-tick-position:75%">7</span><span style="--msig-tick-position:87.5%">8</span><span style="--msig-tick-position:100%">9</span></div>
+        <div class="msig-threshold-ticks" id="msig-threshold-ticks" aria-hidden="true"><span style="--msig-tick-position:0%" data-i18n="literal.number1">1</span><span style="--msig-tick-position:12.5%" data-i18n="literal.number2">2</span><span style="--msig-tick-position:25%" data-i18n="literal.number3">3</span><span style="--msig-tick-position:37.5%" data-i18n="literal.number4">4</span><span style="--msig-tick-position:50%" data-i18n="literal.number5">5</span><span style="--msig-tick-position:62.5%" data-i18n="literal.number6">6</span><span style="--msig-tick-position:75%" data-i18n="literal.number7">7</span><span style="--msig-tick-position:87.5%" data-i18n="literal.number8">8</span><span style="--msig-tick-position:100%" data-i18n="literal.number9">9</span></div>
         <p class="field-note msig-threshold-help" id="msig-threshold-help" data-i18n="msig.thresholdHelp">Enter values, drag either handle, or use the arrow keys. Editing one value past the other moves both.</p>
       </fieldset>
       <details class="msig-import" id="msig-import">
         <summary data-i18n="msig.importSummary">Paste descriptor</summary>
         <label class="field"><span data-i18n="msig.importLabel">Multisig output descriptor</span>
-          <textarea id="msig-descriptor" placeholder="wsh(sortedmulti(2,[fingerprint/48h/0h/0h/2h]Zpub…/0/*, …))" autocomplete="off" spellcheck="false" aria-describedby="msig-descriptor-help"></textarea>
+          <textarea id="msig-descriptor" placeholder="wsh(sortedmulti(2,[fingerprint/48h/0h/0h/2h]Zpub…/0/*, …))" autocomplete="off" spellcheck="false" aria-describedby="msig-descriptor-help" data-i18n-placeholder="shell.msigDescriptorPlaceholder"></textarea>
           <span class="field-note" id="msig-descriptor-help" data-i18n="msig.importHelp">Split a wallet-exported multisig descriptor into one co-signer field per key — the quorum, script type, and key order fill in too. Watch-only public keys only; a descriptor carrying private keys is refused.</span>
         </label>
         <button class="btn secondary" id="msig-descriptor-import" type="button" disabled aria-disabled="true" data-i18n="msig.importButton">Import descriptor</button>
@@ -873,41 +873,41 @@ hodlRootEl.innerHTML = `
             <select id="msig-script-type" aria-describedby="msig-script-warning"><option value="p2sh" data-i18n="script.legacy">Legacy</option><option value="p2sh-p2wsh" data-i18n="script.nested">Nested SegWit</option><option value="p2wsh" selected data-i18n="script.native">Native SegWit</option><option value="p2tr" data-i18n="script.taproot">Taproot</option><option value="mixed" disabled data-custom-select-placeholder="true" data-i18n="msig.mixed">Mixed · incompatible keys</option></select>
             <span class="field-note msig-script-warning" id="msig-script-warning" role="status" hidden></span>
           </label>
-          <div class="field"><label for="msig-purpose">Purpose</label>
-            <div class="derivation-index-control"><span class="derivation-index-value"><input id="msig-purpose" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="48" aria-describedby="msig-purpose-help msig-purpose-warning"><span class="derivation-index-prime" aria-hidden="true">'</span></span><label class="derivation-harden"><input id="msig-purpose-harden" type="checkbox" checked><span>Harden</span></label></div>
-            <span class="field-note" id="msig-purpose-help">Purpose index \xB7 Hardened \xB7 0 to 2,147,483,647</span>
+          <div class="field"><label for="msig-purpose" data-i18n="purpose.label">Purpose</label>
+            <div class="derivation-index-control"><span class="derivation-index-value"><input id="msig-purpose" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="48" aria-describedby="msig-purpose-help msig-purpose-warning"><span class="derivation-index-prime" aria-hidden="true" data-i18n="literal.hardenedMarker">'</span></span><label class="derivation-harden"><input id="msig-purpose-harden" type="checkbox" checked><span data-i18n="shell.harden">Harden</span></label></div>
+            <span class="field-note" id="msig-purpose-help" data-i18n="purpose.help">Purpose index · Hardened · 0 to 2,147,483,647</span>
             <span class="field-note msig-purpose-warning" id="msig-purpose-warning" role="status" hidden></span>
           </div>
         </div>
         <div class="key-settings-row">
-          <div class="field"><label for="msig-network">Network</label>
-            <div class="derivation-index-control"><span class="derivation-index-value"><input id="msig-network" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0" aria-describedby="msig-network-help"><span class="derivation-index-prime" aria-hidden="true">'</span></span><label class="derivation-harden"><input id="msig-network-harden" type="checkbox" checked><span>Harden</span></label></div>
-            <span class="field-note" id="msig-network-help">Coin type index \xB7 Mainnet \xB7 Hardened \xB7 0 to 2,147,483,647</span>
+          <div class="field"><label for="msig-network" data-i18n="network.label">Network</label>
+            <div class="derivation-index-control"><span class="derivation-index-value"><input id="msig-network" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0" aria-describedby="msig-network-help"><span class="derivation-index-prime" aria-hidden="true" data-i18n="literal.hardenedMarker">'</span></span><label class="derivation-harden"><input id="msig-network-harden" type="checkbox" checked><span data-i18n="shell.harden">Harden</span></label></div>
+            <span class="field-note" id="msig-network-help" data-i18n="network.help">Coin type index · Mainnet · Hardened · 0 to 2,147,483,647</span>
           </div>
-          <div class="field"><label for="msig-account">Account</label>
-            <div class="derivation-index-control"><span class="derivation-index-value"><input id="msig-account" type="text" value="" placeholder="Derived from keys" disabled aria-describedby="msig-account-help msig-account-warning"><span class="derivation-index-prime" aria-hidden="true">'</span></span><label class="derivation-harden"><input id="msig-account-harden" type="checkbox" checked><span>Harden</span></label></div>
-            <span class="field-note" id="msig-account-help">Account index \xB7 Hardened \xB7 Derived from co-signer key origins.</span>
+          <div class="field"><label for="msig-account" data-i18n="paths.account">Account</label>
+            <div class="derivation-index-control"><span class="derivation-index-value"><input id="msig-account" type="text" value="" placeholder="Derived from keys" disabled aria-describedby="msig-account-help msig-account-warning" data-i18n-placeholder="msig.accountPlaceholder"><span class="derivation-index-prime" aria-hidden="true" data-i18n="literal.hardenedMarker">'</span></span><label class="derivation-harden"><input id="msig-account-harden" type="checkbox" checked><span data-i18n="shell.harden">Harden</span></label></div>
+            <span class="field-note" id="msig-account-help" data-i18n="msig.accountHelpDerived">Account index · Hardened · Derived from co-signer key origins.</span>
             <span class="field-note msig-account-warning" id="msig-account-warning" role="status" hidden></span>
           </div>
         </div>
         <div class="key-settings-row address-branch-settings">
-          <div class="field"><label for="msig-branch-start">Starting address branch index</label>
-            <div class="derivation-index-control"><span class="derivation-index-value"><input id="msig-branch-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0" aria-describedby="msig-branch-start-help"><span class="derivation-index-prime" aria-hidden="true">'</span></span><label class="derivation-harden"><input id="msig-branch-start-harden" type="checkbox"><span>Harden</span></label></div>
-            <span class="field-note" id="msig-branch-start-help">First address branch to derive · 0 is Receive · 1 is Change · Unhardened · 0 to 2,147,483,647</span>
+          <div class="field"><label for="msig-branch-start" data-i18n="shell.startingAddressBranchIndex">Starting address branch index</label>
+            <div class="derivation-index-control"><span class="derivation-index-value"><input id="msig-branch-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0" aria-describedby="msig-branch-start-help"><span class="derivation-index-prime" aria-hidden="true" data-i18n="literal.hardenedMarker">'</span></span><label class="derivation-harden"><input id="msig-branch-start-harden" type="checkbox"><span data-i18n="shell.harden">Harden</span></label></div>
+            <span class="field-note" id="msig-branch-start-help" data-i18n="shell.branchStartHelpText">First address branch to derive · 0 is Receive · 1 is Change · Unhardened · 0 to 2,147,483,647</span>
           </div>
-          <label class="field">Address branch range
+          <label class="field"><span data-i18n="shell.addressBranchRange">Address branch range</span>
             <input id="msig-branch-range" type="number" min="1" max="2" step="1" inputmode="numeric" value="2" aria-describedby="msig-branch-range-help">
-            <span class="field-note" id="msig-branch-range-help">Derives Receive and Change branches · Max 2</span>
+            <span class="field-note" id="msig-branch-range-help" data-i18n="shell.msigBranchRangeHelpText">Derives Receive and Change branches · Max 2</span>
           </label>
         </div>
         <div class="key-settings-row address-range-settings">
-          <div class="field"><label for="msig-address-start">Starting address index</label>
-            <div class="derivation-index-control"><span class="derivation-index-value"><input id="msig-address-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0" aria-describedby="msig-address-start-help"><span class="derivation-index-prime" aria-hidden="true">'</span></span><label class="derivation-harden"><input id="msig-address-start-harden" type="checkbox"><span>Harden</span></label></div>
-            <span class="field-note" id="msig-address-start-help">First receive and change index to derive \xB7 Unhardened \xB7 0 to 2,147,483,647</span>
+          <div class="field"><label for="msig-address-start" data-i18n="addressStart.label">Starting address index</label>
+            <div class="derivation-index-control"><span class="derivation-index-value"><input id="msig-address-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0" aria-describedby="msig-address-start-help"><span class="derivation-index-prime" aria-hidden="true" data-i18n="literal.hardenedMarker">'</span></span><label class="derivation-harden"><input id="msig-address-start-harden" type="checkbox"><span data-i18n="shell.harden">Harden</span></label></div>
+            <span class="field-note" id="msig-address-start-help" data-i18n="shell.msigAddressStartHelpText">First receive and change index to derive · Unhardened · 0 to 2,147,483,647</span>
           </div>
-          <label class="field">Address range
+          <label class="field"><span data-i18n="addressRange.label">Address range</span>
             <input id="msig-address-range" type="number" min="1" max="10000" step="1" inputmode="numeric" value="5" aria-describedby="msig-address-range-help">
-            <span class="field-note" id="msig-address-range-help">Derives 5 receive and 5 change addresses · Max 10,000</span>
+            <span class="field-note" id="msig-address-range-help" data-i18n="shell.msigAddressRangeHelpText">Derives 5 receive and 5 change addresses · Max 10,000</span>
           </label>
         </div>
         <details class="msig-advanced" id="msig-advanced">
@@ -924,7 +924,7 @@ hodlRootEl.innerHTML = `
       <p class="field-note address-estimate derivation-estimate" id="msig-address-estimate" role="status" data-i18n="estimate.measuring">Measuring this device…</p>
       <div class="row current-item-actions">
         <button class="btn primary" id="msig-go" type="button" aria-describedby="msig-script-warning" disabled aria-disabled="true" data-i18n="action.deriveMsig">Derive Multisig</button>
-        <div class="derive-progress" id="msig-derive-progress" role="progressbar" aria-label="Multisig derivation progress" data-i18n-aria="msig.deriveProgressAria" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
+        <div class="derive-progress" id="msig-derive-progress" role="progressbar" aria-label="Multisig derivation progress" data-i18n-aria="msig.deriveProgressAria" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label" data-i18n="literal.zeroPercent">0%</span></div>
         <button class="btn clear-current-action" id="msig-wipe" type="button" disabled aria-disabled="true" data-i18n="action.clearMsig">Clear Current Multisig</button>
       </div>
       <p class="err" id="msig-error"></p>
@@ -932,111 +932,111 @@ hodlRootEl.innerHTML = `
       <div id="msig-out"></div>
     </section>
     <div class="tool-intro" id="sp-tool-intro" hidden>
-        <div class="kicker">BIP-352 · reusable address, unique outputs</div>
-        <h2>Silent Payments</h2>
-        <p class="muted tool-intro-note">A calculator, not a chain scanner. Derive a reusable <code>sp1q…</code> address from your seed, compute the unique taproot output a sender must pay, or check pasted outputs against your scan key. Nothing here talks to the network.</p>
+        <div class="kicker" data-i18n="shell.bip352ReusableAddressUniqueOutputs">BIP-352 · reusable address, unique outputs</div>
+        <h2 data-i18n="workspace.sp">Silent Payments</h2>
+        <p class="muted tool-intro-note" data-i18n-html="shell.silentPaymentsIntro" data-i18n-vars='{"mainnetPrefix":"sp1q…"}'>A calculator, not a chain scanner. Derive a reusable <code>sp1q…</code> address from your seed, compute the unique taproot output a sender must pay, or check pasted outputs against your scan key. Nothing here talks to the network.</p>
       </div>
       <section class="key-manager no-print" id="sp-manager" hidden>
-        <div class="key-tab-strip"><div class="key-tabs" id="sp-tabs" role="tablist" aria-label="Silent Payments"></div></div>
+        <div class="key-tab-strip"><div class="key-tabs" id="sp-tabs" role="tablist" aria-label="Silent Payments" data-i18n-aria="workspace.sp"></div></div>
       </section>
       <section class="card no-print" id="sp-card" role="tabpanel" hidden>
       <div class="row no-print segmented-control" id="sp-modes">
-        <button class="tab active" type="button" data-sp-mode="receive" aria-pressed="true">Receive</button>
-        <button class="tab" type="button" data-sp-mode="send" aria-pressed="false">Send</button>
-        <button class="tab" type="button" data-sp-mode="verify" aria-pressed="false">Verify</button>
+        <button class="tab active" type="button" data-sp-mode="receive" aria-pressed="true" data-i18n="result.receive">Receive</button>
+        <button class="tab" type="button" data-sp-mode="send" aria-pressed="false" data-i18n="shell.send">Send</button>
+        <button class="tab" type="button" data-sp-mode="verify" aria-pressed="false" data-i18n="shell.verify">Verify</button>
       </div>
       <div class="station-key-source">
-        <p class="label">Bring in a key from Key Station</p>
-        <div class="session-key-picker" id="sp-session-keys" role="group" aria-label="Compatible Key Station keys" hidden></div>
-        <p class="field-note">Choose a compatible HD-root key from this session, or enter a seed phrase or root extended private key below.</p>
+        <p class="label" data-i18n="shell.bip85BenchPText">Bring in a key from Key Station</p>
+        <div class="session-key-picker" id="sp-session-keys" role="group" aria-label="Compatible Key Station keys" hidden data-i18n-aria="shell.compatibleKeyStationKeys"></div>
+        <p class="field-note" data-i18n="shell.spCardPText">Choose a compatible HD-root key from this session, or enter a seed phrase or root extended private key below.</p>
       </div>
       <div class="psbt-grid">
-        <label class="field">Session key (BIP39 seed phrase or root xprv/tprv)
-          <textarea id="sp-key" placeholder="Enter a seed phrase or root xprv/tprv" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <label class="field"><span data-i18n="shell.spKeyLabelText">Session key (BIP39 seed phrase or root xprv/tprv)</span>
+          <textarea id="sp-key" placeholder="Enter a seed phrase or root xprv/tprv" spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="shell.spKeyPlaceholder"></textarea>
         </label>
         <div>
-          <label class="field">Optional BIP39 passphrase
-            <input id="sp-pass" autocomplete="off" placeholder="Enter a BIP39 passphrase, or leave blank for none">
+          <label class="field"><span data-i18n="passphrase.label">Optional BIP39 passphrase</span>
+            <input id="sp-pass" autocomplete="off" placeholder="Enter a BIP39 passphrase, or leave blank for none" data-i18n-placeholder="passphrase.placeholder">
           </label>
-          <label class="field">Address network
-            <select id="sp-network"><option value="mainnet" selected>Bitcoin mainnet</option><option value="testnet">Testnet (practice)</option></select>
+          <label class="field"><span data-i18n="psbt.field.network">Address network</span>
+            <select id="sp-network"><option value="mainnet" selected data-i18n="network.mainnet">Bitcoin mainnet</option><option value="testnet" data-i18n="network.testnetPractice">Testnet (practice)</option></select>
           </label>
-          <label class="field">Account
+          <label class="field"><span data-i18n="account.label">Account</span>
             <input id="sp-account" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
           </label>
         </div>
       </div>
       <div class="row psbt-actions">
-        <button class="btn secondary" id="sp-wipe" type="button">End session / clear fields</button>
+        <button class="btn secondary" id="sp-wipe" type="button" data-i18n="psbt.wipe">End session / clear fields</button>
       </div>
       <p class="muted" id="sp-session" aria-live="polite">No session key. Receive and verify need a seed or root xprv.</p>
       <div id="sp-receive">
-        <label class="field">Label <code>m</code>
-          <input id="sp-label" type="number" min="0" max="4294967295" step="1" inputmode="numeric" placeholder="blank = unlabeled · 0 = change (do not hand out)">
-          <span class="field-note">Unlabeled is the reusable address you publish. <code>m = 0</code> is reserved for change. <code>m ≥ 1</code> is an extra labeled code from the same scan key.</span>
+        <label class="field"><span data-i18n="shell.label">Label</span> <code data-i18n="literal.bip32RootPath">m</code>
+          <input id="sp-label" type="number" min="0" max="4294967295" step="1" inputmode="numeric" placeholder="blank = unlabeled · 0 = change (do not hand out)" data-i18n-placeholder="shell.spLabelPlaceholder">
+          <span class="field-note" data-i18n-html="shell.silentPaymentsLabelHelp" data-i18n-vars='{"changeLabel":"m = 0","publicLabel":"m ≥ 1"}'>Unlabeled is the reusable address you publish. <code>m = 0</code> is reserved for change. <code>m ≥ 1</code> is an extra labeled code from the same scan key.</span>
         </label>
         <div class="row psbt-actions">
-          <button class="btn primary" id="sp-derive" type="button">Derive silent payment address</button>
+          <button class="btn primary" id="sp-derive" type="button" data-i18n="shell.deriveSilentPaymentAddress">Derive silent payment address</button>
         </div>
       </div>
       <div id="sp-send" hidden>
-        <label class="field">Recipients (one <code>sp1q…</code> / <code>tsp1q…</code> per line; optional count)
-          <textarea id="sp-recipients" placeholder="sp1qqgste7k9hx0q…&#10;sp1qqgste7k9hx0q… 2" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <label class="field"><span data-i18n-html="shell.silentPaymentsRecipientsLabel" data-i18n-vars='{"mainnetPrefix":"sp1q…","testnetPrefix":"tsp1q…"}'>Recipients (one <code>sp1q…</code> / <code>tsp1q…</code> per line; optional count)</span>
+          <textarea id="sp-recipients" placeholder="sp1qqgste7k9hx0q… sp1qqgste7k9hx0q… 2" spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="literal.spRecipientsPlaceholder"></textarea>
         </label>
-        <label class="field">Inputs (BIP-352 vin JSON)
-          <textarea id="sp-send-vins" placeholder='[{"txid":"\u2026","vout":0,"scriptSig":"\u2026","txinwitness":"","prevout":{"scriptPubKey":{"hex":"\u2026"}},"private_key":"\u2026"}]' spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-          <span class="field-note">Same shape as the published BIP-352 send vectors. Each eligible input needs its private key. P2TR / P2WPKH / P2SH-P2WPKH / P2PKH only.</span>
+        <label class="field"><span data-i18n="shell.inputsBip352VinJson">Inputs (BIP-352 vin JSON)</span>
+          <textarea id="sp-send-vins" placeholder='[{&quot;txid&quot;:&quot;…&quot;,&quot;vout&quot;:0,&quot;scriptSig&quot;:&quot;…&quot;,&quot;txinwitness&quot;:&quot;&quot;,&quot;prevout&quot;:{&quot;scriptPubKey&quot;:{&quot;hex&quot;:&quot;…&quot;}},&quot;private_key&quot;:&quot;…&quot;}]' spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="literal.spSendVinsPlaceholder"></textarea>
+          <span class="field-note" data-i18n="shell.spSendSpanText">Same shape as the published BIP-352 send vectors. Each eligible input needs its private key. P2TR / P2WPKH / P2SH-P2WPKH / P2PKH only.</span>
         </label>
         <div class="row psbt-actions">
-          <button class="btn primary" id="sp-send-go" type="button">Compute taproot outputs</button>
+          <button class="btn primary" id="sp-send-go" type="button" data-i18n="shell.computeTaprootOutputs">Compute taproot outputs</button>
         </div>
       </div>
       <div id="sp-verify" hidden>
-        <label class="field">Inputs (BIP-352 vin JSON, private keys optional)
-          <textarea id="sp-verify-vins" placeholder='[{"txid":"\u2026","vout":0,"scriptSig":"\u2026","txinwitness":"","prevout":{"scriptPubKey":{"hex":"\u2026"}}}]' spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <label class="field"><span data-i18n="shell.spVerifyVinsLabelText">Inputs (BIP-352 vin JSON, private keys optional)</span>
+          <textarea id="sp-verify-vins" placeholder='[{&quot;txid&quot;:&quot;…&quot;,&quot;vout&quot;:0,&quot;scriptSig&quot;:&quot;…&quot;,&quot;txinwitness&quot;:&quot;&quot;,&quot;prevout&quot;:{&quot;scriptPubKey&quot;:{&quot;hex&quot;:&quot;…&quot;}}}]' spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="literal.spVerifyVinsPlaceholder"></textarea>
         </label>
-        <label class="field">Taproot output keys (32-byte x-only hex, one per line)
-          <textarea id="sp-verify-outputs" placeholder="3e9fce73d4e77a4809908e3c3a2e54ee147b9312dc5044a193d1fc85de46e3c1" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <label class="field"><span data-i18n="shell.spVerifyOutputsLabelText">Taproot output keys (32-byte x-only hex, one per line)</span>
+          <textarea id="sp-verify-outputs" placeholder="3e9fce73d4e77a4809908e3c3a2e54ee147b9312dc5044a193d1fc85de46e3c1" spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="literal.spVerifyOutputsPlaceholder"></textarea>
         </label>
-        <label class="field">Labels to scan
-          <input id="sp-verify-labels" placeholder="0, 1, 2" value="0">
-          <span class="field-note"><code>m = 0</code> is change and should stay in this list. Add any labeled codes you handed out.</span>
+        <label class="field"><span data-i18n="shell.labelsToScan">Labels to scan</span>
+          <input id="sp-verify-labels" placeholder="0, 1, 2" value="0" data-i18n-placeholder="literal.spVerifyLabelsPlaceholder">
+          <span class="field-note" data-i18n-html="shell.silentPaymentsVerifyHelp" data-i18n-vars='{"changeLabel":"m = 0"}'><code>m = 0</code> is change and should stay in this list. Add any labeled codes you handed out.</span>
         </label>
         <div class="row psbt-actions">
-          <button class="btn primary" id="sp-verify-go" type="button">Scan pasted outputs</button>
+          <button class="btn primary" id="sp-verify-go" type="button" data-i18n="shell.scanPastedOutputs">Scan pasted outputs</button>
         </div>
       </div>
       <p class="err" id="sp-error" role="alert"></p>
       <div id="sp-out" aria-live="polite"></div>
-      <p class="muted">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      <p class="muted" data-i18n="psbt.sessionNote">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
     </section>
     <div class="tool-intro-stack" id="psbt-tool-intros" hidden>
     <div class="tool-intro active" id="psbt-tool-intro" aria-hidden="false">
-        <div class="kicker">Inspect first. Sign elsewhere.</div>
-        <h2>Read a PSBT or a signed transaction.</h2>
-        <p class="muted tool-intro-note">Inspecting a PSBT v0 or a raw Bitcoin transaction does not require a private key. EntropyLab can show outputs, PSBT-provided input amounts and fees, signatures, and repeated ECDSA nonce values. Optional Jade anti-exfil transcripts (host nonce \u03C1 and signer opening R) are checked without a key. Finalized taproot witnesses and tap-leaf scripts are scanned for inscription envelopes (OP_FALSE OP_IF "ord"); this does not number sats or fetch content from the chain. Loading a matching key additionally labels which outputs belong to this wallet (change vs receive vs not yours) and checks whether supported signatures match plain RFC 6979 or Bitcoin Core-style low-r grinding; a mismatch alone is not evidence of a compromised signer.</p>
+        <div class="kicker" data-i18n="psbt.kicker">Inspect first. Sign elsewhere.</div>
+        <h2 data-i18n="shell.psbtToolIntroH2Text">Read a PSBT or a signed transaction.</h2>
+        <p class="muted tool-intro-note" data-i18n="shell.psbtToolIntroPText">Inspecting a PSBT v0 or a raw Bitcoin transaction does not require a private key. EntropyLab can show outputs, PSBT-provided input amounts and fees, signatures, and repeated ECDSA nonce values. Optional Jade anti-exfil transcripts (host nonce ρ and signer opening R) are checked without a key. Finalized taproot witnesses and tap-leaf scripts are scanned for inscription envelopes (OP_FALSE OP_IF "ord"); this does not number sats or fetch content from the chain. Loading a matching key additionally labels which outputs belong to this wallet (change vs receive vs not yours) and checks whether supported signatures match plain RFC 6979 or Bitcoin Core-style low-r grinding; a mismatch alone is not evidence of a compromised signer.</p>
       </div>
     <div class="tool-intro" id="psbted-tool-intro" aria-hidden="true">
-        <div class="kicker">Full-fidelity editor. Sign elsewhere.</div>
-        <h2>Edit a PSBT, field by field.</h2>
-        <p class="muted tool-intro-note">A BIP-174 editor in the spirit of bip174.org, backed by rust-bitcoin compiled to WebAssembly. Every key-value pair of the global, per-input and per-output maps is shown with a typed decode (BIP-174 and BIP-371 taproot fields) and stays editable as raw hex, and the unsigned transaction's version, locktime, input prevouts/sequences and output amounts/scripts get structured fields. Every edit rebuilds the file through rust-bitcoin as you type — the fields always show its decode of the current build — and the result follows live as base64, hex, a downloadable .psbt and a QR code (a single static code, or an animated ur:crypto-psbt sequence for larger files). A binary .psbt file as saved by Sparrow, Coldcard or another wallet uploads directly. PSBT v0 only; unknown and proprietary pairs round-trip untouched. A second PSBT can be pasted for a semantic comparison against the editor's: the underlying transaction, the signing state, and the PSBT metadata are diffed separately, on the decoded contents rather than the serialized bytes. Editing never signs anything.</p>
+        <div class="kicker" data-i18n="shell.fullFidelityEditorSignElsewhere">Full-fidelity editor. Sign elsewhere.</div>
+        <h2 data-i18n="shell.editAPsbtFieldByField">Edit a PSBT, field by field.</h2>
+        <p class="muted tool-intro-note" data-i18n="shell.psbtedToolIntroPText">A BIP-174 editor in the spirit of bip174.org, backed by rust-bitcoin compiled to WebAssembly. Every key-value pair of the global, per-input and per-output maps is shown with a typed decode (BIP-174 and BIP-371 taproot fields) and stays editable as raw hex, and the unsigned transaction's version, locktime, input prevouts/sequences and output amounts/scripts get structured fields. Every edit rebuilds the file through rust-bitcoin as you type — the fields always show its decode of the current build — and the result follows live as base64, hex, a downloadable .psbt and a QR code (a single static code, or an animated ur:crypto-psbt sequence for larger files). A binary .psbt file as saved by Sparrow, Coldcard or another wallet uploads directly. PSBT v0 only; unknown and proprietary pairs round-trip untouched. Editing never signs anything.</p>
       </div>
     </div>
     <section class="key-manager no-print" id="psbt-manager" hidden>
       <div class="key-tab-strip">
-        <div class="key-tabs" id="psbt-tool-tabs" role="tablist" aria-label="PSBT stations">
+        <div class="key-tabs" id="psbt-tool-tabs" role="tablist" aria-label="PSBT stations" data-i18n-aria="shell.psbtStations">
           <button class="tab key-tab is-lab active" id="psbt-nonce-tab" type="button" role="tab" aria-selected="true" aria-controls="psbt-card" data-psbt-tool="nonce" data-i18n="workspace.psbtNonce">PSBT / Nonce</button>
           <button class="tab key-tab is-lab" id="psbt-editor-tab" type="button" role="tab" aria-selected="false" aria-controls="psbted-card" data-psbt-tool="editor" data-i18n="workspace.psbted">PSBT Editor</button>
         </div>
       </div>
     </section>
       <section class="card no-print" id="psbt-card" role="tabpanel" hidden>
-      <label class="field">PSBT v0 or raw transaction (base64 or hex)
-        <textarea id="psbt-text" placeholder="cHNidP8B\u2026 or 020000000001\u2026" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      <label class="field"><span data-i18n="shell.psbtTextLabelText">PSBT v0 or raw transaction (base64 or hex)</span>
+        <textarea id="psbt-text" placeholder="cHNidP8B… or 020000000001…" spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="literal.psbtTextPlaceholder"></textarea>
       </label>
       <div class="psbt-grid">
-        <label class="field">Optional session key (BIP39 seed phrase, root xprv/tprv, WIF, or 64-character hex)
-          <textarea id="psbt-key" placeholder="Leave blank for inspect-only mode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <label class="field"><span data-i18n="shell.psbtKeyLabelText">Optional session key (BIP39 seed phrase, root xprv/tprv, WIF, or 64-character hex)</span>
+          <textarea id="psbt-key" placeholder="Leave blank for inspect-only mode" spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="psbt.ph.inspectOnly"></textarea>
         </label>
         <div>
           <label class="field"><span data-i18n="psbt.field.pass">Optional BIP39 passphrase</span>
@@ -1049,9 +1049,9 @@ hodlRootEl.innerHTML = `
         <span class="field-note" data-i18n="psbt.jadeNote">USB Jade only (Green host nonce + opening). QR / sign_psbt does not run anti-exfil yet. BitBox anti-klepto is a different mix — do not paste it here.</span>
       </label>
       <div class="row psbt-actions">
-        <button class="btn primary" id="psbt-go" type="button">Inspect</button>
-        <button class="btn secondary" id="psbt-use-calc" type="button">Use active key this session</button>
-        <button class="btn secondary" id="psbt-wipe" type="button">End session / clear fields</button>
+        <button class="btn primary" id="psbt-go" type="button" data-i18n="shell.inspect">Inspect</button>
+        <button class="btn secondary" id="psbt-use-calc" type="button" data-i18n="psbt.useKey">Use active key this session</button>
+        <button class="btn secondary" id="psbt-wipe" type="button" data-i18n="psbt.wipe">End session / clear fields</button>
       </div>
       <p class="muted" id="psbt-session" aria-live="polite" data-i18n="psbt.noSession">No session key. Inspect-only mode.</p>
       <p class="err" id="psbt-error" role="alert"></p>
@@ -1059,44 +1059,44 @@ hodlRootEl.innerHTML = `
       <p class="muted" data-i18n="psbt.sessionNote">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
     </section>
       <section class="card no-print" id="psbted-card" role="tabpanel" hidden>
-      <label class="field">PSBT v0 (base64 or hex)
-        <textarea id="psbted-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      <label class="field"><span data-i18n="psbt.field.psbt">PSBT v0 (base64 or hex)</span>
+        <textarea id="psbted-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="literal.psbtedTextPlaceholder"></textarea>
       </label>
       <div class="row psbt-actions psbted-actions">
-        <button class="btn primary" id="psbted-load" type="button">Load PSBT</button>
-        <button class="btn secondary" id="psbted-upload" type="button">Upload .psbt file</button>
+        <button class="btn primary" id="psbted-load" type="button" data-i18n="shell.loadPsbt">Load PSBT</button>
+        <button class="btn secondary" id="psbted-upload" type="button" data-i18n="shell.uploadPsbtFile">Upload .psbt file</button>
         <input type="file" id="psbted-file" accept=".psbt,.txt,.hex" hidden>
-        <button class="btn secondary" id="psbted-wipe" type="button">Clear editor</button>
+        <button class="btn secondary" id="psbted-wipe" type="button" data-i18n="shell.clearEditor">Clear editor</button>
       </div>
       <p class="err" id="psbted-error" role="alert"></p>
       <div id="psbted-out" aria-live="polite"></div>
       <section class="psbted-compare" id="psbted-compare">
-        <h3>Compare with another PSBT</h3>
-        <p class="muted">Paste a second PSBT to see what changed relative to the one in the editor. The comparison reads the decoded contents, so reordered maps are not a difference; transaction, signing-state, and metadata changes are reported separately. It describes differences only — it does not judge whether a change is safe.</p>
-        <label class="field">Other PSBT (base64 or hex)
-          <textarea id="psbted-compare-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <h3 data-i18n="psbted.compare.heading">Compare with another PSBT</h3>
+        <p class="muted" data-i18n="psbted.compare.help">Paste a second PSBT to see what changed relative to the one in the editor. The comparison reads the decoded contents, so reordered maps are not a difference; transaction, signing-state, and metadata changes are reported separately. It describes differences only — it does not judge whether a change is safe.</p>
+        <label class="field"><span data-i18n="psbted.compare.otherLabel">Other PSBT (base64 or hex)</span>
+          <textarea id="psbted-compare-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="literal.psbtedTextPlaceholder"></textarea>
         </label>
         <div class="row psbt-actions psbted-actions">
-          <button class="btn secondary" id="psbted-compare-go" type="button">Compare</button>
-          <button class="btn secondary" id="psbted-compare-clear" type="button">Clear comparison</button>
+          <button class="btn secondary" id="psbted-compare-go" type="button" data-i18n="psbted.compare.action">Compare</button>
+          <button class="btn secondary" id="psbted-compare-clear" type="button" data-i18n="psbted.compare.clear">Clear comparison</button>
         </div>
         <p class="err" id="psbted-compare-error" role="alert"></p>
         <div id="psbted-compare-out" aria-live="polite"></div>
       </section>
-      <p class="muted">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
+      <p class="muted" data-i18n="shell.psbtedCardPText">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
     </section>
     <div class="tool-intro" id="journal-tool-intro" hidden>
-        <div class="kicker">Your rolls, on paper you control.</div>
-        <h2>Entropy Journal</h2>
-        <p class="muted tool-intro-note journal-intro">An encrypted notebook of entropy you already produced \u2014 dice, coins, hex, brain-wallet text, or a seed. The file stays on your machine and opens with a password you choose. Encryption is a pure function of the password and the entries \u2014 nothing is generated for you. This is not a password manager and does not invent entropy.</p>
+        <div class="kicker" data-i18n="shell.yourRollsOnPaperYouControl">Your rolls, on paper you control.</div>
+        <h2 data-i18n="shell.entropyJournal">Entropy Journal</h2>
+        <p class="muted tool-intro-note journal-intro" data-i18n="shell.journalToolIntroPText">An encrypted notebook of entropy you already produced — dice, coins, hex, brain-wallet text, or a seed. The file stays on your machine and opens with a password you choose. Encryption is a pure function of the password and the entries — nothing is generated for you. This is not a password manager and does not invent entropy.</p>
         <div class="row journal-global-actions">
-          <button class="btn secondary journal-download-action" id="journal-global-download" type="button" disabled aria-disabled="true"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span>Download journal</span></button>
-          <button class="btn clear-current-action" id="journal-global-clear" type="button" disabled aria-disabled="true">Clear journal</button>
+          <button class="btn secondary journal-download-action" id="journal-global-download" type="button" disabled aria-disabled="true"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span data-i18n="shell.downloadJournal">Download journal</span></button>
+          <button class="btn clear-current-action" id="journal-global-clear" type="button" disabled aria-disabled="true" data-i18n="shell.clearJournal">Clear journal</button>
         </div>
       </div>
     <section class="key-manager no-print" id="journal-manager" hidden>
       <div class="key-tab-strip">
-        <div class="key-tabs" id="journal-tool-tabs" role="tablist" aria-label="Journal stations">
+        <div class="key-tabs" id="journal-tool-tabs" role="tablist" aria-label="Journal stations" data-i18n-aria="shell.journalStations">
           <button class="tab key-tab is-lab" id="journal-notes-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-notes-card" aria-disabled="true" data-journal-tool="notes" data-i18n="workspace.journalNotes" disabled>Notepad</button>
           <button class="tab key-tab is-lab" id="journal-keymanager-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-keymanager-card" aria-disabled="true" data-journal-tool="keymanager" data-i18n="workspace.journalKeyManager" disabled>Key manager</button>
           <button class="tab key-tab is-lab" id="journal-state-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-state-card" aria-disabled="true" data-journal-tool="state" data-i18n="workspace.journalState" disabled>Session state</button>
@@ -1104,34 +1104,34 @@ hodlRootEl.innerHTML = `
         </div>
       </div>
     </section>
-      <section class="card no-print" id="journal-card" role="region" aria-label="Encrypted Journal" hidden>
+      <section class="card no-print" id="journal-card" role="region" aria-label="Encrypted Journal" data-i18n-aria="journal.encryptedAria" hidden>
       <div id="journal-locked-panel">
-        <div class="row segmented-control" id="journal-gate-modes" role="group" aria-label="Journal start">
-          <button type="button" class="tab active" data-journal-gate="create" aria-pressed="true">Create</button>
-          <button type="button" class="tab" data-journal-gate="open" aria-pressed="false">Open file</button>
+        <div class="row segmented-control" id="journal-gate-modes" role="group" aria-label="Journal start" data-i18n-aria="shell.journalStart">
+          <button type="button" class="tab active" data-journal-gate="create" aria-pressed="true" data-i18n="shell.create">Create</button>
+          <button type="button" class="tab" data-journal-gate="open" aria-pressed="false" data-i18n="shell.openFile">Open file</button>
         </div>
         <div id="journal-create-panel">
-          <label class="field"><span class="journal-password-label"><span>Password for the journal</span><span class="journal-password-validation" id="journal-create-password-status" role="status" aria-live="polite" hidden></span></span>
-            <input id="journal-create-password" type="password" placeholder="At least 12 characters" autocomplete="new-password" aria-describedby="journal-create-password-note journal-create-password-status">
-            <span class="field-note" id="journal-create-password-note">A long passphrase you can picture beats a short clever one. There is no recovery: lose the password and the file stays sealed.</span>
+          <label class="field"><span class="journal-password-label"><span data-i18n="shell.passwordForTheJournal">Password for the journal</span><span class="journal-password-validation" id="journal-create-password-status" role="status" aria-live="polite" hidden></span></span>
+            <input id="journal-create-password" type="password" placeholder="At least 12 characters" autocomplete="new-password" aria-describedby="journal-create-password-note journal-create-password-status" data-i18n-placeholder="shell.atLeast12Characters">
+            <span class="field-note" id="journal-create-password-note" data-i18n="shell.journalCreatePanelSpanText">A long passphrase you can picture beats a short clever one. There is no recovery: lose the password and the file stays sealed.</span>
           </label>
-          <label class="field"><span class="journal-password-label"><span>Confirm the password</span><span class="journal-password-validation" id="journal-create-confirm-status" role="status" aria-live="polite" hidden></span></span>
-            <input id="journal-create-confirm" type="password" placeholder="Enter the same password again" autocomplete="new-password" aria-describedby="journal-create-confirm-status">
+          <label class="field"><span class="journal-password-label"><span data-i18n="shell.confirmThePassword">Confirm the password</span><span class="journal-password-validation" id="journal-create-confirm-status" role="status" aria-live="polite" hidden></span></span>
+            <input id="journal-create-confirm" type="password" placeholder="Enter the same password again" autocomplete="new-password" aria-describedby="journal-create-confirm-status" data-i18n-placeholder="shell.enterTheSamePasswordAgain">
           </label>
           <div class="row bip85-actions journal-create-actions">
-            <button class="btn primary" id="journal-create" type="button">Create journal</button>
-            <span class="journal-create-ready" id="journal-create-ready" hidden><span class="journal-create-ready-arrow" aria-hidden="true">←</span> Ready to create journal</span>
+            <button class="btn primary" id="journal-create" type="button" data-i18n="shell.createJournal">Create journal</button>
+            <span class="journal-create-ready" id="journal-create-ready" hidden><span class="journal-create-ready-arrow" aria-hidden="true" data-i18n="literal.leftArrow">←</span> <span data-i18n="shell.readyCreateJournal">Ready to create journal</span></span>
           </div>
         </div>
         <div id="journal-open-panel" hidden>
-          <label class="field">Encrypted journal file
+          <label class="field"><span data-i18n="shell.encryptedJournalFile">Encrypted journal file</span>
             <input id="journal-file" type="file" accept=".json,application/json">
           </label>
-          <label class="field">Password for the journal
-            <input id="journal-open-password" type="password" placeholder="The password used when this file was created" autocomplete="off">
+          <label class="field"><span data-i18n="shell.passwordForTheJournal">Password for the journal</span>
+            <input id="journal-open-password" type="password" placeholder="The password used when this file was created" autocomplete="off" data-i18n-placeholder="shell.journalOpenPasswordPlaceholder">
           </label>
           <div class="row bip85-actions">
-            <button class="btn primary" id="journal-unlock" type="button">Open journal</button>
+            <button class="btn primary" id="journal-unlock" type="button" data-i18n="shell.openJournal">Open journal</button>
           </div>
         </div>
       </div>
@@ -1144,74 +1144,74 @@ hodlRootEl.innerHTML = `
           </div>
         </div>
         <div class="row bip85-actions journal-toolbar">
-          <label class="field journal-search-field">Search labels
-            <input id="journal-search" type="search" placeholder="Filter by label" autocomplete="off">
+          <label class="field journal-search-field"><span data-i18n="shell.searchLabels">Search labels</span>
+            <input id="journal-search" type="search" placeholder="Filter by label" autocomplete="off" data-i18n-placeholder="shell.filterByLabel">
           </label>
-          <button class="btn primary" id="journal-add" type="button">Add entry</button>
-          <button class="btn secondary" id="journal-save" type="button">Save file</button>
-          <button class="btn secondary" id="journal-lock" type="button">Lock</button>
+          <button class="btn primary" id="journal-add" type="button" data-i18n="shell.addEntry">Add entry</button>
+          <button class="btn secondary" id="journal-save" type="button" data-i18n="shell.saveFile">Save file</button>
+          <button class="btn secondary" id="journal-lock" type="button" data-i18n="shell.lock">Lock</button>
         </div>
         <div id="journal-list" class="journal-list" aria-live="polite"></div>
         <div id="journal-editor" class="journal-editor" hidden>
-          <label class="field">Method
+          <label class="field"><span data-i18n="keys.methodLabel">Method</span>
             <select id="journal-method">
-              <option value="dice" selected>Dice rolls</option>
-              <option value="coin">Coin flips</option>
-              <option value="hex">Hex</option>
-              <option value="brain">Brain-wallet text</option>
-              <option value="seed">Manual seed</option>
-              <option value="cards">Playing cards</option>
+              <option value="dice" selected data-i18n="mode.dice">Dice rolls</option>
+              <option value="coin" data-i18n="shell.coinFlips">Coin flips</option>
+              <option value="hex" data-i18n="shell.journalHex">Hex</option>
+              <option value="brain" data-i18n="shell.brainWalletText">Brain-wallet text</option>
+              <option value="seed" data-i18n="shell.manualSeed">Manual seed</option>
+              <option value="cards" data-i18n="shell.playingCards">Playing cards</option>
             </select>
           </label>
-          <label class="field">Raw rolls or input
+          <label class="field"><span data-i18n="shell.rawRollsOrInput">Raw rolls or input</span>
             <textarea id="journal-input" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-            <span class="field-note">Stored exactly as entered.</span>
+            <span class="field-note" data-i18n="shell.storedExactlyAsEntered">Stored exactly as entered.</span>
           </label>
-          <label class="field">BIP39 seed or passphrase
+          <label class="field"><span data-i18n="shell.bip39SeedOrPassphrase">BIP39 seed or passphrase</span>
             <textarea id="journal-phrase" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
           </label>
-          <label class="field">Label
+          <label class="field"><span data-i18n="shell.label">Label</span>
             <input id="journal-label" type="text" maxlength="120" autocomplete="off">
           </label>
-          <label class="field">Notes (optional)
+          <label class="field"><span data-i18n="shell.notesOptional">Notes (optional)</span>
             <textarea id="journal-entry-notes" spellcheck="true"></textarea>
           </label>
-          <label class="field">Session wallet (optional)
-            <select id="journal-wallet"><option value="">None</option></select>
+          <label class="field"><span data-i18n="shell.sessionWalletOptional">Session wallet (optional)</span>
+            <select id="journal-wallet"><option value="" data-i18n="shell.none">None</option></select>
           </label>
           <div class="row bip85-actions">
-            <button class="btn primary" id="journal-commit" type="button">Save entry</button>
-            <button class="btn secondary" id="journal-use-calc" type="button">Use active key</button>
-            <button class="btn secondary" id="journal-cancel" type="button">Cancel</button>
+            <button class="btn primary" id="journal-commit" type="button" data-i18n="shell.saveEntry">Save entry</button>
+            <button class="btn secondary" id="journal-use-calc" type="button" data-i18n="shell.useActiveKey">Use active key</button>
+            <button class="btn secondary" id="journal-cancel" type="button" data-i18n="shell.cancel">Cancel</button>
           </div>
         </div>
         <div id="journal-view" hidden></div>
       </div>
       <p class="err" id="journal-error" role="alert"></p>
-      <p class="muted">The journal lives in this page until you save the encrypted file. Anyone with that file and the journal password can read every entry. Memory clearing is best-effort; close the page before reconnecting the computer.</p>
+      <p class="muted" data-i18n="shell.journalCardPText">The journal lives in this page until you save the encrypted file. Anyone with that file and the journal password can read every entry. Memory clearing is best-effort; close the page before reconnecting the computer.</p>
     </section>
       <section class="card no-print" id="journal-notes-card" role="tabpanel" hidden>
       <div class="journal-section-intro" id="journal-notes-tool-intro">
-        <div class="kicker">Write it down. Stamp the clock. Download to keep it.</div>
-        <h2>Notepad</h2>
-        <p class="muted tool-intro-note">Freeform notes for this sitting, each stamped with this computer's date and time. Nothing is stored in the browser. Closing the page discards the notes unless you download them.</p>
+        <div class="kicker" data-i18n="shell.journalNotesToolIntroDivText">Write it down. Stamp the clock. Download to keep it.</div>
+        <h2 data-i18n="workspace.journalNotes">Notepad</h2>
+        <p class="muted tool-intro-note" data-i18n="shell.journalNotesToolIntroPText">Freeform notes for this sitting, each stamped with this computer's date and time. Nothing is stored in the browser. Closing the page discards the notes unless you download them.</p>
       </div>
-      <div class="journal-format-bar" role="group" aria-label="Notepad appearance and inserts">
-        <label class="journal-format-control journal-key-control"><span>Key</span><select id="journal-key-insert" aria-label="Insert a Key Station key"><option value="" selected data-custom-select-placeholder="true">Insert key</option><option value="" disabled>No derived keys yet</option></select></label>
-        <label class="journal-format-control"><span>Typeface</span><select id="journal-font"><option value="mono" selected>Mono</option><option value="sans">Sans</option><option value="serif">Serif</option></select></label>
-        <label class="journal-format-control"><span>Text size</span><select id="journal-size"><option value="small">Small</option><option value="medium" selected>Medium</option><option value="large">Large</option></select></label>
-        <label class="journal-format-control"><span>Spacing</span><select id="journal-spacing"><option value="compact">Compact</option><option value="comfortable" selected>Comfortable</option><option value="spacious">Spacious</option></select></label>
+      <div class="journal-format-bar" role="group" aria-label="Notepad appearance and inserts" data-i18n-aria="journal.format.aria">
+        <label class="journal-format-control journal-key-control"><span data-i18n="journal.format.key">Key</span><select id="journal-key-insert" aria-label="Insert a Key Station key" data-i18n-aria="journal.format.keyAria"><option value="" selected data-custom-select-placeholder="true" data-i18n="journal.format.insertKey">Insert key</option><option value="" disabled data-i18n="journal.format.noKeys">No derived keys yet</option></select></label>
+        <label class="journal-format-control"><span data-i18n="journal.format.typeface">Typeface</span><select id="journal-font"><option value="mono" selected data-i18n="journal.format.mono">Mono</option><option value="sans" data-i18n="journal.format.sans">Sans</option><option value="serif" data-i18n="journal.format.serif">Serif</option></select></label>
+        <label class="journal-format-control"><span data-i18n="journal.format.textSize">Text size</span><select id="journal-size"><option value="small" data-i18n="journal.format.small">Small</option><option value="medium" selected data-i18n="journal.format.medium">Medium</option><option value="large" data-i18n="journal.format.large">Large</option></select></label>
+        <label class="journal-format-control"><span data-i18n="journal.format.spacing">Spacing</span><select id="journal-spacing"><option value="compact" data-i18n="journal.format.compact">Compact</option><option value="comfortable" selected data-i18n="journal.format.comfortable">Comfortable</option><option value="spacious" data-i18n="journal.format.spacious">Spacious</option></select></label>
       </div>
-      <div class="key-tab-strip journal-page-tab-strip"><div class="key-tabs" id="journal-page-tabs" role="tablist" aria-label="Notepad pages"></div><div class="add-item-control"><button class="add-key" id="add-journal-page" type="button" aria-label="Add notepad page" aria-describedby="add-journal-page-tooltip">+</button><span class="add-item-tooltip" id="add-journal-page-tooltip" role="tooltip">Add notepad page</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-journal-page" type="button" aria-label="Delete current notepad page" aria-describedby="delete-journal-page-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-journal-page-tooltip" role="tooltip">Delete this notepad page</span></div></div>
+      <div class="key-tab-strip journal-page-tab-strip"><div class="key-tabs" id="journal-page-tabs" role="tablist" aria-label="Notepad pages" data-i18n-aria="journal.pages.aria"></div><div class="add-item-control"><button class="add-key" id="add-journal-page" type="button" aria-label="Add notepad page" aria-describedby="add-journal-page-tooltip" data-i18n-aria="journal.pages.addAria" data-i18n="literal.plus">+</button><span class="add-item-tooltip" id="add-journal-page-tooltip" role="tooltip" data-i18n="journal.pages.addTooltip">Add notepad page</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-journal-page" type="button" aria-label="Delete current notepad page" aria-describedby="delete-journal-page-tooltip" disabled data-i18n-aria="journal.pages.deleteAria" data-i18n="literal.minus">−</button><span class="add-item-tooltip" id="delete-journal-page-tooltip" role="tooltip" data-i18n="journal.pages.deleteTooltip">Delete this notepad page</span></div></div>
       <div class="journal-notes-wrap" id="journal-page-panel" role="tabpanel" data-font="mono" data-size="medium" data-spacing="comfortable">
         <div class="journal-notes-render" id="journal-notes-render" aria-hidden="true"></div>
-        <textarea class="journal-notes-text" id="journal-notes-text" aria-label="Session notes" aria-placeholder="Add new note" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-        <div class="journal-notes-prompt" id="journal-notes-prompt" aria-hidden="true"><span id="journal-notes-prompt-before"></span><span class="journal-notes-prompt-text" id="journal-notes-prompt-text">Add new note</span></div>
-        <button class="seed-phrase-copy journal-notes-copy" id="journal-notes-copy" type="button" aria-label="Copy notepad page" title="Copy notepad page" data-copy-label="Copy notepad page" data-copied-label="Notepad page copied" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button>
+        <textarea class="journal-notes-text" id="journal-notes-text" aria-label="Session notes" data-i18n-aria="journal.notes.aria" aria-placeholder="Add new note" data-i18n-aria-placeholder="journal.notes.prompt" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <div class="journal-notes-prompt" id="journal-notes-prompt" aria-hidden="true"><span id="journal-notes-prompt-before"></span><span class="journal-notes-prompt-text" id="journal-notes-prompt-text" data-i18n="journal.notes.prompt">Add new note</span></div>
+        <button class="seed-phrase-copy journal-notes-copy" id="journal-notes-copy" type="button" aria-label="Copy notepad page" data-i18n-aria="journal.notes.copy" title="Copy notepad page" data-i18n-title="journal.notes.copy" data-copy-label="Copy notepad page" data-i18n-copy-label="journal.notes.copy" data-copied-label="Notepad page copied" data-i18n-copied-label="journal.notes.copied" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button>
       </div>
       <div class="row psbt-actions journal-file-actions">
-        <div class="journal-download-options"><button class="btn secondary journal-download-action journal-file-button" id="journal-notes-download" type="button" aria-label="Download notepad" title="Download notepad"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Download notepad</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-notes-encrypt" type="checkbox" checked><span>Use journal password to encrypt</span></label></div>
-        <button class="btn secondary journal-upload-action journal-file-button" id="journal-notes-upload" type="button" aria-label="Upload notebook" title="Upload notebook"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 17V5M7 10l5-5 5 5M5 21h14"/></svg><span class="control-label">Upload</span></button>
+        <div class="journal-download-options"><button class="btn secondary journal-download-action journal-file-button" id="journal-notes-download" type="button" aria-label="Download notepad" data-i18n-aria="journal.notes.download" title="Download notepad" data-i18n-title="journal.notes.download"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label" data-i18n="journal.notes.download">Download notepad</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-notes-encrypt" type="checkbox" checked><span data-i18n="journal.download.encrypt">Use journal password to encrypt</span></label></div>
+        <button class="btn secondary journal-upload-action journal-file-button" id="journal-notes-upload" type="button" aria-label="Upload notebook" data-i18n-aria="journal.notes.upload" title="Upload notebook" data-i18n-title="journal.notes.upload"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 17V5M7 10l5-5 5 5M5 21h14"/></svg><span class="control-label" data-i18n="journal.notes.uploadShort">Upload</span></button>
         <input id="journal-notes-file" type="file" accept=".json,.txt,application/json,text/plain" hidden>
       </div>
       <p class="muted journal-notes-status" id="journal-notes-status" role="status" aria-live="polite"></p>
@@ -1237,49 +1237,49 @@ hodlRootEl.innerHTML = `
     </section>
       <section class="card no-print" id="journal-state-card" role="tabpanel" hidden>
       <div class="journal-section-intro" id="journal-state-tool-intro">
-        <div class="kicker">What this sitting derived.</div>
-        <h2>Session state</h2>
-        <p class="muted tool-intro-note">A live text summary of every key, multisig, BIP-85 child, and calculator payload currently in this page. It updates as the session changes. Private recovery material is omitted unless you tick the box — the same rule as the recovery sheet.</p>
+        <div class="kicker" data-i18n="shell.whatThisSittingDerived">What this sitting derived.</div>
+        <h2 data-i18n="workspace.journalState">Session state</h2>
+        <p class="muted tool-intro-note" data-i18n="shell.journalStateToolIntroPText">A live text summary of every key, multisig, BIP-85 child, and calculator payload currently in this page. It updates as the session changes. Private recovery material is omitted unless you tick the box — the same rule as the recovery sheet.</p>
       </div>
-      <p class="muted">This snapshot follows the current stations automatically.</p>
+      <p class="muted" data-i18n="journal.state.liveNote">This snapshot follows the current stations automatically.</p>
       <label class="choice"><input type="checkbox" id="journal-state-private">
-        <span><strong>Include private recovery material</strong>
-        <span class="desc">Same rule as the recovery sheet. Off by default. The file is then a secret — treat the download like a seed backup.</span></span>
+        <span><strong data-i18n="shell.includePrivateRecoveryMaterial">Include private recovery material</strong>
+        <span class="desc" data-i18n="shell.journalStateCardSpanText">Same rule as the recovery sheet. Off by default. The file is then a secret — treat the download like a seed backup.</span></span>
       </label>
-      <label class="field">Session snapshot
+      <label class="field"><span data-i18n="shell.sessionSnapshot">Session snapshot</span>
         <textarea id="journal-state-text" spellcheck="false" autocomplete="off" autocapitalize="off" readonly aria-readonly="true"></textarea>
       </label>
       <div class="row psbt-actions">
-        <div class="journal-download-options"><button class="btn secondary journal-download-action journal-file-button" id="journal-state-download" type="button" aria-label="Download session state" title="Download session state"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Download session state</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-state-encrypt" type="checkbox" checked><span>Use journal password to encrypt</span></label></div>
+        <div class="journal-download-options"><button class="btn secondary journal-download-action journal-file-button" id="journal-state-download" type="button" aria-label="Download session state" data-i18n-aria="journal.state.download" title="Download session state" data-i18n-title="journal.state.download"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label" data-i18n="journal.state.download">Download session state</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-state-encrypt" type="checkbox" checked><span data-i18n="journal.download.encrypt">Use journal password to encrypt</span></label></div>
       </div>
     </section>
       <section class="card no-print" id="journal-log-card" role="tabpanel" hidden>
       <div class="journal-section-intro" id="journal-log-tool-intro">
-        <div class="kicker">A trace, not a memoir.</div>
-        <h2>Session log</h2>
-        <p class="muted tool-intro-note">An append-only record of meaningful dashboard actions — tool and station changes, calculations, safe settings, copies, file actions, clears, and errors — so a later bug report has a clock and a fingerprint instead of a guess. Seed phrases, xprvs, note bodies, filenames, PSBT bytes, and typed secrets are not written here. Last 400 events. This computer's clock.</p>
+        <div class="kicker" data-i18n="shell.aTraceNotAMemoir">A trace, not a memoir.</div>
+        <h2 data-i18n="workspace.journalLog">Session log</h2>
+        <p class="muted tool-intro-note" data-i18n="shell.journalLogToolIntroPText">An append-only record of meaningful dashboard actions — tool and station changes, calculations, safe settings, copies, file actions, clears, and errors — so a later bug report has a clock and a fingerprint instead of a guess. Seed phrases, xprvs, note bodies, filenames, PSBT bytes, and typed secrets are not written here. Last 400 events. This computer's clock.</p>
       </div>
-      <p class="muted">Download this with a bug report. It names tools and fingerprints, not seeds.</p>
-      <div class="journal-log-wrap"><pre class="journal-log" id="journal-log-out" aria-live="polite">No events yet.</pre><button class="seed-phrase-copy journal-log-copy" id="journal-log-copy" type="button" aria-label="Copy session log" title="Copy session log" data-copy-label="Copy session log" data-copied-label="Session log copied"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button></div>
+      <p class="muted" data-i18n="shell.journalLogCardPText">Download this with a bug report. It names tools and fingerprints, not seeds.</p>
+      <div class="journal-log-wrap"><pre class="journal-log" id="journal-log-out" aria-live="polite">No events yet.</pre><button class="seed-phrase-copy journal-log-copy" id="journal-log-copy" type="button" aria-label="Copy session log" data-i18n-aria="journal.log.copy" title="Copy session log" data-i18n-title="journal.log.copy" data-copy-label="Copy session log" data-i18n-copy-label="journal.log.copy" data-copied-label="Session log copied" data-i18n-copied-label="journal.log.copied"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button></div>
       <div class="row psbt-actions journal-log-actions">
-        <div class="journal-download-options"><button class="btn secondary journal-download-action journal-file-button" id="journal-log-download" type="button" aria-label="Download session log" title="Download session log"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Download session log</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-log-encrypt" type="checkbox" checked><span>Use journal password to encrypt</span></label></div>
-        <button class="btn clear-current-action" id="journal-log-clear" type="button">Clear log</button>
+        <div class="journal-download-options"><button class="btn secondary journal-download-action journal-file-button" id="journal-log-download" type="button" aria-label="Download session log" data-i18n-aria="journal.log.download" title="Download session log" data-i18n-title="journal.log.download"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label" data-i18n="journal.log.download">Download session log</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-log-encrypt" type="checkbox" checked><span data-i18n="journal.download.encrypt">Use journal password to encrypt</span></label></div>
+        <button class="btn clear-current-action" id="journal-log-clear" type="button" data-i18n="shell.clearLog">Clear log</button>
       </div>
     </section>
     </div>
     <section class="card muted sources">
-      <h3 class="sources-heading">Sources</h3>
-      <p>Ian Coleman BIP39: <a href="https://github.com/iancoleman/bip39" target="_blank" rel="noopener noreferrer">github.com/iancoleman/bip39</a> \u2014 pull <code>bip39-standalone.html</code> from Releases, or <code>src/js/index.js</code>, <code>entropy.js</code>, <code>jsbip39.js</code>, <code>wordlist_english.js</code>.</p>
-      <p>bitaddress.org: <a href="https://github.com/pointbiz/bitaddress.org" target="_blank" rel="noopener noreferrer">github.com/pointbiz/bitaddress.org</a> \u2014 pull <code>bitaddress.org.html</code>, or <code>src/ninja.key.js</code>, <code>ninja.detailwallet.js</code>, <code>ninja.paperwallet.js</code>, <code>bitcoinjs-lib.eckey.js</code>.</p>
-      <p>BitBox02 diceware: <a href="https://blog.bitbox.swiss/en/roll-the-dice-generate-your-own-seed/" target="_blank" rel="noopener noreferrer">roll-the-dice-generate-your-own-seed</a> \u2014 lookup table is the BIP39 English list in order.</p>
-      <p>D++ D8 &amp; D16 method: <a href="https://thesimplestbitcoinbook.net/wp-content/uploads/2023/09/Roll-Your-Own-Seed-Phrase-PDF.pdf" target="_blank" rel="noopener noreferrer">Roll Your Own Bitcoin Seed Phrase</a> \u2014 the published 24-word workflow uses one D8 labeled 1\u20138 and two hexadecimal D16 dice labeled 0\u2013F per word, then a final D8.</p>
-      <p>Jade anti-exfil (sign-to-contract): <a href="https://blog.blockstream.com/anti-exfil-stopping-key-exfiltration/" target="_blank" rel="noopener noreferrer">Anti-Exfil: Stopping Key Exfiltration</a> \u2014 secp256k1-zkp <code>ecdsa_s2c</code> / <code>anti_exfil_host_verify</code>.</p>
-      <p>BIP-85 deterministic entropy: <a href="https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki" target="_blank" rel="noopener noreferrer">bip-0085.mediawiki</a> — HMAC-SHA512 of a fully hardened child; English BIP-39 / WIF / XPRV / HEX / password applications match COLDCARD.</p>
-      <p>Entropy Journal: AES-256-GCM from a typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. No relays, no accounts, no localStorage for secrets.</p>
-      <p>BIP-352 Silent Payments: <a href="https://github.com/bitcoin/bips/blob/master/bip-0352.mediawiki" target="_blank" rel="noopener noreferrer">bips/bip-0352</a> — reusable <code>sp1q…</code> addresses and unique taproot outputs. Descriptors: <a href="https://github.com/bitcoin/bips/blob/master/bip-0392.mediawiki" target="_blank" rel="noopener noreferrer">BIP-392</a>.</p>
-      <p>Inscription envelopes: <a href="https://docs.ordinals.com/inscriptions.html" target="_blank" rel="noopener noreferrer">docs.ordinals.com/inscriptions</a> — <code>OP_FALSE OP_IF "ord"</code> parser only. This tool does not create inscriptions or number sats.</p>
+      <h3 class="sources-heading" data-i18n="sources.heading">Sources</h3>
+      <p><span data-i18n="shell.ianColemanBip39">Ian Coleman BIP39:</span> <a href="https://github.com/iancoleman/bip39" target="_blank" rel="noopener noreferrer" data-i18n="literal.ianColemanRepository">github.com/iancoleman/bip39</a> <span data-i18n="shell.pull">— pull</span> <code data-i18n="literal.ianColemanStandaloneFile">bip39-standalone.html</code> <span data-i18n="shell.fromReleasesOr">from Releases, or</span> <code data-i18n="literal.ianColemanIndexFile">src/js/index.js</code><span data-i18n="literal.comma">,</span> <code data-i18n="literal.ianColemanEntropyFile">entropy.js</code><span data-i18n="literal.comma">,</span> <code data-i18n="literal.ianColemanBip39File">jsbip39.js</code><span data-i18n="literal.comma">,</span> <code data-i18n="literal.ianColemanWordlistFile">wordlist_english.js</code><span data-i18n="literal.period">.</span></p>
+      <p><span data-i18n="shell.bitaddressOrg">bitaddress.org:</span> <a href="https://github.com/pointbiz/bitaddress.org" target="_blank" rel="noopener noreferrer" data-i18n="literal.bitaddressRepository">github.com/pointbiz/bitaddress.org</a> <span data-i18n="shell.pull">— pull</span> <code data-i18n="literal.bitaddressStandaloneFile">bitaddress.org.html</code><span data-i18n="shell.or">, or</span> <code data-i18n="literal.bitaddressKeyFile">src/ninja.key.js</code><span data-i18n="literal.comma">,</span> <code data-i18n="literal.bitaddressDetailWalletFile">ninja.detailwallet.js</code><span data-i18n="literal.comma">,</span> <code data-i18n="literal.bitaddressPaperWalletFile">ninja.paperwallet.js</code><span data-i18n="literal.comma">,</span> <code data-i18n="literal.bitaddressEckeyFile">bitcoinjs-lib.eckey.js</code><span data-i18n="literal.period">.</span></p>
+      <p><span data-i18n="shell.bitbox02Diceware">BitBox02 diceware:</span> <a href="https://blog.bitbox.swiss/en/roll-the-dice-generate-your-own-seed/" target="_blank" rel="noopener noreferrer" data-i18n="literal.bitboxArticleSlug">roll-the-dice-generate-your-own-seed</a> <span data-i18n="shell.bitboxDicewareDescription">— lookup table is the BIP39 English list in order.</span></p>
+      <p><span data-i18n="shell.dD8D16Method">D++ D8 &amp; D16 method:</span> <a href="https://thesimplestbitcoinbook.net/wp-content/uploads/2023/09/Roll-Your-Own-Seed-Phrase-PDF.pdf" target="_blank" rel="noopener noreferrer" data-i18n="shell.rollYourOwnBitcoinSeedPhrase">Roll Your Own Bitcoin Seed Phrase</a> <span data-i18n="shell.dplusDiceMethodDescription">— the published 24-word workflow uses one D8 labeled 1–8 and two hexadecimal D16 dice labeled 0–F per word, then a final D8.</span></p>
+      <p><span data-i18n="shell.jadeAntiExfilSignToContract">Jade anti-exfil (sign-to-contract):</span> <a href="https://blog.blockstream.com/anti-exfil-stopping-key-exfiltration/" target="_blank" rel="noopener noreferrer" data-i18n="shell.antiExfilStoppingKeyExfiltration">Anti-Exfil: Stopping Key Exfiltration</a> <span data-i18n="shell.secp256k1Zkp">— secp256k1-zkp</span> <code data-i18n="literal.jadeEcdsaS2cSymbol">ecdsa_s2c</code> <span data-i18n="literal.slash">/</span> <code data-i18n="literal.jadeHostVerifySymbol">anti_exfil_host_verify</code><span data-i18n="literal.period">.</span></p>
+      <p><span data-i18n="shell.bip85DeterministicEntropy">BIP-85 deterministic entropy:</span> <a href="https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki" target="_blank" rel="noopener noreferrer" data-i18n="literal.bip85SpecFile">bip-0085.mediawiki</a> <span data-i18n="shell.bip85Description">— HMAC-SHA512 of a fully hardened child; English BIP-39 / WIF / XPRV / HEX / password applications match COLDCARD.</span></p>
+      <p data-i18n="shell.journalCryptoDescription">Entropy Journal: AES-256-GCM from a typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. No relays, no accounts, no localStorage for secrets.</p>
+      <p><span data-i18n="shell.bip352SilentPayments">BIP-352 Silent Payments:</span> <a href="https://github.com/bitcoin/bips/blob/master/bip-0352.mediawiki" target="_blank" rel="noopener noreferrer" data-i18n="literal.bip352SpecPath">bips/bip-0352</a> <span data-i18n="shell.reusable">— reusable</span> <code data-i18n="literal.silentPaymentMainnetExample">sp1q…</code> <span data-i18n="shell.addressesAndUniqueTaprootOutputsDescriptors">addresses and unique taproot outputs. Descriptors:</span> <a href="https://github.com/bitcoin/bips/blob/master/bip-0392.mediawiki" target="_blank" rel="noopener noreferrer" data-i18n="shell.bip392">BIP-392</a><span data-i18n="literal.period">.</span></p>
+      <p><span data-i18n="shell.inscriptionEnvelopes">Inscription envelopes:</span> <a href="https://docs.ordinals.com/inscriptions.html" target="_blank" rel="noopener noreferrer" data-i18n="literal.inscriptionsDocsPath">docs.ordinals.com/inscriptions</a> <span data-i18n="literal.emDash">—</span> <code data-i18n="literal.inscriptionEnvelopePrefix">OP_FALSE OP_IF "ord"</code> <span data-i18n="shell.inscriptionsParserDescription">parser only. This tool does not create inscriptions or number sats.</span></p>
     </section>
-    <footer class="page-footer muted no-print"><div>Team Ooga Booga</div><div class="page-footer-emoji">🪨 🔥 🎲 🍌</div><div>Since 964013 · <span class="page-footer-build">v{{VERSION}} · commit <code>{{COMMIT_SHORT}}</code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="{{COMMIT}}" width="20" height="20" alt="LifeHash of the build commit" hidden></span></div><div class="page-footer-links"><a class="btn secondary github-repo-link" href="https://github.com/OogaBoogaX/entropylab" target="_blank" rel="noopener noreferrer" aria-label="View the EntropyLab GitHub repository in a new tab"><svg class="github-mark" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="control-label">GitHub</span></a><button type="button" class="theme-toggle" id="theme-toggle" data-theme-mode="dark" aria-label="Theme: dark. Switch to light"><svg class="theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><svg class="theme-icon-light" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button></div></footer>
+    <footer class="page-footer muted no-print"><div data-i18n="shell.teamOogaBooga">Team Ooga Booga</div><div class="page-footer-emoji" data-i18n="literal.footerSymbols">🪨 🔥 🎲 🍌</div><div><span data-i18n="shell.since964013">Since 964013 ·</span> <span class="page-footer-build"><span data-i18n="shell.footerVersionCommit" data-i18n-vars='{"version":"{{VERSION}}"}'>v{{VERSION}} · commit</span> <code data-i18n="literal.footerCommitShort" data-i18n-vars='{"commit":"{{COMMIT_SHORT}}"}'>{{COMMIT_SHORT}}</code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="{{COMMIT}}" width="20" height="20" alt="LifeHash of the build commit" hidden data-i18n-alt="shell.lifehashOfTheBuildCommit"></span></div><div class="page-footer-links"><a class="btn secondary github-repo-link" href="https://github.com/OogaBoogaX/entropylab" target="_blank" rel="noopener noreferrer" aria-label="View the EntropyLab GitHub repository in a new tab" data-i18n-aria="header.githubAria"><svg class="github-mark" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="control-label" data-i18n="header.github">GitHub</span></a><button type="button" class="theme-toggle" id="theme-toggle" data-theme-mode="dark" aria-label="Theme: dark. Switch to light" data-i18n-aria="theme.ariaDarkToLight"><svg class="theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><svg class="theme-icon-light" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button></div></footer>
   </div>
 `;
 if (/^(www\.)?entropylab\.online$/i.test(location.hostname)) document.getElementById("online-warning")?.removeAttribute("hidden");

@@ -146,6 +146,11 @@ function catalogValue(catalog, keyAttr, vars, fileName, token, references, probl
     problems.push(`${fileName}: unknown English key ${key || "(empty)"} at byte ${token.start}`);
     return null;
   }
+  const expectedVars = [...new Set([...catalog[key].matchAll(/(?<!\$)\{(\w+)\}/g)].map((match) => match[1]))].sort();
+  const providedVars = Object.keys(vars ?? {}).sort();
+  if (JSON.stringify(expectedVars) !== JSON.stringify(providedVars)) {
+    problems.push(`${fileName}: ${key} expects variables [${expectedVars.join(", ")}] but received [${providedVars.join(", ")}] at byte ${token.start}`);
+  }
   return interpolate(catalog[key], vars);
 }
 
@@ -303,7 +308,7 @@ export function syncI18nSource(source, catalog, { fileName = "source", javascrip
       }
     }
 
-    for (const [keyName, targetName] of [["data-i18n-aria", "aria-label"], ["data-i18n-placeholder", "placeholder"], ["data-i18n-title", "title"], ["data-i18n-alt", "alt"]]) {
+    for (const [keyName, targetName] of [["data-i18n-aria", "aria-label"], ["data-i18n-aria-placeholder", "aria-placeholder"], ["data-i18n-placeholder", "placeholder"], ["data-i18n-title", "title"], ["data-i18n-alt", "alt"], ["data-i18n-copy-label", "data-copy-label"], ["data-i18n-copied-label", "data-copied-label"]]) {
       const keyAttr = token.attributes.get(keyName);
       if (!keyAttr) continue;
       const target = token.attributes.get(targetName);

@@ -109,7 +109,7 @@ test("a removed English key cannot reactivate an obsolete locale value", async (
   }
 });
 
-test("static translations set title and alt through DOM attributes", () => {
+test("static translations set accessibility and behavior labels through DOM attributes", () => {
   const values = new Map();
   const element = (keyAttribute, key) => ({
     getAttribute(name) { return name === keyAttribute ? key : null; },
@@ -117,13 +117,48 @@ test("static translations set title and alt through DOM attributes", () => {
   });
   const title = element("data-i18n-title", "header.downloadAria");
   const alt = element("data-i18n-alt", "locale.label");
+  const ariaPlaceholder = element("data-i18n-aria-placeholder", "journal.notes.prompt");
+  const copyLabel = element("data-i18n-copy-label", "journal.notes.copy");
+  const copiedLabel = element("data-i18n-copied-label", "journal.notes.copied");
   const root = { querySelectorAll(selector) {
     if (selector === "[data-i18n-title]") return [title];
     if (selector === "[data-i18n-alt]") return [alt];
+    if (selector === "[data-i18n-aria-placeholder]") return [ariaPlaceholder];
+    if (selector === "[data-i18n-copy-label]") return [copyLabel];
+    if (selector === "[data-i18n-copied-label]") return [copiedLabel];
     return [];
   } };
   hodlSetLocale("en", false);
   hodlApplyStaticI18n(root);
   assert.equal(values.get("title"), en["header.downloadAria"]);
   assert.equal(values.get("alt"), en["locale.label"]);
+  assert.equal(values.get("aria-placeholder"), en["journal.notes.prompt"]);
+  assert.equal(values.get("data-copy-label"), en["journal.notes.copy"]);
+  assert.equal(values.get("data-copied-label"), en["journal.notes.copied"]);
+});
+
+test("static translations preserve build values passed through data variables", () => {
+  const elements = [
+    {
+      textContent: "",
+      getAttribute(name) {
+        if (name === "data-i18n") return "shell.footerVersionCommit";
+        if (name === "data-i18n-vars") return '{"version":"0.1.3"}';
+        return null;
+      },
+    },
+    {
+      textContent: "",
+      getAttribute(name) {
+        if (name === "data-i18n") return "literal.footerCommitShort";
+        if (name === "data-i18n-vars") return '{"commit":"0123abc"}';
+        return null;
+      },
+    },
+  ];
+  const root = { querySelectorAll(selector) { return selector === "[data-i18n]" ? elements : []; } };
+  hodlSetLocale("en", false);
+  hodlApplyStaticI18n(root);
+  assert.equal(elements[0].textContent, "v0.1.3 · commit");
+  assert.equal(elements[1].textContent, "0123abc");
 });

@@ -5,8 +5,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { i18nLocaleStatus, i18nSourceHash } from "../scripts/i18n-common.mjs";
 import { markTranslationSources } from "../scripts/i18n-mark.mjs";
-import { syncI18nSource } from "../scripts/i18n-sync.mjs";
-import { collectRepositoryUnwired, collectUnwiredMarkup } from "../scripts/i18n-wiring.mjs";
+import { i18nMarkupTokens, syncI18nSource } from "../scripts/i18n-sync.mjs";
+import { collectRepositoryUnwired, collectUnwiredMarkup, i18nRuntimeOwnedIds } from "../scripts/i18n-wiring.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const en = JSON.parse(readFileSync(join(root, "src/locales/en.json"), "utf8"));
@@ -141,6 +141,14 @@ test("sync rejects dynamic prefixes that cannot prove every complete key", () =>
   }
 });
 
+test("sync requires static variable bindings to match catalog placeholders exactly", () => {
+  const catalog = { greeting: "Hello {name}" };
+  const missing = `<p data-i18n="greeting">Hello name</p>`;
+  const extra = `<p data-i18n="greeting" data-i18n-vars='{"name":"Ada","unused":"x"}'>Hello Ada</p>`;
+  assert.match(syncI18nSource(missing, catalog).problems[0], /expects variables \[name\] but received \[\]/);
+  assert.match(syncI18nSource(extra, catalog).problems[0], /expects variables \[name\] but received \[name, unused\]/);
+});
+
 test("the committed sources contain only known literal references and generated fallbacks", () => {
   for (const [file, javascriptTemplate] of [["src/index.html", false], ["src/js/app.js", true]]) {
     const source = readFileSync(join(root, file), "utf8");
@@ -168,7 +176,38 @@ test("the wiring inventory notices new hardcoded text and attributes", () => {
   ]);
 });
 
-test("the committed legacy wiring inventory is exact", () => {
+test("the committed sources have no unwired static-shell text", () => {
   const baseline = JSON.parse(readFileSync(join(root, "scripts/i18n-unwired.json"), "utf8"));
-  assert.deepEqual(collectRepositoryUnwired(), baseline);
+  assert.deepEqual(baseline, []);
+  assert.deepEqual(collectRepositoryUnwired(), []);
+});
+
+test("plain-text i18n markers never own child elements", () => {
+  for (const file of ["src/index.html", "src/js/app.js"]) {
+    const stack = [];
+    const problems = [];
+    for (const token of i18nMarkupTokens(readFileSync(join(root, file), "utf8"))) {
+      if (token.closing) {
+        for (let index = stack.length - 1; index >= 0; index -= 1) {
+          const frame = stack.pop();
+          if (frame.name === token.name) break;
+        }
+        continue;
+      }
+      const owner = stack.findLast((frame) => frame.key);
+      if (owner) problems.push(`${owner.key} contains <${token.name}>`);
+      if (!token.selfClosing) stack.push({ name: token.name, key: token.attributes.get("data-i18n")?.value ?? "" });
+    }
+    assert.deepEqual(problems, [], file);
+  }
+});
+
+test("static translation never overwrites runtime-owned output", () => {
+  const tokens = i18nMarkupTokens(readFileSync(join(root, "src/js/app.js"), "utf8"));
+  for (const id of i18nRuntimeOwnedIds) {
+    const token = tokens.find((entry) => entry.attributes.get("id")?.value === id);
+    assert.ok(token, id);
+    assert.equal(token.attributes.has("data-i18n"), false, id);
+    assert.equal(token.attributes.has("data-i18n-html"), false, id);
+  }
 });

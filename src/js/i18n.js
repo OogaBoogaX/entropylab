@@ -101,6 +101,9 @@ export function hodlApplyStaticI18n(root = document) {
   root.querySelectorAll("[data-i18n-aria]").forEach((el) => {
     el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria"), hodlI18nVars(el)));
   });
+  root.querySelectorAll("[data-i18n-aria-placeholder]").forEach((el) => {
+    el.setAttribute("aria-placeholder", t(el.getAttribute("data-i18n-aria-placeholder"), hodlI18nVars(el)));
+  });
   root.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
     el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder"), hodlI18nVars(el)));
   });
@@ -109,6 +112,12 @@ export function hodlApplyStaticI18n(root = document) {
   });
   root.querySelectorAll("[data-i18n-alt]").forEach((el) => {
     el.setAttribute("alt", t(el.getAttribute("data-i18n-alt"), hodlI18nVars(el)));
+  });
+  root.querySelectorAll("[data-i18n-copy-label]").forEach((el) => {
+    el.setAttribute("data-copy-label", t(el.getAttribute("data-i18n-copy-label"), hodlI18nVars(el)));
+  });
+  root.querySelectorAll("[data-i18n-copied-label]").forEach((el) => {
+    el.setAttribute("data-copied-label", t(el.getAttribute("data-i18n-copied-label"), hodlI18nVars(el)));
   });
 }
 

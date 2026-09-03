@@ -39,6 +39,12 @@ function problemsWith(code, key, value, source) {
   return problems;
 }
 
+function literalProblems(code, key, value, source) {
+  return key.startsWith("literal.") && value !== source
+    ? [`${code} ${key}: literal values must match English exactly`]
+    : [];
+}
+
 test("the English catalog uses only allowlisted markup and no control characters", () => {
   const problems = [];
   for (const [key, value] of Object.entries(en)) problems.push(...problemsWith("en", key, value));
@@ -63,6 +69,11 @@ test("stale translations need not match a changed English source shape", () => {
   assert.deepEqual(problemsWith("xx", "key", catalog.key, stale.has("key") ? undefined : english.key), []);
 });
 
+test("technical literal values cannot be translated", () => {
+  assert.deepEqual(literalProblems("es", "literal.path", "ruta", "m/0'"), ["es literal.path: literal values must match English exactly"]);
+  assert.deepEqual(literalProblems("es", "shell.pathLabel", "Ruta", "Path"), []);
+});
+
 for (const code of locales) {
   test(`${code}: every translated value is a valid rendering of its English source`, () => {
     const catalog = readJson(join(root, "src/locales", `${code}.json`));
@@ -77,6 +88,7 @@ for (const code of locales) {
       const source = current && !stale.has(key) ? en[key] : undefined;
       problems.push(...problemsWith(code, key, catalog[key], source));
       if (!current) continue;
+      problems.push(...literalProblems(code, key, catalog[key], en[key]));
       const ratio = catalog[key].length / Math.max(en[key].length, 1);
       if (en[key].length >= 20 && (ratio < 0.3 || ratio > 3)) console.warn(`i18n length warning: ${code} ${key} is ${ratio.toFixed(1)}x the English`);
     }

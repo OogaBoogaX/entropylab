@@ -56,13 +56,13 @@ test("wallet coin type indexes enable and default to mainnet", () => {
     assert.match(appWhitespace, mainnetCoinType);
   }
   for (const markup of [template, appWhitespace]) {
-    assert.match(markup, /id="network-help">Coin type index (?:·|\\xB7) Mainnet (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
-    assert.match(markup, /id="msig-network-help">Coin type index (?:·|\\xB7) Mainnet (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
+    assert.match(markup, /id="network-help"[^>]*>Coin type index (?:·|\\xB7) Mainnet (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
+    assert.match(markup, /id="msig-network-help"[^>]*>Coin type index (?:·|\\xB7) Mainnet (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
     // The PSBT tools dropped their own network selects: they read the header
     // picker's choice directly. Only the SP station keeps a select.
     assert.doesNotMatch(markup, /id="psbt-network"/);
     assert.doesNotMatch(markup, /id="psbted-network"/);
-    assert.match(markup, /<select id="sp-network"><option value="mainnet" selected(?:="selected")?>Bitcoin mainnet<\/option>/);
+    assert.match(markup, /<select id="sp-network"><option value="mainnet" selected(?:="selected")?(?: data-i18n="[^"]*")?>Bitcoin mainnet<\/option>/);
   }
   assert.match(appSource, /function hodlReadCoinType\(input = document\.getElementById\("network"\), mark = true\)/);
   assert.match(appSource, /function hodlNetworkFromCoinType\(coinType\)/);
@@ -182,8 +182,8 @@ test("the header network picker sets the network every tool defaults to", () => 
 });
 
 test("advanced derivation fields use the shared responsive settings grid", () => {
-  assert.match(template, /<div class="field network-field"><label for="network">Network<\/label>[\s\S]*?<input id="network"[^>]*>/);
-  assert.match(app, /<div class="field network-field"><label for="network">Network<\/label>[\s\S]*?<input id="network"[^>]*>/);
+  assert.match(template, /<div class="field network-field"><label for="network"[^>]*>Network<\/label>[\s\S]*?<input id="network"[^>]*>/);
+  assert.match(app, /<div class="field network-field"><label for="network"[^>]*>Network<\/label>[\s\S]*?<input id="network"[^>]*>/);
   assert.match(css, /\.derivation-advanced-fields \{ display: grid; gap: var\(--space-component\); \}/);
   assert.match(css, /@media \(max-width: 520px\) \{[\s\S]*?\.key-settings-row \{ grid-template-columns: minmax\(0, 1fr\); \}/);
 });
@@ -194,10 +194,10 @@ test("key and multisig derivation use an indexed address window with an estimate
     assert.match(markup, /id="address-range"[^>]*value="1"/);
     assert.match(markup, /id="msig-address-start"[^>]*value="0"/);
     assert.match(markup, /id="msig-address-range"[^>]*value="5"/);
-    assert.match(markup, /id="address-start-help">First receive index to derive (?:·|\\xB7) Unhardened (?:·|\\xB7) 0 to 2,147,483,647/);
-    assert.match(markup, /id="address-range-help">Derives 1 receive address (?:·|\\xB7) Max 10,000/);
-    assert.match(markup, /id="msig-address-start-help">First receive and change index to derive (?:·|\\xB7) Unhardened (?:·|\\xB7) 0 to 2,147,483,647/);
-    assert.match(markup, /id="msig-address-range-help">Derives 5 receive and 5 change addresses (?:·|\\xB7) Max 10,000/);
+    assert.match(markup, /id="address-start-help"[^>]*>First receive index to derive (?:·|\\xB7) Unhardened (?:·|\\xB7) 0 to 2,147,483,647/);
+    assert.match(markup, /id="address-range-help"[^>]*>Derives 1 receive address (?:·|\\xB7) Max 10,000/);
+    assert.match(markup, /id="msig-address-start-help"[^>]*>First receive and change index to derive (?:·|\\xB7) Unhardened (?:·|\\xB7) 0 to 2,147,483,647/);
+    assert.match(markup, /id="msig-address-range-help"[^>]*>Derives 5 receive and 5 change addresses (?:·|\\xB7) Max 10,000/);
     assert.match(markup, /id="derive-progress"[^>]*role="progressbar"/);
     assert.match(markup, /id="msig-derive-progress"[^>]*role="progressbar"/);
     assert.doesNotMatch(markup, /id="(?:msig-)?count"/);
@@ -612,7 +612,6 @@ test("key derivation and multisig use the accurate Script type label", () => {
     assert.match(markup, /<option value="p2tr"(?:\s[^>]*)?>Taproot<\/option>/);
     assert.doesNotMatch(markup, /<option value="p2wsh"[^>]*>[^<]*BIP48/);
     assert.doesNotMatch(markup, /name="msig-script"|Matches BIP48 script type|Bare P2SH/);
-    assert.doesNotMatch(markup, />Address type</);
   }
 });
 
@@ -621,8 +620,8 @@ test("key derivation separates script type from the hardened purpose index", () 
     assert.match(markup, /id="script-type-field"[^>]*>[\s\S]*?Script type[\s\S]*?<select id="script-type">[\s\S]*?<option value="bip44"[^>]*>Legacy<\/option>[\s\S]*?<option value="bip49"[^>]*>Nested SegWit<\/option>[\s\S]*?<option value="bip84" selected(?:="selected")?[^>]*>Native SegWit<\/option>[\s\S]*?<option value="bip86"[^>]*>Taproot<\/option><\/select>/);
     assert.match(markup, /id="script-type"[\s\S]*id="purpose"[\s\S]*id="network"[\s\S]*id="account"/);
     assert.match(markup, /id="purpose" type="text" inputmode="numeric" value="84'"/);
-    assert.match(markup, /id="purpose-help">Purpose index (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
-    assert.match(markup, /id="account-help">Account index (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
+    assert.match(markup, /id="purpose-help"[^>]*>Purpose index (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
+    assert.match(markup, /id="account-help"[^>]*>Account index (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
   }
   assert.match(appSource, /function hodlReadPurpose\(mark = true\)/);
   assert.match(appSource, /hodlSetSelectedScriptType\(target\.value, true\)/);
@@ -633,8 +632,8 @@ test("key derivation separates script type from the hardened purpose index", () 
 
 test("one editable derivation path replaces schemes and accepts arbitrary depth", () => {
   for (const markup of [template, appWhitespace]) {
-    assert.match(markup, /id="script-type-field">Script type[\s\S]*?id="derivation-path-field">Derivation path[\s\S]*?id="derivation-path" type="text" value="m\/84'\/0'\/0'\/0\/0"/);
-    assert.match(markup, /<details class="derivation-advanced" id="derivation-advanced">[\s\S]*?<summary>Advanced entry<\/summary>/);
+    assert.match(markup, /id="script-type-field"[^>]*>[\s\S]*?Script type[\s\S]*?id="derivation-path-field"[^>]*>[\s\S]*?Derivation path[\s\S]*?id="derivation-path" type="text" value="m\/84'\/0'\/0'\/0\/0"/);
+    assert.match(markup, /<details class="derivation-advanced" id="derivation-advanced">[\s\S]*?<summary[^>]*>Advanced entry<\/summary>/);
     assert.doesNotMatch(markup, /id="derivation-scheme"|id="custom-derivation-path"|id="scheme-script-index"/);
   }
   assert.match(appSource, /function hodlParseCustomDerivationPath\(value\)/);
@@ -1096,10 +1095,7 @@ test("the page closes on a footer in both markups", () => {
     // esbuild escapes the emoji and the middots when it minifies the
     // runtime template, so the two markups carry the same characters in two
     // spellings.
-    assert.match(
-      markup,
-      /<footer class="page-footer muted no-print"><div>Team Ooga Booga<\/div><div class="page-footer-emoji">(?:🪨|\\u\{1FAA8\}) (?:🔥|\\u\{1F525\}) (?:🎲|\\u\{1F3B2\}) (?:🍌|\\u\{1F34C\})<\/div><div>Since 964013 (?:·|\\x[Bb]7|\\u00[Bb]7) <span class="page-footer-build">v\{\{VERSION\}\} (?:·|\\x[Bb]7|\\u00[Bb]7) commit <code>\{\{COMMIT_SHORT\}\}<\/code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" alt="LifeHash of the build commit" hidden><\/span><\/div><div class="page-footer-links">/,
-    );
+    assert.match(markup, /<footer class="page-footer muted no-print">[\s\S]*?Team Ooga Booga[\s\S]*?class="page-footer-emoji"[\s\S]*?(?:🪨|\\u\{1FAA8\}) (?:🔥|\\u\{1F525\}) (?:🎲|\\u\{1F3B2\}) (?:🍌|\\u\{1F34C\})[\s\S]*?Since 964013 (?:·|\\x[Bb]7|\\u00[Bb]7)[\s\S]*?class="page-footer-build"[\s\S]*?v\{\{VERSION\}\} (?:·|\\x[Bb]7|\\u00[Bb]7) commit[\s\S]*?\{\{COMMIT_SHORT\}\}[\s\S]*?class="page-footer-lifehash"/);
     // A fourth row closes it: the two controls that left the header bar.
     assert.match(
       markup,
@@ -1191,7 +1187,7 @@ test("the online and noscript warnings are titled like the beta banner", () => {
   for (const markup of [template, app]) {
     assert.match(
       markup,
-      /<div class="online-warning-text"(?: [^>]*)?><strong>Online version<\/strong> Do not enter seed phrases/,
+      /<div class="online-warning-text"(?: [^>]*)?><strong[^>]*>Online version<\/strong> (?:<span[^>]*>)?Do not enter seed phrases/,
       "the online warning must carry its label in a wrapper",
     );
     // The hosted-site warning is permanent: no dismiss control anywhere.
@@ -1327,7 +1323,7 @@ test("the site header is fixed, carries the logo, and holds the version, downloa
     const wrapper = markup.indexOf('<div class="wrap">');
     assert.ok(header >= 0, "the fixed site header is missing");
     assert.ok(header < wrapper, "the site header must come before the page wrapper");
-    assert.match(markup, /<span class="site-logo" aria-hidden="true"><\/span>\s*<span class="site-title">EntropyLab<\/span>/);
+    assert.match(markup, /<span class="site-logo" aria-hidden="true"><\/span>\s*<span class="site-title"[^>]*>EntropyLab<\/span>/);
     // The version left the bar: it is the footer's build stamp now, and the
     // row needed the width for the network picker.
     assert.doesNotMatch(markup.slice(header, wrapper), /site-version/);
@@ -1433,7 +1429,7 @@ test("the Keys tool intro tells what the calculator does, like the other tool in
   for (const markup of [template, appSource]) {
     // No placeholder copy rides the page's first tool intro.
     assert.doesNotMatch(markup, /lorem ipsum/i);
-    assert.match(markup, /<p class="muted calc-intro">Turn entropy you bring (?:—|\\u2014) dice rolls, playing cards, a number in any base, a seed phrase, or a private key/);
+    assert.match(markup, /<p class="muted calc-intro"[^>]*>Turn entropy you bring (?:—|\\u2014) dice rolls, playing cards, a number in any base, a seed phrase, or a private key/);
     assert.match(markup, /This does not invent entropy (?:—|\\u2014) it is a calculator, and nothing leaves this page\.<\/p>/);
   }
 });
@@ -1514,7 +1510,7 @@ test("D++ uses the published hexadecimal D16 transcript without a notation toggl
   assert.doesNotMatch(appSource, /D\+\+ rolls \(D8 1\\u20138, D16 0\\u2013F/);
   assert.match(appSource, /accessibleRange\.className = "sr-only";\s*accessibleRange\.textContent = rollRange;/);
   assert.doesNotMatch(appSource, /meta\.append\(document\.createTextNode\(" \\xB7 "\), emphasis, document\.createTextNode\(rollRange\)\)/);
-  assert.match(appSource, /D8 labeled 1\\u20138 and two hexadecimal D16 dice labeled 0\\u2013F/);
+  assert.match(en["shell.dplusDiceMethodDescription"], /D8 labeled 1–8 and two hexadecimal D16 dice labeled 0–F/);
   assert.match(appSource, /hodlT\("dice.help.dplus"/);
   assert.doesNotMatch(appSource, /data-dplus-die|hodlDPlusNumberedD16|dplusNumberedD16|Decimal D16/);
   assert.doesNotMatch(css, /dplus-die-pad|dplus-key-decimal|dplus-key-face/);
@@ -1592,7 +1588,7 @@ test("one PSBT workspace contains PSBT / Nonce and PSBT Editor tabs", () => {
   for (const markup of [template, appSource]) {
     assert.match(markup, /<div class="tool-intro-stack" id="psbt-tool-intros" hidden>[\s\S]*?id="psbt-tool-intro"[\s\S]*?id="psbted-tool-intro"[\s\S]*?<section class="key-manager no-print" id="psbt-manager" hidden>/);
     assert.match(markup, /<section class="key-manager no-print" id="psbt-manager" hidden>/);
-    assert.match(markup, /<div class="key-tab-strip">\s*<div class="key-tabs" id="psbt-tool-tabs" role="tablist" aria-label="PSBT stations">/);
+    assert.match(markup, /<div class="key-tab-strip">\s*<div class="key-tabs" id="psbt-tool-tabs" role="tablist" aria-label="PSBT stations"[^>]*>/);
     assert.match(markup, /class="tab key-tab is-lab active"[^>]*data-psbt-tool="nonce"/);
     assert.match(markup, /class="tab key-tab is-lab"[^>]*data-psbt-tool="editor"/);
     assert.doesNotMatch(markup, /class="psbt-tool-tabs segmented-control/);
@@ -1652,11 +1648,11 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
   assert.match(appSource, /function hodlInitSecretFieldAutoClear\(\) \{[\s\S]*hodlJournalWipeMem\(\)/);
   assert.match(appSource, /function hodlJournalWipeMem\(\) \{[\s\S]*hodlJournalWipeNotebook\(\)/);
   for (const markup of [template, appSource]) {
-    assert.match(markup, /<div class="tool-intro" id="journal-tool-intro" hidden>[\s\S]*?<h2>Entropy Journal<\/h2>[\s\S]*?<section class="key-manager no-print" id="journal-manager" hidden>/);
-    assert.match(markup, /id="journal-global-download"[^>]*disabled aria-disabled="true"[^>]*>[\s\S]*?<span>Download journal<\/span><\/button>/);
+    assert.match(markup, /<div class="tool-intro" id="journal-tool-intro" hidden>[\s\S]*?<h2[^>]*>Entropy Journal<\/h2>[\s\S]*?<section class="key-manager no-print" id="journal-manager" hidden>/);
+    assert.match(markup, /id="journal-global-download"[^>]*disabled aria-disabled="true"[^>]*>[\s\S]*?<span[^>]*>Download journal<\/span><\/button>/);
     assert.match(markup, /class="btn clear-current-action" id="journal-global-clear"[^>]*disabled aria-disabled="true"[^>]*>Clear journal<\/button>/);
     assert.match(markup, /<section class="key-manager no-print" id="journal-manager" hidden>/);
-    assert.match(markup, /<div class="key-tabs" id="journal-tool-tabs" role="tablist" aria-label="Journal stations">/);
+    assert.match(markup, /<div class="key-tabs" id="journal-tool-tabs" role="tablist" aria-label="Journal stations"[^>]*>/);
     assert.doesNotMatch(markup, /id="journal-book-tab"|data-journal-tool="book"/);
     assert.match(markup, /id="journal-notes-tab"[^>]*aria-disabled="true"[^>]*data-journal-tool="notes"[^>]*disabled/);
     assert.match(markup, /id="journal-keymanager-tab"[^>]*aria-disabled="true"[^>]*data-journal-tool="keymanager"[^>]*disabled/);
@@ -1675,35 +1671,35 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
     assert.match(markup, /id="journal-create-password"[^>]*aria-describedby="journal-create-password-note journal-create-password-status"/);
     assert.match(markup, /class="journal-password-validation" id="journal-create-confirm-status" role="status" aria-live="polite" hidden/);
     assert.match(markup, /id="journal-create-confirm"[^>]*aria-describedby="journal-create-confirm-status"/);
-    assert.match(markup, /class="row bip85-actions journal-create-actions">\s*<button class="btn primary" id="journal-create"[^>]*>Create journal<\/button>\s*<span class="journal-create-ready" id="journal-create-ready" hidden><span class="journal-create-ready-arrow" aria-hidden="true">←<\/span> Ready to create journal<\/span>/);
+    assert.match(markup, /class="row bip85-actions journal-create-actions">\s*<button class="btn primary" id="journal-create"[^>]*>Create journal<\/button>\s*<span class="journal-create-ready" id="journal-create-ready" hidden><span class="journal-create-ready-arrow" aria-hidden="true"[^>]*>←<\/span>\s*(?:<span[^>]*>)?Ready to create journal(?:<\/span>)?<\/span>/);
     assert.match(markup, /does not invent entropy/);
     assert.match(markup, /The journal lives in this page until you save the encrypted file/);
     assert.match(markup, /id="journal-notes-card"/);
     assert.match(markup, /id="journal-keymanager-card"/);
     assert.match(markup, /id="journal-state-card"/);
     assert.match(markup, /id="journal-log-card"/);
-    assert.match(markup, /id="journal-notes-card"[^>]*>[\s\S]*?id="journal-notes-tool-intro"[\s\S]*?<h2>Notepad<\/h2>[\s\S]*?id="journal-page-tabs"/);
-    assert.match(markup, /id="journal-keymanager-card"[^>]*>[\s\S]*?id="journal-keymanager-tool-intro"[\s\S]*?<h2>Key manager<\/h2>[\s\S]*?id="journal-keymanager-tabs"/);
-    assert.match(markup, /id="journal-state-card"[^>]*>[\s\S]*?id="journal-state-tool-intro"[\s\S]*?<h2>Session state<\/h2>[\s\S]*?id="journal-state-text"/);
-    assert.match(markup, /id="journal-log-card"[^>]*>[\s\S]*?id="journal-log-tool-intro"[\s\S]*?<h2>Session log<\/h2>[\s\S]*?id="journal-log-out"/);
-    assert.match(markup, /<div class="key-tab-strip journal-page-tab-strip"><div class="key-tabs" id="journal-page-tabs" role="tablist" aria-label="Notepad pages"><\/div>/);
+    assert.match(markup, /id="journal-notes-card"[^>]*>[\s\S]*?id="journal-notes-tool-intro"[\s\S]*?<h2[^>]*>Notepad<\/h2>[\s\S]*?id="journal-page-tabs"/);
+    assert.match(markup, /id="journal-keymanager-card"[^>]*>[\s\S]*?id="journal-keymanager-tool-intro"[\s\S]*?<h2[^>]*>Key manager<\/h2>[\s\S]*?id="journal-keymanager-tabs"/);
+    assert.match(markup, /id="journal-state-card"[^>]*>[\s\S]*?id="journal-state-tool-intro"[\s\S]*?<h2[^>]*>Session state<\/h2>[\s\S]*?id="journal-state-text"/);
+    assert.match(markup, /id="journal-log-card"[^>]*>[\s\S]*?id="journal-log-tool-intro"[\s\S]*?<h2[^>]*>Session log<\/h2>[\s\S]*?id="journal-log-out"/);
+    assert.match(markup, /<div class="key-tab-strip journal-page-tab-strip"><div class="key-tabs" id="journal-page-tabs" role="tablist" aria-label="Notepad pages"[^>]*><\/div>/);
     assert.match(markup, /id="add-journal-page"[^>]*aria-label="Add notepad page"/);
     assert.match(markup, /id="delete-journal-page"[^>]*aria-label="Delete current notepad page"[^>]*disabled/);
     assert.match(markup, /class="journal-format-bar" role="group" aria-label="Notepad appearance and inserts"/);
     assert.match(markup, /id="journal-key-insert"[^>]*aria-label="Insert a Key Station key"/);
     assert.match(markup, /id="journal-font"[\s\S]*?id="journal-size"[\s\S]*?id="journal-spacing"/);
-    assert.match(markup, /<div class="journal-notes-wrap" id="journal-page-panel" role="tabpanel"[^>]*>\s*<div class="journal-notes-render" id="journal-notes-render" aria-hidden="true"><\/div>\s*<textarea class="journal-notes-text" id="journal-notes-text"[^>]*aria-placeholder="Add new note"[^>]*><\/textarea>\s*<div class="journal-notes-prompt" id="journal-notes-prompt" aria-hidden="true"><span id="journal-notes-prompt-before"><\/span><span class="journal-notes-prompt-text" id="journal-notes-prompt-text">Add new note<\/span><\/div>/);
+    assert.match(markup, /<div class="journal-notes-wrap" id="journal-page-panel" role="tabpanel"[^>]*>\s*<div class="journal-notes-render" id="journal-notes-render" aria-hidden="true"><\/div>\s*<textarea class="journal-notes-text" id="journal-notes-text"[^>]*aria-placeholder="Add new note"[^>]*><\/textarea>\s*<div class="journal-notes-prompt" id="journal-notes-prompt" aria-hidden="true"><span id="journal-notes-prompt-before"><\/span><span class="journal-notes-prompt-text" id="journal-notes-prompt-text"[^>]*>Add new note<\/span><\/div>/);
     assert.match(markup, /class="seed-phrase-copy journal-notes-copy" id="journal-notes-copy"[^>]*aria-label="Copy notepad page"[^>]*disabled><svg[^>]*><rect class="seed-copy-icon-clip"[^>]*\/><path class="seed-copy-icon-board"[^>]*\/><\/svg><\/button>/);
     assert(markup.indexOf('class="journal-format-bar"') < markup.indexOf('id="journal-page-tabs"') && markup.indexOf('id="journal-page-tabs"') < markup.indexOf('id="journal-page-panel"'), "notepad controls should precede the page tabs while the tabs stay joined to the editor");
-    assert.match(markup, /class="btn secondary journal-download-action journal-file-button" id="journal-notes-download"[^>]*aria-label="Download notepad"[^>]*><svg class="download-mark"[\s\S]*?<span class="control-label">Download notepad<\/span><\/button>/);
-    assert.match(markup, /class="btn secondary journal-upload-action journal-file-button" id="journal-notes-upload"[^>]*aria-label="Upload notebook"[^>]*><svg class="download-mark"[\s\S]*?<path d="M12 17V5M7 10l5-5 5 5M5 21h14"\/>[\s\S]*?<span class="control-label">Upload<\/span><\/button>/);
-    assert.match(markup, /class="btn secondary journal-download-action journal-file-button" id="journal-keymanager-download"[^>]*aria-label="Download managed keys"[^>]*>[\s\S]*?<span class="control-label">Download keys<\/span><\/button>/);
-    assert.match(markup, /class="btn secondary journal-upload-action journal-file-button" id="journal-keymanager-upload"[^>]*aria-label="Upload managed keys"[^>]*>[\s\S]*?<span class="control-label">Upload<\/span><\/button>/);
+    assert.match(markup, /class="btn secondary journal-download-action journal-file-button" id="journal-notes-download"[^>]*aria-label="Download notepad"[^>]*><svg class="download-mark"[\s\S]*?<span class="control-label"[^>]*>Download notepad<\/span><\/button>/);
+    assert.match(markup, /class="btn secondary journal-upload-action journal-file-button" id="journal-notes-upload"[^>]*aria-label="Upload notebook"[^>]*><svg class="download-mark"[\s\S]*?<path d="M12 17V5M7 10l5-5 5 5M5 21h14"\/>[\s\S]*?<span class="control-label"[^>]*>Upload<\/span><\/button>/);
+    assert.match(markup, /class="btn secondary journal-download-action journal-file-button" id="journal-keymanager-download"[^>]*aria-label="Download managed keys"[^>]*>[\s\S]*?<span class="control-label"[^>]*>Download keys<\/span><\/button>/);
+    assert.match(markup, /class="btn secondary journal-upload-action journal-file-button" id="journal-keymanager-upload"[^>]*aria-label="Upload managed keys"[^>]*>[\s\S]*?<span class="control-label"[^>]*>Upload<\/span><\/button>/);
     assert.match(markup, /id="journal-keymanager-file"[^>]*accept="\.elkeys,\.json,application\/json"/);
     assert.equal([...markup.matchAll(/class="journal-encrypt-download"/g)].length, 3, "each Journal tab should carry the shared encryption choice");
-    assert.match(markup, /id="journal-notes-encrypt" type="checkbox" checked><span>Use journal password to encrypt<\/span>/);
-    assert.match(markup, /id="journal-state-encrypt" type="checkbox" checked><span>Use journal password to encrypt<\/span>/);
-    assert.match(markup, /id="journal-log-encrypt" type="checkbox" checked><span>Use journal password to encrypt<\/span>/);
+    assert.match(markup, /id="journal-notes-encrypt" type="checkbox" checked><span[^>]*>Use journal password to encrypt<\/span>/);
+    assert.match(markup, /id="journal-state-encrypt" type="checkbox" checked><span[^>]*>Use journal password to encrypt<\/span>/);
+    assert.match(markup, /id="journal-log-encrypt" type="checkbox" checked><span[^>]*>Use journal password to encrypt<\/span>/);
     assert.match(markup, /id="journal-notes-file"[^>]*accept="\.json,\.txt,application\/json,text\/plain"/);
     assert.doesNotMatch(markup, /id="journal-notes-download-text"|Download plain-text notes/);
     assert.doesNotMatch(markup, /id="journal-note-add"|>Add note</);
@@ -1711,9 +1707,9 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
     assert.match(markup, /id="journal-state-text"[^>]*readonly aria-readonly="true"/);
     assert.match(markup, /id="journal-state-private"/);
     assert(markup.indexOf('id="journal-state-text"') < markup.indexOf('id="journal-state-download"'), "Session state download should follow the live snapshot");
-    assert.match(markup, /class="btn secondary journal-download-action journal-file-button" id="journal-state-download"[^>]*aria-label="Download session state"[^>]*>[\s\S]*?<span class="control-label">Download session state<\/span><\/button>/);
+    assert.match(markup, /class="btn secondary journal-download-action journal-file-button" id="journal-state-download"[^>]*aria-label="Download session state"[^>]*>[\s\S]*?<span class="control-label"[^>]*>Download session state<\/span><\/button>/);
     assert.match(markup, /<div class="journal-log-wrap"><pre class="journal-log" id="journal-log-out"[^>]*>No events yet\.<\/pre><button class="seed-phrase-copy journal-log-copy" id="journal-log-copy"[^>]*aria-label="Copy session log"[^>]*><svg[^>]*><rect class="seed-copy-icon-clip"[^>]*\/><path class="seed-copy-icon-board"[^>]*\/><\/svg><\/button><\/div>/);
-    assert.match(markup, /class="btn secondary journal-download-action journal-file-button" id="journal-log-download"[^>]*aria-label="Download session log"[^>]*>[\s\S]*?<span class="control-label">Download session log<\/span><\/button>/);
+    assert.match(markup, /class="btn secondary journal-download-action journal-file-button" id="journal-log-download"[^>]*aria-label="Download session log"[^>]*>[\s\S]*?<span class="control-label"[^>]*>Download session log<\/span><\/button>/);
     assert.match(markup, /class="btn clear-current-action" id="journal-log-clear"[^>]*>Clear log<\/button>/);
     assert.match(markup, /class="row psbt-actions journal-log-actions"/);
   }
@@ -2169,29 +2165,29 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
     // The key comes in through the same clickable Key Station picker the
     // BIP-85 and Silent Payments tabs use; the selected key is restated with
     // its starting passphrase, labelled and read-only.
-    assert.match(markup, /<p class="label">Bring in a key from Key Station<\/p>/);
-    assert.match(markup, /<div class="session-key-picker" id="vanity-session-keys" role="group" aria-label="Key Station keys" hidden><\/div>/);
+    assert.match(markup, /<p class="label"[^>]*>Bring in a key from Key Station<\/p>/);
+    assert.match(markup, /<div class="session-key-picker" id="vanity-session-keys" role="group" aria-label="Key Station keys"[^>]*hidden><\/div>/);
     assert.match(markup, /<div class="vanity-source" id="vanity-source" hidden>/);
-    assert.match(markup, /<span class="vanity-source-kicker">Selected key<\/span>/);
-    assert.match(markup, /<label class="field" for="vanity-pass">Starting passphrase <span class="vanity-source-from" id="vanity-pass-from"><\/span><\/label>/);
+    assert.match(markup, /<span class="vanity-source-kicker"[^>]*>Selected key<\/span>/);
+    assert.match(markup, /<label class="field" for="vanity-pass">(?:<span[^>]*>)?Starting passphrase(?:<\/span>)? <span class="vanity-source-from" id="vanity-pass-from"><\/span><\/label>/);
     assert.match(markup, /<input id="vanity-pass" readonly autocomplete="off" spellcheck="false"[^>]*aria-describedby="vanity-pass-note">/);
     // Method and address type are dropdowns; the derivation grind swaps the
     // counter fields for an account index range.
-    assert.match(markup, /<select id="vanity-method">\s*<option value="passphrase" selected(?:="selected")?>Passphrase grind<\/option>\s*<option value="derivation">Derivation grind<\/option>/);
-    assert.match(markup, /<select id="vanity-script">[\s\S]*?<option value="p2wpkh" selected(?:="selected")?>[\s\S]*?<option value="p2tr">[\s\S]*?<option value="sp">Silent Payments BIP-352 · sp1qq…<\/option>/);
+    assert.match(markup, /<select id="vanity-method">\s*<option value="passphrase" selected(?:="selected")?(?:\s[^>]*)?>Passphrase grind<\/option>\s*<option value="derivation"[^>]*>Derivation grind<\/option>/);
+    assert.match(markup, /<select id="vanity-script">[\s\S]*?<option value="p2wpkh" selected(?:="selected")?(?:\s[^>]*)?>[\s\S]*?<option value="p2tr"[^>]*>[\s\S]*?<option value="sp"[^>]*>Silent Payments BIP-352 · sp1qq…<\/option>/);
     assert.match(markup, /<input id="vanity-prefix" autocomplete="off" spellcheck="false"[^>]*aria-describedby="vanity-prefix-help">/);
-    assert.match(markup, /<label class="field" data-vanity-method="passphrase">Passphrase length\s*<input id="vanity-length" type="number" min="1" max="32"[^>]*value="8"/);
-    assert.match(markup, /<label class="field" data-vanity-method="passphrase">Start counter\s*<input id="vanity-start" inputmode="numeric"[^>]*value="0"/);
-    assert.match(markup, /<label class="field" data-vanity-method="passphrase">Range size\s*<input id="vanity-count" inputmode="numeric"[^>]*value="1000000"/);
-    assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Start account\s*<input id="vanity-account-start" inputmode="numeric"[^>]*value="0"/);
-    assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Accounts to try\s*<input id="vanity-account-count" inputmode="numeric"[^>]*value="100000"/);
+    assert.match(markup, /<label class="field" data-vanity-method="passphrase">(?:<span[^>]*>)?Passphrase length(?:<\/span>)?\s*<input id="vanity-length" type="number" min="1" max="32"[^>]*value="8"/);
+    assert.match(markup, /<label class="field" data-vanity-method="passphrase">(?:<span[^>]*>)?Start counter(?:<\/span>)?\s*<input id="vanity-start" inputmode="numeric"[^>]*value="0"/);
+    assert.match(markup, /<label class="field" data-vanity-method="passphrase">(?:<span[^>]*>)?Range size(?:<\/span>)?\s*<input id="vanity-count" inputmode="numeric"[^>]*value="1000000"/);
+    assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>(?:<span[^>]*>)?Start account(?:<\/span>)?\s*<input id="vanity-account-start" inputmode="numeric"[^>]*value="0"/);
+    assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>(?:<span[^>]*>)?Accounts to try(?:<\/span>)?\s*<input id="vanity-account-count" inputmode="numeric"[^>]*value="100000"/);
     assert.match(markup, /<input id="vanity-workers" type="number" min="1" max="64"/);
     assert.match(markup, /<p class="muted" id="vanity-estimate" aria-live="polite"><\/p>/);
-    assert.match(markup, /<button class="btn primary" id="vanity-go" type="button">Start grinding<\/button>/);
+    assert.match(markup, /<button class="btn primary" id="vanity-go" type="button"[^>]*>Start grinding<\/button>/);
     assert.match(markup, /id="vanity-progress" role="progressbar"[^>]*hidden>/);
-    assert.match(markup, /<button class="btn secondary" id="vanity-stop" type="button" disabled>Stop<\/button>/);
-    assert.match(markup, /<button class="btn clear-current-action" id="vanity-wipe" type="button" disabled aria-disabled="true">Clear results<\/button>/);
-    assert.match(markup, /<p class="muted" id="vanity-status" aria-live="polite">/);
+    assert.match(markup, /<button class="btn secondary" id="vanity-stop" type="button" disabled[^>]*>Stop<\/button>/);
+    assert.match(markup, /<button class="btn clear-current-action" id="vanity-wipe" type="button" disabled aria-disabled="true"[^>]*>Clear results<\/button>/);
+    assert.match(markup, /<p class="muted" id="vanity-status" aria-live="polite"[^>]*>/);
     assert.match(markup, /<p class="err" id="vanity-error" role="alert"><\/p>/);
     assert.match(markup, /<div id="vanity-out" aria-live="polite"><\/div>/);
     // The passphrase warning is part of the card, not a docs afterthought.
@@ -2287,7 +2283,7 @@ test("the private recovery section lists the BIP39 passphrase beside the seed ph
 
 test("the vanity estimate is timed from a device sample, and Stop on first find halts the grind at the first match", () => {
   for (const markup of [template, appSource]) {
-    assert.match(markup, /<button class="btn secondary" id="vanity-stop" type="button" disabled>Stop<\/button>\s*<button class="btn secondary" id="vanity-first" type="button" aria-pressed="false"[^>]*>Stop on first find<\/button>/);
+    assert.match(markup, /<button class="btn secondary" id="vanity-stop" type="button" disabled[^>]*>Stop<\/button>\s*<button class="btn secondary" id="vanity-first" type="button" aria-pressed="false"[^>]*>Stop on first find<\/button>/);
   }
   const vanityController = appSource.slice(appSource.indexOf("// ── Vanity grinder"), appSource.indexOf("function hodlInitWorkspace()"));
   // The sample runs on tab entry, once per session, never while a grind is

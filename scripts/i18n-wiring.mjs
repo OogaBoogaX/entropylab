@@ -5,6 +5,14 @@ import { i18nMarkupTokens } from "./i18n-sync.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const baselinePath = join(root, "scripts/i18n-unwired.json");
+export const i18nRuntimeOwnedIds = Object.freeze([
+  "bip85-path",
+  "bip85-session",
+  "sp-session",
+  "journal-status-title",
+  "journal-status-note",
+  "journal-log-out",
+]);
 
 function spaces(value) {
   return value.replace(/[^\r\n]/g, " ");
@@ -71,7 +79,7 @@ export function collectUnwiredMarkup(fragment, label = "markup", { ignoredIds = 
     const ancestorReplaced = stack.some((frame) => frame.rich || frame.ignored);
     const tokenPath = pathOf(stack, token);
     if (!ancestorReplaced) {
-      for (const [attribute, marker] of [["aria-label", "data-i18n-aria"], ["placeholder", "data-i18n-placeholder"], ["title", "data-i18n-title"], ["alt", "data-i18n-alt"]]) {
+      for (const [attribute, marker] of [["aria-label", "data-i18n-aria"], ["aria-placeholder", "data-i18n-aria-placeholder"], ["placeholder", "data-i18n-placeholder"], ["title", "data-i18n-title"], ["alt", "data-i18n-alt"], ["data-copy-label", "data-i18n-copy-label"], ["data-copied-label", "data-i18n-copied-label"]]) {
         const value = normalized(token.attributes.get(attribute)?.value ?? "");
         if (value && !token.attributes.has(marker)) entries.push(`${label}:${tokenPath}:@${attribute}:${value}`);
       }
@@ -121,7 +129,7 @@ export function collectRepositoryUnwired() {
     // The source template's #btc-calc is a no-flash placeholder replaced by
     // app.js. The runtime root template below is the copy that must be wired.
     ...collectUnwiredMarkup(indexSource.slice(bodyStart, bodyClose), "src/index.html", { ignoredIds: ["btc-calc"] }),
-    ...collectUnwiredMarkup(appSource.slice(templateStart, appEnd), "src/js/app.js#root-template"),
+    ...collectUnwiredMarkup(appSource.slice(templateStart, appEnd), "src/js/app.js#root-template", { ignoredIds: i18nRuntimeOwnedIds }),
   ].sort();
 }
 
@@ -129,19 +137,23 @@ export function runI18nWiring(argv = process.argv.slice(2)) {
   const current = collectRepositoryUnwired();
   if (argv.includes("--write-baseline")) {
     writeFileSync(baselinePath, `${JSON.stringify(current, null, 2)}\n`);
-    console.log(`Recorded ${current.length} legacy unwired strings.`);
+    console.log(current.length
+      ? `Recorded ${current.length} legacy unwired strings.`
+      : "All static-shell UI text is wired.");
     return;
   }
   const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
   if (JSON.stringify(current) === JSON.stringify(baseline)) {
-    console.log(`No new hardcoded UI text (${current.length} legacy entries remain for Step 3).`);
+    console.log(current.length
+      ? `No new hardcoded UI text (${current.length} legacy entries remain).`
+      : "All static-shell UI text is wired.");
     return;
   }
   const expected = new Set(baseline);
   const actual = new Set(current);
   for (const entry of current) if (!expected.has(entry)) console.error(`New unwired text: ${entry}`);
   for (const entry of baseline) if (!actual.has(entry)) console.error(`Baseline entry changed or was wired: ${entry}`);
-  console.error("Wire new English through en.json, or regenerate the baseline only when intentionally shrinking the Step 3 inventory.");
+  console.error("Wire new English through en.json; the committed unwired inventory must remain empty.");
   process.exitCode = 1;
 }
 

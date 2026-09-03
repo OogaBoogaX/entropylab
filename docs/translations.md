@@ -17,10 +17,17 @@ Variable-only calls are reported as requiring behavioral coverage and warn at
 runtime if they resolve to a missing English key. CI runs the read-only check,
 so the catalog and fallback markup cannot drift.
 
-The wiring check rejects new hardcoded text. `scripts/i18n-unwired.json` is the
-temporary inventory of older interface text that still needs keys in the next
-rollout step. Do not add entries for new copy. Regenerate it only when a wiring
-change intentionally shrinks that inventory.
+The wiring check rejects hardcoded interface text, including translated
+attributes. `scripts/i18n-unwired.json` is intentionally empty and must stay
+empty. New copy must be added to `en.json` and wired at the same time.
+Elements whose text is owned and repeatedly replaced by runtime state are
+explicitly excluded from the static wiring pass so a locale change cannot
+replace a live result with its startup fallback.
+
+Keys under `literal.*` are technical values such as paths, symbols, protocol
+identifiers, and build metadata. They are copied unchanged by translation
+automation. CI rejects a non-English `literal.*` value that differs from
+English.
 
 ## Missing and stale translations
 
@@ -59,13 +66,15 @@ npm run i18n:mark -- --locale es --key journal.saveEntry --key journal.cancel
 npm run i18n:check
 ```
 
-A language pull request should touch exactly its catalog and source record.
-Do not manually copy current hashes onto translations that were not checked
-against the current English; that would hide stale work.
+A language pull request must touch exactly its catalog and source record. The
+automated translator added in rollout Part 4 will create that two-file change,
+run the same CI checks, and merge it only when the translation-only gate passes.
+Do not manually copy current hashes onto translations that were not generated
+from the current English; that would hide stale work.
 
-The later translator workflow will use the same two-file shape and the same CI
-checks. This pull request prepares those deterministic inputs; it does not call
-a model, add an API secret, or change merge policy.
+The translator workflow uses the same two-file shape and deterministic checks.
+The model runs only while preparing a translation commit; it never runs inside
+the build.
 
 Translations are committed inputs to the normal build. No translation service
 or model runs during `npm run build`, so the build remains reproducible.
