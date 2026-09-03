@@ -107,8 +107,9 @@ jobs:
           path: _site
           retention-days: 7
 
-  # The WASM artifacts (src/js/entropylab-wasm-b64.js, src/js/psbt-wasm-b64.js)
-  # are built from the pinned Rust crates (entropylab-wasm/, psbt-wasm/, each
+  # The WASM artifacts (src/js/entropylab-wasm-b64.js, src/js/psbt-wasm-b64.js,
+  # src/js/vanity-wasm-b64.js) are built from the pinned Rust crates
+  # (entropylab-wasm/, psbt-wasm/, vanity-wasm/, each
   # with Cargo.lock and rust-toolchain.toml). This job rebuilds them from
   # scratch and runs their test suites against the fresh build, so a stale or
   # hand-edited committed artifact cannot hide a broken crate. The artifacts
@@ -130,7 +131,7 @@ jobs:
       - name: Rebuild the WASM artifacts from the Rust sources
         run: npm run build:wasm
       - name: Test the freshly built bindings
-        run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/wipe-wasm.test.mjs
+        run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs
 
   # Resolve the OS matrix from workflow_dispatch checkboxes (defaults to Ubuntu
   # for automatic triggers or when nothing is selected).
@@ -435,7 +436,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f entropylab.html src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js SHA256SUMS.txt CID.txt
+          git add -f entropylab.html src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js SHA256SUMS.txt CID.txt
           if git diff --cached --quiet; then
             echo "Build output is unchanged; nothing to commit."
             exit 0

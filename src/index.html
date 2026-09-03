@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en"><head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self'; manifest-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="referrer" content="no-referrer"><meta name="description" content="Self-contained, air-gapped Bitcoin key and wallet calculator. Turn dice rolls, seed phrases, and private keys into wallet recovery information — entirely offline."><meta property="og:title" content="EntropyLab"><meta property="og:type" content="website"><meta property="og:url" content="https://entropylab.online/"><meta property="og:site_name" content="EntropyLab"><meta property="og:description" content="Self-contained, air-gapped Bitcoin key and wallet calculator. Turn dice rolls, seed phrases, and private keys into wallet recovery information — entirely offline."><meta property="og:image" content="https://entropylab.online/assets/entropylab-social.png"><meta property="og:image:type" content="image/png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="The EntropyLab beaker-and-dice logo beside a screenshot of the offline Bitcoin wallet calculator."><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="EntropyLab"><meta name="twitter:description" content="Self-contained, air-gapped Bitcoin key and wallet calculator. Turn dice rolls, seed phrases, and private keys into wallet recovery information — entirely offline."><meta name="twitter:image" content="https://entropylab.online/assets/entropylab-social.png"><meta name="twitter:image:alt" content="The EntropyLab beaker-and-dice logo beside a screenshot of the offline Bitcoin wallet calculator."><title>EntropyLab — Offline Bitcoin Key &amp; Wallet Calculator</title><link rel="icon" type="image/png" sizes="64x64" href="data:image/png;base64,/*@@FAVICON@@*/"><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,/*@@FAVICON_SVG@@*/"><link rel="canonical" href="https://entropylab.online/"><meta name="application-name" content="EntropyLab"><meta name="application-version" content="v{{VERSION}}"><meta name="theme-color" content="#000000"><script>(function(){try{var m=localStorage.getItem("entropylab-theme");if(m==="light"||(m!=="dark"&&matchMedia("(prefers-color-scheme: light)").matches))document.documentElement.dataset.theme="light"}catch(e){}try{if(localStorage.getItem("entropylab-beta-banner-dismissed")==="{{VERSION}}")document.documentElement.dataset.betaBannerDismissed=""}catch(e){}})()</script><meta name="apple-mobile-web-app-title" content="EntropyLab"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="assets/pwa-icon-180.png"><style>:is([id*='google_ads_iframe'],[id*='taboola-'],.taboolaHeight,.taboola-placeholder,#top-ad,#credential_picker_container,#credentials-picker-container,#credential_picker_iframe,#onetap_google_intermediate_iframe,[id*='google-one-tap-iframe'],#google-one-tap-popup-container,.google-one-tap__module,.google-one-tap-modal-div,.adthrive-auto-injected-player-container,.adthrive[id^="cls-video-container"]:has(.adthrive-auto-injected-player-container),#amp_floatingAdDiv,#ez-content-blocker-container) {display:none!important;min-height:0!important;height:0!important;}</style><style id="btc-calc-style">/*@@CSS@@*/</style></head><body><div id="btc-calc">
+<meta http-equiv="content-type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self' blob:; manifest-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="referrer" content="no-referrer"><meta name="description" content="Self-contained, air-gapped Bitcoin key and wallet calculator. Turn dice rolls, seed phrases, and private keys into wallet recovery information — entirely offline."><meta property="og:title" content="EntropyLab"><meta property="og:type" content="website"><meta property="og:url" content="https://entropylab.online/"><meta property="og:site_name" content="EntropyLab"><meta property="og:description" content="Self-contained, air-gapped Bitcoin key and wallet calculator. Turn dice rolls, seed phrases, and private keys into wallet recovery information — entirely offline."><meta property="og:image" content="https://entropylab.online/assets/entropylab-social.png"><meta property="og:image:type" content="image/png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="The EntropyLab beaker-and-dice logo beside a screenshot of the offline Bitcoin wallet calculator."><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="EntropyLab"><meta name="twitter:description" content="Self-contained, air-gapped Bitcoin key and wallet calculator. Turn dice rolls, seed phrases, and private keys into wallet recovery information — entirely offline."><meta name="twitter:image" content="https://entropylab.online/assets/entropylab-social.png"><meta name="twitter:image:alt" content="The EntropyLab beaker-and-dice logo beside a screenshot of the offline Bitcoin wallet calculator."><title>EntropyLab — Offline Bitcoin Key &amp; Wallet Calculator</title><link rel="icon" type="image/png" sizes="64x64" href="data:image/png;base64,/*@@FAVICON@@*/"><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,/*@@FAVICON_SVG@@*/"><link rel="canonical" href="https://entropylab.online/"><meta name="application-name" content="EntropyLab"><meta name="application-version" content="v{{VERSION}}"><meta name="theme-color" content="#000000"><script>(function(){try{var m=localStorage.getItem("entropylab-theme");if(m==="light"||(m!=="dark"&&matchMedia("(prefers-color-scheme: light)").matches))document.documentElement.dataset.theme="light"}catch(e){}try{if(localStorage.getItem("entropylab-beta-banner-dismissed")==="{{VERSION}}")document.documentElement.dataset.betaBannerDismissed=""}catch(e){}})()</script><meta name="apple-mobile-web-app-title" content="EntropyLab"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="assets/pwa-icon-180.png"><style>:is([id*='google_ads_iframe'],[id*='taboola-'],.taboolaHeight,.taboola-placeholder,#top-ad,#credential_picker_container,#credentials-picker-container,#credential_picker_iframe,#onetap_google_intermediate_iframe,[id*='google-one-tap-iframe'],#google-one-tap-popup-container,.google-one-tap__module,.google-one-tap-modal-div,.adthrive-auto-injected-player-container,.adthrive[id^="cls-video-container"]:has(.adthrive-auto-injected-player-container),#amp_floatingAdDiv,#ez-content-blocker-container) {display:none!important;min-height:0!important;height:0!important;}</style><style id="btc-calc-style">/*@@CSS@@*/</style></head><body><div id="btc-calc">
   <div class="site-header no-print">
     <div class="site-header-inner">
       <span class="site-logo" aria-hidden="true"></span>
@@ -55,6 +55,7 @@
       <button type="button" class="workspace-more" id="workspace-more" aria-controls="workspace-tabs" aria-label="Scroll the tool list to see more tools" hidden>More tools<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
       <div class="workspace-tabs" id="workspace-tabs" role="tablist" aria-label="Tool">
         <button type="button" class="workspace-tab active" role="tab" aria-selected="true" aria-label="Keys"><span class="workspace-tab-full">Keys</span><span class="workspace-tab-short">Keys</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Vanity"><span class="workspace-tab-full">Vanity</span><span class="workspace-tab-short">Vanity</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="BIP-85"><span class="workspace-tab-full">BIP-85</span><span class="workspace-tab-short">BIP85</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Multi Signature"><span class="workspace-tab-full">Multi Signature</span><span class="workspace-tab-short">MultiSig</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Silent Payments"><span class="workspace-tab-full">Silent Payments</span><span class="workspace-tab-short">SP</span></button>
@@ -209,6 +210,94 @@ words, pick one of the checksum words.</span></span>
       </div>
       <div id="out"></div>
     </section>
+      <div class="tool-intro" id="vanity-tool-intro" hidden>
+        <div class="kicker">Same key, same counter, same address</div>
+        <h2>Grind a vanity address</h2>
+        <p class="muted tool-intro-note">Pick a Key Station key and turn one of its dials. Passphrase grind extends the key's BIP39 passphrase with counter characters (base-62 over a-zA-Z0-9 in odometer order: "aaa…", "aab…"); derivation grind keeps the passphrase and steps through account indexes. Every candidate is derived the standard way — PBKDF2 seed, BIP32 path — in a dedicated WebAssembly module, one Web Worker per CPU core, and its address of the selected type (including BIP-352 Silent Payment codes) is checked against your prefix. This invents no entropy: same key and counter always reproduce the same address, so every result replays by hand, and Update key writes the winning passphrase or account back to the key it came from.</p>
+      </div>
+      <section class="card no-print" id="vanity-card" role="tabpanel" hidden>
+        <div class="wallet-result-messages" role="note">
+          <ul>
+            <li class="is-warning">A vanity passphrase is a BIP39 passphrase: the seed words alone no longer recover the wallet. After Update key, record the passphrase with the same care as the words.</li>
+            <li>Matching is Bitcoin mainnet, at the key's first receive address (its own purpose, account, branch, and address index). Update key re-derives the key, so the Keys tab, its exports, and the Journal show the vanity wallet.</li>
+          </ul>
+        </div>
+        <div class="station-key-source">
+          <p class="label">Bring in a key from Key Station</p>
+          <div class="session-key-picker" id="vanity-session-keys" role="group" aria-label="Key Station keys" hidden></div>
+          <p class="field-note" id="vanity-session-note">Derive a key on the Keys tab first — the grinder searches that key's passphrase or account index. A key with seed words supports both methods; a root-xprv key supports the derivation grind only.</p>
+        </div>
+        <div class="vanity-source" id="vanity-source" hidden>
+          <div class="vanity-source-head">
+            <span class="vanity-source-kicker">Selected key</span>
+            <span class="vanity-source-key"><img class="key-tab-lifehash" id="vanity-source-lifehash" width="22" height="22" alt="" hidden><code id="vanity-source-name"></code></span>
+            <span class="muted" id="vanity-source-kind"></span>
+          </div>
+          <label class="field" for="vanity-pass">Starting passphrase <span class="vanity-source-from" id="vanity-pass-from"></span></label>
+          <input id="vanity-pass" readonly autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="No passphrase — the key uses its seed words alone" aria-describedby="vanity-pass-note">
+          <span class="field-note" id="vanity-pass-note"></span>
+        </div>
+        <div class="vanity-grid">
+          <label class="field">Method
+            <select id="vanity-method">
+              <option value="passphrase" selected="selected">Passphrase grind</option>
+              <option value="derivation">Derivation grind</option>
+            </select>
+            <span class="field-note" id="vanity-method-help">Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for this key.</span>
+          </label>
+          <label class="field">Address type
+            <select id="vanity-script">
+              <option value="p2pkh">Legacy P2PKH · 1…</option>
+              <option value="p2sh-p2wpkh">Nested SegWit P2SH-P2WPKH · 3…</option>
+              <option value="p2wpkh" selected="selected">Native SegWit P2WPKH · bc1q…</option>
+              <option value="p2tr">Taproot P2TR · bc1p…</option>
+              <option value="sp">Silent Payments BIP-352 · sp1qq…</option>
+            </select>
+          </label>
+          <label class="field">Address prefix
+            <input id="vanity-prefix" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="bc1q…" aria-describedby="vanity-prefix-help">
+            <span class="field-note" id="vanity-prefix-help">Native SegWit P2WPKH prefix, starts with “bc1q”. Live-filtered to lowercase bech32 characters; each free character multiplies the work by ~32.</span>
+          </label>
+        </div>
+        <div class="vanity-grid">
+          <label class="field" data-vanity-method="passphrase">Passphrase length
+            <input id="vanity-length" type="number" min="1" max="32" step="1" inputmode="numeric" value="8" aria-describedby="vanity-length-help">
+            <span class="field-note" id="vanity-length-help">Counter characters a-zA-Z0-9 appended after the starting passphrase. 62^10 counters fill the 64-bit counter; longer passphrases grind their low range.</span>
+          </label>
+          <label class="field" data-vanity-method="passphrase">Start counter
+            <input id="vanity-start" inputmode="numeric" autocomplete="off" spellcheck="false" value="0" aria-describedby="vanity-start-help">
+            <span class="field-note" id="vanity-start-help">First counter tried. Counter 0 is "aaa…".</span>
+          </label>
+          <label class="field" data-vanity-method="passphrase">Range size
+            <input id="vanity-count" inputmode="numeric" autocomplete="off" spellcheck="false" value="1000000" aria-describedby="vanity-count-help">
+            <span class="field-note" id="vanity-count-help">Candidates to grind. After a run, Start continues where the range ended.</span>
+          </label>
+          <label class="field" data-vanity-method="derivation" hidden>Start account
+            <input id="vanity-account-start" inputmode="numeric" autocomplete="off" spellcheck="false" value="0" aria-describedby="vanity-account-start-help">
+            <span class="field-note" id="vanity-account-start-help">First BIP32 account index tried (0 to 2,147,483,647). Each match is an account index holding the vanity address.</span>
+          </label>
+          <label class="field" data-vanity-method="derivation" hidden>Accounts to try
+            <input id="vanity-account-count" inputmode="numeric" autocomplete="off" spellcheck="false" value="100000" aria-describedby="vanity-account-count-help">
+            <span class="field-note" id="vanity-account-count-help">Account indexes to grind. After a run, Start account continues where the range ended.</span>
+          </label>
+          <label class="field">Workers
+            <input id="vanity-workers" type="number" min="1" max="64" step="1" inputmode="numeric" value="1" aria-describedby="vanity-workers-help">
+            <span class="field-note" id="vanity-workers-help">One per CPU core is fastest; defaults to this device's core count.</span>
+          </label>
+        </div>
+        <p class="muted" id="vanity-estimate" aria-live="polite"></p>
+        <div class="row current-item-actions">
+          <button class="btn primary" id="vanity-go" type="button">Start grinding</button>
+          <div class="derive-progress" id="vanity-progress" role="progressbar" aria-label="Vanity grinding progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
+          <button class="btn secondary" id="vanity-stop" type="button" disabled>Stop</button>
+          <button class="btn secondary" id="vanity-first" type="button" aria-pressed="false" title="Stop grinding as soon as the first match is found">Stop on first find</button>
+          <button class="btn clear-current-action" id="vanity-wipe" type="button" disabled aria-disabled="true">Clear results</button>
+        </div>
+        <p class="muted" id="vanity-status" aria-live="polite">Idle. No range has been ground this session.</p>
+        <p class="err" id="vanity-error" role="alert"></p>
+        <div id="vanity-out" aria-live="polite"></div>
+        <p class="muted">Found passphrases remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      </section>
       <div class="tool-intro" id="bip85-tool-intro" hidden>
         <div class="kicker">One seed. Many children.</div>
         <h2>Derive BIP-85 child entropy</h2>

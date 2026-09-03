@@ -2,6 +2,7 @@
 // committed, importable JS modules (base64 + sha256 of the wasm bytes):
 //   entropylab-wasm/ -> src/js/entropylab-wasm-b64.js
 //   psbt-wasm/       -> src/js/psbt-wasm-b64.js
+//   vanity-wasm/     -> src/js/vanity-wasm-b64.js
 //
 // The generated modules are committed so that `npm run build` keeps working
 // with Node alone. CI rebuilds them from the Rust sources (pinned by each
@@ -48,6 +49,15 @@ const crates = [
     symbol: "PSBT_WASM_B64",
     blurb: `// rust-bitcoin 0.32.102 (see psbt-wasm/Cargo.lock) compiled to WebAssembly
 // from psbt-wasm/ with the pinned Rust 1.95.0 toolchain.`,
+  },
+  {
+    dir: "vanity-wasm",
+    wasm: "vanity_wasm.wasm",
+    out: "src/js/vanity-wasm-b64.js",
+    symbol: "VANITY_WASM_B64",
+    blurb: `// libsecp256k1 0.8.0 (vendored by secp256k1-sys 0.14.0, see
+// vanity-wasm/Cargo.lock) plus sha2 0.10.9 / ripemd 0.1.3, compiled to
+// WebAssembly from vanity-wasm/ with the pinned Rust 1.95.0 toolchain.`,
   },
 ];
 

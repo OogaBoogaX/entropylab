@@ -1,0 +1,6 @@
+# Pinned so `npm run build:wasm` produces byte-identical output locally and in
+# CI (the workflow diffs the regenerated artifact against the committed one).
+[toolchain]
+channel = "1.95.0"
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

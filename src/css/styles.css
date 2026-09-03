@@ -1061,7 +1061,18 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   min-height: 44px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px;
   background: var(--surface-2); color: var(--fg); font-family: var(--mono); font-size: 13px; cursor: pointer;
 }
-.session-key-option.active { border-color: var(--accent); }
+.session-key-option:not(.active):hover { border-color: var(--accent); }
+.session-key-option:focus-visible { outline: 2px solid var(--selection-accent); outline-offset: 2px; }
+/* Selection is unmistakable: accent border and tint plus a check mark, so
+   it does not rest on the border colour alone. */
+.session-key-option.active {
+  border-color: var(--selection-accent); color: var(--fg);
+  background: color-mix(in oklab, var(--selection-accent) 16%, var(--surface-2));
+  box-shadow: inset 0 0 0 1px var(--selection-accent);
+}
+.session-key-check { display: none; width: 16px; height: 16px; color: var(--selection-accent); }
+.session-key-check svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.session-key-option.active .session-key-check { display: inline-flex; }
 .msig-session-keys { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
 .msig-session-keys[hidden] { display: none; }
 .msig-session-key {
@@ -1135,8 +1146,8 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .segmented-control.is-stacked > .tab:first-child { border-radius: 8px 8px 0 0; }
 .segmented-control.is-stacked > .tab:last-child { border-radius: 0 0 8px 8px; }
 .segmented-control.is-stacked > .tab:only-child { border-radius: 8px; }
-#msig-card[hidden], #calc-card[hidden], #psbt-card[hidden], #psbted-card[hidden], #bip85-card[hidden], #sp-card[hidden] { display: none !important; }
-#calc-card:not([hidden]), #msig-card:not([hidden]), #bip85-card:not([hidden]), #sp-card:not([hidden]), #psbt-card:not([hidden]), #psbted-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
+#msig-card[hidden], #calc-card[hidden], #psbt-card[hidden], #psbted-card[hidden], #bip85-card[hidden], #sp-card[hidden], #vanity-card[hidden] { display: none !important; }
+#calc-card:not([hidden]), #msig-card:not([hidden]), #bip85-card:not([hidden]), #sp-card:not([hidden]), #psbt-card:not([hidden]), #psbted-card:not([hidden]), #vanity-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
 #journal-card[hidden], #journal-notes-card[hidden], #journal-state-card[hidden], #journal-log-card[hidden] { display: none !important; }
 #journal-card:not([hidden]), #journal-notes-card:not([hidden]), #journal-state-card:not([hidden]), #journal-log-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
 #journal-locked-panel[hidden], #journal-work-panel[hidden], #journal-create-panel[hidden], #journal-open-panel[hidden], #journal-editor[hidden], #journal-view[hidden] { display: none; }
@@ -1181,6 +1192,41 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   .psbt-grid > .field { display: flex; flex-direction: column; }
   .psbt-grid > .field > textarea { flex: 1; }
 }
+.vanity-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
+@media (min-width: 720px) {
+  .vanity-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+}
+.vanity-grid > [hidden] { display: none; }
+.vanity-secret { display: inline-flex; align-items: center; gap: 6px; }
+.vanity-secret .seed-phrase-copy { flex: 0 0 auto; }
+/* The selected key, restated where the grind reads from it: which key, what
+   kind, and its starting passphrase verbatim. */
+.vanity-source {
+  margin: 0 0 var(--space-section); padding: 14px 16px 16px;
+  border: 1px solid color-mix(in oklab, var(--selection-accent) 45%, var(--border)); border-radius: 12px;
+  background: color-mix(in oklab, var(--selection-accent) 6%, var(--surface));
+}
+.vanity-source[hidden] { display: none; }
+.vanity-source-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.vanity-source-kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--selection-accent); font-weight: 600; }
+.vanity-source-key { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.vanity-source-key code { font-family: var(--mono); }
+.vanity-source-head .muted { font-size: 13px; }
+.vanity-source label.field { margin-top: var(--space-control); }
+.vanity-source-from { color: var(--muted); font-weight: 400; }
+.vanity-source #vanity-pass { color: var(--fg); background: var(--bg); cursor: text; }
+/* The stop-on-first-find toggle reads as switched on, not merely hovered. */
+#vanity-first.is-pressed {
+  border-color: var(--selection-accent); color: var(--fg);
+  background: color-mix(in oklab, var(--selection-accent) 16%, var(--surface-2));
+  box-shadow: inset 0 0 0 1px var(--selection-accent);
+}
+.vanity-apply-cell { white-space: nowrap; }
+.vanity-key { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+.vanity-key code { font-family: var(--mono); }
+.vanity-apply { min-height: 36px; padding: 4px 12px; font-size: 13px; }
+.vanity-saved { display: inline-flex; align-items: center; gap: 6px; color: var(--ok-bright); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.vanity-saved svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
 .psbt-kv { font-family: var(--mono); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
 .psbt-ok { color: var(--ok); }
 .psbt-bad { color: var(--danger); }

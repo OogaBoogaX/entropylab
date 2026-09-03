@@ -33,6 +33,7 @@ import { wordlist as bip39English } from "./bip39-english.js";
 import { initPsbtEditor } from "./psbt-editor.js";
 import { renderSVG as hodlUqrRenderSvg } from "uqr";
 import { BIP39_LANGUAGE_ENGLISH, BIP85_APPS, bip85Path, deriveApplication, parseChildIndex, wipeBip85Result, wipeBytes as hodlWipeBytes } from "./bip85.js";
+import { VANITY_HARDENED, VANITY_MAX_INDEX, VANITY_METHODS, VANITY_SCRIPTS, VanityGrinder, estimateVanityWork, validateVanityIndexRange, validateVanityMnemonic, validateVanityPassphrase, validateVanityPrefix, validateVanityRange, vanityBenchmark, vanityPathIndexes, vanityPathString } from "./vanity.js";
 import { t as hodlT, hodlInitLocale, hodlFillLocaleSelect, hodlGetLocale } from "./i18n.js";
 import {
   METHOD_LABELS as hodlJournalMethodLabels,
@@ -637,6 +638,94 @@ hodlRootEl.innerHTML = `
       </div>
       <div id="out"></div>
     </section>
+      <div class="tool-intro" id="vanity-tool-intro" hidden>
+        <div class="kicker">Same key, same counter, same address</div>
+        <h2>Grind a vanity address</h2>
+        <p class="muted tool-intro-note">Pick a Key Station key and turn one of its dials. Passphrase grind extends the key's BIP39 passphrase with counter characters (base-62 over a-zA-Z0-9 in odometer order: "aaa…", "aab…"); derivation grind keeps the passphrase and steps through account indexes. Every candidate is derived the standard way — PBKDF2 seed, BIP32 path — in a dedicated WebAssembly module, one Web Worker per CPU core, and its address of the selected type (including BIP-352 Silent Payment codes) is checked against your prefix. This invents no entropy: same key and counter always reproduce the same address, so every result replays by hand, and Update key writes the winning passphrase or account back to the key it came from.</p>
+      </div>
+      <section class="card no-print" id="vanity-card" role="tabpanel" hidden>
+        <div class="wallet-result-messages" role="note">
+          <ul>
+            <li class="is-warning">A vanity passphrase is a BIP39 passphrase: the seed words alone no longer recover the wallet. After Update key, record the passphrase with the same care as the words.</li>
+            <li>Matching is Bitcoin mainnet, at the key's first receive address (its own purpose, account, branch, and address index). Update key re-derives the key, so the Keys tab, its exports, and the Journal show the vanity wallet.</li>
+          </ul>
+        </div>
+        <div class="station-key-source">
+          <p class="label">Bring in a key from Key Station</p>
+          <div class="session-key-picker" id="vanity-session-keys" role="group" aria-label="Key Station keys" hidden></div>
+          <p class="field-note" id="vanity-session-note">Derive a key on the Keys tab first — the grinder searches that key's passphrase or account index. A key with seed words supports both methods; a root-xprv key supports the derivation grind only.</p>
+        </div>
+        <div class="vanity-source" id="vanity-source" hidden>
+          <div class="vanity-source-head">
+            <span class="vanity-source-kicker">Selected key</span>
+            <span class="vanity-source-key"><img class="key-tab-lifehash" id="vanity-source-lifehash" width="22" height="22" alt="" hidden><code id="vanity-source-name"></code></span>
+            <span class="muted" id="vanity-source-kind"></span>
+          </div>
+          <label class="field" for="vanity-pass">Starting passphrase <span class="vanity-source-from" id="vanity-pass-from"></span></label>
+          <input id="vanity-pass" readonly autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="No passphrase — the key uses its seed words alone" aria-describedby="vanity-pass-note">
+          <span class="field-note" id="vanity-pass-note"></span>
+        </div>
+        <div class="vanity-grid">
+          <label class="field">Method
+            <select id="vanity-method">
+              <option value="passphrase" selected="selected">Passphrase grind</option>
+              <option value="derivation">Derivation grind</option>
+            </select>
+            <span class="field-note" id="vanity-method-help">Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for this key.</span>
+          </label>
+          <label class="field">Address type
+            <select id="vanity-script">
+              <option value="p2pkh">Legacy P2PKH · 1…</option>
+              <option value="p2sh-p2wpkh">Nested SegWit P2SH-P2WPKH · 3…</option>
+              <option value="p2wpkh" selected="selected">Native SegWit P2WPKH · bc1q…</option>
+              <option value="p2tr">Taproot P2TR · bc1p…</option>
+              <option value="sp">Silent Payments BIP-352 · sp1qq…</option>
+            </select>
+          </label>
+          <label class="field">Address prefix
+            <input id="vanity-prefix" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="bc1q…" aria-describedby="vanity-prefix-help">
+            <span class="field-note" id="vanity-prefix-help">Native SegWit P2WPKH prefix, starts with “bc1q”. Live-filtered to lowercase bech32 characters; each free character multiplies the work by ~32.</span>
+          </label>
+        </div>
+        <div class="vanity-grid">
+          <label class="field" data-vanity-method="passphrase">Passphrase length
+            <input id="vanity-length" type="number" min="1" max="32" step="1" inputmode="numeric" value="8" aria-describedby="vanity-length-help">
+            <span class="field-note" id="vanity-length-help">Counter characters a-zA-Z0-9 appended after the starting passphrase. 62^10 counters fill the 64-bit counter; longer passphrases grind their low range.</span>
+          </label>
+          <label class="field" data-vanity-method="passphrase">Start counter
+            <input id="vanity-start" inputmode="numeric" autocomplete="off" spellcheck="false" value="0" aria-describedby="vanity-start-help">
+            <span class="field-note" id="vanity-start-help">First counter tried. Counter 0 is "aaa…".</span>
+          </label>
+          <label class="field" data-vanity-method="passphrase">Range size
+            <input id="vanity-count" inputmode="numeric" autocomplete="off" spellcheck="false" value="1000000" aria-describedby="vanity-count-help">
+            <span class="field-note" id="vanity-count-help">Candidates to grind. After a run, Start continues where the range ended.</span>
+          </label>
+          <label class="field" data-vanity-method="derivation" hidden>Start account
+            <input id="vanity-account-start" inputmode="numeric" autocomplete="off" spellcheck="false" value="0" aria-describedby="vanity-account-start-help">
+            <span class="field-note" id="vanity-account-start-help">First BIP32 account index tried (0 to 2,147,483,647). Each match is an account index holding the vanity address.</span>
+          </label>
+          <label class="field" data-vanity-method="derivation" hidden>Accounts to try
+            <input id="vanity-account-count" inputmode="numeric" autocomplete="off" spellcheck="false" value="100000" aria-describedby="vanity-account-count-help">
+            <span class="field-note" id="vanity-account-count-help">Account indexes to grind. After a run, Start account continues where the range ended.</span>
+          </label>
+          <label class="field">Workers
+            <input id="vanity-workers" type="number" min="1" max="64" step="1" inputmode="numeric" value="1" aria-describedby="vanity-workers-help">
+            <span class="field-note" id="vanity-workers-help">One per CPU core is fastest; defaults to this device's core count.</span>
+          </label>
+        </div>
+        <p class="muted" id="vanity-estimate" aria-live="polite"></p>
+        <div class="row current-item-actions">
+          <button class="btn primary" id="vanity-go" type="button">Start grinding</button>
+          <div class="derive-progress" id="vanity-progress" role="progressbar" aria-label="Vanity grinding progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
+          <button class="btn secondary" id="vanity-stop" type="button" disabled>Stop</button>
+          <button class="btn secondary" id="vanity-first" type="button" aria-pressed="false" title="Stop grinding as soon as the first match is found">Stop on first find</button>
+          <button class="btn clear-current-action" id="vanity-wipe" type="button" disabled aria-disabled="true">Clear results</button>
+        </div>
+        <p class="muted" id="vanity-status" aria-live="polite">Idle. No range has been ground this session.</p>
+        <p class="err" id="vanity-error" role="alert"></p>
+        <div id="vanity-out" aria-live="polite"></div>
+        <p class="muted">Found passphrases remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      </section>
       <div class="tool-intro" id="bip85-tool-intro" hidden>
         <div class="kicker">One seed. Many children.</div>
         <h2>Derive BIP-85 child entropy</h2>
@@ -1452,6 +1541,7 @@ function hodlRootWalletResult(root, network, source, accountIndex, masterFingerp
     coinType,
     mnemonic: source.mnemonic,
     passphraseUsed: source.passphraseUsed,
+    passphrase: source.passphrase ?? "",
     entropyHex: source.entropyHex,
     seedHex: source.seedHex,
     rootXprv: hodlSerializeExtendedKey(root.privateKey ? root.privateExtendedKey : null, network, "x", true),
@@ -1519,7 +1609,7 @@ async function hodlMnemonicWalletWithProgress(value, passphrase, network, count,
   let entropyHex = source?.entropyHex ?? hodlHex.encode(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist)), warnings = [...source?.warnings ?? []];
   if (passphrase.length > 0) warnings.push("A passphrase is in use. The same words without this passphrase are a different wallet. Do not store the passphrase with the words.");
   try {
-    return await hodlRootWalletWithProgress(root, network, count, { mnemonic, passphraseUsed: passphrase.length > 0, entropyHex, seedHex, notes: source?.notes ?? [], warnings }, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
+    return await hodlRootWalletWithProgress(root, network, count, { mnemonic, passphraseUsed: passphrase.length > 0, passphrase, entropyHex, seedHex, notes: source?.notes ?? [], warnings }, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
   } finally {
     root.wipePrivateData(); // the result keeps its extended-key strings, not the root
   }
@@ -1540,7 +1630,7 @@ async function hodlImportedWalletWithProgress(value, network, count, accountInde
     if (!parsed.isPrivate && (derivationPlan ? derivationPlan.hasHardenedPrefix || hardening.branch || hardening.address : Object.values(hardening).some(Boolean))) throw hodlError("error.import.rootXpubPaths");
     if (parsed.family !== "x") throw hodlError("error.import.rootFamily");
     try {
-      return await hodlRootWalletWithProgress(node, network, count, { mnemonic: null, passphraseUsed: false, entropyHex: null, seedHex: null, notes, warnings: [] }, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
+      return await hodlRootWalletWithProgress(node, network, count, { mnemonic: null, passphraseUsed: false, passphrase: "", entropyHex: null, seedHex: null, notes, warnings: [] }, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
     } finally {
       node.wipePrivateData(); // the imported root is dead once the result strings exist
     }
@@ -1556,6 +1646,7 @@ async function hodlImportedWalletWithProgress(value, network, count, accountInde
     network,
     mnemonic: null,
     passphraseUsed: false,
+    passphrase: "",
     entropyHex: null,
     seedHex: null,
     rootXprv: null,
@@ -1989,6 +2080,9 @@ function hodlSingleWalletData(wallet) {
 function hodlHdWalletData(wallet) {
   let privateFields = [];
   if (wallet.mnemonic) privateFields.push(hodlSeedPhraseField(`Your seed phrase \xB7 ${wallet.mnemonic.trim().split(/\s+/).length} words`, wallet.mnemonic), hodlSeedQrExport(wallet.mnemonic, { passphraseUsed: wallet.passphraseUsed, entropyHex: wallet.entropyHex }));
+  // The passphrase sits right under the words it belongs to: without it the
+  // words recover a different wallet, so it is recovery material too.
+  if (wallet.mnemonic && wallet.passphraseUsed && wallet.passphrase) privateFields.push(hodlPrivateFieldHtml("BIP39 passphrase", wallet.passphrase));
   if (wallet.entropyHex) privateFields.push(hodlPrivateFieldHtml("BIP39 entropy hex", wallet.entropyHex));
   if (wallet.seedHex) privateFields.push(hodlPrivateFieldHtml("Master seed hex", wallet.seedHex));
   if (wallet.rootXprv) privateFields.push(hodlPrivateFieldHtml(`Root ${wallet.rootPrivateLabel || hodlExtendedKeyVersions[wallet.network].x.prvName}`, wallet.rootXprv));
@@ -7586,10 +7680,9 @@ function hodlSessionMsigKeys() {
 function hodlSessionHdRootKeys() {
   return hodlKeys.filter((state) => !state.isLab && state.result?.kind === "hd" && (state.result.mnemonic || state.result.rootXprv));
 }
-function hodlFillStationKeyPicker(id, selectedSource, onSelect) {
+function hodlFillStationKeyPicker(id, selectedSource, onSelect, keys = hodlSessionHdRootKeys()) {
   let box = document.getElementById(id);
   if (!box) return;
-  let keys = hodlSessionHdRootKeys();
   box.replaceChildren();
   box.hidden = !keys.length;
   keys.forEach((state) => {
@@ -7606,7 +7699,13 @@ function hodlFillStationKeyPicker(id, selectedSource, onSelect) {
     image.hidden = true;
     hodlFillKeyTabLifehash(image, fingerprint);
     label.textContent = fingerprint;
-    button.append(image, label);
+    // The selected chip carries a check mark as well as its accent border,
+    // so the selection reads without relying on colour alone.
+    let check = document.createElement("span");
+    check.className = "session-key-check";
+    check.setAttribute("aria-hidden", "true");
+    check.innerHTML = hodlCopiedIconMarkup();
+    button.append(image, label, check);
     button.onclick = () => onSelect(state);
     box.appendChild(button);
   });
@@ -7614,6 +7713,9 @@ function hodlFillStationKeyPicker(id, selectedSource, onSelect) {
 function hodlRefreshStationKeyPickers() {
   hodlFillStationKeyPicker("bip85-session-keys", hodlBip85Source, hodlPickBip85SessionKey);
   hodlFillStationKeyPicker("sp-session-keys", hodlSpSource, hodlPickSpSessionKey);
+  hodlFillStationKeyPicker("vanity-session-keys", hodlVanitySource, hodlPickVanitySessionKey, hodlVanitySourceKeys());
+  // The selected key's passphrase and path may have changed on the Keys tab.
+  hodlVanitySyncSource();
 }
 function hodlMatchingMsigExport(result) {
   if (!result?.multisigCosignerExports?.length) return "";
@@ -10212,9 +10314,17 @@ function hodlSnapshotKeySummary(state = hodlKeys[hodlActiveKey]) {
   state.createdPath = hodlKeySummaryPath(state);
 }
 function hodlFillKeyTabLifehash(image, fingerprint) {
-  if (!image || !fingerprint || typeof hodlLifeHash?.fromFingerprint !== "function") return;
+  // The LifeHash module is a later parser-inserted script, and the boot
+  // promise can settle between scripts (the footer waits for full load for
+  // the same reason): `hodlLifeHash?.` alone still throws on an undeclared
+  // identifier, so the plain typeof guard has to come first.
+  if (!image || !fingerprint || typeof hodlLifeHash === "undefined" || typeof hodlLifeHash.fromFingerprint !== "function") return;
+  // The render is asynchronous; when the same image is refilled for a new
+  // fingerprint before the old one lands (Update key re-fingerprints a key),
+  // only the latest request may paint.
+  image.dataset.fingerprint = fingerprint;
   hodlLifeHash.fromFingerprint(fingerprint).then((url) => {
-    if (!image.isConnected) return;
+    if (!image.isConnected || image.dataset.fingerprint !== fingerprint) return;
     image.src = url;
     image.hidden = false;
   });
@@ -11207,6 +11317,7 @@ function hodlShowWorkspace(id) {
   let preservedTop = window.scrollY, preservedLeft = window.scrollX;
   if (hodlWorkspace === "calc") hodlCaptureKey();
   else if (hodlWorkspace === "msig") hodlCaptureMsig();
+  else if (hodlWorkspace === "vanity") hodlVanityCancel();
   hodlWorkspace = id;
   [...hodlElement("#workspace-tabs").querySelectorAll("[data-workspace]")].forEach((button) => {
     let active = button.dataset.workspace === id;
@@ -11223,9 +11334,10 @@ function hodlShowWorkspace(id) {
   document.getElementById("msig-card").hidden = true;
   document.getElementById("bip85-card").hidden = id !== "bip85";
   document.getElementById("sp-card").hidden = id !== "sp";
+  document.getElementById("vanity-card").hidden = id !== "vanity";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
-  ["bip85", "sp", "msig", "calc"].forEach((tool) => {
+  ["bip85", "sp", "msig", "calc", "vanity"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
   hodlSyncPsbtTool();
@@ -11244,6 +11356,11 @@ function hodlShowWorkspace(id) {
     hodlRenderBip85Tabs();
     hodlSyncBip85View();
     hodlBip85SyncOptions();
+  } else if (id === "vanity") {
+    // Keys may have been derived, renamed, or re-passphrased since the picker last filled.
+    hodlFillStationKeyPicker("vanity-session-keys", hodlVanitySource, hodlPickVanitySessionKey, hodlVanitySourceKeys());
+    hodlVanitySyncSource();
+    hodlVanityStartBenchmark();
   }
   if (hodlWorkspaceScrollFrame) cancelAnimationFrame(hodlWorkspaceScrollFrame);
   window.scrollTo(preservedLeft, preservedTop);
@@ -11344,7 +11461,7 @@ function hodlInitDefaultTabStates() {
 }
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "workspace.key", "workspace.keyShort"], ["bip85", "workspace.bip85", "workspace.bip85Short"], ["msig", "workspace.msig", "workspace.msigShort"], ["sp", "workspace.sp", "workspace.spShort"], ["psbt", "workspace.psbt", "workspace.psbtShort"], ["journal", "workspace.journal", "workspace.journalShort"]];
+var hodlWorkspaceTabs = [["calc", "workspace.key", "workspace.keyShort"], ["vanity", "workspace.vanity", "workspace.vanityShort"], ["bip85", "workspace.bip85", "workspace.bip85Short"], ["msig", "workspace.msig", "workspace.msigShort"], ["sp", "workspace.sp", "workspace.spShort"], ["psbt", "workspace.psbt", "workspace.psbtShort"], ["journal", "workspace.journal", "workspace.journalShort"]];
 var hodlPsbtTool = "nonce";
 function hodlSyncPsbtTool() {
   let visible = hodlWorkspace === "psbt",
@@ -12033,6 +12150,612 @@ function hodlSyncWorkspaceOverflow() {
   if (!strip || !hint) return;
   hint.hidden = strip.scrollWidth - strip.clientWidth - strip.scrollLeft <= 1;
 }
+// ── Vanity grinder (workspace tab) ─────────────────────────────────────────
+// The engine (src/js/vanity.js + vanity-wasm) is a calculator over one Key
+// Station key: the passphrase grind extends the key's BIP39 passphrase with
+// counter characters, the derivation grind steps through account indexes with
+// the passphrase fixed, and every candidate is derived the standard way
+// (PBKDF2 seed → BIP32 path → address). A match therefore names a passphrase
+// or an account index of a wallet the user already holds, and Update key
+// writes it back to that key through the same Edit input → Derive path the
+// Keys tab uses by hand.
+var hodlVanityGrinder = null, hodlVanityMatches = [], hodlVanityFound = 0, hodlVanityRunning = false, hodlVanityReveal = false, hodlVanityDisplayLimit = 100, hodlVanitySource = "", hodlVanityRun = null, hodlVanityApplying = false, hodlVanityStopFirst = false, hodlVanityBench = null, hodlVanityBenchPending = false, hodlVanityLiveRate = 0;
+// Only derived HD-root keys are listed — the same set the BIP-85 and Silent
+// Payments pickers offer. The Key Station lab tab is a work surface, not a
+// key, so it never appears as a chip.
+function hodlVanitySourceKeys() {
+  return hodlSessionHdRootKeys();
+}
+function hodlVanitySourceState() {
+  let state = hodlKeys.find((candidate) => "key:" + candidate.id === hodlVanitySource);
+  return state && hodlVanitySourceKeys().includes(state) ? state : null;
+}
+function hodlVanityKeyLabel(state) {
+  return state ? state.result?.masterFingerprint || state.name || "Key " + state.number : "";
+}
+function hodlPickVanitySessionKey(state) {
+  let error = document.getElementById("vanity-error");
+  if (error) error.textContent = "";
+  if (!state) return;
+  if (hodlVanitySource !== "key:" + state.id) {
+    // Results belong to the key they were ground on.
+    hodlVanityCancel();
+    hodlVanityClearResults();
+  }
+  hodlVanitySource = "key:" + state.id;
+  hodlVanitySyncSource();
+  hodlRefreshStationKeyPickers();
+}
+function hodlVanityMethod() {
+  let value = document.getElementById("vanity-method")?.value;
+  return VANITY_METHODS[value] ? value : "passphrase";
+}
+function hodlVanityScriptId() {
+  let value = document.getElementById("vanity-script")?.value;
+  return VANITY_SCRIPTS[value] ? value : "p2wpkh";
+}
+function hodlVanityScript() {
+  return VANITY_SCRIPTS[hodlVanityScriptId()];
+}
+function hodlVanityFormatCount(value) {
+  return BigInt(value).toLocaleString("en-US");
+}
+function hodlFilterVanityPrefix(value, meta = hodlVanityScript()) {
+  let text = String(value ?? "");
+  if (meta.bech32) {
+    let allowed = new Set((meta.prefix + "bc1qpzry9x8gf2tvdw0s3jn54khce6mua7l").split(""));
+    return [...text.toLowerCase()].filter((character) => !/\s/.test(character) && allowed.has(character)).join("");
+  }
+  return [...text].filter((character) => !/\s/.test(character) && "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".includes(character)).join("");
+}
+function hodlVanitySyncScriptNote() {
+  let meta = hodlVanityScript(), help = document.getElementById("vanity-prefix-help"), input = document.getElementById("vanity-prefix");
+  if (help) {
+    help.textContent = meta.firstFree
+      ? `${meta.label} code, starts with “${meta.prefix}”; the next character is one of ${[...meta.firstFree].join(" ")} (the scan key's parity). Live-filtered to lowercase bech32 characters; each further free character multiplies the work by ~32.`
+      : meta.bech32
+        ? `${meta.label} prefix, starts with “${meta.prefix}”. Live-filtered to lowercase bech32 characters; each free character multiplies the work by ~32.`
+        : `${meta.label} prefix, starts with “${meta.prefix}”. Live-filtered to base58 characters; each free character multiplies the work by ~58.`;
+  }
+  if (input) input.placeholder = `${meta.prefix}…`;
+}
+// The source panel names the selected key and shows its passphrase exactly as
+// entered on the Keys tab: the passphrase grind extends that text, the
+// derivation grind uses it as-is, and either way a match is a setting of this
+// key. A root-xprv key has no words to stretch, so only the derivation grind
+// is offered for it.
+function hodlVanitySyncSource() {
+  let panel = document.getElementById("vanity-source"), note = document.getElementById("vanity-session-note");
+  if (!panel) return;
+  let state = hodlVanitySourceState();
+  if (!state) hodlVanitySource = "";
+  if (note) {
+    note.textContent = hodlVanitySourceKeys().length
+      ? "Pick the key to grind. Its passphrase and derivation settings come along exactly as set on the Keys tab: a key with seed words supports both methods, a root-xprv key the derivation grind only."
+      : "Derive a key on the Keys tab first — the grinder searches that key's passphrase or account index. A key with seed words supports both methods; a root-xprv key supports the derivation grind only.";
+  }
+  panel.hidden = !state;
+  let methodSelect = document.getElementById("vanity-method"), passphraseOption = methodSelect?.querySelector('option[value="passphrase"]');
+  if (state) {
+    let label = hodlVanityKeyLabel(state), pass = String(state.fields?.pass ?? ""), hasMnemonic = Boolean(state.result?.mnemonic);
+    let name = document.getElementById("vanity-source-name"), kind = document.getElementById("vanity-source-kind"), image = document.getElementById("vanity-source-lifehash"), from = document.getElementById("vanity-pass-from"), field = document.getElementById("vanity-pass"), passNote = document.getElementById("vanity-pass-note");
+    if (name) name.textContent = label;
+    if (kind) kind.textContent = `${hasMnemonic ? "BIP39 seed words" : "Root xprv"}${state.name && state.name !== label ? ` · ${state.name}` : ""} · ${hodlDisplayDerivationPath(state.fields?.derivationPath || "")}`;
+    if (image) {
+      image.hidden = true;
+      hodlFillKeyTabLifehash(image, state.result?.masterFingerprint || "");
+    }
+    if (from) from.textContent = `· from key ${label}`;
+    if (field) field.value = pass;
+    if (passNote) {
+      passNote.textContent = !hasMnemonic
+        ? `Key ${label} was imported as a root xprv: it has no seed words, so its passphrase cannot be extended — only the derivation grind is available.`
+        : pass.length
+          ? `Copied verbatim from key ${label}'s Optional BIP39 passphrase on the Keys tab. Passphrase grind: candidates are this text followed by the counter characters. Derivation grind: this exact passphrase, with the account index changing.`
+          : `Key ${label} has no passphrase. Passphrase grind: candidates are the counter characters alone. Derivation grind: no passphrase, with the account index changing.`;
+    }
+    if (passphraseOption) passphraseOption.disabled = !hasMnemonic;
+    if (!hasMnemonic && methodSelect && methodSelect.value === "passphrase") methodSelect.value = "derivation";
+  } else if (passphraseOption) passphraseOption.disabled = false;
+  hodlVanitySyncMethod();
+  hodlVanitySyncControls();
+}
+// The method decides which dial the counter turns, so it swaps the range
+// fields (odometer counters vs. account indexes) and the help copy.
+function hodlVanitySyncMethod() {
+  let method = hodlVanityMethod(), help = document.getElementById("vanity-method-help");
+  document.querySelectorAll("#vanity-card [data-vanity-method]").forEach((field) => {
+    field.hidden = field.dataset.vanityMethod !== method;
+  });
+  if (help) {
+    help.textContent = method === "derivation"
+      ? "The passphrase stays as it is; each candidate is the next BIP32 account index at the key's path. A match is an account index holding the vanity address — Update key sets it on the key."
+      : "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for this key.";
+  }
+  hodlVanityEstimate();
+}
+// A short timing sample on tab entry — fixed published constants, never the
+// session's keys — measures this device so the estimate can say how long a
+// match should take. It runs once per session and only when no grind is on.
+function hodlVanityStartBenchmark() {
+  if (hodlVanityBench || hodlVanityBenchPending || hodlVanityRunning) return;
+  hodlVanityBenchPending = true;
+  hodlVanityEstimate();
+  vanityBenchmark().then((rates) => {
+    hodlVanityBench = rates;
+  }).catch(() => {
+    hodlVanityBench = null;
+  }).finally(() => {
+    hodlVanityBenchPending = false;
+    hodlVanityEstimate();
+  });
+}
+function hodlVanityFormatDuration(seconds) {
+  if (!Number.isFinite(seconds)) return "";
+  if (seconds < 1) return "under a second";
+  if (seconds < 90) return `${Math.round(seconds)} second${Math.round(seconds) === 1 ? "" : "s"}`;
+  let minutes = seconds / 60;
+  if (minutes < 90) return `${Math.round(minutes)} minutes`;
+  let hours = minutes / 60;
+  if (hours < 48) return `${Math.round(hours)} hours`;
+  let days = hours / 24;
+  if (days < 730) return `${Math.round(days)} days`;
+  return `${Math.round(days / 365).toLocaleString("en-US")} years`;
+}
+// Candidates per second for the current method and address type: the live
+// rate while a grind runs, otherwise the benchmark scaled by the worker count.
+function hodlVanityExpectedRate() {
+  if (hodlVanityRunning && hodlVanityLiveRate > 0) return hodlVanityLiveRate;
+  if (!hodlVanityBench) return 0;
+  let method = hodlVanityMethod(), sample = method === "derivation" ? (hodlVanityScriptId() === "sp" ? "sp" : "derivation") : "passphrase";
+  let workers = Math.max(1, Math.min(64, Number(document.getElementById("vanity-workers")?.value) || 1));
+  return (hodlVanityBench[sample] || 0) * workers;
+}
+function hodlVanityEstimate() {
+  let estimateEl = document.getElementById("vanity-estimate"), input = document.getElementById("vanity-prefix"), scriptId = hodlVanityScriptId(), method = hodlVanityMethod();
+  if (!estimateEl || !input) return;
+  try {
+    let prefix = validateVanityPrefix(input.value, scriptId), work = estimateVanityWork(prefix, scriptId), rate = hodlVanityExpectedRate();
+    let timing = rate > 0
+      ? `At about ${hodlVanityFormatCount(Math.round(rate))} candidates/s${hodlVanityRunning ? "" : ` on ${Math.max(1, Math.min(64, Number(document.getElementById("vanity-workers")?.value) || 1))} worker${Number(document.getElementById("vanity-workers")?.value) === 1 ? "" : "s"}`}, expect a match roughly every ${hodlVanityFormatDuration(Number(work) / rate)}.`
+      : hodlVanityBenchPending ? "Measuring this device…" : method === "derivation" ? "Derivation grind: each candidate is a few BIP32 child steps." : "Passphrase grind: each candidate is a full BIP39 seed stretch.";
+    estimateEl.textContent = `Prefix “${prefix}” matches about 1 in ${hodlVanityFormatCount(work)} ${hodlVanityScript().label} candidates on average. ${timing}`;
+  } catch {
+    estimateEl.textContent = "";
+  }
+}
+function hodlVanityToggleStopFirst() {
+  hodlVanityStopFirst = !hodlVanityStopFirst;
+  hodlVanitySyncControls();
+}
+// Turns the key's Keys-tab settings into the grind plan: the concrete
+// derivation path (the key's own purpose, coin type, account, branch, and
+// address index — or the BIP-352 account path for Silent Payments), plus the
+// seed words the passphrase grind stretches or the parent node the derivation
+// grind hangs account indexes below. Matching is mainnet only, so the key's
+// coin type must be 0.
+function hodlVanityPlan(state, method, scriptId) {
+  if (!state) throw new Error("Pick a Key Station key first — the grinder searches that key's passphrase or account index.");
+  let result = state.result || {}, fields = state.fields || {}, label = hodlVanityKeyLabel(state);
+  let accountComponents = vanityPathIndexes(fields.derivationAccountPath || "m/84'/0'/0'");
+  if (accountComponents.length < 3) throw new Error(`Key ${label}'s derivation path needs purpose, coin type, and account components.`);
+  if ((accountComponents[1] & VANITY_MAX_INDEX) !== 0) throw new Error(`Vanity matching is Bitcoin mainnet: key ${label} derives coin type ${accountComponents[1] & VANITY_MAX_INDEX}. Pick a mainnet key (coin type 0).`);
+  let index = (text, hardened) => {
+    let value = Number(String(text ?? "0").trim().replace(/['hH]$/, ""));
+    if (!Number.isInteger(value) || value < 0 || value > VANITY_MAX_INDEX) throw new Error(`Key ${label}'s branch and address indexes must be whole numbers from 0 to 2,147,483,647.`);
+    return hardened ? value + VANITY_HARDENED : value;
+  };
+  let path = scriptId === "sp"
+    ? [352 + VANITY_HARDENED, VANITY_HARDENED, (accountComponents[2] & VANITY_MAX_INDEX) + VANITY_HARDENED]
+    : [...accountComponents, index(fields.branchStart, Boolean(fields.branchHarden)), index(fields.addressStart, Boolean(fields.addressHarden))];
+  let passphrase = validateVanityPassphrase(fields.pass ?? "");
+  let plan = { method, script: scriptId, sourceId: state.id, sourceLabel: label, passphrase, accountHardened: path[2] >= VANITY_HARDENED };
+  if (method === "passphrase") {
+    if (!result.mnemonic) throw new Error(`Key ${label} has no seed words (root xprv), so its passphrase cannot be extended — switch to the derivation grind.`);
+    return { ...plan, mnemonic: validateVanityMnemonic(result.mnemonic), path, pathPrefix: [], counterSlot: 0 };
+  }
+  // Derivation grind: the node above the account is derived once, here, and
+  // the workers receive only that node.
+  let root;
+  if (result.mnemonic) {
+    let seed = hodlMnemonicToSeed(result.mnemonic, passphrase);
+    try {
+      root = hodlHDKey.fromMasterSeed(seed);
+    } finally {
+      seed.fill(0);
+    }
+  } else if (result.rootXprv) root = hodlHDKey.fromExtendedKey(hodlParseExtendedKey(result.rootXprv).xkey);
+  else throw new Error(`Key ${label} carries neither seed words nor a root xprv.`);
+  let parent = null;
+  try {
+    parent = root.derive(vanityPathString(path.slice(0, 2)));
+    if (!parent.privateKey) throw new Error(`Key ${label} is watch-only; the derivation grind needs private material.`);
+    let node = new Uint8Array(64);
+    node.set(parent.privateKey, 0);
+    node.set(parent.chainCode, 32);
+    return { ...plan, node, path: path.slice(2), pathPrefix: path.slice(0, 2), counterSlot: 0 };
+  } finally {
+    parent?.wipePrivateData();
+    root.wipePrivateData();
+  }
+}
+function hodlVanityParseInputs() {
+  let method = hodlVanityMethod(), scriptId = hodlVanityScriptId();
+  let prefix = validateVanityPrefix(document.getElementById("vanity-prefix").value, scriptId);
+  let parseCounter = (id, label) => {
+    let raw = document.getElementById(id).value.trim();
+    if (!/^\d+$/.test(raw)) throw new Error(`${label} is a whole number (digits only).`);
+    return BigInt(raw);
+  };
+  let workers = Math.max(1, Math.min(64, Number(document.getElementById("vanity-workers").value) || 1));
+  let plan = hodlVanityPlan(hodlVanitySourceState(), method, scriptId);
+  if (method === "derivation") {
+    let range = validateVanityIndexRange(parseCounter("vanity-account-start", "The start account"), parseCounter("vanity-account-count", "The account range"));
+    return { ...plan, prefix, workers, ...range, passLen: 0 };
+  }
+  let passLen = Number(document.getElementById("vanity-length").value);
+  return { ...plan, prefix, workers, ...validateVanityRange(passLen, parseCounter("vanity-start", "The start counter"), parseCounter("vanity-count", "The range size")) };
+}
+function hodlCopyVanityValue(button, value, label) {
+  if (!value || !button || button.disabled) return;
+  let done = () => {
+    let note = button.closest(".vanity-secret")?.querySelector(".vanity-copied");
+    button.classList.add("is-copied");
+    button.innerHTML = hodlCopiedIconMarkup();
+    button.setAttribute("aria-label", "Copied");
+    button.title = "Copied";
+    if (note) note.textContent = "Copied";
+    clearTimeout(button.hodlCopiedTimer);
+    button.hodlCopiedTimer = setTimeout(() => {
+      if (!button.isConnected) return;
+      button.classList.remove("is-copied");
+      button.innerHTML = hodlClipboardIconMarkup();
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      if (note) note.textContent = "";
+    }, 1600);
+  };
+  let fallback = () => {
+    let field = document.createElement("textarea");
+    field.value = value;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.left = "-9999px";
+    document.body.appendChild(field);
+    field.select();
+    try {
+      document.execCommand("copy");
+      done();
+    } finally {
+      field.remove();
+    }
+  };
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") navigator.clipboard.writeText(value).then(done).catch(fallback);
+  else fallback();
+}
+// The master fingerprint the key will carry once a match is applied: a new
+// passphrase is a new seed, so each passphrase-grind row is its own
+// fingerprint (computed once from the key's words); an account change keeps
+// the key's fingerprint. Rendered with its LifeHash so the row shows the
+// identity Update key will leave behind.
+function hodlVanityMatchFingerprint(match, run) {
+  if (match.fingerprint) return match.fingerprint;
+  if (run.method !== "passphrase") return (match.fingerprint = run.sourceLabel);
+  let state = hodlKeys.find((candidate) => candidate.id === run.sourceId), mnemonic = state?.result?.mnemonic;
+  if (!mnemonic) return "";
+  let seed = hodlMnemonicToSeed(mnemonic, match.passphrase), root = null;
+  try {
+    root = hodlHDKey.fromMasterSeed(seed);
+    return (match.fingerprint = hodlFingerprintHex(root.fingerprint));
+  } finally {
+    seed.fill(0);
+    root?.wipePrivateData();
+  }
+}
+function hodlVanityKeyMarkup(fingerprint) {
+  if (!fingerprint) return "";
+  return `<span class="vanity-key"><img class="key-tab-lifehash" width="22" height="22" alt="" hidden data-vanity-lifehash="${hodlEscapeHtml(fingerprint)}"><code>${hodlEscapeHtml(fingerprint)}</code></span>`;
+}
+function hodlRenderVanityOut() {
+  let box = document.getElementById("vanity-out");
+  if (!box) return;
+  if (!hodlVanityMatches.length || !hodlVanityRun) {
+    box.innerHTML = "";
+    return;
+  }
+  let run = hodlVanityRun, derivation = run.method === "derivation", meta = VANITY_SCRIPTS[run.script] ?? VANITY_SCRIPTS.p2wpkh, label = hodlEscapeHtml(run.sourceLabel);
+  let copyMarkup = (attribute, index, title) => `<button type="button" class="seed-phrase-copy" ${attribute}="${index}" aria-label="${title}" title="${title}">${hodlClipboardIconMarkup()}</button><span class="vanity-copied muted" aria-live="polite"></span>`;
+  let keyCell = (match) => `<td class="vanity-key-cell">${hodlVanityKeyMarkup(hodlVanityMatchFingerprint(match, run))}</td>`;
+  let applyMarkup = (match, index) => match.savedTo
+    ? `<span class="vanity-saved" role="status">${hodlCopiedIconMarkup()}Saved to key ${hodlEscapeHtml(match.savedTo)}</span>`
+    : `<button type="button" class="btn secondary vanity-apply" data-vanity-apply="${index}" ${hodlVanityApplying ? "disabled" : ""} title="Write this ${derivation ? "account index" : "passphrase"} to key ${label} and re-derive it">${hodlVanityApplying ? "Updating…" : "Update key"}</button>`;
+  // Passphrases are private key material: masked until the reveal toggle, and
+  // copied from match state (never a DOM attribute) so the wipe drops them.
+  let rows = hodlVanityMatches.map((match, index) => {
+    let address = `<td><span class="vanity-secret"><span class="mono">${hodlEscapeHtml(match.address)}</span>${copyMarkup("data-vanity-copy-address", index, "Copy address")}</span></td>`;
+    if (derivation) {
+      return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.index}${run.accountHardened ? "'" : ""}</td><td class="mono">${hodlEscapeHtml(hodlDisplayDerivationPath(match.path))}</td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
+    }
+    let secret = hodlVanityReveal
+      ? `<span class="mono">${hodlEscapeHtml(match.passphrase)}</span>`
+      : `<span class="mono" aria-hidden="true">${hodlEscapeHtml("•".repeat(12))}</span><span class="sr-only">Passphrase hidden — tick Show passphrases to reveal</span>`;
+    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, "Copy passphrase")}</span></td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
+  }).join("");
+  let overflow = hodlVanityFound > hodlVanityMatches.length ? `<p class="muted">Only the first ${hodlVanityMatches.length} matches are listed; ${hodlVanityFormatCount(hodlVanityFound)} found in total.</p>` : "";
+  let where = meta.code === 4
+    ? `the BIP-352 Silent Payment code of that account (scan ${hodlEscapeHtml(hodlDisplayDerivationPath(run.pathText))}/1h/0, spend …/0h/0)`
+    : `the ${hodlEscapeHtml(meta.label)} address at ${hodlEscapeHtml(hodlDisplayDerivationPath(run.pathText))}`;
+  let description = derivation
+    ? `Each row is a BIP32 account index of key ${label} — with its passphrase unchanged, ${where} starts with the prefix. Update key sets that account on the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet.`
+    : `Each row is a new BIP39 passphrase for key ${label}: the starting passphrase followed by the counter characters. With this key's seed words it derives ${where}. Update key writes the passphrase to the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet. Anyone holding the words and this passphrase holds the coins.`;
+  let reveal = derivation ? "" : `<div class="wallet-data-actions no-print">
+        <label class="reveal-private-toggle">
+          <input type="checkbox" id="vanity-reveal" ${hodlVanityReveal ? "checked" : ""} aria-describedby="vanity-matches-description">
+          <span>Show passphrases <span class="reveal-private-toggle-note">(air-gap only)</span></span>
+        </label>
+      </div>`;
+  let head = derivation
+    ? `<th scope="col">#</th><th scope="col">Account</th><th scope="col">Path</th><th scope="col">Address</th><th scope="col">Key</th><th scope="col"><span class="sr-only">Update key</span></th>`
+    : `<th scope="col">#</th><th scope="col">Counter</th><th scope="col">Passphrase (keep it secret)</th><th scope="col">Address</th><th scope="col">Key after update</th><th scope="col"><span class="sr-only">Update key</span></th>`;
+  box.innerHTML = `<section class="wallet-data-section wallet-private-section" aria-labelledby="vanity-matches-heading">
+      <div class="wallet-data-section-head"><h3 id="vanity-matches-heading">Matching ${derivation ? "accounts" : "passphrases"}</h3>
+      <p class="muted" id="vanity-matches-description">${description}</p></div>
+      ${reveal}
+      <div class="wallet-address-table"><div class="wallet-table wallet-table-public" role="region" tabindex="0" aria-label="Matching vanity addresses table"><table aria-rowcount="${hodlVanityMatches.length + 1}"><caption class="sr-only">Matching vanity addresses</caption><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div></div>
+      ${overflow}</section>`;
+  // LifeHash images render asynchronously from the fingerprint in the cell.
+  box.querySelectorAll("img[data-vanity-lifehash]").forEach((image) => hodlFillKeyTabLifehash(image, image.dataset.vanityLifehash));
+}
+function hodlVanitySyncControls() {
+  let go = document.getElementById("vanity-go"), stop = document.getElementById("vanity-stop"), wipe = document.getElementById("vanity-wipe"), progress = document.getElementById("vanity-progress");
+  let source = hodlVanitySourceState();
+  if (go) {
+    let blocked = hodlVanityRunning || hodlVanityApplying || !source;
+    go.disabled = blocked;
+    go.setAttribute("aria-disabled", String(blocked));
+    go.textContent = hodlVanityRunning ? "Grinding…" : "Start grinding";
+    go.title = source ? "" : "Pick a Key Station key first";
+  }
+  if (stop) stop.disabled = !hodlVanityRunning;
+  let first = document.getElementById("vanity-first");
+  if (first) {
+    first.setAttribute("aria-pressed", String(hodlVanityStopFirst));
+    first.classList.toggle("is-pressed", hodlVanityStopFirst);
+    first.textContent = hodlVanityStopFirst ? "Stop on first find: on" : "Stop on first find";
+  }
+  let dirty = hodlVanityFound > 0 && !hodlVanityRunning && !hodlVanityApplying;
+  if (wipe) {
+    wipe.disabled = !dirty;
+    wipe.setAttribute("aria-disabled", String(!dirty));
+  }
+  if (progress) progress.hidden = !hodlVanityRunning;
+}
+function hodlVanitySetStatus(text) {
+  let status = document.getElementById("vanity-status");
+  if (status) status.textContent = text;
+}
+function hodlVanityStop() {
+  if (hodlVanityGrinder && hodlVanityRunning) hodlVanityGrinder.stop();
+}
+function hodlVanityCancel() {
+  let wasRunning = hodlVanityRunning;
+  if (hodlVanityGrinder) hodlVanityGrinder.cancel();
+  hodlVanityRunning = false;
+  hodlVanityLiveRate = 0;
+  if (wasRunning) hodlVanitySetStatus("Stopped.");
+  hodlVanitySyncControls();
+}
+function hodlVanityClearResults(status = "Idle. No range has been ground this session.") {
+  hodlVanityMatches = [];
+  hodlVanityFound = 0;
+  hodlVanityReveal = false;
+  hodlVanityRun = null;
+  hodlRenderVanityOut();
+  hodlVanitySetStatus(status);
+  hodlVanitySyncControls();
+}
+function hodlVanityScriptChanged() {
+  hodlVanityCancel();
+  let input = document.getElementById("vanity-prefix");
+  if (input) hodlApplyFilteredInput(input, (value) => hodlFilterVanityPrefix(value));
+  hodlVanityClearResults();
+  hodlVanitySyncScriptNote();
+  hodlVanityEstimate();
+}
+function hodlVanityMethodChanged() {
+  hodlVanityCancel();
+  hodlVanityClearResults();
+  hodlVanitySyncMethod();
+}
+function hodlRunVanity() {
+  let error = document.getElementById("vanity-error");
+  if (error) error.textContent = "";
+  let inputs;
+  try {
+    inputs = hodlVanityParseInputs();
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+    return;
+  }
+  hodlVanityMatches = [];
+  hodlVanityFound = 0;
+  // The run's key, method, and passphrase are fixed at start; snapshot them
+  // so the results (and Update key) cannot drift if the form changes mid-grind.
+  hodlVanityRun = { method: inputs.method, script: inputs.script, sourceId: inputs.sourceId, sourceLabel: inputs.sourceLabel, passphrase: inputs.passphrase, accountHardened: inputs.accountHardened, pathText: vanityPathString([...inputs.pathPrefix, ...inputs.path]) };
+  hodlRenderVanityOut();
+  hodlVanityRunning = true;
+  hodlVanitySyncControls();
+  hodlVanitySetStatus(inputs.method === "derivation" ? `Starting workers — stepping through account indexes of key ${inputs.sourceLabel}…` : `Starting workers — extending key ${inputs.sourceLabel}'s passphrase with the counter characters…`);
+  let progressBar = document.getElementById("vanity-progress");
+  hodlVanityGrinder = new VanityGrinder({
+    onProgress: ({ done, total, rate }) => {
+      let percent = total > 0n ? Number((done * 10000n) / total) / 100 : 0;
+      if (progressBar) {
+        progressBar.setAttribute("aria-valuenow", String(Math.floor(percent)));
+        progressBar.setAttribute("aria-valuetext", `${percent.toFixed(1)}% complete`);
+        let fill = progressBar.querySelector(".derive-progress-bar"), label = progressBar.querySelector(".derive-progress-label");
+        if (fill) fill.style.width = `${percent}%`;
+        if (label) label.textContent = `${percent.toFixed(1)}%`;
+      }
+      hodlVanitySetStatus(`${hodlVanityFormatCount(done)} / ${hodlVanityFormatCount(total)} candidates · ${hodlVanityFormatCount(Math.round(rate))}/s · ${hodlVanityFound} match${hodlVanityFound === 1 ? "" : "es"}`);
+      // The live rate is the best estimate while the grind runs.
+      if (rate > 0 && Math.abs(rate - hodlVanityLiveRate) / rate > 0.05) {
+        hodlVanityLiveRate = rate;
+        hodlVanityEstimate();
+      }
+    },
+    onMatch: (match) => {
+      hodlVanityFound += 1;
+      if (hodlVanityMatches.length < hodlVanityDisplayLimit) {
+        hodlVanityMatches.push(match);
+        hodlRenderVanityOut();
+      }
+      if (hodlVanityStopFirst && hodlVanityRunning) hodlVanityStop();
+    },
+    onDone: ({ done, stopped }) => {
+      hodlVanityRunning = false;
+      hodlVanityLiveRate = 0;
+      // The next run resumes where this range ended; the start field is the
+      // durable record of what has been ground.
+      let nextStart = inputs.start + done;
+      let startField = document.getElementById(inputs.method === "derivation" ? "vanity-account-start" : "vanity-start");
+      if (startField) startField.value = nextStart.toString();
+      hodlVanitySetStatus(`${stopped ? (hodlVanityStopFirst && hodlVanityFound > 0 ? "Stopped at first match" : "Stopped") : "Range complete"}: ${hodlVanityFormatCount(done)} candidates, ${hodlVanityFound} match${hodlVanityFound === 1 ? "" : "es"}. Next ${inputs.method === "derivation" ? "account" : "counter"}: ${nextStart.toString()}.`);
+      hodlVanitySyncControls();
+      hodlVanityEstimate();
+    },
+    onError: (message) => {
+      if (error) error.textContent = message;
+    },
+  });
+  hodlVanityGrinder.start(inputs);
+  // The grinder copied the parent node for its workers; this copy is dead.
+  if (inputs.node) inputs.node.fill(0);
+}
+// Update key: write the match back to its key and re-derive, through the same
+// Edit input → Derive path the Keys tab uses by hand. The key keeps its tab
+// (id, colour, custom name) even when a new passphrase gives it a new
+// fingerprint; the lab tab gets back whatever the user had in it.
+async function hodlVanityApplyMatch(index) {
+  let error = document.getElementById("vanity-error"), match = hodlVanityMatches[index], run = hodlVanityRun;
+  if (error) error.textContent = "";
+  if (!match || !run || hodlVanityApplying || match.savedTo) return;
+  let state = hodlKeys.find((candidate) => candidate.id === run.sourceId && !candidate.isLab);
+  if (!state) {
+    if (error) error.textContent = `Key ${run.sourceLabel} is no longer in Key Station, so there is nothing to update.`;
+    return;
+  }
+  if (hodlActiveDerivation) {
+    if (error) error.textContent = "A derivation is already running on the Keys tab — wait for it to finish.";
+    return;
+  }
+  hodlVanityApplying = true;
+  hodlRenderVanityOut();
+  hodlVanitySyncControls();
+  let before = new Set(hodlKeys.map((candidate) => candidate.id)), lab = hodlKeys.find((candidate) => candidate.isLab) || null;
+  try {
+    let labIndex = hodlFillLabFromKey(state), draft = hodlKeys[labIndex];
+    draft.fields.pass = match.passphrase;
+    if (match.index !== null) {
+      draft.fields.account = `${match.index}${run.accountHardened ? "'" : ""}`;
+      draft.fields.accountHarden = run.accountHardened;
+    }
+    hodlActiveKey = labIndex;
+    hodlRenderKeyTabs();
+    hodlRestoreKey();
+    document.getElementById("calc-card").hidden = hodlWorkspace !== "calc";
+    await hodlDeriveWithProgress("key", hodlCalculateKey);
+    let active = hodlKeys[hodlActiveKey];
+    if (!active || active.isLab || !active.result) throw new Error(active?.error || "Deriving the updated key failed.");
+    if (!before.has(active.id)) {
+      // A changed passphrase means a new fingerprint, which the Keys tab files
+      // as a new key; fold it back into the tab it came from.
+      let target = hodlKeys.findIndex((candidate) => candidate.id === state.id), fresh = hodlActiveKey;
+      if (target >= 0) {
+        hodlKeys[target] = { ...active, id: state.id, number: state.number, color: state.color, name: state.name && state.name !== hodlVanityKeyLabel(state) ? state.name : active.name };
+        hodlKeys.splice(fresh, 1);
+        hodlActiveKey = target > fresh ? target - 1 : target;
+      }
+    }
+    let updated = hodlKeys[hodlActiveKey];
+    match.savedTo = hodlVanityKeyLabel(updated);
+    // A tool that had this key loaded is holding the old seed: reload it so
+    // its chip, fingerprint, and LifeHash follow the key.
+    if (hodlSpSource === "key:" + updated.id) hodlPickSpSessionKey(updated);
+    if (hodlBip85Source === "key:" + updated.id) hodlPickBip85SessionKey(updated);
+    hodlVanitySetStatus(`Saved to key ${match.savedTo}: ${match.index !== null ? `account ${match.index}` : "the new passphrase"} is now on the key${run.sourceLabel !== match.savedTo ? ` — its master fingerprint and LifeHash changed from ${run.sourceLabel} to ${match.savedTo}` : ""}. Open the Keys tab to review and export it.`);
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+  } finally {
+    if (lab) {
+      let current = hodlKeys.findIndex((candidate) => candidate.isLab);
+      if (current >= 0 && hodlKeys[current] !== lab) hodlKeys[current] = lab;
+    }
+    hodlVanityApplying = false;
+    hodlRenderKeyTabs();
+    hodlRestoreKey();
+    // The Keys panel opened for the derive; this tab stays where it is.
+    document.getElementById("calc-card").hidden = hodlWorkspace !== "calc";
+    hodlVanitySyncSource();
+    hodlRenderVanityOut();
+    hodlVanitySyncControls();
+  }
+}
+function hodlInitVanity() {
+  let go = document.getElementById("vanity-go");
+  if (!go) return;
+  let workersField = document.getElementById("vanity-workers");
+  if (workersField && navigator.hardwareConcurrency) workersField.value = String(Math.max(1, Math.min(64, navigator.hardwareConcurrency)));
+  go.onclick = hodlRunVanity;
+  document.getElementById("vanity-stop").onclick = hodlVanityStop;
+  document.getElementById("vanity-first").onclick = hodlVanityToggleStopFirst;
+  document.getElementById("vanity-wipe").onclick = () => hodlVanityClearResults();
+  workersField?.addEventListener("input", hodlVanityEstimate);
+  let prefix = document.getElementById("vanity-prefix");
+  prefix.addEventListener("input", () => {
+    hodlApplyFilteredInput(prefix, (value) => hodlFilterVanityPrefix(value));
+    hodlVanityEstimate();
+  });
+  document.getElementById("vanity-script")?.addEventListener("change", hodlVanityScriptChanged);
+  document.getElementById("vanity-method")?.addEventListener("change", hodlVanityMethodChanged);
+  for (let id of ["vanity-length", "vanity-start", "vanity-count", "vanity-account-start", "vanity-account-count", "vanity-workers"]) {
+    let input = document.getElementById(id);
+    input?.addEventListener("input", () => hodlApplyFilteredInput(input, (value) => String(value ?? "").replace(/\D/g, "")));
+  }
+  // Copy and Update key buttons carry the match index, never the secret; the
+  // click reads the live match list, so wiped state cannot be copied back.
+  let out = document.getElementById("vanity-out");
+  out?.addEventListener("click", (event) => {
+    let secretButton = event.target.closest("[data-vanity-copy]");
+    if (secretButton) {
+      let match = hodlVanityMatches[Number(secretButton.dataset.vanityCopy)];
+      if (match) hodlCopyVanityValue(secretButton, match.passphrase, "Copy passphrase");
+      return;
+    }
+    let addressButton = event.target.closest("[data-vanity-copy-address]");
+    if (addressButton) {
+      let match = hodlVanityMatches[Number(addressButton.dataset.vanityCopyAddress)];
+      if (match) hodlCopyVanityValue(addressButton, match.address, "Copy address");
+      return;
+    }
+    let applyButton = event.target.closest("[data-vanity-apply]");
+    if (applyButton && !applyButton.disabled) hodlVanityApplyMatch(Number(applyButton.dataset.vanityApply));
+  });
+  out?.addEventListener("change", (event) => {
+    if (event.target?.id === "vanity-reveal") {
+      hodlVanityReveal = event.target.checked;
+      hodlRenderVanityOut();
+    }
+  });
+  hodlVanitySyncScriptNote();
+  hodlVanitySyncMethod();
+  hodlVanitySyncControls();
+  // No picker fill here: the chips carry LifeHash images, and the LifeHash
+  // module is a later classic script tag — the WASM-ready promise can settle
+  // between parser-inserted scripts, so boot must not touch it (the footer
+  // stamp waits for full load for the same reason). The picker fills on tab
+  // entry and on every station-key refresh instead.
+}
 function hodlInitWorkspace() {
   let box = hodlElement("#workspace");
   box.innerHTML = "";
@@ -12093,6 +12816,7 @@ function hodlInitWorkspace() {
   hodlInitPsbt();
   initPsbtEditor();
   hodlInitBip85();
+  hodlInitVanity();
   hodlInitSp();
 }
 var hodlKeyClearSyncQueued = false, hodlMsigClearSyncQueued = false, hodlDeriveSyncQueued = false;
@@ -12386,6 +13110,25 @@ function hodlInitSecretFieldAutoClear() {
     if (spVerifyVins) spVerifyVins.value = "";
     if (spVerifyOutputs) spVerifyOutputs.value = "";
     if (spLabel) spLabel.value = "";
+    // Found vanity passphrases and the brought-in salt are private key
+    // material; stop the grinder and drop them too.
+    hodlVanityCancel();
+    hodlVanityMatches = [];
+    hodlVanityFound = 0;
+    hodlVanityReveal = false;
+    hodlVanityRun = null;
+    hodlVanitySource = "";
+    hodlVanityApplying = false;
+    let vanityPass = document.getElementById("vanity-pass"), vanityOut = document.getElementById("vanity-out"), vanityError = document.getElementById("vanity-error"), vanityStatus = document.getElementById("vanity-status");
+    if (vanityPass) vanityPass.value = "";
+    if (vanityOut) vanityOut.innerHTML = "";
+    if (vanityError) vanityError.textContent = "";
+    if (vanityStatus) vanityStatus.textContent = "Idle. No range has been ground this session.";
+    hodlVanitySyncSource();
+    hodlVanitySyncControls();
+    // The keys above were just reset, so their passphrases (and thus the
+    // vanity picker's chips) are gone too.
+    hodlRefreshStationKeyPickers();
     // The <pre> mirrors behind each input hold a second live copy of whatever
     // was typed (dice rolls, seed words, passphrase, private key).
     document.querySelectorAll(".dice-input-highlight").forEach((highlight) => {

@@ -13,3 +13,4 @@ node_modules/
 # Rust build output (the wasm artifacts are committed as src/js/*-wasm-b64.js)
 entropylab-wasm/target/
 psbt-wasm/target/
+vanity-wasm/target/

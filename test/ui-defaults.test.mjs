@@ -1565,8 +1565,8 @@ test("virtual keypads never focus the field on touch so the mobile keyboard stay
   }
 });
 
-test("workspace tabs place BIP-85 between Keys and Multi Signature", () => {
-  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
+test("workspace tabs place Vanity between Keys and BIP-85", () => {
+  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="bip85-card"/);
     assert.match(markup, /id="bip85-go"/);
@@ -1610,7 +1610,7 @@ test("one PSBT workspace contains PSBT / Nonce and PSBT Editor tabs", () => {
   assert.match(appSource, /import \{ initPsbtEditor \} from "\.\/psbt-editor\.js"/);
   assert.match(appSource, /initPsbtEditor\(\)/);
   assert.match(css, /#psbted-card\[hidden\]/);
-  assert.match(css, /#psbt-card:not\(\[hidden\]\), #psbted-card:not\(\[hidden\]\) \{[^}]*border-radius: 0 0 20px 20px;/s);
+  assert.match(css, /#psbt-card:not\(\[hidden\]\), #psbted-card:not\(\[hidden\]\), #vanity-card:not\(\[hidden\]\) \{[^}]*border-radius: 0 0 20px 20px;/s);
 });
 
 test("Journal is the last workspace tab and holds the encrypted notebook, notepad, session state, and session log", () => {
@@ -1681,7 +1681,7 @@ test("BIP-85 entry point sits beside Derive Key and opens the BIP-85 tab", () =>
 test("Silent Payments sits between Multi Signature and PSBT / Nonce", () => {
   const order = /Keys[\s\S]*Multi Signature[\s\S]*Silent Payments[\s\S]*aria-label="PSBT"/;
   assert.match(template, order);
-  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
+  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="sp-card"/);
     assert.match(markup, /id="sp-key"/);
@@ -1718,9 +1718,9 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   assert.match(appSource, /<nav class="workspace no-print" id="workspace"><\/nav>/);
   assert.doesNotMatch(template, /segmented-control" id="workspace"/);
   assert.match(template, /<div class="workspace-tabs" id="workspace-tabs" role="tablist" aria-label="Tool">/);
-  // All six tools ship in the static markup, each with a full name and the
+  // All seven tools ship in the static markup, each with a full name and the
   // short form narrow screens show instead.
-  for (const [full, short, key, shortKey] of [["Keys", "Keys", "workspace.key", "workspace.keyShort"], ["BIP-85", "BIP85", "workspace.bip85", "workspace.bip85Short"], ["Multi Signature", "MultiSig", "workspace.msig", "workspace.msigShort"], ["Silent Payments", "SP", "workspace.sp", "workspace.spShort"], ["PSBT", "PSBT", "workspace.psbt", "workspace.psbtShort"], ["Journal", "Journal", "workspace.journal", "workspace.journalShort"]]) {
+  for (const [full, short, key, shortKey] of [["Keys", "Keys", "workspace.key", "workspace.keyShort"], ["Vanity", "Vanity", "workspace.vanity", "workspace.vanityShort"], ["BIP-85", "BIP85", "workspace.bip85", "workspace.bip85Short"], ["Multi Signature", "MultiSig", "workspace.msig", "workspace.msigShort"], ["Silent Payments", "SP", "workspace.sp", "workspace.spShort"], ["PSBT", "PSBT", "workspace.psbt", "workspace.psbtShort"], ["Journal", "Journal", "workspace.journal", "workspace.journalShort"]]) {
     assert.ok(
       template.includes(`<span class="workspace-tab-full">${full}</span><span class="workspace-tab-short">${short}</span>`),
       `${full} is missing from the workspace strip`,
@@ -1734,7 +1734,7 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   // Hidden text leaves the accessibility tree, so the full name is stated on
   // the tab itself and assistive tech hears it at every width.
   assert.match(appSource, /button\.setAttribute\("aria-label", hodlT\(label\)\);/);
-  for (const full of ["Keys", "BIP-85", "Multi Signature", "Silent Payments", "PSBT", "Journal"]) {
+  for (const full of ["Keys", "Vanity", "BIP-85", "Multi Signature", "Silent Payments", "PSBT", "Journal"]) {
     assert.match(template, new RegExp(`aria-label="${full.replace("/", "\\/")}">[\\s\\S]*?<span class="workspace-tab-full">${full.replace("/", "\\/")}</span>`), `${full} tab needs its accessible name`);
   }
   // A tablist owes arrow keys; the key and multisig strips already answer them.
@@ -1907,7 +1907,7 @@ test("BIP-85 and SP Stations can bring in compatible Key Station roots", () => {
   }
   assert.match(appSource, /function hodlSessionHdRootKeys\(\) \{/);
   assert.match(appSource, /state\.result\?\.kind === "hd" && \(state\.result\.mnemonic \|\| state\.result\.rootXprv\)/);
-  assert.match(appSource, /function hodlFillStationKeyPicker\(id, selectedSource, onSelect\) \{/);
+  assert.match(appSource, /function hodlFillStationKeyPicker\(id, selectedSource, onSelect, keys = hodlSessionHdRootKeys\(\)\) \{/);
   assert.match(appSource, /hodlFillKeyTabLifehash\(image, fingerprint\)/);
   assert.match(appSource, /function hodlPickBip85SessionKey\(state\) \{/);
   assert.match(appSource, /function hodlPickSpSessionKey\(state\) \{/);
@@ -1917,7 +1917,10 @@ test("BIP-85 and SP Stations can bring in compatible Key Station roots", () => {
   assert.match(appSource, /document\.getElementById\("bip85-key"\)\.addEventListener\("input"/);
   assert.match(appSource, /document\.getElementById\("sp-key"\)\.addEventListener\("input", detachStationKey\)/);
   assert.match(css, /\.session-key-picker \{ display: flex; flex-wrap: wrap; gap: 8px; \}/);
-  assert.match(css, /\.session-key-option\.active \{ border-color: var\(--accent\); \}/);
+  // The selected chip is unmistakable: accent border and tint plus a check
+  // mark, so the selection never rests on the border colour alone.
+  assert.match(css, /\.session-key-option\.active \{[^}]*border-color: var\(--selection-accent\)[^}]*box-shadow: inset 0 0 0 1px var\(--selection-accent\)/s);
+  assert.match(css, /\.session-key-option\.active \.session-key-check \{ display: inline-flex; \}/);
 });
 
 test("MS Station stays put and a derived wallet opens its own results tab", () => {
@@ -1973,8 +1976,185 @@ test("session wallets use folder tabs that merge into the card", () => {
   assert.match(css, /\.key-manager \{ margin: 14px 0 -1px;/);
   assert.match(css, /\.key-tab \{[^}]*border-radius: 10px 10px 0 0;/s);
   assert.match(css, /\.key-tab\.active, \.key-tab-editing \{[^}]*border-bottom-color: var\(--surface\);/s);
-  assert.match(css, /#calc-card:not\(\[hidden\]\), #msig-card:not\(\[hidden\]\), #bip85-card:not\(\[hidden\]\), #sp-card:not\(\[hidden\]\), #psbt-card:not\(\[hidden\]\), #psbted-card:not\(\[hidden\]\) \{[^}]*border-radius: 0 0 20px 20px;/s);
+  assert.match(css, /#calc-card:not\(\[hidden\]\), #msig-card:not\(\[hidden\]\), #bip85-card:not\(\[hidden\]\), #sp-card:not\(\[hidden\]\), #psbt-card:not\(\[hidden\]\), #psbted-card:not\(\[hidden\]\), #vanity-card:not\(\[hidden\]\) \{[^}]*border-radius: 0 0 20px 20px;/s);
   assert.match(css, /\.workspace-tab \{[^}]*border-radius: 10px 10px 0 0;/s);
   assert.match(appSource, /let lifehash = tab\.querySelector\("\.key-tab-lifehash"\);/);
   assert.doesNotMatch(appSource, /editor\.append\(hodlCreateKeyIcon\(state\.color\), input\)/);
+});
+
+test("the vanity grinder is a workspace tab that ships collapsed and never auto-runs", () => {
+  // The tab is registered between Keys and BIP-85 and localized like the rest.
+  assert.match(appSource, /\["vanity", "workspace\.vanity", "workspace\.vanityShort"\]/);
+  for (const code of ["en", "de", "es", "fr", "pt"]) {
+    const catalog = JSON.parse(read(`src/locales/${code}.json`));
+    assert.ok(catalog["workspace.vanity"]?.length, `${code} workspace.vanity`);
+    assert.ok(catalog["workspace.vanityShort"]?.length, `${code} workspace.vanityShort`);
+  }
+  // Both templates carry the intro and the card, both hidden until the tab is
+  // picked; the card is a tabpanel and stays out of print output.
+  for (const markup of [template, appSource]) {
+    assert.match(markup, /<div class="tool-intro" id="vanity-tool-intro" hidden>/);
+    assert.match(markup, /<section class="card no-print" id="vanity-card" role="tabpanel" hidden>/);
+    // The key comes in through the same clickable Key Station picker the
+    // BIP-85 and Silent Payments tabs use; the selected key is restated with
+    // its starting passphrase, labelled and read-only.
+    assert.match(markup, /<p class="label">Bring in a key from Key Station<\/p>/);
+    assert.match(markup, /<div class="session-key-picker" id="vanity-session-keys" role="group" aria-label="Key Station keys" hidden><\/div>/);
+    assert.match(markup, /<div class="vanity-source" id="vanity-source" hidden>/);
+    assert.match(markup, /<span class="vanity-source-kicker">Selected key<\/span>/);
+    assert.match(markup, /<label class="field" for="vanity-pass">Starting passphrase <span class="vanity-source-from" id="vanity-pass-from"><\/span><\/label>/);
+    assert.match(markup, /<input id="vanity-pass" readonly autocomplete="off" spellcheck="false"[^>]*aria-describedby="vanity-pass-note">/);
+    // Method and address type are dropdowns; the derivation grind swaps the
+    // counter fields for an account index range.
+    assert.match(markup, /<select id="vanity-method">\s*<option value="passphrase" selected(?:="selected")?>Passphrase grind<\/option>\s*<option value="derivation">Derivation grind<\/option>/);
+    assert.match(markup, /<select id="vanity-script">[\s\S]*?<option value="p2wpkh" selected(?:="selected")?>[\s\S]*?<option value="p2tr">[\s\S]*?<option value="sp">Silent Payments BIP-352 · sp1qq…<\/option>/);
+    assert.match(markup, /<input id="vanity-prefix" autocomplete="off" spellcheck="false"[^>]*aria-describedby="vanity-prefix-help">/);
+    assert.match(markup, /<label class="field" data-vanity-method="passphrase">Passphrase length\s*<input id="vanity-length" type="number" min="1" max="32"[^>]*value="8"/);
+    assert.match(markup, /<label class="field" data-vanity-method="passphrase">Start counter\s*<input id="vanity-start" inputmode="numeric"[^>]*value="0"/);
+    assert.match(markup, /<label class="field" data-vanity-method="passphrase">Range size\s*<input id="vanity-count" inputmode="numeric"[^>]*value="1000000"/);
+    assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Start account\s*<input id="vanity-account-start" inputmode="numeric"[^>]*value="0"/);
+    assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Accounts to try\s*<input id="vanity-account-count" inputmode="numeric"[^>]*value="100000"/);
+    assert.match(markup, /<input id="vanity-workers" type="number" min="1" max="64"/);
+    assert.match(markup, /<p class="muted" id="vanity-estimate" aria-live="polite"><\/p>/);
+    assert.match(markup, /<button class="btn primary" id="vanity-go" type="button">Start grinding<\/button>/);
+    assert.match(markup, /id="vanity-progress" role="progressbar"[^>]*hidden>/);
+    assert.match(markup, /<button class="btn secondary" id="vanity-stop" type="button" disabled>Stop<\/button>/);
+    assert.match(markup, /<button class="btn clear-current-action" id="vanity-wipe" type="button" disabled aria-disabled="true">Clear results<\/button>/);
+    assert.match(markup, /<p class="muted" id="vanity-status" aria-live="polite">/);
+    assert.match(markup, /<p class="err" id="vanity-error" role="alert"><\/p>/);
+    assert.match(markup, /<div id="vanity-out" aria-live="polite"><\/div>/);
+    // The passphrase warning is part of the card, not a docs afterthought.
+    assert.match(markup, /A vanity passphrase is a BIP39 passphrase/);
+    // No typed salt, no brain-wallet convention: the grind runs on a key.
+    const card = markup.slice(markup.indexOf('id="vanity-tool-intro"'), markup.indexOf('id="vanity-out"'));
+    assert.doesNotMatch(card, /id="vanity-salt"|brain.wallet|SHA-256/i);
+  }
+  // The tab rides the same show/hide plumbing as every other tool, and
+  // leaving the tab stops the grind instead of grinding unseen.
+  assert.match(appSource, /getElementById\("vanity-card"\)\.hidden = id !== "vanity"/);
+  assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity"\]\.forEach/);
+  assert.match(appSource, /else if \(hodlWorkspace === "vanity"\) hodlVanityCancel\(\);/);
+  assert.match(appSource, /function hodlInitWorkspace\(\) \{[\s\S]*?hodlInitVanity\(\);/);
+  // The workers spawn only from the button handler; nothing starts on boot,
+  // on tab switches, or on input.
+  assert.match(appSource, /go\.onclick = hodlRunVanity;/);
+  assert.match(appSource, /function hodlRunVanity\(\) \{[\s\S]*?new VanityGrinder\(/);
+  assert.equal(appSource.indexOf("new VanityGrinder"), appSource.indexOf("new VanityGrinder", appSource.indexOf("function hodlRunVanity")));
+  // Passphrases are private material: masked by default behind the same
+  // reveal-toggle convention as the other tools, and copied from match state
+  // rather than a DOM attribute so a wipe cannot leave a copyable secret.
+  assert.match(appSource, /hodlVanityReveal = false/);
+  assert.match(appSource, /type="checkbox" id="vanity-reveal"/);
+  assert.match(appSource, /copyMarkup\("data-vanity-copy", index, "Copy passphrase"\)/);
+  assert.match(appSource, /\$\{attribute\}="\$\{index\}"/);
+  const vanityController = appSource.slice(appSource.indexOf("// ── Vanity grinder"), appSource.indexOf("function hodlInitWorkspace()"));
+  assert.doesNotMatch(vanityController, /data-phrase/);
+  // Blob workers keep the artifact one file; the CSP pins exactly that.
+  assert.match(template, /worker-src 'self' blob:/);
+  assert.match(read("src/js/vanity.js"), /new Blob\(\[VANITY_WORKER_SOURCE\]/);
+  // The picker rides the shared station-key plumbing and lists derived HD-root
+  // keys only — the Key Station lab tab is a work surface, never a chip.
+  assert.match(appSource, /hodlFillStationKeyPicker\("vanity-session-keys", hodlVanitySource, hodlPickVanitySessionKey, hodlVanitySourceKeys\(\)\)/);
+  assert.match(appSource, /function hodlVanitySourceKeys\(\) \{\s*return hodlSessionHdRootKeys\(\);/);
+  // The selected key's passphrase is read from its state, never retyped: the
+  // source panel shows it verbatim and the plan reads it again at start.
+  assert.match(vanityController, /function hodlVanitySyncSource\(\) \{[\s\S]*?pass = String\(state\.fields\?\.pass \?\? ""\)[\s\S]*?field\.value = pass;/);
+  assert.match(vanityController, /function hodlVanityPlan\(state, method, scriptId\) \{[\s\S]*?validateVanityPassphrase\(fields\.pass \?\? ""\)/);
+  // Matching is mainnet only, on the key's own account path.
+  assert.match(vanityController, /Vanity matching is Bitcoin mainnet/);
+  assert.match(vanityController, /vanityPathIndexes\(fields\.derivationAccountPath \|\| "m\/84'\/0'\/0'"\)/);
+  // Update key goes through the same Edit input → Derive path the Keys tab
+  // uses (lab clone, restore, hodlCalculateKey), then folds a re-fingerprinted
+  // key back into its own tab and gives the lab back.
+  assert.match(vanityController, /async function hodlVanityApplyMatch\(index\) \{[\s\S]*?hodlFillLabFromKey\(state\)[\s\S]*?draft\.fields\.pass = match\.passphrase;[\s\S]*?draft\.fields\.account = `\$\{match\.index\}[\s\S]*?await hodlDeriveWithProgress\("key", hodlCalculateKey\);[\s\S]*?hodlKeys\[target\] = \{ \.\.\.active, id: state\.id, number: state\.number, color: state\.color/);
+  assert.match(vanityController, /data-vanity-apply="\$\{index\}"/);
+  assert.match(vanityController, /Saved to key \$\{hodlEscapeHtml\(match\.savedTo\)\}/);
+  // The chip picker marks the selected chip with a check, not colour alone.
+  assert.match(appSource, /check\.className = "session-key-check";/);
+  assert.match(css, /\.session-key-option\.active \{[^}]*border-color: var\(--selection-accent\)/s);
+  assert.match(css, /\.session-key-option\.active \.session-key-check \{ display: inline-flex; \}/);
+  // The picker fills on tab entry and station-key refreshes, never at boot:
+  // the chips carry LifeHash images and the LifeHash module is a later
+  // parser-inserted script, which the WASM-ready promise can beat (the same
+  // hazard the footer's load-event wait documents).
+  const vanityInit = appSource.slice(appSource.indexOf("function hodlInitVanity()"), appSource.indexOf("function hodlInitWorkspace()"));
+  assert.doesNotMatch(vanityInit, /hodlFillStationKeyPicker\s*\(|hodlFillKeyTabLifehash\s*\(/);
+  assert.match(appSource, /else if \(id === "vanity"\) \{\s*\/\/ [^\n]*\n\s*hodlFillStationKeyPicker\("vanity-session-keys"[^\n]*\n\s*hodlVanitySyncSource\(\);/);
+  // The LifeHash image filler itself is boot-safe: `typeof undeclared?.prop`
+  // throws a ReferenceError, so the plain typeof guard must come first (a
+  // boot-time picker refresh would otherwise kill the page in Chromium).
+  assert.match(appSource, /function hodlFillKeyTabLifehash\(image, fingerprint\) \{[\s\S]*?if \(!image \|\| !fingerprint \|\| typeof hodlLifeHash === "undefined" \|\| typeof hodlLifeHash\.fromFingerprint !== "function"\) return;/);
+  const vanityJs = read("src/js/vanity.js");
+  // Grinding is WASM-only: candidates are produced by the vanity_grind export
+  // inside the worker's WebAssembly instance (PBKDF2, BIP32, and the address
+  // encoders). The JS side has no hash or curve grind loop and no CPU
+  // fallback — it spawns workers, validates input, derives the parent node
+  // once for the derivation grind (on the app side, through hdkey.js), and
+  // re-encodes matching records for display through the same WASM-backed
+  // address facade every other tool uses.
+  assert.match(read("src/js/vanity-worker.js"), /wasm\.vanity_grind\(/);
+  assert.doesNotMatch(vanityJs, /secp256k1|getPublicKey|Point\.|pbkdf2Sha512|hmacSha512|sha512/, "no curve or hash math on the JS side");
+  assert.doesNotMatch(vanityJs, /fallback/i, "no CPU fallback grind path");
+  // Both methods are the engine's, not JS approximations.
+  assert.match(read("vanity-wasm/src/lib.rs"), /const SCRIPT_SP: u32 = 4;[\s\S]*const MODE_PASSPHRASE: u32 = 0;[\s\S]*const MODE_NODE: u32 = 1;[\s\S]*const PBKDF2_ROUNDS: u32 = 2048;/);
+  // The calculator contract: no randomness anywhere in the vanity code paths.
+  for (const path of ["src/js/vanity.js", "src/js/vanity-worker.js", "vanity-wasm/src/lib.rs"]) {
+    assert.doesNotMatch(read(path), /Math\.random|getRandomValues|rand::|getrandom/, `${path} must never invent entropy`);
+  }
+});
+
+test("the private recovery section lists the BIP39 passphrase beside the seed phrase", () => {
+  // The HD result carries the passphrase text (not just a flag) so the row
+  // can render; imported roots and single keys carry an empty one.
+  assert.match(appSource, /passphraseUsed: source\.passphraseUsed,\s*passphrase: source\.passphrase \?\? "",/);
+  assert.match(appSource, /\{ mnemonic, passphraseUsed: passphrase\.length > 0, passphrase, entropyHex, seedHex,/);
+  assert.match(appSource, /\{ mnemonic: null, passphraseUsed: false, passphrase: "", entropyHex: null,/);
+  // Rendered right after the words, through the same masked private field as
+  // the entropy and seed hex; absent when no passphrase is in use.
+  assert.match(appSource, /hodlSeedPhraseField\(`Your seed phrase[^\n]*\n[^\n]*\n[^\n]*\n\s*if \(wallet\.mnemonic && wallet\.passphraseUsed && wallet\.passphrase\) privateFields\.push\(hodlPrivateFieldHtml\("BIP39 passphrase", wallet\.passphrase\)\);\n\s*if \(wallet\.entropyHex\)/);
+});
+
+test("the vanity estimate is timed from a device sample, and Stop on first find halts the grind at the first match", () => {
+  for (const markup of [template, appSource]) {
+    assert.match(markup, /<button class="btn secondary" id="vanity-stop" type="button" disabled>Stop<\/button>\s*<button class="btn secondary" id="vanity-first" type="button" aria-pressed="false"[^>]*>Stop on first find<\/button>/);
+  }
+  const vanityController = appSource.slice(appSource.indexOf("// ── Vanity grinder"), appSource.indexOf("function hodlInitWorkspace()"));
+  // The sample runs on tab entry, once per session, never while a grind is
+  // on, and never at boot (the tab-entry branch is the only caller).
+  assert.match(appSource, /else if \(id === "vanity"\) \{[^}]*hodlVanitySyncSource\(\);\s*hodlVanityStartBenchmark\(\);\s*\}/);
+  assert.match(vanityController, /function hodlVanityStartBenchmark\(\) \{\s*if \(hodlVanityBench \|\| hodlVanityBenchPending \|\| hodlVanityRunning\) return;/);
+  assert.equal(appSource.split("hodlVanityStartBenchmark()").length, 3, "one definition, one call site");
+  const vanityInit = appSource.slice(appSource.indexOf("function hodlInitVanity()"), appSource.indexOf("function hodlInitWorkspace()"));
+  assert.doesNotMatch(vanityInit, /vanityBenchmark|hodlVanityStartBenchmark/);
+  // The estimate uses the live rate while grinding, otherwise the sample
+  // scaled by the worker count, and speaks in time.
+  assert.match(vanityController, /function hodlVanityExpectedRate\(\) \{\s*if \(hodlVanityRunning && hodlVanityLiveRate > 0\) return hodlVanityLiveRate;/);
+  assert.match(vanityController, /expect a match roughly every \$\{hodlVanityFormatDuration\(Number\(work\) \/ rate\)\}/);
+  assert.match(vanityController, /"Measuring this device…"/);
+  // Stop on first find is a toggle that asks the pool to stop as the first
+  // match lands, and the status says so.
+  assert.match(vanityController, /if \(hodlVanityStopFirst && hodlVanityRunning\) hodlVanityStop\(\);/);
+  assert.match(vanityController, /"Stopped at first match"/);
+  assert.match(vanityController, /document\.getElementById\("vanity-first"\)\.onclick = hodlVanityToggleStopFirst;/);
+  // Worker chunks adapt to the device so the bar moves smoothly from the start.
+  const worker = read("src/js/vanity-worker.js");
+  assert.match(worker, /var STEP_MS = 120;/);
+  assert.match(worker, /var chunkSize = mode === 1 \? 512 : 16;/);
+  assert.match(worker, /chunkSize = Math\.max\(MIN_CHUNK, Math\.min\(MAX_CHUNK, Math\.round\(chunk \* STEP_MS \/ elapsed\)\)\);/);
+});
+
+test("Update key carries the fingerprint and LifeHash with it: rows show the resulting key, images never paint a stale fingerprint, loaded tools reload", () => {
+  const vanityController = appSource.slice(appSource.indexOf("// ── Vanity grinder"), appSource.indexOf("function hodlInitWorkspace()"));
+  // A passphrase-grind row is its own seed, so its fingerprint is computed
+  // from the key's words once and rendered with a LifeHash; an account row
+  // keeps the key's fingerprint.
+  assert.match(vanityController, /function hodlVanityMatchFingerprint\(match, run\) \{[\s\S]*?if \(run\.method !== "passphrase"\) return \(match\.fingerprint = run\.sourceLabel\);[\s\S]*?hodlMnemonicToSeed\(mnemonic, match\.passphrase\)[\s\S]*?hodlFingerprintHex\(root\.fingerprint\)/);
+  assert.match(vanityController, /<th scope="col">Key after update<\/th>/);
+  assert.match(vanityController, /box\.querySelectorAll\("img\[data-vanity-lifehash\]"\)\.forEach\(\(image\) => hodlFillKeyTabLifehash\(image, image\.dataset\.vanityLifehash\)\);/);
+  // The shared LifeHash filler tags the image with the fingerprint it was
+  // asked for and lets only the latest request paint.
+  assert.match(appSource, /image\.dataset\.fingerprint = fingerprint;\s*hodlLifeHash\.fromFingerprint\(fingerprint\)\.then\(\(url\) => \{\s*if \(!image\.isConnected \|\| image\.dataset\.fingerprint !== fingerprint\) return;/);
+  // Tools holding the old seed reload it, and the status names the change.
+  assert.match(vanityController, /if \(hodlSpSource === "key:" \+ updated\.id\) hodlPickSpSessionKey\(updated\);\s*if \(hodlBip85Source === "key:" \+ updated\.id\) hodlPickBip85SessionKey\(updated\);/);
+  assert.match(vanityController, /its master fingerprint and LifeHash changed from \$\{run\.sourceLabel\} to \$\{match\.savedTo\}/);
 });

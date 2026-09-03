@@ -101,6 +101,23 @@ Official website: [entropylab.online](https://entropylab.online)
   root xprv, including labeled codes, BIP-392 `spscan` / `spspend` descriptors,
   sender taproot outputs from pasted vin JSON, and receiver verification of
   pasted x-only outputs. This is a calculator: it does not scan the chain.
+- Grinds vanity addresses for a Key Station key (Vanity tab), picked through
+  the same chip picker as BIP-85 and Silent Payments. Two methods: the
+  **passphrase grind** extends the key's BIP39 passphrase with base-62
+  odometer counter characters, the **derivation grind** keeps the passphrase
+  and steps through BIP32 account indexes. Every candidate is derived the
+  standard way (PBKDF2 seed, BIP32 path — the key's own purpose, account,
+  branch, and address index) in a dedicated WebAssembly module, one Web Worker
+  per CPU core, and its mainnet address of the selected type (legacy, nested
+  SegWit, native SegWit, Taproot, or a BIP-352 Silent Payment code) is checked
+  against the chosen prefix. A short timing sample on tab entry (fixed
+  published constants, never the session's keys) turns the odds into an
+  expected time to a match, and **Stop on first find** halts the grind at the
+  first hit. Same key and counter always reproduce the same
+  address, so nothing is invented; **Update key** writes a found passphrase or
+  account index back to the key and re-derives it, so the Keys tab, its
+  exports, and the Journal show the vanity wallet. Found passphrases stay in
+  page memory, are masked until revealed, and are wiped with the session.
 - A session **Journal** (last workspace tab) holds an encrypted **Entropy
   Journal** notebook, a notepad stamped with this computer's date and time,
   an editable summary of everything derived in this sitting, and a debug log

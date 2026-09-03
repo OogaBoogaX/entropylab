@@ -1,0 +1,28 @@
+[package]
+name = "vanity-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Unlicense"
+description = "Deterministic vanity-address grinder for EntropyLab (built by CI, committed as src/js/vanity-wasm-b64.js)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Exact versions, lockfile-committed, per CONTRIBUTING.md §2. secp256k1-sys is
+# the same FFI used by entropylab-wasm; here the default (fast) ecmult_gen
+# tables are kept because grinding speed is the point of this crate.
+secp256k1-sys = { version = "=0.14.0" }
+# RustCrypto hashes, pure Rust: SHA-256 turns the candidate passphrase into
+# the private key (brain-wallet convention) and hashes scripts; RIPEMD-160 is
+# the second half of HASH160 for the hash-based address types.
+sha2 = { version = "=0.10.9" }
+ripemd = { version = "=0.1.3" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

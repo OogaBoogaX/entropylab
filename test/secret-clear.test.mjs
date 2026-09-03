@@ -101,3 +101,22 @@ test("highlight mirrors, copy-button phrases, the last-word cache, and the PSBT 
   assert.match(lifecycle, /getElementById\("psbted-wipe"\)/);
   assert.match(lifecycle, /psbtEditorWipe\.click\(\)/);
 });
+
+test("Vanity grinder salt, matches, and running workers are cleared", () => {
+  // The imported/typed salt prefixes every candidate passphrase, and a found
+  // passphrase is private key material — both go on pagehide/bfcache, and the
+  // worker pool is cancelled so nothing keeps grinding (or holding the salt
+  // in a worker's WASM heap) after the page hides.
+  assert.match(lifecycle, /hodlVanityCancel\(\)/);
+  assert.match(lifecycle, /hodlVanityMatches\s*=\s*\[\]/);
+  assert.match(lifecycle, /hodlVanityFound\s*=\s*0/);
+  assert.match(lifecycle, /hodlVanityReveal\s*=\s*false/);
+  assert.match(lifecycle, /hodlVanitySource\s*=\s*""/);
+  assert.match(lifecycle, /hodlVanityRun\s*=\s*null/);
+  assert.match(lifecycle, /getElementById\("vanity-pass"\)/);
+  assert.match(lifecycle, /vanityPass\.value\s*=\s*""/);
+  assert.match(lifecycle, /getElementById\("vanity-out"\)/);
+  assert.match(lifecycle, /vanityOut\.innerHTML\s*=\s*""/);
+  assert.match(lifecycle, /getElementById\("vanity-error"\)/);
+  assert.match(lifecycle, /vanityError\.textContent\s*=\s*""/);
+});
