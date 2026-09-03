@@ -55,6 +55,8 @@
   "workspace.journalNotes": "Notizblock",
   "workspace.journalState": "Sitzungsstatus",
   "workspace.journalLog": "Sitzungsprotokoll",
+  "workspace.cardBackup": "Karten-Backup",
+  "workspace.cardBackupShort": "Karten",
   "keys.heading": "Schlüssel",
   "keys.tabsAria": "Schlüssel",
   "keys.addAria": "Schlüssel hinzufügen",

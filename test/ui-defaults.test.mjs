@@ -1574,7 +1574,7 @@ test("virtual keypads never focus the field on touch so the mobile keyboard stay
 });
 
 test("workspace tabs place Vanity between Keys and BIP-85", () => {
-  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
+  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["card-backup", "workspace\.cardBackup", "workspace\.cardBackupShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="bip85-card"/);
     assert.match(markup, /id="bip85-go"/);
@@ -1829,7 +1829,7 @@ test("BIP-85 stays available as a workspace without a duplicate Key Station acti
 test("Silent Payments sits between Multi Signature and PSBT / Nonce", () => {
   const order = /Keys[\s\S]*Multi Signature[\s\S]*Silent Payments[\s\S]*aria-label="PSBT"/;
   assert.match(template, order);
-  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
+  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["card-backup", "workspace\.cardBackup", "workspace\.cardBackupShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="sp-card"/);
     assert.match(markup, /id="sp-key"/);
@@ -2180,7 +2180,7 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
   // The tab rides the same show/hide plumbing as every other tool, and
   // leaving the tab stops the grind instead of grinding unseen.
   assert.match(appSource, /getElementById\("vanity-card"\)\.hidden = id !== "vanity"/);
-  assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity"\]\.forEach/);
+  assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity", "card-backup"\]\.forEach/);
   assert.match(appSource, /else if \(hodlWorkspace === "vanity"\) hodlVanityCancel\(\);/);
   assert.match(appSource, /function hodlInitWorkspace\(\) \{[\s\S]*?hodlInitVanity\(\);/);
   // The workers spawn only from the button handler; nothing starts on boot,
@@ -2249,6 +2249,68 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
   for (const path of ["src/js/vanity.js", "src/js/vanity-worker.js", "vanity-wasm/src/lib.rs"]) {
     assert.doesNotMatch(read(path), /Math\.random|getRandomValues|rand::|getrandom/, `${path} must never invent entropy`);
   }
+});
+
+test("Card Backup asks only for the inputs its direction needs", () => {
+  const card = appSource.slice(appSource.indexOf('id="card-backup-card"'), appSource.indexOf('id="vanity-tool-intro"'));
+  // No manual word count in either direction: encoding reads the length from
+  // the mnemonic, and recovery reads it from the embedded rank intervals.
+  assert.doesNotMatch(card, /card-backup-words|Mnemonic length/);
+  assert.match(card, /id="card-backup-mnemonic-label">BIP39 mnemonic/);
+  assert.match(card, /id="card-backup-deck-label" hidden/);
+  assert.match(card, /id="card-backup-second-label" hidden[^>]*>\s*Second deck, first 6 cards/);
+  // The direction radios swap exactly the three field groups.
+  assert.match(appSource, /getElementById\("card-backup-card"\)\.hidden = id !== "card-backup"/);
+  assert.match(appSource, /document\.getElementById\("card-backup-mnemonic-label"\)\.hidden = !encode/);
+  // label.field ships display:block, so the hidden attribute needs the same
+  // explicit override the other tools' fields use, or hidden fields stay on screen.
+  assert.match(css, /#card-backup-card \.field\[hidden\] \{ display: none !important; \}/);
+  // Result and error boxes start hidden and reveal only with content;
+  // switching direction or clearing wipes them back out of sight.
+  assert.match(card, /<p class="err" id="card-backup-error" role="alert" hidden>/);
+  assert.match(card, /<div id="card-backup-output" aria-live="polite" hidden>/);
+  assert.match(appSource, /const wipeResults = \(\) => \{[\s\S]*?output\.innerHTML = "";[\s\S]*?output\.hidden = true;[\s\S]*?error\.hidden = true;[\s\S]*?\};/);
+  assert.match(appSource, /run\.textContent = encode \? "Encode" : "Recover";(?:\s*picResync\([^)]*\);)*\s*wipeResults\(\);/);
+  // Encode output separates the visual card grid from the plain text codes:
+  // the tiles sit in their own bordered box, and the deck-as-text is a
+  // visually distinct block below it with a copy button; decode just shows
+  // the mnemonic as text.
+  assert.match(appSource, /const renderDeck = \(deckStr\) =>/);
+  assert.match(appSource, /hodlDealtCardMarkup\(card\)/);
+  assert.match(appSource, /class="cb-codes"/);
+  assert.match(appSource, /class="seed-phrase-copy cb-copy" data-copy=.*aria-label="Copy deck codes"/);
+  assert.match(appSource, /hodlClipboardIconMarkup\(\)/);
+  assert.match(appSource, /const copyDeck = \(button\) =>/);
+  assert.match(appSource, /output\.addEventListener\("click", \(event\) => \{[\s\S]*?\.closest\("\.cb-copy"\)/);
+  assert.match(appSource, /output\.innerHTML = html/);
+  assert.match(appSource, /output\.innerHTML = `<p>Words: \$\{result\.words\}/);
+  assert.match(css, /#card-backup-card #card-backup-output \{ margin-top: var\(--space-control\); display: flex; flex-direction: column; gap: 18px; \}/);
+  assert.match(css, /\.cb-deck \{ display: flex; flex-wrap: wrap; gap: 6px; padding: 12px; border: 1px solid var\(--border\); border-radius: 12px/);
+  assert.match(css, /\.cb-text \{ display: flex; align-items: stretch; gap: 8px; margin-top: 20px; \}/);
+  assert.match(css, /\.cb-copy\.is-copied/);
+  // Recovery also offers a click-to-build picker (rank + suit buttons, like the
+  // Keys tab "cards" method) that writes the deck transcript, in addition to
+  // typing it; both directions are hidden in encode.
+  assert.match(card, /<div class="cb-pick" id="card-backup-first-pick" hidden>/);
+  assert.match(card, /<div class="cb-pick" id="card-backup-second-pick" hidden>/);
+  assert.match(card, /id="card-backup-first-suits"/);
+  assert.match(card, /id="card-backup-first-ranks"/);
+  assert.match(card, /id="card-backup-second-suits"/);
+  assert.match(card, /id="card-backup-second-ranks"/);
+  assert.match(card, /id="card-backup-first-dealt"/);
+  assert.match(card, /id="card-backup-second-dealt"/);
+  assert.match(appSource, /const buildPads = \(\) =>/);
+  assert.match(appSource, /const picCommit = \(key\) =>/);
+  assert.match(appSource, /data-cb-suit=.*data-cb-card-suit=/);
+  assert.match(appSource, /data-cb-rank=.*data-cb-card-rank=/);
+  assert.match(appSource, /\.picked\.pop\(\); picRender\(key\); \};/);
+  assert.match(appSource, /getElementById\("card-backup-first-pick"\)\.hidden = encode/);
+  assert.match(css, /\.cb-pick \{ margin-top: var\(--space-control\); \}/);
+  assert.match(css, /\.cb-pick\[hidden\] \{ display: none; \}/);
+  assert.match(appSource, /const locked = Boolean\(p\.suit\) && p\.suit !== suit/);
+  assert.match(appSource, /const locked = Boolean\(p\.rank\) && p\.rank !== rank/);
+  assert.match(appSource, /card-backup-mnemonic.*card-backup-deck.*card-backup-second.*card-backup-passphrase/);
+  assert.match(appSource, /cardBackupOutput = document\.getElementById\("card-backup-output"\)/);
 });
 
 test("the private recovery section lists the BIP39 passphrase beside the seed phrase", () => {

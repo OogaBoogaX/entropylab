@@ -55,6 +55,8 @@
   "workspace.journalNotes": "Bloc de notas",
   "workspace.journalState": "Estado de sesión",
   "workspace.journalLog": "Registro de sesión",
+  "workspace.cardBackup": "Respaldo con cartas",
+  "workspace.cardBackupShort": "Cartas",
   "keys.heading": "Claves",
   "keys.tabsAria": "Claves",
   "keys.addAria": "Agregar clave",

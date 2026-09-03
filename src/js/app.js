@@ -27,6 +27,7 @@ import { addressFor, addressFromScript, descriptorDerive, p2shP2wpkhScript, p2sh
 import { base58checkDecode, base58checkEncode } from "./base58.js";
 import { HDKey as hodlHDKey } from "./hdkey.js";
 import { entropyToMnemonic as hodlEntropyToMnemonic, mnemonicToEntropy as hodlMnemonicToEntropy, mnemonicToSeedSync as hodlMnemonicToSeed, validateMnemonic as hodlIsValidMnemonic } from "./bip39.js";
+import { encodeMnemonicToDeck as hodlEncodeMnemonicToDeck, decodeDeckToMnemonic as hodlDecodeDeckToMnemonic } from "./card-backup.js";
 import { wordlist as bip39English } from "./bip39-english.js";
 // The PSBT editor (its own workspace tab) drives the rust-bitcoin WASM
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
@@ -644,6 +645,48 @@ hodlRootEl.innerHTML = `
       </div>
       <div id="out"></div>
     </section>
+      <div class="tool-intro" id="card-backup-tool-intro" hidden>
+        <div class="kicker">A physical order. A reversible backup.</div>
+        <h2>Card Backup</h2>
+        <p class="muted tool-intro-note">Convert a BIP39 mnemonic into a deterministic order of ordinary playing cards, or recover it from that order. This is a reversible encoding, not the existing cards-to-SHA-256 entropy method.</p>
+      </div>
+      <section class="card no-print" id="card-backup-card" role="tabpanel" hidden>
+        <p class="muted">Use one standard 52-card deck for 12, 15, 18, or 21 words; a 24-word mnemonic needs the complete first deck plus a second deck whose first 6 cards carry the rest. The word count is embedded in the card order, so recovery asks for no length settings.</p>
+        <div class="choice-grid">
+          <label class="choice"><input type="radio" name="card-backup-direction" value="encode" checked><span><strong>Mnemonic to cards</strong><span class="desc">Create the physical backup order.</span></span></label>
+          <label class="choice"><input type="radio" name="card-backup-direction" value="decode"><span><strong>Cards to mnemonic</strong><span class="desc">Recover and verify the mnemonic.</span></span></label>
+        </div>
+        <label class="field" id="card-backup-mnemonic-label">BIP39 mnemonic
+          <textarea id="card-backup-mnemonic" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Enter a valid BIP39 mnemonic"></textarea>
+        </label>
+        <label class="field" id="card-backup-deck-label" hidden>First deck, in order
+          <textarea id="card-backup-deck" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AS 2H ..."></textarea>
+        </label>
+        <div class="cb-pick" id="card-backup-first-pick" hidden>
+          <p class="field-note">First deck: choose a suit and rank for each card in order (<b id="card-backup-first-n">1</b>/52).</p>
+          <div class="card-suit-pad cb-pick-suits" id="card-backup-first-suits" role="group" aria-label="Card suits"></div>
+          <div class="card-rank-pad dice-input-pad cb-pick-ranks" id="card-backup-first-ranks" role="group" aria-label="Card ranks"></div>
+          <div class="card-controls-row"><button class="card-undo-button seed-keyboard-delete cb-pick-undo" id="card-backup-first-undo" type="button" aria-label="Undo last card" title="Undo last card" disabled><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button></div>
+          <div class="dealt-cards cb-pick-dealt" id="card-backup-first-dealt" aria-live="polite"></div>
+        </div>
+        <label class="field" id="card-backup-second-label" hidden>Second deck, first 6 cards (24 words only; leave empty otherwise)
+          <textarea id="card-backup-second" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AS 2H 3C ..."></textarea>
+        </label>
+        <div class="cb-pick" id="card-backup-second-pick" hidden>
+          <p class="field-note">Second deck, first 6 cards: choose a suit and rank for each card in order (<b id="card-backup-second-n">1</b>/6).</p>
+          <div class="card-suit-pad cb-pick-suits" id="card-backup-second-suits" role="group" aria-label="Card suits"></div>
+          <div class="card-rank-pad dice-input-pad cb-pick-ranks" id="card-backup-second-ranks" role="group" aria-label="Card ranks"></div>
+          <div class="card-controls-row"><button class="card-undo-button seed-keyboard-delete cb-pick-undo" id="card-backup-second-undo" type="button" aria-label="Undo last card" title="Undo last card" disabled><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button></div>
+          <div class="dealt-cards cb-pick-dealt" id="card-backup-second-dealt" aria-live="polite"></div>
+        </div>
+        <label class="field">Optional BIP39 passphrase (never stored in the cards)
+          <input id="card-backup-passphrase" type="password" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="field-note">The passphrase is not recoverable from a finite deck. Keep it separately. The result shows a short verification marker.</p>
+        <div class="row bip85-actions"><button class="btn primary" id="card-backup-run" type="button">Encode</button><button class="btn clear-current-action" id="card-backup-clear" type="button">Clear</button></div>
+        <p class="err" id="card-backup-error" role="alert" hidden></p>
+        <div id="card-backup-output" aria-live="polite" hidden></div>
+      </section>
       <div class="tool-intro" id="vanity-tool-intro" hidden>
         <div class="kicker">Same key, same counter, same address</div>
         <h2>Grind a vanity address</h2>
@@ -11381,9 +11424,10 @@ function hodlShowWorkspace(id) {
   document.getElementById("bip85-card").hidden = id !== "bip85";
   document.getElementById("sp-card").hidden = id !== "sp";
   document.getElementById("vanity-card").hidden = id !== "vanity";
+  document.getElementById("card-backup-card").hidden = id !== "card-backup";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
-  ["bip85", "sp", "msig", "calc", "vanity"].forEach((tool) => {
+  ["bip85", "sp", "msig", "calc", "vanity", "card-backup"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
   hodlSyncPsbtTool();
@@ -11415,6 +11459,178 @@ function hodlShowWorkspace(id) {
     hodlQueueSegmentedControlSync();
     hodlWorkspaceScrollFrame = 0;
   });
+}
+function hodlInitCardBackup() {
+  const run = document.getElementById("card-backup-run");
+  if (!run) return;
+  const direction = () => document.querySelector('input[name="card-backup-direction"]:checked')?.value || "encode";
+  const wipeResults = () => {
+    const output = document.getElementById("card-backup-output"), error = document.getElementById("card-backup-error");
+    output.innerHTML = ""; output.hidden = true;
+    error.textContent = ""; error.hidden = true;
+  };
+  const pick = {
+    first: { text: "card-backup-deck", max: 52, picked: [], suit: "", rank: "" },
+    second: { text: "card-backup-second", max: 6, picked: [], suit: "", rank: "" }
+  };
+  const ALL_CARDS = hodlCardSuits.flatMap((suit) => hodlCardRanks.map((rank) => rank + suit.code));
+  const picParse = (value) => (String(value ?? "").toUpperCase().replace(/10/g, "T").match(/[A2-9TJQK][SHCD]/g) || []);
+  const picCardCodes = (key) => ALL_CARDS.filter((card) => !pick[key].picked.includes(card));
+  const picRefresh = (key) => {
+    const p = pick[key], dealt = document.getElementById(`card-backup-${key}-dealt`), n = document.getElementById(`card-backup-${key}-n`), undo = document.getElementById(`card-backup-${key}-undo`);
+    n.textContent = Math.min(p.picked.length + 1, p.max);
+    dealt.innerHTML = p.picked.map((card, i) => `<span class="cb-tile"><span class="cb-pos">${i + 1}</span>${hodlDealtCardMarkup(card)}</span>`).join("");
+    undo.disabled = p.picked.length === 0;
+    const remaining = picCardCodes(key);
+    document.querySelectorAll(`[data-cb-suit="${key}"]`).forEach((button) => {
+      const suit = button.dataset.cbCardSuit;
+      const card = p.rank ? p.rank + suit : "";
+      const incompatible = Boolean(p.rank) && !remaining.includes(card);
+      const locked = Boolean(p.suit) && p.suit !== suit;
+      const available = !incompatible && remaining.some((c) => c.endsWith(suit));
+      button.disabled = !available || locked;
+      button.classList.toggle("active", p.suit === suit);
+      button.setAttribute("aria-pressed", String(p.suit === suit));
+    });
+    document.querySelectorAll(`[data-cb-rank="${key}"]`).forEach((button) => {
+      const rank = button.dataset.cbCardRank;
+      const card = p.suit ? rank + p.suit : "";
+      const incompatible = Boolean(p.suit) && !remaining.includes(card);
+      const locked = Boolean(p.rank) && p.rank !== rank;
+      const available = !incompatible && remaining.some((c) => c.startsWith(rank));
+      button.disabled = !available || locked;
+      button.classList.toggle("active", p.rank === rank);
+      button.setAttribute("aria-pressed", String(p.rank === rank));
+    });
+  };
+  const picSyncText = (key) => { document.getElementById(pick[key].text).value = pick[key].picked.join(" "); };
+  const picRender = (key) => { picSyncText(key); picRefresh(key); };
+  const picCommit = (key) => {
+    const p = pick[key];
+    if (!p.suit || !p.rank || p.picked.includes(p.rank + p.suit) || p.picked.length >= p.max) { p.suit = ""; p.rank = ""; return; }
+    p.picked.push(p.rank + p.suit);
+    p.suit = ""; p.rank = "";
+    picRender(key);
+  };
+  const picResync = (key) => {
+    const p = pick[key], text = document.getElementById(p.text);
+    p.picked = picParse(text.value).slice(0, p.max);
+    p.suit = ""; p.rank = "";
+    picRefresh(key);
+  };
+  const buildPads = () => {
+    for (const key of ["first", "second"]) {
+      document.getElementById(`card-backup-${key}-suits`).innerHTML = hodlCardSuits.map((suit) => `<button type="button" class="card-suit${suit.red ? " is-red" : ""}" data-cb-suit="${key}" data-cb-card-suit="${suit.code}" aria-label="${suit.label}" aria-pressed="false">${suit.symbol}</button>`).join("");
+      document.getElementById(`card-backup-${key}-ranks`).innerHTML = hodlCardRanks.map((rank) => `<button type="button" data-cb-rank="${key}" data-cb-card-rank="${rank}" aria-label="${rank === "T" ? "10" : rank}">${rank === "T" ? "10" : rank}</button>`).join("");
+    }
+  };
+  const sync = () => {
+    const encode = direction() === "encode";
+    document.getElementById("card-backup-mnemonic-label").hidden = !encode;
+    document.getElementById("card-backup-deck-label").hidden = encode;
+    document.getElementById("card-backup-second-label").hidden = encode;
+    document.getElementById("card-backup-first-pick").hidden = encode;
+    document.getElementById("card-backup-second-pick").hidden = encode;
+    run.textContent = encode ? "Encode" : "Recover";
+    picResync("first");
+    picResync("second");
+    wipeResults();
+  };
+  const renderDeck = (deckStr) => {
+    const cards = deckStr.split(" ");
+    const tiles = cards.map((card, i) => `<span class="cb-tile"><span class="cb-pos">${i + 1}</span>${hodlDealtCardMarkup(card)}</span>`).join("");
+    return `<div class="cb-deck">${tiles}</div><div class="cb-text"><div class="cb-codes" aria-label="Deck as text">${hodlEscapeHtml(deckStr)}</div><button type="button" class="seed-phrase-copy cb-copy" data-copy="${hodlEscapeHtml(deckStr)}" aria-label="Copy deck codes" title="Copy deck codes">${hodlClipboardIconMarkup()}</button></div>`;
+  };
+  const copyDeck = (button) => {
+    const value = button.dataset.copy;
+    if (!value) return;
+    const done = () => {
+      button.classList.add("is-copied");
+      button.innerHTML = hodlCopiedIconMarkup();
+      button.setAttribute("aria-label", "Deck codes copied");
+      button.title = "Deck codes copied";
+      clearTimeout(button.hodlCopyTimer);
+      button.hodlCopyTimer = setTimeout(() => {
+        button.classList.remove("is-copied");
+        button.innerHTML = hodlClipboardIconMarkup();
+        button.setAttribute("aria-label", "Copy deck codes");
+        button.title = "Copy deck codes";
+      }, 1400);
+    };
+    const fallback = () => {
+      const field = document.createElement("textarea");
+      field.value = value;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.left = "-9999px";
+      document.body.appendChild(field);
+      field.select();
+      try {
+        document.execCommand("copy");
+        done();
+      } finally {
+        field.remove();
+      }
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") navigator.clipboard.writeText(value).then(done).catch(fallback);
+    else fallback();
+  };
+  const output = document.getElementById("card-backup-output");
+  output.addEventListener("click", (event) => {
+    const button = event.target.closest(".cb-copy");
+    if (button) copyDeck(button);
+  });
+  document.querySelectorAll('input[name="card-backup-direction"]').forEach((input) => input.onchange = sync);
+  buildPads();
+  document.querySelectorAll("#card-backup-card [data-cb-suit]").forEach((button) => button.onclick = () => {
+    const key = button.dataset.cbSuit, p = pick[key];
+    p.suit = p.suit === button.dataset.cbCardSuit ? "" : button.dataset.cbCardSuit;
+    if (p.suit && p.rank) picCommit(key);
+    else picRefresh(key);
+  });
+  document.querySelectorAll("#card-backup-card [data-cb-rank]").forEach((button) => button.onclick = () => {
+    const key = button.dataset.cbRank, p = pick[key];
+    p.rank = p.rank === button.dataset.cbCardRank ? "" : button.dataset.cbCardRank;
+    if (p.suit && p.rank) picCommit(key);
+    else picRefresh(key);
+  });
+  for (const key of ["first", "second"]) document.getElementById(`card-backup-${key}-undo`).onclick = () => { pick[key].picked.pop(); picRender(key); };
+  for (const key of ["first", "second"]) {
+    document.getElementById(pick[key].text).addEventListener("input", () => picResync(key));
+  }
+  run.onclick = () => {
+    const output = document.getElementById("card-backup-output"), error = document.getElementById("card-backup-error");
+    wipeResults();
+    try {
+      if (direction() === "encode") {
+        const result = hodlEncodeMnemonicToDeck(document.getElementById("card-backup-mnemonic").value, document.getElementById("card-backup-passphrase").value);
+        let html = `<p>Words: ${result.words} · Passphrase marker: ${result.passphraseMarker}</p>`;
+        html += `<p><strong>First deck</strong></p>${renderDeck(result.deck)}`;
+        if (result.secondDeck) {
+          const prefix = result.secondDeck.split(" ").slice(0, 6).join(" ");
+          html += `<p><strong>Second deck</strong> — first 6 cards carry the backup.</p>${renderDeck(prefix)}`;
+          html += `<p class="muted">The remaining 46 cards follow the fixed canonical order of a standard deck minus these 6.</p>`;
+        }
+        output.innerHTML = html;
+      } else {
+        const result = hodlDecodeDeckToMnemonic(document.getElementById("card-backup-deck").value, document.getElementById("card-backup-second").value, document.getElementById("card-backup-passphrase").value);
+        output.innerHTML = `<p>Words: ${result.words} · Passphrase marker: ${result.passphraseMarker}</p><p><strong>Mnemonic</strong></p><pre style="margin:0;white-space:pre-wrap">${hodlEscapeHtml(result.mnemonic)}</pre>`;
+      }
+      output.hidden = false;
+    } catch (exception) {
+      error.textContent = exception.message || String(exception);
+      error.hidden = false;
+    }
+  };
+  document.getElementById("card-backup-clear").onclick = () => {
+    ["card-backup-mnemonic", "card-backup-deck", "card-backup-second", "card-backup-passphrase"].forEach((id) => document.getElementById(id).value = "");
+    picResync("first");
+    picResync("second");
+    picSyncText("first");
+    picSyncText("second");
+    wipeResults();
+  };
+  sync();
 }
 function hodlInitTabDrag(box) {
   let pointerId = null, startX = 0, startScroll = 0, moved = false, suppressClick = false;
@@ -11507,7 +11723,7 @@ function hodlInitDefaultTabStates() {
 }
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "workspace.key", "workspace.keyShort"], ["vanity", "workspace.vanity", "workspace.vanityShort"], ["bip85", "workspace.bip85", "workspace.bip85Short"], ["msig", "workspace.msig", "workspace.msigShort"], ["sp", "workspace.sp", "workspace.spShort"], ["psbt", "workspace.psbt", "workspace.psbtShort"], ["journal", "workspace.journal", "workspace.journalShort"]];
+var hodlWorkspaceTabs = [["calc", "workspace.key", "workspace.keyShort"], ["vanity", "workspace.vanity", "workspace.vanityShort"], ["bip85", "workspace.bip85", "workspace.bip85Short"], ["msig", "workspace.msig", "workspace.msigShort"], ["sp", "workspace.sp", "workspace.spShort"], ["card-backup", "workspace.cardBackup", "workspace.cardBackupShort"], ["psbt", "workspace.psbt", "workspace.psbtShort"], ["journal", "workspace.journal", "workspace.journalShort"]];
 var hodlPsbtTool = "nonce";
 function hodlSyncPsbtTool() {
   let visible = hodlWorkspace === "psbt",
@@ -13604,6 +13820,7 @@ function hodlInitWorkspace() {
   hodlInitPsbt();
   initPsbtEditor({ networkDefault: () => hodlNetworkDefault });
   hodlInitBip85();
+  hodlInitCardBackup();
   hodlInitVanity();
   hodlInitSp();
 }
@@ -13885,6 +14102,22 @@ function hodlInitSecretFieldAutoClear() {
     for (let id of ["dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "pass", "cards", "direct-cards"]) {
       let field = document.getElementById(id);
       if (field) field.value = "";
+    }
+    for (let id of ["card-backup-mnemonic", "card-backup-deck", "card-backup-second", "card-backup-passphrase"]) {
+      let field = document.getElementById(id);
+      if (field) {
+        field.value = "";
+        if (id === "card-backup-deck" || id === "card-backup-second") field.dispatchEvent(new Event("input"));
+      }
+    }
+    let cardBackupOutput = document.getElementById("card-backup-output"), cardBackupError = document.getElementById("card-backup-error");
+    if (cardBackupOutput) {
+      cardBackupOutput.innerHTML = "";
+      cardBackupOutput.hidden = true;
+    }
+    if (cardBackupError) {
+      cardBackupError.textContent = "";
+      cardBackupError.hidden = true;
     }
     let psbtKey = document.getElementById("psbt-key"), psbtPass = document.getElementById("psbt-pass");
     if (psbtKey) psbtKey.value = "";
