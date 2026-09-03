@@ -66,6 +66,30 @@ function passphraseMarker(passphrase) {
   return [...digest.slice(0, 4)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+// The word count is embedded in the deck order: each single-deck size owns a
+// disjoint interval of permutation ranks, 2^128 + 2^160 + 2^192 + 2^224 ranks
+// in total (below 2^225, and 52! is above 2^225), so recovery never needs a
+// manual length choice and cannot silently guess the wrong one.
+const SINGLE_DECK_SIZES = [12, 15, 18, 21];
+function rankToWords(rank) {
+  let base = 0n;
+  for (const words of SINGLE_DECK_SIZES) {
+    const end = base + (1n << BigInt(WORD_BITS[words]));
+    if (rank < end) return [words, rank - base];
+    base = end;
+  }
+  return null;
+}
+
+function deckBase(words) {
+  let base = 0n;
+  for (const size of SINGLE_DECK_SIZES) {
+    if (size === words) return base;
+    base += 1n << BigInt(WORD_BITS[size]);
+  }
+  throw new Error("Unsupported word count.");
+}
+
 export function encodeMnemonicToDeck(mnemonic, passphrase = "") {
   const normalized = String(mnemonic ?? "").normalize("NFKD");
   if (!validateMnemonic(normalized, bip39English)) throw new Error("Invalid BIP39 mnemonic.");
@@ -81,32 +105,38 @@ export function encodeMnemonicToDeck(mnemonic, passphrase = "") {
     const prefix = unrankPermutation(prefixRank, PREFIX_SIZE);
     secondDeck = [...prefix, ...DECK.filter((card) => !prefix.includes(card))];
   } else {
-    firstDeck = unrankPermutation(number, 52);
+    firstDeck = unrankPermutation(deckBase(words) + number, 52);
   }
   return { words, bits, deck: firstDeck.join(" "), secondDeck: secondDeck?.join(" ") || "", passphraseMarker: passphraseMarker(passphrase) };
 }
 
-export function decodeDeckToMnemonic(deck, secondDeck = "", passphrase = "", words = secondDeck ? 24 : 12) {
+export function decodeDeckToMnemonic(deck, secondDeck = "", passphrase = "", words = null) {
   const first = normalizeDeck(deck);
   if (first.length !== 52 || new Set(first).size !== 52) throw new Error("The first deck must contain all 52 distinct cards.");
-  const second = secondDeck ? normalizeDeck(secondDeck) : [];
-  let number;
+  let number, detected;
   if (secondDeck) {
+    const second = normalizeDeck(secondDeck);
     if (second.length !== 52 || new Set(second).size !== 52) throw new Error("The second deck must contain all 52 distinct cards.");
     const prefix = second.slice(0, PREFIX_SIZE);
     number = rankPermutation(first) * PREFIX_SPACE + rankPermutation(prefix);
     if (number >= (1n << 256n)) throw new Error("This card backup is outside the BIP39 24-word range.");
     const canonicalTail = DECK.filter((card) => !prefix.includes(card));
     if (second.slice(PREFIX_SIZE).some((card, index) => card !== canonicalTail[index])) throw new Error("The second deck tail is not the canonical tail for this backup.");
+    detected = 24;
   } else {
-    number = rankPermutation(first);
-    if (number >= (1n << 224n)) throw new Error("A single deck cannot encode a 24-word backup; provide the second deck.");
+    const fit = rankToWords(rankPermutation(first));
+    if (!fit) throw new Error("The card order is not a valid single-deck backup; a 24-word backup needs the second deck.");
+    detected = fit[0];
+    number = fit[1];
   }
-  if (!WORD_BITS[words] || (secondDeck ? words !== 24 : words === 24)) throw new Error("Select a supported word count; 24 words requires the second deck.");
-  if (number >= (1n << BigInt(WORD_BITS[words]))) throw new Error("The card order is outside the selected BIP39 word-count range.");
-  const length = WORD_BITS[words] / 8;
+  if (words !== null && words !== undefined && words !== "") {
+    const selected = Number(words);
+    if (selected === 24 && !secondDeck) throw new Error("Select a supported word count; 24 words requires the second deck.");
+    if (selected !== detected) throw new Error(`The card order encodes a ${detected}-word backup, not ${selected}.`);
+  }
+  const length = WORD_BITS[detected] / 8;
   const mnemonic = entropyToMnemonic(bigIntToBytes(number, length), bip39English);
-  return { mnemonic, words: mnemonic.split(" ").length, passphraseMarker: passphraseMarker(passphrase) };
+  return { mnemonic, words: detected, passphraseMarker: passphraseMarker(passphrase) };
 }
 
 export { DECK, PREFIX_SIZE, PREFIX_SPACE, rankPermutation, unrankPermutation };

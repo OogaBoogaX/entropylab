@@ -1778,6 +1778,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .bip85-intro { margin: var(--space-control) 0 0; }
 .bip85-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; margin-top: var(--space-component); }
 .bip85-grid .field[hidden] { display: none !important; }
+#card-backup-card .field[hidden] { display: none !important; }
 @media (min-width: 720px) {
   .bip85-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .bip85-grid > .field { margin-top: 0; }

@@ -2236,6 +2236,28 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
   }
 });
 
+test("Card Backup asks only for the inputs its direction needs", () => {
+  const card = appSource.slice(appSource.indexOf('id="card-backup-card"'), appSource.indexOf('id="vanity-tool-intro"'));
+  // No manual word count in either direction: encoding reads the length from
+  // the mnemonic, and recovery reads it from the embedded rank intervals.
+  assert.doesNotMatch(card, /card-backup-words|Mnemonic length/);
+  assert.match(card, /id="card-backup-mnemonic-label">BIP39 mnemonic/);
+  assert.match(card, /id="card-backup-deck-label" hidden/);
+  assert.match(card, /id="card-backup-second-label" hidden[^>]*>\s*Second deck[^<]*only for a 24-word backup/);
+  // The direction radios swap exactly the three field groups.
+  assert.match(appSource, /getElementById\("card-backup-card"\)\.hidden = id !== "card-backup"/);
+  assert.match(appSource, /document\.getElementById\("card-backup-mnemonic-label"\)\.hidden = !encode/);
+  // label.field ships display:block, so the hidden attribute needs the same
+  // explicit override the other tools' fields use, or hidden fields stay on screen.
+  assert.match(css, /#card-backup-card \.field\[hidden\] \{ display: none !important; \}/);
+  // Result and error boxes start hidden and reveal only with content;
+  // switching direction or clearing wipes them back out of sight.
+  assert.match(card, /<p class="err" id="card-backup-error" role="alert" hidden>/);
+  assert.match(card, /<pre class="journal-log" id="card-backup-output" aria-live="polite" hidden>/);
+  assert.match(appSource, /const wipeResults = \(\) => \{[\s\S]*?output\.hidden = true;[\s\S]*?error\.hidden = true;[\s\S]*?\};/);
+  assert.match(appSource, /run\.textContent = encode \? "Encode" : "Recover";\s*wipeResults\(\);/);
+});
+
 test("the private recovery section lists the BIP39 passphrase beside the seed phrase", () => {
   // The HD result carries the passphrase text (not just a flag) so the row
   // can render; imported roots and single keys carry an empty one.

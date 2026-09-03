@@ -651,21 +651,18 @@ hodlRootEl.innerHTML = `
         <p class="muted tool-intro-note">Convert a BIP39 mnemonic into a deterministic order of ordinary playing cards, or recover it from that order. This is a reversible encoding, not the existing cards-to-SHA-256 entropy method.</p>
       </div>
       <section class="card no-print" id="card-backup-card" role="tabpanel" hidden>
-        <p class="muted">Use one standard 52-card deck for 12, 15, 18, or 21 words. A 24-word mnemonic needs the complete first deck plus the first 6 cards of a second shuffled deck; the remaining second-deck cards are fixed by the published method.</p>
+        <p class="muted">Use one standard 52-card deck for 12, 15, 18, or 21 words; a 24-word mnemonic needs the complete first deck plus a second deck whose first 6 cards carry the rest. The word count is embedded in the card order, so recovery asks for no length settings.</p>
         <div class="choice-grid">
           <label class="choice"><input type="radio" name="card-backup-direction" value="encode" checked><span><strong>Mnemonic to cards</strong><span class="desc">Create the physical backup order.</span></span></label>
           <label class="choice"><input type="radio" name="card-backup-direction" value="decode"><span><strong>Cards to mnemonic</strong><span class="desc">Recover and verify the mnemonic.</span></span></label>
         </div>
-        <label class="field">Mnemonic length
-          <select id="card-backup-words"><option value="12">12 words</option><option value="15">15 words</option><option value="18">18 words</option><option value="21">21 words</option><option value="24">24 words</option></select>
-        </label>
         <label class="field" id="card-backup-mnemonic-label">BIP39 mnemonic
           <textarea id="card-backup-mnemonic" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Enter a valid BIP39 mnemonic"></textarea>
         </label>
         <label class="field" id="card-backup-deck-label" hidden>First deck, in order
           <textarea id="card-backup-deck" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AS 2H ..."></textarea>
         </label>
-        <label class="field" id="card-backup-second-label" hidden>Second deck, in order (required for 24 words)
+        <label class="field" id="card-backup-second-label" hidden>Second deck, in order (only for a 24-word backup; leave empty otherwise)
           <textarea id="card-backup-second" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AS 2H ..."></textarea>
         </label>
         <label class="field">Optional BIP39 passphrase (never stored in the cards)
@@ -673,8 +670,8 @@ hodlRootEl.innerHTML = `
         </label>
         <p class="field-note">The passphrase is not recoverable from a finite deck. Keep it separately. The result shows a short verification marker.</p>
         <div class="row bip85-actions"><button class="btn primary" id="card-backup-run" type="button">Encode</button><button class="btn clear-current-action" id="card-backup-clear" type="button">Clear</button></div>
-        <p class="err" id="card-backup-error" role="alert"></p>
-        <pre class="journal-log" id="card-backup-output" aria-live="polite"></pre>
+        <p class="err" id="card-backup-error" role="alert" hidden></p>
+        <pre class="journal-log" id="card-backup-output" aria-live="polite" hidden></pre>
       </section>
       <div class="tool-intro" id="vanity-tool-intro" hidden>
         <div class="kicker">Same key, same counter, same address</div>
@@ -11446,33 +11443,40 @@ function hodlInitCardBackup() {
   const run = document.getElementById("card-backup-run");
   if (!run) return;
   const direction = () => document.querySelector('input[name="card-backup-direction"]:checked')?.value || "encode";
+  const wipeResults = () => {
+    const output = document.getElementById("card-backup-output"), error = document.getElementById("card-backup-error");
+    output.textContent = ""; output.hidden = true;
+    error.textContent = ""; error.hidden = true;
+  };
   const sync = () => {
     const encode = direction() === "encode";
     document.getElementById("card-backup-mnemonic-label").hidden = !encode;
     document.getElementById("card-backup-deck-label").hidden = encode;
     document.getElementById("card-backup-second-label").hidden = encode;
     run.textContent = encode ? "Encode" : "Recover";
+    wipeResults();
   };
   document.querySelectorAll('input[name="card-backup-direction"]').forEach((input) => input.onchange = sync);
   run.onclick = () => {
     const output = document.getElementById("card-backup-output"), error = document.getElementById("card-backup-error");
-    error.textContent = "";
+    wipeResults();
     try {
       if (direction() === "encode") {
         const result = hodlEncodeMnemonicToDeck(document.getElementById("card-backup-mnemonic").value, document.getElementById("card-backup-passphrase").value);
         output.textContent = `Words: ${result.words}\nPassphrase marker: ${result.passphraseMarker}\n\nFirst deck:\n${result.deck}${result.secondDeck ? `\n\nSecond deck:\n${result.secondDeck}` : ""}`;
       } else {
-        const result = hodlDecodeDeckToMnemonic(document.getElementById("card-backup-deck").value, document.getElementById("card-backup-second").value, document.getElementById("card-backup-passphrase").value, Number(document.getElementById("card-backup-words").value));
+        const result = hodlDecodeDeckToMnemonic(document.getElementById("card-backup-deck").value, document.getElementById("card-backup-second").value, document.getElementById("card-backup-passphrase").value);
         output.textContent = `Words: ${result.words}\nPassphrase marker: ${result.passphraseMarker}\n\nMnemonic:\n${result.mnemonic}`;
       }
+      output.hidden = false;
     } catch (exception) {
-      output.textContent = "";
       error.textContent = exception.message || String(exception);
+      error.hidden = false;
     }
   };
   document.getElementById("card-backup-clear").onclick = () => {
-    ["card-backup-mnemonic", "card-backup-deck", "card-backup-second", "card-backup-passphrase", "card-backup-output", "card-backup-error"].forEach((id) => document.getElementById(id).value = "");
-    document.getElementById("card-backup-output").textContent = "";
+    ["card-backup-mnemonic", "card-backup-deck", "card-backup-second", "card-backup-passphrase"].forEach((id) => document.getElementById(id).value = "");
+    wipeResults();
   };
   sync();
 }

@@ -15,11 +15,30 @@ for (const [words, mnemonic] of Object.entries(MNEMONICS)) {
       assert.equal(encoded.secondDeck.split(" ").length, 52);
       assert.equal(encoded.secondDeck.split(" ").slice(0, PREFIX_SIZE).length, PREFIX_SIZE);
     } else assert.equal(encoded.secondDeck, "");
-    const decoded = decodeDeckToMnemonic(encoded.deck, encoded.secondDeck, "correct horse battery staple", Number(words));
+    const decoded = decodeDeckToMnemonic(encoded.deck, encoded.secondDeck, "correct horse battery staple");
+    assert.equal(decoded.words, Number(words));
     assert.equal(decoded.mnemonic, mnemonic);
     assert.equal(decoded.passphraseMarker, encoded.passphraseMarker);
+    const pinned = decodeDeckToMnemonic(encoded.deck, encoded.secondDeck, "correct horse battery staple", Number(words));
+    assert.equal(pinned.mnemonic, mnemonic);
   });
 }
+
+test("recovery needs no length choice: sizes stay disjoint", () => {
+  const decks = Object.entries(MNEMONICS)
+    .filter(([words]) => Number(words) !== 24)
+    .map(([, mnemonic]) => encodeMnemonicToDeck(mnemonic).deck);
+  assert.equal(new Set(decks).size, decks.length);
+  for (const [words, mnemonic] of Object.entries(MNEMONICS).filter(([words]) => Number(words) !== 24)) {
+    const encoded = encodeMnemonicToDeck(mnemonic);
+    assert.equal(decodeDeckToMnemonic(encoded.deck).words, Number(words));
+  }
+});
+
+test("an explicit word count that disagrees with the deck is rejected", () => {
+  const encoded = encodeMnemonicToDeck(MNEMONICS[18]);
+  assert.throws(() => decodeDeckToMnemonic(encoded.deck, "", "", 12), /encodes an? 18-word backup, not 12/);
+});
 
 test("the zero 24-word vector is two canonical decks", () => {
   const encoded = encodeMnemonicToDeck(entropyToMnemonic(new Uint8Array(32), bip39English));
@@ -29,6 +48,11 @@ test("the zero 24-word vector is two canonical decks", () => {
 
 test("one deck cannot be mistaken for a 24-word backup", () => {
   assert.throws(() => decodeDeckToMnemonic(DECK.join(" "), "", "", 24), /24 words requires/);
+});
+
+test("a rank beyond every encoded interval is rejected", () => {
+  const reversed = [...DECK].reverse().join(" ");
+  assert.throws(() => decodeDeckToMnemonic(reversed), /valid single-deck backup/);
 });
 
 test("passphrase marker changes without exposing the passphrase", () => {
