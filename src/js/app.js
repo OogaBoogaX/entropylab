@@ -863,11 +863,11 @@ hodlRootEl.innerHTML = `
       <div class="key-settings msig-output-settings">
         <label class="choice msig-legacy-account-toggle" id="msig-legacy-account-toggle" hidden>
           <input id="msig-legacy-bip87" type="checkbox" aria-describedby="msig-legacy-bip87-help">
-          <span><strong data-i18n="msig.legacyBip87">Use standardized BIP87 accounts</strong><span class="desc" id="msig-legacy-bip87-help" data-i18n-html="msig.legacyBip87Help">Uses <span class="mono">m/87'/coin'/account'</span> with this Legacy P2SH descriptor. BIP87 account keys are script-agnostic. Leave unchecked for default BIP45 without accounts.</span></span>
+          <span><strong data-i18n="msig.legacyBip87">Use standardized BIP87 accounts</strong><span class="desc" id="msig-legacy-bip87-help" data-i18n-html="msig.legacyBip87Help">Uses <span class=mono>m/87&#39;/coin&#39;/account&#39;</span> with this descriptor. BIP87 account keys are script-agnostic, so one account key serves any script type. Leave unchecked for this script type&#39;s own standard: BIP45 for Legacy, BIP48 for SegWit. Taproot multisig always uses BIP87.</span></span>
         </label>
         <div class="key-settings-row">
           <label class="field"><span data-i18n="scriptType.label">Script type</span>
-            <select id="msig-script-type" aria-describedby="msig-script-warning"><option value="p2sh" data-i18n="script.legacy">Legacy</option><option value="p2sh-p2wsh" data-i18n="script.nested">Nested SegWit</option><option value="p2wsh" selected data-i18n="script.native">Native SegWit</option><option value="p2tr" data-i18n="script.taproot">Taproot</option><option value="mixed" disabled data-custom-select-placeholder="true" data-i18n="msig.mixed">Mixed \xB7 incompatible keys</option></select>
+            <select id="msig-script-type" aria-describedby="msig-script-warning"><option value="p2sh" data-i18n="script.legacy">Legacy</option><option value="p2sh-p2wsh" data-i18n="script.nested">Nested SegWit</option><option value="p2wsh" selected data-i18n="script.native">Native SegWit</option><option value="p2tr" data-i18n="script.taproot">Taproot</option><option value="mixed" disabled data-custom-select-placeholder="true" data-i18n="msig.mixed">Mixed · incompatible keys</option></select>
             <span class="field-note msig-script-warning" id="msig-script-warning" role="status" hidden></span>
           </label>
           <div class="field"><label for="msig-purpose">Purpose</label>
@@ -911,14 +911,14 @@ hodlRootEl.innerHTML = `
           <summary data-i18n="msig.advanced">Advanced</summary>
           <label class="field"><span data-i18n="msig.keyOrder">Key order</span>
             <select id="msig-key-order">
-              <option value="sorted" selected data-i18n="msig.orderSorted">Sorted \xB7 sortedmulti</option>
-              <option value="listed" data-i18n="msig.orderListed">As listed \xB7 multi</option>
+              <option value="sorted" selected data-i18n="msig.orderSorted">Sorted · sortedmulti</option>
+              <option value="listed" data-i18n="msig.orderListed">As listed · multi</option>
             </select>
             <span class="field-note" id="msig-key-order-help" data-i18n="msig.keyOrderHelp">Sorted is the default. Addresses stay the same no matter which co-signer you paste first. As listed uses multi: the order of the fields is part of the wallet. Taproot uses sortedmulti_a or multi_a.</span>
           </label>
         </details>
       </div>
-      <p class="field-note address-estimate derivation-estimate" id="msig-address-estimate" role="status" data-i18n="estimate.measuring">Measuring this device\u2026</p>
+      <p class="field-note address-estimate derivation-estimate" id="msig-address-estimate" role="status" data-i18n="estimate.measuring">Measuring this device…</p>
       <div class="row current-item-actions">
         <button class="btn primary" id="msig-go" type="button" aria-describedby="msig-script-warning" disabled aria-disabled="true" data-i18n="action.deriveMsig">Derive Multisig</button>
         <div class="derive-progress" id="msig-derive-progress" role="progressbar" aria-label="Multisig derivation progress" data-i18n-aria="msig.deriveProgressAria" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
@@ -1042,8 +1042,8 @@ hodlRootEl.innerHTML = `
         </div>
       </div>
       <label class="field"><span data-i18n="psbt.field.jade">Optional Jade anti-exfil transcript</span>
-        <textarea id="psbt-ax-transcript" placeholder="32-byte host nonce \u03C1, then 33-byte compressed opening R, as hex" data-i18n-placeholder="psbt.jadePlaceholder" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-        <span class="field-note" data-i18n="psbt.jadeNote">USB Jade only (Green host nonce + opening). QR / sign_psbt does not run anti-exfil yet. BitBox anti-klepto is a different mix \u2014 do not paste it here.</span>
+        <textarea id="psbt-ax-transcript" placeholder="32-byte host nonce ρ, then 33-byte compressed opening R, as hex" data-i18n-placeholder="psbt.jadePlaceholder" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <span class="field-note" data-i18n="psbt.jadeNote">USB Jade only (Green host nonce + opening). QR / sign_psbt does not run anti-exfil yet. BitBox anti-klepto is a different mix — do not paste it here.</span>
       </label>
       <div class="row psbt-actions">
         <button class="btn primary" id="psbt-go" type="button">Inspect</button>
