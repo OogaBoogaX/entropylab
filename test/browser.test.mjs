@@ -26,7 +26,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -298,6 +298,7 @@ const spawnBrowser = (engine, { profile, url, logPath, cwd }) => {
         ...chromiumSandboxArgs(),
         "--no-first-run",
         "--no-default-browser-check",
+        "--disable-background-mode",
         "--disable-gpu",
         "--disable-dev-shm-usage",
         "--window-size=1280,800",
@@ -310,6 +311,52 @@ const spawnBrowser = (engine, { profile, url, logPath, cwd }) => {
   closeSync(logFd);
   process.on("error", () => {});
   return process;
+};
+
+// Firefox and Chromium can replace the process Node spawned with another
+// process before cleanup runs. At that point taskkill cannot find the
+// original PID, but the replacement still names our unique private profile
+// in its command line. Kill only browser processes tied to those exact
+// profiles; never use an image-wide taskkill that could close a user's
+// unrelated browser session.
+const stopWindowsProfileProcesses = (profileToken) => {
+  if (process.platform !== "win32") return;
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    "$needle = $env:ENTROPYLAB_BROWSER_PROFILE_TOKEN",
+    "if ([string]::IsNullOrWhiteSpace($needle)) { throw 'missing browser profile token' }",
+    "$browserNames = @('firefox.exe', 'chrome.exe', 'msedge.exe', 'crashpad_handler.exe')",
+    "function Get-OwnedBrowserProcesses {",
+    "  @(Get-CimInstance Win32_Process | Where-Object {",
+    "    $candidate = $_.CommandLine",
+    "    ($browserNames -contains $_.Name) -and $candidate -and $candidate.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0",
+    "  })",
+    "}",
+    "for ($attempt = 0; $attempt -lt 20; $attempt++) {",
+    "  $owned = @(Get-OwnedBrowserProcesses)",
+    "  if ($owned.Count -eq 0) { exit 0 }",
+    "  foreach ($item in $owned) {",
+    "    try {",
+    "      $result = Invoke-CimMethod -InputObject $item -MethodName Terminate -ErrorAction Stop",
+    "      if ($result.ReturnValue -ne 0) { throw \"process termination returned $($result.ReturnValue)\" }",
+    "    } catch {",
+    "      $survivor = @(Get-OwnedBrowserProcesses | Where-Object { $_.ProcessId -eq $item.ProcessId })",
+    "      if ($survivor.Count -gt 0) { throw }",
+    "    }",
+    "  }",
+    "  Start-Sleep -Milliseconds 100",
+    "}",
+    "if (@(Get-OwnedBrowserProcesses).Count -gt 0) { throw 'browser processes still retain the private test profile' }",
+  ].join("\n");
+  const stopped = spawnSync(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-Command", script],
+    {
+      stdio: "ignore",
+      env: { ...process.env, ENTROPYLAB_BROWSER_PROFILE_TOKEN: profileToken },
+    },
+  );
+  assert.equal(stopped.status, 0, "could not terminate browser processes that retained the private test profiles");
 };
 
 const waitForFile = async (file, timeoutMs) => {
@@ -405,9 +452,17 @@ const runEngine = (engine, staging, port) => async () => {
         browser.kill("SIGKILL");
       }
     }
+    await Promise.all(browsers.map((browser) => new Promise((resolve) => {
+      if (browser.exitCode !== null || browser.signalCode !== null) return resolve();
+      const done = () => resolve();
+      browser.once("exit", done);
+      browser.once("error", done);
+      setTimeout(done, 5000);
+    })));
+    stopWindowsProfileProcesses(basename(staging.workDir));
     // Windows can keep profile files locked briefly after termination; give
     // the handles time to release before the workdir is removed.
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 };
 
@@ -446,6 +501,6 @@ test("headless browsers run the hosted and offline suites", async (t) => {
     }
   } finally {
     await new Promise((resolve) => server.close(resolve));
-    rmSync(staging.workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+    rmSync(staging.workDir, { recursive: true, force: true, maxRetries: 30, retryDelay: 500 });
   }
 });
