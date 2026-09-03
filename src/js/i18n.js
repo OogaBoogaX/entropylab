@@ -46,10 +46,22 @@ export function t(key, vars) {
   if (typeof text !== "string" || !text) text = hodlLocaleCatalogs.en[key];
   if (typeof text !== "string") return key;
   if (!vars) return text;
-  return text.replace(/\{(\w+)\}/g, (_, name) => (vars[name] == null ? `{${name}}` : String(vars[name])));
+  let interpolated = text.replace(/\{(\w+)\}/g, (_, name) => (vars[name] == null ? `{${name}}` : String(vars[name])));
+  return hodlSanitizeCatalogHtml(interpolated);
+}
+
+export function tAttr(key, vars) {
+  return t(key, vars).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
 }
 if (typeof globalThis !== "undefined") {
   globalThis.hodlT = t;
+  globalThis.hodlTAttr = tAttr;
   globalThis.hodlSanitizeCatalogHtml = hodlSanitizeCatalogHtml;
 }
 

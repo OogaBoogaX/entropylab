@@ -12,6 +12,7 @@ import {
   hodlSanitizeCatalog,
   hodlSanitizeCatalogHtml,
 } from "../src/js/i18n-sanitize.js";
+import { t, tAttr } from "../src/js/i18n.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const locales = ["en", "es", "pt", "fr", "de"];
@@ -97,11 +98,33 @@ test("the tokenizer sees tags the way the sanitizer does", () => {
   assert.deepEqual(tokens[6].attrs, { "data-z": "1" });
 });
 
+test("placeholder values are sanitized after interpolation", () => {
+  const hostile = '<img src=x onerror="globalThis.__entropyLabPwned = true">';
+  const translated = t("seedLength.words", { n: hostile });
+  assert.equal(translated, '&lt;img src=x onerror="globalThis.__entropyLabPwned = true"&gt; words');
+  assert.doesNotMatch(translated, /<img\b/i);
+});
+
+test("translated template attributes escape every HTML quote and delimiter", () => {
+  const hostile = '" hidden style="display:none" onfocus="globalThis.__entropyLabPwned = true\' data-x=\'x';
+  const translated = tAttr("seedLength.words", { n: hostile });
+  assert.equal(translated, "&quot; hidden style=&quot;display:none&quot; onfocus=&quot;globalThis.__entropyLabPwned = true&#39; data-x=&#39;x words");
+  assert.doesNotMatch(translated, /[<>"']/);
+});
+
+test("quoted template attributes use the attribute-safe translation helper", () => {
+  const source = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const rawTranslationInAttribute = /\b(?:aria-label|title|placeholder)="\$\{(?:[^{}]|\{[^{}]*\})*?\bhodlT\(/g;
+  assert.deepEqual([...source.matchAll(rawTranslationInAttribute)].map((match) => match[0]), []);
+});
+
 test("i18n.js routes every catalog through the sanitizer before t() can read it", () => {
   const source = readFileSync(join(root, "src/js/i18n.js"), "utf8");
   assert.match(source, /import \{[^}]*hodlSanitizeCatalog[^}]*\} from "\.\/i18n-sanitize\.js"/);
   assert.match(source, /const hodlLocaleCatalogs = \{ en: hodlSanitizeCatalog\(en\), es: hodlSanitizeCatalog\(es\), pt: hodlSanitizeCatalog\(pt\), fr: hodlSanitizeCatalog\(fr\), de: hodlSanitizeCatalog\(de\) \}/);
   // The English fallback inside t() must read the sanitized copy, not the raw import.
   assert.match(source, /let catalog = hodlLocaleCatalogs\[hodlLocale\] \|\| hodlLocaleCatalogs\.en;[\s\S]*?text = hodlLocaleCatalogs\.en\[key\]/);
+  assert.match(source, /let interpolated = text\.replace[\s\S]*?return hodlSanitizeCatalogHtml\(interpolated\)/);
+  assert.match(source, /globalThis\.hodlTAttr = tAttr/);
   assert.match(source, /globalThis\.hodlSanitizeCatalogHtml = hodlSanitizeCatalogHtml/);
 });

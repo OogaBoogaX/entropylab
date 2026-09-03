@@ -35,7 +35,7 @@ import { initQrReferences } from "./qr-references.js";
 import { renderSVG as hodlUqrRenderSvg } from "uqr";
 import { BIP39_LANGUAGE_ENGLISH, BIP85_APPS, bip85Path, deriveApplication, parseChildIndex, wipeBip85Result, wipeBytes as hodlWipeBytes } from "./bip85.js";
 import { VANITY_HARDENED, VANITY_MAX_INDEX, VANITY_METHODS, VANITY_SCRIPTS, VanityGrinder, estimateVanityWork, validateVanityIndexRange, validateVanityMnemonic, validateVanityPassphrase, validateVanityPrefix, validateVanityRange, vanityBenchmark, vanityPathIndexes, vanityPathString } from "./vanity.js";
-import { t as hodlT, hodlInitLocale, hodlFillLocaleSelect, hodlGetLocale } from "./i18n.js";
+import { t as hodlT, tAttr as hodlTAttr, hodlInitLocale, hodlFillLocaleSelect, hodlGetLocale } from "./i18n.js";
 import {
   METHOD_LABELS as hodlJournalMethodLabels,
   PASSWORD_MIN_LENGTH as hodlJournalPasswordMinLength,
@@ -1514,7 +1514,7 @@ function hodlWatchOnlyDescriptorExport(receiveDescriptor, changeDescriptor, addr
   if (multipath) {
     try {
       if (multipath.length > 1e3) throw new Error("Descriptor too long for a static QR.");
-      qr = `<div class="watch-only-qr"><div class="qr qr-descriptor" aria-label="${hodlT("result.descriptorQrAria")}">${hodlDescriptorQrSvg(multipath)}</div><p class="muted">${hodlT("result.descriptorImport")}</p></div>`;
+      qr = `<div class="watch-only-qr"><div class="qr qr-descriptor" aria-label="${hodlTAttr("result.descriptorQrAria")}">${hodlDescriptorQrSvg(multipath)}</div><p class="muted">${hodlT("result.descriptorImport")}</p></div>`;
     } catch (error) {
       qr = `<p class="muted">${hodlEscapeHtml(error.message || "Descriptor too long for a static QR.")} Copy the text instead, or import the selected branch descriptors separately.</p>`;
     }
@@ -1948,10 +1948,10 @@ function hodlAddressVirtualRows(rows, includeWif, start, end) {
   return `${hodlAddressVirtualSpacer(top, columns)}${hodlAddressTableRows(rows.slice(start, end), includeWif, start)}${hodlAddressVirtualSpacer(bottom, columns)}`;
 }
 function hodlAddressTable(rows, label = "Addresses", includeWif = false, tableKey = "addresses") {
-  let safeLabel = hodlEscapeHtml(includeWif ? hodlT("result.withWif", { label }) : label), tableClass = includeWif ? "wallet-table-private" : "wallet-table-public", virtual = rows.length > hodlAddressVirtualThreshold;
+  let displayLabel = includeWif ? hodlT("result.withWif", { label }) : label, safeLabel = hodlEscapeHtml(displayLabel), tableClass = includeWif ? "wallet-table-private" : "wallet-table-public", virtual = rows.length > hodlAddressVirtualThreshold;
   let wifHeading = includeWif ? '<th scope="col">WIF</th>' : "", safeKey = hodlEscapeHtml(tableKey), initialEnd = virtual ? Math.min(rows.length, hodlAddressVirtualThreshold) : rows.length;
   let body = virtual ? hodlAddressVirtualRows(rows, includeWif, 0, initialEnd) : hodlAddressTableRows(rows, includeWif);
-  return `<div class="wallet-address-table" data-address-table="${safeKey}"><div class="wallet-table ${tableClass}" role="region" tabindex="0" aria-label="${hodlT("result.tableScrollAria", { label: safeLabel })}"><table aria-rowcount="${rows.length + 1}"><caption class="sr-only">${safeLabel}</caption><thead><tr aria-rowindex="1"><th scope="col">#</th><th scope="col">${hodlT("result.tablePath")}</th><th scope="col">${hodlT("result.tableAddress")}</th>${wifHeading}</tr></thead><tbody>${body}</tbody></table></div></div>`;
+  return `<div class="wallet-address-table" data-address-table="${safeKey}"><div class="wallet-table ${tableClass}" role="region" tabindex="0" aria-label="${hodlTAttr("result.tableScrollAria", { label: displayLabel })}"><table aria-rowcount="${rows.length + 1}"><caption class="sr-only">${safeLabel}</caption><thead><tr aria-rowindex="1"><th scope="col">#</th><th scope="col">${hodlT("result.tablePath")}</th><th scope="col">${hodlT("result.tableAddress")}</th>${wifHeading}</tr></thead><tbody>${body}</tbody></table></div></div>`;
 }
 function hodlBindAddressVirtualization(configs = []) {
   document.querySelectorAll("[data-address-table]").forEach((container) => {
@@ -2130,7 +2130,7 @@ function hodlSingleWalletData(wallet) {
         ${hodlPublicFieldHtml(hodlT("script.native"), wallet.p2wpkh)}
         ${hodlPublicFieldHtml(hodlT("script.taproot"), wallet.p2tr)}
         <h4 class="wallet-data-subtitle">${hodlT("result.nativeQr")}</h4>
-        <div class="qr" aria-label="${hodlT("result.nativeQrAria")}">${hodlQrSvg(wallet.p2wpkh)}</div>
+        <div class="qr" aria-label="${hodlTAttr("result.nativeQrAria")}">${hodlQrSvg(wallet.p2wpkh)}</div>
       </div>
     </section>
   </section>`;
@@ -3366,7 +3366,7 @@ function hodlDiceFairnessIsOpen() {
 }
 function hodlDiceFairnessToggleMarkup(open) {
   let expanded = Boolean(open);
-  return `<button type="button" class="dice-fairness-toggle" id="dice-fairness-toggle" aria-controls="dice-fairness" aria-expanded="${expanded}" aria-label="${expanded ? hodlT("dice.fairness.hideAria") : hodlT("dice.fairness.showAria")}"><span data-dice-fairness-glyph aria-hidden="true">${expanded ? "\u25BE" : "\u25B8"}</span> ${hodlT("dice.fairness.toggle")}</button>`;
+  return `<button type="button" class="dice-fairness-toggle" id="dice-fairness-toggle" aria-controls="dice-fairness" aria-expanded="${expanded}" aria-label="${expanded ? hodlTAttr("dice.fairness.hideAria") : hodlTAttr("dice.fairness.showAria")}"><span data-dice-fairness-glyph aria-hidden="true">${expanded ? "\u25BE" : "\u25B8"}</span> ${hodlT("dice.fairness.toggle")}</button>`;
 }
 function hodlSetDiceFairnessOpen(open) {
   let expanded = Boolean(open), state = hodlKeys[hodlActiveKey], toggle = document.getElementById("dice-fairness-toggle"), glyph = toggle?.querySelector("[data-dice-fairness-glyph]");
@@ -4022,7 +4022,7 @@ function hodlHashedCardInstruction(parsed) {
   return hodlT("cards.instruct.hashedNext");
 }
 function hodlDealtDirectCardMarkup(rank) {
-  return `<span class="dealt-card dealt-card-rank-only" title="${hodlT("cards.title.rank", { rank: hodlEscapeHtml(rank) })}"><span class="dealt-rank">${hodlEscapeHtml(rank)}</span></span>`;
+  return `<span class="dealt-card dealt-card-rank-only" title="${hodlTAttr("cards.title.rank", { rank })}"><span class="dealt-rank">${hodlEscapeHtml(rank)}</span></span>`;
 }
 function hodlUpdateDirectCards() {
   let input = document.getElementById("direct-cards");
@@ -5563,7 +5563,7 @@ function hodlSeedMetaRowMarkup(metaId, live = false) {
   return `<div class="seed-word-meta"><p class="muted" id="${metaId}"${live ? ' aria-live="polite"' : ""}></p></div>`;
 }
 function hodlSeedCopyRowMarkup(leading = "") {
-  return `<div class="seed-word-copy-row">${leading}<span class="seed-phrase-copied" aria-live="polite"></span><button type="button" class="seed-phrase-copy" data-copy-seed-phrase disabled aria-label="${hodlT("seed.copy")}" title="${hodlT("seed.copy")}">${hodlClipboardIconMarkup()}</button></div>`;
+  return `<div class="seed-word-copy-row">${leading}<span class="seed-phrase-copied" aria-live="polite"></span><button type="button" class="seed-phrase-copy" data-copy-seed-phrase disabled aria-label="${hodlTAttr("seed.copy")}" title="${hodlTAttr("seed.copy")}">${hodlClipboardIconMarkup()}</button></div>`;
 }
 function hodlShowSeedPhraseCopied(button) {
   if (!button) return;
@@ -5785,7 +5785,7 @@ function hodlRenderKeyForm() {
   hodlRenderGlobalSyncControl();
   if (hodlKeyMode === "dice") {
     let dplusFaces = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"],
-      dplusPad = dplusFaces.map(face => `<button type="button" data-d="${face}" aria-label="${hodlT("dice.d16Aria", { face })}">${face}</button>`).join("");
+      dplusPad = dplusFaces.map(face => `<button type="button" data-d="${face}" aria-label="${hodlTAttr("dice.d16Aria", { face })}">${face}</button>`).join("");
     let diceLabel = hodlDiceMethod === "dplus" ? hodlT("dice.label.dplus", { final: hodlDPlusFinalDescription(config.words) }) : hodlDiceMethod === "bitbox" ? hodlT("dice.label.bitbox") : hodlT("dice.label.hashed");
     let diceHelp = hodlDiceMethod === "dplus" ? hodlT("dice.help.dplus", { finalHelp: hodlDPlusFinalHelp(config.words) }) : hodlDiceMethod === "bitbox" ? hodlT("dice.help.bitbox", { partialWords: config.partialWords }) : hodlDiceMethod === "coleman" ? hodlT("dice.help.coleman", { hashRolls: config.hashRolls }) : hodlT("dice.help.coldcard", { hashRolls: config.hashRolls });
     let dicePlaceholder = hodlDiceMethod === "dplus" ? "100 2AF…" : hodlDiceMethod === "bitbox" ? "111111 222224\u2026" : "415263415263\u2026";
@@ -5814,7 +5814,7 @@ function hodlRenderKeyForm() {
       ${hodlDiceMethod === "bitbox" || hodlDiceMethod === "dplus" ? `<label class="seed-autocomplete-toggle manual-calculations-toggle"><input type="checkbox" id="show-manual-calculations" ${hodlManualCalculationsOpen ? "checked" : ""} /><span><strong>${hodlT("calc.show")}</strong> <span class="seed-autocomplete-note">${hodlT("calc.showDiceNote")}</span></span></label><div id="dice-manual-calculations" class="manual-calculations-container" hidden></div>` : ""}
       ${hodlSeedCopyRowMarkup(hodlDiceFairnessToggleMarkup(hodlKeys[hodlActiveKey]?.showDiceFairness))}
       <aside id="dice-fairness" class="dice-fairness" hidden role="status" aria-live="polite"></aside>
-      <div id="dice-words" class="dice-word-grid" aria-label="${hodlT("seed.wordSlotsAria", { n: config.words })}"></div><div id="last-words" class="row" style="margin-top:8px"></div>`;
+      <div id="dice-words" class="dice-word-grid" aria-label="${hodlTAttr("seed.wordSlotsAria", { n: config.words })}"></div><div id="last-words" class="row" style="margin-top:8px"></div>`;
     let input = document.getElementById("dice");
     input.dataset.previousValue = input.value;
     let fairnessToggle = document.getElementById("dice-fairness-toggle");
@@ -5888,14 +5888,14 @@ function hodlRenderKeyForm() {
       <label class="field" id="cards-input-label" for="${inputId}">${inputLabel}</label>
       <div class="dice-input-shell cards-input-shell"><pre class="dice-input-highlight" id="cards-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${placeholder}" autocomplete="off" spellcheck="false" autocapitalize="off" aria-labelledby="cards-input-label" aria-describedby="cards-help cards-meta"></textarea></div>
       ${hodlSeedMetaRowMarkup("cards-meta")}
-      ${direct ? "" : `<div class="card-suit-pad" role="group" aria-label="${hodlT("cards.suitAria")}">${suitPad}</div>`}
-      <div class="card-rank-pad dice-input-pad${direct ? " direct-card-rank-pad" : ""}" role="group" aria-label="${hodlT(direct ? "cards.rankOnlyAria" : "cards.rankAria")}">${rankPad}</div>
-      <div class="card-controls-row"><button class="card-undo-button seed-keyboard-delete" id="card-undo" type="button" aria-label="${hodlT("cards.undo")}" title="${hodlT("cards.undo")}" disabled><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button><label class="seed-autocomplete-toggle card-visibility-toggle"><input type="checkbox" id="show-cards" aria-controls="dealt-cards" ${showCards ? "checked" : ""} /><span>${hodlT("cards.show")}</span></label></div>
+      ${direct ? "" : `<div class="card-suit-pad" role="group" aria-label="${hodlTAttr("cards.suitAria")}">${suitPad}</div>`}
+      <div class="card-rank-pad dice-input-pad${direct ? " direct-card-rank-pad" : ""}" role="group" aria-label="${hodlTAttr(direct ? "cards.rankOnlyAria" : "cards.rankAria")}">${rankPad}</div>
+      <div class="card-controls-row"><button class="card-undo-button seed-keyboard-delete" id="card-undo" type="button" aria-label="${hodlTAttr("cards.undo")}" title="${hodlTAttr("cards.undo")}" disabled><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button><label class="seed-autocomplete-toggle card-visibility-toggle"><input type="checkbox" id="show-cards" aria-controls="dealt-cards" ${showCards ? "checked" : ""} /><span>${hodlT("cards.show")}</span></label></div>
       <aside class="cards-reshuffle" id="cards-reshuffle" hidden></aside>
       <div class="dealt-cards" id="dealt-cards" aria-live="polite"${showCards ? "" : " hidden"}></div>
       ${direct ? `<label class="seed-autocomplete-toggle manual-calculations-toggle"><input type="checkbox" id="show-manual-calculations" ${hodlManualCalculationsOpen ? "checked" : ""} /><span><strong>${hodlT("calc.show")}</strong> <span class="seed-autocomplete-note">${hodlT("calc.showCardsNote")}</span></span></label><div id="cards-manual-calculations" class="manual-calculations-container" hidden></div>` : ""}
       ${hodlSeedCopyRowMarkup()}
-      <div id="dice-words" class="dice-word-grid" aria-label="${hodlT("seed.wordSlotsAria", { n: config.words })}"></div>
+      <div id="dice-words" class="dice-word-grid" aria-label="${hodlTAttr("seed.wordSlotsAria", { n: config.words })}"></div>
     `;
     let input = document.getElementById(inputId);
     input.onbeforeinput = direct ? (event) => hodlHandleGroupedSeparatorDelete(input, event) : (event) => {
@@ -5979,7 +5979,7 @@ function hodlRenderKeyForm() {
       return `<label class="choice"><input type="radio" name="entropy-format" value="${id}" ${format.id === id ? "checked" : ""} /><span><strong>${hodlT(`hex.format.${id}`)}</strong><span class="desc">${hodlT(`hex.desc.${id}`)}</span></span></label>`;
     }).join("");
     let formatLabel = hodlT(`hex.format.${format.id}`), formatShort = hodlT(`hex.short.${format.id}`), formatUnit = hodlT(`hex.unit.${format.id}`);
-    let entropyPad = format.id === "base64" ? "" : `<div class="dice-input-pad entropy-keypad entropy-keypad-${format.id}" role="group" aria-label="${hodlT("hex.keypadAria", { label: formatLabel })}">${[...format.alphabet].map((character) => `<button type="button"${format.id === "bin" ? ' class="coin-button"' : ""} data-entropy-digit="${character}" aria-label="${format.id === "bin" ? character === "0" ? hodlT("hex.headsAria") : hodlT("hex.tailsAria") : hodlT("hex.enterDigit", { shortLabel: formatShort, character })}">${format.id === "bin" ? character === "0" ? hodlT("hex.heads") : hodlT("hex.tails") : character}</button>`).join("")}</div>`;
+    let entropyPad = format.id === "base64" ? "" : `<div class="dice-input-pad entropy-keypad entropy-keypad-${format.id}" role="group" aria-label="${hodlTAttr("hex.keypadAria", { label: formatLabel })}">${[...format.alphabet].map((character) => `<button type="button"${format.id === "bin" ? ' class="coin-button"' : ""} data-entropy-digit="${character}" aria-label="${format.id === "bin" ? character === "0" ? hodlTAttr("hex.headsAria") : hodlTAttr("hex.tailsAria") : hodlTAttr("hex.enterDigit", { shortLabel: formatShort, character })}">${format.id === "bin" ? character === "0" ? hodlT("hex.heads") : hodlT("hex.tails") : character}</button>`).join("")}</div>`;
     let remainderHelp = format.remainderBits ? format.binaryRemainder ? hodlT("hex.remainderBinary", { fullDigits: format.fullDigits, shortLabel: formatShort, n: format.remainderBits }) : hodlT("hex.remainderMixed", { n: format.remainderBits, chars: [...format.finalCharacters].join(", ") }) : "", base64Tools = format.id === "base64" ? `<div class="seed-entry-tools base64-entry-tools">${hodlBase64KeyboardToggleMarkup()}</div>` : "", base64Keyboard = format.id === "base64" ? hodlBase64KeyboardMarkup() : "";
     hodlFormEl.innerHTML = `
       <p class="label">${hodlT("hex.heading")}</p>
@@ -5988,13 +5988,13 @@ function hodlRenderKeyForm() {
       <p class="label" id="entropy-input-label">${format.label} entropy for a ${config.words}-word seed</p>
       <p class="muted" id="entropy-input-help">Each complete ${format.shortLabel} character contributes ${format.bitsPerDigit} bit${format.bitsPerDigit === 1 ? "" : "s"}${format.binaryRemainder ? "" : " except for a mixed-radix final character when needed"}. Seed-word cards fill as enough bits arrive; the checksum-derived final word appears when all ${format.digits} characters are entered.${format.id === "bin" ? " Spaces are added every 11 bits." : ""}${remainderHelp} No generator \u2014 enter entropy you already created.</p>
       ${base64Tools}
-      <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" id="entropy-input-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${hodlT("hex.placeholder", { digits: format.digits, unit: formatUnit })}" aria-labelledby="entropy-input-label" aria-describedby="entropy-input-help entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="${format.id === "base64" ? "off" : format.base > 10 ? "characters" : "off"}"></textarea></div>
+      <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" id="entropy-input-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${hodlTAttr("hex.placeholder", { digits: format.digits, unit: formatUnit })}" aria-labelledby="entropy-input-label" aria-describedby="entropy-input-help entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="${format.id === "base64" ? "off" : format.base > 10 ? "characters" : "off"}"></textarea></div>
       ${hodlSeedMetaRowMarkup("entropy-meta", true)}
       ${base64Keyboard}
       ${entropyPad}
       <div id="number-base-calculations" class="number-base-calculations-panel" hidden></div>
       ${hodlSeedCopyRowMarkup()}
-      <div id="entropy-words" class="dice-word-grid" aria-label="${hodlT("seed.wordSlotsAria", { n: config.words })}"></div>`;
+      <div id="entropy-words" class="dice-word-grid" aria-label="${hodlTAttr("seed.wordSlotsAria", { n: config.words })}"></div>`;
     hodlFormEl.querySelectorAll('input[name="entropy-format"]').forEach((radio) => {
       radio.onchange = () => {
         let state2 = hodlKeys[hodlActiveKey], previous = document.getElementById(hodlEntropyFormat);
@@ -6055,7 +6055,7 @@ function hodlRenderKeyForm() {
     });
     if (numbers) {
       let range = hodlT(hodlSeedZeroIndexed ? "seed.range0" : "seed.range1");
-      hodlFormEl.innerHTML = `${choices}<p class="label" id="seed-number-label">${hodlT("seed.numbersLabel", { words: config.words })}</p><p class="muted" id="seed-number-help">${hodlT("seed.numbersHelp", { range })}</p><label class="seed-autocomplete-toggle seed-zero-index-toggle"><input type="checkbox" id="seed-zero-index" ${hodlSeedZeroIndexed ? "checked" : ""} /><span><strong>${hodlT("seed.zeroIndex")}</strong> <span class="seed-autocomplete-note">${hodlT("seed.zeroIndexNote")}</span></span></label><div class="dice-input-shell seed-number-input-shell"><pre class="dice-input-highlight" id="seed-number-highlight" aria-hidden="true"></pre><textarea id="seed-numbers" inputmode="numeric" placeholder="${hodlT(hodlSeedZeroIndexed ? "seed.numbersPlaceholder0" : "seed.numbersPlaceholder1")}" aria-labelledby="seed-number-label" aria-describedby="seed-number-help seed-number-meta" autocomplete="off" spellcheck="false"></textarea></div>${hodlSeedMetaRowMarkup("seed-number-meta", true)}<div class="dice-input-pad seed-number-pad" role="group" aria-label="${hodlT("seed.numberKeypadAria")}">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => `<button type="button" data-seed-number-digit="${digit}" aria-label="${hodlT("seed.enterDigit", { n: digit })}">${digit}</button>`).join("")}<button type="button" class="seed-keyboard-delete seed-number-delete" data-seed-number-delete aria-label="${hodlT("seed.deleteDigit")}"><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button><button type="button" class="seed-number-next" data-seed-number-space>${hodlT("seed.nextWord")}</button></div>${hodlSeedCopyRowMarkup()}<div id="seed-number-words" class="dice-word-grid" aria-label="${hodlT("seed.wordSlotsAria", { n: config.words })}"></div>`;
+      hodlFormEl.innerHTML = `${choices}<p class="label" id="seed-number-label">${hodlT("seed.numbersLabel", { words: config.words })}</p><p class="muted" id="seed-number-help">${hodlT("seed.numbersHelp", { range })}</p><label class="seed-autocomplete-toggle seed-zero-index-toggle"><input type="checkbox" id="seed-zero-index" ${hodlSeedZeroIndexed ? "checked" : ""} /><span><strong>${hodlT("seed.zeroIndex")}</strong> <span class="seed-autocomplete-note">${hodlT("seed.zeroIndexNote")}</span></span></label><div class="dice-input-shell seed-number-input-shell"><pre class="dice-input-highlight" id="seed-number-highlight" aria-hidden="true"></pre><textarea id="seed-numbers" inputmode="numeric" placeholder="${hodlTAttr(hodlSeedZeroIndexed ? "seed.numbersPlaceholder0" : "seed.numbersPlaceholder1")}" aria-labelledby="seed-number-label" aria-describedby="seed-number-help seed-number-meta" autocomplete="off" spellcheck="false"></textarea></div>${hodlSeedMetaRowMarkup("seed-number-meta", true)}<div class="dice-input-pad seed-number-pad" role="group" aria-label="${hodlTAttr("seed.numberKeypadAria")}">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => `<button type="button" data-seed-number-digit="${digit}" aria-label="${hodlTAttr("seed.enterDigit", { n: digit })}">${digit}</button>`).join("")}<button type="button" class="seed-keyboard-delete seed-number-delete" data-seed-number-delete aria-label="${hodlTAttr("seed.deleteDigit")}"><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button><button type="button" class="seed-number-next" data-seed-number-space>${hodlT("seed.nextWord")}</button></div>${hodlSeedCopyRowMarkup()}<div id="seed-number-words" class="dice-word-grid" aria-label="${hodlTAttr("seed.wordSlotsAria", { n: config.words })}"></div>`;
       let input = document.getElementById("seed-numbers"), update = () => {
         let parsed = hodlRenderSeedNumberInputState(input, config.words, hodlSeedZeroIndexed), meta = hodlElement("#seed-number-meta"), entered = parsed.entries.length, progress = hodlT("seed.meta.numberProgress", { entered, words: config.words }), remaining = Math.max(0, config.words - entered);
         hodlRenderDiceWordGrid(document.getElementById("seed-number-words"), parsed.wordSlots, config.words, false);
@@ -6203,7 +6203,7 @@ function hodlRenderKeyForm() {
     <p class="label" id="private-key-input-label">${hodlT("key.inputLabel")}</p>
     <p class="muted" id="private-key-input-help">${hodlT("key.inputHelp")}</p>
     ${hodlPrivateKeyKeyboardToggleMarkup()}
-    <div class="dice-input-shell private-key-input-shell"><pre class="dice-input-highlight" id="private-key-highlight" aria-hidden="true"></pre><textarea id="key" placeholder="${hodlT("key.placeholderWif")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-input-help private-key-meta"></textarea></div><p class="muted" id="private-key-meta" aria-live="polite"></p><div class="passphrase-keyboard-host" id="private-keyboard-host" hidden></div></div>`;
+    <div class="dice-input-shell private-key-input-shell"><pre class="dice-input-highlight" id="private-key-highlight" aria-hidden="true"></pre><textarea id="key" placeholder="${hodlTAttr("key.placeholderWif")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-input-help private-key-meta"></textarea></div><p class="muted" id="private-key-meta" aria-live="polite"></p><div class="passphrase-keyboard-host" id="private-keyboard-host" hidden></div></div>`;
   hodlBindKeyFields();
   hodlRenderPassphraseKeyboard();
 }

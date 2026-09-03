@@ -3389,6 +3389,26 @@
     assert(/<span class="mono">/.test(intro), "Allowlisted catalog markup was stripped");
     host.innerHTML = intro;
     assert(host.querySelector("span.mono"), "Allowlisted catalog markup did not render");
+
+    // Placeholders are untrusted too. Sanitizing only the catalog before
+    // substitution would let a hostile variable create executable markup.
+    delete window.__entropyLabPwned;
+    const placeholderAttack = '<img src=x onerror="window.__entropyLabPwned = true">';
+    host.innerHTML = window.hodlT("seedLength.words", { n: placeholderAttack });
+    assert(!host.querySelector("img"), "An interpolated img element reached innerHTML");
+    assert(host.textContent.includes(placeholderAttack), "The rejected placeholder markup was not kept as visible text");
+    assert(window.__entropyLabPwned !== true, "An interpolated placeholder executed script");
+
+    // Translation text used inside quoted template attributes needs its own
+    // encoding boundary so quotes cannot break out into new attributes.
+    const attributeAttack = '" hidden style="display:none" onfocus="window.__entropyLabPwned = true';
+    host.innerHTML = `<input aria-label="${window.hodlTAttr("seedLength.words", { n: attributeAttack })}">`;
+    const input = host.querySelector("input");
+    assert(input, "The attribute test input was not created");
+    equal(input.getAttribute("aria-label"), `${attributeAttack} words`);
+    assert(!input.hasAttribute("hidden"), "A translated quote created a hidden attribute");
+    assert(!input.hasAttribute("style"), "A translated quote created a style attribute");
+    assert(!input.hasAttribute("onfocus"), "A translated quote created an event handler attribute");
   });
 
   report("online-results.txt");

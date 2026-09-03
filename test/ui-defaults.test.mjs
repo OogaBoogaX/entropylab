@@ -401,7 +401,7 @@ test("dealt playing cards use theme-appropriate surfaces", () => {
 });
 
 test("card undo uses the keyboard delete icon and one rank-grid column", () => {
-  assert.match(app, /class="card-undo-button seed-keyboard-delete" id="card-undo"[^>]*aria-label="\$\{hodlT\("cards.undo"\)\}"[^>]*><svg viewBox="0 0 24 18"/);
+  assert.match(app, /class="card-undo-button seed-keyboard-delete" id="card-undo"[^>]*aria-label="\$\{hodlTAttr\("cards.undo"\)\}"[^>]*><svg viewBox="0 0 24 18"/);
   assert.match(appSource, /function hodlSetInputValueAtEnd\(input, value\)/);
   assert.match(appSource, /hodlSetInputValueAtEnd\(input, value\);\s*input\.dispatchEvent\(new Event\("input"\)\)/);
   assert.match(css, /\.card-controls-row \{[\s\S]*?grid-template-columns: repeat\(7, minmax\(0, 1fr\)\)/);
