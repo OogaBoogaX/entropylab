@@ -1160,7 +1160,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .segmented-control.is-stacked > .tab:first-child { border-radius: 8px 8px 0 0; }
 .segmented-control.is-stacked > .tab:last-child { border-radius: 0 0 8px 8px; }
 .segmented-control.is-stacked > .tab:only-child { border-radius: 8px; }
-#msig-card[hidden], #calc-card[hidden], #psbt-card[hidden], #psbted-card[hidden], #bip85-card[hidden], #sp-card[hidden], #vanity-card[hidden] { display: none !important; }
+#msig-card[hidden], #calc-card[hidden], #psbt-card[hidden], #psbted-card[hidden], #bip85-card[hidden], #sp-card[hidden], #bip47-card[hidden], #vanity-card[hidden] { display: none !important; }
 #calc-card:not([hidden]), #msig-card:not([hidden]), #bip85-card:not([hidden]), #sp-card:not([hidden]), #psbt-card:not([hidden]), #psbted-card:not([hidden]), #vanity-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
 #journal-card[hidden], #journal-notes-card[hidden], #journal-state-card[hidden], #journal-log-card[hidden] { display: none !important; }
 #journal-card:not([hidden]), #journal-notes-card:not([hidden]), #journal-state-card:not([hidden]), #journal-log-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
@@ -1500,9 +1500,9 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 .exp-card textarea[readonly] { color: var(--muted); }
 .exp-actions { margin-top: var(--space-component); }
-.sp-result, .sp-output { margin-top: var(--space-component); }
-.sp-qr { width: min(220px, 100%); margin: var(--space-control) 0; }
-.sp-qr svg { width: 100%; height: auto; display: block; background: #fff; border-radius: 8px; }
+.sp-result, .sp-output, .bip47-result, .bip47-output { margin-top: var(--space-component); }
+.sp-qr, .bip47-qr { width: min(220px, 100%); margin: var(--space-control) 0; }
+.sp-qr svg, .bip47-qr svg { width: 100%; height: auto; display: block; background: #fff; border-radius: 8px; }
 .key-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .key-panel-head #modes { flex: 1 1 auto; min-width: 0; }
 .seed-length-control { margin-top: var(--space-section); padding-top: var(--space-component); border-top: 1px solid var(--border); }

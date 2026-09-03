@@ -146,9 +146,15 @@ test("a public snapshot names fingerprints and omits secrets unless asked", () =
     msigs: [],
     bip85: [{ name: "child", fingerprint: "deadbeef", app: "BIP-39", secret: "abandon abandon abandon" }],
     sp: { derived: false },
+    bip47: { derived: true, fingerprint: "a1b2c3d4", paymentCode: "PM8Texample", notificationAddress: "1Notification" },
     psbt: { loaded: false },
   });
   assert.match(publicText, /Updated: 2026-09-02 10:00:00/);
+  // A payment code and its notification address are published by design, so
+  // the public snapshot carries them; the seed behind them never appears.
+  assert.match(publicText, /BIP-47/);
+  assert.match(publicText, /PM8Texample/);
+  assert.match(publicText, /notification 1Notification/);
   assert.match(publicText, /fingerprint a1b2c3d4/);
   assert.doesNotMatch(publicText, /abandon abandon abandon/);
   let privateText = snapshotSession({

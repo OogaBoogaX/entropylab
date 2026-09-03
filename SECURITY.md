@@ -74,6 +74,17 @@ material. Its security posture rests on the following model:
   addresses, sender outputs, and spend tweaks from user-supplied keys and
   pasted transaction data. It does not connect to a node, Electrum server, or
   indexer, and cannot detect payments on its own.
+- BIP-47 reusable payment codes are a calculator too: payment codes,
+  notification addresses, ECDH payment addresses, notification blinding and
+  unblinding, and address verification are computed from user-supplied keys and
+  pasted notification data. It does not scan the chain, query an indexer, build
+  or sign a notification transaction, or broadcast one, and a miss when
+  verifying an address only means it was not in the window derived here.
+  Watch-only material yields the payment code and notification address and
+  nothing else; the shared secret needs a private key. Coins paid to a
+  notification address are a first-contact marker, and BIP-47 requires that
+  they be kept out of the spendable balance and out of any input set used for
+  these ECDH calculations.
 - Inscription envelope detection is a parser of witness/tap-leaf scripts. It
   does not render inscription media, assign sat numbers, or contact an indexer.
 - PSBT analysis is explicitly bounded. EntropyLab does not independently fetch

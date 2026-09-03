@@ -1574,7 +1574,7 @@ test("virtual keypads never focus the field on touch so the mobile keyboard stay
 });
 
 test("workspace tabs place Vanity between Keys and BIP-85", () => {
-  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
+  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["bip47", "workspace\.bip47", "workspace\.bip47Short"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="bip85-card"/);
     assert.match(markup, /id="bip85-go"/);
@@ -1829,7 +1829,7 @@ test("BIP-85 stays available as a workspace without a duplicate Key Station acti
 test("Silent Payments sits between Multi Signature and PSBT / Nonce", () => {
   const order = /Keys[\s\S]*Multi Signature[\s\S]*Silent Payments[\s\S]*aria-label="PSBT"/;
   assert.match(template, order);
-  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
+  assert.match(appSource, /\["calc", "workspace\.key", "workspace\.keyShort"\], \["vanity", "workspace\.vanity", "workspace\.vanityShort"\], \["bip85", "workspace\.bip85", "workspace\.bip85Short"\], \["msig", "workspace\.msig", "workspace\.msigShort"\], \["sp", "workspace\.sp", "workspace\.spShort"\], \["bip47", "workspace\.bip47", "workspace\.bip47Short"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
   for (const markup of [template, appSource]) {
     assert.match(markup, /id="sp-card"/);
     assert.match(markup, /id="sp-key"/);
@@ -1857,6 +1857,56 @@ test("Silent Payments has a connected SP Station with a monochrome coin-and-sign
     assert.match(markup, /id="sp-tabs"/);
   }
   assert.doesNotMatch(template, /aria-label="Silent Payments"><span class="workspace-tab-icon/);
+});
+
+test("BIP-47 sits between Silent Payments and PSBT / Nonce", () => {
+  const order = /Silent Payments[\s\S]*BIP-47[\s\S]*aria-label="PSBT"/;
+  assert.match(template, order);
+  assert.match(appSource, /\["sp", "workspace\.sp", "workspace\.spShort"\], \["bip47", "workspace\.bip47", "workspace\.bip47Short"\], \["psbt", "workspace\.psbt", "workspace\.psbtShort"\]/);
+  for (const markup of [template, appSource]) {
+    assert.match(markup, /id="bip47-card"/);
+    assert.match(markup, /id="bip47-key"/);
+    assert.match(markup, /id="bip47-network"/);
+    assert.match(markup, /id="bip47-identity"/);
+    assert.match(markup, /id="bip47-derive"/);
+    assert.match(markup, /id="bip47-send-go"/);
+    assert.match(markup, /id="bip47-notify-go"/);
+    assert.match(markup, /id="bip47-verify-go"/);
+    assert.match(markup, /BIP-47/);
+  }
+  assert.match(css, /#bip47-card\[hidden\]/);
+  assert.equal(en["workspace.bip47"], "BIP-47");
+  assert.equal(en["workspace.bip47Short"], "BIP47");
+});
+
+test("BIP-47 has a connected Station and states that it never scans the chain", () => {
+  assert.match(appSource, /function hodlCreateBip47Icon\(\) \{/);
+  assert.match(appSource, /span\.className = "key-tab-icon key-tab-lab-icon bip47-bench-icon bench-tab-icon"/);
+  assert.match(appSource, /function hodlInitBip47Bench\(\) \{/);
+  assert.match(appSource, /label\.textContent = "BIP-47 Station";/);
+  assert.match(appSource, /button\.append\(hodlCreateBip47Icon\(\), label\);/);
+  for (const markup of [template, appSource]) {
+    assert.match(markup, /id="bip47-manager"/);
+    assert.match(markup, /id="bip47-tabs"/);
+  }
+  // The tab is a calculator: it must say so, and must never fetch or broadcast.
+  assert.match(appSource, /Educational calculator only/);
+  assert.match(appSource, /does not scan the chain/);
+  assert.match(appSource, /Receiving the coins still needs a node or a wallet somewhere else/);
+  assert.doesNotMatch(appSource, /fetch\(\s*["'`]https?:/);
+});
+
+test("BIP-47 refuses child secrets without private material", () => {
+  const bip47 = read("src/js/bip47.js");
+  // Watch-only means the public half only: the ECDH steps need a private key
+  // and must say so rather than returning something derived from nothing.
+  assert.match(bip47, /Receive addresses need the recipient's private payment code node/);
+  assert.match(bip47, /watch-only material cannot produce them/i);
+  assert.match(appSource, /The m\/47h path is hardened, so a root xpub cannot reach it/);
+  assert.match(appSource, /Watch-only material cannot derive these addresses/);
+  // No CSPRNG anywhere in the scheme layer, and no network of any kind.
+  assert.doesNotMatch(bip47, /Math\.random|getRandomValues/);
+  assert.doesNotMatch(bip47, /fetch\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage/);
 });
 
 test("the workspace switcher keeps every tool on screen as a tab strip", () => {
@@ -2180,7 +2230,7 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
   // The tab rides the same show/hide plumbing as every other tool, and
   // leaving the tab stops the grind instead of grinding unseen.
   assert.match(appSource, /getElementById\("vanity-card"\)\.hidden = id !== "vanity"/);
-  assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity"\]\.forEach/);
+  assert.match(appSource, /\["bip85", "sp", "bip47", "msig", "calc", "vanity"\]\.forEach/);
   assert.match(appSource, /else if \(hodlWorkspace === "vanity"\) hodlVanityCancel\(\);/);
   assert.match(appSource, /function hodlInitWorkspace\(\) \{[\s\S]*?hodlInitVanity\(\);/);
   // The workers spawn only from the button handler; nothing starts on boot,

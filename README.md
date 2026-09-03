@@ -110,6 +110,17 @@ Official website: [entropylab.online](https://entropylab.online)
   root xprv, including labeled codes, BIP-392 `spscan` / `spspend` descriptors,
   sender taproot outputs from pasted vin JSON, and receiver verification of
   pasted x-only outputs. This is a calculator: it does not scan the chain.
+- Derives BIP-47 reusable payment codes (`PM8T…`) from a seed, a root xprv, or
+  a pasted payment code node, with the notification address and the 80-byte
+  binary payload alongside. Works out the P2PKH addresses a sender and
+  recipient pair produces in either direction, blinds a payment code into the
+  80-byte OP_RETURN payload of a notification transaction, recovers a sender's
+  payment code from pasted notification data, and checks a pasted address
+  against a derived window. An xpub gives the watch-only half — payment code
+  and notification address — and every ECDH step is refused without private
+  material. This is a calculator: it does not scan the chain, look anything up,
+  build or sign a transaction, or broadcast one. Receiving still needs a node
+  or a wallet elsewhere. Matches the test vectors linked from BIP-47.
 - Grinds vanity addresses for a Key Station key (Vanity tab), picked through
   the same chip picker as BIP-85 and Silent Payments. Two methods: the
   **passphrase grind** extends the key's BIP39 passphrase with base-62

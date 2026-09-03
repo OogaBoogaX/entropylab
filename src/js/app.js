@@ -17,6 +17,25 @@ import {
   spendPrivForOutput,
   bytesToHex as hodlSpBytesToHex,
 } from "./bip352.js";
+import {
+  blindPaymentCode as hodlBip47Blind,
+  coinTypeForNetwork as hodlBip47CoinType,
+  decodePaymentCode as hodlBip47Decode,
+  derivePaymentCodeKeys as hodlBip47Keys,
+  deriveReceiveAddresses as hodlBip47Receive,
+  deriveSendAddresses as hodlBip47Send,
+  findDerivedAddress as hodlBip47Find,
+  notificationAddress as hodlBip47NotificationAddress,
+  paymentCodeKeysFromAccountNode as hodlBip47AccountKeys,
+  paymentCodeNode as hodlBip47Node,
+  paymentCodePath as hodlBip47Path,
+  paymentCodePayloadFromScript as hodlBip47PayloadFromScript,
+  serializeOutpoint as hodlBip47Outpoint,
+  unblindPaymentCode as hodlBip47Unblind,
+  bytesToHex as hodlBip47BytesToHex,
+  hexToBytes as hodlBip47HexToBytes,
+  wipeBytes as hodlBip47Wipe,
+} from "./bip47.js";
 import { inspectPsbtInscriptions, describeEnvelope } from "./inscription.js";
 import { parseOpReturn, describeOpReturn } from "./opreturn.js";
 import { parseRawTx, extractEcdsaSignatures, inscriptionHints, isPsbtMagic, serializeTx } from "./tx.js";
@@ -998,6 +1017,146 @@ hodlRootEl.innerHTML = `
       </div>
       <p class="err" id="sp-error" role="alert"></p>
       <div id="sp-out" aria-live="polite"></div>
+      <p class="muted">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+    </section>
+    <div class="tool-intro" id="bip47-tool-intro" hidden>
+        <div class="kicker">BIP-47 · one code you can publish</div>
+        <h2>Reusable Payment Codes</h2>
+        <p class="muted tool-intro-note">Educational calculator only. Derive a <code>PM8T…</code> payment code and its notification address from a key you already have, work out the addresses a payment code pair produces, and check a pasted address against that derivation. It does not scan the chain, does not look anything up, and does not broadcast: a notification transaction is pasted in as data. Receiving the coins still needs a node or a wallet somewhere else.</p>
+      </div>
+      <section class="key-manager no-print" id="bip47-manager" hidden>
+        <div class="key-tab-strip"><div class="key-tabs" id="bip47-tabs" role="tablist" aria-label="BIP-47"></div></div>
+      </section>
+      <section class="card no-print" id="bip47-card" role="tabpanel" hidden>
+      <div class="row no-print segmented-control" id="bip47-modes">
+        <button class="tab active" type="button" data-bip47-mode="code" aria-pressed="true">My code</button>
+        <button class="tab" type="button" data-bip47-mode="send" aria-pressed="false">Send</button>
+        <button class="tab" type="button" data-bip47-mode="notify" aria-pressed="false">Notification</button>
+        <button class="tab" type="button" data-bip47-mode="verify" aria-pressed="false">Verify</button>
+      </div>
+      <div class="station-key-source">
+        <p class="label">Bring in a key from Key Station</p>
+        <div class="session-key-picker" id="bip47-session-keys" role="group" aria-label="Compatible Key Station keys" hidden></div>
+        <p class="field-note">Choose a compatible HD-root key from this session, or enter a seed phrase, a root xprv/tprv, or a watch-only xpub/tpub below.</p>
+      </div>
+      <div class="psbt-grid">
+        <label class="field">Session key (BIP39 seed phrase, root xprv/tprv, or an xpub/tpub for watch-only)
+          <textarea id="bip47-key" placeholder="Enter a seed phrase, a root xprv/tprv, or an xpub/tpub" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <div>
+          <label class="field">Optional BIP39 passphrase
+            <input id="bip47-pass" autocomplete="off" placeholder="Enter a BIP39 passphrase, or leave blank for none">
+          </label>
+          <label class="field">Address network
+            <select id="bip47-network"><option value="mainnet" selected>Bitcoin mainnet</option><option value="testnet">Testnet (practice)</option></select>
+          </label>
+          <label class="field">Identity
+            <input id="bip47-identity" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+            <span class="field-note">The identity level of <code>m/47h/coin_typeh/identityh</code>. BIP-47 pairs it with the BIP-44 account at the same index.</span>
+          </label>
+        </div>
+      </div>
+      <div class="row psbt-actions">
+        <button class="btn secondary" id="bip47-wipe" type="button">End session / clear fields</button>
+      </div>
+      <p class="muted" id="bip47-session" aria-live="polite">No session key. A payment code needs a seed, a root xprv, or an xpub.</p>
+      <div id="bip47-code">
+        <div class="row psbt-actions">
+          <button class="btn primary" id="bip47-derive" type="button">Derive payment code</button>
+        </div>
+        <p class="field-note">Publish the payment code. The notification address is where a first-time sender tells you they exist; do not treat coins landing there as spendable balance.</p>
+      </div>
+      <div id="bip47-send" hidden>
+        <label class="field">Recipient payment code
+          <textarea id="bip47-recipient" placeholder="PM8T…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <div class="psbt-grid">
+          <label class="field">First index
+            <input id="bip47-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+          </label>
+          <label class="field">How many
+            <input id="bip47-count" type="number" min="1" max="1000" step="1" inputmode="numeric" value="10">
+            <span class="field-note">The index belongs to this sender and recipient pair, not to either wallet on its own.</span>
+          </label>
+        </div>
+        <div class="row psbt-actions">
+          <button class="btn primary" id="bip47-send-go" type="button">Derive payment addresses</button>
+        </div>
+        <details class="msig-advanced" id="bip47-blind-advanced">
+          <summary>Blind my payment code for a notification transaction</summary>
+          <p class="field-note">Builds the 80 byte OP_RETURN payload only. It does not select inputs, build a transaction, sign, or broadcast. Do that in a wallet.</p>
+          <label class="field">Designated input private key (WIF or 64-character hex)
+            <input id="bip47-designated-key" autocomplete="off" placeholder="The key behind the first input that exposes a pubkey">
+          </label>
+          <div class="psbt-grid">
+            <label class="field">Designated input txid
+              <input id="bip47-outpoint-txid" autocomplete="off" spellcheck="false" placeholder="64-character txid as displayed">
+            </label>
+            <label class="field">Designated input vout
+              <input id="bip47-outpoint-vout" type="number" min="0" max="4294967295" step="1" inputmode="numeric" value="0">
+            </label>
+          </div>
+          <div class="row psbt-actions">
+            <button class="btn primary" id="bip47-blind-go" type="button">Blind payment code</button>
+          </div>
+        </details>
+      </div>
+      <div id="bip47-notify" hidden>
+        <p class="field-note">Paste what a notification transaction already contains. Nothing is fetched.</p>
+        <label class="field">Blinded payload (80-byte payload or the whole OP_RETURN script, hex)
+          <textarea id="bip47-payload" placeholder="6a4c5001000206…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <label class="field">Designated pubkey (33-byte compressed hex)
+          <input id="bip47-designated-pub" autocomplete="off" spellcheck="false" placeholder="The first pubkey pushed by the first input that exposes one">
+        </label>
+        <div class="psbt-grid">
+          <label class="field">Designated input txid
+            <input id="bip47-notify-txid" autocomplete="off" spellcheck="false" placeholder="64-character txid as displayed">
+          </label>
+          <label class="field">Designated input vout
+            <input id="bip47-notify-vout" type="number" min="0" max="4294967295" step="1" inputmode="numeric" value="0">
+          </label>
+        </div>
+        <div class="psbt-grid">
+          <label class="field">First index
+            <input id="bip47-notify-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+          </label>
+          <label class="field">How many
+            <input id="bip47-notify-count" type="number" min="1" max="1000" step="1" inputmode="numeric" value="10">
+          </label>
+        </div>
+        <div class="row psbt-actions">
+          <button class="btn primary" id="bip47-notify-go" type="button">Recover code and derive receive addresses</button>
+        </div>
+      </div>
+      <div id="bip47-verify" hidden>
+        <label class="field">Address to check
+          <input id="bip47-verify-address" autocomplete="off" spellcheck="false" placeholder="1…">
+        </label>
+        <label class="field">Counterparty payment code
+          <textarea id="bip47-verify-code" placeholder="PM8T…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <label class="field">Direction
+          <select id="bip47-verify-direction">
+            <option value="send" selected>Addresses I would pay them</option>
+            <option value="receive">Addresses they would pay me</option>
+          </select>
+        </label>
+        <div class="psbt-grid">
+          <label class="field">First index
+            <input id="bip47-verify-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+          </label>
+          <label class="field">How many
+            <input id="bip47-verify-count" type="number" min="1" max="1000" step="1" inputmode="numeric" value="20">
+          </label>
+        </div>
+        <div class="row psbt-actions">
+          <button class="btn primary" id="bip47-verify-go" type="button">Check address</button>
+        </div>
+        <p class="field-note">This checks the address against the window derived here. It is not a chain lookup and says nothing about whether the address was ever used.</p>
+      </div>
+      <p class="err" id="bip47-error" role="alert"></p>
+      <div id="bip47-out" aria-live="polite"></div>
       <p class="muted">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
     </section>
     <div class="tool-intro-stack" id="psbt-tool-intros" hidden>
@@ -7745,6 +7904,7 @@ function hodlFillStationKeyPicker(id, selectedSource, onSelect, keys = hodlSessi
 function hodlRefreshStationKeyPickers() {
   hodlFillStationKeyPicker("bip85-session-keys", hodlBip85Source, hodlPickBip85SessionKey);
   hodlFillStationKeyPicker("sp-session-keys", hodlSpSource, hodlPickSpSessionKey);
+  hodlFillStationKeyPicker("bip47-session-keys", hodlBip47Source, hodlPickBip47SessionKey);
   hodlFillStationKeyPicker("vanity-session-keys", hodlVanitySource, hodlPickVanitySessionKey, hodlVanitySourceKeys());
   // The selected key's passphrase and path may have changed on the Keys tab.
   hodlVanitySyncSource();
@@ -9797,6 +9957,411 @@ function hodlInitSp() {
   });
   hodlSpSetMode("receive");
 }
+var hodlBip47Hd = null, hodlBip47Kind = "", hodlBip47Result = null,
+    hodlBip47Note = "No session key. A payment code needs a seed, a root xprv, or an xpub.",
+    hodlBip47Mode = "code", hodlBip47Reveal = false, hodlBip47Source = "";
+function hodlBip47WipeResult() {
+  // The notification private key is the one secret a derive hands back; the
+  // 80-byte payload and the addresses beside it are public.
+  if (hodlBip47Result?.notificationPrivateKey) {
+    try { hodlBip47Wipe(hodlBip47Result.notificationPrivateKey); } catch {}
+  }
+  hodlBip47Result = null;
+}
+function hodlBip47WipeKeys() {
+  hodlBip47WipeResult();
+  if (hodlBip47Hd) {
+    try { hodlBip47Hd.wipePrivateData(); } catch {}
+  }
+  hodlBip47Hd = null;
+  hodlBip47Kind = "";
+  hodlBip47Source = "";
+  hodlBip47Note = "No session key. A payment code needs a seed, a root xprv, or an xpub.";
+}
+function hodlBip47WipeMem() {
+  hodlBip47WipeKeys();
+  hodlBip47Reveal = false;
+}
+function hodlBip47Network() {
+  return document.getElementById("bip47-network")?.value === "testnet" ? "testnet" : "mainnet";
+}
+function hodlBip47Identity() {
+  let value = Number(document.getElementById("bip47-identity")?.value || 0);
+  if (!Number.isInteger(value) || value < 0 || value > 0x7fffffff) throw new Error("Identity index must be an integer between 0 and 2147483647.");
+  return value;
+}
+function hodlBip47ReadCount(id, fallback) {
+  let field = document.getElementById(id);
+  let value = Number(field?.value ?? fallback);
+  if (!Number.isInteger(value) || value < 1 || value > 1000) throw new Error("Derive between 1 and 1000 addresses at a time.");
+  return value;
+}
+function hodlBip47ReadIndex(id) {
+  let value = Number(document.getElementById(id)?.value || 0);
+  if (!Number.isInteger(value) || value < 0 || value > 0x7fffffff) throw new Error("The first index must be an integer between 0 and 2147483647.");
+  return value;
+}
+function hodlBip47LoadKey(text, passphrase) {
+  hodlBip47WipeKeys();
+  let value = String(text || "").trim();
+  if (!value) throw new Error("Paste a BIP39 seed phrase, a BIP32 root xprv/tprv, or an xpub/tpub.");
+  let compact = value.replace(/\s/g, "");
+  if (/^[xt](prv|pub)[1-9A-HJ-NP-Za-km-z]+$/.test(compact)) {
+    let parsed = hodlParseExtendedKey(compact);
+    if (parsed.node.depth !== 0 && parsed.node.depth !== 3) {
+      throw new Error("BIP-47 needs a BIP32 root key (depth 0) or the payment code node at m/47h/coin_typeh/identityh (depth 3).");
+    }
+    hodlBip47Hd = parsed.node;
+    hodlBip47Kind = parsed.node.depth === 0 ? "root" : "account";
+    hodlBip47Source = "manual";
+    hodlBip47Note = parsed.isPrivate
+      ? `Session key: ${hodlBip47Kind === "root" ? "root" : "payment code node"} ${parsed.prefix}. Kept in page memory only.`
+      : `Watch-only session key: ${parsed.prefix}. Payment code and notification address only; no child secrets.`;
+    return;
+  }
+  let mnemonic = hodlValidateMnemonic(value);
+  if (!mnemonic.ok) {
+    if (mnemonic.error?.key) throw hodlError(mnemonic.error.key, mnemonic.error.vars);
+    throw hodlError("psbt.error.enterSeedOrRoot");
+  }
+  let seed = hodlMnemonicToSeed(mnemonic.words.join(" "), passphrase || "");
+  try {
+    hodlBip47Hd = hodlHDKey.fromMasterSeed(seed);
+  } finally {
+    seed.fill(0);
+  }
+  hodlBip47Kind = "root";
+  hodlBip47Source = "manual";
+  hodlBip47Note = "Session key: BIP39 seed" + (passphrase ? " + passphrase" : "") + ". Kept in page memory only.";
+}
+function hodlBip47UseKey(state) {
+  if (!state || !state.result) throw new Error("Derive a key in Key Station first, then return to BIP-47 Station.");
+  let result = state.result;
+  hodlBip47WipeKeys();
+  if (result.kind === "hd" && result.mnemonic) {
+    let seed = hodlMnemonicToSeed(result.mnemonic, state.fields.pass || "");
+    try { hodlBip47Hd = hodlHDKey.fromMasterSeed(seed); } finally { seed.fill(0); }
+    hodlBip47Note = "Session key from " + (state.name || "Key Station key") + " (BIP39 seed). Kept in page memory only.";
+  } else if (result.kind === "hd" && result.rootXprv) {
+    hodlBip47Hd = hodlHDKey.fromExtendedKey(hodlParseExtendedKey(result.rootXprv).xkey);
+    hodlBip47Note = "Session key from " + (state.name || "Key Station key") + " (root xprv). Kept in page memory only.";
+  } else throw new Error("BIP-47 Station needs the Key Station key's seed or root xprv. Account-level and single keys cannot derive m/47h.");
+  hodlBip47Kind = "root";
+  hodlBip47Source = "key:" + state.id;
+}
+function hodlPickBip47SessionKey(state) {
+  let error = document.getElementById("bip47-error");
+  if (error) error.textContent = "";
+  try {
+    hodlBip47UseKey(state);
+    document.getElementById("bip47-key").value = state.result?.mnemonic || state.result?.rootXprv || "";
+    document.getElementById("bip47-pass").value = state.result?.mnemonic ? state.fields?.pass || "" : "";
+    document.getElementById("bip47-session").textContent = hodlBip47Note;
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+  }
+  hodlRefreshStationKeyPickers();
+}
+function hodlBip47EnsureHd() {
+  let manual = document.getElementById("bip47-key")?.value;
+  if (manual && manual.trim()) {
+    if (!hodlBip47Hd || !hodlBip47Source.startsWith("key:")) hodlBip47LoadKey(manual, document.getElementById("bip47-pass")?.value);
+    hodlRefreshStationKeyPickers();
+  }
+  if (!hodlBip47Hd) throw new Error("Choose a compatible Key Station key, or enter a BIP39 seed, a root xprv, or an xpub.");
+  document.getElementById("bip47-session").textContent = hodlBip47Note;
+}
+function hodlBip47DeriveResult() {
+  hodlBip47EnsureHd();
+  hodlBip47WipeResult();
+  let network = hodlBip47Network(), coinType = hodlBip47CoinType(network), identity = hodlBip47Identity();
+  if (hodlBip47Kind === "account") {
+    hodlBip47Result = hodlBip47AccountKeys(hodlBip47Hd, { coinType, identity, network });
+  } else {
+    // m/47h is hardened, so a root xpub can never reach the payment code node.
+    if (!hodlBip47Hd.privateKey) throw new Error("The m/47h path is hardened, so a root xpub cannot reach it. Paste the payment code node itself (an xpub at depth 3) for watch-only use.");
+    hodlBip47Result = hodlBip47Keys(hodlBip47Hd, { coinType, identity, network });
+  }
+  return hodlBip47Result;
+}
+// Runs fn with the private payment code node. A root derives a throwaway copy
+// that is wiped straight after; a pasted account node is the session's own and
+// is left alone.
+function hodlBip47WithAccountNode(fn) {
+  hodlBip47EnsureHd();
+  if (hodlBip47Kind === "account") {
+    if (!hodlBip47Hd.privateKey) throw new Error("Watch-only material cannot derive these addresses: the shared secret needs a private key.");
+    return fn(hodlBip47Hd);
+  }
+  if (!hodlBip47Hd.privateKey) throw new Error("Watch-only material cannot derive these addresses: the shared secret needs a private key.");
+  let node = hodlBip47Hd.derive(hodlBip47Path(hodlBip47CoinType(hodlBip47Network()), hodlBip47Identity()));
+  try {
+    return fn(node);
+  } finally {
+    node.wipePrivateData();
+  }
+}
+function hodlBip47ReadPaymentCode(id, label) {
+  let value = String(document.getElementById(id)?.value || "").replace(/\s+/g, "");
+  if (!value) throw new Error(`Paste ${label}.`);
+  hodlBip47Decode(value); // throws with the specific reason
+  return value;
+}
+function hodlBip47ReadOutpoint(txidId, voutId) {
+  let txid = String(document.getElementById(txidId)?.value || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(txid)) throw new Error("The designated input txid must be 64 hexadecimal characters.");
+  let vout = Number(document.getElementById(voutId)?.value || 0);
+  if (!Number.isInteger(vout) || vout < 0 || vout > 0xffffffff) throw new Error("The designated input vout must be an integer between 0 and 4294967295.");
+  return hodlBip47Outpoint(txid, vout);
+}
+// Accepts the two forms a user actually has to hand: a WIF from a wallet
+// export, or raw hex. Returns bytes the caller must wipe.
+function hodlBip47ReadPrivateKey(id) {
+  let value = String(document.getElementById(id)?.value || "").trim();
+  if (!value) throw new Error("Paste the designated input's private key.");
+  if (/^[0-9a-fA-F]{64}$/.test(value)) return hodlBip47HexToBytes(value.toLowerCase());
+  let decoded = base58checkDecode(value);
+  try {
+    if (decoded.length !== 33 && decoded.length !== 34) throw new Error("That is not a WIF private key.");
+    if (decoded[0] !== 0x80 && decoded[0] !== 0xef) throw new Error("That WIF prefix is not a Bitcoin private key.");
+    return decoded.slice(1, 33);
+  } finally {
+    decoded.fill(0);
+  }
+}
+function hodlBip47SetMode(mode) {
+  hodlBip47Mode = mode;
+  ["code", "send", "notify", "verify"].forEach((id) => {
+    let panel = document.getElementById(`bip47-${id}`);
+    if (panel) panel.hidden = id !== mode;
+  });
+  document.querySelectorAll("#bip47-modes [data-bip47-mode]").forEach((button) => {
+    let active = button.dataset.bip47Mode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+function hodlBip47CopyButton(id, label) {
+  return `<button type="button" class="btn secondary bip47-copy" data-bip47-copy="${id}">${label}</button>`;
+}
+function hodlBip47AddressRows(entries, showPrivate) {
+  return entries.map((entry) => {
+    if (entry.skipped) return `<div class="bip47-output"><p class="label">Index ${entry.index}</p><p class="muted">Skipped: the shared secret fell outside the curve order, so BIP-47 moves to the next index.</p></div>`;
+    return `<div class="bip47-output"><p class="label">Index ${entry.index}</p>
+      <p class="psbt-kv" id="bip47-addr-${entry.index}">${hodlEscapeHtml(entry.address)}</p>
+      ${hodlBip47CopyButton(`bip47-addr-${entry.index}`, "Copy address")}
+      <p class="muted">Public key ${hodlEscapeHtml(entry.publicKey)}</p>
+      <p class="muted">Secret point x ${hodlEscapeHtml(entry.secretPointX)}</p>
+      ${showPrivate && entry.privateKey ? `<p class="psbt-kv">Private key ${hodlEscapeHtml(entry.privateKey)}</p>` : ""}</div>`;
+  }).join("");
+}
+function hodlRenderBip47Code() {
+  let keys = hodlBip47DeriveResult();
+  let network = hodlBip47Network();
+  let path = keys.path || `m/47h/${keys.coinType}h/${keys.identity}h (pasted node)`;
+  let reveal = hodlBip47Reveal && Boolean(keys.notificationPrivateKey);
+  document.getElementById("bip47-out").innerHTML = `
+    <div class="bip47-result">
+      <p class="label">Payment code${keys.watchOnly ? " · watch-only" : ""}</p>
+      <div class="bip47-qr">${hodlQrSvg(keys.paymentCode)}</div>
+      <p class="psbt-kv" id="bip47-code-value">${hodlEscapeHtml(keys.paymentCode)}</p>
+      ${hodlBip47CopyButton("bip47-code-value", "Copy payment code")}
+      <p class="muted">Path <code>${hodlEscapeHtml(path)}</code> · version ${keys.version} · ${network}</p>
+      <p class="label">Notification address</p>
+      <p class="psbt-kv" id="bip47-notification-value">${hodlEscapeHtml(keys.notificationAddress)}</p>
+      ${hodlBip47CopyButton("bip47-notification-value", "Copy notification address")}
+      <p class="muted">Coins sent here are a first contact marker, not spendable balance. BIP-47 says keep them out of your balance and out of any input set used for these ECDH calculations.</p>
+      <p class="label">Payment code public key</p>
+      <p class="psbt-kv">${hodlEscapeHtml(hodlBip47BytesToHex(keys.publicKey))}</p>
+      <p class="label">Payment code chain code</p>
+      <p class="psbt-kv">${hodlEscapeHtml(hodlBip47BytesToHex(keys.chainCode))}</p>
+      <p class="label">Binary payload</p>
+      <p class="psbt-kv">${hodlEscapeHtml(hodlBip47BytesToHex(keys.payload))}</p>
+      ${keys.watchOnly
+        ? `<p class="psbt-warn">Watch-only. This session has no private material, so send, notification recovery, and receive addresses are unavailable.</p>`
+        : `<label class="choice"><input type="checkbox" id="bip47-reveal" ${reveal ? "checked" : ""}> <span>Reveal the notification private key</span></label>
+           ${reveal ? `<p class="label">Notification private key</p><p class="psbt-kv">${hodlEscapeHtml(hodlBip47BytesToHex(keys.notificationPrivateKey))}</p>` : `<p class="muted">Private material stays hidden until you reveal it.</p>`}`}
+      <p class="muted">This is a calculator. Receiving coins still needs a node or a wallet elsewhere; nothing here watches the chain.</p>
+    </div>`;
+  document.getElementById("bip47-reveal")?.addEventListener("change", (event) => {
+    hodlBip47Reveal = event.target.checked;
+    try { hodlRenderBip47Code(); } catch (error) { document.getElementById("bip47-error").textContent = error.message || String(error); }
+  });
+}
+function hodlRenderBip47Send() {
+  let keys = hodlBip47DeriveResult();
+  if (!keys.notificationPrivateKey) throw new Error("Sending needs the 0th private key of your payment code; this session is watch-only.");
+  let recipient = hodlBip47ReadPaymentCode("bip47-recipient", "the recipient's payment code");
+  let entries = hodlBip47Send({
+    senderPrivateKey: keys.notificationPrivateKey,
+    recipientPaymentCode: recipient,
+    start: hodlBip47ReadIndex("bip47-start"),
+    count: hodlBip47ReadCount("bip47-count", 10),
+    network: hodlBip47Network(),
+  });
+  document.getElementById("bip47-out").innerHTML =
+    `<p class="psbt-ok">${entries.length} address${entries.length === 1 ? "" : "es"} for this sender and recipient pair.</p>` +
+    `<p class="muted">Notification address of the recipient: ${hodlEscapeHtml(hodlBip47NotificationAddress(recipient, hodlBip47Network()))}</p>` +
+    `<p class="muted">Send a notification transaction once, before the first payment. Build and sign it in a wallet; this page does neither.</p>` +
+    hodlBip47AddressRows(entries, false);
+}
+function hodlRenderBip47Blind() {
+  let keys = hodlBip47DeriveResult();
+  let outpoint = hodlBip47ReadOutpoint("bip47-outpoint-txid", "bip47-outpoint-vout");
+  let recipient = hodlBip47ReadPaymentCode("bip47-recipient", "the recipient's payment code");
+  let designated = hodlBip47ReadPrivateKey("bip47-designated-key");
+  try {
+    let blinded = hodlBip47Blind({
+      payload: keys.payload,
+      senderPrivateKey: designated,
+      recipientNotificationPublicKey: hodlBip47Node(recipient).deriveChild(0).publicKey,
+      outpoint,
+    });
+    let payload = hodlBip47BytesToHex(blinded.blinded);
+    document.getElementById("bip47-out").innerHTML = `
+      <div class="bip47-result">
+        <p class="psbt-ok">Blinded payload for the recipient's notification transaction.</p>
+        <p class="label">OP_RETURN payload (80 bytes)</p>
+        <p class="psbt-kv" id="bip47-blinded-value">${hodlEscapeHtml(payload)}</p>
+        ${hodlBip47CopyButton("bip47-blinded-value", "Copy payload")}
+        <p class="label">Output script</p>
+        <p class="psbt-kv" id="bip47-blinded-script">6a4c50${hodlEscapeHtml(payload)}</p>
+        ${hodlBip47CopyButton("bip47-blinded-script", "Copy script")}
+        <p class="muted">Pay the recipient's notification address ${hodlEscapeHtml(hodlBip47NotificationAddress(recipient, hodlBip47Network()))} in the same transaction, spending the outpoint above as its first pubkey-exposing input.</p>
+        <p class="muted">This page does not build, sign, or broadcast that transaction.</p>
+      </div>`;
+  } finally {
+    hodlBip47Wipe(designated);
+  }
+}
+function hodlRenderBip47Notify() {
+  let keys = hodlBip47DeriveResult();
+  if (!keys.notificationPrivateKey) throw new Error("Recovering a sender's payment code needs your notification private key; this session is watch-only.");
+  let raw = String(document.getElementById("bip47-payload")?.value || "").replace(/\s+/g, "").toLowerCase();
+  if (!raw) throw new Error("Paste the blinded payload or the OP_RETURN script from the notification transaction.");
+  let blinded = hodlBip47PayloadFromScript(raw);
+  let designatedPub = String(document.getElementById("bip47-designated-pub")?.value || "").replace(/\s+/g, "").toLowerCase();
+  if (!/^0[23][0-9a-f]{64}$/.test(designatedPub)) throw new Error("The designated pubkey must be 33 compressed bytes as hex.");
+  let recovered = hodlBip47Unblind({
+    blinded,
+    notificationPrivateKey: keys.notificationPrivateKey,
+    designatedPublicKey: designatedPub,
+    outpoint: hodlBip47ReadOutpoint("bip47-notify-txid", "bip47-notify-vout"),
+  });
+  if (!recovered.decoded) {
+    document.getElementById("bip47-out").innerHTML = `<p class="psbt-warn">The unblinded x value is not a point on secp256k1, so this payload is not a payment code for this notification key. BIP-47 says ignore it.</p>`;
+    return;
+  }
+  let network = hodlBip47Network();
+  let entries = hodlBip47WithAccountNode((node) => hodlBip47Receive({
+    recipientNode: node,
+    senderPaymentCode: recovered.paymentCode,
+    start: hodlBip47ReadIndex("bip47-notify-start"),
+    count: hodlBip47ReadCount("bip47-notify-count", 10),
+    network,
+    includePrivate: hodlBip47Reveal,
+  }));
+  document.getElementById("bip47-out").innerHTML = `
+    <div class="bip47-result">
+      <p class="psbt-ok">Recovered the sender's payment code.</p>
+      <p class="psbt-kv" id="bip47-recovered-value">${hodlEscapeHtml(recovered.paymentCode)}</p>
+      ${hodlBip47CopyButton("bip47-recovered-value", "Copy payment code")}
+      <p class="muted">Their notification address: ${hodlEscapeHtml(hodlBip47NotificationAddress(recovered.paymentCode, network))}</p>
+      <p class="muted">Blinding mask ${hodlEscapeHtml(hodlBip47BytesToHex(recovered.mask))}</p>
+    </div>
+    <p class="psbt-ok">${entries.length} address${entries.length === 1 ? "" : "es"} this sender can pay you.</p>
+    <label class="choice"><input type="checkbox" id="bip47-reveal" ${hodlBip47Reveal ? "checked" : ""}> <span>Reveal the private key behind each address</span></label>
+    ${hodlBip47AddressRows(entries, hodlBip47Reveal)}
+    <p class="muted">Nothing here checks whether any of these were paid. Watch them with a node or a wallet.</p>`;
+  document.getElementById("bip47-reveal")?.addEventListener("change", (event) => {
+    hodlBip47Reveal = event.target.checked;
+    try { hodlRenderBip47Notify(); } catch (error) { document.getElementById("bip47-error").textContent = error.message || String(error); }
+  });
+}
+function hodlRenderBip47Verify() {
+  let keys = hodlBip47DeriveResult();
+  let counterparty = hodlBip47ReadPaymentCode("bip47-verify-code", "the counterparty's payment code");
+  let direction = document.getElementById("bip47-verify-direction")?.value === "receive" ? "receive" : "send";
+  let start = hodlBip47ReadIndex("bip47-verify-start");
+  let count = hodlBip47ReadCount("bip47-verify-count", 20);
+  let network = hodlBip47Network();
+  let entries;
+  if (direction === "send") {
+    if (!keys.notificationPrivateKey) throw new Error("Checking addresses you would pay needs your 0th private key; this session is watch-only.");
+    entries = hodlBip47Send({ senderPrivateKey: keys.notificationPrivateKey, recipientPaymentCode: counterparty, start, count, network });
+  } else {
+    entries = hodlBip47WithAccountNode((node) => hodlBip47Receive({ recipientNode: node, senderPaymentCode: counterparty, start, count, network }));
+  }
+  let address = String(document.getElementById("bip47-verify-address")?.value || "").trim();
+  let match = hodlBip47Find(address, entries);
+  document.getElementById("bip47-out").innerHTML = match.found
+    ? `<p class="psbt-ok">Match at index ${match.index}.</p>
+       <p class="psbt-kv">${hodlEscapeHtml(match.address)}</p>
+       <p class="muted">Public key ${hodlEscapeHtml(match.publicKey)}</p>
+       <p class="muted">Derived from this pair of payment codes, ${direction === "send" ? "as an address you would pay them" : "as an address they would pay you"}. This is not a chain lookup.</p>`
+    : `<p class="psbt-warn">No match in indexes ${start} to ${start + count - 1}.</p>
+       <p class="muted">Widen the window or check the direction and the payment code. A miss here is not proof the address is unrelated.</p>`;
+}
+function hodlRunBip47(action = hodlBip47Mode) {
+  let error = document.getElementById("bip47-error"), output = document.getElementById("bip47-out");
+  error.textContent = "";
+  output.innerHTML = "";
+  try {
+    if (action === "send") hodlRenderBip47Send();
+    else if (action === "blind") hodlRenderBip47Blind();
+    else if (action === "notify") hodlRenderBip47Notify();
+    else if (action === "verify") hodlRenderBip47Verify();
+    else hodlRenderBip47Code();
+    hodlJournalLog("calculate", action, "bip47");
+  } catch (exception) {
+    error.textContent = exception instanceof Error ? exception.message : String(exception);
+    hodlJournalLog("calculate-error", action, "bip47");
+  }
+}
+function hodlInitBip47() {
+  if (!document.getElementById("bip47-card")) return;
+  hodlRefreshStationKeyPickers();
+  let detachStationKey = () => {
+    if (!hodlBip47Source.startsWith("key:")) return;
+    hodlBip47WipeKeys();
+    hodlBip47Source = document.getElementById("bip47-key").value.trim() ? "manual" : "";
+    document.getElementById("bip47-session").textContent = hodlBip47Source ? "Manual session key entered. It will be validated when you use this Station." : hodlBip47Note;
+    hodlRefreshStationKeyPickers();
+  };
+  document.getElementById("bip47-key").addEventListener("input", detachStationKey);
+  document.getElementById("bip47-pass").addEventListener("input", detachStationKey);
+  document.querySelectorAll("#bip47-modes [data-bip47-mode]").forEach((button) => {
+    button.onclick = () => { hodlBip47SetMode(button.dataset.bip47Mode); document.getElementById("bip47-out").innerHTML = ""; document.getElementById("bip47-error").textContent = ""; };
+  });
+  document.getElementById("bip47-derive").onclick = () => { hodlBip47Mode = "code"; hodlRunBip47("code"); };
+  document.getElementById("bip47-send-go").onclick = () => { hodlBip47Mode = "send"; hodlRunBip47("send"); };
+  document.getElementById("bip47-blind-go").onclick = () => hodlRunBip47("blind");
+  document.getElementById("bip47-notify-go").onclick = () => { hodlBip47Mode = "notify"; hodlRunBip47("notify"); };
+  document.getElementById("bip47-verify-go").onclick = () => { hodlBip47Mode = "verify"; hodlRunBip47("verify"); };
+  document.getElementById("bip47-wipe").onclick = () => {
+    hodlBip47WipeMem();
+    ["bip47-key", "bip47-pass", "bip47-recipient", "bip47-designated-key", "bip47-outpoint-txid", "bip47-payload", "bip47-designated-pub", "bip47-notify-txid", "bip47-verify-address", "bip47-verify-code"].forEach((id) => {
+      let field = document.getElementById(id);
+      if (field) field.value = "";
+    });
+    [["bip47-identity", "0"], ["bip47-start", "0"], ["bip47-count", "10"], ["bip47-outpoint-vout", "0"], ["bip47-notify-vout", "0"], ["bip47-notify-start", "0"], ["bip47-notify-count", "10"], ["bip47-verify-start", "0"], ["bip47-verify-count", "20"]].forEach(([id, value]) => {
+      let field = document.getElementById(id);
+      if (field) field.value = value;
+    });
+    document.getElementById("bip47-out").innerHTML = "";
+    document.getElementById("bip47-error").textContent = "";
+    document.getElementById("bip47-session").textContent = "Session ended and accessible fields were cleared (best effort).";
+    hodlRefreshStationKeyPickers();
+  };
+  document.getElementById("bip47-out").addEventListener("click", (event) => {
+    let button = event.target.closest?.("[data-bip47-copy]");
+    if (!button) return;
+    let node = document.getElementById(button.dataset.bip47Copy);
+    if (!node) return;
+    navigator.clipboard?.writeText(node.textContent || "").catch(() => {});
+  });
+  hodlBip47SetMode("code");
+}
 function hodlTaggedSha256(tag, ...chunks) {
   let tagHash = hodlSha256(new TextEncoder().encode(tag)), total = 64;
   for (let chunk of chunks) total += chunk.length;
@@ -11445,14 +12010,16 @@ function hodlShowWorkspace(id) {
   document.getElementById("bip85-manager").hidden = id !== "bip85";
   document.getElementById("msig-manager").hidden = id !== "msig";
   document.getElementById("sp-manager").hidden = id !== "sp";
+  document.getElementById("bip47-manager").hidden = id !== "bip47";
   document.getElementById("calc-card").hidden = true;
   document.getElementById("msig-card").hidden = true;
   document.getElementById("bip85-card").hidden = id !== "bip85";
   document.getElementById("sp-card").hidden = id !== "sp";
+  document.getElementById("bip47-card").hidden = id !== "bip47";
   document.getElementById("vanity-card").hidden = id !== "vanity";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
-  ["bip85", "sp", "msig", "calc", "vanity"].forEach((tool) => {
+  ["bip85", "sp", "bip47", "msig", "calc", "vanity"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
   hodlSyncPsbtTool();
@@ -11548,6 +12115,65 @@ function hodlInitMsigManager() {
   if (hodlWorkspace === "msig") hodlRestoreMsig();
   else document.getElementById("msig-card").hidden = true;
 }
+function hodlCreateBip47Icon() {
+  let ns = "http://www.w3.org/2000/svg", span = document.createElement("span"), svg = document.createElementNS(ns, "svg");
+  span.className = "key-tab-icon key-tab-lab-icon bip47-bench-icon bench-tab-icon";
+  span.setAttribute("aria-hidden", "true");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("focusable", "false");
+  svg.setAttribute("aria-hidden", "true");
+  // A card you can publish, and the loop that says one code is reused.
+  let card = document.createElementNS(ns, "rect");
+  card.setAttribute("data-part", "code-card");
+  card.setAttribute("x", "2.1");
+  card.setAttribute("y", "5.2");
+  card.setAttribute("width", "13.4");
+  card.setAttribute("height", "9.2");
+  card.setAttribute("rx", "2.1");
+  card.setAttribute("fill", "currentColor");
+  card.setAttribute("fill-opacity", ".2");
+  card.setAttribute("stroke", "currentColor");
+  card.setAttribute("stroke-width", "1.4");
+  svg.appendChild(card);
+  [["code-line-long", "M4.9 8.5h7.8"], ["code-line-short", "M4.9 11.4h4.6"]].forEach(([part, data]) => {
+    let line = document.createElementNS(ns, "path");
+    line.setAttribute("data-part", part);
+    line.setAttribute("d", data);
+    line.setAttribute("stroke", "currentColor");
+    line.setAttribute("stroke-width", "1.3");
+    line.setAttribute("stroke-linecap", "round");
+    svg.appendChild(line);
+  });
+  [["reuse-loop", "M9.6 18.5a6.4 6.4 0 0 0 11.4-3.1"], ["reuse-head", "M22.1 12.6l-1.1 2.7-2.7-1.1"]].forEach(([part, data]) => {
+    let path = document.createElementNS(ns, "path");
+    path.setAttribute("data-part", part);
+    path.setAttribute("d", data);
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "1.7");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(path);
+  });
+  span.appendChild(svg);
+  return span;
+}
+function hodlInitBip47Bench() {
+  let tabs = document.getElementById("bip47-tabs");
+  if (!tabs) return;
+  let button = document.createElement("button"), label = document.createElement("span");
+  button.type = "button";
+  button.id = "bip47-tab-bench";
+  button.className = "tab key-tab is-lab active";
+  button.setAttribute("role", "tab");
+  button.setAttribute("aria-selected", "true");
+  button.setAttribute("aria-controls", "bip47-card");
+  button.setAttribute("aria-label", "BIP-47 Station, selected");
+  label.className = "key-tab-label";
+  label.textContent = "BIP-47 Station";
+  button.append(hodlCreateBip47Icon(), label);
+  tabs.replaceChildren(button);
+}
 function hodlInitSpBench() {
   let tabs = document.getElementById("sp-tabs");
   if (!tabs) return;
@@ -11576,7 +12202,7 @@ function hodlInitDefaultTabStates() {
 }
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "workspace.key", "workspace.keyShort"], ["vanity", "workspace.vanity", "workspace.vanityShort"], ["bip85", "workspace.bip85", "workspace.bip85Short"], ["msig", "workspace.msig", "workspace.msigShort"], ["sp", "workspace.sp", "workspace.spShort"], ["psbt", "workspace.psbt", "workspace.psbtShort"], ["journal", "workspace.journal", "workspace.journalShort"]];
+var hodlWorkspaceTabs = [["calc", "workspace.key", "workspace.keyShort"], ["vanity", "workspace.vanity", "workspace.vanityShort"], ["bip85", "workspace.bip85", "workspace.bip85Short"], ["msig", "workspace.msig", "workspace.msigShort"], ["sp", "workspace.sp", "workspace.spShort"], ["bip47", "workspace.bip47", "workspace.bip47Short"], ["psbt", "workspace.psbt", "workspace.psbtShort"], ["journal", "workspace.journal", "workspace.journalShort"]];
 var hodlPsbtTool = "nonce";
 function hodlSyncPsbtTool() {
   let visible = hodlWorkspace === "psbt",
@@ -11890,6 +12516,7 @@ var hodlJournalAuditedClicks = {
   "msig-edit-inputs": ["msig", "edit-input", "current-multisig"],
   "msig-descriptor-import": ["msig", "import", "descriptor"],
   "sp-wipe": ["sp", "clear", "session"],
+  "bip47-wipe": ["bip47", "clear", "session"],
   "psbt-use-calc": ["psbt", "use-session-key", "active-key"],
   "psbt-wipe": ["psbt", "clear", "session"],
   "psbted-load": ["psbt", "load", "editor-text"],
@@ -11914,11 +12541,13 @@ function hodlJournalControlTool(control) {
   if (id.startsWith("psbt-") || id.startsWith("psbted-")) return "psbt";
   if (id.startsWith("bip85-")) return "bip85";
   if (id.startsWith("msig-")) return "msig";
+  if (id.startsWith("bip47-")) return "bip47";
   if (id.startsWith("sp-")) return "sp";
   if (control?.closest?.("#journal-manager, #journal-notes-card, #journal-state-card, #journal-log-card")) return "journal";
   if (control?.closest?.("#psbt-manager, #psbt-card, #psbted-card")) return "psbt";
   if (control?.closest?.("#bip85-manager, #bip85-card")) return "bip85";
   if (control?.closest?.("#msig-manager, #msig-card")) return "msig";
+  if (control?.closest?.("#bip47-manager, #bip47-card")) return "bip47";
   if (control?.closest?.("#sp-manager, #sp-card")) return "sp";
   if (control?.closest?.("#key-manager, #calc-card")) return "calc";
   return "app";
@@ -11932,6 +12561,8 @@ function hodlJournalAuditedClick(control) {
   if (control.matches("[data-copy-seed-phrase]")) return ["calc", "copy", "seed-phrase"];
   if (control.matches("[data-sp-mode]")) return ["sp", "mode", control.dataset.spMode];
   if (control.matches("[data-sp-copy]")) return ["sp", "copy", "result"];
+  if (control.matches("[data-bip47-mode]")) return ["bip47", "mode", control.dataset.bip47Mode];
+  if (control.matches("[data-bip47-copy]")) return ["bip47", "copy", "result"];
   if (control.matches(".session-key-option, .msig-session-key")) return [hodlJournalControlTool(control), "use-session-key", "key-station"];
   if (control.matches("[data-msig-move]")) return ["msig", "reorder", control.dataset.msigMove === "-1" ? "up" : "down"];
   if (control.matches(".msig-key-reuse-apply")) return ["msig", "apply", "cosigner-path"];
@@ -12464,6 +13095,15 @@ function hodlJournalRefreshSessionState() {
   let sp = { derived: Boolean(hodlSpKeys?.fingerprint), fingerprint: hodlSpKeys?.fingerprint || "", address: "" };
   let addressEl = document.getElementById("sp-address");
   if (addressEl) sp.address = addressEl.textContent || addressEl.value || "";
+  // Public material only: the payment code and its notification address are
+  // meant to be published, and the seed behind them never enters the snapshot.
+  let bip47 = {
+    derived: Boolean(hodlBip47Result),
+    fingerprint: hodlBip47Result ? hodlFingerprintHex(hodlBip47Result.fingerprint) : "",
+    paymentCode: hodlBip47Result?.paymentCode || "",
+    notificationAddress: hodlBip47Result?.notificationAddress || "",
+    watchOnly: Boolean(hodlBip47Result?.watchOnly),
+  };
   let psbt = { loaded: Boolean((document.getElementById("psbt-text")?.value || "").trim() || (document.getElementById("psbted-text")?.value || "").trim()) };
   let text = hodlJournalSnapshot({
     capturedAt: hodlJournalStamp(),
@@ -12474,6 +13114,7 @@ function hodlJournalRefreshSessionState() {
     msigs,
     bip85,
     sp,
+    bip47,
     psbt,
   });
   hodlJournal.stateText = text;
@@ -13675,6 +14316,7 @@ function hodlInitWorkspace() {
   hodlInitBip85();
   hodlInitVanity();
   hodlInitSp();
+  hodlInitBip47();
 }
 var hodlKeyClearSyncQueued = false, hodlMsigClearSyncQueued = false, hodlDeriveSyncQueued = false;
 function hodlQueueKeyClearButtonSync() {
@@ -13929,6 +14571,7 @@ function hodlInitSecretFieldAutoClear() {
     hodlPsbtWipeMem();
     hodlBip85WipeMem();
     hodlSpWipeMem();
+    hodlBip47WipeMem();
     hodlJournalWipeMem();
     hodlKeys = hodlKeys.map((state) => {
       let fields = state.fields || {}, privateKeys = fields.privateKeys;
@@ -13982,6 +14625,22 @@ function hodlInitSecretFieldAutoClear() {
     if (spVerifyVins) spVerifyVins.value = "";
     if (spVerifyOutputs) spVerifyOutputs.value = "";
     if (spLabel) spLabel.value = "";
+    let bip47Key = document.getElementById("bip47-key"), bip47Pass = document.getElementById("bip47-pass");
+    if (bip47Key) bip47Key.value = "";
+    if (bip47Pass) bip47Pass.value = "";
+    // #bip47-designated-key is the private key of a notification input and
+    // #bip47-out can render notification and receive private keys.
+    let bip47Designated = document.getElementById("bip47-designated-key");
+    if (bip47Designated) bip47Designated.value = "";
+    let bip47Out = document.getElementById("bip47-out"), bip47Error = document.getElementById("bip47-error"), bip47Session = document.getElementById("bip47-session");
+    if (bip47Out) bip47Out.innerHTML = "";
+    if (bip47Error) bip47Error.textContent = "";
+    if (bip47Session) bip47Session.textContent = hodlBip47Note;
+    let bip47Recipient = document.getElementById("bip47-recipient"), bip47Payload = document.getElementById("bip47-payload"), bip47VerifyCode = document.getElementById("bip47-verify-code"), bip47VerifyAddress = document.getElementById("bip47-verify-address");
+    if (bip47Recipient) bip47Recipient.value = "";
+    if (bip47Payload) bip47Payload.value = "";
+    if (bip47VerifyCode) bip47VerifyCode.value = "";
+    if (bip47VerifyAddress) bip47VerifyAddress.value = "";
     // Found vanity passphrases and the brought-in salt are private key
     // material; stop the grinder and drop them too.
     hodlVanityCancel();
@@ -14092,6 +14751,7 @@ function hodlBoot() {
   hodlInitKeyManager();
   hodlInitMsigManager();
   hodlInitSpBench();
+  hodlInitBip47Bench();
   hodlInitClearActionState();
   hodlInitSecretFieldAutoClear();
   hodlInitNetworkPicker();

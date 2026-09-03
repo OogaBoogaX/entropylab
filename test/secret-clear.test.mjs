@@ -88,6 +88,36 @@ test("Silent Payments recipient, verify, and label fields are explicitly cleared
   assert.match(lifecycle, /spLabel\.value\s*=\s*""/);
 });
 
+test("BIP-47 session key and passphrase fields are explicitly cleared", () => {
+  assert.match(lifecycle, /hodlBip47WipeMem\(\)/);
+  assert.match(lifecycle, /getElementById\("bip47-key"\)/);
+  assert.match(lifecycle, /getElementById\("bip47-pass"\)/);
+  assert.match(lifecycle, /bip47Key\.value\s*=\s*""/);
+  assert.match(lifecycle, /bip47Pass\.value\s*=\s*""/);
+});
+
+test("BIP-47 private-bearing inputs and revealed output are cleared", () => {
+  // #bip47-designated-key is the private key behind a notification input;
+  // #bip47-out renders the notification key and receive keys when revealed.
+  assert.match(lifecycle, /getElementById\("bip47-designated-key"\)/);
+  assert.match(lifecycle, /bip47Designated\.value\s*=\s*""/);
+  assert.match(lifecycle, /getElementById\("bip47-out"\)/);
+  assert.match(lifecycle, /bip47Out\.innerHTML\s*=\s*""/);
+  assert.match(lifecycle, /bip47Error\.textContent\s*=\s*""/);
+  assert.match(lifecycle, /bip47Session\.textContent\s*=\s*hodlBip47Note/);
+});
+
+test("BIP-47 counterparty codes and pasted notification data are cleared", () => {
+  assert.match(lifecycle, /getElementById\("bip47-recipient"\)/);
+  assert.match(lifecycle, /bip47Recipient\.value\s*=\s*""/);
+  assert.match(lifecycle, /getElementById\("bip47-payload"\)/);
+  assert.match(lifecycle, /bip47Payload\.value\s*=\s*""/);
+  assert.match(lifecycle, /getElementById\("bip47-verify-code"\)/);
+  assert.match(lifecycle, /bip47VerifyCode\.value\s*=\s*""/);
+  assert.match(lifecycle, /getElementById\("bip47-verify-address"\)/);
+  assert.match(lifecycle, /bip47VerifyAddress\.value\s*=\s*""/);
+});
+
 test("highlight mirrors, copy-button phrases, the last-word cache, and the PSBT editor are cleared", () => {
   // The .dice-input-highlight <pre> behind each input holds a second live
   // copy of the typed secret; copy buttons keep the phrase in data-phrase;

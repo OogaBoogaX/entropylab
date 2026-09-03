@@ -153,6 +153,14 @@ test("app derivation paths wipe seeds, roots, and per-address keys (source guard
   assert.match(bip85Wipe, /hodlBip85Root\.wipePrivateData\(\)/, "the BIP-85 root must be wiped, not a getter copy");
   const spWipe = app.slice(app.indexOf("function hodlSpWipeKeys()"), app.indexOf("function hodlSpWipeMem"));
   assert.match(spWipe, /hodlSpHd\.wipePrivateData\(\)/, "the Silent Payments root must be wiped, not a getter copy");
+  const bip47Wipe = app.slice(app.indexOf("function hodlBip47WipeResult()"), app.indexOf("function hodlBip47WipeMem"));
+  assert.match(bip47Wipe, /hodlBip47Wipe\(hodlBip47Result\.notificationPrivateKey\)/, "the BIP-47 notification private key must be zeroed");
+  assert.match(bip47Wipe, /hodlBip47Hd\.wipePrivateData\(\)/, "the BIP-47 session root must be wiped, not a getter copy");
+  const bip47 = read("src/js/bip47.js");
+  assert.match(bip47, /node\.wipePrivateData\(\)/, "derivePaymentCodeKeys must wipe the payment code node it derived");
+  assert.match(bip47, /notificationNode\.wipePrivateData\(\)/, "the notification node must be wiped after its key is copied out");
+  assert.match(bip47, /wipeBytes\(childPriv\)/, "each receive child's private getter copy must be wiped");
+  assert.match(bip47, /wipeBytes\(privateKey\)/, "the tweaked receive key must be wiped after it is rendered");
   const mnemonicPath = app.slice(app.indexOf("async function hodlMnemonicWalletWithProgress("), app.indexOf("async function hodlEntropyWalletWithProgress("));
   assert.match(mnemonicPath, /seed\.fill\(0\)/, "the BIP39 seed must be wiped after master derivation");
   assert.match(mnemonicPath, /root\.wipePrivateData\(\)/, "the master root node must be wiped after the wallet is built");

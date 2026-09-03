@@ -215,6 +215,15 @@ export function snapshotSession(session) {
   }
   lines.push("", "SILENT PAYMENTS");
   lines.push(session.sp?.derived ? `- fingerprint ${session.sp.fingerprint || "unknown"}${session.sp.address ? `\n  ${session.sp.address}` : ""}` : "- not derived");
+  lines.push("", "BIP-47");
+  if (!session.bip47?.derived) lines.push("- not derived");
+  else {
+    lines.push(`- ${session.bip47.fingerprint ? `fingerprint ${session.bip47.fingerprint}` : "payment code derived"}${session.bip47.watchOnly ? " · watch-only" : ""}`);
+    // Payment codes and notification addresses are published by design, so
+    // they ride along whether or not private material is included.
+    if (session.bip47.paymentCode) lines.push(`  ${session.bip47.paymentCode}`);
+    if (session.bip47.notificationAddress) lines.push(`  notification ${session.bip47.notificationAddress}`);
+  }
   lines.push("", "PSBT");
   lines.push(session.psbt?.loaded ? "- payload present in the inspector" : "- inspector empty");
   lines.push("", "This snapshot lives in this page until you download it. Closing the tab discards it.");

@@ -59,6 +59,7 @@
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="BIP-85"><span class="workspace-tab-full">BIP-85</span><span class="workspace-tab-short">BIP85</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Multi Signature"><span class="workspace-tab-full">Multi Signature</span><span class="workspace-tab-short">MultiSig</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Silent Payments"><span class="workspace-tab-full">Silent Payments</span><span class="workspace-tab-short">SP</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="BIP-47"><span class="workspace-tab-full">BIP-47</span><span class="workspace-tab-short">BIP47</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="PSBT"><span class="workspace-tab-full">PSBT</span><span class="workspace-tab-short">PSBT</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Journal"><span class="workspace-tab-full">Journal</span><span class="workspace-tab-short">Journal</span></button>
       </div>
@@ -563,6 +564,146 @@ words, pick one of the checksum words.</span></span>
       </div>
       <p class="err" id="sp-error" role="alert"></p>
       <div id="sp-out" aria-live="polite"></div>
+      <p class="muted">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+    </section>
+    <div class="tool-intro" id="bip47-tool-intro" hidden>
+        <div class="kicker">BIP-47 · one code you can publish</div>
+        <h2>Reusable Payment Codes</h2>
+        <p class="muted tool-intro-note">Educational calculator only. Derive a <code>PM8T…</code> payment code and its notification address from a key you already have, work out the addresses a payment code pair produces, and check a pasted address against that derivation. It does not scan the chain, does not look anything up, and does not broadcast: a notification transaction is pasted in as data. Receiving the coins still needs a node or a wallet somewhere else.</p>
+      </div>
+      <section class="key-manager no-print" id="bip47-manager" hidden>
+        <div class="key-tab-strip"><div class="key-tabs" id="bip47-tabs" role="tablist" aria-label="BIP-47"></div></div>
+      </section>
+      <section class="card no-print" id="bip47-card" role="tabpanel" hidden>
+      <div class="row no-print segmented-control" id="bip47-modes">
+        <button class="tab active" type="button" data-bip47-mode="code" aria-pressed="true">My code</button>
+        <button class="tab" type="button" data-bip47-mode="send" aria-pressed="false">Send</button>
+        <button class="tab" type="button" data-bip47-mode="notify" aria-pressed="false">Notification</button>
+        <button class="tab" type="button" data-bip47-mode="verify" aria-pressed="false">Verify</button>
+      </div>
+      <div class="station-key-source">
+        <p class="label">Bring in a key from Key Station</p>
+        <div class="session-key-picker" id="bip47-session-keys" role="group" aria-label="Compatible Key Station keys" hidden></div>
+        <p class="field-note">Choose a compatible HD-root key from this session, or enter a seed phrase, a root xprv/tprv, or a watch-only xpub/tpub below.</p>
+      </div>
+      <div class="psbt-grid">
+        <label class="field">Session key (BIP39 seed phrase, root xprv/tprv, or an xpub/tpub for watch-only)
+          <textarea id="bip47-key" placeholder="Enter a seed phrase, a root xprv/tprv, or an xpub/tpub" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <div>
+          <label class="field">Optional BIP39 passphrase
+            <input id="bip47-pass" autocomplete="off" placeholder="Enter a BIP39 passphrase, or leave blank for none">
+          </label>
+          <label class="field">Address network
+            <select id="bip47-network"><option value="mainnet" selected>Bitcoin mainnet</option><option value="testnet">Testnet (practice)</option></select>
+          </label>
+          <label class="field">Identity
+            <input id="bip47-identity" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+            <span class="field-note">The identity level of <code>m/47h/coin_typeh/identityh</code>. BIP-47 pairs it with the BIP-44 account at the same index.</span>
+          </label>
+        </div>
+      </div>
+      <div class="row psbt-actions">
+        <button class="btn secondary" id="bip47-wipe" type="button">End session / clear fields</button>
+      </div>
+      <p class="muted" id="bip47-session" aria-live="polite">No session key. A payment code needs a seed, a root xprv, or an xpub.</p>
+      <div id="bip47-code">
+        <div class="row psbt-actions">
+          <button class="btn primary" id="bip47-derive" type="button">Derive payment code</button>
+        </div>
+        <p class="field-note">Publish the payment code. The notification address is where a first-time sender tells you they exist; do not treat coins landing there as spendable balance.</p>
+      </div>
+      <div id="bip47-send" hidden>
+        <label class="field">Recipient payment code
+          <textarea id="bip47-recipient" placeholder="PM8T…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <div class="psbt-grid">
+          <label class="field">First index
+            <input id="bip47-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+          </label>
+          <label class="field">How many
+            <input id="bip47-count" type="number" min="1" max="1000" step="1" inputmode="numeric" value="10">
+            <span class="field-note">The index belongs to this sender and recipient pair, not to either wallet on its own.</span>
+          </label>
+        </div>
+        <div class="row psbt-actions">
+          <button class="btn primary" id="bip47-send-go" type="button">Derive payment addresses</button>
+        </div>
+        <details class="msig-advanced" id="bip47-blind-advanced">
+          <summary>Blind my payment code for a notification transaction</summary>
+          <p class="field-note">Builds the 80 byte OP_RETURN payload only. It does not select inputs, build a transaction, sign, or broadcast. Do that in a wallet.</p>
+          <label class="field">Designated input private key (WIF or 64-character hex)
+            <input id="bip47-designated-key" autocomplete="off" placeholder="The key behind the first input that exposes a pubkey">
+          </label>
+          <div class="psbt-grid">
+            <label class="field">Designated input txid
+              <input id="bip47-outpoint-txid" autocomplete="off" spellcheck="false" placeholder="64-character txid as displayed">
+            </label>
+            <label class="field">Designated input vout
+              <input id="bip47-outpoint-vout" type="number" min="0" max="4294967295" step="1" inputmode="numeric" value="0">
+            </label>
+          </div>
+          <div class="row psbt-actions">
+            <button class="btn primary" id="bip47-blind-go" type="button">Blind payment code</button>
+          </div>
+        </details>
+      </div>
+      <div id="bip47-notify" hidden>
+        <p class="field-note">Paste what a notification transaction already contains. Nothing is fetched.</p>
+        <label class="field">Blinded payload (80-byte payload or the whole OP_RETURN script, hex)
+          <textarea id="bip47-payload" placeholder="6a4c5001000206…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <label class="field">Designated pubkey (33-byte compressed hex)
+          <input id="bip47-designated-pub" autocomplete="off" spellcheck="false" placeholder="The first pubkey pushed by the first input that exposes one">
+        </label>
+        <div class="psbt-grid">
+          <label class="field">Designated input txid
+            <input id="bip47-notify-txid" autocomplete="off" spellcheck="false" placeholder="64-character txid as displayed">
+          </label>
+          <label class="field">Designated input vout
+            <input id="bip47-notify-vout" type="number" min="0" max="4294967295" step="1" inputmode="numeric" value="0">
+          </label>
+        </div>
+        <div class="psbt-grid">
+          <label class="field">First index
+            <input id="bip47-notify-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+          </label>
+          <label class="field">How many
+            <input id="bip47-notify-count" type="number" min="1" max="1000" step="1" inputmode="numeric" value="10">
+          </label>
+        </div>
+        <div class="row psbt-actions">
+          <button class="btn primary" id="bip47-notify-go" type="button">Recover code and derive receive addresses</button>
+        </div>
+      </div>
+      <div id="bip47-verify" hidden>
+        <label class="field">Address to check
+          <input id="bip47-verify-address" autocomplete="off" spellcheck="false" placeholder="1…">
+        </label>
+        <label class="field">Counterparty payment code
+          <textarea id="bip47-verify-code" placeholder="PM8T…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <label class="field">Direction
+          <select id="bip47-verify-direction">
+            <option value="send" selected>Addresses I would pay them</option>
+            <option value="receive">Addresses they would pay me</option>
+          </select>
+        </label>
+        <div class="psbt-grid">
+          <label class="field">First index
+            <input id="bip47-verify-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+          </label>
+          <label class="field">How many
+            <input id="bip47-verify-count" type="number" min="1" max="1000" step="1" inputmode="numeric" value="20">
+          </label>
+        </div>
+        <div class="row psbt-actions">
+          <button class="btn primary" id="bip47-verify-go" type="button">Check address</button>
+        </div>
+        <p class="field-note">This checks the address against the window derived here. It is not a chain lookup and says nothing about whether the address was ever used.</p>
+      </div>
+      <p class="err" id="bip47-error" role="alert"></p>
+      <div id="bip47-out" aria-live="polite"></div>
       <p class="muted">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
     </section>
     <div class="tool-intro-stack" id="psbt-tool-intros" hidden>
