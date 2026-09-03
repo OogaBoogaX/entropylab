@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { hodlCatalogAllowedTags, hodlCatalogHasControlCharacters, hodlCatalogTagAllowed, hodlCatalogTokens } from "../src/js/i18n-sanitize.js";
-import { i18nLocaleStatus } from "../scripts/i18n-common.mjs";
+import { i18nLocaleStatus, i18nSourceHash } from "../scripts/i18n-common.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const locales = ["es", "pt", "fr", "de"];
@@ -54,16 +54,28 @@ test("literal and entity-spelled invisible controls are rejected", () => {
   }
 });
 
+test("stale translations need not match a changed English source shape", () => {
+  const english = { key: "New <code>{command}</code>" };
+  const catalog = { key: "Alte Übersetzung" };
+  const sidecar = { key: i18nSourceHash("Old source") };
+  const stale = new Set(i18nLocaleStatus(english, catalog, sidecar).stale);
+  assert.ok(stale.has("key"));
+  assert.deepEqual(problemsWith("xx", "key", catalog.key, stale.has("key") ? undefined : english.key), []);
+});
+
 for (const code of locales) {
   test(`${code}: every translated value is a valid rendering of its English source`, () => {
     const catalog = readJson(join(root, "src/locales", `${code}.json`));
+    const sidecar = readJson(join(root, "src/locales/.sources", `${code}.json`));
+    const stale = new Set(i18nLocaleStatus(en, catalog, sidecar).stale);
     const problems = [];
     const missing = [];
     const obsolete = [];
     for (const key of Object.keys(catalog)) {
       const current = Object.hasOwn(en, key);
       if (!current) obsolete.push(key);
-      problems.push(...problemsWith(code, key, catalog[key], current ? en[key] : undefined));
+      const source = current && !stale.has(key) ? en[key] : undefined;
+      problems.push(...problemsWith(code, key, catalog[key], source));
       if (!current) continue;
       const ratio = catalog[key].length / Math.max(en[key].length, 1);
       if (en[key].length >= 20 && (ratio < 0.3 || ratio > 3)) console.warn(`i18n length warning: ${code} ${key} is ${ratio.toFixed(1)}x the English`);
