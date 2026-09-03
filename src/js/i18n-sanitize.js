@@ -4,12 +4,12 @@
 // allowlist before it can be used: only these elements survive, with only
 // these attributes at exactly these values, and everything else — unknown
 // tags, extra attributes, comments, script — is emitted as escaped text, so a
-// bad string is visible on screen but can never run. Values with no tag-like
-// sequence pass through untouched, so textContent and attribute sinks see the
-// catalog value exactly as written (the origin errors that mention <0;1> stay
-// readable). The output alphabet is closed: tag names and attributes come from
-// the table below, never from the input, which is what makes this a boundary
-// rather than a check.
+// bad string is visible on screen but can never run. HTML and plain-text sinks
+// get separate renderings: HTML text is entity-escaped, while the text form
+// drops allowlisted formatting tags and is safe for textContent/setAttribute.
+// The output alphabet is closed: tag names and attributes come from the table
+// below, never from the input, which is what makes this a boundary rather than
+// a check.
 export const hodlCatalogAllowedTags = Object.freeze({
   code: Object.freeze({}),
   em: Object.freeze({}),
@@ -24,7 +24,26 @@ export function hodlCatalogHasMarkup(value) {
   return /<[A-Za-z/!?]/.test(String(value ?? ""));
 }
 
-const hodlEscapeText = (text) => text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const hodlControlSource = "[" + [[0, 8], [11, 12], [14, 31], [127, 159], [0x061c, 0x061c], [0x200b, 0x200f], [0x202a, 0x202e], [0x2060, 0x2064], [0x2066, 0x2069], [0xfeff, 0xfeff]]
+  .map(([from, to]) => String.fromCodePoint(from) + "-" + String.fromCodePoint(to)).join("") + "]";
+
+export function hodlCatalogHasControlCharacters(value) {
+  return new RegExp(hodlControlSource).test(String(value ?? ""));
+}
+
+const hodlNeutralizeControls = (value) => String(value ?? "").replace(new RegExp(hodlControlSource, "g"), "\uFFFD");
+
+// Preserve only the entities this function emits itself, making sanitization
+// idempotent. Every other ampersand is escaped, including numeric and named
+// character references that a browser could decode into bidi/invisible text.
+export function hodlEscapeHtmlText(value) {
+  return hodlNeutralizeControls(value)
+    .replace(/&(?!(?:amp|lt|gt|quot|#39);)/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 // Split a value into text runs and tag-like tokens. Each token records the raw
 // source (for escaping when rejected), the lowercased tag name, whether it is
@@ -84,21 +103,27 @@ export function hodlCatalogTagAllowed(token) {
 
 function hodlRenderOpenTag(name, attrs) {
   let allowed = hodlCatalogAllowedTags[name];
-  let rendered = Object.keys(allowed).filter((attribute) => Object.hasOwn(attrs, attribute)).map((attribute) => ` ${attribute}="${allowed[attribute]}"`).join("");
+  let rendered = Object.keys(allowed).filter((attribute) => Object.hasOwn(attrs, attribute)).map((attribute) => {
+    let value = allowed[attribute];
+    if (!/^[A-Za-z0-9._-]+$/.test(value)) throw new Error(`Unsafe fixed catalog attribute value for ${name}.${attribute}`);
+    // Token-safe fixed values need no quote delimiter. Keeping the sanitizer's
+    // entire output quote-free means even a misrouted tHtml() value cannot end
+    // either kind of quoted host attribute.
+    return ` ${attribute}=${value}`;
+  }).join("");
   return `<${name}${rendered}>`;
 }
 
 export function hodlSanitizeCatalogHtml(value) {
   let source = String(value ?? "");
-  if (!hodlCatalogHasMarkup(source)) return source;
   let output = "", stack = [];
   for (let token of hodlCatalogTokens(source)) {
     if (token.text !== undefined) {
-      output += hodlEscapeText(token.text);
+      output += hodlEscapeHtmlText(token.text);
       continue;
     }
     if (!hodlCatalogTagAllowed(token)) {
-      output += hodlEscapeText(token.raw);
+      output += hodlEscapeHtmlText(token.raw);
       continue;
     }
     if (!token.closing) {
@@ -111,6 +136,19 @@ export function hodlSanitizeCatalogHtml(value) {
     while (stack.length > depth) output += `</${stack.pop()}>`;
   }
   while (stack.length) output += `</${stack.pop()}>`;
+  return output;
+}
+
+// Produce the companion representation for DOM text sinks from the same
+// allowlist decision. Allowed formatting tags disappear; rejected markup stays
+// visible as text. Character references remain literal because textContent and
+// setAttribute do not parse them.
+export function hodlSanitizeCatalogText(value) {
+  let output = "";
+  for (let token of hodlCatalogTokens(value)) {
+    if (token.text !== undefined) output += hodlNeutralizeControls(token.text);
+    else if (!hodlCatalogTagAllowed(token)) output += hodlNeutralizeControls(token.raw);
+  }
   return output;
 }
 
@@ -130,5 +168,11 @@ export function hodlEscapeAttribute(value) {
 export function hodlSanitizeCatalog(catalog) {
   let clean = {};
   for (let [key, value] of Object.entries(catalog ?? {})) clean[key] = typeof value === "string" ? hodlSanitizeCatalogHtml(value) : value;
+  return clean;
+}
+
+export function hodlSanitizeTextCatalog(catalog) {
+  let clean = {};
+  for (let [key, value] of Object.entries(catalog ?? {})) clean[key] = typeof value === "string" ? hodlSanitizeCatalogText(value) : value;
   return clean;
 }

@@ -1,6 +1,6 @@
-// Catalog text interpolated into a quoted HTML-template attribute must use
-// hodlTAttr(). Plain hodlT() is safe for DOM setAttribute(), but a quote in its
-// result can end a quoted attribute assembled through innerHTML.
+// Catalog text interpolated into HTML must use the helper for that final sink:
+// hodlTAttr() for quoted template attributes and hodlT()/tHtml() for element
+// content. Plain t()/hodlTText() belongs only in DOM text APIs.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -88,6 +88,7 @@ function templateInterpolations(source) {
         interpolations.push({
           start: index,
           end: expression.end,
+          insideTag: htmlState.inTag,
           insideQuotedAttribute: Boolean(htmlState.attributeQuote),
         });
         index = expression.next;
@@ -122,16 +123,88 @@ function sourceLocation(source, index) {
 // Inspect every interpolation independently instead of skipping to the end of
 // an outer expression. That is important for HTML templates nested inside
 // expressions such as items.map(() => `<button aria-label="${...}">`).
+function importedTranslationBindings(source) {
+  const bindings = {
+    html: new Set(["hodlT"]),
+    text: new Set(["hodlTText"]),
+    attribute: new Set(["hodlTAttr"]),
+  };
+  const imports = /import\s*\{([\s\S]*?)\}\s*from\s*["'][^"']*\/i18n\.js["']/g;
+  for (const match of source.matchAll(imports)) {
+    for (const part of match[1].split(",")) {
+      const binding = /^\s*(tHtml|tAttr|t)\s*(?:as\s*([A-Za-z_$][\w$]*))?\s*$/.exec(part);
+      if (!binding) continue;
+      const local = binding[2] || binding[1];
+      bindings[binding[1] === "tHtml" ? "html" : binding[1] === "tAttr" ? "attribute" : "text"].add(local);
+    }
+  }
+  return bindings;
+}
+
+function translationAliases(source, bindings) {
+  const typed = {
+    html: new Set(bindings.html),
+    text: new Set(bindings.text),
+    attribute: new Set(bindings.attribute),
+  };
+  const all = () => new Set([...typed.html, ...typed.text, ...typed.attribute]);
+  const aliases = [];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const pattern = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:globalThis\.)?([A-Za-z_$][\w$]*)\b(?!\s*\()/g;
+    for (const match of source.matchAll(pattern)) {
+      const kind = Object.keys(typed).find((candidate) => typed[candidate].has(match[2]));
+      if (!kind || all().has(match[1])) continue;
+      typed[kind].add(match[1]);
+      aliases.push({ name: match[1], source: match[2], index: match.index });
+      changed = true;
+    }
+    const wrapper = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*(?:globalThis\.)?([A-Za-z_$][\w$]*)\s*\(/g;
+    for (const match of source.matchAll(wrapper)) {
+      const kind = Object.keys(typed).find((candidate) => typed[candidate].has(match[2]));
+      if (!kind || all().has(match[1])) continue;
+      typed[kind].add(match[1]);
+      aliases.push({ name: match[1], source: match[2], index: match.index });
+      changed = true;
+    }
+  }
+  return { ...typed, all: all(), aliases };
+}
+
+function callsTo(expression, names) {
+  if (!names.size) return [];
+  const escaped = [...names].sort((a, b) => b.length - a.length).map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(`(?<![\\w$])(?:globalThis\\.)?(${escaped.join("|")})\\s*\\(`, "g");
+  return [...expression.matchAll(pattern)];
+}
+
 export function attributeContextCalls(source) {
   const found = [];
+  const bindings = importedTranslationBindings(source);
+  const aliases = translationAliases(source, bindings);
+  const htmlOrText = new Set([...aliases.html, ...aliases.text]);
+  const everyTranslation = new Set([...aliases.all]);
   for (const interpolation of templateInterpolations(source)) {
-    if (!interpolation.insideQuotedAttribute) continue;
     const expression = source.slice(interpolation.start + 2, interpolation.end);
-    for (const match of expression.matchAll(/\bhodlT\(/g)) {
+    let matches = [];
+    let reason = "";
+    if (interpolation.insideTag && !interpolation.insideQuotedAttribute) {
+      matches = callsTo(expression, everyTranslation);
+      reason = "translation appears in an unquoted attribute context";
+    } else if (interpolation.insideQuotedAttribute) {
+      matches = callsTo(expression, htmlOrText);
+      reason = "use the attribute translation helper inside a quoted attribute";
+    } else {
+      matches = callsTo(expression, aliases.text);
+      reason = "use the HTML translation helper inside an HTML template";
+    }
+    for (const match of matches) {
       const callIndex = interpolation.start + 2 + match.index;
       const location = sourceLocation(source, callIndex);
       found.push({
         ...location,
+        reason,
         snippet: source.slice(Math.max(0, callIndex - 40), callIndex + 30).replace(/\s+/g, " ").trim(),
       });
     }
@@ -154,7 +227,7 @@ export function javascriptFiles(directory, prefix = "") {
 
 test("the guard recognizes direct, conditional, prefixed, and nested attribute calls", () => {
   const count = (source) => attributeContextCalls(source).length;
-  assert.equal(count('`<div aria-label="${hodlT("k")}">x</div>`'), 1);
+  assert.equal(count('import { tHtml as hodlT } from "./i18n.js"; `<div aria-label="${hodlT("k")}">x</div>`'), 1);
   assert.equal(count('`<input placeholder="${hodlT("k", { n: 1 })}" title=\'${hodlT("j")}\'>`'), 2);
   assert.equal(count('`<div aria-label="${condition ? hodlT("a") : hodlT("b")}">`'), 2);
   assert.equal(count('`<div aria-label="Prefix ${hodlT("k")} suffix">`'), 1);
@@ -171,6 +244,18 @@ test("the guard allows safe attribute helpers, element content, and DOM APIs", (
   assert.equal(count('`<p class="x">\n${hodlT("k")}\n</p>`'), 0);
   assert.equal(count('const markup = `<div aria-label="safe">`; const plain = "${hodlT(\'k\')}";'), 0);
   assert.equal(count('element.setAttribute("aria-label", hodlT("k"));'), 0);
+});
+
+test("the guard covers natural imports, aliases, wrappers, and unquoted attributes", () => {
+  const count = (source) => attributeContextCalls(source).length;
+  assert.equal(count('import { t } from "./i18n.js"; `<div title="${t("k")}">`'), 1);
+  assert.equal(count('const tr = hodlT; `<div title="${tr("k")}">`'), 1);
+  assert.equal(count('const tr = (...args) => hodlT(...args); `<div title="${tr("k")}">`'), 1);
+  assert.equal(count('const attr = hodlTAttr; `<div title="${attr("k")}">`'), 0);
+  assert.equal(count('const attr = (...args) => hodlTAttr(...args); `<div title="${attr("k")}">`'), 0);
+  assert.equal(count('`<div title=${hodlT("k")}>`'), 1);
+  assert.equal(count('`<div title=${hodlTAttr("k")}>`'), 1);
+  assert.equal(count('import { t } from "./i18n.js"; `<p>${t("k")}</p>`'), 1);
 });
 
 test("the source walk includes JavaScript files in nested directories", () => {
@@ -191,8 +276,8 @@ test("no source file interpolates raw hodlT() into a quoted attribute", () => {
   const violations = [];
   for (const file of javascriptFiles(directory)) {
     for (const hit of attributeContextCalls(readFileSync(file.absolutePath, "utf8"))) {
-      violations.push(`src/js/${file.relativePath}:${hit.line}:${hit.column} ${hit.snippet}`);
+      violations.push(`src/js/${file.relativePath}:${hit.line}:${hit.column} ${hit.reason}: ${hit.snippet}`);
     }
   }
-  assert.deepEqual(violations, [], "use hodlTAttr() for catalog text inside a quoted attribute");
+  assert.deepEqual(violations, [], "keep text/HTML translations out of attributes and quote translated attributes");
 });

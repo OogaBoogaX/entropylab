@@ -3386,7 +3386,7 @@
     assert(window.__entropyLabPwned !== true, "A catalog value executed script");
     // Legitimate catalog markup still renders as markup after sanitizing.
     const intro = window.hodlT("msig.intro");
-    assert(/<span class="mono">/.test(intro), "Allowlisted catalog markup was stripped");
+    assert(!/["']/.test(intro), "Sanitized HTML retained a quoted-attribute delimiter");
     host.innerHTML = intro;
     assert(host.querySelector("span.mono"), "Allowlisted catalog markup did not render");
 
@@ -3425,6 +3425,12 @@
     assert(!host.querySelector("[onerror]"), "A variable created an event handler");
     equal(host.textContent, hostile + " words");
     assert(window.__entropyLabPwned !== true, "A variable executed script");
+    host.innerHTML = window.hodlT("seedLength.words", { n: "<strong>attacker</strong>" });
+    assert(!host.querySelector("strong"), "An allowlisted element arrived through a placeholder");
+    equal(host.textContent, "<strong>attacker</strong> words");
+    host.innerHTML = window.hodlSanitizeCatalogHtml("balance&#x202E;spoof");
+    assert(!host.textContent.includes("\u202E"), "An entity-spelled bidi override reached rendered text");
+    equal(host.textContent, "balance&#x202E;spoof");
   });
 
   report("online-results.txt");

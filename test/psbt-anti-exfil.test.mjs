@@ -53,7 +53,7 @@ test("PSBT copy mentions Jade anti-exfil transcript checks", () => {
   assert.match(app, /id="psbt-ax-transcript"/);
   assert.match(app, /hodlAntiExfilCommitOk\(\s*parts\.r\s*,\s*opening\s*,\s*transcript\.host\s*\)/);
   assert.match(app, /s2c\/ecdsa\/point/);
-  assert.match(app, /hodlT\("psbt.jadeMatch"\)/);
+  assert.match(app, /hodlTText\("psbt.jadeMatch"\)/);
   assert.match(app, /RFC 6979 comparison currently covers/);
   assert.match(en, /QR \/ sign_psbt Jade does not run it yet/);
 });
@@ -112,7 +112,7 @@ test("anti-exfil commit check is try/caught so a bad opening cannot wipe the PSB
   assert.match(app, /else\s+try\s*\{\s*if\s*\(\s*hodlAntiExfilCommitOk\(\s*parts\.r\s*,\s*opening\s*,\s*transcript\.host\s*\)\s*\)/);
   assert.match(
     app,
-    /catch\s*\(\s*exception\s*\)\s*\{\s*message\s*=\s*hodlT\(\s*"psbt.jadeVerifyFail"\s*,\s*\{\s*error:\s*exception\.message\s*\|\|\s*String\s*\(\s*exception\s*\)\s*\}\s*\)\s*;\s*className\s*=\s*"psbt-warn"\s*;?\s*\}/,
+    /catch\s*\(\s*exception\s*\)\s*\{\s*message\s*=\s*hodlTText\(\s*"psbt.jadeVerifyFail"\s*,\s*\{\s*error:\s*exception\.message\s*\|\|\s*String\s*\(\s*exception\s*\)\s*\}\s*\)\s*;\s*className\s*=\s*"psbt-warn"\s*;?\s*\}/,
   );
 });
 

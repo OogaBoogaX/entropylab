@@ -125,8 +125,8 @@ test("the header network picker sets the network every tool defaults to", () => 
   // The option names and the button's accessible name come from the locale
   // catalogs so the whole header follows the selected language.
   assert.match(appSource, /let key = \["mainnet", "testnet", "signet", "regtest"\]\.includes\(hodlNetworkChoice\) \? hodlNetworkChoice : "mainnet"/);
-  assert.match(appSource, /let name = hodlT\(`networkPicker\.name\.\$\{key\}`\)/);
-  assert.match(appSource, /button\.setAttribute\("aria-label", hodlT\("networkPicker\.buttonAria", \{ network: name \}\)\)/);
+  assert.match(appSource, /let name = hodlTText\(`networkPicker\.name\.\$\{key\}`\)/);
+  assert.match(appSource, /button\.setAttribute\("aria-label", hodlTText\("networkPicker\.buttonAria", \{ network: name \}\)\)/);
   assert.match(appSource, /option\.dataset\.network === hodlNetworkChoice/);
   assert.match(appSource, /function hodlApplyNetworkDefault\(network\)/);
   assert.match(appSource, /function hodlInitNetworkPicker\(\)/);
@@ -226,7 +226,7 @@ test("key and multisig derivation use an indexed address window with an estimate
   assert.match(css, /\.derive-progress \{[\s\S]*?border: 0;/);
   assert.match(css, /\.btn\.primary\[data-derivation-state="running"\][\s\S]*?background: var\(--danger\)/);
   assert.doesNotMatch(css, /derive-progress-slide|animation: derive-progress/);
-  assert.match(appSource, /button\.textContent = hodlT\("action.stop"\)/);
+  assert.match(appSource, /button\.textContent = hodlTText\("action.stop"\)/);
   assert.match(appSource, /button\.style\.width = `\$\{width\}px`/);
   assert.match(appSource, /button\.style\.removeProperty\("width"\)/);
   assert.match(appSource, /class HodlDerivationCancelledError extends Error/);
@@ -265,7 +265,7 @@ test("a running derivation yields off the main thread, survives hidden tabs, and
   assert.match(appSource, /function hodlInvalidateMsig\(\) \{[\s\S]*?hodlStopDerivation\("msig"\)[\s\S]*?\}/);
   assert.match(appSource, /function hodlSyncDeriveButton\(\) \{[\s\S]*?hodlActiveDerivation\.kind === "key"[\s\S]*?button\.disabled = true;/);
   assert.match(appSource, /function hodlSyncMsigDeriveButton\(\) \{[\s\S]*?hodlActiveDerivation\.kind === "msig"[\s\S]*?button\.disabled = true;/);
-  assert.equal(appSource.match(/hodlT\("error\.msig\.deriveBusy"\)/g)?.length, 2);
+  assert.equal(appSource.match(/hodlTText\("error\.msig\.deriveBusy"\)/g)?.length, 2);
 });
 
 test("entropy progress messages sit directly below their inputs and above keypads", () => {
@@ -334,7 +334,7 @@ test("hashed cards can match Ian Coleman's suit-symbol SHA-256 transcript", () =
 });
 
 test("Number bases offers exact Base 2, 4, 8, 16, Crockford Base32, and Base64-alphabet input", () => {
-  assert.match(appSource, /hodlT\(`mode\.\$\{mode\}`\)/);
+  assert.match(appSource, /hodlTText\(`mode\.\$\{mode\}`\)/);
   assert.doesNotMatch(template, />Hex or binary<\/button>/);
   assert.ok(app.includes('formatChoices=["bin","base4","base8","hex","base32","base64"]'));
   assert.match(app, /name="entropy-format" value="\$\{id\}"/);
@@ -687,7 +687,7 @@ test("multisig script type and placeholders follow detected co-signer exports", 
   assert.match(app, /function hodlUpdateMsigPurposeDetection\(\)/);
   assert.doesNotMatch(app, /or BIP48 script 3h/);
   assert.doesNotMatch(app, /if\(steps\[3\]==="3h"\)return"p2tr"/);
-  assert.match(app, /hodlT\("error\.msig\.purposeMixed"/);
+  assert.match(app, /hodlTText\("error\.msig\.purposeMixed"/);
   assert.match(app, /button\.disabled=!ready/);
   assert.match(app, /if\(kind==="mixed"\)throw hodlError\("error\.msig\.mixedScripts"\)/);
 });
@@ -704,7 +704,7 @@ test("key derivation shows the relevant paste-ready multisig co-signer exports",
   assert.match(app, /multisigCosignerExports:root\.privateKey\?hodlBuildMultisigCosignerExports\(root,network,accountIndex,masterFingerprint,coinType\):\[\]/);
   assert.match(app, /function hodlRenderMultisigCosignerExport\(exports,accountId\)/);
   assert.match(app, /exports\.filter\(candidate=>candidate\.accountId===accountId\)/);
-  assert.match(appWhitespace, /items\.map\(item=>hodlPublicFieldHtml\(hodlT\("result\.cosignerExport",\{prefix:item\.prefix,label:item\.label\}\),item\.value\)\)\.join\(""\)/);
+  assert.match(appWhitespace, /items\.map\(item=>hodlPublicFieldHtml\(hodlTText\("result\.cosignerExport",\{prefix:item\.prefix,label:item\.label\}\),item\.value\)\)\.join\(""\)/);
   assert.match(app, /\$\{hodlSlip132WatchFields\(account,hodlWalletResult\)\}\s*\$\{hodlImportedCoreRecoveryExport\(hodlWalletResult,account\)\}\s*\$\{hodlRenderMultisigCosignerExport\(hodlWalletResult.multisigCosignerExports,account\.def\.id\)\}/);
   assert.doesNotMatch(`${app}\n${css}`, /account-multisig-exports/);
   assert.match(app, /Legacy P2SH requires the depth-1 BIP45 purpose key at m\/45h/);
@@ -755,8 +755,8 @@ test("multisig key order is sorted by default and listed order is advanced", () 
   assert.match(app, /function hodlMsigKeysSorted\(\)/);
   assert.match(app, /function hodlBindMsigKeyReorder\(box\)/);
   assert.match(app, /function hodlMoveMsigKeyRow\(row,offset\)/);
-  assert.match(app, /hodlT\("msig.moveUp"\)/);
-  assert.match(app, /hodlT\("msig.moveDown"\)/);
+  assert.match(app, /hodlTText\("msig.moveUp"\)/);
+  assert.match(app, /hodlTText\("msig.moveDown"\)/);
   assert.match(app, /function hodlMsigScriptOrder\(keyTokens\)/);
   assert.match(app, /id="multisig-order-heading">\$\{hodlT\("msig\.orderHeading"\)\}/);
   assert.match(app, /keyOrder:"sorted"/);
@@ -939,8 +939,8 @@ test("the Key Station method picker is one dropdown carrying every method's mark
   // The title is the control's accessible name, so speech input can say it.
   assert.match(css, /\.key-mode-select > \.label \{ margin: 0 0 8px; \}/);
   assert.doesNotMatch(template, /Brain wallet — lab/);
-  // The labels live in the locale catalogs; the dropdown reads them through hodlT.
-  assert.match(appSource, /option\.textContent = hodlT\(`mode\.\$\{mode\}`\);/);
+  // The labels live in the locale catalogs; the dropdown reads their text view.
+  assert.match(appSource, /option\.textContent = hodlTText\(`mode\.\$\{mode\}`\);/);
   for (const mode of ["dice", "cards", "hex", "seed", "key"]) {
     assert.ok(en[`mode.${mode}`]?.length > 0, `mode.${mode} label is missing from the English catalog`);
   }
@@ -1534,7 +1534,7 @@ test("dice rolls hide Pearson chi-squared fairness behind a text expand button",
   assert.match(app, /hodlRenderDiceFairness\(input\.value,\s*hodlDiceMethod,\s*config\.words\)/);
   assert.match(app, /showDiceFairness:!1/);
   assert.match(app, /dice\.fairness\.verdict\./);
-  assert.match(app, /hodlT\("dice.fairness.hideAria"\)/);
+  assert.match(app, /hodlTText\("dice.fairness.hideAria"\)/);
   assert.match(css, /\.dice-fairness \{/);
   assert.match(css, /\.dice-fairness-toggle \{/);
   assert.match(css, /\.dice-fairness\[data-tone="danger"\] \{/);
@@ -1899,10 +1899,10 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   // One swaps for the other at the width the header drops its own labels.
   assert.match(css, /\.workspace-tab-short \{ display: none; \}/);
   assert.match(css, /@media \(max-width: 719px\) \{[\s\S]*?\.workspace-tab-full \{ display: none; \}\s*\.workspace-tab-short \{ display: inline; \}/);
-  assert.match(appSource, /fullLabel\.textContent = hodlT\(label\);\s*shortLabel\.textContent = hodlT\(short\);/);
+  assert.match(appSource, /fullLabel\.textContent = hodlTText\(label\);\s*shortLabel\.textContent = hodlTText\(short\);/);
   // Hidden text leaves the accessibility tree, so the full name is stated on
   // the tab itself and assistive tech hears it at every width.
-  assert.match(appSource, /button\.setAttribute\("aria-label", hodlT\(label\)\);/);
+  assert.match(appSource, /button\.setAttribute\("aria-label", hodlTText\(label\)\);/);
   for (const full of ["Keys", "Vanity", "BIP-85", "Multi Signature", "Silent Payments", "PSBT", "Journal"]) {
     assert.match(template, new RegExp(`aria-label="${full.replace("/", "\\/")}">[\\s\\S]*?<span class="workspace-tab-full">${full.replace("/", "\\/")}</span>`), `${full} tab needs its accessible name`);
   }

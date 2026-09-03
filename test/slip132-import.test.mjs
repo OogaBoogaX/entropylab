@@ -116,7 +116,7 @@ const hodlScriptTypes = [
   { id: "bip49", label: "Nested SegWit", bip: "BIP49", script: "p2sh-p2wpkh" },
   { id: "bip84", label: "Native SegWit", bip: "BIP84", script: "p2wpkh" },
 ];
-const hodlScriptUiLabel = new Function("hodlT", `${loadFunction("hodlScriptUiLabel")}; return hodlScriptUiLabel;`)(hodlT);
+const hodlScriptUiLabel = new Function("hodlTText", `${loadFunction("hodlScriptUiLabel")}; return hodlScriptUiLabel;`)(hodlT);
 const hodlSinglesigScriptMismatch = new Function("hodlScriptTypes", "hodlNote", "hodlScriptUiLabel", `${loadFunction("hodlSinglesigScriptMismatch")}; return hodlSinglesigScriptMismatch;`)(hodlScriptTypes, hodlNote, hodlScriptUiLabel);
 const hodlImportedCoreRecoveryData = new Function("hodlDescriptorWithChecksum", "hodlScriptDescriptor", `${loadFunction("hodlImportedCoreRecoveryData")}; return hodlImportedCoreRecoveryData;`)(hodlDescriptorWithChecksum, hodlScriptDescriptor);
 

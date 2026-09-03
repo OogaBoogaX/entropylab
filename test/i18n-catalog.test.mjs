@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { hodlCatalogAllowedTags, hodlCatalogTagAllowed, hodlCatalogTokens } from "../src/js/i18n-sanitize.js";
+import { hodlCatalogAllowedTags, hodlCatalogHasControlCharacters, hodlCatalogTagAllowed, hodlCatalogTokens } from "../src/js/i18n-sanitize.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const locales = ["es", "pt", "fr", "de"];
@@ -17,17 +17,14 @@ const en = readJson(join(root, "src/locales/en.json"));
 
 const tagsOf = (value) => hodlCatalogTokens(value).filter((token) => token.text === undefined).map((token) => `${token.closing ? "/" : ""}${token.name}${Object.entries(token.attrs ?? {}).map(([name, attr]) => ` ${name}="${attr}"`).join("")}`).sort();
 const placeholdersOf = (value) => [...value.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort();
-// Bidirectional overrides, zero-width characters and other controls pass a tag
-// check but can make a string render differently from how it reads in review.
-// C0 controls except tab/newline, DEL, zero-width and directional formatting
-// characters, the invisible operators, the isolates, and the byte order mark.
-const controlCharacters = new RegExp("[" + [[0, 8], [11, 12], [14, 31], [127, 127], [0x200b, 0x200f], [0x202a, 0x202e], [0x2060, 0x2064], [0x2066, 0x2069], [0xfeff, 0xfeff]].map(([from, to]) => String.fromCodePoint(from) + "-" + String.fromCodePoint(to)).join("") + "]");
 const forbidden = [/<script/i, /\bon[a-z]+\s*=/i, /javascript:/i, /\bdata:/i];
+const characterReference = /&(?:#(?:\d+|x[0-9a-f]+)|[a-z][a-z0-9]+);/i;
 
 function problemsWith(code, key, value, source) {
   const problems = [];
   if (typeof value !== "string" || !value.length) return [`${code} ${key}: empty`];
-  if (controlCharacters.test(value)) problems.push(`${code} ${key}: control or bidirectional character`);
+  if (hodlCatalogHasControlCharacters(value)) problems.push(`${code} ${key}: control or bidirectional character`);
+  if (characterReference.test(value)) problems.push(`${code} ${key}: HTML character references are not allowed`);
   for (const pattern of forbidden) if (pattern.test(value)) problems.push(`${code} ${key}: matches ${pattern}`);
   for (const token of hodlCatalogTokens(value)) {
     if (token.text !== undefined) continue;
@@ -46,6 +43,14 @@ test("the English catalog uses only allowlisted markup and no control characters
   for (const [key, value] of Object.entries(en)) problems.push(...problemsWith("en", key, value));
   assert.deepEqual(problems, []);
   assert.ok(Object.keys(hodlCatalogAllowedTags).length >= 4);
+});
+
+test("literal and entity-spelled invisible controls are rejected", () => {
+  assert.ok(problemsWith("xx", "key", "balance\u061C").some((problem) => problem.includes("control or bidirectional")));
+  assert.ok(problemsWith("xx", "key", "balance\u202E").some((problem) => problem.includes("control or bidirectional")));
+  for (const value of ["balance&#1564;", "balance&#x61c;", "balance&#8238;", "balance&#x202e;", "balance&rlm;"]) {
+    assert.ok(problemsWith("xx", "key", value).some((problem) => problem.includes("character references")), value);
+  }
 });
 
 for (const code of locales) {

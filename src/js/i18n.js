@@ -3,7 +3,7 @@ import es from "../locales/es.json" with { type: "json" };
 import pt from "../locales/pt.json" with { type: "json" };
 import fr from "../locales/fr.json" with { type: "json" };
 import de from "../locales/de.json" with { type: "json" };
-import { hodlEscapeAttribute, hodlSanitizeCatalog, hodlSanitizeCatalogHtml } from "./i18n-sanitize.js";
+import { hodlEscapeAttribute, hodlEscapeHtmlText, hodlSanitizeCatalog, hodlSanitizeCatalogHtml, hodlSanitizeTextCatalog } from "./i18n-sanitize.js";
 
 export const hodlLocaleCodes = Object.freeze(["en", "es", "pt", "fr", "de"]);
 export const hodlLocaleStorageKey = "entropylab-locale";
@@ -15,10 +15,11 @@ export const hodlLocaleMeta = Object.freeze({
   de: { htmlLang: "de", label: "Deutsch", short: "DE" },
 });
 
-// Every catalog is rebuilt from the markup allowlist once, here, so nothing
-// downstream — t(), the data-i18n-html branch, or a template that interpolates
-// hodlT() into innerHTML — can ever see a raw catalog value.
-const hodlLocaleCatalogs = { en: hodlSanitizeCatalog(en), es: hodlSanitizeCatalog(es), pt: hodlSanitizeCatalog(pt), fr: hodlSanitizeCatalog(fr), de: hodlSanitizeCatalog(de) };
+// Every catalog is rebuilt from the markup allowlist once, here. Plain DOM
+// sinks and HTML sinks use separate sanitized views so neither has to guess its
+// output context or re-sanitize after placeholder substitution.
+const hodlLocaleHtmlCatalogs = { en: hodlSanitizeCatalog(en), es: hodlSanitizeCatalog(es), pt: hodlSanitizeCatalog(pt), fr: hodlSanitizeCatalog(fr), de: hodlSanitizeCatalog(de) };
+const hodlLocaleTextCatalogs = { en: hodlSanitizeTextCatalog(en), es: hodlSanitizeTextCatalog(es), pt: hodlSanitizeTextCatalog(pt), fr: hodlSanitizeTextCatalog(fr), de: hodlSanitizeTextCatalog(de) };
 let hodlLocale = "en";
 let hodlLocaleListener = null;
 
@@ -27,7 +28,7 @@ export function hodlNormalizeLocale(code) {
 }
 
 export function hodlLocaleIsComplete(code) {
-  let catalog = hodlLocaleCatalogs[hodlNormalizeLocale(code)];
+  let catalog = hodlLocaleTextCatalogs[hodlNormalizeLocale(code)];
   if (!catalog) return false;
   return Object.keys(en).every((key) => typeof catalog[key] === "string" && catalog[key].length > 0);
 }
@@ -40,21 +41,38 @@ export function hodlGetLocale() {
   return hodlLocale;
 }
 
-export function t(key, vars) {
-  let catalog = hodlLocaleCatalogs[hodlLocale] || hodlLocaleCatalogs.en;
+function hodlCatalogValue(catalogs, key) {
+  let catalog = catalogs[hodlLocale] || catalogs.en;
   let text = catalog[key];
-  if (typeof text !== "string" || !text) text = hodlLocaleCatalogs.en[key];
-  if (typeof text !== "string") return key;
+  if (typeof text !== "string" || !text) text = catalogs.en[key];
+  return typeof text === "string" ? text : key;
+}
+
+function hodlInterpolate(text, vars, render) {
   if (!vars) return text;
-  let interpolated = text.replace(/\{(\w+)\}/g, (_, name) => (vars[name] == null ? `{${name}}` : String(vars[name])));
-  return hodlSanitizeCatalogHtml(interpolated);
+  return text.replace(/\{(\w+)\}/g, (_, name) => (vars[name] == null ? `{${name}}` : render(vars[name])));
+}
+
+// Plain strings are only for DOM textContent/setAttribute and other non-HTML
+// consumers. Placeholder values stay byte-faithful because the sink does not
+// parse them.
+export function t(key, vars) {
+  return hodlInterpolate(hodlCatalogValue(hodlLocaleTextCatalogs, key), vars, String);
+}
+
+// HTML strings retain catalog-authored allowlisted markup. Placeholder values
+// are encoded as text before insertion and are never passed back through the
+// allowlist, so they cannot introduce even an otherwise allowed element.
+export function tHtml(key, vars) {
+  return hodlInterpolate(hodlCatalogValue(hodlLocaleHtmlCatalogs, key), vars, hodlEscapeHtmlText);
 }
 
 export function tAttr(key, vars) {
   return hodlEscapeAttribute(t(key, vars));
 }
 if (typeof globalThis !== "undefined") {
-  globalThis.hodlT = t;
+  globalThis.hodlT = tHtml;
+  globalThis.hodlTText = t;
   globalThis.hodlTAttr = tAttr;
   globalThis.hodlSanitizeCatalogHtml = hodlSanitizeCatalogHtml;
 }
@@ -64,7 +82,7 @@ export function hodlApplyStaticI18n(root = document) {
     el.textContent = t(el.getAttribute("data-i18n"), hodlI18nVars(el));
   });
   root.querySelectorAll("[data-i18n-html]").forEach((el) => {
-    el.innerHTML = t(el.getAttribute("data-i18n-html"), hodlI18nVars(el));
+    el.innerHTML = tHtml(el.getAttribute("data-i18n-html"), hodlI18nVars(el));
   });
   root.querySelectorAll("[data-i18n-aria]").forEach((el) => {
     el.setAttribute("aria-label", t(el.getAttribute("data-i18n-aria"), hodlI18nVars(el)));

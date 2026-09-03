@@ -116,7 +116,7 @@ test("the brain-wallet HD output has no silent fingerprint or mnemonic preview p
   // The private-key mode never previews a fingerprint or mnemonic, which now
   // covers the HD brain output too.
   assert.match(app, /if \(hodlKeyMode === "key"\) \{\s*preview\.hidden = true;/);
-  assert.match(app, /hodlT\("note\.brainLabEmpty", \{ derive: hodlT\("action\.derive"\) \}\)/);
+  assert.match(app, /hodlTText\("note\.brainLabEmpty", \{ derive: hodlTText\("action\.derive"\) \}\)/);
   assert.match(en["note.brainLabEmpty"], /24 words appear only after \{derive\}/);
   assert.match(app, /hodlError\("error\.brainAck"\)/);
   assert.match(en["error.brainAck"], /Acknowledge the lab warning before deriving/);
