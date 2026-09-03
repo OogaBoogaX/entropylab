@@ -234,9 +234,10 @@
     assert(document.getElementById("derivation-path").value.startsWith("m/84'/1'/0'"), `Derivation path did not follow: ${document.getElementById("derivation-path").value}`);
     assert(document.getElementById("network-help").textContent.includes("Testnet"), "Coin type help did not follow the header network");
     equal(document.getElementById("msig-network").value, "1", "Multisig coin type did not follow the header network");
-    for (const id of ["sp-network", "psbt-network", "psbted-network"]) {
-      equal(document.getElementById(id).value, "testnet", id + " did not follow the header network");
-    }
+    equal(document.getElementById("sp-network").value, "testnet", "sp-network did not follow the header network");
+    // The PSBT tools have no network select of their own anymore: they read
+    // the header picker's choice directly.
+    assert(!document.getElementById("psbt-network") && !document.getElementById("psbted-network"), "The PSBT network selects must be gone");
     // Signet and regtest are their own picks, but they share the testnet
     // formats, so every tool's network control stays on testnet for them.
     for (const network of ["signet", "regtest"]) {
@@ -246,9 +247,7 @@
       equal(picker.dataset.network, network, "Network picker did not tag " + network);
       equal(document.getElementById("network").value, "1'", "Keys coin type did not follow " + network);
       equal(document.getElementById("msig-network").value, "1", "Multisig coin type did not follow " + network);
-      for (const id of ["sp-network", "psbt-network", "psbted-network"]) {
-        equal(document.getElementById(id).value, "testnet", id + " did not follow " + network);
-      }
+      equal(document.getElementById("sp-network").value, "testnet", "sp-network did not follow " + network);
     }
     button.click();
     menu.querySelector('[data-network="mainnet"]').click();
@@ -256,9 +255,7 @@
     equal(document.getElementById("network").value, "0'", "Keys coin type did not restore mainnet");
     assert(document.getElementById("derivation-path").value.startsWith("m/84'/0'/0'"), "Derivation path did not restore mainnet");
     equal(document.getElementById("msig-network").value, "0", "Multisig coin type did not restore mainnet");
-    for (const id of ["sp-network", "psbt-network", "psbted-network"]) {
-      equal(document.getElementById(id).value, "mainnet", id + " did not restore mainnet");
-    }
+    equal(document.getElementById("sp-network").value, "mainnet", "sp-network did not restore mainnet");
     // Escape closes the menu without a choice, and nothing is ever stored.
     button.click();
     assert(!menu.hidden, "Network menu did not reopen");
@@ -2064,6 +2061,16 @@
     assert(outText().includes("PSBT_IN_WITNESS_UTXO"), "typed pair names missing");
     assert(outText().includes("100000000 sats"), "witness utxo amount missing");
     assert(outText().includes("parses under rust-bitcoin"), "rust-bitcoin verdict missing");
+    assert(outText().includes("1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"), "mainnet output address missing");
+    // The editor has no network select of its own: the header picker's choice
+    // re-decodes the addresses live, without a reload.
+    document.getElementById("network-picker-button").click();
+    document.querySelector('#network-picker-menu [data-network="testnet"]').click();
+    await until(() => outText().includes("mrKjeffvbnmKJURrLNdqLkfrptLrFtnkFx"), "testnet re-decode on picker change");
+    assert(!outText().includes("1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"), "mainnet address survived the network change");
+    document.getElementById("network-picker-button").click();
+    document.querySelector('#network-picker-menu [data-network="mainnet"]').click();
+    await until(() => outText().includes("1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"), "mainnet re-decode on picker change");
     // The loaded PSBT builds at once: result text and QR without a click.
     assert((document.getElementById("psbted-result-b64") || {}).value.startsWith("cHNidP8B"), "result did not follow the load");
     assert(document.querySelector("#psbted-qr-code svg"), "QR did not follow the load");
@@ -2080,6 +2087,66 @@
     document.getElementById("psbted-load").click();
     await until(() => document.getElementById("psbted-error").textContent, "editor rejection");
     assert(!document.querySelector("#psbted-card img") && window.__browserTestInjected !== true, "Editor input executed markup");
+    input(box, "");
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("calc-card").hidden, "key workspace");
+  });
+
+  await test("PSBT editor compares a pasted PSBT semantically", async () => {
+    // Same BIP-174 vector as the editor test above; the "after" PSBT is
+    // produced by the editor itself (output 0 raised by 1000 sats).
+    const vector = "cHNidP8BAKACAAAAAqsJSaCMWvfEm4IS9Bfi8Vqz9cM9zxU4IagTn4d6W3vkAAAAAAD+////qwlJoIxa98SbghL0F+LxWrP1wz3PFTghqBOfh3pbe+QBAAAAAP7///8CYDvqCwAAAAAZdqkUdopAu9dAy+gdmI5x3ipNXHE5ax2IrI4kAAAAAAAAGXapFG9GILVT+glechue4O/p+gOcykWXiKwAAAAAAAEHakcwRAIgR1lmF5fAGwNrJZKJSGhiGDR9iYZLcZ4ff89X0eURZYcCIFMJ6r9Wqk2Ikf/REf3xM286KdqGbX+EhtdVRs7tr5MZASEDXNxh/HupccC1AaZGoqg7ECy0OIEhfKaC3Ibi1z+ogpIAAQEgAOH1BQAAAAAXqRQ1RebjO4MsRwUPJNPuuTycA5SLx4cBBBYAFIXRNTfy4mVAWjTbr6nj3aAfuCMIAAAA";
+    document.querySelector('#workspace [data-workspace="psbt"]').click();
+    document.querySelector('#psbt-tool-tabs [data-psbt-tool="editor"]').click();
+    await until(() => !document.getElementById("psbted-card").hidden, "PSBT editor tab");
+    const box = await until(() => document.getElementById("psbted-text"), "PSBT editor input");
+    const report = () => document.getElementById("psbted-compare-out").textContent;
+    const compareError = () => document.getElementById("psbted-compare-error").textContent;
+    // Comparing with nothing in the editor is a plain error, not a crash.
+    document.getElementById("psbted-wipe").click();
+    input(document.getElementById("psbted-compare-text"), vector);
+    document.getElementById("psbted-compare-go").click();
+    await until(() => compareError(), "compare with empty editor");
+    assert(compareError().includes("Load a PSBT"), "missing-editor error mismatch: " + compareError());
+    input(box, vector);
+    document.getElementById("psbted-load").click();
+    await until(() => document.querySelector("#psbted-out .psbted-pairs"), "editor pair tables");
+    // A fresh load clears any earlier comparison report.
+    equal(report(), "", "stale comparison survived the load");
+    const pristine = document.getElementById("psbted-result-b64").value;
+    input(document.querySelector("[data-txout-val='0']"), "199901000");
+    await until(() => document.getElementById("psbted-out").textContent.includes("199901000") || document.getElementById("psbted-error").textContent, "live rebuild for compare");
+    equal(document.getElementById("psbted-error").textContent, "", "live rebuild failed");
+    const edited = document.getElementById("psbted-result-b64").value;
+    assert(edited !== pristine, "edited PSBT did not change");
+    // Reload the pristine vector as the editor's "before", then compare.
+    input(box, vector);
+    document.getElementById("psbted-load").click();
+    await until(() => (document.getElementById("psbted-result-b64") || { value: "" }).value === pristine, "reload of the pristine vector");
+    input(document.getElementById("psbted-compare-text"), edited);
+    document.getElementById("psbted-compare-go").click();
+    await until(() => report().includes("transaction") || compareError(), "comparison report");
+    equal(compareError(), "", "comparison failed");
+    assert(report().includes("The underlying transaction changed"), "transaction change not flagged");
+    assert(report().includes("Signing state unchanged"), "signing state should read unchanged");
+    assert(report().includes("PSBT metadata unchanged"), "a transaction edit must not flag metadata");
+    assert(report().includes("199900000") && report().includes("199901000"), "before/after amounts missing");
+    // The same bytes on both sides are semantically identical.
+    input(document.getElementById("psbted-compare-text"), pristine);
+    document.getElementById("psbted-compare-go").click();
+    await until(() => report().includes("Semantically identical"), "identical comparison");
+    // Loading another PSBT clears the rendered comparison report.
+    document.getElementById("psbted-load").click();
+    await until(() => (document.getElementById("psbted-result-b64") || { value: "" }).value === pristine, "second reload of the pristine vector");
+    equal(report(), "", "a fresh load did not clear the comparison report");
+    // Markup in the compare box is rejected as a PSBT, never executed.
+    input(document.getElementById("psbted-compare-text"), '<img src=x onerror="window.__browserTestInjected=true">');
+    document.getElementById("psbted-compare-go").click();
+    await until(() => compareError(), "compare rejection");
+    assert(!document.querySelector("#psbted-card img") && window.__browserTestInjected !== true, "Compare input executed markup");
+    document.getElementById("psbted-compare-clear").click();
+    equal(report(), "", "clear did not empty the report");
+    equal(document.getElementById("psbted-compare-text").value, "", "clear did not empty the paste box");
     input(box, "");
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("calc-card").hidden, "key workspace");
@@ -2122,13 +2189,14 @@
     assert(rawOut.includes("Where this transaction sends bitcoin"), "raw transaction outputs section missing");
     assert(rawOut.includes("1Cu32FVupVCgHkMMRJdYJugxwo2Aprgk7H"), "mainnet output address missing");
     assert(rawOut.includes("r values:"), "raw transaction signatures were not inspected");
-    // The testnet option must reach the render as well.
-    const network = document.getElementById("psbt-network");
-    input(network, "testnet");
+    // The header network picker must reach the render as well.
+    document.getElementById("network-picker-button").click();
+    document.querySelector('#network-picker-menu [data-network="testnet"]').click();
     document.getElementById("psbt-go").click();
     await until(() => document.getElementById("psbt-out").textContent.includes("msQzKJatdWdw4rpy8sbv8puHoncseekYCf") || document.getElementById("psbt-error").textContent, "testnet raw transaction report");
     equal(document.getElementById("psbt-error").textContent, "", "inspector rejected the testnet selection");
-    input(network, "mainnet");
+    document.getElementById("network-picker-button").click();
+    document.querySelector('#network-picker-menu [data-network="mainnet"]').click();
     input(box, "");
     document.getElementById("psbt-wipe").click();
     document.querySelector('#workspace [data-workspace="calc"]').click();

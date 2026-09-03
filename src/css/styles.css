@@ -1336,12 +1336,9 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .psbt-ok { color: var(--ok); }
 .psbt-bad { color: var(--danger); }
 .psbt-warn { color: var(--warn); }
-.psbted-network-field { margin-top: 0; min-width: 200px; }
-/* The editor's own action row: the network field's label stacks above its
-   select, and the row's flex stretch would otherwise pull the Load/Clear
-   buttons up to that combined height. Keep the buttons text-sized and
-   aligned with the bottom of the select. (.psbt-actions alone is shared
-   with the other cards' button rows, so scope by the editor's own class.) */
+/* The editor's own action row: keep the buttons text-sized rather than
+   stretched to the row's full height. (.psbt-actions alone is shared with the
+   other cards' button rows, so scope by the editor's own class.) */
 .psbted-actions { align-items: flex-end; }
 .psbted-actions .btn { min-height: 0; padding: 6px 10px; }
 .psbted-map { margin-top: var(--space-component); }
@@ -1401,6 +1398,13 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .psbted-note-ok { color: var(--ok); }
 .psbted-note-warn { color: var(--warn); }
 .psbted-note-bad { color: var(--danger); }
+/* Semantic comparison: the section sits below the editor output and reuses
+   the editor's table density; the diff mark column stays snug like the other
+   utility columns. */
+.psbted-compare { margin-top: var(--space-component); }
+.psbted-compare > h3 { margin: 0 0 4px; font-size: 15px; }
+.psbted-pairs .psbted-col-mark { width: 1.8em; }
+.psbted-diff-mark { font-weight: 700; text-align: center; }
 #psbted-result textarea { font-family: var(--mono); font-size: 12px; min-height: 90px; }
 /* Transaction-flow visualizer (mempool.space-style): input boxes on the
    left, the unsigned transaction in the middle, output boxes on the right,

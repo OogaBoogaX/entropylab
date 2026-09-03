@@ -574,7 +574,7 @@ words, pick one of the checksum words.</span></span>
     <div class="tool-intro" id="psbted-tool-intro" aria-hidden="true">
         <div class="kicker">Full-fidelity editor. Sign elsewhere.</div>
         <h2>Edit a PSBT, field by field.</h2>
-        <p class="muted tool-intro-note">A BIP-174 editor in the spirit of bip174.org, backed by rust-bitcoin compiled to WebAssembly. A transaction-flow diagram in the manner of mempool.space leads: one box per input and output with its claimed amount, address or script template, and signing status. Activating a box opens that key-value map in a panel under the diagram, output amounts edit directly in their boxes, and every key-value pair of the global, per-input and per-output maps is shown with a typed decode (BIP-174 and BIP-371 taproot fields) and stays editable as raw hex; the unsigned transaction's version, locktime, input prevouts/sequences and output amounts/scripts get structured fields. Every edit rebuilds the file through rust-bitcoin as you type — the fields always show its decode of the current build — and the result follows live as base64, hex, a downloadable .psbt and a QR code (a single static code, or an animated ur:crypto-psbt sequence for larger files). A binary .psbt file as saved by Sparrow, Coldcard or another wallet uploads directly. PSBT v0 only; unknown and proprietary pairs round-trip untouched. Editing never signs anything.</p>
+        <p class="muted tool-intro-note">A BIP-174 editor in the spirit of bip174.org, backed by rust-bitcoin compiled to WebAssembly. A transaction-flow diagram in the manner of mempool.space leads: one box per input and output with its claimed amount, address or script template, and signing status. Activating a box opens that key-value map in a panel under the diagram, output amounts edit directly in their boxes, and every key-value pair of the global, per-input and per-output maps is shown with a typed decode (BIP-174 and BIP-371 taproot fields) and stays editable as raw hex; the unsigned transaction's version, locktime, input prevouts/sequences and output amounts/scripts get structured fields. Every edit rebuilds the file through rust-bitcoin as you type — the fields always show its decode of the current build — and the result follows live as base64, hex, a downloadable .psbt and a QR code (a single static code, or an animated ur:crypto-psbt sequence for larger files). A binary .psbt file as saved by Sparrow, Coldcard or another wallet uploads directly. PSBT v0 only; unknown and proprietary pairs round-trip untouched. A second PSBT can be pasted for a semantic comparison against the editor's: the underlying transaction, the signing state, and the PSBT metadata are diffed separately, on the decoded contents rather than the serialized bytes. Editing never signs anything.</p>
       </div>
     </div>
     <section class="key-manager no-print" id="psbt-manager" hidden>
@@ -596,9 +596,6 @@ words, pick one of the checksum words.</span></span>
         <div>
           <label class="field">Optional BIP39 passphrase
             <input id="psbt-pass" autocomplete="off" placeholder="Enter a BIP39 passphrase, or leave blank for none">
-          </label>
-          <label class="field">Address network
-            <select id="psbt-network"><option value="mainnet" selected="selected">Bitcoin mainnet</option><option value="testnet">Testnet (practice)</option></select>
           </label>
         </div>
       </div>
@@ -625,12 +622,22 @@ words, pick one of the checksum words.</span></span>
         <button class="btn secondary" id="psbted-upload" type="button">Upload .psbt file</button>
         <input type="file" id="psbted-file" accept=".psbt,.txt,.hex" hidden>
         <button class="btn secondary" id="psbted-wipe" type="button">Clear editor</button>
-        <label class="field psbted-network-field">Address network
-          <select id="psbted-network"><option value="mainnet" selected="selected">Bitcoin mainnet</option><option value="testnet">Testnet (practice)</option></select>
-        </label>
       </div>
       <p class="err" id="psbted-error" role="alert"></p>
       <div id="psbted-out" aria-live="polite"></div>
+      <section class="psbted-compare" id="psbted-compare">
+        <h3>Compare with another PSBT</h3>
+        <p class="muted">Paste a second PSBT to see what changed relative to the one in the editor. The comparison reads the decoded contents, so reordered maps are not a difference; transaction, signing-state, and metadata changes are reported separately. It describes differences only — it does not judge whether a change is safe.</p>
+        <label class="field">Other PSBT (base64 or hex)
+          <textarea id="psbted-compare-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <div class="row psbt-actions psbted-actions">
+          <button class="btn secondary" id="psbted-compare-go" type="button">Compare</button>
+          <button class="btn secondary" id="psbted-compare-clear" type="button">Clear comparison</button>
+        </div>
+        <p class="err" id="psbted-compare-error" role="alert"></p>
+        <div id="psbted-compare-out" aria-live="polite"></div>
+      </section>
       <p class="muted">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
     </section>
     <div class="tool-intro" id="journal-tool-intro" hidden>

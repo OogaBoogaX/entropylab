@@ -1038,7 +1038,7 @@ hodlRootEl.innerHTML = `
     <div class="tool-intro" id="psbted-tool-intro" aria-hidden="true">
         <div class="kicker">Full-fidelity editor. Sign elsewhere.</div>
         <h2>Edit a PSBT, field by field.</h2>
-        <p class="muted tool-intro-note">A BIP-174 editor in the spirit of bip174.org, backed by rust-bitcoin compiled to WebAssembly. Every key-value pair of the global, per-input and per-output maps is shown with a typed decode (BIP-174 and BIP-371 taproot fields) and stays editable as raw hex, and the unsigned transaction's version, locktime, input prevouts/sequences and output amounts/scripts get structured fields. Every edit rebuilds the file through rust-bitcoin as you type — the fields always show its decode of the current build — and the result follows live as base64, hex, a downloadable .psbt and a QR code (a single static code, or an animated ur:crypto-psbt sequence for larger files). A binary .psbt file as saved by Sparrow, Coldcard or another wallet uploads directly. PSBT v0 only; unknown and proprietary pairs round-trip untouched. Editing never signs anything.</p>
+        <p class="muted tool-intro-note">A BIP-174 editor in the spirit of bip174.org, backed by rust-bitcoin compiled to WebAssembly. Every key-value pair of the global, per-input and per-output maps is shown with a typed decode (BIP-174 and BIP-371 taproot fields) and stays editable as raw hex, and the unsigned transaction's version, locktime, input prevouts/sequences and output amounts/scripts get structured fields. Every edit rebuilds the file through rust-bitcoin as you type — the fields always show its decode of the current build — and the result follows live as base64, hex, a downloadable .psbt and a QR code (a single static code, or an animated ur:crypto-psbt sequence for larger files). A binary .psbt file as saved by Sparrow, Coldcard or another wallet uploads directly. PSBT v0 only; unknown and proprietary pairs round-trip untouched. A second PSBT can be pasted for a semantic comparison against the editor's: the underlying transaction, the signing state, and the PSBT metadata are diffed separately, on the decoded contents rather than the serialized bytes. Editing never signs anything.</p>
       </div>
     </div>
     <section class="key-manager no-print" id="psbt-manager" hidden>
@@ -1060,9 +1060,6 @@ hodlRootEl.innerHTML = `
         <div>
           <label class="field"><span data-i18n="psbt.field.pass">Optional BIP39 passphrase</span>
             <input id="psbt-pass" autocomplete="off" placeholder="Enter a BIP39 passphrase, or leave blank for none" data-i18n-placeholder="passphrase.placeholder">
-          </label>
-          <label class="field"><span data-i18n="psbt.field.network">Address network</span>
-            <select id="psbt-network"><option value="mainnet" selected data-i18n="network.mainnet">Bitcoin mainnet</option><option value="testnet" data-i18n="network.testnetPractice">Testnet (practice)</option></select>
           </label>
         </div>
       </div>
@@ -1089,12 +1086,22 @@ hodlRootEl.innerHTML = `
         <button class="btn secondary" id="psbted-upload" type="button">Upload .psbt file</button>
         <input type="file" id="psbted-file" accept=".psbt,.txt,.hex" hidden>
         <button class="btn secondary" id="psbted-wipe" type="button">Clear editor</button>
-        <label class="field psbted-network-field">Address network
-          <select id="psbted-network"><option value="mainnet" selected>Bitcoin mainnet</option><option value="testnet">Testnet (practice)</option></select>
-        </label>
       </div>
       <p class="err" id="psbted-error" role="alert"></p>
       <div id="psbted-out" aria-live="polite"></div>
+      <section class="psbted-compare" id="psbted-compare">
+        <h3>Compare with another PSBT</h3>
+        <p class="muted">Paste a second PSBT to see what changed relative to the one in the editor. The comparison reads the decoded contents, so reordered maps are not a difference; transaction, signing-state, and metadata changes are reported separately. It describes differences only — it does not judge whether a change is safe.</p>
+        <label class="field">Other PSBT (base64 or hex)
+          <textarea id="psbted-compare-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <div class="row psbt-actions psbted-actions">
+          <button class="btn secondary" id="psbted-compare-go" type="button">Compare</button>
+          <button class="btn secondary" id="psbted-compare-clear" type="button">Clear comparison</button>
+        </div>
+        <p class="err" id="psbted-compare-error" role="alert"></p>
+        <div id="psbted-compare-out" aria-live="polite"></div>
+      </section>
       <p class="muted">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
     </section>
     <div class="tool-intro" id="journal-tool-intro" hidden>
@@ -9990,9 +9997,9 @@ function hodlOwnershipWarning(outputs, network, map) {
   return "<p class='psbt-bad'><strong>No output belongs to this session wallet.</strong> If you expected change, do not sign. A destination-swap can replace both the payment and the change.</p>";
 }
 function hodlRenderPsbt(psbt) {
-  // psbt-network is a mainnet/testnet select, not a numeric coin-type input,
-  // so hodlSelectedNetwork (which reads coin types) cannot parse it.
-  let network = document.getElementById("psbt-network")?.value === "testnet" ? "testnet" : "mainnet",
+  // The inspector follows the header network picker (mainnet/testnet); there
+  // is no per-tool network control.
+  let network = hodlNetworkDefault,
     transcript = null,
     transcriptError = "",
     tx = psbt.tx,
@@ -10168,9 +10175,9 @@ function hodlRenderPsbt(psbt) {
   return html.join("")
 }
 function hodlRenderRawTx(tx) {
-  // psbt-network is a mainnet/testnet select, not a numeric coin-type input,
-  // so hodlSelectedNetwork (which reads coin types) cannot parse it.
-  let network = document.getElementById("psbt-network")?.value === "testnet" ? "testnet" : "mainnet",
+  // The inspector follows the header network picker (mainnet/testnet); there
+  // is no per-tool network control.
+  let network = hodlNetworkDefault,
     html = [],
     map = hodlSessionOwnership(network),
     signatures = extractEcdsaSignatures(tx),
@@ -13713,7 +13720,7 @@ function hodlInitWorkspace() {
   hodlInitJournalNotebook();
   hodlInitMsig();
   hodlInitPsbt();
-  initPsbtEditor();
+  initPsbtEditor({ networkDefault: () => hodlNetworkDefault });
   hodlInitBip85();
   hodlInitCardBackup();
   hodlInitVanity();
@@ -13857,7 +13864,9 @@ function hodlDefaultCoinType() {
 // Pushing the choice into each tool's own network control — and letting the
 // control's ordinary input/change handlers run — keeps every downstream
 // consumer (help text, path preview, key-prefix checks, result invalidation,
-// the custom select chrome) in step without a second code path.
+// the custom select chrome) in step without a second code path. The PSBT
+// tools have no control of their own: the inspectors read hodlNetworkDefault
+// at render time, and the editor hears the change through the document event.
 function hodlApplyNetworkDefault(network) {
   hodlNetworkChoice = ["testnet", "signet", "regtest"].includes(network) ? network : "mainnet";
   hodlNetworkDefault = hodlNetworkChoice === "mainnet" ? "mainnet" : "testnet";
@@ -13878,7 +13887,7 @@ function hodlApplyNetworkDefault(network) {
     msigCoinType.value = String(hodlDefaultCoinType());
     msigCoinType.dispatchEvent(new Event("input", { bubbles: true }));
   }
-  for (let id of ["sp-network", "psbt-network", "psbted-network"]) {
+  for (let id of ["sp-network"]) {
     let select = document.getElementById(id);
     if (!select) continue;
     hodlSyncSelect(select, hodlNetworkDefault);
@@ -13889,6 +13898,7 @@ function hodlApplyNetworkDefault(network) {
       hodlJournalSuppressSettingAudit = false;
     }
   }
+  document.dispatchEvent(new CustomEvent("hodl:network-default"));
 }
 var hodlNetworkPickerRender = null;
 function hodlInitNetworkPicker() {

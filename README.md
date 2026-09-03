@@ -47,13 +47,14 @@ Official website: [entropylab.online](https://entropylab.online)
    type 1 uses Bitcoin Testnet, and custom indexes retain Mainnet address
    serialization. Hardened address children require private key material and
    therefore cannot be derived from multisig co-signer xpubs.
-   PSBT address rendering separately supports Mainnet and Testnet. A network
-   picker in the header (the Bitcoin-orange coin next to the network name)
-   shows the network every tool is set to and switches it — address formats,
-   extended key versions, WIF prefixes, and coin-type defaults all follow, and
-   each menu entry spells out the checks its choice implies. Nothing connects
-   anywhere: the choice only picks formats, and a tool's own advanced fields
-   can still override it. Every load starts on Mainnet again.
+   A network picker in the header (the Bitcoin-orange coin next to the network
+   name) shows the network every tool is set to and switches it — address
+   formats, extended key versions, WIF prefixes, and coin-type defaults all
+   follow, and each menu entry spells out the checks its choice implies. The
+   PSBT tools read the picker's choice directly and have no network control of
+   their own. Nothing connects anywhere: the choice only picks formats, and a
+   tool's own advanced fields can still override it. Every load starts on
+   Mainnet again.
 - Derives watch-only multisignature wallets from extended public keys without
   requiring private keys. Multisig script type and purpose are separate as
   well; conventional script choices restore their standard purpose, while
@@ -97,8 +98,12 @@ Official website: [entropylab.online](https://entropylab.online)
   characters (a whole previous transaction, a large script) collapse to a
   truncated preview with a length label; clicking the cell opens the full
   text in an editor window, where values stay editable. Re-serialization is
-  validated by rust-bitcoin before the edited PSBT is shown. The editor never
-  signs anything.
+  validated by rust-bitcoin before the edited PSBT is shown. A second PSBT can
+  be pasted for a semantic comparison against the editor's: the underlying
+  transaction, the signing state, and the PSBT metadata are diffed separately
+  on the decoded contents, so reordered map serialization is not reported as
+  a change. The comparison reports differences only; it does not judge
+  whether a change is safe. The editor never signs anything.
 - Derives BIP-85 child entropy from the active key's BIP32 root (or a pasted
   root xprv): English BIP-39 mnemonics (12–24 words), HD-seed WIF, XPRV, HEX,
   and Base64/Base85 passwords. Same parent, application, and index always

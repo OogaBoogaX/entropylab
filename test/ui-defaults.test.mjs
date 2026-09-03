@@ -58,7 +58,10 @@ test("wallet coin type indexes enable and default to mainnet", () => {
   for (const markup of [template, appWhitespace]) {
     assert.match(markup, /id="network-help">Coin type index (?:·|\\xB7) Mainnet (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
     assert.match(markup, /id="msig-network-help">Coin type index (?:·|\\xB7) Mainnet (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
-    assert.match(markup, /<select id="psbt-network"><option value="mainnet" selected(?:="selected")?(?: data-i18n="[^"]*")?>Bitcoin mainnet<\/option>/);
+    // The PSBT tools dropped their own network selects: they read the header
+    // picker's choice directly. Only the SP station keeps a select.
+    assert.doesNotMatch(markup, /id="psbt-network"/);
+    assert.doesNotMatch(markup, /id="psbted-network"/);
     assert.match(markup, /<select id="sp-network"><option value="mainnet" selected(?:="selected")?>Bitcoin mainnet<\/option>/);
   }
   assert.match(appSource, /function hodlReadCoinType\(input = document\.getElementById\("network"\), mark = true\)/);
@@ -129,13 +132,17 @@ test("the header network picker sets the network every tool defaults to", () => 
   assert.match(appSource, /function hodlInitNetworkPicker\(\)/);
   // The pick reaches every tool's own network control through the control's
   // ordinary events, so each dependent check follows: the singlesig and
-  // multisig coin-type indexes, and the three mainnet/testnet selects.
+  // multisig coin-type indexes, and the SP station's mainnet/testnet select.
+  // The PSBT tools have no select: the inspectors read hodlNetworkDefault at
+  // render time and the editor re-renders on the document event.
   assert.match(appSource, /coinType\.value = `\$\{hodlDefaultCoinType\(\)\}\$\{hardened \? "'" : ""\}`/);
   assert.match(appSource, /coinType\.dispatchEvent\(new Event\("input", \{ bubbles: true \}\)\)/);
   assert.match(appSource, /msigCoinType\.dispatchEvent\(new Event\("input", \{ bubbles: true \}\)\)/);
-  assert.match(appSource, /for \(let id of \["sp-network", "psbt-network", "psbted-network"\]\)/);
+  assert.match(appSource, /for \(let id of \["sp-network"\]\)/);
   assert.match(appSource, /hodlSyncSelect\(select, hodlNetworkDefault\)/);
   assert.match(appSource, /select\.dispatchEvent\(new Event\("change", \{ bubbles: true \}\)\)/);
+  assert.match(appSource, /document\.dispatchEvent\(new CustomEvent\("hodl:network-default"\)\)/);
+  assert.match(appSource, /let network = hodlNetworkDefault,/);
   // The choice is never stored: every load opens on mainnet again.
   assert.doesNotMatch(appSource, /localStorage\.setItem\([^)]*network/i);
   // The coin takes the Bitcoin Core network colours — yellow mainnet, green
@@ -1600,18 +1607,26 @@ test("one PSBT workspace contains PSBT / Nonce and PSBT Editor tabs", () => {
     assert.match(markup, /id="psbted-text"/);
     assert.match(markup, /id="psbted-load"/);
     assert.match(markup, /id="psbted-wipe"/);
-    assert.match(markup, /id="psbted-network"/);
     assert.match(markup, /id="psbted-out"/);
     assert.match(markup, /id="psbted-error"/);
+    // The comparison surface must exist in both markups: the editor's compare
+    // wiring looks the ids up at boot, and a template without them kills the
+    // page (initPsbtEditor throws inside hodlBoot).
+    assert.match(markup, /id="psbted-compare-text"/);
+    assert.match(markup, /id="psbted-compare-go"/);
+    assert.match(markup, /id="psbted-compare-clear"/);
+    assert.match(markup, /id="psbted-compare-error"/);
+    assert.match(markup, /id="psbted-compare-out"/);
     assert.match(markup, /rust-bitcoin compiled to WebAssembly/);
-    // The row must carry psbted-actions in both markups, or the flex stretch
-    // pulls the Load/Clear buttons up to the network field's full height.
+    // The row must carry psbted-actions in both markups so the editor's
+    // button rows keep their compact, text-sized buttons.
     assert.match(markup, /<div class="row psbt-actions psbted-actions">/);
   }
   assert.match(css, /\.psbted-actions \{ align-items: flex-end; \}/);
   assert.match(css, /\.psbted-actions \.btn \{ min-height: 0; padding: 6px 10px; \}/);
   assert.match(appSource, /import \{ initPsbtEditor \} from "\.\/psbt-editor\.js"/);
-  assert.match(appSource, /initPsbtEditor\(\)/);
+  // The editor reads the header picker's network through the passed getter.
+  assert.match(appSource, /initPsbtEditor\(\{ networkDefault: \(\) => hodlNetworkDefault \}\)/);
   assert.match(css, /#psbted-card\[hidden\]/);
   assert.match(css, /#psbt-card:not\(\[hidden\]\), #psbted-card:not\(\[hidden\]\), #vanity-card:not\(\[hidden\]\) \{[^}]*border-radius: 0 0 20px 20px;/s);
 });
