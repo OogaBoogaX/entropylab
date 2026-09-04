@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -338,12 +339,6 @@ for (const file of htmlFiles) {
       `${file} favicon does not match assets/favicon.png`,
     );
   });
-  test(`${file} ships none of the test-only browser-suite bridge`, () => {
-    // The __entropyLabCrypto hook lets the browser suite reach app internals;
-    // it is compiled in only for the harness's --test-hooks staging variant.
-    const html = read(file);
-    assert.doesNotMatch(html, /__ENTROPYLAB_TEST_HOOKS__|__entropyLabTest|__entropyLabCrypto/);
-  });
   test(`${file} never fetches the header logo or favicon from assets`, () => {
     // The downloaded file has no assets/ beside it, so both have to travel
     // inside the document or the fixed header renders empty when air-gapped.
@@ -372,10 +367,22 @@ test("the build inlines the header logo and SVG favicon from src/assets", () => 
 });
 
 test("the browser-suite crypto bridge is gated out of the release build", () => {
-  // The artifact check above is the invariant; this pins the mechanism so the
-  // gate cannot be dropped without a red test: the hook in app.js must sit
-  // behind the build-time flag, and the build must default that flag off and
-  // refuse to write a hooks build over the release artifact.
+  // Build into an isolated directory so this verifies the current source even
+  // when a pull request still carries rock's older downloadable artifact.
+  // The __entropyLabCrypto hook lets the browser suite reach app internals;
+  // none of its bridge names may survive the production compilation.
+  const outDir = mkdtempSync(join(tmpdir(), "entropylab-release-build-"));
+  try {
+    execFileSync(process.execPath, [join(root, "scripts/build.mjs"), "--out", outDir], { stdio: "pipe" });
+    const html = readFileSync(join(outDir, appFile), "utf8");
+    assert.doesNotMatch(html, /__ENTROPYLAB_TEST_HOOKS__|__entropyLabTest|__entropyLabCrypto/);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+
+  // Pin the mechanism too: the hook in app.js must sit behind the build-time
+  // flag, and the build must default that flag off and refuse to write a hooks
+  // build over the release artifact.
   assert.match(read("src/js/app.js"), /if \(__ENTROPYLAB_TEST_HOOKS__ && globalThis\.__entropyLabTest\) globalThis\.__entropyLabCrypto = /);
   const build = read("scripts/build.mjs");
   assert.match(build, /define: \{ __ENTROPYLAB_TEST_HOOKS__: testHooks \? "true" : "false" \}/);
