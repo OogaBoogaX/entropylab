@@ -332,17 +332,14 @@ const stopWindowsProfileProcesses = (profileToken) => {
     "    ($browserNames -contains $_.Name) -and $candidate -and $candidate.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0",
     "  })",
     "}",
-    "for ($attempt = 0; $attempt -lt 20; $attempt++) {",
+    "for ($attempt = 0; $attempt -lt 100; $attempt++) {",
     "  $owned = @(Get-OwnedBrowserProcesses)",
     "  if ($owned.Count -eq 0) { exit 0 }",
     "  foreach ($item in $owned) {",
     "    try {",
     "      $result = Invoke-CimMethod -InputObject $item -MethodName Terminate -ErrorAction Stop",
     "      if ($result.ReturnValue -ne 0) { throw \"process termination returned $($result.ReturnValue)\" }",
-    "    } catch {",
-    "      $survivor = @(Get-OwnedBrowserProcesses | Where-Object { $_.ProcessId -eq $item.ProcessId })",
-    "      if ($survivor.Count -gt 0) { throw }",
-    "    }",
+    "    } catch {}",
     "  }",
     "  Start-Sleep -Milliseconds 100",
     "}",
@@ -352,11 +349,15 @@ const stopWindowsProfileProcesses = (profileToken) => {
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-Command", script],
     {
-      stdio: "ignore",
+      encoding: "utf8",
       env: { ...process.env, ENTROPYLAB_BROWSER_PROFILE_TOKEN: profileToken },
     },
   );
-  assert.equal(stopped.status, 0, "could not terminate browser processes that retained the private test profiles");
+  assert.equal(
+    stopped.status,
+    0,
+    `could not terminate browser processes that retained the private test profiles${stopped.stderr ? `: ${stopped.stderr.trim()}` : ""}`,
+  );
 };
 
 const waitForFile = async (file, timeoutMs) => {
