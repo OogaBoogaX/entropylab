@@ -249,6 +249,38 @@ test("BIP39: no non-canonical separator yields a derivable seed-bearing phrase",
   }
 });
 
+// Regression guard for #283 ("Wrong keys derived when adding numbers as
+// passphrase"): a passphrase of ASCII digits must reach PBKDF2 as the exact
+// string typed — no numeric coercion (leading zeros are significant), no
+// trimming, no length capping. ColdCard and every other BIP39 signer stretch
+// the string as-is, so any transformation here derives a wallet nothing else
+// reproduces. The fingerprints are pinned to values an independent
+// implementation (@scure/bip39 + @scure/bip32) produces, so the guard holds
+// even if the oracle dependency moves.
+test("BIP39 numeric passphrases stretch the exact string (#283)", () => {
+  const phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+  const fingerprintHex = (pass) => (HDKey.fromMasterSeed(mnemonicToSeedSync(phrase, pass)).fingerprint >>> 0).toString(16).padStart(8, "0");
+  const cases = [
+    ["", "73c5da0a"],
+    ["0", "4d9cb38e"],
+    ["007", "9f67e695"],
+    ["123456", "e9646cf9"],
+    ["987654321098765432109876543210", "aa5d8432"],
+    ["abc123", "23a41e58"],
+    ["hello world", "ec372958"],
+  ];
+  for (const [pass, expected] of cases) {
+    assert.equal(bytesToHex(mnemonicToSeedSync(phrase, pass)), bytesToHex(scureBip39.mnemonicToSeedSync(phrase, pass)), `seed for ${JSON.stringify(pass)} disagrees with scure`);
+    assert.equal(fingerprintHex(pass), expected, `master fingerprint for ${JSON.stringify(pass)}`);
+  }
+  // Numeric coercion would collapse these pairs; exact-string semantics keep
+  // every one distinct.
+  const distinct = [["007", "7"], ["123456", "123456 "], ["0", "00"], ["000102", "102"]];
+  for (const [a, b] of distinct) {
+    assert.notEqual(fingerprintHex(a), fingerprintHex(b), `${JSON.stringify(a)} and ${JSON.stringify(b)} must derive different wallets`);
+  }
+});
+
 test("wordlist agreement: JS data file == rust-bip39 English list, word for word", () => {
   assert.equal(bip39English.length, 2048);
   const wasm = wasmExports();
