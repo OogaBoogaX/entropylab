@@ -239,6 +239,8 @@ machine and verify important addresses and descriptors with an independent
 wallet or signing device before receiving funds.
 
 To build the HTML file yourself, see [Building from source](#building-from-source).
+For a full walkthrough of preparing a dedicated air-gapped machine, see
+[AIRGAPPED_SETUP.md](AIRGAPPED_SETUP.md).
 
 ### iPhone home-screen app
 
