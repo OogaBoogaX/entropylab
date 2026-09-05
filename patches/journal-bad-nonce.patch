@@ -1,0 +1,137 @@
+diff --git a/src/js/app.js b/src/js/app.js
+index 8d7ea5f..f342095 100644
+--- a/src/js/app.js
++++ b/src/js/app.js
+@@ -8224,6 +8224,33 @@ function hodlCompareNonces(rValues) {
+   }
+ }
+ 
++// Last inspect-only nonce verdict for the Journal session snapshot.
++// Never stores r values, signatures, or keys — counts and a short state only.
++var hodlPsbtNonceVerdict = "";
++function hodlJournalNonceVerdict(kind, reused, possible, uninspected, comparable) {
++  let detail = `${kind} · ${comparable} comparable · ${reused.length} reuse · ${possible.length} possible · ${uninspected} unreadable`;
++  if (reused.length) {
++    hodlPsbtNonceVerdict = "reuse";
++    hodlJournalLog("inspect-nonce-reuse", detail, "psbt");
++    return;
++  }
++  if (possible.length) {
++    hodlPsbtNonceVerdict = "possible";
++    hodlJournalLog("inspect-nonce-possible", detail, "psbt");
++    return;
++  }
++  if (uninspected) {
++    hodlPsbtNonceVerdict = "incomplete";
++    hodlJournalLog("inspect-nonce-incomplete", detail, "psbt");
++    return;
++  }
++  if (comparable < 2) {
++    hodlPsbtNonceVerdict = "incomplete";
++    return;
++  }
++  hodlPsbtNonceVerdict = "clean";
++}
++
+ function hodlPrivForPub(pubkey) {
+   if (hodlPsbtPriv) {
+     let compressed = hodlSecp256k1.getPublicKey(hodlPsbtPriv, true), uncompressed = hodlSecp256k1.getPublicKey(hodlPsbtPriv, false);
+@@ -8274,6 +8301,7 @@ function hodlPsbtWipeMem() {
+   hodlPsbtHd = null;
+   hodlPsbtSource = "";
+   hodlPsbtSessionSpec = { key: "No session key. Inspect-only mode." };
++  hodlPsbtNonceVerdict = "";
+ }
+ function hodlLoadPsbtKey(text, passphrase) {
+   hodlPsbtWipeMem();
+@@ -9504,6 +9532,7 @@ function hodlRenderPsbt(psbt) {
+     reused,
+     possible
+   } = hodlCompareNonces(rValues);
++  hodlJournalNonceVerdict("psbt", reused, possible, uninspected, rValues.length);
+   if (reused.length) html.push("<p class='psbt-bad'><strong>Reused nonce detected for the same public key.</strong> The same r value appears on different message digests. If both signatures are valid, the private key can be recovered. Do not broadcast this transaction.</p>");
+   else if (possible.length) html.push("<p class='psbt-warn'><strong>Possible repeated nonce for the same public key.</strong> The message digests could not both be reconstructed, so verify these signatures independently before treating this as a key leak.</p>");
+   else if (uninspected) html.push("<p class='psbt-warn'><strong>Incomplete nonce coverage.</strong> Some ECDSA signatures could not be inspected, so this is not a clean verdict.</p>");
+@@ -9590,6 +9619,7 @@ function hodlRenderRawTx(tx) {
+     });
+   });
+   let { reused, possible } = hodlCompareNonces(rValues);
++  hodlJournalNonceVerdict("transaction", reused, possible, uninspected, rValues.length);
+   if (reused.length || possible.length) html.push("<p class='psbt-bad'><strong>Repeated nonce r for the same public key.</strong> Message digests cannot be rebuilt from a raw transaction without prevouts, so treat this as a warning and do not broadcast until the signatures are checked independently.</p>");
+   else if (uninspected) html.push("<p class='psbt-warn'><strong>Incomplete nonce coverage.</strong> Some ECDSA signatures could not be inspected.</p>");
+   else if (rValues.length >= 2) html.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this transaction.</p>");
+@@ -12155,7 +12185,10 @@ function hodlJournalRefreshSessionState() {
+   let sp = { derived: Boolean(hodlSpKeys?.fingerprint), fingerprint: hodlSpKeys?.fingerprint || "", address: "" };
+   let addressEl = document.getElementById("sp-address");
+   if (addressEl) sp.address = addressEl.textContent || addressEl.value || "";
+-  let psbt = { loaded: Boolean((document.getElementById("psbt-text")?.value || "").trim() || (document.getElementById("psbted-text")?.value || "").trim()) };
++  let psbt = {
++    loaded: Boolean((document.getElementById("psbt-text")?.value || "").trim() || (document.getElementById("psbted-text")?.value || "").trim()),
++    nonce: hodlPsbtNonceVerdict,
++  };
+   let text = hodlJournalSnapshot({
+     capturedAt: hodlJournalStamp(),
+     version: build?.textContent?.match(/v[\d.]+/)?.[0] || "",
+diff --git a/src/js/journal.js b/src/js/journal.js
+index 6e62d8c..847f501 100644
+--- a/src/js/journal.js
++++ b/src/js/journal.js
+@@ -217,6 +217,10 @@ export function snapshotSession(session) {
+   lines.push(session.sp?.derived ? `- fingerprint ${session.sp.fingerprint || "unknown"}${session.sp.address ? `\n  ${session.sp.address}` : ""}` : "- not derived");
+   lines.push("", "PSBT");
+   lines.push(session.psbt?.loaded ? "- payload present in the inspector" : "- inspector empty");
++  if (session.psbt?.nonce === "reuse") lines.push("- nonce verdict: reused ECDSA nonce (same key, different digest)");
++  else if (session.psbt?.nonce === "possible") lines.push("- nonce verdict: possible reuse (digest incomplete)");
++  else if (session.psbt?.nonce === "incomplete") lines.push("- nonce verdict: incomplete coverage");
++  else if (session.psbt?.nonce === "clean") lines.push("- nonce verdict: no repeated r for the same key in this file");
+   lines.push("", "This snapshot lives in this page until you download it. Closing the tab discards it.");
+   return lines.join("\n");
+ }
+diff --git a/test/journal.test.mjs b/test/journal.test.mjs
+index f73f5c7..70317d8 100644
+--- a/test/journal.test.mjs
++++ b/test/journal.test.mjs
+@@ -149,6 +149,8 @@ test("a public snapshot names fingerprints and omits secrets unless asked", () =
+     psbt: { loaded: false },
+   });
+   assert.match(publicText, /Updated: 2026-09-02 10:00:00/);
++  assert.match(publicText, /inspector empty/);
++  assert.doesNotMatch(publicText, /nonce verdict/);
+   assert.match(publicText, /fingerprint a1b2c3d4/);
+   assert.doesNotMatch(publicText, /abandon abandon abandon/);
+   let privateText = snapshotSession({
+@@ -161,6 +163,18 @@ test("a public snapshot names fingerprints and omits secrets unless asked", () =
+     psbt: { loaded: false },
+   });
+   assert.match(privateText, /abandon abandon abandon/);
++  let reuseText = snapshotSession({
++    capturedAt: "2026-09-02 10:00:00",
++    includePrivate: false,
++    keys: [],
++    msigs: [],
++    bip85: [],
++    sp: { derived: false },
++    psbt: { loaded: true, nonce: "reuse" },
++  });
++  assert.match(reuseText, /payload present in the inspector/);
++  assert.match(reuseText, /nonce verdict: reused ECDSA nonce/);
++  assert.doesNotMatch(reuseText, /\br=/);
+ });
+ 
+ test("wipe drops notes, log, and snapshot text", () => {
+diff --git a/test/ui-defaults.test.mjs b/test/ui-defaults.test.mjs
+index 8df0a00..7998e4a 100644
+--- a/test/ui-defaults.test.mjs
++++ b/test/ui-defaults.test.mjs
+@@ -1795,6 +1795,11 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
+   assert.match(appSource, /hodlJournalTool === "state"\) hodlJournalRefreshSessionState\(\)/);
+   assert.doesNotMatch(appSource, /hodlJournalLog\("capture"|hodlJournalCaptureSession/);
+   assert.match(appSource, /hodlJournalLog\("inspect", kind, "psbt"\)[\s\S]*hodlJournalLog\("inspect-error", "", "psbt"\)/);
++  assert.match(appSource, /function hodlJournalNonceVerdict\(/);
++  assert.match(appSource, /hodlJournalLog\("inspect-nonce-reuse", detail, "psbt"\)/);
++  assert.match(appSource, /hodlJournalNonceVerdict\("psbt", reused, possible, uninspected, rValues\.length\)/);
++  assert.match(appSource, /hodlJournalNonceVerdict\("transaction", reused, possible, uninspected, rValues\.length\)/);
++  assert.doesNotMatch(appSource, /hodlJournalLog\("inspect-nonce-reuse"[\s\S]{0,80}value\.hex/);
+   assert.match(appSource, /hodlJournalLog\("calculate", hodlSpMode, "sp"\)[\s\S]*hodlJournalLog\("calculate-error", hodlSpMode, "sp"\)/);
+   assert.match(appSource, /hodlJournalLog\("derive-error", "", "bip85"\)/);
+   assert.match(appSource, /hodlJournalLog\("note-delete", "", "journal"\)/);
