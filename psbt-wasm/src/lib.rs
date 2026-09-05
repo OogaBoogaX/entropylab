@@ -1026,12 +1026,12 @@ fn resolve_input_amount(pairs: &[RawPair], tx: &Transaction, index: usize) -> Am
     AmountClaim::Claimed(first)
 }
 
-/// Bitcoin Core's CheckTransaction sanity, minus the coinbase cases an
-/// unsigned PSBT transaction can never hit: nonempty vin/vout, the block
-/// weight bound, per-output and aggregate MoneyRange, and unique prevouts.
-/// Structural PSBT validity (Psbt::deserialize) says nothing about any of
-/// these. Returns Core's rejection reason when the transaction is
-/// consensus-invalid (issues #322, #361).
+/// Bitcoin Core's CheckTransaction sanity, applied to an unsigned PSBT
+/// transaction: nonempty vin/vout, the block weight bound, per-output and
+/// aggregate MoneyRange, no null prevouts, and unique prevouts. Structural
+/// PSBT validity (Psbt::deserialize) says nothing about any of these. Returns
+/// Core's rejection reason when the transaction is consensus-invalid (issues
+/// #322, #361).
 fn tx_sanity_error(tx: &Transaction) -> Option<&'static str> {
     if tx.input.is_empty() {
         return Some("bad-txns-vin-empty");
@@ -1051,6 +1051,14 @@ fn tx_sanity_error(tx: &Transaction) -> Option<&'static str> {
             Some(sum) if sum <= Amount::MAX_MONEY => sum,
             _ => return Some("bad-txns-txouttotal-toolarge"),
         };
+    }
+    // A null prevout (txid 0, vout u32::MAX) is never spendable: Core rejects
+    // it as bad-cb-length when it is the only input (IsCoinBase, and the
+    // PSBT-forced empty scriptSig fails the 2..100 coinbase rule) and as
+    // bad-txns-prevout-null otherwise. The editor's free-text txid/vout fields
+    // put it one edit away, so it is checked here like any other sanity rule.
+    if tx.input.iter().any(|input| input.previous_output.is_null()) {
+        return Some("bad-txns-prevout-null");
     }
     let mut prevouts = BTreeSet::new();
     for input in &tx.input {

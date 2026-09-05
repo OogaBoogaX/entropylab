@@ -180,6 +180,14 @@ test("build rejects consensus-invalid transactions with Core's reasons; inspect 
   const dup = { ...sane, inputs: [sane.inputs[0], sane.inputs[0]] };
   assert.throws(() => psbtBuildBytes({ tx: dup, globals: [], inputs: [[], []], outputs: [[]] }), /bad-txns-inputs-duplicate/);
 
+  // Null prevout (txid 0, vout u32::MAX): a hand edit away in the editor.
+  // Core rejects it as bad-cb-length when it is the only input (coinbase
+  // shape, empty scriptSig) and as bad-txns-prevout-null otherwise; the gate
+  // reports the latter either way.
+  const nullPrevout = { txid: "0".repeat(64), vout: "4294967295", scriptSig: "", sequence: "4294967295" };
+  assert.throws(() => buildTx({ ...sane, inputs: [nullPrevout] }), /bad-txns-prevout-null/);
+  assert.throws(() => psbtBuildBytes({ tx: { ...sane, inputs: [sane.inputs[0], nullPrevout] }, globals: [], inputs: [[], []], outputs: [[]] }), /bad-txns-prevout-null/);
+
   // One output past MAX_MONEY (u64::MAX included) and an over-cap total.
   assert.throws(() => buildTx({ ...sane, outputs: [{ value: "18446744073709551615", scriptPubKey: "51" }] }), /bad-txns-vout-toolarge/);
   assert.throws(() => buildTx({ ...sane, outputs: [{ value: "2100000000000001", scriptPubKey: "51" }] }), /bad-txns-vout-toolarge/);
@@ -190,6 +198,18 @@ test("build rejects consensus-invalid transactions with Core's reasons; inspect 
   assert.equal(insane.rustBitcoinError, null); // rust-bitcoin parses the PSBT fine
   assert.equal(insane.txSanityError, "bad-txns-vout-toolarge");
   assert.equal(insane.tx.outputs[0].value, "18446744073709551615");
+
+  // Same separation for a null prevout spliced into the first input: the PSBT
+  // parses, the transaction is flagged with Core's reason.
+  const nullHex = VALID_HEX.replace(
+    "ab0949a08c5af7c49b8212f417e2f15ab3f5c33dcf153821a8139f877a5b7be40000000000",
+    "00".repeat(32) + "ffffffff00",
+  );
+  const nullDoc = psbtInspectDoc(unhex(nullHex));
+  assert.equal(nullDoc.tx.inputs[0].txid, "0".repeat(64));
+  assert.equal(nullDoc.tx.inputs[0].vout, 4294967295);
+  assert.equal(nullDoc.rustBitcoinError, null);
+  assert.equal(nullDoc.txSanityError, "bad-txns-prevout-null");
 });
 
 test("fee computes once every input carries a claimed amount", () => {
