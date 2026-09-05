@@ -2468,6 +2468,10 @@
     }
     assert(!document.querySelector("#psbted-qr-code svg"), "stale bytes still animated as QR");
     assert(outText().includes("last valid build"), "stale note missing");
+    // The byte text itself leaves the screen: a disabled, readonly textarea's
+    // content is still selectable and copyable in Firefox.
+    equal(document.getElementById("psbted-result-b64").value, "", "stale base64 stayed selectable on screen");
+    equal(document.getElementById("psbted-result-hex").value, "", "stale hex stayed selectable on screen");
     // Typing back to a buildable value re-enables every export control.
     input(document.querySelector("[data-txout-val='0']"), "199902000");
     await until(() => document.getElementById("psbted-error").textContent === "" && document.getElementById("psbted-result-b64").value.includes("cHNidP8B"), "rebuild after stale");
