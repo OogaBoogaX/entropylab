@@ -117,6 +117,17 @@ test("the editor renders the structural controls for inputs and outputs", () => 
   assert.match(editor, /draft\.tx\.outputs\.splice\(index, 1\);\s*\n\s*draft\.outputs\.splice\(index, 1\)/);
 });
 
+test("the pair-delete handler binds pair buttons only, not the element deletes", () => {
+  // Regression: the row deletes (data-txin-del/data-txout-del) and the
+  // diagram close button share the psbted-del styling class with the pair
+  // deletes. Binding the pair-delete handler to the bare class double-fired
+  // it with an undefined data-kind — its TypeError surfaced as a spurious
+  // error banner and the freshly built result was falsely marked stale.
+  const editor = read("src/js/psbt-editor.js");
+  assert.match(editor, /querySelectorAll\("\.psbted-del\[data-kind\]"\)/);
+  assert.doesNotMatch(editor, /querySelectorAll\("\.psbted-del"\)/);
+});
+
 test("dropSigningPairs removes exactly the transaction-committing fields (issues #325, #360)", () => {
   const doc = fixtureDoc();
   doc.inputs[0].push(
