@@ -9128,11 +9128,14 @@ function hodlRenderSpReceive() {
 }
 // Resolve every eligible vin's input key from the loaded SP session root —
 // never from a pasted scalar (issue #331). A vin may name its derivation
-// path explicitly ("path": "m/84'/1'/0'/0/5", plus an optional "fingerprint"
+// path explicitly ("path": "m/84'/1'/0'/0/0/5", plus an optional "fingerprint"
 // that must equal the session root's) or be resolved through the session
 // ownership index by its prevout script. Either way the derived key is
-// verified against the prevout script before use, and every derived node is
-// wiped after output construction.
+// verified against the prevout script before use, every derived node is
+// wiped immediately, and the scalar leaves here only as a zeroable byte copy
+// that the send flow wipes after output construction (hodlSpWipeVinKeys).
+// What no wipe can cover: the BigInt scalars the BIP-352 math materialises
+// are immutable JavaScript values and live until the GC takes them.
 function hodlSpDeriveVinKeys(vins) {
   hodlSpEnsureHd();
   const root = hodlSpHd, network = hodlSpNetwork(), fingerprint = hodlFingerprintHex(root.fingerprint);
@@ -9178,18 +9181,35 @@ function hodlSpDeriveVinKeys(vins) {
         throw new Error(`Input ${i}: the key derived at ${path} does not produce the prevout's scriptPubKey.`);
       }
       if (expected === null) throw new Error(`Input ${i}: unrecognized prevout script type.`);
-      return { ...vin, private_key: hodlSpBytesToHex(node.privateKey) };
+      // A zeroable byte copy, not a hex string: a string is immutable and
+      // would outlive the node wipe below (issue #331).
+      return { ...vin, private_key: new Uint8Array(node.privateKey) };
     } finally {
       if (node) node.wipePrivateData();
     }
   });
+}
+// Zeroes every derived input key hodlSpDeriveVinKeys attached. Called by the
+// send flow once output construction is done with them.
+function hodlSpWipeVinKeys(vins) {
+  for (const vin of vins) {
+    if (vin && vin.private_key instanceof Uint8Array) vin.private_key.fill(0);
+  }
 }
 function hodlRenderSpSend() {
   let parsed = hodlSpParseRecipients(document.getElementById("sp-recipients")?.value);
   let recipients = parsed.recipients;
   let hrp = hodlSpHrp(hodlSpNetwork());
   for (const recipient of recipients) decodeSilentPaymentAddress(recipient.address, hrp);
-  let result = createSilentPaymentOutputs(hodlSpDeriveVinKeys(hodlSpParseVins(document.getElementById("sp-send-vins")?.value)), recipients, { hrp });
+  // The derived per-input keys are wiped as soon as output construction is
+  // done with them, on the error path too (issue #331).
+  const keyedVins = hodlSpDeriveVinKeys(hodlSpParseVins(document.getElementById("sp-send-vins")?.value));
+  let result;
+  try {
+    result = createSilentPaymentOutputs(keyedVins, recipients, { hrp });
+  } finally {
+    hodlSpWipeVinKeys(keyedVins);
+  }
   if (!result.outputs.length) {
     document.getElementById("sp-out").innerHTML = `<p class="psbt-warn">No silent payment outputs. Eligible inputs may be missing, the private-key sum may be zero, or a scan-key group exceeded K<sub>max</sub> = 2323.</p>`;
     return;
