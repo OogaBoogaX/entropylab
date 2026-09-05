@@ -8050,7 +8050,13 @@ function hodlNonWitUtxo(entries, input) {
   let entry = hodlFind(entries, 0).find((item) => item.keydata.length === 0);
   if (!entry) return null;
   let prev = parseRawTx(entry.val);
-  let txid = hodlSha256(hodlSha256(entry.val));
+  // The txid commits to the legacy (witness-stripped) serialization: a
+  // witness-carrying prevtx — legal BIP-174 and common from non-Core wallets —
+  // must be stripped before hashing, otherwise this computes the wtxid and
+  // every such field is a false "does not match" (issue #350). The WASM
+  // inspector's compute_txid() strips unconditionally; stripping only the
+  // segwit case here keeps legacy bytes hashed exactly as before.
+  let txid = hodlSha256(hodlSha256(prev.segwit ? serializeTx(prev) : entry.val));
   if (!hodlEq(txid, input.txid)) throw new Error("A non-witness UTXO's transaction does not match the input's previous output.");
   let output = prev.outputs[input.vout];
   if (!output) throw new Error("A non-witness UTXO's transaction does not contain the spent output.");
