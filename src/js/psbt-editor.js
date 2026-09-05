@@ -11,6 +11,11 @@
 // build is kept below, marked stale. The unsigned transaction pair (global
 // key 00) is regenerated from the transaction section on every build, so it
 // is never edited directly.
+//
+// Signing material never survives a transaction edit: a BIP-174 signature
+// commits to the exact unsigned transaction it was made over, so an edit that
+// moves one of those fields orphans every signature in the maps. See
+// psbtDropStaleSigningMaterial below.
 import { Address as BtcAddress, NETWORK as BTC_MAINNET, TEST_NETWORK as BTC_TESTNET, OutScript } from "@scure/btc-signer";
 import { renderSVG as renderQrSvg } from "uqr";
 import { psbtInspectDoc, psbtBuildBytes, psbtWasmReady } from "./psbt-wasm.js";
@@ -260,6 +265,61 @@ export const psbtEditorBuildDoc = (doc) => ({
   outputs: doc.outputs.map((map) => map.map((pair) => ({ key: pair.key, value: pair.value }))),
 });
 
+// --- Stale signing material ------------------------------------------------
+// A BIP-174 signature commits to the exact unsigned transaction it was made
+// over. Every signature in an input map is therefore a claim about the
+// transaction it was decoded against, and editing that transaction silently
+// turns the file into one that looks signed for outputs nobody authorized.
+// The editor drops the orphaned pairs on the edit that orphans them and says
+// which ones went; re-signing is then the user's own next step.
+//
+// Only pairs that assert signing material are dropped. PSBT_IN_SIGHASH_TYPE
+// declares a policy for a future signer instead of attesting to a signature,
+// so a transaction edit leaves it alone.
+const SIGNING_MATERIAL_PAIRS = new Set(["PSBT_IN_PARTIAL_SIG", "PSBT_IN_FINAL_SCRIPTSIG", "PSBT_IN_FINAL_SCRIPTWITNESS", "PSBT_IN_TAP_KEY_SIG", "PSBT_IN_TAP_SCRIPT_SIG"]);
+
+// One editable field as comparable text. The WASM decode yields numbers and
+// lower-case hex while typing yields strings, and hex typed in upper case is
+// the same bytes, so anything equal here is a field no signature can tell
+// apart from its previous value.
+const txFieldText = (value) => String(value ?? "").trim().toLowerCase();
+
+// The identity of the unsigned transaction as the transaction section exposes
+// it: version, locktime and every input/output field. Equal keys mean the
+// transaction did not move, so its signatures still commit to it.
+export const psbtTxSectionKey = (tx) =>
+  JSON.stringify([
+    txFieldText(tx?.version),
+    txFieldText(tx?.locktime),
+    (tx?.inputs ?? []).map((input) => [txFieldText(input?.txid), txFieldText(input?.vout), txFieldText(input?.scriptSig), txFieldText(input?.sequence)]),
+    (tx?.outputs ?? []).map((output) => [txFieldText(output?.value), txFieldText(output?.scriptPubKey)]),
+  ]);
+
+// Removes every pair that asserts signing material from the input maps.
+// Pure: `doc` is untouched and a document with those pairs gone comes back,
+// along with `dropped` — one { input, name, note } per removed pair, for the
+// notice that names them. A document with nothing to drop comes back as is.
+export const psbtDropStaleSigningMaterial = (doc) => {
+  const dropped = [];
+  const inputs = (doc.inputs ?? []).map((map, input) =>
+    map.filter((pair) => {
+      if (!SIGNING_MATERIAL_PAIRS.has(pair?.name)) return true;
+      const pubkey = pair.decoded?.pubkey || pair.decoded?.xonly;
+      dropped.push({ input, name: pair.name, note: pubkey ? `pubkey ${shorten(pubkey)}` : "" });
+      return false;
+    }),
+  );
+  return dropped.length ? { doc: { ...doc, inputs }, dropped } : { doc, dropped };
+};
+
+// The notice naming what a transaction edit removed. Pair names come from the
+// typed decode table and pubkeys from PSBT bytes, so both escape.
+const signingDroppedNotice = (dropped) => {
+  const list = dropped.map((pair) => `input ${pair.input} ${pair.name}${pair.note ? ` (${pair.note})` : ""}`).join(", ");
+  const plural = dropped.length === 1 ? "pair" : "pairs";
+  return `<p class="psbted-note-bad" id="psbted-signing-dropped">✕ The transaction changed, so ${dropped.length} signing ${plural} no longer committed to it and were removed: ${escapeHtml(list)}. The edited PSBT is unsigned — re-sign it before anyone relies on these outputs.</p>`;
+};
+
 // --- Comparison report -----------------------------------------------------
 // Rendering for comparePsbtDocs output (psbt-diff.js). Pure string building,
 // unit-tested under Node; every interpolated value passes escapeHtml or
@@ -407,6 +467,10 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
   let resultBytes = null; // last successfully built PSBT
   let stale = false; // true while the current fields do not build; resultBytes is then the last valid build
   let qrTimer = null; // animation timer of the UR fragment QR, when running
+  // psbtTxSectionKey of the transaction the current maps were decoded against,
+  // i.e. the transaction their signatures commit to. Null until a PSBT loads.
+  let signedAgainst = null;
+  let signingDropped = []; // what the last successful build removed, for its notice
   // Which flow-diagram part is open ({ kind: "input"|"output", index } for a
   // box or { kind: "tx" } for the middle transaction box); its fields render
   // in the panel under the diagram instead of inline.
@@ -550,6 +614,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     out.innerHTML = `
       <p class="psbt-kv"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · ${tx.inputs.length} input(s) · ${tx.outputs.length} output(s) · fee ${fee} · ${verdict}</p>
       <p class="muted" id="psbted-status" aria-live="polite">${stale ? "The fields do not build right now — see the error above; the result below is the last valid build." : "Every edit rebuilds the PSBT immediately; the fields show rust-bitcoin's decode of the current build."}</p>
+      ${signingDropped.length ? signingDroppedNotice(signingDropped) : ""}
 
       ${psbtVizHtml(doc, network(), selected)}
       ${detail}
@@ -691,11 +756,20 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
   // re-rendered from rust-bitcoin's fresh decode; when the rebuild was
   // triggered by typing (restoreFocus), focus and the caret return to the
   // field being edited, so a successful keystroke never interrupts typing.
+  //
+  // An edit that moved any field the signatures committed to drops that
+  // material from the document being built, and keeps the drop only when the
+  // build succeeds: a state that does not build leaves the working document,
+  // signatures and all, exactly as it was, as always on this path.
   const rebuild = ({ restoreFocus = false } = {}) => {
     const focus = restoreFocus ? captureFocus() : null;
-    const fresh = psbtBuildBytes(psbtEditorBuildDoc(doc));
+    const staleTx = signedAgainst !== null && psbtTxSectionKey(doc.tx) !== signedAgainst;
+    const draft = staleTx ? psbtDropStaleSigningMaterial(doc) : { doc, dropped: [] };
+    const fresh = psbtBuildBytes(psbtEditorBuildDoc(draft.doc));
     const decoded = psbtInspectDoc(fresh);
     doc = decoded;
+    signingDropped = draft.dropped;
+    signedAgainst = psbtTxSectionKey(decoded.tx);
     resultBytes = fresh;
     stale = false;
     setError("");
@@ -774,6 +848,8 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     }
     resultBytes = null;
     stale = false;
+    signedAgainst = psbtTxSectionKey(doc.tx); // a loaded file's own signatures still commit to it
+    signingDropped = [];
     // The loaded PSBT builds at once, so the result text and QR appear
     // without an extra click.
     try {
@@ -1015,6 +1091,8 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     doc = null;
     resultBytes = null;
     stale = false;
+    signedAgainst = null;
+    signingDropped = [];
     selected = null;
     text.value = "";
     setError("");
