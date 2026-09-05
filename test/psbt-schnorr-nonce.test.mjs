@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { hodlLooksSchnorr, hodlParseSchnorr, hodlTapSighashProblems, hodlCompareSchnorrNonces, hodlTapKeySigs, hodlTapScriptSigs } from "../src/js/psbt-schnorr.js";
+
+const root = dirname(fileURLToPath(import.meta.url));
 
 const eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 const rA = new Uint8Array(32).fill(0x11);
@@ -132,4 +137,23 @@ test("nonce compare ignores same-input pairs, key mismatches, and missing r valu
   ], eq);
   assert.equal(flagged.possible.length, 3, "every cross-input pair of the shared R is reported");
   assert.deepEqual(flagged.reused, [], "definite proof is left to the ECDSA comparison");
+});
+
+test("the report counts only parseable Schnorr signatures as present (issue #333)", () => {
+  // Unparseable values stay in the collection (with r null) so the policy
+  // analysis can flag them…
+  const keys = hodlTapKeySigs([
+    { type: 19, keydata: new Uint8Array(), val: new Uint8Array(64) },
+    { type: 19, keydata: new Uint8Array(), val: new Uint8Array(10) },
+  ], (e, t) => e.filter((x) => x.type === t));
+  assert.equal(keys.length, 2);
+  assert.equal(keys.filter((sig) => sig.r).length, 1, "exactly one parses under BIP341");
+  // …but the inspector's count lines run on the parseable subset: the
+  // per-input "signature(s) present" line and the Taproot total both use the
+  // parsed count, and the unparseable entry only shows in the policy problem.
+  const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
+  assert.match(app, /let parsedTapSignatures = tapSignatures\.reduce/);
+  assert.match(app, /tapSignatureCount \+= parsedTapSignatures/);
+  assert.match(app, /signatures\.length \+ parsedTapSignatures \? signatures\.length \+ parsedTapSignatures \+ " signature\(s\) present"/);
+  assert.doesNotMatch(app, /tapSignatureCount \+= tapSignatures\.length/);
 });
