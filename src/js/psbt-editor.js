@@ -266,12 +266,15 @@ export const psbtEditorBuildDoc = (doc) => ({
 
 // Input-map key types whose values commit to the unsigned transaction:
 // partial signatures (0x02), final scriptSig (0x07), final witness (0x08),
-// Taproot key/script signatures (0x13/0x14). Any edit to the transaction
+// Taproot key/script signatures (0x13/0x14), and the MuSig2 signing-session
+// material (BIP-327): public nonces (0x1b) and partial signatures (0x1c) are
+// bound to the message like any signature. Any edit to the transaction
 // changes every digest those values commit to, so keeping them would leave a
 // rebuilt PSBT looking signed while its signatures are invalid (issues #325,
-// #360). Sighash-type hints (0x03) and UTXO claims are not signatures and
-// stay.
-const SIGNING_KEY_TYPES = new Set(["02", "07", "08", "13", "14"]);
+// #360). Sighash-type hints (0x03), MuSig2 participant pubkeys (0x1a —
+// message-independent), and UTXO claims are not signatures and stay; the
+// UTXO claims join the signing anchor below instead.
+const SIGNING_KEY_TYPES = new Set(["02", "07", "08", "13", "14", "1b", "1c"]);
 
 // Drops every signing/finalization pair from the document's input maps, in
 // place. Called by the editor when the transaction section is about to be
@@ -288,6 +291,24 @@ export const dropSigningPairs = (doc) => {
   }
   return dropped;
 };
+
+// Input-map key types whose *contents* signatures commit to without being
+// signatures themselves: the UTXO declarations (non-witness 0x00, witness
+// 0x01). BIP-143 commits to the spent output's amount and scriptCode; BIP-341
+// commits to every input's amount and scriptPubKey. Editing a declaration in
+// the pair table changes those digests exactly like a transaction edit, so
+// the declarations join the rebuild anchor and stale signatures drop the same
+// way (issue #325).
+const UTXO_CLAIM_TYPES = new Set(["00", "01"]);
+
+// Everything the input maps' signatures commit to, as one comparable string:
+// the unsigned transaction plus each input's UTXO declarations (key and value
+// only — the decoded/name fields are presentation).
+export const signingAnchor = (doc) =>
+  JSON.stringify([
+    doc.tx,
+    doc.inputs.map((map) => map.filter((pair) => UTXO_CLAIM_TYPES.has(pair.key.slice(0, 2))).map((pair) => [pair.key, pair.value])),
+  ]);
 
 // --- Comparison report -----------------------------------------------------
 // Rendering for comparePsbtDocs output (psbt-diff.js). Pure string building,
@@ -435,7 +456,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
   let doc = null; // inspect document being edited; null when nothing is loaded
   let resultBytes = null; // last successfully built PSBT
   let stale = false; // true while the current fields do not build; resultBytes is then the last valid build
-  let pristineTx = null; // JSON of the transaction the current signing pairs commit to; null while unknown
+  let pristineTx = null; // signingAnchor of the document the current signing pairs commit to; null while unknown
   let qrTimer = null; // animation timer of the UR fragment QR, when running
   // Which flow-diagram part is open ({ kind: "input"|"output", index } for a
   // box or { kind: "tx" } for the middle transaction box); its fields render
@@ -758,10 +779,11 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
   // field being edited, so a successful keystroke never interrupts typing.
   const rebuild = ({ restoreFocus = false } = {}) => {
     const focus = restoreFocus ? captureFocus() : null;
-    // A transaction edit invalidates every signature and final script the
-    // maps carry: drop them before the rebuild so the result never looks
-    // signed with stale material (issues #325, #360).
-    if (pristineTx !== null && JSON.stringify(doc.tx) !== pristineTx) {
+    // An edit to anything a signature commits to — the transaction itself or
+    // an input's UTXO declaration — invalidates every signature and final
+    // script the maps carry: drop them before the rebuild so the result never
+    // looks signed with stale material (issues #325, #360).
+    if (pristineTx !== null && signingAnchor(doc) !== pristineTx) {
       dropSigningPairs(doc);
       pristineTx = null; // pairs and transaction agree again (or are gone)
     }
@@ -770,7 +792,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     doc = decoded;
     resultBytes = fresh;
     stale = false;
-    pristineTx = JSON.stringify(doc.tx);
+    pristineTx = signingAnchor(doc);
     setError("");
     render();
     renderResult();
