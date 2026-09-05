@@ -32,9 +32,11 @@ import {
   formatNotebook,
   formatNotebookPages,
   journalFromPlainText,
+  journalKeyReferenceRanges,
   journalKeyReferenceToken,
   journalNotebookRuns,
   journalTextFromRuns,
+  mergeNotebookImport,
   normalizeEntry,
   openDocument,
   openExport,
@@ -413,6 +415,7 @@ test("notebook imports are bounded and content must be a run list", () => {
   })).pages.length, NOTEBOOK_MAX_PAGES);
   assert.throws(() => parseNotebook(JSON.stringify({ format: NOTEBOOK_FORMAT, version: NOTEBOOK_VERSION, pages: [{ content: "text" }] })), /content list/);
   assert.throws(() => journalTextFromRuns([{ type: "key", name: "k", fingerprint: "xyz" }]), /8-character hexadecimal/);
+  assert.throws(() => journalTextFromRuns([{ type: "key", source: "bip85", application: "unknown", fingerprint: "deadbeef" }]), /supported application/);
   assert.throws(() => journalTextFromRuns([{ type: "text", text: "x".repeat(NOTEBOOK_MAX_TEXT_LENGTH + 1) }]), /too large/);
   assert.equal(journalTextFromRuns([{ type: "text", text: "x".repeat(NOTEBOOK_MAX_TEXT_LENGTH) }]).length, NOTEBOOK_MAX_TEXT_LENGTH);
   assert.throws(() => journalFromPlainText("x".repeat(NOTEBOOK_MAX_TEXT_LENGTH + 1)), /too large/);
@@ -420,10 +423,10 @@ test("notebook imports are bounded and content must be a run list", () => {
 });
 
 test("key reference tokens survive careless names and reject bad fingerprints", () => {
-  assert.equal(journalKeyReferenceToken("", "deadbeef"), "◆◆ Key [deadbeef] ◆");
-  assert.equal(journalKeyReferenceToken("  \n  ", "deadbeef"), "◆◆ Key [deadbeef] ◆");
-  assert.equal(journalKeyReferenceToken("a".repeat(200), "deadbeef"), `◆◆ ${"a".repeat(120)} [deadbeef] ◆`);
-  assert.equal(journalKeyReferenceToken("line\nbreak◆s", "DEADBEEF"), "◆◆ line break◇s [deadbeef] ◆");
+  assert.equal(journalKeyReferenceToken("", "deadbeef"), "◆◆ Key [deadbeef]\u2063");
+  assert.equal(journalKeyReferenceToken("  \n  ", "deadbeef"), "◆◆ Key [deadbeef]\u2063");
+  assert.equal(journalKeyReferenceToken("a".repeat(200), "deadbeef"), `◆◆ ${"a".repeat(120)} [deadbeef]\u2063`);
+  assert.equal(journalKeyReferenceToken("line\nbreak◆s", "DEADBEEF"), "◆◆ line break◇s [deadbeef]\u2063");
   assert.throws(() => journalKeyReferenceToken("Key", "1234567"), /8-character hexadecimal/);
   assert.throws(() => journalKeyReferenceToken("Key", "123456789"), /8-character hexadecimal/);
   assert.throws(() => journalKeyReferenceToken("Key", "abcdefgh"), /8-character hexadecimal/);
@@ -441,6 +444,16 @@ test("only well-formed tokens parse; lookalikes stay plain text", () => {
   // Repeated calls see the same input (no hidden regex cursor state).
   const source = "x ◆◆ [aaaaaaaa] ◆ y";
   assert.deepEqual(journalNotebookRuns(source), journalNotebookRuns(source));
+  assert.equal(journalFromPlainText(source).notesText, "x ◆◆ [aaaaaaaa]\u2063 y", "plain-text imports should upgrade the visible legacy boundary");
+});
+
+test("key reference ranges identify the complete atomic token", () => {
+  const token = journalKeyReferenceToken("Key A", "deadbeef");
+  assert.deepEqual(journalKeyReferenceRanges(`before ${token} after`), [{
+    start: 7,
+    end: 7 + token.length,
+  }]);
+  assert.deepEqual(journalKeyReferenceRanges("◆◆ [deadbeef]"), []);
 });
 
 test("the plain-text download strips only untouched hint lines", () => {
@@ -645,6 +658,7 @@ test("the app routes every journal backup through the sealed primitives", () => 
   // Imports are size-bounded and sniff the export envelope before parsing.
   assert.match(app, /async function hodlJournalImportFile\(file\)[\s\S]*?file\.size > 2 \* 1024 \* 1024/);
   assert.match(app, /outer\?\.entropylabJournalExport[\s\S]*?hodlJournalOpenExport\(outer, hodlJournalKeys\)/);
+  assert.match(app, /hodlJournalStoreNotesText\(field\)[\s\S]*?hodlMergeNotebookImport\(hodlJournal, imported\)/);
   assert.match(app, /async function hodlKeyManagerImportFile\(file\)[\s\S]*?file\.size > 2 \* 1024 \* 1024/);
   assert.match(app, /opened\.kind !== "key-manager"/);
   // Plain-text .txt uploads stay a legacy single-page import.

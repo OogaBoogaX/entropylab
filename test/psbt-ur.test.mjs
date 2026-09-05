@@ -76,6 +76,21 @@ test("incomplete fragments and fountain seq>count are refused", () => {
   );
 });
 
+test("duplicate sequence numbers never silently overwrite a filled slot (issue #364)", () => {
+  // Fragments spliced from two different PSBTs with the same fragment count:
+  // last-wins reassembly would decode a transaction neither sender produced.
+  const a = hodlUrEncodePsbt(hex("70736274ff" + "aa".repeat(80)), { maxBytes: 40 });
+  const b = hodlUrEncodePsbt(hex("70736274ff" + "bb".repeat(80)), { maxBytes: 40 });
+  assert.equal(a.length, b.length);
+  // Every slot of A filled, plus B's seq-1 fragment spliced in: the duplicate
+  // must be caught, never last-wins over A's own seq-1 fragment.
+  assert.throws(() => hodlUrDecodePsbt([...a, b[0]]), /Duplicate UR fragment 1/);
+  // An exact repeat of the same fragment (pasted twice) is idempotent.
+  const repeated = [...a.slice(0, -1), a[a.length - 1], a[a.length - 1]];
+  const decoded = hodlUrDecodePsbt(repeated);
+  assert.equal(decoded.parts, a.length);
+});
+
 test("bad checksum is refused", () => {
   assert.throws(
     () => hodlBytewordsDecode("able able able able able"),

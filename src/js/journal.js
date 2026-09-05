@@ -12,7 +12,16 @@ export const NOTEBOOK_MAX_TEXT_LENGTH = 1024 * 1024;
 const JOURNAL_FONTS = new Set(["mono", "sans", "serif"]);
 const JOURNAL_SIZES = new Set(["small", "medium", "large"]);
 const JOURNAL_SPACINGS = new Set(["compact", "comfortable", "spacious"]);
-const KEY_REFERENCE_PATTERN = /◆◆ (?:([^\n◆]*?) )?\[([0-9a-fA-F]{8})\] ◆/g;
+const KEY_REFERENCE_END = "\u2063";
+const KEY_REFERENCE_PATTERN = /(◆◆|◈◈) (?:([^\n◆\u2063]*?) )?\[([0-9a-fA-F]{8})\](?:\u2063| ◆)/g;
+const BIP85_REFERENCE_LABELS = Object.freeze({
+  bip39: "BIP-39",
+  wif: "WIF",
+  xprv: "XPRV",
+  hex: "HEX",
+  "pwd-base64": "Base64 password",
+  "pwd-base85": "Base85 password",
+});
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -36,22 +45,52 @@ export function normalizeJournalPageStyle(style) {
 }
 
 export function journalKeyReferenceToken(name, fingerprint) {
-  let cleanName = String(name || "Key").replace(/[\r\n]+/g, " ").replace(/◆/g, "◇").replace(/\s+/g, " ").trim().slice(0, 120) || "Key";
+  let cleanName = String(name || "Key").replace(/[\r\n]+/g, " ").replace(/◆/g, "◇").replaceAll(KEY_REFERENCE_END, "").replace(/\s+/g, " ").trim().slice(0, 120) || "Key";
   let cleanFingerprint = String(fingerprint || "").trim().toLowerCase();
   if (!/^[0-9a-f]{8}$/.test(cleanFingerprint)) throw new Error("A key reference needs an 8-character hexadecimal fingerprint.");
-  if (cleanName.toLowerCase() === cleanFingerprint) return `◆◆ [${cleanFingerprint}] ◆`;
-  return `◆◆ ${cleanName} [${cleanFingerprint}] ◆`;
+  if (cleanName.toLowerCase() === cleanFingerprint) return `◆◆ [${cleanFingerprint}]${KEY_REFERENCE_END}`;
+  return `◆◆ ${cleanName} [${cleanFingerprint}]${KEY_REFERENCE_END}`;
+}
+
+export function journalBip85ReferenceToken(application, fingerprint) {
+  let app = String(application || ""), label = BIP85_REFERENCE_LABELS[app];
+  let cleanFingerprint = String(fingerprint || "").trim().toLowerCase();
+  if (!label) throw new Error("A BIP-85 reference needs a supported application.");
+  if (!/^[0-9a-f]{8}$/.test(cleanFingerprint)) throw new Error("A key reference needs an 8-character hexadecimal fingerprint.");
+  return `◈◈ BIP-85 · ${label} [${cleanFingerprint}]${KEY_REFERENCE_END}`;
+}
+
+function bip85ReferenceApplication(name) {
+  let label = String(name || "").match(/^BIP-85 · (.+)$/)?.[1];
+  return Object.keys(BIP85_REFERENCE_LABELS).find((app) => BIP85_REFERENCE_LABELS[app] === label) || "";
+}
+
+function referenceFromMatch(match) {
+  let fingerprint = match[3].toLowerCase();
+  if (match[1] === "◆◆") return { type: "key", name: match[2] || fingerprint, fingerprint };
+  let application = bip85ReferenceApplication(match[2]);
+  if (!application) return null;
+  return { type: "key", name: match[2], fingerprint, source: "bip85", application };
 }
 
 export function journalNotebookRuns(text) {
   let source = String(text ?? ""), runs = [], cursor = 0;
   for (let match of source.matchAll(KEY_REFERENCE_PATTERN)) {
+    let reference = referenceFromMatch(match);
+    if (!reference) continue;
     if (match.index > cursor) runs.push({ type: "text", text: source.slice(cursor, match.index) });
-    runs.push({ type: "key", name: match[1] || match[2].toLowerCase(), fingerprint: match[2].toLowerCase() });
+    runs.push(reference);
     cursor = match.index + match[0].length;
   }
   if (cursor < source.length || !runs.length) runs.push({ type: "text", text: source.slice(cursor) });
   return runs;
+}
+
+export function journalKeyReferenceRanges(text) {
+  return [...String(text ?? "").matchAll(KEY_REFERENCE_PATTERN)].filter(referenceFromMatch).map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
 }
 
 export function journalTextFromRuns(runs) {
@@ -59,6 +98,7 @@ export function journalTextFromRuns(runs) {
   let text = "";
   for (let run of runs) {
     if (run?.type === "text" && typeof run.text === "string") text += run.text;
+    else if (run?.type === "key" && run.source === "bip85") text += journalBip85ReferenceToken(run.application, run.fingerprint);
     else if (run?.type === "key") text += journalKeyReferenceToken(run.name, run.fingerprint);
     else throw new Error("The notebook contains an unsupported content item.");
     if (text.length > NOTEBOOK_MAX_TEXT_LENGTH) throw new Error("A notebook page is too large to import.");
@@ -79,8 +119,12 @@ export function createJournal() {
 }
 
 export function formatNotebook(text) {
-  let cleaned = String(text ?? "").replace(KEY_REFERENCE_PATTERN, (_match, name, fingerprint) => {
+  let cleaned = String(text ?? "").replace(KEY_REFERENCE_PATTERN, (match, marker, name, fingerprint) => {
     let cleanFingerprint = fingerprint.toLowerCase();
+    if (marker === "◈◈") {
+      let application = bip85ReferenceApplication(name);
+      return application ? `[BIP-85 ${BIP85_REFERENCE_LABELS[application]}: ${cleanFingerprint}]` : match;
+    }
     return !name || name.trim().toLowerCase() === cleanFingerprint
       ? `[Key: ${cleanFingerprint}]`
       : `[Key: ${name} · ${cleanFingerprint}]`;
@@ -150,9 +194,60 @@ export function parseNotebook(text) {
 export function journalFromPlainText(text) {
   let journal = createJournal(), value = String(text ?? "");
   if (value.length > NOTEBOOK_MAX_TEXT_LENGTH) throw new Error("The notes file is too large to import.");
+  value = journalTextFromRuns(journalNotebookRuns(value));
   journal.notesText = value;
   journal.pages[0].notesText = value;
   return journal;
+}
+
+export function notebookPageHasContent(text) {
+  return String(text ?? "").split("\n").some((line) => {
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  (?:Add new note)?\s*$/.test(line)) return false;
+    return line.trim().length > 0;
+  });
+}
+
+export function mergeNotebookImport(journal, imported) {
+  let currentPages = journal?.pages?.length ? journal.pages : createJournal().pages;
+  let importedPages = imported?.pages;
+  if (!importedPages?.length) throw new Error(`A notebook must contain between 1 and ${NOTEBOOK_MAX_PAGES} pages.`);
+  let currentActive = Math.max(0, Math.min(Number(journal?.activePage) || 0, currentPages.length - 1));
+  let replaceCurrent = !notebookPageHasContent(currentPages[currentActive]?.notesText);
+  let insertion = replaceCurrent ? currentActive : currentActive + 1;
+  if (currentPages.length - Number(replaceCurrent) + importedPages.length > NOTEBOOK_MAX_PAGES) {
+    throw new Error(`A notebook must contain between 1 and ${NOTEBOOK_MAX_PAGES} pages.`);
+  }
+  let retained = currentPages.filter((_page, index) => !replaceCurrent || index !== currentActive);
+  let usedNames = new Set(retained.map((page) => String(page.name || "").trim().replace(/\s+/g, " ").toLowerCase()).filter(Boolean));
+  let maxId = currentPages.reduce((latest, page) => Number.isSafeInteger(page.id) && page.id > latest ? page.id : latest, 0);
+  let maxNumber = currentPages.reduce((latest, page) => Number.isSafeInteger(page.number) && page.number > latest ? page.number : latest, 0);
+  let nextId = Math.max(Number(journal?.nextPageId) || 1, maxId + 1);
+  let nextNumber = Math.max(Number(journal?.nextPageNumber) || 1, maxNumber + 1);
+  let mapped = importedPages.map((page, index) => {
+    let id = replaceCurrent && index === 0 ? currentPages[currentActive].id : nextId++;
+    let number = replaceCurrent && index === 0 ? currentPages[currentActive].number : nextNumber++;
+    let importedDefault = String(page.name || "").trim() === `Page ${page.number}`;
+    let rootName = (importedDefault ? `Page ${number}` : String(page.name || `Page ${number}`).trim().replace(/\s+/g, " ")).slice(0, 120) || `Page ${number}`;
+    let name = rootName, suffix = 2;
+    while (usedNames.has(name.toLowerCase())) {
+      let ending = ` (${suffix++})`;
+      name = rootName.slice(0, 120 - ending.length) + ending;
+    }
+    usedNames.add(name.toLowerCase());
+    return { id, number, name, notesText: String(page.notesText || ""), style: normalizeJournalPageStyle(page.style) };
+  });
+  let pages = [...currentPages];
+  pages.splice(insertion, replaceCurrent ? 1 : 0, ...mapped);
+  let importedActive = Math.max(0, Math.min(Number(imported.activePage) || 0, mapped.length - 1));
+  let activePage = insertion + importedActive;
+  return {
+    ...journal,
+    pages,
+    activePage,
+    nextPageId: Math.max(nextId, pages.reduce((latest, page) => Math.max(latest, page.id || 0), 0) + 1),
+    nextPageNumber: Math.max(nextNumber, pages.reduce((latest, page) => Math.max(latest, page.number || 0), 0) + 1),
+    notesText: pages[activePage].notesText,
+  };
 }
 
 export function formatNotebookPages(pages) {

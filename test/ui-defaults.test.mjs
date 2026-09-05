@@ -110,9 +110,10 @@ test("the header network picker sets the network every tool defaults to", () => 
     assert.match(markup, /<strong[^>]*>Regtest<\/strong>/);
     assert.match(markup, /xpub\/ypub\/zpub · WIF 5\/K\/L · coin type 0'/);
     assert.match(markup, /tpub\/upub\/vpub · WIF 9\/c · coin type 1'/);
-    // Signet and regtest derive with the testnet formats; the options say so.
+    // Signet shares the testnet formats; regtest shares the key formats but
+    // renders SegWit with the bcrt HRP — the options say so (issue #329).
     assert.match(markup, /Signed practice coins, no value · same formats as testnet/);
-    assert.match(markup, /Local sandbox coins · derived here with the testnet formats/);
+    assert.match(markup, /Local sandbox coins · addresses m…\/n…, 2…, bcrt1q…, bcrt1p… · tpub\/upub\/vpub · WIF 9\/c · coin type 1'/);
     // And the menu says plainly that no connection is ever made.
     assert.match(markup, /This page never connects to any network/);
   }
@@ -123,6 +124,13 @@ test("the header network picker sets the network every tool defaults to", () => 
   assert.match(appSource, /var hodlNetworkChoice = "mainnet"/);
   assert.match(appSource, /hodlNetworkChoice = \["testnet", "signet", "regtest"\]\.includes\(network\) \? network : "mainnet"/);
   assert.match(appSource, /hodlNetworkDefault = hodlNetworkChoice === "mainnet" \? "mainnet" : "testnet"/);
+  // The tools still see the binary encoding family, but the derivation keeps
+  // the picker's chain identity when it matches the family's coin type, so
+  // wallet.dat exports and bcrt rendering stay chain-true (issue #329).
+  assert.match(appSource, /function hodlNetworkFamily\(network\) \{\s*return network === "mainnet" \? "mainnet" : "testnet";/);
+  assert.match(appSource, /chain = hodlNetworkFamily\(hodlNetworkChoice\) === network \? hodlNetworkChoice : network/);
+  assert.match(appSource, /hodlMnemonicWalletWithProgress\(phrase, passphrase, chain, count,/);
+  assert.match(appSource, /hodlNetworkFamily\(hodlWalletResult\?\.network\) !== hodlNetworkFamily\(chain\)/);
   // The option names and the button's accessible name come from the locale
   // catalogs so the whole header follows the selected language.
   assert.match(appSource, /let key = \["mainnet", "testnet", "signet", "regtest"\]\.includes\(hodlNetworkChoice\) \? hodlNetworkChoice : "mainnet"/);
@@ -1478,8 +1486,10 @@ test("narrow screens keep the fixed header on one row by hiding control labels",
 
 test("PSBT amounts and fees are labeled as unverified claims", () => {
   assert.match(app, /BTC claimed/);
-  assert.match(app, /Unverified fee \(PSBT witness UTXO claims\)/);
-  assert.match(app, /Input amounts and any fee are unverified PSBT claims/);
+  assert.match(app, /Unverified fee \(PSBT previous-output claims\)/);
+  // Witness claims are unverified; non-witness claims are checked against the
+  // embedded previous transaction (issue #350). Neither touches the chain.
+  assert.match(app, /Witness-UTXO amounts are unverified PSBT claims/);
   assert.doesNotMatch(app, /Fee \(from PSBT fields\)/);
 });
 
@@ -1642,6 +1652,8 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
   assert.match(appSource, /hodlInitJournalNotebook\(\)/);
   assert.match(appSource, /function hodlJournalNotesClick\(field\)/);
   assert.match(appSource, /notesText\.addEventListener\("click", \(\) => hodlJournalNotesClick\(notesText\)\)/);
+  assert.match(appSource, /function hodlJournalKeyReferenceKeydown\(event, field\)[\s\S]*field\.setSelectionRange\(adjacent\.start, adjacent\.end\)/);
+  assert.match(appSource, /function hodlJournalDeleteKeyReference\(field, range, inputType\)[\s\S]*field\.dispatchEvent\(new InputEvent\("input"/);
   assert.match(appSource, /function hodlRefreshJournalKeyPicker\(\)/);
   assert.match(appSource, /function hodlJournalInsertKey\(select, field\)/);
   assert.match(appSource, /function hodlJournalImportFile\(file\)/);
@@ -1737,8 +1749,10 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
   assert.match(css, /#journal-tool-tabs \.key-tab:disabled,[\s\S]*opacity: \.52; cursor: not-allowed;/);
   assert.match(css, /#journal-card:not\(\[hidden\]\), #journal-notes-card:not\(\[hidden\]\), #journal-keymanager-card:not\(\[hidden\]\), #journal-state-card:not\(\[hidden\]\), #journal-log-card:not\(\[hidden\]\) \{[^}]*border-radius: 0 0 20px 20px;/s);
   assert.match(css, /\.journal-notes-wrap \{[^}]*--journal-font-family:[^}]*position: relative;/s);
-  assert.match(css, /\.journal-page-tab-strip \{ margin-top: 0; margin-bottom: -1px; \}/);
+  assert.match(css, /\.journal-page-tab-strip \{[^}]*position: relative;[^}]*z-index: 3;[^}]*margin-top: 0; margin-bottom: -2px; \}/);
   assert.match(css, /\.key-tab\.journal-page-tab\.active,[^}]*background: var\(--bg\); border-bottom-color: var\(--bg\);/);
+  assert.match(css, /\.journal-page-tab-strip:has\(\+ \.journal-notes-wrap \.journal-notes-text:focus\) \.journal-page-tab\.active \{[^}]*border-color: var\(--blue\);[^}]*border-bottom-color: var\(--bg\);[^}]*box-shadow:/);
+  assert.match(css, /\.journal-page-tab-strip:has\(\+ \.journal-notes-wrap \.journal-notes-text:focus\) \.journal-page-tab\.active::after \{[^}]*bottom: -3px; height: 4px; background: var\(--bg\);/);
   assert.match(css, /\.journal-page-tab \.journal-page-tab-short \{ display: none; \}/);
   assert.match(css, /\.journal-page-tab\.is-default \.journal-page-tab-full \{ display: none; \}/);
   assert.match(css, /\.journal-page-tab\.is-default \.journal-page-tab-short \{ display: inline-block; \}/);
@@ -1746,13 +1760,20 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
   assert.match(css, /\.journal-key-control \{ grid-column: 1 \/ -1; \}/);
   assert.match(css, /\.journal-notes-text \{[^}]*min-height: 20rem;[^}]*color: transparent;[^}]*caret-color: var\(--fg\);/s);
   assert.match(css, /\.journal-notes-text \{[^}]*border-top-left-radius: 0;/s);
+  assert.match(css, /\.journal-notes-text:focus \{ border: 2px solid var\(--blue\); outline: none; \}/);
+  assert.match(css, /\.journal-notes-text::selection \{[^}]*background: color-mix\(in oklab, var\(--selection-accent\) 38%, transparent\);[^}]*color: transparent;[^}]*-webkit-text-fill-color: transparent;/s);
+  assert.match(appSource, /notesText\.addEventListener\("select", \(\) => hodlJournalProtectStampSelection\(notesText\)\)/);
+  assert.match(appSource, /function hodlJournalProtectStampSelection\(field\) \{[\s\S]*?startStamp[\s\S]*?endStamp[\s\S]*?field\.setSelectionRange\(nextStart, nextEnd/);
   assert.match(css, /\.journal-notes-render \{[^}]*pointer-events: none;[^}]*white-space: pre-wrap;/s);
   assert.match(css, /\.journal-inline-key-lifehash \{[^}]*width: 1\.1em; height: 1\.1em;/s);
+  assert.match(css, /\.journal-inline-bip85 \{[^}]*color: var\(--blue\);[^}]*background: color-mix/s);
   assert.match(css, /\.journal-notes-prompt \{[^}]*color: transparent;[^}]*white-space: pre-wrap;/s);
   assert.match(css, /\.journal-notes-prompt-text \{ color: var\(--faint\); \}/);
   assert.match(css, /\.journal-notes-copy \{[^}]*position: absolute;[^}]*top: 10px; right: 12px;[^}]*opacity: 0; pointer-events: none; transition: opacity \.18s ease;/s);
   assert.match(css, /\.journal-notes-copy\.is-visible, \.journal-notes-copy:hover, \.journal-notes-copy:focus-visible \{ opacity: 1; pointer-events: auto; \}/);
   assert.match(css, /\.journal-notes-copy\.is-copied, \.journal-notes-copy\.is-copied:not\(:disabled\):hover \{ color: var\(--ok\); \}/);
+  assert.match(appSource, /function hodlJournalRememberKeyInsertion\(select, field\)[\s\S]*?select\.hodlJournalInsertionRange = \{ start: field\.selectionStart, end: field\.selectionEnd \}/);
+  assert.match(appSource, /let saved = select\.hodlJournalInsertionRange;\s*delete select\.hodlJournalInsertionRange;/);
   assert.match(appSource, /notesText\.addEventListener\("mousemove", \(\) => hodlJournalRevealCopyButton\(notesCopy\)\)/);
   assert.match(appSource, /hodlJournalFormatNotebook\(field\.value\)[\s\S]*?button\.dataset\.phrase = phrase/);
   assert.match(appSource, /hodlCopySeedPhraseButton\(notesCopy\);[\s\S]*?hodlJournalRevealCopyButton\(notesCopy, 1900\)/);
@@ -1805,6 +1826,8 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
   assert.match(appSource, /function hodlSyncJournalCreatePasswordValidation\(\) \{[\s\S]*Array\.from\(passwordValue\)\.length >= hodlJournalPasswordMinLength[\s\S]*Password has too few characters[\s\S]*Passwords do not match/);
   assert.match(appSource, /if \(ready\) ready\.hidden = !\(passwordLongEnough && confirmValue && passwordsMatch\);/);
   assert.match(appSource, /\["journal-create-password", "journal-create-confirm"\][\s\S]*addEventListener\("input", hodlSyncJournalCreatePasswordValidation\)/);
+  assert.match(appSource, /function hodlJournalCreatePasswordKeydown\(event\) \{[\s\S]*event\.key !== "Enter"[\s\S]*Array\.from\(password\.value\)\.length < hodlJournalPasswordMinLength[\s\S]*confirm\.focus\(\)[\s\S]*confirm\.value === password\.value\) hodlJournalCreate\(\)/);
+  assert.match(appSource, /\["journal-create-password", "journal-create-confirm"\][\s\S]*addEventListener\("keydown", hodlJournalCreatePasswordKeydown\)/);
   assert.match(appSource, /function hodlSyncJournalTool\(\) \{[\s\S]*unlocked = hodlJournalUnlocked\(\)[\s\S]*button\.disabled = !unlocked;[\s\S]*button\.setAttribute\("aria-disabled", String\(!unlocked\)\)[\s\S]*journal-notes-card"\)\.hidden = !visible \|\| !unlocked/);
   assert.match(appSource, /async function hodlJournalCreate\(\) \{[\s\S]*hodlJournalShowWork\(\);\s*hodlShowJournalTool\("notes"\)/);
   assert.match(appSource, /async function hodlJournalUnlock\(\) \{[\s\S]*hodlJournalShowWork\(\);\s*hodlShowJournalTool\("notes"\)/);

@@ -113,18 +113,21 @@ test("HDKey.derive wipes the intermediate path nodes but keeps the returned chil
 test("the Rust free functions wipe before deallocating (source guard)", () => {
   // The behavioral tests above pin the committed artifact; this pins the
   // source so a future edit cannot quietly drop the wipe.
-  assert.match(
-    read("entropylab-wasm/src/lib.rs"),
-    /fn el_free\(ptr: \*mut u8, len: usize\) \{\s*(?:\/\/[^\n]*\n\s*(?:\/\/[^\n]*\n\s*)*)?wipe\(ptr, len\);/,
-  );
-  assert.match(
-    read("psbt-wasm/src/lib.rs"),
-    /fn psbt_free\(ptr: \*mut u8, len: usize\) \{\s*(?:\/\/[^\n]*\n\s*(?:\/\/[^\n]*\n\s*)*)?wipe\(ptr, len\);/,
-  );
+  for (const [file, free] of [
+    ["entropylab-wasm/src/lib.rs", "el_free"],
+    ["psbt-wasm/src/lib.rs", "psbt_free"],
+    ["vanity-wasm/src/lib.rs", "vanity_free"],
+  ]) {
+    assert.match(
+      read(file),
+      new RegExp(`fn ${free}\\(ptr: \\*mut u8, len: usize\\) \\{\\s*(?://[^\\n]*\\n\\s*(?://[^\\n]*\\n\\s*)*)?wipe\\(ptr, len\\);`),
+      `${file}: ${free} must wipe before deallocating`,
+    );
+  }
 });
 
 test("the Rust allocators reconstruct the exact boxed-slice layout", () => {
-  for (const file of ["entropylab-wasm/src/lib.rs", "psbt-wasm/src/lib.rs"]) {
+  for (const file of ["entropylab-wasm/src/lib.rs", "psbt-wasm/src/lib.rs", "vanity-wasm/src/lib.rs"]) {
     const source = read(file);
     assert.match(source, /vec!\[0u8; len\]\.into_boxed_slice\(\)/);
     assert.match(source, /slice_from_raw_parts_mut\(ptr, len\)/);
@@ -133,13 +136,29 @@ test("the Rust allocators reconstruct the exact boxed-slice layout", () => {
   }
 });
 
+test("the vanity crate wipes its derivation secrets and the worker its buffers (source guard)", () => {
+  const vanity = read("vanity-wasm/src/lib.rs");
+  // HMAC pads in HmacSha512::new, the PBKDF2 round value, the master HMAC
+  // output, the CKD tweak, intermediate path nodes, and the grind loop's
+  // seed, per-candidate node, parent node, and passphrase window.
+  assert.ok((vanity.match(/wipe_bytes\(/g) || []).length >= 6, "secret byte strings must be wiped");
+  assert.ok((vanity.match(/wipe_node\(/g) || []).length >= 4, "private-key nodes must be wiped");
+  const worker = read("src/js/vanity-worker.js");
+  assert.match(worker, /function wipeSecrets\(\)/);
+  assert.match(worker, /heap\(\)\.fill\(0, keyPtr, keyPtr \+ MAX_KEY\)/);
+  assert.match(worker, /heap\(\)\.fill\(0, saltPtr, saltPtr \+ MAX_SALT\)/);
+  // Job start, both done paths, and the grind-error path all wipe.
+  assert.ok((worker.match(/wipeSecrets\(\);/g) || []).length >= 4, "every job-ending path must wipe");
+  assert.match(worker, /heap\(\)\.fill\(0, outPtr/, "the record area is wiped after each drain");
+});
+
 test("the JS facades wipe their secret byte buffers (source guard)", () => {
   const bip39 = read("src/js/bip39.js");
   assert.match(bip39, /phrase\.fill\(0\);\s*salt\.fill\(0\);/, "mnemonicToSeedSync must wipe the encoded phrase and salt");
   assert.equal((bip39.match(/phrase\.fill\(0\)/g) || []).length, 3, "every encoded phrase buffer must be wiped");
   const bip85 = read("src/js/bip85.js");
   assert.match(bip85, /child\.wipePrivateData\(\)/, "deriveBip85Entropy must wipe the derived child node");
-  assert.ok((bip85.match(/wipeBytes\(digest\)/g) || []).length >= 4, "every BIP-85 HMAC digest must be wiped");
+  assert.ok((bip85.match(/wipeBytes\(digest\)/g) || []).length >= 6, "every BIP-85 HMAC digest must be wiped");
   const hdkey = read("src/js/hdkey.js");
   assert.match(hdkey, /if \(child !== this\) child\.wipePrivateData\(\);/, "derive must wipe intermediate path nodes");
   assert.match(hdkey, /input\.fill\(0\)/, "deriveChild must wipe the packed parent node");

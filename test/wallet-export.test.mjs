@@ -12,16 +12,18 @@
 //
 // The same generated file shapes were also validated by loading them with
 // bitcoind (loadwallet) and spending from the private variant on regtest.
+// The final section automates that: where bitcoind is installed, every chain
+// the network picker advertises loads its generated file (issue #329).
 //
 // Run with `npm run test:wallet-export` or `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash, createHmac } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { createServer } from "node:net";
 import {
   REF_ACCOUNT_TPUB,
   REF_CREATION_TIME,
@@ -30,157 +32,46 @@ import {
   REF_PUBLIC_DESCRIPTORS,
   REF_WATCH_ONLY_RECORDS,
 } from "./wallet-export-reference.mjs";
+import {
+  B58,
+  BASE_G,
+  CHECKSUM_CHARSET,
+  FIELD_P,
+  INPUT_CHARSET,
+  ORDER_N,
+  PYTHON_SQLITE,
+  asMap,
+  b58checkDecode,
+  b58checkEncode,
+  b58encode,
+  bigintBytes,
+  bytesToHex,
+  deps,
+  deriveBranchBody,
+  descriptorChecksum,
+  hdDeriveHardened,
+  hdMasterFromSeed,
+  hdNodeFrom,
+  hexToBytes,
+  loadModule,
+  modPow,
+  moduleRecords,
+  pointAdd,
+  pointMul,
+  publicKeyForPrivate,
+  read,
+  ripemd160,
+  serPub,
+  serializeExtendedKey,
+  sha256,
+  sqliteReadBack,
+  unserPub,
+} from "./wallet-export-harness.mjs";
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const read = (path) => readFileSync(join(root, path), "utf8");
 const sqliteSrc = read("src/js/sqlite-writer.js");
 const walletSrc = read("src/js/wallet-export.js");
 const app = read("src/js/app.js");
 
-const loadModule = () => new Function(`${sqliteSrc}\n${walletSrc}\nreturn hodlWalletExport;`)();
-
-const hexToBytes = (text) => Uint8Array.from(Buffer.from(text, "hex"));
-const bytesToHex = (bytes) => Buffer.from(bytes).toString("hex");
-
-// --- independent reference crypto (test-local, no application code) --------
-
-const FIELD_P = BigInt("0x" + "f".repeat(55) + "efffffc2f");
-const ORDER_N = BigInt("0x" + "f".repeat(31) + "ebaaedce6af48a03bbfd25e8cd0364141");
-const BASE_G = [
-  BigInt("0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
-  BigInt("0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"),
-];
-const modPow = (base, exp, mod) => {
-  let result = 1n;
-  base %= mod;
-  while (exp) {
-    if (exp & 1n) result = (result * base) % mod;
-    base = (base * base) % mod;
-    exp >>= 1n;
-  }
-  return result;
-};
-const pointAdd = (p, q) => {
-  if (p === null) return q;
-  if (q === null) return p;
-  if (p[0] === q[0] && (p[1] + q[1]) % FIELD_P === 0n) return null;
-  const inv = (a) => modPow(((a % FIELD_P) + FIELD_P) % FIELD_P, FIELD_P - 2n, FIELD_P);
-  const l = p[0] === q[0] && p[1] === q[1]
-    ? (3n * p[0] * p[0] * inv(2n * p[1])) % FIELD_P
-    : ((q[1] - p[1]) * inv(q[0] - p[0])) % FIELD_P;
-  const x = ((l * l - p[0] - q[0]) % FIELD_P + FIELD_P) % FIELD_P;
-  return [x, ((l * (p[0] - x) - p[1]) % FIELD_P + FIELD_P) % FIELD_P];
-};
-const pointMul = (scalar) => {
-  let k = ((scalar % ORDER_N) + ORDER_N) % ORDER_N;
-  let result = null;
-  let point = BASE_G;
-  while (k) {
-    if (k & 1n) result = pointAdd(result, point);
-    point = pointAdd(point, point);
-    k >>= 1n;
-  }
-  return result;
-};
-const serPub = (point) => Uint8Array.from([point[1] & 1n ? 3 : 2, ...bigintBytes(point[0], 32)]);
-const unserPub = (bytes) => {
-  const x = BigInt("0x" + bytesToHex(bytes.slice(1)));
-  let y = modPow((x * x * x + 7n) % FIELD_P, (FIELD_P + 1n) / 4n, FIELD_P);
-  if ((y & 1n) !== BigInt(bytes[0] & 1)) y = FIELD_P - y;
-  return [x, y];
-};
-const bigintBytes = (value, length) => {
-  const out = new Uint8Array(length);
-  for (let i = length - 1; i >= 0; i--) { out[i] = Number(value & 0xffn); value >>= 8n; }
-  return out;
-};
-
-const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-const b58encode = (bytes) => {
-  let n = BigInt("0x" + (bytes.length ? bytesToHex(bytes) : "0"));
-  let out = "";
-  while (n > 0n) { out = B58[Number(n % 58n)] + out; n /= 58n; }
-  let zeros = 0;
-  while (zeros < bytes.length && bytes[zeros] === 0) zeros++;
-  return "1".repeat(zeros) + out;
-};
-const b58checkDecode = (text) => {
-  let n = 0n;
-  for (const char of text) n = n * 58n + BigInt(B58.indexOf(char));
-  let raw = bigintBytes(n, Math.max(1, Math.ceil(n.toString(2).length / 8)));
-  if (n === 0n) raw = new Uint8Array(0);
-  let zeros = 0;
-  while (zeros < text.length && text[zeros] === "1") zeros++;
-  raw = Uint8Array.from([...new Array(zeros).fill(0), ...raw]);
-  const data = raw.slice(0, -4);
-  const check = raw.slice(-4);
-  const digest = createHash("sha256").update(createHash("sha256").update(data).digest()).digest();
-  if (Buffer.from(check).compare(digest.subarray(0, 4)) !== 0) throw new Error("bad base58 checksum in test helper");
-  return data;
-};
-const b58checkEncode = (data) => {
-  const digest = createHash("sha256").update(createHash("sha256").update(data).digest()).digest();
-  return b58encode(Uint8Array.from([...data, ...digest.subarray(0, 4)]));
-};
-
-const sha256 = (bytes) => new Uint8Array(createHash("sha256").update(bytes).digest());
-const ripemd160 = (bytes) => new Uint8Array(createHash("ripemd160").update(bytes).digest());
-
-// Descriptor checksum: the reference algorithm from Bitcoin Core's
-// doc/descriptors.md (NOT the app's implementation).
-const INPUT_CHARSET =
-  "0123456789()[],'/*abcdefgh@:$%{}IJKLMNOPQRSTUVWXYZ&+-.;<=>?!^_|~ijklmnopqrstuvwxyzABCDEFGH`JKLMNOPQRSTUVWXYZ";
-const CHECKSUM_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-const descriptorChecksum = (body) => {
-  const GEN = [0xf5dee51989n, 0xa9fdca3312n, 0x1bab10e32dn, 0x3706b1677an, 0x644d626ffdn];
-  const groups = [];
-  const symbols = [];
-  for (const character of body) {
-    const index = INPUT_CHARSET.indexOf(character);
-    symbols.push(index & 31);
-    groups.push(index >> 5);
-    if (groups.length === 3) {
-      symbols.push(groups[0] * 9 + groups[1] * 3 + groups[2]);
-      groups.length = 0;
-    }
-  }
-  if (groups.length === 1) symbols.push(groups[0]);
-  else if (groups.length === 2) symbols.push(groups[0] * 9 + groups[1] * 3);
-  let chk = 1n;
-  for (const value of [...symbols, 0, 0, 0, 0, 0, 0, 0, 0]) {
-    const top = chk >> 35n;
-    chk = ((chk & 0x7ffffffffn) << 5n) ^ BigInt(value);
-    for (let i = 0; i < 5; i++) if ((top >> BigInt(i)) & 1n) chk ^= GEN[i];
-  }
-  chk ^= 1n;
-  let out = "";
-  for (let i = 0; i < 8; i++) out += CHECKSUM_CHARSET[Number((chk >> BigInt(5 * (7 - i))) & 31n)];
-  return out;
-};
-
-// BIP32 public derivation of the account branch xpub, packed as the 74-byte
-// cache body (depth, parent fingerprint, child number, chaincode, pubkey).
-const deriveBranchBody = (xpubText, branch) => {
-  const raw = b58checkDecode(xpubText);
-  const depth = raw[4];
-  const chaincode = raw.slice(13, 45);
-  const pubkey = raw.slice(45, 78);
-  const indexBytes = Uint8Array.from([(branch >>> 24) & 0xff, (branch >>> 16) & 0xff, (branch >>> 8) & 0xff, branch & 0xff]);
-  const I = createHmac("sha512", chaincode).update(Buffer.concat([Buffer.from(pubkey), Buffer.from(indexBytes)])).digest();
-  const tweak = BigInt("0x" + I.subarray(0, 32).toString("hex"));
-  const childPoint = pointAdd(pointMul(tweak), unserPub(pubkey));
-  const fingerprint = ripemd160(sha256(pubkey)).subarray(0, 4);
-  return Uint8Array.from([
-    depth + 1,
-    ...fingerprint,
-    ...indexBytes,
-    ...new Uint8Array(I.subarray(32)),
-    ...serPub(childPoint),
-  ]);
-};
-const publicKeyForPrivate = (secret) => serPub(pointMul(BigInt("0x" + bytesToHex(secret))));
-
-const deps = { sha256, checksum: descriptorChecksum, base58Decode: b58checkDecode, deriveBranchBody, publicKeyForPrivate };
 
 // --- reference wallets ------------------------------------------------------
 
@@ -220,51 +111,6 @@ const PRIVATE_WALLET = {
   accounts: makeAccounts(REF_PRIVATE_PUBLIC_FORMS, REF_PRIVATE_DESCRIPTORS),
 };
 
-const asMap = (records) => new Map(records.map(([key, value]) => [key, value]));
-const moduleRecords = (wallet, includePrivate) =>
-  asMap(
-    loadModule()
-      .buildWalletRecords(wallet, includePrivate, deps, REF_CREATION_TIME)
-      .map(([key, value]) => [bytesToHex(key), bytesToHex(value)]),
-  );
-
-const PYTHON_SQLITE = (() => {
-  const probe = spawnSync("python3", ["-c", "import sqlite3"], { stdio: "pipe" });
-  return probe.status === 0;
-})();
-
-// Reads a generated database with the real SQLite library and returns its
-// integrity check plus every row of the `main` table.
-const sqliteReadBack = (dbBytes) => {
-  const dir = mkdtempSync(join(tmpdir(), "entropylab-walletdat-"));
-  const file = join(dir, "wallet.dat");
-  writeFileSync(file, dbBytes);
-  try {
-    const out = execFileSync(
-      "python3",
-      [
-        "-c",
-        `
-import sqlite3, json, sys
-con = sqlite3.connect(sys.argv[1])
-result = {
-  "integrity": con.execute("PRAGMA integrity_check").fetchone()[0],
-  "app_id": con.execute("PRAGMA application_id").fetchone()[0] & 0xFFFFFFFF,
-  "user_version": con.execute("PRAGMA user_version").fetchone()[0],
-  "rows": [[k.hex(), v.hex()] for k, v in con.execute("SELECT key, value FROM main")],
-}
-con.close()
-print(json.dumps(result))
-`,
-        file,
-      ],
-      { encoding: "utf8", maxBuffer: 1 << 26 },
-    );
-    return JSON.parse(out);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-};
 
 // --- tests ------------------------------------------------------------------
 
@@ -292,7 +138,7 @@ test("reference implementations agree with the fixture", () => {
 });
 
 test("watch-only records are byte-identical to a Bitcoin Core wallet", () => {
-  const mine = moduleRecords(WATCH_ONLY_WALLET, false);
+  const mine = moduleRecords(WATCH_ONLY_WALLET, false, REF_CREATION_TIME);
   const reference = asMap(REF_WATCH_ONLY_RECORDS);
   assert.equal(mine.size, reference.size);
   for (const [key, value] of reference) {
@@ -306,7 +152,7 @@ test("watch-only records are byte-identical to a Bitcoin Core wallet", () => {
 });
 
 test("private records are byte-identical to a Bitcoin Core wallet", () => {
-  const mine = moduleRecords(PRIVATE_WALLET, true);
+  const mine = moduleRecords(PRIVATE_WALLET, true, REF_CREATION_TIME);
   const reference = asMap(REF_PRIVATE_RECORDS);
   assert.equal(mine.size, reference.size);
   for (const [key, value] of reference) {
@@ -320,10 +166,132 @@ test("private records are byte-identical to a Bitcoin Core wallet", () => {
 });
 
 test("accounts without private material stay watch-only in a private export", () => {
-  const watchOnly = moduleRecords(WATCH_ONLY_WALLET, false);
-  const fallback = moduleRecords(WATCH_ONLY_WALLET, true);
+  const watchOnly = moduleRecords(WATCH_ONLY_WALLET, false, REF_CREATION_TIME);
+  const fallback = moduleRecords(WATCH_ONLY_WALLET, true, REF_CREATION_TIME);
   assert.deepEqual([...fallback.keys()].sort(), [...watchOnly.keys()].sort());
   for (const key of watchOnly.keys()) assert.equal(fallback.get(key), watchOnly.get(key));
+});
+
+// Regression: the h->' compat rewrite must stay inside the [origin] segment.
+// About 1 in 375 account xpubs end in a digit followed by the base58 letter
+// "h"; a body-wide rewrite corrupted that xpub, and Bitcoin Core refused to
+// load the wallet ("descriptor ID calculated by the wallet differs from the
+// one in DB"). Both xpubs below are real m/84'/0'/0' account keys with that
+// ending, so the old code path is exercised exactly.
+const XPUB_TAIL_4H = "xpub6DGDSTSv42ve3BBRALC4UVi3LdaoQjA9R2yV9RSDojTRKQTK5Jk73WKqm6v392eeF3Lxawf8gHiBpD5xBDx7HYvbkLoZ6e1Emu9fvW2M24h";
+const XPUB_TAIL_2H = "xpub6ChZ8GTJVLpepi3oLPQUHRx6H7RkwQ6bsoqvSfwTw5jZuRithtrc75Tfq7H3sa8bXkA9d35K3CdJDY5B2aTFmdFEp19AGWT7XTXDVFvCn2h";
+
+const DESCRIPTOR_PREFIX = "10" + "77616c6c657464657363726970746f72"; // length-prefixed "walletdescriptor"
+const descriptorIds = (records) =>
+  [...records.keys()].filter((key) => key.startsWith(DESCRIPTOR_PREFIX)).map((key) => key.slice(DESCRIPTOR_PREFIX.length));
+const digitHWallet = (descriptorFor) => ({
+  kind: "hd",
+  network: "mainnet",
+  accounts: [{
+    def: { id: "bip84" },
+    receiveDescriptor: descriptorFor(XPUB_TAIL_4H),
+    changeDescriptor: descriptorFor(XPUB_TAIL_2H),
+  }],
+});
+
+test("descriptor ids keep account xpubs ending in <digit>h byte-identical", () => {
+  const descriptorFor = (xpub) => {
+    const body = `wpkh([00000000/84h/0h/0h]${xpub}/0/*)`;
+    return `${body}#${descriptorChecksum(body)}`;
+  };
+  const records = moduleRecords(digitHWallet(descriptorFor), false, REF_CREATION_TIME);
+  const ids = descriptorIds(records);
+  assert.equal(ids.length, 2);
+  for (const xpub of [XPUB_TAIL_4H, XPUB_TAIL_2H]) {
+    // What Core computes at load: origin steps rendered with ', key material
+    // (including its trailing "h") re-encoded untouched.
+    const compat = `wpkh([00000000/84'/0'/0']${xpub}/0/*)`;
+    const expectedId = bytesToHex(sha256(new TextEncoder().encode(`${compat}#${descriptorChecksum(compat)}`)));
+    assert.ok(ids.includes(expectedId), `record id for ...${xpub.slice(-12)} must match Core's DescriptorID`);
+  }
+  // The stored descriptor string keeps the original xpub text as well.
+  const storedValues = ids.map((id) => Buffer.from(records.get(DESCRIPTOR_PREFIX + id), "hex").toString());
+  for (const xpub of [XPUB_TAIL_4H, XPUB_TAIL_2H]) {
+    assert.ok(storedValues.some((value) => value.includes(xpub)), `stored descriptor keeps ...${xpub.slice(-12)} verbatim`);
+  }
+});
+
+test("origin-less descriptors keep a <digit>h xpub byte-identical", () => {
+  // Imported account keys export without a key origin (the app does not
+  // fabricate one). With nothing to rewrite, the compat form is the body
+  // itself — the body-wide rewrite corrupted these xpubs just the same.
+  const descriptorFor = (xpub) => {
+    const body = `wpkh(${xpub}/0/*)`;
+    return `${body}#${descriptorChecksum(body)}`;
+  };
+  const records = moduleRecords(digitHWallet(descriptorFor), false, REF_CREATION_TIME);
+  const ids = descriptorIds(records);
+  assert.equal(ids.length, 2);
+  for (const xpub of [XPUB_TAIL_4H, XPUB_TAIL_2H]) {
+    const body = `wpkh(${xpub}/0/*)`;
+    const expectedId = bytesToHex(sha256(new TextEncoder().encode(`${body}#${descriptorChecksum(body)}`)));
+    assert.ok(ids.includes(expectedId), `record id for origin-less ...${xpub.slice(-12)} must hash the unchanged body`);
+  }
+});
+
+// Regression for the Harden branch option: the watch-only descriptor is
+// "wpkh([fp/84h/0h/0h/0h]xpubBranch/*)" — the branch xpub IS the descriptor
+// root key. Core caches the root key itself when the path after it is empty
+// (BIP32PubkeyProvider) and looks the root pubkey up in walletdescriptorkey.
+// Deriving branch 0/1 of that key for the cache made Core watch a different
+// subtree, and recording the account key left the spending variant unable to
+// sign (root pubkey lookup misses in m_map_keys).
+test("hardened-branch descriptors cache and sign with the descriptor root key", () => {
+  const seed = new Uint8Array(32);
+  seed[31] = 1;
+  const master = hdMasterFromSeed(seed);
+  const fp = bytesToHex(ripemd160(sha256(publicKeyForPrivate(master.secret))).subarray(0, 4));
+  let account = master;
+  for (const step of [84, 0, 0]) account = hdDeriveHardened(account, step);
+  const accountXprv = serializeExtendedKey(account, 0x0488ade4, true);
+  const branch = (b) => hdDeriveHardened(account, b);
+  const branchXpub = (b) => serializeExtendedKey(branch(b), 0x0488b21e, false);
+  const descriptorFor = (b) => {
+    const body = `wpkh([${fp}/84h/0h/0h/${b}h]${branchXpub(b)}/*)`;
+    return `${body}#${descriptorChecksum(body)}`;
+  };
+  const privateDescriptorFor = (b) => {
+    const body = `wpkh([${fp}/84h/0h/0h]${accountXprv}/${b}'/*)`;
+    return `${body}#${descriptorChecksum(body)}`;
+  };
+  const wallet = {
+    kind: "hd",
+    network: "mainnet",
+    accounts: [{
+      def: { id: "bip84" },
+      receiveDescriptor: descriptorFor(0),
+      changeDescriptor: descriptorFor(1),
+      receiveDescriptorPriv: privateDescriptorFor(0),
+      changeDescriptorPriv: privateDescriptorFor(1),
+    }],
+  };
+
+  // Watch-only: the cache parent is the branch xpub itself (raw 74-byte body).
+  const watch = moduleRecords(wallet, false, REF_CREATION_TIME);
+  const cachePrefix = "15" + "77616c6c657464657363726970746f726361636865"; // \x15walletdescriptorcache
+  const caches = [...watch.entries()].filter(([key]) => key.startsWith(cachePrefix)).map(([, value]) => value);
+  assert.equal(caches.length, 2);
+  for (const b of [0, 1]) {
+    const expected = "4a" + bytesToHex(b58checkDecode(branchXpub(b)).slice(4));
+    assert.ok(caches.includes(expected), `cache parent for branch ${b} is the descriptor root key itself`);
+  }
+
+  // Spending: each key record maps the branch pubkey to the branch secret.
+  const spending = moduleRecords(wallet, true, REF_CREATION_TIME);
+  const keyRecords = [...spending.entries()].filter(([key]) => key.includes("77616c6c657464657363726970746f726b6579"));
+  assert.equal(keyRecords.length, 2);
+  for (const b of [0, 1]) {
+    const pubkey = bytesToHex(publicKeyForPrivate(branch(b).secret));
+    const record = keyRecords.find(([key]) => key.endsWith("21" + pubkey));
+    assert.ok(record, `key record for branch ${b} names the branch pubkey`);
+    const secret = bytesToHex(branch(b).secret);
+    assert.ok(record[1].startsWith("d6") && record[1].includes(secret), `key record for branch ${b} carries the branch secret`);
+  }
 });
 
 test("generated watch-only wallet.dat verifies with real SQLite", { skip: !PYTHON_SQLITE }, () => {
@@ -347,15 +315,62 @@ test("generated private wallet.dat verifies with real SQLite", { skip: !PYTHON_S
 
 test("network selects the application id and best-block locator", () => {
   const { buildWalletRecords, buildWalletDat } = loadModule();
-  const mainnetWallet = { ...WATCH_ONLY_WALLET, network: "mainnet" };
-  const bytes = buildWalletDat(mainnetWallet, false, deps, REF_CREATION_TIME);
-  assert.equal(bytesToHex(bytes.subarray(68, 72)), "f9beb4d9"); // mainnet magic
-  const records = moduleRecords(mainnetWallet, false);
   const bestblockKey = "12" + "62657374626c6f636b5f6e6f6d65726b6c65"; // "bestblock_nomerkle"
-  const mainnetGenesis = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
-  const reversed = bytesToHex(hexToBytes(mainnetGenesis).reverse());
-  assert.ok(records.get(bestblockKey).endsWith(reversed), "bestblock locator should name the mainnet genesis block");
-  assert.throws(() => buildWalletRecords({ ...WATCH_ONLY_WALLET, network: "signet" }, false, deps, REF_CREATION_TIME), /unknown network/);
+  // Every picker network writes its own network magic and genesis locator:
+  // signet and regtest share testnet's key/address family but are NOT aliases
+  // for it in the wallet metadata (issue #329). The signet row is the default
+  // signet; custom-challenge signets get a different magic in Core and are
+  // out of scope.
+  const chains = {
+    mainnet: { magic: "f9beb4d9", genesis: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" },
+    testnet: { magic: "0b110907", genesis: "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943" },
+    signet: { magic: "0a03cf40", genesis: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6" },
+    regtest: { magic: "fabfb5da", genesis: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206" },
+  };
+  for (const [network, { magic, genesis }] of Object.entries(chains)) {
+    const wallet = { ...WATCH_ONLY_WALLET, network };
+    const bytes = buildWalletDat(wallet, false, deps, REF_CREATION_TIME);
+    assert.equal(bytesToHex(bytes.subarray(68, 72)), magic, `${network} application id`);
+    const locator = moduleRecords(wallet, false, REF_CREATION_TIME).get(bestblockKey);
+    assert.ok(locator.endsWith(bytesToHex(hexToBytes(genesis).reverse())), `${network} bestblock locator should name its genesis block`);
+  }
+  assert.throws(() => buildWalletRecords({ ...WATCH_ONLY_WALLET, network: "mutinynet" }, false, deps, REF_CREATION_TIME), /unknown network/);
+});
+
+test("descriptor ranges cover displayed addresses plus a recovery gap", () => {
+  const { buildWalletRecords, walletDescriptorUnits } = loadModule();
+  const wallet = structuredClone(WATCH_ONLY_WALLET);
+  wallet.accounts[0].addressBranches = [
+    { branch: 0, rows: [{ index: 5000 }, { index: 5001 }, { index: 5002 }] },
+    { branch: 1, rows: [{ index: 7000 }] },
+  ];
+
+  const units = walletDescriptorUnits(wallet, false);
+  assert.deepEqual(
+    units.slice(0, 2).map(({ nextIndex, rangeStart, rangeEnd }) => ({ nextIndex, rangeStart, rangeEnd })),
+    [
+      { nextIndex: 5003, rangeStart: 5000, rangeEnd: 6002 },
+      { nextIndex: 7001, rangeStart: 7000, rangeEnd: 8000 },
+    ],
+  );
+
+  const records = buildWalletRecords(wallet, false, deps, REF_CREATION_TIME);
+  const descriptorValues = records
+    .filter(([key]) => key[0] === 16 && new TextDecoder().decode(key.slice(1, 17)) === "walletdescriptor")
+    .map(([, value]) => Buffer.from(value));
+  const readRange = (value) => {
+    const first = value[0];
+    const lengthBytes = first < 253 ? 1 : first === 253 ? 3 : first === 254 ? 5 : 9;
+    const descriptorLength = first < 253 ? first : first === 253 ? value.readUInt16LE(1) : first === 254 ? value.readUInt32LE(1) : Number(value.readBigUInt64LE(1));
+    const offset = lengthBytes + descriptorLength + 8;
+    return {
+      nextIndex: value.readUInt32LE(offset),
+      rangeStart: value.readUInt32LE(offset + 4),
+      rangeEnd: value.readUInt32LE(offset + 8),
+    };
+  };
+  assert.deepEqual(readRange(descriptorValues[0]), { nextIndex: 5003, rangeStart: 5000, rangeEnd: 6002 });
+  assert.deepEqual(readRange(descriptorValues[1]), { nextIndex: 7001, rangeStart: 7000, rangeEnd: 8000 });
 });
 
 test("button gating: only HD wallets with descriptors", () => {
@@ -366,6 +381,44 @@ test("button gating: only HD wallets with descriptors", () => {
   assert.equal(hasDescriptors({ kind: "msig", receiveDescriptor: "wsh(...)#x", changeDescriptor: "wsh(...)#y" }), false);
   assert.equal(hasDescriptors({ kind: "hd", accounts: [] }), false);
   assert.equal(hasDescriptors(WATCH_ONLY_WALLET), true);
+});
+
+test("a receive-only wallet still exports: units cover whichever branches exist (issue #366)", () => {
+  const { hasDescriptors, hasPrivateDescriptors, walletDescriptorUnits, buildWalletRecords } = loadModule();
+  const wallet = structuredClone(WATCH_ONLY_WALLET);
+  for (const account of wallet.accounts) {
+    account.changeDescriptor = null;
+    account.changeDescriptorPriv = null;
+  }
+  assert.equal(hasDescriptors(wallet), true, "receive-only wallets must have an export");
+  const units = walletDescriptorUnits(wallet, false);
+  assert.equal(units.length, 4);
+  assert.ok(units.every((unit) => !unit.internal), "no internal-branch units");
+  const records = buildWalletRecords(wallet, false, deps, REF_CREATION_TIME);
+  const names = records.map(([key]) => new TextDecoder().decode(key.slice(1, 1 + key[0])));
+  assert.equal(names.filter((name) => name === "activeexternalspk").length, 4);
+  assert.ok(!names.includes("activeinternalspk"), "a branch that was never derived must not produce an active record");
+  assert.equal(names.filter((name) => name === "walletdescriptor").length, 4);
+  // The secrets-variant label/filename honesty helpers track real material.
+  assert.equal(hasPrivateDescriptors(wallet), false);
+  assert.equal(hasPrivateDescriptors(PRIVATE_WALLET), true);
+  // Symmetric case: a change-only wallet (custom branch start) exports too.
+  const changeOnly = structuredClone(WATCH_ONLY_WALLET);
+  for (const account of changeOnly.accounts) {
+    account.receiveDescriptor = null;
+    account.receiveDescriptorPriv = null;
+  }
+  const changeUnits = walletDescriptorUnits(changeOnly, false);
+  assert.equal(changeUnits.length, 4);
+  assert.ok(changeUnits.every((unit) => unit.internal), "no external-branch units");
+});
+
+test("the app keys the secrets label and filename to actual material (issue #366)", () => {
+  const app = read("src/js/app.js");
+  assert.match(app, /withSecrets = includePrivate && hodlWalletExport\.hasPrivateDescriptors\(hodlWalletResult\)/);
+  assert.match(app, /walletDatButtonLabel\(withSecrets\)/);
+  assert.match(app, /withSecrets = hodlRevealPrivate && hodlWalletExport\.hasPrivateDescriptors\(hodlWalletResult\)/);
+  assert.match(app, /walletDatFilename\(hodlWalletResult, withSecrets\)/);
 });
 
 test("filename announces the wallet fingerprint and watch-only vs secrets", () => {
@@ -398,13 +451,13 @@ test("template, build script, and app wiring ship the export", () => {
   assert.match(build, /wallet-export\.js/);
   assert.match(build, /JS_WALLET_EXPORT/);
   // The button renders next to #save in the wallet-data-actions row, and its
-  // label is driven by the reveal flag (Ge) at render time.
+  // label follows the material that exists, not the reveal flag alone (#366).
   assert.match(app, /id="save"[^>]*>\$\{downloadLabel\}<\/button>\s*\$\{hodlWalletDatControl\(privateSheet\)\}/);
   assert.match(app, /hodlSaveRecoveryControl\s*\(\s*\)\s*\{\s*return\s*`<div class="wallet-data-actions no-print">[^`]*\$\{hodlWalletDatControl\(\s*(?:false|!1)\s*\)\}/);
-  assert.match(app, /id="download-wallet-dat"[^>]*>\$\{hodlWalletExport\.walletDatButtonLabel\(includePrivate\)\}/);
+  assert.match(app, /id="download-wallet-dat"[^>]*>\$\{hodlWalletExport\.walletDatButtonLabel\(withSecrets\)\}/);
   assert.match(app, /hodlWalletExport\.hasDescriptors\(hodlWalletResult\)/);
-  assert.match(app, /hodlWalletExport\.buildWalletDat\(\s*hodlWalletResult\s*,\s*hodlRevealPrivate\s*,\s*hodlWalletDatDeps\(\s*\)\s*,\s*creationTime\s*\)/);
-  assert.match(app, /hodlWalletExport\.walletDatFilename\(hodlWalletResult, hodlRevealPrivate\)/);
+  assert.match(app, /hodlWalletExport\.buildWalletDat\(\s*hodlWalletResult\s*,\s*withSecrets\s*,\s*hodlWalletDatDeps\(\s*\)\s*,\s*creationTime\s*\)/);
+  assert.match(app, /hodlWalletExport\.walletDatFilename\(hodlWalletResult, withSecrets\)/);
   assert.match(app, /document\.getElementById\("download-wallet-dat"\)/);
   assert.match(css, /\.save-wallet-dat/);
 });
@@ -417,21 +470,6 @@ const extract = (startNeedle, endNeedle) => {
   if (start < 0 || end < 0) throw new Error(`extract failed: ${startNeedle}`);
   return app.slice(start, end);
 };
-
-// Stand-in for the vendor HDKey shape hodlWalletDatDeps() reads, backed by
-// the reference CKDpub above.
-const hdNodeFrom = (raw) => ({
-  depth: raw[4],
-  parentFingerprint: Buffer.from(raw.slice(5, 9)).readUInt32BE(0),
-  index: Buffer.from(raw.slice(9, 13)).readUInt32BE(0),
-  chainCode: raw.slice(13, 45),
-  publicKey: raw.slice(45, 78),
-  privateKey: raw[45] === 0 ? raw.slice(46, 78) : null,
-  deriveChild(index) {
-    const body = deriveBranchBody(b58checkEncode(Uint8Array.from([...raw.slice(0, 4), this.depth, ...raw.slice(5)])), index);
-    return hdNodeFrom(Uint8Array.from([...raw.slice(0, 4), ...body]));
-  },
-});
 
 // The UI harness executes the real app.js controls and download handler in a
 // module scope where the vendor globals they read (tr, Cs, sr, le, Gt, xe,
@@ -497,7 +535,14 @@ test("controls render the wallet.dat button next to #save only when descriptors 
   assert.match(watchHtml, /id="save"/);
   assert.match(watchHtml, /id="download-wallet-dat"[^>]*>Download watch-only wallet\.dat<\/button>/);
 
+  // The reveal flag alone must not produce a secrets label on a wallet that
+  // has no private descriptors (issue #366): watch-only stays watch-only.
   ui.setResult(WATCH_ONLY_WALLET, true);
+  const noSecretsHtml = ui.hodlPrivateDataControls("wallet-private-description");
+  assert.match(noSecretsHtml, /id="download-wallet-dat"[^>]*>Download watch-only wallet\.dat<\/button>/);
+
+  // With private descriptors present, the reveal flag yields the secrets label.
+  ui.setResult(PRIVATE_WALLET, true);
   const privateHtml = ui.hodlPrivateDataControls("wallet-private-description");
   assert.match(privateHtml, /id="download-wallet-dat"[^>]*>Download wallet\.dat with secrets \(xprvs\)<\/button>/);
 
@@ -591,3 +636,131 @@ test("binding attaches the download to #download-wallet-dat and tolerates missin
   assert.equal(ui.captured.name, "watch-only-wallet.dat");
   ui.elements.clear();
 });
+
+// --- Bitcoin Core integration (skipped where bitcoind is not installed) ----
+//
+// For every chain the header picker advertises, a fresh bitcoind on that
+// chain must load the generated wallet.dat, and the signing variant must
+// hand out the chain's own address form — including regtest's bcrt1… —
+// because the SQLite application id and the bestblock locator are
+// chain-specific (issue #329). A file carrying another chain's metadata must
+// be refused. CI runners and the dev image skip this; run it where Bitcoin
+// Core is installed (verified with v31.1.0).
+const BITCOIND = (() => {
+  const daemon = spawnSync("bitcoind", ["--version"], { stdio: "pipe" });
+  const cli = spawnSync("bitcoin-cli", ["--version"], { stdio: "pipe" });
+  return daemon.status === 0 && cli.status === 0;
+})();
+
+// Re-version every extended key in a descriptor (tpub<->xpub and tprv<->xprv
+// payloads have the same layout) and re-checksum it — what the app does when
+// the mainnet family re-labels the same key material.
+const reversionDescriptor = (descriptor, publicVersion, privateVersion) => {
+  const body = descriptor
+    .slice(0, descriptor.lastIndexOf("#"))
+    .replace(/[txyzuv](?:prv|pub)[1-9A-HJ-NP-Za-km-z]{90,}/g, (key) => {
+      const raw = b58checkDecode(key).slice();
+      const version = key.slice(1, 4) === "prv" ? privateVersion : publicVersion;
+      raw[0] = (version >>> 24) & 255;
+      raw[1] = (version >>> 16) & 255;
+      raw[2] = (version >>> 8) & 255;
+      raw[3] = version & 255;
+      return b58checkEncode(raw);
+    });
+  return `${body}#${descriptorChecksum(body)}`;
+};
+
+const CHAIN_FIXTURES = {
+  mainnet: { flag: "", subdir: ".", bech32Prefix: "bc1q" },
+  testnet: { flag: "-testnet", subdir: "testnet3", bech32Prefix: "tb1q" },
+  signet: { flag: "-signet", subdir: "signet", bech32Prefix: "tb1q" },
+  regtest: { flag: "-regtest", subdir: "regtest", bech32Prefix: "bcrt1q" },
+};
+
+// The wallet the app exports for each chain: the reference key material,
+// versioned the way that chain's encoding family versions it.
+const chainWallets = (network) => {
+  const toMainnet = (descriptor) => reversionDescriptor(descriptor, 0x0488b21e, 0x0488ade4);
+  const asChain = (descriptors) => descriptors.map((d) => (network === "mainnet" ? toMainnet(d) : d));
+  return {
+    watch: { kind: "hd", network, accounts: makeAccounts(asChain(REF_PUBLIC_DESCRIPTORS), new Array(8).fill(null)) },
+    priv: { kind: "hd", network, accounts: makeAccounts(asChain(REF_PRIVATE_PUBLIC_FORMS), asChain(REF_PRIVATE_DESCRIPTORS)) },
+  };
+};
+
+// An OS-assigned localhost port keeps parallel or repeated runs from
+// colliding with a real node.
+const freePort = () =>
+  new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+// Boots a fresh node for the chain, runs `body(cli)` where
+// cli(...rpcArgs) returns the parsed JSON result (asserting success), and
+// always shuts the node down again.
+const withChainNode = async (network, body) => {
+  const fixture = CHAIN_FIXTURES[network];
+  const port = await freePort();
+  const datadir = mkdtempSync(join(tmpdir(), `entropylab-bitcoind-${network}-`));
+  const flagArgs = fixture.flag ? [fixture.flag] : [];
+  const cliArgs = [...flagArgs, `-datadir=${datadir}`, "-rpcuser=el", "-rpcpassword=el", `-rpcport=${port}`];
+  const cli = (args, { check = true } = {}) => {
+    const run = spawnSync("bitcoin-cli", [...cliArgs, ...args], { encoding: "utf8", maxBuffer: 1 << 22 });
+    if (check && run.status !== 0) throw new Error(`bitcoin-cli ${args[0]} failed on ${network}: ${run.stderr.trim()}`);
+    return run;
+  };
+  try {
+    execFileSync("bitcoind", [...flagArgs, `-datadir=${datadir}`, "-listen=0", "-connect=0", "-server", "-rpcuser=el", "-rpcpassword=el", `-rpcport=${port}`, "-daemon"], { stdio: "pipe" });
+    cli(["-rpcwait", "getblockchaininfo"]);
+    await body((args, options) => cli(args, options), join(datadir, fixture.subdir, "wallets"));
+  } finally {
+    spawnSync("bitcoin-cli", [...cliArgs, "stop"], { stdio: "pipe" });
+    // stop returns before the process exits; wait for the RPC to go quiet so
+    // the datadir removal cannot race a late flush.
+    for (let waited = 0; waited < 300; waited++) {
+      if (cli(["getblockchaininfo"], { check: false }).status !== 0) break;
+      sleepSync(100);
+    }
+    rmSync(datadir, { recursive: true, force: true });
+  }
+};
+
+for (const network of Object.keys(CHAIN_FIXTURES)) {
+  test(`bitcoind on ${network} loads the generated wallet.dat`, { skip: !BITCOIND, timeout: 120000 }, async () => {
+    const { buildWalletDat } = loadModule();
+    const wallets = chainWallets(network);
+    const watchBytes = buildWalletDat(wallets.watch, false, deps, 0);
+    const privBytes = buildWalletDat(wallets.priv, true, deps, 0);
+    await withChainNode(network, (cli, walletsDir) => {
+      for (const [name, bytes] of [["elwatch", watchBytes], ["elpriv", privBytes]]) {
+        mkdirSync(join(walletsDir, name), { recursive: true });
+        writeFileSync(join(walletsDir, name, "wallet.dat"), bytes);
+        assert.equal(JSON.parse(cli(["loadwallet", name]).stdout).name, name, `${network} refused its ${name} wallet`);
+      }
+      const watchInfo = JSON.parse(cli(["-rpcwallet=elwatch", "getwalletinfo"]).stdout);
+      assert.equal(watchInfo.format, "sqlite");
+      assert.equal(watchInfo.descriptors, true);
+      assert.equal(watchInfo.private_keys_enabled, false);
+      const privInfo = JSON.parse(cli(["-rpcwallet=elpriv", "getwalletinfo"]).stdout);
+      assert.equal(privInfo.private_keys_enabled, true);
+      // The signing wallet hands out the chain's own SegWit address: bc1q… on
+      // mainnet, tb1q… on testnet AND signet, bcrt1q… on regtest.
+      const address = cli(["-rpcwallet=elpriv", "getnewaddress", "", "bech32"]).stdout.trim();
+      assert.ok(address.startsWith(CHAIN_FIXTURES[network].bech32Prefix), `${network} address ${address} has the wrong HRP`);
+      if (network === "regtest") {
+        // The regression from issue #329: a file built with testnet metadata
+        // is not a regtest wallet and must be refused.
+        mkdirSync(join(walletsDir, "elwrong"), { recursive: true });
+        writeFileSync(join(walletsDir, "elwrong", "wallet.dat"), buildWalletDat(chainWallets("testnet").watch, false, deps, 0));
+        assert.notEqual(cli(["loadwallet", "elwrong"], { check: false }).status, 0, "a testnet-magic wallet loaded on regtest");
+      }
+    });
+  });
+}

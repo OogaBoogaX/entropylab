@@ -223,11 +223,13 @@ export class HDKey {
     }
     let child = this;
     for (const part of parts) {
-      const m = /^(\d+)('?)$/.exec(part);
+      // The hardened marker accepts h, H, or ' — the same grammar the UI
+      // path parsers (app.js) accept before they normalize to '.
+      const m = /^(\d+)([hH']?)$/.exec(part);
       if (!m) throw new Error("invalid child index: " + part);
       let idx = +m[1];
       if (!Number.isSafeInteger(idx) || idx >= HARDENED_OFFSET) throw new Error("Invalid index");
-      if (m[2] === "'") idx += HARDENED_OFFSET;
+      if (m[2]) idx += HARDENED_OFFSET;
       const next = child.deriveChild(idx);
       // Intermediate path nodes are dead once their child exists; wipe the
       // private half instead of leaving the keys for the GC to keep.

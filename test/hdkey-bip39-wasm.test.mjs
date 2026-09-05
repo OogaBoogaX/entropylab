@@ -12,6 +12,9 @@
 //     the rust-bip39 crate's English list (single source of truth check).
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import * as scureBip39 from "@scure/bip39";
 import { wordlist as scureEnglish } from "@scure/bip39/wordlists/english.js";
@@ -20,6 +23,7 @@ import { bip39English, entropyToMnemonic, mnemonicToEntropy, mnemonicToSeedSync,
 import { wasmExports } from "../src/js/entropylab-wasm.js";
 import { withInput, withOutput } from "../src/js/entropylab-wasm.js";
 
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const hexToBytes = (hex) => new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
 const bytesToHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 
@@ -57,6 +61,18 @@ test("BIP32 differential: private and public derivation match @scure/bip32", () 
       assert.equal(bytesToHex(ours.privateKey), bytesToHex(theirs.privateKey), `privateKey ${path}`);
     }
   }
+});
+
+test("BIP32 path grammar accepts h, H, and ' as the hardened marker (audit #365)", () => {
+  // The UI path parsers accept all three notations and normalize to ' before
+  // calling derive; a direct call with h or H must not throw.
+  const root = HDKey.fromMasterSeed(hexToBytes("000102030405060708090a0b0c0d0e0f"));
+  const prime = root.derive("m/84'/0'/0'");
+  for (const path of ["m/84h/0h/0h", "m/84H/0H/0H", "m/84h/0'/0H"]) {
+    const node = root.derive(path);
+    assert.equal(node.privateExtendedKey, prime.privateExtendedKey, path);
+  }
+  assert.throws(() => root.derive("m/84p"), /invalid child index/);
 });
 
 test("BIP32 watch-only: neutered derivation matches scure on normal paths", () => {
@@ -243,4 +259,17 @@ test("wordlist agreement: JS data file == rust-bip39 English list, word for word
   }
   // scure's copy (previously the app's list) is identical as well
   for (let i = 0; i < 2048; i += 137) assert.equal(scureEnglish[i], bip39English[i], `scure word ${i}`);
+});
+
+test("I_L == 0 returns the BIP32 retry verdict, never an invented node (issue #359)", () => {
+  // No real vector exists (the case is ~2^-128 per step), so pin the wiring:
+  // both CKD steps return the retry code and the JS loop proceeds with the
+  // next index, exactly as BIP32 specifies.
+  const rust = readFileSync(join(repoRoot, "entropylab-wasm/src/lib.rs"), "utf8");
+  assert.match(rust, /I_L == 0: BIP32 says proceed with the next value for i[\s\S]*?break 'ckd 1;/);
+  assert.match(rust, /exactly like el_hd_ckd_priv[\s\S]*?return 1;/);
+  assert.doesNotMatch(rust, /keep the parent/);
+  const js = readFileSync(join(repoRoot, "src/js/hdkey.js"), "utf8");
+  assert.match(js, /if \(code === 1\) \{/);
+  assert.match(js, /deriveChild\(index \+ 1\)/);
 });

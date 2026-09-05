@@ -95,20 +95,30 @@ test("coin-button positions are excluded from the rolls and counted in range onl
   assert.equal(hodlAnalyzeDiceInput("12", "coldcard", 24, [5, 99, -1]).coinDerivedCount, 0);
 });
 
-test("bitbox analysis enforces four low dice then a sixth die-or-coin per word", () => {
+test("bitbox analysis enforces four low dice then a sixth die per word", () => {
   assert.equal(hodlAnalyzeDiceInput("1111", "bitbox", 12, []).diceInWord, 4);
   // Faces 5 and 6 are rerolled away on the first five dice of a word.
   assert.deepEqual(hodlAnalyzeDiceInput("11115", "bitbox", 12, []).invalidRanges, [[4, 5]]);
   assert.deepEqual(hodlAnalyzeDiceInput("11116", "bitbox", 12, []).invalidRanges, [[4, 5]]);
   const five = hodlAnalyzeDiceInput("11114", "bitbox", 12, []);
   assert.equal(five.diceInWord, 5);
-  assert.equal(five.coinTurn, true, "the sixth roll may be a coin flip");
+  assert.equal(five.coinTurn, true, "the sixth roll doubles as the coin flip");
   assert.equal(five.complete, false);
-  for (const sixth of ["1", "6", "h", "t", "H", "T"]) {
+  for (const sixth of ["1", "6"]) {
     const analysis = hodlAnalyzeDiceInput(`11114${sixth}`, "bitbox", 12, []);
     assert.equal(analysis.words, 1, `sixth roll ${sixth}`);
     assert.equal(analysis.diceInWord, 0, sixth);
     assert.equal(analysis.coinTurn, false, sixth);
+  }
+  // Coin letters never complete a word: the derivation parser
+  // (hodlBitBoxRolls) and the input sanitizer both keep digits only, so the
+  // analyzer must not disagree with them on a completed word.
+  for (const coin of ["h", "t", "H", "T"]) {
+    const analysis = hodlAnalyzeDiceInput(`11114${coin}`, "bitbox", 12, []);
+    assert.equal(analysis.words, 0, `coin letter ${coin}`);
+    assert.deepEqual(analysis.invalidRanges, [[5, 6]], coin);
+    assert.equal(analysis.coinTurn, true, `${coin}: still waiting on the sixth die`);
+    assert.equal(analysis.complete, false, coin);
   }
   // Anything else on the sixth roll is invalid.
   assert.deepEqual(hodlAnalyzeDiceInput("11114x", "bitbox", 12, []).invalidRanges, [[5, 6]]);

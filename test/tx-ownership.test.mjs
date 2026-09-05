@@ -168,6 +168,24 @@ test("scriptPushes reads a P2PKH scriptSig", () => {
   assert.equal(pushes[1].length, 33);
 });
 
+test("scriptPushes handles PUSHDATA4 and surfaces no phantom signatures (audit #365)", () => {
+  // An 80-byte PUSHDATA4 payload whose interior opens with a DER-looking
+  // 9-byte sequence: a scanner without PUSHDATA4 support walks inside the
+  // push and reports those interior bytes as a signature push.
+  const derLookalike = Uint8Array.of(0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01);
+  const payload = concat(Uint8Array.of(0x09), derLookalike, new Uint8Array(70).fill(0x42));
+  const script = concat(Uint8Array.of(0x4e), u32(payload.length), payload);
+  const pushes = scriptPushes(script);
+  assert.equal(pushes.length, 1, "the PUSHDATA4 payload is one push");
+  assert.deepEqual([...pushes[0]], [...payload]);
+  // End to end: the interior DER-looking bytes are not a signature.
+  const sigs = extractEcdsaSignatures({ inputs: [{ scriptSig: script, witness: [] }] });
+  assert.equal(sigs.length, 0, "no phantom signature from inside a push");
+  // A truncated PUSHDATA4 length or payload just stops the scan.
+  assert.deepEqual(scriptPushes(Uint8Array.of(0x4e, 0x01, 0x00)), []);
+  assert.deepEqual(scriptPushes(concat(Uint8Array.of(0x4e), u32(500), new Uint8Array(10))), []);
+});
+
 test("app inspects raw transactions and labels outputs", () => {
   assert.match(app, /hodlRenderRawTx/);
   assert.match(app, /hodlSessionOwnership/);

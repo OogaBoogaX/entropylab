@@ -104,3 +104,31 @@ test("the bounds check marks the offending field when asked", () => {
     ["attr", "aria-invalid", "false"],
   ]);
 });
+
+test("a custom coin type warns that mainnet version bytes are used (issue #357)", () => {
+  // hodlNetworkFromCoinType silently maps every non-1 coin type to mainnet
+  // serialization; the derived wallet must carry a blocking warning so the
+  // format is never mistaken for the intended coin's.
+  const api2 = new Function(
+    "hodlHDKey", "hodlBase58Check", "hodlExtendedKeyVersions", "hodlNote",
+    `${["hodlNetworkFamily", "hodlCoinTypeFromNetwork", "hodlNetworkFromCoinType", "hodlReadExtendedKeyVersion", "hodlReversionExtendedKey", "hodlSerializeExtendedKey", "hodlRootWalletResult"].map(loadSlice).join("\n")}
+     var hodlError = (k) => new Error(k);
+     return { hodlRootWalletResult, hodlNetworkFromCoinType };`,
+  )(
+    null,
+    { decode: () => new Uint8Array(78), encode: () => "xkey-stub" },
+    { mainnet: { x: { prv: 0, pub: 0, prvName: "xprv", pubName: "xpub" } }, testnet: { x: { prv: 0, pub: 0, prvName: "tprv", pubName: "tpub" } } },
+    (key, vars) => ({ key, vars }),
+  );
+  const rootStub = { privateKey: null, publicExtendedKey: "xpub-stub" };
+  const source = { mnemonic: null, passphraseUsed: false, passphrase: "", entropyHex: null, seedHex: null, notes: [], warnings: [] };
+  const custom = api2.hodlRootWalletResult(rootStub, "mainnet", source, 0, "00000000", [], 145);
+  assert.ok(custom.warnings.some((note) => note.key.includes("not Bitcoin mainnet (0) or testnet (1)")), "custom coin type produced no mainnet-serialization warning");
+  for (const coinType of [0, 1]) {
+    const result = api2.hodlRootWalletResult(rootStub, coinType === 1 ? "testnet" : "mainnet", source, 0, "00000000", [], coinType);
+    assert.ok(!result.warnings.length, `coin type ${coinType} must not warn`);
+  }
+  // The mapping itself is unchanged: 0 mainnet, 1 testnet, anything else
+  // mainnet serialization — now loudly disclosed at the output.
+  assert.equal(api2.hodlNetworkFromCoinType(145), "mainnet");
+});

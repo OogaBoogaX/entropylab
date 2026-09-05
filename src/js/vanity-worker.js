@@ -81,7 +81,18 @@ function bytesOf(value) {
   return encoder.encode(String(value == null ? "" : value));
 }
 
+// The persistent buffers hold the NFKD mnemonic / BIP32 node (keyPtr) and the
+// starting passphrase (saltPtr) between messages; they are wiped when a job
+// ends, stops, or errors, and before a new job overwrites them (issues #327,
+// #356). The buffers stay allocated for reuse — the secret content does not.
+function wipeSecrets() {
+  if (!wasm) return;
+  heap().fill(0, keyPtr, keyPtr + MAX_KEY);
+  heap().fill(0, saltPtr, saltPtr + MAX_SALT);
+}
+
 function grind(msg) {
+  wipeSecrets(); // a previous job's key/salt may still sit in the buffers
   var mode = msg.mode === 1 ? 1 : 0;
   var prefixBytes = encoder.encode(msg.prefix);
   if (prefixBytes.length === 0 || prefixBytes.length > MAX_PREFIX) {
@@ -121,6 +132,7 @@ function grind(msg) {
   stopRequested = false;
   var step = function () {
     if (done >= total || stopRequested) {
+      wipeSecrets();
       postMessage({ type: "done", done: done, stopped: stopRequested });
       return;
     }
@@ -129,18 +141,23 @@ function grind(msg) {
     var startedAt = Date.now();
     var status = wasm.vanity_grind(mode, keyPtr, keyBytes.length, saltPtr, saltBytes.length, pathPtr, path.length, counterSlot, prefixPtr, prefixBytes.length, passLen, cursor, BigInt(chunk), outPtr, OUT_CAP, msg.script || 0);
     if (status === -1) {
+      wipeSecrets();
       postMessage({ type: "error", message: "vanity_grind rejected its arguments" });
       return;
     }
     var elapsed = Math.max(1, Date.now() - startedAt);
     chunkSize = Math.max(MIN_CHUNK, Math.min(MAX_CHUNK, Math.round(chunk * STEP_MS / elapsed)));
     var drained = drain(passLen);
+    // The records carried candidate passphrases; the copies are out, the
+    // wasm-side originals go now.
+    heap().fill(0, outPtr, outPtr + 12 + Number(new DataView(wasm.memory.buffer, outPtr, 12).getUint32(8, true)) * RECORD_LEN);
     done += drained.processed;
     cursor += drained.processed;
     postMessage({ type: "progress", done: done, matches: drained.matches });
     // status -2 means the record area filled up; it was drained above, so the
     // loop simply continues. A short chunk means the counter space ran out.
     if (status !== -2 && drained.processed < BigInt(chunk)) {
+      wipeSecrets();
       postMessage({ type: "done", done: done, stopped: false });
       return;
     }

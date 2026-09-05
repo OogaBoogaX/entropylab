@@ -66,6 +66,14 @@ test("exact mode accepts whitespace while trim mode rejects an empty result", ()
   assert.throws(() => helpers.hodlBrainWalletPassphrase(""), /Enter the brain-wallet recovery passphrase/);
 });
 
+test("the trim toggle invalidates the displayed result and re-syncs mirrors", () => {
+  // Trimming changes the hashed bytes — a different wallet — so the handler
+  // must retract the live result and re-run the cross-method sync, like the
+  // sibling brain-wallet controls.
+  const handler = app.match(/getElementById\("brain-wallet-trim"\)[\s\S]{0,600}?hodlInvalidateLiveKeyResult\(\)[\s\S]{0,200}?hodlGlobalSyncFromCurrentInput\(\)/);
+  assert.ok(handler, "trim onchange invalidates and re-syncs");
+});
+
 const lab = new Function(
   "hodlSha256",
   "hodlHex",
@@ -89,6 +97,18 @@ test("brain-wallet lab hashes exact UTF-8 text as 256-bit BIP39 entropy", () => 
   assert.match(result.warnings.join(" "), /not a BIP39 passphrase/);
   assert.match(result.warnings.join(" "), /not a Bitcoin Core hdseed/);
   assert.match(result.warnings.join(" "), /not mean it is the same wallet/);
+});
+
+test("the lab note says when the hashed text was trimmed (audit #365)", () => {
+  // The HD derive path hashes the passphrase after trimming when the trim
+  // option is on, so the note must not claim the exact text was hashed.
+  const exact = lab.hodlBrainLabEntropy("phrase");
+  assert.match(exact.notes.join(" "), /SHA-256 of the exact UTF-8 text/);
+  const trimmed = lab.hodlBrainLabEntropy("phrase", true);
+  assert.match(trimmed.notes.join(" "), /with boundary whitespace trimmed/);
+  assert.doesNotMatch(trimmed.notes.join(" "), /exact UTF-8 text/);
+  // The HD derive call passes the live trim flag through to the note.
+  assert.match(app, /hodlBrainLabEntropy\(hodlBrainWalletPassphrase\(value, hodlBrainWalletTrimEnabled\(\)\), hodlBrainWalletTrimEnabled\(\)\)/);
 });
 
 test("brain-wallet lab rejects empty text and keeps private-key hashing separate", () => {

@@ -100,7 +100,8 @@ const hodlReadExtendedKeyVersion = new Function("hodlBase58Check", `${loadFuncti
 const hodlParseExtendedKey = new Function("hodlBase58Check", "hodlReadExtendedKeyVersion", "hodlReversionExtendedKey", "hodlExtendedKeyPrefixTable", "hodlHDKey", "hodlExtendedKeyVersions", "hodlError", `let hodlParseExtendedKey; ${extract("hodlParseExtendedKey = function(value)", "function hodlAccountExportFamily")}; return hodlParseExtendedKey;`)(hodlBase58Check, hodlReadExtendedKeyVersion, hodlReversionExtendedKey, hodlExtendedKeyPrefixTable, HDKey, hodlExtendedKeyVersions, hodlError);
 
 const hodlAccountExportFamily = new Function(`${loadFunction("hodlAccountExportFamily")}; return hodlAccountExportFamily;`)();
-const hodlSerializeExtendedKey = new Function("hodlReversionExtendedKey", "hodlExtendedKeyVersions", `${loadFunction("hodlSerializeExtendedKey")}; return hodlSerializeExtendedKey;`)(hodlReversionExtendedKey, hodlExtendedKeyVersions);
+const hodlNetworkFamily = new Function(`${loadFunction("hodlNetworkFamily")}; return hodlNetworkFamily;`)();
+const hodlSerializeExtendedKey = new Function("hodlReversionExtendedKey", "hodlExtendedKeyVersions", "hodlNetworkFamily", `${loadFunction("hodlSerializeExtendedKey")}; return hodlSerializeExtendedKey;`)(hodlReversionExtendedKey, hodlExtendedKeyVersions, hodlNetworkFamily);
 const hodlStripDescriptorChecksum = new Function(`${loadFunction("hodlStripDescriptorChecksum")}; return hodlStripDescriptorChecksum;`)();
 const hodlWatchOnlyMultipathDescriptor = new Function("hodlStripDescriptorChecksum", "hodlDescriptorWithChecksum", `${loadFunction("hodlWatchOnlyMultipathDescriptor")}; return hodlWatchOnlyMultipathDescriptor;`)(hodlStripDescriptorChecksum, hodlDescriptorWithChecksum);
 const hodlPathComponent = new Function(`${loadFunction("hodlPathComponent")}; return hodlPathComponent;`)();
@@ -108,9 +109,9 @@ const hodlOriginPathComponent = new Function(`${loadFunction("hodlOriginPathComp
 const hodlAddressBranchRole = new Function(`${loadFunction("hodlAddressBranchRole")}; return hodlAddressBranchRole;`)();
 const hodlAddressBranchLabel = new Function(`${loadFunction("hodlAddressBranchLabel")}; return hodlAddressBranchLabel;`)();
 const hodlAccountResult = new Function(
-  "hodlAccountExportFamily", "hodlSerializeExtendedKey", "hodlExtendedKeyVersions", "hodlDescriptorWithChecksum", "hodlScriptDescriptor", "hodlWatchOnlyMultipathDescriptor", "hodlPathComponent", "hodlOriginPathComponent", "hodlAddressBranchRole", "hodlAddressBranchLabel", "hodlDeriveAddressRows",
+  "hodlAccountExportFamily", "hodlSerializeExtendedKey", "hodlExtendedKeyVersions", "hodlNetworkFamily", "hodlDescriptorWithChecksum", "hodlScriptDescriptor", "hodlWatchOnlyMultipathDescriptor", "hodlPathComponent", "hodlOriginPathComponent", "hodlAddressBranchRole", "hodlAddressBranchLabel", "hodlDeriveAddressRows",
   `${loadFunction("hodlAccountResult")}; return hodlAccountResult;`,
-)(hodlAccountExportFamily, hodlSerializeExtendedKey, hodlExtendedKeyVersions, hodlDescriptorWithChecksum, hodlScriptDescriptor, hodlWatchOnlyMultipathDescriptor, hodlPathComponent, hodlOriginPathComponent, hodlAddressBranchRole, hodlAddressBranchLabel, () => { throw new Error("unexpected address derivation"); });
+)(hodlAccountExportFamily, hodlSerializeExtendedKey, hodlExtendedKeyVersions, hodlNetworkFamily, hodlDescriptorWithChecksum, hodlScriptDescriptor, hodlWatchOnlyMultipathDescriptor, hodlPathComponent, hodlOriginPathComponent, hodlAddressBranchRole, hodlAddressBranchLabel, () => { throw new Error("unexpected address derivation"); });
 const hodlScriptTypes = [
   { id: "bip44", label: "Legacy", bip: "BIP44", script: "p2pkh" },
   { id: "bip49", label: "Nested SegWit", bip: "BIP49", script: "p2sh-p2wpkh" },

@@ -2,6 +2,9 @@
 // English 15/21-word lengths the BIP table allows but does not vector.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { HDKey } from "@scure/bip32";
 import { validateMnemonic } from "@scure/bip39";
 import { wordlist as bip39English } from "@scure/bip39/wordlists/english.js";
@@ -35,6 +38,7 @@ import {
 } from "../src/js/bip85.js";
 
 const MASTER = "xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb";
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const root = HDKey.fromExtendedKey(MASTER);
 
 test("path builder is fully hardened from purpose 83696968'", () => {
@@ -187,4 +191,57 @@ test("wiping a result discards secret bytes", () => {
   assert.ok(derived.entropy.every((b) => b === 0));
   assert.notEqual(hexCoder.encode(copy), hexCoder.encode(derived.entropy));
   wipeBytes(copy);
+});
+
+test("password results hold a wipeable copy, not the live HMAC (audit #365)", () => {
+  // The password apps encode all 64 HMAC bytes; the digest is wiped at derive
+  // time like the other four apps, and the result's own copy still wipes.
+  for (const derive of [derivePwdBase64, derivePwdBase85]) {
+    let derived = derive(root, { index: 0 });
+    assert.equal(derived.entropy.length, 64);
+    wipeBip85Result(derived);
+    assert.equal(derived.secret, "");
+    assert.equal(derived.entropyHex, "");
+    assert.ok(derived.entropy.every((b) => b === 0));
+  }
+  // And the digest wipe at derive time must not clobber the result.
+  assert.equal(derivePwdBase64(root, { length: 21, index: 0 }).secret, "dKLoepugzdVJvdL56ogNV");
+});
+
+// Issue #352: the version bytes must follow the session network on every
+// BIP-85 parent-load path — a testnet wallet used to yield mainnet-version
+// children when loaded via mnemonic but testnet-version ones via its xprv.
+test("the mnemonic load path follows the session network like the xprv path", () => {
+  const app = readFileSync(join(repoRoot, "src/js/app.js"), "utf8");
+  const slice = (name) => {
+    const start = app.indexOf(`function ${name}(`);
+    assert.ok(start >= 0, name);
+    let depth = 0;
+    for (let i = app.indexOf("{", start); i < app.length; i++) {
+      if (app[i] === "{") depth++;
+      else if (app[i] === "}") { depth--; if (depth === 0) return app.slice(start, i + 1); }
+    }
+    throw new Error(name);
+  };
+  const hodlUseKeyForBip85 = new Function(
+    "hodlBip85WipeParent", "hodlMnemonicToSeed", "hodlHDKey", "hodlWipeBytes", "hodlNetworkFamily", "hodlParseExtendedKey",
+    `${slice("hodlNetworkFamily")}; ${slice("hodlUseKeyForBip85")}; return hodlUseKeyForBip85;`,
+  )(
+    () => {},
+    () => new Uint8Array(64), // a stand-in seed; only the flag is under test
+    HDKey,
+    (bytes) => bytes.fill(0),
+    undefined, // hodlNetworkFamily is sliced in
+    undefined, // hodlParseExtendedKey is not reached by the mnemonic branch
+  );
+  const state = (network) => ({ id: "k1", name: "test", fields: { pass: "" }, result: { kind: "hd", mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", network } });
+  hodlUseKeyForBip85(state("testnet"));
+  assert.equal(globalThis.hodlBip85Testnet, true, "a testnet mnemonic session must yield testnet-version children");
+  hodlUseKeyForBip85(state("mainnet"));
+  assert.equal(globalThis.hodlBip85Testnet, false, "a mainnet mnemonic session keeps mainnet versions");
+  // Both load paths now read the same convention; nothing hardcodes mainnet.
+  const useKey = app.slice(app.indexOf("function hodlUseKeyForBip85"), app.indexOf("function hodlPickBip85SessionKey"));
+  assert.doesNotMatch(useKey, /hodlBip85Testnet = false/);
+  assert.ok((useKey.match(/hodlNetworkFamily\(result\.network\) === "testnet"/g) || []).length >= 2, "mnemonic and xprv paths both read the session network");
+  delete globalThis.hodlBip85Testnet;
 });

@@ -220,7 +220,13 @@ export function parseEnvelopes(script) {
   return { envelopes, error: error || null };
 }
 
-export function parseWitness(bytes) {
+// Witness stacks use full Bitcoin CompactSize item lengths: an inscription
+// carrying media puts its tap-leaf script in a single item, so lengths above
+// 64 KiB (0xfe/0xff encodings) are normal, not errors. The strict variant
+// throws on malformed data; the exported parseWitness stays tolerant and
+// returns an empty stack, while callers that report scan coverage use the
+// strict one so a skipped witness can never look like a completed scan.
+function parseWitnessStrict(bytes) {
   if (!(bytes instanceof Uint8Array) || !bytes.length) return [];
   let offset = 0;
   const readVarInt = () => {
@@ -236,18 +242,34 @@ export function parseWitness(bytes) {
       offset += 3;
       return value;
     }
-    throw new Error("witness compact size is too large");
-  };
-  try {
-    const count = readVarInt();
-    const stack = [];
-    for (let i = 0; i < count; i++) {
-      const length = readVarInt();
-      if (offset + length > bytes.length) throw new Error("witness item overruns buffer");
-      stack.push(bytes.slice(offset, offset + length));
-      offset += length;
+    if (first === 0xfe) {
+      if (offset + 5 > bytes.length) throw new Error("witness ended inside compact size");
+      const value = (bytes[offset + 1] | (bytes[offset + 2] << 8) | (bytes[offset + 3] << 16) | (bytes[offset + 4] << 24)) >>> 0;
+      if (value <= 0xffff) throw new Error("non-canonical witness compact size");
+      offset += 5;
+      return value;
     }
-    return stack;
+    if (offset + 9 > bytes.length) throw new Error("witness ended inside compact size");
+    let value = 0n;
+    for (let i = 1; i <= 8; i++) value |= BigInt(bytes[offset + i]) << BigInt(8 * (i - 1));
+    if (value <= 0xffffffffn || value > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("non-canonical witness compact size");
+    offset += 9;
+    return Number(value);
+  };
+  const count = readVarInt();
+  const stack = [];
+  for (let i = 0; i < count; i++) {
+    const length = readVarInt();
+    if (offset + length > bytes.length) throw new Error("witness item overruns buffer");
+    stack.push(bytes.slice(offset, offset + length));
+    offset += length;
+  }
+  return stack;
+}
+
+export function parseWitness(bytes) {
+  try {
+    return parseWitnessStrict(bytes);
   } catch {
     return [];
   }
@@ -261,14 +283,21 @@ function taprootWitnessScriptCandidates(stack) {
   return items;
 }
 
-export function scriptsFromPsbtInput(entries) {
+export function scriptsFromPsbtInput(entries, errors) {
   const scripts = [];
   if (!Array.isArray(entries)) return scripts;
   for (const entry of entries) {
     if (entry.type === 21 && entry.val && entry.val.length >= 2) {
       scripts.push({ source: "tap-leaf", script: entry.val.slice(0, entry.val.length - 1) });
     } else if (entry.type === 8 && entry.val) {
-      const stack = parseWitness(entry.val);
+      let stack;
+      try {
+        stack = parseWitnessStrict(entry.val);
+      } catch (exception) {
+        // A malformed witness is a coverage gap, not an empty result.
+        errors?.push(exception.message || String(exception));
+        continue;
+      }
       for (const script of taprootWitnessScriptCandidates(stack)) scripts.push({ source: "final-witness", script });
     } else if (entry.type === 5 && entry.val) {
       scripts.push({ source: "witness-script", script: entry.val });
@@ -281,14 +310,18 @@ export function scriptsFromPsbtInput(entries) {
 
 export function inspectPsbtInscriptions(psbt) {
   const inputs = [];
+  const errors = [];
   let envelopeIndex = 0;
   const list = psbt?.inputs || [];
   for (let input = 0; input < list.length; input++) {
     const found = [];
     const seen = new Set();
     try {
-      for (const item of scriptsFromPsbtInput(list[input])) {
-        const { envelopes } = parseEnvelopes(item.script);
+      for (const item of scriptsFromPsbtInput(list[input], errors)) {
+        const { envelopes, error } = parseEnvelopes(item.script);
+        // A tokenizer fault truncates this script's scan; report the
+        // coverage gap instead of claiming a completed scan.
+        if (error) errors.push(error);
         for (const envelope of envelopes) {
           const key = `${envelope.contentType}|${envelope.bodyBytes}|${bytesToHex(envelope.body.slice(0, 32))}`;
           if (seen.has(key)) continue;
@@ -301,14 +334,17 @@ export function inspectPsbtInscriptions(psbt) {
           });
         }
       }
-    } catch {
+    } catch (exception) {
       // A malformed witness must not wipe the rest of the PSBT report.
+      errors.push(exception?.message || String(exception));
     }
     inputs.push({ input, envelopes: found });
   }
   return {
     inputs,
     envelopes: inputs.flatMap((row) => row.envelopes),
+    incomplete: errors.length > 0,
+    errors,
   };
 }
 

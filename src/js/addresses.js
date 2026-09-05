@@ -6,7 +6,9 @@
 // p2pkh/p2sh-p2wpkh/p2wpkh/p2tr address rendering, P2SH/P2WSH wrapping,
 // bare and taproot multisig leaf scripts, and script -> address rendering
 // (which returns null for unknown templates, like the previous fallback that
-// showed the script hex). Networks are "mainnet" | "testnet".
+// showed the script hex). Networks are "mainnet" | "testnet" | "signet" |
+// "regtest": signet shares testnet's encodings; regtest differs only in its
+// bcrt1… bech32 HRP (issue #329).
 //
 // descriptorDerive is the rust-miniscript side of the crate: it parses an
 // output descriptor (BIP380-386 key expressions, xpubs and xprvs included),
@@ -24,6 +26,8 @@ const DESCRIPTOR_CAP = 4096; // address + scriptPubKey hex + 15 multisig keys is
 const netOf = (network) => {
   if (network === "mainnet") return 0;
   if (network === "testnet") return 1;
+  if (network === "signet") return 2;
+  if (network === "regtest") return 3;
   throw new Error("Unknown Bitcoin network: " + network);
 };
 
@@ -136,8 +140,25 @@ export const addressFromScript = (script, network) => {
 // refused: one call derives one output — pass a single branch. A present
 // #checksum is verified by the crate. Throws on any parse or derivation
 // failure, exactly like the script builders above return null/throw.
+//
+// rust-miniscript 13.x escalates public keys that keep hardened derivation
+// steps (xpub…/0', xpub…/*h, or a bare hex key with a hardened step) to a
+// panic, which with panic=abort is an unrecoverable WASM trap rather than
+// the documented -1. Bitcoin Core rejects the same descriptors (hardened
+// steps need private key material), so refuse them here, where an error can
+// still be thrown. Extended private keys are exempt: the crate derives their
+// hardened steps privately first.
+const DESCRIPTOR_PUBLIC_KEY = /(?:xpub|tpub|ypub|upub|zpub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{90,}|(?:02|03)[0-9a-fA-F]{64}|04[0-9a-fA-F]{128}|[0-9a-fA-F]{64}(?![0-9a-fA-F])/g;
+const hardenedPublicKeyStep = (text) => {
+  for (const match of text.matchAll(DESCRIPTOR_PUBLIC_KEY)) {
+    const tail = text.slice(match.index + match[0].length).match(/^[0-9/'hH*<>;]*/)[0];
+    if (/['hH]/.test(tail)) return true;
+  }
+  return false;
+};
 export const descriptorDerive = (descriptor, index, network) => {
   if (!Number.isSafeInteger(index) || index < 0 || index > 2147483647) throw new Error("Descriptor derivation index must be 0 to 2,147,483,647.");
+  if (hardenedPublicKeyStep(String(descriptor ?? ""))) throw new Error("Public descriptor keys cannot carry hardened derivation steps.");
   const bytes = textEncoder.encode(String(descriptor ?? ""));
   const net = netOf(network);
   const record = withInput(bytes, (p) =>

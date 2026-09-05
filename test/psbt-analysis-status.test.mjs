@@ -55,6 +55,14 @@ test("a problem outranks incomplete coverage without hiding either state", () =>
   assert.doesNotMatch(html, /<p class='psbt-warn'><strong>|LISTED CHECKS COMPLETE/);
 });
 
+test("an impossible (negative) claimed fee escalates the fee check to a problem", () => {
+  // Outputs exceeding claimed inputs is an inconsistency in the PSBT's own
+  // data, not missing coverage: the banner must turn red, not stay yellow.
+  const render = loadSlice("hodlRenderPsbt");
+  assert.match(render, /feeInconsistent = 1/);
+  assert.match(render, /state: feeInconsistent \? "problem" : "incomplete"/);
+});
+
 test("the report maps each implemented incomplete-analysis condition", () => {
   const render = loadSlice("hodlRenderPsbt") + loadSlice("hodlPsbtNonceCheck");
   for (const limitation of [

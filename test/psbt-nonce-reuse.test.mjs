@@ -90,7 +90,10 @@ test("same key compressed vs uncompressed with the same r is reused nonce", () =
   assert.equal(scan.possible.length, 0);
 });
 
-test("different keys with the same r are not same-key reuse", () => {
+test("different claimed keys with the same r are cross-flagged, never silently skipped (issue #353)", () => {
+  // The partial-sig keydata pubkey is attacker-controlled: a counterparty
+  // hiding genuine nonce reuse mislabels one signature under another key,
+  // and same-key grouping would never see the pair. The pair must surface.
   const r = rOf("11".repeat(32));
   const z1 = rOf("01".repeat(32));
   const z2 = rOf("02".repeat(32));
@@ -100,6 +103,13 @@ test("different keys with the same r are not same-key reuse", () => {
   ]);
   assert.equal(scan.reused.length, 0);
   assert.equal(scan.possible.length, 0);
+  assert.equal(scan.crossKey.length, 1, "same r under different claimed keys must be flagged");
+  // The same flag fires when neither digest could be verified.
+  const unverified = hodlCompareNonces([
+    { input: 0, r, pubkey: hodlCompressedPubkey(G_COMPRESSED), sighash: null, valid: null },
+    { input: 1, r, pubkey: hodlCompressedPubkey(OTHER), sighash: null, valid: null },
+  ]);
+  assert.equal(unverified.crossKey.length, 1);
 });
 
 test("non-minimal DER still yields the same r as the minimal encoding", () => {

@@ -378,6 +378,13 @@ mod tests {
             testnet.address.as_deref(),
             Some("tb1pm5jn9xnjz3v9xm7jjw2yheajy92pps5fdazdpfnmvzfymu787hhsayqy7t")
         );
+        // Signet shares the testnet encodings; regtest keeps the script but
+        // switches the bech32 HRP to bcrt (issue #329).
+        let signet = derive_descriptor(&desc, 0, Network::Signet).expect("signet derives");
+        assert_eq!(signet.address.as_deref(), testnet.address.as_deref());
+        let regtest = derive_descriptor(&desc, 0, Network::Regtest).expect("regtest derives");
+        assert_eq!(regtest.script_pubkey, testnet.script_pubkey);
+        assert!(regtest.address.as_deref().is_some_and(|a| a.starts_with("bcrt1p")));
     }
 
     #[test]

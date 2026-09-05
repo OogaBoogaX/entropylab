@@ -11,8 +11,8 @@
 // build is kept below, marked stale. The unsigned transaction pair (global
 // key 00) is regenerated from the transaction section on every build, so it
 // is never edited directly.
-import { Address as BtcAddress, NETWORK as BTC_MAINNET, TEST_NETWORK as BTC_TESTNET, OutScript } from "@scure/btc-signer";
 import { renderSVG as renderQrSvg } from "uqr";
+import { addressFromScript } from "./addresses.js";
 import { psbtInspectDoc, psbtBuildBytes, psbtWasmReady } from "./psbt-wasm.js";
 import { comparePsbtDocs } from "./psbt-diff.js";
 import { expandableHtml, EXPAND_LIMIT, initExpandable } from "./expandable.js";
@@ -40,7 +40,7 @@ const base64Encode = (bytes) => {
 // inspector (5 MB decoded, 7 MB of base64 text).
 export const psbtBytesFromText = (raw) => {
   const value = String(raw ?? "").trim(), compact = value.replace(/\s/g, "");
-  if (!value) throw new Error("Paste a PSBT v0.");
+  if (!value) throw new Error("Paste a PSBT (v0 or v2).");
   if (compact.length > 7e6) throw new Error("This PSBT is too large to edit safely.");
   let bytes;
   if (/^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0 && compact.length >= 10) bytes = hexToBytes(compact.toLowerCase());
@@ -98,9 +98,13 @@ const shorten = (hex, head = 10, tail = 6) => {
   return text.length > head + tail + 2 ? text.slice(0, head) + "…" + text.slice(-tail) : text;
 };
 
+// Script → address rendering goes through rust-bitcoin (the same
+// addressFromScript the inspector uses), so the editor, the diagram, and the
+// inspector never diverge on exotic witness programs (issue #354); unknown
+// templates return null and the caller falls back to the script hex/asm.
 const addressFor = (scriptHex, network) => {
   try {
-    return BtcAddress(network === "testnet" ? BTC_TESTNET : BTC_MAINNET).encode(OutScript.decode(hexToBytes(scriptHex)));
+    return addressFromScript(hexToBytes(scriptHex), network);
   } catch {
     return null;
   }
@@ -260,6 +264,31 @@ export const psbtEditorBuildDoc = (doc) => ({
   outputs: doc.outputs.map((map) => map.map((pair) => ({ key: pair.key, value: pair.value }))),
 });
 
+// Input-map key types whose values commit to the unsigned transaction:
+// partial signatures (0x02), final scriptSig (0x07), final witness (0x08),
+// Taproot key/script signatures (0x13/0x14). Any edit to the transaction
+// changes every digest those values commit to, so keeping them would leave a
+// rebuilt PSBT looking signed while its signatures are invalid (issues #325,
+// #360). Sighash-type hints (0x03) and UTXO claims are not signatures and
+// stay.
+const SIGNING_KEY_TYPES = new Set(["02", "07", "08", "13", "14"]);
+
+// Drops every signing/finalization pair from the document's input maps, in
+// place. Called by the editor when the transaction section is about to be
+// rebuilt with different bytes than the pairs were inspected against.
+export const dropSigningPairs = (doc) => {
+  let dropped = 0;
+  for (const map of doc.inputs) {
+    for (let i = map.length - 1; i >= 0; i--) {
+      if (SIGNING_KEY_TYPES.has(map[i].key.slice(0, 2))) {
+        map.splice(i, 1);
+        dropped += 1;
+      }
+    }
+  }
+  return dropped;
+};
+
 // --- Comparison report -----------------------------------------------------
 // Rendering for comparePsbtDocs output (psbt-diff.js). Pure string building,
 // unit-tested under Node; every interpolated value passes escapeHtml or
@@ -406,6 +435,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
   let doc = null; // inspect document being edited; null when nothing is loaded
   let resultBytes = null; // last successfully built PSBT
   let stale = false; // true while the current fields do not build; resultBytes is then the last valid build
+  let pristineTx = null; // JSON of the transaction the current signing pairs commit to; null while unknown
   let qrTimer = null; // animation timer of the UR fragment QR, when running
   // Which flow-diagram part is open ({ kind: "input"|"output", index } for a
   // box or { kind: "tx" } for the middle transaction box); its fields render
@@ -474,14 +504,29 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
       return;
     }
     const tx = doc.tx;
+    // sats null with every input claimed marks an invalid fee: the document's
+    // error string says why (negative fee, u64 overflow, or past MAX_MONEY).
     const fee = doc.fee?.known
       ? doc.fee.sats === null
-        ? `<span class="psbted-note-bad">outputs exceed claimed inputs</span>`
+        ? `<span class="psbted-note-bad">${escapeHtml(doc.fee.error || "outputs exceed claimed inputs")}</span>`
         : `${escapeHtml(String(doc.fee.sats))} sats (${satsToBtc(doc.fee.sats)} BTC, from PSBT-claimed input amounts)`
-      : "unknown — some inputs carry no claimed previous-output amount";
-    const verdict = doc.rustBitcoinError
-      ? `<span class="psbted-note-warn">rust-bitcoin reports: ${escapeHtml(doc.rustBitcoinError)}</span>`
-      : `<span class="psbted-note-ok">parses under rust-bitcoin</span>`;
+      : doc.fee?.error
+        ? `<span class="psbted-note-bad">${escapeHtml(doc.fee.error)}</span>`
+        : "unknown — some inputs carry no claimed previous-output amount";
+    // rust-bitcoin's PSBT module is v0-only (deprecated upstream); v2 files
+    // are validated by the crate's own BIP-370 reader, and the verdict says so
+    // instead of borrowing rust-bitcoin's name (issue #358).
+    const verdict = doc.psbtVersion === 2
+      ? `<span class="psbted-note-ok">PSBT v2 (BIP-370) — decoded by EntropyLab's own reader (rust-bitcoin checks v0 only)</span>`
+      : doc.rustBitcoinError
+        ? `<span class="psbted-note-warn">rust-bitcoin reports: ${escapeHtml(doc.rustBitcoinError)}</span>`
+        : `<span class="psbted-note-ok">PSBT structure parses under rust-bitcoin</span>`;
+    // Structural validity and consensus validity are separate facts: name the
+    // transaction's sanity state explicitly so "parses" never reads as
+    // "accepted by Bitcoin" (issues #322, #361).
+    const sanity = doc.txSanityError
+      ? `<span class="psbted-note-bad">unsigned transaction is consensus-invalid (${escapeHtml(doc.txSanityError)}) — export is blocked</span>`
+      : `<span class="psbted-note-ok">unsigned transaction passes consensus sanity checks</span>`;
 
     // The last remaining input carries no delete control: a zero-input
     // unsigned transaction cannot round-trip through BIP-174 serialization,
@@ -548,7 +593,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
       : "";
 
     out.innerHTML = `
-      <p class="psbt-kv"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · ${tx.inputs.length} input(s) · ${tx.outputs.length} output(s) · fee ${fee} · ${verdict}</p>
+      <p class="psbt-kv"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · ${tx.inputs.length} input(s) · ${tx.outputs.length} output(s) · fee ${fee} · ${verdict} · ${sanity}</p>
       <p class="muted" id="psbted-status" aria-live="polite">${stale ? "The fields do not build right now — see the error above; the result below is the last valid build." : "Every edit rebuilds the PSBT immediately; the fields show rust-bitcoin's decode of the current build."}</p>
 
       ${psbtVizHtml(doc, network(), selected)}
@@ -577,21 +622,26 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     const b64 = base64Encode(resultBytes);
     const hex = bytesToHex(resultBytes);
     box.classList.toggle("psbted-stale", stale);
+    // While the displayed fields do not build, the last valid bytes stay
+    // visible for reference but must not cross an export boundary: every
+    // copy/download/reload control and the QR are disabled (issue #320).
+    const gated = stale ? " disabled" : "";
     box.innerHTML = `
-      ${stale ? `<p class="psbted-note-warn" id="psbted-stale-note">The fields do not build right now — this is the last valid build.</p>` : ""}
-      <p class="psbt-ok">Rebuilt PSBT is accepted by rust-bitcoin (${resultBytes.length} bytes).</p>
-      <label class="field">Edited PSBT (base64)<textarea id="psbted-result-b64" readonly spellcheck="false">${escapeHtml(b64)}</textarea></label>
+      ${stale ? `<p class="psbted-note-warn" id="psbted-stale-note">The fields do not build right now — this is the last valid build. Export is unavailable until they build again.</p>` : ""}
+      <p class="psbt-ok">Rebuilt PSBT parses under rust-bitcoin; its unsigned transaction passes consensus sanity checks (${resultBytes.length} bytes).</p>
+      <label class="field">Edited PSBT (base64)<textarea id="psbted-result-b64" readonly spellcheck="false"${gated}>${escapeHtml(b64)}</textarea></label>
       <div class="row psbt-actions">
-        <button class="btn secondary" id="psbted-copy-b64" type="button">Copy base64</button>
-        <button class="btn secondary" id="psbted-copy-hex" type="button">Copy hex</button>
-        <button class="btn secondary" id="psbted-download" type="button">Download .psbt</button>
-        <button class="btn secondary" id="psbted-reload" type="button">Load edited PSBT into the editor</button>
+        <button class="btn secondary" id="psbted-copy-b64" type="button"${gated}>Copy base64</button>
+        <button class="btn secondary" id="psbted-copy-hex" type="button"${gated}>Copy hex</button>
+        <button class="btn secondary" id="psbted-download" type="button"${gated}>Download .psbt</button>
+        <button class="btn secondary" id="psbted-reload" type="button"${gated}>Load edited PSBT into the editor</button>
       </div>
-      <label class="field">Edited PSBT (hex)<textarea id="psbted-result-hex" readonly spellcheck="false">${escapeHtml(hex)}</textarea></label>
+      <label class="field">Edited PSBT (hex)<textarea id="psbted-result-hex" readonly spellcheck="false"${gated}>${escapeHtml(hex)}</textarea></label>
       <div class="psbted-qr-block">
         <div class="qr psbted-qr" id="psbted-qr-code"></div>
-        <p class="muted" id="psbted-qr-note"></p>
+        <p class="muted" id="psbted-qr-note">${stale ? "QR unavailable until the fields build again." : ""}</p>
       </div>`;
+    if (stale) return;
     $("psbted-copy-b64").onclick = () => navigator.clipboard?.writeText(b64).catch(() => {});
     $("psbted-copy-hex").onclick = () => navigator.clipboard?.writeText(hex).catch(() => {});
     $("psbted-reload").onclick = () => {
@@ -636,14 +686,29 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
   };
 
   // Marks the intact result panel as the last valid build — used when a
-  // keystroke left the fields in a state that does not build, so the QR and
-  // text of the last good build stay visible instead of vanishing.
+  // keystroke left the fields in a state that does not build, so the text of
+  // the last good build stays visible instead of vanishing. The export
+  // controls and QR are disabled: stale bytes must not cross an export
+  // boundary while the fields say something else (issue #320).
   const markResultStale = () => {
     const box = document.getElementById("psbted-result");
     if (!box || !resultBytes) return;
     box.classList.add("psbted-stale");
-    if (!document.getElementById("psbted-stale-note"))
-      box.insertAdjacentHTML("afterbegin", '<p class="psbted-note-warn" id="psbted-stale-note">The fields do not build right now — this is the last valid build.</p>');
+    const note = document.getElementById("psbted-stale-note");
+    if (note) note.textContent = "The fields do not build right now — this is the last valid build. Export is unavailable until they build again.";
+    else box.insertAdjacentHTML("afterbegin", '<p class="psbted-note-warn" id="psbted-stale-note">The fields do not build right now — this is the last valid build. Export is unavailable until they build again.</p>');
+    for (const id of ["psbted-copy-b64", "psbted-copy-hex", "psbted-download", "psbted-reload", "psbted-result-b64", "psbted-result-hex"]) {
+      document.getElementById(id)?.setAttribute("disabled", "");
+    }
+    clearInterval(qrTimer);
+    qrTimer = null;
+    const qr = document.getElementById("psbted-qr-code");
+    const qrNote = document.getElementById("psbted-qr-note");
+    if (qr) {
+      qr.innerHTML = "";
+      qr.removeAttribute("aria-label");
+    }
+    if (qrNote) qrNote.textContent = "QR unavailable until the fields build again.";
   };
 
   // The mempool.space-style connectors: a bezier from every input box into
@@ -693,11 +758,19 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
   // field being edited, so a successful keystroke never interrupts typing.
   const rebuild = ({ restoreFocus = false } = {}) => {
     const focus = restoreFocus ? captureFocus() : null;
+    // A transaction edit invalidates every signature and final script the
+    // maps carry: drop them before the rebuild so the result never looks
+    // signed with stale material (issues #325, #360).
+    if (pristineTx !== null && JSON.stringify(doc.tx) !== pristineTx) {
+      dropSigningPairs(doc);
+      pristineTx = null; // pairs and transaction agree again (or are gone)
+    }
     const fresh = psbtBuildBytes(psbtEditorBuildDoc(doc));
     const decoded = psbtInspectDoc(fresh);
     doc = decoded;
     resultBytes = fresh;
     stale = false;
+    pristineTx = JSON.stringify(doc.tx);
     setError("");
     render();
     renderResult();
@@ -768,12 +841,14 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
       doc = null;
       resultBytes = null;
       stale = false;
+      pristineTx = null;
       render();
       setError(exception.message || String(exception));
       return;
     }
     resultBytes = null;
     stale = false;
+    pristineTx = null; // the fresh document's pairs commit to its own transaction
     // The loaded PSBT builds at once, so the result text and QR appear
     // without an extra click.
     try {
@@ -858,7 +933,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
             draft.tx.inputs.push({ txid: "0".repeat(64), vout: 0, scriptSig: "", sequence: 4294967295 });
             draft.inputs.push([]);
           } else {
-            draft.tx.outputs.push({ value: 0, scriptPubKey: "" });
+            draft.tx.outputs.push({ value: "0", scriptPubKey: "" });
             draft.outputs.push([]);
           }
         });
@@ -1015,6 +1090,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     doc = null;
     resultBytes = null;
     stale = false;
+    pristineTx = null;
     selected = null;
     text.value = "";
     setError("");

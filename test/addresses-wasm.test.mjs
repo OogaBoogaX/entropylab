@@ -34,6 +34,13 @@ test("generator point renders its published legacy and SegWit addresses", () => 
   // BIP173/BIP350 reference P2WPKH address for the generator's hash160.
   assert.equal(addressFor("p2wpkh", G_COMPRESSED, "mainnet"), "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
   assert.equal(addressFor("p2wpkh", G_COMPRESSED, "testnet"), "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx");
+  // Signet shares the testnet encodings; regtest keeps testnet's base58
+  // versions but renders SegWit with the bcrt HRP (issue #329).
+  assert.equal(addressFor("p2wpkh", G_COMPRESSED, "signet"), "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx");
+  assert.equal(addressFor("p2wpkh", G_COMPRESSED, "regtest"), "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080");
+  assert.equal(addressFor("p2tr", G_COMPRESSED, "signet"), "tb1pmfr3p9j00pfxjh0zmgp99y8zftmd3s5pmedqhyptwy6lm87hf5ssk79hv2");
+  assert.equal(addressFor("p2tr", G_COMPRESSED, "regtest"), "bcrt1pmfr3p9j00pfxjh0zmgp99y8zftmd3s5pmedqhyptwy6lm87hf5ssm803es");
+  assert.equal(addressFor("p2pkh", G_COMPRESSED, "regtest"), addressFor("p2pkh", G_COMPRESSED, "testnet"));
 });
 
 test("BIP86 first address matches the published vector", async () => {
@@ -175,7 +182,36 @@ test("descriptorDerive verifies a supplied #checksum and refuses multipath", () 
   assert.equal(checksummed.scriptHex, good.scriptHex);
   assert.throws(() => descriptorDerive(`${body}#qqqqqqqq`, 0, "mainnet"), /Invalid output descriptor/);
   assert.throws(() => descriptorDerive("wpkh(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/<0;1>/*)", 0, "mainnet"), /Invalid output descriptor/);
-  assert.throws(() => descriptorDerive(body, 0, "regtest"), /Unknown Bitcoin network/);
+  // The four picker networks all derive (issue #329): signet renders tb1p…
+  // like testnet, regtest renders bcrt1p…; unknown names still fail.
+  assert.match(descriptorDerive(body, 0, "signet").address, /^tb1p/);
+  assert.match(descriptorDerive(body, 0, "regtest").address, /^bcrt1p/);
+  assert.throws(() => descriptorDerive(body, 0, "mutinynet"), /Unknown Bitcoin network/);
+});
+
+test("descriptorDerive refuses hardened steps on public keys instead of trapping", async () => {
+  // rust-miniscript escalates public keys with hardened steps to a panic,
+  // which with panic=abort is an unrecoverable WASM trap; the facade rejects
+  // them first, matching Bitcoin Core's acceptance rules.
+  const XPUB = "xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ";
+  for (const descriptor of [
+    `wpkh(${XPUB}/0')`,
+    `wpkh(${XPUB}/0h/*)`,
+    `wpkh(${XPUB}/*h)`,
+    `wpkh(${XPUB}/*')`,
+    `wsh(sortedmulti(2,${XPUB}/0'/*,${XPUB}/*))`,
+    `pk(${bytesToHex(G_COMPRESSED)}/0')`,
+    `tr(${bytesToHex(G_COMPRESSED.slice(1))}/0h)`,
+  ]) assert.throws(() => descriptorDerive(descriptor, 0, "mainnet"), /hardened/, descriptor);
+  // The same xpub without hardened steps derives normally, including one
+  // whose base58 body itself ends in <digit>h before the path separator.
+  const XPUB_TAIL_4H = "xpub6DGDSTSv42ve3BBRALC4UVi3LdaoQjA9R2yV9RSDojTRKQTK5Jk73WKqm6v392eeF3Lxawf8gHiBpD5xBDx7HYvbkLoZ6e1Emu9fvW2M24h";
+  assert.match(descriptorDerive(`wpkh(${XPUB}/0/*)`, 0, "mainnet").address, /^bc1q/);
+  assert.match(descriptorDerive(`wpkh(${XPUB_TAIL_4H}/0/*)`, 0, "mainnet").address, /^bc1q/);
+  // Private keys are exempt: their hardened steps are derived privately.
+  const { HDKey } = await import("../src/js/hdkey.js");
+  const root = HDKey.fromMasterSeed(new Uint8Array(32).fill(7));
+  assert.match(descriptorDerive(`wpkh(${root.privateExtendedKey}/0'/*)`, 0, "mainnet").address, /^bc1q/);
 });
 
 test("base58check and coders match @scure/base", async () => {

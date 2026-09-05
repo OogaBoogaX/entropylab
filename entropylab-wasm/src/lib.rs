@@ -516,11 +516,11 @@ pub unsafe extern "C" fn el_hd_ckd_priv(node: *const u8, index: u32, out: *mut u
     let result = 'ckd: {
         let il: &[u8] = &hmac[..32];
         let child_key = if il.iter().all(|b| *b == 0) {
-            // I_L == 0: BIP32 says retry with the next index, but we keep the
-            // parent key unchanged to match the previous JS implementation
-            // and to avoid rust-bitcoin's panic paths (statistically
-            // unreachable).
-            parent.private_key
+            // I_L == 0: BIP32 says proceed with the next value for i, and so
+            // do we — the retry verdict (statistically unreachable) goes to
+            // the caller's retry loop instead of inventing a node BIP32 never
+            // defines (issue #359).
+            break 'ckd 1;
         } else {
             let mut tweak = match SecretKey::from_slice(il) {
                 Ok(tweak) => tweak,
@@ -574,9 +574,9 @@ pub unsafe extern "C" fn el_hd_ckd_pub(node: *const u8, index: u32, out: *mut u8
     let hmac = Hmac::<sha512::Hash>::from_engine(engine);
     let il: &[u8] = &hmac[..32];
     let child_point = if il.iter().all(|b| *b == 0) {
-        // I_L == 0: same deliberate deviation as el_hd_ckd_priv — keep the
-        // parent point rather than retrying, and never panic.
-        parent.public_key
+        // I_L == 0: retry with the next index, exactly like el_hd_ckd_priv
+        // (statistically unreachable, but spec-defined — issue #359).
+        return 1;
     } else {
         let tweak = match SecretKey::from_slice(il) {
             Ok(tweak) => tweak,
@@ -707,8 +707,10 @@ pub unsafe extern "C" fn el_bip39_word_at(index: u32, out: *mut u8, cap: usize) 
 // scriptPubKey builders take keys/scripts in and produce the raw script bytes;
 // network selection only shapes the address string (el_addr_from_script),
 // mirroring how the previous @scure/btc-signer code was used. net: 0 =
-// mainnet, 1 = testnet. All return the byte length written, or -1 on invalid
-// input (bad key, bad template arguments, unknown script type).
+// mainnet, 1 = testnet, 2 = signet, 3 = regtest. Signet shares testnet's
+// tb1…/m…/n…/2… encodings; regtest differs only in its bcrt1… bech32 HRP.
+// All return the byte length written, or -1 on invalid input (bad key, bad
+// template arguments, unknown script type).
 
 use bitcoin::address::Address;
 use bitcoin::key::XOnlyPublicKey;
@@ -719,6 +721,8 @@ fn network_from_selector(sel: u8) -> Option<Network> {
     match sel {
         0 => Some(Network::Bitcoin),
         1 => Some(Network::Testnet),
+        2 => Some(Network::Signet),
+        3 => Some(Network::Regtest),
         _ => None,
     }
 }
@@ -998,12 +1002,14 @@ pub unsafe extern "C" fn el_bech32m_decode(
 // and run on rust-bitcoin's own decoder.
 //
 // el_tx_parse emits a flat little-endian layout:
-//   u32 version | u8 segwit | u32 in_count | per input: 32-byte prev txid
+//   i32 version (the consensus-signed bit pattern; JavaScript reads it with
+//   getInt32) | u8 segwit | u32 in_count | per input: 32-byte prev txid
 //   (wire order) | u32 vout | u32 script_len + script | u32 sequence |
 //   u32 witness_count + per item (u32 len + bytes) || u32 out_count |
 //   per output: u64 amount | u32 script_len + script || u32 locktime
 // Returns bytes written, -1 on decode failure, -2 when bytes trail the
-// transaction, -3 when the output capacity is too small.
+// transaction, -3 when the output capacity is too small. A null `out` is a
+// size query: it returns the required flat capacity instead of writing.
 
 use bitcoin::consensus::Decodable;
 use bitcoin::Transaction;
@@ -1028,6 +1034,14 @@ pub unsafe extern "C" fn el_tx_parse(input: *const u8, input_len: usize, out: *m
     }
     for txout in &tx.output {
         size += 8 + 4 + txout.script_pubkey.len();
+    }
+    if out.is_null() {
+        // Size query (the two-call convention): report the flat-layout
+        // capacity the caller must provide. The estimate-based caller cap
+        // could under-allocate a decodable transaction — a witness can carry
+        // many empty items at one wire byte each against four flat bytes —
+        // and misreport it as truncated (issue #339).
+        return if size > i32::MAX as usize { -3 } else { size as i32 };
     }
     if size > cap {
         return -3;

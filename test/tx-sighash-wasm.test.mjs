@@ -69,6 +69,16 @@ test("the unsigned BIP143 vectors parse and re-serialize byte-identically", () =
   const parsed = parseRawTx(BIP143_P2WPKH_UNSIGNED);
   assert.equal(parsed.version, 1);
   assert.equal(parsed.locktime, 0x11);
+  // Transaction versions are signed i32: wire ffffffff is version -1, and the
+  // serializer writes the same four bytes back (issue #336).
+  const negative = new Uint8Array(BIP143_P2WPKH_UNSIGNED);
+  negative.set([0xff, 0xff, 0xff, 0xff], 0);
+  const negParsed = parseRawTx(negative);
+  assert.equal(negParsed.version, -1);
+  assert.deepEqual(Array.from(serializeTx(negParsed)), Array.from(negative));
+  // Version 2 keeps its positive sign, and i32::MIN stays exact.
+  negative.set([0, 0, 0, 128], 0);
+  assert.equal(parseRawTx(negative).version, -2147483648);
   assert.equal(parsed.inputs.length, 2);
   assert.equal(parsed.inputs[0].sequence, 0xffffffee); // wire bytes eeffffff, little-endian
   assert.equal(parsed.outputs[0].amount, 112340000n);
@@ -86,6 +96,25 @@ test("the signed BIP143 transaction parses with its witness intact", () => {
   const witnessSig = sigs.find((s) => s.input === 1);
   assert.equal(witnessSig.sighash, 1);
   assert.equal(witnessSig.pubkey.length, 33);
+});
+
+test("a witness-heavy transaction is sized from its decode, not an estimate (issue #339)", () => {
+  // 100,000 empty witness items: one wire byte each but four flat bytes each,
+  // so the old 2x + 64 KiB estimate under-allocated and the decoder answered
+  // "Transaction ended early" for a transaction that decodes fine.
+  const items = 100_000;
+  const raw = new Uint8Array([
+    ...hex.decode("02000000" + "0001" + "01" + "11".repeat(32) + "00000000" + "00" + "ffffffff" + "01" + "0000000000000000" + "0151"),
+    ...hex.decode("fe" + "a0860100"), // compact-size 100,000
+    ...new Uint8Array(items),
+    ...hex.decode("00000000"),
+  ]);
+  const parsed = parseRawTx(raw);
+  assert.equal(parsed.segwit, true);
+  assert.equal(parsed.inputs[0].witness.length, items);
+  // Truncation and trailing bytes keep their distinct messages.
+  assert.throws(() => parseRawTx(raw.slice(0, -5)), /ended early/);
+  assert.throws(() => parseRawTx(new Uint8Array([...raw, 0])), /trailing bytes/);
 });
 
 test("non-canonical transactions are rejected", () => {
@@ -106,4 +135,25 @@ test("non-canonical transactions are rejected", () => {
     "01000000" + "fd0100" + "11".repeat(32) + "00000000" + "00" + "ffffffff" + "01" + "e803000000000000" + "016a" + "00000000"
   );
   assert.throws(() => parseRawTx(nonMinimal));
+});
+
+test("serializeTx rejects out-of-u64-range amounts instead of wrapping (issue #338)", () => {
+  const tx = {
+    version: 2,
+    locktime: 0,
+    inputs: [{ txid: new Uint8Array(32), vout: 0, scriptSig: new Uint8Array(), sequence: 0xffffffff }],
+    outputs: [{ amount: 0n, script: new Uint8Array([0x51]) }],
+  };
+  const withAmount = (amount) => ({ ...tx, outputs: [{ amount, script: new Uint8Array([0x51]) }] });
+  // In-range boundaries serialize: 0, MAX_MONEY, and u64::MAX.
+  for (const amount of [0n, 2100000000000000n, 0xffffffffffffffffn, "0", "18446744073709551615"]) {
+    assert.doesNotThrow(() => serializeTx(withAmount(amount)), String(amount));
+  }
+  // u64::MAX lands as eight 0xff bytes (no wrap to zero).
+  const max = serializeTx(withAmount(0xffffffffffffffffn));
+  assert.deepEqual(Array.from(max.slice(47, 55)), Array(8).fill(0xff));
+  // Negative and oversized values must throw, not alias modulo 2^64.
+  for (const amount of [-1n, 0x10000000000000000n, 0x10000000000000001n, "-1", "18446744073709551616"]) {
+    assert.throws(() => serializeTx(withAmount(amount)), /out of the unsigned 64-bit range/, String(amount));
+  }
 });

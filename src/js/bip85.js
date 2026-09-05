@@ -244,31 +244,43 @@ export function derivePwdBase64(root, { length = 21, index = 0 } = {}) {
   let size = Number(length);
   if (!Number.isInteger(size) || size < PWD_BASE64_MIN || size > PWD_BASE64_MAX) throw new Error(`BASE64 passwords are ${PWD_BASE64_MIN} to ${PWD_BASE64_MAX} characters.`);
   let path = bip85Path(BIP85_APPS.PWD_BASE64, size, parseChildIndex(index));
-  let entropy = deriveBip85Entropy(root, path);
-  let encoded = base64Coder.encode(entropy).replace(/\s+/g, "");
-  return result({
-    app: "pwd-base64",
-    path,
-    entropy,
-    secret: encoded.slice(0, size),
-    secretLabel: `Password · Base64 · ${size} characters`,
-    notes: ["RFC 4648 Base64 of all 64 HMAC bytes, then sliced to the requested length. Length ≤ 86 so the password never includes padding."]
-  });
+  let digest = deriveBip85Entropy(root, path);
+  try {
+    // The password encodes all 64 HMAC bytes, so the result keeps its own
+    // copy and the digest is wiped like in the other four apps.
+    let entropy = digest.slice();
+    let encoded = base64Coder.encode(entropy).replace(/\s+/g, "");
+    return result({
+      app: "pwd-base64",
+      path,
+      entropy,
+      secret: encoded.slice(0, size),
+      secretLabel: `Password · Base64 · ${size} characters`,
+      notes: ["RFC 4648 Base64 of all 64 HMAC bytes, then sliced to the requested length. Length ≤ 86 so the password never includes padding."]
+    });
+  } finally {
+    wipeBytes(digest);
+  }
 }
 
 export function derivePwdBase85(root, { length = 12, index = 0 } = {}) {
   let size = Number(length);
   if (!Number.isInteger(size) || size < PWD_BASE85_MIN || size > PWD_BASE85_MAX) throw new Error(`BASE85 passwords are ${PWD_BASE85_MIN} to ${PWD_BASE85_MAX} characters.`);
   let path = bip85Path(BIP85_APPS.PWD_BASE85, size, parseChildIndex(index));
-  let entropy = deriveBip85Entropy(root, path);
-  return result({
-    app: "pwd-base85",
-    path,
-    entropy,
-    secret: encodeRfc1924Base85(entropy).slice(0, size),
-    secretLabel: `Password · RFC1924 Base85 · ${size} characters`,
-    notes: ["RFC 1924 Base85 of all 64 HMAC bytes (4-byte groups), then sliced to the requested length."]
-  });
+  let digest = deriveBip85Entropy(root, path);
+  try {
+    let entropy = digest.slice();
+    return result({
+      app: "pwd-base85",
+      path,
+      entropy,
+      secret: encodeRfc1924Base85(entropy).slice(0, size),
+      secretLabel: `Password · RFC1924 Base85 · ${size} characters`,
+      notes: ["RFC 1924 Base85 of all 64 HMAC bytes (4-byte groups), then sliced to the requested length."]
+    });
+  } finally {
+    wipeBytes(digest);
+  }
 }
 
 export function deriveApplication(root, spec = {}) {

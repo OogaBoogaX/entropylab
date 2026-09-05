@@ -153,6 +153,48 @@ test("final scriptwitness yields the tapscript", () => {
   assert.ok(found.some((row) => parseEnvelopes(row.script).envelopes.length === 1));
 });
 
+test("witness items above 64 KiB use full CompactSize and are still scanned", () => {
+  // A media inscription puts its tap-leaf script in a single witness item,
+  // so >64 KiB items (0xfe/0xff length prefixes) are normal, not errors.
+  const script = envelope({ body: "x".repeat(70000) });
+  assert.ok(script.length > 0xffff);
+  const control = new Uint8Array(33).fill(0xc0);
+  const item32 = (bytes) => concatBytes(
+    Uint8Array.of(0xfe, bytes.length & 0xff, (bytes.length >> 8) & 0xff, (bytes.length >> 16) & 0xff, (bytes.length >> 24) & 0xff),
+    bytes,
+  );
+  const small = (bytes) => concatBytes(Uint8Array.of(bytes.length), bytes);
+  const witness = concatBytes(Uint8Array.of(3), small(new Uint8Array(64)), item32(script), small(control));
+  const stack = parseWitness(witness);
+  assert.equal(stack.length, 3);
+  assert.equal(stack[1].length, script.length);
+  const report = inspectPsbtInscriptions({ inputs: [[{ type: 8, val: witness, keydata: new Uint8Array() }]] });
+  assert.equal(report.envelopes.length, 1);
+  assert.equal(report.envelopes[0].bodyBytes, 70000);
+  assert.equal(report.incomplete, false);
+});
+
+test("a malformed finalized witness flags the scan incomplete instead of claiming coverage", () => {
+  const truncated = Uint8Array.of(0xff); // 0xff length prefix without its 8 bytes
+  assert.deepEqual(parseWitness(truncated), []); // tolerant API unchanged
+  const report = inspectPsbtInscriptions({ inputs: [[{ type: 8, val: truncated, keydata: new Uint8Array() }]] });
+  assert.equal(report.envelopes.length, 0);
+  assert.equal(report.incomplete, true);
+  assert.ok(report.errors.length > 0);
+});
+
+test("a truncated script push flags the scan incomplete", () => {
+  // 0x03 announces a 3-byte push but only one byte follows before the leaf version.
+  const leaf = concatBytes(Uint8Array.of(0x00, 0x63, 0x03, 0x6f), Uint8Array.of(0xc0));
+  const report = inspectPsbtInscriptions({ inputs: [[{ type: 21, val: leaf, keydata: new Uint8Array(33) }]] });
+  assert.equal(report.envelopes.length, 0);
+  assert.equal(report.incomplete, true);
+});
+
+test("the PSBT inspector escalates inscription coverage gaps to the summary", () => {
+  assert.match(app, /inscriptionReport\.incomplete\) inscriptionScanIncomplete = true/);
+});
+
 test("inspectPsbtInscriptions numbers envelopes across inputs and survives junk", () => {
   const script = envelope({ body: "a" });
   const leaf = concatBytes(script, Uint8Array.of(0xc0));

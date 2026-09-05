@@ -5,7 +5,7 @@
 // (entropylab-wasm); this file reshapes the flat layout it emits and keeps
 // the app's guardrails (size caps, the witness-flag rule, the trailing-byte
 // rule) and error strings.
-import { heap, wasmExports as wasm, withInput } from "./entropylab-wasm.js";
+import { wasmExports as wasm, withInput, withOutput } from "./entropylab-wasm.js";
 
 const ORD_MAGIC = Uint8Array.of(0x00, 0x63, 0x03, 0x6f, 0x72, 0x64); // OP_FALSE OP_IF "ord"
 
@@ -67,6 +67,17 @@ export function scriptPushes(script) {
       i += length;
       continue;
     }
+    if (op === 0x4e) {
+      // PUSHDATA4: without this branch the scanner walks inside the pushed
+      // data and can surface DER-looking bytes as phantom signatures.
+      if (i + 4 > script.length) break;
+      const length = (script[i] | (script[i + 1] << 8) | (script[i + 2] << 16) | (script[i + 3] << 24)) >>> 0;
+      i += 4;
+      if (i + length > script.length) break;
+      pushes.push(script.slice(i, i + length));
+      i += length;
+      continue;
+    }
   }
   return pushes;
 }
@@ -110,12 +121,19 @@ const layoutReader = (bytes) => {
     offset += 4;
     return value;
   };
+  // Transaction versions are signed (i32) at the consensus layer; the wire
+  // bytes are identical, but -1 must display as -1, not 4294967295 (#336).
+  const i32 = () => {
+    const value = view.getInt32(offset, true);
+    offset += 4;
+    return value;
+  };
   const take = (n) => {
     const out = bytes.slice(offset, offset + n);
     offset += n;
     return out;
   };
-  return { u32, take };
+  return { u32, i32, take };
 };
 
 // Serializes the { version, inputs, outputs, locktime } shape back to wire
@@ -133,10 +151,17 @@ export function serializeTx(tx) {
   }
   out.push(...varint(tx.outputs.length));
   for (const output of tx.outputs) {
-    let amount = BigInt(output.amount);
+    // Validate before emitting: the eight-byte little-endian write would
+    // otherwise alias negative and oversized values modulo 2^64 (issue #338).
+    // (BigInt() already throws on non-integers; MAX_MONEY is a consensus
+    // rule, enforced where transactions are constructed — psbt-wasm's build
+    // gate — not by this wire serializer.)
+    const amount = BigInt(output.amount);
+    if (amount < 0n || amount > 0xffffffffffffffffn) {
+      throw new Error("Output amount is out of the unsigned 64-bit range.");
+    }
     for (let i = 0; i < 8; i++) {
-      out.push(Number(amount & 255n));
-      amount >>= 8n;
+      out.push(Number((amount >> BigInt(8 * i)) & 255n));
     }
     out.push(...varint(output.script.length), ...output.script);
   }
@@ -151,20 +176,23 @@ export function parseRawTx(bytes) {
   // BIP144: a zero marker must be followed by flag 0x01 (kept from the
   // previous parser; rust-bitcoin would decode other flags).
   if (bytes[4] === 0x00 && bytes.length > 5 && bytes[5] !== 0x01) throw new Error("Unknown witness flag.");
-  const cap = bytes.length * 2 + 65536;
-  const { code, body } = withInput(bytes, (p) => {
-    const outPtr = wasm().el_alloc(cap);
-    try {
-      const produced = wasm().el_tx_parse(p, bytes.length, outPtr, cap);
-      return { code: produced, body: produced > 0 ? heap().slice(outPtr, outPtr + produced) : null };
-    } finally {
-      wasm().el_free(outPtr, cap);
-    }
+  // The flat layout can be larger than the wire bytes (every witness item
+  // adds a 4-byte length), so size it exactly with a query call instead of an
+  // estimate: an estimate can under-allocate a decodable transaction and
+  // misreport it as truncated (issue #339). The query also bounds the decoded
+  // output before any allocation; past the ceiling the decoder refuses
+  // outright rather than letting an attacker steer a huge allocation.
+  const FLAT_CAP = 64 * 1024 * 1024;
+  const body = withInput(bytes, (p) => {
+    const needed = wasm().el_tx_parse(p, bytes.length, 0, 0);
+    if (needed === -2) throw new Error("Transaction contains trailing bytes.");
+    if (needed < 0) throw new Error("Transaction ended early.");
+    if (needed > FLAT_CAP) throw new Error("Transaction is too large to expand for inspection.");
+    return withOutput(needed, (out) => wasm().el_tx_parse(p, bytes.length, out, needed));
   });
-  if (code === -2) throw new Error("Transaction contains trailing bytes.");
   if (!body) throw new Error("Transaction ended early.");
   const r = layoutReader(body);
-  const version = r.u32();
+  const version = r.i32();
   const segwit = r.take(1)[0] === 1;
   const inputCount = r.u32();
   if (inputCount > 1e5) throw new Error("Transaction has too many inputs.");

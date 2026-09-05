@@ -170,6 +170,16 @@ export function hodlUrDecodePsbt(raw) {
   const slots = Array.from({ length: count }, () => null);
   for (const part of parsed) {
     if (part.seq < 1 || part.seq > count) throw new Error("UR fragment index is out of range.");
+    // A second fragment for an already-filled sequence number would silently
+    // overwrite it — with fragments spliced from two different PSBTs the
+    // reassembly would decode to a transaction neither sender produced.
+    // Exact repeats (the same fragment pasted twice) are idempotent;
+    // conflicting ones are rejected (issue #364).
+    const existing = slots[part.seq - 1];
+    if (existing) {
+      if (existing.length === part.payload.length && existing.every((byte, i) => byte === part.payload[i])) continue;
+      throw new Error("Duplicate UR fragment " + part.seq + " with different content.");
+    }
     slots[part.seq - 1] = part.payload;
   }
   if (slots.some((slot) => !slot)) {

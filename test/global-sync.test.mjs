@@ -117,6 +117,15 @@ test("a brain wallet reports unknown strength instead of a green tick", () => {
   assert.match(markup, /entropy unknown/);
 });
 
+test("an over-long hex key goes invalid in sync instead of being truncated", () => {
+  // Publishing the first 64 characters of a 65+-character key would mirror a
+  // key the private-key field itself rejects; every other source publishes
+  // null when its input is invalid.
+  const source = loadSlice("hodlGlobalSyncCurrentBits");
+  assert.match(source, /if \(digits\.length > 64\) return null;/);
+  assert.doesNotMatch(source, /\.slice\(0, 64\)/);
+});
+
 test("a minikey reports its payload keyspace, not its 256-bit digest", () => {
   // A minikey is SHA-256(text) exactly like a brain wallet, format-constrained
   // to S plus 21 or 29 base58 characters, so the accepted 22-character form

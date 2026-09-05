@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { psbtInspectDoc } from "../src/js/psbt-wasm.js";
 import { psbtVizHtml } from "../src/js/psbt-viz.js";
+import { addressFromScript } from "../src/js/addresses.js";
 
 // BIP-174 valid vector 2 (same file as in test/psbt-wasm.test.mjs): two
 // inputs — a finalized P2PKH scriptSig with no amount claim and a nested
@@ -87,8 +88,9 @@ test("OP_RETURN outputs get the data-carrier tag instead of an address", () => {
   assert.ok(!html.includes("psbted-viz-out"), "an OP_RETURN box must not pose as an address");
 });
 
-test("signing progress counts partial and taproot signatures", () => {
-  const pairs = (names) => names.map((name) => ({ key: "02", value: "", name }));
+test("signing progress counts successfully decoded partial and taproot signatures (issue #328)", () => {
+  // A pair name alone no longer counts: the typed decode must have succeeded.
+  const pairs = (names) => names.map((name) => ({ key: "02", value: "", name, decoded: { signature: "ab" } }));
   const doc = syntheticDoc({
     inputs: [[], pairs(["PSBT_IN_PARTIAL_SIG", "PSBT_IN_PARTIAL_SIG"]), pairs(["PSBT_IN_TAP_KEY_SIG"]), pairs(["PSBT_IN_FINAL_SCRIPTWITNESS"])],
   });
@@ -98,6 +100,26 @@ test("signing progress counts partial and taproot signatures", () => {
   assert.ok(html.includes("2 signatures"), "partial signatures not counted");
   assert.ok(html.includes("1 signature"), "taproot key signature not counted");
   assert.ok(html.includes("finalized"), "final witness not reported");
+});
+
+test("malformed signing fields read as malformed, never as signed or finalized (issue #328)", () => {
+  // Names survive failed decodes; the status must not. A field that fails its
+  // typed decode is presence without validity.
+  const bad = (name) => ({ key: "02", value: "", name, decoded: null, decodeError: "truncated" });
+  const doc = syntheticDoc({
+    inputs: [
+      [bad("PSBT_IN_PARTIAL_SIG")],
+      [bad("PSBT_IN_FINAL_SCRIPTSIG")],
+      // A good signature alongside a malformed one still counts the good one.
+      [{ key: "02", value: "", name: "PSBT_IN_PARTIAL_SIG", decoded: { signature: "ab" } }, bad("PSBT_IN_TAP_SCRIPT_SIG")],
+    ],
+  });
+  doc.tx.inputs = [0, 1, 2].map((vout) => ({ txid: "11".repeat(32), vout, scriptSig: "", sequence: 0 }));
+  const html = psbtVizHtml(doc, "mainnet");
+  assert.ok(!html.includes("finalized"), "malformed final scriptSig was labeled finalized");
+  assert.ok(!html.includes("2 signatures"), "malformed signatures were counted");
+  assert.equal(html.match(/malformed signing field/g).length, 2, "malformed fields not flagged");
+  assert.ok(html.includes("1 signature"), "the one decodable signature should still count");
 });
 
 test("the selected box is marked open and expanded, the rest are not", () => {
@@ -142,6 +164,64 @@ test("fee states: known fee, negative fee, unknown fee", () => {
   // The unknown state stays compact; the reason moves to the tooltip.
   assert.ok(!unknown.includes("unknown — an input carries no amount claim"), "long fee text still inline");
   assert.ok(unknown.includes('title="an input carries no amount claim"'), "fee reason not on hover");
+});
+
+test("invalid fee reasons and an unknown outputs total render from the document", () => {
+  // The inspector marks fees invalid with a reason (issue #367): u64 overflow
+  // or amounts past Bitcoin's MAX_MONEY. The diagram shows the reason.
+  const overflow = psbtVizHtml(syntheticDoc({ fee: { known: true, sats: null, error: "amounts overflow u64" } }), "mainnet");
+  assert.ok(overflow.includes("amounts overflow u64"), "overflow fee reason missing");
+  const capped = psbtVizHtml(syntheticDoc({ fee: { known: true, sats: null, error: "amounts exceed Bitcoin's MAX_MONEY" } }), "mainnet");
+  assert.ok(capped.includes("MAX_MONEY"), "MAX_MONEY fee reason missing");
+  // An overflowing output total comes back null; the column hint must say so
+  // instead of grouping "null".
+  const noTotal = psbtVizHtml(syntheticDoc({ totalOut: null }), "mainnet");
+  assert.ok(noTotal.includes("outputs total unknown"), "unknown outputs total missing");
+  assert.ok(!noTotal.includes("null sats"), "null total must not render as an amount");
+});
+
+test("conflicting witness and non-witness claims render as a conflict, independent of map order (issue #324)", () => {
+  const witness = { key: "01", value: "", name: "PSBT_IN_WITNESS_UTXO", decoded: { value: "5000", scriptPubKey: "51" } };
+  const nonWitness = { key: "00", value: "", name: "PSBT_IN_NON_WITNESS_UTXO", decoded: { txid: "00".repeat(32), outputCount: 1, prevout: { vout: 1, value: "1000", scriptPubKey: "51" } } };
+  for (const pairs of [[witness, nonWitness], [nonWitness, witness]]) {
+    const html = psbtVizHtml(syntheticDoc({ inputs: [pairs] }), "mainnet");
+    assert.ok(html.includes(`conflicting claims: ${sats("5000")} vs ${sats("1000")} sats`), "conflict warning missing");
+  }
+  // The fee line shows the document's conflict reason instead of "unknown".
+  const conflicted = psbtVizHtml(syntheticDoc({
+    inputs: [[witness, nonWitness]],
+    fee: { known: false, error: "input(s) 0 declare conflicting witness and non-witness UTXO amounts" },
+  }), "mainnet");
+  assert.ok(conflicted.includes("conflicting witness and non-witness UTXO amounts"), "fee conflict reason missing");
+  // Agreeing claims resolve normally to the (verified) non-witness claim.
+  const agreed = psbtVizHtml(syntheticDoc({
+    inputs: [[{ ...witness, decoded: { value: "1000", scriptPubKey: "51" } }, nonWitness]],
+  }), "mainnet");
+  assert.ok(agreed.includes(`${sats("1000")} sats`), "agreed claim amount missing");
+  assert.ok(!agreed.includes("conflicting claims"), "agreement must not warn");
+});
+
+test("exotic witness programs render as bech32m addresses, matching the inspector (issue #354)", () => {
+  // The diagram and the inspector share one renderer (rust-bitcoin via
+  // addressFromScript), so scripts that used to fall back to hex here —
+  // v1 programs ≠ 32 bytes, v2–v16 programs — show their address instead.
+  const programs = [
+    "51024e73", // BIP-433 P2A: the one exotic case that always worked
+    "5120" + "02".padStart(64, "0"), // v1, off-curve x-only key (x=2 has no curve point)
+    "5110" + "22".repeat(16), // v1, 16-byte program
+    "5202" + "3333", // v2, 2-byte program
+    "5220" + "44".repeat(32), // v2, 32-byte program
+  ];
+  const doc = syntheticDoc();
+  doc.tx.outputs = programs.map((scriptPubKey) => ({ value: "1", scriptPubKey, asm: "" }));
+  doc.outputs = programs.map(() => []);
+  const html = psbtVizHtml(doc, "mainnet");
+  assert.ok(html.includes("bc1pfeessrawgf"), "P2A address missing");
+  for (const program of programs) {
+    const address = addressFromScript(new Uint8Array(program.match(/../g).map((b) => parseInt(b, 16))), "mainnet");
+    assert.ok(address, `expected an address for ${program}`);
+    assert.ok(html.includes(address), `${address} not rendered for ${program}`);
+  }
 });
 
 test("column hint lines carry the totals, unless a claim is missing", () => {

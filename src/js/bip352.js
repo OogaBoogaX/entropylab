@@ -159,6 +159,7 @@ export const isP2pkh = (spk) => spk.length === 25 && spk[0] === 0x76 && spk[1] =
 export const isP2sh = (spk) => spk.length === 23 && spk[0] === 0xa9 && spk[1] === 0x14 && spk[22] === 0x87;
 export const isP2wpkh = (spk) => spk.length === 22 && spk[0] === 0x00 && spk[1] === 0x14;
 export const isP2tr = (spk) => spk.length === 34 && spk[0] === 0x51 && spk[1] === 0x20;
+const isFutureSegwit = (spk) => spk.length >= 4 && spk.length <= 42 && spk[0] >= 0x52 && spk[0] <= 0x60 && spk[1] === spk.length - 2;
 
 const compressedPointOrNull = (bytes) => {
   if (!(bytes instanceof Uint8Array) || bytes.length !== 33 || (bytes[0] !== 2 && bytes[0] !== 3)) return null;
@@ -234,6 +235,12 @@ export function encodeSilentPaymentAddress(scanPoint, spendPoint, hrp = "sp", ve
 
 export function decodeSilentPaymentAddress(address, expectedHrp) {
   if (typeof address !== "string" || !address) throw new Error("Silent payment address is empty.");
+  // Bech32/Bech32m permit all-lowercase or all-uppercase encodings and
+  // require mixed case to be rejected — lowercasing first would launder a
+  // corrupted or crafted address into a valid one (issue #335).
+  if (address !== address.toLowerCase() && address !== address.toUpperCase()) {
+    throw new Error("A silent payment address must be all lowercase or all uppercase, not mixed case.");
+  }
   const lower = address.toLowerCase();
   const decoded = bech32mDecode(lower);
   if (!decoded) throw new Error("Not a Bech32m silent payment address.");
@@ -350,7 +357,9 @@ export function p2trAddressFromXonly(xonly, network = "mainnet") {
 
 // The prevout's scriptPubKey bytes (BIP352 input-key eligibility tests the
 // script type), not the txid/vout pair "prevout" means elsewhere.
-const vinPrevoutScript = (vin) => (vin.prevout instanceof Uint8Array ? vin.prevout : hexToBytes(typeof vin.prevout === "string" ? vin.prevout : vin.prevout.scriptPubKey.hex));
+// The prevout script of a vin, in any of the accepted shapes (raw bytes, hex
+// string, or the published-vector { scriptPubKey: { hex } } form).
+export const vinPrevoutScript = (vin) => (vin.prevout instanceof Uint8Array ? vin.prevout : hexToBytes(typeof vin.prevout === "string" ? vin.prevout : vin.prevout.scriptPubKey.hex));
 
 const normalizeVin = (vin) => ({
   txid: vin.txid,
@@ -361,17 +370,37 @@ const normalizeVin = (vin) => ({
   private_key: vin.private_key,
 });
 
+// BIP-352 spends a taproot input with "the private key corresponding to the
+// taproot output key (i.e. the tweaked private key)": the BIP-341 key-path
+// tweak of the even-Y internal key. Supplying the raw internal key instead
+// produces outputs the recipient can never detect.
+export function taprootOutputPrivateKey(secret) {
+  const internal = scalarFromBytes(secret instanceof Uint8Array ? secret : hexToBytes(secret));
+  const even = pointHasEvenY(Point.fromBytes(secp256k1.getPublicKey(bigToBytes32(internal), true))) ? internal : ORDER - internal;
+  const xonly = pointToXOnly(Point.fromBytes(secp256k1.getPublicKey(bigToBytes32(even), true)));
+  const tweak = scalarFromBytes(taggedHash("TapTweak", xonly));
+  const output = (even + tweak) % ORDER;
+  if (output === 0n) throw new Error("Taproot key-path tweak produced an invalid key.");
+  return bigToBytes32(output);
+}
+
 export function eligibleInputKeys(vins) {
   const pubkeys = [];
   const privkeys = [];
-  for (const raw of vins) {
+  for (const [index, raw] of vins.entries()) {
     const vin = normalizeVin(raw);
     const extracted = extractInputPubKey(vin);
     if (!extracted) continue;
     pubkeys.push(extracted);
     if (vin.private_key) {
+      const scalar = scalarFromBytes(typeof vin.private_key === "string" ? hexToBytes(vin.private_key) : vin.private_key);
+      const suppliedPoint = Point.fromBytes(secp256k1.getPublicKey(bigToBytes32(scalar), true));
+      const matches = extracted.isTaproot
+        ? equalBytes(pointToXOnly(suppliedPoint), pointToXOnly(extracted.point))
+        : equalBytes(pointToCompressed(suppliedPoint), pointToCompressed(extracted.point));
+      if (!matches) throw new Error(`Input ${index} private key does not match its eligible input public key.`);
       privkeys.push({
-        scalar: scalarFromBytes(typeof vin.private_key === "string" ? hexToBytes(vin.private_key) : vin.private_key),
+        scalar,
         isTaproot: extracted.isTaproot,
       });
     }
@@ -380,6 +409,9 @@ export function eligibleInputKeys(vins) {
 }
 
 export function createSilentPaymentOutputs(vins, recipients, { hrp = "sp" } = {}) {
+  if (vins.some((vin) => isFutureSegwit(vinPrevoutScript(vin)))) {
+    throw new Error("BIP-352 v0 cannot send with an input that spends a future SegWit version.");
+  }
   const { pubkeys, privkeys } = eligibleInputKeys(vins);
   if (!pubkeys.length) return { outputs: [], inputPubKeys: [], inputPrivateKeySum: null, sharedSecrets: [] };
   if (privkeys.length !== pubkeys.length) throw new Error("Sending needs a private key for every eligible input.");
@@ -453,7 +485,10 @@ export function createSilentPaymentOutputs(vins, recipients, { hrp = "sp" } = {}
     }
   }
   return {
-    outputs: [...new Set(outputs)],
+    // BIP352: every generated P_i stays in the transaction — multiplicity is
+    // part of the payment request and the scan progression, so the ordered
+    // list is returned as-is and never deduplicated (issue #332).
+    outputs,
     inputPubKeys: pubkeys.map((entry) => bytesToHex(pointToCompressed(entry.point))),
     inputPrivateKeySum: bytesToHex(bigToBytes32(aSum)),
     sharedSecrets,
@@ -461,6 +496,9 @@ export function createSilentPaymentOutputs(vins, recipients, { hrp = "sp" } = {}
 }
 
 export function scanSilentPaymentOutputs({ scanPriv, spendPub, vins, outputs, labels = [] }) {
+  if (vins.some((vin) => isFutureSegwit(vinPrevoutScript(vin)))) {
+    return { outputs: [], inputPubKeySum: null, tweak: null, sharedSecret: null };
+  }
   const scanScalar = scanPriv instanceof Uint8Array ? scalarFromBytes(scanPriv) : scanPriv;
   const spendPoint = spendPub instanceof Uint8Array ? Point.fromBytes(spendPub) : spendPub;
   const { pubkeys } = eligibleInputKeys(vins);

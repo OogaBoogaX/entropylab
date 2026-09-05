@@ -33,9 +33,13 @@ import {
   snapshotFromKeyState,
   wipeDocument,
   journalFromPlainText,
+  journalBip85ReferenceToken,
+  journalKeyReferenceRanges,
   journalKeyReferenceToken,
   journalNotebookRuns,
   journalTextFromRuns,
+  mergeNotebookImport,
+  notebookPageHasContent,
   parseNotebook,
   serializeNotebook,
   snapshotSession,
@@ -73,7 +77,7 @@ test("a multi-page notebook download includes every named page", () => {
 
 test("key references round-trip as structured public runs and stay readable in text", () => {
   let token = journalKeyReferenceToken("Signing ◆ key\nbackup", "A1B2C3D4");
-  assert.equal(token, "◆◆ Signing ◇ key backup [a1b2c3d4] ◆");
+  assert.equal(token, "◆◆ Signing ◇ key backup [a1b2c3d4]\u2063");
   let source = `before ${token} after`;
   assert.deepEqual(journalNotebookRuns(source), [
     { type: "text", text: "before " },
@@ -87,12 +91,38 @@ test("key references round-trip as structured public runs and stay readable in t
 
 test("key references do not repeat a default fingerprint name", () => {
   let token = journalKeyReferenceToken("A1B2C3D4", "a1b2c3d4");
-  assert.equal(token, "◆◆ [a1b2c3d4] ◆");
+  assert.equal(token, "◆◆ [a1b2c3d4]\u2063");
   assert.deepEqual(journalNotebookRuns(token), [
     { type: "key", name: "a1b2c3d4", fingerprint: "a1b2c3d4" },
   ]);
   assert.equal(journalTextFromRuns(journalNotebookRuns(token)), token);
   assert.equal(formatNotebook(token), "[Key: a1b2c3d4]");
+});
+
+test("BIP-85 references round-trip with their application and remain visually distinct", () => {
+  for (let [application, label] of [["bip39", "BIP-39"], ["wif", "WIF"], ["xprv", "XPRV"], ["hex", "HEX"], ["pwd-base64", "Base64 password"], ["pwd-base85", "Base85 password"]]) {
+    let token = journalBip85ReferenceToken(application, "DEADBEEF");
+    assert.equal(token, `◈◈ BIP-85 · ${label} [deadbeef]\u2063`);
+    assert.deepEqual(journalNotebookRuns(token), [{
+      type: "key",
+      name: `BIP-85 · ${label}`,
+      fingerprint: "deadbeef",
+      source: "bip85",
+      application,
+    }]);
+    assert.equal(journalTextFromRuns(journalNotebookRuns(token)), token);
+    assert.equal(formatNotebook(token), `[BIP-85 ${label}: deadbeef]`);
+    assert.deepEqual(journalKeyReferenceRanges(token), [{ start: 0, end: token.length }]);
+  }
+  let journal = createJournal(), token = journalBip85ReferenceToken("wif", "deadbeef");
+  journal.pages[0].notesText = token;
+  let encoded = serializeNotebook(journal), document = JSON.parse(encoded);
+  assert.deepEqual(document.pages[0].content[0], {
+    type: "key", name: "BIP-85 · WIF", fingerprint: "deadbeef", source: "bip85", application: "wif",
+  });
+  assert.equal(parseNotebook(encoded).pages[0].notesText, token);
+  assert.throws(() => journalBip85ReferenceToken("unknown", "deadbeef"), /supported application/);
+  assert.throws(() => journalBip85ReferenceToken("wif", "not-an-xfp"), /8-character hexadecimal/);
 });
 
 test("the versioned notebook preserves pages, styles, and key references", () => {
@@ -124,6 +154,30 @@ test("notebook imports validate their schema and legacy text becomes one page", 
   assert.equal(legacy.pages.length, 1);
   assert.equal(legacy.pages[0].notesText, "old notes\nkept as text");
   assert.deepEqual(legacy.pages[0].style, defaultJournalPageStyle());
+});
+
+test("notebook uploads preserve a filled page and reuse an empty current page", () => {
+  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), false);
+  assert.equal(notebookPageHasContent("\n  \n2026-09-04 13:17:24  Add new note"), false);
+  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  kept"), true);
+  let imported = journalFromPlainText("uploaded notes");
+  let journal = createJournal();
+  journal.pages[0].notesText = "2026-09-04 13:17:24  existing notes";
+  journal.notesText = journal.pages[0].notesText;
+  let merged = mergeNotebookImport(journal, imported);
+  assert.equal(merged.pages.length, 2);
+  assert.equal(merged.pages[0].notesText, journal.pages[0].notesText);
+  assert.equal(merged.pages[1].notesText, "uploaded notes");
+  assert.equal(merged.pages[1].name, "Page 2");
+  assert.equal(merged.activePage, 1);
+  let empty = createJournal();
+  empty.pages[0].notesText = "2026-09-04 13:17:24  ";
+  merged = mergeNotebookImport(empty, imported);
+  assert.equal(merged.pages.length, 1);
+  assert.equal(merged.pages[0].id, 1);
+  assert.equal(merged.pages[0].number, 1);
+  assert.equal(merged.pages[0].notesText, "uploaded notes");
+  assert.equal(merged.activePage, 0);
 });
 
 test("the log is a ring buffer and never stores more than the cap", () => {

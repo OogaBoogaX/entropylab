@@ -136,6 +136,29 @@ const grind = ({ mode = 0, key = encoder.encode(MNEMONIC), salt = encoder.encode
   }
 };
 
+test("vanity_free zeroes and vanity_alloc zero-fills; the grind leaves no seed or mnemonic behind (issues #327, #356)", () => {
+  // Allocator hygiene: freed buffers are wiped and fresh ones start at zero.
+  const ptr = wasm.vanity_alloc(64);
+  heap().fill(0x5a, ptr, ptr + 64);
+  wasm.vanity_free(ptr, 64);
+  assert.deepEqual([...heap().slice(ptr, ptr + 64)], new Array(64).fill(0), "freed buffer was not wiped");
+  const fresh = wasm.vanity_alloc(64);
+  assert.deepEqual([...heap().slice(fresh, fresh + 64)], new Array(64).fill(0), "fresh buffer was not zero-filled");
+  wasm.vanity_free(fresh, 64);
+  // A passphrase grind over the whole 1-character odometer (prefix "b" matches
+  // every bc1q address): the candidate seeds and the mnemonic are working
+  // secrets of the loop and must not survive it.
+  const run = grind({ prefix: "b", count: 62n, passLen: 1 });
+  assert.equal(run.processed, 62n);
+  const memory = () => Buffer.from(heap().buffer);
+  for (const candidate of ["a", "9", "z"]) {
+    const seed = Buffer.from(mnemonicToSeedSync(MNEMONIC, PASSPHRASE + candidate));
+    assert.equal(memory().indexOf(seed), -1, `the candidate seed for ${JSON.stringify(candidate)} survived the grind`);
+  }
+  const mnemonicBytes = Buffer.from(new TextEncoder().encode(MNEMONIC));
+  assert.equal(memory().indexOf(mnemonicBytes), -1, "the mnemonic survived the grind (freed key buffer was not wiped)");
+});
+
 test("committed vanity WASM artifact is intact (sha256 in module header matches payload)", () => {
   const source = readFileSync(join(root, "src/js/vanity-wasm-b64.js"), "utf8");
   const declared = source.match(/wasm sha256: ([0-9a-f]{64})/);

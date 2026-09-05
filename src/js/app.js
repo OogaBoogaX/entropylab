@@ -10,11 +10,18 @@ import {
   encodeSilentPaymentAddress,
   encodeSpscan,
   encodeSpspend,
+  extractInputPubKey,
   formatSpDescriptor,
   hrpForNetwork as hodlSpHrp,
+  isP2pkh,
+  isP2sh,
+  isP2tr,
+  isP2wpkh,
   p2trAddressFromXonly,
   scanSilentPaymentOutputs,
   spendPrivForOutput,
+  taprootOutputPrivateKey,
+  vinPrevoutScript,
   bytesToHex as hodlSpBytesToHex,
 } from "./bip352.js";
 import {
@@ -29,7 +36,7 @@ import { parseRawTx, extractEcdsaSignatures, inscriptionHints, isPsbtMagic, seri
 import { wasmExports as hodlWasm, withInput as hodlWasmIn, withOutput as hodlWasmOut } from "./entropylab-wasm.js";
 import { indexHdKey, indexSingleKey, matchOwnership, pathLabel } from "./ownership.js";
 import { hex as hodlHex } from "./coders.js";
-import { addressFor, addressFromScript, descriptorDerive, p2shP2wpkhScript, p2shScript, p2trKeyScript, p2wshScript } from "./addresses.js";
+import { addressFor, addressFromScript, descriptorDerive, p2pkhScript, p2shP2wpkhScript, p2shScript, p2trKeyScript, p2wpkhScript, p2wshScript } from "./addresses.js";
 import { base58checkDecode, base58checkEncode } from "./base58.js";
 import { HDKey as hodlHDKey } from "./hdkey.js";
 import { entropyToMnemonic as hodlEntropyToMnemonic, mnemonicToEntropy as hodlMnemonicToEntropy, mnemonicToSeedSync as hodlMnemonicToSeed, validateMnemonic as hodlIsValidMnemonic } from "./bip39.js";
@@ -37,6 +44,7 @@ import { wordlist as bip39English } from "./bip39-english.js";
 // The PSBT editor (its own workspace tab) drives the rust-bitcoin WASM
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor } from "./psbt-editor.js";
+import { hodlTapKeySigs, hodlTapScriptSigs, hodlTapSighashProblems } from "./psbt-schnorr.js";
 import { initQrReferences } from "./qr-references.js";
 import { renderSVG as hodlUqrRenderSvg } from "uqr";
 import { BIP39_LANGUAGE_ENGLISH, BIP85_APPS, bip85Path, deriveApplication, parseChildIndex, wipeBip85Result, wipeBytes as hodlWipeBytes } from "./bip85.js";
@@ -69,8 +77,11 @@ import {
   wipeBytes as hodlJournalWipeBytes,
   wipeDocument as hodlJournalWipeDocument,
   journalFromPlainText as hodlJournalFromPlainText,
+  journalBip85ReferenceToken as hodlJournalBip85ReferenceToken,
+  journalKeyReferenceRanges as hodlJournalKeyReferenceRanges,
   journalKeyReferenceToken as hodlJournalKeyReferenceToken,
   journalNotebookRuns as hodlJournalNotebookRuns,
+  mergeNotebookImport as hodlMergeNotebookImport,
   normalizeJournalPageStyle as hodlNormalizeJournalPageStyle,
   parseNotebook as hodlParseNotebook,
   serializeNotebook as hodlSerializeNotebook,
@@ -162,6 +173,16 @@ function hodlLastWordCandidates(e) {
 var hodlBase58Check = { encode: base58checkEncode, decode: base58checkDecode }, hodlSecp256k1Order = BigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141"), hodlScriptTypes = [{ id: "bip44", bip: "BIP44", label: "Legacy", short: "Legacy 1\u2026", beginner: hodlScriptBeginnerTexts.bip44, script: "p2pkh", purpose: 44, slip: "x" }, { id: "bip49", bip: "BIP49", label: "Nested SegWit", short: "Nested 3\u2026", beginner: hodlScriptBeginnerTexts.bip49, script: "p2sh-p2wpkh", purpose: 49, slip: "y" }, { id: "bip84", bip: "BIP84", label: "Native SegWit", short: "SegWit bc1q\u2026", beginner: hodlScriptBeginnerTexts.bip84, script: "p2wpkh", purpose: 84, slip: "z" }, { id: "bip86", bip: "BIP86", label: "Taproot", short: "Taproot bc1p\u2026", beginner: hodlScriptBeginnerTexts.bip86, script: "p2tr", purpose: 86, slip: "x" }], hodlExtendedKeyVersions = { mainnet: { x: { pub: 76067358, prv: 76066276, pubName: "xpub", prvName: "xprv" }, y: { pub: 77429938, prv: 77428856, pubName: "ypub", prvName: "yprv" }, z: { pub: 78792518, prv: 78791436, pubName: "zpub", prvName: "zprv" } }, testnet: { x: { pub: 70617039, prv: 70615956, pubName: "tpub", prvName: "tprv" }, y: { pub: 71979618, prv: 71978536, pubName: "upub", prvName: "uprv" }, z: { pub: 73342198, prv: 73341116, pubName: "vpub", prvName: "vprv" } } };
 function hodlWifVersionByte(e) {
   return e === "mainnet" ? 128 : 239;
+}
+// The header picker tracks Bitcoin Core's four chains (mainnet, testnet,
+// signet, regtest), and a derived wallet keeps that chain identity so the
+// wallet.dat export can write chain-specific metadata (issue #329). Extended
+// key versions, WIF bytes, and coin types form only two encoding families —
+// signet and regtest share the testnet versions — so every version lookup
+// normalizes the chain through this map. (Regtest's bcrt1… HRP is NOT part
+// of the family: the address layer takes the chain itself.)
+function hodlNetworkFamily(network) {
+  return network === "mainnet" ? "mainnet" : "testnet";
 }
 function hodlCoinTypeFromNetwork(e) {
   let index = Number(e);
@@ -443,7 +464,10 @@ function hodlScriptDescriptor(e, t) {
 }
 function hodlIsMiniKey(e) {
   let t = e.trim();
-  return !t.startsWith("S") || t.length !== 22 && t.length !== 30 || !/^[A-Za-z0-9]+$/.test(t) ? false : hodlSha256(new TextEncoder().encode(t + "?"))[0] === 0;
+  // The minikey alphabet is Bitcoin Base58: the decode paths enforce it, so
+  // the auto-detect check must not accept the wider alphanumeric set (0, O,
+  // I, l are not Base58).
+  return !t.startsWith("S") || t.length !== 22 && t.length !== 30 || !/^[1-9A-HJ-NP-Za-km-z]+$/.test(t) ? false : hodlSha256(new TextEncoder().encode(t + "?"))[0] === 0;
 }
 function hodlDecodeMiniKey(e) {
   if (!hodlIsMiniKey(e)) throw hodlError("Not a valid Casascius mini private key.");
@@ -457,11 +481,11 @@ function hodlBrainWalletPassphrase(value, trimBoundaryWhitespace = false) {
 function hodlBrainWalletPrivateKey(value, trimBoundaryWhitespace = false) {
   return hodlSha256(new TextEncoder().encode(hodlBrainWalletPassphrase(value, trimBoundaryWhitespace)));
 }
-function hodlBrainLabEntropy(value) {
+function hodlBrainLabEntropy(value, trimmed = false) {
   let text = String(value ?? ""), notes = [], warnings = [];
   if (!text.length) return { ok: false, error: { key: "Enter the brain-wallet lab text." }, notes, warnings };
   let bytes = hodlSha256(new TextEncoder().encode(text)), hex = hodlHex.encode(bytes);
-  notes.push(hodlNote("SHA-256 of the exact UTF-8 text is 32 bytes of BIP39 entropy (256 bits → 24 words)."));
+  notes.push(hodlNote(trimmed ? "SHA-256 of the UTF-8 text with boundary whitespace trimmed is 32 bytes of BIP39 entropy (256 bits → 24 words)." : "SHA-256 of the exact UTF-8 text is 32 bytes of BIP39 entropy (256 bits → 24 words)."));
   warnings.push(hodlNote("Lab only. Strength is the entropy of this text, not the 24-word count."));
   warnings.push(hodlNote("SHA-256(text) is unsalted and fast. Anyone who can guess the text recovers the wallet."));
   warnings.push(hodlNote("This is not a BIP39 passphrase, and it is not a Bitcoin Core hdseed or address-key backup."));
@@ -475,7 +499,9 @@ function hodlSingleKeyWallet(e, t, r, trimBrainWallet = false) {
   } else if (r === "minikey" || hodlIsMiniKey(a)) i = hodlDecodeMiniKey(a), s = a, n.push(hodlNote("Casascius mini private key decoded via SHA-256."));
   else if (/^[5KL9c][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(a)) {
     let E = hodlDecodeWif(a);
-    i = E.priv, c = E.network, n.push(hodlNote(E.compressed ? "Decoded a compressed WIF private key (starts with K or L on mainnet)." : "Decoded an uncompressed WIF private key (starts with 5 on mainnet)."));
+    // A WIF only settles the encoding family; when it matches the selected
+    // chain's family, keep the chain so regtest still renders bcrt1….
+    i = E.priv, c = hodlNetworkFamily(t) === E.network ? t : E.network, n.push(hodlNote(E.compressed ? "Decoded a compressed WIF private key (starts with K or L on mainnet)." : "Decoded an uncompressed WIF private key (starts with 5 on mainnet)."));
   } else {
     let E = a.replace(/\s/g, "").replace(/^0x/i, "");
     if (!/^[0-9a-fA-F]{64}$/.test(E)) throw hodlError("Enter a WIF key (5/K/L…), a 64-character hex private key, or a Casascius mini key (S…).");
@@ -645,7 +671,7 @@ function hodlAccountExportFamily(definition, options = {}) {
   return "x";
 }
 function hodlSerializeExtendedKey(value, network, family, isPrivate) {
-  return value ? hodlReversionExtendedKey(value, hodlExtendedKeyVersions[network][family][isPrivate ? "prv" : "pub"]) : null;
+  return value ? hodlReversionExtendedKey(value, hodlExtendedKeyVersions[hodlNetworkFamily(network)][family][isPrivate ? "prv" : "pub"]) : null;
 }
 function hodlBuildMultisigCosignerExports(root, network, accountIndex, masterFingerprint, coinType = hodlCoinTypeFromNetwork(network)) {
   return [{
@@ -693,7 +719,7 @@ function hodlBuildMultisigCosignerExports(root, network, accountIndex, masterFin
       originPath = definition.originPath || `48h/${coinType}h/${accountIndex}h/${definition.scriptIndex}h`;
     let node = root.derive(accountPath),
       publicKey = hodlSerializeExtendedKey(node.publicExtendedKey, network, "x", !1);
-    let prefix = hodlExtendedKeyVersions[network].x.pubName;
+    let prefix = hodlExtendedKeyVersions[hodlNetworkFamily(network)].x.pubName;
     return {
       ...definition,
       accountPath,
@@ -743,7 +769,7 @@ function hodlWatchOnlyDescriptorExport(receiveDescriptor, changeDescriptor, addr
   return `${hodlPublicFieldHtml("Watch-only wallet descriptor", multipath || "\u2014")}${qr}<details class="wallet-advanced"><summary>Address branch descriptors</summary>${details}</details>`;
 }
 function hodlAccountResult(node, definition, network, count, options = {}) {
-  let rawPublic = node.publicExtendedKey, rawPrivate = node.privateKey ? node.privateExtendedKey : null, family = hodlAccountExportFamily(definition, options), primaryConfig = hodlExtendedKeyVersions[network][family] || hodlExtendedKeyVersions[network].x, genericConfig = hodlExtendedKeyVersions[network].x;
+  let rawPublic = node.publicExtendedKey, rawPrivate = node.privateKey ? node.privateExtendedKey : null, family = hodlAccountExportFamily(definition, options), keyVersions = hodlExtendedKeyVersions[hodlNetworkFamily(network)], primaryConfig = keyVersions[family] || keyVersions.x, genericConfig = keyVersions.x;
   let genericPublic = hodlSerializeExtendedKey(rawPublic, network, "x", false), genericPrivate = hodlSerializeExtendedKey(rawPrivate, network, "x", true);
   let primaryPublic = hodlSerializeExtendedKey(rawPublic, network, family, false), primaryPrivate = hodlSerializeExtendedKey(rawPrivate, network, family, true);
   let origin = options.originFingerprint && options.originPath ? `[${options.originFingerprint}/${options.originPath}]` : "", branchHardened = Boolean(options.branchHardened), addressHardened = Boolean(options.addressHardened), wildcard = addressHardened ? "*'" : "*", branchStart = options.branchStart ?? 0, branchRange = options.branchRange ?? 2;
@@ -813,7 +839,7 @@ function hodlAccountResult(node, definition, network, count, options = {}) {
   };
 }
 function hodlRootWalletResult(root, network, source, accountIndex, masterFingerprint, accounts, coinType = hodlCoinTypeFromNetwork(network)) {
-  return {
+  let result = {
     kind: "hd",
     network,
     coinType,
@@ -824,8 +850,8 @@ function hodlRootWalletResult(root, network, source, accountIndex, masterFingerp
     seedHex: source.seedHex,
     rootXprv: hodlSerializeExtendedKey(root.privateKey ? root.privateExtendedKey : null, network, "x", true),
     rootXpub: hodlSerializeExtendedKey(root.publicExtendedKey, network, "x", false),
-    rootPrivateLabel: hodlExtendedKeyVersions[network].x.prvName,
-    rootPublicLabel: hodlExtendedKeyVersions[network].x.pubName,
+    rootPrivateLabel: hodlExtendedKeyVersions[hodlNetworkFamily(network)].x.prvName,
+    rootPublicLabel: hodlExtendedKeyVersions[hodlNetworkFamily(network)].x.pubName,
     masterFingerprint,
     multisigCosignerExports: root.privateKey ? hodlBuildMultisigCosignerExports(root, network, accountIndex, masterFingerprint, coinType) : [],
     imported: false,
@@ -833,6 +859,14 @@ function hodlRootWalletResult(root, network, source, accountIndex, masterFingerp
     warnings: source.warnings,
     accounts
   };
+  // A coin type beyond 0 (Bitcoin mainnet) or 1 (every testnet) serializes
+  // with mainnet version bytes: that is another coin's address format, and
+  // the result must say so at the output, not only in a help label
+  // (issue #357).
+  if (result.coinType !== 0 && result.coinType !== 1) {
+    result.warnings = [...(result.warnings ?? []), hodlNote("Coin type {coinType} is not Bitcoin mainnet (0) or testnet (1). The addresses, WIF keys, and SLIP-132 versions below serialize with MAINNET version bytes — they are not necessarily valid for the coin you may intend.", { coinType: result.coinType })];
+  }
+  return result;
 }
 function hodlImportedScriptDefinition(parsed) {
   if (parsed.family === "y") return hodlScriptTypes.find((definition) => definition.id === "bip49");
@@ -902,7 +936,7 @@ async function hodlEntropyWalletWithProgress(entropy, passphrase, network, count
 async function hodlImportedWalletWithProgress(value, network, count, accountIndex, addressStart, tracker, purposeIndex, coinType = hodlCoinTypeFromNetwork(network), hardening = hodlDefaultHardening(), branchStart = 0, branchRange = 2, derivationPlan = null) {
   let importedValue = String(value ?? "").trim(), parsed = hodlParseExtendedKey(importedValue);
   if (parsed.scope !== "singlesig") throw hodlError("{prefix} is a multisig extended key. Use it in Multi Signature, not Key Derivation.", { prefix: parsed.prefix });
-  if (parsed.network !== network) throw hodlError("This {prefix} belongs to Bitcoin {network}. Change Network to {network} before deriving it.", { prefix: parsed.prefix, network: parsed.network });
+  if (parsed.network !== hodlNetworkFamily(network)) throw hodlError("This {prefix} belongs to Bitcoin {network}. Change Network to {network} before deriving it.", { prefix: parsed.prefix, network: parsed.network });
   let node = parsed.node, mismatch = hodlSinglesigScriptMismatch(parsed, hodlSelectedScriptType()), notes = [hodlNote(parsed.isPrivate ? "Imported an extended private key. Addresses and WIF keys are derived from it." : "Imported an extended public key. This is watch-only: it can derive addresses but cannot spend.")];
   if (node.depth === 0) {
     if (!parsed.isPrivate && (derivationPlan ? derivationPlan.hasHardenedPrefix || hardening.branch || hardening.address : Object.values(hardening).some(Boolean))) throw hodlError("A root extended public key cannot derive the selected hardened path. Turn every Harden option off, import an account-level public key, or use the root xprv/tprv offline.");
@@ -1301,13 +1335,17 @@ function hodlPrivateDataControls(descriptionId, scope = "wallet") {
 }
 function hodlWalletDatControl(includePrivate) {
   if (!hodlWalletExport.hasDescriptors(hodlWalletResult)) return "";
+  // The secrets variant follows the material that actually exists, not just
+  // the reveal toggle, so the label and filename never lie for an imported
+  // watch-only wallet (issue #366).
+  const withSecrets = includePrivate && hodlWalletExport.hasPrivateDescriptors(hodlWalletResult);
   // Bitcoin Core starts its automatic scan at the wallet birthday stored in
   // the descriptor records. Recovery needs genesis (creation time 0) so
   // transactions predating this export are found; "now" is only safe for
   // keys created at this moment and skips past history (faster, and reveals
   // no older activity to anyone who later sees the file). If a loaded wallet
   // looks empty, repair it with Bitcoin Core's `rescanblockchain 0`.
-  return `<label class="wallet-dat-birthday">${hodlT("Wallet birthday")} <select data-wallet-dat-birthday aria-describedby="wallet-dat-birthday-help"><option value="genesis"${hodlWalletDatBirthday === "genesis" ? " selected" : ""}>${hodlT("Recovering keys · scan from genesis")}</option><option value="now"${hodlWalletDatBirthday === "now" ? " selected" : ""}>${hodlT("New keys · created today")}</option></select></label><button class="btn secondary save-wallet-dat" id="download-wallet-dat" type="button" aria-describedby="recovery-sheet-disclosure wallet-dat-birthday-help">${hodlWalletExport.walletDatButtonLabel(includePrivate)}</button><p class="muted wallet-dat-birthday-help" id="wallet-dat-birthday-help">${hodlT("Bitcoin Core only auto-scans history back to the birthday. Choose “New keys” only for entropy created right now; recovering older keys with today's birthday can look empty until you run <code>rescanblockchain 0</code> in Bitcoin Core.")}</p>`;
+  return `<label class="wallet-dat-birthday">${hodlT("Wallet birthday")} <select data-wallet-dat-birthday aria-describedby="wallet-dat-birthday-help"><option value="genesis"${hodlWalletDatBirthday === "genesis" ? " selected" : ""}>${hodlT("Recovering keys · scan from genesis")}</option><option value="now"${hodlWalletDatBirthday === "now" ? " selected" : ""}>${hodlT("New keys · created today")}</option></select></label><button class="btn secondary save-wallet-dat" id="download-wallet-dat" type="button" aria-describedby="recovery-sheet-disclosure wallet-dat-birthday-help">${hodlWalletExport.walletDatButtonLabel(withSecrets)}</button><p class="muted wallet-dat-birthday-help" id="wallet-dat-birthday-help">${hodlT("Bitcoin Core only auto-scans history back to the birthday. Choose “New keys” only for entropy created right now; recovering older keys with today's birthday can look empty until you run <code>rescanblockchain 0</code> in Bitcoin Core.")}</p>`;
 }
 function hodlSaveRecoveryControl() {
   return `<div class="wallet-data-actions no-print"><button class="btn secondary save-recovery-sheet" id="save" type="button">${hodlT("Save watch-only sheet")}</button>${hodlWalletDatControl(false)}</div>`;
@@ -1369,7 +1407,7 @@ function hodlHdWalletData(wallet) {
   if (wallet.mnemonic && wallet.passphraseUsed && wallet.passphrase) privateFields.push(hodlPrivateFieldHtml("BIP39 passphrase", wallet.passphrase));
   if (wallet.entropyHex) privateFields.push(hodlPrivateFieldHtml("BIP39 entropy hex", wallet.entropyHex));
   if (wallet.seedHex) privateFields.push(hodlPrivateFieldHtml("Master seed hex", wallet.seedHex));
-  if (wallet.rootXprv) privateFields.push(hodlPrivateFieldHtml(`Root ${wallet.rootPrivateLabel || hodlExtendedKeyVersions[wallet.network].x.prvName}`, wallet.rootXprv));
+  if (wallet.rootXprv) privateFields.push(hodlPrivateFieldHtml(`Root ${wallet.rootPrivateLabel || hodlExtendedKeyVersions[hodlNetworkFamily(wallet.network)].x.prvName}`, wallet.rootXprv));
   if (wallet.importedPrivateKey) privateFields.push(hodlPrivateFieldHtml(`Imported ${wallet.importedPrivateLabel || "extended private key"}`, wallet.importedPrivateKey));
   let hasAccountPrivate = wallet.accounts.some(hodlAccountHasPrivate), hasPrivate = privateFields.length > 0 || hasAccountPrivate;
   let privateContent = privateFields.length ? privateFields.join("") : `<p class="muted">Private account material is available in the selected script panel below; no BIP32 root private key was supplied.</p>`;
@@ -1386,7 +1424,7 @@ function hodlHdWalletData(wallet) {
   let fingerprint = wallet.masterFingerprint ? hodlPublicFieldHtml("Master fingerprint", wallet.masterFingerprint) : "";
   let parentFingerprint = !wallet.masterFingerprint && wallet.parentFingerprint ? hodlPublicFieldHtml("Encoded parent fingerprint (not a master fingerprint)", wallet.parentFingerprint) : "";
   let nodeFingerprint = !wallet.masterFingerprint && wallet.nodeFingerprint ? hodlPublicFieldHtml("Imported key fingerprint (not a master fingerprint)", wallet.nodeFingerprint) : "";
-  let rootPublic = wallet.rootXpub ? hodlPublicFieldHtml("Root {name}", wallet.rootXpub, { name: wallet.rootPublicLabel || hodlExtendedKeyVersions[wallet.network].x.pubName }) : "";
+  let rootPublic = wallet.rootXpub ? hodlPublicFieldHtml("Root {name}", wallet.rootXpub, { name: wallet.rootPublicLabel || hodlExtendedKeyVersions[hodlNetworkFamily(wallet.network)].x.pubName }) : "";
   let importedPublic = wallet.importedPublicKey ? hodlPublicFieldHtml("Imported {name}", wallet.importedPublicKey, { name: wallet.importedPublicLabel || hodlTText("extended public key") }) : "";
   return `<section class="card wallet-data-card">
     <div class="wallet-data-intro">
@@ -1442,6 +1480,9 @@ function hodlWalletDatDeps() {
       body.set(node.publicKey, 41);
       return body;
     },
+    // Hardened-branch private key records are derived from the account xprv.
+    deriveExtendedPrivateChild: (extendedKeyText, index) =>
+      hodlHDKey.fromExtendedKey(hodlReversionExtendedKey(extendedKeyText, hodlExtendedKeyVersions.mainnet.x.prv)).deriveChild(index).privateExtendedKey,
     publicKeyForPrivate: (secret) => hodlSecp256k1.getPublicKey(secret, true)
   };
 }
@@ -1451,9 +1492,11 @@ function hodlDownloadWalletDat() {
   // "now" is written only when the user confirms the keys are new (issue
   // #95).
   let creationTime = hodlWalletDatBirthday === "now" ? Math.floor(Date.now() / 1000) : 0;
-  let bytes = hodlWalletExport.buildWalletDat(hodlWalletResult, hodlRevealPrivate, hodlWalletDatDeps(), creationTime), blob = new Blob([bytes], { type: "application/octet-stream" }), url = URL.createObjectURL(blob), link = document.createElement("a");
+  // The secrets variant follows the material, not the toggle alone (#366).
+  let withSecrets = hodlRevealPrivate && hodlWalletExport.hasPrivateDescriptors(hodlWalletResult);
+  let bytes = hodlWalletExport.buildWalletDat(hodlWalletResult, withSecrets, hodlWalletDatDeps(), creationTime), blob = new Blob([bytes], { type: "application/octet-stream" }), url = URL.createObjectURL(blob), link = document.createElement("a");
   link.href = url;
-  link.download = hodlWalletExport.walletDatFilename(hodlWalletResult, hodlRevealPrivate);
+  link.download = hodlWalletExport.walletDatFilename(hodlWalletResult, withSecrets);
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1e3);
 }
@@ -1531,7 +1574,7 @@ var hodlRecoverySheetText = function(wallet, revealPrivate) {
     }
     if (wallet.entropyHex) lines.push("", "BIP39 ENTROPY HEX", wallet.entropyHex);
     if (wallet.seedHex) lines.push("", "MASTER SEED HEX (BIP39 PBKDF2, 512 bits)", wallet.seedHex);
-    if (wallet.rootXprv) lines.push("", `BIP32 ROOT ${(wallet.rootPrivateLabel || hodlExtendedKeyVersions[wallet.network].x.prvName).toUpperCase()}`, wallet.rootXprv);
+    if (wallet.rootXprv) lines.push("", `BIP32 ROOT ${(wallet.rootPrivateLabel || hodlExtendedKeyVersions[hodlNetworkFamily(wallet.network)].x.prvName).toUpperCase()}`, wallet.rootXprv);
     if (wallet.importedPrivateKey) lines.push("", `IMPORTED ${(wallet.importedPrivateLabel || "EXTENDED PRIVATE KEY").toUpperCase()}`, wallet.importedPrivateKey);
     for (let account of wallet.accounts) {
       if (!hodlAccountHasPrivate(account)) continue;
@@ -1551,7 +1594,7 @@ var hodlRecoverySheetText = function(wallet, revealPrivate) {
   if (wallet.masterFingerprint) lines.push(`Master fingerprint: ${wallet.masterFingerprint}`);
   if (wallet.parentFingerprint && !wallet.masterFingerprint) lines.push(`Encoded parent fingerprint (not a master fingerprint): ${wallet.parentFingerprint}`);
   if (wallet.nodeFingerprint && !wallet.masterFingerprint) lines.push(`Imported key fingerprint (not a master fingerprint): ${wallet.nodeFingerprint}`);
-  if (wallet.rootXpub) lines.push(`BIP32 root ${(wallet.rootPublicLabel || hodlExtendedKeyVersions[wallet.network].x.pubName).toUpperCase()}: ${wallet.rootXpub}`);
+  if (wallet.rootXpub) lines.push(`BIP32 root ${(wallet.rootPublicLabel || hodlExtendedKeyVersions[hodlNetworkFamily(wallet.network)].x.pubName).toUpperCase()}: ${wallet.rootXpub}`);
   if (wallet.multisigCosignerExports?.length) {
     lines.push("", "MULTISIG CO-SIGNER EXPORTS", "Paste one complete value into a co-signer input. Legacy offers BIP45 without accounts and BIP87 with standardized accounts; use the same standard and account policy for every co-signer.");
     for (let item of wallet.multisigCosignerExports) lines.push(`${item.label} (${item.prefix}): ${item.value}`);
@@ -2419,17 +2462,20 @@ function hodlAnalyzeDiceInput(value, method = hodlDiceMethod, targetWords = hodl
       index = end;
       continue;
     }
-    let isDie = normalized >= "1" && normalized <= "6", isCoin = normalized === "h" || normalized === "t", valid = false;
+    let isDie = normalized >= "1" && normalized <= "6", valid = false;
     if (method === "coldcard" || method === "coleman") {
       valid = isDie && !coinPositionSet.has(index);
       if (valid) acceptedRolls.push(normalized);
     } else if (words < config.partialWords) {
+      // BitBox: the sixth roll is the coin by die face (1–3 heads, 4–6 tails).
+      // h/t are not accepted — the derivation parser (hodlBitBoxRolls) and the
+      // input sanitizer both keep digits only, so the analyzer must agree.
       if (diceInWord < 5) {
         if (isDie && Number(normalized) <= 4) {
           valid = true;
           diceInWord += 1;
         }
-      } else if (isDie || isCoin) {
+      } else if (isDie) {
         valid = true;
         words += 1;
         diceInWord = 0;
@@ -3872,7 +3918,7 @@ function hodlSyncBrainOutput() {
     hex.className = "muted";
     return;
   }
-  let entropy = hodlBrainLabEntropy(hodlBrainWalletText(input.value));
+  let entropy = hodlBrainLabEntropy(hodlBrainWalletText(input.value), hodlBrainWalletTrimEnabled());
   hex.textContent = entropy.ok ? hodlTText("SHA-256 {hex} · 24 words appear only after {derive}.", { hex: entropy.hex, derive: hodlTText("Derive Key") }) : hodlFormatNote(entropy.error);
   hex.className = "muted" + (entropy.ok ? " ok" : " err");
 }
@@ -4599,8 +4645,13 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
     }
     let kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value || "wif", value);
     if (kind === "hex-key") {
+      // An over-long key is invalid, not truncated: publishing its first 64
+      // characters would mirror a key the source field itself rejects, while
+      // every other source publishes nothing when invalid.
+      let digits = value.replace(/\s/g, "").replace(/^0x/i, "");
+      if (digits.length > 64) return null;
       let bits = "";
-      for (let digit of value.replace(/\s/g, "").replace(/^0x/i, "").slice(0, 64)) {
+      for (let digit of digits) {
         if (!/^[0-9a-fA-F]$/.test(digit)) break;
         bits += Number.parseInt(digit, 16).toString(2).padStart(4, "0");
       }
@@ -5736,11 +5787,13 @@ function hodlBindKeyFields() {
     document.getElementById("network")?.addEventListener("change", apply);
     let trim = document.getElementById("brain-wallet-trim");
     if (trim) trim.onchange = () => {
+      // Trimming changes the hashed bytes, so it changes the wallet: retract
+      // the displayed result and re-sync the mirrored representations, like
+      // every other entropy-affecting control.
       if (state) state.brainWalletTrim = trim.checked;
-      hodlSyncBrainOutput();
-      hodlRenderPrivateKeyInputState(key);
-      hodlSyncKeyClearButton();
-      hodlSyncDeriveButton();
+      hodlInvalidateLiveKeyResult();
+      hodlGlobalSyncFromCurrentInput();
+      refreshBrain();
     };
     apply();
   }
@@ -6032,7 +6085,13 @@ async function hodlCalculateKey(progress) {
   // recovery export.
   hodlWalletDatBirthday = "genesis";
   try {
-    let derivationPlan = hodlKeyMode === "key" && !hodlBrainHdActive() ? null : hodlReadDerivationPlan(), coinType = derivationPlan?.coinType ?? hodlReadCoinType(document.getElementById("network")), network = derivationPlan?.network ?? hodlNetworkFromCoinType(coinType), addressWindow = hodlKeyMode === "key" ? { start: 0, range: 1 } : hodlReadAddressWindow(), branchWindow = hodlKeyMode === "key" ? { start: 0, range: 2 } : hodlReadBranchWindow(), count = addressWindow.range, addressStart = addressWindow.start, branchStart = branchWindow.start, branchRange = branchWindow.range, passphrase = document.getElementById("pass").value, scriptType = hodlSelectedScriptType(), purpose = derivationPlan?.purpose ?? 84, account = derivationPlan?.accountIndex ?? 0, hardening = derivationPlan?.hardening ?? hodlDefaultHardening();
+    // `network` is the encoding family the tool fields settled on (from the
+    // coin type); `chain` is the picker's chain identity when it belongs to
+    // the same family, so a signet/regtest selection survives into the wallet
+    // result and its wallet.dat export (issue #329). A tool override that
+    // switches family (e.g. coin type 0' under a signet picker) drops the
+    // picker chain with it.
+    let derivationPlan = hodlKeyMode === "key" && !hodlBrainHdActive() ? null : hodlReadDerivationPlan(), coinType = derivationPlan?.coinType ?? hodlReadCoinType(document.getElementById("network")), network = derivationPlan?.network ?? hodlNetworkFromCoinType(coinType), chain = hodlNetworkFamily(hodlNetworkChoice) === network ? hodlNetworkChoice : network, addressWindow = hodlKeyMode === "key" ? { start: 0, range: 1 } : hodlReadAddressWindow(), branchWindow = hodlKeyMode === "key" ? { start: 0, range: 2 } : hodlReadBranchWindow(), count = addressWindow.range, addressStart = addressWindow.start, branchStart = branchWindow.start, branchRange = branchWindow.range, passphrase = document.getElementById("pass").value, scriptType = hodlSelectedScriptType(), purpose = derivationPlan?.purpose ?? 84, account = derivationPlan?.accountIndex ?? 0, hardening = derivationPlan?.hardening ?? hodlDefaultHardening();
     if ((hodlKeyMode !== "key" || hodlBrainHdActive()) && hodlPassphraseBip39Enabled() && passphrase) {
       let passphraseAnalysis = hodlAnalyzeBip39Passphrase(passphrase);
       if (passphraseAnalysis.invalidRanges.length || passphraseAnalysis.incomplete || passphraseAnalysis.trailingSeparator) throw hodlError("Correct the highlighted BIP39-word passphrase inconsistencies before deriving.");
@@ -6061,7 +6120,7 @@ async function hodlCalculateKey(progress) {
         hodlThrowIfFailed(validation);
         let notes = parsed.notes.slice();
         if (!rollsFinalWord) notes.push(`Selected checksum-valid final word: ${finalWord}.`);
-        hodlWalletResult = await hodlMnemonicWalletWithProgress(phrase, passphrase, network, count, {
+        hodlWalletResult = await hodlMnemonicWalletWithProgress(phrase, passphrase, chain, count, {
           notes,
           warnings: parsed.warnings
         }, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan)
@@ -6073,30 +6132,30 @@ async function hodlCalculateKey(progress) {
         if (!hodlPickedLastWord || !possible?.candidates.includes(hodlPickedLastWord)) throw hodlError("Choose one of the {n} valid final checksum words before deriving the wallet.", { n: hodlSeedConfig().candidates });
         let phrase = [...parsed.words, hodlPickedLastWord].join(" "), validation = hodlValidateTargetMnemonic(phrase, hodlTargetWordCount);
         hodlThrowIfFailed(validation);
-        hodlWalletResult = await hodlMnemonicWalletWithProgress(phrase, passphrase, network, count, { notes: parsed.notes, warnings: parsed.warnings }, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        hodlWalletResult = await hodlMnemonicWalletWithProgress(phrase, passphrase, chain, count, { notes: parsed.notes, warnings: parsed.warnings }, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
       } else {
         let diceValue = document.getElementById("dice").value;
         if (hodlAnalyzeDiceInput(diceValue, hodlDiceMethod, hodlTargetWordCount).coinDerivedCount) throw hodlError("Coin-button digits are entropy-equivalent only in BitBox mode. Clear them and enter fair die rolls for this conversion method.");
         let entropy = hodlDiceEntropy(diceValue, hodlDiceMethod, hodlTargetWordCount);
         hodlThrowIfFailed(entropy);
-        hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, network, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
       }
     } else if (hodlKeyMode === "cards") {
       let entropy = hodlSelectedCardsEntropy(hodlTargetWordCount);
       hodlThrowIfFailed(entropy);
-      hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, network, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
     } else if (hodlKeyMode === "hex") {
       let entropy = hodlSelectedEntropy();
       hodlThrowIfFailed(entropy);
-      hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, network, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
     } else if (hodlKeyMode === "seed") {
       let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
-      if (selected.extended) hodlWalletResult = await hodlImportedWalletWithProgress(value, network, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      if (selected.extended) hodlWalletResult = await hodlImportedWalletWithProgress(value, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
       else {
         if (hodlSeedMethod === "numbers" && !selected.parsed?.complete) throw selected.parsed?.invalidEntries.length ? hodlError("Word numbers must be between {min} and {max}.", { min: selected.parsed.minimum, max: selected.parsed.maximum }) : selected.parsed?.extraEntries.length ? hodlError("Enter exactly {words} BIP39 word numbers.", { words: hodlTargetWordCount }) : selected.parsed?.checksumInvalid ? hodlError("The entered word numbers do not have a valid BIP39 checksum.") : hodlError("Enter exactly {words} BIP39 word numbers before deriving the wallet.", { words: hodlTargetWordCount });
         let validation = hodlValidateTargetMnemonic(value, hodlTargetWordCount);
         hodlThrowIfFailed(validation);
-        hodlWalletResult = await hodlMnemonicWalletWithProgress(validation.words.join(" "), passphrase, network, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        hodlWalletResult = await hodlMnemonicWalletWithProgress(validation.words.join(" "), passphrase, chain, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
       }
     } else {
       let value = document.getElementById("key").value, kind = hodlNormalizePrivateKeyKind(document.querySelector("input[name=kk]:checked")?.value, value);
@@ -6105,21 +6164,21 @@ async function hodlCalculateKey(progress) {
         // The digest becomes BIP39 entropy rather than the private key itself,
         // which is a different wallet from the same text.
         if (passphrase && document.getElementById("passphrase-field")?.hidden) throw hodlError("A passphrase is set but not visible for this output. Show it and confirm it, or clear it, before deriving.");
-        let entropy = hodlBrainLabEntropy(hodlBrainWalletPassphrase(value, hodlBrainWalletTrimEnabled()));
+        let entropy = hodlBrainLabEntropy(hodlBrainWalletPassphrase(value, hodlBrainWalletTrimEnabled()), hodlBrainWalletTrimEnabled());
         hodlThrowIfFailed(entropy);
-        hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, network, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
       } else {
         let trimBrainWallet = hodlBrainWalletTrimEnabled();
-        hodlAssertPrivateKeyKind(value, network, kind, trimBrainWallet);
+        hodlAssertPrivateKeyKind(value, chain, kind, trimBrainWallet);
         progress.setTotal(1);
-        hodlWalletResult = hodlSingleKeyWallet(value, network, kind, trimBrainWallet);
+        hodlWalletResult = hodlSingleKeyWallet(value, chain, kind, trimBrainWallet);
         progress.step();
       }
       // Mark brain-derived results so a revoked acknowledgement can retract
       // them from every key slot, not just the lab that produced them.
       if (kind === "brain") hodlWalletResult.brainWalletOutput = hodlBrainWalletOutput();
     }
-    if (hodlWalletResult?.network !== network) throw hodlError("The supplied key is for {have}, but Network is set to {want}.", { have: hodlWalletResult.network, want: network });
+    if (hodlNetworkFamily(hodlWalletResult?.network) !== hodlNetworkFamily(chain)) throw hodlError("The supplied key is for {have}, but Network is set to {want}.", { have: hodlWalletResult.network, want: chain });
     hodlRevealPrivate = false;
     hodlSetSelectedScriptType(scriptType);
     hodlCaptureKey();
@@ -6175,9 +6234,9 @@ function hodlAssertPrivateKeyKind(value, network, kind, trimBrainWallet = false)
   try {
     decoded = hodlDecodeWif(candidate);
   } catch {
-    throw hodlError("Enter a valid {network} WIF private key ({hint}).", { network, hint: network === "testnet" ? "9\u2026 or c\u2026" : "5\u2026, K\u2026, or L\u2026" });
+    throw hodlError("Enter a valid {network} WIF private key ({hint}).", { network, hint: hodlNetworkFamily(network) === "testnet" ? "9\u2026 or c\u2026" : "5\u2026, K\u2026, or L\u2026" });
   }
-  if (decoded.network !== network) throw hodlError("This WIF is for {have}; Network is set to {want}.", { have: decoded.network, want: network });
+  if (decoded.network !== hodlNetworkFamily(network)) throw hodlError("This WIF is for {have}; Network is set to {want}.", { have: decoded.network, want: network });
   hodlAssertPrivateKey(decoded.priv);
   return candidate;
 }
@@ -7917,6 +7976,7 @@ function hodlTx(bytes) {
     if (message.includes("trailing")) throw new Error("Unsigned transaction contains trailing bytes.");
     if (message.includes("too many inputs")) throw new Error("Unsigned transaction has too many inputs.");
     if (message.includes("too many outputs")) throw new Error("Unsigned transaction has too many outputs.");
+    if (message.includes("too large to expand")) throw new Error("Unsigned transaction is too large to expand for inspection.");
     throw new Error("Unsigned transaction ended early.");
   }
   for (const input of tx.inputs) {
@@ -7936,7 +7996,7 @@ function hodlParsePsbt(bytes) {
   offset = globalMap.next;
   let versionEntry = globalMap.entries.find((entry) => entry.type === 251 && entry.keydata.length === 0);
   if (versionEntry) {
-    if (versionEntry.val.length !== 4 || hodlR32(versionEntry.val, 0) !== 0) throw new Error("EntropyLab currently supports PSBT v0 only.");
+    if (versionEntry.val.length !== 4 || hodlR32(versionEntry.val, 0) !== 0) throw new Error("This inspector reads PSBT v0. PSBT v2 (BIP-370) files open in the PSBT editor tab.");
   }
   let unsignedEntries = globalMap.entries.filter((entry) => entry.type === 0 && entry.keydata.length === 0);
   if (unsignedEntries.length !== 1) throw new Error("This PSBT must contain exactly one unsigned transaction.");
@@ -7982,6 +8042,21 @@ function hodlWitUtxo(entries) {
   if (scriptStart + scriptLength !== entry.val.length) throw new Error("A witness UTXO contains trailing bytes.");
   return { amount, script: entry.val.slice(scriptStart) };
 }
+// PSBT_IN_NON_WITNESS_UTXO (0x00): the full previous transaction. Unlike a
+// witness claim, this one is checkable — the embedded transaction's txid must
+// equal the input's referenced prevout and the amount is read from that
+// transaction's own output, so a lied amount cannot survive (issue #350).
+// `input` is the inspector's parsed input (wire-order txid bytes, vout).
+function hodlNonWitUtxo(entries, input) {
+  let entry = hodlFind(entries, 0).find((item) => item.keydata.length === 0);
+  if (!entry) return null;
+  let prev = parseRawTx(entry.val);
+  let txid = hodlSha256(hodlSha256(entry.val));
+  if (!hodlEq(txid, input.txid)) throw new Error("A non-witness UTXO's transaction does not match the input's previous output.");
+  let output = prev.outputs[input.vout];
+  if (!output) throw new Error("A non-witness UTXO's transaction does not contain the spent output.");
+  return { amount: output.amount, script: output.script };
+}
 function hodlPartialSigs(entries) {
   return hodlFind(entries, 2).map((entry) => {
     let signature = entry.val;
@@ -7989,8 +8064,11 @@ function hodlPartialSigs(entries) {
     return { pubkey: entry.keydata, der: signature.slice(0, -1), sighash: signature[signature.length - 1], raw: signature };
   });
 }
-function hodlTapSigs(entries) {
-  return hodlFind(entries, 19).concat(hodlFind(entries, 20));
+// Taproot signatures are analyzed parsed, not raw-counted: the sighash
+// suffix is part of the safety analysis and an unparseable Schnorr signature
+// is flagged, not silently counted (issue #333).
+function hodlTapSigsParsed(entries) {
+  return hodlTapKeySigs(entries, hodlFind).concat(hodlTapScriptSigs(entries, hodlFind));
 }
 // PSBT_IN_SIGHASH_TYPE (input type 0x03): empty keydata, four-byte
 // little-endian policy. It must be decoded before signing, and shown even
@@ -8006,18 +8084,26 @@ function hodlSighashLabel(policy) {
   let base = policy & 0x7f, baseName = base === 1 ? "SIGHASH_ALL" : base === 2 ? "SIGHASH_NONE" : base === 3 ? "SIGHASH_SINGLE" : "unknown 0x" + base.toString(16);
   return baseName + ((policy & 0x80) ? " | ANYONECANPAY" : "") + " (0x" + policy.toString(16) + ")";
 }
-// Exact SIGHASH_ALL is the only policy that commits to every displayed
-// output. Anything else, or a disagreement between the PSBT field and a
-// signature's appended byte, is blocking — no session key required.
+// Exact SIGHASH_ALL is the only policy that commits to every displayed input
+// and output. NONE/SINGLE (± ANYONECANPAY) drop output commitments and
+// ANYONECANPAY|ALL drops the other inputs; the warning names which side is
+// uncommitted (issue #333). A disagreement between the PSBT field and a
+// signature's appended byte is blocking too — no session key required.
 function hodlSighashProblems(declared, suffix) {
   let problems = [], tr = hodlT;
+  const commitment = (value) => {
+    let base = value & 0x7f;
+    if (base === 2 || base === 3) return tr("does not commit to all shown outputs");
+    if (base === 1) return tr("does not commit to all shown inputs");
+    return tr("is not a defined sighash policy");
+  };
   if (declared !== null && declared !== 1) {
-    let policy = hodlSighashLabel(declared);
-    problems.push(tr("The PSBT requests {policy}, which does not commit to all shown outputs.", { policy }));
+    let policy = hodlSighashLabel(declared), lacks = commitment(declared);
+    problems.push(tr("The PSBT requests {policy}, which {lacks}.", { policy, lacks }));
   }
   if (suffix !== null && suffix !== 1) {
-    let policy = hodlSighashLabel(suffix);
-    problems.push(tr("This signature uses {policy}, which does not commit to all shown outputs.", { policy }));
+    let policy = hodlSighashLabel(suffix), lacks = commitment(suffix);
+    problems.push(tr("This signature uses {policy}, which {lacks}.", { policy, lacks }));
   }
   if (declared !== null && suffix !== null && declared !== suffix) problems.push(tr("The PSBT-declared policy and the signature's appended sighash byte disagree."));
   return problems;
@@ -8210,18 +8296,28 @@ function hodlDerRLoose(der) {
 
 function hodlCompareNonces(rValues) {
   let reused = [],
-    possible = [];
+    possible = [],
+    crossKey = [];
   for (let first = 0; first < rValues.length; first++)
     for (let second = first + 1; second < rValues.length; second++) {
       let a = rValues[first],
         b = rValues[second];
-      if (!hodlEq(a.pubkey, b.pubkey) || !hodlEq(a.r, b.r)) continue;
+      if (!hodlEq(a.r, b.r)) continue;
+      // The claimed pubkey is attacker-controlled metadata for partial
+      // signatures: the same r under two different claimed keys must not
+      // silently skip the comparison — it is itself the red flag (issue
+      // #353). A verified signature's claimed key *is* the verified key.
+      if (!hodlEq(a.pubkey, b.pubkey)) {
+        crossKey.push([a, b]);
+        continue;
+      }
       if (a.valid && b.valid && a.sighash && b.sighash && !hodlEq(a.sighash, b.sighash)) reused.push([a, b]);
       else if (a.input !== b.input) possible.push([a, b]);
     }
   return {
     reused,
-    possible
+    possible,
+    crossKey
   }
 }
 
@@ -8533,11 +8629,14 @@ function hodlUseKeyForBip85(state) {
     } finally {
       hodlWipeBytes(seed);
     }
-    hodlBip85Testnet = false;
+    // The version bytes follow the session network on every load path: a
+    // testnet wallet must not yield mainnet-version children because it
+    // arrived as a mnemonic rather than a root xprv (issue #352).
+    hodlBip85Testnet = hodlNetworkFamily(result.network) === "testnet";
     hodlBip85Note = "Parent: " + (state.name || "Key Station key") + (result.passphraseUsed || (state.fields.pass || "").length ? " with BIP-39 passphrase (COLDCARD does the same \u2014 children differ without it)." : ".") + " Kept in page memory only.";
   } else if (result.kind === "hd" && result.rootXprv) {
     hodlBip85Root = hodlHDKey.fromExtendedKey(hodlParseExtendedKey(result.rootXprv).xkey);
-    hodlBip85Testnet = result.network === "testnet";
+    hodlBip85Testnet = hodlNetworkFamily(result.network) === "testnet";
     hodlBip85Note = "Parent: root xprv from " + (state.name || "Key Station key") + ". Kept in page memory only.";
   } else if (result.kind === "hd") throw new Error("This Key Station key is not a BIP32 root. Import the original seed or root xprv.");
   else throw new Error("BIP-85 needs an HD root. This Key Station key is a single private key.");
@@ -8719,6 +8818,7 @@ function hodlDeleteActiveBip85() {
   hodlActiveBip85 = Math.min(deletedIndex, hodlBip85Children.length - 1);
   hodlRenderBip85Tabs();
   hodlSyncBip85View();
+  hodlRefreshJournalKeyPicker();
   hodlJournalLog("station-delete", "child", "bip85");
   document.getElementById("bip85-tabs")?.children[hodlActiveBip85]?.focus();
 }
@@ -8753,6 +8853,7 @@ function hodlRunBip85() {
     if (session) session.textContent = hodlBip85Note;
     hodlRenderBip85Tabs();
     hodlSyncBip85View();
+    hodlRefreshJournalKeyPicker();
   } catch (exception) {
     wipeBip85Result(result);
     if (error) error.textContent = exception.message || String(exception);
@@ -9037,18 +9138,94 @@ function hodlRenderSpReceive() {
     try { hodlRenderSpReceive(); } catch (error) { document.getElementById("sp-error").textContent = error.message || String(error); }
   });
 }
+// Resolve every eligible vin's input key from the loaded SP session root —
+// never from a pasted scalar (issue #331). A vin may name its derivation
+// path explicitly ("path": "m/84'/1'/0'/0/5", plus an optional "fingerprint"
+// that must equal the session root's) or be resolved through the session
+// ownership index by its prevout script. Either way the derived key is
+// verified against the prevout script before use, and every derived node is
+// wiped after output construction.
+function hodlSpDeriveVinKeys(vins) {
+  hodlSpEnsureHd();
+  const root = hodlSpHd, network = hodlSpNetwork(), fingerprint = hodlFingerprintHex(root.fingerprint);
+  let index = null;
+  return vins.map((vin, i) => {
+    // The published BIP-352 vectors carry raw per-input scalars; the UI flow
+    // derives from the session instead. (The library function keeps vector
+    // support for the test suite.)
+    if (vin && typeof vin === "object" && "private_key" in vin) {
+      throw new Error(`Input ${i} carries a "private_key" field. The send flow derives each input's key from the loaded session — remove it (that field exists for the published BIP-352 test vectors).`);
+    }
+    // Only inputs of the eligible script types take part; anything else is
+    // skipped by the sender and needs no key.
+    const extracted = extractInputPubKey(vin);
+    if (!extracted) return vin;
+    if (vin.fingerprint !== undefined && String(vin.fingerprint).toLowerCase().replace(/^0x/, "") !== fingerprint) {
+      throw new Error(`Input ${i}: origin fingerprint ${vin.fingerprint} is not this session's ${fingerprint}.`);
+    }
+    let path = typeof vin.path === "string" && vin.path.trim() ? vin.path.trim() : null;
+    if (!path) {
+      if (!index) index = indexHdKey(root, network);
+      const hit = matchOwnership(index, vinPrevoutScript(vin));
+      if (hit.state !== "ours") {
+        throw new Error(`Input ${i}: the prevout script was not found under this session's keys. Add a "path" field (e.g. "m/84'/…") to name the input's derivation path.`);
+      }
+      path = hit.path;
+    }
+    if (!/^m(\/|$)/.test(path)) throw new Error(`Input ${i}: path must start at the session root ("m/…").`);
+    let node = null;
+    try {
+      node = root.derive(path);
+      if (!node.privateKey) throw new Error(`Input ${i}: path ${path} names a watch-only node.`);
+      // The derived key must actually produce the prevout script — the "lie"
+      // check, including the BIP-341 tweak for P2TR inputs.
+      const scriptBytes = vinPrevoutScript(vin);
+      const pubkey = node.publicKey;
+      let expected = null;
+      if (isP2pkh(scriptBytes)) expected = p2pkhScript(pubkey);
+      else if (isP2wpkh(scriptBytes)) expected = p2wpkhScript(pubkey);
+      else if (isP2sh(scriptBytes)) expected = p2shP2wpkhScript(pubkey);
+      else if (isP2tr(scriptBytes)) expected = p2trKeyScript(pubkey.slice(1));
+      if (expected && hodlSpBytesToHex(expected) !== hodlSpBytesToHex(scriptBytes)) {
+        throw new Error(`Input ${i}: the key derived at ${path} does not produce the prevout's scriptPubKey.`);
+      }
+      if (expected === null) throw new Error(`Input ${i}: unrecognized prevout script type.`);
+      // BIP-352 spends a taproot input with the key of its output key, so the
+      // P2TR case injects the BIP-341-tweaked scalar; anything less would
+      // produce outputs the recipient can never detect.
+      const privateKey = isP2tr(scriptBytes) ? taprootOutputPrivateKey(node.privateKey) : node.privateKey;
+      return { ...vin, private_key: hodlSpBytesToHex(privateKey) };
+    } finally {
+      if (node) node.wipePrivateData();
+    }
+  });
+}
 function hodlRenderSpSend() {
   let parsed = hodlSpParseRecipients(document.getElementById("sp-recipients")?.value);
   let recipients = parsed.recipients;
   let hrp = hodlSpHrp(hodlSpNetwork());
   for (const recipient of recipients) decodeSilentPaymentAddress(recipient.address, hrp);
-  let result = createSilentPaymentOutputs(hodlSpParseVins(document.getElementById("sp-send-vins")?.value), recipients, { hrp });
+  let result = createSilentPaymentOutputs(hodlSpDeriveVinKeys(hodlSpParseVins(document.getElementById("sp-send-vins")?.value)), recipients, { hrp });
   if (!result.outputs.length) {
     document.getElementById("sp-out").innerHTML = `<p class="psbt-warn">No silent payment outputs. Eligible inputs may be missing, the private-key sum may be zero, or a scan-key group exceeded K<sub>max</sub> = 2323.</p>`;
     return;
   }
   let network = hodlSpNetwork();
-  document.getElementById("sp-out").innerHTML = `<p class="psbt-ok">${result.outputs.length} unique taproot output${result.outputs.length === 1 ? "" : "s"}.</p>` + (parsed.lightning ? `<p class="muted">Lightning parameters in the URI were ignored. This page does not pay invoices or offers.</p>` : "") + result.outputs.map((xonly, index) => {
+  // A URI's payment intent is surfaced, never silently dropped (issues #321,
+  // #326): requested amounts are shown for the sender to enter manually —
+  // this page builds output scripts only — and a URI that offered several
+  // payment instructions says which one was selected.
+  let notes = "";
+  if (parsed.alternatives) notes += `<p class="psbt-warn">The URI offered ${parsed.alternatives} alternative payment instructions. The first silent-payment address was selected; the rest are not paid.</p>`;
+  parsed.recipients.forEach((recipient, index) => {
+    if (recipient.amountSats !== null) {
+      notes += `<p class="psbt-warn">The URI requested ${hodlSats(BigInt(recipient.amountSats))} BTC for recipient ${index + 1} (${hodlSpEscape(recipient.address.slice(0, 20))}…). This page builds output scripts only — enter the amount yourself when funding.</p>`;
+    }
+  });
+  // BIP352 keeps every generated output, duplicates included (issue #332);
+  // say so only when a repeat actually occurs.
+  const repeated = result.outputs.length - new Set(result.outputs).size;
+  document.getElementById("sp-out").innerHTML = `<p class="psbt-ok">${result.outputs.length} taproot output${result.outputs.length === 1 ? "" : "s"}.</p>` + (repeated ? `<p class="muted">${repeated} repeated output${repeated === 1 ? "" : "s"} kept on purpose: every generated BIP352 output belongs in the transaction.</p>` : "") + notes + (parsed.lightning ? `<p class="muted">Lightning parameters in the URI were ignored. This page does not pay invoices or offers.</p>` : "") + result.outputs.map((xonly, index) => {
     let address = p2trAddressFromXonly(xonly, network);
     return `<div class="sp-output"><p class="label">Output ${index + 1}</p><p class="psbt-kv" id="sp-out-addr-${index}">${hodlSpEscape(address)}</p><p class="psbt-kv" id="sp-out-xonly-${index}">${hodlSpEscape(xonly)}</p>${hodlSpCopyButton(`sp-out-addr-${index}`, "Copy P2TR")}</div>`;
   }).join("");
@@ -9332,6 +9509,7 @@ function hodlRenderPsbt(psbt) {
     tx = psbt.tx,
     inputSum = 0n,
     knownInputs = 0,
+    conflictedInputs = [],
     html = [],
     rValues = [],
     rows = [],
@@ -9340,10 +9518,14 @@ function hodlRenderPsbt(psbt) {
     uninspected = 0,
     policyProblems = 0,
     policyIncomplete = 0,
-    unsupportedNonceChecks = 0;
+    unsupportedNonceChecks = 0,
+    feeInconsistent = 0;
   let inscriptionReport = { inputs: [], envelopes: [] }, inscriptionScanIncomplete = false;
   try {
     inscriptionReport = inspectPsbtInscriptions(psbt);
+    // Malformed witnesses and truncated scripts are coverage gaps: the
+    // summary must not claim a completed inscription scan over them.
+    if (inscriptionReport.incomplete) inscriptionScanIncomplete = true;
   } catch {
     inscriptionReport = { inputs: [], envelopes: [] };
     inscriptionScanIncomplete = true;
@@ -9361,10 +9543,26 @@ function hodlRenderPsbt(psbt) {
   html.push(hodlOwnershipWarning(tx.outputs, network, ownershipMap));
   psbt.inputs.forEach((entries, index) => {
     let witnessUtxo = hodlWitUtxo(entries);
-    if (witnessUtxo) {
-      inputSum += witnessUtxo.amount;
-      knownInputs++;
+    // The non-witness UTXO is the checkable claim: it embeds the previous
+    // transaction, so its txid must match the input's outpoint (issue #350).
+    let nonWitnessUtxo = null, nonWitnessError = "";
+    try {
+      nonWitnessUtxo = hodlNonWitUtxo(entries, tx.inputs[index]);
+    } catch (exception) {
+      nonWitnessError = exception.message || String(exception);
     }
+    // Resolve all declarations as a set: agreeing claims count once,
+    // disagreeing claims count as nothing and are flagged, and the verified
+    // non-witness amount is preferred for display when both agree.
+    let claim = null, claimConflict = false;
+    if (witnessUtxo && nonWitnessUtxo) {
+      if (witnessUtxo.amount === nonWitnessUtxo.amount) claim = nonWitnessUtxo;
+      else claimConflict = true;
+    } else claim = witnessUtxo || nonWitnessUtxo;
+    if (claim) {
+      inputSum += claim.amount;
+      knownInputs++;
+    } else if (claimConflict) conflictedInputs.push(index);
     let declaredSighash = null, declaredSighashError = "";
     try {
       declaredSighash = hodlSighashPolicy(entries);
@@ -9372,7 +9570,7 @@ function hodlRenderPsbt(psbt) {
       declaredSighashError = exception.message || String(exception);
     }
     let declaredLabel = declaredSighashError ? "" : declaredSighash === null ? "SIGHASH_ALL (default)" : hodlSighashLabel(declaredSighash);
-    let previous = tx.inputs[index], destination = witnessUtxo ? hodlAddr(witnessUtxo.script, network) : "(previous output details unavailable)", signatures = hodlPartialSigs(entries), tapSignatures = hodlTapSigs(entries), finalized = hodlFinalized(entries);
+    let previous = tx.inputs[index], destination = claim ? hodlAddr(claim.script, network) : "(previous output details unavailable)", signatures = hodlPartialSigs(entries), tapSignatures = hodlTapSigsParsed(entries), finalized = hodlFinalized(entries), taprootish = entries.some((entry) => entry.type >= 0x13 && entry.type <= 0x18);
     if (finalized) {
       // Finalized signatures moved into the final script fields must not
       // escape repeated-nonce analysis (issue #87).
@@ -9385,7 +9583,9 @@ function hodlRenderPsbt(psbt) {
       uninspected += finalMaterial.uninspected + (finalMaterial.malformed ? 1 : 0);
     }
     tapSignatureCount += tapSignatures.length;
-    html.push("<p class='psbt-kv'><strong>Input " + index + "</strong> \xB7 " + hodlHexRev(previous.txid) + " : " + previous.vout + (witnessUtxo ? " \xB7 " + hodlSats(witnessUtxo.amount) + " BTC claimed" : "") + "<br>" + hodlEscapeHtml(destination) + "<br>" + (signatures.length + tapSignatures.length ? signatures.length + tapSignatures.length + " signature(s) present" : finalized ? "Finalized input data present" : "Not signed yet") + (declaredSighashError ? "<br>Declared sighash policy unreadable: " + hodlEscapeHtml(declaredSighashError) : "<br>Signature policy: " + hodlEscapeHtml(declaredLabel)) + "</p>");
+    html.push("<p class='psbt-kv'><strong>Input " + index + "</strong> \xB7 " + hodlHexRev(previous.txid) + " : " + previous.vout + (claim ? " \xB7 " + hodlSats(claim.amount) + " BTC claimed" : "") + "<br>" + hodlEscapeHtml(destination) + "<br>" + (signatures.length + tapSignatures.length ? signatures.length + tapSignatures.length + " signature(s) present" : finalized ? "Finalized input data present" : "Not signed yet") + (declaredSighashError ? "<br>Declared sighash policy unreadable: " + hodlEscapeHtml(declaredSighashError) : "<br>Signature policy: " + hodlEscapeHtml(declaredLabel)) + "</p>");
+    if (claimConflict) html.push("<p class='psbt-bad'><strong>Conflicting previous-output claims:</strong> input " + index + " declares " + hodlSats(witnessUtxo.amount) + " BTC in its witness UTXO but " + hodlSats(nonWitnessUtxo.amount) + " BTC in its non-witness UTXO (checked against the embedded previous transaction). Neither amount is trusted and the fee is left unknown.</p>");
+    if (nonWitnessError) html.push("<p class='psbt-bad'><strong>Non-witness UTXO problem:</strong> input " + index + ": " + hodlEscapeHtml(nonWitnessError) + " That field claims nothing.</p>");
     let inputEnvelopes = (inscriptionReport.inputs[index] && inscriptionReport.inputs[index].envelopes) || [];
     inputEnvelopes.forEach((envelope) => {
       let className = envelope.unrecognizedEven || envelope.bodyBytes > 100000 ? "psbt-bad" : "psbt-warn";
@@ -9394,10 +9594,30 @@ function hodlRenderPsbt(psbt) {
     if (declaredSighashError) {
       policyProblems++;
       html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + " declares a malformed sighash policy. Do not sign until its policy is known.</p>");
-    } else if (declaredSighash !== null && declaredSighash !== 1) {
+    } else if (declaredSighash !== null && declaredSighash !== 1 && !(taprootish && declaredSighash === 0)) {
+      // SIGHASH_DEFAULT (0) is Taproot's full-commitment policy, so only
+      // ECDSA inputs treat 0 as undefined. The warning names which commitment
+      // side is missing (issue #333).
       policyProblems++;
-      html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + " requests " + hodlEscapeHtml(declaredLabel) + "; that policy does not commit to all shown outputs. Do not accept the displayed outputs as what a signature will authorize.</p>");
+      let base = declaredSighash & 0x7f, lacks = base === 1 ? "does not commit to all shown inputs" : base >= 2 && base <= 3 ? "does not commit to all shown outputs" : "is not a defined sighash policy";
+      html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + " requests " + hodlEscapeHtml(declaredLabel) + "; that policy " + hodlEscapeHtml(lacks) + ". Do not accept the displayed outputs as what a signature will authorize.</p>");
     }
+    // Every Schnorr signature's sighash suffix joins the safety analysis; one
+    // that does not parse under BIP341 (64 bytes, or 65 with a defined
+    // sighash byte) is a policy problem, not a countable signature.
+    tapSignatures.forEach((tapSig) => {
+      if (!tapSig.r) {
+        uninspected += 1;
+        policyIncomplete += 1;
+        policyProblems++;
+        html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + " carries a Schnorr signature that is not valid under BIP341 (64 bytes, or 65 with a defined sighash byte). Do not sign until its policy is known.</p>");
+        return;
+      }
+      hodlTapSighashProblems(declaredSighash, tapSig.sighash, hodlSighashLabel).forEach((problem) => {
+        policyProblems++;
+        html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + ": " + hodlEscapeHtml(problem) + " Do not sign until its policy is known.</p>");
+      });
+    });
     if (tapSignatures.length || (finalized && !signatures.length)) policyIncomplete++;
     signatures.forEach(signature => {
       let parts = hodlSigParts(signature.der),
@@ -9490,12 +9710,16 @@ function hodlRenderPsbt(psbt) {
       rows.push({ input: index, message, className, pubkey: hodlHex.encode(signature.pubkey) });
     });
   });
-  if (knownInputs === tx.inputs.length) {
+  if (conflictedInputs.length) html.push("<p class='psbt-bad'><strong>Fee unknown</strong> — input(s) " + conflictedInputs.join(", ") + " carry conflicting witness and non-witness UTXO amounts.</p>");
+  else if (knownInputs === tx.inputs.length) {
     let outputSum = tx.outputs.reduce((sum, output) => sum + output.amount, 0n), fee = inputSum - outputSum;
-    if (fee >= 0n) html.push("<p class='psbt-kv'><strong>Unverified fee (PSBT witness UTXO claims)</strong> \xB7 " + hodlSats(fee) + " BTC</p>");
-    else html.push("<p class='psbt-bad'><strong>Inconsistent claimed amounts:</strong> outputs exceed claimed inputs by " + hodlSats(-fee) + " BTC.</p>");
-  } else html.push("<p class='muted'>Fee unknown — some inputs do not include a claimed witness UTXO amount.</p>");
-  html.push("<p class='muted'>Input amounts and any fee are unverified PSBT claims. This tool does not check them against previous transactions or the blockchain.</p>");
+    if (fee >= 0n) html.push("<p class='psbt-kv'><strong>Unverified fee (PSBT previous-output claims)</strong> \xB7 " + hodlSats(fee) + " BTC</p>");
+    else {
+      feeInconsistent = 1;
+      html.push("<p class='psbt-bad'><strong>Inconsistent claimed amounts:</strong> outputs exceed claimed inputs by " + hodlSats(-fee) + " BTC.</p>");
+    }
+  } else html.push("<p class='muted'>Fee unknown — some inputs do not include a claimed previous-output amount.</p>");
+  html.push("<p class='muted'>Witness-UTXO amounts are unverified PSBT claims; non-witness UTXO amounts are cross-checked against the embedded previous transaction. Neither is checked against the blockchain.</p>");
   if (inscriptionReport.envelopes.length) {
     html.push("<p class='psbt-warn'><strong>" + inscriptionReport.envelopes.length + " inscription envelope" + (inscriptionReport.envelopes.length === 1 ? "" : "s") + " in this PSBT.</strong> This is what the file reveals in witness or tap-leaf scripts. EntropyLab does not number sats, fetch content from the chain, or render binary payloads.</p>");
   }
@@ -9503,26 +9727,30 @@ function hodlRenderPsbt(psbt) {
   if (transcriptError) html.push("<p class='psbt-warn'><strong>Jade anti-exfil transcript not used:</strong> " + hodlEscapeHtml(transcriptError) + "</p>");
   let {
     reused,
-    possible
+    possible,
+    crossKey
   } = hodlCompareNonces(rValues);
   if (reused.length) html.push("<p class='psbt-bad'><strong>Reused nonce detected for the same public key.</strong> The same r value appears on different message digests. If both signatures are valid, the private key can be recovered. Do not broadcast this transaction.</p>");
   else if (possible.length) html.push("<p class='psbt-warn'><strong>Possible repeated nonce for the same public key.</strong> The message digests could not both be reconstructed, so verify these signatures independently before treating this as a key leak.</p>");
+  if (crossKey.length) html.push("<p class='psbt-bad'><strong>Same r value claimed under different public keys.</strong> " + crossKey.length + " pair(s) share an r value but name different keys — a mislabeled signature field can hide real nonce reuse this way. Verify every signature against its input's key independently before signing or broadcasting.</p>");
   else if (uninspected) html.push("<p class='psbt-warn'><strong>Incomplete nonce coverage.</strong> Some ECDSA signatures could not be inspected, so this is not a clean verdict.</p>");
   else if (rValues.length >= 2) html.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this PSBT.</p>");
   else if (rValues.length === 1) html.push("<p class='muted'>Only one ECDSA signature with a readable r is present. Nonce reuse cannot be judged from this file alone.</p>");
   else html.push("<p class='muted'>No ECDSA signatures with a readable r value are present, so there is no nonce to compare yet.</p>");
   if (rValues.length) html.push("<p class='psbt-kv'>r values:<br>" + rValues.map(value => hodlEscapeHtml(value.hex) + " (input " + value.input + ")").join("<br>") + "</p>");
   rows.forEach(row => html.push("<p class='" + row.className + "'><strong>Input " + row.input + "</strong> pubkey " + hodlEscapeHtml(row.pubkey.slice(0, 18)) + "\u2026 \u2014 " + hodlEscapeHtml(row.message) + "</p>"));
-  if (tapSignatureCount) html.push("<p class='muted'>This PSBT also contains " + tapSignatureCount + " Taproot / Schnorr signature(s). They are counted but their BIP340 nonces are not analyzed in this version.</p>");
-  html.push("<p class='muted'>RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding. Jade anti-exfil is secp256k1-zkp sign-to-contract and needs the USB host nonce plus signer opening; QR / sign_psbt Jade does not run it yet. BitBox anti-klepto is a different construction. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0\u20132, 50 receive + 50 change, all four script types. It does not talk to the chain.</p>");
-  let nonceIncomplete = uninspected || tapSignatureCount || unsupportedNonceChecks || rValues.length < 2;
+  if (tapSignatureCount) html.push("<p class='muted'>This PSBT also contains " + tapSignatureCount + " Taproot / Schnorr signature(s). Their sighash policies are checked above; their BIP340 nonces are not analyzed in this version.</p>");
+  html.push("<p class='muted'>RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding. Jade anti-exfil is secp256k1-zkp sign-to-contract and needs the USB host nonce plus signer opening; QR / sign_psbt Jade does not run it yet. BitBox anti-klepto is a different construction. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER; the same r value claimed under two different public keys is flagged as a mislabeled field rather than skipped. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0\u20132, 50 receive + 50 change, all four script types. It does not talk to the chain.</p>");
+  let nonceIncomplete = uninspected || tapSignatureCount || unsupportedNonceChecks || crossKey.length || rValues.length < 2;
   let checks = [
     {
       label: "Previous outputs and fee",
-      state: "incomplete",
-      detail: knownInputs === tx.inputs.length
-        ? "Amounts and fee were calculated from PSBT-provided witness UTXO claims, but those claims were not checked against previous transactions or the blockchain."
-        : "One or more inputs have no witness UTXO amount, and available PSBT claims were not checked against previous transactions or the blockchain.",
+      state: feeInconsistent ? "problem" : "incomplete",
+      detail: feeInconsistent
+        ? "The claimed output amounts exceed the claimed input amounts, so the PSBT's own claims are inconsistent; claims were not checked against previous transactions or the blockchain."
+        : knownInputs === tx.inputs.length
+          ? "Amounts and fee were calculated from PSBT-provided witness UTXO claims, but those claims were not checked against previous transactions or the blockchain."
+          : "One or more inputs have no witness UTXO amount, and available PSBT claims were not checked against previous transactions or the blockchain.",
     },
     {
       label: "SIGHASH policy",
@@ -9590,8 +9818,9 @@ function hodlRenderRawTx(tx) {
       valid: null
     });
   });
-  let { reused, possible } = hodlCompareNonces(rValues);
+  let { reused, possible, crossKey } = hodlCompareNonces(rValues);
   if (reused.length || possible.length) html.push("<p class='psbt-bad'><strong>Repeated nonce r for the same public key.</strong> Message digests cannot be rebuilt from a raw transaction without prevouts, so treat this as a warning and do not broadcast until the signatures are checked independently.</p>");
+  if (crossKey.length) html.push("<p class='psbt-warn'><strong>Same r value claimed under different public keys.</strong> A key association in a raw transaction is read from the script, not verified; verify these signatures independently before broadcast.</p>");
   else if (uninspected) html.push("<p class='psbt-warn'><strong>Incomplete nonce coverage.</strong> Some ECDSA signatures could not be inspected.</p>");
   else if (rValues.length >= 2) html.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this transaction.</p>");
   else if (rValues.length === 1) html.push("<p class='muted'>Only one ECDSA signature with a readable r is present. Nonce reuse cannot be judged from this file alone.</p>");
@@ -11266,8 +11495,9 @@ function hodlJournalRenderVisual(field = document.getElementById("journal-notes-
       render.appendChild(document.createTextNode(run.text));
       continue;
     }
-    let reference = document.createElement("span"), slot = document.createElement("span"), image = document.createElement("img"), end = document.createElement("span");
-    reference.className = "journal-inline-key";
+    let reference = document.createElement("span"), slot = document.createElement("span"), image = document.createElement("img");
+    let isBip85 = run.source === "bip85";
+    reference.className = "journal-inline-key" + (isBip85 ? " journal-inline-bip85" : "");
     let repeatedFingerprint = run.name.trim().toLowerCase() === run.fingerprint;
     reference.title = repeatedFingerprint ? run.fingerprint : `${run.name} · ${run.fingerprint}`;
     slot.className = "journal-inline-key-lifehash-slot";
@@ -11278,9 +11508,7 @@ function hodlJournalRenderVisual(field = document.getElementById("journal-notes-
     image.alt = "";
     image.hidden = true;
     slot.appendChild(image);
-    end.className = "journal-inline-key-end";
-    end.textContent = "◆";
-    reference.append(slot, document.createTextNode(repeatedFingerprint ? ` [${run.fingerprint}] ` : ` ${run.name} [${run.fingerprint}] `), end);
+    reference.append(slot, document.createTextNode(repeatedFingerprint ? ` [${run.fingerprint}]` : ` ${run.name} [${run.fingerprint}]`));
     render.appendChild(reference);
     hodlFillKeyTabLifehash(image, run.fingerprint);
   }
@@ -11299,6 +11527,10 @@ function hodlJournalRevealCopyButton(button, delay = 1100) {
   clearTimeout(button.hodlJournalHideTimer);
   button.classList.add("is-visible");
   button.hodlJournalHideTimer = setTimeout(() => button.classList.remove("is-visible"), delay);
+}
+function hodlJournalRememberKeyInsertion(select, field) {
+  if (!select || !field) return;
+  select.hodlJournalInsertionRange = { start: field.selectionStart, end: field.selectionEnd };
 }
 function hodlJournalActivePageStyle() {
   let page = hodlJournalActivePage();
@@ -11646,13 +11878,15 @@ function hodlShowJournalTool(id, focus = false) {
 function hodlRefreshJournalKeyPicker() {
   let select = document.getElementById("journal-key-insert");
   if (!select) return;
-  let placeholder = document.createElement("option"), keys = (hodlKeys || []).filter((state) => !state.isLab && /^[0-9a-f]{8}$/i.test(state.result?.masterFingerprint || ""));
+  let placeholder = document.createElement("option");
+  let keys = (hodlKeys || []).filter((state) => !state.isLab && /^[0-9a-f]{8}$/i.test(state.result?.masterFingerprint || ""));
+  let bip85Keys = (hodlBip85Children || []).filter((state) => !state.isLab && /^[0-9a-f]{8}$/i.test(state.fingerprint || ""));
   placeholder.value = "";
   placeholder.textContent = "Insert key";
   placeholder.selected = true;
   placeholder.dataset.customSelectPlaceholder = "true";
   select.replaceChildren(placeholder);
-  if (!keys.length) {
+  if (!keys.length && !bip85Keys.length) {
     let empty = document.createElement("option");
     empty.value = "";
     empty.textContent = "No derived keys yet";
@@ -11660,11 +11894,21 @@ function hodlRefreshJournalKeyPicker() {
     select.appendChild(empty);
   } else keys.forEach((state) => {
     let option = document.createElement("option"), fingerprint = state.result.masterFingerprint.toLowerCase();
-    option.value = String(state.id);
+    option.value = `key:${state.id}`;
     let keyName = state.name || `Key ${state.number}`;
     option.textContent = keyName.trim().toLowerCase() === fingerprint ? fingerprint : `${keyName} · ${fingerprint}`;
     option.dataset.keyName = keyName;
     option.dataset.fingerprint = fingerprint;
+    select.appendChild(option);
+  });
+  bip85Keys.forEach((state) => {
+    let option = document.createElement("option"), fingerprint = state.fingerprint.toLowerCase(), app = state.result.app;
+    option.value = `bip85:${state.id}`;
+    option.textContent = `BIP-85 · ${hodlBip85AppLabel(app)} · ${fingerprint}`;
+    option.dataset.keyName = `BIP-85 · ${hodlBip85AppLabel(app)}`;
+    option.dataset.fingerprint = fingerprint;
+    option.dataset.referenceKind = "bip85";
+    option.dataset.bip85App = app;
     select.appendChild(option);
   });
   select.entropylabOptionIcon = (value) => {
@@ -11676,6 +11920,7 @@ function hodlRefreshJournalKeyPicker() {
     image.height = 22;
     image.alt = "";
     image.hidden = true;
+    image.classList.toggle("is-bip85", option.dataset.referenceKind === "bip85");
     hodlFillKeyTabLifehash(image, option.dataset.fingerprint);
     return image;
   };
@@ -11685,10 +11930,16 @@ function hodlRefreshJournalKeyPicker() {
 function hodlJournalInsertKey(select, field) {
   let option = select?.selectedOptions?.[0], fingerprint = option?.dataset.fingerprint;
   if (!field || !fingerprint) return;
-  let token = hodlJournalKeyReferenceToken(option.dataset.keyName, fingerprint), start = field.selectionStart, end = field.selectionEnd;
+  let saved = select.hodlJournalInsertionRange;
+  delete select.hodlJournalInsertionRange;
+  let start = saved ? Math.min(saved.start, field.value.length) : field.selectionStart;
+  let end = saved ? Math.min(saved.end, field.value.length) : field.selectionEnd;
+  let token = option.dataset.referenceKind === "bip85"
+    ? hodlJournalBip85ReferenceToken(option.dataset.bip85App, fingerprint)
+    : hodlJournalKeyReferenceToken(option.dataset.keyName, fingerprint);
   let prefix = start > 0 && !/\s$/.test(field.value.slice(0, start)) ? " " : "";
-  let suffix = end < field.value.length && !/^\s/.test(field.value.slice(end)) ? " " : "";
-  field.setRangeText(prefix + token + suffix, start, end, "end");
+  while (end < field.value.length && /[ \t]/.test(field.value[end])) end++;
+  field.setRangeText(prefix + token + " ", start, end, "end");
   field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: token }));
   select.value = "";
   select.dispatchEvent(new Event("entropylab:sync-select"));
@@ -11734,13 +11985,16 @@ async function hodlJournalImportFile(file) {
       encryptedNotebook = true;
     }
     let imported = !encryptedNotebook && /\.txt$/i.test(file.name) ? hodlJournalFromPlainText(text) : hodlParseNotebook(text);
-    hodlJournal.pages = imported.pages;
-    hodlJournal.activePage = imported.activePage;
-    hodlJournal.nextPageId = imported.nextPageId;
-    hodlJournal.nextPageNumber = imported.nextPageNumber;
-    hodlJournal.notesText = imported.notesText;
+    let field = document.getElementById("journal-notes-text");
+    if (field) hodlJournalStoreNotesText(field);
+    let merged = hodlMergeNotebookImport(hodlJournal, imported);
+    hodlJournal.pages = merged.pages;
+    hodlJournal.activePage = merged.activePage;
+    hodlJournal.nextPageId = merged.nextPageId;
+    hodlJournal.nextPageNumber = merged.nextPageNumber;
+    hodlJournal.notesText = merged.notesText;
     hodlRenderJournalPageTabs();
-    hodlJournalRestorePage(document.getElementById("journal-notes-text"));
+    hodlJournalRestorePage(field);
     hodlJournalLog("notebook-import", `${imported.pages.length} page${imported.pages.length === 1 ? "" : "s"}`);
     hodlJournalSetStatus(`Imported ${imported.pages.length} page${imported.pages.length === 1 ? "" : "s"} from ${file.name}.`);
   } catch (error) {
@@ -11830,6 +12084,7 @@ function hodlInitJournalToolTabs() {
     setInterval(() => hodlJournalRefreshPendingNote(notesText), 1e3);
     notesText.addEventListener("input", (event) => hodlJournalUpdateNotesText(notesText, event));
     notesText.addEventListener("keydown", (event) => hodlJournalNotesKeydown(event, notesText));
+    notesText.addEventListener("select", () => hodlJournalProtectStampSelection(notesText));
     notesText.addEventListener("scroll", () => hodlJournalSyncPendingPrompt(notesText));
     notesText.addEventListener("click", () => hodlJournalNotesClick(notesText));
     notesText.addEventListener("mousemove", () => hodlJournalRevealCopyButton(notesCopy));
@@ -11856,6 +12111,13 @@ function hodlInitJournalToolTabs() {
   hodlRefreshJournalKeyPicker();
   let keyInsert = document.getElementById("journal-key-insert");
   if (keyInsert) keyInsert.onchange = () => hodlJournalInsertKey(keyInsert, notesText);
+  let keyInsertButton = keyInsert?.nextElementSibling?.querySelector(".custom-select-button");
+  if (keyInsertButton) {
+    keyInsertButton.addEventListener("pointerdown", () => hodlJournalRememberKeyInsertion(keyInsert, notesText));
+    keyInsertButton.addEventListener("keydown", (event) => {
+      if (["ArrowDown", "Enter", " "].includes(event.key)) hodlJournalRememberKeyInsertion(keyInsert, notesText);
+    });
+  }
   for (let [id, property] of [["journal-font", "font"], ["journal-size", "size"], ["journal-spacing", "spacing"]]) {
     let select = document.getElementById(id);
     if (select) select.onchange = () => hodlJournalSetPageStyle(property, select.value);
@@ -11924,6 +12186,38 @@ function hodlRenderJournalNotes() {
   if (field.dataset.pendingNote) hodlJournalRenderPendingPrompt(field);
 }
 var hodlJournalNoteStampPattern = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  /;
+function hodlJournalStampRanges(value) {
+  let ranges = [], offset = 0;
+  for (let line of String(value).split("\n")) {
+    let stamp = line.match(hodlJournalNoteStampPattern)?.[0];
+    if (stamp) ranges.push({ start: offset, end: offset + stamp.length });
+    offset += line.length + 1;
+  }
+  return ranges;
+}
+function hodlJournalProtectStampSelection(field) {
+  if (!field || field.hodlProtectingStampSelection) return;
+  let start = field.selectionStart, end = field.selectionEnd, direction = field.selectionDirection;
+  let ranges = hodlJournalStampRanges(field.value);
+  let startStamp = ranges.find((range) => start >= range.start && start < range.end);
+  let endStamp = ranges.find((range) => end > range.start && end <= range.end);
+  let nextStart = start, nextEnd = end;
+  if (start === end && startStamp) {
+    nextStart = startStamp.end;
+    nextEnd = startStamp.end;
+  } else {
+    if (startStamp) nextStart = startStamp.end;
+    if (endStamp) nextEnd = endStamp.start;
+    if (nextStart > nextEnd) {
+      nextStart = startStamp?.end || endStamp?.end || end;
+      nextEnd = nextStart;
+    }
+  }
+  if (nextStart === start && nextEnd === end) return;
+  field.hodlProtectingStampSelection = true;
+  field.setSelectionRange(nextStart, nextEnd, nextStart === nextEnd ? "none" : direction);
+  field.hodlProtectingStampSelection = false;
+}
 function hodlJournalLineIndexAt(value, offset) {
   return value.slice(0, offset).split("\n").length - 1;
 }
@@ -12012,7 +12306,40 @@ function hodlJournalDeletePendingLine(field) {
   if (field.dataset.pendingNote) hodlJournalRenderPendingPrompt(field);
   return true;
 }
+function hodlJournalDeleteKeyReference(field, range, inputType) {
+  let value = field.value, left = range.start, right = range.end;
+  let lineStart = value.lastIndexOf("\n", left - 1) + 1;
+  let structuralStamp = value.slice(lineStart, left).match(hodlJournalNoteStampPattern)?.[0];
+  if (!structuralStamp || structuralStamp.length !== left - lineStart) {
+    while (left > lineStart && /[ \t]/.test(value[left - 1])) left--;
+  }
+  while (right < value.length && /[ \t]/.test(value[right])) right++;
+  let before = value.slice(0, left), after = value.slice(right);
+  let separator = before && after && !/[\n \t]$/.test(before) && !/^\n/.test(after) ? " " : "";
+  field.setRangeText(separator, left, right, "end");
+  field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType, data: null }));
+}
+function hodlJournalKeyReferenceKeydown(event, field) {
+  if ((event.key !== "Backspace" && event.key !== "Delete") || event.altKey || event.ctrlKey || event.metaKey) return false;
+  let start = field.selectionStart, end = field.selectionEnd;
+  let ranges = hodlJournalKeyReferenceRanges(field.value);
+  let selected = ranges.find((range) => start === range.start && end === range.end);
+  if (selected) {
+    event.preventDefault();
+    hodlJournalDeleteKeyReference(field, selected, event.key === "Backspace" ? "deleteContentBackward" : "deleteContentForward");
+    return true;
+  }
+  if (start !== end) return false;
+  let adjacent = ranges.find((range) => event.key === "Backspace"
+    ? start > range.start && (start <= range.end || start === range.end + 1 && /[ \t]/.test(field.value[range.end]))
+    : start >= range.start && start < range.end);
+  if (!adjacent) return false;
+  event.preventDefault();
+  field.setSelectionRange(adjacent.start, adjacent.end);
+  return true;
+}
 function hodlJournalNotesClick(field) {
+  hodlJournalProtectStampSelection(field);
   let start = field.selectionStart, end = field.selectionEnd;
   if (start !== end) return;
   let lines = field.value.split("\n"), clicked = hodlJournalLineIndexAt(field.value, start);
@@ -12035,6 +12362,8 @@ function hodlJournalNotesClick(field) {
       field.setSelectionRange(start, end);
       hodlJournalStoreNotesText(field);
     }
+    let key = hodlJournalKeyReferenceRanges(field.value).find((range) => start >= range.start && start <= range.end);
+    if (key) field.setSelectionRange(key.start, key.end);
     return;
   }
   let stamp = pending >= 0 ? lines[pending] : `${hodlJournalStamp()}  `;
@@ -12084,6 +12413,7 @@ function hodlJournalUpdateNotesText(field, event) {
   for (let count = nextCount; count < previousCount; count++) hodlJournalLog("note-delete", "", "journal");
 }
 function hodlJournalNotesKeydown(event, field) {
+  if (hodlJournalKeyReferenceKeydown(event, field)) return;
   let pendingIndex = hodlJournalPendingLineIndex(field), pendingStart = hodlJournalPendingLineStart(field);
   if (pendingStart >= 0 && hodlJournalLineIndexAt(field.value, field.selectionStart) === pendingIndex) {
     if (event.key === "Enter") {
@@ -12100,6 +12430,11 @@ function hodlJournalNotesKeydown(event, field) {
       hodlJournalDeletePendingLine(field);
       return;
     }
+  }
+  if (event.key === "Backspace" && field.selectionStart === field.selectionEnd
+      && hodlJournalStampRanges(field.value).some((range) => range.end === field.selectionStart)) {
+    event.preventDefault();
+    return;
   }
   if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey) return;
   let start = field.selectionStart, end = field.selectionEnd, value = field.value;
@@ -12272,6 +12607,18 @@ function hodlSyncJournalCreatePasswordValidation() {
     !confirmValue ? "" : passwordsMatch ? "\u2713 Passwords match" : "Passwords do not match",
   );
   if (ready) ready.hidden = !(passwordLongEnough && confirmValue && passwordsMatch);
+}
+function hodlJournalCreatePasswordKeydown(event) {
+  if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey || event.isComposing || event.repeat) return;
+  let password = document.getElementById("journal-create-password"),
+      confirm = document.getElementById("journal-create-confirm");
+  if (!password || !confirm || Array.from(password.value).length < hodlJournalPasswordMinLength) return;
+  event.preventDefault();
+  if (event.currentTarget === password && confirm.value !== password.value) {
+    confirm.focus();
+    return;
+  }
+  if (confirm.value && confirm.value === password.value) hodlJournalCreate();
 }
 function hodlJournalSetGate(mode) {
   hodlJournalGate = mode === "open" ? "open" : "create";
@@ -12614,6 +12961,7 @@ function hodlInitJournalNotebook() {
   if (!document.getElementById("journal-create")) return;
   for (let id of ["journal-create-password", "journal-create-confirm"]) {
     document.getElementById(id)?.addEventListener("input", hodlSyncJournalCreatePasswordValidation);
+    document.getElementById(id)?.addEventListener("keydown", hodlJournalCreatePasswordKeydown);
   }
   document.querySelectorAll("#journal-gate-modes [data-journal-gate]").forEach((button) => {
     button.onclick = () => hodlJournalSetGate(button.dataset.journalGate);
@@ -13501,9 +13849,12 @@ function hodlInitBetaWarningDismiss() {
 // key versions, WIF prefixes, and coin-type indexes new work defaults to.
 // Not persisted: every load starts on mainnet, the safe direction for a
 // wallet tool. A tool's own advanced fields can still override it per item.
-// The picker offers Bitcoin Core's four networks, but signet and regtest
-// share the testnet versions (coin type 1', tb1… addresses, tpub keys, 9/c
-// WIF), so the tools themselves only ever see the binary choice.
+// The picker offers Bitcoin Core's four networks. Signet and regtest share
+// the testnet key versions (coin type 1', tpub keys, 9/c WIF), so the tools'
+// own fields only ever see the binary family choice — but the chain identity
+// is kept: hodlCalculateKey stores the picker's chain on the wallet result,
+// where the wallet.dat export writes chain-specific metadata and the address
+// tables render regtest's bcrt1… HRP (issue #329).
 var hodlNetworkChoice = "mainnet"; // what the picker shows: mainnet, testnet, signet, or regtest
 var hodlNetworkDefault = "mainnet"; // what the tools derive with: mainnet or testnet
 function hodlDefaultCoinType() {

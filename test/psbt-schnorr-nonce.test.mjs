@@ -22,6 +22,20 @@ test("DEFAULT and ALL are safe; ANYONECANPAY is not", () => {
   assert.ok(hodlTapSighashProblems(0x82, 0x82, label).length >= 2);
 });
 
+test("ANYONECANPAY|ALL drops input commitment while NONE/SINGLE drop outputs (issue #333)", () => {
+  const label = (p) => "0x" + p.toString(16);
+  const inputs = hodlTapSighashProblems(null, 0x81, label);
+  assert.equal(inputs.length, 1);
+  assert.ok(inputs[0].includes("does not commit to all shown inputs"), inputs[0]);
+  assert.ok(!inputs[0].includes("outputs"), inputs[0]);
+  for (const value of [0x02, 0x03, 0x82, 0x83]) {
+    const problems = hodlTapSighashProblems(value, null, label);
+    assert.ok(problems[0].includes("does not commit to all shown outputs"), `0x${value.toString(16)}: ${problems[0]}`);
+  }
+  const undefinedByte = hodlTapSighashProblems(null, 0x7f, label);
+  assert.ok(undefinedByte[0].includes("not a defined Taproot sighash"), undefinedByte[0]);
+});
+
 test("same R on two inputs is flagged", () => {
   const scan = hodlCompareSchnorrNonces([
     { input: 0, r: rA, pubkey: key },
@@ -37,14 +51,26 @@ test("tap key sig records are collected", () => {
   assert.equal(keys.length, 1);
 });
 
-test("looksSchnorr accepts 64/65-byte items but never a DER signature", () => {
+test("looksSchnorr decides by length and suffix only, never the first signature byte (issue #333)", () => {
   assert.equal(hodlLooksSchnorr(null), false);
   assert.equal(hodlLooksSchnorr(new Uint8Array(63)), false);
   assert.equal(hodlLooksSchnorr(new Uint8Array(64)), true);
-  assert.equal(hodlLooksSchnorr(new Uint8Array(65)), true);
   const derLookalike = new Uint8Array(65);
-  derLookalike[0] = 0x30;
-  assert.equal(hodlLooksSchnorr(derLookalike), false, "a 65-byte DER signature is not Schnorr");
+  derLookalike[0] = 0x30; // DER's sequence marker is a fine R.x first byte
+  derLookalike[64] = 0x01;
+  assert.equal(hodlLooksSchnorr(derLookalike), true, "first byte 0x30 must not classify the signature as DER");
+  // The 65th byte must be a defined Taproot sighash: explicit 0x00 is invalid
+  // (DEFAULT is only ever the 64-byte form), and undefined bytes are invalid.
+  const zeroSuffix = new Uint8Array(65); // suffix defaults to 0x00
+  assert.equal(hodlLooksSchnorr(zeroSuffix), false, "explicit 0x00 suffix is not SIGHASH_DEFAULT");
+  const undefinedSuffix = new Uint8Array(65);
+  undefinedSuffix[64] = 0x04;
+  assert.equal(hodlLooksSchnorr(undefinedSuffix), false, "undefined sighash byte");
+  for (const defined of [0x01, 0x02, 0x03, 0x81, 0x82, 0x83]) {
+    const valid = new Uint8Array(65);
+    valid[64] = defined;
+    assert.equal(hodlLooksSchnorr(valid), true, `sighash 0x${defined.toString(16)}`);
+  }
   assert.equal(hodlLooksSchnorr(new Uint8Array(66)), false);
   assert.equal(hodlParseSchnorr(new Uint8Array(10)), null);
 });

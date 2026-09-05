@@ -125,21 +125,46 @@ const PAYLOAD_LEN: usize = 66;
 const RECORD_LEN: usize = 8 + MAX_PASS_LEN + PAYLOAD_LEN;
 const HEADER_LEN: usize = 12;
 
-/// Allocates `len` bytes of linear memory for JS to fill. Pair with
-/// `vanity_free`.
+/// Allocates `len` zero-filled bytes of linear memory for JS to fill. Pair
+/// with `vanity_free`. The box owns exactly `len` bytes, so the deallocation
+/// layout is reproducible from `len` alone.
 #[no_mangle]
 pub extern "C" fn vanity_alloc(len: usize) -> *mut u8 {
-    let mut buf = Vec::<u8>::with_capacity(len);
-    let ptr = buf.as_mut_ptr();
-    std::mem::forget(buf);
-    ptr
+    Box::into_raw(vec![0u8; len].into_boxed_slice()) as *mut u8
 }
 
 /// # Safety
-/// `ptr`/`len` must come from `vanity_alloc`.
+/// `ptr` must come from `vanity_alloc` and `len` must be exactly the length
+/// passed there: the box is reconstructed from `len` alone, so any other
+/// length deallocates with the wrong layout.
 #[no_mangle]
 pub unsafe extern "C" fn vanity_free(ptr: *mut u8, len: usize) {
-    drop(Vec::from_raw_parts(ptr, 0, len));
+    // Zero before deallocation: these buffers carry the NFKD mnemonic or a
+    // raw 64-byte BIP32 node (private key ‖ chain code) — strictly more
+    // sensitive than anything the other crates handle (issues #327, #356).
+    wipe(ptr, len);
+    let slice = std::ptr::slice_from_raw_parts_mut(ptr, len);
+    drop(Box::from_raw(slice));
+}
+
+/// Overwrites `len` bytes at `ptr` with zeroes. Volatile stores plus a
+/// compiler fence, so the wipe cannot be elided as a dead store ahead of
+/// deallocation.
+unsafe fn wipe(ptr: *mut u8, len: usize) {
+    if !ptr.is_null() {
+        for i in 0..len {
+            std::ptr::write_volatile(ptr.add(i), 0u8);
+        }
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Volatile-zero a byte string we own (same reasoning as `wipe`).
+fn wipe_bytes(bytes: &mut [u8]) {
+    for byte in bytes.iter_mut() {
+        unsafe { std::ptr::write_volatile(byte, 0u8) };
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
 }
 
 fn sha256(data: &[u8]) -> [u8; 32] {
@@ -173,10 +198,17 @@ impl HmacSha512 {
             ipad[i] = block[i] ^ 0x36;
             opad[i] = block[i] ^ 0x5c;
         }
-        HmacSha512 {
+        let engine = HmacSha512 {
             inner: Sha512::new().chain_update(ipad),
             outer: Sha512::new().chain_update(opad),
-        }
+        };
+        // The key-bearing pads have been absorbed; the working copies go now.
+        // (The sha2 crate's mid-state is opaque and cannot be zeroed from
+        // here — the buffer wipes around the call sites carry the hygiene.)
+        wipe_bytes(&mut block);
+        wipe_bytes(&mut ipad);
+        wipe_bytes(&mut opad);
+        engine
     }
 
     fn mac(&self, parts: &[&[u8]]) -> [u8; 64] {
@@ -209,6 +241,7 @@ fn bip39_seed(mnemonic: &HmacSha512, passphrase_parts: &[&[u8]]) -> [u8; 64] {
             *acc ^= next;
         }
     }
+    wipe_bytes(&mut u); // same secret as the returned seed
     t
 }
 
@@ -216,6 +249,12 @@ fn bip39_seed(mnemonic: &HmacSha512, passphrase_parts: &[&[u8]]) -> [u8; 64] {
 struct Node {
     key: [u8; 32],
     chain: [u8; 32],
+}
+
+/// A BIP32 node holds a private key: volatile-zero it when it retires.
+fn wipe_node(node: &mut Node) {
+    wipe_bytes(&mut node.key);
+    wipe_bytes(&mut node.chain);
 }
 
 unsafe fn pubkey_compressed(seckey: &[u8; 32]) -> Option<[u8; 33]> {
@@ -234,11 +273,13 @@ unsafe fn pubkey_compressed(seckey: &[u8; 32]) -> Option<[u8; 33]> {
 /// BIP32 master node from a seed. Returns None for the (2^-128 rare) invalid
 /// master key.
 unsafe fn master_node(seed: &[u8]) -> Option<Node> {
-    let i = HmacSha512::new(b"Bitcoin seed").mac(&[seed]);
+    let mut i = HmacSha512::new(b"Bitcoin seed").mac(&[seed]);
     let mut node = Node { key: [0u8; 32], chain: [0u8; 32] };
     node.key.copy_from_slice(&i[..32]);
     node.chain.copy_from_slice(&i[32..]);
+    wipe_bytes(&mut i); // the HMAC output is the master key ‖ chain code
     if ffi::secp256k1_ec_seckey_verify(ctx(), node.key.as_ptr()) != 1 {
+        wipe_node(&mut node);
         return None;
     }
     Some(node)
@@ -249,7 +290,7 @@ unsafe fn master_node(seed: &[u8]) -> Option<Node> {
 unsafe fn ckd_priv(parent: &Node, index: u32) -> Option<Node> {
     let mac = HmacSha512::new(&parent.chain);
     let index_bytes = index.to_be_bytes();
-    let i = if index & HARDENED != 0 {
+    let mut i = if index & HARDENED != 0 {
         mac.mac(&[&[0u8], &parent.key, &index_bytes])
     } else {
         let pk = pubkey_compressed(&parent.key)?;
@@ -257,17 +298,30 @@ unsafe fn ckd_priv(parent: &Node, index: u32) -> Option<Node> {
     };
     let mut node = Node { key: parent.key, chain: [0u8; 32] };
     // child = (IL + k_par) mod n; libsecp256k1 rejects IL >= n and a zero result.
-    if ffi::secp256k1_ec_seckey_tweak_add(ctx(), node.key.as_mut_ptr(), i[..32].as_ptr()) != 1 {
+    let ok = ffi::secp256k1_ec_seckey_tweak_add(ctx(), node.key.as_mut_ptr(), i[..32].as_ptr()) == 1;
+    node.chain.copy_from_slice(&i[32..]);
+    wipe_bytes(&mut i); // IL is the private tweak
+    if !ok {
+        wipe_node(&mut node);
         return None;
     }
-    node.chain.copy_from_slice(&i[32..]);
     Some(node)
 }
 
 unsafe fn derive_path(root: &Node, path: &[u32]) -> Option<Node> {
     let mut node = *root;
     for &index in path {
-        node = ckd_priv(&node, index)?;
+        match ckd_priv(&node, index) {
+            // `node` is always our owned copy, never the caller's memory.
+            Some(child) => {
+                wipe_node(&mut node);
+                node = child;
+            }
+            None => {
+                wipe_node(&mut node);
+                return None;
+            }
+        }
     }
     Some(node)
 }
@@ -568,8 +622,20 @@ pub unsafe extern "C" fn vanity_grind(
                 for i in 0..pass_len {
                     pass[i] = ALPHABET[digit[i] as usize];
                 }
-                let seed = bip39_seed(mnemonic, &[salt, &pass[..pass_len]]);
-                master_node(&seed).and_then(|root| derive_path(&root, path))
+                let mut seed = bip39_seed(mnemonic, &[salt, &pass[..pass_len]]);
+                // Every stage of the per-candidate chain is wiped on use:
+                // the 64-byte seed, the master node, each intermediate CKD
+                // node (in derive_path), and the final child (below).
+                let node = match master_node(&seed) {
+                    Some(mut root) => {
+                        let node = derive_path(&root, path);
+                        wipe_node(&mut root);
+                        node
+                    }
+                    None => None,
+                };
+                wipe_bytes(&mut seed);
+                node
             }
             (_, Some(parent)) => {
                 path[counter_slot as usize] = (counter as u32) | hardened_slot;
@@ -578,8 +644,10 @@ pub unsafe extern "C" fn vanity_grind(
             _ => None,
         };
         // Invalid children (IL >= n, zero keys) are ~2^-128 rare; skip them.
-        if let Some(node) = node {
-            if let Some((addr, addr_len, payload)) = candidate_address(script, &node) {
+        if let Some(mut node) = node {
+            let candidate = candidate_address(script, &node);
+            wipe_node(&mut node);
+            if let Some((addr, addr_len, payload)) = candidate {
                 if addr_len >= prefix_len && &addr[..prefix_len] == prefix {
                     if (matches as usize) < record_cap {
                         let at = HEADER_LEN + matches as usize * RECORD_LEN;
@@ -612,5 +680,13 @@ pub unsafe extern "C" fn vanity_grind(
 
     out_slice[0..8].copy_from_slice(&processed.to_le_bytes());
     out_slice[8..12].copy_from_slice(&matches.to_le_bytes());
+    // Retire the long-lived secrets: the fixed parent node and the candidate
+    // passphrase window. (The absorbed HMAC pads sit in the sha2 crate's
+    // opaque state and cannot be zeroed from here; the input buffers are
+    // wiped by vanity_free when JS releases them.)
+    if let Some(mut node) = parent {
+        wipe_node(&mut node);
+    }
+    wipe_bytes(&mut pass);
     status
 }

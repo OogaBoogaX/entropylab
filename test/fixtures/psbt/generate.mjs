@@ -77,6 +77,20 @@ const txout = (value, scriptPubKey) => ({ value, scriptPubKey });
 const pair = (key, value) => ({ key, value });
 const doc = (tx, globals, inputs, outputs) => ({ tx, globals, inputs, outputs });
 
+// Hand-assembled PSBT v0 bytes for shapes the build gate refuses on purpose
+// (consensus-invalid transactions, e.g. zero outputs — issues #322/#361).
+// The fixture exists to prove inspection still parses and reports them.
+const rawTx = (version, inputs, outputs, locktime) =>
+  le32(version) +
+  varint(inputs.length) + inputs.map((i) => bytesToHex(Uint8Array.from(hexToBytes(i.txid)).reverse()) + le32(i.vout) + "00" + le32(i.sequence)).join("") +
+  varint(outputs.length) + outputs.map((o) => le64(o.value) + varint(o.scriptPubKey.length / 2) + o.scriptPubKey).join("") +
+  le32(locktime);
+const rawPsbt = (txHex, inputMaps, outputMaps = []) =>
+  "70736274ff" + "01" + "00" + varint(txHex.length / 2) + txHex + "00" +
+  [...inputMaps, ...outputMaps]
+    .map((map) => map.map((p) => varint(p.key.length / 2) + p.key + varint(p.value.length / 2) + p.value).join("") + "00")
+    .join("");
+
 // BIP-174 valid vector 2, verbatim: two inputs (a finalized P2PKH scriptSig
 // with no amount claim, and a nested P2WPKH with a 100000000-sat witness
 // UTXO) and two P2PKH outputs. The one fixture that is not generated.
@@ -252,14 +266,15 @@ const FIXTURES = [
   {
     // A zero-input PSBT cannot exist: transaction consensus encoding rejects
     // it (the 0x00 input count collides with the segwit marker), so the
-    // diagram's "No inputs." state is unreachable from a real file.
+    // diagram's "No inputs." state is unreachable from a real file. And since
+    // the build gate enforces CheckTransaction sanity (issues #322/#361), the
+    // zero-output file below is hand-assembled: the editor can inspect it,
+    // name it consensus-invalid, and must never emit it.
     name: "no-outputs",
     description: "One input, zero outputs, no pairs: the diagram's empty-column state.",
-    doc: doc(
-      { version: 2, locktime: 0, inputs: [txin(R("ab"), 0)], outputs: [] },
-      [],
+    fixedHex: rawPsbt(
+      rawTx(2, [txin(R("ab"), 0)], [], 0),
       [[pair("01", witnessUtxo(75000, p2wpkh(pk1)))]],
-      [],
     ),
     expect: { inputs: 1, outputs: 0, fee: "known" },
   },

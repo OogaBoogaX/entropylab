@@ -10,6 +10,7 @@
 // Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -54,6 +55,7 @@ const source = [
     "hodlNote",
     "hodlError",
     "hodlDecodeWif",
+    "hodlNetworkFamily",
     "hodlAssertPrivateKey",
     "hodlIsMiniKey",
     "hodlDecodeMiniKey",
@@ -68,7 +70,7 @@ const source = [
     "hodlPrivateKeyCharacterEntries",
     "hodlPrivateKeyInputAnalysis",
   ].map(slice),
-  "export { hodlDetectPrivateKeyKind, hodlNormalizePrivateKeyKind, hodlHexPrivateKeyPrefix, hodlWifPrivateKeyPrefix, hodlMiniPrivateKeyPrefix, hodlDecodeMiniPrivateKey, hodlAssertPrivateKeyKind, hodlPrivateKeyCharacterEntries, hodlPrivateKeyInputAnalysis };",
+  "export { hodlIsMiniKey, hodlDetectPrivateKeyKind, hodlNormalizePrivateKeyKind, hodlHexPrivateKeyPrefix, hodlWifPrivateKeyPrefix, hodlMiniPrivateKeyPrefix, hodlDecodeMiniPrivateKey, hodlAssertPrivateKeyKind, hodlPrivateKeyCharacterEntries, hodlPrivateKeyInputAnalysis };",
 ].join("\n");
 
 const modulePath = join(root, "test", `.private-key-inputs-${process.pid}.mjs`);
@@ -80,6 +82,7 @@ try {
   unlinkSync(modulePath);
 }
 const {
+  hodlIsMiniKey,
   hodlDetectPrivateKeyKind,
   hodlNormalizePrivateKeyKind,
   hodlHexPrivateKeyPrefix,
@@ -108,6 +111,23 @@ const MINIKEY_22_PRIV = "e9873d79c6d87dc0fb6a5778633389f4453213303da61f20bd67fc2
 const MINIKEY_TAMPERED = "S6c56bnXQiBjk9mqSYE7ykVQ7NzrRz";
 
 const hexOf = (bytes) => Buffer.from(bytes).toString("hex");
+
+test("hodlIsMiniKey rejects the non-Base58 alphabet even with a passing checksum (audit #365)", () => {
+  // The auto-detect helper used to accept any alphanumeric string: an
+  // S-prefixed 22/30-char string containing 0, O, I, or l with a lucky
+  // checksum would decode as a minikey even though Base58 cannot represent
+  // it. Find such a string and pin the strict alphabet.
+  let candidate = null;
+  for (let i = 0; i < 100000 && !candidate; i++) {
+    const probe = `S0${i.toString(36).padStart(20, "1")}`;
+    if (createHash("sha256").update(`${probe}?`).digest()[0] === 0) candidate = probe;
+  }
+  assert.ok(candidate, "a checksummed non-Base58 minikey-shaped string exists");
+  assert.equal(candidate.length, 22);
+  assert.equal(hodlIsMiniKey(candidate), false);
+  assert.equal(hodlIsMiniKey(MINIKEY_22), true, "real minikeys still pass");
+  assert.equal(hodlIsMiniKey(MINIKEY_30), true, "real minikeys still pass");
+});
 
 test("kind detection classifies minikey, WIF, and hex by shape only", () => {
   assert.equal(hodlDetectPrivateKeyKind(MINIKEY_22), "minikey");

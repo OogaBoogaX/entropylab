@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { psbtEditorBuildDoc } from "../src/js/psbt-editor.js";
+import { psbtEditorBuildDoc, dropSigningPairs } from "../src/js/psbt-editor.js";
 import { psbtBuildBytes, psbtInspectDoc } from "../src/js/psbt-wasm.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -27,7 +27,7 @@ const addElement = (doc, kind) => {
     doc.tx.inputs.push({ txid: "0".repeat(64), vout: 0, scriptSig: "", sequence: 4294967295 });
     doc.inputs.push([]);
   } else {
-    doc.tx.outputs.push({ value: 0, scriptPubKey: "" });
+    doc.tx.outputs.push({ value: "0", scriptPubKey: "" });
     doc.outputs.push([]);
   }
 };
@@ -61,7 +61,7 @@ test("adding an output appends a zero-value empty-script slot and its map", () =
   const fresh = rebuild(doc);
   assert.equal(fresh.tx.outputs.length, before + 1);
   assert.equal(fresh.outputs.length, before + 1);
-  assert.equal(fresh.tx.outputs[before].value, 0);
+  assert.equal(fresh.tx.outputs[before].value, "0");
   assert.equal(fresh.tx.outputs[before].scriptPubKey, "");
   assert.deepEqual(fresh.outputs[before], []);
 });
@@ -115,4 +115,35 @@ test("the editor renders the structural controls for inputs and outputs", () => 
   assert.match(editor, /draft\.tx\.outputs\.push\([\s\S]*?draft\.outputs\.push/);
   assert.match(editor, /draft\.tx\.inputs\.splice\(index, 1\);\s*\n\s*draft\.inputs\.splice\(index, 1\)/);
   assert.match(editor, /draft\.tx\.outputs\.splice\(index, 1\);\s*\n\s*draft\.outputs\.splice\(index, 1\)/);
+});
+
+test("dropSigningPairs removes exactly the transaction-committing fields (issues #325, #360)", () => {
+  const doc = fixtureDoc();
+  doc.inputs[0].push(
+    { key: "02" + "02".repeat(33), value: "3007" }, // partial sig
+    { key: "07", value: "47" + "30".repeat(35) }, // final scriptSig
+    { key: "08", value: "02" }, // final scriptWitness
+    { key: "13", value: "5a".repeat(64) }, // taproot key sig
+    { key: "14" + "cc".repeat(32) + "dd".repeat(32), value: "6b".repeat(64) }, // taproot script sig
+  );
+  const utxoPairs = doc.inputs[0].filter((pair) => pair.key === "01").length;
+  const dropped = dropSigningPairs(doc);
+  assert.equal(dropped, 6); // the five above plus the fixture's own partial sig
+  // The witness UTXO, the sighash-type hint, and the derivation path stay:
+  // none of them are signatures.
+  assert.deepEqual(doc.inputs[0].map((pair) => pair.key.slice(0, 2)).sort(), ["01", "03", "06"]);
+  assert.equal(doc.inputs[0].filter((pair) => pair.key === "01").length, utxoPairs);
+  // The surviving document still builds: claims and sighash hints remain.
+  assert.ok(psbtBuildBytes(psbtEditorBuildDoc(doc)).length > 0);
+});
+
+test("the editor drops signing material when the transaction section changes (issues #325, #360)", () => {
+  const editor = read("src/js/psbt-editor.js");
+  // The rebuild compares against the transaction the pairs were inspected
+  // with, and re-anchors only after a successful build.
+  assert.match(editor, /pristineTx !== null && JSON\.stringify\(doc\.tx\) !== pristineTx/);
+  assert.match(editor, /dropSigningPairs\(doc\)/);
+  assert.match(editor, /pristineTx = JSON\.stringify\(doc\.tx\)/);
+  // Loads and wipes re-anchor so a fresh document's pairs are never stripped.
+  assert.ok((editor.match(/pristineTx = null/g) || []).length >= 3, "load, load-failure, and wipe all reset the anchor");
 });

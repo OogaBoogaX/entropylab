@@ -1036,6 +1036,9 @@
       input(journalPasswordInput, "too short");
       assert(!journalPasswordStatus.hidden && journalPasswordStatus.classList.contains("is-invalid"), "A short Journal password should show a red warning");
       equal(journalPasswordStatus.textContent, "Password has too few characters");
+      journalPasswordInput.focus();
+      journalPasswordInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      assert(document.activeElement === journalPasswordInput, "Enter should not advance past a short Journal password");
       assert(Math.abs(journalPasswordStatus.getBoundingClientRect().right - journalPasswordInput.getBoundingClientRect().right) <= 2, "Password validation should align to the right of its label");
       input(journalPasswordInput, "");
       assert(journalPasswordStatus.hidden, "Clearing the Journal password should hide its validation message");
@@ -1046,6 +1049,9 @@
       const journalPassword = "correct horse battery staple";
       input(journalPasswordInput, journalPassword);
       assert(journalPasswordStatus.classList.contains("is-valid") && journalPasswordStatus.textContent.includes("Password is long enough"), "A long Journal password should show a green check");
+      journalPasswordInput.focus();
+      journalPasswordInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      assert(document.activeElement === journalConfirmInput, "Enter should advance a valid Journal password to confirmation");
       input(journalConfirmInput, journalPassword);
       assert(journalConfirmStatus.classList.contains("is-valid"), "Matching Journal passwords should show a green check");
       equal(journalConfirmStatus.textContent, "\u2713 Passwords match");
@@ -1062,7 +1068,8 @@
       journalTabs.forEach((tab) => assert(tab.disabled, "A rejected password should not unlock Journal tabs"));
       input(journalPasswordInput, journalPassword);
       input(journalConfirmInput, journalPassword);
-      document.getElementById("journal-create").click();
+      journalConfirmInput.focus();
+      journalConfirmInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
       await until(() => !document.getElementById("journal-notes-card").hidden, "valid journal creation to open Notepad");
       assert(document.getElementById("journal-card").hidden, "The create/open gate should disappear after journal creation");
       assert(!journalIntro.hidden, "Entropy Journal introduction should remain visible after journal creation");
@@ -1471,6 +1478,10 @@
     const headerDownloadStyle = getComputedStyle(document.querySelector(".download-controls .download-html"));
     equal(getComputedStyle(body).borderTopLeftRadius, "0px", "the page tab should join directly to the top-left of the editor");
     equal(getComputedStyle(pageTabs[0]).backgroundColor, getComputedStyle(notesWrap).backgroundColor, "the selected page tab should use the editor background");
+    body.focus();
+    equal(getComputedStyle(body).outlineStyle, "none", "the focused editor should replace the browser outline with its connected page outline");
+    equal(getComputedStyle(pageTabs[0]).borderTopColor, getComputedStyle(body).borderTopColor, "the focused editor outline should climb around its active page tab");
+    equal(getComputedStyle(pageTabs[0], "::after").backgroundColor, getComputedStyle(notesWrap).backgroundColor, "the active page tab should mask the editor outline beneath it");
     assert(notesCopy && notesCopy.classList.contains("seed-phrase-copy"), "the notepad should reuse the clipboard icon button");
     equal(Math.round(notesCopy.getBoundingClientRect().top - notesWrap.getBoundingClientRect().top), 10, "the notepad copy button should align with the bottom of the first text line");
     equal(Math.round(notesWrap.getBoundingClientRect().right - notesCopy.getBoundingClientRect().right), 12, "the notepad copy button should sit in the top-right corner");
@@ -1551,10 +1562,18 @@
     assert(prompt.hidden, "typing should hide the first-note prompt");
     await new Promise((resolve) => setTimeout(resolve, 1100));
     equal(body.value, `${frozenTimestamp}kitchen table dice`, "the timestamp should freeze once note text is entered");
-    body.value = frozenTimestamp;
-    body.setSelectionRange(body.value.length, body.value.length);
+    body.setSelectionRange(4, 12);
+    body.dispatchEvent(new Event("select", { bubbles: true }));
+    equal(body.selectionStart, frozenTimestamp.length, "a selection contained by the timestamp should collapse at the note boundary");
+    equal(body.selectionEnd, frozenTimestamp.length, "the timestamp should never remain selected");
+    body.setSelectionRange(4, body.value.length);
+    body.dispatchEvent(new Event("select", { bubbles: true }));
+    equal(body.selectionStart, frozenTimestamp.length, "a partial timestamp selection should begin at the note text");
+    equal(body.selectionEnd, body.value.length, "a partial timestamp selection should preserve its note-text edge");
+    body.setRangeText("", body.selectionStart, body.selectionEnd, "end");
     body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
-    assert(prompt && !prompt.hidden, "deleting back to the timestamp should restore the first-note prompt");
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(body.value), "deleting all note text should leave one live timestamp on the line");
+    assert(prompt && !prompt.hidden, "deleting all note text should restore the first-note prompt");
     equal(body.selectionStart, body.value.length, "the restored caret should return to the front of the prompt");
     body.setRangeText("kitchen table dice", body.value.length, body.value.length, "end");
     body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "kitchen table dice" }));
@@ -1665,6 +1684,9 @@
     equal(pageTabs[1].querySelector(".journal-page-tab-full").textContent, "Page 2", "new pages should follow the Key Station index convention");
     equal(pageTabs[1].querySelector(".journal-page-tab-short").textContent, "P2", "the second page should carry its narrow name");
     assert(pageTabs[1].classList.contains("active"), "the new page should become active");
+    body.focus();
+    equal(getComputedStyle(pageTabs[1]).borderTopColor, getComputedStyle(body).borderTopColor, "the connected focus outline should follow the active page");
+    assert(getComputedStyle(pageTabs[0]).borderTopColor !== getComputedStyle(body).borderTopColor, "the focus outline should leave the inactive page behind");
     assert(!document.getElementById("delete-journal-page").disabled, "minus should enable when another page exists");
     assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(body.value), "a new page should open with a live note");
     body.setRangeText("second page note", body.value.length, body.value.length, "end");
@@ -1698,11 +1720,17 @@
     equal(encryptedNotebookDocument.entropylabJournalExport, 1, "the default notebook download should be a password-encrypted Journal export");
     body.value = "temporary encrypted replacement";
     body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "temporary encrypted replacement" }));
+    const pagesBeforeEncryptedImport = pageTabsRoot.children.length;
     const fileInput = document.getElementById("journal-notes-file");
     Object.defineProperty(fileInput, "files", { configurable: true, value: [new File([encryptedNotebookText], "field-notes.encrypted.json", { type: "application/json" })] });
     fileInput.dispatchEvent(new Event("change", { bubbles: true }));
     await until(() => body.value.includes("kitchen table dice"), "encrypted notebook import");
-    equal(pageTabsRoot.children[0].querySelector(".journal-page-tab-full").textContent, "Field notes", "uploading an encrypted notebook should restore page labels");
+    equal(pageTabsRoot.children.length, pagesBeforeEncryptedImport + 1, "uploading onto a filled page should open the imported notebook in a new page");
+    assert(pageTabsRoot.children[1].classList.contains("active"), "the imported page should become active");
+    pageTabsRoot.children[0].click();
+    assert(body.value.endsWith("temporary encrypted replacement"), "uploading should preserve the filled page that was already open");
+    pageTabsRoot.children[1].click();
+    assert(body.value.includes("kitchen table dice"), "the new page should contain the encrypted notebook import");
     const encryptChoice = document.getElementById("journal-notes-encrypt");
     encryptChoice.checked = false;
     encryptChoice.dispatchEvent(new Event("change", { bubbles: true }));
@@ -1720,12 +1748,23 @@
     document.getElementById("journal-notes-upload").click();
     body.value = "temporary replacement";
     body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "temporary replacement" }));
+    const pagesBeforePlainImport = pageTabsRoot.children.length;
     document.getElementById("journal-notes-status").textContent = "";
     Object.defineProperty(fileInput, "files", { configurable: true, value: [new File([notebookText], "field-notes.json", { type: "application/json" })] });
     fileInput.dispatchEvent(new Event("change", { bubbles: true }));
     await until(() => document.getElementById("journal-notes-status").textContent.includes("Imported"), "notebook import");
     assert(body.value.includes("kitchen table dice"), "uploading a notebook should restore its notes");
+    equal(pageTabsRoot.children.length, pagesBeforePlainImport + notebookDocument.pages.length, "each uploaded notebook page should be added when the current page is filled");
     equal(pageTabsRoot.children[0].querySelector(".journal-page-tab-full").textContent, "Field notes", "uploading should restore page labels");
+    const pagesBeforeEmptyImport = pageTabsRoot.children.length;
+    document.getElementById("add-journal-page").click();
+    equal(pageTabsRoot.children.length, pagesBeforeEmptyImport + 1, "the empty-page import check should start on a new page");
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [new File(["loaded into empty page"], "single.txt", { type: "text/plain" })] });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => body.value === "loaded into empty page", "plain text to load into the empty current page");
+    equal(pageTabsRoot.children.length, pagesBeforeEmptyImport + 1, "uploading onto an empty page should reuse it instead of adding another page");
+    document.getElementById("add-journal-page").click();
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(body.value), "the next Journal test should start from a fresh note line");
     document.querySelector('#journal-tool-tabs [data-journal-tool="state"]').click();
     await until(() => !document.getElementById("journal-state-card").hidden, "session state");
     const stateText = document.getElementById("journal-state-text");
@@ -2388,6 +2427,8 @@
     await until(() => document.querySelector("#psbted-out .psbted-pairs"), "editor pair tables");
     const outText = () => document.getElementById("psbted-out").textContent;
     assert(outText().includes("PSBT_IN_WITNESS_UTXO"), "typed pair names missing");
+    const vizText = () => document.querySelector("#psbted-out .psbted-viz").textContent;
+    assert(vizText().includes("finalized"), "finalized fixture lost its final scriptSig status on load");
     assert(outText().includes("100000000 sats"), "witness utxo amount missing");
     assert(outText().includes("parses under rust-bitcoin"), "rust-bitcoin verdict missing");
     assert(outText().includes("1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"), "mainnet output address missing");
@@ -2412,10 +2453,42 @@
     assert(edited.startsWith("cHNidP8B") && edited !== vector, "edited PSBT missing or unchanged");
     assert(!document.getElementById("psbted-build"), "the Re-serialize button is gone");
     assert(outText().includes("199901000"), "edited amount was not re-decoded");
+    // Issue #325: the amount edit invalidated every digest the fixture's final
+    // scriptSig committed to, so the pair is dropped instead of left looking
+    // signed; input 0 reads unsigned again. (The pair-type dropdown always
+    // lists the field name, so the signal is the diagram's status line.)
+    assert(!vizText().includes("finalized"), "stale final scriptSig survived a transaction edit");
+    // Issue #320: a valid edit followed by an invalid pending value leaves the
+    // last valid build visible but must disable every export boundary (copy,
+    // download, reload, QR) until the fields build again.
+    input(document.querySelector("[data-txout-val='0']"), "not-a-number");
+    await until(() => document.getElementById("psbted-error").textContent, "stale rebuild error");
+    for (const id of ["psbted-copy-b64", "psbted-copy-hex", "psbted-download", "psbted-reload", "psbted-result-b64", "psbted-result-hex"]) {
+      assert(document.getElementById(id).disabled, `${id} stayed enabled while stale`);
+    }
+    assert(!document.querySelector("#psbted-qr-code svg"), "stale bytes still animated as QR");
+    assert(outText().includes("last valid build"), "stale note missing");
+    // Typing back to a buildable value re-enables every export control.
+    input(document.querySelector("[data-txout-val='0']"), "199902000");
+    await until(() => document.getElementById("psbted-error").textContent === "" && document.getElementById("psbted-result-b64").value.includes("cHNidP8B"), "rebuild after stale");
+    assert(!document.getElementById("psbted-copy-b64").disabled, "copy stayed disabled after a clean rebuild");
+    assert(!document.getElementById("psbted-download").disabled, "download stayed disabled after a clean rebuild");
+    assert(document.querySelector("#psbted-qr-code svg"), "QR did not resume after a clean rebuild");
     input(box, '<img src=x onerror="window.__browserTestInjected=true">');
     document.getElementById("psbted-load").click();
     await until(() => document.getElementById("psbted-error").textContent, "editor rejection");
     assert(!document.querySelector("#psbted-card img") && window.__browserTestInjected !== true, "Editor input executed markup");
+    // Issue #358: BIP-370 v2 is wired into the editor — the spec's own minimal
+    // vector loads, synthesizes its transaction, and rebuilds byte-identically.
+    const v2 = "cHNidP8BAgQCAAAAAQQBAQEFAQIB+wQCAAAAAAEOIAsK2SFBnByHGXNdctxzn56p4GONH+TB7vD5lECEgV/IAQ8EAAAAAAABAwgACK8vAAAAAAEEFgAUxDD2TEdW2jENvRoIVXLvKZkmJywAAQMIi73rCwAAAAABBBYAFE3Rk6yWSlasG54cyoRU/i9HT4UTAA==";
+    input(box, v2);
+    document.getElementById("psbted-load").click();
+    await until(() => document.querySelector("#psbted-out .psbted-pairs") || document.getElementById("psbted-error").textContent, "v2 load");
+    equal(document.getElementById("psbted-error").textContent, "", "editor rejected the BIP-370 vector");
+    assert(outText().includes("PSBT v2 (BIP-370)"), "v2 verdict missing");
+    assert(outText().includes("PSBT_GLOBAL_TX_VERSION"), "v2 typed field names missing");
+    assert(outText().includes("PSBT_IN_PREVIOUS_TXID"), "v2 input field names missing");
+    assert(document.getElementById("psbted-result-b64").value === v2, "v2 rebuild was not byte-identical");
     input(box, "");
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("calc-card").hidden, "key workspace");
@@ -2457,7 +2530,9 @@
     await until(() => report().includes("transaction") || compareError(), "comparison report");
     equal(compareError(), "", "comparison failed");
     assert(report().includes("The underlying transaction changed"), "transaction change not flagged");
-    assert(report().includes("Signing state unchanged"), "signing state should read unchanged");
+    // The editor dropped the stale final scriptSig when the amount changed
+    // (issue #325), so the signing state differs from the pristine vector.
+    assert(report().includes("Signing state changed"), "dropped final scriptSig not flagged as a signing change");
     assert(report().includes("PSBT metadata unchanged"), "a transaction edit must not flag metadata");
     assert(report().includes("199900000") && report().includes("199901000"), "before/after amounts missing");
     // The same bytes on both sides are semantically identical.
@@ -2552,6 +2627,37 @@
     equal(document.getElementById("psbt-error").textContent, "", "inspector rejected the testnet selection");
     document.getElementById("network-picker-button").click();
     document.querySelector('#network-picker-menu [data-network="mainnet"]').click();
+    // Issue #350: an input whose witness UTXO claims 5,000 sats while its
+    // (txid-verified) non-witness UTXO carries 1,000 must not show a fee at
+    // all — the conflict is named and the fee stays unknown.
+    const conflictPsbt = "cHNidP8BAFICAAAAAYNUCtlv8zXTPDr2h+6wsPDUNuzsackM+DvAvxr0m8IIAAAAAAD/////AYQDAAAAAAAAFgAUEREREREREREREREREREREREREREAAAAAAAEBH4gTAAAAAAAAFgAUEREREREREREREREREREREREREREBAFICAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////AegDAAAAAAAAFgAUEREREREREREREREREREREREREREAAAAAAAA=";
+    input(box, conflictPsbt);
+    document.getElementById("psbt-go").click();
+    await until(() => document.getElementById("psbt-out").textContent.includes("Conflicting previous-output claims") || document.getElementById("psbt-error").textContent, "conflict report");
+    equal(document.getElementById("psbt-error").textContent, "", "inspector rejected the conflict fixture");
+    const conflictOut = document.getElementById("psbt-out").textContent;
+    assert(conflictOut.includes("Conflicting previous-output claims"), "conflict warning missing");
+    assert(conflictOut.includes("0.00005000") && conflictOut.includes("0.00001000"), "both claimed amounts missing");
+    assert(conflictOut.includes("Fee unknown"), "conflicted input must void the fee");
+    assert(!conflictOut.includes("Unverified fee"), "a fee was derived from conflicting claims");
+    // Issue #333: Taproot sighash suffixes are part of the safety analysis.
+    // ANYONECANPAY|ALL drops input commitment, not outputs, and says so.
+    const tapAcp = "cHNidP8BAF4CAAAAATMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzAQAAAAD/////AUCcAAAAAAAAIlEgEREREREREREREREREREREREREREREREREREREREREREAAAAAAAEBK1DDAAAAAAAAIlEgEREREREREREREREREREREREREREREREREREREREREREBE0FaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpagQAA";
+    input(box, tapAcp);
+    document.getElementById("psbt-go").click();
+    await until(() => document.getElementById("psbt-out").textContent.includes("ANYONECANPAY") || document.getElementById("psbt-error").textContent, "taproot sighash report");
+    equal(document.getElementById("psbt-error").textContent, "", "inspector rejected the taproot fixture");
+    const tapOut = document.getElementById("psbt-out").textContent;
+    assert(tapOut.includes("does not commit to all shown inputs"), "ANYONECANPAY|ALL must flag the missing input commitment");
+    assert(!tapOut.includes("does not commit to all shown outputs"), "ANYONECANPAY|ALL must not misstate output commitment");
+    // A 65-byte signature with an explicit 0x00 suffix is invalid (DEFAULT is
+    // only the 64-byte form) and must not parse as a countable signature.
+    const tapZero = "cHNidP8BAF4CAAAAATMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzAQAAAAD/////AUCcAAAAAAAAIlEgEREREREREREREREREREREREREREREREREREREREREREAAAAAAAEBK1DDAAAAAAAAIlEgEREREREREREREREREREREREREREREREREREREREREREBE0FaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaAAAA";
+    input(box, tapZero);
+    document.getElementById("psbt-go").click();
+    await until(() => document.getElementById("psbt-out").textContent.includes("not valid under BIP341") || document.getElementById("psbt-error").textContent, "explicit-zero sighash report");
+    equal(document.getElementById("psbt-error").textContent, "", "inspector rejected the explicit-zero fixture");
+    assert(document.getElementById("psbt-out").textContent.includes("not valid under BIP341"), "explicit 0x00 suffix must not read as SIGHASH_DEFAULT");
     input(box, "");
     document.getElementById("psbt-wipe").click();
     document.querySelector('#workspace [data-workspace="calc"]').click();
@@ -2892,17 +2998,59 @@
     );
     assert(pickerHash.src.startsWith("data:image/"), "the Journal key picker did not render a LifeHash");
     const body = document.getElementById("journal-notes-text");
+    const beforeKey = body.value;
+    const keyToken = defaultFingerprintName ? `◆◆ [${fingerprint}]\u2063` : `◆◆ ${option.dataset.keyName} [${fingerprint}]\u2063`;
+    body.setSelectionRange(body.value.length, body.value.length);
+    const pickerRoot = picker.nextElementSibling;
+    const pickerButton = pickerRoot.querySelector(".custom-select-button");
+    pickerButton.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    pickerButton.click();
+    assert(pickerRoot.classList.contains("open") && !pickerRoot.querySelector(".custom-select-list").hidden, "the key dropdown should open above the notepad");
+    [...pickerRoot.querySelectorAll(".custom-select-option")].find((item) => item.textContent.trim() === option.textContent.trim()).click();
+    await until(() => body.value.includes(keyToken), "the dropdown to insert its key");
+    equal(body.value.split("\n").slice(0, -1).join("\n"), beforeKey.split("\n").slice(0, -1).join("\n"), "the key dropdown should preserve earlier notes");
+    const insertedLine = body.value.split("\n").at(-1);
+    const insertedStamp = insertedLine.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  /)?.[0];
+    assert(insertedStamp && insertedLine === `${insertedStamp}${keyToken} `, "the key dropdown should insert after exactly one timestamp");
+    assert(body.value.includes(keyToken), "selecting a key should insert the same non-duplicated label inline");
+    assert(!body.value.includes(`${fingerprint} [${fingerprint}]`), "the inline key should not repeat a default fingerprint name");
+    let keyStart = body.value.indexOf(keyToken), keyEnd = keyStart + keyToken.length;
+    equal(body.value.slice(keyEnd), " ", "an inline key should have exactly one trailing space");
+    body.setSelectionRange(keyEnd + 1, keyEnd + 1);
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    equal(body.selectionStart, keyStart, "Backspace beside an inline key should select its beginning");
+    equal(body.selectionEnd, keyEnd, "Backspace beside an inline key should select the complete token");
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    assert(!body.value.includes(keyToken), "a second Backspace should remove the selected key");
+    equal(body.value.split("\n").slice(0, -1).join("\n"), beforeKey.split("\n").slice(0, -1).join("\n"), "removing an inline key should preserve earlier notes");
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(body.value.split("\n").at(-1)), "removing the only content in a note should restore its live empty timestamp");
     body.setSelectionRange(body.value.length, body.value.length);
     picker.value = option.value;
     picker.dispatchEvent(new Event("change", { bubbles: true }));
-    assert(body.value.includes(defaultFingerprintName ? `◆◆ [${fingerprint}] ◆` : `◆◆ ${option.dataset.keyName} [${fingerprint}] ◆`), "selecting a key should insert the same non-duplicated label inline");
-    assert(!body.value.includes(`${fingerprint} [${fingerprint}]`), "the inline key should not repeat a default fingerprint name");
+    keyStart = body.value.indexOf(keyToken, beforeKey.length);
+    keyEnd = keyStart + keyToken.length;
+    body.setSelectionRange(keyStart + 2, keyStart + 2);
+    body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    equal(body.selectionStart, keyStart, "clicking an inline key should select its beginning");
+    equal(body.selectionEnd, keyEnd, "clicking an inline key should select the complete token");
     const inlineHash = await until(
       () => [...document.querySelectorAll("#journal-notes-render .journal-inline-key-lifehash")].find((image) => !image.hidden && image.src),
       "inline Journal LifeHash",
     );
     const lineHeight = parseFloat(getComputedStyle(document.getElementById("journal-notes-render")).lineHeight);
     assert(inlineHash.getBoundingClientRect().height <= lineHeight, "the inline LifeHash should fit within the line height");
+    const lastLineStart = body.value.lastIndexOf("\n") + 1;
+    const stamp = body.value.slice(lastLineStart).match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  /)?.[0];
+    assert(stamp, "the inline key note should retain its timestamp");
+    body.value = body.value.slice(0, lastLineStart) + `${stamp}left  ${keyToken}   right`;
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "left and right" }));
+    keyStart = body.value.indexOf(keyToken, lastLineStart);
+    body.setSelectionRange(keyStart, keyStart + keyToken.length);
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    equal(body.value.slice(lastLineStart), `${stamp}left right`, "deleting an inline key should collapse surrounding whitespace to one space");
+    body.setSelectionRange(body.value.length, body.value.length);
+    picker.value = option.value;
+    picker.dispatchEvent(new Event("change", { bubbles: true }));
     equal(picker.value, "", "the key picker should reset after inserting a reference");
 
     state.lastBlob = null;
@@ -2976,6 +3124,27 @@
     assert(document.querySelector("#bip85-out .wallet-data-fields")?.textContent.includes("Master fingerprint"), "The BIP39 child did not identify its master fingerprint");
     assert(!document.getElementById("delete-bip85").disabled, "The child delete control did not become available");
 
+    document.querySelector('#workspace [data-workspace="journal"]').click();
+    document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
+    const journalPicker = document.getElementById("journal-key-insert");
+    const bip85Option = await until(
+      () => [...journalPicker.options].find((option) => option.dataset.referenceKind === "bip85"),
+      "BIP-85 child in the Journal key picker",
+    );
+    assert(bip85Option.textContent.startsWith("BIP-85 · BIP-39 · "), "The BIP-85 picker option did not identify its source and application");
+    const notes = document.getElementById("journal-notes-text");
+    notes.setSelectionRange(notes.value.length, notes.value.length);
+    journalPicker.value = bip85Option.value;
+    journalPicker.dispatchEvent(new Event("change", { bubbles: true }));
+    const bip85Token = `◈◈ BIP-85 · BIP-39 [${bip85Option.dataset.fingerprint}]\u2063`;
+    await until(() => notes.value.includes(bip85Token), "BIP-85 reference in the notepad");
+    const inlineBip85 = document.querySelector("#journal-notes-render .journal-inline-bip85");
+    assert(inlineBip85?.textContent.includes("BIP-85 · BIP-39"), "The inline BIP-85 reference did not retain its distinct label");
+    assert(getComputedStyle(inlineBip85).color === getComputedStyle(document.documentElement).getPropertyValue("--blue").trim() || getComputedStyle(inlineBip85).boxShadow !== "none", "The inline BIP-85 reference did not receive its distinct styling");
+
+    bip85Workspace.click();
+    await until(() => !document.getElementById("bip85-manager").hidden, "BIP-85 after Journal insertion");
+
     document.getElementById("add-bip85").click();
     await until(() => !document.getElementById("bip85-bench").hidden, "BIP-85 bench after plus");
     assert(!document.getElementById("bip85-out").textContent.trim(), "Returning to the bench left a child result visible");
@@ -2983,8 +3152,10 @@
     document.getElementById("bip85-go").click();
     await until(() => tabs.children.length === 3 && document.querySelector("#bip85-out #bip85-private-heading"), "second BIP-85 child tab");
     assert(tabs.children[2].querySelector(".key-tab-lifehash"), "The second BIP-85 child tab is missing its LifeHash target");
+    equal([...document.getElementById("journal-key-insert").options].filter((option) => option.dataset.referenceKind === "bip85").length, 2, "The Journal picker did not list every BIP-85 child");
     document.getElementById("delete-bip85").click();
     await until(() => tabs.children.length === 2, "selected BIP-85 child deletion");
+    equal([...document.getElementById("journal-key-insert").options].filter((option) => option.dataset.referenceKind === "bip85").length, 1, "The Journal picker retained a deleted BIP-85 child");
     assert(!document.getElementById("delete-bip85").disabled, "The remaining child was not selected after deletion");
 
     keyWorkspace.click();
@@ -3001,6 +3172,41 @@
     assert(document.getElementById("sp-key").value.trim(), "SP Station did not populate the selected session key");
     assert(document.getElementById("sp-session").textContent.includes("Session key from"), "SP Station did not load the selected key");
     assert(!document.getElementById("sp-error").textContent, "SP Station rejected a compatible Key Station key");
+
+    // Issue #331: the send flow derives each input's key from the loaded
+    // session — pasted scalars are refused. Self-payment to the session's own
+    // receive address, spending the session's own m/86'/1'/0'/0/0 output.
+    // (The SP select is set directly: the header picker invalidates the
+    // derived Key Station result, which the next tests still need.)
+    const spNetwork = document.getElementById("sp-network");
+    spNetwork.value = "testnet";
+    spNetwork.dispatchEvent(new Event("change", { bubbles: true }));
+    document.getElementById("sp-derive").click();
+    const receiveAddress = await until(() => document.getElementById("sp-address-value")?.textContent.startsWith("tsp1") && document.getElementById("sp-address-value"), "SP receive address");
+    const recipient = receiveAddress.textContent.trim();
+    document.querySelector('#sp-modes [data-sp-mode="send"]').click();
+    // m/86'/1'/0'/0/0 of this suite's wallet, as a key-path P2TR input.
+    const ownedVin = [{ txid: "00".repeat(32), vout: 0, scriptSig: "", txinwitness: "01" + "40" + "5a".repeat(64), prevout: { scriptPubKey: { hex: "51203b82b2b2a9185315da6f80da5f06d0440d8a5e1457fa93387c2d919c86ec8786" } } }];
+    input(document.getElementById("sp-recipients"), recipient);
+    input(document.getElementById("sp-send-vins"), JSON.stringify(ownedVin));
+    document.getElementById("sp-send-go").click();
+    await until(() => document.getElementById("sp-out").textContent.includes("taproot output") || document.getElementById("sp-error").textContent, "SP send computes");
+    assert(document.getElementById("sp-out").textContent.includes("1 taproot output"), "session-resolved send did not compute the output");
+    assert(document.getElementById("sp-out").textContent.includes("tb1p"), "the output did not render as testnet P2TR");
+    // A pasted scalar is refused.
+    input(document.getElementById("sp-send-vins"), JSON.stringify([{ ...ownedVin[0], private_key: "01".repeat(32) }]));
+    document.getElementById("sp-send-go").click();
+    await until(() => document.getElementById("sp-error").textContent.includes("derives each input's key from the loaded session"), "pasted scalar refusal");
+    // A foreign origin fingerprint is refused.
+    input(document.getElementById("sp-send-vins"), JSON.stringify([{ ...ownedVin[0], path: "m/86'/1'/0'/0/0", fingerprint: "deadbeef" }]));
+    document.getElementById("sp-send-go").click();
+    await until(() => document.getElementById("sp-error").textContent.includes("is not this session's 73c5da0a"), "foreign fingerprint refusal");
+    // And a script no session key produces is refused.
+    input(document.getElementById("sp-send-vins"), JSON.stringify([{ ...ownedVin[0], prevout: { scriptPubKey: { hex: "51208d678520df960df678ab30d318b913ddfdf56468e3d882459618173771af0e9c" } } }]));
+    document.getElementById("sp-send-go").click();
+    await until(() => document.getElementById("sp-error").textContent.includes("not found under this session"), "unowned script refusal");
+    spNetwork.value = "mainnet";
+    spNetwork.dispatchEvent(new Event("change", { bubbles: true }));
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("key-manager").hidden, "key workspace after SP Station test");
   });
@@ -3467,6 +3673,43 @@
     assert(state.downloadName === "entropylab-73c5da0a-private-wallet-secrets.dat", "Unexpected private wallet.dat filename");
     assert(dat.startsWith("SQLite format 3"), "private wallet.dat is not a SQLite database");
     assert(dat.includes("walletdescriptorkey"), "Private wallet.dat is missing spending key records");
+  });
+
+  await test("the picker chain identity reaches addresses and wallet.dat metadata", async () => {
+    // Issue #329: signet and regtest share testnet's key versions, but the
+    // chain identity must survive into the derived wallet — regtest renders
+    // bcrt1… addresses, and the wallet.dat header carries each chain's own
+    // network magic (bytes 68-72 of the SQLite header).
+    const magicOf = async () => {
+      const datButton = await until(() => document.getElementById("download-wallet-dat"), "wallet.dat button");
+      state.lastBlob = null;
+      datButton.click();
+      const bytes = new Uint8Array(await (await until(() => state.lastBlob, "wallet.dat blob")).arrayBuffer());
+      return [...bytes.subarray(68, 72)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    };
+    const pick = async (network) => {
+      document.getElementById("network-picker-button").click();
+      document.querySelector(`#network-picker-menu [data-network="${network}"]`).click();
+      const derive = await until(() => !document.getElementById("go").disabled && document.getElementById("go"), `derive button on ${network}`);
+      derive.click();
+      await until(() => document.querySelector("#acct .account-address-lead p.mono:not(.muted)"), `${network} address lead`);
+    };
+
+    await pick("regtest");
+    const regtestLead = document.querySelector("#acct .account-address-lead p.mono:not(.muted)").textContent.trim();
+    assert(regtestLead.startsWith("bcrt1q"), `regtest derive rendered ${regtestLead.slice(0, 12)}… instead of bcrt1q…`);
+    assert(document.querySelector("#acct .kicker")?.textContent.includes("regtest"), "The result did not identify the regtest chain");
+    equal(await magicOf(), "fabfb5da", "wallet.dat on regtest did not carry the regtest network magic");
+
+    await pick("signet");
+    const signetLead = document.querySelector("#acct .account-address-lead p.mono:not(.muted)").textContent.trim();
+    assert(signetLead.startsWith("tb1q"), `signet derive rendered ${signetLead.slice(0, 12)}… instead of tb1q…`);
+    equal(await magicOf(), "0a03cf40", "wallet.dat on signet did not carry the default-signet network magic");
+
+    // Restore the testnet result the following tests were written against.
+    await pick("testnet");
+    assert(document.querySelector("#acct .account-address-lead p.mono:not(.muted)").textContent.trim().startsWith("tb1q"), "testnet restore did not render tb1q…");
+    equal(await magicOf(), "0b110907", "wallet.dat on testnet did not carry the testnet network magic");
   });
 
   await test("versioned HTML export downloads the current self-contained release", async () => {

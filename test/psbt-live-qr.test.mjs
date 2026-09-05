@@ -67,6 +67,19 @@ test("the editor is live: no Re-serialize button, rebuild on every input event",
   assert.match(editor, /resultBytes = null;\s*\n\s*stale = false;\s*\n[\s\S]*?rebuild\(\);/);
 });
 
+test("stale builds disable every export boundary, not just the styling (issue #320)", () => {
+  const editor = read("src/js/psbt-editor.js");
+  // renderResult gates copy/download/reload, both textareas, and the QR.
+  assert.match(editor, /const gated = stale \? " disabled" : ""/);
+  for (const id of ["psbted-copy-b64", "psbted-copy-hex", "psbted-download", "psbted-reload"]) {
+    assert.ok(editor.includes(`id="${id}"`), `${id} must exist`);
+  }
+  assert.match(editor, /if \(stale\) return;/); // no handlers, no QR, when stale
+  // The keystroke path applies the same gating to the already-rendered panel.
+  assert.match(editor, /for \(const id of \["psbted-copy-b64", "psbted-copy-hex", "psbted-download", "psbted-reload", "psbted-result-b64", "psbted-result-hex"\]\)/);
+  assert.match(editor, /qr\.removeAttribute\("aria-label"\)/);
+});
+
 test("the result panel renders the QR block and its animation plumbing", () => {
   const editor = read("src/js/psbt-editor.js");
   assert.match(editor, /import \{ renderSVG as renderQrSvg \} from "uqr"/);
