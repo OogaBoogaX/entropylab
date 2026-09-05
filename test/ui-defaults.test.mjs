@@ -2233,11 +2233,11 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
     const card = markup.slice(markup.indexOf('id="vanity-tool-intro"'), markup.indexOf('id="vanity-out"'));
     assert.doesNotMatch(card, /id="vanity-salt"|brain.wallet|SHA-256/i);
   }
-  // The tab rides the same show/hide plumbing as every other tool, and
-  // leaving the tab stops the grind instead of grinding unseen.
+  // The tab rides the same show/hide plumbing as every other tool.
+  // Leaving the tab does not cancel the grind.
   assert.match(appSource, /getElementById\("vanity-card"\)\.hidden = id !== "vanity"/);
   assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity"\]\.forEach/);
-  assert.match(appSource, /else if \(hodlWorkspace === "vanity"\) hodlVanityCancel\(\);/);
+  assert.doesNotMatch(appSource, /else if \(hodlWorkspace === "vanity"\) hodlVanityCancel\(\);/);
   assert.match(appSource, /function hodlInitWorkspace\(\) \{[\s\S]*?hodlInitVanity\(\);/);
   // The workers spawn only from the button handler; nothing starts on boot,
   // on tab switches, or on input.
