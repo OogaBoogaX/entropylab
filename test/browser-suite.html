@@ -2388,6 +2388,13 @@
     await until(() => document.querySelector("#psbted-out .psbted-pairs"), "editor pair tables");
     const outText = () => document.getElementById("psbted-out").textContent;
     assert(outText().includes("PSBT_IN_WITNESS_UTXO"), "typed pair names missing");
+    // The loaded file keeps its own signing material: nothing was edited. A
+    // plain textContent probe cannot isolate one map — every map's "Add pair"
+    // select lists all pair types — so read the input 0 table by section.
+    const mapSectionText = (title) =>
+      [...document.querySelectorAll("#psbted-out .psbted-map")].find((section) => new RegExp(`${title} key-value map`).test(section.textContent))?.textContent ?? "";
+    assert(mapSectionText("Input 0").includes("PSBT_IN_FINAL_SCRIPTSIG"), "the loaded final scriptSig should be listed in input 0");
+    assert(!outText().includes("no longer committed to it"), "a plain load must not report dropped signatures");
     assert(outText().includes("100000000 sats"), "witness utxo amount missing");
     assert(outText().includes("parses under rust-bitcoin"), "rust-bitcoin verdict missing");
     assert(outText().includes("1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"), "mainnet output address missing");
@@ -2410,6 +2417,13 @@
     equal(document.getElementById("psbted-error").textContent, "", "live rebuild failed");
     const edited = document.getElementById("psbted-result-b64").value;
     assert(edited.startsWith("cHNidP8B") && edited !== vector, "edited PSBT missing or unchanged");
+    // Raising an output orphaned the finalized input's scriptSig: the editor
+    // must drop it and say so, rather than ship a PSBT that looks signed for
+    // outputs its signatures never committed to.
+    assert(outText().includes("no longer committed to it"), "the dropped signing material was not reported");
+    // The drop shows up in the map's own table (not just the notice): input 0
+    // had exactly the one final scriptSig and is empty afterwards.
+    assert(mapSectionText("Input 0").includes("No pairs in this map."), "input 0 kept signing material after the transaction edit: " + mapSectionText("Input 0").slice(0, 200));
     assert(!document.getElementById("psbted-build"), "the Re-serialize button is gone");
     assert(outText().includes("199901000"), "edited amount was not re-decoded");
     input(box, '<img src=x onerror="window.__browserTestInjected=true">');
@@ -2423,7 +2437,8 @@
 
   await test("PSBT editor compares a pasted PSBT semantically", async () => {
     // Same BIP-174 vector as the editor test above; the "after" PSBT is
-    // produced by the editor itself (output 0 raised by 1000 sats).
+    // produced by the editor itself (output 0 raised by 1000 sats, which also
+    // drops the finalized input's script: a transaction edit orphans it).
     const vector = "cHNidP8BAKACAAAAAqsJSaCMWvfEm4IS9Bfi8Vqz9cM9zxU4IagTn4d6W3vkAAAAAAD+////qwlJoIxa98SbghL0F+LxWrP1wz3PFTghqBOfh3pbe+QBAAAAAP7///8CYDvqCwAAAAAZdqkUdopAu9dAy+gdmI5x3ipNXHE5ax2IrI4kAAAAAAAAGXapFG9GILVT+glechue4O/p+gOcykWXiKwAAAAAAAEHakcwRAIgR1lmF5fAGwNrJZKJSGhiGDR9iYZLcZ4ff89X0eURZYcCIFMJ6r9Wqk2Ikf/REf3xM286KdqGbX+EhtdVRs7tr5MZASEDXNxh/HupccC1AaZGoqg7ECy0OIEhfKaC3Ibi1z+ogpIAAQEgAOH1BQAAAAAXqRQ1RebjO4MsRwUPJNPuuTycA5SLx4cBBBYAFIXRNTfy4mVAWjTbr6nj3aAfuCMIAAAA";
     document.querySelector('#workspace [data-workspace="psbt"]').click();
     document.querySelector('#psbt-tool-tabs [data-psbt-tool="editor"]').click();
@@ -2457,7 +2472,11 @@
     await until(() => report().includes("transaction") || compareError(), "comparison report");
     equal(compareError(), "", "comparison failed");
     assert(report().includes("The underlying transaction changed"), "transaction change not flagged");
-    assert(report().includes("Signing state unchanged"), "signing state should read unchanged");
+    // The edit raised an output, so the finalized input's script no longer
+    // commits to the transaction and the editor dropped it: the signing state
+    // really did change. Reading "unchanged" here would mean stale signatures
+    // survived a transaction edit.
+    assert(report().includes("Signing state changed"), "the dropped final script should flag a signing-state change");
     assert(report().includes("PSBT metadata unchanged"), "a transaction edit must not flag metadata");
     assert(report().includes("199900000") && report().includes("199901000"), "before/after amounts missing");
     // The same bytes on both sides are semantically identical.
