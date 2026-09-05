@@ -9562,8 +9562,12 @@ function hodlRenderPsbt(psbt) {
       signatures = signatures.concat(finalMaterial.signatures);
       uninspected += finalMaterial.uninspected + (finalMaterial.malformed ? 1 : 0);
     }
-    tapSignatureCount += tapSignatures.length;
-    html.push("<p class='psbt-kv'><strong>Input " + index + "</strong> \xB7 " + hodlHexRev(previous.txid) + " : " + previous.vout + (claim ? " \xB7 " + hodlSats(claim.amount) + " BTC claimed" : "") + "<br>" + hodlEscapeHtml(destination) + "<br>" + (signatures.length + tapSignatures.length ? signatures.length + tapSignatures.length + " signature(s) present" : finalized ? "Finalized input data present" : "Not signed yet") + (declaredSighashError ? "<br>Declared sighash policy unreadable: " + hodlEscapeHtml(declaredSighashError) : "<br>Signature policy: " + hodlEscapeHtml(declaredLabel)) + "</p>");
+    // Only a Schnorr signature that parses under BIP341 counts as present: an
+    // unparseable one is flagged as a policy problem below, not silently
+    // counted (issue #333).
+    let parsedTapSignatures = tapSignatures.reduce((count, tapSig) => count + (tapSig.r ? 1 : 0), 0);
+    tapSignatureCount += parsedTapSignatures;
+    html.push("<p class='psbt-kv'><strong>Input " + index + "</strong> \xB7 " + hodlHexRev(previous.txid) + " : " + previous.vout + (claim ? " \xB7 " + hodlSats(claim.amount) + " BTC claimed" : "") + "<br>" + hodlEscapeHtml(destination) + "<br>" + (signatures.length + parsedTapSignatures ? signatures.length + parsedTapSignatures + " signature(s) present" : finalized ? "Finalized input data present" : "Not signed yet") + (declaredSighashError ? "<br>Declared sighash policy unreadable: " + hodlEscapeHtml(declaredSighashError) : "<br>Signature policy: " + hodlEscapeHtml(declaredLabel)) + "</p>");
     if (claimConflict) html.push("<p class='psbt-bad'><strong>Conflicting previous-output claims:</strong> input " + index + " declares " + hodlSats(witnessUtxo.amount) + " BTC in its witness UTXO but " + hodlSats(nonWitnessUtxo.amount) + " BTC in its non-witness UTXO (checked against the embedded previous transaction). Neither amount is trusted and the fee is left unknown.</p>");
     if (nonWitnessError) html.push("<p class='psbt-bad'><strong>Non-witness UTXO problem:</strong> input " + index + ": " + hodlEscapeHtml(nonWitnessError) + " That field claims nothing.</p>");
     let inputEnvelopes = (inscriptionReport.inputs[index] && inscriptionReport.inputs[index].envelopes) || [];
