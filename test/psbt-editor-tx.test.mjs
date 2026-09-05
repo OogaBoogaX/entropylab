@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { psbtEditorBuildDoc, dropSigningPairs } from "../src/js/psbt-editor.js";
+import { psbtEditorBuildDoc, dropSigningPairs, signingAnchor } from "../src/js/psbt-editor.js";
 import { psbtBuildBytes, psbtInspectDoc } from "../src/js/psbt-wasm.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -137,13 +137,49 @@ test("dropSigningPairs removes exactly the transaction-committing fields (issues
   assert.ok(psbtBuildBytes(psbtEditorBuildDoc(doc)).length > 0);
 });
 
-test("the editor drops signing material when the transaction section changes (issues #325, #360)", () => {
+test("dropSigningPairs removes MuSig2 session material but keeps participant pubkeys (BIP-327, issue #325)", () => {
+  const doc = fixtureDoc();
+  doc.inputs[0].push(
+    { key: "1a" + "02".repeat(33), value: "02" + "03".repeat(33) }, // participant pubkeys: message-independent, stay
+    { key: "1b" + "02".repeat(33), value: "aa".repeat(66) }, // pub nonce: bound to the message, drops
+    { key: "1c" + "02".repeat(33), value: "bb".repeat(32) }, // partial signature: drops
+  );
+  const dropped = dropSigningPairs(doc);
+  assert.equal(dropped, 3); // 0x1b, 0x1c, and the fixture's own partial sig
+  assert.ok(doc.inputs[0].some((pair) => pair.key.slice(0, 2) === "1a"), "participant pubkeys stay");
+  assert.ok(!doc.inputs[0].some((pair) => ["1b", "1c"].includes(pair.key.slice(0, 2))), "nonces and partial sigs dropped");
+});
+
+test("the signing anchor covers UTXO declarations, not just the transaction (issue #325)", () => {
+  const doc = fixtureDoc();
+  const anchor = signingAnchor(doc);
+  // Re-reading the same document yields the same anchor.
+  assert.equal(signingAnchor(fixtureDoc()), anchor);
+  // A witness-UTXO value edit (amount or scriptPubKey) changes what every
+  // BIP-143/BIP-341 signature commits to, so the anchor moves…
+  const claim = doc.inputs[0].find((pair) => pair.key === "01");
+  claim.value = claim.value.slice(0, -1) + (claim.value.endsWith("0") ? "1" : "0");
+  assert.notEqual(signingAnchor(doc), anchor);
+  // …and a transaction edit moves it too.
+  const doc2 = fixtureDoc();
+  doc2.tx.outputs[0].value = String(Number(doc2.tx.outputs[0].value) + 1);
+  assert.notEqual(signingAnchor(doc2), anchor);
+  // A pair that commits to nothing (the sighash-type hint) leaves it alone.
+  const doc3 = fixtureDoc();
+  const hint = doc3.inputs[0].find((pair) => pair.key.slice(0, 2) === "03");
+  if (hint) {
+    hint.value = hint.value === "01000000" ? "02000000" : "01000000";
+    assert.equal(signingAnchor(doc3), anchor);
+  }
+});
+
+test("the editor drops signing material when the anchor changes (issues #325, #360)", () => {
   const editor = read("src/js/psbt-editor.js");
-  // The rebuild compares against the transaction the pairs were inspected
-  // with, and re-anchors only after a successful build.
-  assert.match(editor, /pristineTx !== null && JSON\.stringify\(doc\.tx\) !== pristineTx/);
+  // The rebuild compares against the transaction and UTXO declarations the
+  // pairs were inspected with, and re-anchors only after a successful build.
+  assert.match(editor, /pristineTx !== null && signingAnchor\(doc\) !== pristineTx/);
   assert.match(editor, /dropSigningPairs\(doc\)/);
-  assert.match(editor, /pristineTx = JSON\.stringify\(doc\.tx\)/);
+  assert.match(editor, /pristineTx = signingAnchor\(doc\)/);
   // Loads and wipes re-anchor so a fresh document's pairs are never stripped.
   assert.ok((editor.match(/pristineTx = null/g) || []).length >= 3, "load, load-failure, and wipe all reset the anchor");
 });
