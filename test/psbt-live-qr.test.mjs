@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { psbtQrPlan, PSBT_QR_STATIC_MAX_BYTES } from "../src/js/psbt-editor.js";
+import { psbtBuildBytes, psbtInspectDoc } from "../src/js/psbt-wasm.js";
 import { hodlUrDecodePsbt } from "../src/js/psbt-ur.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -78,6 +79,20 @@ test("stale builds disable every export boundary, not just the styling (issue #3
   // The keystroke path applies the same gating to the already-rendered panel.
   assert.match(editor, /for \(const id of \["psbted-copy-b64", "psbted-copy-hex", "psbted-download", "psbted-reload", "psbted-result-b64", "psbted-result-hex"\]\)/);
   assert.match(editor, /qr\.removeAttribute\("aria-label"\)/);
+});
+
+test("the rebuild verdict names the gate that actually ran: rust-bitcoin for v0, the BIP-370 reader for v2 (issue #358)", () => {
+  // rust-bitcoin's Psbt type is v0-only, so for a v2 build rustBitcoinError
+  // is null because the check never ran — the result line must not credit it.
+  const v2 = psbtInspectDoc(psbtBuildBytes({
+    tx: { version: 2, locktime: 0, inputs: [{ txid: "22".repeat(32), vout: 0, scriptSig: "", sequence: "4294967295" }], outputs: [{ value: 1000, scriptPubKey: "51" }] },
+    globals: [{ key: "fb", value: "02000000" }],
+    inputs: [[]], outputs: [[]],
+  }));
+  assert.equal(v2.psbtVersion, 2);
+  assert.equal(v2.rustBitcoinError, null);
+  const editor = read("src/js/psbt-editor.js");
+  assert.match(editor, /doc\.psbtVersion === 2\s*\?\s*"Rebuilt PSBT v2 round-trips through EntropyLab's own BIP-370 reader \(rust-bitcoin checks v0 only\)"\s*:\s*"Rebuilt PSBT parses under rust-bitcoin"/);
 });
 
 test("the result panel renders the QR block and its animation plumbing", () => {
