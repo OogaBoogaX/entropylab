@@ -217,6 +217,13 @@ export function snapshotSession(session) {
   lines.push(session.sp?.derived ? `- fingerprint ${session.sp.fingerprint || "unknown"}${session.sp.address ? `\n  ${session.sp.address}` : ""}` : "- not derived");
   lines.push("", "PSBT");
   lines.push(session.psbt?.loaded ? "- payload present in the inspector" : "- inspector empty");
+  if (session.psbt?.loaded && session.psbt?.nonce) {
+    let kind = session.psbt?.nonceKind === "transaction" ? "raw transaction" : "PSBT";
+    if (session.psbt.nonce === "reuse") lines.push(`- nonce verdict: reused ECDSA nonce in this ${kind} (same key, different digest)`);
+    else if (session.psbt.nonce === "possible") lines.push(`- nonce verdict: possible reuse in this ${kind} (digest incomplete)`);
+    else if (session.psbt.nonce === "incomplete") lines.push(`- nonce verdict: incomplete coverage in this ${kind}`);
+    else if (session.psbt.nonce === "clean") lines.push(`- nonce verdict: no repeated ECDSA r for the same key in this ${kind} (ECDSA signatures only; Taproot/Schnorr nonces are not analyzed)`);
+  }
   lines.push("", "This snapshot lives in this page until you download it. Closing the tab discards it.");
   return lines.join("\n");
 }

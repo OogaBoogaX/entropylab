@@ -1795,6 +1795,14 @@ test("Journal gates its four tools behind the encrypted notebook", () => {
   assert.match(appSource, /hodlJournalTool === "state"\) hodlJournalRefreshSessionState\(\)/);
   assert.doesNotMatch(appSource, /hodlJournalLog\("capture"|hodlJournalCaptureSession/);
   assert.match(appSource, /hodlJournalLog\("inspect", kind, "psbt"\)[\s\S]*hodlJournalLog\("inspect-error", "", "psbt"\)/);
+  assert.match(appSource, /function hodlJournalNonceVerdict\(/);
+  assert.match(appSource, /hodlJournalLog\("inspect-nonce-reuse", detail, "psbt"\)/);
+  // The hooks run after the nonce banners are pushed, gated on the same
+  // incompleteness predicate as the on-screen summary, and wrapped so logging
+  // cannot abort the render and hide a reuse warning.
+  assert.match(appSource, /psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this PSBT\.<\/p>"\);[\s\S]*hodlJournalNonceVerdict\("psbt", reused, possible, nonceIncomplete, rValues\.length\)/);
+  assert.match(appSource, /do not broadcast until the signatures are checked independently\.<\/p>"\);[\s\S]*hodlJournalNonceVerdict\("transaction", reused, possible, uninspected \|\| rValues\.length < 2, rValues\.length\)/);
+  assert.doesNotMatch(appSource, /hodlJournalLog\("inspect-nonce-reuse"[\s\S]{0,80}value\.hex/);
   assert.match(appSource, /hodlJournalLog\("calculate", hodlSpMode, "sp"\)[\s\S]*hodlJournalLog\("calculate-error", hodlSpMode, "sp"\)/);
   assert.match(appSource, /hodlJournalLog\("derive-error", "", "bip85"\)/);
   assert.match(appSource, /hodlJournalLog\("note-delete", "", "journal"\)/);

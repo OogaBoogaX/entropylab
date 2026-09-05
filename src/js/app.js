@@ -8224,6 +8224,32 @@ function hodlCompareNonces(rValues) {
   }
 }
 
+// Last inspect-only nonce verdict for the Journal session snapshot.
+// Never stores r values, signatures, or keys — counts and a short state only.
+var hodlPsbtNonceVerdict = "", hodlPsbtNonceVerdictKind = "";
+// `incomplete` is the same coverage predicate the on-screen Nonce-analysis
+// summary uses (unreadable sigs, Taproot/Schnorr sigs, or unsupported checks),
+// so the journal can never say "clean" while the summary says "Incomplete".
+function hodlJournalNonceVerdict(kind, reused, possible, incomplete, comparable) {
+  let detail = `${kind} · ${comparable} comparable · ${reused.length} reuse · ${possible.length} possible · ${incomplete} unreadable`;
+  hodlPsbtNonceVerdictKind = kind;
+  if (reused.length) {
+    hodlPsbtNonceVerdict = "reuse";
+    hodlJournalLog("inspect-nonce-reuse", detail, "psbt");
+    return;
+  }
+  if (possible.length) {
+    hodlPsbtNonceVerdict = "possible";
+    hodlJournalLog("inspect-nonce-possible", detail, "psbt");
+    return;
+  }
+  if (incomplete || comparable < 2) {
+    hodlPsbtNonceVerdict = "incomplete";
+    if (incomplete) hodlJournalLog("inspect-nonce-incomplete", detail, "psbt");
+    return;
+  }
+  hodlPsbtNonceVerdict = "clean";
+}
 function hodlPrivForPub(pubkey) {
   if (hodlPsbtPriv) {
     let compressed = hodlSecp256k1.getPublicKey(hodlPsbtPriv, true), uncompressed = hodlSecp256k1.getPublicKey(hodlPsbtPriv, false);
@@ -8274,6 +8300,8 @@ function hodlPsbtWipeMem() {
   hodlPsbtHd = null;
   hodlPsbtSource = "";
   hodlPsbtSessionSpec = { key: "No session key. Inspect-only mode." };
+  hodlPsbtNonceVerdict = "";
+  hodlPsbtNonceVerdictKind = "";
 }
 function hodlLoadPsbtKey(text, passphrase) {
   hodlPsbtWipeMem();
@@ -8797,6 +8825,10 @@ function hodlRunPsbt() {
   let output = document.getElementById("psbt-out"), manual = document.getElementById("psbt-key").value;
   hodlSetPsbtError(null);
   hodlPsbtLast = null;
+  // Invalidate the journal nonce verdict so a failed or pending re-inspect
+  // can never be reported against a stale prior payload.
+  hodlPsbtNonceVerdict = "";
+  hodlPsbtNonceVerdictKind = "";
   output.innerHTML = "";
   try {
     if (manual.trim()) {
@@ -8812,6 +8844,8 @@ function hodlRunPsbt() {
     hodlJournalLog("inspect", kind, "psbt");
   } catch (exception) {
     hodlPsbtLast = null;
+    hodlPsbtNonceVerdict = "";
+    hodlPsbtNonceVerdictKind = "";
     if (!hodlPsbtErrorSpec) hodlSetPsbtError({ raw: exception instanceof Error ? exception.message : String(exception) });
     else hodlSetPsbtError(hodlPsbtErrorSpec);
     hodlJournalLog("inspect-error", "", "psbt");
@@ -9515,6 +9549,12 @@ function hodlRenderPsbt(psbt) {
   if (tapSignatureCount) html.push("<p class='muted'>This PSBT also contains " + tapSignatureCount + " Taproot / Schnorr signature(s). They are counted but their BIP340 nonces are not analyzed in this version.</p>");
   html.push("<p class='muted'>RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding. Jade anti-exfil is secp256k1-zkp sign-to-contract and needs the USB host nonce plus signer opening; QR / sign_psbt Jade does not run it yet. BitBox anti-klepto is a different construction. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0\u20132, 50 receive + 50 change, all four script types. It does not talk to the chain.</p>");
   let nonceIncomplete = uninspected || tapSignatureCount || unsupportedNonceChecks || rValues.length < 2;
+  // Journal logging runs after every warning banner is pushed and is wrapped
+  // so a logging failure can never suppress the on-screen nonce verdict.
+  try {
+    hodlJournalNonceVerdict("psbt", reused, possible, nonceIncomplete, rValues.length);
+  } catch {
+  }
   let checks = [
     {
       label: "Previous outputs and fee",
@@ -9597,6 +9637,12 @@ function hodlRenderRawTx(tx) {
   else html.push("<p class='muted'>No ECDSA signatures with a readable r and public key were found.</p>");
   if (rValues.length) html.push("<p class='psbt-kv'>r values:<br>" + rValues.map((value) => hodlEscapeHtml(value.hex) + " (input " + value.input + ")").join("<br>") + "</p>");
   html.push("<p class='muted'>Raw-transaction inspect does not reconstruct sighashes. Paste the PSBT when you still can; use this path for a fully signed hex dump from a hardware wallet or Bitcoin Core.</p>");
+  // Journal logging runs after every warning banner is pushed and is wrapped
+  // so a logging failure can never suppress the on-screen nonce verdict.
+  try {
+    hodlJournalNonceVerdict("transaction", reused, possible, uninspected || rValues.length < 2, rValues.length);
+  } catch {
+  }
   return html.join("");
 }
 var hodlAccountId = "bip84",
@@ -12155,7 +12201,11 @@ function hodlJournalRefreshSessionState() {
   let sp = { derived: Boolean(hodlSpKeys?.fingerprint), fingerprint: hodlSpKeys?.fingerprint || "", address: "" };
   let addressEl = document.getElementById("sp-address");
   if (addressEl) sp.address = addressEl.textContent || addressEl.value || "";
-  let psbt = { loaded: Boolean((document.getElementById("psbt-text")?.value || "").trim() || (document.getElementById("psbted-text")?.value || "").trim()) };
+  let psbt = {
+    loaded: Boolean((document.getElementById("psbt-text")?.value || "").trim() || (document.getElementById("psbted-text")?.value || "").trim()),
+    nonce: hodlPsbtNonceVerdict,
+    nonceKind: hodlPsbtNonceVerdictKind,
+  };
   let text = hodlJournalSnapshot({
     capturedAt: hodlJournalStamp(),
     version: build?.textContent?.match(/v[\d.]+/)?.[0] || "",

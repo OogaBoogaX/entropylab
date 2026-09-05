@@ -149,6 +149,8 @@ test("a public snapshot names fingerprints and omits secrets unless asked", () =
     psbt: { loaded: false },
   });
   assert.match(publicText, /Updated: 2026-09-02 10:00:00/);
+  assert.match(publicText, /inspector empty/);
+  assert.doesNotMatch(publicText, /nonce verdict/);
   assert.match(publicText, /fingerprint a1b2c3d4/);
   assert.doesNotMatch(publicText, /abandon abandon abandon/);
   let privateText = snapshotSession({
@@ -161,6 +163,18 @@ test("a public snapshot names fingerprints and omits secrets unless asked", () =
     psbt: { loaded: false },
   });
   assert.match(privateText, /abandon abandon abandon/);
+  let reuseText = snapshotSession({
+    capturedAt: "2026-09-02 10:00:00",
+    includePrivate: false,
+    keys: [],
+    msigs: [],
+    bip85: [],
+    sp: { derived: false },
+    psbt: { loaded: true, nonce: "reuse", nonceKind: "psbt" },
+  });
+  assert.match(reuseText, /payload present in the inspector/);
+  assert.match(reuseText, /nonce verdict: reused ECDSA nonce in this PSBT/);
+  assert.doesNotMatch(reuseText, /\br=/);
 });
 
 test("wipe drops notes, log, and snapshot text", () => {
