@@ -78,6 +78,12 @@ test("stale builds disable every export boundary, not just the styling (issue #3
   // The keystroke path applies the same gating to the already-rendered panel.
   assert.match(editor, /for \(const id of \["psbted-copy-b64", "psbted-copy-hex", "psbted-download", "psbted-reload", "psbted-result-b64", "psbted-result-hex"\]\)/);
   assert.match(editor, /qr\.removeAttribute\("aria-label"\)/);
+  // And the byte text itself leaves the screen in both paths: disabling is
+  // not a boundary, since Firefox lets a disabled, readonly textarea's
+  // content be selected and copied.
+  assert.match(editor, /\$\{stale \? "" : escapeHtml\(b64\)\}/);
+  assert.match(editor, /\$\{stale \? "" : escapeHtml\(hex\)\}/);
+  assert.match(editor, /area\.value = ""/);
 });
 
 test("the result panel renders the QR block and its animation plumbing", () => {
