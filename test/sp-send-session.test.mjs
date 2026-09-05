@@ -78,19 +78,37 @@ const setup = () => {
   globalThis.hodlSpBytesToHex = bytesToHex;
 };
 
+const hodlSpWipeVinKeys = new Function(`${loadSlice("hodlSpWipeVinKeys")}; return hodlSpWipeVinKeys;`)();
+
 test("an owned input resolves through the ownership index, and the derived key matches the prevout", () => {
   setup();
   const [resolved] = hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT)]);
-  assert.ok(resolved.private_key, "no key injected");
-  const pub = secp256k1.getPublicKey(hexToBytes_(resolved.private_key), true);
+  // The scalar is handed over as a zeroable byte copy, not an immutable hex
+  // string that would outlive the node wipe (issue #331).
+  assert.ok(resolved.private_key instanceof Uint8Array, "key must be zeroable bytes");
+  assert.equal(resolved.private_key.length, 32);
+  const pub = secp256k1.getPublicKey(resolved.private_key, true);
   // The derived key really does produce the prevout script (BIP-341 tweak).
   assert.equal(bytesToHex(p2trKeyScript(pub.slice(1))), OWNED_SCRIPT);
   // Same result via an explicit path.
   const [byPath] = hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT, { path: "m/86'/1'/0'/0/0" })]);
-  assert.equal(byPath.private_key, resolved.private_key);
+  assert.deepEqual(byPath.private_key, resolved.private_key);
   // And the fingerprint guard accepts the session's own fingerprint.
   const [byOrigin] = hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT, { path: "m/86'/1'/0'/0/0", fingerprint: "73c5da0a" })]);
-  assert.equal(byOrigin.private_key, resolved.private_key);
+  assert.deepEqual(byOrigin.private_key, resolved.private_key);
+});
+
+test("the send flow wipes the derived byte copies after output construction (issue #331)", () => {
+  setup();
+  const [resolved] = hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT)]);
+  assert.ok(resolved.private_key.some((byte) => byte !== 0));
+  hodlSpWipeVinKeys([resolved]);
+  assert.ok(resolved.private_key.every((byte) => byte === 0), "derived copy zeroed");
+  // Missing or non-byte keys are simply skipped.
+  hodlSpWipeVinKeys([{ private_key: "00".repeat(32) }, {}]);
+  // The wiring: construction runs inside try, the wipe in finally, so the
+  // error path wipes too.
+  assert.match(app, /try \{\s*result = createSilentPaymentOutputs\(keyedVins, recipients, \{ hrp \}\);\s*\} finally \{\s*hodlSpWipeVinKeys\(keyedVins\);\s*\}/);
 });
 
 test("session derivation refuses pasted scalars, foreign origins, and unowned scripts (issue #331)", () => {
@@ -123,7 +141,3 @@ test("the shell copy points at session-derived inputs, not pasted keys", () => {
   assert.doesNotMatch(shell, /Each eligible input needs its private key/);
   assert.match(shell, /derived from the loaded session key/);
 });
-
-function hexToBytes_(hex) {
-  return new Uint8Array(hex.match(/../g).map((b) => parseInt(b, 16)));
-}
