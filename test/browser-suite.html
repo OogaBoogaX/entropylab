@@ -3077,6 +3077,28 @@
     await until(() => !document.getElementById("key-manager").hidden, "key workspace after Journal key reference test");
   });
 
+  await test("every address row opens a QR overlay showing that row's address", async () => {
+    const row = document.querySelector('#acct [data-address-table="hd-receive"] tbody tr');
+    const index = row?.querySelector("th")?.textContent.trim();
+    const address = row?.querySelector(".addr-text")?.textContent.trim();
+    const button = row?.querySelector(".addr-qr");
+    assert(row && index && address, "The receive table row is missing");
+    assert(button, "The receive address row has no QR button");
+    equal(button.dataset.addressQr, address, "The QR button carries a different address than the row");
+    equal(button.getAttribute("aria-label"), `Show QR code for Address #${index}`, "The QR button aria-label is wrong");
+    button.click();
+    const overlay = await until(() => {
+      const candidate = document.getElementById("addr-qr-overlay");
+      return candidate && !candidate.hidden && candidate;
+    }, "address QR overlay");
+    equal(overlay.querySelector("#addr-qr-title").textContent, `Address #${index}`, "The overlay title is wrong");
+    equal(overlay.querySelector("#addr-qr-address").textContent, address, "The overlay shows a different address than the row");
+    assert(overlay.querySelector("#addr-qr-image svg"), "The overlay did not render a QR code");
+    overlay.querySelector("#addr-qr-close").click();
+    await until(() => document.getElementById("addr-qr-overlay")?.hidden, "address QR overlay close");
+    assert(!overlay.querySelector("#addr-qr-image svg"), "The closed overlay kept its QR code");
+  });
+
   await test("BIP-85 keeps its Station and opens each child in a LifeHash fingerprint tab", async () => {
     const bip85Workspace = document.querySelector('#workspace [data-workspace="bip85"]');
     const keyWorkspace = document.querySelector('#workspace [data-workspace="calc"]');
