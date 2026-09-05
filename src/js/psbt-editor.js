@@ -809,6 +809,15 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
       }
     }
     if (!selector) return null;
+    // The output sats field exists twice per output — in the diagram box and
+    // in the transaction table row — so a bare data-attribute selector is
+    // ambiguous and querySelector would always return the diagram's field,
+    // stealing focus mid-edit. Qualify a duplicated selector by the edited
+    // element's classes.
+    if (out.querySelectorAll(selector).length > 1) {
+      const classes = [...el.classList];
+      if (classes.length) selector = `${el.tagName.toLowerCase()}.${classes.join(".")}${selector}`;
+    }
     return { selector, start: el.selectionStart, end: el.selectionEnd };
   };
 
@@ -1016,7 +1025,12 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
         liveRebuild();
       })
     );
-    out.querySelectorAll(".psbted-del").forEach((button) =>
+    // Pair-delete buttons only: the tx-element deletes and the diagram close
+    // button share the psbted-del styling class but carry no data-kind and
+    // have their own handlers — binding them here double-fires a pair delete
+    // with no kind (a TypeError surfaces as a spurious error banner and the
+    // fresh build is falsely marked stale).
+    out.querySelectorAll(".psbted-del[data-kind]").forEach((button) =>
       button.addEventListener("click", () => {
         const { kind, map, pair } = button.dataset;
         mutate((draft) => {

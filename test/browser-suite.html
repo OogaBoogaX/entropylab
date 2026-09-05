@@ -2474,6 +2474,34 @@
     assert(!document.getElementById("psbted-copy-b64").disabled, "copy stayed disabled after a clean rebuild");
     assert(!document.getElementById("psbted-download").disabled, "download stayed disabled after a clean rebuild");
     assert(document.querySelector("#psbted-qr-code svg"), "QR did not resume after a clean rebuild");
+    // Structural edits round-trip too: add an input and an output, delete
+    // them again. The row delete buttons share the psbted-del styling class
+    // with the pair deletes; the pair handler must not fire for them (it
+    // threw and falsely marked the fresh build stale).
+    document.querySelector("[data-tx-add='input']").click();
+    await until(() => document.querySelectorAll("[data-txin]").length === 3, "added input row");
+    equal(document.getElementById("psbted-error").textContent, "", "add input failed");
+    document.querySelector("[data-tx-add='output']").click();
+    await until(() => document.querySelectorAll(".psbted-txouts tbody tr").length === 3, "added output row");
+    equal(document.getElementById("psbted-error").textContent, "", "add output failed");
+    document.querySelector("[data-txout-del='2']").click();
+    await until(() => document.querySelectorAll(".psbted-txouts tbody tr").length === 2, "deleted output row");
+    equal(document.getElementById("psbted-error").textContent, "", "output delete raised a spurious error");
+    assert(!document.getElementById("psbted-stale-note"), "a clean delete was marked stale");
+    document.querySelector("[data-txin-del='2']").click();
+    await until(() => document.querySelectorAll("[data-txin]").length === 2, "deleted input row");
+    equal(document.getElementById("psbted-error").textContent, "", "input delete raised a spurious error");
+    assert(!document.getElementById("psbted-stale-note"), "a clean delete was marked stale");
+    assert(document.getElementById("psbted-result-b64").value.startsWith("cHNidP8B"), "result missing after structural edits");
+    // Focus stays in the table's sats field while typing: the diagram's sats
+    // field shares the data-txout-val attribute, so the restore selector
+    // must be qualified by the edited element, not resolve to the diagram.
+    const tableValue = document.querySelector("td input.psbted-num[data-txout-val='0']");
+    tableValue.focus();
+    input(tableValue, "199903000");
+    await until(() => outText().includes("199903000") || document.getElementById("psbted-error").textContent, "live rebuild from the table field");
+    equal(document.getElementById("psbted-error").textContent, "", "table-field rebuild failed");
+    equal(document.activeElement, document.querySelector("td input.psbted-num[data-txout-val='0']"), "focus left the table field while typing");
     input(box, '<img src=x onerror="window.__browserTestInjected=true">');
     document.getElementById("psbted-load").click();
     await until(() => document.getElementById("psbted-error").textContent, "editor rejection");
