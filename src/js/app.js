@@ -24,6 +24,7 @@ import {
   parseRecipientLines,
 } from "./bip321.js";
 import { inspectPsbtInscriptions, describeEnvelope } from "./inscription.js";
+import { hodlTapSighashProblems, hodlTapKeySigs, hodlTapScriptSigs } from "./psbt-schnorr.js";
 import { parseOpReturn, describeOpReturn } from "./opreturn.js";
 import { parseRawTx, extractEcdsaSignatures, inscriptionHints, isPsbtMagic, serializeTx } from "./tx.js";
 import { wasmExports as hodlWasm, withInput as hodlWasmIn, withOutput as hodlWasmOut } from "./entropylab-wasm.js";
@@ -7988,9 +7989,6 @@ function hodlPartialSigs(entries) {
     return { pubkey: entry.keydata, der: signature.slice(0, -1), sighash: signature[signature.length - 1], raw: signature };
   });
 }
-function hodlTapSigs(entries) {
-  return hodlFind(entries, 19).concat(hodlFind(entries, 20));
-}
 // PSBT_IN_SIGHASH_TYPE (input type 0x03): empty keydata, four-byte
 // little-endian policy. It must be decoded before signing, and shown even
 // without a session key.
@@ -8001,8 +7999,11 @@ function hodlSighashPolicy(entries) {
   return new DataView(declarations[0].val.buffer, declarations[0].val.byteOffset, 4).getUint32(0, true);
 }
 // The base type occupies the low seven bits; bit 0x80 marks ANYONECANPAY.
+// Base 0 is BIP341 SIGHASH_DEFAULT (Taproot), which commits to more than
+// SIGHASH_ALL; for ECDSA a 0x00 policy byte is meaningless and still flagged
+// by hodlSighashProblems.
 function hodlSighashLabel(policy) {
-  let base = policy & 0x7f, baseName = base === 1 ? "SIGHASH_ALL" : base === 2 ? "SIGHASH_NONE" : base === 3 ? "SIGHASH_SINGLE" : "unknown 0x" + base.toString(16);
+  let base = policy & 0x7f, baseName = base === 0 ? "SIGHASH_DEFAULT" : base === 1 ? "SIGHASH_ALL" : base === 2 ? "SIGHASH_NONE" : base === 3 ? "SIGHASH_SINGLE" : "unknown 0x" + base.toString(16);
   return baseName + ((policy & 0x80) ? " | ANYONECANPAY" : "") + " (0x" + policy.toString(16) + ")";
 }
 // Exact SIGHASH_ALL is the only policy that commits to every displayed
@@ -9371,7 +9372,7 @@ function hodlRenderPsbt(psbt) {
       declaredSighashError = exception.message || String(exception);
     }
     let declaredLabel = declaredSighashError ? "" : declaredSighash === null ? "SIGHASH_ALL (default)" : hodlSighashLabel(declaredSighash);
-    let previous = tx.inputs[index], destination = witnessUtxo ? hodlAddr(witnessUtxo.script, network) : "(previous output details unavailable)", signatures = hodlPartialSigs(entries), tapSignatures = hodlTapSigs(entries), finalized = hodlFinalized(entries);
+    let previous = tx.inputs[index], destination = witnessUtxo ? hodlAddr(witnessUtxo.script, network) : "(previous output details unavailable)", signatures = hodlPartialSigs(entries), tapSignatures = hodlTapKeySigs(entries, hodlFind).concat(hodlTapScriptSigs(entries, hodlFind)), finalized = hodlFinalized(entries);
     if (finalized) {
       // Finalized signatures moved into the final script fields must not
       // escape repeated-nonce analysis (issue #87).
@@ -9390,14 +9391,36 @@ function hodlRenderPsbt(psbt) {
       let className = envelope.unrecognizedEven || envelope.bodyBytes > 100000 ? "psbt-bad" : "psbt-warn";
       html.push("<p class='" + className + "'><strong>Inscription envelope</strong> \xB7 input " + index + " \xB7 #" + envelope.envelopeIndex + " \xB7 " + hodlEscapeHtml(envelope.source) + "<br>" + describeEnvelope(envelope).map(hodlEscapeHtml).join("<br>") + "</p>");
     });
+    // BIP341 SIGHASH_DEFAULT (0x00) is only meaningful for Taproot inputs;
+    // it commits to more than SIGHASH_ALL, so it is not a policy problem.
+    // Taproot inputs are recognized by their typed fields (BIP371 key,
+    // script, leaf, derivation, and merkle records), by present Taproot
+    // signatures, or by a v1 32-byte witness program in the claimed UTXO.
+    let taprootInput = tapSignatures.length > 0
+      || entries.some((entry) => entry.type >= 19 && entry.type <= 24)
+      || Boolean(witnessUtxo && witnessUtxo.script.length === 34 && witnessUtxo.script[0] === 0x51 && witnessUtxo.script[1] === 0x20);
     if (declaredSighashError) {
       policyProblems++;
       html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + " declares a malformed sighash policy. Do not sign until its policy is known.</p>");
-    } else if (declaredSighash !== null && declaredSighash !== 1) {
+    } else if (declaredSighash !== null && declaredSighash !== 1 && !(declaredSighash === 0 && taprootInput)) {
       policyProblems++;
       html.push("<p class='psbt-bad'><strong>Policy problem:</strong> input " + index + " requests " + hodlEscapeHtml(declaredLabel) + "; that policy does not commit to all shown outputs. Do not accept the displayed outputs as what a signature will authorize.</p>");
     }
-    if (tapSignatures.length || (finalized && !signatures.length)) policyIncomplete++;
+    // Taproot (BIP340) signature sighash bytes get the same policy verdict as
+    // ECDSA: DEFAULT and ALL are interchangeable, anything else is blocking.
+    tapSignatures.forEach((tapSignature) => {
+      let tapProblems = hodlTapSighashProblems(declaredSighash, tapSignature.sighash, hodlSighashLabel);
+      if (tapProblems.length) {
+        policyProblems++;
+        rows.push({
+          input: index,
+          message: hodlT("Signature policy problem: {problems}", { problems: tapProblems.join(" ") }),
+          className: "psbt-bad",
+          pubkey: tapSignature.pubkey.length ? hodlHex.encode(tapSignature.pubkey) : tapSignature.source === "tap-key" ? "key-path" : "script-path"
+        });
+      } else if (tapSignature.sighash === null) policyIncomplete++; // undecodable Taproot signature: no policy verdict possible
+    });
+    if (finalized && !signatures.length) policyIncomplete++;
     signatures.forEach(signature => {
       let parts = hodlSigParts(signature.der),
         looseR = parts ? parts.r : hodlDerRLoose(signature.der),
@@ -9512,7 +9535,7 @@ function hodlRenderPsbt(psbt) {
   else html.push("<p class='muted'>No ECDSA signatures with a readable r value are present, so there is no nonce to compare yet.</p>");
   if (rValues.length) html.push("<p class='psbt-kv'>r values:<br>" + rValues.map(value => hodlEscapeHtml(value.hex) + " (input " + value.input + ")").join("<br>") + "</p>");
   rows.forEach(row => html.push("<p class='" + row.className + "'><strong>Input " + row.input + "</strong> pubkey " + hodlEscapeHtml(row.pubkey.slice(0, 18)) + "\u2026 \u2014 " + hodlEscapeHtml(row.message) + "</p>"));
-  if (tapSignatureCount) html.push("<p class='muted'>This PSBT also contains " + tapSignatureCount + " Taproot / Schnorr signature(s). They are counted but their BIP340 nonces are not analyzed in this version.</p>");
+  if (tapSignatureCount) html.push("<p class='muted'>This PSBT also contains " + tapSignatureCount + " Taproot / Schnorr signature(s). Their sighash policy is checked above; their BIP340 nonces are not analyzed in this version.</p>");
   html.push("<p class='muted'>RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding. Jade anti-exfil is secp256k1-zkp sign-to-contract and needs the USB host nonce plus signer opening; QR / sign_psbt Jade does not run it yet. BitBox anti-klepto is a different construction. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0\u20132, 50 receive + 50 change, all four script types. It does not talk to the chain.</p>");
   let nonceIncomplete = uninspected || tapSignatureCount || unsupportedNonceChecks || rValues.length < 2;
   let checks = [
@@ -9530,7 +9553,7 @@ function hodlRenderPsbt(psbt) {
         ? "At least one malformed, unsafe, or conflicting policy was found; see the blocking warning below."
         : policyIncomplete
           ? "Some finalized, Taproot, or undecodable signature data could not be evaluated by this check."
-          : "Every policy declaration and readable ECDSA signature suffix available to this report commits to all displayed outputs.",
+          : "Every policy declaration and readable signature suffix available to this report commits to all displayed outputs.",
     },
     {
       label: "Output ownership / derivation",

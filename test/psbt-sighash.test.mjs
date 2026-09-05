@@ -54,6 +54,23 @@ test("every base type and its ANYONECANPAY form is labeled", () => {
   }
 });
 
+test("BIP341 SIGHASH_DEFAULT (0x00) is labeled, not reported as unknown", () => {
+  assert.ok(hodlSighashLabel(0).includes("SIGHASH_DEFAULT"));
+  assert.ok(hodlSighashLabel(0x80).includes("ANYONECANPAY"));
+});
+
+test("the inspector evaluates Taproot signature sighash bytes like ECDSA ones", () => {
+  const render = loadSlice("hodlRenderPsbt");
+  // Typed Taproot partial signatures (BIP371 key/script sig fields) are
+  // parsed and run through the same blocking policy verdict as ECDSA
+  // suffixes; anything but ALL/DEFAULT escalates to a psbt-bad row.
+  assert.match(render, /hodlTapKeySigs\(entries, hodlFind\)\.concat\(hodlTapScriptSigs\(entries, hodlFind\)\)/);
+  assert.match(render, /hodlTapSighashProblems\(declaredSighash, tapSignature\.sighash, hodlSighashLabel\)/);
+  // A Taproot input declaring SIGHASH_DEFAULT (0x00) is not a policy
+  // problem; a 0x00 declaration on any other input still is.
+  assert.match(render, /declaredSighash === 0 && taprootInput/);
+});
+
 test("exact SIGHASH_ALL declared and signed produces no problem", () => {
   assert.deepEqual(hodlSighashProblems(1, 1), []);
   assert.deepEqual(hodlSighashProblems(null, 1), []);

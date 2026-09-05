@@ -61,8 +61,11 @@ Official website: [entropylab.online](https://entropylab.online)
   anti-exfil (sign-to-contract) transcripts without a key, and can compare supported
   SegWit v0 SIGHASH_ALL signatures with RFC 6979, including Bitcoin Core-style low-r grinding, in a temporary session.
   Every input's declared sighash policy and each signature's appended sighash
-  byte are decoded without a key; anything other than exact SIGHASH_ALL is a
-  blocking warning. Finalized signatures that cannot be decoded or associated
+  byte are decoded without a key — ECDSA and Taproot (BIP340) partial
+  signatures alike; anything other than exact SIGHASH_ALL is a blocking
+  warning, except that Taproot signatures and policies may use the BIP341
+  SIGHASH_DEFAULT (0x00), which commits to more than SIGHASH_ALL. Finalized
+  signatures that cannot be decoded or associated
   with a key block any clean nonce verdict. The report gives each check a
   completed, problem, or incomplete state and gives an overall incomplete
   result whenever required data or support is missing. “Completed” describes
