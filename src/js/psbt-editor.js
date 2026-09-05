@@ -626,9 +626,16 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     // visible for reference but must not cross an export boundary: every
     // copy/download/reload control and the QR are disabled (issue #320).
     const gated = stale ? " disabled" : "";
+    // Name the gate that actually ran: rust-bitcoin's PSBT type is v0-only,
+    // so a v2 build is closed-loop-checked by the crate's own BIP-370 reader
+    // (lib.rs build_v2) — crediting rust-bitcoin here would be a lie, the
+    // same distinction the header verdict makes (issue #358).
+    const gate = doc.psbtVersion === 2
+      ? "Rebuilt PSBT v2 round-trips through EntropyLab's own BIP-370 reader (rust-bitcoin checks v0 only)"
+      : "Rebuilt PSBT parses under rust-bitcoin";
     box.innerHTML = `
       ${stale ? `<p class="psbted-note-warn" id="psbted-stale-note">The fields do not build right now — this is the last valid build. Export is unavailable until they build again.</p>` : ""}
-      <p class="psbt-ok">Rebuilt PSBT parses under rust-bitcoin; its unsigned transaction passes consensus sanity checks (${resultBytes.length} bytes).</p>
+      <p class="psbt-ok">${gate}; its unsigned transaction passes consensus sanity checks (${resultBytes.length} bytes).</p>
       <label class="field">Edited PSBT (base64)<textarea id="psbted-result-b64" readonly spellcheck="false"${gated}>${escapeHtml(b64)}</textarea></label>
       <div class="row psbt-actions">
         <button class="btn secondary" id="psbted-copy-b64" type="button"${gated}>Copy base64</button>
