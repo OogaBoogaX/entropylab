@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { t as hodlT } from "../src/js/i18n.js";
+import { hodlHexFormatLabels } from "../src/js/i18n-labels.js";
+// The sliced app.js functions resolve the label tables through the global, like hodlT.
+globalThis.hodlHexFormatLabels = hodlHexFormatLabels;
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
@@ -116,7 +119,8 @@ test("Base 8 uses a mixed-radix final character and Base32 switches to coin flip
   assert.equal(base8.finalCharacters, "0123");
   assert.equal(api.hodlAnalyzeEntropyInput(`${"0".repeat(42)}4`, "base8", 12).finalInvalid, true);
   const octalError = api.hodlNumberBaseEntropy(`${"0".repeat(42)}4`, "base8", 12).error;
-  assert.equal(octalError.key, "error.hexFinalMixed");
+  // The spec key is the English source text itself.
+  assert.equal(octalError.key, "The final {label} character contributes only {n} bits and must be one of {chars}.");
   assert.match(hodlT(octalError.key, octalError.vars), /final Octal character contributes only 2 bits and must be one of 0, 1, 2, 3/);
 
   const base32 = api.hodlEntropyFormatConfig("base32", 24);

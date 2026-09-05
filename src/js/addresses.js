@@ -6,7 +6,9 @@
 // p2pkh/p2sh-p2wpkh/p2wpkh/p2tr address rendering, P2SH/P2WSH wrapping,
 // bare and taproot multisig leaf scripts, and script -> address rendering
 // (which returns null for unknown templates, like the previous fallback that
-// showed the script hex). Networks are "mainnet" | "testnet".
+// showed the script hex). Networks are "mainnet" | "testnet" | "signet" |
+// "regtest": signet shares testnet's encodings; regtest differs only in its
+// bcrt1… bech32 HRP (issue #329).
 //
 // descriptorDerive is the rust-miniscript side of the crate: it parses an
 // output descriptor (BIP380-386 key expressions, xpubs and xprvs included),
@@ -24,6 +26,8 @@ const DESCRIPTOR_CAP = 4096; // address + scriptPubKey hex + 15 multisig keys is
 const netOf = (network) => {
   if (network === "mainnet") return 0;
   if (network === "testnet") return 1;
+  if (network === "signet") return 2;
+  if (network === "regtest") return 3;
   throw new Error("Unknown Bitcoin network: " + network);
 };
 

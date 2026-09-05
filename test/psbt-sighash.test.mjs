@@ -2,6 +2,7 @@
 // blocking without a session key. Regression coverage for each base type and
 // ANYONECANPAY combination.
 import { test } from "node:test";
+import { t as hodlT } from "../src/js/i18n.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -24,8 +25,9 @@ function loadSlice(name) {
 const hodlFind = (entries, type) => entries.filter((entry) => entry.type === type);
 const { hodlSighashPolicy, hodlSighashLabel, hodlSighashProblems } = new Function(
   "hodlFind",
+  "hodlT",
   `${["hodlSighashPolicy", "hodlSighashLabel", "hodlSighashProblems"].map(loadSlice).join("\n")}; return { hodlSighashPolicy, hodlSighashLabel, hodlSighashProblems };`,
-)(hodlFind);
+)(hodlFind, hodlT);
 
 const entry = (type, value, keydata = new Uint8Array(0)) => ({ type, keydata, val: value });
 const u32 = (value) => Uint8Array.of(value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255);

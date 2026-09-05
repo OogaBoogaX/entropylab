@@ -244,6 +244,75 @@ test("a non-witness utxo that does not match its input's outpoint is not claimed
   assert.deepEqual(reversed.fee, { known: false });
 });
 
+test("hostile amount totals mark totals and fee invalid instead of wrapping (issue #367)", () => {
+  // A structurally valid PSBT can claim amounts whose u64 total overflows; a
+  // wrapped sum would display as a plausible total or fee. The inspector must
+  // accumulate with checked arithmetic, report the totals as unknown and the
+  // fee as invalid, and separately refuse fees derived from amounts past
+  // Bitcoin's MAX_MONEY supply cap.
+  const le64hex = (value) => {
+    let n = BigInt(value);
+    const bytes = [];
+    for (let i = 0; i < 8; i++) { bytes.push(Number(n & 255n)); n >>= 8n; }
+    return Buffer.from(bytes).toString("hex");
+  };
+  // Each input claims `sats` via a witness utxo with an empty scriptPubKey.
+  const hostile = ({ claims, outputs }) => psbtInspectDoc(psbtBuildBytes({
+    tx: {
+      version: 2,
+      locktime: 0,
+      inputs: claims.map((_, vout) => ({ txid: "22".repeat(32), vout, scriptSig: "", sequence: 0xffffffff })),
+      outputs: outputs.map((value) => ({ value: String(value), scriptPubKey: "51" })),
+    },
+    globals: [],
+    inputs: claims.map((sats) => [{ key: "01", value: le64hex(sats) + "00" }]),
+    outputs: outputs.map(() => []),
+  }));
+  const U64_MAX = 18446744073709551615n;
+  const MAX_MONEY = 2100000000000000n;
+
+  // Multiple u64::MAX claims: the input total overflows; without checked
+  // arithmetic the fee would wrap to a small plausible number.
+  const claims = hostile({ claims: [U64_MAX, U64_MAX], outputs: [0n] });
+  assert.equal(claims.totalIn, null);
+  assert.equal(claims.fee.known, true);
+  assert.equal(claims.fee.sats, null);
+  assert.equal(claims.fee.error, "amounts overflow u64");
+
+  // Overflow boundary: u64::MAX + 1 wraps to exactly 0, which a wrapping
+  // build would show as fee 0. Checked arithmetic marks it invalid.
+  const boundary = hostile({ claims: [U64_MAX, 1n], outputs: [0n] });
+  assert.equal(boundary.totalIn, null);
+  assert.equal(boundary.fee.sats, null);
+  assert.equal(boundary.fee.error, "amounts overflow u64");
+
+  // Multiple u64::MAX outputs overflow the output total the same way, even
+  // though the input claim is honest.
+  const outs = hostile({ claims: [1000n], outputs: [U64_MAX, U64_MAX] });
+  assert.equal(outs.totalOut, null);
+  assert.equal(outs.fee.known, true);
+  assert.equal(outs.fee.sats, null);
+  assert.equal(outs.fee.error, "amounts overflow u64");
+
+  // u64::MAX exactly is representable but past the 21M BTC supply cap: the
+  // totals still render (they are the PSBT's own claims) but the fee must be
+  // invalid rather than a monetary-impossible number.
+  const capped = hostile({ claims: [U64_MAX], outputs: [0n] });
+  assert.equal(capped.fee.known, true);
+  assert.equal(capped.fee.sats, null);
+  assert.equal(capped.fee.error, "amounts exceed Bitcoin's MAX_MONEY");
+
+  // One sat over the cap invalidates the fee too.
+  const overCap = hostile({ claims: [MAX_MONEY + 1n], outputs: [0n] });
+  assert.equal(overCap.fee.sats, null);
+  assert.equal(overCap.fee.error, "amounts exceed Bitcoin's MAX_MONEY");
+
+  // Exactly MAX_MONEY stays valid: 21M BTC in, nothing out, all of it fee.
+  const exact = hostile({ claims: [MAX_MONEY], outputs: [0n] });
+  assert.deepEqual(exact.fee, { known: true, sats: 2100000000000000 });
+  assert.equal(exact.totalIn, 2100000000000000);
+});
+
 test("unknown and proprietary pairs round-trip with decodes", () => {
   const doc = inspectValid();
   doc.globals.push({ key: "fc026d7900", value: "deadbeef" });

@@ -113,6 +113,14 @@ image, so `npm ci` and `npm run build:wasm` work without further downloads.
 - **Tests:** new or changed behaviour needs a test; published vectors (BIP39,
   BIP32, Bitcoin Core) are preferred. Never weaken, skip, or delete an existing
   test to make CI pass — if it is wrong, say why.
+- **Translations:** user-facing text is written in English and translated
+  content-keyed — the English string at the call site is the catalog key
+  (`t("Save watch-only sheet")`), and a content sweep translates static markup
+  in place. There is no key naming and no `en.json`. After adding or editing
+  user-facing text, run `npm run i18n:sync` and fill the entries it appends to
+  all four catalogs in `src/locales/` (es, pt, fr, de); CI fails on missing or
+  dead entries. If you cannot translate a string competently, flag it in the
+  pull request — do not leave the catalogs silently incomplete.
 - **Pull requests:** small and focused, one change each. No drive-by
   reformatting or refactors. Describe what and why, and list the commands you
   ran. Comments explain intent and security reasoning, not the code.

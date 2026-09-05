@@ -73,9 +73,19 @@ material. Its security posture rests on the following model:
 - Silent Payments (BIP-352) support is a calculator: it derives reusable
   addresses, sender outputs, and spend tweaks from user-supplied keys and
   pasted transaction data. It does not connect to a node, Electrum server, or
-  indexer, and cannot detect payments on its own.
+  indexer, and cannot detect payments on its own. BIP-321 URIs and BIP-353 DNS
+  TXT records are printed from the derived code so you can publish them on a
+  domain you control; the page never resolves names, never fetches
+  silentpayments.net, and ignores Lightning parameters in a URI.
 - Inscription envelope detection is a parser of witness/tap-leaf scripts. It
   does not render inscription media, assign sat numbers, or contact an indexer.
+- PSBT analysis is explicitly bounded. EntropyLab does not independently fetch
+  or verify previous outputs, its output-ownership search covers only the
+  displayed account/address range and supported script types, RFC 6979 replay
+  needs a matching session key plus a supported SegWit v0 digest, and
+  Taproot/Schnorr nonces are not analyzed. The report marks these cases
+  incomplete; a completed individual check is not a security conclusion for
+  the transaction.
 - OP_RETURN detection is a parser of output scripts. It does not create
   data-carrier outputs, assign protocol meaning, or contact an indexer.
 - The published `CID.txt` is CIDv1 (raw, sha2-256) of the release
@@ -87,9 +97,17 @@ material. Its security posture rests on the following model:
 - The session Journal (notepad, session snapshot, session log) lives only in
   this page's memory. It is never written to `localStorage`, IndexedDB, or the
   network. Closing or hiding the page discards it with the other secret
-  fields. Downloaded notes or snapshots are files the user chose to keep. The
-  log records tool names, timestamps, and fingerprints — not seed phrases,
-  xprvs, or typed secrets.
+  fields. Downloads from all three tabs reuse the unlocked Entropy Journal
+  keys and are password-encrypted by default; the synchronized checkbox can
+  explicitly switch them back to plain JSON or text. The log records tool
+  names, timestamps, and fingerprints — not seed phrases, xprvs, or typed
+  secrets.
+- Key Manager lives behind the same unlocked Journal gate. Its `.elkeys`
+  exports reuse the Journal's deterministic export encryption and password;
+  the Key Manager does not generate a salt, nonce, password, or key material.
+  Imported private material remains in page memory and is not loaded into Key
+  Station until the user explicitly chooses it. Locking or clearing the
+  Journal drops pending and ignored Key Manager entries on a best-effort basis.
 - The Entropy Journal notebook is an encrypted notebook of entropy the user
   already produced, not a password manager and not a key generator. The
   AES-256-GCM key is PBKDF2-SHA-256 (600,000 rounds) of a password the user

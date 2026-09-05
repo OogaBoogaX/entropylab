@@ -5,30 +5,44 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   JOURNAL_ITERATIONS,
+  JOURNAL_EXPORT_VERSION,
   JOURNAL_LOG_LIMIT,
   JOURNAL_VERSION,
   METHODS,
   addEntry,
-  addNote,
+  NOTEBOOK_FORMAT,
+  NOTEBOOK_VERSION,
   appendLog,
   assertPassword,
   createDocument,
   createJournal,
-  deleteNote,
   emptyDocument,
   encodeFile,
+  defaultJournalPageStyle,
   formatLog,
-  formatNotes,
+  formatNotebook,
+  formatNotebookPages,
   formatStamp,
   openDocument,
+  openExport,
   parseFile,
   removeEntry,
   searchEntries,
   sealDocument,
+  sealExport,
   snapshotFromKeyState,
-  snapshotSession,
-  updateNote,
   wipeDocument,
+  journalFromPlainText,
+  journalBip85ReferenceToken,
+  journalKeyReferenceRanges,
+  journalKeyReferenceToken,
+  journalNotebookRuns,
+  journalTextFromRuns,
+  mergeNotebookImport,
+  notebookPageHasContent,
+  parseNotebook,
+  serializeNotebook,
+  snapshotSession,
   wipeJournal,
 } from "../src/js/journal.js";
 
@@ -46,19 +60,124 @@ test("formatStamp is local wall-clock, not UTC ISO", () => {
   assert.doesNotMatch(stamp, /T|Z/);
 });
 
-test("notes get incrementing ids and keep the typed time", () => {
+test("the notebook download preserves blank lines and removes untouched inline hints", () => {
+  let text = "2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note";
+  assert.equal(formatNotebook(text), "2026-09-02 10:00:00  first note");
+  assert.equal(formatNotebook("2026-09-02 10:00:00  first note\n2026-09-02 10:01:00  "), "2026-09-02 10:00:00  first note");
+  assert.equal(formatNotebook(""), "No notes.");
+});
+
+test("a multi-page notebook download includes every named page", () => {
+  assert.equal(formatNotebookPages([
+    { number: 1, name: "Field notes", notesText: "2026-09-02 10:00:00  first note" },
+    { number: 2, name: "Page 2", notesText: "2026-09-02 10:01:00  " },
+  ]), "Field notes\n2026-09-02 10:00:00  first note\n\nPage 2\nNo notes.");
+  assert.equal(formatNotebookPages([{ number: 1, name: "Page 1", notesText: "" }]), "No notes.");
+});
+
+test("key references round-trip as structured public runs and stay readable in text", () => {
+  let token = journalKeyReferenceToken("Signing ◆ key\nbackup", "A1B2C3D4");
+  assert.equal(token, "◆◆ Signing ◇ key backup [a1b2c3d4]\u2063");
+  let source = `before ${token} after`;
+  assert.deepEqual(journalNotebookRuns(source), [
+    { type: "text", text: "before " },
+    { type: "key", name: "Signing ◇ key backup", fingerprint: "a1b2c3d4" },
+    { type: "text", text: " after" },
+  ]);
+  assert.equal(journalTextFromRuns(journalNotebookRuns(source)), source);
+  assert.equal(formatNotebook(source), "before [Key: Signing ◇ key backup · a1b2c3d4] after");
+  assert.throws(() => journalKeyReferenceToken("Key", "not-an-xfp"), /8-character hexadecimal/);
+});
+
+test("key references do not repeat a default fingerprint name", () => {
+  let token = journalKeyReferenceToken("A1B2C3D4", "a1b2c3d4");
+  assert.equal(token, "◆◆ [a1b2c3d4]\u2063");
+  assert.deepEqual(journalNotebookRuns(token), [
+    { type: "key", name: "a1b2c3d4", fingerprint: "a1b2c3d4" },
+  ]);
+  assert.equal(journalTextFromRuns(journalNotebookRuns(token)), token);
+  assert.equal(formatNotebook(token), "[Key: a1b2c3d4]");
+});
+
+test("BIP-85 references round-trip with their application and remain visually distinct", () => {
+  for (let [application, label] of [["bip39", "BIP-39"], ["wif", "WIF"], ["xprv", "XPRV"], ["hex", "HEX"], ["pwd-base64", "Base64 password"], ["pwd-base85", "Base85 password"]]) {
+    let token = journalBip85ReferenceToken(application, "DEADBEEF");
+    assert.equal(token, `◈◈ BIP-85 · ${label} [deadbeef]\u2063`);
+    assert.deepEqual(journalNotebookRuns(token), [{
+      type: "key",
+      name: `BIP-85 · ${label}`,
+      fingerprint: "deadbeef",
+      source: "bip85",
+      application,
+    }]);
+    assert.equal(journalTextFromRuns(journalNotebookRuns(token)), token);
+    assert.equal(formatNotebook(token), `[BIP-85 ${label}: deadbeef]`);
+    assert.deepEqual(journalKeyReferenceRanges(token), [{ start: 0, end: token.length }]);
+  }
+  let journal = createJournal(), token = journalBip85ReferenceToken("wif", "deadbeef");
+  journal.pages[0].notesText = token;
+  let encoded = serializeNotebook(journal), document = JSON.parse(encoded);
+  assert.deepEqual(document.pages[0].content[0], {
+    type: "key", name: "BIP-85 · WIF", fingerprint: "deadbeef", source: "bip85", application: "wif",
+  });
+  assert.equal(parseNotebook(encoded).pages[0].notesText, token);
+  assert.throws(() => journalBip85ReferenceToken("unknown", "deadbeef"), /supported application/);
+  assert.throws(() => journalBip85ReferenceToken("wif", "not-an-xfp"), /8-character hexadecimal/);
+});
+
+test("the versioned notebook preserves pages, styles, and key references", () => {
   let journal = createJournal();
-  let first = addNote(journal, { text: "dice from the kitchen table" }, new Date(2026, 8, 2, 10, 0, 0));
-  let second = addNote(journal, { at: "2026-09-02 11:00:00", text: "passphrase hint is the dog" });
-  assert.equal(first.id, 1);
-  assert.equal(second.id, 2);
-  assert.equal(first.at, "2026-09-02 10:00:00");
-  assert.equal(journal.notes.length, 2);
-  updateNote(journal, 1, { text: "updated" });
-  assert.equal(journal.notes[0].text, "updated");
-  assert.equal(deleteNote(journal, 1), true);
-  assert.equal(journal.notes.length, 1);
-  assert.match(formatNotes(journal.notes), /Written: 2026-09-02 11:00:00/);
+  journal.pages[0].name = "Field notes";
+  journal.pages[0].style = { font: "serif", size: "large", spacing: "spacious" };
+  journal.pages[0].notesText = `2026-09-02 10:00:00  ${journalKeyReferenceToken("Key 1", "deadbeef")}`;
+  journal.pages.push({ id: 2, number: 2, name: "Page 2", notesText: "second", style: { font: "sans", size: "small", spacing: "compact" } });
+  journal.activePage = 1;
+  let encoded = serializeNotebook(journal), document = JSON.parse(encoded);
+  assert.equal(document.format, NOTEBOOK_FORMAT);
+  assert.equal(document.version, NOTEBOOK_VERSION);
+  assert.deepEqual(document.pages[0].content[1], { type: "key", name: "Key 1", fingerprint: "deadbeef" });
+  assert.doesNotMatch(encoded, /data:image|<img|xprv|mnemonic/);
+  let restored = parseNotebook(encoded);
+  assert.equal(restored.pages.length, 2);
+  assert.equal(restored.activePage, 1);
+  assert.equal(restored.pages[0].notesText, journal.pages[0].notesText);
+  assert.deepEqual(restored.pages[0].style, journal.pages[0].style);
+  assert.deepEqual(restored.pages[1].style, journal.pages[1].style);
+  assert.equal(restored.nextPageNumber, 3);
+});
+
+test("notebook imports validate their schema and legacy text becomes one page", () => {
+  assert.throws(() => parseNotebook("not json"), /not valid notebook JSON/);
+  assert.throws(() => parseNotebook('{"format":"something-else","version":1,"pages":[]}'), /not a supported/);
+  assert.throws(() => journalTextFromRuns([{ type: "html", text: "<img>" }]), /unsupported content item/);
+  let legacy = journalFromPlainText("old notes\nkept as text");
+  assert.equal(legacy.pages.length, 1);
+  assert.equal(legacy.pages[0].notesText, "old notes\nkept as text");
+  assert.deepEqual(legacy.pages[0].style, defaultJournalPageStyle());
+});
+
+test("notebook uploads preserve a filled page and reuse an empty current page", () => {
+  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), false);
+  assert.equal(notebookPageHasContent("\n  \n2026-09-04 13:17:24  Add new note"), false);
+  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  kept"), true);
+  let imported = journalFromPlainText("uploaded notes");
+  let journal = createJournal();
+  journal.pages[0].notesText = "2026-09-04 13:17:24  existing notes";
+  journal.notesText = journal.pages[0].notesText;
+  let merged = mergeNotebookImport(journal, imported);
+  assert.equal(merged.pages.length, 2);
+  assert.equal(merged.pages[0].notesText, journal.pages[0].notesText);
+  assert.equal(merged.pages[1].notesText, "uploaded notes");
+  assert.equal(merged.pages[1].name, "Page 2");
+  assert.equal(merged.activePage, 1);
+  let empty = createJournal();
+  empty.pages[0].notesText = "2026-09-04 13:17:24  ";
+  merged = mergeNotebookImport(empty, imported);
+  assert.equal(merged.pages.length, 1);
+  assert.equal(merged.pages[0].id, 1);
+  assert.equal(merged.pages[0].number, 1);
+  assert.equal(merged.pages[0].notesText, "uploaded notes");
+  assert.equal(merged.activePage, 0);
 });
 
 test("the log is a ring buffer and never stores more than the cap", () => {
@@ -83,6 +202,7 @@ test("a public snapshot names fingerprints and omits secrets unless asked", () =
     sp: { derived: false },
     psbt: { loaded: false },
   });
+  assert.match(publicText, /Updated: 2026-09-02 10:00:00/);
   assert.match(publicText, /fingerprint a1b2c3d4/);
   assert.doesNotMatch(publicText, /abandon abandon abandon/);
   let privateText = snapshotSession({
@@ -99,13 +219,21 @@ test("a public snapshot names fingerprints and omits secrets unless asked", () =
 
 test("wipe drops notes, log, and snapshot text", () => {
   let journal = createJournal();
-  addNote(journal, { text: "secret hint" });
   appendLog(journal, { tool: "calc", action: "derive", detail: "fp=aa" });
   journal.stateText = "xprv...";
+  journal.notesText = "2026-09-02 10:00:00  secret hint";
+  journal.pages.push({ id: 2, number: 2, name: "Field notes", notesText: journal.notesText });
+  journal.activePage = 1;
+  journal.nextPageId = 3;
+  journal.nextPageNumber = 3;
   wipeJournal(journal);
-  assert.equal(journal.notes.length, 0);
   assert.equal(journal.log.length, 0);
   assert.equal(journal.stateText, "");
+  assert.equal(journal.notesText, "");
+  assert.deepEqual(journal.pages, [{ id: 1, number: 1, name: "Page 1", notesText: "", style: defaultJournalPageStyle() }]);
+  assert.equal(journal.activePage, 0);
+  assert.equal(journal.nextPageId, 2);
+  assert.equal(journal.nextPageNumber, 2);
 });
 
 test("the journal module never talks to the network, browser storage, or a CSPRNG", () => {
@@ -224,6 +352,22 @@ test("encryption is deterministic: same password and entries, same file", async 
   const after = await sealDocument(created.doc, created.keys);
   assert.notEqual(after.iv, before.iv);
   assert.deepEqual(before, first);
+});
+
+test("tab exports reuse the unlocked journal password keys and remain deterministic", async () => {
+  const created = await createDocument(password, password);
+  const first = await sealExport("notebook", "reloadable notebook JSON", created.keys);
+  const second = await sealExport("notebook", "reloadable notebook JSON", created.keys);
+  assert.equal(first.entropylabJournalExport, JOURNAL_EXPORT_VERSION);
+  assert.deepEqual(second, first);
+  assert.deepEqual(await openExport(JSON.stringify(first), created.keys), {
+    kind: "notebook",
+    content: "reloadable notebook JSON",
+  });
+  const other = await createDocument(otherPassword, otherPassword);
+  await assert.rejects(() => openExport(first, other.keys), /different journal password/);
+  await assert.rejects(() => sealExport("unknown", "text", created.keys), /not supported/);
+  await assert.rejects(() => openExport("{}", created.keys), /not an encrypted Journal export/);
 });
 
 test("encodeFile stores the IV and iteration count next to the ciphertext", () => {

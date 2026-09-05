@@ -696,23 +696,42 @@ fn inspect(bytes: &[u8]) -> Result<String, String> {
         })).collect::<Vec<_>>(),
     });
 
-    let mut known_in_sats = 0u64;
+    // Monetary totals accumulate with checked arithmetic: a hostile PSBT can
+    // claim structurally valid amounts whose u64 sum overflows, and that must
+    // mark the totals and fee invalid instead of wrapping (issue #367).
+    // MAX_MONEY is enforced separately — totals within u64 but past Bitcoin's
+    // supply cap are monetary-invalid, so no fee is derived from them.
+    let max_money = Amount::MAX_MONEY.to_sat();
+    let mut known_in_sats = Some(0u64);
     let mut known_inputs = 0usize;
+    let mut money_valid = true;
     for (index, pairs) in raw.inputs.iter().enumerate() {
         if let Some(amount) = pairs.iter().find_map(|p| claimed_prevout_amount(p, tx, index)) {
-            known_in_sats += amount;
+            known_in_sats = known_in_sats.and_then(|sum| sum.checked_add(amount));
+            money_valid &= amount <= max_money;
             known_inputs += 1;
         }
     }
-    let out_sum: u64 = tx.output.iter().map(|o| o.value.to_sat()).sum();
-    let fee = if known_inputs == tx.input.len() {
-        if known_in_sats >= out_sum {
-            json!({ "known": true, "sats": known_in_sats - out_sum })
+    money_valid &= known_in_sats.is_none_or(|sum| sum <= max_money);
+    let out_sum = tx
+        .output
+        .iter()
+        .try_fold(0u64, |sum, output| sum.checked_add(output.value.to_sat()));
+    money_valid &= out_sum.is_none_or(|sum| sum <= max_money)
+        && tx.output.iter().all(|output| output.value.to_sat() <= max_money);
+
+    let fee = if known_inputs != tx.input.len() {
+        json!({ "known": false })
+    } else if let (Some(in_sum), Some(out_sum)) = (known_in_sats, out_sum) {
+        if !money_valid {
+            json!({ "known": true, "sats": Value::Null, "error": "amounts exceed Bitcoin's MAX_MONEY" })
+        } else if in_sum >= out_sum {
+            json!({ "known": true, "sats": in_sum - out_sum })
         } else {
             json!({ "known": true, "sats": Value::Null, "error": "outputs exceed claimed inputs" })
         }
     } else {
-        json!({ "known": false })
+        json!({ "known": true, "sats": Value::Null, "error": "amounts overflow u64" })
     };
 
     let rust_bitcoin_error = match Psbt::deserialize(bytes) {
@@ -726,8 +745,8 @@ fn inspect(bytes: &[u8]) -> Result<String, String> {
         "globals": raw.globals.iter().map(|p| pair_json("global", p, tx, None)).collect::<Vec<_>>(),
         "inputs": raw.inputs.iter().enumerate().map(|(n, map)| map.iter().map(|p| pair_json("input", p, tx, Some(n))).collect::<Vec<_>>()).collect::<Vec<_>>(),
         "outputs": raw.outputs.iter().map(|map| map.iter().map(|p| pair_json("output", p, tx, None)).collect::<Vec<_>>()).collect::<Vec<_>>(),
-        "totalIn": if known_inputs == tx.input.len() { json!(known_in_sats) } else { Value::Null },
-        "totalOut": out_sum,
+        "totalIn": if known_inputs == tx.input.len() { known_in_sats.map_or(Value::Null, |sum| json!(sum)) } else { Value::Null },
+        "totalOut": out_sum.map_or(Value::Null, |sum| json!(sum)),
         "fee": fee,
         "rustBitcoinError": rust_bitcoin_error,
     });

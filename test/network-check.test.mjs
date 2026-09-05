@@ -111,11 +111,12 @@ test("does not throw when the status tag is missing", () => {
 
 test("the status tag ships online, sits in the header, and is wired to the build", () => {
   const template = read("src/index.html");
+const shell = read("src/shell.html");
   const app = read("src/js/app.js");
   const build = read("scripts/build.mjs");
   const css = read("src/css/styles.css");
   const live = (markup) => markup.replace(/<!--[\s\S]*?-->/g, "");
-  for (const markup of [template, app]) {
+  for (const markup of [shell]) {
     const doc = live(markup);
     const tag = doc.match(/<span[^>]*id="network-status"[^>]*>/)?.[0];
     assert.ok(tag, "the network status tag is missing from the live document");

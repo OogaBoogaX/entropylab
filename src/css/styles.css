@@ -218,6 +218,18 @@ textarea { display: block; min-height: 96px; letter-spacing: 0.08em; }
   display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
   color: var(--ok); font-size: 13px; font-weight: 600; white-space: nowrap;
 }
+/* Narrow screens only: the badge drops below the toggle and the shortfall takes
+   its own line, while each phrase stays on one line. */
+@media (max-width: 720px) {
+  .global-sync-head { flex-wrap: wrap; }
+  .global-sync-toggle { flex: 1 1 100%; }
+  .global-sync-status { flex: 1 1 100%; flex-wrap: wrap; white-space: normal; }
+  .global-sync-status > span { white-space: nowrap; }
+}
+.global-sync-shortfall {
+  display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; color: var(--warn);
+}
+.global-sync-shortfall svg { display: block; width: 16px; height: 16px; }
 .global-sync-status[hidden] { display: none; }
 .global-sync-status svg { display: block; width: 16px; height: 16px; }
 .number-base-calculations-toggle { width: 100%; margin-top: var(--space-control); }
@@ -295,9 +307,9 @@ textarea { display: block; min-height: 96px; letter-spacing: 0.08em; }
   .dplus-calculation-sum { justify-content: flex-start; flex-wrap: wrap; margin-top: 7px; padding-top: 6px; gap: 4px; font-size: 10px; white-space: normal; overflow: visible; }
 }
 .passphrase-field { margin-top: var(--space-component); font-size: 14px; font-weight: 600; }
-.passphrase-keyboard-tools { display: flex; align-items: stretch; gap: var(--space-control); margin-top: var(--space-control); }
+.passphrase-keyboard-tools { display: flex; align-items: flex-start; gap: var(--space-control); margin-top: var(--space-control); }
 .passphrase-keyboard-tools[hidden] { display: none; }
-.passphrase-keyboard-tools .seed-keyboard-toggle { align-self: stretch; height: auto; }
+.passphrase-keyboard-tools .seed-keyboard-toggle { align-self: flex-start; }
 .passphrase-bip39-options { display: grid; flex: 1 1 auto; gap: var(--space-control); }
 .passphrase-bip39-toggle, .passphrase-autocomplete-toggle { width: 100%; margin-top: 0; }
 .passphrase-autocomplete-toggle[hidden] { display: none; }
@@ -614,10 +626,10 @@ details.lab-entropy .wallet-result-messages { margin-top: var(--space-control); 
 .table-private-field-value { display: inline-grid; white-space: nowrap; }
 .private-field-value:not(.secret-placeholder),
 .table-private-field-value:not(.secret-placeholder) { color: var(--blue); }
-.secret-placeholder { display: grid; color: var(--muted); }
+.secret-placeholder { display: grid; min-width: 0; max-width: 100%; color: var(--muted); }
 .secret-placeholder > .secret-placeholder-mask,
 .secret-placeholder > .secret-placeholder-message { grid-area: 1 / 1; }
-.secret-placeholder-mask { visibility: hidden; user-select: none; }
+.secret-placeholder-mask { min-width: 0; max-width: 100%; visibility: hidden; overflow-wrap: anywhere; word-break: break-all; user-select: none; }
 .secret-placeholder-message { color: var(--muted); }
 .secret-placeholder-label {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -629,12 +641,12 @@ details.lab-entropy .wallet-result-messages { margin-top: var(--space-control); 
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { text-align: left; color: var(--muted); font-weight: 600; padding: 8px; }
 td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; font-family: var(--mono); }
-.qr { background: var(--paper); padding: 8px; border: 1px solid var(--border); border-radius: 8px; display: inline-block; }
-.qr svg { display: block; width: 140px; height: 140px; }
+.qr { max-width: 100%; background: var(--paper); padding: 8px; border: 1px solid var(--border); border-radius: 8px; display: inline-block; }
+.qr svg { display: block; max-width: 100%; width: 140px; height: auto; aspect-ratio: 1; }
 .qr-descriptor { padding: 12px; }
-.qr-descriptor svg { width: 280px; height: 280px; }
+.qr-descriptor svg { width: 280px; height: auto; }
 .qr-seed { padding: 12px; }
-.qr-seed svg { width: 200px; height: 200px; }
+.qr-seed svg { width: 200px; height: auto; }
 .watch-only-qr { margin: 12px 0 16px; }
 .seed-qr-pair { display: grid; gap: 16px; }
 .seed-qr-pair .watch-only-qr { margin: 0; }
@@ -770,8 +782,9 @@ td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; fon
 .download-mark { display: block; flex: 0 0 auto; }
 /* Header controls sit below the app's default 44px so the bar stays slim.
    Keep --site-header-height in step. */
-.header-button { min-height: 40px; font-size: 14px; }
-.download-controls > a { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.header-button, .journal-file-button { min-height: 40px; font-size: 14px; }
+.download-controls > a, .journal-file-button { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.journal-file-button .control-label { display: inline; }
 /* Centring puts the label's em box on the button's centre line, but a font's
    ascent leaves more room above the caps than its descent leaves below, so the
    glyphs land a pixel low next to a symmetric icon. This nudge is optical, not
@@ -794,14 +807,14 @@ td { border-top: 1px solid var(--border); padding: 8px; vertical-align: top; fon
 }
 .theme-toggle svg { display: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .theme-toggle[data-theme-mode="dark"] .theme-icon-dark, .theme-toggle[data-theme-mode="light"] .theme-icon-light { display: block; }
-.btn:is(.download-html, .save-recovery-sheet, .save-wallet-dat) {
+.btn:is(.download-html, .save-recovery-sheet, .save-wallet-dat, .journal-download-action) {
   border-color: color-mix(in oklab, var(--ok) 65%, var(--border));
   background: color-mix(in oklab, var(--ok) 14%, var(--surface)); color: var(--ok);
 }
-.btn:is(.download-html, .save-recovery-sheet, .save-wallet-dat):hover {
+.btn:is(.download-html, .save-recovery-sheet, .save-wallet-dat, .journal-download-action):hover {
   background: color-mix(in oklab, var(--ok) 23%, var(--surface)); color: var(--fg);
 }
-.btn:is(.download-html, .save-recovery-sheet, .save-wallet-dat):focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+.btn:is(.download-html, .save-recovery-sheet, .save-wallet-dat, .journal-download-action):focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
 .github-mark { flex: 0 0 auto; }
 .custom-select-native {
   position: absolute !important; width: 1px !important; height: 1px !important; min-height: 0 !important;
@@ -1022,6 +1035,19 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .tool-intro[hidden] { display: none; }
 .tool-intro h2 { margin: 5px 0 8px; }
 .tool-intro > .muted { max-width: 760px; margin: 0; }
+/* Tools with fixed inner tabs stack their introductions in one grid cell so
+   the tab strip starts below the longest copy at the current width. Hidden
+   introductions stay invisible, but still set that shared row height. */
+.tool-intro-stack { display: grid; }
+.tool-intro-stack[hidden] { display: none !important; }
+.tool-intro-stack > .tool-intro { grid-area: 1 / 1; visibility: hidden; }
+.tool-intro-stack > .tool-intro.active { visibility: visible; }
+/* A direct intro's 24px bottom margin collapses with .key-manager's 14px top
+   and .key-tab-strip's 12px top margins. The grid wrapper prevents that
+   collapse, so remove both trailing margins here and keep the same 24px
+   text-to-tabs gap for both layouts. */
+.tool-intro-stack + .key-manager { margin-top: 0; }
+.tool-intro-stack + .key-manager > .key-tab-strip { margin-top: 0; }
 .key-lab[hidden], .key-summary[hidden], .msig-lab[hidden], .bip85-bench[hidden] { display: none; }
 #calc-card.is-result-view #modes,
 #calc-card:not(.is-result-view) #out,
@@ -1042,9 +1068,9 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .key-tab.is-lab { font-weight: 700; }
 .key-tab-lab-icon { width: 16px; height: 16px; padding: 0; color: var(--muted); }
 .key-tab-lab-icon svg { display: block; width: 100%; height: 100%; }
-.key-result { margin-top: 16px; }
+.key-result { min-width: 0; max-width: 100%; margin-top: 16px; }
 .key-result-scripts-label { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
-.key-result-main { margin-top: 8px; padding: 16px 16px 20px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); }
+.key-result-main { min-width: 0; max-width: 100%; margin-top: 8px; padding: 16px 16px 20px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); }
 .key-result .wallet-result-messages { margin: 0 0 16px; }
 .account-receive-section { margin-top: 0; }
 .station-key-source { margin: 0 0 20px; }
@@ -1148,10 +1174,12 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .segmented-control.is-stacked > .tab:only-child { border-radius: 8px; }
 #msig-card[hidden], #calc-card[hidden], #psbt-card[hidden], #psbted-card[hidden], #bip85-card[hidden], #sp-card[hidden], #vanity-card[hidden] { display: none !important; }
 #calc-card:not([hidden]), #msig-card:not([hidden]), #bip85-card:not([hidden]), #sp-card:not([hidden]), #psbt-card:not([hidden]), #psbted-card:not([hidden]), #vanity-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
-#journal-card[hidden], #journal-notes-card[hidden], #journal-state-card[hidden], #journal-log-card[hidden] { display: none !important; }
-#journal-card:not([hidden]), #journal-notes-card:not([hidden]), #journal-state-card:not([hidden]), #journal-log-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
+#journal-card[hidden], #journal-notes-card[hidden], #journal-keymanager-card[hidden], #journal-state-card[hidden], #journal-log-card[hidden] { display: none !important; }
+#journal-card:not([hidden]), #journal-notes-card:not([hidden]), #journal-keymanager-card:not([hidden]), #journal-state-card:not([hidden]), #journal-log-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
 #journal-locked-panel[hidden], #journal-work-panel[hidden], #journal-create-panel[hidden], #journal-open-panel[hidden], #journal-editor[hidden], #journal-view[hidden] { display: none; }
 .journal-intro { margin: var(--space-control) 0 0; }
+.journal-global-actions { align-items: center; margin-top: var(--space-component); }
+.journal-global-actions .journal-download-action { display: inline-flex; align-items: center; gap: 6px; }
 .journal-status { display: flex; align-items: center; gap: 14px; margin-bottom: var(--space-component); }
 .journal-status-lifehash { width: 48px; height: 48px; border-radius: 8px; image-rendering: pixelated; flex: 0 0 auto; }
 .journal-status-title { margin: 0; font-weight: 700; }
@@ -1173,24 +1201,159 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .journal-note {
   margin: 0 0 14px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
 }
-.journal-note-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.journal-note-at {
-  width: auto; flex: 1 1 auto; min-width: 0; min-height: 0; margin-top: 0; padding: 6px 10px;
-  letter-spacing: 0; font-size: 13px;
+.journal-password-label { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.journal-password-validation { margin-inline-start: auto; font-size: 12px; font-weight: 700; line-height: 1.4; text-align: end; }
+.journal-password-validation[hidden] { display: none; }
+.journal-password-validation.is-invalid { color: var(--danger); }
+.journal-password-validation.is-valid { color: var(--ok); }
+.journal-create-actions { align-items: center; }
+.journal-create-ready { display: inline-flex; align-items: center; gap: 7px; color: var(--ok); font-size: 13px; font-weight: 700; }
+.journal-create-ready[hidden] { display: none; }
+.journal-create-ready-arrow { display: inline-block; font-size: 18px; line-height: 1; }
+.journal-section-intro { margin: 0 0 24px; }
+.journal-section-intro h2 { margin: 5px 0 8px; }
+.journal-section-intro > .muted { max-width: 760px; margin: 0; }
+#journal-tool-tabs .key-tab:disabled,
+#journal-tool-tabs .key-tab:disabled:hover {
+  background: transparent; color: var(--faint); opacity: .52; cursor: not-allowed;
 }
-.journal-note-head .btn { flex: 0 0 auto; min-height: 0; padding: 6px 10px; }
-.journal-note-body { min-height: 88px; margin-top: 0; letter-spacing: 0; }
+.journal-page-tab-strip { position: relative; z-index: 3; margin-top: 0; margin-bottom: -2px; }
+.key-tab.journal-page-tab.active, .key-tab.journal-page-tab.key-tab-editing { background: var(--bg); border-bottom-color: var(--bg); }
+.journal-page-tab-strip:has(+ .journal-notes-wrap .journal-notes-text:focus) .journal-page-tab.active {
+  border-color: var(--blue); border-bottom-color: var(--bg);
+  box-shadow: inset 1px 0 var(--blue), inset -1px 0 var(--blue), inset 0 1px var(--blue);
+}
+.journal-page-tab-strip:has(+ .journal-notes-wrap .journal-notes-text:focus) .journal-page-tab.active::after {
+  content: ""; position: absolute; z-index: 1; left: 1px; right: 1px; bottom: -3px; height: 4px; background: var(--bg);
+}
+.journal-page-tab .journal-page-tab-short { display: none; }
+.journal-format-bar {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+  padding: 0 0 12px;
+}
+.journal-format-control { min-width: 0; color: var(--muted); font-size: 12px; font-weight: 700; }
+.journal-format-control > span { display: block; margin-bottom: 5px; }
+.journal-format-control .custom-select { margin-top: 0; font-size: 13px; }
+.journal-format-control .custom-select-button { min-height: 44px; padding-block: 8px; }
+.journal-format-control .custom-select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.journal-format-control .custom-select-value > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.journal-format-control .custom-select-option { display: flex; align-items: center; gap: 8px; }
+.journal-key-control { grid-column: 1 / -1; }
+.journal-key-option-lifehash { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 4px; image-rendering: pixelated; background: #fff; }
+.journal-notes-wrap {
+  --journal-font-family: var(--mono); --journal-font-size: 13px; --journal-line-height: 1.6;
+  position: relative; border-radius: 0 12px 12px 12px; background: var(--bg);
+}
+.journal-notes-wrap[data-font="sans"] { --journal-font-family: var(--sans); }
+.journal-notes-wrap[data-font="serif"] { --journal-font-family: Georgia, "Times New Roman", serif; }
+.journal-notes-wrap[data-size="small"] { --journal-font-size: 12px; }
+.journal-notes-wrap[data-size="large"] { --journal-font-size: 16px; }
+.journal-notes-wrap[data-spacing="compact"] { --journal-line-height: 1.35; }
+.journal-notes-wrap[data-spacing="spacious"] { --journal-line-height: 1.9; }
+.journal-notes-text {
+  position: relative; z-index: 1; min-height: 20rem; margin-top: 0; background: transparent;
+  border-top-left-radius: 0;
+  color: transparent; -webkit-text-fill-color: transparent; caret-color: var(--fg);
+  font-family: var(--journal-font-family); font-size: var(--journal-font-size); line-height: var(--journal-line-height); letter-spacing: 0;
+}
+.journal-notes-text:focus { border: 2px solid var(--blue); outline: none; }
+.journal-notes-text::selection { background: color-mix(in oklab, var(--selection-accent) 38%, transparent); color: transparent; -webkit-text-fill-color: transparent; }
+.journal-notes-render {
+  position: absolute; z-index: 0; top: 1px; left: 1px; overflow: hidden; padding: 10px 12px;
+  border-radius: 0 12px 12px 12px; pointer-events: none;
+  color: var(--fg); font-family: var(--journal-font-family); font-size: var(--journal-font-size); line-height: var(--journal-line-height); letter-spacing: 0;
+  white-space: pre-wrap; overflow-wrap: break-word;
+}
+.journal-inline-key { color: var(--selection-accent); }
+.journal-inline-bip85 {
+  color: var(--blue); border-radius: .2em;
+  background: color-mix(in oklab, var(--blue) 12%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--blue) 52%, transparent);
+}
+.journal-inline-key-lifehash-slot { position: relative; color: transparent; }
+.journal-inline-key-lifehash {
+  position: absolute; left: 50%; top: 50%; width: 1.1em; height: 1.1em; border-radius: .18em;
+  background: #fff; image-rendering: pixelated; transform: translate(-50%, -50%);
+}
+.journal-notes-prompt {
+  position: absolute; z-index: 2; top: 1px; left: 1px; overflow: hidden; padding: 10px 12px; pointer-events: none;
+  color: transparent; font-family: var(--journal-font-family); font-size: var(--journal-font-size); line-height: var(--journal-line-height); letter-spacing: 0;
+  white-space: pre-wrap; overflow-wrap: break-word;
+}
+.journal-notes-prompt-text { color: var(--faint); }
+.journal-notes-prompt[hidden] { display: none; }
+.journal-notes-copy {
+  position: absolute; z-index: 3; top: 10px; right: 12px;
+  opacity: 0; pointer-events: none; transition: opacity .18s ease;
+}
+.journal-notes-copy.is-visible, .journal-notes-copy:hover, .journal-notes-copy:focus-visible { opacity: 1; pointer-events: auto; }
+.journal-notes-copy.is-copied, .journal-notes-copy.is-copied:not(:disabled):hover { color: var(--ok); }
+@media (prefers-reduced-motion: reduce) { .journal-notes-copy { transition: none; } }
+.journal-file-actions { margin-top: var(--space-component); }
+.journal-download-options { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.journal-encrypt-option { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; }
+.journal-encrypt-option input { margin: 0; accent-color: var(--ok); }
+.journal-file-actions .journal-upload-action { margin-inline-start: auto; }
+.journal-file-actions .journal-upload-action {
+  border-color: color-mix(in oklab, var(--blue) 65%, var(--border));
+  background: color-mix(in oklab, var(--blue) 14%, var(--surface)); color: var(--blue);
+}
+.journal-file-actions .journal-upload-action:hover { background: color-mix(in oklab, var(--blue) 23%, var(--surface)); color: var(--fg); }
+.journal-file-actions .journal-upload-action:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.journal-notes-status { margin: 8px 0 0; }
+.journal-notes-status:empty { display: none; }
+.journal-keymanager-tab-strip { margin-top: 0; margin-bottom: -1px; }
+.key-tab.journal-keymanager-key-tab.active { background: var(--bg); border-bottom-color: var(--bg); }
+.journal-keymanager-panel {
+  min-height: 16rem; padding: 16px; border: 1px solid var(--border); border-radius: 0 12px 12px 12px;
+  background: var(--bg);
+}
+.journal-keymanager-empty { margin: 0; color: var(--muted); }
+.journal-keymanager-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; }
+.journal-keymanager-heading h3 { margin: 0; }
+.journal-keymanager-badge { color: var(--muted); font-size: 12px; font-weight: 700; }
+.journal-keymanager-badge.is-included { color: var(--ok); }
+.journal-keymanager-name { flex: 1 1 16rem; margin-top: var(--space-component); }
+.journal-keymanager-details { display: grid; grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr); gap: 8px 14px; margin: var(--space-component) 0 0; }
+.journal-keymanager-details dt { color: var(--muted); font-size: 12px; font-weight: 700; }
+.journal-keymanager-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.journal-keymanager-entry-actions { margin-top: var(--space-component); }
+.journal-keymanager-ignore { margin-inline-start: auto; }
+.journal-keymanager-ignored { margin-top: var(--space-section); }
+.journal-keymanager-ignored h3 { margin: 0 0 var(--space-control); }
+.journal-keymanager-ignored-list { display: grid; gap: 8px; }
+.journal-keymanager-ignored-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.journal-keymanager-ignored-copy { min-width: 0; }
+.journal-keymanager-ignored-copy strong, .journal-keymanager-ignored-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.journal-keymanager-ignored-copy span { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.journal-keymanager-file-actions { margin-top: var(--space-section); }
+.journal-keymanager-encryption-note { color: var(--muted); font-size: 12px; font-weight: 700; }
+.journal-keymanager-status { margin: 8px 0 0; }
+.journal-keymanager-status:empty { display: none; }
+.journal-keymanager-status[data-state="error"] { color: var(--danger); }
+.journal-log-wrap { position: relative; margin: 0 0 14px; }
 .journal-log {
   font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
-  margin: 0 0 14px; padding: 12px; border: 1px solid var(--border); border-radius: 12px;
-  background: var(--surface-2); max-height: 420px; overflow: auto;
+  margin: 0; padding: 12px 44px 12px 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: #000; max-height: 420px; overflow: auto;
 }
+:root[data-theme="light"] .journal-log { background: var(--surface-2); }
+.journal-log-copy { position: absolute; z-index: 1; top: 10px; right: 12px; }
+.journal-log-copy.is-copied, .journal-log-copy.is-copied:not(:disabled):hover { color: var(--ok); }
+.journal-log-actions #journal-log-clear { margin-inline-start: auto; }
 #journal-state-text { min-height: 280px; letter-spacing: 0; font-size: 13px; }
 .psbt-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
 @media (min-width: 720px) {
+  .journal-format-bar { grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(120px, 1fr)); }
+  .journal-key-control { grid-column: auto; }
   .psbt-grid { grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); }
   .psbt-grid > .field { display: flex; flex-direction: column; }
   .psbt-grid > .field > textarea { flex: 1; }
+}
+@media (max-width: 520px) {
+  .journal-keymanager-details { grid-template-columns: 1fr; gap: 3px; }
+  .journal-keymanager-details dd + dt { margin-top: 7px; }
+  .journal-keymanager-ignored-row { align-items: stretch; flex-direction: column; }
 }
 .vanity-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
 @media (min-width: 720px) {
@@ -1231,14 +1394,15 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .psbt-ok { color: var(--ok); }
 .psbt-bad { color: var(--danger); }
 .psbt-warn { color: var(--warn); }
-.psbted-network-field { margin-top: 0; min-width: 200px; }
-/* The editor's own action row: the network field's label stacks above its
-   select, and the row's flex stretch would otherwise pull the Load/Clear
-   buttons up to that combined height. Keep the buttons text-sized and
-   aligned with the bottom of the select. (.psbt-actions alone is shared
-   with the other cards' button rows, so scope by the editor's own class.) */
+.psbt-analysis-summary { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: var(--space-component); }
+.psbt-analysis-summary > p { margin: 0 0 8px; }
+.psbt-analysis-summary ul { margin: 0 0 8px; padding-left: 20px; }
+.psbt-analysis-summary li + li { margin-top: 8px; }
+/* The editor's own action row: keep the buttons text-sized rather than
+   stretched to the row's full height. (.psbt-actions alone is shared with the
+   other cards' button rows, so scope by the editor's own class.) */
 .psbted-actions { align-items: flex-end; }
-.psbted-actions .btn { min-height: 0; padding: 6px 10px; }
+.psbted-actions .btn, .psbted-actions .custom-select-button { min-height: 36px; padding: 6px 10px; border-radius: 8px; }
 .psbted-map { margin-top: var(--space-component); }
 .psbted-map > h3 { margin: 0 0 4px; font-size: 15px; }
 .psbted-txhead { display: flex; flex-wrap: wrap; gap: 0 16px; margin-bottom: 4px; }
@@ -1296,6 +1460,13 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .psbted-note-ok { color: var(--ok); }
 .psbted-note-warn { color: var(--warn); }
 .psbted-note-bad { color: var(--danger); }
+/* Semantic comparison: the section sits below the editor output and reuses
+   the editor's table density; the diff mark column stays snug like the other
+   utility columns. */
+.psbted-compare { margin-top: var(--space-component); }
+.psbted-compare > h3 { margin: 0 0 4px; font-size: 15px; }
+.psbted-pairs .psbted-col-mark { width: 1.8em; }
+.psbted-diff-mark { font-weight: 700; text-align: center; }
 #psbted-result textarea { font-family: var(--mono); font-size: 12px; min-height: 90px; }
 /* Transaction-flow visualizer (mempool.space-style): input boxes on the
    left, the unsigned transaction in the middle, output boxes on the right,
@@ -1387,6 +1558,26 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 .exp-card textarea[readonly] { color: var(--muted); }
 .exp-actions { margin-top: var(--space-component); }
+/* The QR reference overlay mirrors the expandable and disclaimer overlays:
+   a dimmed backdrop with one centered card, dismissed by clicking outside
+   or pressing Escape. Shown when an external link is clicked while the
+   page is offline, so the user can scan the QR with an online phone. */
+.qr-ref-overlay {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center;
+  padding: 24px; box-sizing: border-box; background: rgb(0 0 0 / 55%);
+}
+.qr-ref-overlay[hidden] { display: none; }
+.qr-ref-card {
+  width: min(440px, 100%); padding: 24px; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--surface);
+  box-shadow: 0 16px 36px rgb(0 0 0 / 55%); text-align: center;
+}
+.qr-ref-title { margin: 0 0 16px; font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+.qr-ref-qr { display: inline-block; padding: 12px; background: #fff; border-radius: 8px; }
+.qr-ref-qr svg { display: block; width: 200px; height: 200px; }
+.qr-ref-url { margin: 16px 0 0; font-size: 12px; overflow-wrap: anywhere; word-break: break-all; }
+.qr-ref-hint { margin: 12px 0 0; }
+.qr-ref-actions { margin-top: var(--space-component); justify-content: center; }
 .sp-result, .sp-output { margin-top: var(--space-component); }
 .sp-qr { width: min(220px, 100%); margin: var(--space-control) 0; }
 .sp-qr svg { width: 100%; height: auto; display: block; background: #fff; border-radius: 8px; }
@@ -1536,7 +1727,8 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 }
 .derive-progress {
   display: inline-flex; flex: 0 1 260px; min-width: 170px; align-items: center; gap: 9px;
-  padding: 8px 11px; border: 0;
+  min-height: 44px; box-sizing: border-box; padding: 8px 11px;
+  border: 1px solid color-mix(in oklab, currentColor 35%, transparent);
   border-radius: 9px; background: color-mix(in oklab, var(--accent) 8%, var(--surface)); color: var(--accent);
 }
 .derive-progress[hidden] { display: none !important; }
@@ -1826,7 +2018,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .account-address-lead { display: grid; gap: 10px; justify-items: start; margin-bottom: 22px; }
 .account-address-lead p { margin: 0; }
 .wallet-table {
-  width: 100%; max-height: 252px; overflow: auto; border: 1px solid var(--border); border-radius: 9px;
+  width: 100%; max-width: 100%; max-height: 252px; overflow: auto; border: 1px solid var(--border); border-radius: 9px;
   overflow-anchor: none; overscroll-behavior: contain;
   scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--surface);
 }
@@ -1875,6 +2067,8 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
      fitting more of it on screen matters more than the fuller wording. */
   .workspace-tab-full { display: none; }
   .workspace-tab-short { display: inline; }
+  .journal-page-tab.is-default .journal-page-tab-full { display: none; }
+  .journal-page-tab.is-default .journal-page-tab-short { display: inline-block; }
   /* Icon-only: square them off against the 40px theme toggle. */
   .download-controls .download-html { flex: 0 0 40px; width: 40px; padding: 0; justify-content: center; }
   /* The footer link loses its label with the rest, so it squares off against
@@ -1914,6 +2108,9 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   .current-item-actions > *,
   .bip85-actions > *,
   .psbt-actions > * { width: 100%; justify-content: center; }
+  .journal-download-options { justify-content: flex-start; }
+  .journal-download-options > .btn { width: auto; }
+  .journal-create-ready-arrow { transform: rotate(90deg); }
 }
 .key-tab-icon { display: inline-flex; flex: 0 0 auto; width: 16px; height: 16px; color: var(--key-color); }
 .key-tab-icon svg { display: block; width: 16px; height: 16px; }

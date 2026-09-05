@@ -215,7 +215,7 @@ test("one valid card produces a deterministic testing seed", () => {
   assert.equal(entropy.ok, true);
   assert.equal(entropy.bytes.length, 32);
   assert.equal(entropy.parsed.cards.length, 1);
-  assert.equal(entropy.warnings[0]?.key, "note.fewCards");
+  assert.equal(entropy.warnings[0]?.key, "Only {have} of {need} recommended cards were entered. The {words}-word phrase is deterministic, but its security cannot exceed the approximately {bits} bits supplied. Use only for testing until the recommendation is met.");
   assert.equal(entropy.warnings[0]?.vars?.have, 1);
   assert.equal(entropy.warnings[0]?.vars?.need, 58);
   assert.equal(hodlCardsEntropy("AS AS", 24).ok, false);

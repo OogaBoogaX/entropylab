@@ -159,6 +159,7 @@ export const isP2pkh = (spk) => spk.length === 25 && spk[0] === 0x76 && spk[1] =
 export const isP2sh = (spk) => spk.length === 23 && spk[0] === 0xa9 && spk[1] === 0x14 && spk[22] === 0x87;
 export const isP2wpkh = (spk) => spk.length === 22 && spk[0] === 0x00 && spk[1] === 0x14;
 export const isP2tr = (spk) => spk.length === 34 && spk[0] === 0x51 && spk[1] === 0x20;
+const isFutureSegwit = (spk) => spk.length >= 4 && spk.length <= 42 && spk[0] >= 0x52 && spk[0] <= 0x60 && spk[1] === spk.length - 2;
 
 const compressedPointOrNull = (bytes) => {
   if (!(bytes instanceof Uint8Array) || bytes.length !== 33 || (bytes[0] !== 2 && bytes[0] !== 3)) return null;
@@ -380,6 +381,9 @@ export function eligibleInputKeys(vins) {
 }
 
 export function createSilentPaymentOutputs(vins, recipients, { hrp = "sp" } = {}) {
+  if (vins.some((vin) => isFutureSegwit(vinPrevoutScript(vin)))) {
+    throw new Error("BIP-352 v0 cannot send with an input that spends a future SegWit version.");
+  }
   const { pubkeys, privkeys } = eligibleInputKeys(vins);
   if (!pubkeys.length) return { outputs: [], inputPubKeys: [], inputPrivateKeySum: null, sharedSecrets: [] };
   if (privkeys.length !== pubkeys.length) throw new Error("Sending needs a private key for every eligible input.");
@@ -461,6 +465,9 @@ export function createSilentPaymentOutputs(vins, recipients, { hrp = "sp" } = {}
 }
 
 export function scanSilentPaymentOutputs({ scanPriv, spendPub, vins, outputs, labels = [] }) {
+  if (vins.some((vin) => isFutureSegwit(vinPrevoutScript(vin)))) {
+    return { outputs: [], inputPubKeySum: null, tweak: null, sharedSecret: null };
+  }
   const scanScalar = scanPriv instanceof Uint8Array ? scalarFromBytes(scanPriv) : scanPriv;
   const spendPoint = spendPub instanceof Uint8Array ? Point.fromBytes(spendPub) : spendPub;
   const { pubkeys } = eligibleInputKeys(vins);

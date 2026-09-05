@@ -10,6 +10,9 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hodlHexFormatLabels } from "../src/js/i18n-labels.js";
+// The sliced app.js functions resolve the label tables through the global, like hodlT.
+globalThis.hodlHexFormatLabels = hodlHexFormatLabels;
 import { entropyToMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 

@@ -82,10 +82,12 @@ const signingStatus = (pairs) => {
   return sigs ? { text: `${sigs} signature${sigs === 1 ? "" : "s"}`, tone: "" } : { text: "unsigned", tone: "muted" };
 };
 
+// sats null with every input claimed marks an invalid fee: the document's
+// error string says why (negative fee, u64 overflow, or past MAX_MONEY).
 const feeHtml = (doc) => {
   if (doc.fee?.known) {
     return doc.fee.sats === null
-      ? `<span class="psbted-note-bad">outputs exceed claimed inputs</span>`
+      ? `<span class="psbted-note-bad">${escapeHtml(doc.fee?.error || "outputs exceed claimed inputs")}</span>`
       : `<span class="psbted-viz-feenum">${groupSats(doc.fee.sats)} sats</span> <span class="muted">(PSBT claim)</span>`;
   }
   return `<span class="muted" title="an input carries no amount claim">unknown</span>`;
@@ -165,7 +167,7 @@ export const psbtVizHtml = (doc, network, selected = null) => {
     </div>
     <div class="psbted-viz-col">
       <h3 class="psbted-viz-heading">Outputs (${doc.tx.outputs.length})</h3>
-      <p class="psbted-viz-hint muted">${groupSats(doc.totalOut)} sats in total · editable in the boxes</p>
+      <p class="psbted-viz-hint muted">${doc.totalOut === null ? "outputs total unknown — amounts overflow u64" : `${groupSats(doc.totalOut)} sats in total`} · editable in the boxes</p>
       ${outputs || `<div class="psbted-viz-box muted">No outputs.</div>`}
     </div>
   </div>

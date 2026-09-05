@@ -8,15 +8,28 @@
 // serve the same application. The output is byte-for-byte reproducible from
 // the sources, the version declared in package.json, and the commit the
 // build is cut from (stamped into the footer).
+//
+// The browser test harness builds a staging variant with
+// `--test-hooks --out <dir>`: it compiles in the suite's test bridge (see
+// src/js/app.js) and writes the files outside the repository root. The
+// release build leaves the flag off, so no test code reaches entropylab.html.
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const SRC = join(root, "src");
+
+const testHooks = process.argv.includes("--test-hooks");
+const outFlag = process.argv.indexOf("--out");
+if (outFlag !== -1 && !process.argv[outFlag + 1]) throw new Error("--out requires a directory");
+const outDir = outFlag === -1 ? root : resolve(root, process.argv[outFlag + 1]);
+if (testHooks && outDir === root) {
+  throw new Error("--test-hooks requires --out outside the repository root: the release artifact ships no test code");
+}
 
 const read = (path) => readFileSync(join(SRC, path), "utf8");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
@@ -52,6 +65,10 @@ if (process.argv.includes("--clean")) {
 }
 
 const template = read("index.html");
+// The page body lives once in shell.html: it is injected into index.html for
+// first paint / no-JS and imported by app.js (esbuild text loader) for the
+// boot render, so the two can never drift.
+const shell = read("shell.html");
 const workerTemplate = read("service-worker.js");
 const css = read("css/styles.css");
 // The header logo is inlined as SVG markup so the downloaded file shows it
@@ -79,6 +96,8 @@ const jsMain = buildSync({
   target: "es2022",
   legalComments: "none",
   charset: "utf8",
+  loader: { ".html": "text" },
+  define: { __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false" },
 }).outputFiles[0].text.split(siteLogoSpan).join(siteLogo);
 const jsSqliteWriter = read("js/sqlite-writer.js");
 const jsWalletExport = read("js/wallet-export.js");
@@ -90,6 +109,7 @@ const jsEnhanced = read("js/enhanced-inputs.js");
 const jsRepeat = read("js/repeat-inputs.js");
 
 let html = template
+  .replace("/*@@SHELL@@*/", () => shell)
   .split(siteLogoSpan).join(siteLogo)
   .replace("/*@@FAVICON@@*/", () => favicon)
   .replace("/*@@FAVICON_SVG@@*/", () => faviconSvg)
@@ -125,12 +145,16 @@ for (const leftover of `${html}\n${worker}`.match(/\/\*@@|{{(?:VERSION|PWA_VERSI
   throw new Error(`Unreplaced build token in output: ${leftover}`);
 }
 
-// Remove stale generated files (e.g. versioned copies from older releases)
-for (const name of generated()) rmSync(join(root, name), { force: true });
+if (outDir === root) {
+  // Remove stale generated files (e.g. versioned copies from older releases)
+  for (const name of generated()) rmSync(join(root, name), { force: true });
+} else {
+  mkdirSync(outDir, { recursive: true });
+}
 
-writeFileSync(join(root, appFile), html);
-writeFileSync(join(root, workerFile), worker);
+writeFileSync(join(outDir, appFile), html);
+writeFileSync(join(outDir, workerFile), worker);
 
-console.log(`Built EntropyLab v${version}`);
+console.log(`Built EntropyLab v${version}${testHooks ? " (test hooks enabled; not for release)" : ""}`);
 console.log(`  ${appFile} (${Buffer.byteLength(html, "utf8")} bytes)`);
 console.log(`  ${workerFile} (${Buffer.byteLength(worker, "utf8")} bytes)`);

@@ -190,6 +190,34 @@ test("group sizes beyond K_max fail before any expansion", () => {
   assert.throws(() => createSilentPaymentOutputs(vin, [{ address, count: 0 }], { hrp: "sp" }), /positive integer/);
 });
 
+test("future SegWit inputs fail sending and make v0 receivers skip the transaction", () => {
+  const sending = structuredClone(vectors[0].sending[0].given);
+  const futureWitnessInput = {
+    txid: "22".repeat(32),
+    vout: 1,
+    scriptSig: "",
+    txinwitness: "",
+    prevout: { scriptPubKey: { hex: "5220" + "33".repeat(32) } },
+  };
+  sending.vin.push(futureWitnessInput);
+  assert.throws(
+    () => createSilentPaymentOutputs(sending.vin, sending.recipients, { hrp: "sp" }),
+    /future SegWit version/i,
+  );
+
+  const receiving = vectors[0].receiving[0].given;
+  const scan = hexToBytes(receiving.key_material.scan_priv_key);
+  const spend = hexToBytes(receiving.key_material.spend_priv_key);
+  const result = scanSilentPaymentOutputs({
+    scanPriv: scan,
+    spendPub: secp256k1.getPublicKey(spend, true),
+    vins: [...receiving.vin, futureWitnessInput],
+    outputs: vectors[0].sending[0].expected.outputs[0],
+    labels: receiving.labels || [],
+  });
+  assert.deepEqual(result, { outputs: [], inputPubKeySum: null, tweak: null, sharedSecret: null });
+});
+
 test("generateLabel is deterministic", () => {
   const scan = hexToBytes("0f694e068028a717f8af6b9411f9a133dd3565258714cc226594b34db90c1f2c");
   const a = generateLabel(scan, 0);

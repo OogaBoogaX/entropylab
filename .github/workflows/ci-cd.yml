@@ -62,7 +62,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build static site
         run: npm run build
       - name: Generate the SHA-256 checksum manifest
@@ -127,7 +127,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Rebuild the WASM artifacts from the Rust sources
         run: npm run build:wasm
       - name: Test the freshly built bindings
@@ -176,7 +176,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       # Test the exact object the build job produced — never a rebuild.
       - name: Download the tested candidate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -205,7 +205,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install Firefox (macOS)
         if: inputs.install-firefox && runner.os == 'macOS'
         run: brew install --cask firefox
@@ -267,7 +267,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       # browser-check.test.mjs reads the compiled entropylab.html — test the
       # exact object the build job produced, never a rebuild.
       - name: Download the tested candidate
@@ -290,7 +290,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run UI-default tests
         run: npm run test:ui
 
@@ -306,7 +306,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       # validate.test.mjs reads the compiled entropylab.html — test the exact
       # object the build job produced, never a rebuild.
       - name: Download the tested candidate
@@ -341,7 +341,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run SeedQR tests
         run: npm run test:seedqr
 
@@ -356,7 +356,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run number-base tests
         run: npm run test:number-bases
 
@@ -375,7 +375,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install locked fuzzing dependencies
-        run: npm ci --ignore-scripts --prefix fuzzing
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix fuzzing
       - name: Run the LifeHash differential fuzzer
         run: npm --prefix fuzzing run fuzz:lifehash
 
@@ -393,7 +393,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install locked fuzzing dependencies
-        run: npm ci --ignore-scripts --prefix fuzzing
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix fuzzing
       - name: Run the multisig differential fuzzer
         run: npm --prefix fuzzing run fuzz:msig
 
@@ -419,7 +419,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Rebuild the WASM artifacts from the Rust sources
         run: npm run build:wasm
       - name: Download the tested candidate
@@ -458,7 +458,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       # Verify the exact object the build job produced — never a rebuild.
       - name: Download the tested candidate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -468,6 +468,38 @@ jobs:
         run: echo "${{ needs.build.outputs.sha256 }}  entropylab.html" | sha256sum -c -
       - name: Verify site artifact
         run: npm run verify
+
+  # ── Translation gate: locale files may only change through the post-merge
+  # translation automation (issue #286). Any PR whose diff touches
+  # src/locales/ must come from the configured GitHub App, on the
+  # i18n/translate-<lang> branch namespace, changing exactly one catalog and
+  # its provenance sidecar — and both must validate. PRs that touch no locale
+  # files pass trivially. Make this a required check alongside test-ci so
+  # auto-merged translation PRs cannot skip it (see
+  # docs/Translation_Automation_Setup.md).
+
+  translation-gate:
+    name: Gate · translation-only PR scope
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Run the translation-only gate
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_BASE: ${{ github.base_ref }}
+          PR_HEAD: ${{ github.head_ref }}
+          APP_SLUG: ${{ vars.TRANSLATION_APP_SLUG }}
+        run: |
+          git fetch origin "$PR_BASE"
+          FILES=$(git diff --name-only "origin/$PR_BASE"...HEAD | tr '\n' ' ')
+          node scripts/i18n-gate.mjs --author "$PR_AUTHOR" --app-slug "$APP_SLUG" --base "$PR_BASE" --head "$PR_HEAD" --files $FILES
 
   # ── Deploy: gated on a good build and a clean verify ──
 

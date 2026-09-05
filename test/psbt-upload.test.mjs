@@ -63,7 +63,7 @@ test("upload and paste routes agree on the same PSBT", () => {
 
 test("both markups carry the upload control, and the editor wires it", () => {
   const editor = read("src/js/psbt-editor.js");
-  for (const markup of [read("src/index.html"), read("src/js/app.js")]) {
+  for (const markup of [read("src/shell.html")]) {
     assert.match(markup, /<button class="btn secondary" id="psbted-upload" type="button">/);
     assert.match(markup, /<input type="file" id="psbted-file" /);
     assert.match(markup, /binary \.psbt file as saved by Sparrow/);

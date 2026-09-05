@@ -1,0 +1,109 @@
+name: Translation automation
+
+# Post-merge i18n side loop (issue #286): after English source strings change
+# on rock, generate translations with an LLM and open one translation-only PR
+# per language, which the translation gate + normal CI merge unattended.
+# Translation is never a build step — every artifact stays a pure function of
+# the committed tree.
+on:
+  push:
+    branches: [rock]
+    paths:
+      - "src/js/**"
+      - "src/shell.html"
+      - "src/index.html"
+      - "src/locales/**"
+      - "scripts/i18n-*"
+      - ".github/workflows/translate.yml"
+  schedule:
+    # Weekly, Monday 04:17 UTC — catches drift even if a push path filter misses it.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: translate
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  # ── Job A: generate + validate. Holds the LLM secret; cannot write to the
+  # repository. Reads only committed English sources and committed catalogs.
+  translate:
+    name: Translate · generate + validate (no repo write)
+    # Skip cleanly on forks and before the operator finishes setup
+    # (docs/Translation_Automation_Setup.md).
+    if: vars.TRANSLATION_APP_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Generate translations (schema-constrained, audited)
+        env:
+          TRANSLATE_API_KEY: ${{ secrets.TRANSLATE_API_KEY }}
+          TRANSLATE_API_URL: ${{ vars.TRANSLATE_API_URL }}
+          TRANSLATE_MODEL: ${{ vars.TRANSLATE_MODEL }}
+        run: node scripts/i18n-translate.mjs --out out/i18n
+      # The generator already validates; this independent pass fails the run
+      # before anything crosses the trust boundary into the publish job.
+      - name: Validate proposed catalogs
+        run: |
+          shopt -s nullglob
+          files=(out/i18n/*.json)
+          if [ ${#files[@]} -gt 0 ]; then node scripts/i18n-validate.mjs "${files[@]}"; fi
+      - name: Upload proposals
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: translation-proposals
+          path: out/i18n
+          retention-days: 1
+          if-no-files-found: ignore
+
+  # ── Job B: publish. Holds the GitHub App token; never sees the LLM secret.
+  # Revalidates the artifact, then opens/updates one PR per language and
+  # enables auto-merge for the exact head SHA.
+  publish:
+    name: Publish · per-language PRs + auto-merge
+    needs: [translate]
+    if: vars.TRANSLATION_APP_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Download proposals
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: translation-proposals
+          path: out/i18n
+      - name: Independently re-validate proposals
+        run: |
+          shopt -s nullglob
+          files=(out/i18n/*.json)
+          if [ ${#files[@]} -eq 0 ]; then echo "no proposals — nothing to publish"; exit 0; fi
+          node scripts/i18n-validate.mjs "${files[@]}"
+      - name: Mint the translation App token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.TRANSLATION_APP_ID }}
+          private-key: ${{ secrets.TRANSLATION_APP_PRIVATE_KEY }}
+      - name: Open/update per-language PRs and enable auto-merge
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/i18n-publish.mjs --dir out/i18n
+

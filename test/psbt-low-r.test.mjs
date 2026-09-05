@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
-const template = readFileSync(join(root, "..", "src/index.html"), "utf8");
+const shell = readFileSync(join(root, "..", "src/shell.html"), "utf8");
 
 function loadSlice(name) {
   const start = app.indexOf(`function ${name}(`);
@@ -33,8 +33,7 @@ const hodlLe32Counter = new Function(`${loadSlice("hodlLe32Counter")}; return ho
 const hodlIsLowR = new Function(`${loadSlice("hodlIsLowR")}; return hodlIsLowR;`)();
 
 test("PSBT copy mentions Bitcoin Core-style low-r grinding", () => {
-  assert.match(template, /plain RFC 6979 or Bitcoin Core-style low-r grinding/);
-  assert.match(app, /plain RFC 6979 or Bitcoin Core-style low-r grinding/);
+  assert.match(shell, /plain RFC 6979 or Bitcoin Core-style low-r grinding/);
   assert.match(app, /hodlRfc6979Compare\(\s*sighash\s*,\s*privateKey\s*,\s*parts\.r\s*\)/);
   assert.match(app, /extraEntropy\s*:\s*hodlLe32Counter\(\s*n\s*\)/);
   assert.match(app, /RFC 6979 comparison currently covers/);

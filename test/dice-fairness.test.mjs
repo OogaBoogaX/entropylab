@@ -179,7 +179,7 @@ test("fairness UI stays collapsed until the Die Distribution / Fairness Analysis
   assert.match(app, /id="dice-fairness-toggle"/);
   assert.match(app, /class="dice-fairness-toggle"/);
   assert.match(app, /data-dice-fairness-glyph/);
-  assert.match(app, /hodlT\("dice.fairness.toggle"\)/);
+  assert.match(app, /hodlT\("Die Distribution \/ Fairness Analysis"\)/);
   assert.match(app, /function hodlSetDiceFairnessOpen\(open\)/);
   assert.match(app, /panel\.hidden = !open/);
   assert.match(app, /showDiceFairness: false/);

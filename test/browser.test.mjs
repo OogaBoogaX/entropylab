@@ -10,7 +10,7 @@
 // Run with `npm run test:browser` or `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import {
   closeSync,
@@ -188,10 +188,17 @@ const stageWorkDir = () => {
   const workDir = mkdtempSync(join(stagingBase(), "entropylab-browser-"));
   const siteDir = join(workDir, "site");
   mkdirSync(join(siteDir, "assets"), { recursive: true });
+  // The served download target stays the exact release artifact, so the
+  // export check below keeps proving the download link serves the release.
   cpSync(appSource, join(siteDir, appFile));
   cpSync(join(root, "assets"), join(siteDir, "assets"), { recursive: true });
 
-  const appHtml = read(appFile);
+  // The suite drives app internals through __entropyLabCrypto, a test-only
+  // bridge the release build strips (scripts/build.mjs). Assemble the test
+  // document from a hooks-enabled variant built into the work dir; the build
+  // is identical to the release except for that one compiled-in statement.
+  execFileSync(process.execPath, [join(root, "scripts/build.mjs"), "--test-hooks", "--out", workDir], { stdio: "inherit" });
+  const appHtml = readFileSync(join(workDir, appFile), "utf8");
   const instrumentation = read("test/browser-instrumentation.html");
   const suite = read("test/browser-suite.html");
 
@@ -347,9 +354,12 @@ const runEngine = (engine, staging, port) => async () => {
   try {
     const onlineReport = join(downloadDir, "online-results.txt");
     const offlineReport = join(downloadDir, "offline-results.txt");
+    // Watchdog, not a performance budget: this only detects a hung browser.
+    // CI runners render in software and the online and offline instances share
+    // a CPU, so Firefox there needs close to a minute for the full suite.
     const [onlineDone, offlineDone] = await Promise.all([
-      waitForFile(onlineReport, 60000),
-      waitForFile(offlineReport, 60000),
+      waitForFile(onlineReport, 150000),
+      waitForFile(offlineReport, 150000),
     ]);
     assert.ok(
       onlineDone && offlineDone,

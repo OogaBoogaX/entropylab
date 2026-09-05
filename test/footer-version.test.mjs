@@ -27,7 +27,7 @@ test("the build stamps the commit tokens from git, with a snapshot fallback", ()
 });
 
 test("both footers carry the build stamp and the LifeHash target", () => {
-  for (const markup of [read("src/index.html"), read("src/js/app.js")]) {
+  for (const markup of [read("src/shell.html")]) {
     assert.match(markup, /<span class="page-footer-build">v\{\{VERSION\}\} · commit <code>\{\{COMMIT_SHORT\}\}<\/code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" alt="LifeHash of the build commit" hidden><\/span>/);
   }
 });

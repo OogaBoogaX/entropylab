@@ -9,6 +9,7 @@ import { runInNewContext } from "node:vm";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
 const template = read("src/index.html");
+const shell = read("src/shell.html");
 const worker = read("src/service-worker.js");
 const manifest = JSON.parse(read("manifest.webmanifest"));
 const workflow = read(".github/workflows/ci-cd.yml");
@@ -25,8 +26,8 @@ test("the hosted app publishes complete install metadata", () => {
   assert.match(template, /rel="apple-touch-icon" href="assets\/pwa-icon-180\.png"/);
   assert.match(template, /name="apple-mobile-web-app-capable" content="yes"/);
   assert.match(template, /viewport-fit=cover/);
-  assert.match(template, /Share → Add to Home Screen → Open as Web App/);
-  assert.match(template, /Cached availability is not proof of an air gap/);
+  assert.match(shell, /Share → Add to Home Screen → Open as Web App/);
+  assert.match(shell, /Cached availability is not proof of an air gap/);
 });
 
 test("PWA icons have the declared square dimensions and alpha channel", () => {

@@ -144,6 +144,20 @@ test("fee states: known fee, negative fee, unknown fee", () => {
   assert.ok(unknown.includes('title="an input carries no amount claim"'), "fee reason not on hover");
 });
 
+test("invalid fee reasons and an unknown outputs total render from the document", () => {
+  // The inspector marks fees invalid with a reason (issue #367): u64 overflow
+  // or amounts past Bitcoin's MAX_MONEY. The diagram shows the reason.
+  const overflow = psbtVizHtml(syntheticDoc({ fee: { known: true, sats: null, error: "amounts overflow u64" } }), "mainnet");
+  assert.ok(overflow.includes("amounts overflow u64"), "overflow fee reason missing");
+  const capped = psbtVizHtml(syntheticDoc({ fee: { known: true, sats: null, error: "amounts exceed Bitcoin's MAX_MONEY" } }), "mainnet");
+  assert.ok(capped.includes("MAX_MONEY"), "MAX_MONEY fee reason missing");
+  // An overflowing output total comes back null; the column hint must say so
+  // instead of grouping "null".
+  const noTotal = psbtVizHtml(syntheticDoc({ totalOut: null }), "mainnet");
+  assert.ok(noTotal.includes("outputs total unknown"), "unknown outputs total missing");
+  assert.ok(!noTotal.includes("null sats"), "null total must not render as an amount");
+});
+
 test("column hint lines carry the totals, unless a claim is missing", () => {
   const html = psbtVizHtml(syntheticDoc({ totalIn: 250000 }), "mainnet");
   assert.ok(html.includes(`${sats("250000")} sats claimed, not verified`), "inputs total missing");

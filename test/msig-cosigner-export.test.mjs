@@ -41,12 +41,13 @@ function loadObjectLiteral(name) {
 const hodlBase58Check = createBase58check(sha256);
 const hodlExtendedKeyVersions = new Function(`return ${loadObjectLiteral("hodlExtendedKeyVersions")};`)();
 const hodlReversionExtendedKey = new Function("hodlBase58Check", `${loadFunction("hodlReversionExtendedKey")}; return hodlReversionExtendedKey;`)(hodlBase58Check);
-const hodlSerializeExtendedKey = new Function("hodlReversionExtendedKey", "hodlExtendedKeyVersions", `${loadFunction("hodlSerializeExtendedKey")}; return hodlSerializeExtendedKey;`)(hodlReversionExtendedKey, hodlExtendedKeyVersions);
+const hodlNetworkFamily = new Function(`${loadFunction("hodlNetworkFamily")}; return hodlNetworkFamily;`)();
+const hodlSerializeExtendedKey = new Function("hodlReversionExtendedKey", "hodlExtendedKeyVersions", "hodlNetworkFamily", `${loadFunction("hodlSerializeExtendedKey")}; return hodlSerializeExtendedKey;`)(hodlReversionExtendedKey, hodlExtendedKeyVersions, hodlNetworkFamily);
 const hodlCoinTypeFromNetwork = new Function(`${loadFunction("hodlCoinTypeFromNetwork")}; return hodlCoinTypeFromNetwork;`)();
 const hodlBuildMultisigCosignerExports = new Function(
-  "hodlSerializeExtendedKey", "hodlExtendedKeyVersions", "hodlCoinTypeFromNetwork",
+  "hodlSerializeExtendedKey", "hodlExtendedKeyVersions", "hodlCoinTypeFromNetwork", "hodlNetworkFamily",
   `${loadFunction("hodlBuildMultisigCosignerExports")}; return hodlBuildMultisigCosignerExports;`,
-)(hodlSerializeExtendedKey, hodlExtendedKeyVersions, hodlCoinTypeFromNetwork);
+)(hodlSerializeExtendedKey, hodlExtendedKeyVersions, hodlCoinTypeFromNetwork, hodlNetworkFamily);
 const hodlMultisigPrefixCompatible = new Function(`${loadFunction("hodlMultisigPrefixCompatible")}; return hodlMultisigPrefixCompatible;`)();
 
 // BIP39 "abandon" x11 + "about"; master fingerprint 73c5da0a.

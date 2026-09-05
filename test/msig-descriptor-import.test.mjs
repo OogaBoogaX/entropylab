@@ -18,6 +18,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
 const page = readFileSync(join(root, "src/index.html"), "utf8");
+const shell = readFileSync(join(root, "src/shell.html"), "utf8");
 
 function loadSlice(name) {
   const start = app.indexOf(`function ${name}(`);
@@ -164,7 +165,7 @@ test("more keys than the quorum supports are refused", () => {
 });
 
 test("both markups ship the Paste descriptor panel and the app wires it", () => {
-  for (const markup of [page, app]) {
+  for (const markup of [shell]) {
     assert.match(markup, /<summary[^>]*>Paste descriptor<\/summary>/, "expandable summary");
     assert.ok(markup.includes('id="msig-descriptor"'), "descriptor textarea");
     assert.ok(markup.includes('id="msig-descriptor-import"'), "import button");

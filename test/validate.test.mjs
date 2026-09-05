@@ -41,6 +41,7 @@ const requiredFiles = [
   "test/browser-instrumentation.html",
   "test/browser-suite.html",
   "src/index.html",
+  "src/shell.html",
   "src/assets/logo-dark.svg",
   "src/assets/logo-light.svg",
   "src/assets/favicon.svg",
@@ -199,10 +200,10 @@ test("the release build attests the wallet artifact and ships a checksum manifes
 });
 
 test("repository links follow the Team Ooga Booga ownership", () => {
-  for (const path of ["README.md", "CONTRIBUTING.md", "SECURITY.md", "llms.txt", "src/index.html", "src/js/app.js"]) {
+  for (const path of ["README.md", "CONTRIBUTING.md", "SECURITY.md", "llms.txt", "src/index.html", "src/shell.html", "src/js/app.js"]) {
     assert.doesNotMatch(read(path), /github\.com\/(?:w-s-bitcoin|Team-Ooga-Booga)\/entropylab/, `${path} still links through a former owner`);
   }
-  assert.match(read("src/index.html"), /https:\/\/github\.com\/OogaBoogaX\/entropylab/);
+  assert.match(read("src/shell.html"), /https:\/\/github\.com\/OogaBoogaX\/entropylab/);
 });
 
 test("the GHCR image name is normalized for mixed-case organization logins", () => {
@@ -338,6 +339,12 @@ for (const file of htmlFiles) {
       `${file} favicon does not match assets/favicon.png`,
     );
   });
+  test(`${file} ships none of the test-only browser-suite bridge`, () => {
+    // The __entropyLabCrypto hook lets the browser suite reach app internals;
+    // it is compiled in only for the harness's --test-hooks staging variant.
+    const html = read(file);
+    assert.doesNotMatch(html, /__ENTROPYLAB_TEST_HOOKS__|__entropyLabTest|__entropyLabCrypto/);
+  });
   test(`${file} never fetches the header logo or favicon from assets`, () => {
     // The downloaded file has no assets/ beside it, so both have to travel
     // inside the document or the fixed header renders empty when air-gapped.
@@ -361,8 +368,19 @@ test("the build inlines the header logo and SVG favicon from src/assets", () => 
   assert.match(build, /logoSvg\("logo-light"\)/);
   assert.match(build, /read\("assets\/favicon\.svg"\)/);
   assert.match(build, /\.split\(siteLogoSpan\)\.join\(siteLogo\)/);
-  assert.match(template, /<span class="site-logo" aria-hidden="true"><\/span>/);
+  assert.match(read("src/shell.html"), /<span class="site-logo" aria-hidden="true"><\/span>/);
   assert.match(template, /<link rel="icon" type="image\/svg\+xml" href="data:image\/svg\+xml,\/\*@@FAVICON_SVG@@\*\/">/);
+});
+
+test("the browser-suite crypto bridge is gated out of the release build", () => {
+  // The artifact check above is the invariant; this pins the mechanism so the
+  // gate cannot be dropped without a red test: the hook in app.js must sit
+  // behind the build-time flag, and the build must default that flag off and
+  // refuse to write a hooks build over the release artifact.
+  assert.match(read("src/js/app.js"), /if \(__ENTROPYLAB_TEST_HOOKS__ && globalThis\.__entropyLabTest\) globalThis\.__entropyLabCrypto = /);
+  const build = read("scripts/build.mjs");
+  assert.match(build, /define: \{ __ENTROPYLAB_TEST_HOOKS__: testHooks \? "true" : "false" \}/);
+  assert.match(build, /--test-hooks requires --out outside the repository root/);
 });
 
 test("the document head declares its link-preview card", () => {

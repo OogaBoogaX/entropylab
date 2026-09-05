@@ -121,7 +121,7 @@ test("one account key under different appended derivation paths is distinct co-s
 test("both duplicate checks and the final script guard use derivation identity", () => {
   // Field-level and final validation compare hodlCanonicalMultisigKey output.
   assert.match(app, /function hodlDuplicateMultisigKey\(ta, parsed\) \{\s*let canonical = hodlCanonicalMultisigKey\(parsed\)/);
-  assert.match(app, /canonical = hodlCanonicalMultisigKey\(parsed\);\s*if \(xpubs\.includes\(canonical\)\) throw hodlError\("error\.msig\.cosignerDuplicate"/);
+  assert.match(app, /canonical = hodlCanonicalMultisigKey\(parsed\);\s*if \(xpubs\.includes\(canonical\)\) throw hodlError\("Co-signer \{n\} duplicates an earlier co-signer\./);
   // Final defense: a generated script never contains a repeated public key.
   assert.match(app, /new Set\(publicKeys\.map\(hodlHex\.encode\)\)\.size !== publicKeys\.length/);
   // Identity follows the node derived through any appended co-signer path.

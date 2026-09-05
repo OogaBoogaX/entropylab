@@ -707,8 +707,10 @@ pub unsafe extern "C" fn el_bip39_word_at(index: u32, out: *mut u8, cap: usize) 
 // scriptPubKey builders take keys/scripts in and produce the raw script bytes;
 // network selection only shapes the address string (el_addr_from_script),
 // mirroring how the previous @scure/btc-signer code was used. net: 0 =
-// mainnet, 1 = testnet. All return the byte length written, or -1 on invalid
-// input (bad key, bad template arguments, unknown script type).
+// mainnet, 1 = testnet, 2 = signet, 3 = regtest. Signet shares testnet's
+// tb1…/m…/n…/2… encodings; regtest differs only in its bcrt1… bech32 HRP.
+// All return the byte length written, or -1 on invalid input (bad key, bad
+// template arguments, unknown script type).
 
 use bitcoin::address::Address;
 use bitcoin::key::XOnlyPublicKey;
@@ -719,6 +721,8 @@ fn network_from_selector(sel: u8) -> Option<Network> {
     match sel {
         0 => Some(Network::Bitcoin),
         1 => Some(Network::Testnet),
+        2 => Some(Network::Signet),
+        3 => Some(Network::Regtest),
         _ => None,
     }
 }

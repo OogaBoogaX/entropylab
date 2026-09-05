@@ -4,6 +4,24 @@
 import { hex as hexCoder } from "./coders.js";
 
 export const JOURNAL_LOG_LIMIT = 400;
+export const NOTEBOOK_FORMAT = "entropylab-notebook";
+export const NOTEBOOK_VERSION = 1;
+export const NOTEBOOK_MAX_PAGES = 100;
+export const NOTEBOOK_MAX_TEXT_LENGTH = 1024 * 1024;
+
+const JOURNAL_FONTS = new Set(["mono", "sans", "serif"]);
+const JOURNAL_SIZES = new Set(["small", "medium", "large"]);
+const JOURNAL_SPACINGS = new Set(["compact", "comfortable", "spacious"]);
+const KEY_REFERENCE_END = "\u2063";
+const KEY_REFERENCE_PATTERN = /(◆◆|◈◈) (?:([^\n◆\u2063]*?) )?\[([0-9a-fA-F]{8})\](?:\u2063| ◆)/g;
+const BIP85_REFERENCE_LABELS = Object.freeze({
+  bip39: "BIP-39",
+  wif: "WIF",
+  xprv: "XPRV",
+  hex: "HEX",
+  "pwd-base64": "Base64 password",
+  "pwd-base85": "Base85 password",
+});
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -14,34 +32,228 @@ export function formatStamp(date = new Date()) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
 }
 
+export function defaultJournalPageStyle() {
+  return { font: "mono", size: "medium", spacing: "comfortable" };
+}
+
+export function normalizeJournalPageStyle(style) {
+  return {
+    font: JOURNAL_FONTS.has(style?.font) ? style.font : "mono",
+    size: JOURNAL_SIZES.has(style?.size) ? style.size : "medium",
+    spacing: JOURNAL_SPACINGS.has(style?.spacing) ? style.spacing : "comfortable",
+  };
+}
+
+export function journalKeyReferenceToken(name, fingerprint) {
+  let cleanName = String(name || "Key").replace(/[\r\n]+/g, " ").replace(/◆/g, "◇").replaceAll(KEY_REFERENCE_END, "").replace(/\s+/g, " ").trim().slice(0, 120) || "Key";
+  let cleanFingerprint = String(fingerprint || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{8}$/.test(cleanFingerprint)) throw new Error("A key reference needs an 8-character hexadecimal fingerprint.");
+  if (cleanName.toLowerCase() === cleanFingerprint) return `◆◆ [${cleanFingerprint}]${KEY_REFERENCE_END}`;
+  return `◆◆ ${cleanName} [${cleanFingerprint}]${KEY_REFERENCE_END}`;
+}
+
+export function journalBip85ReferenceToken(application, fingerprint) {
+  let app = String(application || ""), label = BIP85_REFERENCE_LABELS[app];
+  let cleanFingerprint = String(fingerprint || "").trim().toLowerCase();
+  if (!label) throw new Error("A BIP-85 reference needs a supported application.");
+  if (!/^[0-9a-f]{8}$/.test(cleanFingerprint)) throw new Error("A key reference needs an 8-character hexadecimal fingerprint.");
+  return `◈◈ BIP-85 · ${label} [${cleanFingerprint}]${KEY_REFERENCE_END}`;
+}
+
+function bip85ReferenceApplication(name) {
+  let label = String(name || "").match(/^BIP-85 · (.+)$/)?.[1];
+  return Object.keys(BIP85_REFERENCE_LABELS).find((app) => BIP85_REFERENCE_LABELS[app] === label) || "";
+}
+
+function referenceFromMatch(match) {
+  let fingerprint = match[3].toLowerCase();
+  if (match[1] === "◆◆") return { type: "key", name: match[2] || fingerprint, fingerprint };
+  let application = bip85ReferenceApplication(match[2]);
+  if (!application) return null;
+  return { type: "key", name: match[2], fingerprint, source: "bip85", application };
+}
+
+export function journalNotebookRuns(text) {
+  let source = String(text ?? ""), runs = [], cursor = 0;
+  for (let match of source.matchAll(KEY_REFERENCE_PATTERN)) {
+    let reference = referenceFromMatch(match);
+    if (!reference) continue;
+    if (match.index > cursor) runs.push({ type: "text", text: source.slice(cursor, match.index) });
+    runs.push(reference);
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < source.length || !runs.length) runs.push({ type: "text", text: source.slice(cursor) });
+  return runs;
+}
+
+export function journalKeyReferenceRanges(text) {
+  return [...String(text ?? "").matchAll(KEY_REFERENCE_PATTERN)].filter(referenceFromMatch).map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+}
+
+export function journalTextFromRuns(runs) {
+  if (!Array.isArray(runs)) throw new Error("A notebook page must contain a content list.");
+  let text = "";
+  for (let run of runs) {
+    if (run?.type === "text" && typeof run.text === "string") text += run.text;
+    else if (run?.type === "key" && run.source === "bip85") text += journalBip85ReferenceToken(run.application, run.fingerprint);
+    else if (run?.type === "key") text += journalKeyReferenceToken(run.name, run.fingerprint);
+    else throw new Error("The notebook contains an unsupported content item.");
+    if (text.length > NOTEBOOK_MAX_TEXT_LENGTH) throw new Error("A notebook page is too large to import.");
+  }
+  return text;
+}
+
 export function createJournal() {
-  return { nextId: 1, notes: [], log: [], stateText: "" };
+  return {
+    notesText: "",
+    pages: [{ id: 1, number: 1, name: "Page 1", notesText: "", style: defaultJournalPageStyle() }],
+    activePage: 0,
+    nextPageId: 2,
+    nextPageNumber: 2,
+    log: [],
+    stateText: "",
+  };
 }
 
-export function addNote(journal, { at, text } = {}, now = new Date()) {
-  let note = { id: journal.nextId++, at: at || formatStamp(now), text: String(text ?? "") };
-  journal.notes.push(note);
-  return note;
+export function formatNotebook(text) {
+  let cleaned = String(text ?? "").replace(KEY_REFERENCE_PATTERN, (match, marker, name, fingerprint) => {
+    let cleanFingerprint = fingerprint.toLowerCase();
+    if (marker === "◈◈") {
+      let application = bip85ReferenceApplication(name);
+      return application ? `[BIP-85 ${BIP85_REFERENCE_LABELS[application]}: ${cleanFingerprint}]` : match;
+    }
+    return !name || name.trim().toLowerCase() === cleanFingerprint
+      ? `[Key: ${cleanFingerprint}]`
+      : `[Key: ${name} · ${cleanFingerprint}]`;
+  }).split("\n")
+    .filter((line) => !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  (?:Add new note)?$/.test(line))
+    .join("\n")
+    .trimEnd();
+  return cleaned || "No notes.";
 }
 
-export function updateNote(journal, id, patch) {
-  let note = journal.notes.find((entry) => entry.id === id);
-  if (!note) return null;
-  if (patch && Object.prototype.hasOwnProperty.call(patch, "at")) note.at = String(patch.at ?? "");
-  if (patch && Object.prototype.hasOwnProperty.call(patch, "text")) note.text = String(patch.text ?? "");
-  return note;
+export function serializeNotebook(journal) {
+  let pages = journal?.pages?.length ? journal.pages : createJournal().pages;
+  let document = {
+    format: NOTEBOOK_FORMAT,
+    version: NOTEBOOK_VERSION,
+    activePage: Math.max(0, Math.min(Number(journal?.activePage) || 0, pages.length - 1)),
+    pages: pages.map((page, index) => ({
+      number: Number.isSafeInteger(page.number) && page.number > 0 ? page.number : index + 1,
+      name: String(page.name || `Page ${index + 1}`).slice(0, 120),
+      style: normalizeJournalPageStyle(page.style),
+      content: journalNotebookRuns(page.notesText),
+    })),
+  };
+  return JSON.stringify(document, null, 2) + "\n";
 }
 
-export function deleteNote(journal, id) {
-  let index = journal.notes.findIndex((entry) => entry.id === id);
-  if (index < 0) return false;
-  journal.notes.splice(index, 1);
-  return true;
+export function parseNotebook(text) {
+  let document;
+  try {
+    document = JSON.parse(String(text ?? ""));
+  } catch {
+    throw new Error("This is not valid notebook JSON.");
+  }
+  if (!document || document.format !== NOTEBOOK_FORMAT || document.version !== NOTEBOOK_VERSION) {
+    throw new Error("This file is not a supported EntropyLab notebook.");
+  }
+  if (!Array.isArray(document.pages) || !document.pages.length || document.pages.length > NOTEBOOK_MAX_PAGES) {
+    throw new Error(`A notebook must contain between 1 and ${NOTEBOOK_MAX_PAGES} pages.`);
+  }
+  let usedNumbers = new Set(), pages = document.pages.map((page, index) => {
+    let preferred = Number.isSafeInteger(page?.number) && page.number > 0 ? page.number : index + 1;
+    while (usedNumbers.has(preferred)) preferred++;
+    usedNumbers.add(preferred);
+    let fallbackName = `Page ${preferred}`;
+    let name = typeof page?.name === "string" ? page.name.trim().replace(/\s+/g, " ").slice(0, 120) : "";
+    return {
+      id: index + 1,
+      number: preferred,
+      name: name || fallbackName,
+      notesText: journalTextFromRuns(page?.content),
+      style: normalizeJournalPageStyle(page?.style),
+    };
+  });
+  let activePage = Number.isSafeInteger(document.activePage) ? document.activePage : 0;
+  activePage = Math.max(0, Math.min(activePage, pages.length - 1));
+  return {
+    notesText: pages[activePage].notesText,
+    pages,
+    activePage,
+    nextPageId: pages.length + 1,
+    nextPageNumber: pages.reduce((latest, page) => Math.max(latest, page.number), 0) + 1,
+    log: [],
+    stateText: "",
+  };
 }
 
-export function formatNotes(notes) {
-  if (!notes.length) return "No notes.";
-  return notes.map((note, i) => `Note ${i + 1}\nWritten: ${note.at || "(no time)"}\n${note.text || ""}`.trimEnd()).join("\n\n---\n\n");
+export function journalFromPlainText(text) {
+  let journal = createJournal(), value = String(text ?? "");
+  if (value.length > NOTEBOOK_MAX_TEXT_LENGTH) throw new Error("The notes file is too large to import.");
+  value = journalTextFromRuns(journalNotebookRuns(value));
+  journal.notesText = value;
+  journal.pages[0].notesText = value;
+  return journal;
+}
+
+export function notebookPageHasContent(text) {
+  return String(text ?? "").split("\n").some((line) => {
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  (?:Add new note)?\s*$/.test(line)) return false;
+    return line.trim().length > 0;
+  });
+}
+
+export function mergeNotebookImport(journal, imported) {
+  let currentPages = journal?.pages?.length ? journal.pages : createJournal().pages;
+  let importedPages = imported?.pages;
+  if (!importedPages?.length) throw new Error(`A notebook must contain between 1 and ${NOTEBOOK_MAX_PAGES} pages.`);
+  let currentActive = Math.max(0, Math.min(Number(journal?.activePage) || 0, currentPages.length - 1));
+  let replaceCurrent = !notebookPageHasContent(currentPages[currentActive]?.notesText);
+  let insertion = replaceCurrent ? currentActive : currentActive + 1;
+  if (currentPages.length - Number(replaceCurrent) + importedPages.length > NOTEBOOK_MAX_PAGES) {
+    throw new Error(`A notebook must contain between 1 and ${NOTEBOOK_MAX_PAGES} pages.`);
+  }
+  let retained = currentPages.filter((_page, index) => !replaceCurrent || index !== currentActive);
+  let usedNames = new Set(retained.map((page) => String(page.name || "").trim().replace(/\s+/g, " ").toLowerCase()).filter(Boolean));
+  let maxId = currentPages.reduce((latest, page) => Number.isSafeInteger(page.id) && page.id > latest ? page.id : latest, 0);
+  let maxNumber = currentPages.reduce((latest, page) => Number.isSafeInteger(page.number) && page.number > latest ? page.number : latest, 0);
+  let nextId = Math.max(Number(journal?.nextPageId) || 1, maxId + 1);
+  let nextNumber = Math.max(Number(journal?.nextPageNumber) || 1, maxNumber + 1);
+  let mapped = importedPages.map((page, index) => {
+    let id = replaceCurrent && index === 0 ? currentPages[currentActive].id : nextId++;
+    let number = replaceCurrent && index === 0 ? currentPages[currentActive].number : nextNumber++;
+    let importedDefault = String(page.name || "").trim() === `Page ${page.number}`;
+    let rootName = (importedDefault ? `Page ${number}` : String(page.name || `Page ${number}`).trim().replace(/\s+/g, " ")).slice(0, 120) || `Page ${number}`;
+    let name = rootName, suffix = 2;
+    while (usedNames.has(name.toLowerCase())) {
+      let ending = ` (${suffix++})`;
+      name = rootName.slice(0, 120 - ending.length) + ending;
+    }
+    usedNames.add(name.toLowerCase());
+    return { id, number, name, notesText: String(page.notesText || ""), style: normalizeJournalPageStyle(page.style) };
+  });
+  let pages = [...currentPages];
+  pages.splice(insertion, replaceCurrent ? 1 : 0, ...mapped);
+  let importedActive = Math.max(0, Math.min(Number(imported.activePage) || 0, mapped.length - 1));
+  let activePage = insertion + importedActive;
+  return {
+    ...journal,
+    pages,
+    activePage,
+    nextPageId: Math.max(nextId, pages.reduce((latest, page) => Math.max(latest, page.id || 0), 0) + 1),
+    nextPageNumber: Math.max(nextNumber, pages.reduce((latest, page) => Math.max(latest, page.number || 0), 0) + 1),
+    notesText: pages[activePage].notesText,
+  };
+}
+
+export function formatNotebookPages(pages) {
+  if (!pages?.length) return "No notes.";
+  if (pages.length === 1) return formatNotebook(pages[0].notesText);
+  return pages.map((page) => `${page.name || `Page ${page.number}`}\n${formatNotebook(page.notesText)}`).join("\n\n");
 }
 
 export function appendLog(journal, { at, tool, action, detail } = {}, now = new Date()) {
@@ -66,7 +278,7 @@ export function formatLog(events) {
 export function snapshotSession(session) {
   let lines = [
     "ENTROPYLAB SESSION STATE",
-    `Captured: ${session.capturedAt || ""}`,
+    `Updated: ${session.capturedAt || ""}`,
     `Build: ${session.version || "unknown"}${session.commit ? ` · ${session.commit}` : ""}`,
     `Private material: ${session.includePrivate ? "INCLUDED" : "omitted"}`,
     "",
@@ -105,14 +317,13 @@ export function snapshotSession(session) {
 }
 
 export function wipeJournal(journal) {
-  journal.notes.forEach((note) => {
-    note.text = "";
-    note.at = "";
-  });
-  journal.notes.length = 0;
+  journal.notesText = "";
+  journal.pages = [{ id: 1, number: 1, name: "Page 1", notesText: "", style: defaultJournalPageStyle() }];
+  journal.activePage = 0;
+  journal.nextPageId = 2;
+  journal.nextPageNumber = 2;
   journal.log.length = 0;
   journal.stateText = "";
-  journal.nextId = 1;
   return journal;
 }
 //
@@ -123,6 +334,7 @@ export function wipeJournal(journal) {
 // under a second derived key (a synthetic IV), so the same password and the
 // same entries always produce the same file.
 export const JOURNAL_VERSION = 2;
+export const JOURNAL_EXPORT_VERSION = 1;
 export const JOURNAL_KDF = "PBKDF2-SHA-256";
 export const JOURNAL_CIPHER = "AES-256-GCM";
 export const JOURNAL_ITERATIONS = 600_000; // OWASP 2023 floor for PBKDF2-HMAC-SHA-256
@@ -132,6 +344,7 @@ export const JOURNAL_SALT_PREFIX = "entropylab-journal-salt-v1:";
 export const IV_BYTES = 12;
 export const PASSWORD_MIN_LENGTH = 12;
 export const METHODS = Object.freeze(["dice", "coin", "hex", "brain", "seed", "cards"]);
+const JOURNAL_EXPORT_KINDS = new Set(["notebook", "key-manager", "session-state", "session-log"]);
 export const METHOD_LABELS = Object.freeze({
   dice: "Dice rolls",
   coin: "Coin flips",
@@ -387,14 +600,10 @@ function parseDocument(plain) {
 // derived key. The same password and entries produce the same file; two
 // different plaintexts share an IV only on an HMAC collision. No randomness
 // is generated, matching the rest of EntropyLab.
-export async function sealDocument(doc, keys) {
+async function sealPlainText(plainText, keys) {
   if (!keys?.encKey || !keys?.ivKey) throw new Error("Unlock the journal before saving.");
   const subtle = requireSubtle();
-  const plain = encoder.encode(JSON.stringify({
-    version: JOURNAL_VERSION,
-    nextId: doc.nextId,
-    entries: doc.entries,
-  }));
+  const plain = encoder.encode(plainText);
   try {
     const tag = new Uint8Array(await subtle.sign("HMAC", keys.ivKey, plain));
     try {
@@ -406,6 +615,60 @@ export async function sealDocument(doc, keys) {
     }
   } finally {
     wipeBytes(plain);
+  }
+}
+
+export async function sealDocument(doc, keys) {
+  return sealPlainText(JSON.stringify({
+    version: JOURNAL_VERSION,
+    nextId: doc.nextId,
+    entries: doc.entries,
+  }), keys);
+}
+
+export async function sealExport(kind, content, keys) {
+  if (!JOURNAL_EXPORT_KINDS.has(kind)) throw new Error("That Journal export type is not supported.");
+  const file = await sealPlainText(JSON.stringify({
+    entropylabJournalExport: JOURNAL_EXPORT_VERSION,
+    kind,
+    content: String(content ?? ""),
+  }), keys);
+  return { ...file, entropylabJournalExport: JOURNAL_EXPORT_VERSION };
+}
+
+export async function openExport(file, keys) {
+  let outer;
+  try {
+    outer = typeof file === "string" ? JSON.parse(file) : file;
+  } catch {
+    throw new Error("That encrypted export is not valid JSON.");
+  }
+  if (!outer || outer.entropylabJournalExport !== JOURNAL_EXPORT_VERSION) throw new Error("That file is not an encrypted Journal export.");
+  if (!keys?.encKey || !keys?.ivKey) throw new Error("Open or create the journal before importing an encrypted export.");
+  const parsed = parseFile(outer);
+  if (parsed.iterations !== keys.iterations) throw new Error("That encrypted export uses a different journal password.");
+  const subtle = requireSubtle();
+  let plainBytes;
+  try {
+    plainBytes = new Uint8Array(await subtle.decrypt({ name: "AES-GCM", iv: parsed.iv }, keys.encKey, parsed.ciphertext));
+  } catch {
+    throw new Error("That encrypted export uses a different journal password, or the file is damaged.");
+  }
+  try {
+    let payload;
+    try {
+      payload = JSON.parse(decoder.decode(plainBytes));
+    } catch {
+      throw new Error("The encrypted Journal export is corrupt.");
+    }
+    if (!payload || payload.entropylabJournalExport !== JOURNAL_EXPORT_VERSION || !JOURNAL_EXPORT_KINDS.has(payload.kind) || typeof payload.content !== "string") {
+      throw new Error("The encrypted Journal export is corrupt.");
+    }
+    return { kind: payload.kind, content: payload.content };
+  } finally {
+    wipeBytes(plainBytes);
+    wipeBytes(parsed.iv);
+    wipeBytes(parsed.ciphertext);
   }
 }
 

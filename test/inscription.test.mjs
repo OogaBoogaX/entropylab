@@ -17,6 +17,7 @@ import {
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
 const template = readFileSync(join(root, "src/index.html"), "utf8");
+const shell = readFileSync(join(root, "src/shell.html"), "utf8");
 const utf8 = (text) => new TextEncoder().encode(text);
 const push = (data) => {
   const bytes = typeof data === "string" ? utf8(data) : data;
@@ -173,7 +174,7 @@ test("PSBT inspector wires envelope detection into the report", () => {
   assert.match(app, /inspectPsbtInscriptions/);
   assert.match(app, /Inscription envelope/);
   assert.match(app, /does not number sats/);
-  for (const markup of [template, app]) {
+  for (const markup of [shell]) {
     assert.match(markup, /inscription envelope/);
   }
 });

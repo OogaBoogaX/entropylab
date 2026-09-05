@@ -34,6 +34,13 @@ test("generator point renders its published legacy and SegWit addresses", () => 
   // BIP173/BIP350 reference P2WPKH address for the generator's hash160.
   assert.equal(addressFor("p2wpkh", G_COMPRESSED, "mainnet"), "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
   assert.equal(addressFor("p2wpkh", G_COMPRESSED, "testnet"), "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx");
+  // Signet shares the testnet encodings; regtest keeps testnet's base58
+  // versions but renders SegWit with the bcrt HRP (issue #329).
+  assert.equal(addressFor("p2wpkh", G_COMPRESSED, "signet"), "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx");
+  assert.equal(addressFor("p2wpkh", G_COMPRESSED, "regtest"), "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080");
+  assert.equal(addressFor("p2tr", G_COMPRESSED, "signet"), "tb1pmfr3p9j00pfxjh0zmgp99y8zftmd3s5pmedqhyptwy6lm87hf5ssk79hv2");
+  assert.equal(addressFor("p2tr", G_COMPRESSED, "regtest"), "bcrt1pmfr3p9j00pfxjh0zmgp99y8zftmd3s5pmedqhyptwy6lm87hf5ssm803es");
+  assert.equal(addressFor("p2pkh", G_COMPRESSED, "regtest"), addressFor("p2pkh", G_COMPRESSED, "testnet"));
 });
 
 test("BIP86 first address matches the published vector", async () => {
@@ -175,7 +182,11 @@ test("descriptorDerive verifies a supplied #checksum and refuses multipath", () 
   assert.equal(checksummed.scriptHex, good.scriptHex);
   assert.throws(() => descriptorDerive(`${body}#qqqqqqqq`, 0, "mainnet"), /Invalid output descriptor/);
   assert.throws(() => descriptorDerive("wpkh(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/<0;1>/*)", 0, "mainnet"), /Invalid output descriptor/);
-  assert.throws(() => descriptorDerive(body, 0, "regtest"), /Unknown Bitcoin network/);
+  // The four picker networks all derive (issue #329): signet renders tb1p…
+  // like testnet, regtest renders bcrt1p…; unknown names still fail.
+  assert.match(descriptorDerive(body, 0, "signet").address, /^tb1p/);
+  assert.match(descriptorDerive(body, 0, "regtest").address, /^bcrt1p/);
+  assert.throws(() => descriptorDerive(body, 0, "mutinynet"), /Unknown Bitcoin network/);
 });
 
 test("base58check and coders match @scure/base", async () => {

@@ -14,6 +14,7 @@
 import { Address as BtcAddress, NETWORK as BTC_MAINNET, TEST_NETWORK as BTC_TESTNET, OutScript } from "@scure/btc-signer";
 import { renderSVG as renderQrSvg } from "uqr";
 import { psbtInspectDoc, psbtBuildBytes, psbtWasmReady } from "./psbt-wasm.js";
+import { comparePsbtDocs } from "./psbt-diff.js";
 import { expandableHtml, EXPAND_LIMIT, initExpandable } from "./expandable.js";
 import { psbtVizHtml } from "./psbt-viz.js";
 import { parseOpReturn } from "./opreturn.js";
@@ -259,11 +260,148 @@ export const psbtEditorBuildDoc = (doc) => ({
   outputs: doc.outputs.map((map) => map.map((pair) => ({ key: pair.key, value: pair.value }))),
 });
 
-export const initPsbtEditor = () => {
+// --- Comparison report -----------------------------------------------------
+// Rendering for comparePsbtDocs output (psbt-diff.js). Pure string building,
+// unit-tested under Node; every interpolated value passes escapeHtml or
+// expandableHtml. The report is descriptive: git-style +/−/~ marks name the
+// kind of difference, and the summary lines carry the only tones.
+
+const DIFF_MARK = {
+  added: ["+", "ok", "added in the pasted PSBT"],
+  removed: ["−", "bad", "removed in the pasted PSBT"],
+  changed: ["~", "warn", "changed in the pasted PSBT"],
+};
+
+const capitalize = (text) => text.slice(0, 1).toUpperCase() + text.slice(1);
+
+const formatSats = (value) => {
+  try {
+    return `${value} sats (${satsToBtc(value)} BTC)`;
+  } catch {
+    return String(value ?? "");
+  }
+};
+
+// One-line presentation of an output script, the same fallback chain as the
+// editor's output rows: address, OP_RETURN summary, ASM, else raw hex.
+const scriptCell = (scriptHex, asm, network) => {
+  const text = addressFor(scriptHex, network) || opReturnSummary(scriptHex)?.text || asm || String(scriptHex ?? "");
+  return expandableHtml(text, { label: "scriptPubKey" });
+};
+
+const emDash = '<span class="muted">—</span>';
+
+const diffRow = (change, fieldHtml, beforeHtml, afterHtml) => {
+  const [mark, tone, label] = DIFF_MARK[change.kind];
+  return `<tr><td class="psbted-diff-mark psbted-note-${tone}" title="${label}">${mark}</td><td>${fieldHtml}</td><td>${beforeHtml}</td><td>${afterHtml}</td></tr>`;
+};
+
+const diffTable = (rows) =>
+  rows.length
+    ? `<table class="psbted-pairs psbted-diff">
+      <thead><tr><th class="psbted-col-mark"></th><th>Field</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>${rows.join("")}</tbody>
+    </table>`
+    : "";
+
+// The transaction-section rows: version/locktime, per-input and per-output
+// fields, and whole inputs/outputs appearing or disappearing.
+const txDiffRows = (changes, before, after, network) =>
+  changes
+    .filter((change) => change.category === "transaction")
+    .map((change) => {
+      if (!change.field) {
+        const element = change.kind === "added" ? change.after : change.before;
+        const cell =
+          change.scope === "input"
+            ? `<span class="psbted-hex">${expandableHtml(String(element.txid), { label: `Input ${change.index} previous txid` })}</span> : ${escapeHtml(String(element.vout))}`
+            : `${escapeHtml(formatSats(element.value))}<br>${scriptCell(element.scriptPubKey, element.asm, network)}`;
+        return diffRow(change, escapeHtml(`${capitalize(change.scope)} ${change.index}`), change.kind === "added" ? emDash : cell, change.kind === "added" ? cell : emDash);
+      }
+      const name = change.field.split(".").pop();
+      const label = change.scope === "transaction" ? capitalize(name) : `${capitalize(change.scope)} ${change.index} · ${{ txid: "previous txid", vout: "prevout index", value: "value", scriptPubKey: "scriptPubKey" }[name] || name}`;
+      const side = (value, doc) => {
+        if (name === "value") return escapeHtml(formatSats(value));
+        if (name === "scriptPubKey") return scriptCell(value, doc?.tx?.outputs?.[change.index]?.asm, network);
+        if (name === "txid") return `<span class="psbted-hex">${expandableHtml(String(value), { label })}</span>`;
+        return escapeHtml(String(value ?? ""));
+      };
+      return diffRow(change, escapeHtml(label), side(change.before, before), side(change.after, after));
+    });
+
+// One key-value pair cell of a map diff: the typed one-line decode when the
+// pair has one, otherwise (or when undecodable) the raw value hex — the same
+// two presentations the editor's pair tables use.
+const pairCell = (pair, network) => {
+  if (!pair) return emDash;
+  const name = pair.name || "pair";
+  const note = describePair(pair, network);
+  const parts = [];
+  if (note.text) parts.push(`<span${note.tone ? ` class="psbted-note-${note.tone}"` : ""}>${expandableHtml(note.text, { label: `${name} — decoded` })}</span>`);
+  if (!pair.decoded || !note.text) parts.push(`<span class="psbted-hex">${expandableHtml(pair.value, { label: `${name} — value (hex)` })}</span>`);
+  return parts.join("<br>");
+};
+
+const mapDiffRows = (changes, scope, index, before, after, network) =>
+  changes
+    .filter((change) => change.scope === scope && change.index === index)
+    .map((change) => {
+      const mapOf = (doc) => (scope === "global" ? doc.globals : scope === "input-map" ? doc.inputs?.[index] : doc.outputs?.[index]) || [];
+      const beforePair = mapOf(before).find((pair) => pair.key === change.key) || null;
+      const afterPair = mapOf(after).find((pair) => pair.key === change.key) || null;
+      const field = change.name ? `<span class="psbted-hex">${escapeHtml(change.name)}</span>` : escapeHtml(`Unknown pair (type 0x${change.key.slice(0, 2)})`);
+      return diffRow(change, field, pairCell(beforePair, network), pairCell(afterPair, network));
+    });
+
+export const psbtDiffHtml = (diff, before, after, network) => {
+  if (diff.equal) return `<p class="psbted-note-ok">Semantically identical — the underlying transaction, the signing state, and the metadata all match.</p>`;
+  const summary = [
+    diff.transactionChanged
+      ? `<p class="psbted-note-bad">✕ The underlying transaction changed — review every input and output before using either PSBT.</p>`
+      : `<p class="psbted-note-ok">✓ The underlying transaction is unchanged.</p>`,
+    diff.signingChanged
+      ? `<p class="psbted-note-warn">⚠ Signing state changed (signatures, sighash types, final scripts).</p>`
+      : `<p class="muted">Signing state unchanged.</p>`,
+    diff.metadataChanged
+      ? `<p class="psbted-note-warn">⚠ PSBT metadata changed (key-value pairs outside the transaction).</p>`
+      : `<p class="muted">PSBT metadata unchanged.</p>`,
+  ];
+  // The fee is derived from the compared fields (claimed input amounts minus
+  // outputs), so a fee change always accompanies rows above; this line states
+  // the bottom line directly.
+  const feeOf = (doc) => (doc.fee?.known && doc.fee.sats !== null ? doc.fee.sats : null);
+  const feeBefore = feeOf(before), feeAfter = feeOf(after);
+  if (feeBefore !== null && feeAfter !== null && feeBefore !== feeAfter)
+    summary.push(`<p class="psbted-note-warn">Fee (from PSBT-claimed input amounts): ${escapeHtml(formatSats(feeBefore))} → ${escapeHtml(formatSats(feeAfter))}.</p>`);
+
+  const sections = [];
+  const txRows = txDiffRows(diff.changes, before, after, network);
+  if (txRows.length) sections.push(`<section class="psbted-map"><h3>Transaction</h3>${diffTable(txRows)}</section>`);
+  const mapSections = (scope, title) => {
+    const indexes = [...new Set(diff.changes.filter((change) => change.scope === scope).map((change) => change.index))].sort((a, b) => a - b);
+    for (const index of indexes) {
+      const rows = mapDiffRows(diff.changes, scope, index, before, after, network);
+      if (rows.length) sections.push(`<section class="psbted-map"><h3>${title} ${index} key-value map</h3>${diffTable(rows)}</section>`);
+    }
+  };
+  mapSections("input-map", "Input");
+  mapSections("output-map", "Output");
+  const globalRows = mapDiffRows(diff.changes, "global", null, before, after, network);
+  if (globalRows.length) sections.push(`<section class="psbted-map"><h3>Global key-value map</h3>${diffTable(globalRows)}</section>`);
+
+  return `<p class="muted">before = the PSBT in the editor · after = the pasted PSBT. Only differences are listed.</p>${summary.join("")}${sections.join("")}`;
+};
+
+// The editor has no network control of its own: addresses decode against the
+// header network picker's choice, read through the `networkDefault` getter
+// (mainnet/testnet), and re-decoded live when the picker changes it (the
+// "hodl:network-default" document event).
+export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
   const load = document.getElementById("psbted-load");
   if (!load) return;
   const $ = (id) => document.getElementById(id);
-  const out = $("psbted-out"), error = $("psbted-error"), text = $("psbted-text"), network = $("psbted-network");
+  const out = $("psbted-out"), error = $("psbted-error"), text = $("psbted-text");
+  const network = networkDefault;
 
   let doc = null; // inspect document being edited; null when nothing is loaded
   let resultBytes = null; // last successfully built PSBT
@@ -293,7 +431,7 @@ export const initPsbtEditor = () => {
     const rows = map
       .map((pair, pairIndex) => {
         const locked = kind === "global" && pair.key === "00";
-        const note = describePair(pair, network.value);
+        const note = describePair(pair, network());
         const tone = note.tone ? ` class="psbted-note-${note.tone}"` : "";
         const name = pair.name || "pair";
         // Long fields collapse to the standard truncated cell; activating it
@@ -336,9 +474,11 @@ export const initPsbtEditor = () => {
       return;
     }
     const tx = doc.tx;
+    // sats null with every input claimed marks an invalid fee: the document's
+    // error string says why (negative fee, u64 overflow, or past MAX_MONEY).
     const fee = doc.fee?.known
       ? doc.fee.sats === null
-        ? `<span class="psbted-note-bad">outputs exceed claimed inputs</span>`
+        ? `<span class="psbted-note-bad">${escapeHtml(doc.fee.error || "outputs exceed claimed inputs")}</span>`
         : `${escapeHtml(String(doc.fee.sats))} sats (${satsToBtc(doc.fee.sats)} BTC, from PSBT-claimed input amounts)`
       : "unknown — some inputs carry no claimed previous-output amount";
     const verdict = doc.rustBitcoinError
@@ -361,7 +501,7 @@ export const initPsbtEditor = () => {
       .join("");
     const outputRows = tx.outputs
       .map((output, index) => {
-        const addr = addressFor(output.scriptPubKey, network.value);
+        const addr = addressFor(output.scriptPubKey, network());
         const opret = addr ? null : opReturnSummary(output.scriptPubKey, output.value);
         return `<tr>
           <td>${index}</td>
@@ -381,7 +521,7 @@ export const initPsbtEditor = () => {
       const sub =
         kind === "input"
           ? `Spends ${escapeHtml(tx.inputs[index].txid)}:${escapeHtml(String(tx.inputs[index].vout))}`
-          : `Pays ${escapeHtml(String(tx.outputs[index].value))} sats${addressFor(tx.outputs[index].scriptPubKey, network.value) ? ` to ${escapeHtml(addressFor(tx.outputs[index].scriptPubKey, network.value))}` : ""}`;
+          : `Pays ${escapeHtml(String(tx.outputs[index].value))} sats${addressFor(tx.outputs[index].scriptPubKey, network()) ? ` to ${escapeHtml(addressFor(tx.outputs[index].scriptPubKey, network()))}` : ""}`;
       return `<section class="psbted-map"><h3>${kind === "input" ? "Input" : "Output"} ${index} key-value map</h3><p class="muted">${sub}</p>${pairRows(kind, map, index)}</section>`;
     };
     // The unsigned-transaction section, rendered either inline (the default)
@@ -413,7 +553,7 @@ export const initPsbtEditor = () => {
       <p class="psbt-kv"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · ${tx.inputs.length} input(s) · ${tx.outputs.length} output(s) · fee ${fee} · ${verdict}</p>
       <p class="muted" id="psbted-status" aria-live="polite">${stale ? "The fields do not build right now — see the error above; the result below is the last valid build." : "Every edit rebuilds the PSBT immediately; the fields show rust-bitcoin's decode of the current build."}</p>
 
-      ${psbtVizHtml(doc, network.value, selected)}
+      ${psbtVizHtml(doc, network(), selected)}
       ${detail}
 
       ${isSelected("tx") ? "" : txSection()}
@@ -623,6 +763,7 @@ export const initPsbtEditor = () => {
   const loadFromText = () => {
     setError("");
     selected = null;
+    clearCompareReport(); // a different editor PSBT invalidates an old report
     try {
       doc = psbtInspectDoc(psbtBytesFromText(text.value));
     } catch (exception) {
@@ -754,7 +895,7 @@ export const initPsbtEditor = () => {
       const text = out.querySelector(`[data-build-script="${index}"]`)?.value ?? "";
       const mode = out.querySelector(`[data-build-mode="${index}"]`)?.value ?? "auto";
       try {
-        const built = buildOutputScript(text, { network: network.value, mode });
+        const built = buildOutputScript(text, { network: network(), mode });
         doc.tx.outputs[Number(index)].scriptPubKey = built.scriptHex;
         liveRebuild();
       } catch (exception) {
@@ -861,6 +1002,17 @@ export const initPsbtEditor = () => {
       })
       .catch((exception) => setError(exception.message || String(exception)));
   });
+  // Semantic comparison against a second, pasted PSBT (engine: psbt-diff.js).
+  // The compare section lives outside #psbted-out, so the editor's live
+  // re-renders never touch the pasted text or the report.
+  const compareText = $("psbted-compare-text"), compareOut = $("psbted-compare-out"), compareError = $("psbted-compare-error");
+  const setCompareError = (message) => {
+    compareError.textContent = message || "";
+  };
+  const clearCompareReport = () => {
+    compareOut.innerHTML = "";
+    setCompareError("");
+  };
   $("psbted-wipe").onclick = () => {
     doc = null;
     resultBytes = null;
@@ -868,9 +1020,47 @@ export const initPsbtEditor = () => {
     selected = null;
     text.value = "";
     setError("");
+    compareText.value = "";
+    clearCompareReport();
     render();
   };
-  network.addEventListener("change", () => {
+  $("psbted-compare-go").addEventListener("click", () => {
+    psbtWasmReady
+      .then(() => {
+        clearCompareReport();
+        if (!doc) {
+          setCompareError("Load a PSBT above first.");
+          return;
+        }
+        let beforeDoc;
+        try {
+          // Both sides are compared as rust-bitcoin decodes of accepted
+          // PSBTs. The working document is rebuilt first so mid-edit field
+          // text (an amount field holds a string while typed) cannot fake a
+          // difference; a state that does not build refuses to compare
+          // instead of guessing.
+          beforeDoc = psbtInspectDoc(psbtBuildBytes(psbtEditorBuildDoc(doc)));
+        } catch (exception) {
+          setCompareError(`The editor fields do not build right now: ${exception.message || exception}`);
+          return;
+        }
+        let afterDoc;
+        try {
+          afterDoc = psbtInspectDoc(psbtBytesFromText(compareText.value));
+        } catch (exception) {
+          setCompareError(exception.message || String(exception));
+          return;
+        }
+        compareOut.innerHTML = psbtDiffHtml(comparePsbtDocs(beforeDoc, afterDoc), beforeDoc, afterDoc, network());
+      })
+      .catch((exception) => setCompareError(exception.message || String(exception)));
+  });
+  $("psbted-compare-clear").addEventListener("click", () => {
+    compareText.value = "";
+    clearCompareReport();
+  });
+  // The header network picker broadcasts its choice; re-decode addresses.
+  document.addEventListener("hodl:network-default", () => {
     if (doc) {
       render();
       renderResult();

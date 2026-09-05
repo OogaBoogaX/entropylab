@@ -12,6 +12,7 @@ import { indexHdKey, matchOwnership, addressFromPubkey, OWNERSHIP_GAP } from "..
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
 const template = readFileSync(join(root, "src/index.html"), "utf8");
+const shell = readFileSync(join(root, "src/shell.html"), "utf8");
 
 const concat = (...parts) => {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
@@ -175,7 +176,7 @@ test("app inspects raw transactions and labels outputs", () => {
   assert.match(app, /No output belongs to this session wallet/);
   assert.match(app, /script " \+ hodlHex\.encode\(script\)/);
   assert.doesNotMatch(app, /debug fp=/);
-  for (const markup of [app, template]) {
+  for (const markup of [shell]) {
     assert.match(markup, /Read a PSBT or a signed transaction/);
     assert.match(markup, /raw transaction/);
   }

@@ -84,7 +84,7 @@ test("the result panel renders the QR block and its animation plumbing", () => {
 });
 
 test("both intro texts describe the live rebuild and QR output", () => {
-  for (const markup of [read("src/index.html"), read("src/js/app.js")]) {
+  for (const markup of [read("src/shell.html")]) {
     assert.match(markup, /Every edit rebuilds the file through rust-bitcoin as you type/);
     assert.match(markup, /animated ur:crypto-psbt sequence/);
   }

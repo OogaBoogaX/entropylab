@@ -8,9 +8,8 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
-const en = JSON.parse(readFileSync(join(root, "..", "src/locales/en.json"), "utf8"));
 function hodlT(key, vars) {
-  let text = en[key] || key;
+  let text = key; // English-as-key
   if (vars) text = text.replace(/\{(\w+)\}/g, (_, n) => (vars[n] == null ? `{${n}}` : String(vars[n])));
   return text;
 }
@@ -116,9 +115,47 @@ test("the brain-wallet HD output has no silent fingerprint or mnemonic preview p
   // The private-key mode never previews a fingerprint or mnemonic, which now
   // covers the HD brain output too.
   assert.match(app, /if \(hodlKeyMode === "key"\) \{\s*preview\.hidden = true;/);
-  assert.match(app, /hodlT\("note\.brainLabEmpty", \{ derive: hodlT\("action\.derive"\) \}\)/);
-  assert.match(en["note.brainLabEmpty"], /24 words appear only after \{derive\}/);
-  assert.match(app, /hodlError\("error\.brainAck"\)/);
-  assert.match(en["error.brainAck"], /Acknowledge the lab warning before deriving/);
+  assert.match(app, /hodlTText\("([\w .-]*\{derive\}[\w .-]*)", \{ derive: hodlTText\("Derive Key"\) \}\)/);
+  assert.match(app, /24 words appear only after \{derive\}/);
+  assert.match(app, /hodlError\("Acknowledge the lab warning before deriving/);
+  // Each output is acknowledged on its own, so one does not unlock the other.
+  assert.match(app, /hodlBrainLabAck = \{ scalar: false, hd: false \}/);
+  assert.match(app, /hodlBrainLabAck\[output\] = ack\.checked/);
   assert.doesNotMatch(loadSlice("hodlBrainLabEntropy"), /localStorage/);
+});
+
+test("a derived brain wallet does not outlive its acknowledgement or its output choice", () => {
+  // Unticking "I understand" has to retract what it authorised. Without this the
+  // warning can be revoked while the derived private key stays on screen and
+  // stays revealable, which is the opposite of what the checkbox promises.
+  // Switching output is the same failure wearing a different hat: the two
+  // outputs build different wallets from the same text, so a result left over
+  // from the other one is a wrong address waiting to be copied.
+  const ack = app.slice(app.indexOf('let ack = document.getElementById("brain-lab-ack");'));
+  const handler = ack.slice(0, ack.indexOf("};") + 2);
+  assert.match(handler, /hodlBrainLabAck\[output\] = ack\.checked;\s*if \(!ack\.checked\) hodlRetractBrainWalletResults\(output\);\s*hodlInvalidateLiveKeyResult\(\);/);
+
+  const radios = app.slice(app.indexOf(`document.querySelectorAll('input[name="bo"]')`));
+  const bound = radios.slice(0, radios.indexOf("}));") + 4);
+  assert.match(bound, /state\.brainWalletOutput = hodlBrainWalletOutput\(\);\s*hodlInvalidateLiveKeyResult\(\);/);
+
+  // The retraction has to clear the rendered result and the reveal flag, not
+  // merely hide the input.
+  const invalidate = loadSlice("hodlInvalidateLiveKeyResult");
+  assert.match(invalidate, /state\.result = null/);
+  assert.match(invalidate, /state\.reveal = false/);
+  assert.match(invalidate, /hodlWalletResult = null/);
+  assert.match(invalidate, /hodlRevealPrivate = false/);
+  assert.match(invalidate, /hodlOutEl\.innerHTML = ""/);
+
+  // A revoked acknowledgement has to reach committed key tabs too: they
+  // re-render their stored result without asking again, so every brain-derived
+  // result carries a marker and revoking sweeps it from every slot.
+  const derive = loadSlice("hodlCalculateKey");
+  assert.match(derive, /if \(kind === "brain"\) hodlWalletResult\.brainWalletOutput = hodlBrainWalletOutput\(\);/);
+  const retract = loadSlice("hodlRetractBrainWalletResults");
+  assert.match(retract, /for \(let state of hodlKeys\)/);
+  assert.match(retract, /state\?\.result\?\.brainWalletOutput !== output/);
+  assert.match(retract, /state\.result = null/);
+  assert.match(retract, /state\.reveal = false/);
 });

@@ -234,9 +234,10 @@
     assert(document.getElementById("derivation-path").value.startsWith("m/84'/1'/0'"), `Derivation path did not follow: ${document.getElementById("derivation-path").value}`);
     assert(document.getElementById("network-help").textContent.includes("Testnet"), "Coin type help did not follow the header network");
     equal(document.getElementById("msig-network").value, "1", "Multisig coin type did not follow the header network");
-    for (const id of ["sp-network", "psbt-network", "psbted-network"]) {
-      equal(document.getElementById(id).value, "testnet", id + " did not follow the header network");
-    }
+    equal(document.getElementById("sp-network").value, "testnet", "sp-network did not follow the header network");
+    // The PSBT tools have no network select of their own anymore: they read
+    // the header picker's choice directly.
+    assert(!document.getElementById("psbt-network") && !document.getElementById("psbted-network"), "The PSBT network selects must be gone");
     // Signet and regtest are their own picks, but they share the testnet
     // formats, so every tool's network control stays on testnet for them.
     for (const network of ["signet", "regtest"]) {
@@ -246,9 +247,7 @@
       equal(picker.dataset.network, network, "Network picker did not tag " + network);
       equal(document.getElementById("network").value, "1'", "Keys coin type did not follow " + network);
       equal(document.getElementById("msig-network").value, "1", "Multisig coin type did not follow " + network);
-      for (const id of ["sp-network", "psbt-network", "psbted-network"]) {
-        equal(document.getElementById(id).value, "testnet", id + " did not follow " + network);
-      }
+      equal(document.getElementById("sp-network").value, "testnet", "sp-network did not follow " + network);
     }
     button.click();
     menu.querySelector('[data-network="mainnet"]').click();
@@ -256,15 +255,106 @@
     equal(document.getElementById("network").value, "0'", "Keys coin type did not restore mainnet");
     assert(document.getElementById("derivation-path").value.startsWith("m/84'/0'/0'"), "Derivation path did not restore mainnet");
     equal(document.getElementById("msig-network").value, "0", "Multisig coin type did not restore mainnet");
-    for (const id of ["sp-network", "psbt-network", "psbted-network"]) {
-      equal(document.getElementById(id).value, "mainnet", id + " did not restore mainnet");
-    }
+    equal(document.getElementById("sp-network").value, "mainnet", "sp-network did not restore mainnet");
     // Escape closes the menu without a choice, and nothing is ever stored.
     button.click();
     assert(!menu.hidden, "Network menu did not reopen");
     button.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     assert(menu.hidden && button.getAttribute("aria-expanded") === "false", "Escape did not close the network menu");
     assert(!Object.keys(localStorage).some((key) => /network/i.test(key)), "The network choice must not persist to storage");
+  });
+
+  await test("the locale switch translates the shell and restores English on the way back", async () => {
+    const select = document.getElementById("locale-select");
+    assert(select, "Locale select is missing");
+    const pitchItem = document.querySelector(".pitch-list li");
+    const betaBanner = document.querySelector(".beta-warning-text");
+    const download = document.querySelector(".download-html");
+    const modeOption = document.querySelector("#key-mode-select option");
+    assert(pitchItem && betaBanner && download && modeOption, "Fixture elements for the locale switch are missing");
+    equal(pitchItem.textContent, "Save this air-gapped bitcoin calculator to a removable drive and open it on a computer that never goes online.", "Pitch starts in English");
+    select.value = "es";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await wait(0);
+    // Static shell text, a rich (markup-bearing) block, an aria-label, and a
+    // t()-rendered dynamic label all follow the switch.
+    equal(pitchItem.textContent, "Guarda esta calculadora de bitcoin aislada de internet en una unidad extraíble y ábrela en una computadora que nunca se conecte a internet.", "Static shell text did not translate");
+    assert(betaBanner.querySelector("strong")?.textContent === "Software en beta", "Rich banner did not translate: " + betaBanner.textContent);
+    equal(download.getAttribute("aria-label"), "Descargar EntropyLab", "aria-label did not translate");
+    equal(modeOption.textContent, "Tiradas de dados", "The method dropdown did not re-render in Spanish");
+    // Switching back restores the English originals, not a stale translation.
+    select.value = "en";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await wait(0);
+    equal(pitchItem.textContent, "Save this air-gapped bitcoin calculator to a removable drive and open it on a computer that never goes online.", "Switching back did not restore the English original");
+    equal(modeOption.textContent, "Dice rolls", "The method dropdown did not restore English");
+    assert(localStorage.getItem("entropylab-locale") === "en", "The locale choice should be stored as English again");
+  });
+
+  await test("catalog markup is rebuilt from the allowlist before it can reach innerHTML", () => {
+    // The catalogs are the one place translated text can carry markup into
+    // the page. Whatever a catalog value says, only allowlisted elements may
+    // survive sanitization, and nothing in a catalog value may ever execute.
+    const i18n = window.__entropyLabI18n;
+    assert(i18n && typeof i18n.sanitizeCatalogHtml === "function", "The catalog sanitizer is not exposed");
+    delete window.__entropyLabPwned;
+    const hostile = '<img src=x onerror="window.__entropyLabPwned = true">Hi <strong>there</strong>, <span class="mono">m/84\'</span> <span onclick="window.__entropyLabPwned = true">x</span><a href="javascript:window.__entropyLabPwned = true">go</a>';
+    const host = document.createElement("div");
+    host.innerHTML = i18n.sanitizeCatalogHtml(hostile);
+    assert(!host.querySelector("img"), "An img element survived the sanitizer");
+    assert(!host.querySelector("[onclick], [onerror]"), "An event handler attribute survived the sanitizer");
+    assert(!host.querySelector("a"), "A link with a javascript: href survived the sanitizer");
+    equal(host.querySelector("strong")?.textContent, "there");
+    equal(host.querySelector("span.mono")?.textContent, "m/84'");
+    assert(host.textContent.includes('<img src=x onerror="window.__entropyLabPwned = true">'), "The rejected tag was not kept as visible text");
+    assert(window.__entropyLabPwned !== true, "A catalog value executed script");
+    // A real markup-bearing source keeps its allowlisted markup through tHtml.
+    const rich = i18n.tHtml("<strong>Cannot spend:</strong> these exports can monitor every address and reveal this account's transaction history and balance. Treat them as privacy-sensitive.");
+    host.innerHTML = rich;
+    equal(host.querySelector("strong")?.textContent, "Cannot spend:", "Allowlisted catalog markup did not render through tHtml");
+  });
+
+  await test("a hostile translation inside an attribute cannot add attributes", () => {
+    const i18n = window.__entropyLabI18n;
+    assert(i18n && typeof i18n.tAttr === "function", "tAttr is not exposed");
+    delete window.__entropyLabPwned;
+    const hostile = '" hidden style="display:none" onmouseover="window.__entropyLabPwned = true" x="';
+    const host = document.createElement("div");
+    host.innerHTML = `<div class="probe" aria-label="${i18n.tAttr("{n} cards are recommended", { n: hostile })}">a</div>`
+      + `<span class="probe" title="${i18n.tAttr("{n} cards are recommended", { n: hostile })}">b</span>`
+      + `<input class="probe" placeholder="${i18n.tAttr("{n} cards are recommended", { n: hostile })}">`;
+    const probes = host.querySelectorAll(".probe");
+    equal(probes.length, 3);
+    for (const probe of probes) {
+      assert(!probe.hasAttribute("hidden"), probe.tagName + " gained a hidden attribute");
+      assert(!probe.hasAttribute("style"), probe.tagName + " gained a style attribute");
+      assert(!probe.hasAttribute("x"), probe.tagName + " gained an attribute named x");
+      assert(![...probe.attributes].some((attribute) => /^on/i.test(attribute.name)), probe.tagName + " gained an event handler");
+      equal(probe.attributes.length, 2);
+    }
+    equal(host.querySelector("div").getAttribute("aria-label"), hostile + " cards are recommended");
+    equal(host.querySelector("span").getAttribute("title"), hostile + " cards are recommended");
+    equal(host.querySelector("input").getAttribute("placeholder"), hostile + " cards are recommended");
+    probes[1].dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    assert(window.__entropyLabPwned !== true, "An attribute value executed script");
+  });
+
+  await test("a hostile placeholder value stays visible text and creates no element", () => {
+    const i18n = window.__entropyLabI18n;
+    delete window.__entropyLabPwned;
+    const hostile = '<img src=x onerror="window.__entropyLabPwned = true">';
+    const host = document.createElement("div");
+    host.innerHTML = i18n.tHtml("{n} cards are recommended", { n: hostile });
+    assert(!host.querySelector("img"), "A variable created an element");
+    assert(!host.querySelector("[onerror]"), "A variable created an event handler");
+    equal(host.textContent, hostile + " cards are recommended");
+    assert(window.__entropyLabPwned !== true, "A variable executed script");
+    host.innerHTML = i18n.tHtml("{n} cards are recommended", { n: "<strong>attacker</strong>" });
+    assert(!host.querySelector("strong"), "An allowlisted element arrived through a placeholder");
+    equal(host.textContent, "<strong>attacker</strong> cards are recommended");
+    host.innerHTML = i18n.sanitizeCatalogHtml("balance&#x202E;spoof");
+    assert(!host.textContent.includes("\u202E"), "An entity-spelled bidi override reached rendered text");
+    equal(host.textContent, "balance&#x202E;spoof");
   });
 
   await test("language and form dropdowns use the network picker's caret styling", async () => {
@@ -514,6 +604,20 @@
     input(cards, "");
   });
 
+  await test("a duplicated card-pad click commits once and clears both selections", async () => {
+    await chooseMode("Cards");
+    const cards = await until(() => document.getElementById("cards"), "card transcript input");
+    const ace = document.querySelector('[data-card-rank="A"]');
+    const hearts = document.querySelector('[data-card-suit="H"]');
+    ace.click();
+    hearts.click();
+    hearts.click();
+    equal(cards.value, "Ah ");
+    assert(!document.querySelector(".card-suit-pad .active"), "Suit remained selected after the duplicated click");
+    assert(!document.querySelector(".card-rank-pad .active"), "Rank remained selected after the duplicated click");
+    input(cards, "");
+  });
+
   await test("partial entropy word grids remain copyable", async () => {
     await chooseMode("Number bases");
     document.querySelector('input[name="entropy-format"][value="bin"]').click();
@@ -551,7 +655,7 @@
     sync.click();
     await wait(0);
     const syncStatus = document.getElementById("global-sync-status");
-    assert(syncStatus && !syncStatus.hidden && syncStatus.textContent.includes("128 bits synced"), "Complete entropy did not show the global synced confirmation");
+    assert(syncStatus && !syncStatus.hidden && syncStatus.textContent.includes("Key synced") && !syncStatus.querySelector(".global-sync-shortfall"), "Complete entropy did not show the global synced confirmation");
     document.querySelector('input[name="entropy-format"][value="hex"]').click();
     const syncedHex = await until(() => document.getElementById("hex"), "synced hex input");
     equal(syncedHex.value, "0".repeat(32));
@@ -584,7 +688,8 @@
     assert(!document.getElementById("go").disabled, "24-word Base32 did not accept a final single entropy bit");
     input(base32For24, "0".repeat(51));
     assert(document.getElementById("global-entropy-sync").checked, "Global sync turned off for incomplete entropy");
-    assert(document.getElementById("global-sync-status").textContent.includes("255 bits synced"), "Incomplete entropy did not report its exact synced bit count");
+    const incompleteStatus = document.getElementById("global-sync-status");
+    assert(incompleteStatus.textContent.includes("Key synced") && !incompleteStatus.querySelector(".global-sync-shortfall"), "Entropy past the minimum did not report a healthy sync");
     document.querySelector('input[name="entropy-format"][value="hex"]').click();
     const preservedHex = await until(() => document.getElementById("hex"), "truncated synchronized hex input");
     assert(preservedHex.value.length === 63, "Global sync did not wait for a complete next hexadecimal character");
@@ -603,7 +708,8 @@
     const syncLabel = directToggle.closest("label").textContent;
     if (!directToggle.checked) directToggle.click();
     input(binary, "000");
-    assert(document.getElementById("global-sync-status").textContent.includes("3 bits synced"), "Partial direct entropy did not sync immediately");
+    const partialStatus = document.getElementById("global-sync-status");
+    assert(partialStatus.textContent.includes("3 bits of entropy") && partialStatus.querySelector(".global-sync-shortfall"), "Partial direct entropy did not sync immediately");
 
     await chooseMode("Dice rolls");
     document.querySelector('input[name="dm"][value="dplus"]').click();
@@ -685,7 +791,7 @@
     assert(diceToggle && !diceToggle.disabled && !diceToggle.checked, "A direct dice method did not offer an enabled, unchecked global sync toggle");
     diceToggle.click();
     for (const face of ["1", "0", "0"]) document.querySelector(`[data-d="${face}"]`).click();
-    assert(document.getElementById("global-sync-status").textContent.includes("11 bits synced"), "Dice pad clicks did not re-run the sync");
+    assert(document.getElementById("global-sync-status").textContent.includes("11 bits of entropy"), "Dice pad clicks did not re-run the sync");
     await chooseMode("Seed phrase");
     equal(document.getElementById("seed").value, "abandon", "Eleven pad-entered bits did not fill the first BIP39 word");
 
@@ -886,26 +992,134 @@
       tabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
       await until(() => !document.getElementById("bip85-card").hidden, "BIP-85 to open on the next ArrowRight");
       assert(document.activeElement === tabs[2], "Focus should follow the arrow key");
-      // End jumps to the last tool, Journal, whose default station is the encrypted notebook.
+      const introToTabsGap = (intro, tabs) => {
+        const bodyBottom = Math.max(...[...intro.querySelectorAll(":scope > p.muted, :scope > .journal-global-actions, :scope > .tool-intro > p.muted")]
+          .map((body) => body.getBoundingClientRect().bottom));
+        return tabs.getBoundingClientRect().top - bodyBottom;
+      };
+      const singleIntroGap = introToTabsGap(
+        document.getElementById("bip85-tool-intro"),
+        document.querySelector("#bip85-manager > .key-tab-strip"),
+      );
+      // End jumps to the last tool. Journal begins at its create/open gate while
+      // keeping the four destination tabs visible but unavailable.
       tabs[2].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
       await until(() => !document.getElementById("journal-card").hidden, "End to reach the Journal tool");
       assert(document.activeElement === tabs[6], "End should move focus to the last tab");
       const journalTabs = [...document.querySelectorAll("#journal-tool-tabs [data-journal-tool]")];
       equal(journalTabs.length, 4, "Journal should expose exactly four internal tabs");
-      equal(journalTabs.map((tab) => tab.textContent.trim()).join("|"), "Journal|Notepad|Session state|Session log");
+      equal(journalTabs.map((tab) => tab.textContent.trim()).join("|"), "Notepad|Key manager|Session state|Session log");
       const journalManager = document.getElementById("journal-manager");
       assert(journalManager && !journalManager.hidden, "Journal station tabs should be visible inside the Journal tool");
+      const journalIntro = document.getElementById("journal-tool-intro");
+      assert(journalIntro && !journalIntro.hidden, "Entropy Journal introduction should remain visible at the gate");
+      const journalGlobalDownload = document.getElementById("journal-global-download");
+      const journalGlobalClear = document.getElementById("journal-global-clear");
+      assert(journalGlobalDownload.disabled && journalGlobalClear.disabled, "Journal-wide actions should be disabled before a journal is opened");
+      equal(introToTabsGap(journalIntro, journalManager.querySelector(":scope > .key-tab-strip")), singleIntroGap, "Journal intro-to-tabs spacing differs from a single-intro tool");
+      const documentTop = (element) => element.getBoundingClientRect().top + scrollY;
+      const journalManagerTop = documentTop(journalManager);
       journalTabs.forEach((tab) => assert(tab.classList.contains("key-tab"), "Journal stations should use folder-style Key Station tabs"));
-      equal(getComputedStyle(document.getElementById("journal-card")).borderTopLeftRadius, "0px", "The active Journal station card should join its folder tab");
+      journalTabs.forEach((tab) => {
+        assert(tab.disabled, "Journal station tabs should be disabled before a journal is opened");
+        equal(tab.getAttribute("aria-disabled"), "true", "A locked Journal tab should expose its disabled state");
+        equal(tab.getAttribute("aria-selected"), "false", "No locked Journal tab should be selected");
+      });
+      journalTabs[0].click();
+      assert(!document.getElementById("journal-card").hidden, "A disabled Journal tab should leave the create/open gate in place");
+      const journalPasswordInput = document.getElementById("journal-create-password");
+      const journalConfirmInput = document.getElementById("journal-create-confirm");
+      const journalPasswordStatus = document.getElementById("journal-create-password-status");
+      const journalConfirmStatus = document.getElementById("journal-create-confirm-status");
+      const journalCreateReady = document.getElementById("journal-create-ready");
+      assert(journalPasswordStatus.hidden && journalConfirmStatus.hidden && journalCreateReady.hidden, "Empty Journal password fields should not show validation messages");
+      input(journalPasswordInput, "too short");
+      assert(!journalPasswordStatus.hidden && journalPasswordStatus.classList.contains("is-invalid"), "A short Journal password should show a red warning");
+      equal(journalPasswordStatus.textContent, "Password has too few characters");
+      journalPasswordInput.focus();
+      journalPasswordInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      assert(document.activeElement === journalPasswordInput, "Enter should not advance past a short Journal password");
+      assert(Math.abs(journalPasswordStatus.getBoundingClientRect().right - journalPasswordInput.getBoundingClientRect().right) <= 2, "Password validation should align to the right of its label");
+      input(journalPasswordInput, "");
+      assert(journalPasswordStatus.hidden, "Clearing the Journal password should hide its validation message");
+      input(journalPasswordInput, "too short");
+      input(journalConfirmInput, "different");
+      assert(!journalConfirmStatus.hidden && journalConfirmStatus.classList.contains("is-invalid"), "A mismatched confirmation should show a red warning");
+      equal(journalConfirmStatus.textContent, "Passwords do not match");
+      const journalPassword = "correct horse battery staple";
+      input(journalPasswordInput, journalPassword);
+      assert(journalPasswordStatus.classList.contains("is-valid") && journalPasswordStatus.textContent.includes("Password is long enough"), "A long Journal password should show a green check");
+      journalPasswordInput.focus();
+      journalPasswordInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      assert(document.activeElement === journalConfirmInput, "Enter should advance a valid Journal password to confirmation");
+      input(journalConfirmInput, journalPassword);
+      assert(journalConfirmStatus.classList.contains("is-valid"), "Matching Journal passwords should show a green check");
+      equal(journalConfirmStatus.textContent, "\u2713 Passwords match");
+      assert(!journalCreateReady.hidden, "Valid matching passwords should show readiness beside Create journal");
+      equal(journalCreateReady.textContent.trim(), "← Ready to create journal");
+      assert(document.getElementById("journal-create").getBoundingClientRect().right < journalCreateReady.getBoundingClientRect().left, "The ready message should sit to the right of Create journal");
+      input(journalConfirmInput, "");
+      assert(journalConfirmStatus.hidden && journalCreateReady.hidden, "Clearing the confirmation should hide its validation and ready messages");
+      input(journalPasswordInput, "too short");
+      input(journalConfirmInput, "too short");
+      document.getElementById("journal-create").click();
+      await until(() => document.getElementById("journal-error").textContent.includes("12"), "short journal password error");
+      assert(!document.getElementById("journal-card").hidden, "A rejected password should leave the Journal gate visible");
+      journalTabs.forEach((tab) => assert(tab.disabled, "A rejected password should not unlock Journal tabs"));
+      input(journalPasswordInput, journalPassword);
+      input(journalConfirmInput, journalPassword);
+      journalConfirmInput.focus();
+      journalConfirmInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      await until(() => !document.getElementById("journal-notes-card").hidden, "valid journal creation to open Notepad");
+      assert(document.getElementById("journal-card").hidden, "The create/open gate should disappear after journal creation");
+      assert(!journalIntro.hidden, "Entropy Journal introduction should remain visible after journal creation");
+      journalTabs.forEach((tab) => {
+        assert(!tab.disabled, "Journal station tabs should enable after journal creation");
+        equal(tab.getAttribute("aria-disabled"), "false", "An unlocked Journal tab should expose its enabled state");
+      });
+      assert(journalTabs[0].classList.contains("active"), "A newly created journal should start on Notepad");
+      equal(journalTabs[0].getAttribute("aria-selected"), "true", "Notepad should be selected after journal creation");
+      assert(!journalGlobalDownload.disabled && !journalGlobalClear.disabled, "Journal-wide actions should enable after journal creation");
+      state.lastBlob = null;
+      journalGlobalDownload.click();
+      const encryptedJournalText = await (await until(() => state.lastBlob, "encrypted Journal download")).text();
+      journalGlobalClear.click();
+      await until(() => !document.getElementById("journal-card").hidden, "Journal gate after clearing");
+      journalTabs.forEach((tab) => assert(tab.disabled, "Clearing should disable the Journal tabs again"));
+      assert(journalGlobalDownload.disabled && journalGlobalClear.disabled, "Clearing should disable the Journal-wide actions again");
+      document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
+      const encryptedJournalInput = document.getElementById("journal-file");
+      Object.defineProperty(encryptedJournalInput, "files", { configurable: true, value: [new File([encryptedJournalText], "entropylab-journal.json", { type: "application/json" })] });
+      encryptedJournalInput.dispatchEvent(new Event("change", { bubbles: true }));
+      input(document.getElementById("journal-open-password"), journalPassword);
+      await wait(250);
+      document.getElementById("journal-unlock").click();
+      await until(() => !document.getElementById("journal-notes-card").hidden || document.getElementById("journal-error").textContent, "successful Journal file open result");
+      assert(!document.getElementById("journal-notes-card").hidden, `Opening the encrypted Journal failed: ${document.getElementById("journal-error").textContent}`);
+      assert(document.getElementById("journal-card").hidden, "The create/open gate should disappear after opening a journal");
+      assert(!journalIntro.hidden, "Entropy Journal introduction should remain visible after opening a journal");
+      journalTabs.forEach((tab) => assert(!tab.disabled, "Opening a journal should enable its four tabs"));
+      assert(journalTabs[0].classList.contains("active"), "An opened journal should start on Notepad");
+      equal(getComputedStyle(document.getElementById("journal-notes-card")).borderTopLeftRadius, "0px", "The active Notepad card should join its folder tab");
       journalTabs[0].focus();
       journalTabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
-      await until(() => !document.getElementById("journal-notes-card").hidden, "ArrowRight to open Notepad");
+      await until(() => !document.getElementById("journal-keymanager-card").hidden, "ArrowRight to open Key manager");
+      equal(documentTop(journalManager), journalManagerTop, "Key manager moved the Journal tab strip");
       assert(document.activeElement === journalTabs[1], "Focus should follow the Journal subtab arrow key");
+      const keyManagerCard = document.getElementById("journal-keymanager-card");
+      const keyManagerDownload = document.getElementById("journal-keymanager-download");
+      const keyManagerUpload = document.getElementById("journal-keymanager-upload");
+      const keyManagerDownloadReference = getComputedStyle(document.querySelector(".download-controls .download-html"));
+      assert(keyManagerCard.querySelector("#journal-keymanager-tool-intro h2").textContent === "Key manager", "Key manager should use an in-card Journal heading");
+      for (const property of ["backgroundColor", "color", "borderTopColor"]) equal(getComputedStyle(keyManagerDownload)[property], keyManagerDownloadReference[property], `Key Manager download should use the header download button's ${property}`);
+      equal(keyManagerUpload.querySelector(".download-mark path")?.getAttribute("d"), "M12 17V5M7 10l5-5 5 5M5 21h14", "Key Manager upload should use the shared upward-arrow icon");
+      assert(keyManagerUpload.getBoundingClientRect().left > keyManagerDownload.getBoundingClientRect().right, "Key Manager upload should sit at the right edge of the action row");
       journalTabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
       await until(() => !document.getElementById("journal-state-card").hidden, "ArrowRight to open Session state");
       journalTabs[2].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
       await until(() => !document.getElementById("journal-log-card").hidden, "ArrowRight to open Session log");
       journalTabs[3].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+      equal(documentTop(journalManager), journalManagerTop, "Session log moved the Journal tab strip");
       await until(() => !document.getElementById("journal-state-card").hidden, "ArrowLeft to open Session state");
       assert(document.activeElement === journalTabs[2], "Focus should return to Session state");
       // PSBT stays a workspace of its own, with station tabs inside it.
@@ -916,11 +1130,14 @@
       equal(psbtTabs.map((tab) => tab.textContent.trim()).join("|"), "PSBT / Nonce|PSBT Editor");
       const psbtManager = document.getElementById("psbt-manager");
       assert(psbtManager && !psbtManager.hidden, "PSBT station tabs should be visible inside the PSBT tool");
+      equal(introToTabsGap(document.getElementById("psbt-tool-intros"), psbtManager.querySelector(":scope > .key-tab-strip")), singleIntroGap, "PSBT intro-to-tabs spacing differs from a single-intro tool");
+      const psbtManagerTop = documentTop(psbtManager);
       psbtTabs.forEach((tab) => assert(tab.classList.contains("key-tab"), "PSBT stations should use folder-style Key Station tabs"));
       equal(getComputedStyle(document.getElementById("psbt-card")).borderTopLeftRadius, "0px", "The active PSBT station card should join its folder tab");
       psbtTabs[0].focus();
       psbtTabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
       await until(() => !document.getElementById("psbted-card").hidden, "ArrowRight to open PSBT Editor");
+      equal(documentTop(psbtManager), psbtManagerTop, "PSBT Editor moved the PSBT tab strip");
       assert(document.activeElement === psbtTabs[1], "Focus should follow the PSBT subtab arrow key");
       psbtTabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
       await until(() => !document.getElementById("psbt-card").hidden, "ArrowLeft to open PSBT / Nonce");
@@ -935,6 +1152,135 @@
       document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
       document.querySelector('#workspace [data-workspace="calc"]').click();
       await until(() => !document.getElementById("key-manager").hidden, "key workspace");
+    }
+  });
+
+  await test("the Journal stores entries and notes to files and loads them back", async () => {
+    const journalPassword = "load store drill password";
+    const entryLabel = "store-load drill entry";
+    const entryInput = "aa11bb22cc33dd44";
+    const entryPhrase = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const entryNotes = "kept in the garage";
+    const noteLine = "store-load drill note 7f3a";
+    const legacyNote = "legacy plain text note 9z";
+    const notesStatus = document.getElementById("journal-notes-status");
+    const setFiles = (field, file) => {
+      Object.defineProperty(field, "files", { configurable: true, value: [file] });
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const captureDownload = async (filename, description, action) => {
+      state.downloadName = "";
+      state.lastBlob = null;
+      action();
+      const blob = await until(() => state.downloadName === filename && state.lastBlob, description);
+      return blob.text();
+    };
+    try {
+      // Start from the create/open gate, whatever earlier tests left behind.
+      document.querySelector('#workspace [data-workspace="journal"]').click();
+      await until(() => !document.getElementById("journal-manager").hidden, "Journal tool for the store/load drill");
+      if (!document.getElementById("journal-work-panel").hidden) {
+        document.getElementById("journal-global-clear").click();
+        await until(() => document.getElementById("journal-global-download").disabled, "Journal wiped before the drill");
+      }
+      assert(!document.getElementById("journal-locked-panel").hidden && document.getElementById("journal-work-panel").hidden, "A wiped Journal should stand at its gate");
+
+      // Create a journal and store one entry through the editor.
+      input(document.getElementById("journal-create-password"), journalPassword);
+      input(document.getElementById("journal-create-confirm"), journalPassword);
+      document.getElementById("journal-create").click();
+      await until(() => !document.getElementById("journal-global-download").disabled, "Journal unlocked after creation");
+      // The entry book has no tab of its own: "Save to Journal" is the way in.
+      document.getElementById("journal-open").click();
+      await until(() => !document.getElementById("journal-card").hidden && !document.getElementById("journal-editor").hidden, "entry editor to open");
+      document.getElementById("journal-method").value = "hex";
+      input(document.getElementById("journal-input"), entryInput);
+      input(document.getElementById("journal-phrase"), entryPhrase);
+      input(document.getElementById("journal-label"), entryLabel);
+      input(document.getElementById("journal-entry-notes"), entryNotes);
+      document.getElementById("journal-commit").click();
+      await until(() => [...document.querySelectorAll("#journal-list .journal-item-label")].some((el) => el.textContent === entryLabel), "committed entry in the list");
+      assert(document.getElementById("journal-editor").hidden, "Committing should close the editor");
+      assert([...document.querySelectorAll("#journal-list .journal-item-meta")].some((el) => el.textContent.startsWith("Hex · ")), "The entry should list its method and date");
+
+      // Store: the Save file button downloads the sealed journal.
+      const journalText = await captureDownload("entropylab-journal.json", "journal file download", () => document.getElementById("journal-save").click());
+      const envelope = JSON.parse(journalText);
+      equal(envelope.kdf, "PBKDF2-SHA-256", "The stored file should name its key derivation");
+      equal(envelope.cipher, "AES-256-GCM", "The stored file should name its cipher");
+      assert(!journalText.includes(entryLabel) && !journalText.includes(entryInput) && !journalText.includes(entryPhrase), "The stored file must not carry plaintext");
+      assert(document.getElementById("journal-status-note").textContent.includes("1 entry"), "The status should count the stored entry");
+
+      // Load: lock, then open the file back — wrong password first.
+      document.getElementById("journal-lock").click();
+      await until(() => document.getElementById("journal-global-download").disabled, "Journal locked");
+      assert(document.getElementById("journal-work-panel").hidden, "Locking should hide the work panel");
+      assert(!document.querySelector("#journal-list .journal-item"), "Locking should clear the visible entries");
+      document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
+      setFiles(document.getElementById("journal-file"), new File([journalText], "entropylab-journal.json", { type: "application/json" }));
+      input(document.getElementById("journal-open-password"), "a long enough but wrong password");
+      await wait(250); // the change handler reads the file asynchronously
+      document.getElementById("journal-unlock").click();
+      await until(() => document.getElementById("journal-error").textContent.includes("Wrong password"), "wrong-password error on open");
+      assert(document.getElementById("journal-work-panel").hidden, "A wrong password must not open the work panel");
+      input(document.getElementById("journal-open-password"), journalPassword);
+      document.getElementById("journal-unlock").click();
+      await until(() => !document.getElementById("journal-global-download").disabled, "Journal unlocked from the stored file");
+
+      // The stored entry survived: listed, viewable, and revealed on demand.
+      document.getElementById("journal-open").click();
+      await until(() => !document.getElementById("journal-editor").hidden, "editor over the loaded journal");
+      document.getElementById("journal-cancel").click();
+      const restoredItem = await until(() => [...document.querySelectorAll("#journal-list .journal-item")].find((el) => el.querySelector(".journal-item-label")?.textContent === entryLabel), "stored entry listed after load");
+      restoredItem.click();
+      await until(() => !document.getElementById("journal-view").hidden, "stored entry view");
+      assert(document.getElementById("journal-view").textContent.includes(entryInput), "The stored input survived the load");
+      assert(document.getElementById("journal-view").textContent.includes(entryNotes), "The stored notes survived the load");
+      assert(!document.getElementById("journal-view").textContent.includes(entryPhrase), "The stored seed stays masked until revealed");
+      const reveal = document.getElementById("journal-reveal");
+      reveal.checked = true;
+      reveal.dispatchEvent(new Event("change", { bubbles: true }));
+      await until(() => document.getElementById("journal-view").textContent.includes(entryPhrase), "stored seed revealed after load");
+
+      // The notepad stores encrypted by default and loads back through upload.
+      document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
+      await until(() => !document.getElementById("journal-notes-card").hidden, "Notepad for the store/load drill");
+      const notesField = document.getElementById("journal-notes-text");
+      input(notesField, noteLine);
+      await until(() => notesField.value.includes(noteLine), "the typed note");
+      const notesFile = await captureDownload("entropylab-notebook.encrypted.json", "encrypted notepad download", () => document.getElementById("journal-notes-download").click());
+      assert(!notesFile.includes(noteLine), "The encrypted notepad download must not carry the note");
+      equal(JSON.parse(notesFile).entropylabJournalExport, 1, "The notepad download should be a Journal export envelope");
+      input(notesField, "");
+      await until(() => !notesField.value.includes(noteLine), "the notepad cleared");
+      setFiles(document.getElementById("journal-notes-file"), new File([notesFile], "entropylab-notebook.encrypted.json", { type: "application/json" }));
+      // The status line is live-region reused across imports: only trust a
+      // message that names the file just uploaded.
+      await until(() => notesField.value.includes(noteLine) || notesStatus.textContent.includes("entropylab-notebook.encrypted.json"), "encrypted notepad upload");
+      assert(notesField.value.includes(noteLine), `The stored notepad did not load back: ${notesStatus.textContent}`);
+      // A plain-text .txt upload still imports as a single legacy page.
+      setFiles(document.getElementById("journal-notes-file"), new File([legacyNote], "notes.txt", { type: "text/plain" }));
+      await until(() => notesField.value.includes(legacyNote) || notesStatus.textContent.includes("notes.txt"), "plain-text notepad upload");
+      assert(notesField.value.includes(legacyNote), `The plain-text notes did not load: ${notesStatus.textContent}`);
+    } finally {
+      // Later cases inherit an unlocked, empty journal with a pristine
+      // notepad: wipe, then create a fresh one, whatever happened above.
+      try {
+        document.querySelector('#workspace [data-workspace="journal"]').click();
+        await until(() => !document.getElementById("journal-manager").hidden, "Journal tool for the cleanup");
+        if (!document.getElementById("journal-work-panel").hidden) {
+          document.getElementById("journal-global-clear").click();
+          await until(() => document.getElementById("journal-global-download").disabled, "Journal wiped after the drill");
+        }
+        input(document.getElementById("journal-create-password"), journalPassword);
+        input(document.getElementById("journal-create-confirm"), journalPassword);
+        document.getElementById("journal-create").click();
+        await until(() => !document.getElementById("journal-global-download").disabled, "fresh Journal after the drill");
+      } finally {
+        document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
+        document.querySelector('#workspace [data-workspace="calc"]').click();
+        await until(() => !document.getElementById("key-manager").hidden, "key workspace after the drill");
+      }
     }
   });
 
@@ -1069,12 +1415,12 @@
     row = document.querySelector("#vanity-out table tbody tr");
     cells = [...row.children];
     equal(cells[1].textContent.trim(), "3'", "the hit is account 3, hardened like the key's account");
-    equal(cells[2].textContent.trim(), "m/84h/0h/3h/0/0", "the row shows the concrete path");
+    equal(cells[2].textContent.trim(), "m/84'/0'/3'/0/0", "the row shows the concrete path");
     assert(cells[3].textContent.includes("bc1qf5q2vkxyuccj242qk4xny2e50aq736a2xgdjf7"), "the account address is the pinned vector");
     equal(document.getElementById("vanity-account-start").value, "10", "Start account continues where the range ended");
     document.querySelector("#vanity-out [data-vanity-apply]").click();
     await until(() => document.getElementById("vanity-status").textContent.includes("account 3 is now on the key"), "Update key to set the account", 60000);
-    assert(document.getElementById("vanity-source-kind").textContent.includes("m/84h/0h/3h/0/0"), "the selected-key panel shows the new path");
+    assert(document.getElementById("vanity-source-kind").textContent.includes("m/84'/0'/3'/0/0"), "the selected-key panel shows the new path");
     equal([...document.querySelectorAll("#key-tabs .key-tab")].map((tab) => tab.textContent.trim()).join(","), "Key Station,c55401c7", "an account change keeps the same fingerprint and tab");
     // Silent Payments: the prefix filter lowercases, "sp1qq" is fixed, and
     // account 1' of this key is sp1qqtjetnp0fgkeulzm….
@@ -1105,32 +1451,429 @@
     await until(() => [...document.querySelectorAll("#key-tabs .key-tab")].every((tab) => !tab.textContent.includes("c55401c7")), "the derived key to be deleted");
     input(document.getElementById("pass"), "");
   });
-  await test("Journal notepad stamps notes, session state captures, and the log omits secrets", async () => {
+  await test("Journal notepad stamps notes, session state stays live, and the log omits secrets", async () => {
     document.querySelector('#workspace [data-workspace="journal"]').click();
     // Earlier tests can leave Journal on Session state or Session log; pick
     // Notepad explicitly so this case does not depend on that leftover.
     document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
     await until(() => !document.getElementById("journal-notes-card").hidden, "Journal notepad");
-    document.getElementById("journal-note-add").click();
-    const body = await until(() => document.querySelector(".journal-note-body"), "a note field");
-    body.value = "kitchen table dice";
-    body.dispatchEvent(new Event("input", { bubbles: true }));
-    const at = document.querySelector(".journal-note-at");
-    assert(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(at.value), "note should be stamped with this computer's clock");
+    const body = await until(() => document.getElementById("journal-notes-text"), "the notes field");
+    const render = document.getElementById("journal-notes-render");
+    const prompt = document.getElementById("journal-notes-prompt");
+    const promptText = document.getElementById("journal-notes-prompt-text");
+    const notesCopy = document.getElementById("journal-notes-copy");
+    const pageTabsRoot = document.getElementById("journal-page-tabs");
+    let pageTabs = [...pageTabsRoot.children];
+    equal(pageTabs.length, 1, "the notepad should open with one page");
+    equal(pageTabs[0].querySelector(".journal-page-tab-full").textContent, "Page 1", "the first page should use the indexed full name");
+    equal(pageTabs[0].querySelector(".journal-page-tab-short").textContent, "P1", "the first page should carry its narrow name");
+    equal(getComputedStyle(pageTabs[0].querySelector(".journal-page-tab-short")).display, "none", "the narrow page name should not repeat beside the full name at wide widths");
+    assert(pageTabs[0].classList.contains("active"), "Page 1 should open selected");
+    assert(document.getElementById("delete-journal-page").disabled, "the only notepad page should not be deletable");
+    assert(!document.getElementById("journal-note-add"), "the old Add note button is still present");
+    const notesWrap = document.getElementById("journal-page-panel");
+    const journalCard = document.getElementById("journal-notes-card");
+    const journalActions = document.querySelector(".journal-file-actions");
+    const journalStatus = document.getElementById("journal-notes-status");
+    const headerDownloadStyle = getComputedStyle(document.querySelector(".download-controls .download-html"));
+    equal(getComputedStyle(body).borderTopLeftRadius, "0px", "the page tab should join directly to the top-left of the editor");
+    equal(getComputedStyle(pageTabs[0]).backgroundColor, getComputedStyle(notesWrap).backgroundColor, "the selected page tab should use the editor background");
+    body.focus();
+    equal(getComputedStyle(body).outlineStyle, "none", "the focused editor should replace the browser outline with its connected page outline");
+    equal(getComputedStyle(pageTabs[0]).borderTopColor, getComputedStyle(body).borderTopColor, "the focused editor outline should climb around its active page tab");
+    equal(getComputedStyle(pageTabs[0], "::after").backgroundColor, getComputedStyle(notesWrap).backgroundColor, "the active page tab should mask the editor outline beneath it");
+    assert(notesCopy && notesCopy.classList.contains("seed-phrase-copy"), "the notepad should reuse the clipboard icon button");
+    equal(Math.round(notesCopy.getBoundingClientRect().top - notesWrap.getBoundingClientRect().top), 10, "the notepad copy button should align with the bottom of the first text line");
+    equal(Math.round(notesWrap.getBoundingClientRect().right - notesCopy.getBoundingClientRect().right), 12, "the notepad copy button should sit in the top-right corner");
+    equal(getComputedStyle(notesCopy).opacity, "0", "the notepad copy button should begin faded out");
+    body.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    assert(notesCopy.classList.contains("is-visible"), "mouse movement over the notepad should reveal its copy button");
+    equal(getComputedStyle(notesCopy).pointerEvents, "auto", "the revealed notepad copy button should be clickable");
+    await until(() => !notesCopy.classList.contains("is-visible"), "the idle notepad copy button to begin fading out");
+    await until(() => Number.parseFloat(getComputedStyle(notesCopy).opacity) < 0.05, "the idle notepad copy button to finish fading out");
+    const formatBar = document.querySelector(".journal-format-bar");
+    assert(formatBar.compareDocumentPosition(document.getElementById("journal-page-tabs")) & Node.DOCUMENT_POSITION_FOLLOWING, "the notepad controls should precede the page tabs");
+    assert(document.getElementById("journal-page-tabs").compareDocumentPosition(notesWrap) & Node.DOCUMENT_POSITION_FOLLOWING, "the page tabs should remain joined directly above the editor");
+    equal(getComputedStyle(journalStatus).display, "none", "an empty notepad status should not leave a large chin below the file buttons");
+    assert(journalCard.getBoundingClientRect().bottom - journalActions.getBoundingClientRect().bottom <= 24, "the notepad file buttons should finish close to the card edge while there is no status message");
+    const journalDownloadLabels = {
+      "journal-notes-download": "Download notepad",
+      "journal-keymanager-download": "Download keys",
+      "journal-state-download": "Download session state",
+      "journal-log-download": "Download session log",
+    };
+    for (const [id, label] of Object.entries(journalDownloadLabels)) {
+      const downloadButton = document.getElementById(id);
+      const downloadStyle = getComputedStyle(downloadButton);
+      for (const property of ["backgroundColor", "color", "borderTopColor", "minHeight", "fontSize", "borderRadius", "paddingLeft", "paddingRight"]) equal(downloadStyle[property], headerDownloadStyle[property], `${id} should use the header download button's ${property}`);
+      equal(downloadButton.textContent.trim(), label, `${id} should identify its downloaded Journal content`);
+      equal(downloadButton.querySelector(".download-mark path")?.getAttribute("d"), "M12 3v12M7 11l5 5 5-5M5 21h14", `${id} should use the header download icon`);
+    }
+    const journalGlobalDownload = document.getElementById("journal-global-download");
+    for (const property of ["backgroundColor", "color", "borderTopColor"]) equal(getComputedStyle(journalGlobalDownload)[property], headerDownloadStyle[property], `Download journal should use the header download button's ${property}`);
+    assert(document.getElementById("journal-global-clear").classList.contains("clear-current-action"), "Clear journal should use the shared red clear-button treatment");
+    const encryptChoices = [...document.querySelectorAll(".journal-encrypt-download")];
+    equal(encryptChoices.length, 3, "each Journal tab should expose the encryption choice");
+    assert(encryptChoices.every((checkbox) => checkbox.checked), "Journal tab downloads should be encrypted by default");
+    encryptChoices[0].checked = false;
+    encryptChoices[0].dispatchEvent(new Event("change", { bubbles: true }));
+    assert(encryptChoices.every((checkbox) => !checkbox.checked), "unchecking encryption in Notepad should sync every Journal tab");
+    encryptChoices[1].checked = true;
+    encryptChoices[1].dispatchEvent(new Event("change", { bubbles: true }));
+    assert(encryptChoices.every((checkbox) => checkbox.checked), "checking encryption in Session state should sync every Journal tab");
+    const uploadButton = document.getElementById("journal-notes-upload");
+    equal(uploadButton.textContent.trim(), "Upload", "the notebook upload should use a concise label");
+    equal(uploadButton.querySelector(".download-mark path")?.getAttribute("d"), "M12 17V5M7 10l5-5 5 5M5 21h14", "the notebook upload should put its up arrow above a bottom tray");
+    assert(uploadButton.getBoundingClientRect().left > document.querySelector(".journal-file-actions .journal-download-options").getBoundingClientRect().right, "the notebook upload should sit on the right side of its action row");
+    assert(!document.getElementById("journal-notes-download-text"), "the notepad should offer only its reloadable notebook download");
+    for (const [id, value, attribute] of [["journal-font", "serif", "font"], ["journal-size", "large", "size"], ["journal-spacing", "spacious", "spacing"]]) {
+      const select = document.getElementById(id);
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      equal(notesWrap.dataset[attribute], value, `${id} should style the active page`);
+    }
+    equal(getComputedStyle(body).fontFamily, getComputedStyle(render).fontFamily, "the editor and visual layer should share a typeface");
+    for (const [id, value] of [["journal-font", "mono"], ["journal-size", "medium"], ["journal-spacing", "comfortable"]]) {
+      const select = document.getElementById(id);
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(body.value), "the empty notebook should begin with its timestamp as real text");
+    equal(getComputedStyle(render).color, getComputedStyle(document.body).color, "the rendered live timestamp should use the normal foreground color");
+    equal(getComputedStyle(body).caretColor, getComputedStyle(document.body).color, "the textarea caret should stay visible above its visual layer");
+    assert(prompt && !prompt.hidden && promptText.textContent === "Add new note", "the new-note prompt should follow the timestamp");
+    equal(body.selectionStart, body.value.length, "the caret should begin immediately before the first-note prompt");
+    equal(body.selectionEnd, body.value.length, "the initial caret should not select the timestamp");
+    const firstTimestamp = body.value;
+    await until(() => body.value !== firstTimestamp, "the first-note timestamp to advance");
+    const frozenTimestamp = body.value;
+    body.setRangeText("kitchen table dice", body.value.length, body.value.length, "end");
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "kitchen table dice" }));
+    equal(body.value, `${frozenTimestamp}kitchen table dice`, "typing the first note should keep the visible timestamp in place");
+    assert(!notesCopy.disabled && notesCopy.dataset.phrase === body.value, "the copy button should hold the current readable page once a note exists");
+    body.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    notesCopy.click();
+    await until(() => notesCopy.classList.contains("is-copied"), "the notepad copy confirmation check");
+    const okReference = document.createElement("span");
+    okReference.style.color = "var(--ok)";
+    document.body.appendChild(okReference);
+    equal(getComputedStyle(notesCopy).color, getComputedStyle(okReference).color, "the notepad copy confirmation check should turn green");
+    okReference.remove();
+    assert(prompt.hidden, "typing should hide the first-note prompt");
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    equal(body.value, `${frozenTimestamp}kitchen table dice`, "the timestamp should freeze once note text is entered");
+    body.setSelectionRange(4, 12);
+    body.dispatchEvent(new Event("select", { bubbles: true }));
+    equal(body.selectionStart, frozenTimestamp.length, "a selection contained by the timestamp should collapse at the note boundary");
+    equal(body.selectionEnd, frozenTimestamp.length, "the timestamp should never remain selected");
+    body.setSelectionRange(4, body.value.length);
+    body.dispatchEvent(new Event("select", { bubbles: true }));
+    equal(body.selectionStart, frozenTimestamp.length, "a partial timestamp selection should begin at the note text");
+    equal(body.selectionEnd, body.value.length, "a partial timestamp selection should preserve its note-text edge");
+    body.setRangeText("", body.selectionStart, body.selectionEnd, "end");
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(body.value), "deleting all note text should leave one live timestamp on the line");
+    assert(prompt && !prompt.hidden, "deleting all note text should restore the first-note prompt");
+    equal(body.selectionStart, body.value.length, "the restored caret should return to the front of the prompt");
+    body.setRangeText("kitchen table dice", body.value.length, body.value.length, "end");
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "kitchen table dice" }));
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  kitchen table dice$/.test(body.value), "typing after reset should freeze the refreshed timestamp");
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    let lines = body.value.split("\n");
+    equal(lines.length, 2, "Enter should open one next-note line");
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(lines[1]), "the next-note line should contain only its live timestamp");
+    assert(prompt && !prompt.hidden && promptText.textContent === "Add new note", "the new-note placeholder should follow the timestamp");
+    equal(body.selectionStart, body.value.length, "the caret should sit at the front of the next-note placeholder");
+    equal(body.selectionEnd, body.value.length, "the next-note placeholder should not be highlighted");
+    const firstNextTimestamp = lines[1];
+    await until(() => body.value.split("\n")[1] !== firstNextTimestamp, "the next-note timestamp to advance");
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    lines = body.value.split("\n");
+    equal(lines.length, 3, "a repeated Enter should replace the pending line with a blank and a new prompt line");
+    equal(lines[1], "", "the empty return should have no timestamp");
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(lines[2]), "the replacement next-note line should have a fresh live timestamp");
+    equal(body.selectionStart, body.value.length, "the replacement prompt should keep the caret at its front");
+    equal(body.selectionEnd, body.value.length, "the replacement prompt should not be highlighted");
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    lines = body.value.split("\n");
+    equal(lines.slice(1, 3).join("|"), "|", "multiple empty returns should remain blank and unstamped");
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(lines[3]), "each empty return should move the live next-note line down once");
+    const rollbackTimestamp = lines[3];
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    lines = body.value.split("\n");
+    equal(lines.length, 3, "Delete should move a pending note up into the empty line above");
+    equal(lines[2], rollbackTimestamp, "moving into an empty line should preserve the same live timestamp");
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }));
+    lines = body.value.split("\n");
+    equal(lines.length, 2, "Delete should consume the next empty line above");
+    equal(lines[1], rollbackTimestamp, "each upward move should preserve the pending timestamp");
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    equal(body.value.split("\n").length, 1, "Delete should remove the pending timestamp line above a completed note");
+    assert(prompt.hidden, "the next-note placeholder should disappear above a completed note");
+    equal(body.selectionStart, body.value.length, "the caret should move to the end of the completed note");
+    equal(body.selectionEnd, body.value.length, "nothing should be selected after removing the pending line");
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    lines = body.value.split("\n");
+    equal(lines.length, 2, "Enter at the completed note's end should open a new pending note line");
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(lines[1]), "the reopened next-note line should have a live timestamp");
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    lines = body.value.split("\n");
+    const movableTimestamp = lines[3];
+    const lineStart = (items, index) => items.slice(0, index).reduce((offset, line) => offset + line.length + 1, 0);
+    body.setSelectionRange(lineStart(lines, 1), lineStart(lines, 1));
+    body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    lines = body.value.split("\n");
+    equal(lines[1], movableTimestamp, "clicking an earlier blank should move the untouched live note there");
+    equal(lines.slice(2).join("|"), "|", "moving the live note should leave the other blank rows empty");
+    equal(body.selectionStart, lineStart(lines, 1) + lines[1].length, "the moved live note should place the caret before its placeholder");
+    body.setRangeText("middle note", body.selectionStart, body.selectionEnd, "end");
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "middle note" }));
+    assert(prompt.hidden, "typing in the moved live note should commit it");
+    lines = body.value.split("\n");
+    const blankSelectionStart = lineStart(lines, 2), blankSelectionEnd = body.value.length;
+    const valueBeforeBlankSelection = body.value;
+    body.setSelectionRange(blankSelectionStart, blankSelectionEnd);
+    body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    equal(body.value, valueBeforeBlankSelection, "selecting across blank lines should not insert a live timestamp");
+    equal(body.selectionStart, blankSelectionStart, "a blank multi-line selection should keep its starting edge");
+    equal(body.selectionEnd, blankSelectionEnd, "a blank multi-line selection should remain highlighted");
+    assert(prompt.hidden, "selecting blank lines should not show a note placeholder");
+    body.setSelectionRange(lineStart(lines, 3), lineStart(lines, 3));
+    body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    body.setRangeText("last note", body.selectionStart, body.selectionEnd, "end");
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "last note" }));
+    lines = body.value.split("\n");
+    const lastCommittedNote = lines[3];
+    body.setSelectionRange(lineStart(lines, 2), lineStart(lines, 2));
+    body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    lines = body.value.split("\n");
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(lines[2]), "clicking a blank with no pending note should create a live timestamp there");
+    equal(lines[3], lastCommittedNote, "creating a note in blank space should preserve the later committed note");
+    assert(prompt && !prompt.hidden && promptText.textContent === "Add new note", "an inserted blank-space note should show the new-note placeholder");
+    equal(body.selectionStart, lineStart(lines, 2) + lines[2].length, "the inserted note should put the caret before its placeholder");
+    equal(body.selectionEnd, body.selectionStart, "the inserted placeholder should not be highlighted");
+    const earlierNoteCaret = lines[0].length;
+    body.setSelectionRange(earlierNoteCaret, earlierNoteCaret);
+    body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    lines = body.value.split("\n");
+    equal(lines[2], "", "clicking a completed note should remove the untouched pending note from its blank row");
+    equal(lines[3], lastCommittedNote, "canceling the pending note should preserve later committed notes");
+    assert(prompt.hidden, "clicking a completed note should hide the pending placeholder");
+    equal(body.selectionStart, earlierNoteCaret, "canceling the pending note should keep the caret where the user clicked");
+    equal(body.selectionEnd, earlierNoteCaret, "canceling the pending note should leave no text selected");
+    const canceledPendingValue = body.value;
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    equal(body.value, canceledPendingValue, "a canceled pending timestamp should stop refreshing");
+    equal(body.selectionStart, earlierNoteCaret, "the canceled timestamp timer should not pull the caret back into blank space");
+    lines = body.value.split("\n");
+    const selectedBottomStart = lineStart(lines, 2), selectedBottomEnd = body.value.length;
+    body.setSelectionRange(selectedBottomStart, selectedBottomEnd);
+    body.setRangeText("", selectedBottomStart, selectedBottomEnd, "start");
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+    lines = body.value.split("\n");
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(lines[2]), "deleting the selected bottom section should stamp the blank caret line");
+    assert(prompt && !prompt.hidden && promptText.textContent === "Add new note", "the blank line left by a bottom-section deletion should show the new-note placeholder");
+    equal(body.selectionStart, lineStart(lines, 2) + lines[2].length, "the caret should sit at the front of the restored placeholder");
+    equal(body.selectionEnd, body.selectionStart, "the restored placeholder should not be highlighted");
+    const timestampAfterBottomDelete = lines[2];
+    await until(() => body.value.split("\n")[2] !== timestampAfterBottomDelete, "the timestamp after deleting the bottom section to advance");
+    document.getElementById("add-journal-page").click();
+    pageTabs = [...pageTabsRoot.children];
+    equal(pageTabs.length, 2, "plus should add a second notepad page");
+    equal(pageTabs[1].querySelector(".journal-page-tab-full").textContent, "Page 2", "new pages should follow the Key Station index convention");
+    equal(pageTabs[1].querySelector(".journal-page-tab-short").textContent, "P2", "the second page should carry its narrow name");
+    assert(pageTabs[1].classList.contains("active"), "the new page should become active");
+    body.focus();
+    equal(getComputedStyle(pageTabs[1]).borderTopColor, getComputedStyle(body).borderTopColor, "the connected focus outline should follow the active page");
+    assert(getComputedStyle(pageTabs[0]).borderTopColor !== getComputedStyle(body).borderTopColor, "the focus outline should leave the inactive page behind");
+    assert(!document.getElementById("delete-journal-page").disabled, "minus should enable when another page exists");
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(body.value), "a new page should open with a live note");
+    body.setRangeText("second page note", body.value.length, body.value.length, "end");
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "second page note" }));
+    pageTabsRoot.children[0].click();
+    assert(body.value.includes("kitchen table dice") && body.value.includes("middle note"), "switching pages should restore Page 1's notes");
+    pageTabsRoot.children[0].dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true }));
+    const pageName = await until(() => pageTabsRoot.querySelector(".key-tab-name-input"), "the page rename field");
+    pageName.value = "Field notes";
+    pageName.dispatchEvent(new Event("input", { bubbles: true }));
+    pageName.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    equal(pageTabsRoot.children[0].querySelector(".journal-page-tab-full").textContent, "Field notes", "F2 should rename the active notepad page");
+    equal(getComputedStyle(pageTabsRoot.children[0].querySelector(".journal-page-tab-short")).display, "none", "a renamed page should render its name only once");
+    assert(!pageTabsRoot.children[0].classList.contains("is-default"), "a renamed page should keep its full label at narrow widths");
+    pageTabsRoot.children[1].click();
+    assert(body.value.includes("second page note"), "switching pages should restore Page 2's note");
+    document.getElementById("delete-journal-page").click();
+    equal(pageTabsRoot.children.length, 1, "minus should remove the selected page");
+    equal(pageTabsRoot.children[0].querySelector(".journal-page-tab-full").textContent, "Field notes", "deletion should select the nearest surviving page");
+    assert(body.value.includes("kitchen table dice"), "deleting Page 2 should restore the surviving page body");
+    document.getElementById("add-journal-page").click();
+    equal(pageTabsRoot.children[1].querySelector(".journal-page-tab-full").textContent, "Page 2", "a replacement page should reuse the next index after the surviving maximum");
+    document.getElementById("delete-journal-page").click();
+    state.lastBlob = null;
+    state.downloadName = "";
+    document.getElementById("journal-notes-download").click();
+    const encryptedNotebookBlob = await until(() => state.lastBlob, "encrypted notebook download");
+    const encryptedNotebookText = await encryptedNotebookBlob.text();
+    const encryptedNotebookDocument = JSON.parse(encryptedNotebookText);
+    equal(state.downloadName, "entropylab-notebook.encrypted.json", "encrypted notebook downloads should advertise their format in the filename");
+    equal(encryptedNotebookDocument.entropylabJournalExport, 1, "the default notebook download should be a password-encrypted Journal export");
+    body.value = "temporary encrypted replacement";
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "temporary encrypted replacement" }));
+    const pagesBeforeEncryptedImport = pageTabsRoot.children.length;
+    const fileInput = document.getElementById("journal-notes-file");
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [new File([encryptedNotebookText], "field-notes.encrypted.json", { type: "application/json" })] });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => body.value.includes("kitchen table dice"), "encrypted notebook import");
+    equal(pageTabsRoot.children.length, pagesBeforeEncryptedImport + 1, "uploading onto a filled page should open the imported notebook in a new page");
+    assert(pageTabsRoot.children[1].classList.contains("active"), "the imported page should become active");
+    pageTabsRoot.children[0].click();
+    assert(body.value.endsWith("temporary encrypted replacement"), "uploading should preserve the filled page that was already open");
+    pageTabsRoot.children[1].click();
+    assert(body.value.includes("kitchen table dice"), "the new page should contain the encrypted notebook import");
+    const encryptChoice = document.getElementById("journal-notes-encrypt");
+    encryptChoice.checked = false;
+    encryptChoice.dispatchEvent(new Event("change", { bubbles: true }));
+    assert([...document.querySelectorAll(".journal-encrypt-download")].every((checkbox) => !checkbox.checked), "the unencrypted choice should remain synced before other tab downloads");
+    state.lastBlob = null;
+    state.downloadName = "";
+    document.getElementById("journal-notes-download").click();
+    const notebookBlob = await until(() => state.lastBlob, "plain notebook download");
+    const notebookText = await notebookBlob.text();
+    const notebookDocument = JSON.parse(notebookText);
+    equal(state.downloadName, "entropylab-notebook.json", "the reloadable notebook should use a JSON filename");
+    equal(notebookDocument.format, "entropylab-notebook", "the notebook download should identify its format");
+    equal(notebookDocument.version, 1, "the notebook download should be versioned");
+    equal(notebookDocument.pages[0].name, "Field notes", "the notebook download should preserve page names");
+    document.getElementById("journal-notes-upload").click();
+    body.value = "temporary replacement";
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "temporary replacement" }));
+    const pagesBeforePlainImport = pageTabsRoot.children.length;
+    document.getElementById("journal-notes-status").textContent = "";
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [new File([notebookText], "field-notes.json", { type: "application/json" })] });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => document.getElementById("journal-notes-status").textContent.includes("Imported"), "notebook import");
+    assert(body.value.includes("kitchen table dice"), "uploading a notebook should restore its notes");
+    equal(pageTabsRoot.children.length, pagesBeforePlainImport + notebookDocument.pages.length, "each uploaded notebook page should be added when the current page is filled");
+    equal(pageTabsRoot.children[0].querySelector(".journal-page-tab-full").textContent, "Field notes", "uploading should restore page labels");
+    const pagesBeforeEmptyImport = pageTabsRoot.children.length;
+    document.getElementById("add-journal-page").click();
+    equal(pageTabsRoot.children.length, pagesBeforeEmptyImport + 1, "the empty-page import check should start on a new page");
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [new File(["loaded into empty page"], "single.txt", { type: "text/plain" })] });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => body.value === "loaded into empty page", "plain text to load into the empty current page");
+    equal(pageTabsRoot.children.length, pagesBeforeEmptyImport + 1, "uploading onto an empty page should reuse it instead of adding another page");
+    document.getElementById("add-journal-page").click();
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(body.value), "the next Journal test should start from a fresh note line");
     document.querySelector('#journal-tool-tabs [data-journal-tool="state"]').click();
     await until(() => !document.getElementById("journal-state-card").hidden, "session state");
-    document.getElementById("journal-state-capture").click();
-    const snap = document.getElementById("journal-state-text").value;
-    assert(/ENTROPYLAB SESSION STATE/.test(snap), "capture should write a snapshot");
+    const stateText = document.getElementById("journal-state-text");
+    assert(stateText.readOnly && stateText.getAttribute("aria-readonly") === "true", "the live session snapshot should be read-only");
+    assert(!document.getElementById("journal-state-capture"), "the live session snapshot should not need a Capture button");
+    await until(() => stateText.value.includes("ENTROPYLAB SESSION STATE"), "the live session snapshot to populate");
+    const snap = stateText.value;
+    assert(/ENTROPYLAB SESSION STATE/.test(snap), "opening Session state should show the current snapshot");
     assert(!/kitchen table dice/.test(snap), "notes are not the session snapshot");
+    const includePrivate = document.getElementById("journal-state-private");
+    includePrivate.checked = true;
+    includePrivate.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => stateText.value.includes("Private material: INCLUDED"), "the live snapshot to include private material");
+    includePrivate.checked = false;
+    includePrivate.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => stateText.value.includes("Private material: omitted"), "the live snapshot to omit private material again");
+    state.lastBlob = null;
+    state.downloadName = "";
+    document.getElementById("journal-state-download").click();
+    const stateBlob = await until(() => state.lastBlob, "session-state download");
+    assert((await stateBlob.text()).includes("ENTROPYLAB SESSION STATE"), "the session-state download should contain the captured snapshot");
     document.querySelector('#journal-tool-tabs [data-journal-tool="log"]').click();
     await until(() => !document.getElementById("journal-log-card").hidden, "session log");
-    const log = document.getElementById("journal-log-out").textContent;
+    const logOut = document.getElementById("journal-log-out");
+    const log = logOut.textContent;
     assert(/note-add/.test(log), "log should record the new note");
-    assert(/capture/.test(log), "log should record the snapshot");
+    assert(/note-delete/.test(log), "log should record note deletion without storing its text");
+    assert(/journal\tsetting  journal-state-private=on/.test(log), "log should record the live snapshot privacy choice");
+    assert(!/journal\tcapture/.test(log), "the live snapshot should not add obsolete capture events");
+    assert(/journal\tdownload  notebook/.test(log), "log should record notebook downloads");
+    assert(/journal\tupload  notebook/.test(log), "log should record use of the notebook upload control");
+    assert(/journal\tdownload  session-state/.test(log), "log should record session-state downloads");
+    assert(/journal\tpage-add  page-2/.test(log), "log should record page creation without storing its name");
+    assert(/journal\tpage-rename  page-1/.test(log), "log should record page renames without storing the new name");
+    assert(/journal\tpage-delete  page-2/.test(log), "log should record page deletion");
+    assert(/journal\tsetting  journal-font=serif/.test(log), "log should record safe appearance changes");
     assert(!/kitchen table dice/.test(log), "log must not copy the note body");
+    const logCopy = document.getElementById("journal-log-copy"), logWrap = logOut.closest(".journal-log-wrap");
+    assert(logCopy && logWrap, "the log output should carry its clipboard control");
+    equal(Math.round(logCopy.getBoundingClientRect().top - logWrap.getBoundingClientRect().top), 10, "the log copy button should sit in the output's top-right corner");
+    equal(Math.round(logWrap.getBoundingClientRect().right - logCopy.getBoundingClientRect().right), 12, "the log copy button should sit in the output's top-right corner");
+    const previousRootTheme = document.documentElement.getAttribute("data-theme");
+    document.documentElement.removeAttribute("data-theme");
+    equal(getComputedStyle(logOut).backgroundColor, "rgb(0, 0, 0)", "the log output should be black in dark mode");
+    if (previousRootTheme === null) document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", previousRootTheme);
+    logCopy.click();
+    await until(() => logCopy.classList.contains("is-copied"), "the session-log copy confirmation check");
+    const logAfterCopy = logOut.textContent;
+    assert(/journal\tcopy  session-log/.test(logAfterCopy), "the log should record its own copy control");
+    equal(logCopy.dataset.phrase, logAfterCopy, "the log clipboard control should copy the complete visible output, including the copy action");
+    const logOkReference = document.createElement("span");
+    logOkReference.style.color = "var(--ok)";
+    document.body.appendChild(logOkReference);
+    equal(getComputedStyle(logCopy).color, getComputedStyle(logOkReference).color, "the log copy confirmation check should turn green");
+    logOkReference.remove();
+    const logClear = document.getElementById("journal-log-clear"), logActions = logClear.closest(".journal-log-actions");
+    assert(logClear.classList.contains("clear-current-action"), "Clear log should use the shared red clear-button treatment");
+    equal(Math.round(logActions.getBoundingClientRect().right - logClear.getBoundingClientRect().right), 0, "Clear log should sit at the right edge of its action row");
+    state.lastBlob = null;
+    state.downloadName = "";
+    document.getElementById("journal-log-download").click();
+    const logBlob = await until(() => state.lastBlob, "session-log download");
+    const downloadedLog = await logBlob.text();
+    assert(/journal\tdownload  session-log/.test(downloadedLog), "the downloaded log should include its own download action");
+    logClear.click();
+    assert(/journal\tclear  session-log/.test(logOut.textContent), "clearing the log should leave a record of the clear itself");
+    assert(!/note-add/.test(logOut.textContent), "clearing the log should remove its earlier entries");
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("key-manager").hidden, "key workspace");
+  });
+  await test("Session log audits meaningful dashboard actions without secret input values", async () => {
+    const theme = document.getElementById("theme-toggle");
+    theme.click();
+    theme.click();
+    document.querySelector('#network-picker-menu [data-network="testnet"]').click();
+    document.querySelector('#network-picker-menu [data-network="mainnet"]').click();
+    document.querySelector('#workspace [data-workspace="sp"]').click();
+    await until(() => !document.getElementById("sp-card").hidden, "Silent Payments audit workspace");
+    document.querySelector('#sp-modes [data-sp-mode="send"]').click();
+    document.getElementById("sp-send-go").click();
+    document.getElementById("sp-wipe").click();
+    document.querySelector('#workspace [data-workspace="psbt"]').click();
+    await until(() => !document.getElementById("psbt-manager").hidden, "PSBT audit workspace");
+    document.getElementById("psbt-editor-tab").click();
+    document.getElementById("psbted-wipe").click();
+    document.getElementById("psbt-nonce-tab").click();
+    document.getElementById("psbt-key").value = "secret audit sentinel";
+    document.getElementById("psbt-go").click();
+    document.getElementById("psbt-wipe").click();
+    document.querySelector('#workspace [data-workspace="journal"]').click();
+    await until(() => !document.getElementById("journal-manager").hidden, "Journal audit workspace");
+    document.getElementById("journal-state-tab").click();
+    const stateText = document.getElementById("journal-state-text");
+    await until(() => stateText.value.includes("ENTROPYLAB SESSION STATE"), "automatic session-state refresh");
+    document.getElementById("journal-log-tab").click();
+    const auditLog = document.getElementById("journal-log-out").textContent;
+    assert(/app\ttheme  (?:light|dark)/.test(auditLog), "theme changes should be logged");
+    assert(/app\tnetwork  testnet/.test(auditLog) && /app\tnetwork  mainnet/.test(auditLog), "network changes should be logged once at the app level");
+    assert(/sp\tmode  send/.test(auditLog), "Silent Payments mode changes should be logged");
+    assert(/sp\tcalculate-error  send/.test(auditLog), "Silent Payments calculation failures should be logged");
+    assert(/sp\tclear  session/.test(auditLog), "Silent Payments clears should be logged");
+    assert(/psbt\ttool-tab  editor/.test(auditLog) && /psbt\ttool-tab  nonce/.test(auditLog), "PSBT internal tab changes should be logged");
+    assert(/psbt\tclear  editor/.test(auditLog) && /psbt\tclear  session/.test(auditLog), "both PSBT clear actions should be logged");
+    assert(/psbt\tinspect-error/.test(auditLog), "PSBT inspection failures should be logged");
+    assert(!/secret audit sentinel/.test(auditLog), "secret field contents must never enter the log");
+    document.getElementById("journal-log-clear").click();
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("key-manager").hidden, "key workspace after the audit");
   });
   await test("Silent Payments opens a connected SP Station with its monochrome icon", async () => {
     document.querySelector('#workspace [data-workspace="sp"]').click();
@@ -1345,8 +2088,8 @@
     );
     assert(passphraseTools.getBoundingClientRect().bottom <= passphrase.getBoundingClientRect().top, "Passphrase tools overlap or follow the input");
     assert(
-      Boolean(fingerprintCards.compareDocumentPosition(keyboardHost) & Node.DOCUMENT_POSITION_FOLLOWING),
-      "Passphrase keyboard is not below the master fingerprint cards",
+      Boolean(keyboardHost.compareDocumentPosition(fingerprintCards) & Node.DOCUMENT_POSITION_FOLLOWING),
+      "Passphrase keyboard is not above the master fingerprint cards",
     );
     assert(toggle.getAttribute("aria-expanded") === "false" && keyboard.hidden, "Dice keyboard did not start closed");
     toggle.click();
@@ -1531,6 +2274,86 @@
     input(passphrase, "");
   });
 
+  await test("revoking the brain-wallet acknowledgement retracts the derived wallet", async () => {
+    // The checkbox is re-rendered on every refresh, so it must be looked up
+    // again before each click; holding a reference clicks a detached node and
+    // silently proves nothing.
+    const ackBox = () => document.getElementById("brain-lab-ack");
+    await chooseMode("Private key");
+    document.querySelector('input[name="kk"][value="brain"]').click();
+    if (!ackBox().checked) ackBox().click();
+    const brainInput = await until(() => document.getElementById("key"), "brain-wallet input");
+    input(brainInput, "correct horse battery staple");
+    const derive = await until(() => !document.getElementById("go").disabled && document.getElementById("go"), "brain-wallet derive button");
+    derive.click();
+    await until(() => document.getElementById("out").textContent.trim(), "derived brain wallet");
+    const secretShowing = () => {
+      const text = document.getElementById("out").textContent;
+      // The revealed digest and chain code run together past 64 characters, so
+      // a word boundary never lands on the end of the hex.
+      return /\b[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\b/.test(text) || /[0-9a-f]{64}/.test(text);
+    };
+    const reveal = document.getElementById("reveal");
+    if (reveal) reveal.click();
+    await until(secretShowing, "revealed brain-wallet recovery material");
+
+    ackBox().click();
+    await wait(0);
+    assert(!ackBox().checked, "The acknowledgement did not clear");
+    assert(!document.getElementById("out").textContent.trim(), "Revoking the acknowledgement left the derived wallet on screen");
+    assert(!secretShowing(), "Recovery material survived the revoked acknowledgement");
+
+    // Switching output must retract too: the same text builds a different
+    // wallet, so the previous result would be a wrong address left on screen.
+    // Deriving leaves the key-kind radio on WIF, so brain is re-selected here
+    // exactly as a second run would need to.
+    document.querySelector('input[name="kk"][value="brain"]').click();
+    if (!ackBox().checked) ackBox().click();
+    await wait(0);
+    input(await until(() => document.getElementById("key"), "brain-wallet input for the second run"), "correct horse battery staple");
+    const again = await until(() => !document.getElementById("go").disabled && document.getElementById("go"), "brain-wallet derive button after re-acknowledging");
+    again.click();
+    await until(() => document.getElementById("out").textContent.trim(), "re-derived brain wallet");
+    document.querySelector('input[name="bo"][value="hd"]').click();
+    await wait(0);
+    assert(!document.getElementById("out").textContent.trim(), "Switching brain-wallet output left the other output's result on screen");
+
+    // Revoking has to reach committed key tabs too: they re-render their stored
+    // result without asking again. Park one brain wallet in its tab, derive a
+    // second from the Key Station, and revoke from there — the parked tab must
+    // lose its recovery material as well.
+    document.getElementById("key-tab-lab").click();
+    await chooseMode("Private key");
+    document.querySelector('input[name="kk"][value="brain"]').click();
+    if (!ackBox().checked) ackBox().click();
+    input(await until(() => document.getElementById("key"), "brain-wallet input for the parked run"), "correct horse battery staple");
+    (await until(() => !document.getElementById("go").disabled && document.getElementById("go"), "brain-wallet derive button for the parked run")).click();
+    await until(() => document.getElementById("out").textContent.trim(), "parked brain wallet");
+    const parkedTabId = document.getElementById("calc-card").getAttribute("aria-labelledby");
+    document.getElementById("reveal")?.click();
+    await until(secretShowing, "parked brain-wallet recovery material");
+
+    document.getElementById("key-tab-lab").click();
+    await chooseMode("Private key");
+    document.querySelector('input[name="kk"][value="brain"]').click();
+    input(await until(() => document.getElementById("key"), "brain-wallet input for the second tab"), "a different brain wallet text");
+    (await until(() => !document.getElementById("go").disabled && document.getElementById("go"), "brain-wallet derive button for the second tab")).click();
+    await until(() => document.getElementById("out").textContent.trim(), "second tab's brain wallet");
+    ackBox().click();
+    await wait(0);
+    assert(!ackBox().checked, "The acknowledgement did not clear for the second tab");
+    assert(!document.getElementById("out").textContent.trim(), "Revoking the acknowledgement left the second tab's wallet on screen");
+    document.getElementById(parkedTabId).click();
+    await wait(0);
+    assert(!document.getElementById("out").textContent.trim(), "Revoking the acknowledgement left the parked tab's wallet restorable");
+    assert(!secretShowing(), "Recovery material survived the revoked acknowledgement in the parked tab");
+
+    input(document.getElementById("key") || brainInput, "");
+    document.querySelector('input[name="bo"][value="scalar"]').click();
+    if (ackBox()?.checked) ackBox().click();
+    document.getElementById("wipe").click();
+  });
+
   await test("dice fairness panel stays hidden until the Die Distribution / Fairness Analysis text button expands it", async () => {
     await chooseMode("Dice rolls");
     const dice = await until(() => document.getElementById("dice"), "dice input");
@@ -1606,6 +2429,16 @@
     assert(outText().includes("PSBT_IN_WITNESS_UTXO"), "typed pair names missing");
     assert(outText().includes("100000000 sats"), "witness utxo amount missing");
     assert(outText().includes("parses under rust-bitcoin"), "rust-bitcoin verdict missing");
+    assert(outText().includes("1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"), "mainnet output address missing");
+    // The editor has no network select of its own: the header picker's choice
+    // re-decodes the addresses live, without a reload.
+    document.getElementById("network-picker-button").click();
+    document.querySelector('#network-picker-menu [data-network="testnet"]').click();
+    await until(() => outText().includes("mrKjeffvbnmKJURrLNdqLkfrptLrFtnkFx"), "testnet re-decode on picker change");
+    assert(!outText().includes("1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"), "mainnet address survived the network change");
+    document.getElementById("network-picker-button").click();
+    document.querySelector('#network-picker-menu [data-network="mainnet"]').click();
+    await until(() => outText().includes("1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"), "mainnet re-decode on picker change");
     // The loaded PSBT builds at once: result text and QR without a click.
     assert((document.getElementById("psbted-result-b64") || {}).value.startsWith("cHNidP8B"), "result did not follow the load");
     assert(document.querySelector("#psbted-qr-code svg"), "QR did not follow the load");
@@ -1622,6 +2455,66 @@
     document.getElementById("psbted-load").click();
     await until(() => document.getElementById("psbted-error").textContent, "editor rejection");
     assert(!document.querySelector("#psbted-card img") && window.__browserTestInjected !== true, "Editor input executed markup");
+    input(box, "");
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("calc-card").hidden, "key workspace");
+  });
+
+  await test("PSBT editor compares a pasted PSBT semantically", async () => {
+    // Same BIP-174 vector as the editor test above; the "after" PSBT is
+    // produced by the editor itself (output 0 raised by 1000 sats).
+    const vector = "cHNidP8BAKACAAAAAqsJSaCMWvfEm4IS9Bfi8Vqz9cM9zxU4IagTn4d6W3vkAAAAAAD+////qwlJoIxa98SbghL0F+LxWrP1wz3PFTghqBOfh3pbe+QBAAAAAP7///8CYDvqCwAAAAAZdqkUdopAu9dAy+gdmI5x3ipNXHE5ax2IrI4kAAAAAAAAGXapFG9GILVT+glechue4O/p+gOcykWXiKwAAAAAAAEHakcwRAIgR1lmF5fAGwNrJZKJSGhiGDR9iYZLcZ4ff89X0eURZYcCIFMJ6r9Wqk2Ikf/REf3xM286KdqGbX+EhtdVRs7tr5MZASEDXNxh/HupccC1AaZGoqg7ECy0OIEhfKaC3Ibi1z+ogpIAAQEgAOH1BQAAAAAXqRQ1RebjO4MsRwUPJNPuuTycA5SLx4cBBBYAFIXRNTfy4mVAWjTbr6nj3aAfuCMIAAAA";
+    document.querySelector('#workspace [data-workspace="psbt"]').click();
+    document.querySelector('#psbt-tool-tabs [data-psbt-tool="editor"]').click();
+    await until(() => !document.getElementById("psbted-card").hidden, "PSBT editor tab");
+    const box = await until(() => document.getElementById("psbted-text"), "PSBT editor input");
+    const report = () => document.getElementById("psbted-compare-out").textContent;
+    const compareError = () => document.getElementById("psbted-compare-error").textContent;
+    // Comparing with nothing in the editor is a plain error, not a crash.
+    document.getElementById("psbted-wipe").click();
+    input(document.getElementById("psbted-compare-text"), vector);
+    document.getElementById("psbted-compare-go").click();
+    await until(() => compareError(), "compare with empty editor");
+    assert(compareError().includes("Load a PSBT"), "missing-editor error mismatch: " + compareError());
+    input(box, vector);
+    document.getElementById("psbted-load").click();
+    await until(() => document.querySelector("#psbted-out .psbted-pairs"), "editor pair tables");
+    // A fresh load clears any earlier comparison report.
+    equal(report(), "", "stale comparison survived the load");
+    const pristine = document.getElementById("psbted-result-b64").value;
+    input(document.querySelector("[data-txout-val='0']"), "199901000");
+    await until(() => document.getElementById("psbted-out").textContent.includes("199901000") || document.getElementById("psbted-error").textContent, "live rebuild for compare");
+    equal(document.getElementById("psbted-error").textContent, "", "live rebuild failed");
+    const edited = document.getElementById("psbted-result-b64").value;
+    assert(edited !== pristine, "edited PSBT did not change");
+    // Reload the pristine vector as the editor's "before", then compare.
+    input(box, vector);
+    document.getElementById("psbted-load").click();
+    await until(() => (document.getElementById("psbted-result-b64") || { value: "" }).value === pristine, "reload of the pristine vector");
+    input(document.getElementById("psbted-compare-text"), edited);
+    document.getElementById("psbted-compare-go").click();
+    await until(() => report().includes("transaction") || compareError(), "comparison report");
+    equal(compareError(), "", "comparison failed");
+    assert(report().includes("The underlying transaction changed"), "transaction change not flagged");
+    assert(report().includes("Signing state unchanged"), "signing state should read unchanged");
+    assert(report().includes("PSBT metadata unchanged"), "a transaction edit must not flag metadata");
+    assert(report().includes("199900000") && report().includes("199901000"), "before/after amounts missing");
+    // The same bytes on both sides are semantically identical.
+    input(document.getElementById("psbted-compare-text"), pristine);
+    document.getElementById("psbted-compare-go").click();
+    await until(() => report().includes("Semantically identical"), "identical comparison");
+    // Loading another PSBT clears the rendered comparison report.
+    document.getElementById("psbted-load").click();
+    await until(() => (document.getElementById("psbted-result-b64") || { value: "" }).value === pristine, "second reload of the pristine vector");
+    equal(report(), "", "a fresh load did not clear the comparison report");
+    // Markup in the compare box is rejected as a PSBT, never executed.
+    input(document.getElementById("psbted-compare-text"), '<img src=x onerror="window.__browserTestInjected=true">');
+    document.getElementById("psbted-compare-go").click();
+    await until(() => compareError(), "compare rejection");
+    assert(!document.querySelector("#psbted-card img") && window.__browserTestInjected !== true, "Compare input executed markup");
+    document.getElementById("psbted-compare-clear").click();
+    equal(report(), "", "clear did not empty the report");
+    equal(document.getElementById("psbted-compare-text").value, "", "clear did not empty the paste box");
     input(box, "");
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("calc-card").hidden, "key workspace");
@@ -1645,6 +2538,32 @@
     assert(out.includes("1.99900000"), "decoded output amount missing");
     assert(out.includes("Signature policy: SIGHASH_ALL"), "sighash policy missing");
     assert(out.includes("r values:"), "finalized signature was not inspected");
+    assert(out.includes("PSBT security analysis"), "analysis status summary missing");
+    assert(out.includes("ANALYSIS INCOMPLETE"), "partial report was not marked incomplete");
+    assert(out.includes("Previous outputs and fee — Incomplete"), "unverified previous-output claims were not exposed");
+    assert(out.includes("Output ownership / derivation — Incomplete"), "missing session-key coverage was not exposed");
+    assert(out.includes("Nonce analysis — Incomplete"), "single-signature nonce limitation was not exposed");
+    assert(!out.includes("LISTED CHECKS COMPLETE"), "an incomplete report was presented as complete");
+    // Change the finalized signature's SIGHASH_ALL suffix to SIGHASH_NONE.
+    // The report remains incomplete for unverified prevouts, but the real
+    // policy problem must dominate the overall banner and its severity.
+    const unsafe = Uint8Array.from(atob(vector), (char) => char.charCodeAt(0));
+    const signatureTail = [0xaf, 0x93, 0x19, 0x01, 0x21, 0x03];
+    let suffix = -1;
+    for (let index = 0; index <= unsafe.length - signatureTail.length; index++) {
+      if (signatureTail.every((byte, offset) => unsafe[index + offset] === byte)) {
+        suffix = index + 3;
+        break;
+      }
+    }
+    assert(suffix >= 0, "finalized signature fixture suffix missing");
+    unsafe[suffix] = 0x02;
+    input(box, btoa(String.fromCharCode(...unsafe)));
+    document.getElementById("psbt-go").click();
+    await until(() => document.getElementById("psbt-out").textContent.includes("ISSUES FOUND") || document.getElementById("psbt-error").textContent, "unsafe policy report");
+    equal(document.getElementById("psbt-error").textContent, "", "inspector rejected the unsafe-policy fixture");
+    const problemBanner = document.querySelector("#psbt-out .psbt-analysis-summary > p.psbt-bad");
+    assert(problemBanner && problemBanner.textContent.includes("ISSUES FOUND — ANALYSIS ALSO INCOMPLETE"), "problem did not dominate the incomplete summary");
     // BIP143 "Native P2WPKH" signed transaction (witness-carrying) — the raw
     // transaction path reads the same network select.
     const rawTx =
@@ -1664,13 +2583,14 @@
     assert(rawOut.includes("Where this transaction sends bitcoin"), "raw transaction outputs section missing");
     assert(rawOut.includes("1Cu32FVupVCgHkMMRJdYJugxwo2Aprgk7H"), "mainnet output address missing");
     assert(rawOut.includes("r values:"), "raw transaction signatures were not inspected");
-    // The testnet option must reach the render as well.
-    const network = document.getElementById("psbt-network");
-    input(network, "testnet");
+    // The header network picker must reach the render as well.
+    document.getElementById("network-picker-button").click();
+    document.querySelector('#network-picker-menu [data-network="testnet"]').click();
     document.getElementById("psbt-go").click();
     await until(() => document.getElementById("psbt-out").textContent.includes("msQzKJatdWdw4rpy8sbv8puHoncseekYCf") || document.getElementById("psbt-error").textContent, "testnet raw transaction report");
     equal(document.getElementById("psbt-error").textContent, "", "inspector rejected the testnet selection");
-    input(network, "mainnet");
+    document.getElementById("network-picker-button").click();
+    document.querySelector('#network-picker-menu [data-network="mainnet"]').click();
     input(box, "");
     document.getElementById("psbt-wipe").click();
     document.querySelector('#workspace [data-workspace="calc"]').click();
@@ -1953,6 +2873,13 @@
     derive.click();
     await until(() => document.getElementById("save") || document.getElementById("error").textContent, "wallet result");
     assert(!document.getElementById("error").textContent, "Wallet derivation failed");
+    const mobileResult = document.querySelector(".key-result");
+    mobileResult.style.width = "220px";
+    assert(
+      mobileResult.scrollWidth <= mobileResult.clientWidth,
+      `Derived wallet widened a mobile layout to ${mobileResult.scrollWidth}px from ${mobileResult.clientWidth}px`,
+    );
+    mobileResult.style.width = "";
     const derivationProgress = await until(() => document.getElementById("derive-progress").classList.contains("is-complete") && document.getElementById("derive-progress"), "completed derivation progress");
     assert(!derivationProgress.hidden, "Completed derivation progress did not remain visible");
     equal(derivationProgress.getAttribute("aria-valuenow"), "100", "Derivation progress did not reach 100%");
@@ -1961,8 +2888,8 @@
     assert(receiveLead?.querySelector("h4")?.textContent.includes("#7"), "The first requested address was not used for the receive QR");
     assert(receiveLead?.querySelector('.qr[aria-label="Receive address 7 QR code"]'), "The receive QR did not use the starting address index");
     equal(receiveLead?.querySelector("p.mono:not(.muted)")?.textContent.trim(), "tb1qq88mz59zeavyc2nvncjmr5fnyhy9wfgg7spmjf", "The custom-purpose Native SegWit address did not match the independent BIP32 vector");
-    assert(receiveLead?.querySelector(".muted.mono")?.textContent.includes("m/69420h/1h/0h/0/7"), "The custom purpose was not used in the displayed address path");
-    assert(document.querySelector("#acct .kicker")?.textContent.includes("Purpose 69420h"), "The result mislabeled the custom purpose as a standard BIP");
+    assert(receiveLead?.querySelector(".muted.mono")?.textContent.includes("m/69420'/1'/0'/0/7"), "The custom purpose was not used in the displayed address path");
+    assert(document.querySelector("#acct .kicker")?.textContent.includes("Purpose 69420'"), "The result mislabeled the custom purpose as a standard BIP");
     const watchText = document.querySelector("#acct .account-watch-section")?.textContent || "";
     assert(watchText.includes("/69420h/1h/0h]"), `The custom purpose was not used in the descriptor origin: ${watchText.slice(0, 600)}`);
     const receiveRows = document.querySelectorAll('#acct [data-address-table="hd-receive"] tbody tr');
@@ -1977,7 +2904,7 @@
     assert(document.getElementById("derivation-path").value.endsWith("/0/7'"), "The path did not show a hardened address index");
     derive.click();
     await until(
-      () => document.querySelector("#acct .account-address-lead .muted.mono")?.textContent.includes("/7h"),
+      () => document.querySelector("#acct .account-address-lead .muted.mono")?.textContent.includes("/7'"),
       "hardened address result",
     );
     addressHarden.click();
@@ -1987,6 +2914,100 @@
       () => document.querySelectorAll('#acct [data-address-table="hd-receive"] tbody tr').length === 5,
       "restored unhardened wallet result",
     );
+  });
+
+  await test("Journal embeds a Key Station LifeHash and restores it from its structured download", async () => {
+    document.querySelector('#workspace [data-workspace="journal"]').click();
+    document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
+    await until(() => !document.getElementById("journal-notes-card").hidden, "Journal key reference test");
+    const picker = document.getElementById("journal-key-insert");
+    const option = await until(() => [...picker.options].find((item) => item.dataset.fingerprint), "derived key in the Journal picker");
+    const fingerprint = option.dataset.fingerprint;
+    const defaultFingerprintName = option.dataset.keyName.trim().toLowerCase() === fingerprint;
+    equal(option.textContent, defaultFingerprintName ? fingerprint : `${option.dataset.keyName} · ${fingerprint}`, "the Journal key picker should show the name and fingerprint without duplicating them");
+    const pickerHash = await until(
+      () => [...document.querySelectorAll(".journal-key-control .journal-key-option-lifehash")].find((image) => !image.hidden && image.src),
+      "LifeHash in the Journal key picker",
+    );
+    assert(pickerHash.src.startsWith("data:image/"), "the Journal key picker did not render a LifeHash");
+    const body = document.getElementById("journal-notes-text");
+    const beforeKey = body.value;
+    const keyToken = defaultFingerprintName ? `◆◆ [${fingerprint}]\u2063` : `◆◆ ${option.dataset.keyName} [${fingerprint}]\u2063`;
+    body.setSelectionRange(body.value.length, body.value.length);
+    const pickerRoot = picker.nextElementSibling;
+    const pickerButton = pickerRoot.querySelector(".custom-select-button");
+    pickerButton.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    pickerButton.click();
+    assert(pickerRoot.classList.contains("open") && !pickerRoot.querySelector(".custom-select-list").hidden, "the key dropdown should open above the notepad");
+    [...pickerRoot.querySelectorAll(".custom-select-option")].find((item) => item.textContent.trim() === option.textContent.trim()).click();
+    await until(() => body.value.includes(keyToken), "the dropdown to insert its key");
+    equal(body.value.split("\n").slice(0, -1).join("\n"), beforeKey.split("\n").slice(0, -1).join("\n"), "the key dropdown should preserve earlier notes");
+    const insertedLine = body.value.split("\n").at(-1);
+    const insertedStamp = insertedLine.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  /)?.[0];
+    assert(insertedStamp && insertedLine === `${insertedStamp}${keyToken} `, "the key dropdown should insert after exactly one timestamp");
+    assert(body.value.includes(keyToken), "selecting a key should insert the same non-duplicated label inline");
+    assert(!body.value.includes(`${fingerprint} [${fingerprint}]`), "the inline key should not repeat a default fingerprint name");
+    let keyStart = body.value.indexOf(keyToken), keyEnd = keyStart + keyToken.length;
+    equal(body.value.slice(keyEnd), " ", "an inline key should have exactly one trailing space");
+    body.setSelectionRange(keyEnd + 1, keyEnd + 1);
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    equal(body.selectionStart, keyStart, "Backspace beside an inline key should select its beginning");
+    equal(body.selectionEnd, keyEnd, "Backspace beside an inline key should select the complete token");
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    assert(!body.value.includes(keyToken), "a second Backspace should remove the selected key");
+    equal(body.value.split("\n").slice(0, -1).join("\n"), beforeKey.split("\n").slice(0, -1).join("\n"), "removing an inline key should preserve earlier notes");
+    assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  $/.test(body.value.split("\n").at(-1)), "removing the only content in a note should restore its live empty timestamp");
+    body.setSelectionRange(body.value.length, body.value.length);
+    picker.value = option.value;
+    picker.dispatchEvent(new Event("change", { bubbles: true }));
+    keyStart = body.value.indexOf(keyToken, beforeKey.length);
+    keyEnd = keyStart + keyToken.length;
+    body.setSelectionRange(keyStart + 2, keyStart + 2);
+    body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    equal(body.selectionStart, keyStart, "clicking an inline key should select its beginning");
+    equal(body.selectionEnd, keyEnd, "clicking an inline key should select the complete token");
+    const inlineHash = await until(
+      () => [...document.querySelectorAll("#journal-notes-render .journal-inline-key-lifehash")].find((image) => !image.hidden && image.src),
+      "inline Journal LifeHash",
+    );
+    const lineHeight = parseFloat(getComputedStyle(document.getElementById("journal-notes-render")).lineHeight);
+    assert(inlineHash.getBoundingClientRect().height <= lineHeight, "the inline LifeHash should fit within the line height");
+    const lastLineStart = body.value.lastIndexOf("\n") + 1;
+    const stamp = body.value.slice(lastLineStart).match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  /)?.[0];
+    assert(stamp, "the inline key note should retain its timestamp");
+    body.value = body.value.slice(0, lastLineStart) + `${stamp}left  ${keyToken}   right`;
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "left and right" }));
+    keyStart = body.value.indexOf(keyToken, lastLineStart);
+    body.setSelectionRange(keyStart, keyStart + keyToken.length);
+    body.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    equal(body.value.slice(lastLineStart), `${stamp}left right`, "deleting an inline key should collapse surrounding whitespace to one space");
+    body.setSelectionRange(body.value.length, body.value.length);
+    picker.value = option.value;
+    picker.dispatchEvent(new Event("change", { bubbles: true }));
+    equal(picker.value, "", "the key picker should reset after inserting a reference");
+
+    state.lastBlob = null;
+    state.downloadName = "";
+    document.getElementById("journal-notes-download").click();
+    const notebookText = await (await until(() => state.lastBlob, "key-reference notebook download")).text();
+    const notebookDocument = JSON.parse(notebookText);
+    const keyRun = notebookDocument.pages.flatMap((page) => page.content).find((run) => run.type === "key");
+    assert(keyRun && keyRun.fingerprint === fingerprint, "the notebook file should encode the key as a structured public reference");
+    assert(!notebookText.includes("data:image"), "the notebook file should regenerate rather than store LifeHash image data");
+
+    body.value = "removed before reload";
+    body.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "removed before reload" }));
+    const fileInput = document.getElementById("journal-notes-file");
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [new File([notebookText], "key-reference.json", { type: "application/json" })] });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => body.value.includes(`[${fingerprint}]`), "key reference restored from notebook upload");
+    await until(
+      () => [...document.querySelectorAll("#journal-notes-render .journal-inline-key-lifehash")].some((image) => !image.hidden && image.src),
+      "restored inline Journal LifeHash",
+    );
+
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("key-manager").hidden, "key workspace after Journal key reference test");
   });
 
   await test("BIP-85 keeps its Station and opens each child in a LifeHash fingerprint tab", async () => {
@@ -2014,6 +3035,27 @@
     assert(document.querySelector("#bip85-out .wallet-data-fields")?.textContent.includes("Master fingerprint"), "The BIP39 child did not identify its master fingerprint");
     assert(!document.getElementById("delete-bip85").disabled, "The child delete control did not become available");
 
+    document.querySelector('#workspace [data-workspace="journal"]').click();
+    document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
+    const journalPicker = document.getElementById("journal-key-insert");
+    const bip85Option = await until(
+      () => [...journalPicker.options].find((option) => option.dataset.referenceKind === "bip85"),
+      "BIP-85 child in the Journal key picker",
+    );
+    assert(bip85Option.textContent.startsWith("BIP-85 · BIP-39 · "), "The BIP-85 picker option did not identify its source and application");
+    const notes = document.getElementById("journal-notes-text");
+    notes.setSelectionRange(notes.value.length, notes.value.length);
+    journalPicker.value = bip85Option.value;
+    journalPicker.dispatchEvent(new Event("change", { bubbles: true }));
+    const bip85Token = `◈◈ BIP-85 · BIP-39 [${bip85Option.dataset.fingerprint}]\u2063`;
+    await until(() => notes.value.includes(bip85Token), "BIP-85 reference in the notepad");
+    const inlineBip85 = document.querySelector("#journal-notes-render .journal-inline-bip85");
+    assert(inlineBip85?.textContent.includes("BIP-85 · BIP-39"), "The inline BIP-85 reference did not retain its distinct label");
+    assert(getComputedStyle(inlineBip85).color === getComputedStyle(document.documentElement).getPropertyValue("--blue").trim() || getComputedStyle(inlineBip85).boxShadow !== "none", "The inline BIP-85 reference did not receive its distinct styling");
+
+    bip85Workspace.click();
+    await until(() => !document.getElementById("bip85-manager").hidden, "BIP-85 after Journal insertion");
+
     document.getElementById("add-bip85").click();
     await until(() => !document.getElementById("bip85-bench").hidden, "BIP-85 bench after plus");
     assert(!document.getElementById("bip85-out").textContent.trim(), "Returning to the bench left a child result visible");
@@ -2021,8 +3063,10 @@
     document.getElementById("bip85-go").click();
     await until(() => tabs.children.length === 3 && document.querySelector("#bip85-out #bip85-private-heading"), "second BIP-85 child tab");
     assert(tabs.children[2].querySelector(".key-tab-lifehash"), "The second BIP-85 child tab is missing its LifeHash target");
+    equal([...document.getElementById("journal-key-insert").options].filter((option) => option.dataset.referenceKind === "bip85").length, 2, "The Journal picker did not list every BIP-85 child");
     document.getElementById("delete-bip85").click();
     await until(() => tabs.children.length === 2, "selected BIP-85 child deletion");
+    equal([...document.getElementById("journal-key-insert").options].filter((option) => option.dataset.referenceKind === "bip85").length, 1, "The Journal picker retained a deleted BIP-85 child");
     assert(!document.getElementById("delete-bip85").disabled, "The remaining child was not selected after deletion");
 
     keyWorkspace.click();
@@ -2109,7 +3153,9 @@
     input(document.getElementById("derivation-path"), "m/84h/1h/0h/777/0/7");
     const derive = await until(() => !document.getElementById("go").disabled && document.getElementById("go"), "custom-path derive button");
     derive.click();
-    await until(() => document.querySelector("#acct .account-address-lead .muted.mono")?.textContent.includes("m/84h/1h/0h/777/0/7"), "custom derived path");
+    // Typed with h above, shown with apostrophes here, and carried into the
+    // descriptor origin as h on the next line: both conventions in one test.
+    await until(() => document.querySelector("#acct .account-address-lead .muted.mono")?.textContent.includes("m/84'/1'/0'/777/0/7"), "custom derived path");
     const watchText = document.querySelector("#acct .account-watch-section")?.textContent || "";
     assert(watchText.includes("/84h/1h/0h/777]"), "The custom path did not reach the descriptor key origin");
     assert(document.querySelector("#acct .account-address-lead p.mono:not(.muted)")?.textContent.trim().startsWith("tb1"), "The custom coin type did not control address encoding");
@@ -2142,7 +3188,7 @@
     assert(document.getElementById("branch-start-help").textContent.includes("Hardened"), "Address branch help did not reflect hardened derivation");
     assert(document.getElementById("derivation-path").value.endsWith("/2'/7"), "The path did not show a hardened branch index");
     derive.click();
-    await until(() => document.querySelector('#acct .account-address-lead .muted.mono')?.textContent.includes("/2h/7"), "hardened address branch result");
+    await until(() => document.querySelector('#acct .account-address-lead .muted.mono')?.textContent.includes("/2'/7"), "hardened address branch result");
     const hardenedWatchText = document.querySelector("#acct .account-watch-section")?.textContent || "";
     assert(hardenedWatchText.includes("/2h]") && hardenedWatchText.includes("/*"), "The hardened branch watch-only descriptor did not use a branch-level xpub origin");
     branchHarden.click();
@@ -2332,7 +3378,7 @@
     equal(multisigProgress.getAttribute("aria-valuenow"), "100", "Multisig progress did not reach 100%");
     assert(multisigProgress.querySelector(".derive-progress-label")?.textContent.includes("Done"), "Completed multisig progress did not show Done");
     const resultText = document.getElementById("msig-out").textContent;
-    assert(resultText.includes("1-of-1 multisig · Purpose 87h"), "Result did not identify purpose 87 separately from script type");
+    assert(resultText.includes("1-of-1 multisig · Purpose 87'"), "Result did not identify purpose 87 separately from script type");
     assert(resultText.includes("/87h/1h/0h") && resultText.includes("/<0;1>/*"), "BIP87 wallet descriptor paths are wrong");
     assert(resultText.includes("Receive address #11"), "The multisig receive QR did not use the starting address index");
     const multisigReceiveRows = document.querySelectorAll('#msig-out [data-address-table="msig-receive"] tbody tr');
@@ -2365,7 +3411,7 @@
     equal(multisigPurpose.value, "69420", "A custom co-signer purpose was not auto-detected");
     const deriveCustomMultisig = await until(() => !document.getElementById("msig-go").disabled && document.getElementById("msig-go"), "custom-purpose multisig derive button");
     deriveCustomMultisig.click();
-    await until(() => document.getElementById("msig-out").textContent.includes("Purpose 69420h") || document.getElementById("msig-error").textContent, "custom-purpose multisig result");
+    await until(() => document.getElementById("msig-out").textContent.includes("Purpose 69420'") || document.getElementById("msig-error").textContent, "custom-purpose multisig result");
     assert(
       !document.getElementById("msig-error").textContent,
       `Custom-purpose multisig derivation failed: ${document.getElementById("msig-error").textContent}`,
@@ -2465,7 +3511,7 @@
     const text = await blob.text();
     assert(state.downloadName === "bitcoin-recovery-sheet.txt", "Unexpected filename");
     assert(text.includes(versionHeader) && text.includes("Network: testnet"), "Export headers are missing");
-    assert(text.includes("Native SegWit (Purpose 69420h)") && text.includes("m/69420h/1h/0h"), "The recovery sheet omitted the custom purpose");
+    assert(text.includes("Native SegWit (Purpose 69420')") && text.includes("m/69420'/1'/0'"), "The recovery sheet omitted the custom purpose");
     assert(text.includes("PRIVATE RECOVERY MATERIAL OMITTED"), "Omission notice is missing");
     assert(!text.includes("YOUR SEED PHRASE") && !text.includes("MASTER SEED HEX") && !text.includes("BIP32 ROOT TPRV"), "Watch-only export leaked private data");
 
@@ -2503,6 +3549,43 @@
     assert(state.downloadName === "entropylab-73c5da0a-private-wallet-secrets.dat", "Unexpected private wallet.dat filename");
     assert(dat.startsWith("SQLite format 3"), "private wallet.dat is not a SQLite database");
     assert(dat.includes("walletdescriptorkey"), "Private wallet.dat is missing spending key records");
+  });
+
+  await test("the picker chain identity reaches addresses and wallet.dat metadata", async () => {
+    // Issue #329: signet and regtest share testnet's key versions, but the
+    // chain identity must survive into the derived wallet — regtest renders
+    // bcrt1… addresses, and the wallet.dat header carries each chain's own
+    // network magic (bytes 68-72 of the SQLite header).
+    const magicOf = async () => {
+      const datButton = await until(() => document.getElementById("download-wallet-dat"), "wallet.dat button");
+      state.lastBlob = null;
+      datButton.click();
+      const bytes = new Uint8Array(await (await until(() => state.lastBlob, "wallet.dat blob")).arrayBuffer());
+      return [...bytes.subarray(68, 72)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    };
+    const pick = async (network) => {
+      document.getElementById("network-picker-button").click();
+      document.querySelector(`#network-picker-menu [data-network="${network}"]`).click();
+      const derive = await until(() => !document.getElementById("go").disabled && document.getElementById("go"), `derive button on ${network}`);
+      derive.click();
+      await until(() => document.querySelector("#acct .account-address-lead p.mono:not(.muted)"), `${network} address lead`);
+    };
+
+    await pick("regtest");
+    const regtestLead = document.querySelector("#acct .account-address-lead p.mono:not(.muted)").textContent.trim();
+    assert(regtestLead.startsWith("bcrt1q"), `regtest derive rendered ${regtestLead.slice(0, 12)}… instead of bcrt1q…`);
+    assert(document.querySelector("#acct .kicker")?.textContent.includes("regtest"), "The result did not identify the regtest chain");
+    equal(await magicOf(), "fabfb5da", "wallet.dat on regtest did not carry the regtest network magic");
+
+    await pick("signet");
+    const signetLead = document.querySelector("#acct .account-address-lead p.mono:not(.muted)").textContent.trim();
+    assert(signetLead.startsWith("tb1q"), `signet derive rendered ${signetLead.slice(0, 12)}… instead of tb1q…`);
+    equal(await magicOf(), "0a03cf40", "wallet.dat on signet did not carry the default-signet network magic");
+
+    // Restore the testnet result the following tests were written against.
+    await pick("testnet");
+    assert(document.querySelector("#acct .account-address-lead p.mono:not(.muted)").textContent.trim().startsWith("tb1q"), "testnet restore did not render tb1q…");
+    equal(await magicOf(), "0b110907", "wallet.dat on testnet did not carry the testnet network magic");
   });
 
   await test("versioned HTML export downloads the current self-contained release", async () => {

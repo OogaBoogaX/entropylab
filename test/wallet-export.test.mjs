@@ -12,16 +12,19 @@
 //
 // The same generated file shapes were also validated by loading them with
 // bitcoind (loadwallet) and spending from the private variant on regtest.
+// The final section automates that: where bitcoind is installed, every chain
+// the network picker advertises loads its generated file (issue #329).
 //
 // Run with `npm run test:wallet-export` or `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, createHmac } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createServer } from "node:net";
 import {
   REF_ACCOUNT_TPUB,
   REF_CREATION_TIME,
@@ -347,15 +350,62 @@ test("generated private wallet.dat verifies with real SQLite", { skip: !PYTHON_S
 
 test("network selects the application id and best-block locator", () => {
   const { buildWalletRecords, buildWalletDat } = loadModule();
-  const mainnetWallet = { ...WATCH_ONLY_WALLET, network: "mainnet" };
-  const bytes = buildWalletDat(mainnetWallet, false, deps, REF_CREATION_TIME);
-  assert.equal(bytesToHex(bytes.subarray(68, 72)), "f9beb4d9"); // mainnet magic
-  const records = moduleRecords(mainnetWallet, false);
   const bestblockKey = "12" + "62657374626c6f636b5f6e6f6d65726b6c65"; // "bestblock_nomerkle"
-  const mainnetGenesis = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f";
-  const reversed = bytesToHex(hexToBytes(mainnetGenesis).reverse());
-  assert.ok(records.get(bestblockKey).endsWith(reversed), "bestblock locator should name the mainnet genesis block");
-  assert.throws(() => buildWalletRecords({ ...WATCH_ONLY_WALLET, network: "signet" }, false, deps, REF_CREATION_TIME), /unknown network/);
+  // Every picker network writes its own network magic and genesis locator:
+  // signet and regtest share testnet's key/address family but are NOT aliases
+  // for it in the wallet metadata (issue #329). The signet row is the default
+  // signet; custom-challenge signets get a different magic in Core and are
+  // out of scope.
+  const chains = {
+    mainnet: { magic: "f9beb4d9", genesis: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" },
+    testnet: { magic: "0b110907", genesis: "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943" },
+    signet: { magic: "0a03cf40", genesis: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6" },
+    regtest: { magic: "fabfb5da", genesis: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206" },
+  };
+  for (const [network, { magic, genesis }] of Object.entries(chains)) {
+    const wallet = { ...WATCH_ONLY_WALLET, network };
+    const bytes = buildWalletDat(wallet, false, deps, REF_CREATION_TIME);
+    assert.equal(bytesToHex(bytes.subarray(68, 72)), magic, `${network} application id`);
+    const locator = moduleRecords(wallet, false).get(bestblockKey);
+    assert.ok(locator.endsWith(bytesToHex(hexToBytes(genesis).reverse())), `${network} bestblock locator should name its genesis block`);
+  }
+  assert.throws(() => buildWalletRecords({ ...WATCH_ONLY_WALLET, network: "mutinynet" }, false, deps, REF_CREATION_TIME), /unknown network/);
+});
+
+test("descriptor ranges cover displayed addresses plus a recovery gap", () => {
+  const { buildWalletRecords, walletDescriptorUnits } = loadModule();
+  const wallet = structuredClone(WATCH_ONLY_WALLET);
+  wallet.accounts[0].addressBranches = [
+    { branch: 0, rows: [{ index: 5000 }, { index: 5001 }, { index: 5002 }] },
+    { branch: 1, rows: [{ index: 7000 }] },
+  ];
+
+  const units = walletDescriptorUnits(wallet, false);
+  assert.deepEqual(
+    units.slice(0, 2).map(({ nextIndex, rangeStart, rangeEnd }) => ({ nextIndex, rangeStart, rangeEnd })),
+    [
+      { nextIndex: 5003, rangeStart: 5000, rangeEnd: 6002 },
+      { nextIndex: 7001, rangeStart: 7000, rangeEnd: 8000 },
+    ],
+  );
+
+  const records = buildWalletRecords(wallet, false, deps, REF_CREATION_TIME);
+  const descriptorValues = records
+    .filter(([key]) => key[0] === 16 && new TextDecoder().decode(key.slice(1, 17)) === "walletdescriptor")
+    .map(([, value]) => Buffer.from(value));
+  const readRange = (value) => {
+    const first = value[0];
+    const lengthBytes = first < 253 ? 1 : first === 253 ? 3 : first === 254 ? 5 : 9;
+    const descriptorLength = first < 253 ? first : first === 253 ? value.readUInt16LE(1) : first === 254 ? value.readUInt32LE(1) : Number(value.readBigUInt64LE(1));
+    const offset = lengthBytes + descriptorLength + 8;
+    return {
+      nextIndex: value.readUInt32LE(offset),
+      rangeStart: value.readUInt32LE(offset + 4),
+      rangeEnd: value.readUInt32LE(offset + 8),
+    };
+  };
+  assert.deepEqual(readRange(descriptorValues[0]), { nextIndex: 5003, rangeStart: 5000, rangeEnd: 6002 });
+  assert.deepEqual(readRange(descriptorValues[1]), { nextIndex: 7001, rangeStart: 7000, rangeEnd: 8000 });
 });
 
 test("button gating: only HD wallets with descriptors", () => {
@@ -472,6 +522,8 @@ const hodlExtendedKeyVersions = { mainnet: { x: { pub: 0x0488b21e } } };
 const hodlHDKey = { fromExtendedKey: (text) => hdNodeFrom(b58checkDecode(text)) };
 const hodlSecp256k1 = { getPublicKey: (secret) => publicKeyForPrivate(secret) };
 function hodlBindAddressMatch(){}
+// app.js calls the i18n t() directly now; the harness runs it in English.
+const hodlT = (source, vars) => !vars ? source : source.replace(/\{(\w+)\}/g, (_, name) => (vars[name] == null ? "{" + name + "}" : String(vars[name])));
 ${extract("function hodlPrivateDataControls", "function hodlWalletMessages")}
 ${extract("function hodlWalletDatDeps", "function hodlFocusWalletResult")}
 ${sqliteSrc}
@@ -589,3 +641,131 @@ test("binding attaches the download to #download-wallet-dat and tolerates missin
   assert.equal(ui.captured.name, "watch-only-wallet.dat");
   ui.elements.clear();
 });
+
+// --- Bitcoin Core integration (skipped where bitcoind is not installed) ----
+//
+// For every chain the header picker advertises, a fresh bitcoind on that
+// chain must load the generated wallet.dat, and the signing variant must
+// hand out the chain's own address form — including regtest's bcrt1… —
+// because the SQLite application id and the bestblock locator are
+// chain-specific (issue #329). A file carrying another chain's metadata must
+// be refused. CI runners and the dev image skip this; run it where Bitcoin
+// Core is installed (verified with v31.1.0).
+const BITCOIND = (() => {
+  const daemon = spawnSync("bitcoind", ["--version"], { stdio: "pipe" });
+  const cli = spawnSync("bitcoin-cli", ["--version"], { stdio: "pipe" });
+  return daemon.status === 0 && cli.status === 0;
+})();
+
+// Re-version every extended key in a descriptor (tpub<->xpub and tprv<->xprv
+// payloads have the same layout) and re-checksum it — what the app does when
+// the mainnet family re-labels the same key material.
+const reversionDescriptor = (descriptor, publicVersion, privateVersion) => {
+  const body = descriptor
+    .slice(0, descriptor.lastIndexOf("#"))
+    .replace(/[txyzuv](?:prv|pub)[1-9A-HJ-NP-Za-km-z]{90,}/g, (key) => {
+      const raw = b58checkDecode(key).slice();
+      const version = key.slice(1, 4) === "prv" ? privateVersion : publicVersion;
+      raw[0] = (version >>> 24) & 255;
+      raw[1] = (version >>> 16) & 255;
+      raw[2] = (version >>> 8) & 255;
+      raw[3] = version & 255;
+      return b58checkEncode(raw);
+    });
+  return `${body}#${descriptorChecksum(body)}`;
+};
+
+const CHAIN_FIXTURES = {
+  mainnet: { flag: "", subdir: ".", bech32Prefix: "bc1q" },
+  testnet: { flag: "-testnet", subdir: "testnet3", bech32Prefix: "tb1q" },
+  signet: { flag: "-signet", subdir: "signet", bech32Prefix: "tb1q" },
+  regtest: { flag: "-regtest", subdir: "regtest", bech32Prefix: "bcrt1q" },
+};
+
+// The wallet the app exports for each chain: the reference key material,
+// versioned the way that chain's encoding family versions it.
+const chainWallets = (network) => {
+  const toMainnet = (descriptor) => reversionDescriptor(descriptor, 0x0488b21e, 0x0488ade4);
+  const asChain = (descriptors) => descriptors.map((d) => (network === "mainnet" ? toMainnet(d) : d));
+  return {
+    watch: { kind: "hd", network, accounts: makeAccounts(asChain(REF_PUBLIC_DESCRIPTORS), new Array(8).fill(null)) },
+    priv: { kind: "hd", network, accounts: makeAccounts(asChain(REF_PRIVATE_PUBLIC_FORMS), asChain(REF_PRIVATE_DESCRIPTORS)) },
+  };
+};
+
+// An OS-assigned localhost port keeps parallel or repeated runs from
+// colliding with a real node.
+const freePort = () =>
+  new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+// Boots a fresh node for the chain, runs `body(cli)` where
+// cli(...rpcArgs) returns the parsed JSON result (asserting success), and
+// always shuts the node down again.
+const withChainNode = async (network, body) => {
+  const fixture = CHAIN_FIXTURES[network];
+  const port = await freePort();
+  const datadir = mkdtempSync(join(tmpdir(), `entropylab-bitcoind-${network}-`));
+  const flagArgs = fixture.flag ? [fixture.flag] : [];
+  const cliArgs = [...flagArgs, `-datadir=${datadir}`, "-rpcuser=el", "-rpcpassword=el", `-rpcport=${port}`];
+  const cli = (args, { check = true } = {}) => {
+    const run = spawnSync("bitcoin-cli", [...cliArgs, ...args], { encoding: "utf8", maxBuffer: 1 << 22 });
+    if (check && run.status !== 0) throw new Error(`bitcoin-cli ${args[0]} failed on ${network}: ${run.stderr.trim()}`);
+    return run;
+  };
+  try {
+    execFileSync("bitcoind", [...flagArgs, `-datadir=${datadir}`, "-listen=0", "-connect=0", "-server", "-rpcuser=el", "-rpcpassword=el", `-rpcport=${port}`, "-daemon"], { stdio: "pipe" });
+    cli(["-rpcwait", "getblockchaininfo"]);
+    await body((args, options) => cli(args, options), join(datadir, fixture.subdir, "wallets"));
+  } finally {
+    spawnSync("bitcoin-cli", [...cliArgs, "stop"], { stdio: "pipe" });
+    // stop returns before the process exits; wait for the RPC to go quiet so
+    // the datadir removal cannot race a late flush.
+    for (let waited = 0; waited < 300; waited++) {
+      if (cli(["getblockchaininfo"], { check: false }).status !== 0) break;
+      sleepSync(100);
+    }
+    rmSync(datadir, { recursive: true, force: true });
+  }
+};
+
+for (const network of Object.keys(CHAIN_FIXTURES)) {
+  test(`bitcoind on ${network} loads the generated wallet.dat`, { skip: !BITCOIND, timeout: 120000 }, async () => {
+    const { buildWalletDat } = loadModule();
+    const wallets = chainWallets(network);
+    const watchBytes = buildWalletDat(wallets.watch, false, deps, 0);
+    const privBytes = buildWalletDat(wallets.priv, true, deps, 0);
+    await withChainNode(network, (cli, walletsDir) => {
+      for (const [name, bytes] of [["elwatch", watchBytes], ["elpriv", privBytes]]) {
+        mkdirSync(join(walletsDir, name), { recursive: true });
+        writeFileSync(join(walletsDir, name, "wallet.dat"), bytes);
+        assert.equal(JSON.parse(cli(["loadwallet", name]).stdout).name, name, `${network} refused its ${name} wallet`);
+      }
+      const watchInfo = JSON.parse(cli(["-rpcwallet=elwatch", "getwalletinfo"]).stdout);
+      assert.equal(watchInfo.format, "sqlite");
+      assert.equal(watchInfo.descriptors, true);
+      assert.equal(watchInfo.private_keys_enabled, false);
+      const privInfo = JSON.parse(cli(["-rpcwallet=elpriv", "getwalletinfo"]).stdout);
+      assert.equal(privInfo.private_keys_enabled, true);
+      // The signing wallet hands out the chain's own SegWit address: bc1q… on
+      // mainnet, tb1q… on testnet AND signet, bcrt1q… on regtest.
+      const address = cli(["-rpcwallet=elpriv", "getnewaddress", "", "bech32"]).stdout.trim();
+      assert.ok(address.startsWith(CHAIN_FIXTURES[network].bech32Prefix), `${network} address ${address} has the wrong HRP`);
+      if (network === "regtest") {
+        // The regression from issue #329: a file built with testnet metadata
+        // is not a regtest wallet and must be refused.
+        mkdirSync(join(walletsDir, "elwrong"), { recursive: true });
+        writeFileSync(join(walletsDir, "elwrong", "wallet.dat"), buildWalletDat(chainWallets("testnet").watch, false, deps, 0));
+        assert.notEqual(cli(["loadwallet", "elwrong"], { check: false }).status, 0, "a testnet-magic wallet loaded on regtest");
+      }
+    });
+  });
+}

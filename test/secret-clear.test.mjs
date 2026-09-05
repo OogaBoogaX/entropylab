@@ -86,6 +86,8 @@ test("Silent Payments recipient, verify, and label fields are explicitly cleared
   assert.match(lifecycle, /spVerifyOutputs\.value\s*=\s*""/);
   assert.match(lifecycle, /getElementById\("sp-label"\)/);
   assert.match(lifecycle, /spLabel\.value\s*=\s*""/);
+  assert.match(lifecycle, /getElementById\("sp-payname"\)/);
+  assert.match(lifecycle, /spPayname\.value\s*=\s*""/);
 });
 
 test("highlight mirrors, copy-button phrases, the last-word cache, and the PSBT editor are cleared", () => {
