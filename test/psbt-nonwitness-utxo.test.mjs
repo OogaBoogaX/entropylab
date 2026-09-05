@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseRawTx } from "../src/js/tx.js";
+import { parseRawTx, serializeTx } from "../src/js/tx.js";
 import { sha256 } from "../src/js/hashes.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -42,8 +42,9 @@ const hodlNonWitUtxo = new Function(
   "parseRawTx",
   "hodlSha256",
   "hodlEq",
+  "serializeTx",
   `${loadSlice("hodlNonWitUtxo")}; return hodlNonWitUtxo;`,
-)(hodlFind, parseRawTx, sha256, hodlEq);
+)(hodlFind, parseRawTx, sha256, hodlEq, serializeTx);
 
 // A minimal previous transaction paying `sats` to `script` on output `vout`.
 const le32 = (n) => new Uint8Array(new Uint32Array([n >>> 0]).buffer);
@@ -52,6 +53,18 @@ const prevTx = (sats, script = [0x51]) =>
   new Uint8Array([
     ...le32(2), 1, ...new Uint8Array(32), ...le32(0xffffffff), 0, ...le32(0xffffffff),
     1, ...le64(sats), script.length, ...script,
+    ...le32(0),
+  ]);
+// The same transaction witness-serialized (BIP-144 marker/flag plus a
+// one-item stack): legal inside a non-witness UTXO and common from non-Core
+// wallets. Its fields are identical to prevTx's, so prevTx(sats, script) is
+// exactly its witness-stripped form.
+const segwitPrevTx = (sats, script = [0x51]) =>
+  new Uint8Array([
+    ...le32(2), 0, 1,
+    1, ...new Uint8Array(32), ...le32(0xffffffff), 0, ...le32(0xffffffff),
+    1, ...le64(sats), script.length, ...script,
+    1, 1, 0x10,
     ...le32(0),
   ]);
 const txidOf = (bytes) => createHash("sha256").update(createHash("sha256").update(bytes).digest()).digest();
@@ -78,6 +91,23 @@ test("a non-witness UTXO missing the spent output claims nothing", () => {
   const prev = prevTx(42000);
   const input = { txid: new Uint8Array(txidOf(prev)), vout: 3 };
   assert.throws(() => hodlNonWitUtxo([entry(0, prev)], input), /does not contain the spent output/);
+});
+
+test("a witness-serialized non-witness UTXO matches by txid, never by wtxid (issue #350)", () => {
+  const prev = segwitPrevTx(42000);
+  const stripped = prevTx(42000);
+  // The two serializations hash differently: hashing the raw bytes is the wtxid.
+  assert.notDeepEqual(txidOf(prev), txidOf(stripped));
+  assert.deepEqual(parseRawTx(prev).segwit, true);
+  // The outpoint names the txid, so the witness-carrying field verifies…
+  const input = { txid: new Uint8Array(txidOf(stripped)), vout: 0 };
+  const claim = hodlNonWitUtxo([entry(0, prev)], input);
+  assert.equal(claim.amount, 42000n);
+  assert.deepEqual([...claim.script], [0x51]);
+  // …and a field whose bytes only hash to the outpoint with the witness
+  // included is the lie the check exists to catch.
+  const byWtxid = { txid: new Uint8Array(txidOf(prev)), vout: 0 };
+  assert.throws(() => hodlNonWitUtxo([entry(0, prev)], byWtxid), /does not match the input's previous output/);
 });
 
 test("the report resolves claims as a set and flags conflicts (issue #350)", () => {
