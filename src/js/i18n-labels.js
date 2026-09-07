@@ -73,9 +73,10 @@ export const hodlScriptBeginnerTexts = Object.freeze({
 });
 
 // Pearson chi-squared fairness verdicts (hodlDiceFairnessVerdict ids).
+// "fair" is a face-count test only. It does not mean the rolls are safe entropy.
 export const hodlFairnessVerdictLabels = Object.freeze({
   "need-more": "Need more rolls",
-  fair: "Looks pretty fair",
+  fair: "Looks pretty fair on face counts only (weak test)",
   unsure: "Not sure; roll some more",
   biased: "Looks biased",
 });
