@@ -17,6 +17,9 @@ Guidelines for AI coding agents.
 - The page body lives once in `src/shell.html`: the build injects it into
   `index.html`, and `app.js` assigns it at boot. Edit markup there, never in
   two places.
+- When adding a workspace, follow the [workspace integration checklist in
+  CONTRIBUTING.md](CONTRIBUTING.md#adding-a-workspace), including the explicit
+  workspace lists and expectations in the UI and browser tests.
 - Translations are content-keyed: the English text at the call site is the
   catalog key (`t("Save watch-only sheet")`); there is no `en.json`. Static
   markup needs nothing — a content sweep translates text nodes and

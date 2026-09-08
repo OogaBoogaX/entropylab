@@ -1015,7 +1015,11 @@
   await test("tool tabs answer the arrow keys and name themselves in full", async () => {
     const strip = document.getElementById("workspace-tabs");
     const tabs = [...strip.querySelectorAll("[data-workspace]")];
-    assert(tabs.length === 7, `Expected seven tool tabs, found ${tabs.length}`);
+    assert(tabs.length === 7,
+      `Expected seven tool tabs, found ${tabs.length} (${tabs.map(tab => tab.dataset.workspace).join(", ")}). ` +
+      "Check src/shell.html and hodlWorkspaceTabs in src/js/app.js. If adding a workspace intentionally, " +
+      "update this count and names list plus test/ui-defaults.test.mjs expectations; " +
+      "see CONTRIBUTING.md#adding-a-workspace.");
     // The visible label may be abbreviated; the accessible name never is.
     const names = ["Keys", "Vanity", "BIP-85", "Multi Signature", "Silent Payments", "PSBT", "Journal"];
     tabs.forEach((tab, i) => {
