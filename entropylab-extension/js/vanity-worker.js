@@ -1,0 +1,166 @@
+
+"use strict";
+var wasm = null;
+var stopRequested = false;
+var prefixPtr = 0;
+var saltPtr = 0;
+var keyPtr = 0;
+var pathPtr = 0;
+var outPtr = 0;
+var STEP_MS = 120;
+var MIN_CHUNK = 8;
+var MAX_CHUNK = 8192;
+var RECORD_CAP = 8192;
+var RECORD_LEN = 106;
+var PAYLOAD_LEN = 66;
+var OUT_CAP = 12 + RECORD_LEN * RECORD_CAP;
+// Same limits as MAX_ADDR_LEN, MAX_SALT_LEN, MAX_KEY_LEN, and MAX_PATH_LEN in
+// vanity-wasm/src/lib.rs.
+var MAX_PREFIX = 116;
+var MAX_SALT = 256;
+var MAX_KEY = 1024;
+var MAX_PATH = 16;
+var NO_SLOT = 0xffffffff;
+var encoder = new TextEncoder();
+var decoder = new TextDecoder();
+
+function heap() {
+  return new Uint8Array(wasm.memory.buffer);
+}
+
+function drain(passLen) {
+  var header = new DataView(wasm.memory.buffer, outPtr, 12);
+  var processed = header.getBigUint64(0, true);
+  var count = header.getUint32(8, true);
+  var matches = [];
+  for (var i = 0; i < count; i++) {
+    var at = outPtr + 12 + i * RECORD_LEN;
+    matches.push({
+      counter: new DataView(wasm.memory.buffer, at, 8).getBigUint64(0, true),
+      passphrase: decoder.decode(heap().slice(at + 8, at + 8 + passLen)),
+      payload: heap().slice(at + 40, at + 40 + PAYLOAD_LEN)
+    });
+  }
+  return { processed: processed, matches: matches };
+}
+
+function bytesOf(value) {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  return encoder.encode(String(value == null ? "" : value));
+}
+
+// The persistent buffers hold the NFKD mnemonic / BIP32 node (keyPtr) and the
+// starting passphrase (saltPtr) between messages; they are wiped when a job
+// ends, stops, or errors, and before a new job overwrites them (issues #327,
+// #356). The buffers stay allocated for reuse — the secret content does not.
+function wipeSecrets() {
+  if (!wasm) return;
+  heap().fill(0, keyPtr, keyPtr + MAX_KEY);
+  heap().fill(0, saltPtr, saltPtr + MAX_SALT);
+}
+
+function grind(msg) {
+  wipeSecrets(); // a previous job's key/salt may still sit in the buffers
+  var mode = msg.mode === 1 ? 1 : 0;
+  var prefixBytes = encoder.encode(msg.prefix);
+  if (prefixBytes.length === 0 || prefixBytes.length > MAX_PREFIX) {
+    postMessage({ type: "error", message: "vanity prefix is empty or longer than " + MAX_PREFIX + " characters" });
+    return;
+  }
+  heap().set(prefixBytes, prefixPtr);
+  var keyBytes = bytesOf(msg.key);
+  if (keyBytes.length === 0 || keyBytes.length > MAX_KEY) {
+    postMessage({ type: "error", message: "vanity key material is empty or longer than " + MAX_KEY + " bytes" });
+    return;
+  }
+  heap().set(keyBytes, keyPtr);
+  var saltBytes = mode === 1 ? new Uint8Array(0) : bytesOf(msg.salt);
+  if (saltBytes.length > MAX_SALT) {
+    postMessage({ type: "error", message: "vanity starting passphrase is longer than " + MAX_SALT + " bytes" });
+    return;
+  }
+  heap().set(saltBytes, saltPtr);
+  var path = Array.isArray(msg.path) ? msg.path : [];
+  if (path.length === 0 || path.length > MAX_PATH) {
+    postMessage({ type: "error", message: "vanity derivation path has 1 to " + MAX_PATH + " components" });
+    return;
+  }
+  var pathView = new DataView(wasm.memory.buffer, pathPtr, MAX_PATH * 4);
+  for (var i = 0; i < path.length; i++) pathView.setUint32(i * 4, Number(path[i]) >>> 0, true);
+  var counterSlot = mode === 1 ? Number(msg.counterSlot) >>> 0 : NO_SLOT;
+  var passLen = mode === 1 ? 0 : Number(msg.passLen);
+  var total = BigInt(msg.count);
+  var cursor = BigInt(msg.start);
+  var done = BigInt(0);
+  // Chunks adapt to the device: the first is small so progress shows within
+  // a fraction of a second even for the PBKDF2-heavy passphrase grind, then
+  // each step is resized to take about STEP_MS so the bar moves smoothly and
+  // a queued "stop" lands promptly.
+  var chunkSize = mode === 1 ? 512 : 16;
+  stopRequested = false;
+  var step = function () {
+    if (done >= total || stopRequested) {
+      wipeSecrets();
+      postMessage({ type: "done", done: done, stopped: stopRequested });
+      return;
+    }
+    var remaining = total - done;
+    var chunk = remaining > BigInt(chunkSize) ? chunkSize : Number(remaining);
+    var startedAt = Date.now();
+    var status = wasm.vanity_grind(mode, keyPtr, keyBytes.length, saltPtr, saltBytes.length, pathPtr, path.length, counterSlot, prefixPtr, prefixBytes.length, passLen, cursor, BigInt(chunk), outPtr, OUT_CAP, msg.script || 0);
+    if (status === -1) {
+      wipeSecrets();
+      postMessage({ type: "error", message: "vanity_grind rejected its arguments" });
+      return;
+    }
+    var elapsed = Math.max(1, Date.now() - startedAt);
+    chunkSize = Math.max(MIN_CHUNK, Math.min(MAX_CHUNK, Math.round(chunk * STEP_MS / elapsed)));
+    var drained = drain(passLen);
+    // The records carried candidate passphrases; the copies are out, the
+    // wasm-side originals go now.
+    heap().fill(0, outPtr, outPtr + 12 + Number(new DataView(wasm.memory.buffer, outPtr, 12).getUint32(8, true)) * RECORD_LEN);
+    done += drained.processed;
+    cursor += drained.processed;
+    postMessage({ type: "progress", done: done, matches: drained.matches });
+    // status -2 means the record area filled up; it was drained above, so the
+    // loop simply continues. A short chunk means the counter space ran out.
+    if (status !== -2 && drained.processed < BigInt(chunk)) {
+      wipeSecrets();
+      postMessage({ type: "done", done: done, stopped: false });
+      return;
+    }
+    setTimeout(step, 0); // yield so a queued "stop" message lands
+  };
+  step();
+}
+
+self.onmessage = function (event) {
+  var msg = event.data;
+  if (!msg || typeof msg !== "object") return;
+  if (msg.type === "init") {
+    WebAssembly.instantiate(msg.wasm, {}).then(function (result) {
+      wasm = result.instance.exports;
+      prefixPtr = wasm.vanity_alloc(MAX_PREFIX);
+      saltPtr = wasm.vanity_alloc(MAX_SALT);
+      keyPtr = wasm.vanity_alloc(MAX_KEY);
+      pathPtr = wasm.vanity_alloc(MAX_PATH * 4);
+      outPtr = wasm.vanity_alloc(OUT_CAP);
+      postMessage({ type: "ready" });
+    }).catch(function (error) {
+      postMessage({ type: "error", message: "vanity wasm failed to instantiate: " + (error && error.message || error) });
+    });
+  } else if (msg.type === "grind") {
+    if (!wasm) {
+      postMessage({ type: "error", message: "worker not initialized" });
+      return;
+    }
+    try {
+      grind(msg);
+    } catch (error) {
+      postMessage({ type: "error", message: (error && error.message) || String(error) });
+    }
+  } else if (msg.type === "stop") {
+    stopRequested = true;
+  }
+};

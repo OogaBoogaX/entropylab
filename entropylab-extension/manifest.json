@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "EntropyLab \u2014 Offline Bitcoin Key & Wallet Calculator",
+  "short_name": "EntropyLab",
+  "version": "0.1.3",
+  "description": "Self-contained, air-gapped Bitcoin key and wallet calculator. Turn dice rolls, seed phrases, and private keys into wallet recovery information \u2014 entirely offline.",
+  "author": "EntropyLab",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Open EntropyLab",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [],
+  "host_permissions": [],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "offline_enabled": true
+}
