@@ -54,26 +54,18 @@ test("the diagram shows one box per input and output with decoded claims", () =>
   for (const target of ["input:0", "input:1", "output:0", "output:1"]) {
     assert.ok(html.includes(`data-viz="${target}"`), `missing box ${target}`);
   }
-  // Input 0 carries only a finalized scriptSig: no claim, but a status.
   assert.ok(html.includes("no amount claim"), "input without utxo pairs must say so");
   assert.ok(html.includes("finalized"), "finalized input status missing");
-  // Input 1's witness UTXO claim renders as grouped sats plus the address.
   assert.ok(html.includes(`${sats("100000000")} sats`), "witness UTXO claim missing");
   assert.ok(html.includes("36YhUacEtc"), "P2SH claim address missing");
-  // Outputs render their addresses, script tags, and editable sats fields.
-  // Box labels truncate mid-string (mempool.space-style); the full address
-  // survives in the tooltip and the button's aria-label.
   assert.ok(html.includes("1BonMcawnm…k9K7hEWe"), "output 0 address missing");
   assert.ok(html.includes('title="1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"'), "output 0 full address tooltip missing");
   assert.ok(html.includes('aria-label="Output 1, 1B9N1re3RYdB7RPhsNS92vbYQegYWZW3og:'), "output 1 full address label missing");
   assert.ok(html.includes('data-txout-val="0" value="199900000"'), "output 0 amount field missing");
   assert.ok(html.includes('data-txout-val="1" value="9358"'), "output 1 amount field missing");
-  // The middle summarizes the unsigned transaction; the fee is unknown here
-  // because input 0 claims no amount.
   assert.ok(html.includes("PSBT v0"), "PSBT version missing");
   assert.ok(html.includes("version 2 · locktime 0"), "version/locktime missing");
   assert.ok(html.includes("unknown"), "unknown fee state missing");
-  // Input amounts keep the unverified-claim disclaimer on the diagram itself.
   assert.ok(html.includes("not verified"), "claim disclaimer missing");
 });
 
@@ -89,7 +81,6 @@ test("OP_RETURN outputs get the data-carrier tag instead of an address", () => {
 });
 
 test("signing progress counts successfully decoded partial and taproot signatures (issue #328)", () => {
-  // A pair name alone no longer counts: the typed decode must have succeeded.
   const pairs = (names) => names.map((name) => ({ key: "02", value: "", name, decoded: { signature: "ab" } }));
   const doc = syntheticDoc({
     inputs: [[], pairs(["PSBT_IN_PARTIAL_SIG", "PSBT_IN_PARTIAL_SIG"]), pairs(["PSBT_IN_TAP_KEY_SIG"]), pairs(["PSBT_IN_FINAL_SCRIPTWITNESS"])],
@@ -103,14 +94,11 @@ test("signing progress counts successfully decoded partial and taproot signature
 });
 
 test("malformed signing fields read as malformed, never as signed or finalized (issue #328)", () => {
-  // Names survive failed decodes; the status must not. A field that fails its
-  // typed decode is presence without validity.
   const bad = (name) => ({ key: "02", value: "", name, decoded: null, decodeError: "truncated" });
   const doc = syntheticDoc({
     inputs: [
       [bad("PSBT_IN_PARTIAL_SIG")],
       [bad("PSBT_IN_FINAL_SCRIPTSIG")],
-      // A good signature alongside a malformed one still counts the good one.
       [{ key: "02", value: "", name: "PSBT_IN_PARTIAL_SIG", decoded: { signature: "ab" } }, bad("PSBT_IN_TAP_SCRIPT_SIG")],
     ],
   });
@@ -129,7 +117,6 @@ test("the selected box is marked open and expanded, the rest are not", () => {
   assert.ok(box("input:1").includes('aria-expanded="true"'), "selected box not expanded");
   assert.ok(!box("input:0").includes('aria-expanded="true"'), "unselected box expanded");
   assert.ok(html.includes("is-open"), "selected box is not highlighted");
-  // A stale selection (out of range) selects nothing.
   const stale = psbtVizHtml(doc, "mainnet", { kind: "input", index: 9 });
   assert.ok(!stale.includes('aria-expanded="true"'), "out-of-range selection must be ignored");
 });
@@ -161,20 +148,15 @@ test("fee states: known fee, negative fee, unknown fee", () => {
   assert.ok(negative.includes("outputs exceed claimed inputs"), "negative fee missing");
   const unknown = psbtVizHtml(syntheticDoc({ fee: { known: false } }), "mainnet");
   assert.ok(unknown.includes("unknown"), "unknown fee missing");
-  // The unknown state stays compact; the reason moves to the tooltip.
   assert.ok(!unknown.includes("unknown — an input carries no amount claim"), "long fee text still inline");
   assert.ok(unknown.includes('title="an input carries no amount claim"'), "fee reason not on hover");
 });
 
 test("invalid fee reasons and an unknown outputs total render from the document", () => {
-  // The inspector marks fees invalid with a reason (issue #367): u64 overflow
-  // or amounts past Bitcoin's MAX_MONEY. The diagram shows the reason.
   const overflow = psbtVizHtml(syntheticDoc({ fee: { known: true, sats: null, error: "amounts overflow u64" } }), "mainnet");
   assert.ok(overflow.includes("amounts overflow u64"), "overflow fee reason missing");
   const capped = psbtVizHtml(syntheticDoc({ fee: { known: true, sats: null, error: "amounts exceed Bitcoin's MAX_MONEY" } }), "mainnet");
   assert.ok(capped.includes("MAX_MONEY"), "MAX_MONEY fee reason missing");
-  // An overflowing output total comes back null; the column hint must say so
-  // instead of grouping "null".
   const noTotal = psbtVizHtml(syntheticDoc({ totalOut: null }), "mainnet");
   assert.ok(noTotal.includes("outputs total unknown"), "unknown outputs total missing");
   assert.ok(!noTotal.includes("null sats"), "null total must not render as an amount");
@@ -187,13 +169,11 @@ test("conflicting witness and non-witness claims render as a conflict, independe
     const html = psbtVizHtml(syntheticDoc({ inputs: [pairs] }), "mainnet");
     assert.ok(html.includes(`conflicting claims: ${sats("5000")} vs ${sats("1000")} sats`), "conflict warning missing");
   }
-  // The fee line shows the document's conflict reason instead of "unknown".
   const conflicted = psbtVizHtml(syntheticDoc({
     inputs: [[witness, nonWitness]],
     fee: { known: false, error: "input(s) 0 declare conflicting witness and non-witness UTXO amounts" },
   }), "mainnet");
   assert.ok(conflicted.includes("conflicting witness and non-witness UTXO amounts"), "fee conflict reason missing");
-  // Agreeing claims resolve normally to the (verified) non-witness claim.
   const agreed = psbtVizHtml(syntheticDoc({
     inputs: [[{ ...witness, decoded: { value: "1000", scriptPubKey: "51" } }, nonWitness]],
   }), "mainnet");
@@ -202,15 +182,12 @@ test("conflicting witness and non-witness claims render as a conflict, independe
 });
 
 test("exotic witness programs render as bech32m addresses, matching the inspector (issue #354)", () => {
-  // The diagram and the inspector share one renderer (rust-bitcoin via
-  // addressFromScript), so scripts that used to fall back to hex here —
-  // v1 programs ≠ 32 bytes, v2–v16 programs — show their address instead.
   const programs = [
-    "51024e73", // BIP-433 P2A: the one exotic case that always worked
-    "5120" + "02".padStart(64, "0"), // v1, off-curve x-only key (x=2 has no curve point)
-    "5110" + "22".repeat(16), // v1, 16-byte program
-    "5202" + "3333", // v2, 2-byte program
-    "5220" + "44".repeat(32), // v2, 32-byte program
+    "51024e73",
+    "5120" + "02".padStart(64, "0"),
+    "5110" + "22".repeat(16),
+    "5202" + "3333",
+    "5220" + "44".repeat(32),
   ];
   const doc = syntheticDoc();
   doc.tx.outputs = programs.map((scriptPubKey) => ({ value: "1", scriptPubKey, asm: "" }));
@@ -226,9 +203,8 @@ test("exotic witness programs render as bech32m addresses, matching the inspecto
 
 test("column hint lines carry the totals, unless a claim is missing", () => {
   const html = psbtVizHtml(syntheticDoc({ totalIn: 250000 }), "mainnet");
-  assert.ok(html.includes(`${sats("250000")} sats claimed, not verified`), "inputs total missing");
+  assert.ok(html.includes(`${sats("250000")} sats claimed; not verified unless matching witness and non-witness UTXO claims agree`), "inputs total missing");
   assert.ok(html.includes(`${sats("5000")} sats in total`), "outputs total missing");
-  // The vector's first input claims nothing, so the inputs side cannot total.
   const partial = psbtVizHtml(inspectValid(), "mainnet");
   assert.ok(!partial.includes("sats claimed"), "a partial claim set must not total");
   assert.ok(partial.includes("not verified"), "claim disclaimer missing");
@@ -236,9 +212,6 @@ test("column hint lines carry the totals, unless a claim is missing", () => {
 
 test("an input's prevout is stated once per box, in full on hover", () => {
   const html = psbtVizHtml(inspectValid(), "mainnet");
-  // Input 0 has no claim: the truncated txid:vout is the label; the sub-line
-  // must not repeat it. Input 1 has an address label: its prevout is hover-only.
-  // (The inspection document reports txids in display order.)
   const txid = "e47b5b7a879f13a8213815cf3dc3f5b35af1e217f412829bc4f75a8ca04909ab";
   const firstBox = html.match(/<div class="psbted-viz-box">[\s\S]*?<\/div>/)[0];
   const subLine = firstBox.match(/<p class="psbted-viz-sub"[\s\S]*?<\/p>/)[0];
