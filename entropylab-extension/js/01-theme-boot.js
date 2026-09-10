@@ -1,0 +1,1 @@
+(function(){try{var m=localStorage.getItem("entropylab-theme");if(m==="light"||(m!=="dark"&&matchMedia("(prefers-color-scheme: light)").matches))document.documentElement.dataset.theme="light"}catch(e){}try{if(localStorage.getItem("entropylab-beta-banner-dismissed")==="0.1.3")document.documentElement.dataset.betaBannerDismissed=""}catch(e){}})()
