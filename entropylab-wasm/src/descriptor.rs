@@ -6,14 +6,12 @@
 //! sorted as x-only bytes, and the expression rewritten to the multi_a it
 //! denotes before rust-miniscript sees it.
 //!
-//! The boundary is one export, `el_desc_derive`: descriptor text and a child
-//! index in, a newline-separated record out — address (empty when the
-//! template has none), scriptPubKey hex, then the comma-separated derived
-//! keys (compressed hex) so the caller can enforce its own key-distinctness
-//! policy. Everything here is watch-only in effect: xprv/WIF key expressions
-//! are accepted but are reduced to their public keys immediately; the few
-//! secret temporaries live only for the call, like the existing BIP32 path
-//! (see the crate doc's residual note).
+//! The boundary exports `el_desc_derive` (one derived output) and
+//! `el_desc_duplicate_check` (informational concrete-key collision scan
+//! across every BIP-389 materialized branch). Everything here is watch-only
+//! in effect: xprv/WIF key expressions are accepted but are reduced to their
+//! public keys immediately; the few secret temporaries live only for the
+//! call, like the existing BIP32 path (see the crate doc's residual note).
 
 use crate::{ctx, read, wipe_string};
 use bitcoin::bip32::ChildNumber;
@@ -24,6 +22,39 @@ use std::str::FromStr;
 
 /// App-built descriptors are under 2 KB; capping the input bounds parse
 /// recursion depth ahead of rust-miniscript's own limits.
+fn check_bip389_invalid(body: &str) -> Result<(), String> {
+    if body.contains(">/<") {
+        return Err("Invalid output descriptor or invalid multipath expression".into());
+    }
+    let mut in_bracket = false;
+    for c in body.chars() {
+        if c == '[' { in_bracket = true; }
+        else if c == ']' { in_bracket = false; }
+        else if in_bracket && c == '<' {
+            return Err("Invalid output descriptor or invalid multipath expression".into());
+        }
+    }
+    let mut start: Option<usize> = None;
+    for (i, c) in body.char_indices() {
+        if c == '<' { start = Some(i); }
+        else if c == '>' {
+            if let Some(s) = start {
+                let inner = &body[s+1..i];
+                if inner.contains(';') {
+                    let mut seen = std::collections::HashSet::new();
+                    for part in inner.split(';') {
+                        if !seen.insert(part) {
+                            return Err("Invalid output descriptor or invalid multipath expression".into());
+                        }
+                    }
+                }
+            }
+            start = None;
+        }
+    }
+    Ok(())
+}
+
 const MAX_DESCRIPTOR_BYTES: usize = 16_384;
 
 /// Parses a BIP380 key expression (hex key, xpub/xprv with optional origin
@@ -196,6 +227,7 @@ struct Derived {
 }
 
 fn derive_miniscript(body: &str, index: u32, network: Network) -> Result<Derived, String> {
+    check_bip389_invalid(body)?;
     let (descriptor, secrets) = Descriptor::parse_descriptor(ctx(), body).map_err(|e| format!("invalid descriptor: {}", e))?;
     drop(secrets); // parsed xprv/WIF keys; only their public halves are used
     if descriptor.is_multipath() {
@@ -234,6 +266,105 @@ fn derive_descriptor(body: &str, index: u32, network: Network) -> Result<Derived
     let result = derive_miniscript(&substituted, index, network);
     wipe_string(&mut substituted);
     result
+}
+
+/// Checks concrete public keys across every BIP-389 materialized branch.
+///
+/// The result record is:
+/// `OK\nexpanded_count\nchild_index\nfinding_count` followed by one line per
+/// finding: `compressed_pubkey_hex:branch/key_position,...`.
+/// Invalid descriptors return an error without exposing parser error text.
+fn descriptor_duplicate_check(body: &str, child_index: u32) -> Result<String, String> {
+    if body.is_empty() || body.len() > MAX_DESCRIPTOR_BYTES {
+        return Err("descriptor length out of range".into());
+    }
+    check_bip389_invalid(body)?;
+    let (descriptor, secrets) = Descriptor::parse_descriptor(ctx(), body)
+        .map_err(|_| "invalid descriptor or multipath expression".to_string())?;
+    drop(secrets);
+
+    let single_descriptors = descriptor
+        .into_single_descriptors()
+        .map_err(|_| "invalid descriptor or multipath expression".to_string())?;
+
+    use std::collections::HashMap;
+    let mut occurrences: HashMap<[u8; 33], Vec<(usize, usize)>> = HashMap::new();
+
+    for (branch, single) in single_descriptors.iter().enumerate() {
+        let concrete = single
+            .derived_descriptor(ctx(), child_index)
+            .map_err(|_| "descriptor cannot be derived at this index".to_string())?;
+        let mut key_position = 0usize;
+        concrete.for_each_key(|key| {
+            occurrences
+                .entry(key.inner.serialize())
+                .or_default()
+                .push((branch, key_position));
+            key_position += 1;
+            true
+        });
+    }
+
+    let mut findings: Vec<([u8; 33], Vec<(usize, usize)>)> = occurrences
+        .into_iter()
+        .filter(|(_, positions)| positions.len() > 1)
+        .collect();
+    findings.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut record = format!(
+        "OK\n{}\n{}\n{}",
+        single_descriptors.len(),
+        child_index,
+        findings.len()
+    );
+    for (key, positions) in findings {
+        record.push('\n');
+        record.push_str(&hex_lower(&key));
+        record.push(':');
+        for (i, (branch, key_position)) in positions.iter().enumerate() {
+            if i > 0 { record.push(','); }
+            record.push_str(&branch.to_string());
+            record.push('/');
+            record.push_str(&key_position.to_string());
+        }
+    }
+    Ok(record)
+}
+
+/// An informational duplicate-key check for multipath descriptors.
+/// Child index is explicit because multipath expansion resolves finite
+/// `<a;b>` dimensions but ranged `/*` remains after expansion.
+#[no_mangle]
+pub unsafe extern "C" fn el_desc_duplicate_check(
+    desc: *const u8,
+    desc_len: usize,
+    child_index: u32,
+    out: *mut u8,
+    cap: usize,
+) -> i32 {
+    let text = match std::str::from_utf8(read(desc, desc_len)) {
+        Ok(text) => text,
+        Err(_) => return -1,
+    };
+    let body = match checksum::verify_checksum(text) {
+        Ok(body) => body,
+        Err(_) => return -1,
+    };
+    let mut record = match descriptor_duplicate_check(body, child_index) {
+        Ok(record) => record,
+        Err(mut error) => {
+            wipe_string(&mut error);
+            return -1;
+        }
+    };
+    if record.len() > cap {
+        wipe_string(&mut record);
+        return -2;
+    }
+    std::ptr::copy_nonoverlapping(record.as_ptr(), out, record.len());
+    let len = record.len() as i32;
+    wipe_string(&mut record);
+    len
 }
 
 /// Evaluates a descriptor at child `index` and writes the record
@@ -324,6 +455,47 @@ mod tests {
         "03DFF1D77F2A671C5F36183726DB2341BE58FEAE1DA2DECED843240F7B502BA659",
         "023590A94E768F8E1815C2F24B4D80A8E3149316C3518CE7B7AD338368D038CA66",
     ];
+
+    #[test]
+    fn duplicate_check_detects_later_multipath_branch() {
+        let xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+        let body = format!("wsh(or_i(pk({}/<0;1>),pk({}/<2;1>)))", xpub, xpub);
+        let record = descriptor_duplicate_check(&body, 0).expect("valid multipath descriptor");
+        let lines: Vec<&str> = record.lines().collect();
+        assert_eq!(lines[0], "OK");
+        assert_eq!(lines[1], "2");
+        assert_eq!(lines[2], "0");
+        assert_eq!(lines[3], "1");
+        assert!(lines[4].contains(":1/0,1/1"));
+    }
+
+    #[test]
+    fn duplicate_check_detects_explicit_duplicate() {
+        let xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+        let body = format!("wsh(or_i(pk({}/1),pk({}/1)))", xpub, xpub);
+        let record = descriptor_duplicate_check(&body, 0).expect("valid descriptor");
+        assert_eq!(record.lines().nth(3), Some("1"));
+    }
+
+    #[test]
+    fn duplicate_check_rejects_invalid_bip389_before_scan() {
+        let xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+        for body in [
+            format!("wpkh({}/<0;0>/*)", xpub),
+            format!("wpkh({}/<0;1>/<2;3>/*)", xpub),
+            format!("wpkh([deadbeef/<0;1>]{}/0/*)", xpub),
+        ] {
+            assert!(descriptor_duplicate_check(&body, 0).is_err());
+        }
+    }
+
+    #[test]
+    fn duplicate_check_does_not_flag_distinct_paths() {
+        let xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+        let body = format!("wsh(multi(2,{}/0/0,{}/0/2))", xpub, xpub);
+        let record = descriptor_duplicate_check(&body, 0).expect("valid descriptor");
+        assert_eq!(record.lines().nth(3), Some("0"));
+    }
 
     #[test]
     fn multisig_descriptors_derive_through_miniscript() {

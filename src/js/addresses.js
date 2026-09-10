@@ -22,6 +22,7 @@ const textEncoder = new TextEncoder();
 const SCRIPT_CAP = 4096; // every script the app builds is far smaller
 const ADDRESS_CAP = 128; // a v1 bech32m address is <= 74 chars for known templates
 const DESCRIPTOR_CAP = 4096; // address + scriptPubKey hex + 15 multisig keys is ~1.2 KB
+const DUPLICATE_DESCRIPTOR_CAP = 8192;
 
 const netOf = (network) => {
   if (network === "mainnet") return 0;
@@ -167,6 +168,57 @@ export const descriptorDerive = (descriptor, index, network) => {
   if (!record) throw new Error("Invalid output descriptor, or it cannot be derived at this index.");
   const [address, scriptHex, keys] = textDecoder.decode(record).split("\n");
   return { address: address || null, scriptHex, pubkeys: keys ? keys.split(",") : [] };
+};
+
+/**
+ * Checks concrete public keys across every materialized BIP-389 multipath
+ * branch. `childIndex` resolves any remaining wildcard `/*` for this v1
+ * concrete check. The Rust side rejects invalid multipath syntax before
+ * any key comparison.
+ */
+export const descriptorDuplicateCheck = (descriptor, childIndex = 0) => {
+  const _d = String(descriptor ?? "");
+  if (_d.includes(">/<")) throw new Error("Invalid output descriptor or invalid multipath expression");
+  if (/\[[^\]]*<[^>]*>[^\]]*\]/.test(_d)) throw new Error("Invalid output descriptor or invalid multipath expression");
+  for (const mm of _d.matchAll(/<([^>]+)>/g)) {
+    const parts = mm[1].split(";");
+    if (parts.length > 1 && new Set(parts).size !== parts.length) {
+      throw new Error("Invalid output descriptor or invalid multipath expression");
+    }
+  }
+
+  if (!Number.isSafeInteger(childIndex) || childIndex < 0 || childIndex > 2147483647) {
+    throw new Error("Descriptor derivation index must be 0 to 2,147,483,647.");
+  }
+  const bytes = textEncoder.encode(String(descriptor ?? ""));
+  const record = withInput(bytes, (p) =>
+    withOutput(DUPLICATE_DESCRIPTOR_CAP, (out) =>
+      wasm().el_desc_duplicate_check(p, bytes.length, childIndex, out, DUPLICATE_DESCRIPTOR_CAP)
+    )
+  );
+  if (!record) throw new Error("Invalid output descriptor or invalid multipath expression.");
+  const lines = textDecoder.decode(record).split("\n");
+  if (lines.length < 4 || lines[0] !== "OK") throw new Error("Invalid duplicate-key analysis result.");
+  const expandedCount = Number(lines[1]);
+  const returnedChildIndex = Number(lines[2]);
+  const findingCount = Number(lines[3]);
+  if (!Number.isSafeInteger(expandedCount) || expandedCount < 1 || returnedChildIndex !== childIndex || !Number.isSafeInteger(findingCount) || findingCount < 0 || lines.length !== 4 + findingCount) {
+    throw new Error("Invalid duplicate-key analysis result.");
+  }
+  const findings = lines.slice(4).map((line) => {
+    const separator = line.indexOf(":");
+    if (separator <= 0) throw new Error("Invalid duplicate-key analysis result.");
+    const publicKey = line.slice(0, separator);
+    if (!/^(02|03)[0-9a-f]{64}$/i.test(publicKey)) throw new Error("Invalid duplicate-key analysis result.");
+    const occurrences = line.slice(separator + 1).split(",").map((entry) => {
+      const match = /^(\d+)\/(\d+)$/.exec(entry);
+      if (!match) throw new Error("Invalid duplicate-key analysis result.");
+      return { branch: Number(match[1]), keyPosition: Number(match[2]) };
+    });
+    if (occurrences.length < 2) throw new Error("Invalid duplicate-key analysis result.");
+    return { publicKey: publicKey.toLowerCase(), occurrences };
+  });
+  return { isValid: true, expandedCount, childIndex, hasDuplicate: findings.length > 0, findings };
 };
 
 // One-call helpers for the four single-signature templates, mirroring how the

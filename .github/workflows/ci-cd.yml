@@ -131,7 +131,7 @@ jobs:
       - name: Rebuild the WASM artifacts from the Rust sources
         run: npm run build:wasm
       - name: Test the freshly built bindings
-        run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs
+        run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/descriptor-duplicate.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs
 
   # Resolve the OS matrix from workflow_dispatch checkboxes (defaults to Ubuntu
   # for automatic triggers or when nothing is selected).
