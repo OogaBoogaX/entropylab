@@ -1,3 +1,5 @@
+import "./psbt-construct-ui.js";
+
 // Pure semantic comparison of two rust-bitcoin PSBT inspection documents
 // (the output of psbtInspectDoc in psbt-wasm.js).
 //
