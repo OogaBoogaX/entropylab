@@ -693,6 +693,58 @@
     input(cards, "");
   });
 
+  await test("deriving below the recommended entropy asks for confirmation first", async () => {
+    localStorage.removeItem("entropylab-low-entropy-warning-dismissed");
+    await chooseMode("Dice rolls");
+    const dice = await until(() => document.getElementById("dice"), "dice input");
+    input(dice, "123456");
+    const go = await until(() => !document.getElementById("go").disabled && document.getElementById("go"), "Derive Key to enable for six rolls");
+    const overlay = () => document.getElementById("low-entropy-overlay");
+    const before = document.getElementById("out").innerHTML;
+    go.click();
+    const dialog = await until(() => {
+      const node = overlay();
+      return node && !node.hidden ? node.querySelector(".low-entropy-card") : null;
+    }, "low-entropy confirmation to appear");
+    equal(dialog.getAttribute("role"), "dialog", "The confirmation is not a dialog");
+    equal(dialog.getAttribute("aria-modal"), "true", "The confirmation is not modal");
+    equal(dialog.getAttribute("aria-labelledby"), "low-entropy-title", "The confirmation is not labelled");
+    const message = dialog.querySelector("#low-entropy-message").textContent;
+    assert(message.includes("15.5 bits") && message.includes("recommended: 256 bits"), `The message did not state provided vs recommended entropy: ${message}`);
+    equal(dialog.querySelector("#low-entropy-detail").textContent, "6 of 99 recommended rolls", "The confirmation lost the roll count");
+    const dismiss = dialog.querySelector("#low-entropy-dismiss");
+    assert(dismiss && dismiss.type === "checkbox" && !dismiss.checked, "The Don't-show-again checkbox did not start unchecked");
+    equal(document.activeElement, dialog.querySelector("#low-entropy-more"), "The safe choice did not take the initial focus");
+    // Add More Entropy cancels: the overlay closes, nothing derives, and the
+    // entered rolls stay put so the user can keep going.
+    dialog.querySelector("#low-entropy-more").click();
+    assert(overlay().hidden, "Add More Entropy did not dismiss the confirmation");
+    equal(document.getElementById("out").innerHTML, before, "Cancelling still derived a key");
+    equal(dice.value, "123456", "Cancelling discarded the entered rolls");
+    // Proceed derives — and with the checkbox ticked, remembers the choice.
+    go.click();
+    await until(() => !overlay().hidden, "the confirmation to reappear");
+    dismiss.click();
+    dialog.querySelector("#low-entropy-proceed").click();
+    await until(() => document.querySelector("#out .key-result"), "the low-entropy key to derive after proceeding");
+    assert(overlay().hidden, "Proceeding left the confirmation open");
+    equal(localStorage.getItem("entropylab-low-entropy-warning-dismissed"), "1", "The dismissal was not remembered");
+    // The remembered dismissal bypasses the confirmation entirely.
+    go.click();
+    assert(overlay().hidden, "A remembered dismissal still showed the confirmation");
+    await until(() => document.querySelector("#out .key-result"), "the bypassed re-derivation");
+    localStorage.removeItem("entropylab-low-entropy-warning-dismissed");
+    input(dice, "");
+    // Leave the Key Station the way the test found it: no committed key tabs,
+    // so later tests that derive their own keys start from a clean station.
+    const keyTabs = document.getElementById("key-tabs");
+    while (keyTabs.children.length > 1) {
+      keyTabs.lastElementChild.click();
+      document.getElementById("delete-key").click();
+      await wait(0);
+    }
+  });
+
   await test("partial entropy word grids remain copyable", async () => {
     await chooseMode("Number bases");
     document.querySelector('input[name="entropy-format"][value="bin"]').click();

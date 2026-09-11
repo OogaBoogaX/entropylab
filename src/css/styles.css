@@ -1800,6 +1800,26 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .addr-qr-image svg { width: 220px; height: 220px; }
 .addr-qr-address { margin: var(--space-control) 0 0; font-size: 12px; overflow-wrap: anywhere; }
 .addr-qr-actions { margin-top: var(--space-component); justify-content: center; }
+/* The low-entropy confirmation mirrors the address-QR overlay: a dimmed
+   backdrop with one centered card, dismissed by Add More Entropy, Escape, or
+   a click outside. Shown when Derive Key is pressed with less entropy than
+   recommended. */
+.low-entropy-overlay {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center;
+  padding: 24px; box-sizing: border-box; background: rgb(0 0 0 / 55%);
+}
+.low-entropy-overlay[hidden] { display: none; }
+.low-entropy-card {
+  width: min(440px, 100%); padding: 20px; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--surface);
+  box-shadow: 0 16px 36px rgb(0 0 0 / 55%);
+}
+.low-entropy-title { margin: 0 0 var(--space-control); font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+.low-entropy-message { margin: 0; }
+.low-entropy-detail { margin: var(--space-control) 0 0; }
+.low-entropy-advice { margin: var(--space-control) 0 0; }
+.low-entropy-dismiss-row { margin-top: var(--space-component); }
+.low-entropy-actions { margin-top: var(--space-component); justify-content: flex-end; }
 .sp-result, .sp-output { margin-top: var(--space-component); }
 .sp-qr { width: min(220px, 100%); margin: var(--space-control) 0; }
 .sp-qr svg { width: 100%; height: auto; display: block; background: #fff; border-radius: 8px; }
