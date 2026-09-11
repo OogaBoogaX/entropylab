@@ -176,6 +176,38 @@ meaningful group, and `tool-actions` separates actions from the content they
 operate on. Compact tables, grids, and visualizations may use tighter local
 spacing internally, but their outer boundary should still follow this rhythm.
 
+## Adding a workspace
+
+Use this checklist when adding a tool to the top-level workspace strip:
+
+- **Markup:** add the tab and its panel, introduction, and controls in
+  `src/shell.html`. Keep IDs consistent with the runtime code; the build and
+  boot render both use this shell, so do not duplicate the body in `index.html`.
+- **Registration and switching:** update `hodlWorkspaceTabs` in
+  `src/js/app.js` (ID, full label, short label). `hodlInitWorkspace` builds
+  the runtime strip; `hodlShowWorkspace` controls panel/manager and intro
+  visibility and entry/exit behavior. Wire initialization and event handlers
+  into the existing boot flow. Check keyboard navigation and switching away
+  from the new tool as well as opening it. PSBT and Journal have separate
+  subtool synchronization; a subtool is not necessarily a new workspace.
+- **Styles:** use `src/css/styles.css` and the shared classes described above.
+  Check hidden panels, narrow-screen labels, overflow, and print behavior.
+- **Bundling:** ordinary imports from `src/js/app.js` are bundled by
+  `scripts/build.mjs`. Check `src/index.html` and that build script if adding
+  a separate script or resource; keep the output self-contained and offline.
+  Rust/WASM changes also need the relevant crate and `scripts/build-wasm.mjs`
+  integration. Never hand-edit or submit generated artifacts.
+- **Explicit test expectations:** review `test/ui-defaults.test.mjs`
+  (workspace order, labels, panel containment, and switcher assertions) and
+  `test/browser-suite.html` (tab count/names, keyboard navigation, visibility,
+  and layout checks). Search these files for `workspace`, `data-workspace`,
+  and `tool-intro`. An intentional addition may require updating their
+  hard-coded lists/counts together; retain coverage for existing tools and
+  add checks for the new one, rather than removing assertions.
+- **Finish:** update user-facing documentation as required above, then run
+  `npm run build && npm test`. Run `npm run test:browser` with an installed
+  browser to exercise the workspace interactions.
+
 ## A final sanity check
 
 1. Does this keep EntropyLab a calculator that never invents entropy?
