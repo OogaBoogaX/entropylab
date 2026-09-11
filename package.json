@@ -27,7 +27,7 @@
     "test:number-bases": "node --test test/number-bases.test.mjs",
     "test:validate": "node --test test/validate.test.mjs",
     "test:browser": "node --test test/browser.test.mjs",
-    "testmode": "node scripts.testmode.mjs",
+    "testmode": "node scripts/testmode.mjs",
     "verify": "node scripts/verify-site.mjs",
     "ci": "npm run test:ci && npm run build && npm run verify",
     "test:lowr": "node --test test/psbt-low-r.test.mjs",
