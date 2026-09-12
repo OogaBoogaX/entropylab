@@ -50,6 +50,12 @@ material. Its security posture rests on the following model:
   iOS/macOS Lockdown Mode disables WebAssembly. Exclude the site in Safari
   or use a host that can compile WASM. There is no JavaScript secp256k1
   fallback; a host that cannot run the module is treated as broken.
+- Vanity wipes its retained final child and fixed parent nodes in place;
+  matching a copy of a node and wiping that copy is not sufficient. Regression
+  tests scan WASM memory for independently derived nodes, private keys, and
+  chain codes after a grind. Passing these vectors does not guarantee erasure
+  of every compiler or crypto-library temporary; terminate the worker to
+  release its entire WASM instance.
 - Secret byte buffers are overwritten after use, on a best-effort basis. The
   WASM bindings zero every linear-memory buffer before freeing it
   (`el_free`/`psbt_free` use volatile writes) and erase their own secret

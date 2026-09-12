@@ -13,6 +13,11 @@ Official website: [entropylab.online](https://entropylab.online)
 
 ## Features
 
+When a multi-worker Vanity search stops, its next counter is the first
+unfinished counter, not the sum of candidates processed across workers.
+Resuming can repeat work from later buckets, but will not skip an unfinished
+gap in the requested range.
+
 - Accepts dice rolls, coin flips, hexadecimal entropy, BIP39 seed phrases,
   extended keys, WIF keys, raw private keys, and Casascius mini private keys.
   All five BIP39 phrase lengths (12, 15, 18, 21, and 24 words) are supported

@@ -292,7 +292,14 @@ export class VanityGrinder {
       if (runId !== this.runId || !this.running) return;
       this.running = false;
       const done = progress.reduce((sum, value) => sum + value, 0n);
-      this.callbacks.onDone?.({ done, total, stopped, found });
+      // Totals can include work beyond a hole in an earlier worker's bucket.
+      // Resume at the first unprocessed counter, not start + total work.
+      let nextStart = start;
+      for (let index = 0; index < buckets.length; index++) {
+        nextStart = buckets[index].start + progress[index];
+        if (progress[index] < buckets[index].count) break;
+      }
+      this.callbacks.onDone?.({ done, total, stopped, found, nextStart });
       this.#terminate();
     };
     const fail = (message) => {
@@ -344,6 +351,7 @@ export class VanityGrinder {
           this.callbacks.onProgress?.({ done, total, rate: elapsed > 0 ? Number(done) / elapsed : 0 });
         } else if (msg.type === "done") {
           progress[index] = msg.done;
+          stoppedEarly ||= Boolean(msg.stopped);
           finished += 1;
           if (finished === buckets.length) finish(Boolean(msg.stopped) || stoppedEarly);
         } else if (msg.type === "error") {

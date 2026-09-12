@@ -159,6 +159,53 @@ test("vanity_free zeroes and vanity_alloc zero-fills; the grind leaves no seed o
   assert.equal(memory().indexOf(mnemonicBytes), -1, "the mnemonic survived the grind (freed key buffer was not wiped)");
 });
 
+test("grind wipes the actual final child and fixed parent, not copies (#423, #425)", () => {
+  const parent = masterFor(PASSPHRASE);
+  const path = [84 + H, H, H, 0, 0];
+  const assertGone = (node, label) => {
+    const memory = Buffer.from(heap().buffer);
+    // Check the complete retained Node and both components independently.
+    assert.equal(memory.indexOf(Buffer.from(nodeBytes(node))), -1, label + " node survived");
+    assert.equal(memory.indexOf(Buffer.from(node.privateKey)), -1, label + " private key survived");
+    assert.equal(memory.indexOf(Buffer.from(node.chainCode)), -1, label + " chain code survived");
+  };
+  grind({ prefix: "b", count: 1n, path });
+  assertGone(masterFor(PASSPHRASE + "a").derive("m/84'/0'/0'/0/0"), "passphrase final child");
+  grind({ mode: 1, key: nodeBytes(parent), salt: new Uint8Array(), prefix: "b",
+    path, counterSlot: 2, count: 1n });
+  assertGone(parent, "fixed parent");
+  assertGone(parent.derive("m/84'/0'/0'/0/0"), "derivation final child");
+  for (const recordCap of [0, 1]) {
+    grind({ mode: 1, key: nodeBytes(parent), salt: new Uint8Array(), prefix: "sp",
+      path: [352 + H, H, H], counterSlot: 2, count: 1n, script: "sp", recordCap });
+    assertGone(parent, "SP fixed parent");
+    assertGone(parent.derive("m/352'/0'/0'"), "SP account");
+    assertGone(parent.derive("m/352'/0'/0'/1'/0"), "SP scan");
+    assertGone(parent.derive("m/352'/0'/0'/0'/0"), "SP spend");
+  }
+});
+
+test("pool resume stops at the first gap, regardless of later completed work", () => {
+  for (const amounts of [[2n, 8n], [5n, 10n], [10n, 3n], [10n, 10n], [0n, 0n]]) {
+    const workers = [];
+    let result;
+    const grinder = new VanityGrinder({ onDone: value => { result = value; } }, () => {
+      const worker = { postMessage() {}, terminate() {} };
+      workers.push(worker);
+      return { worker };
+    });
+    grinder.start({ method: "passphrase", script: "p2wpkh", prefix: "bc1q",
+      start: 40n, count: 20n, workers: 2, passLen: 2, mnemonic: MNEMONIC,
+      passphrase: PASSPHRASE, path: [84 + H, H, H, 0, 0] });
+    // Reverse completion order: the last report must not hide an earlier stop.
+    workers[1].onmessage({ data: { type: "done", done: amounts[1], stopped: amounts[1] < 10n } });
+    workers[0].onmessage({ data: { type: "done", done: amounts[0], stopped: amounts[0] < 10n } });
+    assert.equal(result.done, amounts[0] + amounts[1]);
+    assert.equal(result.nextStart, amounts[0] < 10n ? 40n + amounts[0] : 50n + amounts[1]);
+    assert.equal(result.stopped, amounts.some(amount => amount < 10n));
+  }
+});
+
 test("committed vanity WASM artifact is intact (sha256 in module header matches payload)", () => {
   const source = readFileSync(join(root, "src/js/vanity-wasm-b64.js"), "utf8");
   const declared = source.match(/wasm sha256: ([0-9a-f]{64})/);
