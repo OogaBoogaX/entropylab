@@ -72,7 +72,7 @@ test("Add all ignores duplicate identities and does nothing without pending keys
 test("Add all is disabled initially and refreshed from available managed keys", () => {
   assert.match(read("src/shell.html"), /id="journal-keymanager-add-all" type="button" disabled>Add all to Key Station/);
   const source = read("src/js/app.js");
-  assert.match(source, /addAll\.disabled = !states\.some\(\(state\) => !hodlKeys\.includes\(state\)\)/);
+  assert.match(source, /addAll\.disabled = !states\.some\(\(state\) => !state\.needsDerivation && !hodlKeys\.includes\(state\)\)/);
   assert.match(source, /addAll\.onclick = hodlKeyManagerUseAllInStation/);
 });
 
@@ -100,7 +100,9 @@ test("Key Manager payloads round-trip and clear transient UI state", () => {
   assert.equal(raw.keys[0].errorSpec, undefined);
   assert.equal(raw.ignoredKeys[0].name, "Ignored");
   assert.deepEqual(parseKeyVault(text), { keys: raw.keys, ignoredKeys: raw.ignoredKeys });
-  assert.equal(keyVaultIdentity(raw.keys[0]), "deadbeef");
+  assert.equal(raw.keys[0].result, null);
+  assert.equal(raw.keys[0].needsDerivation, true);
+  assert.equal(keyVaultIdentity(raw.keys[0]), "", "file claims cannot supply a trusted identity");
 });
 
 test("Key Manager payload validation rejects malformed or oversized files", () => {
@@ -119,7 +121,8 @@ test(".elkeys reuse deterministic Journal encryption and the Journal password", 
   assert.deepEqual(second, first);
   const opened = await openExport(JSON.stringify(first), journal.keys);
   assert.equal(opened.kind, "key-manager");
-  assert.equal(parseKeyVault(opened.content).keys[0].result.masterFingerprint, "deadbeef");
+  assert.equal(parseKeyVault(opened.content).keys[0].fields.seed, "user supplied words");
+  assert.equal(parseKeyVault(opened.content).keys[0].result, null);
 });
 
 test("Key Manager has no entropy, network, or browser-storage primitive", () => {

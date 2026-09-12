@@ -700,7 +700,7 @@ test("a vault backup normalizes names and drops transient UI state", () => {
   assert.equal(restored.reveal, false);
   assert.equal(restored.error, "");
   assert.equal("errorSpec" in restored, false);
-  assert.equal(restored.extra, "kept"); // unknown state is preserved for forward compatibility
+  assert.equal(restored.extra, undefined); // only input/settings fields cross the trust boundary
   assert.equal(restored.fields.seed, "user supplied words");
   const [unnamed] = parseKeyVault(serializeKeyVault([managedKey({ name: "   " })])).keys;
   assert.equal(unnamed.name, "Imported key");
@@ -715,7 +715,8 @@ test("vault backups are bounded and schema-checked on both directions", () => {
   assert.throws(() => serializeKeyVault([null]), /invalid key/);
   assert.throws(() => serializeKeyVault([{ name: "no state" }]), /invalid key/);
   assert.throws(() => serializeKeyVault([managedKey({ fields: null })]), /invalid key/);
-  assert.throws(() => serializeKeyVault([managedKey({ result: null })]), /invalid key/);
+  assert.equal(parseKeyVault(serializeKeyVault([managedKey({ result: null })])).keys[0].needsDerivation, true);
+  assert.throws(() => serializeKeyVault([managedKey({ fields: [] })]), /invalid key/);
   assert.throws(() => parseKeyVault(JSON.stringify({ format: KEY_VAULT_FORMAT, version: KEY_VAULT_VERSION })), /too many keys/);
   assert.throws(() => parseKeyVault(JSON.stringify({ format: KEY_VAULT_FORMAT, version: KEY_VAULT_VERSION + 1, keys: [] })), /not a supported/);
   const ignoredDefault = parseKeyVault(JSON.stringify({ format: KEY_VAULT_FORMAT, version: KEY_VAULT_VERSION, keys: [] }));
@@ -744,7 +745,8 @@ test("an .elkeys backup is opaque until opened with the journal password", async
   const vault = parseKeyVault(opened.content);
   assert.equal(vault.keys.length, 1);
   assert.equal(vault.ignoredKeys.length, 1);
-  assert.equal(keyVaultIdentity(vault.keys[0]), "deadbeef");
+  assert.equal(keyVaultIdentity(vault.keys[0]), "");
+  assert.equal(vault.keys[0].fields.seed, "user supplied words");
 });
 
 // --- App wiring: the buttons actually route through these primitives ----------
@@ -800,7 +802,8 @@ test("backup drill: seal everything, restore from a cold start", async () => {
   const notes = parseNotebook((await openExport(notebookExport, restored.keys)).content);
   assert.equal(notes.pages[0].notesText, journal.pages[0].notesText);
   const vault = parseKeyVault((await openExport(vaultExport, restored.keys)).content);
-  assert.equal(keyVaultIdentity(vault.keys[0]), "deadbeef");
+  assert.equal(keyVaultIdentity(vault.keys[0]), "");
+  assert.equal(vault.keys[0].fields.seed, "user supplied words");
   const state = await openExport(stateExport, restored.keys);
   assert.match(state.content, /fingerprint deadbeef/);
   const log = await openExport(logExport, restored.keys);

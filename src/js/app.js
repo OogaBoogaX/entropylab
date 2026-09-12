@@ -1220,10 +1220,9 @@ function hodlBindAddressMatch() {
 }
 var hodlAddressVirtualThreshold = 24, hodlAddressVirtualRowHeight = 34, hodlAddressVirtualOverscan = 6;
 // Address indexes come out of the derivation loops as non-negative integers.
-// An imported cached result (Key Manager → "Use in Key Station") is restored
-// without re-derivation and can carry an arbitrary value instead, so anything
-// but a non-negative integer renders as escaped text — never markup that an
-// imported file could smuggle onto the page (issue #389).
+// Keep the renderer defensive even though Key Manager now discards imported
+// cached results: anything but a non-negative integer renders as escaped
+// text, never markup (issue #389).
 function hodlAddressIndexHtml(index) {
   return Number.isSafeInteger(index) && index >= 0 ? String(index) : hodlEscapeHtml(index);
 }
@@ -10529,6 +10528,12 @@ function hodlKeyManagerRename(state, input) {
 }
 function hodlKeyManagerDetails(state) {
   let result = state.result || {};
+  if (state.needsDerivation) return [
+    ["Verification", "Unverified inputs — derive in Key Station before using any address or export."],
+    ["Method", hodlKeySummaryMethod(state) || "Unknown"],
+    ["Derivation path", state.fields?.derivationPath || "Not available"],
+    ["Private material", "Saved inputs may contain secrets. Cached outputs were discarded."],
+  ];
   return [
     ["Created", state.createdAt ? new Date(state.createdAt).toLocaleString() : "Not available"],
     ["Master fingerprint", result.masterFingerprint || "Not available"],
@@ -10565,7 +10570,7 @@ function hodlKeyManagerRender() {
   let states = hodlKeyManagerStates();
   let addAll = document.getElementById("journal-keymanager-add-all");
   if (addAll) {
-    addAll.disabled = !states.some((state) => !hodlKeys.includes(state));
+    addAll.disabled = !states.some((state) => !state.needsDerivation && !hodlKeys.includes(state));
     addAll.onclick = hodlKeyManagerUseAllInStation;
   }
   tabs.replaceChildren();
@@ -10651,7 +10656,7 @@ function hodlKeyManagerRender() {
   include.onclick = () => hodlKeyManagerToggle(active);
   use.className = "btn secondary";
   use.type = "button";
-  use.textContent = hodlKeys.includes(active) ? "Open in Key Station" : "Use in Key Station";
+  use.textContent = active.needsDerivation ? "Load inputs to derive" : hodlKeys.includes(active) ? "Open in Key Station" : "Use in Key Station";
   use.onclick = () => hodlKeyManagerUseInStation(active);
   ignore.className = "btn clear-current-action journal-keymanager-ignore";
   ignore.type = "button";
@@ -10684,6 +10689,8 @@ function hodlKeyManagerImportedState(entry) {
     createdAt: entry.createdAt || state.createdAt,
     fields: { ...state.fields, ...entry.fields, ...(entry.fields?.privateKeys ? { privateKeys: { ...state.fields.privateKeys, ...entry.fields.privateKeys } } : {}) },
     reveal: false,
+    result: null,
+    needsDerivation: true,
     error: "",
     errorSpec: null,
   });
@@ -10691,6 +10698,16 @@ function hodlKeyManagerImportedState(entry) {
   return state;
 }
 function hodlKeyManagerUseInStation(state) {
+  if (state.needsDerivation) {
+    if (!hodlKeyManagerPending.includes(state) || hodlActiveDerivation) return;
+    let lab = hodlFillLabFromKey(state);
+    hodlKeys[lab].importedKeyId = state.id;
+    hodlActiveKey = lab;
+    hodlRenderKeyTabs();
+    hodlShowWorkspace("calc");
+    hodlKeyManagerStatus("Unverified inputs loaded. Review them and derive the key before using addresses or exports.");
+    return;
+  }
   let identity = keyVaultIdentity(state), existing = hodlKeys.find((candidate) => !candidate.isLab && keyVaultIdentity(candidate) === identity);
   if (existing) hodlActiveKey = hodlKeys.indexOf(existing);
   else {
@@ -10705,7 +10722,7 @@ function hodlKeyManagerUseInStation(state) {
   hodlShowWorkspace("calc");
 }
 function hodlKeyManagerUseAllInStation() {
-  let states = hodlKeyManagerStates().filter((state) => !hodlKeys.includes(state));
+  let states = hodlKeyManagerStates().filter((state) => !state.needsDerivation && !hodlKeys.includes(state));
   if (!states.length) return;
   states.forEach((state) => {
     let pending = hodlKeyManagerPending.indexOf(state);
@@ -10831,6 +10848,7 @@ function hodlCommitDerivedKey() {
     hodlRestoreKey();
     return hodlActiveKey;
   }
+  let imported = hodlKeyManagerPending.find((state) => state.id === lab.importedKeyId);
   let fingerprint = lab.result.masterFingerprint || "";
   let existing = fingerprint ? hodlKeys.findIndex((state) => !state.isLab && state.result?.masterFingerprint === fingerprint) : -1;
   if (existing >= 0) {
@@ -10842,6 +10860,12 @@ function hodlCommitDerivedKey() {
     hodlKeys[hodlActiveKey] = hodlNewLabState();
     hodlKeys.push(derived);
     hodlActiveKey = hodlKeys.length - 1;
+  }
+  if (imported) {
+    let identity = keyVaultIdentity(imported), derivedIdentity = keyVaultIdentity(hodlKeys[hodlActiveKey]);
+    hodlKeyManagerPending.splice(hodlKeyManagerPending.indexOf(imported), 1);
+    if (hodlKeyManagerIds.delete(identity)) hodlKeyManagerIds.add(derivedIdentity);
+    if (hodlKeyManagerActiveId === identity) hodlKeyManagerActiveId = derivedIdentity;
   }
   hodlRenderKeyTabs();
   hodlRestoreKey();
@@ -10862,7 +10886,7 @@ function hodlFillLabFromKey(source) {
   let labIndex = hodlKeys.findIndex((state) => state.isLab);
   let existing = labIndex >= 0 ? hodlKeys[labIndex] : hodlNewLabState();
   let lab = hodlCloneDerivedKey(source, existing);
-  Object.assign(lab, { isLab: true, name: "Key Station", result: null, error: "", reveal: false, createdScript: "", createdPath: "" });
+  Object.assign(lab, { isLab: true, name: "Key Station", result: null, importedKeyId: null, error: "", reveal: false, createdScript: "", createdPath: "" });
   if (labIndex < 0) {
     hodlKeys.unshift(lab);
     labIndex = 0;
@@ -12781,28 +12805,22 @@ async function hodlKeyManagerImportFile(file) {
     if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
     let opened = await hodlJournalOpenExport(await file.text(), hodlJournalKeys);
     if (opened.kind !== "key-manager") throw new Error("That encrypted file is not a Key Manager export.");
-    let imported = parseKeyVault(opened.content), added = 0, duplicates = 0;
+    let imported = parseKeyVault(opened.content), added = 0;
     imported.keys.forEach((entry) => {
-      let identity = keyVaultIdentity(entry), existing = identity && hodlKeyManagerStates().find((state) => keyVaultIdentity(state) === identity);
-      if (existing) {
-        hodlKeyManagerIds.add(identity);
-        duplicates++;
-        return;
-      }
+      // Cached fingerprints and file-local IDs are not identity evidence.
+      // Only a fresh derivation may match an existing station key.
       let state = hodlKeyManagerImportedState(entry);
       hodlKeyManagerPending.push(state);
       hodlKeyManagerIds.add(keyVaultIdentity(state));
       added++;
     });
     imported.ignoredKeys.forEach((entry) => {
-      let identity = keyVaultIdentity(entry);
-      if (!identity || hodlKeyManagerStates().some((state) => keyVaultIdentity(state) === identity) || hodlKeyManagerIgnored.some((state) => keyVaultIdentity(state) === identity)) return;
-      hodlKeyManagerIgnored.push(entry);
+      hodlKeyManagerIgnored.push(hodlKeyManagerImportedState(entry));
     });
     hodlKeyManagerActiveId = hodlKeyManagerActiveId || keyVaultIdentity(hodlKeyManagerStates()[0]);
     hodlKeyManagerRender();
-    hodlKeyManagerStatus(`${added} new key${added === 1 ? "" : "s"} imported${duplicates ? `; ${duplicates} duplicate${duplicates === 1 ? "" : "s"} kept unchanged` : ""}. ` + hodlTText("Use “Use in Key Station” to load one, or “Add all to Key Station” to load every waiting key."));
-    hodlJournalLog("key-manager-import", `${added} keys; ${duplicates} duplicates`, "journal");
+    hodlKeyManagerStatus(hodlTText("{n} unverified input set(s) imported. Use “Load inputs to derive” for each key. Cached outputs were discarded.", { n: added }));
+    hodlJournalLog("key-manager-import", `${added} unverified inputs`, "journal");
   } catch (error) {
     hodlKeyManagerStatus(error?.message || "The key file could not be imported.", true);
     hodlJournalLog("key-manager-import-error", "invalid-file", "journal");
