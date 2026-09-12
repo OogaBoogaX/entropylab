@@ -270,60 +270,51 @@ unsafe fn pubkey_compressed(seckey: &[u8; 32]) -> Option<[u8; 33]> {
     Some(serialized)
 }
 
-/// BIP32 master node from a seed. Returns None for the (2^-128 rare) invalid
+/// BIP32 master node from a seed. Returns false for the (2^-128 rare) invalid
 /// master key.
-unsafe fn master_node(seed: &[u8]) -> Option<Node> {
+unsafe fn master_node(seed: &[u8], node: &mut Node) -> bool {
     let mut i = HmacSha512::new(b"Bitcoin seed").mac(&[seed]);
-    let mut node = Node { key: [0u8; 32], chain: [0u8; 32] };
     node.key.copy_from_slice(&i[..32]);
     node.chain.copy_from_slice(&i[32..]);
     wipe_bytes(&mut i); // the HMAC output is the master key ‖ chain code
     if ffi::secp256k1_ec_seckey_verify(ctx(), node.key.as_ptr()) != 1 {
-        wipe_node(&mut node);
-        return None;
+        wipe_node(node);
+        return false;
     }
-    Some(node)
+    true
 }
 
-/// BIP32 CKDpriv. Returns None when the child is invalid (IL >= n or a zero
+/// BIP32 CKDpriv in caller-owned storage. Returns false when the child is invalid (IL >= n or a zero
 /// key), which BIP32 says to skip.
-unsafe fn ckd_priv(parent: &Node, index: u32) -> Option<Node> {
+unsafe fn ckd_priv(parent: &mut Node, index: u32) -> bool {
     let mac = HmacSha512::new(&parent.chain);
     let index_bytes = index.to_be_bytes();
     let mut i = if index & HARDENED != 0 {
         mac.mac(&[&[0u8], &parent.key, &index_bytes])
     } else {
-        let pk = pubkey_compressed(&parent.key)?;
+        let Some(pk) = pubkey_compressed(&parent.key) else {
+            wipe_node(parent);
+            return false;
+        };
         mac.mac(&[&pk, &index_bytes])
     };
-    let mut node = Node { key: parent.key, chain: [0u8; 32] };
     // child = (IL + k_par) mod n; libsecp256k1 rejects IL >= n and a zero result.
-    let ok = ffi::secp256k1_ec_seckey_tweak_add(ctx(), node.key.as_mut_ptr(), i[..32].as_ptr()) == 1;
-    node.chain.copy_from_slice(&i[32..]);
+    let ok = ffi::secp256k1_ec_seckey_tweak_add(ctx(), parent.key.as_mut_ptr(), i[..32].as_ptr()) == 1;
+    parent.chain.copy_from_slice(&i[32..]);
     wipe_bytes(&mut i); // IL is the private tweak
     if !ok {
-        wipe_node(&mut node);
-        return None;
+        wipe_node(parent);
     }
-    Some(node)
+    ok
 }
 
-unsafe fn derive_path(root: &Node, path: &[u32]) -> Option<Node> {
-    let mut node = *root;
+unsafe fn derive_path(node: &mut Node, path: &[u32]) -> bool {
     for &index in path {
-        match ckd_priv(&node, index) {
-            // `node` is always our owned copy, never the caller's memory.
-            Some(child) => {
-                wipe_node(&mut node);
-                node = child;
-            }
-            None => {
-                wipe_node(&mut node);
-                return None;
-            }
+        if !ckd_priv(node, index) {
+            return false;
         }
     }
-    Some(node)
+    true
 }
 
 /// Base58Check of version + HASH160 (mainnet P2PKH/P2SH), written into the
@@ -477,10 +468,19 @@ unsafe fn candidate_address(script: u32, node: &Node) -> Option<([u8; MAX_ADDR_L
     let mut payload = [0u8; PAYLOAD_LEN];
     match script {
         SCRIPT_SP => {
-            let scan = derive_path(node, &[1 | HARDENED, 0])?;
-            let spend = derive_path(node, &[HARDENED, 0])?;
-            payload[..33].copy_from_slice(&pubkey_compressed(&scan.key)?);
-            payload[33..].copy_from_slice(&pubkey_compressed(&spend.key)?);
+            let mut scan = *node;
+            let mut spend = *node;
+            let public = if derive_path(&mut scan, &[1 | HARDENED, 0])
+                && derive_path(&mut spend, &[HARDENED, 0]) {
+                pubkey_compressed(&scan.key).zip(pubkey_compressed(&spend.key))
+            } else {
+                None
+            };
+            wipe_node(&mut scan);
+            wipe_node(&mut spend);
+            let (scan, spend) = public?;
+            payload[..33].copy_from_slice(&scan);
+            payload[33..].copy_from_slice(&spend);
             let (addr, len) = bech32_encode(b"sp", 0, &payload, true);
             Some((addr, len, payload))
         }
@@ -600,14 +600,11 @@ pub unsafe extern "C" fn vanity_grind(
     // The mnemonic pads are absorbed once for the whole range (passphrase
     // grind); the parent node is fixed for the whole range (derivation grind).
     let mnemonic = if mode == MODE_PASSPHRASE { Some(HmacSha512::new(key)) } else { None };
-    let parent = if mode == MODE_NODE {
-        let mut node = Node { key: [0u8; 32], chain: [0u8; 32] };
-        node.key.copy_from_slice(&key[..32]);
-        node.chain.copy_from_slice(&key[32..]);
-        Some(node)
-    } else {
-        None
-    };
+    let mut parent = Node { key: [0u8; 32], chain: [0u8; 32] };
+    if mode == MODE_NODE {
+        parent.key.copy_from_slice(&key[..32]);
+        parent.chain.copy_from_slice(&key[32..]);
+    }
     let hardened_slot = if mode == MODE_NODE { path[counter_slot as usize] & HARDENED } else { 0 };
 
     let mut processed: u64 = 0;
@@ -617,36 +614,29 @@ pub unsafe extern "C" fn vanity_grind(
 
     while processed < count {
         let counter = start + processed;
-        let node = match (&mnemonic, &parent) {
-            (Some(mnemonic), _) => {
+        let mut node = Node { key: [0u8; 32], chain: [0u8; 32] };
+        let valid = match &mnemonic {
+            Some(mnemonic) => {
                 for i in 0..pass_len {
                     pass[i] = ALPHABET[digit[i] as usize];
                 }
                 let mut seed = bip39_seed(mnemonic, &[salt, &pass[..pass_len]]);
-                // Every stage of the per-candidate chain is wiped on use:
-                // the 64-byte seed, the master node, each intermediate CKD
-                // node (in derive_path), and the final child (below).
-                let node = match master_node(&seed) {
-                    Some(mut root) => {
-                        let node = derive_path(&root, path);
-                        wipe_node(&mut root);
-                        node
-                    }
-                    None => None,
-                };
+                // Derive into caller-owned storage: returning Copy nodes
+                // leaves extra stack copies even if the final binding is wiped.
+                let valid = master_node(&seed, &mut node) && derive_path(&mut node, path);
                 wipe_bytes(&mut seed);
-                node
+                valid
             }
-            (_, Some(parent)) => {
+            None => {
                 path[counter_slot as usize] = (counter as u32) | hardened_slot;
-                derive_path(parent, path)
+                node = parent;
+                derive_path(&mut node, path)
             }
-            _ => None,
         };
         // Invalid children (IL >= n, zero keys) are ~2^-128 rare; skip them.
-        if let Some(mut node) = node {
-            let candidate = candidate_address(script, &node);
-            wipe_node(&mut node);
+        let candidate = if valid { candidate_address(script, &node) } else { None };
+        wipe_node(&mut node);
+        if valid {
             if let Some((addr, addr_len, payload)) = candidate {
                 if addr_len >= prefix_len && &addr[..prefix_len] == prefix {
                     if (matches as usize) < record_cap {
@@ -684,9 +674,7 @@ pub unsafe extern "C" fn vanity_grind(
     // passphrase window. (The absorbed HMAC pads sit in the sha2 crate's
     // opaque state and cannot be zeroed from here; the input buffers are
     // wiped by vanity_free when JS releases them.)
-    if let Some(mut node) = parent {
-        wipe_node(&mut node);
-    }
+    wipe_node(&mut parent);
     wipe_bytes(&mut pass);
     status
 }

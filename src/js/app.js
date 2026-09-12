@@ -14305,12 +14305,11 @@ function hodlRunVanity() {
       }
       if (hodlVanityStopFirst && hodlVanityRunning) hodlVanityStop();
     },
-    onDone: ({ done, stopped }) => {
+    onDone: ({ done, stopped, nextStart }) => {
       hodlVanityRunning = false;
       hodlVanityLiveRate = 0;
-      // The next run resumes where this range ended; the start field is the
-      // durable record of what has been ground.
-      let nextStart = inputs.start + done;
+      // Only a contiguous processed prefix is safe to skip. After a stop,
+      // resuming may repeat work from later buckets but cannot miss a gap.
       let startField = document.getElementById(inputs.method === "derivation" ? "vanity-account-start" : "vanity-start");
       if (startField) startField.value = nextStart.toString();
       hodlVanitySetStatus(`${stopped ? (hodlVanityStopFirst && hodlVanityFound > 0 ? "Stopped at first match" : "Stopped") : "Range complete"}: ${hodlVanityFormatCount(done)} candidates, ${hodlVanityFound} match${hodlVanityFound === 1 ? "" : "es"}. Next ${inputs.method === "derivation" ? "account" : "counter"}: ${nextStart.toString()}.`);
