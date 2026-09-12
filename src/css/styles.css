@@ -784,10 +784,10 @@ details.lab-entropy .wallet-result-messages { margin-top: var(--space-control); 
 .table-private-field-value { display: inline-grid; white-space: nowrap; }
 .private-field-value:not(.secret-placeholder),
 .table-private-field-value:not(.secret-placeholder) { color: var(--blue); }
-.secret-placeholder { position: relative; display: grid; min-width: 0; max-width: 100%; color: var(--muted); }
+.secret-placeholder { display: grid; color: var(--muted); }
 .secret-placeholder > .secret-placeholder-mask,
 .secret-placeholder > .secret-placeholder-message { grid-area: 1 / 1; }
-.secret-placeholder-mask { min-width: 0; max-width: 100%; visibility: hidden; overflow-wrap: anywhere; word-break: break-all; user-select: none; }
+.secret-placeholder-mask { visibility: hidden; user-select: none; }
 .secret-placeholder-message { color: var(--muted); }
 .secret-placeholder-label {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -1182,6 +1182,9 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   position: relative; z-index: 1;
   border: 1px solid var(--border); border-radius: 0 0 20px 20px;
   padding: 20px 16px;
+  /* Wide result tables scroll inside their own wrappers; contain their
+     min-content width here so deriving a wallet cannot widen the page. */
+  min-width: 0; overflow-x: hidden;
 }
 /* The tool's context sits on the panel's own ground above the card, so the
    grey surface starts at the controls rather than at the explanation. */
@@ -1225,9 +1228,9 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .key-tab.is-lab { font-weight: 700; }
 .key-tab-lab-icon { width: 16px; height: 16px; padding: 0; color: var(--muted); }
 .key-tab-lab-icon svg { display: block; width: 100%; height: 100%; }
-.key-result { min-width: 0; max-width: 100%; margin-top: 16px; }
+.key-result { margin-top: 16px; }
 .key-result-scripts-label { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
-.key-result-main { min-width: 0; max-width: 100%; margin-top: 8px; padding: 16px 16px 20px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); }
+.key-result-main { margin-top: 8px; padding: 16px 16px 20px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); }
 .key-result .wallet-result-messages { margin: 0 0 16px; }
 .account-receive-section { margin-top: 0; }
 .station-key-source > .label { margin: 0 0 8px; }
@@ -2344,7 +2347,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .account-address-lead { display: grid; gap: 10px; justify-items: start; margin-bottom: 22px; }
 .account-address-lead p { margin: 0; }
 .wallet-table {
-  width: 100%; max-width: 100%; max-height: 252px; overflow: auto; border: 1px solid var(--border); border-radius: 9px;
+  width: 100%; max-height: 252px; overflow: auto; border: 1px solid var(--border); border-radius: 9px;
   overflow-anchor: none; overscroll-behavior: contain;
   scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--surface);
 }
