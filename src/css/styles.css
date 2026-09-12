@@ -1182,6 +1182,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   position: relative; z-index: 1;
   border: 1px solid var(--border); border-radius: 0 0 20px 20px;
   padding: 20px 16px;
+  min-width: 0; overflow-x: hidden;
 }
 /* The tool's context sits on the panel's own ground above the card, so the
    grey surface starts at the controls rather than at the explanation. */
@@ -1330,7 +1331,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .segmented-control.is-stacked > .tab:last-child { border-radius: 0 0 8px 8px; }
 .segmented-control.is-stacked > .tab:only-child { border-radius: 8px; }
 #msig-card[hidden], #calc-card[hidden], #psbt-card[hidden], #psbted-card[hidden], #bip85-card[hidden], #sp-card[hidden], #vanity-card[hidden], #ln-card[hidden] { display: none !important; }
-#calc-card:not([hidden]), #msig-card:not([hidden]), #bip85-card:not([hidden]), #sp-card:not([hidden]), #psbt-card:not([hidden]), #psbted-card:not([hidden]), #vanity-card:not([hidden]), #ln-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
+#calc-card:not([hidden]), #msig-card:not([hidden]), #bip85-card:not([hidden]), #sp-card:not([hidden]), #psbt-card:not([hidden]), #psbted-card:not([hidden]), #vanity-card:not([hidden]), #ln-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; min-width: 0; overflow-x: hidden; }
 #journal-card[hidden], #journal-notes-card[hidden], #journal-keymanager-card[hidden], #journal-state-card[hidden], #journal-log-card[hidden] { display: none !important; }
 #journal-card:not([hidden]), #journal-notes-card:not([hidden]), #journal-keymanager-card:not([hidden]), #journal-state-card:not([hidden]), #journal-log-card:not([hidden]) { margin-top: 0; border-radius: 0 0 20px 20px; position: relative; z-index: 1; }
 #journal-locked-panel[hidden], #journal-work-panel[hidden], #journal-create-panel[hidden], #journal-open-panel[hidden], #journal-editor[hidden], #journal-view[hidden] { display: none; }
