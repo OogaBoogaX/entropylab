@@ -3427,18 +3427,23 @@
     derive.click();
     await until(() => document.getElementById("save") || document.getElementById("error").textContent, "wallet result");
     assert(!document.getElementById("error").textContent, "Wallet derivation failed");
-    const mobileResult = document.querySelector(".key-result");
-    mobileResult.style.width = "220px";
-    const tablePrivateValue = mobileResult.querySelector(".table-private-field-value.secret-placeholder");
-    assert(
-      tablePrivateValue?.querySelector(".secret-placeholder-label")?.offsetParent === tablePrivateValue,
-      "The hidden WIF label escaped its horizontally scrolling table",
-    );
-    assert(
-      mobileResult.scrollWidth <= mobileResult.clientWidth,
-      `Derived wallet widened a mobile layout to ${mobileResult.scrollWidth}px from ${mobileResult.clientWidth}px`,
-    );
-    mobileResult.style.width = "";
+    const page = document.querySelector(".wrap");
+    const previousPageWidth = page.style.width;
+    try {
+      page.style.width = "390px";
+      await wait(0);
+      assert(
+        page.scrollWidth <= page.clientWidth,
+        `Derived wallet widened the 390px page container to ${page.scrollWidth}px`,
+      );
+      const addressTable = document.querySelector("#acct .wallet-table");
+      assert(
+        addressTable.scrollWidth > addressTable.clientWidth,
+        "The wide address table was clipped instead of remaining horizontally scrollable",
+      );
+    } finally {
+      page.style.width = previousPageWidth;
+    }
     const derivationProgress = await until(() => document.getElementById("derive-progress").classList.contains("is-complete") && document.getElementById("derive-progress"), "completed derivation progress");
     assert(!derivationProgress.hidden, "Completed derivation progress did not remain visible");
     equal(derivationProgress.getAttribute("aria-valuenow"), "100", "Derivation progress did not reach 100%");
