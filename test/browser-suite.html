@@ -779,7 +779,12 @@
     await chooseMode("Number bases");
     document.querySelector('input[name="entropy-format"][value="base32"]').click();
     const base32 = await until(() => document.getElementById("base32"), "Base32 input");
-    equal(base32.getAttribute("autocapitalize"), "off", "Base32 requested capitalization from the system keyboard");
+    // Read the reflected property, not the attribute string. The HTML spec maps
+    // the keywords "off" and "none" to the same no-capitalization state, and
+    // engines disagree on the stored string: Chrome keeps "off" while Firefox 128
+    // stores "none". The property reports "none" in both, and still reads
+    // "characters" or "sentences" if the field ever asks the keyboard to capitalize.
+    equal(base32.autocapitalize, "none", "Base32 requested capitalization from the system keyboard");
     input(base32, "");
     const toggle = document.getElementById("base32-keyboard-toggle");
     const keyboard = document.getElementById("base32-keyboard");
