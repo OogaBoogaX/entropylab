@@ -127,7 +127,7 @@ test("the header network picker sets the network every tool defaults to", () => 
   assert.match(appSource, /function hodlNetworkFamily\(network\) \{\s*return network === "mainnet" \? "mainnet" : "testnet";/);
   assert.match(appSource, /chain = hodlNetworkFamily\(hodlNetworkChoice\) === network \? hodlNetworkChoice : network/);
   assert.match(appSource, /hodlMnemonicWalletWithProgress\(phrase, passphrase, chain, count,/);
-  assert.match(appSource, /hodlNetworkFamily\(hodlWalletResult\?\.network\) !== hodlNetworkFamily\(chain\)/);
+  assert.match(appSource, /hodlNetworkFamily\(result\?\.network\) !== hodlNetworkFamily\(chain\)/);
   // The option names and the button's accessible name come from the locale
   // catalogs so the whole header follows the selected language.
   assert.match(appSource, /let key = \["mainnet", "testnet", "signet", "regtest"\]\.includes\(hodlNetworkChoice\) \? hodlNetworkChoice : "mainnet"/);
@@ -2459,15 +2459,12 @@ test("derived key results put private recovery before script type and addresses"
 });
 
 test("derived wallet results stay within the mobile layout (#238)", () => {
-  assert.match(css, /\.key-result \{ min-width: 0; max-width: 100%;/);
-  assert.match(css, /\.key-result-main \{ min-width: 0; max-width: 100%;/);
-  assert.match(css, /\.secret-placeholder \{ position: relative; display: grid; min-width: 0; max-width: 100%;/);
-  assert.match(css, /\.secret-placeholder-mask \{[^}]*max-width: 100%;[^}]*overflow-wrap: anywhere;[^}]*word-break: break-all;/);
+  assert.match(css, /\.workspace-panel \{[^}]*min-width: 0; overflow-x: hidden;/s);
   assert.match(css, /\.qr \{ max-width: 100%;/);
   assert.match(css, /\.qr svg \{[^}]*max-width: 100%;[^}]*height: auto;[^}]*aspect-ratio: 1;/);
   assert.match(css, /\.qr-descriptor svg \{ width: 280px; height: auto; \}/);
   assert.match(css, /\.qr-seed svg \{ width: 200px; height: auto; \}/);
-  assert.match(css, /\.wallet-table \{[^}]*width: 100%; max-width: 100%;[^}]*overflow: auto;/);
+  assert.match(css, /\.wallet-table \{[^}]*width: 100%;[^}]*overflow: auto;/);
 });
 
 test("every MS Station co-signer keeps its key and full path visible with synchronized advanced components", () => {

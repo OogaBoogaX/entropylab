@@ -172,7 +172,7 @@ test("a derived brain wallet does not outlive its acknowledgement or its output 
   // re-render their stored result without asking again, so every brain-derived
   // result carries a marker and revoking sweeps it from every slot.
   const derive = loadSlice("hodlCalculateKey");
-  assert.match(derive, /if \(kind === "brain"\) hodlWalletResult\.brainWalletOutput = hodlBrainWalletOutput\(\);/);
+  assert.match(derive, /if \(kind === "brain"\) result\.brainWalletOutput = hodlBrainWalletOutput\(\);/);
   const retract = loadSlice("hodlRetractBrainWalletResults");
   assert.match(retract, /for \(let state of hodlKeys\)/);
   assert.match(retract, /state\?\.result\?\.brainWalletOutput !== output/);

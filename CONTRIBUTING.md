@@ -126,8 +126,12 @@ for UI testing only and must never receive funds. The loader and its
 - **Docs:** user-facing or security-model changes require `README.md` /
   `SECURITY.md` updates in the same pull request.
 - **Tests:** new or changed behaviour needs a test; published vectors (BIP39,
-  BIP32, Bitcoin Core) are preferred. Never weaken, skip, or delete an existing
-  test to make CI pass — if it is wrong, say why.
+  BIP32, Bitcoin Core) are preferred. Changes to security-sensitive validation,
+  cryptography, scripts, or transaction/PSBT parsing must cover both accepted
+  and rejected inputs. For bug fixes, add a regression case that fails before
+  the fix when practicable, and explain any identified negative case that is
+  intentionally out of scope. Never weaken, skip, or delete an existing test
+  to make CI pass — if it is wrong, say why.
 - **Translations:** user-facing text is written in English and translated
   content-keyed — the English string at the call site is the catalog key
   (`t("Save watch-only sheet")`), and a content sweep translates static markup

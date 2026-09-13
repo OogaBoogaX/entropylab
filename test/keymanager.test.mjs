@@ -133,5 +133,5 @@ test("the Journal integration keeps imported keys pending until explicit use", (
   assert.match(source, /function hodlKeyManagerUseInStation\(state\)[\s\S]*hodlKeyManagerPending\.splice\(pending, 1\);[\s\S]*hodlKeys\.push\(state\)/);
   assert.match(source, /function hodlDeleteActiveKey\(\)[\s\S]*hodlJournalUnlocked\(\)[\s\S]*hodlKeyManagerDetachFromStation\(state\)/);
   assert.match(source, /hodlJournalSealExport\("key-manager", content, hodlJournalKeys\)/);
-  assert.match(source, /hodlJournalOpenExport\(await file\.text\(\), hodlJournalKeys\)/);
+  assert.match(source, /let text = await file\.text\(\);\s*if \(generation !== hodlJournalGeneration\) return;\s*let opened = await hodlJournalOpenExport\(text, hodlJournalKeys\)/);
 });

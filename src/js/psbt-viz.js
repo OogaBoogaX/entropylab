@@ -19,6 +19,7 @@
 // UTXO pairs); like the rest of the editor they are not verified against the
 // chain, and the inputs column says so.
 import { addressFromScript } from "./addresses.js";
+import { psbtCostFactsFromDoc } from "./psbt-cost.js";
 
 const escapeHtml = (text) =>
   String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -114,6 +115,15 @@ const feeHtml = (doc) => {
     : `<span class="muted" title="an input carries no amount claim">unknown</span>`;
 };
 
+const costHtml = (doc) => {
+  const facts = psbtCostFactsFromDoc(doc);
+  if (!facts.finalized) {
+    return `<span class="muted" title="exact transaction size requires final scriptSig/scriptWitness for every input">size unknown — final transaction not reconstructable</span>`;
+  }
+  const rate = facts.feeRateSatPerVbyte === null ? "" : ` · ${facts.feeRateSatPerVbyte} sat/vB (PSBT claim)`;
+  return `<span title="exact serialized transaction size">${facts.vsize} vB · ${facts.weight} WU</span>${rate}`;
+};
+
 const inputBox = (doc, index, network, selected) => {
   const input = doc.tx.inputs[index];
   const pairs = doc.inputs[index] ?? [];
@@ -184,6 +194,7 @@ export const psbtVizHtml = (doc, network, selected = null) => {
         <span class="psbted-viz-txline"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · unsigned tx</span>
         <span class="psbted-viz-txline muted">version ${escapeHtml(String(doc.tx.version))} · locktime ${escapeHtml(String(doc.tx.locktime))}</span>
         <span class="psbted-viz-txline">fee ${feeHtml(doc)}</span>
+        <span class="psbted-viz-txline">${costHtml(doc)}</span>
       </button>
       <div class="psbted-viz-arrow" aria-hidden="true"></div>
     </div>

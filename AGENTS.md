@@ -81,3 +81,17 @@ Guidelines for AI coding agents.
   it, rather than sweeping the suite, so the design diff stays reviewable and
   the count comes down as the work moves through each surface.
 - Before finishing, run `npm run build && npm test` and make sure they pass.
+
+### Security-sensitive test coverage
+
+For changes to verification, cryptography, consensus-sensitive behaviour,
+scripts, or transaction/PSBT parsing:
+
+- Include tests for both accepted and rejected inputs.
+- For bug fixes, add a regression case that fails before the fix and passes
+  afterward when practicable.
+- Cover applicable negative cases identified in the issue or review. Explain
+  in the pull request when a listed case is intentionally out of scope.
+
+Documentation-only and presentation-only changes do not need test vectors
+solely to satisfy this section.
