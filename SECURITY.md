@@ -50,6 +50,13 @@ material. Its security posture rests on the following model:
   iOS/macOS Lockdown Mode disables WebAssembly. Exclude the site in Safari
   or use a host that can compile WASM. There is no JavaScript secp256k1
   fallback; a host that cannot run the module is treated as broken.
+- Clearing a Key or Multisig station invalidates pending derivation work.
+  Pagehide and persisted-page restoration also invalidate derivations and
+  clear rendered seed-word grids, checksum choices, and brain-lab hex.
+  Journal teardown (including Lock) invalidates pending notebook and Key
+  Manager imports at both file-read and decryption boundaries. Obsolete
+  completions cannot restore cleared state; this is not guaranteed erasure
+  of immutable strings or browser-managed memory.
 - Secret byte buffers are overwritten after use, on a best-effort basis. The
   WASM bindings zero every linear-memory buffer before freeing it
   (`el_free`/`psbt_free` use volatile writes) and erase their own secret

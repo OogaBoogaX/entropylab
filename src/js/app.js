@@ -1917,6 +1917,14 @@ class HodlDerivationCancelledError extends Error {
   }
 }
 var hodlActiveDerivation = null;
+var hodlDerivationGeneration = 0;
+function hodlInvalidateDerivation() {
+  hodlDerivationGeneration++;
+  if (hodlActiveDerivation) hodlActiveDerivation.cancelled = true;
+}
+function hodlAssertDerivationActive(generation, control) {
+  if (generation !== hodlDerivationGeneration || control?.cancelled) throw new HodlDerivationCancelledError();
+}
 function hodlDerivationButton(kind) {
   return document.getElementById(kind === "msig" ? "msig-go" : "go");
 }
@@ -6270,6 +6278,7 @@ async function hodlCalculateKey(progress) {
   // from genesis) so a previous "new keys" choice cannot leak into a
   // recovery export.
   hodlWalletDatBirthday = "genesis";
+  let generation = hodlDerivationGeneration, control = hodlActiveDerivation, result;
   try {
     // `network` is the encoding family the tool fields settled on (from the
     // coin type); `chain` is the picker's chain identity when it belongs to
@@ -6306,7 +6315,7 @@ async function hodlCalculateKey(progress) {
         hodlThrowIfFailed(validation);
         let notes = parsed.notes.slice();
         if (!rollsFinalWord) notes.push(`Selected checksum-valid final word: ${finalWord}.`);
-        hodlWalletResult = await hodlMnemonicWalletWithProgress(phrase, passphrase, chain, count, {
+        result = await hodlMnemonicWalletWithProgress(phrase, passphrase, chain, count, {
           notes,
           warnings: parsed.warnings
         }, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan)
@@ -6318,30 +6327,30 @@ async function hodlCalculateKey(progress) {
         if (!hodlPickedLastWord || !possible?.candidates.includes(hodlPickedLastWord)) throw hodlError("Choose one of the {n} valid final checksum words before deriving the wallet.", { n: hodlSeedConfig().candidates });
         let phrase = [...parsed.words, hodlPickedLastWord].join(" "), validation = hodlValidateTargetMnemonic(phrase, hodlTargetWordCount);
         hodlThrowIfFailed(validation);
-        hodlWalletResult = await hodlMnemonicWalletWithProgress(phrase, passphrase, chain, count, { notes: parsed.notes, warnings: parsed.warnings }, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        result = await hodlMnemonicWalletWithProgress(phrase, passphrase, chain, count, { notes: parsed.notes, warnings: parsed.warnings }, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
       } else {
         let diceValue = document.getElementById("dice").value;
         if (hodlAnalyzeDiceInput(diceValue, hodlDiceMethod, hodlTargetWordCount).coinDerivedCount) throw hodlError("Coin-button digits are entropy-equivalent only in BitBox mode. Clear them and enter fair die rolls for this conversion method.");
         let entropy = hodlDiceEntropy(diceValue, hodlDiceMethod, hodlTargetWordCount);
         hodlThrowIfFailed(entropy);
-        hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        result = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
       }
     } else if (hodlKeyMode === "cards") {
       let entropy = hodlSelectedCardsEntropy(hodlTargetWordCount);
       hodlThrowIfFailed(entropy);
-      hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      result = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
     } else if (hodlKeyMode === "hex") {
       let entropy = hodlSelectedEntropy();
       hodlThrowIfFailed(entropy);
-      hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      result = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
     } else if (hodlKeyMode === "seed") {
       let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
-      if (selected.extended) hodlWalletResult = await hodlImportedWalletWithProgress(value, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      if (selected.extended) result = await hodlImportedWalletWithProgress(value, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
       else {
         if (hodlSeedMethod === "numbers" && !selected.parsed?.complete) throw selected.parsed?.invalidEntries.length ? hodlError("Word numbers must be between {min} and {max}.", { min: selected.parsed.minimum, max: selected.parsed.maximum }) : selected.parsed?.extraEntries.length ? hodlError("Enter exactly {words} BIP39 word numbers.", { words: hodlTargetWordCount }) : selected.parsed?.checksumInvalid ? hodlError("The entered word numbers do not have a valid BIP39 checksum.") : hodlError("Enter exactly {words} BIP39 word numbers before deriving the wallet.", { words: hodlTargetWordCount });
         let validation = hodlValidateTargetMnemonic(value, hodlTargetWordCount);
         hodlThrowIfFailed(validation);
-        hodlWalletResult = await hodlMnemonicWalletWithProgress(validation.words.join(" "), passphrase, chain, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        result = await hodlMnemonicWalletWithProgress(validation.words.join(" "), passphrase, chain, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
       }
     } else {
       let value = document.getElementById("key").value, kind = hodlNormalizePrivateKeyKind(document.querySelector("input[name=kk]:checked")?.value, value);
@@ -6352,19 +6361,21 @@ async function hodlCalculateKey(progress) {
         if (passphrase && document.getElementById("passphrase-field")?.hidden) throw hodlError("A passphrase is set but not visible for this output. Show it and confirm it, or clear it, before deriving.");
         let entropy = hodlBrainLabEntropy(hodlBrainWalletPassphrase(value, hodlBrainWalletTrimEnabled()), hodlBrainWalletTrimEnabled());
         hodlThrowIfFailed(entropy);
-        hodlWalletResult = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        result = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
       } else {
         let trimBrainWallet = hodlBrainWalletTrimEnabled();
         hodlAssertPrivateKeyKind(value, chain, kind, trimBrainWallet);
         progress.setTotal(1);
-        hodlWalletResult = hodlSingleKeyWallet(value, chain, kind, trimBrainWallet);
+        result = hodlSingleKeyWallet(value, chain, kind, trimBrainWallet);
         progress.step();
       }
       // Mark brain-derived results so a revoked acknowledgement can retract
       // them from every key slot, not just the lab that produced them.
-      if (kind === "brain") hodlWalletResult.brainWalletOutput = hodlBrainWalletOutput();
+      if (kind === "brain") result.brainWalletOutput = hodlBrainWalletOutput();
     }
-    if (hodlNetworkFamily(hodlWalletResult?.network) !== hodlNetworkFamily(chain)) throw hodlError("The supplied key is for {have}, but Network is set to {want}.", { have: hodlWalletResult.network, want: chain });
+    if (hodlNetworkFamily(result?.network) !== hodlNetworkFamily(chain)) throw hodlError("The supplied key is for {have}, but Network is set to {want}.", { have: result.network, want: chain });
+    hodlAssertDerivationActive(generation, control);
+    hodlWalletResult = result;
     hodlRevealPrivate = false;
     hodlSetSelectedScriptType(scriptType);
     hodlCaptureKey();
@@ -6375,6 +6386,7 @@ async function hodlCalculateKey(progress) {
     hodlFocusWalletResult();
     return true;
   } catch (error) {
+    hodlAssertDerivationActive(generation, control);
     if (error instanceof HodlDerivationCancelledError) throw error;
     hodlWalletResult = null;
     hodlSetWorkspaceError("key", hodlErrorSpecFrom(error, "Could not derive key"));
@@ -8073,6 +8085,7 @@ function hodlValidatedMsigInputs() {
   return { network, coinType, count, addressStart, branchStart, branchRange, hardening, n, m, kind, purpose, legacyStandard, nodes, xpubs, keyTokens, accountSummary, accountWarning };
 }
 async function hodlBuildMsig(progress) {
+  let generation = hodlDerivationGeneration, control = hodlActiveDerivation;
   let error = document.getElementById("msig-error");
   hodlSetWorkspaceError("msig", null);
   try {
@@ -8120,6 +8133,7 @@ async function hodlBuildMsig(progress) {
     if (kind === "p2sh" && legacyStandard === "bip87") notes.push("Legacy P2SH uses the selected BIP87 account paths. Keep the descriptor with every seed backup.");
     if (kind === "p2tr") notes.push("Taproot script-path multisig. The internal key is the BIP341 NUMS point, so spending is only possible through the " + (sorted ? "sortedmulti_a" : "multi_a") + " script path.");
     if (!sorted) notes.push("This wallet uses " + hodlMsigPolicyOp(kind, !1) + ", so the listed co-signer order is part of the script. Reordering keys changes addresses.");
+    hodlAssertDerivationActive(generation, control);
     hodlWalletResult = {
       kind: "msig",
       network,
@@ -8156,6 +8170,7 @@ async function hodlBuildMsig(progress) {
     hodlFocusWalletResult();
     return true;
   } catch (exception) {
+    hodlAssertDerivationActive(generation, control);
     if (exception instanceof HodlDerivationCancelledError) throw exception;
     hodlWalletResult = null;
     hodlClearMsigOut();
@@ -11041,6 +11056,7 @@ function hodlSyncKeyClearButton(capture = false) {
   button.setAttribute("aria-disabled", String(button.disabled));
 }
 function hodlWipeActiveKey() {
+  hodlInvalidateDerivation();
   if (hodlActiveKey < 0 || !hodlKeys[hodlActiveKey]) return;
   let state = hodlKeys[hodlActiveKey];
   hodlKeys[hodlActiveKey] = state.isLab ? hodlNewLabState() : hodlNewKeyState(state.name, state.id, state.number);
@@ -11827,6 +11843,7 @@ function hodlRestoreMsig() {
   hodlSyncMsigClearButton();
 }
 function hodlWipeActiveMsig() {
+  hodlInvalidateDerivation();
   if (hodlActiveMsig < 0 || !hodlMsigs[hodlActiveMsig]) return;
   let state = hodlMsigs[hodlActiveMsig];
   hodlMsigs[hodlActiveMsig] = state.isLab ? hodlNewMsigLabState() : hodlNewMsigState(state.name, state.id, state.number);
@@ -12719,6 +12736,7 @@ async function hodlJournalDownloadContent(kind, filename, text, type = "text/pla
 }
 async function hodlJournalImportFile(file) {
   if (!file) return;
+  let generation = hodlJournalGeneration;
   if (file.size > 2 * 1024 * 1024) {
     hodlJournalLog("notebook-import-error", "too-large", "journal");
     hodlJournalSetStatus("That notebook is larger than the 2 MiB import limit.", true);
@@ -12726,10 +12744,12 @@ async function hodlJournalImportFile(file) {
   }
   try {
     let text = await file.text(), encryptedNotebook = false;
+    if (generation !== hodlJournalGeneration) return;
     let outer;
     try { outer = JSON.parse(text); } catch { outer = null; }
     if (outer?.entropylabJournalExport) {
       let decrypted = await hodlJournalOpenExport(outer, hodlJournalKeys);
+      if (generation !== hodlJournalGeneration) return;
       if (decrypted.kind !== "notebook") throw new Error("That encrypted file is not a notepad export.");
       text = decrypted.content;
       encryptedNotebook = true;
@@ -12748,6 +12768,7 @@ async function hodlJournalImportFile(file) {
     hodlJournalLog("notebook-import", `${imported.pages.length} page${imported.pages.length === 1 ? "" : "s"}`);
     hodlJournalSetStatus(`Imported ${imported.pages.length} page${imported.pages.length === 1 ? "" : "s"} from ${file.name}.`);
   } catch (error) {
+    if (generation !== hodlJournalGeneration) return;
     hodlJournalLog("notebook-import-error", "invalid-file", "journal");
     hodlJournalSetStatus(error?.message || "The notebook could not be imported.", true);
   }
@@ -12772,6 +12793,7 @@ async function hodlKeyManagerDownload() {
 }
 async function hodlKeyManagerImportFile(file) {
   if (!file) return;
+  let generation = hodlJournalGeneration;
   if (file.size > 2 * 1024 * 1024) {
     hodlKeyManagerStatus("That key file is larger than the 2 MiB import limit.", true);
     hodlJournalLog("key-manager-import-error", "too-large", "journal");
@@ -12779,7 +12801,10 @@ async function hodlKeyManagerImportFile(file) {
   }
   try {
     if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
-    let opened = await hodlJournalOpenExport(await file.text(), hodlJournalKeys);
+    let text = await file.text();
+    if (generation !== hodlJournalGeneration) return;
+    let opened = await hodlJournalOpenExport(text, hodlJournalKeys);
+    if (generation !== hodlJournalGeneration) return;
     if (opened.kind !== "key-manager") throw new Error("That encrypted file is not a Key Manager export.");
     let imported = parseKeyVault(opened.content), added = 0, duplicates = 0;
     imported.keys.forEach((entry) => {
@@ -12804,6 +12829,7 @@ async function hodlKeyManagerImportFile(file) {
     hodlKeyManagerStatus(`${added} new key${added === 1 ? "" : "s"} imported${duplicates ? `; ${duplicates} duplicate${duplicates === 1 ? "" : "s"} kept unchanged` : ""}. ` + hodlTText("Use “Use in Key Station” to load one, or “Add all to Key Station” to load every waiting key."));
     hodlJournalLog("key-manager-import", `${added} keys; ${duplicates} duplicates`, "journal");
   } catch (error) {
+    if (generation !== hodlJournalGeneration) return;
     hodlKeyManagerStatus(error?.message || "The key file could not be imported.", true);
     hodlJournalLog("key-manager-import-error", "invalid-file", "journal");
   }
@@ -14765,6 +14791,7 @@ function hodlInitTheme() {
 }
 function hodlInitSecretFieldAutoClear() {
   let clearSecretFields = () => {
+    hodlInvalidateDerivation();
     hodlPsbtWipeMem();
     hodlBip85WipeMem();
     hodlSpWipeMem();
@@ -14850,7 +14877,7 @@ function hodlInitSecretFieldAutoClear() {
     hodlRefreshStationKeyPickers();
     // The <pre> mirrors behind each input hold a second live copy of whatever
     // was typed (dice rolls, seed words, passphrase, private key).
-    document.querySelectorAll(".dice-input-highlight").forEach((highlight) => {
+    document.querySelectorAll(".dice-input-highlight, .dice-word-grid, #last-words, #brain-lab-hex").forEach((highlight) => {
       highlight.textContent = "";
     });
     // Copy buttons keep the phrase/child secret in a data attribute.
