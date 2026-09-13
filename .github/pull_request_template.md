@@ -1,1 +1,1 @@
-- [ ] Tests: Includes both valid and invalid vectors. Invalid cases fail before fix and are correctly rejected after (per Bitcoin Core guidelines)
+- [ ] Security-sensitive validation/parsing changes include applicable accepted and rejected test cases, or this does not apply.

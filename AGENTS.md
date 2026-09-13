@@ -82,16 +82,16 @@ Guidelines for AI coding agents.
   the count comes down as the work moves through each surface.
 - Before finishing, run `npm run build && npm test` and make sure they pass.
 
-### Testing - valid AND invalid (borrowed from Bitcoin Core)
+### Security-sensitive test coverage
 
-Following Bitcoin Core's contribution guidelines: https://github.com/bitcoin/bitcoin/blob/master/CONTRIBUTING.md
+For changes to verification, cryptography, consensus-sensitive behaviour,
+scripts, or transaction/PSBT parsing:
 
-For any PR touching verification, consensus, cryptography, script, or PSBT parsing:
+- Include tests for both accepted and rejected inputs.
+- For bug fixes, add a regression case that fails before the fix and passes
+  afterward when practicable.
+- Cover applicable negative cases identified in the issue or review. Explain
+  in the pull request when a listed case is intentionally out of scope.
 
-1. Every PR must include tests
-2. For validation logic, include BOTH valid and invalid vectors
-3. Invalid vectors must fail before your fix and be correctly rejected after
-
-This is not AI-specific - it's the same rule Bitcoin Core uses for `feature_taproot.py`.
-
-If your issue lists "Negative cases", copy them into tests first.
+Documentation-only and presentation-only changes do not need test vectors
+solely to satisfy this section.
