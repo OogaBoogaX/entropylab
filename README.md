@@ -189,13 +189,18 @@ the limits of browser-memory cleanup.
   to keep it. Closing the page discards the sitting. The notebook is a
   calculator companion, not a password manager: it only stores material the
   user generated themselves.
-  The **Key manager** tab packages selected derived Key Station keys and
-  ignored-key metadata into an `.elkeys` file. It reuses the unlocked
+  The **Key manager** tab packages selected Key Station source inputs and
+  settings, including ignored entries, into an `.elkeys` file. It reuses the unlocked
   Journal's password setting, so it adds no password prompt, random salt,
-  or random nonce. Imported keys remain in Key Manager until the user chooses
-  **Use in Key Station** for one key or **Add all to Key Station** for every
-  waiting key. Adding all skips keys already in the station and leaves ignored
-  keys untouched. Deleting a Key Station tab while a Journal is open
+  or random nonce. Imports are **unverified inputs**, not ready-to-use wallets.
+  Choose **Load inputs to derive**, review the inputs/settings, then derive each
+  key in Key Station. Cached addresses, private outputs, and fingerprints from
+  legacy files are discarded; only fresh derivation can match an existing key.
+  **Add all to Key Station** applies only to already-derived keys, leaving
+  unverified and ignored entries untouched. New files use input-only format
+  version 2 (requires this updated reader); version 1 files remain importable.
+  Cached-output-only files cannot replace missing source inputs.
+  Deleting a Key Station tab while a Journal is open
   likewise removes it from the station without discarding it from Key Manager.
   The Journal also includes a paged notepad. Pages use
   the Key Station's numbered naming convention, can be added or removed with

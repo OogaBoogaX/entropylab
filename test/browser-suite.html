@@ -4326,6 +4326,45 @@
     await until(() => !image.hidden && image.src.startsWith("data:image/png"), "footer LifeHash");
   });
 
+  await test("a forged legacy .elkeys cache stays unverified until the source inputs are derived", async () => {
+    // Deterministic sealExport("key-manager", ...) fixture, password below.
+    // V1 input: BIP39 abandon x11/about, empty passphrase, m/84'/0'/0'/0/0.
+    // Cache: deadbeef fingerprint, "forged cached xprv", "forged WIF",
+    // "forged address", plus verified:true and needsDerivation:false.
+    const fixture = {"entropylabJournal":2,"kdf":"PBKDF2-SHA-256","iterations":600000,"cipher":"AES-256-GCM","iv":"437ff043fb7b9cc1da70f61e","ciphertext":"699a11e60bdf32ec7d8af7f14284783befc6bc68d8007a0d1680f6034c1f7258be9476042c7898267d6e0f46f31f66ea3bd2afbeb507490eab0c7b45fdbaf4e3ea39b6193f2d663aa8982d8e8ce7f40379cc49567423bd9e1cee0cb9849b03a36666d77e489a19096670ff3687b3394ec9d7746bc71ab26806284f27fce809ff038aaf31f4d421c1175bbe9255f7a0f6069ecd731fc1c198b771208b2d3e7eb0c98b2d0f587b82c7084392740d80d7ca0f021b812007d5c5cc50540dc489ed4672b0ecdbf495d006d9e2f97d28e3ec0dde39b711f20559d1b9115e80e7f23c712e20538f8d80ec1f27929bf19e59881eccbdb0b54a7aa98e3a9961b4b5693801ee2439e5b9787f08d06219bf6910a0d7a7b95e10221cf6f4617ff13144646978550ce152cadf139a7cf985d278c0da272249924d2b86029242cbbbed4cab105833ee560fe09b177b1e5d91a1a5f3ab610547b765d0667e9cf86d84d8a5eede7970d6bec993500e40a6cc95d3e5e6c294b5502f98a733d7d73947146971d9e6374416ed61f82b30f70074cf9f57a72b6f31276fd617e69020d39252a5601a953f173e4d7881302ead614480881845f94cb7c2aafe891f1a391266795bf70a99f5e0d28e61a9723bb206086eaba9464a973b3a7d93b640329387a1ca9749509dd1a3ed745fe937ed72546c4516d8ec5a532d6566a1c9173ca9bb062dde7323290dfe95a5e1900521b19163b47522d12d291f3d8bb4f8c89f26d34ae1141bfd68b5cdb0a8981ad45e40faad1a608dd11e78a280252a495f44e26ff66bf28f63d9faae29ac5b25ec02570f46f2b82bcb447bfde786446c7672de73736d0117a9a185f697a79a574b770dbbf42ecd84d1a618fa6edbfe038bc3624268fba6081670c1645d9aa46cb631711af89c5d7ebd2a35a77d9d1780c694077e5d1b5dfa0129968706aca41dc3872c0dfde0089c65bb0032055edac06277aa43467e1de01998e62cd981fb1f193c63c90192b2d24fdf7da62b87d41868ba33a6798a7583eb59f5c521b05ffbbd9dd64176368eb0c01d141034aebafb6e438857adc32e21adbc27fd409319cc79350676235312a2065e1f3c885ad987a5e10dd116a6dfba3add4353564e0160cfe81f2fc0c5d1e6cad4944c8920df2deaa2cb7be35f932dd409e7035f16b6cdad80432b07c1cc9913c0754366bf2915b43766e0b6c56ea73b4160928fdc2ebd5fac2d08ee47b1473b29d9060f375a","entropylabJournalExport":1};
+    document.querySelector('#workspace [data-workspace="journal"]').click();
+    if (!document.getElementById("journal-work-panel").hidden) {
+      document.getElementById("journal-global-clear").click();
+      await until(() => document.getElementById("journal-global-download").disabled, "journal reset for import");
+    }
+    input(document.getElementById("journal-create-password"), "elkeys fixture password");
+    input(document.getElementById("journal-create-confirm"), "elkeys fixture password");
+    document.getElementById("journal-create").click();
+    await until(() => !document.getElementById("journal-global-download").disabled, "journal for legacy key import");
+    document.querySelector('#journal-tool-tabs [data-journal-tool="keymanager"]').click();
+    const file = document.getElementById("journal-keymanager-file");
+    Object.defineProperty(file, "files", { configurable: true, value: [new File([JSON.stringify(fixture)], "legacy.elkeys", { type: "application/json" })] });
+    file.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => document.getElementById("journal-keymanager-status").textContent.includes("unverified input"), "unverified import");
+    const tab = [...document.querySelectorAll("#journal-keymanager-tabs button")].find(button => button.textContent.includes("Unverified legacy fixture"));
+    assert(tab, "the input-only entry is available");
+    tab.click();
+    const panel = document.getElementById("journal-keymanager-panel");
+    assert(panel.textContent.includes("Unverified inputs"), "the manager must label the input unverified");
+    assert(!/forged|deadbeef/.test(panel.textContent), "cached outputs and identity must not be shown");
+    assert(document.getElementById("journal-keymanager-add-all").disabled, "bulk add must not install unverified inputs");
+    [...panel.querySelectorAll("button")].find(button => button.textContent === "Load inputs to derive").click();
+    await until(() => !document.getElementById("key-manager").hidden && document.getElementById("seed"), "imported inputs in the lab");
+    equal(document.getElementById("seed").value, "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about");
+    assert(!/forged/.test(document.getElementById("out").textContent), "loading cannot restore cached output");
+    document.getElementById("go").click();
+    await until(() => document.getElementById("out").textContent.includes("bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"), "fresh BIP84 address from imported inputs");
+    document.querySelector('#workspace [data-workspace="journal"]').click();
+    document.querySelector('#journal-tool-tabs [data-journal-tool="keymanager"]').click();
+    assert(!document.getElementById("journal-keymanager-tabs").textContent.includes("Unverified legacy fixture"), "successful derivation retires the pending input");
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+  });
+
   await test("hosted application makes only expected same-origin connections", () => {
     const resources = performance.getEntriesByType("resource").map((entry) => entry.name);
     const observed = [...state.network.map((entry) => entry.url), ...resources];

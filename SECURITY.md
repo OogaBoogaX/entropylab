@@ -131,6 +131,13 @@ material. Its security posture rests on the following model:
 - Key Manager lives behind the same unlocked Journal gate. Its `.elkeys`
   exports reuse the Journal's deterministic export encryption and optional password;
   the Key Manager does not generate a salt, nonce, password, or key material.
+  Version 2 vaults store source inputs/settings, not cached wallet results.
+  Both version 1 and 2 imports discard cached results, claimed identities,
+  and any claimed verification state. Imports (including ignored entries)
+  are labeled unverified and must be loaded into the lab and freshly derived
+  before becoming station wallets or supplying outputs to other tools.
+  Re-derivation proves consistency with the supplied inputs, not that the
+  sender lacks a copy of the key or that the inputs have adequate entropy.
   Imported private material remains in page memory and is not loaded into Key
   Station until the user explicitly chooses it. Locking or clearing the
   Journal drops pending and ignored Key Manager entries on a best-effort basis.

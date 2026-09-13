@@ -825,7 +825,7 @@ words, pick one of the checksum words.</span></span>
       <div class="journal-section-intro" id="journal-keymanager-tool-intro">
         <div class="kicker">Keys on paper you control.</div>
         <h2>Key manager</h2>
-        <p class="muted tool-intro-note" data-i18n-rich>Collect derived Key Station keys in one <code>.elkeys</code> file. Imported keys stay here until you explicitly load one into Key Station. The file uses this Journal's password setting and never leaves your machine; without a password it has no access protection.</p>
+        <p class="muted tool-intro-note" data-i18n-rich>Save key inputs and settings in one <code>.elkeys</code> file. Imported inputs are unverified: load and derive each key before using addresses or exports. New files use input-only version 2 and require an updated reader; older files remain importable, but cached outputs are discarded. The file uses this Journal's password setting and never leaves your machine; without a password it has no access protection.</p>
       </div>
       <div class="row tool-actions"><button class="btn secondary" id="journal-keymanager-add-all" type="button" disabled>Add all to Key Station</button></div>
       <div class="key-tab-strip journal-keymanager-tab-strip"><div class="key-tabs" id="journal-keymanager-tabs" role="tablist" aria-label="Managed keys"></div></div>
