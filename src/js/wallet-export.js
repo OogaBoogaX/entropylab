@@ -67,7 +67,10 @@ var hodlWalletExport = (() => {
   };
 
   // OutputType (wallet): pkh=0, sh(wpkh)=1, wpkh=2, tr=3.
+  // Multisig wrappers land on the same enum: sh(multi)=legacy, sh(wsh)=p2sh-segwit,
+  // wsh=bech32, tr(sortedmulti_a)=bech32m.
   const OUTPUT_TYPES = { bip44: 0, bip49: 1, bip84: 2, bip86: 3 };
+  const MSIG_OUTPUT_TYPES = { p2sh: 0, "p2sh-p2wsh": 1, p2wsh: 2, p2tr: 3 };
 
   // DER-encoded secp256k1 private key (Bitcoin Core CPrivKey form): static
   // template, insert the 32-byte secret and the 33-byte compressed pubkey.
@@ -153,29 +156,73 @@ var hodlWalletExport = (() => {
   // SLIP-132 single-signature prefixes (plus generic xpub/xprv); Bitcoin has
   // no base58 "npub"/"nprv" extended keys (that spelling is Nostr's bech32).
   const EXTENDED_KEY_PATTERN = /((?:xpub|tpub|ypub|upub|zpub|vpub|xprv|tprv|yprv|uprv|zprv|vprv)[1-9A-HJ-NP-Za-km-z]{90,})/;
+  const EXTENDED_PUB_GLOBAL = /((?:xpub|tpub|ypub|upub|zpub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{90,})/g;
+  const PRIVATE_KEY = /\b(?:[xyztuv]prv|[YZUV]prv)[1-9A-HJ-NP-Za-km-z]{90,}/;
   const extractExtendedKey = (descriptor, label) => {
     const match = descriptor.match(EXTENDED_KEY_PATTERN);
     if (!match) throw new Error(`wallet.dat export: no extended key found in ${label} descriptor`);
     return match[1];
   };
+  const extractExtendedPubs = (descriptor) => {
+    EXTENDED_PUB_GLOBAL.lastIndex = 0;
+    const keys = [];
+    let match;
+    while ((match = EXTENDED_PUB_GLOBAL.exec(descriptor))) keys.push(match[1]);
+    return keys;
+  };
 
-  // Path between a descriptor's extended key and its closing parens, reduced
-  // to the step above the wildcard: { branch, hardened } for "…/0/*" style
-  // tails, { branch: null } when the key is already at the branch level
-  // ("…/*", the hardened-branch watch-only layout, where the branch xpub is
-  // the descriptor root key).
+  // Path between a descriptor's extended key and the next comma or closing
+  // paren, reduced to the step above the wildcard: { branch, hardened } for
+  // "…/0/*" style tails, { branch: null } when the key is already at the
+  // branch level ("…/*"). Stops at "," so a sortedmulti with N keys still
+  // parses; a two-step tail (BIP45 "…/0/0/*") is refused.
   const descriptorKeyTail = (descriptor, extendedKey) => {
     const body = stripChecksum(descriptor);
-    const tail = body.slice(body.indexOf(extendedKey) + extendedKey.length).replace(/\)+$/, "");
-    if (tail === "/*") return { branch: null, hardened: false };
-    const branch = tail.match(/^\/(\d+)(['hH]?)\/\*$/);
+    const at = body.indexOf(extendedKey);
+    if (at < 0) throw new Error("wallet.dat export: extended key not in descriptor");
+    const after = body.slice(at + extendedKey.length);
+    if (/^\/\*(?=[,)]|$)/.test(after)) return { branch: null, hardened: false };
+    const branch = after.match(/^\/(\d+)(['hH]?)\/\*(?=[,)]|$)/);
     if (!branch || Number(branch[1]) >= 0x80000000) throw new Error("wallet.dat export: unsupported descriptor path shape");
     return { branch: Number(branch[1]), hardened: Boolean(branch[2]) };
   };
 
   // One descriptor export unit per account branch: the watch-only descriptor
   // plus, when requested and available, its private key record material.
+  const branchRangeFromRows = (rows) => {
+    const indexes = Array.isArray(rows)
+      ? rows.map((row) => row?.index).filter((index) => Number.isSafeInteger(index) && index >= 0 && index <= MAX_ADDRESS_INDEX)
+      : [];
+    const rangeStart = indexes.length ? Math.min(...indexes) : 0;
+    const displayedEnd = indexes.length ? Math.max(...indexes) : 0;
+    const rangeEnd = indexes.length ? Math.min(MAX_ADDRESS_INDEX, displayedEnd + RANGE_END) : RANGE_END;
+    const nextIndex = indexes.length ? Math.min(MAX_ADDRESS_INDEX, displayedEnd + 1) : 0;
+    return { nextIndex, rangeStart, rangeEnd };
+  };
+
+  const msigDescriptorUnits = (wallet) => {
+    const type = MSIG_OUTPUT_TYPES[wallet.script];
+    if (type === undefined) return [];
+    const units = [];
+    for (const branch of [0, 1]) {
+      const descriptor = branch === 0 ? wallet.receiveDescriptor : wallet.changeDescriptor;
+      if (!descriptor) continue;
+      const branchRows = wallet.addressBranches?.find((entry) => entry.branch === branch)?.rows;
+      const rows = Array.isArray(branchRows) ? branchRows : branch === 0 ? wallet.receive : wallet.change;
+      units.push({
+        type,
+        internal: branch === 1,
+        descriptor,
+        privateDescriptor: null,
+        multiKey: true,
+        ...branchRangeFromRows(rows),
+      });
+    }
+    return units;
+  };
+
   const walletDescriptorUnits = (wallet, includePrivate) => {
+    if (wallet?.kind === "msig") return msigDescriptorUnits(wallet);
     if (!wallet || wallet.kind !== "hd" || !Array.isArray(wallet.accounts)) return [];
     const units = [];
     for (const account of wallet.accounts) {
@@ -191,21 +238,12 @@ var hodlWalletExport = (() => {
         const privateDescriptor = branch === 0 ? account.receiveDescriptorPriv : account.changeDescriptorPriv;
         const branchRows = account.addressBranches?.find((entry) => entry.branch === branch)?.rows;
         const rows = Array.isArray(branchRows) ? branchRows : branch === 0 ? account.receive : account.change;
-        const indexes = Array.isArray(rows)
-          ? rows.map((row) => row?.index).filter((index) => Number.isSafeInteger(index) && index >= 0 && index <= MAX_ADDRESS_INDEX)
-          : [];
-        const rangeStart = indexes.length ? Math.min(...indexes) : 0;
-        const displayedEnd = indexes.length ? Math.max(...indexes) : 0;
-        const rangeEnd = indexes.length ? Math.min(MAX_ADDRESS_INDEX, displayedEnd + RANGE_END) : RANGE_END;
-        const nextIndex = indexes.length ? Math.min(MAX_ADDRESS_INDEX, displayedEnd + 1) : 0;
         units.push({
           type,
           internal: branch === 1,
           descriptor,
           privateDescriptor: includePrivate ? privateDescriptor : null,
-          nextIndex,
-          rangeStart,
-          rangeEnd,
+          ...branchRangeFromRows(rows),
         });
       }
     }
@@ -252,7 +290,11 @@ var hodlWalletExport = (() => {
 
     const seenActive = new Set();
     for (const unit of units) {
-      const stored = unit.descriptor; // public (watch-only) form with checksum, exactly as Core stores it
+      let stored = unit.descriptor; // public (watch-only) form with checksum, exactly as Core stores it
+      if (unit.multiKey) {
+        if (typeof deps.canonicalizeDescriptor === "function") stored = deps.canonicalizeDescriptor(stored);
+        if (PRIVATE_KEY.test(stored)) throw new Error("wallet.dat export: watch-only multisig refused an extended private key");
+      }
       const body = stripChecksum(stored);
       const compatBody = toCompatForm(body);
       const compatDescriptor = `${compatBody}#${deps.checksum(compatBody)}`;
@@ -264,21 +306,28 @@ var hodlWalletExport = (() => {
         concat(streamString(stored), u64le(creationTime), u32le(unit.nextIndex), u32le(unit.rangeStart), u32le(unit.rangeEnd)),
       );
 
-      const xpub = extractExtendedKey(stored, "watch-only");
-      const tail = descriptorKeyTail(stored, xpub);
-      if (tail.hardened) throw new Error("wallet.dat export: hardened step after a public key");
-      // Core caches the parent key of the wildcard: the branch child for
-      // account-level descriptors ("…xpub/0/*"), or the descriptor root key
-      // itself when a hardened branch already moved the key to branch level
-      // ("…xpubBranch/*") — BIP32PubkeyProvider with an empty path caches
-      // its root key. Caching the wrong parent makes Core watch a different
-      // subtree than the descriptor's.
-      const branchBody = tail.branch === null ? extendedKeyBody(xpub) : deps.deriveBranchBody(xpub, tail.branch);
-      if (branchBody.length !== 74) throw new Error("wallet.dat export: branch xpub body must be 74 bytes");
-      push(
-        concat(streamString("walletdescriptorcache"), id, u32le(0)),
-        concat(compactSize(branchBody.length), branchBody),
-      );
+      const pubs = unit.multiKey ? extractExtendedPubs(stored) : [extractExtendedKey(stored, "watch-only")];
+      if (!pubs.length) throw new Error("wallet.dat export: no extended key found in watch-only descriptor");
+      if (unit.multiKey && pubs.some((key) => !/^[xt]pub/.test(key))) {
+        throw new Error("wallet.dat export: multisig descriptors need the Base58Check codec to rewrite as xpub/tpub");
+      }
+      pubs.forEach((xpub, index) => {
+        const tail = descriptorKeyTail(stored, xpub);
+        if (tail.hardened) throw new Error("wallet.dat export: hardened step after a public key");
+        // Core caches the parent key of the wildcard: the branch child for
+        // account-level descriptors ("…xpub/0/*"), or the descriptor root key
+        // itself when a hardened branch already moved the key to branch level
+        // ("…xpubBranch/*") — BIP32PubkeyProvider with an empty path caches
+        // its root key. Caching the wrong parent makes Core watch a different
+        // subtree than the descriptor's. Multisig writes one parent per
+        // co-signer (key_exp_index 0..n-1).
+        const branchBody = tail.branch === null ? extendedKeyBody(xpub) : deps.deriveBranchBody(xpub, tail.branch);
+        if (branchBody.length !== 74) throw new Error("wallet.dat export: branch xpub body must be 74 bytes");
+        push(
+          concat(streamString("walletdescriptorcache"), id, u32le(index)),
+          concat(compactSize(branchBody.length), branchBody),
+        );
+      });
 
       if (unit.privateDescriptor) {
         let xprv = extractExtendedKey(unit.privateDescriptor, "spending");
@@ -333,6 +382,12 @@ var hodlWalletExport = (() => {
   // reveal state suffix still says which variant the file contains. Falls
   // back to the plain name when the wallet has no fingerprint.
   const walletDatFilename = (wallet, includePrivate = false) => {
+    if (wallet?.kind === "msig") {
+      const policy = Number.isSafeInteger(wallet.m) && Number.isSafeInteger(wallet.n)
+        ? `msig-${wallet.m}of${wallet.n}`
+        : "msig";
+      return `entropylab-${policy}-watch-only-wallet.dat`;
+    }
     const base = includePrivate ? "private-wallet-secrets" : "watch-only-wallet";
     const fingerprint = typeof wallet?.masterFingerprint === "string" && /^[0-9a-fA-F]{8}$/.test(wallet.masterFingerprint)
       ? wallet.masterFingerprint.toLowerCase()

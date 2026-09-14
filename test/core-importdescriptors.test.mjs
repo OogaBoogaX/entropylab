@@ -183,21 +183,25 @@ test("the builder never talks to the network", () => {
   assert.doesNotMatch(source, /\bfetch\b|XMLHttpRequest|WebSocket|RTCPeerConnection|sendBeacon|WebTransport/);
 });
 
-test("MS Station result markup wires copy/save; no new workspace tab", () => {
+test("MS Station result markup wires copy/save and wallet.dat; no new workspace tab", () => {
   const app = read("src/js/app.js");
   const shell = read("src/shell.html");
   assert.match(app, /id="msig-copy-importdescriptors"/);
   assert.match(app, /id="msig-save-importdescriptors"/);
+  assert.match(app, /id="msig-download-wallet-dat"/);
   assert.match(app, /hodlT\("Copy Core importdescriptors"\)/);
   assert.match(app, /hodlT\("Save Core watch-only JSON"\)/);
+  assert.match(app, /hodlT\("Download watch-only wallet.dat"\)/);
   assert.match(app, /buildImportDescriptorsJson/);
   assert.match(app, /function hodlShowMsig\(/);
-  assert.doesNotMatch(shell, /msig-copy-importdescriptors|msig-save-importdescriptors/);
+  assert.doesNotMatch(shell, /msig-copy-importdescriptors|msig-save-importdescriptors|msig-download-wallet-dat/);
   assert.doesNotMatch(shell, /id="workspace-tabs"[\s\S]{0,2000}importdescriptors/);
   assert.match(shell, /id="workspace-tabs"/);
 });
 
-test("wallet.dat export still refuses msig wallets", () => {
+test("wallet.dat export accepts watch-only msig and still ignores private material", () => {
   const source = read("src/js/wallet-export.js");
-  assert.match(source, /wallet\.kind !== "hd"/);
+  assert.match(source, /kind === "msig"/);
+  assert.match(source, /multiKey: true/);
+  assert.match(source, /privateDescriptor: null/);
 });
