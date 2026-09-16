@@ -53,6 +53,7 @@ import {
   coreImportDescriptorsFilename,
 } from "./core-importdescriptors.js";
 import { initQrReferences } from "./qr-references.js";
+import { initOtsVerifier } from "./ots-verifier-ui.js";
 import { addressQrButtonHtml as hodlAddressQrButton, initAddressQr as hodlInitAddressQr } from "./address-qr.js";
 import { NONCE_HISTORY_MAX_TEXT, compareNonceHistory, mergeNonceHistory, nonceHistoryRecord, parseNonceHistory, serializeNonceHistory } from "./nonce-history.js";
 import { renderSVG as hodlUqrRenderSvg } from "uqr";
@@ -15172,6 +15173,7 @@ async function hodlBoot() {
   hodlInitSegmentedControls();
   initQrReferences();
   hodlInitLocale(hodlApplyLocale);
+  initOtsVerifier();
 }
 // Curve operations need the WebAssembly module instantiated first (async in
 // browsers; already resolved synchronously under Node for the test suite).
