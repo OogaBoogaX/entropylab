@@ -15,6 +15,7 @@ import { renderSVG as renderQrSvg } from "uqr";
 import { addressFromScript } from "./addresses.js";
 import { psbtInspectDoc, psbtBuildBytes, psbtWasmReady } from "./psbt-wasm.js";
 import { comparePsbtDocs } from "./psbt-diff.js";
+import { psbtPayjoinSignalsHtml, initPsbtPayjoinCompare } from "./psbt-payjoin.js";
 import { expandableHtml, EXPAND_LIMIT, initExpandable } from "./expandable.js";
 import { psbtVizHtml } from "./psbt-viz.js";
 import { parseOpReturn } from "./opreturn.js";
@@ -739,6 +740,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
 
       ${psbtProblemsHtml(doc, insane)}
       ${psbtSanitizeHtml(doc)}
+      ${psbtPayjoinSignalsHtml(doc.payjoin)}
 
       <div id="psbted-result"></div>`;
 
@@ -1017,6 +1019,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     setError("");
     selected = null;
     clearCompareReport(); // a different editor PSBT invalidates an old report
+    payjoin?.clearReport();
     try {
       doc = psbtInspectDoc(psbtBytesFromText(text.value));
     } catch (exception) {
@@ -1301,6 +1304,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
     setError("");
     compareText.value = "";
     clearCompareReport();
+    payjoin?.clearAll();
     render();
   };
   $("psbted-compare-go").addEventListener("click", () => {
@@ -1339,6 +1343,25 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet" } = {}) => {
   $("psbted-compare-clear").addEventListener("click", () => {
     compareText.value = "";
     clearCompareReport();
+  });
+  // The payjoin checklist card next to the semantic comparison (rendering
+  // and wiring shared with the inspector via psbt-payjoin.js). The original
+  // side is the editor's current build — rebuilt here, like the comparison
+  // does, so mid-edit field text cannot fake a file; a state that does not
+  // build refuses with the builder's error in the card's own error element.
+  const payjoin = initPsbtPayjoinCompare({
+    ids: {
+      text: "psbted-payjoin-text",
+      script: "psbted-payjoin-script",
+      go: "psbted-payjoin-go",
+      clear: "psbted-payjoin-clear",
+      out: "psbted-payjoin-out",
+      error: "psbted-payjoin-error",
+    },
+    originalBytes: () => {
+      if (!doc) throw new Error("Load a PSBT above first.");
+      return psbtBuildBytes(psbtEditorBuildDoc(doc), { insane });
+    },
   });
   // The header network picker broadcasts its choice; re-decode addresses.
   document.addEventListener("hodl:network-default", () => {

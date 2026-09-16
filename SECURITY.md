@@ -106,6 +106,15 @@ material. Its security posture rests on the following model:
   Taproot/Schnorr nonces are not analyzed. The report marks these cases
   incomplete; a completed individual check is not a security conclusion for
   the transaction.
+- Payjoin detection (BIP-78/77) is offline and advisory. The single-file
+  signals are shape facts, not a verdict: mixed finalization and multi-wallet
+  inputs also occur in coinjoins and collaborative batches, and a fully
+  re-signed payjoin is indistinguishable from any other transaction. The
+  two-file sender checklist reports only what the two PSBTs decide;
+  `pjos=0` and the fee-contribution parameters live in the BIP-21 URI and
+  the payjoin request, which EntropyLab never sees — it accepts no BIP-21
+  URI parameters and no raw transactions (PSBTs only), and it never contacts
+  a `pj=` endpoint or BIP-77 directory.
 - The optional ECDSA nonce-history file is an explicit user download and never
   uses browser storage or the network. It contains check timestamps, master
   fingerprints when available, raw `r` values, domain-separated SHA-256

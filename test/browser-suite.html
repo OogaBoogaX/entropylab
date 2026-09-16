@@ -2818,11 +2818,12 @@
     const insaneToggle = document.getElementById("psbted-insane");
     assert(insaneToggle && !insaneToggle.checked, "Insane editing switch missing or on by default");
     assert(outText().includes("No consensus or signing problems found"), "problem list missing its clean verdict");
-    // The analysis sections sit below the editing area, after the last
+    // The analysis sections (consensus problems, format/origin checks, and
+    // the payjoin signals) sit below the editing area, after the last
     // key-value map, and their findings render as real list items.
     const mapSections = document.querySelectorAll("#psbted-out .psbted-map");
     const analysisSections = document.querySelectorAll("#psbted-out .psbt-analysis-summary");
-    equal(analysisSections.length, 2, "analysis sections missing");
+    equal(analysisSections.length, 3, "analysis sections missing");
     assert(analysisSections[0].compareDocumentPosition(mapSections[mapSections.length - 1]) & Node.DOCUMENT_POSITION_PRECEDING, "analysis is not below the editor");
     const finding = analysisSections[1].querySelector("ul li");
     equal(getComputedStyle(finding).display, "list-item", "analysis findings do not render as list items");

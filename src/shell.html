@@ -619,6 +619,22 @@ words, pick one of the checksum words.</span></span>
         <p class="muted" id="psbt-nonce-history-status" aria-live="polite">No nonce history in memory. Inspect a PSBT or upload a history file.</p>
         <div id="psbt-nonce-history-result" aria-live="assertive"></div>
       </section>
+      <section class="tool-section" aria-labelledby="psbt-payjoin-heading">
+        <h3 id="psbt-payjoin-heading">Check a payjoin proposal</h3>
+        <p class="muted">Paste the Payjoin Proposal PSBT a receiver returned to check it against the Original PSBT in the box above, offline, using the BIP-78 sender checklist: which inputs the receiver added, what they contribute, whether an output was substituted, value changes, and the fee before and after. The payment script is the scriptPubKey of the BIP-21 payment output (hex); with it, a replaced output is confirmed as the payment output, without it a lone replacement is reported as unconfirmed. PSBTs only — no raw transactions, no BIP-21 URI parameters, and nothing contacts a pj= endpoint or directory.</p>
+        <label class="field">Payjoin Proposal PSBT (base64 or hex)
+          <textarea id="psbt-payjoin-text" placeholder="cHNidP8B…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <label class="field"><span>Payment script (hex, optional)</span>
+          <input id="psbt-payjoin-script" placeholder="0014…" spellcheck="false" autocomplete="off" autocapitalize="off">
+        </label>
+        <div class="row psbt-actions tool-actions">
+          <button class="btn secondary" id="psbt-payjoin-go" type="button">Check proposal</button>
+          <button class="btn secondary" id="psbt-payjoin-clear" type="button">Clear payjoin check</button>
+        </div>
+        <p class="err" id="psbt-payjoin-error" role="alert"></p>
+        <div id="psbt-payjoin-out" aria-live="polite"></div>
+      </section>
       <p class="muted" id="psbt-session" aria-live="polite">No session key. Inspect-only mode.</p>
       <p class="err" id="psbt-error" role="alert"></p>
       <div id="psbt-out" aria-live="polite"></div>
@@ -649,6 +665,22 @@ words, pick one of the checksum words.</span></span>
         </div>
         <p class="err" id="psbted-compare-error" role="alert"></p>
         <div id="psbted-compare-out" aria-live="polite"></div>
+      </section>
+      <section class="psbted-compare" id="psbted-payjoin">
+        <h3>Check a payjoin proposal</h3>
+        <p class="muted">Paste the Payjoin Proposal PSBT a receiver returned to check it against the PSBT in the editor, offline, using the BIP-78 sender checklist: which inputs the receiver added, what they contribute, whether an output was substituted, value changes, and the fee before and after. The payment script is the scriptPubKey of the BIP-21 payment output (hex); with it, a replaced output is confirmed as the payment output, without it a lone replacement is reported as unconfirmed. PSBTs only — no raw transactions, no BIP-21 URI parameters, and nothing contacts a pj= endpoint or directory.</p>
+        <label class="field">Payjoin Proposal PSBT (base64 or hex)
+          <textarea id="psbted-payjoin-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <label class="field"><span>Payment script (hex, optional)</span>
+          <input id="psbted-payjoin-script" placeholder="0014…" spellcheck="false" autocomplete="off" autocapitalize="off">
+        </label>
+        <div class="row psbt-actions psbted-actions tool-actions">
+          <button class="btn secondary" id="psbted-payjoin-go" type="button">Check proposal</button>
+          <button class="btn secondary" id="psbted-payjoin-clear" type="button">Clear payjoin check</button>
+        </div>
+        <p class="err" id="psbted-payjoin-error" role="alert"></p>
+        <div id="psbted-payjoin-out" aria-live="polite"></div>
       </section>
       <p class="muted">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
     </section>

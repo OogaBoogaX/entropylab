@@ -44,6 +44,10 @@ import { wordlist as bip39English } from "./bip39-english.js";
 // The PSBT editor (its own workspace tab) drives the rust-bitcoin WASM
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor, psbtBytesFromUpload } from "./psbt-editor.js";
+// Offline payjoin detection (issue #446): single-file signals from the WASM
+// inspect document, and the shared two-file checklist card.
+import { psbtInspectDoc, psbtWasmReady } from "./psbt-wasm.js";
+import { psbtPayjoinSignalsHtml, initPsbtPayjoinCompare } from "./psbt-payjoin.js";
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
@@ -9106,10 +9110,25 @@ function hodlInitPsbt() {
     document.getElementById("psbt-text").value = "";
     let ax = document.getElementById("psbt-ax-transcript");
     if (ax) ax.value = "";
+    if (payjoin) payjoin.clearAll();
     document.getElementById("psbt-out").innerHTML = "";
     hodlSetPsbtError(null);
     document.getElementById("psbt-session").textContent = hodlPsbtSessionText();
   };
+  // The payjoin checklist compares the proposal against whatever the paste
+  // box currently holds; a raw transaction there is rejected by the WASM
+  // comparison (PSBTs only) with the error landing in the card's own element.
+  const payjoin = initPsbtPayjoinCompare({
+    ids: {
+      text: "psbt-payjoin-text",
+      script: "psbt-payjoin-script",
+      go: "psbt-payjoin-go",
+      clear: "psbt-payjoin-clear",
+      out: "psbt-payjoin-out",
+      error: "psbt-payjoin-error",
+    },
+    originalBytes: () => hodlPsbtBytes(document.getElementById("psbt-text").value),
+  });
   // Same load path as the editor: Sparrow/Coldcard binary .psbt, or a
   // base64/hex text export saved to disk. The textarea mirrors the file as
   // base64 so Inspect and Download keep working without a second parser.
@@ -9172,6 +9191,9 @@ function hodlInitPsbt() {
     hodlPsbtSyncNonceHistoryControls(hodlTText("Nonce history cleared from memory. Inspect again to add the current file."));
   };
   document.getElementById("psbt-text").addEventListener("input", hodlPsbtResetNonceInspection);
+  // Editing the original invalidates a rendered payjoin checklist: it
+  // compared against the box's previous contents.
+  document.getElementById("psbt-text").addEventListener("input", () => payjoin?.clearReport());
   hodlPsbtSyncNonceHistoryControls();
   let clearSecretFields = () => {
     hodlPsbtWipeMem();
@@ -9599,6 +9621,22 @@ function hodlInitBip85() {
   }
   hodlBip85SyncOptions();
 }
+// Single-file payjoin signals ride the WASM inspect document, a second parse
+// the inspector's own JS reader does not need — so they fill in
+// asynchronously once the module is ready, into a slot the render leaves at
+// the end of the report. The slot is captured before the wait: a re-inspect
+// replaces #psbt-out wholesale, and a stale fill then lands on a detached
+// node instead of the new report. Signals are advisory; a WASM hiccup here
+// must never break an inspection that already succeeded.
+function hodlPsbtPayjoinSignals(bytes) {
+  let slot = document.getElementById("psbt-payjoin-signals");
+  if (!slot) return;
+  psbtWasmReady.then(() => {
+    slot.innerHTML = psbtPayjoinSignalsHtml(psbtInspectDoc(bytes).payjoin);
+  }).catch(() => {
+    slot.remove();
+  });
+}
 function hodlRunPsbt() {
   let output = document.getElementById("psbt-out"), manual = document.getElementById("psbt-key").value;
   hodlSetPsbtError(null);
@@ -9615,8 +9653,11 @@ function hodlRunPsbt() {
     let bytes = hodlPsbtBytes(document.getElementById("psbt-text").value);
     let kind = isPsbtMagic(bytes) ? "psbt" : "transaction";
     let sourceTag = hodlSha256(bytes), checkedAt = new Date().toISOString();
-    if (kind === "psbt") output.innerHTML = hodlRenderPsbt(hodlParsePsbt(bytes), sourceTag, checkedAt);
-    else output.innerHTML = hodlRenderRawTx(parseRawTx(bytes), sourceTag, checkedAt);
+    if (kind === "psbt") {
+      output.innerHTML = hodlRenderPsbt(hodlParsePsbt(bytes), sourceTag, checkedAt);
+      output.insertAdjacentHTML("beforeend", '<div id="psbt-payjoin-signals"></div>');
+      hodlPsbtPayjoinSignals(bytes);
+    } else output.innerHTML = hodlRenderRawTx(parseRawTx(bytes), sourceTag, checkedAt);
     hodlJournalLog("inspect", kind, "psbt");
   } catch (exception) {
     hodlPsbtLast = null;

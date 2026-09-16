@@ -136,6 +136,17 @@ the limits of browser-memory cleanup.
   on the decoded contents, so reordered map serialization is not reported as
   a change. The comparison reports differences only; it does not judge
   whether a change is safe. The editor never signs anything.
+- Detects payjoin patterns offline (BIP-78/77). The inspector and the editor
+  report single-file signals — mixed input finalization (a proposal's shape)
+  and inputs from more than one wallet group by BIP-32 master fingerprint —
+  framed as signals, never a verdict: the same patterns occur in coinjoins
+  and collaborative batches, and a fully re-signed payjoin looks like any
+  other transaction. A Payjoin Proposal PSBT can be checked against the
+  Original PSBT with the BIP-78 sender checklist: receiver inputs and their
+  contribution, output substitution (confirmed against an optional payment
+  script), value changes, and the fee before and after. PSBTs only — no
+  raw-transaction input, no BIP-21 URI parameters are accepted, and nothing
+  contacts a `pj=` endpoint or directory.
 - Derives BIP-85 child entropy from the active key's BIP32 root (or a pasted
   root xprv): English BIP-39 mnemonics (12–24 words), HD-seed WIF, XPRV, HEX,
   and Base64/Base85 passwords. Same parent, application, and index always
