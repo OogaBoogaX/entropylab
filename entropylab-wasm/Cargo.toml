@@ -15,8 +15,10 @@ crate-type = ["cdylib"]
 # vendored by secp256k1-sys and build with clang). "lowmemory" shrinks the
 # precomputed EC tables baked into the WASM data segment (~1.1 MB ->
 # negligible); signing speed is irrelevant for a calculator. No rand features:
-# this library never generates randomness.
-secp256k1 = { version = "=0.29.1", default-features = false, features = ["std", "lowmemory"] }
+# this library never generates randomness. "recovery" exposes ECDSA public
+# key recovery, which the BOLT11 invoice decoder needs to recover the payee
+# node id from the invoice signature.
+secp256k1 = { version = "=0.29.1", default-features = false, features = ["std", "lowmemory", "recovery"] }
 bitcoin_hashes = { version = "=0.14.101", default-features = false, features = ["alloc"] }
 # rust-bitcoin proper: BIP32 extended keys (bitcoin::bip32). default-features
 # are off so no rand/serde/recovery code is compiled in.

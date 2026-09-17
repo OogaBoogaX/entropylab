@@ -24,6 +24,8 @@ import { aezeedDecode, BITCOIN_GENESIS_TIMESTAMP } from "./aezeed.js";
 import { wordlist as bip39English } from "./bip39-english.js";
 import { hex } from "./coders.js";
 import { t } from "./i18n.js";
+import { bolt11Decode } from "./bolt11.js";
+import { bolt12Decode, bolt12PathCount, bolt12RecipientVisibility } from "./bolt12.js";
 
 // ── Derivations (DOM-free, unit-tested directly) ────────────────────────────
 
@@ -216,14 +218,195 @@ function hodlLnSyncFormat() {
   }
 }
 
+// ── BOLT11/BOLT12 invoice decoder ──────────────────────────────────────────
+// DOM-free decoding lives in bolt11.js and bolt12.js; this section only
+// renders results. Decode-only by design: no invoice creation, no payment,
+// no network — an offer's blinded paths are counted, never followed.
+
+let hodlLnInvLast = null; // last successful decode { decoded, raw, pageNetwork }
+let hodlLnInvReveal = false;
+let hodlLnInvQrSvg = null;
+let hodlLnInvNetworkChoice = () => "mainnet";
+
+export function hodlLnInvWipeMem() {
+  // Decoded strings (payment secret, payment hash, node id) are immutable JS
+  // values; dropping the references is the best effort available (same limit
+  // as the other tools' displayed keys).
+  hodlLnInvLast = null;
+  hodlLnInvReveal = false;
+}
+
+const hodlLnInvAmount = (msat) => {
+  if (msat === null || msat === undefined) return null;
+  const ms = BigInt(msat);
+  const whole = ms / 10n ** 11n;
+  const frac = (ms % 10n ** 11n).toString().padStart(11, "0").replace(/0+$/, "");
+  return `${whole}${frac ? "." + frac : ""} BTC (${ms.toString()} msat)`;
+};
+
+// The timestamp comes from untrusted input (a BOLT11 `timestamp`, or a BOLT12
+// tu64 expiry/creation), so it can be far outside the range Date can
+// represent. Guard it here so an out-of-range value fails with a translatable
+// key instead of letting toISOString() throw a raw RangeError at the caller.
+const hodlLnInvIso = (timestamp) => {
+  const ms = timestamp * 1000;
+  if (!Number.isFinite(ms) || Math.abs(ms) > 8.64e15) {
+    throw { key: "This {what} field is out of range.", vars: { what: "date" } };
+  }
+  return new Date(ms).toISOString().replace(".000Z", " UTC");
+};
+
+const hodlLnInvRow = (label, value, copyId) => `
+      <p class="label">${escapeHtml(label)}</p>
+      <p class="psbt-kv"${copyId ? ` id="${copyId}"` : ""}>${escapeHtml(value)}</p>
+      ${copyId ? hodlLnCopyButton(copyId, `Copy ${label.toLowerCase()}`) : ""}`;
+
+function hodlLnInvRender() {
+  const output = document.getElementById("ln-inv-out");
+  if (!output) return;
+  const r = hodlLnInvLast;
+  if (!r) {
+    output.innerHTML = "";
+    return;
+  }
+  const d = r.decoded;
+  const wrongNetwork = d.kind === "bolt11" && d.network !== r.pageNetwork;
+  const states = `
+      <ul class="ln-inv-states">
+        <li class="psbt-ok">Present — the checksum verifies.</li>
+        <li class="psbt-ok">Structurally valid — required fields are present and well-formed.</li>
+        ${d.kind === "bolt11"
+          ? `<li class="psbt-ok">Signature valid — verifies against the recovered node id.</li>`
+          : `<li class="muted">Signature not checked — this tool never marks BOLT12 data as verified.</li>`}
+      </ul>`;
+  const warning = wrongNetwork
+    ? `<p class="warn">This invoice is for Bitcoin ${escapeHtml(d.network)}, but the page network is ${escapeHtml(r.pageNetwork)}. It does not belong to the selected chain.</p>`
+    : "";
+  let rows = "";
+  if (d.kind === "bolt11") {
+    rows = `
+      ${d.amountMsat !== null ? hodlLnInvRow("Amount", hodlLnInvAmount(d.amountMsat)) : `<p class="muted">No amount set — the payer chooses.</p>`}
+      ${d.description ? hodlLnInvRow("Description", d.description) : ""}
+      ${d.descriptionHash ? hodlLnInvRow("Description hash", d.descriptionHash) : ""}
+      ${hodlLnInvRow("Payment hash", d.paymentHash, "ln-inv-payment-hash")}
+      ${hodlLnInvRow("Node id (recovered from the signature)", d.nodeId, "ln-inv-node-id")}
+      ${hodlLnInvRow("Created", hodlLnInvIso(d.timestamp))}
+      ${hodlLnInvRow("Expiry", d.expiry !== null ? `${d.expiry} seconds` : "not set (3600 seconds by default)")}
+      ${d.minFinalCltvExpiry !== null ? hodlLnInvRow("Minimum final CLTV delta", String(d.minFinalCltvExpiry)) : ""}
+      ${d.fallbacks.length ? hodlLnInvRow("Fallback addresses", d.fallbacks.map((f) => `version ${f.version}: ${f.program}`).join(" · ")) : ""}
+      ${d.routeHintHops ? hodlLnInvRow("Route hints", `${d.routeHintHops} hop${d.routeHintHops === 1 ? "" : "s"} (not resolved)`) : ""}
+      ${d.features ? hodlLnInvRow("Feature bits", d.features) : ""}
+      ${d.unknownOddTags.length ? hodlLnInvRow("Unknown fields skipped", d.unknownOddTags.map((tag) => `tag ${tag}`).join(", ")) : ""}
+      <label class="choice"><input type="checkbox" id="ln-inv-reveal" ${hodlLnInvReveal ? "checked" : ""}> <span>Reveal the payment secret</span></label>
+      ${hodlLnInvReveal
+        ? hodlLnInvRow("Payment secret", d.paymentSecret, "ln-inv-payment-secret")
+        : `<p class="muted">The payment secret stays hidden until you reveal it.</p>`}`;
+  } else {
+    const names = { lno: "BOLT12 offer", lnr: "BOLT12 invoice request", lni: "BOLT12 invoice" };
+    const fields = d.fields || {};
+    const noun = names[d.hrp] || "BOLT12 data";
+    const pathCount = bolt12PathCount(fields);
+    const visibility = bolt12RecipientVisibility(fields);
+    const offerAmount = () => {
+      if (fields.invoiceAmount != null) return hodlLnInvAmount(fields.invoiceAmount);
+      if (fields.amountMsat != null) return hodlLnInvAmount(fields.amountMsat);
+      if (fields.amount == null) return null;
+      if (fields.currency) return `${fields.amount} ${fields.currency}`;
+      return hodlLnInvAmount(fields.amount);
+    };
+    const amountText = offerAmount();
+    const honesty = visibility.kind === "blinded"
+      ? `<p class="muted">Recipient node id is not in this ${escapeHtml(noun.toLowerCase())} (blinded paths). The issuer signing key is not the destination.</p>`
+      : visibility.kind === "published"
+        ? `<p class="warn">No blinded path. This ${escapeHtml(noun.toLowerCase())} publishes the issuer pubkey in the clear — that is a signing key, not a hidden destination.</p>`
+        : "";
+    const fieldRows = [
+      ["description", "Description", (v) => v],
+      ["currency", "Currency", (v) => v],
+      ["issuer", "Issuer", (v) => v],
+      ["issuerId", "Issuer signing key (not the destination)", (v) => v],
+      ["nodeId", "Invoice node id (signing key, not a route destination)", (v) => v],
+      ["payerId", "Payer id", (v) => v],
+      ["payerNote", "Payer note", (v) => v],
+      ["paymentHash", "Payment hash", (v) => v],
+      ["absoluteExpiry", "Expires", (v) => hodlLnInvIso(Number(v))],
+      ["createdAt", "Created", (v) => hodlLnInvIso(Number(v))],
+      ["quantityMax", "Maximum quantity", (v) => String(v)],
+      ["chains", "Chains", (v) => (Array.isArray(v) ? v.join(" · ") : String(v))],
+    ];
+    rows = `
+      <p class="label">${escapeHtml(noun)}</p>
+      ${honesty}
+      ${pathCount ? hodlLnInvRow("Blinded paths", `${pathCount} (counted, never followed)`) : ""}
+      ${amountText ? hodlLnInvRow("Amount", amountText) : ""}
+      ${fieldRows.filter(([key]) => fields[key] !== undefined && fields[key] !== null)
+        .map(([key, label, format]) => hodlLnInvRow(label, format(fields[key]), key === "issuerId" ? "ln-inv-issuer-id" : key === "nodeId" ? "ln-inv-invoice-node-id" : undefined)).join("")}
+      ${d.unknownOddTypes && d.unknownOddTypes.length ? hodlLnInvRow("Unknown fields skipped", d.unknownOddTypes.map((type) => `type ${type}`).join(", ")) : ""}`;
+  }
+  output.innerHTML = `
+    <div class="ln-result">
+      ${states}
+      ${warning}
+      ${rows}
+      ${r.qrSvg ? `<div class="qr">${r.qrSvg(r.raw)}</div>` : ""}
+    </div>`;
+  document.getElementById("ln-inv-reveal")?.addEventListener("change", (event) => {
+    hodlLnInvReveal = event.target.checked;
+    hodlLnInvRender();
+  });
+}
+
+function hodlRunLnInv() {
+  const error = document.getElementById("ln-inv-error");
+  error.textContent = "";
+  hodlLnInvWipeMem();
+  try {
+    const raw = String(document.getElementById("ln-inv-input").value || "").trim();
+    if (!raw) throw Object.assign(new Error("empty"), { key: "Paste an invoice or offer first." });
+    // lnb* is BOLT11 (lnbc/lntb/lntbs/lnbcrt); lno/lnr/lni are BOLT12. Each
+    // decoder hard-rejects the other's strings as well.
+    const decoded = raw.slice(0, 3).toLowerCase() === "lnb" ? bolt11Decode(raw) : bolt12Decode(raw);
+    hodlLnInvLast = { decoded, raw, pageNetwork: hodlLnInvNetworkChoice(), qrSvg: hodlLnInvQrSvg };
+    hodlLnInvRender();
+    hodlLnJournalLog("invoice-decode", decoded.kind, "ln");
+  } catch (exception) {
+    hodlLnInvWipeMem();
+    hodlLnInvRender();
+    error.textContent = exception && typeof exception.key === "string"
+      ? t(exception.key, exception.vars)
+      : exception instanceof Error ? exception.message : String(exception);
+    hodlLnJournalLog("invoice-decode-error", "", "ln");
+  }
+}
+
 // Wires the Lightning card. `journalLog` is the app's hodlJournalLog; the
 // module takes it as an option instead of importing app.js (same shape as
 // initPsbtEditor's options object).
-export function hodlInitLn({ journalLog } = {}) {
+export function hodlInitLn({ journalLog, qrSvg, networkChoice } = {}) {
   const go = document.getElementById("ln-go");
   if (!go) return;
   if (typeof journalLog === "function") hodlLnJournalLog = journalLog;
+  if (typeof qrSvg === "function") hodlLnInvQrSvg = qrSvg;
+  if (typeof networkChoice === "function") hodlLnInvNetworkChoice = networkChoice;
   go.onclick = hodlRunLn;
+  const invDecode = document.getElementById("ln-inv-decode");
+  if (invDecode) {
+    invDecode.onclick = hodlRunLnInv;
+    document.getElementById("ln-inv-clear").onclick = () => {
+      hodlLnInvWipeMem();
+      const field = document.getElementById("ln-inv-input");
+      if (field) field.value = "";
+      document.getElementById("ln-inv-out").innerHTML = "";
+      document.getElementById("ln-inv-error").textContent = "";
+    };
+    document.getElementById("ln-inv-out").addEventListener("click", (event) => {
+      const button = event.target.closest?.("[data-ln-copy]");
+      if (!button) return;
+      const node = document.getElementById(button.dataset.lnCopy);
+      if (!node) return;
+      navigator.clipboard?.writeText(node.textContent || "").catch(() => {});
+    });
+  }
   document.getElementById("ln-wipe").onclick = () => {
     hodlLnWipeMem();
     for (const id of ["ln-seed", "ln-pass"]) {

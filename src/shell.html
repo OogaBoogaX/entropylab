@@ -705,6 +705,19 @@ words, pick one of the checksum words.</span></span>
         <div id="ln-out" aria-live="polite"></div>
         <p class="muted">Seeds and derived keys remain in this page only and are never stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </section>
+      <section class="card no-print tool-card" id="ln-inv-card" role="tabpanel" hidden>
+        <label class="field">Lightning invoice or offer
+          <textarea id="ln-inv-input" placeholder="lnbc… · lntb… · lno…" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="ln-inv-help"></textarea>
+          <span class="field-note" id="ln-inv-help">A BOLT11 invoice (lnbc / lntb / lntbs / lnbcrt) or a BOLT12 offer, invoice request, or invoice (lno / lnr / lni). Decoding is local to this page: nothing is paid, fetched, resolved, or followed.</span>
+        </label>
+        <div class="row ln-actions tool-actions">
+          <button class="btn primary" id="ln-inv-decode" type="button">Decode</button>
+          <button class="btn secondary" id="ln-inv-clear" type="button">Clear</button>
+        </div>
+        <p class="err" id="ln-inv-error" role="alert"></p>
+        <div id="ln-inv-out" aria-live="polite"></div>
+        <p class="muted">A valid BOLT11 signature only ties an invoice to its recovered node id — it says nothing about whether paying it is safe. BOLT12 offers are unsigned, so their fields are unverified claims. Payment secrets stay hidden until you reveal them.</p>
+      </section>
     <div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>
         <h2>Entropy Journal</h2>
         <p class="muted tool-intro-note">A local notebook of entropy you already produced. Password is optional. No password means anyone with the file can open it. Not a password manager. Does not generate entropy.</p>

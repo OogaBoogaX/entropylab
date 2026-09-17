@@ -121,8 +121,8 @@ test("the tab registry and workspace switcher carry the Lightning tool", () => {
   }
   assert.match(appSource, /getElementById\("ln-card"\)\.hidden = id !== "ln"/);
   assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity", "ln"\]\.forEach/);
-  assert.match(appSource, /import \{ hodlInitLn, hodlLnWipeMem \} from "\.\/lightning\.js"/);
-  assert.match(appSource, /hodlInitLn\(\{ journalLog: hodlJournalLog \}\)/);
+  assert.match(appSource, /import \{ hodlInitLn, hodlLnInvWipeMem, hodlLnWipeMem \} from "\.\/lightning\.js"/);
+  assert.match(appSource, /hodlInitLn\(\{ journalLog: hodlJournalLog, qrSvg: hodlQrSvg, networkChoice: \(\) => hodlNetworkChoice \}\)/);
 });
 
 test("a format or network change wipes the derived result", () => {

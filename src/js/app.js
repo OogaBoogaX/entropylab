@@ -46,7 +46,7 @@ import { wordlist as bip39English } from "./bip39-english.js";
 import { initPsbtEditor, psbtBytesFromUpload } from "./psbt-editor.js";
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
-import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
+import { hodlInitLn, hodlLnInvWipeMem, hodlLnWipeMem } from "./lightning.js";
 import { hodlTapKeySigs, hodlTapScriptSigs, hodlTapSighashProblems } from "./psbt-schnorr.js";
 import {
   buildImportDescriptorsJson,
@@ -12246,6 +12246,7 @@ function hodlShowWorkspace(id) {
   document.getElementById("sp-card").hidden = id !== "sp";
   document.getElementById("vanity-card").hidden = id !== "vanity";
   document.getElementById("ln-card").hidden = id !== "ln";
+  document.getElementById("ln-inv-card").hidden = id !== "ln";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
   ["bip85", "sp", "msig", "calc", "vanity", "ln"].forEach((tool) => {
@@ -14811,7 +14812,7 @@ function hodlInitWorkspace() {
   hodlInitBip85();
   hodlInitVanity();
   hodlInitSp();
-  hodlInitLn({ journalLog: hodlJournalLog });
+  hodlInitLn({ journalLog: hodlJournalLog, qrSvg: hodlQrSvg, networkChoice: () => hodlNetworkChoice });
 }
 var hodlKeyClearSyncQueued = false, hodlMsigClearSyncQueued = false, hodlDeriveSyncQueued = false;
 function hodlQueueKeyClearButtonSync() {
@@ -15131,6 +15132,11 @@ function hodlInitSecretFieldAutoClear() {
     let lnOut = document.getElementById("ln-out"), lnError = document.getElementById("ln-error");
     if (lnOut) lnOut.innerHTML = "";
     if (lnError) lnError.textContent = "";
+    hodlLnInvWipeMem();
+    let lnInvInput = document.getElementById("ln-inv-input"), lnInvOut = document.getElementById("ln-inv-out"), lnInvError = document.getElementById("ln-inv-error");
+    if (lnInvInput) lnInvInput.value = "";
+    if (lnInvOut) lnInvOut.innerHTML = "";
+    if (lnInvError) lnInvError.textContent = "";
     // Found vanity passphrases and the brought-in salt are private key
     // material; stop the grinder and drop them too.
     hodlVanityCancel();

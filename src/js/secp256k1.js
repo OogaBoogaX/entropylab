@@ -4,7 +4,8 @@
 // entropylab-wasm.js).
 //
 // Drop-in replacement for the slice of @noble/curves/secp256k1.js the app
-// uses: getPublicKey, sign, verify, Signature (strict DER <-> compact), and
+// uses: getPublicKey, sign, verify, recover (ECDSA public-key recovery, for
+// the BOLT11 invoice decoder), Signature (strict DER <-> compact), and
 // Point (parse/serialize/add/multiply). Nothing here generates randomness:
 // sign() is RFC 6979 and rejects extraEntropy: true on purpose.
 //
@@ -218,4 +219,22 @@ const verify = (signature, msghash, publicKey, options = {}) => {
   }
 };
 
-export const secp256k1 = { getPublicKey, sign, verify, Signature, Point };
+// Recovers the compressed public key from a compact 64-byte signature and a
+// recovery id (0-3) over a pre-hashed 32-byte message. Returns null instead
+// of throwing on malformed input, mirroring verify(). Used by the BOLT11
+// invoice decoder to recover the payee node id from the invoice signature.
+const recover = (msghash, signature, recid) => {
+  requireReady();
+  try {
+    assertBytes32(msghash, "Message hash");
+    if (!(signature instanceof Uint8Array) || signature.length !== 64) return null;
+    if (!Number.isInteger(recid) || recid < 0 || recid > 3) return null;
+    return withInput(msghash, (m) =>
+      withInput(signature, (s) => withOutput(33, (out) => wasm().secp_ecdsa_recover(m, s, recid, out)))
+    );
+  } catch {
+    return null;
+  }
+};
+
+export const secp256k1 = { getPublicKey, sign, verify, recover, Signature, Point };
