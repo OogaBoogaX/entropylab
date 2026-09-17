@@ -1608,4 +1608,60 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn parse_raw_rejects_over_5mb() {
+        let big = vec![0u8; super::MAX_PSBT_BYTES + 1];
+        let err = match parse_raw(&big) {
+            Ok(_) => panic!("should reject >5MB"),
+            Err(e) => e,
+        };
+        assert_eq!(err, "this PSBT is too large to inspect safely");
+    }
+
+    #[test]
+    fn parse_raw_accepts_exactly_5mb_at_size_gate() {
+        let exact = vec![0u8; super::MAX_PSBT_BYTES];
+        let err = match parse_raw(&exact) {
+            Ok(_) => return,
+            Err(e) => e,
+        };
+        assert_ne!(err, "this PSBT is too large to inspect safely");
+    }
+
+    #[test]
+    fn parse_raw_rejects_10001_pairs_in_map() {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(b"psbt\xFF");
+        for _ in 0..10_001 {
+            raw.push(0x01);
+            raw.push(0x00);
+            raw.push(0x00);
+        }
+        raw.push(0x00);
+        let err = match parse_raw(&raw) {
+            Ok(_) => panic!("should reject >10000 pairs"),
+            Err(e) => e,
+        };
+        assert_eq!(err, "PSBT map has too many entries to inspect safely");
+    }
+
+    #[test]
+    fn parse_raw_accepts_10000_pairs_at_count_gate() {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(b"psbt\xFF");
+        for _ in 0..10_000 {
+            raw.push(0x01);
+            raw.push(0x00);
+            raw.push(0x00);
+        }
+        raw.push(0x00);
+        // Synthetic PSBT need not be otherwise valid.
+        // We only pin that the pair-count gate is strictly > 10,000, not >=.
+        let res = parse_raw(&raw);
+        if let Err(e) = res {
+            assert_ne!(e, "PSBT map has too many entries to inspect safely");
+        }
+    }
+
 }
