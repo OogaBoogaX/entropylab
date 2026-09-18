@@ -58,7 +58,7 @@ function raceHarness() {
     "hodlSnapshotKeySummary", "hodlCommitDerivedKey", "hodlJournalCaptureDerivedKey",
     "hodlFocusWalletResult", "hodlJournalLog", "hodlSetWorkspaceError", "hodlJournalSetStatus",
     "hodlKeyManagerStatus", "hodlPsbtWipeMem", "hodlBip85WipeMem", "hodlSpWipeMem",
-    "hodlLnWipeMem", "hodlRenderBip85Tabs", "hodlSyncBip85View", "hodlVanityCancel",
+    "hodlLnWipeMem", "hodlLnInvWipeMem", "hodlRenderBip85Tabs", "hodlSyncBip85View", "hodlVanityCancel",
     "hodlVanitySyncSource", "hodlVanitySyncControls", "hodlRefreshStationKeyPickers"])
     context[name] = (...args) => { effects.push([name, ...args]); };
   vm.runInContext('class HodlDerivationCancelledError extends Error {}', context);
