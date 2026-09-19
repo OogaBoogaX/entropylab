@@ -12729,7 +12729,12 @@ async function hodlLoadTestKeys() {
 }
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["bip85", "BIP-85", "BIP85"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "PSBT", "PSBT"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity", "Vanity"], ["ln", "Lightning", "LN"], ["journal", "Journal", "Journal"]];
+var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "PSBT", "PSBT"], ["bip85", "BIP-85", "BIP85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity", "Vanity"], ["journal", "Journal", "Journal"]];
+// Lightning is held back until after v1. The tool, its card and its wiring
+// all stay in place; only the way in is withdrawn, so it returns by putting
+// ["ln", "Lightning", "LN"] back in the list above and its button back in
+// the shell strip. Nothing persists the active tool, so no session can be
+// left pointing at a tab that is no longer there.
 var hodlPsbtTool = "nonce";
 function hodlSyncPsbtTool() {
   let visible = hodlWorkspace === "psbt",
