@@ -2469,3 +2469,40 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   background: color-mix(in oklab, var(--accent) 9%, var(--surface)); color: inherit;
   font: inherit; line-height: 1.2; outline: 0;
 }
+
+/* ==== General on-screen keyboard for non-sensitive inputs (touch only) ==== */
+/* Reuses existing .seed-keyboard panel and .seed-keyboard-key styles — */
+/* only layout-specific overrides here. */
+
+.general-osk-panel {
+  /* Inherits panel chrome from .seed-keyboard; right-justify so the panel
+     aligns under a field in the row's right-hand grid column. */
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* Left-column fields (e.g. Purpose, Account, Starting branch/index) flip
+   the justification so the keyboard opens under the field that owns it. */
+.general-osk-panel.general-osk-left {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* Purpose-built single-row layout (per-field charsets): keys stretch to
+   Uniform key size: every key is the same fixed width in every row
+   (like a physical keyboard), and each row centers within the panel.
+   10 keys/row at 58px + gaps ≈ 614px, inside the 640px panel. */
+.general-osk-panel .general-osk-key-row {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.general-osk-panel .general-osk-key-row .seed-keyboard-key {
+  flex: 0 0 58px; /* fixed width — same size in every row */
+  width: 58px;
+  min-height: 48px;
+  font-size: 17px;
+}
+
+/* ==== end general on-screen keyboard ==== */

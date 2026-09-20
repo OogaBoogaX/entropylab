@@ -47,6 +47,7 @@ import { initPsbtEditor, psbtBytesFromUpload } from "./psbt-editor.js";
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
+import "./general-osk.js";
 import { hodlTapKeySigs, hodlTapScriptSigs, hodlTapSighashProblems } from "./psbt-schnorr.js";
 import {
   buildImportDescriptorsJson,
