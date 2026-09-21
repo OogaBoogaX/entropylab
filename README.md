@@ -179,11 +179,12 @@ the limits of browser-memory cleanup.
   computer's date and time, a Key Manager, a live summary of everything
   derived in this sitting, and a debug log
   of tool switches and derives (fingerprints, not seeds). Its introduction
-  remains above the Journal controls. All four tabs stay visible but disabled
-  until the user creates a Journal, with or without a password, or successfully
-  opens a Journal access file; the gate then disappears and the Journal starts
-  on Notepad. The create form reports whether password protection is enabled
-  and checks confirmation matches live without exposing what was typed. A blank
+  remains above the Journal controls. The create/open gate appears first; the
+  four tabs appear only after the user creates a Journal, with or without a
+  password, or successfully opens a Journal access file. The gate then
+  disappears and the Journal starts on Notepad. The create form reports whether
+  password protection is enabled and checks confirmation matches live without
+  exposing what was typed. A blank
   password is accepted and provides no access protection. The access file is an
   encrypted password verifier: it restores the same export-encryption context,
   but deliberately contains no Notepad, Key manager, Session state, or Session

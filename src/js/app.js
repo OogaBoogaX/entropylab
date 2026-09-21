@@ -12766,7 +12766,7 @@ function hodlSyncJournalTool() {
       tabs = document.getElementById("journal-tool-tabs"),
       unlocked = hodlJournalUnlocked();
   if (intro) intro.hidden = !visible;
-  if (manager) manager.hidden = !visible;
+  if (manager) manager.hidden = !visible || !unlocked;
   if (tabs) {
     tabs.querySelectorAll("[data-journal-tool]").forEach((button) => {
       let active = unlocked && button.dataset.journalTool === hodlJournalTool;
