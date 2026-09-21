@@ -12,7 +12,7 @@ import {
   parseKeyVault,
   serializeKeyVault,
 } from "../src/js/keymanager.js";
-import { createDocument, openExport, sealExport } from "../src/js/journal.js";
+import { createAccess, openExport, sealExport } from "../src/js/journal.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -114,7 +114,7 @@ test("Key Manager payload validation rejects malformed or oversized files", () =
 });
 
 test(".elkeys reuse deterministic Journal encryption and the Journal password", async () => {
-  const journal = await createDocument(password, password);
+  const journal = await createAccess(password, password);
   const content = serializeKeyVault([key()]);
   const first = await sealExport("key-manager", content, journal.keys);
   const second = await sealExport("key-manager", content, journal.keys);

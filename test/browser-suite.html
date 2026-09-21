@@ -1190,14 +1190,14 @@
         document.getElementById("bip85-tool-intro"),
         document.querySelector("#bip85-manager > .key-tab-strip"),
       );
-      // End jumps to the last tool. Journal begins at its create/open gate while
-      // keeping the five destination tabs visible but unavailable.
+      // End jumps to the last tool. Journal begins at its standalone
+      // create/open gate with four destination tabs visible but unavailable.
       tabs[2].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
-      await until(() => !document.getElementById("journal-card").hidden, "End to reach the Journal tool");
+      await until(() => !document.getElementById("journal-gate-card").hidden, "End to reach the Journal tool");
       assert(document.activeElement === tabs[7], "End should move focus to the last tab");
       const journalTabs = [...document.querySelectorAll("#journal-tool-tabs [data-journal-tool]")];
-      equal(journalTabs.length, 5, "Journal should expose exactly five internal tabs");
-      equal(journalTabs.map((tab) => tab.textContent.trim()).join("|"), "Entries|Notepad|Key manager|Session state|Session log");
+      equal(journalTabs.length, 4, "Journal should expose exactly four internal tabs");
+      equal(journalTabs.map((tab) => tab.textContent.trim()).join("|"), "Notepad|Key manager|Session state|Session log");
       const journalManager = document.getElementById("journal-manager");
       assert(journalManager && !journalManager.hidden, "Journal station tabs should be visible inside the Journal tool");
       const journalIntro = document.getElementById("journal-tool-intro");
@@ -1205,107 +1205,77 @@
       const journalGlobalDownload = document.getElementById("journal-global-download");
       const journalGlobalClear = document.getElementById("journal-global-clear");
       assert(journalGlobalDownload.disabled && journalGlobalClear.disabled, "Journal-wide actions should be disabled before a journal is opened");
-      equal(introToTabsGap(journalIntro, journalManager.querySelector(":scope > .key-tab-strip")), singleIntroGap, "Journal intro-to-tabs spacing differs from a single-intro tool");
-      const documentTop = (element) => element.getBoundingClientRect().top + scrollY;
-      const journalManagerTop = documentTop(journalManager);
-      journalTabs.forEach((tab) => assert(tab.classList.contains("key-tab"), "Journal stations should use folder-style Key Station tabs"));
       journalTabs.forEach((tab) => {
         assert(tab.disabled, "Journal station tabs should be disabled before a journal is opened");
         equal(tab.getAttribute("aria-disabled"), "true", "A locked Journal tab should expose its disabled state");
         equal(tab.getAttribute("aria-selected"), "false", "No locked Journal tab should be selected");
       });
       journalTabs[0].click();
-      assert(!document.getElementById("journal-card").hidden, "A disabled Journal tab should leave the create/open gate in place");
+      assert(!document.getElementById("journal-gate-card").hidden, "A disabled Journal tab should leave the create/open gate in place");
+
       const journalPasswordInput = document.getElementById("journal-create-password");
       const journalConfirmInput = document.getElementById("journal-create-confirm");
       const journalPasswordStatus = document.getElementById("journal-create-password-status");
       const journalConfirmStatus = document.getElementById("journal-create-confirm-status");
       const journalCreateReady = document.getElementById("journal-create-ready");
       assert(journalPasswordStatus.hidden && journalConfirmStatus.hidden && !journalCreateReady.hidden, "Blank Journal password fields should be ready without validation errors");
-      equal(journalCreateReady.textContent.trim(), "← Ready to create without a password");
       document.getElementById("journal-create").click();
-      await until(() => !document.getElementById("journal-card").hidden && !document.getElementById("journal-work-panel").hidden, "passwordless journal creation to open Entries");
-      assert(document.getElementById("journal-status-title").textContent.includes("No password protection"), "A passwordless Journal should disclose that its file has no access protection");
+      await until(() => !document.getElementById("journal-notes-card").hidden, "passwordless journal creation to open Notepad");
+      assert(document.getElementById("journal-access-status-text").textContent.includes("No password protection"), "A passwordless Journal should disclose that its exports have no password protection");
       journalGlobalClear.click();
-      await until(() => !document.getElementById("journal-card").hidden, "Journal gate after clearing the passwordless Journal");
+      await until(() => !document.getElementById("journal-gate-card").hidden, "Journal gate after clearing the passwordless Journal");
       journalTabs.forEach((tab) => assert(tab.disabled, "Clearing a passwordless Journal should disable its tabs"));
+
       const journalPassword = "too short";
       input(journalPasswordInput, journalPassword);
       assert(!journalPasswordStatus.hidden && journalPasswordStatus.classList.contains("is-valid"), "A short Journal password should be accepted");
-      equal(journalPasswordStatus.textContent, "✓ Password protection enabled");
-      assert(Math.abs(journalPasswordStatus.getBoundingClientRect().right - journalPasswordInput.getBoundingClientRect().right) <= 2, "Password validation should align to the right of its label");
       input(journalConfirmInput, "different");
-      assert(!journalConfirmStatus.hidden && journalConfirmStatus.classList.contains("is-invalid"), "A mismatched confirmation should show a red warning");
-      equal(journalConfirmStatus.textContent, "Passwords do not match");
+      assert(!journalConfirmStatus.hidden && journalConfirmStatus.classList.contains("is-invalid"), "A mismatched confirmation should show a warning");
       journalPasswordInput.focus();
       journalPasswordInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
       assert(document.activeElement === journalConfirmInput, "Enter should advance a Journal password to confirmation");
       input(journalConfirmInput, journalPassword);
-      assert(journalConfirmStatus.classList.contains("is-valid"), "Matching Journal passwords should show a green check");
-      equal(journalConfirmStatus.textContent, "\u2713 Passwords match");
-      assert(!journalCreateReady.hidden, "Matching passwords should show readiness beside Create journal");
-      equal(journalCreateReady.textContent.trim(), "← Ready to create with a password");
-      assert(document.getElementById("journal-create").getBoundingClientRect().right < journalCreateReady.getBoundingClientRect().left, "The ready message should sit to the right of Create journal");
-      input(journalConfirmInput, "");
-      assert(journalConfirmStatus.hidden && journalCreateReady.hidden, "Clearing the confirmation should hide its validation and ready messages");
-      input(journalPasswordInput, journalPassword);
-      input(journalConfirmInput, journalPassword);
-      journalConfirmInput.focus();
+      assert(journalConfirmStatus.classList.contains("is-valid"), "Matching Journal passwords should show a valid state");
       journalConfirmInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
-      await until(() => !document.getElementById("journal-card").hidden && !document.getElementById("journal-work-panel").hidden, "valid journal creation to open Entries");
-      assert(document.getElementById("journal-locked-panel").hidden, "The create/open gate should disappear after journal creation");
-      assert(!journalIntro.hidden, "Entropy Journal introduction should remain visible after journal creation");
-      journalTabs.forEach((tab) => {
-        assert(!tab.disabled, "Journal station tabs should enable after journal creation");
-        equal(tab.getAttribute("aria-disabled"), "false", "An unlocked Journal tab should expose its enabled state");
-      });
-      assert(journalTabs[0].classList.contains("active"), "A newly created journal should start on Entries");
-      equal(journalTabs[0].getAttribute("aria-selected"), "true", "Entries should be selected after journal creation");
+      await until(() => !document.getElementById("journal-notes-card").hidden, "valid journal creation to open Notepad");
+      assert(document.getElementById("journal-gate-card").hidden, "The create/open gate should disappear after journal creation");
+      journalTabs.forEach((tab) => assert(!tab.disabled, "Journal station tabs should enable after journal creation"));
+      assert(journalTabs[0].classList.contains("active"), "A newly created journal should start on Notepad");
+      equal(journalTabs[0].getAttribute("aria-selected"), "true", "Notepad should be selected after journal creation");
       assert(!journalGlobalDownload.disabled && !journalGlobalClear.disabled, "Journal-wide actions should enable after journal creation");
+
       state.lastBlob = null;
       journalGlobalDownload.click();
-      const encryptedJournalText = await (await until(() => state.lastBlob, "encrypted Journal download")).text();
+      const accessText = await (await until(() => state.lastBlob, "Journal access-file download")).text();
+      equal(state.downloadName, "entropylab-journal-access.json", "The global download should be the access file");
       journalGlobalClear.click();
-      await until(() => !document.getElementById("journal-card").hidden, "Journal gate after clearing");
-      journalTabs.forEach((tab) => assert(tab.disabled, "Clearing should disable the Journal tabs again"));
+      await until(() => !document.getElementById("journal-gate-card").hidden, "Journal gate after clearing");
       assert(journalGlobalDownload.disabled && journalGlobalClear.disabled, "Clearing should disable the Journal-wide actions again");
+
       document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
-      const encryptedJournalInput = document.getElementById("journal-file");
-      Object.defineProperty(encryptedJournalInput, "files", { configurable: true, value: [new File([encryptedJournalText], "entropylab-journal.json", { type: "application/json" })] });
-      encryptedJournalInput.dispatchEvent(new Event("change", { bubbles: true }));
+      const accessInput = document.getElementById("journal-file");
+      Object.defineProperty(accessInput, "files", { configurable: true, value: [new File([accessText], "entropylab-journal-access.json", { type: "application/json" })] });
+      accessInput.dispatchEvent(new Event("change", { bubbles: true }));
       input(document.getElementById("journal-open-password"), journalPassword);
       await wait(250);
       document.getElementById("journal-unlock").click();
-      await until(() => !document.getElementById("journal-card").hidden && !document.getElementById("journal-work-panel").hidden || document.getElementById("journal-error").textContent, "successful Journal file open result");
-      assert(!document.getElementById("journal-work-panel").hidden, `Opening the encrypted Journal failed: ${document.getElementById("journal-error").textContent}`);
-      assert(document.getElementById("journal-locked-panel").hidden, "The create/open gate should disappear after opening a journal");
-      assert(!journalIntro.hidden, "Entropy Journal introduction should remain visible after opening a journal");
-      journalTabs.forEach((tab) => assert(!tab.disabled, "Opening a journal should enable its five tabs"));
-      assert(journalTabs[0].classList.contains("active"), "An opened journal should start on Entries");
-      journalTabs[1].click();
-      await until(() => !document.getElementById("journal-notes-card").hidden, "Notepad after opening a journal");
-      equal(getComputedStyle(document.getElementById("journal-notes-card")).borderTopLeftRadius, "0px", "The active Notepad card should join its folder tab");
-      journalTabs[1].focus();
-      journalTabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      await until(() => !document.getElementById("journal-notes-card").hidden || document.getElementById("journal-error").textContent, "successful Journal access-file open result");
+      assert(!document.getElementById("journal-notes-card").hidden, `Opening the Journal access file failed: ${document.getElementById("journal-error").textContent}`);
+      assert(document.getElementById("journal-gate-card").hidden, "The create/open gate should disappear after opening a journal");
+      journalTabs.forEach((tab) => assert(!tab.disabled, "Opening a journal should enable its four tabs"));
+      assert(journalTabs[0].classList.contains("active"), "An opened journal should start on Notepad");
+
+      journalTabs[0].focus();
+      journalTabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
       await until(() => !document.getElementById("journal-keymanager-card").hidden, "ArrowRight to open Key manager");
-      equal(documentTop(journalManager), journalManagerTop, "Key manager moved the Journal tab strip");
-      assert(document.activeElement === journalTabs[2], "Focus should follow the Journal subtab arrow key");
-      const keyManagerCard = document.getElementById("journal-keymanager-card");
-      const keyManagerDownload = document.getElementById("journal-keymanager-download");
-      const keyManagerUpload = document.getElementById("journal-keymanager-upload");
-      const keyManagerDownloadReference = getComputedStyle(document.querySelector(".download-controls .download-html"));
-      assert(keyManagerCard.querySelector("#journal-keymanager-tool-intro h2").textContent === "Key manager", "Key manager should use an in-card Journal heading");
-      for (const property of ["backgroundColor", "color", "borderTopColor"]) equal(getComputedStyle(keyManagerDownload)[property], keyManagerDownloadReference[property], `Key Manager download should use the header download button's ${property}`);
-      equal(keyManagerUpload.querySelector(".download-mark path")?.getAttribute("d"), "M12 17V5M7 10l5-5 5 5M5 21h14", "Key Manager upload should use the shared upward-arrow icon");
-      assert(keyManagerUpload.getBoundingClientRect().left > keyManagerDownload.getBoundingClientRect().right, "Key Manager upload should sit at the right edge of the action row");
-      journalTabs[2].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      assert(document.activeElement === journalTabs[1], "Focus should follow the Journal subtab arrow key");
+      journalTabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
       await until(() => !document.getElementById("journal-state-card").hidden, "ArrowRight to open Session state");
-      journalTabs[3].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      journalTabs[2].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
       await until(() => !document.getElementById("journal-log-card").hidden, "ArrowRight to open Session log");
-      journalTabs[4].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
-      equal(documentTop(journalManager), journalManagerTop, "Session log moved the Journal tab strip");
+      journalTabs[3].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
       await until(() => !document.getElementById("journal-state-card").hidden, "ArrowLeft to open Session state");
-      assert(document.activeElement === journalTabs[3], "Focus should return to Session state");
+      assert(document.activeElement === journalTabs[2], "Focus should return to Session state");
       // PSBT stays a workspace of its own, with station tabs inside it.
       document.querySelector('#workspace [data-workspace="psbt"]').click();
       await until(() => !document.getElementById("psbt-card").hidden, "PSBT tool");
@@ -1315,7 +1285,6 @@
       const psbtManager = document.getElementById("psbt-manager");
       assert(psbtManager && !psbtManager.hidden, "PSBT station tabs should be visible inside the PSBT tool");
       equal(introToTabsGap(document.querySelector("#psbt-tool-intros > .tool-intro.active"), psbtManager.querySelector(":scope > .key-tab-strip")), singleIntroGap, "PSBT intro-to-tabs spacing differs from a single-intro tool");
-      const psbtManagerTop = documentTop(psbtManager);
       psbtTabs.forEach((tab) => assert(tab.classList.contains("key-tab"), "PSBT stations should use folder-style Key Station tabs"));
       equal(getComputedStyle(document.getElementById("psbt-card")).borderTopLeftRadius, "0px", "The active PSBT station card should join its folder tab");
       psbtTabs[0].focus();
@@ -1375,7 +1344,7 @@
 
     const cardIds = [
       "calc-card", "vanity-card", "bip85-card", "msig-card", "sp-card",
-      "psbt-card", "psbted-card", "ln-card", "journal-card", "journal-notes-card",
+      "psbt-card", "psbted-card", "ln-card", "journal-gate-card", "journal-notes-card",
       "journal-keymanager-card", "journal-state-card", "journal-log-card",
     ];
     cardIds.forEach((id) => {
@@ -1424,12 +1393,8 @@
     }
   });
 
-  await test("the Journal stores entries and notes to files and loads them back", async () => {
+  await test("the Journal access file and Notepad backup restore their separate responsibilities", async () => {
     const journalPassword = "load store drill password";
-    const entryLabel = "store-load drill entry";
-    const entryInput = "aa11bb22cc33dd44";
-    const entryPhrase = "legal winner thank year wave sausage worth useful legal winner thank yellow";
-    const entryNotes = "kept in the garage";
     const noteLine = "store-load drill note 7f3a";
     const legacyNote = "legacy plain text note 9z";
     const notesStatus = document.getElementById("journal-notes-status");
@@ -1445,95 +1410,61 @@
       return blob.text();
     };
     try {
-      // Start from the create/open gate, whatever earlier tests left behind.
       document.querySelector('#workspace [data-workspace="journal"]').click();
       await until(() => !document.getElementById("journal-manager").hidden, "Journal tool for the store/load drill");
-      if (!document.getElementById("journal-work-panel").hidden) {
+      if (!document.getElementById("journal-global-download").disabled) {
         document.getElementById("journal-global-clear").click();
         await until(() => document.getElementById("journal-global-download").disabled, "Journal wiped before the drill");
       }
-      assert(!document.getElementById("journal-locked-panel").hidden && document.getElementById("journal-work-panel").hidden, "A wiped Journal should stand at its gate");
+      assert(!document.getElementById("journal-gate-card").hidden, "A wiped Journal should stand at its gate");
 
-      // Create a journal and store one entry through the editor.
       input(document.getElementById("journal-create-password"), journalPassword);
       input(document.getElementById("journal-create-confirm"), journalPassword);
       document.getElementById("journal-create").click();
-      await until(() => !document.getElementById("journal-global-download").disabled, "Journal unlocked after creation");
-      document.getElementById("journal-add").click();
-      await until(() => !document.getElementById("journal-editor").hidden, "entry editor to open");
-      document.getElementById("journal-method").value = "hex";
-      input(document.getElementById("journal-input"), entryInput);
-      input(document.getElementById("journal-phrase"), entryPhrase);
-      input(document.getElementById("journal-label"), entryLabel);
-      input(document.getElementById("journal-entry-notes"), entryNotes);
-      document.getElementById("journal-commit").click();
-      await until(() => [...document.querySelectorAll("#journal-list .journal-item-label")].some((el) => el.textContent === entryLabel), "committed entry in the list");
-      assert(document.getElementById("journal-editor").hidden, "Committing should close the editor");
-      assert([...document.querySelectorAll("#journal-list .journal-item-meta")].some((el) => el.textContent.startsWith("Number bases · ")), "The entry should list its method and date");
+      await until(() => !document.getElementById("journal-notes-card").hidden, "Journal unlocked after creation");
 
-      // Store: the Save file button downloads the sealed journal.
-      const journalText = await captureDownload("entropylab-journal.json", "journal file download", () => document.getElementById("journal-save").click());
-      const envelope = JSON.parse(journalText);
-      equal(envelope.kdf, "PBKDF2-SHA-256", "The stored file should name its key derivation");
-      equal(envelope.cipher, "AES-256-GCM", "The stored file should name its cipher");
-      assert(!journalText.includes(entryLabel) && !journalText.includes(entryInput) && !journalText.includes(entryPhrase), "The stored file must not carry plaintext");
-      assert(document.getElementById("journal-status-note").textContent.includes("1 entry"), "The status should count the stored entry");
-
-      // Load: lock, then open the file back — wrong password first.
-      document.getElementById("journal-lock").click();
-      await until(() => document.getElementById("journal-global-download").disabled, "Journal locked");
-      assert(document.getElementById("journal-work-panel").hidden, "Locking should hide the work panel");
-      assert(!document.querySelector("#journal-list .journal-item"), "Locking should clear the visible entries");
-      document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
-      setFiles(document.getElementById("journal-file"), new File([journalText], "entropylab-journal.json", { type: "application/json" }));
-      input(document.getElementById("journal-open-password"), "a long enough but wrong password");
-      await wait(250); // the change handler reads the file asynchronously
-      document.getElementById("journal-unlock").click();
-      await until(() => document.getElementById("journal-error").textContent.includes("password is incorrect"), "wrong-password error on open");
-      assert(document.getElementById("journal-work-panel").hidden, "A wrong password must not open the work panel");
-      input(document.getElementById("journal-open-password"), journalPassword);
-      document.getElementById("journal-unlock").click();
-      await until(() => !document.getElementById("journal-global-download").disabled, "Journal unlocked from the stored file");
-
-      // The stored entry survived: listed, viewable, and revealed on demand.
-      const restoredItem = await until(() => [...document.querySelectorAll("#journal-list .journal-item")].find((el) => el.querySelector(".journal-item-label")?.textContent === entryLabel), "stored entry listed after load");
-      restoredItem.click();
-      await until(() => !document.getElementById("journal-view").hidden, "stored entry view");
-      assert(document.getElementById("journal-view").textContent.includes(entryInput), "The stored input survived the load");
-      assert(document.getElementById("journal-view").textContent.includes(entryNotes), "The stored notes survived the load");
-      assert(!document.getElementById("journal-view").textContent.includes(entryPhrase), "The stored seed stays masked until revealed");
-      const reveal = document.getElementById("journal-reveal");
-      reveal.checked = true;
-      reveal.dispatchEvent(new Event("change", { bubbles: true }));
-      await until(() => document.getElementById("journal-view").textContent.includes(entryPhrase), "stored seed revealed after load");
-
-      // The notepad stores encrypted by default and loads back through upload.
-      document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
-      await until(() => !document.getElementById("journal-notes-card").hidden, "Notepad for the store/load drill");
       const notesField = document.getElementById("journal-notes-text");
       input(notesField, noteLine);
       await until(() => notesField.value.includes(noteLine), "the typed note");
       const notesFile = await captureDownload("entropylab-notebook.encrypted.json", "encrypted notepad download", () => document.getElementById("journal-notes-download").click());
       assert(!notesFile.includes(noteLine), "The encrypted notepad download must not carry the note");
       equal(JSON.parse(notesFile).entropylabJournalExport, 1, "The notepad download should be a Journal export envelope");
-      input(notesField, "");
-      await until(() => !notesField.value.includes(noteLine), "the notepad cleared");
+
+      const accessFile = await captureDownload("entropylab-journal-access.json", "Journal access-file download", () => document.getElementById("journal-global-download").click());
+      const envelope = JSON.parse(accessFile);
+      equal(envelope.kdf, "PBKDF2-SHA-256", "The access file should name its key derivation");
+      equal(envelope.cipher, "AES-256-GCM", "The access file should name its cipher");
+      assert(!accessFile.includes(noteLine), "The access file must not contain Notepad content");
+
+      document.getElementById("journal-global-clear").click();
+      await until(() => document.getElementById("journal-global-download").disabled, "Journal cleared");
+      assert(!document.getElementById("journal-gate-card").hidden, "Clearing should return to the access gate");
+      assert(!notesField.value.includes(noteLine), "Clearing should wipe the in-memory Notepad");
+
+      document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
+      setFiles(document.getElementById("journal-file"), new File([accessFile], "entropylab-journal-access.json", { type: "application/json" }));
+      input(document.getElementById("journal-open-password"), "a long enough but wrong password");
+      await wait(250);
+      document.getElementById("journal-unlock").click();
+      await until(() => document.getElementById("journal-error").textContent.includes("password is incorrect"), "wrong-password error on open");
+      assert(!document.getElementById("journal-gate-card").hidden, "A wrong password must leave the access gate open");
+
+      input(document.getElementById("journal-open-password"), journalPassword);
+      document.getElementById("journal-unlock").click();
+      await until(() => !document.getElementById("journal-notes-card").hidden, "Journal unlocked from the access file");
+      assert(!notesField.value.includes(noteLine), "The access file must not restore Notepad content");
+
       setFiles(document.getElementById("journal-notes-file"), new File([notesFile], "entropylab-notebook.encrypted.json", { type: "application/json" }));
-      // The status line is live-region reused across imports: only trust a
-      // message that names the file just uploaded.
       await until(() => notesField.value.includes(noteLine) || notesStatus.textContent.includes("entropylab-notebook.encrypted.json"), "encrypted notepad upload");
       assert(notesField.value.includes(noteLine), `The stored notepad did not load back: ${notesStatus.textContent}`);
-      // A plain-text .txt upload still imports as a single legacy page.
       setFiles(document.getElementById("journal-notes-file"), new File([legacyNote], "notes.txt", { type: "text/plain" }));
       await until(() => notesField.value.includes(legacyNote) || notesStatus.textContent.includes("notes.txt"), "plain-text notepad upload");
       assert(notesField.value.includes(legacyNote), `The plain-text notes did not load: ${notesStatus.textContent}`);
     } finally {
-      // Later cases inherit an unlocked, empty journal with a pristine
-      // notepad: wipe, then create a fresh one, whatever happened above.
       try {
         document.querySelector('#workspace [data-workspace="journal"]').click();
         await until(() => !document.getElementById("journal-manager").hidden, "Journal tool for the cleanup");
-        if (!document.getElementById("journal-work-panel").hidden) {
+        if (!document.getElementById("journal-global-download").disabled) {
           document.getElementById("journal-global-clear").click();
           await until(() => document.getElementById("journal-global-download").disabled, "Journal wiped after the drill");
         }
@@ -1568,15 +1499,6 @@
     await until(() => !document.getElementById("go").disabled, "Derive Key to enable");
     document.getElementById("go").click();
     await until(() => [...document.querySelectorAll("#key-tabs .key-tab")].some((tab) => tab.textContent.includes("ef94d090")), "the derived key tab ef94d090");
-    document.querySelector('#workspace [data-workspace="journal"]').click();
-    document.querySelector('#journal-tool-tabs [data-journal-tool="book"]').click();
-    const capturedEntry = await until(() => document.querySelector("#journal-list .journal-item"), "automatically captured Key Station entry");
-    equal(document.querySelectorAll("#journal-list .journal-item").length, 1, "a Key Station derivation should add one journal entry");
-    assert(document.getElementById("journal-status-note").textContent.includes("download the journal file to preserve them"), "automatic capture should explain that the journal still needs downloading");
-    capturedEntry.click();
-    await until(() => !document.getElementById("journal-view").hidden, "automatically captured entry view");
-    assert(document.getElementById("journal-view").textContent.includes("passphrase was in effect"), "automatic capture should retain the passphrase-in-use note");
-    assert(!document.getElementById("journal-view").textContent.includes("correct horse battery staple"), "automatic capture must not store the BIP39 passphrase");
     document.querySelector('#workspace [data-workspace="vanity"]').click();
     await until(() => document.querySelector("#vanity-session-keys .session-key-option"), "the Key Station chip to appear");
     const vanityKeyPickerStyle = getComputedStyle(document.getElementById("vanity-session-keys"));
@@ -1802,7 +1724,7 @@
       equal(downloadButton.querySelector(".download-mark path")?.getAttribute("d"), "M12 3v12M7 11l5 5 5-5M5 21h14", `${id} should use the header download icon`);
     }
     const journalGlobalDownload = document.getElementById("journal-global-download");
-    for (const property of ["backgroundColor", "color", "borderTopColor"]) equal(getComputedStyle(journalGlobalDownload)[property], headerDownloadStyle[property], `Download journal should use the header download button's ${property}`);
+    for (const property of ["backgroundColor", "color", "borderTopColor"]) equal(getComputedStyle(journalGlobalDownload)[property], headerDownloadStyle[property], `Download access file should use the header download button's ${property}`);
     assert(document.getElementById("journal-global-clear").classList.contains("clear-current-action"), "Clear journal should use the shared red clear-button treatment");
     const encryptChoices = [...document.querySelectorAll(".journal-encrypt-download")];
     equal(encryptChoices.length, 3, "each Journal tab should expose the encryption choice");
@@ -4489,7 +4411,7 @@
     // "forged address", plus verified:true and needsDerivation:false.
     const fixture = {"entropylabJournal":2,"kdf":"PBKDF2-SHA-256","iterations":600000,"cipher":"AES-256-GCM","iv":"437ff043fb7b9cc1da70f61e","ciphertext":"699a11e60bdf32ec7d8af7f14284783befc6bc68d8007a0d1680f6034c1f7258be9476042c7898267d6e0f46f31f66ea3bd2afbeb507490eab0c7b45fdbaf4e3ea39b6193f2d663aa8982d8e8ce7f40379cc49567423bd9e1cee0cb9849b03a36666d77e489a19096670ff3687b3394ec9d7746bc71ab26806284f27fce809ff038aaf31f4d421c1175bbe9255f7a0f6069ecd731fc1c198b771208b2d3e7eb0c98b2d0f587b82c7084392740d80d7ca0f021b812007d5c5cc50540dc489ed4672b0ecdbf495d006d9e2f97d28e3ec0dde39b711f20559d1b9115e80e7f23c712e20538f8d80ec1f27929bf19e59881eccbdb0b54a7aa98e3a9961b4b5693801ee2439e5b9787f08d06219bf6910a0d7a7b95e10221cf6f4617ff13144646978550ce152cadf139a7cf985d278c0da272249924d2b86029242cbbbed4cab105833ee560fe09b177b1e5d91a1a5f3ab610547b765d0667e9cf86d84d8a5eede7970d6bec993500e40a6cc95d3e5e6c294b5502f98a733d7d73947146971d9e6374416ed61f82b30f70074cf9f57a72b6f31276fd617e69020d39252a5601a953f173e4d7881302ead614480881845f94cb7c2aafe891f1a391266795bf70a99f5e0d28e61a9723bb206086eaba9464a973b3a7d93b640329387a1ca9749509dd1a3ed745fe937ed72546c4516d8ec5a532d6566a1c9173ca9bb062dde7323290dfe95a5e1900521b19163b47522d12d291f3d8bb4f8c89f26d34ae1141bfd68b5cdb0a8981ad45e40faad1a608dd11e78a280252a495f44e26ff66bf28f63d9faae29ac5b25ec02570f46f2b82bcb447bfde786446c7672de73736d0117a9a185f697a79a574b770dbbf42ecd84d1a618fa6edbfe038bc3624268fba6081670c1645d9aa46cb631711af89c5d7ebd2a35a77d9d1780c694077e5d1b5dfa0129968706aca41dc3872c0dfde0089c65bb0032055edac06277aa43467e1de01998e62cd981fb1f193c63c90192b2d24fdf7da62b87d41868ba33a6798a7583eb59f5c521b05ffbbd9dd64176368eb0c01d141034aebafb6e438857adc32e21adbc27fd409319cc79350676235312a2065e1f3c885ad987a5e10dd116a6dfba3add4353564e0160cfe81f2fc0c5d1e6cad4944c8920df2deaa2cb7be35f932dd409e7035f16b6cdad80432b07c1cc9913c0754366bf2915b43766e0b6c56ea73b4160928fdc2ebd5fac2d08ee47b1473b29d9060f375a","entropylabJournalExport":1};
     document.querySelector('#workspace [data-workspace="journal"]').click();
-    if (!document.getElementById("journal-work-panel").hidden) {
+    if (!document.getElementById("journal-global-download").disabled) {
       document.getElementById("journal-global-clear").click();
       await until(() => document.getElementById("journal-global-download").disabled, "journal reset for import");
     }

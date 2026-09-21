@@ -1,6 +1,6 @@
-// Offline session journal: notepad, session snapshot, debug log — plus the
-// encrypted entropy notebook further below. In-memory only. No network, no
-// browser storage, no CSPRNG.
+// Offline session journal: notepad, session snapshot, debug log, and the
+// password-derived encryption context shared by their exports. In-memory only.
+// No network, browser storage, or CSPRNG.
 import { hex as hexCoder } from "./coders.js";
 
 export const JOURNAL_LOG_LIMIT = 400;
@@ -342,13 +342,14 @@ export function wipeJournal(journal) {
   return journal;
 }
 //
-// Encryption is a pure function of the user's password and the entries — the
-// journal never calls a CSPRNG. The AES-256-GCM key is PBKDF2-SHA-256
+// Encryption is a pure function of the user's password and the plaintext —
+// the Journal never calls a CSPRNG. The AES-256-GCM key is PBKDF2-SHA-256
 // (600,000 rounds) of the password, with the salt derived from the password
 // itself under a domain separator. The IV is HMAC-SHA-256 of the plaintext
 // under a second derived key (a synthetic IV), so the same password and the
-// same entries always produce the same file.
+// same plaintext always produce the same file.
 export const JOURNAL_VERSION = 2;
+export const JOURNAL_ACCESS_VERSION = 1;
 export const JOURNAL_EXPORT_VERSION = 1;
 export const JOURNAL_KDF = "PBKDF2-SHA-256";
 export const JOURNAL_CIPHER = "AES-256-GCM";
@@ -357,45 +358,7 @@ export const JOURNAL_MIN_ITERATIONS = 100_000; // never open a file cheaper than
 export const JOURNAL_MAX_ITERATIONS = 10_000_000; // a crafted file must not hang the page
 export const JOURNAL_SALT_PREFIX = "entropylab-journal-salt-v1:";
 export const IV_BYTES = 12;
-export const METHODS = Object.freeze(["dice", "coin", "hex", "brain", "seed", "cards"]);
 const JOURNAL_EXPORT_KINDS = new Set(["notebook", "key-manager", "session-state", "session-log"]);
-export const METHOD_LABELS = Object.freeze({
-  dice: "Dice rolls",
-  coin: "Coin flips",
-  hex: "Number bases",
-  brain: "Brain-wallet text",
-  seed: "Manual seed",
-  cards: "Playing cards",
-});
-const ENTRY_VARIANTS = Object.freeze({
-  diceMethod: Object.freeze({ coldcard: "COLDCARD / SeedSigner", coleman: "Ian Coleman / Keystone", bitbox: "BitBox diceware", dplus: "D++ direct word selection" }),
-  entropyFormat: Object.freeze({ bin: "Binary (Base 2)", base4: "Quaternary (Base 4)", base8: "Base 8", hex: "Hexadecimal (Base 16)", base32: "Base32 (Bech32)", base64: "Base64" }),
-  cardMethod: Object.freeze({ hashed: "Hashed transcript", direct: "Direct word selection" }),
-  seedMethod: Object.freeze({ words: "Direct words", numbers: "BIP39 word numbers" }),
-});
-
-// Each entry method owns at most one variant field. normalizeEntry keeps only
-// the field that belongs to the entry's method, so a stale variant cannot
-// survive a method switch through replaceEntry's merge of the previous entry.
-const METHOD_VARIANT_FIELD = Object.freeze({
-  dice: "diceMethod",
-  hex: "entropyFormat",
-  cards: "cardMethod",
-  seed: "seedMethod",
-});
-
-function normalizeEntryVariant(field, value) {
-  const variant = String(value ?? "");
-  return Object.hasOwn(ENTRY_VARIANTS[field], variant) ? variant : "";
-}
-
-export function entryMethodLabel(entry) {
-  const method = String(entry?.method || "");
-  const base = METHOD_LABELS[method] || method;
-  const field = METHOD_VARIANT_FIELD[method] || "";
-  const variant = field ? ENTRY_VARIANTS[field][normalizeEntryVariant(field, entry?.[field])] : "";
-  return variant ? `${base} · ${variant}` : base;
-}
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -403,23 +366,6 @@ const decoder = new TextDecoder();
 export function wipeBytes(bytes) {
   if (bytes && bytes.fill) bytes.fill(0);
   return bytes;
-}
-
-export function wipeEntry(entry) {
-  if (!entry) return;
-  entry.input = "";
-  entry.phrase = "";
-  entry.label = "";
-  entry.notes = "";
-  entry.walletName = "";
-  entry.fingerprint = "";
-}
-
-export function wipeDocument(doc) {
-  if (!doc) return;
-  for (const entry of doc.entries || []) wipeEntry(entry);
-  doc.entries = [];
-  doc.nextId = 1;
 }
 
 export function assertPassword(password, { confirm } = {}) {
@@ -476,191 +422,6 @@ export async function deriveJournalKeys(password, iterations = JOURNAL_ITERATION
   }
 }
 
-export function emptyDocument() {
-  return { version: JOURNAL_VERSION, nextId: 1, entries: [] };
-}
-
-export function normalizeEntry(entry, now = new Date()) {
-  const method = String(entry?.method || "").trim();
-  if (!METHODS.includes(method)) throw new Error("Journal method must be dice, coin, hex, brain, seed, or cards.");
-  const label = String(entry?.label ?? "").trim();
-  if (!label) throw new Error("Every journal entry needs a label.");
-  const created = entry?.created ? String(entry.created) : now.toISOString();
-  if (!/^\d{4}-\d{2}-\d{2}T/.test(created)) throw new Error("Journal timestamp must be ISO-8601.");
-  const walletId = entry?.walletId == null || entry.walletId === "" ? null : Number(entry.walletId);
-  if (walletId != null && (!Number.isInteger(walletId) || walletId < 0)) throw new Error("Session wallet id must be a whole number.");
-  const normalized = {
-    id: Number.isInteger(entry?.id) && entry.id > 0 ? entry.id : 0,
-    method,
-    input: String(entry?.input ?? ""),
-    phrase: String(entry?.phrase ?? ""),
-    label,
-    notes: String(entry?.notes ?? ""),
-    created,
-    walletId,
-    walletName: String(entry?.walletName ?? ""),
-    fingerprint: String(entry?.fingerprint ?? "").toLowerCase(),
-  };
-  const variantField = METHOD_VARIANT_FIELD[method] || "";
-  for (const field of Object.keys(ENTRY_VARIANTS)) {
-    const variant = field === variantField ? normalizeEntryVariant(field, entry?.[field]) : "";
-    if (variant) normalized[field] = variant;
-  }
-  return normalized;
-}
-
-export function addEntry(doc, fields, now = new Date()) {
-  if (!doc || !Array.isArray(doc.entries)) throw new Error("Journal document is missing.");
-  const entry = normalizeEntry({ ...fields, id: doc.nextId || 1 }, now);
-  doc.entries = [...doc.entries, entry];
-  doc.nextId = entry.id + 1;
-  return entry;
-}
-
-export function replaceEntry(doc, id, fields) {
-  if (!doc || !Array.isArray(doc.entries)) throw new Error("Journal document is missing.");
-  const index = doc.entries.findIndex((entry) => entry.id === id);
-  if (index < 0) throw new Error("That journal entry is not in this file.");
-  const previous = doc.entries[index];
-  const entry = normalizeEntry({ ...previous, ...fields, id: previous.id, created: previous.created });
-  const next = doc.entries.slice();
-  wipeEntry(previous);
-  next[index] = entry;
-  doc.entries = next;
-  return entry;
-}
-
-export function removeEntry(doc, id) {
-  if (!doc || !Array.isArray(doc.entries)) throw new Error("Journal document is missing.");
-  const index = doc.entries.findIndex((entry) => entry.id === id);
-  if (index < 0) throw new Error("That journal entry is not in this file.");
-  const next = doc.entries.slice();
-  wipeEntry(next[index]);
-  next.splice(index, 1);
-  doc.entries = next;
-}
-
-export function searchEntries(doc, query) {
-  const entries = doc?.entries || [];
-  const needle = String(query ?? "").trim().toLowerCase();
-  if (!needle) return entries.slice();
-  return entries.filter((entry) => String(entry.label || "").toLowerCase().includes(needle));
-}
-
-export function snapshotFromKeyState(state) {
-  if (!state || state.isLab) return null;
-  const fields = state.fields || {};
-  const mode = state.mode || "";
-  let method = "seed";
-  let input = "";
-  let variants = {};
-  if (mode === "dice") {
-    method = "dice";
-    variants.diceMethod = normalizeEntryVariant("diceMethod", state.diceMethod) || "coldcard";
-    if (state.diceMethod === "dplus") input = fields.dplusDice || "";
-    else if (state.diceMethod === "bitbox") input = fields.bitboxDice || "";
-    else if (state.diceMethod === "coleman" && Object.prototype.hasOwnProperty.call(fields, "colemanDice")) input = fields.colemanDice || "";
-    else input = fields.dice || "";
-  } else if (mode === "cards") {
-    method = "cards";
-    variants.cardMethod = normalizeEntryVariant("cardMethod", state.cardMethod) || "hashed";
-    input = state.cardMethod === "direct" ? fields.directCards || "" : fields.cards || "";
-  } else if (mode === "hex") {
-    method = "hex";
-    const format = state.entropyFormat || "hex";
-    input = fields[format] || fields.hex || "";
-    variants.entropyFormat = fields[format] ? normalizeEntryVariant("entropyFormat", format) || "hex" : "hex";
-  } else if (mode === "seed") {
-    method = "seed";
-    variants.seedMethod = normalizeEntryVariant("seedMethod", state.seedMethod) || "words";
-    input = state.seedMethod === "numbers" ? fields.seedNumbers || "" : fields.seed || "";
-  } else if (mode === "key") {
-    const kind = fields.keyKind || "";
-    if (kind === "brain") {
-      method = "brain";
-      input = (fields.privateKeys && fields.privateKeys.brain) || fields.key || fields.brainLab || "";
-    } else {
-      method = "seed";
-      input = (fields.privateKeys && (fields.privateKeys[kind] || fields.privateKeys.wif)) || fields.key || "";
-    }
-  }
-  const phrase = state.result?.mnemonic || "";
-  if (!String(input).trim() && !String(phrase).trim()) return null;
-  return {
-    method,
-    ...variants,
-    input: String(input),
-    phrase: String(phrase),
-    label: String(state.name || state.result?.masterFingerprint || "").trim(),
-    notes: fields.pass ? "BIP-39 passphrase was in effect on the linked key. The passphrase itself is not stored here unless you paste it." : "",
-    walletId: state.id,
-    walletName: String(state.name || ""),
-    fingerprint: String(state.result?.masterFingerprint || "").toLowerCase(),
-  };
-}
-
-const KEY_SNAPSHOT_MATCH_FIELDS = Object.freeze([
-  "method",
-  "diceMethod",
-  "entropyFormat",
-  "cardMethod",
-  "seedMethod",
-  "input",
-  "phrase",
-  "label",
-  "notes",
-  "walletName",
-  "fingerprint",
-]);
-
-// Session wallet ids are intentionally excluded: they are only meaningful in
-// the current page and may be reused when a journal is opened later.
-export function keySnapshotMatchesEntry(entry, snapshot) {
-  if (!entry || !snapshot) return false;
-  return KEY_SNAPSHOT_MATCH_FIELDS.every((field) => {
-    let left = String(entry[field] ?? ""), right = String(snapshot[field] ?? "");
-    if (field === "fingerprint") {
-      left = left.toLowerCase();
-      right = right.toLowerCase();
-    }
-    return left === right;
-  });
-}
-
-export function syncKeySnapshots(doc, snapshots, associations, now = new Date()) {
-  if (!doc || !Array.isArray(doc.entries)) throw new Error("Journal document is missing.");
-  if (!(associations instanceof Map)) throw new Error("Journal key associations are missing.");
-  const result = { added: 0, updated: 0, matched: 0 };
-  const claimedEntryIds = new Set();
-  for (const snapshot of snapshots || []) {
-    if (!snapshot || snapshot.walletId == null || snapshot.walletId === "") continue;
-    const stateId = Number(snapshot.walletId);
-    if (!Number.isInteger(stateId) || stateId < 0) continue;
-    let entryId = associations.get(stateId);
-    let entry = entryId == null || claimedEntryIds.has(entryId) ? null : doc.entries.find((item) => item.id === entryId);
-    if (!entry && entryId != null) associations.delete(stateId);
-    if (entry) {
-      claimedEntryIds.add(entry.id);
-      if (keySnapshotMatchesEntry(entry, snapshot)) {
-        result.matched++;
-      } else {
-        entry = replaceEntry(doc, entry.id, snapshot);
-        result.updated++;
-      }
-    } else {
-      entry = doc.entries.find((item) => !claimedEntryIds.has(item.id) && keySnapshotMatchesEntry(item, snapshot));
-      if (entry) result.matched++;
-      else {
-        entry = addEntry(doc, snapshot, now);
-        result.added++;
-      }
-      associations.set(stateId, entry.id);
-      claimedEntryIds.add(entry.id);
-    }
-  }
-  return result;
-}
-
 export function encodeFile({ iv, ciphertext, iterations = JOURNAL_ITERATIONS }) {
   if (!(iv instanceof Uint8Array) || iv.length !== IV_BYTES) throw new Error("Journal IV must be 12 bytes.");
   if (!(ciphertext instanceof Uint8Array) || !ciphertext.length) throw new Error("Journal ciphertext is missing.");
@@ -700,23 +461,23 @@ export function parseFile(text) {
   return { iv, ciphertext, iterations: parsed.iterations };
 }
 
-function parseDocument(plain) {
+function parseAccessPayload(plain) {
   let parsed;
   try {
     parsed = JSON.parse(plain);
   } catch {
     throw new Error("The journal file is corrupt.");
   }
-  if (!parsed || parsed.version !== JOURNAL_VERSION || !Array.isArray(parsed.entries)) {
-    throw new Error("The journal file is corrupt.");
+  if (parsed?.entropylabJournalAccess === JOURNAL_ACCESS_VERSION) return;
+  if (parsed?.version === JOURNAL_VERSION && Array.isArray(parsed.entries)) {
+    if (parsed.entries.length) throw new Error("This older journal contains retired Entries. Open it with an earlier EntropyLab release before removing or moving those entries.");
+    return;
   }
-  const nextId = Number.isInteger(parsed.nextId) && parsed.nextId > 0 ? parsed.nextId : 1;
-  const entries = parsed.entries.map((entry) => normalizeEntry(entry));
-  return { version: JOURNAL_VERSION, nextId, entries };
+  throw new Error("The journal access file is corrupt.");
 }
 
 // The IV is a synthetic nonce — HMAC-SHA-256 of the plaintext under its own
-// derived key. The same password and entries produce the same file; two
+// derived key. The same password and plaintext produce the same file; two
 // different plaintexts share an IV only on an HMAC collision. No randomness
 // is generated, matching the rest of EntropyLab.
 async function sealPlainText(plainText, keys) {
@@ -737,12 +498,8 @@ async function sealPlainText(plainText, keys) {
   }
 }
 
-export async function sealDocument(doc, keys) {
-  return sealPlainText(JSON.stringify({
-    version: JOURNAL_VERSION,
-    nextId: doc.nextId,
-    entries: doc.entries,
-  }), keys);
+export async function sealAccessFile(keys) {
+  return sealPlainText(JSON.stringify({ entropylabJournalAccess: JOURNAL_ACCESS_VERSION }), keys);
 }
 
 export async function sealExport(kind, content, keys) {
@@ -791,7 +548,7 @@ export async function openExport(file, keys) {
   }
 }
 
-export async function openDocument(file, password) {
+export async function openAccessFile(file, password) {
   const parsed = parseFile(file);
   const keys = await deriveJournalKeys(password, parsed.iterations);
   const subtle = requireSubtle();
@@ -802,7 +559,13 @@ export async function openDocument(file, password) {
     throw new Error("The password is incorrect, or the journal file is damaged.");
   }
   try {
-    return { keys, doc: parseDocument(decoder.decode(plainBytes)) };
+    try {
+      parseAccessPayload(decoder.decode(plainBytes));
+      return { keys };
+    } catch (error) {
+      wipeBytes(keys.verify);
+      throw error;
+    }
   } finally {
     wipeBytes(plainBytes);
     wipeBytes(parsed.iv);
@@ -810,7 +573,7 @@ export async function openDocument(file, password) {
   }
 }
 
-export async function createDocument(password, confirm) {
+export async function createAccess(password, confirm) {
   assertPassword(password, { confirm });
-  return { keys: await deriveJournalKeys(password), doc: emptyDocument() };
+  return { keys: await deriveJournalKeys(password) };
 }

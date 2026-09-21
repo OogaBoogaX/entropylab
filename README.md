@@ -25,8 +25,8 @@ For local testing after Rust changes, run `npm run build:wasm` before
 
 Clearing a Key or Multisig station cancels its pending derivation. Leaving
 the page clears rendered seed-word copies and prevents a late derivation or
-import from restoring cleared secrets. Locking the journal also invalidates
-pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
+import from restoring cleared secrets. Clearing the journal also invalidates
+pending Notepad and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
 
 - Accepts dice rolls, coin flips, hexadecimal entropy, BIP39 seed phrases,
@@ -175,30 +175,25 @@ the limits of browser-memory cleanup.
   wallet birthday are shown alongside the node key; the decoded entropy and
   salt and the BIP32 root xprv (what `chantools showrootkey` prints) sit
   behind a reveal toggle. Decoding only: the tab never creates seeds.
-- A session **Journal** (last workspace tab) holds an **Entropy
-  Journal** notebook, a notepad stamped with this computer's date and time,
-  a Key Manager, a live summary of everything derived in this sitting, and a debug log
+- A session **Journal** (last workspace tab) holds a notepad stamped with this
+  computer's date and time, a Key Manager, a live summary of everything
+  derived in this sitting, and a debug log
   of tool switches and derives (fingerprints, not seeds). Its introduction
-  remains above the Journal controls. Notepad, Key manager, Session state, and Session log
-  stay visible but disabled until the user creates a journal, with or without
-  a password, or successfully opens an existing journal; the create/open gate
-  then disappears and the Journal starts on Notepad. The create form reports
-  whether password protection is enabled and checks confirmation matches live
-  without exposing what was typed. A blank password is accepted and provides
-  no access protection: anyone holding the resulting file can open it by
-  leaving the password blank. Journal-wide **Download journal** and **Clear journal** actions stay
-  below the introduction once a journal is unlocked; clearing wipes the
-  entries, notepad, session snapshot, and log from page memory and
-  returns to the create/open gate. The notebook keeps
-  entropy the user already produced — dice, coins, hex, brain-wallet text, or
-  a seed — under AES-256-GCM; the key is PBKDF2-SHA-256 (600,000 rounds) of the
-  optional password the user chooses, with the salt derived from that password
-  and the IV HMAC-SHA-256 of the plaintext, so the file is a pure function of
-  password and entries and no CSPRNG is ever called. One JSON file the user
-  downloads and loads back. Nothing is stored in the browser; download a file
-  to keep it. Closing the page discards the sitting. The notebook is a
-  calculator companion, not a password manager: it only stores material the
-  user generated themselves.
+  remains above the Journal controls. All four tabs stay visible but disabled
+  until the user creates a Journal, with or without a password, or successfully
+  opens a Journal access file; the gate then disappears and the Journal starts
+  on Notepad. The create form reports whether password protection is enabled
+  and checks confirmation matches live without exposing what was typed. A blank
+  password is accepted and provides no access protection. The access file is an
+  encrypted password verifier: it restores the same export-encryption context,
+  but deliberately contains no Notepad, Key manager, Session state, or Session
+  log content. Each tab has its own accurately scoped download. Journal-wide
+  **Download access file** and **Clear journal** actions stay below the
+  introduction once a Journal is open; clearing wipes all four Journal tools
+  from page memory and returns to the gate. The AES-256-GCM key is
+  PBKDF2-SHA-256 (600,000 rounds) of the optional password, with the salt
+  derived from that password and each file's IV derived by HMAC-SHA-256 of its
+  plaintext. Files are deterministic and no CSPRNG is called.
   The **Key manager** tab packages selected Key Station source inputs and
   settings, including ignored entries, into an `.elkeys` file. It reuses the unlocked
   Journal's password setting, so it adds no password prompt, random salt,
@@ -512,7 +507,7 @@ To remove generated files, run `npm run clean`.
 │   ├── css/styles.css      Application styles
 │   └── js/
 │       ├── app.js          Application logic and explicit package imports
-│       ├── journal.js      Encrypted entropy notebook, session notepad, snapshot, and debug log
+│       ├── journal.js      Journal access encryption, session notepad, snapshot, and debug log
 │       ├── secp256k1.js    Curve facade over the WASM module (noble-shaped API)
 │       ├── entropylab-wasm.js Shared WASM module loader
 │       ├── entropylab-wasm-b64.js Generated WASM artifact (committed; build:wasm)

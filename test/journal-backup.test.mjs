@@ -1,5 +1,5 @@
 // Backup drills for the Journal: every way a user backs up and restores —
-// the encrypted journal file, the paged notepad, the Key Manager vault, the
+// the access file, the paged notepad, the Key Manager vault, the
 // session snapshot, and the session log — plus the failure modes a backup
 // must survive (wrong password, tampered bytes, cross-format confusion).
 // Run with `npm test`.
@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import {
   IV_BYTES,
   JOURNAL_CIPHER,
+  JOURNAL_ACCESS_VERSION,
   JOURNAL_EXPORT_VERSION,
   JOURNAL_ITERATIONS,
   JOURNAL_KDF,
@@ -21,13 +22,10 @@ import {
   NOTEBOOK_MAX_PAGES,
   NOTEBOOK_MAX_TEXT_LENGTH,
   NOTEBOOK_VERSION,
-  addEntry,
   appendLog,
-  createDocument,
+  createAccess,
   createJournal,
   deriveJournalKeys,
-  emptyDocument,
-  entryMethodLabel,
   encodeFile,
   formatLog,
   formatNotebook,
@@ -37,25 +35,16 @@ import {
   journalKeyReferenceToken,
   journalNotebookRuns,
   journalTextFromRuns,
-  keySnapshotMatchesEntry,
   mergeNotebookImport,
-  normalizeEntry,
-  openDocument,
+  openAccessFile,
   openExport,
   parseFile,
   parseNotebook,
-  removeEntry,
-  replaceEntry,
-  sealDocument,
+  sealAccessFile,
   sealExport,
-  searchEntries,
   serializeNotebook,
-  snapshotFromKeyState,
   snapshotSession,
-  syncKeySnapshots,
   wipeBytes,
-  wipeDocument,
-  wipeEntry,
 } from "../src/js/journal.js";
 import {
   KEY_VAULT_FORMAT,
@@ -70,119 +59,58 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
 
 const password = "correct horse battery staple";
-const fixedNow = new Date("2026-09-01T15:04:05.000Z");
 // Derived once for the whole file: PBKDF2 at JOURNAL_ITERATIONS is the slow
 // part, and the backup drills below only need the keys, not fresh salt (the
 // salt is a pure function of the password, so one derivation is every
 // derivation).
-const shared = await createDocument(password, password);
+const shared = await createAccess(password, password);
 const keys = shared.keys;
 
-const pack = (file) => JSON.stringify(file, null, 2) + "\n"; // mirrors hodlJournalSaveFile
+const pack = (file) => JSON.stringify(file, null, 2) + "\n";
 const flip = (text, index) => text.slice(0, index) + (text[index] === "0" ? "1" : "0") + text.slice(index + 1);
+// --- The encrypted access file ---------------------------------------------
 
-function sampleEntry(overrides = {}) {
-  return {
-    method: "dice",
-    input: "3 1 4 1 5 9",
-    phrase: "legal winner thank year wave sausage worth useful legal winner thank yellow",
-    label: "Cold storage",
-    notes: "garage safe",
-    created: "2026-09-01T15:04:05.000Z",
-    walletId: 4,
-    walletName: "cold",
-    fingerprint: "DEADBEEF",
-    ...overrides,
-  };
-}
-
-// --- The encrypted journal file is the backup ------------------------------
-
-test("a backup restores every entry method and keeps id allocation moving", async () => {
-  const doc = emptyDocument();
-  for (let [index, method] of ["dice", "coin", "hex", "brain", "seed", "cards"].entries()) {
-    addEntry(doc, sampleEntry({ method, label: `Entry ${index} ☾`, walletId: index || null }));
-  }
-  const opened = await openDocument(pack(await sealDocument(doc, keys)), password);
-  assert.deepEqual(opened.doc.entries, doc.entries);
-  assert.equal(opened.doc.nextId, doc.nextId);
-  // Restoring a backup must not collide new entries with restored ones.
-  const next = addEntry(opened.doc, sampleEntry({ label: "after restore" }), fixedNow);
-  assert.equal(next.id, doc.nextId);
-  assert.equal(opened.doc.nextId, doc.nextId + 1);
+test("an access file opens the matching password context", async () => {
+  const file = await sealAccessFile(keys);
+  const opened = await openAccessFile(pack(file), password);
+  assert.deepEqual([...opened.keys.verify], [...keys.verify]);
+  assert.equal(opened.keys.passwordProtected, true);
 });
 
-test("an empty journal backs up and restores", async () => {
-  const file = await sealDocument(emptyDocument(), keys);
-  const opened = await openDocument(file, password); // an already-parsed object is accepted too
-  assert.deepEqual(opened.doc, emptyDocument());
+test("an opened access file re-seals to the identical file", async () => {
+  const file = await sealAccessFile(keys);
+  const opened = await openAccessFile(pack(file), password);
+  assert.deepEqual(await sealAccessFile(opened.keys), file);
 });
 
-test("a restored backup re-seals to the identical file", async () => {
-  const doc = emptyDocument();
-  addEntry(doc, sampleEntry(), fixedNow);
-  const file = await sealDocument(doc, keys);
-  const opened = await openDocument(pack(file), password);
-  // Save → load → save is a fixed point: backups never drift between cycles.
-  assert.deepEqual(await sealDocument(opened.doc, opened.keys), file);
-});
-
-test("the backup file is opaque: fixed envelope, no salt, no plaintext secrets", async () => {
-  const doc = emptyDocument();
-  addEntry(doc, sampleEntry({ label: "Operation Moonshine", input: "6 6 6 1 1 1", phrase: "zoo zoo zoo" }), fixedNow);
-  const file = await sealDocument(doc, keys);
+test("the access file is opaque and contains no tab content", async () => {
+  const file = await sealAccessFile(keys);
   assert.deepEqual(Object.keys(file).sort(), ["cipher", "ciphertext", "entropylabJournal", "iterations", "iv", "kdf"]);
   assert.equal(file.entropylabJournal, JOURNAL_VERSION);
   assert.equal(file.kdf, JOURNAL_KDF);
   assert.equal(file.cipher, JOURNAL_CIPHER);
   assert.equal(file.iterations, JOURNAL_ITERATIONS);
-  const packed = pack(file);
-  for (let secret of ["Operation Moonshine", "6 6 6 1 1 1", "zoo zoo zoo", "deadbeef", "salt"]) {
-    assert.ok(!packed.includes(secret), `the backup leaks "${secret}"`);
-  }
+  assert.ok(!pack(file).includes("entropylabJournalAccess"));
   // AES-256-GCM appends a 16-byte tag: ciphertext = plaintext + tag.
-  const plain = JSON.stringify({ version: JOURNAL_VERSION, nextId: doc.nextId, entries: doc.entries });
+  const plain = JSON.stringify({ entropylabJournalAccess: JOURNAL_ACCESS_VERSION });
   assert.equal(file.ciphertext.length / 2 - plain.length, 16);
   assert.equal(file.iv.length, IV_BYTES * 2);
 });
 
-test("a tampered backup is detected at open, not silently restored", async () => {
-  const doc = emptyDocument();
-  addEntry(doc, sampleEntry(), fixedNow);
-  const file = await sealDocument(doc, keys);
+test("a tampered access file is detected at open", async () => {
+  const file = await sealAccessFile(keys);
   const flippedCipher = { ...file, ciphertext: flip(file.ciphertext, 0) };
-  await assert.rejects(() => openDocument(pack(flippedCipher), password), /password is incorrect/);
+  await assert.rejects(() => openAccessFile(pack(flippedCipher), password), /password is incorrect/);
   const flippedIv = { ...file, iv: flip(file.iv, 0) };
-  await assert.rejects(() => openDocument(pack(flippedIv), password), /password is incorrect/);
+  await assert.rejects(() => openAccessFile(pack(flippedIv), password), /password is incorrect/);
 });
 
-test("a backup that decrypts to invalid entries is rejected entry by entry", async () => {
-  // sealDocument serializes whatever it is given, so a hand-built doc stands
-  // in for a damaged or hostile plaintext.
-  const badMethod = await sealDocument({ nextId: 1, entries: [{ method: "nostr", label: "x" }] }, keys);
-  await assert.rejects(() => openDocument(pack(badMethod), password), /method must be/);
-  const missingLabel = await sealDocument({ nextId: 1, entries: [{ method: "dice" }] }, keys);
-  await assert.rejects(() => openDocument(pack(missingLabel), password), /needs a label/);
-});
-
-test("restoring drops unknown fields and repairs a broken nextId", async () => {
-  const entry = { ...normalizeEntry(sampleEntry(), fixedNow), evil: "exfil" };
-  const file = await sealDocument({ nextId: -5, entries: [entry] }, keys);
-  const opened = await openDocument(pack(file), password);
-  assert.equal("evil" in opened.doc.entries[0], false);
-  assert.equal(opened.doc.nextId, 1); // non-positive nextId falls back to 1
-});
-
-test("an export file is not a journal backup and vice versa", async () => {
+test("an export file is not an access file and vice versa", async () => {
   const exportFile = await sealExport("notebook", "notes", keys);
-  // The outer envelope parses as a journal file, so openDocument pays the
-  // KDF and decrypts — then rejects the payload as a corrupt document.
-  await assert.rejects(() => openDocument(pack(exportFile), password), /corrupt/);
-  const docFile = await sealDocument(emptyDocument(), keys);
-  await assert.rejects(() => openExport(pack(docFile), keys), /not an encrypted Journal export/);
-  // Even with the export marker forged onto a journal file, the decrypted
-  // payload is a document, not an export.
-  const forged = { entropylabJournalExport: JOURNAL_EXPORT_VERSION, ...docFile };
+  await assert.rejects(() => openAccessFile(pack(exportFile), password), /corrupt/);
+  const accessFile = await sealAccessFile(keys);
+  await assert.rejects(() => openExport(pack(accessFile), keys), /not an encrypted Journal export/);
+  const forged = { entropylabJournalExport: JOURNAL_EXPORT_VERSION, ...accessFile };
   await assert.rejects(() => openExport(pack(forged), keys), /corrupt/);
 });
 
@@ -234,218 +162,13 @@ test("key derivation is deterministic, bounded, and non-extractable", async () =
   assert.ok(passwordless.verify.some((byte) => byte !== 0));
 });
 
-// --- Entry bookkeeping behind the backup ------------------------------------
+// --- Memory clearing ---------------------------------------------------------
 
-test("addEntry fills defaults, sequences ids, and ignores a supplied id", () => {
-  const doc = emptyDocument();
-  const bare = addEntry(doc, { method: "coin", label: "flips" }, fixedNow);
-  assert.deepEqual(bare, {
-    id: 1, method: "coin", input: "", phrase: "", label: "flips", notes: "",
-    created: "2026-09-01T15:04:05.000Z", walletId: null, walletName: "", fingerprint: "",
-  });
-  const stamped = addEntry(doc, { ...sampleEntry({ id: 99, label: "second" }), created: "2020-01-02T03:04:05.000Z" }, fixedNow);
-  assert.equal(stamped.id, 2); // the supplied id 99 is discarded
-  assert.equal(stamped.created, "2020-01-02T03:04:05.000Z"); // a valid stamp is kept
-  assert.equal(doc.nextId, 3);
-  assert.throws(() => addEntry(null, sampleEntry()), /document is missing/);
-  assert.throws(() => addEntry({}, sampleEntry()), /document is missing/);
-});
-
-test("entries validate their timestamp and wallet link", () => {
-  assert.throws(() => normalizeEntry(sampleEntry({ created: "2026-09-01" })), /ISO-8601/);
-  assert.throws(() => normalizeEntry(sampleEntry({ created: "yesterday" })), /ISO-8601/);
-  assert.throws(() => normalizeEntry(sampleEntry({ walletId: 3.5 })), /whole number/);
-  assert.throws(() => normalizeEntry(sampleEntry({ walletId: -1 })), /whole number/);
-  assert.equal(normalizeEntry(sampleEntry({ walletId: "3" })).walletId, 3); // coerced like the UI select
-  assert.equal(normalizeEntry(sampleEntry({ walletId: "" })).walletId, null);
-  assert.equal(normalizeEntry(sampleEntry({ fingerprint: "AABBCCDD" })).fingerprint, "aabbccdd");
-});
-
-test("replaceEntry keeps identity, wipes the old object, and removeEntry wipes too", () => {
-  const doc = emptyDocument();
-  const original = addEntry(doc, sampleEntry(), fixedNow);
-  const replaced = replaceEntry(doc, original.id, { label: "renamed", input: "1 1 1" });
-  assert.equal(replaced.id, original.id);
-  assert.equal(replaced.created, original.created);
-  assert.equal(replaced.label, "renamed");
-  // The replaced object was zeroed in place — no stale copy of the input.
-  assert.equal(original.input, "");
-  assert.equal(original.label, "");
-  assert.equal(doc.entries[0], replaced);
-  assert.throws(() => replaceEntry(doc, 99, { label: "x" }), /not in this file/);
-  const doomed = addEntry(doc, sampleEntry({ label: "doomed" }), fixedNow);
-  removeEntry(doc, doomed.id);
-  assert.equal(doc.entries.length, 1);
-  assert.equal(doomed.input, "");
-  assert.equal(doomed.phrase, "");
-  assert.throws(() => removeEntry(doc, doomed.id), /not in this file/);
-  assert.throws(() => removeEntry(null, 1), /document is missing/);
-});
-
-test("search is case-insensitive, label-scoped, and hands back a copy", () => {
-  const doc = emptyDocument();
-  addEntry(doc, sampleEntry({ label: "Cold Storage", notes: "warm phrase" }), fixedNow);
-  addEntry(doc, sampleEntry({ method: "hex", label: "attic" }), fixedNow);
-  assert.equal(searchEntries(doc, "COLD").length, 1);
-  assert.equal(searchEntries(doc, "warm").length, 0); // notes are not searched
-  const all = searchEntries(doc, "  ");
-  all.length = 0; // mutating the result must not touch the document
-  assert.equal(doc.entries.length, 2);
-  assert.deepEqual(searchEntries(null, "x"), []);
-});
-
-test("wipe helpers zero secrets in place and reset allocation", () => {
+test("wipeBytes zeroes mutable secret bytes in place", () => {
   const bytes = Uint8Array.from([1, 2, 3, 4]);
   assert.equal(wipeBytes(bytes), bytes);
   assert.deepEqual([...bytes], [0, 0, 0, 0]);
   assert.equal(wipeBytes(null), null);
-  const entry = sampleEntry();
-  wipeEntry(entry);
-  for (let field of ["input", "phrase", "label", "notes", "walletName", "fingerprint"]) assert.equal(entry[field], "");
-  const doc = emptyDocument();
-  const kept = addEntry(doc, sampleEntry(), fixedNow);
-  wipeDocument(doc);
-  assert.equal(kept.input, ""); // wiped before the array was dropped
-  assert.deepEqual(doc.entries, []);
-  assert.equal(doc.nextId, 1);
-  wipeDocument(null); // must not throw
-});
-
-// --- Session-key snapshots (what automatic Key Station capture stores) -------
-
-test("the snapshot captures each input method's live transcript", () => {
-  const base = { id: 1, isLab: false, name: "", fields: {}, result: null };
-  const dplus = snapshotFromKeyState({ ...base, mode: "dice", diceMethod: "dplus", fields: { dplusDice: "⚁⚂⚄", dice: "1 2 3" } });
-  assert.equal(dplus.input, "⚁⚂⚄");
-  assert.equal(dplus.diceMethod, "dplus");
-  assert.equal(entryMethodLabel(dplus), "Dice rolls · D++ direct word selection");
-  const bitbox = snapshotFromKeyState({ ...base, mode: "dice", diceMethod: "bitbox", fields: { bitboxDice: "bb", dice: "1 2 3" } });
-  assert.equal(bitbox.input, "bb");
-  assert.equal(bitbox.diceMethod, "bitbox");
-  const coleman = snapshotFromKeyState({ ...base, mode: "dice", diceMethod: "coleman", fields: { colemanDice: "654321", dice: "123456" } });
-  assert.equal(coleman.input, "654321");
-  const legacyColeman = snapshotFromKeyState({ ...base, mode: "dice", diceMethod: "coleman", fields: { dice: "123456" } });
-  assert.equal(legacyColeman.input, "123456");
-  const direct = snapshotFromKeyState({ ...base, mode: "cards", cardMethod: "direct", fields: { directCards: "AS KD", cards: "hashed" } });
-  assert.equal(direct.method, "cards");
-  assert.equal(direct.input, "AS KD");
-  assert.equal(direct.cardMethod, "direct");
-  assert.equal(entryMethodLabel(direct), "Playing cards · Direct word selection");
-  const binary = snapshotFromKeyState({ ...base, mode: "hex", entropyFormat: "bin", fields: { bin: "0101", hex: "aa" } });
-  assert.equal(binary.method, "hex");
-  assert.equal(binary.input, "0101");
-  assert.equal(binary.entropyFormat, "bin");
-  assert.equal(entryMethodLabel(binary), "Number bases · Binary (Base 2)");
-  const hexFallback = snapshotFromKeyState({ ...base, mode: "hex", entropyFormat: "base64", fields: { hex: "aa" } });
-  assert.equal(hexFallback.input, "aa"); // an empty chosen format falls back to hex
-  assert.equal(hexFallback.entropyFormat, "hex");
-  const numbers = snapshotFromKeyState({ ...base, mode: "seed", seedMethod: "numbers", fields: { seedNumbers: "1 2 3", seed: "words" } });
-  assert.equal(numbers.input, "1 2 3");
-  assert.equal(numbers.seedMethod, "numbers");
-  assert.equal(entryMethodLabel(numbers), "Manual seed · BIP39 word numbers");
-});
-
-test("journal entry variants survive encryption while old and unknown variants stay safe", async () => {
-  const doc = emptyDocument();
-  addEntry(doc, sampleEntry({ method: "dice", diceMethod: "coleman" }), fixedNow);
-  const opened = await openDocument(pack(await sealDocument(doc, keys)), password);
-  assert.equal(opened.doc.entries[0].diceMethod, "coleman");
-  assert.equal(entryMethodLabel(opened.doc.entries[0]), "Dice rolls · Ian Coleman / Keystone");
-  const oldEntry = normalizeEntry(sampleEntry({ method: "seed" }), fixedNow);
-  assert.equal(entryMethodLabel(oldEntry), "Manual seed");
-  const hostile = normalizeEntry(sampleEntry({ method: "cards", cardMethod: "exfil", entropyFormat: "javascript:" }), fixedNow);
-  assert.equal(hostile.cardMethod, undefined);
-  assert.equal(hostile.entropyFormat, undefined);
-  assert.equal(entryMethodLabel(hostile), "Playing cards");
-  // The hex method is labeled "Number bases" with or without a variant,
-  // matching the method pickers in the rest of the app.
-  assert.equal(entryMethodLabel(normalizeEntry(sampleEntry({ method: "hex" }), fixedNow)), "Number bases");
-});
-
-test("a variant that belongs to another method is dropped, even through an edit", () => {
-  // replaceEntry merges the previous entry, so a stale diceMethod would
-  // survive a method switch if normalizeEntry did not drop it.
-  const doc = emptyDocument();
-  const entry = addEntry(doc, sampleEntry({ method: "dice", diceMethod: "coldcard" }), fixedNow);
-  const replaced = replaceEntry(doc, entry.id, sampleEntry({ method: "cards", cardMethod: "direct" }));
-  assert.equal(replaced.method, "cards");
-  assert.equal(replaced.diceMethod, undefined);
-  assert.equal(replaced.cardMethod, "direct");
-  assert.equal(entryMethodLabel(replaced), "Playing cards · Direct word selection");
-  // Methods with no variant field (coin, brain) drop every variant.
-  const coin = normalizeEntry(sampleEntry({ method: "coin", diceMethod: "coldcard", seedMethod: "numbers" }), fixedNow);
-  assert.equal(coin.diceMethod, undefined);
-  assert.equal(coin.seedMethod, undefined);
-});
-
-test("the snapshot captures private-key modes and the passphrase warning", () => {
-  const base = { id: 2, isLab: false, mode: "key", name: "", fields: {}, result: { mnemonic: "", masterFingerprint: "AABBCCDD" } };
-  const brain = snapshotFromKeyState({ ...base, fields: { keyKind: "brain", privateKeys: { brain: "correct horse" } } });
-  assert.equal(brain.method, "brain");
-  assert.equal(brain.input, "correct horse");
-  assert.equal(brain.label, "AABBCCDD"); // no name: the fingerprint names the entry
-  assert.equal(brain.fingerprint, "aabbccdd"); // the fingerprint field is normalized
-  const wif = snapshotFromKeyState({ ...base, fields: { keyKind: "minikey", privateKeys: { minikey: "", wif: "KwDi..." }, key: "fallback" } });
-  assert.equal(wif.method, "seed");
-  assert.equal(wif.input, "KwDi..."); // empty kind slot falls back to wif, then to the raw field
-  const raw = snapshotFromKeyState({ ...base, fields: { keyKind: "hex-key", privateKeys: {}, key: "0011" } });
-  assert.equal(raw.input, "0011");
-  const withPass = snapshotFromKeyState({ ...base, fields: { keyKind: "brain", privateKeys: { brain: "x" }, pass: "secret pass" } });
-  assert.match(withPass.notes, /passphrase was in effect/);
-  assert.doesNotMatch(withPass.notes, /secret pass/); // the passphrase itself is never copied
-  assert.equal(snapshotFromKeyState({ isLab: true, mode: "dice", fields: { dice: "1" } }), null);
-  assert.equal(snapshotFromKeyState({ ...base, fields: {}, result: null }), null);
-  assert.equal(snapshotFromKeyState(null), null);
-});
-
-test("derived Key Station snapshots backfill a new journal and auto-add later keys", () => {
-  const doc = emptyDocument(), associations = new Map();
-  const beforeCreate = sampleEntry({ walletId: 11, label: "Before journal", input: "1 2 3", created: undefined });
-  const afterCreate = sampleEntry({ walletId: 12, label: "After journal", input: "4 5 6", created: undefined });
-  assert.deepEqual(syncKeySnapshots(doc, [beforeCreate], associations, fixedNow), { added: 1, updated: 0, matched: 0 });
-  assert.equal(doc.entries.length, 1);
-  assert.deepEqual(syncKeySnapshots(doc, [afterCreate], associations, fixedNow), { added: 1, updated: 0, matched: 0 });
-  assert.deepEqual(doc.entries.map((entry) => entry.label), ["Before journal", "After journal"]);
-  assert.equal(associations.get(11), doc.entries[0].id);
-  assert.equal(associations.get(12), doc.entries[1].id);
-});
-
-test("re-deriving one Key Station state updates its associated entry", () => {
-  const doc = emptyDocument(), associations = new Map();
-  const first = sampleEntry({ walletId: 21, label: "Same tab", input: "first transcript", fingerprint: "11111111", created: undefined });
-  syncKeySnapshots(doc, [first], associations, fixedNow);
-  const entryId = doc.entries[0].id, created = doc.entries[0].created;
-  const next = { ...first, input: "replacement transcript", phrase: "replacement mnemonic", fingerprint: "22222222" };
-  assert.deepEqual(syncKeySnapshots(doc, [next], associations, new Date("2026-09-02T00:00:00Z")), { added: 0, updated: 1, matched: 0 });
-  assert.equal(doc.entries.length, 1);
-  assert.equal(doc.entries[0].id, entryId);
-  assert.equal(doc.entries[0].created, created);
-  assert.equal(doc.entries[0].input, "replacement transcript");
-  assert.equal(doc.entries[0].fingerprint, "22222222");
-});
-
-test("opening a journal matches meaningful snapshots and backfills only missing keys", () => {
-  const doc = emptyDocument();
-  const matching = sampleEntry({ walletId: 31, label: "Existing", input: "same transcript", created: undefined });
-  const existing = addEntry(doc, matching, fixedNow);
-  const reusedSessionId = { ...matching, walletId: 31, input: "different transcript", phrase: "different mnemonic" };
-  const missing = sampleEntry({ walletId: 32, label: "Missing", input: "new transcript", fingerprint: "cafebabe", created: undefined });
-  const reopenedAssociations = new Map();
-  assert(keySnapshotMatchesEntry(existing, { ...matching, walletId: 999 }), "session ids must not participate in meaningful matching");
-  assert(!keySnapshotMatchesEntry(existing, reusedSessionId), "a fingerprint and reused session id must not hide changed key content");
-  assert.deepEqual(syncKeySnapshots(doc, [{ ...matching, walletId: 999 }, reusedSessionId, missing], reopenedAssociations, fixedNow), { added: 2, updated: 0, matched: 1 });
-  assert.equal(doc.entries.length, 3);
-  assert.equal(reopenedAssociations.get(999), existing.id);
-  assert.notEqual(reopenedAssociations.get(31), existing.id);
-});
-
-test("automatically captured Key Station entries survive journal download and reopen", async () => {
-  const doc = emptyDocument(), associations = new Map();
-  const snapshot = sampleEntry({ walletId: 41, label: "Automatic backup", input: "saved transcript", created: undefined });
-  syncKeySnapshots(doc, [snapshot], associations, fixedNow);
-  const opened = await openDocument(pack(await sealDocument(doc, keys)), password);
-  assert.equal(opened.doc.entries.length, 1);
-  assert(keySnapshotMatchesEntry(opened.doc.entries[0], snapshot));
 });
 
 // --- Notepad backups ---------------------------------------------------------
@@ -753,18 +476,14 @@ test("an .elkeys backup is opaque until opened with the journal password", async
 
 test("the app routes every journal backup through the sealed primitives", () => {
   const app = read("src/js/app.js");
-  // Automatic Key Station capture persists the snapshot's method variant;
-  // manual entries still keep their selected variant through the editor.
-  assert.match(app, /hodlJournalSyncKeySnapshots\(hodlJournalDoc, snapshots, hodlJournalKeyEntries\)/);
-  assert.match(app, /method: document\.getElementById\("journal-method"\)\?\.value \|\| "dice",\s+\.\.\.hodlJournalEntryVariants,/);
-  assert.equal((app.match(/hodlJournalEntryMethodLabel\(entry\)/g) || []).length, 2);
   // Downloads encrypt with the unlocked journal keys by default and mark the
   // file as encrypted.
   assert.match(app, /async function hodlJournalDownloadContent\(kind, filename, text[\s\S]*?hodlJournalSealExport\(kind, text, hodlJournalKeys\)/);
   assert.match(app, /filename\.replace\(\/\\\.\[\^\.\]\+\$\/, ""\) \+ "\.encrypted\.json"/);
-  // The journal file itself downloads through sealDocument as JSON.
-  assert.match(app, /hodlJournalSealDocument\(hodlJournalDoc, hodlJournalKeys\)/);
-  assert.match(app, /link\.download = "entropylab-journal\.json"/);
+  // The access file is a password verifier, not a content backup.
+  assert.match(app, /hodlJournalSealAccessFile\(hodlJournalKeys\)/);
+  assert.match(app, /link\.download = "entropylab-journal-access\.json"/);
+  assert.doesNotMatch(app, /hodlJournalCaptureDerivedKey|hodlJournalSyncKeySnapshots/);
   // Imports are size-bounded and sniff the export envelope before parsing.
   assert.match(app, /async function hodlJournalImportFile\(file\)[\s\S]*?file\.size > 2 \* 1024 \* 1024/);
   assert.match(app, /outer\?\.entropylabJournalExport[\s\S]*?hodlJournalOpenExport\(outer, hodlJournalKeys\)/);
@@ -778,11 +497,8 @@ test("the app routes every journal backup through the sealed primitives", () => 
 // --- The full backup drill ------------------------------------------------------
 
 test("backup drill: seal everything, restore from a cold start", async () => {
-  // Day one: derive keys, journal two entries, fill the notepad, manage a key.
-  const doc = emptyDocument();
-  addEntry(doc, sampleEntry({ label: "first" }), fixedNow);
-  addEntry(doc, sampleEntry({ method: "cards", label: "second", input: "AS KD QH" }), fixedNow);
-  const journalFile = pack(await sealDocument(doc, keys));
+  // Day one: save the access file, fill the notepad, and manage a key.
+  const accessFile = pack(await sealAccessFile(keys));
   const journal = createJournal();
   journal.pages[0].notesText = `rolls ${journalKeyReferenceToken("Cold storage", "deadbeef")}`;
   const notebookExport = pack(await sealExport("notebook", serializeNotebook(journal), keys));
@@ -796,9 +512,8 @@ test("backup drill: seal everything, restore from a cold start", async () => {
     { at: "2026-09-02 10:00:00", tool: "calc", action: "derive", detail: "fp=deadbeef" },
   ]), keys));
 
-  // Day two, cold start: open the journal file, then pull each tab back.
-  const restored = await openDocument(journalFile, password);
-  assert.deepEqual(restored.doc.entries, doc.entries);
+  // Day two, cold start: open the access file, then restore each tab's own file.
+  const restored = await openAccessFile(accessFile, password);
   const notes = parseNotebook((await openExport(notebookExport, restored.keys)).content);
   assert.equal(notes.pages[0].notesText, journal.pages[0].notesText);
   const vault = parseKeyVault((await openExport(vaultExport, restored.keys)).content);
@@ -809,9 +524,6 @@ test("backup drill: seal everything, restore from a cold start", async () => {
   const log = await openExport(logExport, restored.keys);
   assert.match(log.content, /calc\tderive  fp=deadbeef/);
 
-  // And the cycle continues: new entries seal on top of the restored file.
-  addEntry(restored.doc, sampleEntry({ label: "third" }), fixedNow);
-  const again = await openDocument(pack(await sealDocument(restored.doc, restored.keys)), password);
-  assert.equal(again.doc.entries.length, 3);
-  assert.equal(again.doc.entries[2].label, "third");
+  // The access file remains stable because it never contains tab content.
+  assert.deepEqual(await sealAccessFile(restored.keys), JSON.parse(accessFile));
 });

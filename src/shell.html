@@ -707,16 +707,19 @@ words, pick one of the checksum words.</span></span>
       </section>
     <div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>
         <h2>Entropy Journal</h2>
-        <p class="muted tool-intro-note">A local notebook of entropy you already produced. Password is optional. No password means anyone with the file can open it. Not a password manager. Does not generate entropy.</p>
+        <p class="muted tool-intro-note">Local notes, restorable key inputs, a live session snapshot, and a privacy-safe debug log. The optional Journal password protects encrypted tab downloads. Nothing is stored in the browser or sent anywhere.</p>
+        <div class="journal-access-status" id="journal-access-status" role="status" aria-live="polite">
+          <img class="journal-access-lifehash" id="journal-lifehash" width="40" height="40" alt="" hidden>
+          <span id="journal-access-status-text">Create a Journal or open an access file to enable its tools.</span>
+        </div>
         <div class="row journal-global-actions tool-actions">
-          <button class="btn secondary green journal-download-action" id="journal-global-download" type="button" disabled aria-disabled="true"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span>Download journal</span></button>
+          <button class="btn secondary green journal-download-action" id="journal-global-download" type="button" disabled aria-disabled="true"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span>Download access file</span></button>
           <button class="btn red clear-current-action" id="journal-global-clear" type="button" disabled aria-disabled="true">Clear journal</button>
         </div>
       </div>
     <section class="key-manager no-print" id="journal-manager" hidden>
       <div class="key-tab-strip">
         <div class="key-tabs" id="journal-tool-tabs" role="tablist" aria-label="Journal stations">
-          <button class="tab key-tab is-lab" id="journal-book-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-card" aria-disabled="true" data-journal-tool="book" disabled>Entries</button>
           <button class="tab key-tab is-lab" id="journal-notes-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-notes-card" aria-disabled="true" data-journal-tool="notes" disabled>Notepad</button>
           <button class="tab key-tab is-lab" id="journal-keymanager-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-keymanager-card" aria-disabled="true" data-journal-tool="keymanager" disabled>Key manager</button>
           <button class="tab key-tab is-lab" id="journal-state-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-state-card" aria-disabled="true" data-journal-tool="state" disabled>Session state</button>
@@ -724,8 +727,7 @@ words, pick one of the checksum words.</span></span>
         </div>
       </div>
     </section>
-      <section class="card no-print tool-card" id="journal-card" role="region" aria-label="Journal" hidden>
-      <div id="journal-locked-panel">
+      <section class="card no-print tool-card" id="journal-gate-card" role="region" aria-label="Journal access" hidden>
         <div class="row segmented-control" id="journal-gate-modes" role="group" aria-label="Journal start">
           <button type="button" class="tab active" data-journal-gate="create" aria-pressed="true">Create</button>
           <button type="button" class="tab" data-journal-gate="open" aria-pressed="false">Open file</button>
@@ -733,7 +735,7 @@ words, pick one of the checksum words.</span></span>
         <div id="journal-create-panel">
           <label class="field"><span class="journal-password-label"><span>Journal password (optional)</span><span class="journal-password-validation" id="journal-create-password-status" role="status" aria-live="polite" hidden></span></span>
             <input id="journal-create-password" type="password" placeholder="Leave blank for no password" autocomplete="new-password" aria-describedby="journal-create-password-note journal-create-password-status">
-            <span class="field-note" id="journal-create-password-note">A password protects Journal files and encrypted downloads. Leave it blank to create without password protection; anyone with the file can open it. Passwords cannot be recovered.</span>
+            <span class="field-note" id="journal-create-password-note">A password protects the Journal access file and encrypted tab downloads. Leave it blank to create without password protection; anyone with those files can open them. Passwords cannot be recovered.</span>
           </label>
           <label class="field"><span class="journal-password-label"><span>Confirm password (optional)</span><span class="journal-password-validation" id="journal-create-confirm-status" role="status" aria-live="polite" hidden></span></span>
             <input id="journal-create-confirm" type="password" placeholder="Repeat password or leave blank" autocomplete="new-password" aria-describedby="journal-create-confirm-status">
@@ -744,7 +746,7 @@ words, pick one of the checksum words.</span></span>
           </div>
         </div>
         <div id="journal-open-panel" hidden>
-          <label class="field">Journal file
+          <label class="field">Journal access file
             <input id="journal-file" type="file" accept=".json,application/json">
           </label>
           <label class="field">Journal password (if used)
@@ -754,60 +756,8 @@ words, pick one of the checksum words.</span></span>
             <button class="btn primary" id="journal-unlock" type="button">Open journal</button>
           </div>
         </div>
-      </div>
-      <div id="journal-work-panel" hidden>
-        <div class="journal-status" id="journal-status">
-          <img class="journal-status-lifehash" id="journal-lifehash" width="48" height="48" alt="" hidden>
-          <div>
-            <p class="journal-status-title" id="journal-status-title">Journal open</p>
-            <p class="muted" id="journal-status-note">No entries yet. Download the journal file after you add one.</p>
-          </div>
-        </div>
-        <div class="row bip85-actions journal-toolbar tool-actions">
-          <label class="field journal-search-field">Search labels
-            <input id="journal-search" type="search" placeholder="Filter by label" autocomplete="off">
-          </label>
-          <button class="btn primary" id="journal-add" type="button">Add entry</button>
-          <button class="btn secondary" id="journal-save" type="button">Save file</button>
-          <button class="btn secondary" id="journal-lock" type="button">Lock</button>
-        </div>
-        <div id="journal-list" class="journal-list" aria-live="polite"></div>
-        <div id="journal-editor" class="journal-editor" hidden>
-          <label class="field">Method
-            <select id="journal-method">
-              <option value="dice" selected>Dice rolls</option>
-              <option value="coin">Coin flips</option>
-              <option value="hex">Hex</option>
-              <option value="brain">Brain-wallet text</option>
-              <option value="seed">Manual seed</option>
-              <option value="cards">Playing cards</option>
-            </select>
-          </label>
-          <label class="field">Raw rolls or input
-            <textarea id="journal-input" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-            <span class="field-note">Stored exactly as entered.</span>
-          </label>
-          <label class="field">BIP39 seed or passphrase
-            <textarea id="journal-phrase" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-          </label>
-          <label class="field">Label
-            <input id="journal-label" type="text" maxlength="120" autocomplete="off">
-          </label>
-          <label class="field">Notes (optional)
-            <textarea id="journal-entry-notes" spellcheck="true"></textarea>
-          </label>
-          <label class="field">Session wallet (optional)
-            <select id="journal-wallet"><option value="">None</option></select>
-          </label>
-          <div class="row bip85-actions tool-actions">
-            <button class="btn primary" id="journal-commit" type="button">Save entry</button>
-            <button class="btn secondary" id="journal-cancel" type="button">Cancel</button>
-          </div>
-        </div>
-        <div id="journal-view" hidden></div>
-      </div>
       <p class="err" id="journal-error" role="alert"></p>
-      <p class="muted">The journal lives in this page until you download its file. Password-protected files require the exact password; files created without one can be opened by anyone. Memory clearing is best-effort; close the page before reconnecting the computer.</p>
+      <p class="muted">The access file verifies the Journal password and unlocks matching encrypted tab downloads; it does not contain Notepad, Key manager, Session state, or Session log content. Download anything you need from those tabs separately. Memory clearing is best-effort; close the page before reconnecting the computer.</p>
     </section>
       <section class="card no-print tool-card" id="journal-notes-card" role="tabpanel" hidden>
       <div class="tool-intro edge-note is-info" id="journal-notes-tool-intro">
@@ -892,7 +842,7 @@ words, pick one of the checksum words.</span></span>
       <p data-i18n-rich>Die Distribution / Fairness Analysis (Pearson’s χ²): <a href="https://rpg.stackexchange.com/questions/70802/how-can-i-test-whether-a-die-is-fair" target="_blank" rel="noopener noreferrer">How can I test whether a die is fair?</a> — live check while entering rolls, following the <a href="https://dicefairness.johnellmore.com/" target="_blank" rel="noopener noreferrer">Dice Fairness Tester</a> thresholds.</p>
       <p data-i18n-rich>Jade anti-exfil (sign-to-contract): <a href="https://blog.blockstream.com/anti-exfil-stopping-key-exfiltration/" target="_blank" rel="noopener noreferrer">Anti-Exfil: Stopping Key Exfiltration</a> — secp256k1-zkp <code>ecdsa_s2c</code> / <code>anti_exfil_host_verify</code>.</p>
       <p data-i18n-rich>BIP-85 deterministic entropy: <a href="https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki" target="_blank" rel="noopener noreferrer">bip-0085.mediawiki</a> — HMAC-SHA512 of a fully hardened child; English BIP-39 / WIF / XPRV / HEX / password applications match COLDCARD.</p>
-      <p data-i18n-rich>Entropy Journal: AES-256-GCM from an optional typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. An empty password preserves the file format but provides no access protection. No relays, no accounts, no localStorage for secrets.</p>
+      <p data-i18n-rich>Entropy Journal: AES-256-GCM from an optional typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and content always reproduce the same file. An empty password preserves the file format but provides no access protection. No relays, no accounts, no localStorage for secrets.</p>
       <p data-i18n-rich>BIP-352 Silent Payments: <a href="https://github.com/bitcoin/bips/blob/master/bip-0352.mediawiki" target="_blank" rel="noopener noreferrer">bips/bip-0352</a> — reusable <code>sp1q…</code> addresses and unique taproot outputs. Descriptors: <a href="https://github.com/bitcoin/bips/blob/master/bip-0392.mediawiki" target="_blank" rel="noopener noreferrer">BIP-392</a>. Publish URI: <a href="https://github.com/bitcoin/bips/blob/master/bip-0321.mediawiki" target="_blank" rel="noopener noreferrer">BIP-321</a>. DNS name: <a href="https://github.com/bitcoin/bips/blob/master/bip-0353.mediawiki" target="_blank" rel="noopener noreferrer">BIP-353</a> — this page prints the TXT, it does not resolve names.</p>
       <p data-i18n-rich>Inscription envelopes: <a href="https://docs.ordinals.com/inscriptions.html" target="_blank" rel="noopener noreferrer">docs.ordinals.com/inscriptions</a> — <code>OP_FALSE OP_IF "ord"</code> parser only. This tool does not create inscriptions or number sats.</p>
     </section>

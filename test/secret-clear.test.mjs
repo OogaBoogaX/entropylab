@@ -55,7 +55,7 @@ function raceHarness() {
   });
   fields.set("pass", { value: "private passphrase" });
   for (const name of ["hodlThrowIfFailed", "hodlSetSelectedScriptType", "hodlCaptureKey",
-    "hodlSnapshotKeySummary", "hodlCommitDerivedKey", "hodlJournalCaptureDerivedKey",
+    "hodlSnapshotKeySummary", "hodlCommitDerivedKey",
     "hodlFocusWalletResult", "hodlJournalLog", "hodlSetWorkspaceError", "hodlJournalSetStatus",
     "hodlKeyManagerStatus", "hodlPsbtWipeMem", "hodlBip85WipeMem", "hodlSpWipeMem",
     "hodlLnWipeMem", "hodlRenderBip85Tabs", "hodlSyncBip85View", "hodlVanityCancel",
@@ -207,15 +207,15 @@ test("Lightning seed, passphrase, and derived output are explicitly cleared", ()
   assert.match(lifecycle, /lnError\.textContent\s*=\s*""/);
 });
 
-test("Entropy Journal password, entries, and encrypted session are explicitly cleared", () => {
-  // The lifecycle's hodlJournalWipeMem clears both the session notepad and the
-  // encrypted notebook (keys, document, and every notebook field).
+test("Entropy Journal password, access keys, and tab state are explicitly cleared", () => {
+  // The lifecycle's hodlJournalWipeMem clears the session tabs and access
+  // context together, so no hidden tab content survives the gate returning.
   assert.match(lifecycle, /hodlJournalWipeMem\(\)/);
-  assert.match(app, /function hodlJournalWipeMem\(\) \{[\s\S]*?hodlJournalWipeNotebook\(\)[\s\S]*?hodlJournalClearFields\(\)/);
+  assert.match(app, /function hodlJournalWipeMem\(\) \{[\s\S]*?wipeJournal\(hodlJournal\)[\s\S]*?hodlKeyManagerReset\(\)[\s\S]*?hodlJournalCloseAccess\(\)[\s\S]*?hodlJournalClearFields\(\)/);
   assert.match(app, /journal-create-password/);
-  assert.match(app, /journal-input/);
-  assert.match(app, /journal-phrase/);
-  assert.match(app, /journal-entry-notes/);
+  assert.match(app, /journal-open-password/);
+  assert.match(app, /journal-notes-text/);
+  assert.match(app, /journal-log-out/);
 });
 
 test("Silent Payments session key and passphrase fields are explicitly cleared", () => {

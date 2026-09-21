@@ -60,7 +60,7 @@ material. Its security posture rests on the following model:
 - Clearing a Key or Multisig station invalidates pending derivation work.
   Pagehide and persisted-page restoration also invalidate derivations and
   clear rendered seed-word grids, checksum choices, and brain-lab hex.
-  Journal teardown (including Lock) invalidates pending notebook and Key
+  Journal clearing and lifecycle teardown invalidate pending Notepad and Key
   Manager imports at both file-read and decryption boundaries. Obsolete
   completions cannot restore cleared state; this is not guaranteed erasure
   of immutable strings or browser-managed memory.
@@ -146,20 +146,18 @@ material. Its security posture rests on the following model:
   Re-derivation proves consistency with the supplied inputs, not that the
   sender lacks a copy of the key or that the inputs have adequate entropy.
   Imported private material remains in page memory and is not loaded into Key
-  Station until the user explicitly chooses it. Locking or clearing the
+  Station until the user explicitly chooses it. Clearing the
   Journal drops pending and ignored Key Manager entries on a best-effort basis.
-- The Entropy Journal notebook holds entropy the user
-  already produced, not a password manager and not a key generator. The
-  AES-256-GCM key is PBKDF2-SHA-256 (600,000 rounds) of the optional password
-  the user types, with the salt derived from the password itself; the IV is
-  HMAC-SHA-256 of the plaintext under a second derived key. The file is
-  therefore a deterministic function of the password and the entries — the
-  journal never calls a CSPRNG. The trade-off is brute-force cost: anyone
-  holding a password-protected file can test passwords at 600,000 SHA-256
-  rounds per guess, so a password should have real length. An empty password
-  is allowed to preserve a frictionless local workflow and the same file
-  format, but it provides no access protection: anyone with the file can open
-  every entry by leaving the password blank. The plaintext never goes to
+- The Journal access file contains only an encrypted format marker. It verifies
+  the optional password and restores the encryption context used by tab
+  downloads; it does not contain Notepad, Key Manager, Session state, or
+  Session log content. The AES-256-GCM key is PBKDF2-SHA-256 (600,000 rounds)
+  of the password, with the salt derived from the password itself; each file's
+  IV is HMAC-SHA-256 of its plaintext under a second derived key. Files are
+  deterministic and the Journal never calls a CSPRNG. Anyone holding a
+  password-protected file can test passwords at 600,000 SHA-256 rounds per
+  guess, so a password should have real length. An empty password preserves
+  the format but provides no access protection. Plaintext never goes to
   localStorage, IndexedDB, or the network.
 - Low-entropy dice and card transcripts are accepted intentionally so the
   calculator can be used for deterministic tests, demonstrations, and
