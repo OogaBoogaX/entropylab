@@ -37,6 +37,14 @@
       ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
       ["m", "/", "'", "backspace"],
     ],
+    // Vanity prefix: lowercase bech32 charset (full a-z + digits; the field
+    // itself live-filters invalid sequences). qwerty rows, backspace last.
+    "vanity-prefix": [
+      ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+      ["a", "s", "d", "f", "g", "h", "j", "k", "l", "backspace"],
+      ["z", "x", "c", "v", "b", "n", "m", "1", "2", "3"],
+      ["4", "5", "6", "7", "8", "9", "0"],
+    ],
   };
 
   function charsetFor(input) {
@@ -175,20 +183,25 @@
         b.setAttribute("aria-expanded", "true");
         b.setAttribute("aria-label", "Hide on-screen keyboard");
       });
-      // Position the panel below the field's ROW (not inside the grid cell,
-      // which would squash it to half width or drop it into the wrong column).
-      // Justification follows the field's column: a field in the row's LEFT
-      // grid column gets a left-justified keyboard, a field in the RIGHT
-      // column gets a right-justified one, so the keyboard sits under the
-      // field that opened it.
+      // Position the panel below the field's ROW or GRID (never inside a grid
+      // cell, which would squash it to one column width). Justification
+      // follows the field's column when the container is a two-column
+      // row: left-column fields get a left-justified keyboard, right-column
+      // fields a right-justified one, so the keyboard sits under the field
+      // that opened it. Single-column grids (e.g. .vanity-grid) place the
+      // panel below the whole grid at full content width.
       const field = input.closest("label.field, .field") || input.parentElement;
       const row = field && field.closest(".key-settings-row");
+      const grid = field && field.closest(".vanity-grid, .derivation-advanced-fields");
       if (row && row.parentNode) {
         row.parentNode.insertBefore(panel, row.nextSibling);
         // Column detection: compare the field against the row's first grid child
         const firstCell = row.firstElementChild;
         const inLeftColumn = !firstCell || field === firstCell || firstCell.contains(field);
         panel.classList.toggle("general-osk-left", inLeftColumn);
+      } else if (grid && grid.parentNode) {
+        grid.parentNode.insertBefore(panel, grid.nextSibling);
+        panel.classList.remove("general-osk-left");
       } else if (field && field.parentNode) {
         field.parentNode.insertBefore(panel, field.nextSibling);
         panel.classList.remove("general-osk-left");
