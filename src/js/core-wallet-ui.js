@@ -137,7 +137,7 @@ export const initCoreWallet = ({ deps } = {}) => {
         : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: keyRecord.der.length })}</span>`);
       push(tHtml("Private key {n} pubkey", { n: keyIndex + 1 }), expandableHtml(bytesToHex(keyRecord.pubkey), { label: t("Descriptor {n} key pubkey", { n: index + 1 }) }));
     });
-    return `<section data-core-descriptor><p class="psbt-kv"><strong>${tHtml("Descriptor {n}", { n: index + 1 })}</strong><br>${escapeHtml(functions)} · ${escapeHtml(branch)}</p>
+    return `<section class="card static-card" data-core-descriptor><p class="psbt-kv"><strong>${tHtml("Descriptor {n}", { n: index + 1 })}</strong><br>${escapeHtml(functions)} · ${escapeHtml(branch)}</p>
       <table class="psbted-pairs psbted-kv"><colgroup><col class="psbted-col-field"><col></colgroup><tbody>${rows.join("")}</tbody></table></section>`;
   };
 

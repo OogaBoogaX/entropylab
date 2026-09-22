@@ -138,8 +138,8 @@ button:not(:disabled):active * { color: inherit !important; }
 .intro-dismiss { position: absolute; top: 12px; right: 12px; margin: 0; }
 /* Shared tool shell. Cards own their edge padding; children own only the space
    between components, so adding a new first or last block cannot double it. */
-.tool-card > :first-child { margin-top: 0; }
-.tool-card > :last-child { margin-bottom: 0; }
+:is(.tool-card, .tool-result .static-card) > :first-child { margin-top: 0; }
+:is(.tool-card, .tool-result .static-card) > :last-child { margin-bottom: 0; }
 .tool-section { margin: var(--space-section) 0; }
 .tool-card > .tool-section:first-child { margin-top: 0; }
 /* ...but a field label opening a card is not a leading block: the margin on
