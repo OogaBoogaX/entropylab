@@ -28,7 +28,13 @@ const OUTPUT_TYPE_NAMES = [
 ];
 const outputTypeName = (type) => (OUTPUT_TYPE_NAMES[type] ?? (() => t("unknown type {n}", { n: type })))();
 
-const TONE_MARK = { ok: "✓", warn: "!", bad: "✗" };
+// A check's tone reads as a verdict word in the inspector's status colours.
+const TONE_VERDICT = {
+  ok: ["psbt-ok", () => t("Passed")],
+  warn: ["psbt-warn", () => t("Warning")],
+  bad: ["psbt-bad", () => t("Failed")],
+};
+const toneVerdict = (tone) => TONE_VERDICT[tone] ?? ["psbt-warn", () => t("Unknown")];
 
 export const initCoreWallet = ({ deps } = {}) => {
   const upload = document.getElementById("core-upload");
@@ -49,18 +55,43 @@ export const initCoreWallet = ({ deps } = {}) => {
     error.textContent = message || "";
   };
 
-  const checkListHtml = (checks) =>
-    `<ul>${checks
-      .map(
-        (item) =>
-          `<li><span class="psbted-note-${item.tone}">${TONE_MARK[item.tone] ?? "?"}</span> <strong>${escapeHtml(item.label)}</strong> — ${escapeHtml(item.detail)}</li>`,
-      )
-      .join("")}</ul>`;
+  // Actions stay disabled until there is something to act on.
+  const setEnabled = (button, on) => {
+    button.disabled = !on;
+    button.setAttribute("aria-disabled", String(!on));
+  };
+  const syncAddGo = () => setEnabled(addGo, Boolean(doc && addText.value.trim()));
+
+  // A report section opens on the hairline, a label with its count, and a
+  // grey line saying what the section holds — the PSBT Inspector's shape.
+  const sectionHeadHtml = (label, count, description) =>
+    `<hr class="result-divider"><p class="label">${label}${count === undefined ? "" : ` <span class="label-value">(${escapeHtml(String(count))})</span>`}</p><p class="muted label-description">${description}</p>`;
+
+  const checksHtml = (checks) => {
+    const bad = checks.filter((item) => item.tone === "bad").length;
+    const warned = checks.filter((item) => item.tone === "warn").length;
+    const [overallClass, overall] = bad
+      ? ["psbt-bad", tHtml("{count} CHECK(S) FAILED", { count: bad })]
+      : warned
+        ? ["psbt-warn", tHtml("ALL CHECKS PASSED WITH {count} WARNING(S)", { count: warned })]
+        : ["psbt-ok", tHtml("ALL CHECKS PASSED")];
+    const rows = checks
+      .map((item) => {
+        const [className, word] = toneVerdict(item.tone);
+        return `<li data-tone="${escapeHtml(item.tone)}"><span class="label">${escapeHtml(item.label)}</span> — <span class="${className}">${escapeHtml(word())}</span><br><span class="muted">${escapeHtml(item.detail)}</span></li>`;
+      })
+      .join("");
+    return `<section class="psbt-analysis-summary" data-core-checks aria-label="${escapeHtml(t("Wallet verification status"))}"><p class="label">${tHtml("Wallet verification")}</p><p class="${overallClass}"><strong>${overall}</strong></p><ul>${rows}</ul><p class="edge-note is-private">${tHtml("Passed means only that the file’s records agree with each other. It does not show that the keys are backed up or that Bitcoin Core will load the file.")}</p></section>`;
+  };
 
   const walletRowsHtml = () => {
     const rows = [];
     const push = (field, valueHtml) => rows.push(`<tr><td>${field}</td><td>${valueHtml}</td></tr>`);
+    const privateKeys = doc.descriptors.reduce((count, entry) => count + entry.keys.length, 0);
     push(tHtml("Network"), doc.network ? escapeHtml(doc.network) : `<span class="psbted-note-bad">${tHtml("unknown application_id 0x{id}", { id: doc.applicationId.toString(16).padStart(8, "0") })}</span>`);
+    push(tHtml("Wallet type"), privateKeys
+      ? tHtml("signing ({count} private key record(s))", { count: privateKeys })
+      : tHtml("watch-only"));
     push(tHtml("SQLite page size"), tHtml("{count} bytes", { count: doc.pageSize }));
     if (doc.meta.version !== undefined) push(tHtml("Client version"), escapeHtml(String(doc.meta.version)));
     if (doc.meta.minversion !== undefined) push(tHtml("Minimum client version"), escapeHtml(String(doc.meta.minversion)));
@@ -73,7 +104,9 @@ export const initCoreWallet = ({ deps } = {}) => {
       push(escapeHtml(label), expandableHtml(locator.hashes.join(" "), { label: `${label} hashes` }) + `<br><span class="muted">${escapeHtml(summary)}</span>`);
     }
     push(tHtml("Records in main table"), escapeHtml(String(doc.rows.length)));
-    return `<table class="psbted-pairs psbted-kv"><thead><tr><th class="psbted-col-field">${tHtml("Field")}</th><th>${tHtml("Value")}</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+    if (added) push(tHtml("Added this session"), tHtml("{count} descriptor(s)", { count: added }));
+    return `${sectionHeadHtml(tHtml("Wallet"), undefined, tHtml("What the file records about itself"))}
+      <table class="psbted-pairs psbted-kv"><colgroup><col class="psbted-col-field"><col></colgroup><tbody>${rows.join("")}</tbody></table>`;
   };
 
   const descriptorHtml = (entry, index) => {
@@ -104,8 +137,8 @@ export const initCoreWallet = ({ deps } = {}) => {
         : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: keyRecord.der.length })}</span>`);
       push(tHtml("Private key {n} pubkey", { n: keyIndex + 1 }), expandableHtml(bytesToHex(keyRecord.pubkey), { label: t("Descriptor {n} key pubkey", { n: index + 1 }) }));
     });
-    return `<section class="psbted-map"><h3>${tHtml("Descriptor {n}", { n: index + 1 })}: ${escapeHtml(functions)} · ${escapeHtml(branch)}</h3>
-      <table class="psbted-pairs psbted-kv"><tbody>${rows.join("")}</tbody></table></section>`;
+    return `<section data-core-descriptor><p class="psbt-kv"><strong>${tHtml("Descriptor {n}", { n: index + 1 })}</strong><br>${escapeHtml(functions)} · ${escapeHtml(branch)}</p>
+      <table class="psbted-pairs psbted-kv"><colgroup><col class="psbted-col-field"><col></colgroup><tbody>${rows.join("")}</tbody></table></section>`;
   };
 
   const otherRecordsHtml = () => {
@@ -124,16 +157,18 @@ export const initCoreWallet = ({ deps } = {}) => {
     const more = doc.others.length > shown.length
       ? `<p class="muted">${tHtml("…and {count} more record(s) not listed.", { count: doc.others.length - shown.length })}</p>`
       : "";
-    return `<section class="psbted-map"><h3>${tHtml("Other records")}</h3>
-      <p class="muted">${tHtml("Records this tool does not decode (transactions, address book, script caches). They are preserved byte-for-byte in the download.")}</p>
-      <table class="psbted-pairs"><thead><tr><th>${tHtml("Record")}</th><th>${tHtml("Key (hex)")}</th><th>${tHtml("Value (hex)")}</th></tr></thead><tbody>${rows}</tbody></table>${more}</section>`;
+    return `${sectionHeadHtml(tHtml("Other records"), doc.others.length, tHtml("Records this tool does not decode (transactions, address book, script caches). They are preserved byte-for-byte in the download."))}
+      <table class="psbted-pairs"><thead><tr><th>${tHtml("Record")}</th><th>${tHtml("Key (hex)")}</th><th>${tHtml("Value (hex)")}</th></tr></thead><tbody>${rows}</tbody></table>${more}`;
   };
 
   const render = () => {
     if (!doc) {
       out.innerHTML = "";
+      delete out.dataset.added;
       addSection.hidden = true;
-      download.disabled = true;
+      setEnabled(download, false);
+      setEnabled(wipe, false);
+      syncAddGo();
       return;
     }
     let checks = [];
@@ -142,29 +177,17 @@ export const initCoreWallet = ({ deps } = {}) => {
     } catch (exception) {
       checks = [{ tone: "bad", label: t("Verification"), detail: exception.message || String(exception) }];
     }
-    const bad = checks.filter((item) => item.tone === "bad").length;
-    const warned = checks.filter((item) => item.tone === "warn").length;
-    const verdict = bad
-      ? `<span class="psbted-note-bad">${tHtml("{count} check(s) failed", { count: bad })}</span>`
-      : warned
-        ? `<span class="psbted-note-warn">${tHtml("all checks passed with {count} warning(s)", { count: warned })}</span>`
-        : `<span class="psbted-note-ok">${tHtml("all checks passed")}</span>`;
-    const privateKeys = doc.descriptors.reduce((count, entry) => count + entry.keys.length, 0);
-    const summary = [
-      `<strong>${escapeHtml(doc.network ?? t("unknown network"))}</strong>`,
-      t("{count} descriptor(s)", { count: doc.descriptors.length }),
-      privateKeys ? t("signing ({count} private key record(s))", { count: privateKeys }) : t("watch-only"),
-      t("{count} record(s)", { count: doc.rows.length }),
-    ].join(" · ");
-
     out.innerHTML = `
-      <p class="psbt-kv">${summary} · ${verdict}${added ? ` · ${tHtml("{count} descriptor(s) added this session", { count: added })}` : ""}</p>
-      <section class="psbted-map"><h3>${tHtml("Verification")}</h3>${checkListHtml(checks)}</section>
-      <section class="psbted-map"><h3>${tHtml("Wallet")}</h3>${walletRowsHtml()}</section>
+      ${checksHtml(checks)}
+      ${walletRowsHtml()}
+      ${sectionHeadHtml(tHtml("Descriptors"), doc.descriptors.length, tHtml("The wallet’s output descriptors, with their key caches and private key records"))}
       ${doc.descriptors.map((entry, index) => descriptorHtml(entry, index)).join("")}
       ${otherRecordsHtml()}`;
+    out.dataset.added = String(added);
     addSection.hidden = false;
-    download.disabled = false;
+    setEnabled(download, true);
+    setEnabled(wipe, true);
+    syncAddGo();
   };
 
   const loadBytes = (bytes, name) => {
@@ -207,6 +230,7 @@ export const initCoreWallet = ({ deps } = {}) => {
       doc = hodlCoreWallet.parseWalletDat(hodlCoreWallet.buildWalletDat(doc, rows));
       added++;
       addText.value = "";
+      syncAddGo();
       render();
     } catch (exception) {
       setError(exception.message || String(exception));
@@ -239,4 +263,5 @@ export const initCoreWallet = ({ deps } = {}) => {
   };
 
   reveal.addEventListener("change", () => render());
+  addText.addEventListener("input", syncAddGo);
 };
