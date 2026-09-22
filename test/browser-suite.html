@@ -1305,11 +1305,11 @@
   await test("tool tabs answer the arrow keys and name themselves in full", async () => {
     const strip = document.getElementById("workspace-tabs");
     const tabs = [...strip.querySelectorAll("[data-workspace]")];
-    assert(tabs.length === 7, `Expected seven tool tabs, found ${tabs.length}`);
+    assert(tabs.length === 8, `Expected eight tool tabs, found ${tabs.length}`);
     // The visible label may be abbreviated; the accessible name never is.
     // Which tools exist and how they name themselves is the contract; where
     // they sit in the strip is a design decision that changes freely.
-    const names = ["BIP-85 Child", "Journal", "Keys", "Multi Signature", "PSBT", "Silent Payments", "Vanity"];
+    const names = ["BIP-85 Child", "Core Wallet", "Journal", "Keys", "Multi Signature", "PSBT", "Silent Payments", "Vanity"];
     equal(tabs.map((tab) => tab.getAttribute("aria-label")).sort().join("|"), names.join("|"), "every tool tab names itself in full");
     assert(!document.querySelector('#workspace [data-workspace="sp"] .silent-payments-icon'), "Silent Payments icon should not be in the workspace tab");
     const start = document.querySelector('#workspace [data-workspace="calc"]');
@@ -1523,7 +1523,7 @@
 
     const cardIds = [
       "calc-card", "vanity-card", "bip85-card", "msig-card", "sp-card",
-      "psbt-card", "psbted-card", "ln-card", "journal-card", "journal-notes-card",
+      "psbt-card", "psbted-card", "core-card", "ln-card", "journal-card", "journal-notes-card",
       "journal-keymanager-card", "journal-state-card", "journal-log-card",
     ];
     cardIds.forEach((id) => {
@@ -3159,6 +3159,54 @@
     equal(document.getElementById("psbted-error").textContent, "", "multisig fixture load failed");
     equal(document.querySelectorAll("#psbted-out .psbt-analysis-summary li ul li").length, 3, "each origin finding did not render as its own list item");
     input(box, "");
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("calc-card").hidden, "key workspace");
+  });
+
+  await test("Core Wallet verifies a wallet.dat and appends a descriptor", async () => {
+    // A minimal regtest descriptor wallet: the header records plus the
+    // native-SegWit pair of the Bitcoin Core v28.3.0 ground-truth rows used
+    // by test/core-wallet.test.mjs (test/wallet-export-reference.mjs). The
+    // container is built with the app's own SQLite writer.
+    const rows = [["0776657273696f6e","ec460400"],["0a6d696e76657273696f6e","ac970200"],["05666c616773","0000000007000000"],["0962657374626c6f636b","8011010000"],["1262657374626c6f636b5f6e6f6d65726b6c65","801101000106226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"],["1577616c6c657464657363726970746f7263616368655fa9d4c4c6182db7c06749cf4139e4a544043399f4b6f5da4b33380b185ebdaf00000000","4a04acb203c700000000cc83327390cf31fbe0187d7fe103c0e93b8aaedfaa3a6a70190ab6b822b99c3602befeb2a88655a33e30f4da4f242623c90a18ec13f236e928bf01cde94a5bad75"],["1077616c6c657464657363726970746f725fa9d4c4c6182db7c06749cf4139e4a544043399f4b6f5da4b33380b185ebdaf","9677706b68285b34323063396561332f3834682f31682f30685d747075624443684b4e516a4538386d50594c514d32714a7a426a43616f4867453857354c674b32584531706250624154775135686968477868663276564c57616d6b784d48347447556b383571547143794842796d5538526b654650574131506859414452793379476a5634396d6d2f302f2a292334633237676c6e68dae5494d000000000000000000000000e8030000"],["1161637469766565787465726e616c73706b02","5fa9d4c4c6182db7c06749cf4139e4a544043399f4b6f5da4b33380b185ebdaf"],["1577616c6c657464657363726970746f726361636865793913dfb376df009009fcb3debc1939a2955f13285567c106d84a13b540f10d00000000","4a04acb203c70000000128e080f6aa65124314aa34f4b0e0665ad2af058b1c9d69a0803cd0814066b9a702993afdaa057a4eca300236c6281388a703d1f97a2b7c93441f051fae596720e3"],["1077616c6c657464657363726970746f72793913dfb376df009009fcb3debc1939a2955f13285567c106d84a13b540f10d","9677706b68285b34323063396561332f3834682f31682f30685d747075624443684b4e516a4538386d50594c514d32714a7a426a43616f4867453857354c674b32584531706250624154775135686968477868663276564c57616d6b784d48347447556b383571547143794842796d5538526b654650574131506859414452793379476a5634396d6d2f312f2a29237976306c34327230dae5494d000000000000000000000000e8030000"],["11616374697665696e7465726e616c73706b02","793913dfb376df009009fcb3debc1939a2955f13285567c106d84a13b540f10d"]];
+    const fromHex = (text) => Uint8Array.from(text.match(/../g).map((pair) => parseInt(pair, 16)));
+    const walletBytes = hodlSqliteWriter.createDatabase({
+      applicationId: 0xfabfb5da,
+      tables: [{ name: "main", sql: "CREATE TABLE main(key BLOB PRIMARY KEY NOT NULL, value BLOB NOT NULL)", primaryKey: 0, rows: rows.map(([key, value]) => [fromHex(key), fromHex(value)]) }],
+    });
+    document.querySelector('#workspace [data-workspace="core"]').click();
+    await until(() => !document.getElementById("core-card").hidden, "Core Wallet tab");
+    const coreOut = () => document.getElementById("core-out").textContent;
+    const fileInput = document.getElementById("core-file");
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [new File([walletBytes], "wallet.dat", { type: "application/octet-stream" })] });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    const coreChecks = () => document.querySelector("#core-out [data-core-checks]");
+    const coreDescriptors = () => document.querySelectorAll("#core-out [data-core-descriptor]").length;
+    await until(() => coreChecks() || document.getElementById("core-error").textContent, "wallet verification to render");
+    equal(document.getElementById("core-error").textContent, "", "wallet upload failed");
+    assert(coreOut().includes("regtest"), "network not decoded");
+    equal(coreDescriptors(), 2, "descriptor count");
+    assert(coreOut().includes("watch-only"), "watch-only state missing");
+    assert(coreChecks().querySelectorAll("[data-tone]").length > 0, "no verification checks listed");
+    assert(!coreChecks().querySelector('[data-tone="bad"]'), "a verification check failed on the reference wallet");
+    assert(!document.getElementById("core-download").disabled, "download stayed disabled after a load");
+    assert(document.getElementById("core-add-go").disabled, "add enabled with no descriptor typed");
+    assert(!document.getElementById("core-add").hidden, "add-descriptor section stayed hidden");
+    // Append the reference legacy (pkh) descriptor: the file re-parses and
+    // re-verifies with three descriptors before it can download.
+    input(document.getElementById("core-add-text"), "pkh([420c9ea3/44h/1h/0h]tpubDCHZAX9rt6AMCqXFKo8DTQj3moR5fEozbLupqHq6GrA9s44DdnPSpuNv3fZPR8nAK7mGQFpdGSSF1Ky6Rqjb29JYzaDU998qiv99SWG1pAM/0/*)#789zdhaw");
+    document.getElementById("core-add-go").click();
+    await until(() => coreDescriptors() === 3 || document.getElementById("core-error").textContent, "descriptor addition to rebuild");
+    equal(document.getElementById("core-error").textContent, "", "descriptor addition failed");
+    assert(!coreChecks().querySelector('[data-tone="bad"]'), "a verification check failed after adding a descriptor");
+    equal(document.getElementById("core-out").dataset.added, "1", "added count");
+    // A malformed file reports an error and keeps the controls disabled.
+    document.getElementById("core-wipe").click();
+    await until(() => coreOut() === "" && document.getElementById("core-download").disabled && document.getElementById("core-wipe").disabled, "wipe to clear the editor");
+    Object.defineProperty(fileInput, "files", { configurable: true, value: [new File([new Uint8Array(4096)], "wallet.dat", { type: "application/octet-stream" })] });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => document.getElementById("core-error").textContent, "corrupt upload to raise an error");
+    assert(document.getElementById("core-download").disabled, "download enabled after a failed load");
     document.querySelector('#workspace [data-workspace="calc"]').click();
     await until(() => !document.getElementById("calc-card").hidden, "key workspace");
   });

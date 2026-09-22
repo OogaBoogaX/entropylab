@@ -59,6 +59,7 @@
         <button type="button" class="workspace-tab active" role="tab" aria-selected="true" aria-label="Keys"><span class="workspace-tab-full">Keys</span><span class="workspace-tab-short">Keys</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Multi Signature"><span class="workspace-tab-full">Multi Signature</span><span class="workspace-tab-short">MultiSig</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="PSBT"><span class="workspace-tab-full">PSBT</span><span class="workspace-tab-short">PSBT</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Core Wallet"><span class="workspace-tab-full">Core Wallet</span><span class="workspace-tab-short">Core</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="BIP-85 Child"><span class="workspace-tab-full">BIP-85 Child</span><span class="workspace-tab-short">BIP-85</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Silent Payments"><span class="workspace-tab-full">Silent Payments</span><span class="workspace-tab-short">SP</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Vanity"><span class="workspace-tab-full">Vanity</span><span class="workspace-tab-short">Vanity</span></button>
@@ -729,6 +730,40 @@ words, pick one of the checksum words.</span></span>
         <button class="btn secondary" id="nonce-upload" type="button">Upload .psbt File</button>
         <input type="file" id="nonce-file" accept=".psbt,.txn,.txt,.hex" hidden>
         <button class="btn secondary" id="nonce-wipe" type="button" disabled aria-disabled="true">End Session / Clear Fields</button>
+      </div>
+    </section>
+      <div class="tool-intro edge-note is-info" id="core-tool-intro" hidden>
+        <h2>Check a Bitcoin Core wallet</h2>
+        <p class="muted tool-intro-note">Upload a <code>wallet.dat</code> from Bitcoin Core 23 or later. Every descriptor and key record is decoded and re-checked. You can add descriptors and download the rebuilt file.</p>
+      </div>
+      <section class="card no-print tool-card" id="core-card" role="tabpanel" hidden>
+      <p class="edge-note is-public">Descriptor wallets only (SQLite). Older Berkeley DB wallets are refused.</p>
+      <div class="switch-row"><label class="switch-toggle"><input type="checkbox" id="core-reveal" aria-describedby="core-reveal-note"><span class="label">Show private key material</span></label><p class="switch-note" id="core-reveal-note">Reveals the raw private key records of a spending wallet. Off, they are listed but redacted.</p></div>
+      <details class="derivation-advanced" id="core-add" hidden>
+        <summary>Add a descriptor</summary>
+        <p class="muted label-description">Append a ranged descriptor to the loaded wallet. The file is rebuilt and re-checked before it can be downloaded.</p>
+        <label class="field">Output descriptor
+          <span class="field-note">Ranged descriptors only, with a /* wildcard. A private (xprv) descriptor is stored neutered plus its key record, and only into a wallet that already holds private keys — the same rule Bitcoin Core applies.</span>
+          <textarea id="core-add-text" placeholder="wpkh([00000000/84'/0'/0']xpub…/0/*)" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <div class="switch-row"><label class="switch-toggle"><input type="checkbox" id="core-add-active" aria-describedby="core-add-active-note"><span class="label">Set as the active descriptor for its type</span></label><p class="switch-note" id="core-add-active-note">New addresses of this type come from it. The descriptor it replaces stays in the wallet.</p></div>
+        <div class="switch-row"><label class="switch-toggle"><input type="checkbox" id="core-add-internal" aria-describedby="core-add-internal-note"><span class="label">Change (internal) chain</span></label><p class="switch-note" id="core-add-internal-note">With the descriptor active, it becomes the change branch for its type rather than the receive branch.</p></div>
+        <div class="row tool-actions">
+          <button class="btn secondary" id="core-add-go" type="button" disabled aria-disabled="true">Add Descriptor</button>
+        </div>
+      </details>
+      <p class="edge-note is-public">Uploaded wallets remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      <p class="label" id="core-result-label">Wallet check result</p>
+      <div class="tool-result" role="region" aria-labelledby="core-result-label">
+        <p class="field-note tool-result-empty">Upload a wallet.dat to view its records and checks here.</p>
+        <div class="tool-result-body" id="core-out" aria-live="polite"></div>
+      </div>
+      <p class="err" id="core-error" role="alert"></p>
+      <div class="row psbt-actions tool-actions">
+        <button class="btn primary" id="core-upload" type="button">Upload wallet.dat</button>
+        <input type="file" id="core-file" accept=".dat" hidden>
+        <button class="btn secondary" id="core-download" type="button" disabled aria-disabled="true">Download wallet.dat</button>
+        <button class="btn secondary" id="core-wipe" type="button" disabled aria-disabled="true">End Session / Clear Fields</button>
       </div>
     </section>
       <div class="tool-intro edge-note is-info" id="ln-tool-intro" hidden>
