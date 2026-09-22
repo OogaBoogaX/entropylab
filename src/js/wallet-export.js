@@ -274,6 +274,101 @@ var hodlWalletExport = (() => {
   // the file does not contain (issue #366).
   const hasPrivateDescriptors = (wallet) => walletDescriptorUnits(wallet, true).some((unit) => unit.privateDescriptor);
 
+  // The 74-byte serialized node (no version bytes), as Core's descriptor
+  // cache stores it.
+  const extendedKeyBody = (extendedKey, deps) => {
+    const raw = deps.base58Decode(extendedKey);
+    if (raw.length !== 78) throw new Error("wallet.dat export: unexpected extended key payload");
+    return raw.slice(4);
+  };
+
+  // The records one descriptor unit contributes to the `main` table:
+  // walletdescriptor, one walletdescriptorcache per pubkey provider, an
+  // optional walletdescriptorkey for spending material, and (unless
+  // unit.active === false) the activeexternalspk/activeinternalspk pointer.
+  // Exported for the Core Wallet tab, which appends units to an existing
+  // wallet and resolves active-record conflicts itself.
+  // deps = { sha256, checksum, base58Decode, deriveBranchBody, publicKeyForPrivate }
+  const descriptorUnitRecords = (unit, deps, creationTime) => {
+    const records = [];
+    const push = (key, value) => records.push([key, value]);
+
+    let stored = unit.descriptor; // public (watch-only) form with checksum, exactly as Core stores it
+    if (unit.multiKey) {
+      if (typeof deps.canonicalizeDescriptor === "function") stored = deps.canonicalizeDescriptor(stored);
+      if (PRIVATE_KEY.test(stored)) throw new Error("wallet.dat export: watch-only multisig refused an extended private key");
+    }
+    const body = stripChecksum(stored);
+    const compatBody = toCompatForm(body);
+    const compatDescriptor = `${compatBody}#${deps.checksum(compatBody)}`;
+    const id = deps.sha256(utf8(compatDescriptor)); // DescriptorID: raw SHA-256 digest bytes
+    if (id.length !== 32) throw new Error("wallet.dat export: sha256 must return 32 bytes");
+
+    push(
+      concat(streamString("walletdescriptor"), id),
+      concat(streamString(stored), u64le(creationTime), u32le(unit.nextIndex), u32le(unit.rangeStart), u32le(unit.rangeEnd)),
+    );
+
+    const pubs = unit.multiKey ? extractExtendedPubs(stored) : [extractExtendedKey(stored, "watch-only")];
+    if (!pubs.length) throw new Error("wallet.dat export: no extended key found in watch-only descriptor");
+    if (unit.multiKey && pubs.some((key) => !/^[xt]pub/.test(key))) {
+      throw new Error("wallet.dat export: multisig descriptors need the Base58Check codec to rewrite as xpub/tpub");
+    }
+    pubs.forEach((xpub, index) => {
+      const tail = descriptorKeyTail(stored, xpub);
+      if (tail.hardened) throw new Error("wallet.dat export: hardened step after a public key");
+      // Core caches the parent key of the wildcard: the branch child for
+      // account-level descriptors ("…xpub/0/*"), or the descriptor root key
+      // itself when a hardened branch already moved the key to branch level
+      // ("…xpubBranch/*") — BIP32PubkeyProvider with an empty path caches
+      // its root key. Caching the wrong parent makes Core watch a different
+      // subtree than the descriptor's. Multisig writes one parent per
+      // co-signer at that key's Core key_exp_index (0..n-1, or 1..n when a
+      // Taproot NUMS internal key occupies 0).
+      const branchBody = tail.branch === null ? extendedKeyBody(xpub, deps) : deps.deriveBranchBody(xpub, tail.branch);
+      if (branchBody.length !== 74) throw new Error("wallet.dat export: branch xpub body must be 74 bytes");
+      push(
+        concat(streamString("walletdescriptorcache"), id, u32le(cacheKeyExpIndex(stored, index))),
+        concat(compactSize(branchBody.length), branchBody),
+      );
+    });
+
+    if (unit.privateDescriptor) {
+      let xprv = extractExtendedKey(unit.privateDescriptor, "spending");
+      // The key record must map the stored descriptor's root pubkey, or
+      // Core's GetExtKey finds no key for it and the wallet cannot sign.
+      // A hardened branch step means the stored root is the branch key, so
+      // derive the branch xprv; otherwise the account key signs as itself.
+      const privateTail = descriptorKeyTail(unit.privateDescriptor, xprv);
+      if (privateTail.hardened) xprv = deps.deriveExtendedPrivateChild(xprv, 0x80000000 + privateTail.branch);
+      const raw = deps.base58Decode(xprv);
+      if (raw.length !== 78 || raw[45] !== 0) throw new Error("wallet.dat export: unexpected extended private key payload");
+      const secret = raw.slice(46, 78);
+      const pubkey = deps.publicKeyForPrivate(secret);
+      if (pubkey.length !== 33) throw new Error("wallet.dat export: public key must be 33 bytes");
+      const der = concat(DER_PREFIX, secret, DER_PARAMS, DER_PUBKEY_PREFIX, pubkey);
+      if (der.length !== 214) throw new Error("wallet.dat export: DER private key must be 214 bytes");
+      const keyHash = deps.sha256(deps.sha256(concat(pubkey, der)));
+      push(
+        concat(streamString("walletdescriptorkey"), id, compactSize(pubkey.length), pubkey),
+        concat(compactSize(der.length), der, keyHash),
+      );
+      // concat() copied the bytes into the record; wipe the intermediates.
+      raw.fill(0);
+      secret.fill(0);
+      der.fill(0);
+      keyHash.fill(0);
+    }
+
+    if (unit.active !== false) {
+      push(
+        concat(streamString(unit.internal ? "activeinternalspk" : "activeexternalspk"), u8(unit.type)),
+        id,
+      );
+    }
+    return records;
+  };
+
   // Builds the exact key/value rows of the `main` table.
   // deps = { sha256, checksum, base58Decode, deriveBranchBody, publicKeyForPrivate }
   const buildWalletRecords = (wallet, includePrivate, deps, creationTime) => {
@@ -284,14 +379,6 @@ var hodlWalletExport = (() => {
 
     const records = [];
     const push = (key, value) => records.push([key, value]);
-
-    // The 74-byte serialized node (no version bytes), as Core's descriptor
-    // cache stores it.
-    const extendedKeyBody = (extendedKey) => {
-      const raw = deps.base58Decode(extendedKey);
-      if (raw.length !== 78) throw new Error("wallet.dat export: unexpected extended key payload");
-      return raw.slice(4);
-    };
 
     push(streamString("version"), u32le(RECORD_VERSION));
     push(streamString("minversion"), u32le(RECORD_MINVERSION));
@@ -307,80 +394,10 @@ var hodlWalletExport = (() => {
 
     const seenActive = new Set();
     for (const unit of units) {
-      let stored = unit.descriptor; // public (watch-only) form with checksum, exactly as Core stores it
-      if (unit.multiKey) {
-        if (typeof deps.canonicalizeDescriptor === "function") stored = deps.canonicalizeDescriptor(stored);
-        if (PRIVATE_KEY.test(stored)) throw new Error("wallet.dat export: watch-only multisig refused an extended private key");
-      }
-      const body = stripChecksum(stored);
-      const compatBody = toCompatForm(body);
-      const compatDescriptor = `${compatBody}#${deps.checksum(compatBody)}`;
-      const id = deps.sha256(utf8(compatDescriptor)); // DescriptorID: raw SHA-256 digest bytes
-      if (id.length !== 32) throw new Error("wallet.dat export: sha256 must return 32 bytes");
-
-      push(
-        concat(streamString("walletdescriptor"), id),
-        concat(streamString(stored), u64le(creationTime), u32le(unit.nextIndex), u32le(unit.rangeStart), u32le(unit.rangeEnd)),
-      );
-
-      const pubs = unit.multiKey ? extractExtendedPubs(stored) : [extractExtendedKey(stored, "watch-only")];
-      if (!pubs.length) throw new Error("wallet.dat export: no extended key found in watch-only descriptor");
-      if (unit.multiKey && pubs.some((key) => !/^[xt]pub/.test(key))) {
-        throw new Error("wallet.dat export: multisig descriptors need the Base58Check codec to rewrite as xpub/tpub");
-      }
-      pubs.forEach((xpub, index) => {
-        const tail = descriptorKeyTail(stored, xpub);
-        if (tail.hardened) throw new Error("wallet.dat export: hardened step after a public key");
-        // Core caches the parent key of the wildcard: the branch child for
-        // account-level descriptors ("…xpub/0/*"), or the descriptor root key
-        // itself when a hardened branch already moved the key to branch level
-        // ("…xpubBranch/*") — BIP32PubkeyProvider with an empty path caches
-        // its root key. Caching the wrong parent makes Core watch a different
-        // subtree than the descriptor's. Multisig writes one parent per
-        // co-signer at that key's Core key_exp_index (0..n-1, or 1..n when a
-        // Taproot NUMS internal key occupies 0).
-        const branchBody = tail.branch === null ? extendedKeyBody(xpub) : deps.deriveBranchBody(xpub, tail.branch);
-        if (branchBody.length !== 74) throw new Error("wallet.dat export: branch xpub body must be 74 bytes");
-        push(
-          concat(streamString("walletdescriptorcache"), id, u32le(cacheKeyExpIndex(stored, index))),
-          concat(compactSize(branchBody.length), branchBody),
-        );
-      });
-
-      if (unit.privateDescriptor) {
-        let xprv = extractExtendedKey(unit.privateDescriptor, "spending");
-        // The key record must map the stored descriptor's root pubkey, or
-        // Core's GetExtKey finds no key for it and the wallet cannot sign.
-        // A hardened branch step means the stored root is the branch key, so
-        // derive the branch xprv; otherwise the account key signs as itself.
-        const privateTail = descriptorKeyTail(unit.privateDescriptor, xprv);
-        if (privateTail.hardened) xprv = deps.deriveExtendedPrivateChild(xprv, 0x80000000 + privateTail.branch);
-        const raw = deps.base58Decode(xprv);
-        if (raw.length !== 78 || raw[45] !== 0) throw new Error("wallet.dat export: unexpected extended private key payload");
-        const secret = raw.slice(46, 78);
-        const pubkey = deps.publicKeyForPrivate(secret);
-        if (pubkey.length !== 33) throw new Error("wallet.dat export: public key must be 33 bytes");
-        const der = concat(DER_PREFIX, secret, DER_PARAMS, DER_PUBKEY_PREFIX, pubkey);
-        if (der.length !== 214) throw new Error("wallet.dat export: DER private key must be 214 bytes");
-        const keyHash = deps.sha256(deps.sha256(concat(pubkey, der)));
-        push(
-          concat(streamString("walletdescriptorkey"), id, compactSize(pubkey.length), pubkey),
-          concat(compactSize(der.length), der, keyHash),
-        );
-        // concat() copied the bytes into the record; wipe the intermediates.
-        raw.fill(0);
-        secret.fill(0);
-        der.fill(0);
-        keyHash.fill(0);
-      }
-
       const activeKey = `${unit.internal}:${unit.type}`;
       if (seenActive.has(activeKey)) throw new Error("wallet.dat export: duplicate script type across accounts");
       seenActive.add(activeKey);
-      push(
-        concat(streamString(unit.internal ? "activeinternalspk" : "activeexternalspk"), u8(unit.type)),
-        id,
-      );
+      records.push(...descriptorUnitRecords(unit, deps, creationTime));
     }
     return records;
   };
@@ -424,9 +441,17 @@ var hodlWalletExport = (() => {
     walletDescriptorUnits,
     hasDescriptors,
     hasPrivateDescriptors,
+    descriptorUnitRecords,
     buildWalletRecords,
     buildWalletDat,
     walletDatFilename,
     walletDatButtonLabel,
+    // Shared with the Core Wallet tab's verifier and add-descriptor path.
+    NETWORKS,
+    toCompatForm,
+    descriptorKeyTail,
+    extendedKeyBody,
+    cacheKeyExpIndex,
+    FLAG_DISABLE_PRIVATE_KEYS,
   };
 })();

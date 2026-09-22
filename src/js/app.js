@@ -48,6 +48,7 @@ import { wordlist as bip39English } from "./bip39-english.js";
 // The PSBT editor (its own workspace tab) drives the rust-bitcoin WASM
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor, psbtBytesFromUpload } from "./psbt-editor.js";
+import { initCoreWallet } from "./core-wallet-ui.js";
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
@@ -1617,7 +1618,13 @@ function hodlWalletDatDeps() {
     canonicalizeDescriptor: (descriptor) => canonicalizeWatchDescriptor(descriptor, {
       decode: (key) => hodlBase58Check.decode(key),
       encode: (bytes) => hodlBase58Check.encode(bytes)
-    })
+    }),
+    // Neutering keeps the chain family: tprv/uprv/vprv become tpub.
+    neuterExtendedKey: (extendedKeyText) => {
+      let text = extendedKeyText.trim(), testnet = /^(?:tprv|uprv|vprv)/.test(text);
+      let node = hodlHDKey.fromExtendedKey(hodlReversionExtendedKey(text, hodlExtendedKeyVersions.mainnet.x.prv)).neutered();
+      return hodlReversionExtendedKey(node.publicExtendedKey, testnet ? hodlExtendedKeyVersions.testnet.x.pub : hodlExtendedKeyVersions.mainnet.x.pub);
+    }
   };
 }
 function hodlDownloadWalletDat() {
@@ -12874,9 +12881,10 @@ function hodlShowWorkspace(id) {
   document.getElementById("sp-card").hidden = id !== "sp";
   document.getElementById("vanity-card").hidden = id !== "vanity";
   document.getElementById("ln-card").hidden = id !== "ln";
+  document.getElementById("core-card").hidden = id !== "core";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
-  ["bip85", "sp", "msig", "calc", "vanity", "ln"].forEach((tool) => {
+  ["bip85", "sp", "msig", "calc", "vanity", "ln", "core"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
   hodlSyncPsbtTool();
@@ -13036,7 +13044,7 @@ async function hodlLoadTestKeys() {
 }
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "PSBT", "PSBT"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity", "Vanity"], ...(__ENTROPYLAB_TEST_HOOKS__ ? [["journal", "Journal", "Journal"]] : [])];
+var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "PSBT", "PSBT"], ["core", "Core Wallet", "Core"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity", "Vanity"], ...(__ENTROPYLAB_TEST_HOOKS__ ? [["journal", "Journal", "Journal"]] : [])];
 // Lightning and Journal are held back from release navigation while their
 // implementations remain in source. Test builds keep Journal reachable so its
 // behavior and backup compatibility stay covered until the UI is ready.
@@ -13370,6 +13378,10 @@ var hodlJournalAuditedClicks = {
   "psbted-copy-hex": ["psbt", "copy", "edited-psbt-hex"],
   "psbted-download": ["psbt", "download", "edited-psbt"],
   "psbted-reload": ["psbt", "load", "edited-psbt"],
+  "core-upload": ["core", "upload", "wallet-dat"],
+  "core-download": ["core", "download", "wallet-dat"],
+  "core-wipe": ["core", "clear", "editor"],
+  "core-add-go": ["core", "editor-add", "descriptor"],
   "journal-notes-copy": ["journal", "copy", "notepad-page"],
   "journal-notes-download": ["journal", "download", "notebook"],
   "journal-notes-upload": ["journal", "upload", "notebook"],
@@ -13385,6 +13397,8 @@ function hodlJournalControlTool(control) {
   let id = control?.id || "";
   if (id.startsWith("journal-")) return "journal";
   if (id.startsWith("psbt-") || id.startsWith("psbted-")) return "psbt";
+  if (id.startsWith("core-")) return "core";
+  if (control?.closest?.("#core-card")) return "core";
   if (id.startsWith("bip85-")) return "bip85";
   if (id.startsWith("msig-")) return "msig";
   if (id.startsWith("sp-")) return "sp";
@@ -15459,6 +15473,7 @@ function hodlInitWorkspace() {
   hodlInitMsig();
   hodlInitPsbt();
   initPsbtEditor({ networkDefault: () => hodlNetworkDefault });
+  initCoreWallet({ deps: hodlWalletDatDeps() });
   hodlInitBip85();
   hodlInitVanity();
   hodlInitSp();

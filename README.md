@@ -136,6 +136,20 @@ the limits of browser-memory cleanup.
   on the decoded contents, so reordered map serialization is not reported as
   a change. The comparison reports differences only; it does not judge
   whether a change is safe. The editor never signs anything.
+- Verifies and extends Bitcoin Core descriptor wallets (Core Wallet tab):
+  upload a SQLite `wallet.dat` (Bitcoin Core 23+; legacy Berkeley DB wallets
+  are refused) and every record is decoded — client versions, wallet flags,
+  sync locators, descriptors with their cached branch parents and private-key
+  records, and the active scriptPubKey pointers — then re-checked claim by
+  claim: descriptor checksums and recomputed DescriptorIDs, cache parents
+  re-derived from the account keys, private-key records against their pubkeys
+  and record hashes, and the network magic against the chain's genesis hash.
+  Private key material is listed but redacted unless a reveal toggle is on.
+  Additional ranged descriptors (watch-only or, into a wallet that already
+  signs, private) can be appended; the rebuilt database is re-parsed and
+  re-verified before it downloads, and records the tool does not decode are
+  preserved byte-for-byte. As with Core, a private descriptor is refused by a
+  disable-private-keys wallet.
 - Derives BIP-85 child entropy from the active key's BIP32 root (or a pasted
   root xprv): English BIP-39 mnemonics (12–24 words), HD-seed WIF, XPRV, HEX,
   and Base64/Base85 passwords. Same parent, application, and index always

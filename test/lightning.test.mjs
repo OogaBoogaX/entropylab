@@ -120,7 +120,7 @@ test("the workspace switcher retains the held-back Lightning implementation", ()
     assert.match(appSource, entry);
   }
   assert.match(appSource, /getElementById\("ln-card"\)\.hidden = id !== "ln"/);
-  assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity", "ln"\]\.forEach/);
+  assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity", "ln", "core"\]\.forEach/);
   assert.match(appSource, /import \{ hodlInitLn, hodlLnWipeMem \} from "\.\/lightning\.js"/);
   assert.match(appSource, /hodlInitLn\(\{ journalLog: hodlJournalLog \}\)/);
 });
