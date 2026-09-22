@@ -1749,9 +1749,9 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .psbt-analysis-summary li > .label { margin: 0; }
 /* A verdict is a live status, so it takes the bright set the status notes use
    rather than the muted text tones the rest of the report reads in. */
-:is(.psbt-analysis-summary, #nonce-out, #psbt-nonce-history-result) :is(.psbt-ok, .psbted-note-ok) { color: var(--ok-bright); }
-:is(.psbt-analysis-summary, #nonce-out, #psbt-nonce-history-result) :is(.psbt-warn, .psbted-note-warn) { color: var(--warn-bright); }
-:is(.psbt-analysis-summary, #nonce-out, #psbt-nonce-history-result) :is(.psbt-bad, .psbted-note-bad) { color: var(--danger-bright); }
+:is(.psbt-analysis-summary, #nonce-out, #psbt-nonce-history-result, #core-out) :is(.psbt-ok, .psbted-note-ok) { color: var(--ok-bright); }
+:is(.psbt-analysis-summary, #nonce-out, #psbt-nonce-history-result, #core-out) :is(.psbt-warn, .psbted-note-warn) { color: var(--warn-bright); }
+:is(.psbt-analysis-summary, #nonce-out, #psbt-nonce-history-result, #core-out) :is(.psbt-bad, .psbted-note-bad) { color: var(--danger-bright); }
 .psbt-analysis-summary li + li { margin-top: 12px; }
 /* A check family's findings nest as a dash-marked sublist, one line each. */
 .psbt-analysis-summary li ul { margin: 4px 0 2px; padding-left: 18px; list-style-type: "- "; }

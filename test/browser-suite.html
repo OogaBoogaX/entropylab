@@ -3180,25 +3180,29 @@
     const fileInput = document.getElementById("core-file");
     Object.defineProperty(fileInput, "files", { configurable: true, value: [new File([walletBytes], "wallet.dat", { type: "application/octet-stream" })] });
     fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-    await until(() => coreOut().includes("Verification") || document.getElementById("core-error").textContent, "wallet verification to render");
+    const coreChecks = () => document.querySelector("#core-out [data-core-checks]");
+    const coreDescriptors = () => document.querySelectorAll("#core-out [data-core-descriptor]").length;
+    await until(() => coreChecks() || document.getElementById("core-error").textContent, "wallet verification to render");
     equal(document.getElementById("core-error").textContent, "", "wallet upload failed");
     assert(coreOut().includes("regtest"), "network not decoded");
-    assert(coreOut().includes("2 descriptor(s)"), "descriptor count missing");
+    equal(coreDescriptors(), 2, "descriptor count");
     assert(coreOut().includes("watch-only"), "watch-only state missing");
-    assert(!document.querySelector("#core-out .psbted-note-bad"), "a verification check failed on the reference wallet");
+    assert(coreChecks().querySelectorAll("[data-tone]").length > 0, "no verification checks listed");
+    assert(!coreChecks().querySelector('[data-tone="bad"]'), "a verification check failed on the reference wallet");
     assert(!document.getElementById("core-download").disabled, "download stayed disabled after a load");
+    assert(document.getElementById("core-add-go").disabled, "add enabled with no descriptor typed");
     assert(!document.getElementById("core-add").hidden, "add-descriptor section stayed hidden");
     // Append the reference legacy (pkh) descriptor: the file re-parses and
     // re-verifies with three descriptors before it can download.
     input(document.getElementById("core-add-text"), "pkh([420c9ea3/44h/1h/0h]tpubDCHZAX9rt6AMCqXFKo8DTQj3moR5fEozbLupqHq6GrA9s44DdnPSpuNv3fZPR8nAK7mGQFpdGSSF1Ky6Rqjb29JYzaDU998qiv99SWG1pAM/0/*)#789zdhaw");
     document.getElementById("core-add-go").click();
-    await until(() => coreOut().includes("3 descriptor(s)") || document.getElementById("core-error").textContent, "descriptor addition to rebuild");
+    await until(() => coreDescriptors() === 3 || document.getElementById("core-error").textContent, "descriptor addition to rebuild");
     equal(document.getElementById("core-error").textContent, "", "descriptor addition failed");
-    assert(!document.querySelector("#core-out .psbted-note-bad"), "a verification check failed after adding a descriptor");
-    assert(coreOut().includes("1 descriptor(s) added this session"), "added count missing");
+    assert(!coreChecks().querySelector('[data-tone="bad"]'), "a verification check failed after adding a descriptor");
+    equal(document.getElementById("core-out").dataset.added, "1", "added count");
     // A malformed file reports an error and keeps the controls disabled.
     document.getElementById("core-wipe").click();
-    await until(() => coreOut() === "" && document.getElementById("core-download").disabled, "wipe to clear the editor");
+    await until(() => coreOut() === "" && document.getElementById("core-download").disabled && document.getElementById("core-wipe").disabled, "wipe to clear the editor");
     Object.defineProperty(fileInput, "files", { configurable: true, value: [new File([new Uint8Array(4096)], "wallet.dat", { type: "application/octet-stream" })] });
     fileInput.dispatchEvent(new Event("change", { bubbles: true }));
     await until(() => document.getElementById("core-error").textContent, "corrupt upload to raise an error");
