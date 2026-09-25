@@ -24,6 +24,7 @@ import { Worker } from "node:worker_threads";
 import { Transaction } from "@scure/btc-signer";
 import { p2tr, tapLeafHash } from "@scure/btc-signer/payment.js";
 import { secp256k1, schnorr } from "@noble/curves/secp256k1.js";
+import { sha256 as sha256n } from "@noble/hashes/sha2.js";
 
 const unhex = (hex) => new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
 const le32 = (n) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
@@ -127,8 +128,31 @@ const tapscriptLeafPsbt = (leaf) => {
   return psbt.toPSBT();
 };
 
+// #539: two per-signature costs remain after #538. Every script-path
+// signature re-hashes every tapscript leaf to find the one it names
+// (verify.rs:419), and the analysis memo holds one script, so signatures
+// alternating leaves re-walk and re-copy the whole leaf each time
+// (verify.rs:60-68). The leaves below carry no separators: the cost being
+// measured is the hashing and the memo copies, not the walk.
+const bigLeafPsbt = (leafSize, sigCount, alternate) => {
+  const cat = (...parts) => { const out = new Uint8Array(parts.reduce((sum, x) => sum + x.length, 0)); let i = 0; for (const x of parts) { out.set(x, i); i += x.length; } return out; };
+  const u8 = (a) => Uint8Array.from(a);
+  const vb = (b) => cat(u8(compactSize(b.length)), b);
+  const tagged = (tag, m) => { const t = sha256n(new TextEncoder().encode(tag)); return sha256n(cat(t, t, m)); };
+  const key = (i) => schnorr.getPublicKey(u8([...new Array(30).fill(0), (i >> 8) + 1, (i & 255) + 1]));
+  const X = key(0);
+  const leaves = (alternate ? [0x61, 0x51] : [0x61]).map((op) => { const script = new Uint8Array(leafSize + 34).fill(op); script.set([0x20, ...X, 0xac], leafSize); return script; });
+  const hashes = leaves.map((script) => tagged("TapLeaf", cat(u8([0xc0]), vb(script))));
+  const unsigned = cat(u8([2, 0, 0, 0, 1]), new Uint8Array(32).fill(7), u8([0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 1, ...[1000 & 255, (1000 >>> 8) & 255, 0, 0, 0, 0, 0, 0], 1, 0x51, 0, 0, 0, 0]));
+  const parts = [u8([0x70, 0x73, 0x62, 0x74, 0xff]), kv(u8([0x00]), unsigned), u8([0]), kv(u8([0x01]), cat(u8([5000 & 255, (5000 >>> 8) & 255, 0, 0, 0, 0, 0, 0]), vb(cat(u8([0x51, 0x20]), X))))];
+  leaves.forEach((script, j) => parts.push(kv(cat(u8([0x15, 0xc0 + j]), X), cat(script, u8([0xc0])))));
+  for (let i = 0; i < sigCount; i++) parts.push(kv(cat(u8([0x14]), key(i + 1), hashes[alternate ? i % 2 : 0]), new Uint8Array(64).fill(1)));
+  parts.push(u8([0, 0]));
+  return cat(...parts);
+};
+
 const DEADLINE_MS = 20000;
-const inspectInWorker = (psbt, timeoutMs = DEADLINE_MS) =>
+const inspectInWorker = (psbt, timeoutMs = DEADLINE_MS, issue = "#535") =>
   new Promise((resolve, reject) => {
     const worker = new Worker(
       `const { parentPort, workerData } = require("node:worker_threads");
@@ -141,7 +165,7 @@ const inspectInWorker = (psbt, timeoutMs = DEADLINE_MS) =>
     );
     const deadline = setTimeout(() => {
       worker.terminate();
-      reject(new Error(`psbtInspectDoc did not return within ${timeoutMs}ms (module hung, #535)`));
+      reject(new Error(`psbtInspectDoc did not return within ${timeoutMs}ms (module hung, ${issue})`));
     }, timeoutMs);
     worker.once("message", (msg) => { clearTimeout(deadline); worker.terminate(); resolve(msg); });
     worker.once("error", (error) => { clearTimeout(deadline); worker.terminate(); reject(error); });
@@ -151,8 +175,8 @@ const inspectInWorker = (psbt, timeoutMs = DEADLINE_MS) =>
 // verification_incomplete, or verification_budget), or the one deliberate
 // refusal we know — the size guard. A trap fails, and so does any other
 // throw: a parse error on a malformed builder is how a vacuous green reads.
-const outcome = async (psbt) => {
-  const result = await inspectInWorker(psbt);
+const outcome = async (psbt, timeoutMs, issue) => {
+  const result = await inspectInWorker(psbt, timeoutMs, issue);
   assert.notEqual(result.errorName, "RuntimeError", `the module trapped: ${result.errorMessage}`);
   if (result.errorMessage) {
     assert.match(result.errorMessage, /too large to inspect safely/, `unexpected throw (not a known refusal): ${result.errorMessage}`);
@@ -184,6 +208,8 @@ test("the hostile builders produce parseable PSBTs with a strict-DER signature",
     ["bare legacy, two signatures", hostileLegacyPsbt(nestedIfSeparator(4), 2)],
     ["P2WSH witnessScript", hostileP2wshPsbt(nestedIfSeparator(4))],
     ["tapscript leaf", tapscriptLeafPsbt(nestedIfSeparator(4))],
+    ["big tapscript leaf with several signatures", bigLeafPsbt(512, 3, false)],
+    ["two tapscript leaves with alternating signatures", bigLeafPsbt(512, 3, true)],
   ]) {
     const parsed = Transaction.fromPSBT(psbt, SCURE_OPTS);
     assert.ok(parsed.inputs.length > 0, `${name}: the PSBT did not parse back`);
@@ -204,6 +230,31 @@ for (const [name, psbt] of [
     assert.ok(result, `expected psbtInspectDoc to return, got ${JSON.stringify(result)}`);
   });
 }
+
+// #539: per-signature costs #538 did not touch. Every script-path signature
+// re-hashes every leaf to find its match, and the one-slot analysis memo
+// thrashes when signatures alternate leaves. { todo: "#539" }: these fail
+// until the memoization fix lands, then the marker comes off.
+// The deadline alone cannot catch the single-leaf case: 12-16 s of
+// per-signature rehashing slides under 20 s and would pass unfixed once the
+// marker came off. A ratio is machine-independent: today 255 signatures cost
+// ~8.5x one signature on the same leaf; a memoized fix lands near 1.
+test("per-signature cost stays flat per signature (#539)", { todo: "#539" }, async () => {
+  const one = await outcome(bigLeafPsbt(4_000_000, 1, false), 8000, "#539");
+  const many = await outcome(bigLeafPsbt(4_000_000, 255, false), 8000, "#539");
+  const ratio = many.ms / one.ms;
+  assert.ok(ratio < 2, `1 sig → ${one.ms}ms, 255 sigs → ${many.ms}ms (ratio ${ratio.toFixed(1)}): per-signature work grows with the signature count`);
+});
+// Alternating leaves need the ratio too: a deadline cannot tell a half fix
+// (leaf-hash map without the memo keyed by leaf) from the full one — the
+// half fix still misses the memo every signature but lands under 20 s. A
+// half fix shows ~x9; the full fix lands near 1.
+test("per-signature cost stays flat across alternating leaves (#539)", { todo: "#539" }, async () => {
+  const one = await outcome(bigLeafPsbt(2_000_000, 1, true), 8000, "#539");
+  const many = await outcome(bigLeafPsbt(2_000_000, 255, true), 8000, "#539");
+  const ratio = many.ms / one.ms;
+  assert.ok(ratio < 2, `1 sig → ${one.ms}ms, 255 alternating → ${many.ms}ms (ratio ${ratio.toFixed(1)}): per-signature work grows across alternating leaves`);
+});
 
 // The deadline alone passes a fix that only shaves the constant. The same
 // shape at 2x size must not cost ~4x: a sub-quadratic answer lands near 1.
