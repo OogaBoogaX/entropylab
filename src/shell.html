@@ -803,6 +803,7 @@ words, pick one of the checksum words.</span></span>
         <div class="row segmented-control" id="journal-gate-modes" role="group" aria-label="Journal start">
           <button type="button" class="tab active" data-journal-gate="create" aria-pressed="true">Create</button>
           <button type="button" class="tab" data-journal-gate="open" aria-pressed="false">Open file</button>
+          <button type="button" class="tab" data-journal-gate="unlock" aria-pressed="false" hidden>Unlock</button>
         </div>
         <div id="journal-create-panel">
           <label class="field"><span class="journal-password-label"><span>Journal password (optional)</span><span class="journal-password-validation" id="journal-create-password-status" role="status" aria-live="polite" hidden></span></span>
@@ -826,6 +827,15 @@ words, pick one of the checksum words.</span></span>
           </label>
           <div class="row bip85-actions tool-actions">
             <button class="btn primary" id="journal-unlock" type="button">Open journal</button>
+          </div>
+        </div>
+        <div id="journal-unlock-panel" hidden>
+          <p class="muted" id="journal-unlock-note">This session is locked in this page. Enter the journal password to restore the notebook, notepad, Key Manager, and session snapshot. Closing the tab discards it. Clear journal wipes it.</p>
+          <label class="field">Journal password
+            <input id="journal-session-password" type="password" placeholder="Journal password" autocomplete="off" aria-describedby="journal-unlock-note">
+          </label>
+          <div class="row bip85-actions tool-actions">
+            <button class="btn primary" id="journal-session-unlock" type="button">Unlock journal</button>
           </div>
         </div>
       </div>

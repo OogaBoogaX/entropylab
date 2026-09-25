@@ -350,6 +350,7 @@ export function wipeJournal(journal) {
 // same entries always produce the same file.
 export const JOURNAL_VERSION = 2;
 export const JOURNAL_EXPORT_VERSION = 1;
+export const JOURNAL_VAULT_VERSION = 1;
 export const JOURNAL_KDF = "PBKDF2-SHA-256";
 export const JOURNAL_CIPHER = "AES-256-GCM";
 export const JOURNAL_ITERATIONS = 600_000; // OWASP 2023 floor for PBKDF2-HMAC-SHA-256
@@ -813,4 +814,103 @@ export async function openDocument(file, password) {
 export async function createDocument(password, confirm) {
   assertPassword(password, { confirm });
   return { keys: await deriveJournalKeys(password), doc: emptyDocument() };
+}
+
+function cloneVaultJson(value, fallback) {
+  try {
+    return JSON.parse(JSON.stringify(value ?? fallback));
+  } catch {
+    throw new Error("The locked journal could not be encoded.");
+  }
+}
+
+function parseVaultLog(events) {
+  if (!Array.isArray(events)) return [];
+  return events.slice(0, JOURNAL_LOG_LIMIT).map((event) => ({
+    at: String(event?.at || ""),
+    tool: String(event?.tool || ""),
+    action: String(event?.action || ""),
+    detail: String(event?.detail || "").slice(0, 300),
+  }));
+}
+
+function parseVaultKeyManager(value) {
+  const pending = Array.isArray(value?.pending) ? cloneVaultJson(value.pending, []) : [];
+  const ignored = Array.isArray(value?.ignored) ? cloneVaultJson(value.ignored, []) : [];
+  if (pending.length > 100 || ignored.length > 100) throw new Error("The locked journal is corrupt.");
+  const ids = Array.isArray(value?.ids) ? value.ids.map((id) => String(id || "")).filter(Boolean) : [];
+  return { pending, ignored, ids, activeId: String(value?.activeId || "") };
+}
+
+function parseVaultPayload(plain) {
+  let parsed;
+  try {
+    parsed = JSON.parse(plain);
+  } catch {
+    throw new Error("The locked journal is corrupt.");
+  }
+  if (!parsed || parsed.entropylabJournalVault !== JOURNAL_VAULT_VERSION) {
+    throw new Error("That ciphertext is not a locked journal session.");
+  }
+  const notebook = parseDocument(JSON.stringify({
+    version: parsed.notebook?.version,
+    nextId: parsed.notebook?.nextId,
+    entries: parsed.notebook?.entries,
+  }));
+  const notepadSource = typeof parsed.notepad === "string" ? parsed.notepad : JSON.stringify(parsed.notepad);
+  const notepad = parseNotebook(notepadSource);
+  return {
+    notebook,
+    notepad,
+    keyManager: parseVaultKeyManager(parsed.keyManager),
+    sessionState: {
+      text: String(parsed.sessionState?.text ?? ""),
+      includePrivate: Boolean(parsed.sessionState?.includePrivate),
+    },
+    sessionLog: parseVaultLog(parsed.sessionLog),
+  };
+}
+
+export function buildVaultPayload({ notebook, notepad, keyManager, sessionState, sessionLog }) {
+  if (!notebook || !Array.isArray(notebook.entries)) throw new Error("Journal document is missing.");
+  return {
+    entropylabJournalVault: JOURNAL_VAULT_VERSION,
+    notebook: {
+      version: JOURNAL_VERSION,
+      nextId: notebook.nextId,
+      entries: notebook.entries,
+    },
+    notepad: JSON.parse(serializeNotebook(notepad)),
+    keyManager: parseVaultKeyManager(keyManager),
+    sessionState: {
+      text: String(sessionState?.text ?? ""),
+      includePrivate: Boolean(sessionState?.includePrivate),
+    },
+    sessionLog: parseVaultLog(sessionLog),
+  };
+}
+
+export async function sealVault(payload, keys) {
+  if (!keys?.passwordProtected) throw new Error("Set a journal password before locking.");
+  return sealPlainText(JSON.stringify(buildVaultPayload(payload)), keys);
+}
+
+export async function openVault(file, password) {
+  const parsed = parseFile(file);
+  const keys = await deriveJournalKeys(password, parsed.iterations);
+  const subtle = requireSubtle();
+  let plainBytes;
+  try {
+    plainBytes = new Uint8Array(await subtle.decrypt({ name: "AES-GCM", iv: parsed.iv }, keys.encKey, parsed.ciphertext));
+  } catch {
+    throw new Error("The password is incorrect, or the locked journal is damaged.");
+  }
+  try {
+    if (!keys.passwordProtected) throw new Error("Set a journal password before locking.");
+    return { keys, vault: parseVaultPayload(decoder.decode(plainBytes)) };
+  } finally {
+    wipeBytes(plainBytes);
+    wipeBytes(parsed.iv);
+    wipeBytes(parsed.ciphertext);
+  }
 }

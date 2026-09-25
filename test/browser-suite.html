@@ -1371,6 +1371,7 @@
       document.getElementById("journal-create").click();
       await until(() => !document.getElementById("journal-card").hidden && !document.getElementById("journal-work-panel").hidden, "passwordless journal creation to open Entries");
       assert(document.getElementById("journal-status-title").textContent.includes("No password protection"), "A passwordless Journal should disclose that its file has no access protection");
+      assert(document.getElementById("journal-lock").disabled, "Lock must stay disabled without a journal password");
       journalGlobalClear.click();
       await until(() => !document.getElementById("journal-card").hidden, "Journal gate after clearing the passwordless Journal");
       journalTabs.forEach((tab) => assert(tab.disabled, "Clearing a passwordless Journal should disable its tabs"));
@@ -1621,6 +1622,33 @@
       assert(document.getElementById("journal-editor").hidden, "Committing should close the editor");
       assert([...document.querySelectorAll("#journal-list .journal-item-meta")].some((el) => el.textContent.startsWith("Number bases · ")), "The entry should list its method and date");
 
+      document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
+      await until(() => !document.getElementById("journal-notes-card").hidden, "Notepad before lock");
+      const notesField = document.getElementById("journal-notes-text");
+      input(notesField, noteLine);
+      await until(() => notesField.value.includes(noteLine), "the typed note before lock");
+      document.querySelector('#journal-tool-tabs [data-journal-tool="book"]').click();
+      await until(() => !document.getElementById("journal-work-panel").hidden, "Entries before lock");
+      assert(!document.getElementById("journal-lock").disabled, "Lock should enable once the journal has a password");
+      document.getElementById("journal-lock").click();
+      await until(() => document.getElementById("journal-work-panel").hidden, "session lock hides the work panel");
+      assert(!document.querySelector("#journal-list .journal-item"), "Locking should clear the visible entries");
+      assert(!notesField.value.includes(noteLine), "Locking should clear the notepad field");
+      assert(!document.querySelector('#journal-gate-modes [data-journal-gate="unlock"]').hidden, "A locked session should offer Unlock");
+      input(document.getElementById("journal-session-password"), "a long enough but wrong password");
+      document.getElementById("journal-session-unlock").click();
+      await until(() => document.getElementById("journal-error").textContent.includes("password is incorrect"), "wrong-password error on session unlock");
+      assert(document.getElementById("journal-work-panel").hidden, "A wrong session password must not open the work panel");
+      input(document.getElementById("journal-session-password"), journalPassword);
+      document.getElementById("journal-session-unlock").click();
+      await until(() => !document.getElementById("journal-global-download").disabled, "Journal unlocked from the in-page vault");
+      assert([...document.querySelectorAll("#journal-list .journal-item-label")].some((el) => el.textContent === entryLabel), "Lock must restore the notebook entry");
+      document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
+      await until(() => !document.getElementById("journal-notes-card").hidden, "Notepad after session unlock");
+      assert(notesField.value.includes(noteLine), "Lock must restore the notepad");
+      document.querySelector('#journal-tool-tabs [data-journal-tool="book"]').click();
+      await until(() => !document.getElementById("journal-work-panel").hidden, "Entries after session unlock");
+
       // Store: the Save file button downloads the sealed journal.
       const journalText = await captureDownload("entropylab-journal.json", "journal file download", () => document.getElementById("journal-save").click());
       const envelope = JSON.parse(journalText);
@@ -1660,7 +1688,6 @@
       // The notepad stores encrypted by default and loads back through upload.
       document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
       await until(() => !document.getElementById("journal-notes-card").hidden, "Notepad for the store/load drill");
-      const notesField = document.getElementById("journal-notes-text");
       input(notesField, noteLine);
       await until(() => notesField.value.includes(noteLine), "the typed note");
       const notesFile = await captureDownload("entropylab-notebook.encrypted.json", "encrypted notepad download", () => document.getElementById("journal-notes-download").click());

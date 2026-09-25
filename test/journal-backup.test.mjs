@@ -765,6 +765,9 @@ test("the app routes every journal backup through the sealed primitives", () => 
   // The journal file itself downloads through sealDocument as JSON.
   assert.match(app, /hodlJournalSealDocument\(hodlJournalDoc, hodlJournalKeys\)/);
   assert.match(app, /link\.download = "entropylab-journal\.json"/);
+  // Lock seals the session with the unlocked keys; Unlock reopens that vault.
+  assert.match(app, /hodlJournalSealVault\(\{[\s\S]*?notebook: hodlJournalDoc[\s\S]*?notepad: hodlJournal[\s\S]*?hodlJournalKeys\)/);
+  assert.match(app, /hodlJournalOpenVault\(hodlJournalHeldVault,/);
   // Imports are size-bounded and sniff the export envelope before parsing.
   assert.match(app, /async function hodlJournalImportFile\(file\)[\s\S]*?file\.size > 2 \* 1024 \* 1024/);
   assert.match(app, /outer\?\.entropylabJournalExport[\s\S]*?hodlJournalOpenExport\(outer, hodlJournalKeys\)/);

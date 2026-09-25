@@ -90,11 +90,13 @@ import {
   formatStamp as hodlJournalStamp,
   openDocument as hodlJournalOpenDocument,
   openExport as hodlJournalOpenExport,
+  openVault as hodlJournalOpenVault,
   removeEntry as hodlJournalRemoveEntry,
   replaceEntry as hodlJournalReplaceEntry,
   searchEntries as hodlJournalSearch,
   sealDocument as hodlJournalSealDocument,
   sealExport as hodlJournalSealExport,
+  sealVault as hodlJournalSealVault,
   syncKeySnapshots as hodlJournalSyncKeySnapshots,
   snapshotFromKeyState as hodlJournalKeySnapshot,
   snapshotSession as hodlJournalSnapshot,
@@ -11683,6 +11685,19 @@ function hodlKeyManagerImportedState(entry) {
   if (legacyColemanDice !== null) state.fields.colemanDice = legacyColemanDice;
   return state;
 }
+function hodlKeyManagerRestoreLockedState(entry) {
+  let state = hodlKeyManagerImportedState(entry);
+  if (entry?.result && typeof entry.result === "object") {
+    try {
+      state.result = JSON.parse(JSON.stringify(entry.result));
+      state.needsDerivation = false;
+    } catch {
+      state.result = null;
+      state.needsDerivation = true;
+    }
+  }
+  return state;
+}
 function hodlKeyManagerUseInStation(state) {
   if (state.needsDerivation) {
     if (!hodlKeyManagerPending.includes(state) || hodlActiveDerivation) return;
@@ -14365,7 +14380,7 @@ function hodlScheduleJournalStateRefresh() {
 }
 // The encrypted entropy notebook gates the Journal tools and keeps its
 // document and Web Crypto keys apart from the session notepad.
-var hodlJournalKeys = null, hodlJournalDoc = null, hodlJournalFileText = "", hodlJournalDirty = false, hodlJournalGate = "create", hodlJournalReveal = false, hodlJournalEditingId = null, hodlJournalDeleteArmed = false, hodlJournalEntryVariants = {}, hodlJournalKeyEntries = new Map();
+var hodlJournalKeys = null, hodlJournalDoc = null, hodlJournalFileText = "", hodlJournalHeldVault = null, hodlJournalDirty = false, hodlJournalGate = "create", hodlJournalReveal = false, hodlJournalEditingId = null, hodlJournalDeleteArmed = false, hodlJournalEntryVariants = {}, hodlJournalKeyEntries = new Map();
 function hodlJournalReadEntryVariants(entry) {
   if (!entry) return {};
   return Object.fromEntries(["diceMethod", "entropyFormat", "cardMethod", "seedMethod"].filter((field) => entry[field]).map((field) => [field, entry[field]]));
@@ -14430,7 +14445,7 @@ function hodlJournalCopy(button, label) {
   else fallback();
 }
 function hodlJournalClearFields() {
-  for (let id of ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-search"]) {
+  for (let id of ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-session-password", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-search"]) {
     let field = document.getElementById(id);
     if (field) field.value = "";
   }
@@ -14490,15 +14505,19 @@ function hodlJournalCreatePasswordKeydown(event) {
   if (confirm.value === password.value) hodlJournalCreate();
 }
 function hodlJournalSetGate(mode) {
-  hodlJournalGate = mode === "open" ? "open" : "create";
+  if (mode === "unlock" && !hodlJournalHeldVault) mode = "create";
+  hodlJournalGate = mode === "open" || mode === "unlock" ? mode : "create";
   document.querySelectorAll("#journal-gate-modes [data-journal-gate]").forEach((button) => {
+    let isUnlock = button.dataset.journalGate === "unlock";
+    if (isUnlock) button.hidden = !hodlJournalHeldVault;
     let active = button.dataset.journalGate === hodlJournalGate;
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
-  let create = document.getElementById("journal-create-panel"), open = document.getElementById("journal-open-panel");
+  let create = document.getElementById("journal-create-panel"), open = document.getElementById("journal-open-panel"), unlock = document.getElementById("journal-unlock-panel");
   if (create) create.hidden = hodlJournalGate !== "create";
   if (open) open.hidden = hodlJournalGate !== "open";
+  if (unlock) unlock.hidden = hodlJournalGate !== "unlock";
   hodlSyncJournalCreatePasswordValidation();
 }
 function hodlJournalUnlocked() {
@@ -14558,17 +14577,29 @@ function hodlJournalFillWallets(selected) {
   });
   select.value = [...select.options].some((option) => option.value === current) ? current : "";
 }
+function hodlJournalSyncLockButton() {
+  let button = document.getElementById("journal-lock");
+  if (!button) return;
+  let allowed = hodlJournalUnlocked() && Boolean(hodlJournalKeys?.passwordProtected);
+  button.disabled = !allowed;
+  button.setAttribute("aria-disabled", String(!allowed));
+}
 function hodlJournalShowWork() {
   let locked = document.getElementById("journal-locked-panel"), work = document.getElementById("journal-work-panel");
   let unlocked = hodlJournalUnlocked();
   if (locked) locked.hidden = unlocked;
   if (work) work.hidden = !unlocked;
-  for (let id of ["journal-global-download", "journal-global-clear"]) {
-    let button = document.getElementById(id);
-    if (!button) continue;
-    button.disabled = !unlocked;
-    button.setAttribute("aria-disabled", String(!unlocked));
+  let download = document.getElementById("journal-global-download"), clear = document.getElementById("journal-global-clear");
+  if (download) {
+    download.disabled = !unlocked;
+    download.setAttribute("aria-disabled", String(!unlocked));
   }
+  if (clear) {
+    let canClear = unlocked || Boolean(hodlJournalHeldVault);
+    clear.disabled = !canClear;
+    clear.setAttribute("aria-disabled", String(!canClear));
+  }
+  hodlJournalSyncLockButton();
   let note = document.getElementById("journal-status-note");
   if (note) note.textContent = hodlJournalNoteText();
   if (unlocked) {
@@ -14749,6 +14780,7 @@ async function hodlJournalCreate() {
     if (generation !== hodlJournalGeneration) return hodlJournalDiscardOpened(created);
     hodlKeyManagerReset();
     hodlJournalWipeNotebook();
+    hodlJournalHeldVault = null;
     hodlJournalKeys = created.keys;
     hodlJournalDoc = created.doc;
     hodlJournalDirty = true;
@@ -14772,6 +14804,7 @@ async function hodlJournalUnlock() {
     if (generation !== hodlJournalGeneration) return hodlJournalDiscardOpened(opened);
     hodlKeyManagerReset();
     hodlJournalWipeNotebook();
+    hodlJournalHeldVault = null;
     hodlJournalKeys = opened.keys;
     hodlJournalDoc = opened.doc;
     hodlJournalDirty = false;
@@ -14832,17 +14865,113 @@ function hodlJournalCommit() {
     hodlJournalError(exception.message || String(exception));
   }
 }
-function hodlJournalLock() {
+function hodlJournalRestoreNotepad(notepad) {
+  hodlJournal.pages = notepad.pages;
+  hodlJournal.activePage = notepad.activePage;
+  hodlJournal.nextPageId = notepad.nextPageId;
+  hodlJournal.nextPageNumber = notepad.nextPageNumber;
+  hodlJournal.notesText = notepad.notesText;
+  hodlRenderJournalPageTabs();
+  hodlJournalRestorePage();
+}
+function hodlJournalRestoreLockedKeyManager(keyManager) {
   hodlKeyManagerReset();
-  hodlJournalWipeNotebook();
-  hodlJournalClearFields();
-  hodlJournalHideEditor();
-  hodlJournalSetGate("create");
-  hodlJournalTool = "book";
-  hodlJournalShowWork();
-  hodlSyncJournalTool();
-  hodlJournalLog("journal-lock");
-  document.getElementById("journal-status-note").textContent = "Journal locked. Password and entries were cleared (best effort).";
+  (keyManager?.pending || []).forEach((entry) => {
+    let state = hodlKeyManagerRestoreLockedState(entry);
+    hodlKeyManagerPending.push(state);
+  });
+  (keyManager?.ignored || []).forEach((entry) => {
+    hodlKeyManagerIgnored.push(hodlKeyManagerRestoreLockedState(entry));
+  });
+  hodlKeyManagerIds.clear();
+  (keyManager?.ids || []).forEach((id) => { if (id) hodlKeyManagerIds.add(id); });
+  hodlKeyManagerPending.forEach((state) => hodlKeyManagerIds.add(keyVaultIdentity(state)));
+  hodlKeyManagerActiveId = keyManager?.activeId || keyVaultIdentity(hodlKeyManagerStates()[0]) || "";
+  hodlKeyManagerRender();
+}
+async function hodlJournalLock() {
+  hodlJournalError("");
+  if (!hodlJournalUnlocked()) return;
+  if (!hodlJournalKeys.passwordProtected) {
+    hodlJournalError(hodlTText("Set a journal password before locking."));
+    hodlJournalSyncLockButton();
+    return;
+  }
+  let generation = hodlJournalGeneration, button = document.getElementById("journal-lock");
+  if (button) {
+    button.disabled = true;
+    button.setAttribute("aria-disabled", "true");
+  }
+  try {
+    let notes = document.getElementById("journal-notes-text");
+    if (notes) hodlJournalStoreNotesText(notes);
+    hodlJournalRefreshSessionState();
+    hodlJournalLog("journal-lock");
+    let vault = await hodlJournalSealVault({
+      notebook: hodlJournalDoc,
+      notepad: hodlJournal,
+      keyManager: {
+        pending: hodlKeyManagerPending.map(hodlKeyManagerEntry),
+        ignored: hodlKeyManagerIgnored.map(hodlKeyManagerEntry),
+        ids: [...hodlKeyManagerIds],
+        activeId: hodlKeyManagerActiveId || "",
+      },
+      sessionState: {
+        text: hodlJournal.stateText || "",
+        includePrivate: Boolean(document.getElementById("journal-state-private")?.checked),
+      },
+      sessionLog: hodlJournal.log.slice(),
+    }, hodlJournalKeys);
+    if (generation !== hodlJournalGeneration) return;
+    hodlJournalHeldVault = vault;
+    hodlJournalHidePlaintext();
+    hodlJournalSetGate("unlock");
+    hodlJournalShowWork();
+    hodlSyncJournalTool();
+  } catch (exception) {
+    hodlJournalError(exception.message || String(exception));
+    hodlJournalSyncLockButton();
+  }
+}
+async function hodlJournalUnlockSession() {
+  hodlJournalError("");
+  let generation = hodlJournalGeneration;
+  try {
+    if (!hodlJournalHeldVault) throw new Error("No locked journal in this page.");
+    let opened = await hodlJournalOpenVault(hodlJournalHeldVault, document.getElementById("journal-session-password")?.value || "");
+    if (generation !== hodlJournalGeneration) {
+      hodlJournalWipeDocument(opened?.vault?.notebook);
+      if (opened?.keys) hodlJournalWipeBytes(opened.keys.verify);
+      return;
+    }
+    hodlKeyManagerReset();
+    hodlJournalWipeNotebook();
+    hodlJournalKeys = opened.keys;
+    hodlJournalDoc = opened.vault.notebook;
+    hodlJournalDirty = true;
+    hodlJournalHeldVault = null;
+    hodlJournalRestoreNotepad(opened.vault.notepad);
+    hodlJournal.log = opened.vault.sessionLog.slice();
+    hodlJournal.stateText = opened.vault.sessionState.text;
+    let privateBox = document.getElementById("journal-state-private"), stateField = document.getElementById("journal-state-text");
+    if (privateBox) privateBox.checked = Boolean(opened.vault.sessionState.includePrivate);
+    if (stateField) stateField.value = hodlJournal.stateText;
+    hodlJournalRestoreLockedKeyManager(opened.vault.keyManager);
+    hodlJournalBackfillDerivedKeys();
+    document.getElementById("journal-session-password").value = "";
+    hodlJournalHideEditor();
+    hodlJournalShowWork();
+    hodlShowJournalTool("book");
+    hodlRenderJournalLog();
+    hodlJournalLog("journal-unlock", `${opened.vault.notebook.entries.length} entries`);
+  } catch (exception) {
+    hodlJournalError(exception.message || String(exception));
+  }
+}
+function hodlJournalSessionPasswordKeydown(event) {
+  if (event.key !== "Enter" || event.altKey || event.ctrlKey || event.metaKey || event.isComposing || event.repeat) return;
+  event.preventDefault();
+  hodlJournalUnlockSession();
 }
 function hodlInitJournalNotebook() {
   if (!document.getElementById("journal-create")) return;
@@ -14866,6 +14995,8 @@ function hodlInitJournalNotebook() {
   });
   document.getElementById("journal-save")?.addEventListener("click", hodlJournalSaveFile);
   document.getElementById("journal-lock")?.addEventListener("click", hodlJournalLock);
+  document.getElementById("journal-session-unlock")?.addEventListener("click", hodlJournalUnlockSession);
+  document.getElementById("journal-session-password")?.addEventListener("keydown", hodlJournalSessionPasswordKeydown);
   document.getElementById("journal-global-download")?.addEventListener("click", hodlJournalSaveFile);
   document.getElementById("journal-global-clear")?.addEventListener("click", hodlJournalWipeMem);
   document.getElementById("journal-commit")?.addEventListener("click", hodlJournalCommit);
@@ -14878,18 +15009,15 @@ function hodlInitJournalNotebook() {
   hodlJournalSetGate("create");
   hodlJournalShowWork();
 }
-function hodlJournalWipeMem() {
+function hodlJournalHidePlaintext() {
   wipeJournal(hodlJournal);
   hodlKeyManagerReset();
   hodlJournalWipeNotebook();
   hodlJournalClearFields();
   hodlJournalHideEditor();
-  hodlJournalSetGate("create");
   hodlJournalTool = "book";
   hodlJournalEncryptDownloads = true;
   hodlJournalSyncEncryptDownloads();
-  hodlJournalShowWork();
-  hodlSyncJournalTool();
   let field = document.getElementById("journal-state-text");
   if (field) field.value = "";
   let privateBox = document.getElementById("journal-state-private");
@@ -14904,6 +15032,13 @@ function hodlJournalWipeMem() {
   hodlJournalSetStatus("");
   let log = document.getElementById("journal-log-out");
   if (log) log.textContent = "No events yet.";
+}
+function hodlJournalWipeMem() {
+  hodlJournalHeldVault = null;
+  hodlJournalHidePlaintext();
+  hodlJournalSetGate("create");
+  hodlJournalShowWork();
+  hodlSyncJournalTool();
 }
 // The switcher keeps every tool on screen as a folder-tab strip that scrolls
 // when it must, in the shape the Keys section uses for its own tabs.
