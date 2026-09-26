@@ -317,3 +317,24 @@ test("Vanity grinder salt, matches, and running workers are cleared", () => {
   assert.match(lifecycle, /getElementById\("vanity-error"\)/);
   assert.match(lifecycle, /vanityError\.textContent\s*=\s*""/);
 });
+
+test("the key Wipe button drops the cached partial mnemonics", () => {
+  // Runs the real hodlWipeActiveKey. The cache keys are near-complete seeds,
+  // so the wipe must clear them itself rather than wait for pagehide, and it
+  // must do so even when no key slot is active.
+  for (const activeKey of [-1, 0]) {
+    const cache = new Map([["24:abandon abandon abandon", { candidates: [] }]]);
+    const context = vm.createContext({
+      hodlLastWordCache: cache,
+      hodlInvalidateDerivation() {},
+      hodlActiveKey: activeKey,
+      hodlKeys: [{ name: "Key 1", id: 1, number: 1, isLab: false }],
+      hodlNewKeyState: () => ({}),
+      hodlNewLabState: () => ({}),
+      hodlRestoreKey() {},
+      hodlJournalLog() {},
+    });
+    vm.runInContext(`${functionSource("hodlWipeActiveKey")}\nhodlWipeActiveKey();`, context);
+    assert.equal(cache.size, 0, `Wipe (active key ${activeKey}) left partial mnemonics in the last-word cache`);
+  }
+});

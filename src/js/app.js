@@ -12142,6 +12142,9 @@ function hodlSyncKeyClearButton(capture = false) {
 }
 function hodlWipeActiveKey() {
   hodlInvalidateDerivation();
+  // Cache keys are partial mnemonics (23 of 24 words, 11 of 12): wiping a key
+  // must not leave its seed, minus the last word, referenced until pagehide.
+  hodlLastWordCache.clear();
   if (hodlActiveKey < 0 || !hodlKeys[hodlActiveKey]) return;
   let state = hodlKeys[hodlActiveKey];
   hodlKeys[hodlActiveKey] = state.isLab ? hodlNewLabState() : hodlNewKeyState(state.name, state.id, state.number);
