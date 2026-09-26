@@ -12,6 +12,10 @@ import { wasmExports, heap } from "../src/js/entropylab-wasm.js";
 import { secp256k1 } from "../src/js/secp256k1.js";
 import { HDKey } from "../src/js/hdkey.js";
 import { PSBT_WASM_B64 } from "../src/js/psbt-wasm-b64.js";
+import { VANITY_WASM_B64 } from "../src/js/vanity-wasm-b64.js";
+import { mnemonicToSeedSync } from "../src/js/bip39.js";
+import { base58checkEncode } from "../src/js/base58.js";
+import { hash160 } from "../src/js/hashes.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (file) => readFileSync(join(root, file), "utf8");
@@ -150,6 +154,95 @@ test("the vanity crate wipes its derivation secrets and the worker its buffers (
   // Job start, both done paths, and the grind-error path all wipe.
   assert.ok((worker.match(/wipeSecrets\(\);/g) || []).length >= 4, "every job-ending path must wipe");
   assert.match(worker, /heap\(\)\.fill\(0, outPtr/, "the record area is wiped after each drain");
+});
+
+// Behavioral counterpart to the source guard above: after a grind, and after
+// the same buffer wipes the worker performs when a job ends (key, salt, and
+// record areas), nothing secret the grind handled or derived may remain
+// anywhere in the vanity module's linear memory, shadow stack included. The
+// expected secrets are recomputed with the main module, which has its own
+// linear memory, so computing them cannot plant the bytes being searched for.
+test("a vanity grind leaves no input or derived secret in its linear memory once the worker wipes", () => {
+  const binary = new Uint8Array(Buffer.from(VANITY_WASM_B64, "base64"));
+  const vanity = new WebAssembly.Instance(new WebAssembly.Module(binary), {}).exports;
+  const vHeap = () => new Uint8Array(vanity.memory.buffer);
+  const contains = (bytes) => Buffer.from(vHeap().buffer).indexOf(Buffer.from(bytes)) !== -1;
+  const encode = (text) => new TextEncoder().encode(text);
+  // Same sizes as the worker (vanity-worker.js).
+  const MAX_PREFIX = 116, MAX_SALT = 256, MAX_KEY = 1024, MAX_PATH = 16, OUT_CAP = 12 + 106 * 8192;
+  const prefixPtr = vanity.vanity_alloc(MAX_PREFIX);
+  const saltPtr = vanity.vanity_alloc(MAX_SALT);
+  const keyPtr = vanity.vanity_alloc(MAX_KEY);
+  const pathPtr = vanity.vanity_alloc(MAX_PATH * 4);
+  const outPtr = vanity.vanity_alloc(OUT_CAP);
+  const H = 0x80000000;
+  const grind = (mode, key, salt, path, counterSlot, passLen) => {
+    vHeap().set(encode("bc1q"), prefixPtr);
+    vHeap().set(key, keyPtr);
+    vHeap().set(salt, saltPtr);
+    const pathView = new DataView(vanity.memory.buffer, pathPtr, MAX_PATH * 4);
+    path.forEach((component, i) => pathView.setUint32(i * 4, component >>> 0, true));
+    const status = vanity.vanity_grind(mode, keyPtr, key.length, saltPtr, salt.length, pathPtr, path.length,
+      counterSlot, prefixPtr, 4, passLen, 0n, 4n, outPtr, OUT_CAP, 2);
+    assert.equal(status, 0, `vanity_grind mode ${mode} failed`);
+    // Every bc1q address matches the prefix, so each candidate leaves a
+    // record; its HASH160 lets the test prove it recomputed the same keys.
+    const count = new DataView(vanity.memory.buffer, outPtr, 12).getUint32(8, true);
+    const hashes = Array.from({ length: count }, (_, i) =>
+      Buffer.from(vHeap().slice(outPtr + 12 + i * 106 + 40, outPtr + 12 + i * 106 + 60)).toString("hex"));
+    vHeap().fill(0, keyPtr, keyPtr + MAX_KEY); // wipeSecrets()
+    vHeap().fill(0, saltPtr, saltPtr + MAX_SALT);
+    vHeap().fill(0, outPtr, outPtr + OUT_CAP); // the post-drain record wipe
+    return hashes;
+  };
+  const hashOf = (hd) => Buffer.from(hash160(hd.publicKey)).toString("hex");
+
+  // Passphrase grind: odometer candidates "aaa".."aad" after the salt.
+  const phrase = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+  const salt = "residue-scan-salt";
+  const passphraseHits = grind(0, encode(phrase), encode(salt), [84 + H, H, H, 0, 0], 0xffffffff, 3);
+  assert.equal(passphraseHits.length, 4);
+  assert.equal(contains(encode(phrase)), false, "the mnemonic survived");
+  assert.equal(contains(encode(salt)), false, "the starting passphrase survived");
+  for (const [i, odometer] of ["aaa", "aab", "aac", "aad"].entries()) {
+    const seed = mnemonicToSeedSync(phrase, salt + odometer);
+    const master = HDKey.fromMasterSeed(seed);
+    const account = master.derive("m/84'/0'/0'");
+    const leaf = account.derive("m/0/0");
+    assert.equal(passphraseHits[i], hashOf(leaf), `candidate ${odometer}: recomputed keys differ from the grind's`);
+    for (const [label, bytes] of [
+      ["seed", seed.subarray(0, 32)],
+      ["master key", master.privateKey],
+      ["account key", account.privateKey],
+      ["address key", leaf.privateKey],
+    ]) {
+      assert.equal(contains(bytes), false, `candidate ${odometer}: the ${label} survived`);
+    }
+    for (const node of [master, account, leaf]) node.wipePrivateData();
+  }
+
+  // Derivation grind: counter in slot 0 below a 64-byte node (key ‖ chain code).
+  const node = pattern(64, 101);
+  const derivationHits = grind(1, node, new Uint8Array(0), [0, 0], 0, 0);
+  assert.equal(derivationHits.length, 4);
+  assert.equal(contains(node.subarray(0, 32)), false, "the parent private key survived");
+  assert.equal(contains(node.subarray(32)), false, "the parent chain code survived");
+  const xprv = new Uint8Array(78);
+  xprv.set([0x04, 0x88, 0xad, 0xe4]);
+  xprv.set(node.subarray(32), 13);
+  xprv.set(node.subarray(0, 32), 46);
+  const parent = HDKey.fromExtendedKey(base58checkEncode(xprv));
+  for (let counter = 0; counter < 4; counter++) {
+    const child = parent.deriveChild(counter);
+    const leaf = child.deriveChild(0);
+    assert.equal(derivationHits[counter], hashOf(leaf), `counter ${counter}: recomputed keys differ from the grind's`);
+    assert.equal(contains(child.privateKey), false, `counter ${counter}: the child key survived`);
+    assert.equal(contains(child.chainCode), false, `counter ${counter}: the child chain code survived`);
+    assert.equal(contains(leaf.privateKey), false, `counter ${counter}: the address key survived`);
+    child.wipePrivateData();
+    leaf.wipePrivateData();
+  }
+  parent.wipePrivateData();
 });
 
 test("the JS facades wipe their secret byte buffers (source guard)", () => {
