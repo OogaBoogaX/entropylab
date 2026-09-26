@@ -6,7 +6,11 @@
 // the helpers here so the module is decoded and instantiated exactly once.
 // The boundary helpers copy inputs into linear memory for the duration of
 // one call and copy outputs back out; el_free zeroes each buffer before
-// deallocating it, so nothing secret is left behind in linear memory.
+// deallocating it. Buffers are not the only copies, though: Rust frames
+// (including dependency code with no erase API) spill arguments and
+// temporaries into the shadow stack, which also lives in linear memory and is
+// not erased when a frame pops. So every export is wrapped to schedule a
+// zeroing of the whole stack region once per task (see scrubStack below).
 //
 // Loading: browsers refuse to compile a module this size synchronously on
 // the main thread, so in the browser instantiation is async and app boot
@@ -21,18 +25,129 @@ const wasmBytes = (() => {
   return bytes;
 })();
 
-let wasm = null; // WebAssembly exports; set by init below.
+// Returns the initial stack pointer of a stack-first module: the top of the
+// region [0, top) that holds nothing but the downward-growing shadow stack.
+// Read from the binary rather than assumed, and fails closed: if the linker
+// layout ever changes (static data or a passive segment that could land below
+// the stack top, no unique stack pointer, any imports), zeroing [0, top)
+// would corrupt the module, so loading throws and the test suite fails.
+export const stackRegion = (bytes) => {
+  let p = 8;
+  const uleb = () => {
+    let value = 0, shift = 0, byte;
+    do { byte = bytes[p++]; value += (byte & 0x7f) * 2 ** shift; shift += 7; } while (byte & 0x80);
+    return value;
+  };
+  const sleb = () => {
+    let value = 0, shift = 0, byte;
+    do { byte = bytes[p++]; value += (byte & 0x7f) * 2 ** shift; shift += 7; } while (byte & 0x80);
+    return byte & 0x40 ? value - 2 ** shift : value;
+  };
+  // A constant expression; returns its value when it is a plain i32.const.
+  const constExpr = () => {
+    const op = bytes[p++];
+    let value = null;
+    if (op === 0x41) value = sleb();
+    else if (op === 0x42 || op === 0x23) sleb();
+    else if (op === 0x43) p += 4;
+    else if (op === 0x44) p += 8;
+    else throw new Error(`stackRegion: unsupported constant expression opcode 0x${op.toString(16)}`);
+    if (bytes[p++] !== 0x0b) throw new Error("stackRegion: unsupported constant expression");
+    return value;
+  };
+  const stackPointers = [];
+  const dataOffsets = [];
+  while (p < bytes.length) {
+    const id = bytes[p++];
+    const size = uleb();
+    const end = p + size;
+    if (id === 2) throw new Error("stackRegion: the module has imports; the stack layout is not verified");
+    if (id === 6) {
+      for (let n = uleb(); n > 0; n--) {
+        const type = bytes[p++];
+        const mutable = bytes[p++] === 1;
+        const init = constExpr();
+        if (type === 0x7f && mutable && init !== null) stackPointers.push(init);
+      }
+    } else if (id === 11) {
+      for (let n = uleb(); n > 0; n--) {
+        const flags = uleb();
+        if (flags === 1) throw new Error("stackRegion: passive data segment; not stack-first-verifiable");
+        if (flags === 2) uleb();
+        const offset = constExpr();
+        if (offset === null) throw new Error("stackRegion: data segment offset is not a constant");
+        dataOffsets.push(offset);
+        const length = uleb(); // not `p += uleb()`: that reads p before uleb advances it
+        p += length;
+      }
+    }
+    p = end;
+  }
+  if (stackPointers.length !== 1) throw new Error(`stackRegion: expected one stack pointer, found ${stackPointers.length}`);
+  const top = stackPointers[0];
+  if (!(top > 0)) throw new Error("stackRegion: invalid stack pointer");
+  if (dataOffsets.some((offset) => offset < top)) throw new Error("stackRegion: data below the stack top; the module is not stack-first");
+  return top;
+};
+
+const stackTop = stackRegion(wasmBytes);
+export const wasmStackTop = () => stackTop;
+
+let wasm = null; // Wrapped WebAssembly exports; set by init below.
+let memory = null; // The raw linear memory, for the scrub.
+
+// Zeroes the whole shadow-stack region. Only valid while no export is
+// running; that always holds when JS runs, because the module imports
+// nothing and so can never call back into JS mid-export. The fill costs
+// about 20 µs for the default 1 MiB stack, which is why it is batched.
+export const scrubStack = () => {
+  if (memory) new Uint8Array(memory.buffer).fill(0, 0, stackTop);
+};
+let scrubQueued = false;
+const scheduleScrub = () => {
+  if (scrubQueued) return;
+  scrubQueued = true;
+  queueMicrotask(() => {
+    scrubQueued = false;
+    scrubStack();
+  });
+};
+// Every exported function schedules a scrub on the way out, so no facade
+// (and no future export) has to remember to. A derivation that makes many
+// calls in one task pays for one scrub; the stack residue lives until the
+// task's microtasks run, no longer than the task's own JS copies of the same
+// secrets. Callers that need the stack clean synchronously call scrubStack().
+const guard = (exports) => {
+  const wrapped = {};
+  for (const [name, value] of Object.entries(exports)) {
+    wrapped[name] = typeof value === "function"
+      ? (...args) => {
+          try {
+            return value(...args);
+          } finally {
+            scheduleScrub();
+          }
+        }
+      : value;
+  }
+  return Object.freeze(wrapped);
+};
+const bind = (instance) => {
+  memory = instance.exports.memory;
+  if (instance.exports.__heap_base && instance.exports.__heap_base.value < stackTop) {
+    throw new Error("EntropyLab WebAssembly: the heap starts below the stack top");
+  }
+  wasm = guard(instance.exports);
+};
 
 const isNode = typeof process !== "undefined" && !!(process.versions && process.versions.node);
 if (isNode) {
   // Node has no synchronous-compilation size limit; tests stay synchronous.
-  wasm = new WebAssembly.Instance(new WebAssembly.Module(wasmBytes), {}).exports;
+  bind(new WebAssembly.Instance(new WebAssembly.Module(wasmBytes), {}));
 }
 export const wasmReady = isNode
   ? Promise.resolve()
-  : WebAssembly.instantiate(wasmBytes, {}).then(({ instance }) => {
-      wasm = instance.exports;
-    });
+  : WebAssembly.instantiate(wasmBytes, {}).then(({ instance }) => bind(instance));
 
 export const requireReady = () => {
   if (!wasm) throw new Error("EntropyLab WebAssembly is not initialized yet; await wasmReady.");

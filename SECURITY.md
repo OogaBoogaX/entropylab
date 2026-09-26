@@ -89,10 +89,16 @@ material. Its security posture rests on the following model:
   PSBT/BIP-85/Silent-Payments session roots when a session ends or the page
   unloads. The limits are structural: JavaScript strings and DOM values
   (displayed seed phrases, WIF keys, typed input) cannot be overwritten, only
-  dereferenced — the "(best effort)" the UI already states — and copies made
-  inside dependency types that expose no erase (HMAC engines,
-  `bip39::Mnemonic`) remain until their memory is reused. None of this
-  protects against a compromised machine.
+  dereferenced — the "(best effort)" the UI already states — and heap copies
+  made inside dependency types that expose no erase (HMAC engines,
+  `bip39::Mnemonic`) remain until their memory is reused. Stack copies are
+  handled separately: Rust frames spill arguments and temporaries into the
+  WASM shadow stack, which lives in linear memory and is not erased when a
+  frame returns, so the loader wraps every export to zero the whole stack
+  region once per task after any export ran (the Node suite asserts BIP39
+  entropy, the PBKDF2 passphrase salt, HMAC and hash inputs, and WIF keys are
+  absent from linear memory once the task settles). None of this protects
+  against a compromised machine.
 - The on-screen result of any derivation can only be as trustworthy as the
   code that produced it. Review the source, build from `src/`, and test the
   tool with published vectors before relying on it.

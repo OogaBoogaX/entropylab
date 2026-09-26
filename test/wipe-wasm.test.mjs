@@ -8,9 +8,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { wasmExports, heap } from "../src/js/entropylab-wasm.js";
+import { wasmExports, heap, scrubStack, stackRegion, wasmStackTop } from "../src/js/entropylab-wasm.js";
 import { secp256k1 } from "../src/js/secp256k1.js";
 import { HDKey } from "../src/js/hdkey.js";
+import { entropyToMnemonic, mnemonicToEntropy, mnemonicToSeedSync, validateMnemonic } from "../src/js/bip39.js";
+import { hmacSha512, pbkdf2Sha512, sha256, sha512 } from "../src/js/hashes.js";
+import { base58checkDecode, base58checkEncode } from "../src/js/base58.js";
 import { PSBT_WASM_B64 } from "../src/js/psbt-wasm-b64.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -71,6 +74,90 @@ test("signing leaves neither the private key nor the extra entropy in linear mem
   assert.equal(secp256k1.sign(msg, priv, { prehash: false, extraEntropy: extra }).length, 64);
   assert.equal(wasmMemoryContains(priv), false, "the signing key survived in WASM linear memory");
   assert.equal(wasmMemoryContains(extra), false, "the extra entropy survived in WASM linear memory");
+});
+
+// Rust frames spill their arguments and temporaries into the WASM shadow
+// stack, which also lives in linear memory, and popping a frame does not
+// erase it. The loader zeroes the stack region once per task after any export
+// ran, so these checks let the task settle before scanning.
+const settled = () => new Promise((resolve) => setImmediate(resolve));
+const stackResidue = [
+  ["BIP39 entropy → mnemonic", (s) => entropyToMnemonic(s.entropy), { entropy: pattern(32, 43) }],
+  ["BIP39 mnemonic validation", (s) => validateMnemonic(s.phrase), { entropy: pattern(32, 47) }],
+  ["BIP39 mnemonic → entropy", (s) => mnemonicToEntropy(s.phrase), { entropy: pattern(32, 53) }],
+  ["BIP39 mnemonic → seed", (s) => mnemonicToSeedSync(s.phrase, "stack residue passphrase"), {
+    entropy: pattern(16, 59),
+    salt: new TextEncoder().encode("mnemonicstack residue passphrase"),
+  }],
+  ["PBKDF2-HMAC-SHA512", (s) => pbkdf2Sha512(s.password, s.salt, 2), {
+    password: pattern(40, 61),
+    salt: pattern(24, 67),
+  }],
+  ["HMAC-SHA512", (s) => hmacSha512(s.key, s.data), { key: pattern(32, 71), data: pattern(37, 73) }],
+  ["SHA-256 of a secret", (s) => sha256(s.input), { input: pattern(32, 79) }],
+  ["SHA-512 of a secret", (s) => sha512(s.input), { input: pattern(32, 83) }],
+  ["Base58Check WIF encode", (s) => base58checkEncode(s.wif), { key: pattern(32, 89) }],
+  ["Base58Check WIF decode", (s) => base58checkDecode(s.text), { key: pattern(32, 97) }],
+];
+
+for (const [name, run, secrets] of stackResidue) {
+  test(`${name} leaves no stack residue in linear memory once the task settles`, async () => {
+    const inputs = { ...secrets };
+    if (secrets.entropy && name !== "BIP39 entropy → mnemonic") inputs.phrase = entropyToMnemonic(secrets.entropy);
+    if (secrets.key) {
+      inputs.wif = new Uint8Array([0x80, ...secrets.key, 0x01]);
+      inputs.text = base58checkEncode(inputs.wif);
+    }
+    await settled();
+    run(inputs);
+    await settled();
+    for (const [label, bytes] of Object.entries(secrets)) {
+      assert.equal(wasmMemoryContains(bytes), false, `${name}: the ${label} survived in WASM linear memory`);
+    }
+  });
+}
+
+test("scrubStack zeroes the whole stack region at once and the module keeps working", () => {
+  const top = wasmStackTop();
+  heap().fill(0xa5, 0, top); // no export is running, so the region is dead
+  scrubStack();
+  assert.ok(heap().subarray(0, top).every((byte) => byte === 0), "stack region not fully zeroed");
+  // BIP39 vector 1 (all-zero entropy, passphrase TREZOR).
+  const phrase = entropyToMnemonic(new Uint8Array(16));
+  assert.equal(
+    Buffer.from(mnemonicToSeedSync(phrase, "TREZOR")).toString("hex"),
+    "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04",
+  );
+});
+
+test("the loaded module is stack-first: the region below the stack top holds only the stack", () => {
+  const wasm = wasmExports();
+  const top = wasmStackTop();
+  assert.ok(top > 0 && top % 16 === 0, `implausible stack top ${top}`);
+  assert.ok(wasm.__data_end.value >= top, "static data sits below the stack top");
+  assert.ok(wasm.__heap_base.value >= top, "the heap starts below the stack top");
+});
+
+// Minimal module: memory, one mutable i32 global (the stack pointer) at
+// 65536, and one-byte active data segments at `offsets` (several, so a
+// mis-skipped segment length would derail the parse).
+const layoutModule = (...offsets) => {
+  const leb = (n) => { const out = []; for (;;) { const b = n & 0x7f; n >>= 7; if ((n === 0 && !(b & 0x40)) || (n === -1 && (b & 0x40))) { out.push(b); return out; } out.push(b | 0x80); } };
+  const section = (id, body) => [id, ...leb(body.length), ...body];
+  return new Uint8Array([
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    ...section(5, [1, 0x00, 2]),
+    ...section(6, [1, 0x7f, 0x01, 0x41, ...leb(65536), 0x0b]),
+    ...section(11, [offsets.length, ...offsets.flatMap((offset) => [0x00, 0x41, ...leb(offset), 0x0b, 1, 0x2a])]),
+  ]);
+};
+
+test("stackRegion reads the stack top and refuses a layout with data below it", () => {
+  const ok = layoutModule(65536 + 16, 65536 + 300000);
+  const bad = layoutModule(65536 + 16, 16);
+  assert.ok(WebAssembly.validate(ok) && WebAssembly.validate(bad), "fixture modules must be valid WASM");
+  assert.equal(stackRegion(ok), 65536);
+  assert.throws(() => stackRegion(bad), /stack-first/);
 });
 
 test("HDKey.wipePrivateData zeroes and drops the internal private key buffer", () => {
