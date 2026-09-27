@@ -1090,5 +1090,12 @@
   "Any use": "cbe95f4f7c5ef025f06e7acc9b0957aefd3f33853093ab5069ff5702ef9e64f6",
   "online": "f6fc84c9f21c24907d6bee6eec38cabab5fa9a7be8c4a7827fe9e56f245bd2d5",
   "or with real funds can be dangerous.": "4883e9e11afb1f450d77cf9da945faf2403dc07842fe78ff7670419e098b07ee",
-  "I Understand": "f02b9628d5767db6b7a20e4a9da7f4a15d93a17cd0e46fcab1ed054e9706dafe"
+  "I Understand": "f02b9628d5767db6b7a20e4a9da7f4a15d93a17cd0e46fcab1ed054e9706dafe",
+  "The final {n} entropy bit must be 0 or 1": "92066cec7260a39b8666aa2fc9dbd43bc415c13639b6cc40a3088996cb455379",
+  "The final {n} entropy bits must each be 0 or 1": "ede6acdb842475ea2e95f317f2ad809983c63a1d1a041391a6d0e1af89630c2e",
+  "The final {n}-bit character must be one of {chars}": "2929bda5bba5353d97d85179294c4fe0e1e37993435e936fcbc38094942a33fd",
+  "{n} valid checksum word starts with “{prefix}”": "7d89ba2f0d5a2c9cde152e444ccde103de45e28c76a4a0b67c79b453cc5533ae",
+  "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for the same seed words.": "097355830eb003d8af021935155eeb2cba1723d75eb719aa92c811550910720a",
+  "Use an existing key": "f4d8355c39f93b3ba44e3d29f13fc7e919d9279c169411ccc1d5a697482097a5",
+  "Import Descriptor": "f5cc43d42c0e7eaf7ab557d5d2f8c4af63a649f2345aa27fed0f0845c5c59f2e"
 }
