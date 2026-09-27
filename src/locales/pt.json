@@ -451,7 +451,6 @@
   "This script type's origin must end in {last}.": "A origem deste tipo de script deve terminar em {last}.",
   "The account index is out of range.": "O índice da conta está fora do intervalo.",
   "Co-signer account numbers do not match ({accounts}). The Account field is shown as Mixed.": "Os números de conta dos cossignatários não coincidem ({accounts}). O campo Conta é mostrado como Misto.",
-  "Co-signer purpose indexes do not match ({purposes}).": "Os índices de propósito dos cossignatários não coincidem ({purposes}).",
   "A derivation is already running.": "Uma derivação já está em execução.",
   "Complete every multisig field.": "Preencha todos os campos da multiassinatura.",
   "Co-signer exports indicate different script types ({labels}). A Mixed selection does not define one multisig output policy; export every key for the same script type before deriving.": "As exportações dos cossignatários indicam tipos de script diferentes ({labels}). Uma seleção Mista não define uma política de saída de multiassinatura; exporte todas as chaves para o mesmo tipo de script antes de derivar.",
@@ -1118,5 +1117,6 @@
   "BIP84 account key": "Chave de conta BIP84",
   "BIP86 account key": "Chave de conta BIP86",
   "Custom": "Personalizado",
-  "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for the same seed words.": "Cada candidato é a frase secreta inicial seguida pelos caracteres do contador, estendida em uma seed (2.048 rodadas PBKDF2) e derivada no caminho da chave. Uma correspondência é uma nova frase secreta para as mesmas palavras da seed."
+  "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for the same seed words.": "Cada candidato é a frase secreta inicial seguida pelos caracteres do contador, estendida em uma seed (2.048 rodadas PBKDF2) e derivada no caminho da chave. Uma correspondência é uma nova frase secreta para as mesmas palavras da seed.",
+  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "O índice de propósito {purpose}h não corresponde aos outros co-signatários ({reference}h)."
 }

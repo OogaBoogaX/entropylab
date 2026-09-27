@@ -451,7 +451,6 @@
   "This script type's origin must end in {last}.": "70ad053318d823fa3f6a631dd53ec7aed72fa385133b9ed89b3755ce16602f72",
   "The account index is out of range.": "93b8dbd4c188bc7d98e8bc8a2ccd9797f1271c1e76dabffb2c516250b3052672",
   "Co-signer account numbers do not match ({accounts}). The Account field is shown as Mixed.": "77d55bbe4bd650f0b5743539785c9e9b544f5d3d5f71ada9b6cd7a6c54d6f48c",
-  "Co-signer purpose indexes do not match ({purposes}).": "d54d212bd66eb8355c79f11cff152a866e812393153f33ddc2c43b853db631a9",
   "A derivation is already running.": "d51b3f0489a09740e2af1b76f2fe30b46a976681c79af1cecaadd99458c0224c",
   "Complete every multisig field.": "c593986b77707e35ed8df69252f2c94ce897499781cc81435f2dddf67436de9a",
   "Co-signer exports indicate different script types ({labels}). A Mixed selection does not define one multisig output policy; export every key for the same script type before deriving.": "393e68c7337d577f4926c1d0a839644a5483c2f4fbc89412b31cec46ba7085ef",
@@ -1118,5 +1117,6 @@
   "BIP84 account key": "71e558f90c7cd0e268bde79c254a422c863cb3b8b7add2fb1b1b259e73945b5c",
   "BIP86 account key": "6c4f02d0b1796cbee42158dfa443d4aeb659083bbc6cf2ba5bec707207d32b15",
   "Custom": "494ca78f7374e46fb2de9ad9f2dbd4aaae89b50b2ca044177a1566a59e06627e",
-  "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for the same seed words.": "097355830eb003d8af021935155eeb2cba1723d75eb719aa92c811550910720a"
+  "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for the same seed words.": "097355830eb003d8af021935155eeb2cba1723d75eb719aa92c811550910720a",
+  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "7abb1eda54910e025209744ec173b7d2f215b6b3ecd9e7eadd84b4179daa24c8"
 }
