@@ -750,7 +750,6 @@
   "checksum-valid {words}-word seed ready to derive": "Graine de {words} mots valide (checksum) prête à dériver",
   "Repeated {card} highlighted · deal a different card": "{card} répétée mise en surbrillance · distribuer une carte différente",
   "Finish {token} with a suit": "Terminer {token} avec une couleur",
-  "All {n} extra card is included": "Toutes les {n} cartes supplémentaires sont incluses",
   "All {n} extra cards are included": "Toutes les {n} cartes supplémentaires sont incluses",
   "{have} of {need} recommended cards": "{have} sur {need} cartes recommandées",
   "{bits} bits estimated": "{bits} bits estimés",
