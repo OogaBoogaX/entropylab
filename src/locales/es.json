@@ -451,7 +451,6 @@
   "This script type's origin must end in {last}.": "El origen de este tipo de script debe terminar en {last}.",
   "The account index is out of range.": "El índice de cuenta está fuera de rango.",
   "Co-signer account numbers do not match ({accounts}). The Account field is shown as Mixed.": "Los números de cuenta de los cofirmantes no coinciden ({accounts}). El campo Cuenta se muestra como Mixto.",
-  "Co-signer purpose indexes do not match ({purposes}).": "Los índices de propósito de los cofirmantes no coinciden ({purposes}).",
   "A derivation is already running.": "Ya hay una derivación en curso.",
   "Complete every multisig field.": "Completa todos los campos de la multifirma.",
   "Co-signer exports indicate different script types ({labels}). A Mixed selection does not define one multisig output policy; export every key for the same script type before deriving.": "Las exportaciones de los cofirmantes indican tipos de script distintos ({labels}). Una selección Mixto no define una política de salida de multifirma; exporta todas las claves para el mismo tipo de script antes de derivar.",
@@ -1118,5 +1117,6 @@
   "BIP49 account key": "Clave de cuenta BIP49",
   "BIP84 account key": "Clave de cuenta BIP84",
   "BIP86 account key": "Clave de cuenta BIP86",
-  "Custom": "Personalizado"
+  "Custom": "Personalizado",
+  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "El índice de propósito {purpose}h no coincide con los otros cofirmantes ({reference}h)."
 }
