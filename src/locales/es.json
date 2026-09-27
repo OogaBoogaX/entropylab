@@ -1090,5 +1090,12 @@
   "Any use": "Cualquier uso",
   "online": "en línea",
   "or with real funds can be dangerous.": "o con fondos reales puede ser peligroso.",
-  "I Understand": "Entiendo"
+  "I Understand": "Entiendo",
+  "The final {n} entropy bit must be 0 or 1": "El bit de entropía final {n} debe ser 0 o 1",
+  "The final {n} entropy bits must each be 0 or 1": "Los bits de entropía finales {n} deben ser cada uno 0 o 1",
+  "The final {n}-bit character must be one of {chars}": "El carácter de {n} bits final debe ser uno de {chars}",
+  "{n} valid checksum word starts with “{prefix}”": "{n} palabra de suma de comprobación válida comienza con \"{prefix}\"",
+  "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for the same seed words.": "Cada candidato es la frase de contraseña inicial seguida de los caracteres del contador, extendida en una semilla (2.048 rondas PBKDF2) y derivada en la ruta de la clave. Una coincidencia es una nueva frase de contraseña para las mismas palabras semilla.",
+  "Use an existing key": "Usar una clave existente",
+  "Import Descriptor": "Importar Descriptor"
 }
