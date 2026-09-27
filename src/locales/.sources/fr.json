@@ -750,7 +750,6 @@
   "checksum-valid {words}-word seed ready to derive": "2f68a21748d43044cf6048598c108316479ce75730ce2d6b8ddb2588edd3cc6f",
   "Repeated {card} highlighted · deal a different card": "a0d9c4ad1076bb71375be427f269475446c0f42268b707d753a0f560c5691724",
   "Finish {token} with a suit": "1e547719be45bfeadcc6880718511eb3280be8bdc67ecf2d5f570fb145e9d405",
-  "All {n} extra card is included": "6625afeaae93a37ae3f0048b1ef5584d2368b1821c9f282c857ffeb01d8a1607",
   "All {n} extra cards are included": "917a701bd8cd186259b6e452bb9e3cf23aaa77a69568a6c082c89e9ea13feed7",
   "{have} of {need} recommended cards": "dedb007304e07265e3c9cf140785f55c6b30eca550de357ec537830e8300e291",
   "{bits} bits estimated": "15e88f825d763e50d332f3239b08a4d964ff2dd5296a09ee366ab4cffada415e",
