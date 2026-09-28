@@ -1119,5 +1119,6 @@
   "BIP84 account key": "BIP84 Konto-Schlüssel",
   "BIP86 account key": "BIP86 Konto-Schlüssel",
   "Custom": "Benutzerdefiniert",
-  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "Zweckindex {purpose}h stimmt nicht mit den anderen Mitunterzeichnern ({reference}h) überein."
+  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "Zweckindex {purpose}h stimmt nicht mit den anderen Mitunterzeichnern ({reference}h) überein.",
+  "As pasted": "Wie eingefügt"
 }
