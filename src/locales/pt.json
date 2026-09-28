@@ -234,14 +234,12 @@
   "Multisig signature threshold": "Limite de assinaturas da multiassinatura",
   "Use standardized BIP87 accounts": "Usar contas BIP87 padronizadas",
   "Sorted is the default. Addresses stay the same no matter which co-signer you paste first. As listed uses multi: the order of the fields is part of the wallet. Taproot uses sortedmulti_a or multi_a.": "Ordenadas é o padrão. Os endereços permanecem os mesmos, não importa qual cossignatário você cole primeiro. Conforme listadas usa multi: a ordem dos campos faz parte da carteira. Taproot usa sortedmulti_a ou multi_a.",
-  "Position {n}": "Posição {n}",
   "Move up": "Mover para cima",
   "Move down": "Mover para baixo",
   "Multisig derivation progress": "Progresso da derivação da multiassinatura",
   "Multisig {n} ({suffix})": "Multiassinatura {n} ({suffix})",
   "BIP45 purpose keys do not contain an account number.": "Chaves de propósito BIP45 não contêm um número de conta.",
   "Import the watch-only wallet descriptor into Sparrow or another wallet.": "Importe o descritor da carteira somente de observação no Sparrow ou em outra carteira.",
-  "Script key order": "Ordem das chaves do script",
   "32-byte host nonce ρ, then 33-byte compressed opening R, as hex": "Nonce do host ρ de 32 bytes, depois opening R comprimido de 33 bytes, em hex",
   "Save unencrypted private sheet": "Salvar folha privada sem criptografia",
   "Save watch-only sheet": "Salvar folha somente de observação",
@@ -291,7 +289,6 @@
   "Addresses that start with 3. A SegWit script wrapped so older wallets can still send to it.": "Endereços que começam com 3. Um script SegWit encapsulado para que carteiras mais antigas ainda possam enviar para ele.",
   "Addresses that start with bc1q. The default in Bitcoin Core, Sparrow, and Electrum today.": "Endereços que começam com bc1q. O padrão no Bitcoin Core, Sparrow e Electrum hoje.",
   "Addresses that start with bc1p. Newest type. Use this if your wallet speaks Taproot.": "Endereços que começam com bc1p. Tipo mais novo. Use este se a sua carteira fala Taproot.",
-  "{op} uses the co-signers in this order. Changing the order creates a different wallet.": "{op} usa os cossignatários nesta ordem. Alterar a ordem cria uma carteira diferente.",
   "First shuffle · No cards yet": "Primeiro embaralhamento · Nenhuma carta ainda",
   "First shuffle · {have} of {need}": "Primeiro embaralhamento · {have} de {need}",
   "Second shuffle · {have} of {need}": "Segundo embaralhamento · {have} de {need}",
@@ -1119,5 +1116,8 @@
   "Custom": "Personalizado",
   "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for the same seed words.": "Cada candidato é a frase secreta inicial seguida pelos caracteres do contador, estendida em uma seed (2.048 rodadas PBKDF2) e derivada no caminho da chave. Uma correspondência é uma nova frase secreta para as mesmas palavras da seed.",
   "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "O índice de propósito {purpose}h não corresponde aos outros co-signatários ({reference}h).",
-  "As pasted": "Como colado"
+  "As pasted": "Como colado",
+  "Clear the co-signer fields to import a descriptor.": "Limpe os campos de co-assinante para importar um descritor.",
+  "That key has no compatible multisig export for the selected script type.": "Essa chave não possui exportação multisig compatível para o tipo de script selecionado.",
+  "Key order:": "Ordem das chaves:"
 }
