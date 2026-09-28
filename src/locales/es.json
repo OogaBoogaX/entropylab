@@ -1118,5 +1118,6 @@
   "BIP84 account key": "Clave de cuenta BIP84",
   "BIP86 account key": "Clave de cuenta BIP86",
   "Custom": "Personalizado",
-  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "El índice de propósito {purpose}h no coincide con los otros cofirmantes ({reference}h)."
+  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "El índice de propósito {purpose}h no coincide con los otros cofirmantes ({reference}h).",
+  "All {n} extra card is included": "Se incluye la {n} carta extra"
 }

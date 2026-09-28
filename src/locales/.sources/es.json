@@ -1118,5 +1118,6 @@
   "BIP84 account key": "71e558f90c7cd0e268bde79c254a422c863cb3b8b7add2fb1b1b259e73945b5c",
   "BIP86 account key": "6c4f02d0b1796cbee42158dfa443d4aeb659083bbc6cf2ba5bec707207d32b15",
   "Custom": "494ca78f7374e46fb2de9ad9f2dbd4aaae89b50b2ca044177a1566a59e06627e",
-  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "7abb1eda54910e025209744ec173b7d2f215b6b3ecd9e7eadd84b4179daa24c8"
+  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "7abb1eda54910e025209744ec173b7d2f215b6b3ecd9e7eadd84b4179daa24c8",
+  "All {n} extra card is included": "6625afeaae93a37ae3f0048b1ef5584d2368b1821c9f282c857ffeb01d8a1607"
 }
