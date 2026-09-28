@@ -1123,5 +1123,6 @@
   "Important!": "Important !",
   "Any derived child key that isn't cleared will be available elsewhere in the app wherever choosing an existing key is an option. Anyone with the parent seed, passphrase, application, and index can reproduce them.": "Toute clé enfant dérivée qui n'est pas effacée sera disponible ailleurs dans l'application là où le choix d'une clé existante est une option. Toute personne possédant la seed parente, la passphrase, l'application et l'index peut les reproduire.",
   "Paste a wallet-exported multisig descriptor here — the quorum, script type, key order, and co-signer xpubs will be filled in below.": "Collez ici un descripteur multisig exporté du portefeuille — le quorum, le type de script, l'ordre des clés et les xpubs des co-signataires seront remplis ci-dessous.",
-  "Only accepts watch-only public keys; a descriptor carrying private keys will be refused.": "Accepte uniquement les clés publiques en mode lecture seule ; un descripteur contenant des clés privées sera refusé."
+  "Only accepts watch-only public keys; a descriptor carrying private keys will be refused.": "Accepte uniquement les clés publiques en mode lecture seule ; un descripteur contenant des clés privées sera refusé.",
+  " (1–3 Heads, 4–6 Tails)": " (1–3 Têtes, 4–6 Queues)"
 }

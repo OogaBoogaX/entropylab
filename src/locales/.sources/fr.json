@@ -1123,5 +1123,6 @@
   "Important!": "055881ac6763cba0a241e2a2641638859b8da04dded94119369252774bd62e71",
   "Any derived child key that isn't cleared will be available elsewhere in the app wherever choosing an existing key is an option. Anyone with the parent seed, passphrase, application, and index can reproduce them.": "b61f0a4d7de902252cbbbb031c8618fe16c6864d10444c4efc5ea4fef8bfbde2",
   "Paste a wallet-exported multisig descriptor here — the quorum, script type, key order, and co-signer xpubs will be filled in below.": "7afffe1ea40856851ccb5d3fc786ada7b337b0bb053879945a58744b22ffa1d6",
-  "Only accepts watch-only public keys; a descriptor carrying private keys will be refused.": "2cce514ab2e90adad69da3c192e23d4ea5f14d08e53a70a7c269dafe4a95de49"
+  "Only accepts watch-only public keys; a descriptor carrying private keys will be refused.": "2cce514ab2e90adad69da3c192e23d4ea5f14d08e53a70a7c269dafe4a95de49",
+  " (1–3 Heads, 4–6 Tails)": "2615b01c5828c320e795592ef1afad957e98e2bf25b6ff60de9f17ea80f553ce"
 }
