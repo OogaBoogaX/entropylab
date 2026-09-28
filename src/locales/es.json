@@ -234,14 +234,12 @@
   "Multisig signature threshold": "Umbral de firmas de la multifirma",
   "Use standardized BIP87 accounts": "Usar cuentas BIP87 estandarizadas",
   "Sorted is the default. Addresses stay the same no matter which co-signer you paste first. As listed uses multi: the order of the fields is part of the wallet. Taproot uses sortedmulti_a or multi_a.": "Ordenado es el valor predeterminado. Las direcciones se mantienen iguales sin importar qué cofirmante pegues primero. Como se listan usa multi: el orden de los campos forma parte de la billetera. Taproot usa sortedmulti_a o multi_a.",
-  "Position {n}": "Posición {n}",
   "Move up": "Mover arriba",
   "Move down": "Mover abajo",
   "Multisig derivation progress": "Progreso de derivación de la multifirma",
   "Multisig {n} ({suffix})": "Multifirma {n} ({suffix})",
   "BIP45 purpose keys do not contain an account number.": "Las claves de propósito BIP45 no contienen un número de cuenta.",
   "Import the watch-only wallet descriptor into Sparrow or another wallet.": "Importa el descriptor de la billetera de solo lectura en Sparrow o en otra billetera.",
-  "Script key order": "Orden de claves del script",
   "32-byte host nonce ρ, then 33-byte compressed opening R, as hex": "Nonce del host ρ de 32 bytes, luego apertura comprimida R de 33 bytes, en hex",
   "Save unencrypted private sheet": "Guardar hoja privada sin cifrar",
   "Save watch-only sheet": "Guardar hoja de solo lectura",
@@ -291,7 +289,6 @@
   "Addresses that start with 3. A SegWit script wrapped so older wallets can still send to it.": "Direcciones que empiezan con 3. Un script SegWit envuelto para que las billeteras más antiguas aún puedan enviarle.",
   "Addresses that start with bc1q. The default in Bitcoin Core, Sparrow, and Electrum today.": "Direcciones que empiezan con bc1q. El valor predeterminado en Bitcoin Core, Sparrow y Electrum hoy.",
   "Addresses that start with bc1p. Newest type. Use this if your wallet speaks Taproot.": "Direcciones que empiezan con bc1p. El tipo más reciente. Úsalo si tu billetera admite Taproot.",
-  "{op} uses the co-signers in this order. Changing the order creates a different wallet.": "{op} usa los cofirmantes en este orden. Cambiar el orden crea una billetera distinta.",
   "First shuffle · No cards yet": "Primera barajada · Aún no hay cartas",
   "First shuffle · {have} of {need}": "Primera barajada · {have} de {need}",
   "Second shuffle · {have} of {need}": "Segunda barajada · {have} de {need}",
@@ -1119,5 +1116,8 @@
   "BIP86 account key": "Clave de cuenta BIP86",
   "Custom": "Personalizado",
   "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "El índice de propósito {purpose}h no coincide con los otros cofirmantes ({reference}h).",
-  "All {n} extra card is included": "Se incluye la {n} carta extra"
+  "All {n} extra card is included": "Se incluye la {n} carta extra",
+  "Clear the co-signer fields to import a descriptor.": "Borra los campos del cofirmante para importar un descriptor.",
+  "That key has no compatible multisig export for the selected script type.": "Esa clave no tiene una exportación multifirma compatible para el tipo de script seleccionado.",
+  "Key order:": "Orden de clave:"
 }

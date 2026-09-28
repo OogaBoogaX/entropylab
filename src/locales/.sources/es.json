@@ -234,14 +234,12 @@
   "Multisig signature threshold": "7ce96c0cf56057278a144b86dec3bd1aeb8313a5aac48a5d1b9d66c62d664113",
   "Use standardized BIP87 accounts": "226216d026a7376002b74fff7338b107fb9eed5ff6983bc0f239cfc7a0821a7c",
   "Sorted is the default. Addresses stay the same no matter which co-signer you paste first. As listed uses multi: the order of the fields is part of the wallet. Taproot uses sortedmulti_a or multi_a.": "d9d5559200db0b9a65ac4d3388ec4638e13a874b35746b0af2a0a771c2afdfa3",
-  "Position {n}": "9d2240c174384b6a802f18b3ea481eda311fb0edb531265cdba53b1cb8c8d2ca",
   "Move up": "c66feb5eb8f217c76bfb0f1b41e3ee73ab41cb9959fae8284911bd3ad3816086",
   "Move down": "40bb50da160cdc21d6029a927b68f92b07fd450688e609826cbc70d202db96da",
   "Multisig derivation progress": "a5b8536926babaae7078cdc1299701e8f1b1f3c2b98868c2286cc03e7a5f922f",
   "Multisig {n} ({suffix})": "f8f22b543747b7fc6625c1342fa03a70d328d0229e21561fff8daed1836743f8",
   "BIP45 purpose keys do not contain an account number.": "9411aaa52dc8850baca03efa4ebcfdb22696cf9e1ecba3e60d1681f093134978",
   "Import the watch-only wallet descriptor into Sparrow or another wallet.": "1682b265142c5ebe9e49d1b75198a45cea486a45ae671e56e01ffbb18b868e90",
-  "Script key order": "3a874d72492350d5f5a22f1bda97e72862161186558ebc70a3356bf07ed50d1f",
   "32-byte host nonce ρ, then 33-byte compressed opening R, as hex": "e95e52e0f147cfb9a33d67232d4bcc9003a40f50e2cb1e900d7003bce5febcec",
   "Save unencrypted private sheet": "56f108a6bd08a6fb29236cf8455c095b0ff2fd12840a4520f9fa9f89a9bbc999",
   "Save watch-only sheet": "19c61b803b1bc5b079c32983648087893e0bd1e26f1482682c7c161999107078",
@@ -291,7 +289,6 @@
   "Addresses that start with 3. A SegWit script wrapped so older wallets can still send to it.": "4caa1120add798fc4f5ee8a8e63c17cdd92f00da9a656fd11025f10014f45755",
   "Addresses that start with bc1q. The default in Bitcoin Core, Sparrow, and Electrum today.": "34af8d1a028852142250e1ebcdce06ee8f3de48b99b2b16bbdacdbf4b150f0b1",
   "Addresses that start with bc1p. Newest type. Use this if your wallet speaks Taproot.": "048319e0e69efc478d890be0ac73e5cd5d7a0959fdba797756b36ecfb3cdae3d",
-  "{op} uses the co-signers in this order. Changing the order creates a different wallet.": "52e2402381e02676a2972fbc702a6e634ee40a514a46f3ccc9ef8a9f65c7ccae",
   "First shuffle · No cards yet": "8c1cda053e4b72db263fa158e21de7f7553c4022f1e3b82b0aa609e2dbcfbdad",
   "First shuffle · {have} of {need}": "39384b89bc44c968caee79c4b009cc132ad9ff9f2f3e650148c7f9e2c0bd275c",
   "Second shuffle · {have} of {need}": "d6401a33cb7edc871542a7ee73763f533472fdc6279e670c4122c8613cd346fc",
@@ -1119,5 +1116,8 @@
   "BIP86 account key": "6c4f02d0b1796cbee42158dfa443d4aeb659083bbc6cf2ba5bec707207d32b15",
   "Custom": "494ca78f7374e46fb2de9ad9f2dbd4aaae89b50b2ca044177a1566a59e06627e",
   "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "7abb1eda54910e025209744ec173b7d2f215b6b3ecd9e7eadd84b4179daa24c8",
-  "All {n} extra card is included": "6625afeaae93a37ae3f0048b1ef5584d2368b1821c9f282c857ffeb01d8a1607"
+  "All {n} extra card is included": "6625afeaae93a37ae3f0048b1ef5584d2368b1821c9f282c857ffeb01d8a1607",
+  "Clear the co-signer fields to import a descriptor.": "828512e858e7316ab23f3887c8e2ea2ca14db2ca211ea411e54e43cf5d5b017e",
+  "That key has no compatible multisig export for the selected script type.": "551d6fa4713756783761374d6f1a948ae6bdd0a4b8bbd2595771d50efb771a32",
+  "Key order:": "205d8b7efeaa15b373df452c74c9c6a5d6ae40c011cbbd5738089eb9cefb208d"
 }
