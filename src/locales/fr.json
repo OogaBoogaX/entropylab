@@ -1118,5 +1118,7 @@
   "BIP84 account key": "Clé de compte BIP84",
   "BIP86 account key": "Clé de compte BIP86",
   "Custom": "Personnalisé",
-  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "L'index de but {purpose}h ne correspond pas aux autres co-signataires ({reference}h)."
+  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "L'index de but {purpose}h ne correspond pas aux autres co-signataires ({reference}h).",
+  "As pasted": "Tel que collé",
+  "All {n} extra card is included": "Toutes les {n} cartes supplémentaires sont incluses"
 }
