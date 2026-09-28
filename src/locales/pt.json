@@ -1118,5 +1118,6 @@
   "BIP86 account key": "Chave de conta BIP86",
   "Custom": "Personalizado",
   "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for the same seed words.": "Cada candidato é a frase secreta inicial seguida pelos caracteres do contador, estendida em uma seed (2.048 rodadas PBKDF2) e derivada no caminho da chave. Uma correspondência é uma nova frase secreta para as mesmas palavras da seed.",
-  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "O índice de propósito {purpose}h não corresponde aos outros co-signatários ({reference}h)."
+  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "O índice de propósito {purpose}h não corresponde aos outros co-signatários ({reference}h).",
+  "As pasted": "Como colado"
 }

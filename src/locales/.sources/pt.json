@@ -1118,5 +1118,6 @@
   "BIP86 account key": "6c4f02d0b1796cbee42158dfa443d4aeb659083bbc6cf2ba5bec707207d32b15",
   "Custom": "494ca78f7374e46fb2de9ad9f2dbd4aaae89b50b2ca044177a1566a59e06627e",
   "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for the same seed words.": "097355830eb003d8af021935155eeb2cba1723d75eb719aa92c811550910720a",
-  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "7abb1eda54910e025209744ec173b7d2f215b6b3ecd9e7eadd84b4179daa24c8"
+  "Purpose index {purpose}h does not match the other co-signers ({reference}h).": "7abb1eda54910e025209744ec173b7d2f215b6b3ecd9e7eadd84b4179daa24c8",
+  "As pasted": "838adb0c4b0a6d1d456bb0057d6544de648fc18983b8ed2bdf90cfa59362d815"
 }
