@@ -7,6 +7,7 @@ import {
   JOURNAL_ITERATIONS,
   JOURNAL_EXPORT_VERSION,
   JOURNAL_LOG_LIMIT,
+  JOURNAL_VAULT_VERSION,
   JOURNAL_VERSION,
   METHODS,
   addEntry,
@@ -14,6 +15,7 @@ import {
   NOTEBOOK_VERSION,
   appendLog,
   assertPassword,
+  buildVaultPayload,
   createDocument,
   createJournal,
   emptyDocument,
@@ -25,11 +27,13 @@ import {
   formatStamp,
   openDocument,
   openExport,
+  openVault,
   parseFile,
   removeEntry,
   searchEntries,
   sealDocument,
   sealExport,
+  sealVault,
   snapshotFromKeyState,
   wipeDocument,
   journalFromPlainText,
@@ -412,6 +416,48 @@ test("tab exports reuse the unlocked journal password keys and remain determinis
   await assert.rejects(() => openExport(first, other.keys), /different journal password/);
   await assert.rejects(() => sealExport("unknown", "text", created.keys), /not supported/);
   await assert.rejects(() => openExport("{}", created.keys), /not an encrypted Journal export/);
+});
+
+test("a locked session vault round-trips notebook, notepad, and key manager and stays sealed", async () => {
+  const created = await createDocument(password, password);
+  addEntry(created.doc, { method: "hex", input: "aa11bb22", phrase: "legal winner thank year wave sausage worth useful legal winner thank yellow", label: "vault-entry" }, fixedNow);
+  const notepad = createJournal();
+  notepad.pages[0].notesText = "keep this notepad line";
+  notepad.notesText = "keep this notepad line";
+  const payload = {
+    notebook: created.doc,
+    notepad,
+    keyManager: {
+      pending: [{ name: "Detached", fields: { seed: "legal winner thank year wave sausage worth useful legal winner thank yellow" }, result: { mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow" } }],
+      ignored: [],
+      ids: ["deadbeef"],
+      activeId: "deadbeef",
+    },
+    sessionState: { text: "session snapshot private", includePrivate: true },
+    sessionLog: [{ at: "2026-09-20 13:00:00", tool: "journal", action: "journal-lock", detail: "" }],
+  };
+  const file = await sealVault(payload, created.keys);
+  const packed = JSON.stringify(file);
+  assert.equal(buildVaultPayload(payload).entropylabJournalVault, JOURNAL_VAULT_VERSION);
+  assert.equal(file.entropylabJournal, JOURNAL_VERSION);
+  assert.match(packed, new RegExp(`"entropylabJournal":${JOURNAL_VERSION}`));
+  assert.equal(JSON.parse(packed).entropylabJournalVault, undefined);
+  assert.doesNotMatch(packed, /vault-entry|keep this notepad line|session snapshot private|legal winner/);
+  await assert.rejects(() => openDocument(packed, password), /corrupt|not a locked journal|Journal file/);
+  const opened = await openVault(packed, password);
+  assert.equal(opened.vault.notebook.entries[0].label, "vault-entry");
+  assert.equal(opened.vault.notebook.entries[0].phrase.startsWith("legal winner"), true);
+  assert.match(opened.vault.notepad.notesText, /keep this notepad line/);
+  assert.equal(opened.vault.keyManager.pending[0].result.mnemonic.startsWith("legal winner"), true);
+  assert.equal(opened.vault.sessionState.includePrivate, true);
+  assert.match(opened.vault.sessionState.text, /session snapshot private/);
+  assert.equal(opened.vault.sessionLog[0].action, "journal-lock");
+  assert.equal(opened.keys.passwordProtected, true);
+  await assert.rejects(() => openVault(packed, otherPassword), /password is incorrect/);
+  const passwordless = await createDocument("", "");
+  await assert.rejects(() => sealVault(payload, passwordless.keys), /password before locking/);
+  const again = await sealVault(payload, created.keys);
+  assert.deepEqual(again, file);
 });
 
 test("encodeFile stores the IV and iteration count next to the ciphertext", () => {

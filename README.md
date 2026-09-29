@@ -25,9 +25,12 @@ For local testing after Rust changes, run `npm run build:wasm` before
 
 Clearing a Key or Multisig station cancels its pending derivation. Leaving
 the page clears rendered seed-word copies and prevents a late derivation or
-import from restoring cleared secrets. Locking the journal also invalidates
-pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
-the limits of browser-memory cleanup.
+import from restoring cleared secrets. Locking a password-protected journal
+encrypts the notebook, notepad, Key Manager, and session snapshot in this
+page and restores them on Unlock; Lock stays disabled without a password.
+Clear journal still wipes. Locking also invalidates pending notebook and
+Key Manager imports. See [SECURITY.md](SECURITY.md) for the limits of
+browser-memory cleanup.
 
 - Accepts dice rolls, coin flips, hexadecimal entropy, BIP39 seed phrases,
   extended keys, WIF keys, raw private keys, and Casascius mini private keys.

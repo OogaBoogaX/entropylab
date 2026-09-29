@@ -71,8 +71,12 @@ material. Its security posture rests on the following model:
 - Clearing a Key or Multisig station invalidates pending derivation work.
   Pagehide and persisted-page restoration also invalidate derivations and
   clear rendered seed-word grids, checksum choices, and brain-lab hex.
-  Journal teardown (including Lock) invalidates pending notebook and Key
-  Manager imports at both file-read and decryption boundaries. Obsolete
+  Journal teardown (Clear, page close, and Lock) invalidates pending notebook
+  and Key Manager imports at both file-read and decryption boundaries. Lock
+  with a password seals the notebook, notepad, Key Manager, and session
+  snapshot into RAM ciphertext and drops the plaintext; Unlock re-derives
+  from that password in this page. Without a password Lock is disabled.
+  Clear journal and closing the tab discard the ciphertext. Obsolete
   completions cannot restore cleared state; this is not guaranteed erasure
   of immutable strings or browser-managed memory.
 - Secret byte buffers are overwritten after use, on a best-effort basis. The
