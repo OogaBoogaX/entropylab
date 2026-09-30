@@ -1132,15 +1132,6 @@
   "The original multisig is no longer available.": "Die ursprüngliche Multisignatur ist nicht mehr verfügbar.",
   "The original key is no longer available. Derive a new key instead.": "Der ursprüngliche Schlüssel ist nicht mehr verfügbar. Leiten Sie stattdessen einen neuen Schlüssel ab.",
   "The original multisig is no longer available. Derive a new multisig instead.": "Die ursprüngliche Multisignatur ist nicht mehr verfügbar. Leiten Sie stattdessen eine neue Multisignatur ab.",
-  "Clipboard keeps copies": "Zwischenablage behält Kopien",
-  "Clipboard history and sync may have kept a copy of what you pasted or copied — possibly on other devices. EntropyLab cannot remove it.": "Verlauf und Synchronisierung der Zwischenablage haben möglicherweise eine Kopie dessen behalten, was Sie eingefügt oder kopiert haben – möglicherweise auf anderen Geräten. EntropyLab kann dies nicht entfernen.",
-  "Dismiss the clipboard notice": "Hinweis zur Zwischenablage schließen",
-  "Before private keys enter memory": "Bevor private Schlüssel in den Speicher gelangen",
-  "The operating system can write memory to disk through swap and hibernation, and the browser cannot prevent it. For real funds, the machine should have full-disk encryption on and hibernation off before you continue — ideally a dedicated, offline machine.": "Das Betriebssystem kann Speicher über Swap und Ruhezustand auf die Festplatte schreiben, und der Browser kann dies nicht verhindern. Für echtes Geld sollte die Festplattenverschlüsselung aktiviert und der Ruhezustand deaktiviert sein, bevor Sie fortfahren – idealerweise auf einem dedizierten Offline-Computer.",
-  "Dismiss the machine notice": "Hinweis zum Computer schließen",
-  "Session ended — leftovers may persist": "Sitzung beendet – Reste können verbleiben",
-  "Close the browser and restart the computer as a precaution. It is a precaution, not a guarantee: a restart does not erase memory.": "Schließen Sie den Browser und starten Sie den Computer vorsorglich neu. Dies ist eine Vorsichtsmaßnahme, keine Garantie: Ein Neustart löscht den Speicher nicht.",
-  "Dismiss the restart reminder": "Neustarterinnerung schließen",
   "S… (22, 26, or 30 Base58 characters)": "S… (22, 26 oder 30 Base58-Zeichen)",
   " (1–3 Heads, 4–6 Tails)": " (1–3 Kopf, 4–6 Zahl)",
   "{count} of 22, 26, or 30 Mini-key characters entered": "{count} von 22, 26 oder 30 Mini-Schlüsselzeichen eingegeben",
@@ -1148,5 +1139,11 @@
   "Not a valid PSBT.": "Kein gültiger PSBT.",
   "The reference layer (rust-bitcoin) reports error-severity BIP-174 / consensus problems; treat every field below with suspicion:": "Die Referenzschicht (rust-bitcoin) meldet Fehler-Schweregrad BIP-174 / Konsensprobleme; behandeln Sie jedes Feld unten mit Misstrauen:",
   "…and {n} more.": "…und {n} mehr.",
-  "Signature not inspected: this file carries more SIGHASH_ALL signatures than the per-file check budget covers.": "Signatur nicht geprüft: Diese Datei enthält mehr SIGHASH_ALL-Signaturen, als das Prüfbudget pro Datei abdeckt."
+  "Signature not inspected: this file carries more SIGHASH_ALL signatures than the per-file check budget covers.": "Signatur nicht geprüft: Diese Datei enthält mehr SIGHASH_ALL-Signaturen, als das Prüfbudget pro Datei abdeckt.",
+  "Important": "Wichtig",
+  "<strong>Your computer may keep a copy of your keys.</strong> It can save open data to its drive without asking, and the browser can't stop it. For real funds, use an encrypted, offline computer with hibernation turned off.": "<strong>Ihr Computer kann eine Kopie Ihrer Schlüssel speichern.</strong> Er kann offene Daten ohne Nachfrage auf seine Festplatte speichern, und der Browser kann dies nicht verhindern. Verwenden Sie für echtes Geld einen verschlüsselten, offline Computer, bei dem die Ruhezustandsfunktion deaktiviert ist.",
+  "<strong>Clipboard keeps copies.</strong> Clipboard history and sync may have kept a copy of what you pasted or copied — possibly on other devices.": "<strong>Die Zwischenablage speichert Kopien.</strong> Der Verlauf und die Synchronisierung der Zwischenablage haben möglicherweise eine Kopie dessen gespeichert, was Sie eingefügt oder kopiert haben – möglicherweise auch auf anderen Geräten.",
+  "<strong>Session ended — leftovers may persist.</strong> Close the browser and restart the computer as a precaution. It is a precaution, not a guarantee.": "<strong>Sitzung beendet – Reste können verbleiben.</strong> Schließen Sie den Browser und starten Sie den Computer vorsorglich neu. Dies ist eine Vorsichtsmaßnahme, keine Garantie.",
+  "Be sure you understand": "Stellen Sie sicher, dass Sie verstehen",
+  "Type the number three into the field below to prove you read this.": "Geben Sie die Zahl drei in das Feld unten ein, um zu beweisen, dass Sie dies gelesen haben."
 }
