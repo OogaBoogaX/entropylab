@@ -1135,5 +1135,14 @@
   "The multisig that supplied these inputs was deleted. You can still derive a new multisig below.": "aab82fb13a8e27734088378f7e7700443895d16001a732d304cd57c26b97f156",
   "The original multisig is no longer available.": "53ab814643bfd863035efaf33181c691c1f96dd79a1b206cec25ba5e93619d93",
   "The original key is no longer available. Derive a new key instead.": "7ac49cbcca4980eb1a0a99ed0490f37cd1e0371ad7e903e66c12b368bca05c3a",
-  "The original multisig is no longer available. Derive a new multisig instead.": "e7cedec4c03ae57a57c330543d4048a3e083edfd8c8e1b31a132722877a3b912"
+  "The original multisig is no longer available. Derive a new multisig instead.": "e7cedec4c03ae57a57c330543d4048a3e083edfd8c8e1b31a132722877a3b912",
+  "Clipboard keeps copies": "da46f33e544ea6f5cf226a69f65a8e05c67991e566e4712050cd091761bc99a2",
+  "Clipboard history and sync may have kept a copy of what you pasted or copied — possibly on other devices. EntropyLab cannot remove it.": "4b34d256ef00ce3db3157f0013b0a606d8041f4b68787641d6f136e6c734bcad",
+  "Dismiss the clipboard notice": "a4ce2dfd6cd42babffc653638cf8f63f01d477972d34bb5666fe9d2d7d1df595",
+  "Before private keys enter memory": "862b8cf065512b324de696e79e06b1c579c28bd3dfb35b5ff9e4cb88a4e76342",
+  "The operating system can write memory to disk through swap and hibernation, and the browser cannot prevent it. For real funds, the machine should have full-disk encryption on and hibernation off before you continue — ideally a dedicated, offline machine.": "7610d3090708b960a8f422b396cb2bc9df86d4b8f7e5bbf9d11a42860792c1d1",
+  "Dismiss the machine notice": "ebd209bba94a9b70853e701c55ec7affc60faecc34a9e7d0d56a73b8a49089a2",
+  "Session ended — leftovers may persist": "987aeacdac9ffd2a79904bb4cbc073fe378b0c7ddfac50e9f52dea1a5a36e9bd",
+  "Close the browser and restart the computer as a precaution. It is a precaution, not a guarantee: a restart does not erase memory.": "8aaad0a04edf5f3425bcff8176296796876a0b370719f5051d500077b491575c",
+  "Dismiss the restart reminder": "984b01301c6a33b333bf91f2c759bb81b51b543bdc4d97c3238b9ed72614eb63"
 }

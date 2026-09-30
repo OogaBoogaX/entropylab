@@ -1135,5 +1135,14 @@
   "The multisig that supplied these inputs was deleted. You can still derive a new multisig below.": "Le multisig qui a fourni ces entrées a été supprimé. Vous pouvez toujours en dériver un nouveau ci-dessous.",
   "The original multisig is no longer available.": "Le multisig d'origine n'est plus disponible.",
   "The original key is no longer available. Derive a new key instead.": "La clé d'origine n'est plus disponible. Dérivez une nouvelle clé à la place.",
-  "The original multisig is no longer available. Derive a new multisig instead.": "Le multisig d'origine n'est plus disponible. Dérivez un nouveau multisig à la place."
+  "The original multisig is no longer available. Derive a new multisig instead.": "Le multisig d'origine n'est plus disponible. Dérivez un nouveau multisig à la place.",
+  "Clipboard keeps copies": "Le presse-papiers conserve des copies",
+  "Clipboard history and sync may have kept a copy of what you pasted or copied — possibly on other devices. EntropyLab cannot remove it.": "L'historique et la synchronisation du presse-papiers ont pu conserver une copie de ce que vous avez collé ou copié — potentiellement sur d'autres appareils. EntropyLab ne peut pas la supprimer.",
+  "Dismiss the clipboard notice": "Fermer l'avis du presse-papiers",
+  "Before private keys enter memory": "Avant que les clés privées n'entrent en mémoire",
+  "The operating system can write memory to disk through swap and hibernation, and the browser cannot prevent it. For real funds, the machine should have full-disk encryption on and hibernation off before you continue — ideally a dedicated, offline machine.": "Le système d'exploitation peut écrire la mémoire sur le disque via l'échange et la mise en veille prolongée, et le navigateur ne peut pas l'empêcher. Pour de vrais fonds, la machine doit avoir le chiffrement complet du disque activé et la mise en veille prolongée désactivée avant de continuer — idéalement une machine dédiée et hors ligne.",
+  "Dismiss the machine notice": "Fermer l'avis de la machine",
+  "Session ended — leftovers may persist": "Session terminée — des résidus peuvent persister",
+  "Close the browser and restart the computer as a precaution. It is a precaution, not a guarantee: a restart does not erase memory.": "Fermez le navigateur et redémarrez l'ordinateur par mesure de précaution. C'est une précaution, pas une garantie : un redémarrage n'efface pas la mémoire.",
+  "Dismiss the restart reminder": "Fermer le rappel de redémarrage"
 }
