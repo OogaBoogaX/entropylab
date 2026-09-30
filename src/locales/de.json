@@ -1134,5 +1134,14 @@
   "The multisig that supplied these inputs was deleted. You can still derive a new multisig below.": "Die Multisignatur, die diese Eingaben bereitgestellt hat, wurde gelöscht. Sie können unten trotzdem eine neue Multisignatur ableiten.",
   "The original multisig is no longer available.": "Die ursprüngliche Multisignatur ist nicht mehr verfügbar.",
   "The original key is no longer available. Derive a new key instead.": "Der ursprüngliche Schlüssel ist nicht mehr verfügbar. Leiten Sie stattdessen einen neuen Schlüssel ab.",
-  "The original multisig is no longer available. Derive a new multisig instead.": "Die ursprüngliche Multisignatur ist nicht mehr verfügbar. Leiten Sie stattdessen eine neue Multisignatur ab."
+  "The original multisig is no longer available. Derive a new multisig instead.": "Die ursprüngliche Multisignatur ist nicht mehr verfügbar. Leiten Sie stattdessen eine neue Multisignatur ab.",
+  "Clipboard keeps copies": "Zwischenablage behält Kopien",
+  "Clipboard history and sync may have kept a copy of what you pasted or copied — possibly on other devices. EntropyLab cannot remove it.": "Verlauf und Synchronisierung der Zwischenablage haben möglicherweise eine Kopie dessen behalten, was Sie eingefügt oder kopiert haben – möglicherweise auf anderen Geräten. EntropyLab kann dies nicht entfernen.",
+  "Dismiss the clipboard notice": "Hinweis zur Zwischenablage schließen",
+  "Before private keys enter memory": "Bevor private Schlüssel in den Speicher gelangen",
+  "The operating system can write memory to disk through swap and hibernation, and the browser cannot prevent it. For real funds, the machine should have full-disk encryption on and hibernation off before you continue — ideally a dedicated, offline machine.": "Das Betriebssystem kann Speicher über Swap und Ruhezustand auf die Festplatte schreiben, und der Browser kann dies nicht verhindern. Für echtes Geld sollte die Festplattenverschlüsselung aktiviert und der Ruhezustand deaktiviert sein, bevor Sie fortfahren – idealerweise auf einem dedizierten Offline-Computer.",
+  "Dismiss the machine notice": "Hinweis zum Computer schließen",
+  "Session ended — leftovers may persist": "Sitzung beendet – Reste können verbleiben",
+  "Close the browser and restart the computer as a precaution. It is a precaution, not a guarantee: a restart does not erase memory.": "Schließen Sie den Browser und starten Sie den Computer vorsorglich neu. Dies ist eine Vorsichtsmaßnahme, keine Garantie: Ein Neustart löscht den Speicher nicht.",
+  "Dismiss the restart reminder": "Neustarterinnerung schließen"
 }
