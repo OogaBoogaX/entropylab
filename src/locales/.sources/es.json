@@ -202,7 +202,6 @@
   "{entered} entered · {words} required BIP39 words": "22959a807aea063afe3e7a51b4062b914b3fec3a593b5a797b9a3af199a835cd",
   "{entered} of {words} BIP39 word numbers entered": "e0956306dfb08a98e471b5fa6a6b9823b8ba2e8d7e2c2a29ca65bdc7cb0c3c56",
   "64 hexadecimal characters": "38d6020594c7c4bbd1b74c38edc01e2a49b2568046cfbdec1280bfff8ba2b559",
-  "S… (22 or 30 Base58 characters)": "51fd4a9deb4332b58d652367502bcea395ff9b87ce4d2bd10f05cb3951fbd24e",
   "Text to hash": "9b33596cd1c91e7fd6244fcb26b1690cbab2b0ad7ed8572a4b6bc034d21896db",
   "5… / K… / L…": "2dad1ca9135f334f11e692f48aa6fc55c952e5761c7a221f487eea87f50f2a86",
   "9… / c…": "db1c64412d6f4948a7a5fcfef11de3c1786552aeb05d5b9d53834af651c30e63",
@@ -464,7 +463,6 @@
   "Acknowledge the lab warning before deriving.": "b1ce48be19c8f284b9c3637153c76f12d4e0d24f5bda74ea21b7d962ab30bef7",
   "Enter a private key.": "34c4b1a6637eef396537df8a787b6880989275a739ecfb1d5c5770af14ab3ea1",
   "Enter a WIF key (5/K/L…), a 64-character hex private key, or a Casascius mini key (S…).": "a640e24b48da9a7a501d0fdcb2280138e20c2446ad245671a6ad0d3117a37987",
-  "Mini keys must start with S and contain 22 or 30 Bitcoin Base58 characters.": "3b01d3d9bbf9ce70c4cadefd890c95697453c7d176a215d2d457dfaea9c9490a",
   "Not a valid Casascius mini private key.": "9f930a26b3a78a506b8aa216698cbfda0ccd7c27cc6ea5ca2ad4f98401a1c88f",
   "Enter exactly 64 hexadecimal characters (0–9 and a–f).": "dc9a38f732cbfdc947af659a0c523bc2df680b8d2eb91c08dedf34a413397cc3",
   "Enter a valid {network} WIF private key ({hint}).": "cd58d23ccc95c491daecf39139ed7ab929262dc00c3117203a5b7358719129f9",
@@ -806,7 +804,6 @@
   "Invalid Mini-key checksum": "490c4ca21ab3ba95230ed9f9e131b25154c50d7f97bc39cfa266ea5a77a95f4d",
   "{count} Mini-key characters entered · 30 maximum": "e509b3c0c314f01c7ea86e9e07eae8b0a6e249e4a594edef52ed181ac9c57bfd",
   "{count} of {required} Mini-key characters entered": "251e07800bbccfab7efb2cc201f01fde41f9021b0316768aa82676d632efb1bf",
-  "{count} of 22 or 30 Mini-key characters entered": "ba5452c0c13bb0454e2e76e90f5e04fbbf20a1878beb596fa77adc80fe9627cb",
   "Locked to the imported {m}-of-{n} descriptor. Clear Current Multisig to choose a different quorum.": "4985829807d40e922558ab4af62ba75fd27456e11e51f87d8abdc7ca27f59d31",
   "Co-signer {n}": "4d04901d98e37314b506de1c9567beb8da0e7ef8f9f552efc49ef41cd3eeb76a",
   "Advanced entry for Co-signer {n}": "45b75ee4c5c651f4369aff5f2668cce913a9431e6ffc69b1e9ea98023c24d6ca",
@@ -1143,5 +1140,12 @@
   "Dismiss the machine notice": "ebd209bba94a9b70853e701c55ec7affc60faecc34a9e7d0d56a73b8a49089a2",
   "Session ended — leftovers may persist": "987aeacdac9ffd2a79904bb4cbc073fe378b0c7ddfac50e9f52dea1a5a36e9bd",
   "Close the browser and restart the computer as a precaution. It is a precaution, not a guarantee: a restart does not erase memory.": "8aaad0a04edf5f3425bcff8176296796876a0b370719f5051d500077b491575c",
-  "Dismiss the restart reminder": "984b01301c6a33b333bf91f2c759bb81b51b543bdc4d97c3238b9ed72614eb63"
+  "Dismiss the restart reminder": "984b01301c6a33b333bf91f2c759bb81b51b543bdc4d97c3238b9ed72614eb63",
+  "S… (22, 26, or 30 Base58 characters)": "c9c1821b7a0ab5ad8adabd6a7c4cafd1c139daaad88e5f0c88d173ba9a3ed25a",
+  "{count} of 22, 26, or 30 Mini-key characters entered": "af7e1f970f225df0b8c0325fe66e80d551615a4cf61c700e46590c61a13c30f5",
+  "Mini keys must start with S and contain 22, 26, or 30 Bitcoin Base58 characters.": "6c71d138a77564a1b256c7e18e787b9e4e64018350f92b83c7ed72c956df81d0",
+  "Not a valid PSBT.": "c12d63338a20cd4508e776bf225a0b0355079134ebe13340d43cad3f3cb537ff",
+  "The reference layer (rust-bitcoin) reports error-severity BIP-174 / consensus problems; treat every field below with suspicion:": "e4bfa63955afab5f7d409d0b8fc42c8e93d504573af26b46ee21b5cebfadecc1",
+  "…and {n} more.": "203d99b8b95d9f7030fc735fa62ba1c422ee03773e61d56701488e4dd9be0389",
+  "Signature not inspected: this file carries more SIGHASH_ALL signatures than the per-file check budget covers.": "7bc5d48932cca1934b89ad8e861bb2446379a676f0e5678feab6d8d8f4d5bf9d"
 }
