@@ -202,7 +202,6 @@
   "{entered} entered · {words} required BIP39 words": "{entered} eingegeben · {words} BIP39-Wörter erforderlich",
   "{entered} of {words} BIP39 word numbers entered": "{entered} von {words} BIP39-Wortnummern eingegeben",
   "64 hexadecimal characters": "64 hexadezimale Zeichen",
-  "S… (22 or 30 Base58 characters)": "S… (22 oder 30 Base58-Zeichen)",
   "Text to hash": "Text zum Hashen",
   "5… / K… / L…": "5… / K… / L…",
   "9… / c…": "9… / c…",
@@ -464,7 +463,6 @@
   "Acknowledge the lab warning before deriving.": "Warnhinweis des Labors vor dem Ableiten bestätigen.",
   "Enter a private key.": "Geben Sie einen privaten Schlüssel ein.",
   "Enter a WIF key (5/K/L…), a 64-character hex private key, or a Casascius mini key (S…).": "Geben Sie einen WIF-Schlüssel (5/K/L…), einen 64-stelligen hexadezimalen privaten Schlüssel oder einen Casascius-Mini-Schlüssel (S…) ein.",
-  "Mini keys must start with S and contain 22 or 30 Bitcoin Base58 characters.": "Mini-Schlüssel müssen mit S beginnen und 22 oder 30 Bitcoin-Base58-Zeichen enthalten.",
   "Not a valid Casascius mini private key.": "Kein gültiger privater Casascius-Mini-Schlüssel.",
   "Enter exactly 64 hexadecimal characters (0–9 and a–f).": "Geben Sie genau 64 hexadezimale Zeichen ein (0–9 und a–f).",
   "Enter a valid {network} WIF private key ({hint}).": "Geben Sie einen gültigen privaten {network}-WIF-Schlüssel ein ({hint}).",
@@ -812,7 +810,6 @@
   "Invalid Mini-key checksum": "Ungültige Mini-Schlüssel-Prüfsumme",
   "{count} Mini-key characters entered · 30 maximum": "{count} Mini-Schlüssel-Zeichen eingegeben · 30 maximal",
   "{count} of {required} Mini-key characters entered": "{count} von {required} Mini-Schlüssel-Zeichen eingegeben",
-  "{count} of 22 or 30 Mini-key characters entered": "{count} von 22 oder 30 Mini-Schlüssel-Zeichen eingegeben",
   "Locked to the imported {m}-of-{n} descriptor. Clear Current Multisig to choose a different quorum.": "Gesperrt für den importierten {m}-von-{n}-Deskriptor. Aktuelle Multisignatur löschen, um ein anderes Quorum zu wählen.",
   "Co-signer {n}": "Mitunterzeichner {n}",
   "Advanced entry for Co-signer {n}": "Erweiterte Eingabe für Mitunterzeichner {n}",
@@ -1143,5 +1140,13 @@
   "Dismiss the machine notice": "Hinweis zum Computer schließen",
   "Session ended — leftovers may persist": "Sitzung beendet – Reste können verbleiben",
   "Close the browser and restart the computer as a precaution. It is a precaution, not a guarantee: a restart does not erase memory.": "Schließen Sie den Browser und starten Sie den Computer vorsorglich neu. Dies ist eine Vorsichtsmaßnahme, keine Garantie: Ein Neustart löscht den Speicher nicht.",
-  "Dismiss the restart reminder": "Neustarterinnerung schließen"
+  "Dismiss the restart reminder": "Neustarterinnerung schließen",
+  "S… (22, 26, or 30 Base58 characters)": "S… (22, 26 oder 30 Base58-Zeichen)",
+  " (1–3 Heads, 4–6 Tails)": " (1–3 Kopf, 4–6 Zahl)",
+  "{count} of 22, 26, or 30 Mini-key characters entered": "{count} von 22, 26 oder 30 Mini-Schlüsselzeichen eingegeben",
+  "Mini keys must start with S and contain 22, 26, or 30 Bitcoin Base58 characters.": "Mini-Schlüssel müssen mit S beginnen und 22, 26 oder 30 Bitcoin Base58-Zeichen enthalten.",
+  "Not a valid PSBT.": "Kein gültiger PSBT.",
+  "The reference layer (rust-bitcoin) reports error-severity BIP-174 / consensus problems; treat every field below with suspicion:": "Die Referenzschicht (rust-bitcoin) meldet Fehler-Schweregrad BIP-174 / Konsensprobleme; behandeln Sie jedes Feld unten mit Misstrauen:",
+  "…and {n} more.": "…und {n} mehr.",
+  "Signature not inspected: this file carries more SIGHASH_ALL signatures than the per-file check budget covers.": "Signatur nicht geprüft: Diese Datei enthält mehr SIGHASH_ALL-Signaturen, als das Prüfbudget pro Datei abdeckt."
 }
