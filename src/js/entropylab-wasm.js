@@ -21,12 +21,18 @@ import { makeStackScrub, stackRegion } from "./wasm-stack-scrub.js";
 
 export { stackRegion };
 
-const wasmBytes = (() => {
+// A key worker (ln-worker.js) is bundled without the base64 module and gets
+// the page's bytes in its first message, set here before this runs.
+const injectedBytes = globalThis.__entropyLabWasmBytes instanceof ArrayBuffer ? new Uint8Array(globalThis.__entropyLabWasmBytes) : null;
+const wasmBytes = injectedBytes ?? (() => {
   const binary = atob(ENTROPYLAB_WASM_B64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 })();
+// A copy of the module bytes (public) for a key worker to instantiate its own
+// instance, with its own linear memory, from.
+export const wasmModuleBytes = () => wasmBytes.slice();
 
 // The shadow-stack region is verified against the binary at load and the
 // exports are wrapped to zero that region once per task; see
@@ -45,11 +51,13 @@ const bind = (instance) => {
 };
 
 const isNode = typeof process !== "undefined" && !!(process.versions && process.versions.node);
-if (isNode) {
-  // Node has no synchronous-compilation size limit; tests stay synchronous.
+// Node has no synchronous-compilation size limit, so tests stay synchronous;
+// neither has a worker, so a key worker is ready before its first message.
+const syncInit = isNode || injectedBytes !== null;
+if (syncInit) {
   bind(new WebAssembly.Instance(new WebAssembly.Module(wasmBytes), {}));
 }
-export const wasmReady = isNode
+export const wasmReady = syncInit
   ? Promise.resolve()
   : WebAssembly.instantiate(wasmBytes, {}).then(({ instance }) => bind(instance));
 

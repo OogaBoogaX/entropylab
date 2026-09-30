@@ -707,7 +707,7 @@ test("the browser-suite crypto bridge is gated out of the release build", () => 
   // refuse to write a hooks build over the release artifact.
   assert.match(read("src/js/app.js"), /if \(__ENTROPYLAB_TEST_HOOKS__ && globalThis\.__entropyLabTest\) globalThis\.__entropyLabCrypto = /);
   const build = read("scripts/build.mjs");
-  assert.match(build, /define: \{ __ENTROPYLAB_TEST_HOOKS__: testHooks \? "true" : "false" \}/);
+  assert.match(build, /define: \{ __ENTROPYLAB_TEST_HOOKS__: testHooks \? "true" : "false", __LN_WORKER_SOURCE__: JSON\.stringify\(lnWorkerSource\) \}/);
   assert.match(build, /--test-hooks requires --out outside the repository root/);
 });
 

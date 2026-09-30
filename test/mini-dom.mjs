@@ -260,6 +260,11 @@ export class MiniElement {
   addEventListener(type, listener) { addListener(this, type, listener); }
   removeEventListener(type, listener) { removeListener(this, type, listener); }
   listenerCount(type) { return countListeners(this, type); }
+  // Runs this element's own listeners for the event (no bubbling).
+  dispatchEvent(event) {
+    for (const listener of [...(listeners.get(this)?.get(event.type) ?? [])]) listener.call(this, Object.assign(event, { target: this }));
+    return true;
+  }
   focus() {}
   select() {}
   click() {

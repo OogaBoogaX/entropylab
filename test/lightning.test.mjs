@@ -61,7 +61,7 @@ test("only known aezeed internal versions derive a node key", () => {
   assert.ok(isKnownInternalVersion(0), "LND's version");
   assert.ok(isKnownInternalVersion(1), "the toolkit's version");
   for (const unknown of [2, 3, 255]) assert.ok(!isKnownInternalVersion(unknown), `version ${unknown} is refused`);
-  const lnSource = read("src/js/lightning.js");
+  const lnSource = read("src/js/lightning-derive.js");
   assert.match(lnSource, /if \(!isKnownInternalVersion\(decoded\.internalVersion\)\)/, "the tool gates on it before deriving");
   assert.match(lnSource, /code: "internal-version"/, "the refusal is a named error");
 });

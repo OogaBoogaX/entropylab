@@ -19,6 +19,7 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
+import { buildLnWorkerSource } from "./ln-worker-source.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const SRC = join(root, "src");
@@ -119,6 +120,9 @@ const wasmAezNotice = `/*!
  *   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 `;
+// The Lightning key worker, bundled on its own and handed to the page as a
+// string constant (lightning.js starts it from a Blob).
+const lnWorkerSource = await buildLnWorkerSource();
 const jsMain = buildSync({
   entryPoints: [join(SRC, "js/app.js")],
   bundle: true,
@@ -131,7 +135,7 @@ const jsMain = buildSync({
   charset: "utf8",
   loader: { ".html": "text" },
   banner: { js: wasmAezNotice },
-  define: { __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false" },
+  define: { __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false", __LN_WORKER_SOURCE__: JSON.stringify(lnWorkerSource) },
 }).outputFiles[0].text.split(siteLogoSpan).join(siteLogo);
 const jsSqliteWriter = read("js/sqlite-writer.js");
 const jsWalletExport = read("js/wallet-export.js");
