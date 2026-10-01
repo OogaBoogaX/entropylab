@@ -17,7 +17,6 @@
   "Practice coins, no value · addresses m…/n…, 2…, tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "4fb1fa90398281df394e737ed3cb4a8a6435e14b6fc5a92898fdba641f7c0646",
   "Signed practice coins, no value · same formats as testnet · tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "9bbe0ea8d8d14d3a580431ed9a2847fff657bc2e307fc71081a69b0095b0d605",
   "This page never connects to any network — the choice sets the address formats, key versions, and checks the tools run with. A tool's own advanced fields can still override it.": "a87bdbc3651e0b9f38d7cd1f2d9a0aa522403ea9f401457cea171a7dd3f631a7",
-  "Dismiss the beta software warning": "8543a01a6256105341ea940d8b3e1f48cd5fde24852f7fc8ac6e2cfc7062d2d3",
   "I understand": "860296446ec43c52d0ecbc689617af38c1af2c26ab5b61f37efa5523dd1b08c1",
   "Run Offline · Bring your own entropy": "2d8ad152a1316752b6f4fb613af4eb81fbda32f95dff2c29dbfc9d88039a634b",
   "Hold or receive bitcoin without a signing device.": "ffa0928aeafc32d1eb9df2acc096f6c187ddb6ec53303654845269dc5801ffd6",
@@ -1153,5 +1152,6 @@
   "Type the number six to prove you read this.": "452b657ad0737dd47c95873364707110187746e27b297087437ff83ce61aff8f",
   "Type the number seven to prove you read this.": "7c1398481b8b0b9a97d0ea4a69d0493fff282d0678689e0f703e52bca04b6039",
   "Type the number eight to prove you read this.": "394d386c31e724b773777389211d3907b2a9afd51768547cd658384601192ea7",
-  "Type the number nine to prove you read this.": "e31283b4069dc29319a710ae2ed630ed4891e25d8f1dc757bb00daf9c1cb451c"
+  "Type the number nine to prove you read this.": "e31283b4069dc29319a710ae2ed630ed4891e25d8f1dc757bb00daf9c1cb451c",
+  "Dismiss the experimental software warning": "dfb467eca3e81b9735f0ebeaae81418b950801e343c1f4e0e912658abf423039"
 }

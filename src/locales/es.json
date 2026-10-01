@@ -17,7 +17,6 @@
   "Practice coins, no value · addresses m…/n…, 2…, tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "Monedas de práctica, sin valor · direcciones m…/n…, 2…, tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · tipo de moneda 1'",
   "Signed practice coins, no value · same formats as testnet · tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "Monedas de práctica firmadas, sin valor · mismos formatos que testnet · tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · tipo de moneda 1'",
   "This page never connects to any network — the choice sets the address formats, key versions, and checks the tools run with. A tool's own advanced fields can still override it.": "Esta página nunca se conecta a ninguna red: la elección define los formatos de dirección, las versiones de clave y las comprobaciones que ejecutan las herramientas. Los campos avanzados de cada herramienta aún pueden anularla.",
-  "Dismiss the beta software warning": "Descartar la advertencia de software en beta",
   "I understand": "Entiendo",
   "Run Offline · Bring your own entropy": "Ejecuta sin conexión · Trae tu propia entropía",
   "Hold or receive bitcoin without a signing device.": "Guarda o recibe bitcoin sin un dispositivo de firma.",
@@ -1153,5 +1152,6 @@
   "Type the number six to prove you read this.": "Escribe el número seis para demostrar que has leído esto.",
   "Type the number seven to prove you read this.": "Escribe el número siete para demostrar que has leído esto.",
   "Type the number eight to prove you read this.": "Escribe el número ocho para demostrar que has leído esto.",
-  "Type the number nine to prove you read this.": "Escribe el número nueve para demostrar que has leído esto."
+  "Type the number nine to prove you read this.": "Escribe el número nueve para demostrar que has leído esto.",
+  "Dismiss the experimental software warning": "Descartar la advertencia de software experimental"
 }
