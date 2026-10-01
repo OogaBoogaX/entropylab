@@ -17,7 +17,6 @@
   "Practice coins, no value · addresses m…/n…, 2…, tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "Moedas de prática, sem valor · endereços m…/n…, 2…, tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · tipo de moeda 1'",
   "Signed practice coins, no value · same formats as testnet · tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "Moedas de prática assinadas, sem valor · mesmos formatos da testnet · tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · tipo de moeda 1'",
   "This page never connects to any network — the choice sets the address formats, key versions, and checks the tools run with. A tool's own advanced fields can still override it.": "Esta página nunca se conecta a nenhuma rede — a escolha define os formatos de endereço, as versões de chave e as verificações que as ferramentas executam. Os campos avançados de cada ferramenta ainda podem substituí-la.",
-  "Dismiss the beta software warning": "Dispensar o aviso de software beta",
   "I understand": "Entendi",
   "Run Offline · Bring your own entropy": "Execute offline · Traga sua própria entropia",
   "Hold or receive bitcoin without a signing device.": "Guarde ou receba bitcoin sem um dispositivo de assinatura.",
@@ -1145,7 +1144,15 @@
   "Experimental software": "Software experimental",
   "EntropyLab is experimental and should be used only for testing and educational purposes.": "EntropyLab é experimental e deve ser usado apenas para fins de teste e educacionais.",
   "It is intended for": "Destina-se a",
-  "Type the number": "Digite o número",
-  "three": "três",
-  "to prove you read this.": "para provar que você leu isto."
+  "Dismiss the experimental software warning": "Ignorar o aviso de software experimental",
+  "Type the number zero to prove you read this.": "Digite o número zero para provar que você leu isto.",
+  "Type the number one to prove you read this.": "Digite o número um para provar que você leu isto.",
+  "Type the number two to prove you read this.": "Digite o número dois para provar que você leu isto.",
+  "Type the number three to prove you read this.": "Digite o número três para provar que você leu isto.",
+  "Type the number four to prove you read this.": "Digite o número quatro para provar que você leu isto.",
+  "Type the number five to prove you read this.": "Digite o número cinco para provar que você leu isto.",
+  "Type the number six to prove you read this.": "Digite o número seis para provar que você leu isto.",
+  "Type the number seven to prove you read this.": "Digite o número sete para provar que você leu isto.",
+  "Type the number eight to prove you read this.": "Digite o número oito para provar que você leu isto.",
+  "Type the number nine to prove you read this.": "Digite o número nove para provar que você leu isto."
 }
