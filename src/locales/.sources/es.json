@@ -1144,7 +1144,14 @@
   "Experimental software": "263e2950b2094bd9fd46a92c1e40d2894aecb7cfe5f4e02c3040db6508842471",
   "EntropyLab is experimental and should be used only for testing and educational purposes.": "a803f51e8014194f9e091b2367b65ed7d883c2ba3610e3eb318686be891f6365",
   "It is intended for": "8bc1a01c16fd6c8d7086749e8784c7145a60e56c23a8a1201998c7c110689660",
-  "Type the number": "a0ad4014b85b81b0f2d50860f0c47536e307664980f3d4ffe8e52fc6997687df",
-  "three": "8b5b9db0c13db24256c829aa364aa90c6d2eba318b9232a4ab9313b954d3555f",
-  "to prove you read this.": "4632fd9a48080047059ef0e9d8528866180736edc964d1e26a1c7ee4b5ed60cd"
+  "Type the number zero to prove you read this.": "336c387977fad0a013bf44fe3423a2bb3ddf90ca2250865439a2487e0b574c35",
+  "Type the number one to prove you read this.": "fc8dd64f35f92d6cc39fa74cac1e29f3129478951be1d5c5186ad73308df50fb",
+  "Type the number two to prove you read this.": "4e7417a07bdf0ce9757312f6a2d3646915fc32140bf0362954eac54bcc2754f1",
+  "Type the number three to prove you read this.": "168c9b8ced63c09362565231a2d2d8228aec5b9266ae0a214e20d8034ec7a935",
+  "Type the number four to prove you read this.": "14f69b7df598b14d0c87851fcaa7134b50116fef4b32076d2b82a6e6eb892013",
+  "Type the number five to prove you read this.": "2337b395e6692fa2640d6312029caafa95a15ddce99951251fcb2f95ce8b513a",
+  "Type the number six to prove you read this.": "452b657ad0737dd47c95873364707110187746e27b297087437ff83ce61aff8f",
+  "Type the number seven to prove you read this.": "7c1398481b8b0b9a97d0ea4a69d0493fff282d0678689e0f703e52bca04b6039",
+  "Type the number eight to prove you read this.": "394d386c31e724b773777389211d3907b2a9afd51768547cd658384601192ea7",
+  "Type the number nine to prove you read this.": "e31283b4069dc29319a710ae2ed630ed4891e25d8f1dc757bb00daf9c1cb451c"
 }
