@@ -1145,7 +1145,14 @@
   "Experimental software": "Experimentelle Software",
   "EntropyLab is experimental and should be used only for testing and educational purposes.": "EntropyLab ist experimentell und sollte nur zu Test- und Bildungszwecken verwendet werden.",
   "It is intended for": "Es ist bestimmt für",
-  "Type the number": "Geben Sie die Zahl ein",
-  "three": "drei",
-  "to prove you read this.": "um zu beweisen, dass Sie dies gelesen haben."
+  "Type the number zero to prove you read this.": "Geben Sie die Zahl Null ein, um zu beweisen, dass Sie dies gelesen haben.",
+  "Type the number one to prove you read this.": "Geben Sie die Zahl Eins ein, um zu beweisen, dass Sie dies gelesen haben.",
+  "Type the number two to prove you read this.": "Geben Sie die Zahl Zwei ein, um zu beweisen, dass Sie dies gelesen haben.",
+  "Type the number three to prove you read this.": "Geben Sie die Zahl Drei ein, um zu beweisen, dass Sie dies gelesen haben.",
+  "Type the number four to prove you read this.": "Geben Sie die Zahl Vier ein, um zu beweisen, dass Sie dies gelesen haben.",
+  "Type the number five to prove you read this.": "Geben Sie die Zahl Fünf ein, um zu beweisen, dass Sie dies gelesen haben.",
+  "Type the number six to prove you read this.": "Geben Sie die Zahl Sechs ein, um zu beweisen, dass Sie dies gelesen haben.",
+  "Type the number seven to prove you read this.": "Geben Sie die Zahl Sieben ein, um zu beweisen, dass Sie dies gelesen haben.",
+  "Type the number eight to prove you read this.": "Geben Sie die Zahl Acht ein, um zu beweisen, dass Sie dies gelesen haben.",
+  "Type the number nine to prove you read this.": "Geben Sie die Zahl Neun ein, um zu beweisen, dass Sie dies gelesen haben."
 }
