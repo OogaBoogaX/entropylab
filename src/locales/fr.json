@@ -1145,7 +1145,14 @@
   "Experimental software": "Logiciel expérimental",
   "EntropyLab is experimental and should be used only for testing and educational purposes.": "EntropyLab est expérimental et ne doit être utilisé qu'à des fins de test et d'éducation.",
   "It is intended for": "Il est destiné à",
-  "Type the number": "Tapez le nombre",
-  "three": "trois",
-  "to prove you read this.": "pour prouver que vous avez lu ceci."
+  "Type the number zero to prove you read this.": "Tapez le nombre zéro pour prouver que vous avez lu ceci.",
+  "Type the number one to prove you read this.": "Tapez le nombre un pour prouver que vous avez lu ceci.",
+  "Type the number two to prove you read this.": "Tapez le nombre deux pour prouver que vous avez lu ceci.",
+  "Type the number three to prove you read this.": "Tapez le nombre trois pour prouver que vous avez lu ceci.",
+  "Type the number four to prove you read this.": "Tapez le nombre quatre pour prouver que vous avez lu ceci.",
+  "Type the number five to prove you read this.": "Tapez le nombre cinq pour prouver que vous avez lu ceci.",
+  "Type the number six to prove you read this.": "Tapez le nombre six pour prouver que vous avez lu ceci.",
+  "Type the number seven to prove you read this.": "Tapez le nombre sept pour prouver que vous avez lu ceci.",
+  "Type the number eight to prove you read this.": "Tapez le nombre huit pour prouver que vous avez lu ceci.",
+  "Type the number nine to prove you read this.": "Tapez le nombre neuf pour prouver que vous avez lu ceci."
 }
