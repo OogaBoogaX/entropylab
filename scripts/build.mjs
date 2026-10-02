@@ -134,7 +134,9 @@ const jsMain = buildSync({
   define: { __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false" },
 }).outputFiles[0].text.split(siteLogoSpan).join(siteLogo);
 const jsSqliteWriter = read("js/sqlite-writer.js");
+const jsSqliteReader = read("js/sqlite-reader.js");
 const jsWalletExport = read("js/wallet-export.js");
+const jsCoreWallet = read("js/core-wallet.js");
 const jsOnline = read("js/online.js");
 const jsNetwork = read("js/network-check.js");
 const jsBrowserCheck = read("js/browser-check.js");
@@ -150,7 +152,9 @@ let html = template
   .replace("/*@@CSS@@*/", () => css)
   .replace("/*@@JS_MAIN@@*/", () => jsMain)
   .replace("/*@@JS_SQLITE_WRITER@@*/", () => jsSqliteWriter)
+  .replace("/*@@JS_SQLITE_READER@@*/", () => jsSqliteReader)
   .replace("/*@@JS_WALLET_EXPORT@@*/", () => jsWalletExport)
+  .replace("/*@@JS_CORE_WALLET@@*/", () => jsCoreWallet)
   .replace("/*@@JS_ONLINE@@*/", () => jsOnline)
   .replace("/*@@JS_NETWORK@@*/", () => jsNetwork)
   .replace("/*@@JS_BROWSER_CHECK@@*/", () => jsBrowserCheck)

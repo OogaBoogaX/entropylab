@@ -1,4 +1,4 @@
-import { sha256 as hodlSha256 } from "./hashes.js";
+import { sha256 as hodlSha256, hash160 as hodlHash160 } from "./hashes.js";
 // secp256k1 operations run in the libsecp256k1 WebAssembly module; the facade
 // is a drop-in for the noble/curves surface this file uses (see
 // src/js/secp256k1.js). App boot waits for the module to be ready.
@@ -48,6 +48,7 @@ import { wordlist as bip39English } from "./bip39-english.js";
 // The PSBT editor (its own workspace tab) drives the rust-bitcoin WASM
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFromUpload, psbtQrPlan as hodlPsbtQrPlan } from "./psbt-editor.js";
+import { initCoreWallet } from "./core-wallet-ui.js";
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
@@ -1867,6 +1868,8 @@ function hodlWalletDatDeps() {
     sha256: (bytes) => hodlSha256(bytes),
     checksum: hodlDescriptorChecksum,
     base58Decode: (text) => hodlBase58Check.decode(text),
+    base58Encode: (bytes) => hodlBase58Check.encode(bytes),
+    hash160: (bytes) => hodlHash160(bytes),
     deriveBranchBody: (extendedKeyText, branch) => {
       // Any SLIP-132 prefix is accepted; it is re-versioned to plain xpub here.
       let node = hodlHDKey.fromExtendedKey(hodlReversionExtendedKey(extendedKeyText, hodlExtendedKeyVersions.mainnet.x.pub)).deriveChild(branch), body = new Uint8Array(74), view = new DataView(body.buffer);
@@ -1884,8 +1887,43 @@ function hodlWalletDatDeps() {
     canonicalizeDescriptor: (descriptor) => canonicalizeWatchDescriptor(descriptor, {
       decode: (key) => hodlBase58Check.decode(key),
       encode: (bytes) => hodlBase58Check.encode(bytes)
-    })
+    }),
+    // Neutering keeps the chain family: tprv/uprv/vprv become tpub.
+    neuterExtendedKey: (extendedKeyText) => {
+      let text = extendedKeyText.trim(), testnet = /^(?:tprv|uprv|vprv)/.test(text);
+      let node = hodlHDKey.fromExtendedKey(hodlReversionExtendedKey(text, hodlExtendedKeyVersions.mainnet.x.prv)).neutered();
+      return hodlReversionExtendedKey(node.publicExtendedKey, testnet ? hodlExtendedKeyVersions.testnet.x.pub : hodlExtendedKeyVersions.mainnet.x.pub);
+    }
   };
+}
+// A proven key from a Core wallet.dat moves into the Key Station as reviewable
+// inputs — never a finished key. The lab is filled with the reconstructed
+// extended key and the wallet's own network family; deriving happens only when
+// the user presses Derive Key, the same contract as the journal's key manager
+// "Load inputs to derive" flow (hodlKeyManagerUseInStation).
+function hodlCoreImportIntoStation(item) {
+  if (!item?.xprv || typeof item.xprv !== "string") return;
+  let source = hodlNewKeyState();
+  source.mode = "seed";
+  source.fields.seed = item.xprv;
+  source.fields.network = /^xprv/.test(item.xprv) ? "mainnet" : "testnet";
+  source.fields.coinType = source.fields.network === "testnet" ? "1'" : "0'";
+  if (item.kind === "account" && item.script) {
+    source.fields.script = item.script;
+    source.accountId = item.script;
+    // Keep the form's public path text in step with the script the account
+    // import chose — the derivation of an account key ignores it, but the
+    // key card's summary would otherwise read the m/84' default.
+    let purpose = { bip44: 44, bip49: 49, bip84: 84, bip86: 86 }[item.script], coinType = source.fields.network === "testnet" ? 1 : 0;
+    source.fields.purpose = `${purpose}'`;
+    source.fields.derivationAccountPath = `m/${purpose}'/${coinType}'/0'`;
+    source.fields.derivationPath = `m/${purpose}'/${coinType}'/0'/{0-1}/{0-9}`;
+  }
+  let labIndex = hodlFillLabFromKey(source);
+  hodlActiveKey = labIndex;
+  hodlRenderKeyTabs();
+  hodlShowWorkspace("calc");
+  hodlJournalLog("core-import", item.fingerprint || "wallet-dat", "core");
 }
 function hodlDownloadWalletDat() {
   if (!hodlWalletResult || !hodlWalletExport.hasDescriptors(hodlWalletResult)) return;
@@ -13995,9 +14033,10 @@ function hodlShowWorkspace(id) {
   document.getElementById("sp-card").hidden = id !== "sp";
   document.getElementById("vanity-card").hidden = id !== "vanity";
   document.getElementById("ln-card").hidden = id !== "ln";
+  document.getElementById("core-card").hidden = id !== "core";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
-  ["bip85", "sp", "msig", "calc", "vanity", "ln"].forEach((tool) => {
+  ["bip85", "sp", "msig", "calc", "vanity", "ln", "core"].forEach((tool) => {
     document.getElementById(`${tool}-tool-intro`).hidden = id !== tool;
   });
   hodlSyncPsbtTool();
@@ -14147,7 +14186,7 @@ async function hodlLoadTestKeys() {
 }
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "PSBT", "PSBT"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity"], ...(__ENTROPYLAB_TEST_HOOKS__ ? [["journal", "Journal", "Journal"]] : [])];
+var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "PSBT", "PSBT"], ["core", "Core Wallet", "Core"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity"], ...(__ENTROPYLAB_TEST_HOOKS__ ? [["journal", "Journal", "Journal"]] : [])];
 // Lightning and Journal are held back from release navigation while their
 // implementations remain in source. Test builds keep Journal reachable so its
 // behavior and backup compatibility stay covered until the UI is ready.
@@ -14480,6 +14519,10 @@ var hodlJournalAuditedClicks = {
   "psbted-copy-b64": ["psbt", "copy", "edited-psbt-base64"],
   "psbted-copy-hex": ["psbt", "copy", "edited-psbt-hex"],
   "psbted-download": ["psbt", "download", "edited-psbt"],
+  "core-upload": ["core", "upload", "wallet-dat"],
+  "core-download": ["core", "download", "wallet-dat"],
+  "core-wipe": ["core", "clear", "editor"],
+  "core-add-go": ["core", "editor-add", "descriptor"],
   "journal-notes-copy": ["journal", "copy", "notepad-page"],
   "journal-notes-download": ["journal", "download", "notebook"],
   "journal-notes-upload": ["journal", "upload", "notebook"],
@@ -14495,6 +14538,8 @@ function hodlJournalControlTool(control) {
   let id = control?.id || "";
   if (id.startsWith("journal-")) return "journal";
   if (id.startsWith("psbt-") || id.startsWith("psbted-")) return "psbt";
+  if (id.startsWith("core-")) return "core";
+  if (control?.closest?.("#core-card")) return "core";
   if (id.startsWith("bip85-")) return "bip85";
   if (id.startsWith("msig-")) return "msig";
   if (id.startsWith("sp-")) return "sp";
@@ -16620,6 +16665,7 @@ function hodlInitWorkspace() {
   hodlInitMsig();
   hodlInitPsbt();
   initPsbtEditor({ networkDefault: () => hodlNetworkDefault, copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup });
+  initCoreWallet({ deps: hodlWalletDatDeps(), onImportIntoStation: hodlCoreImportIntoStation });
   hodlInitBip85();
   hodlInitVanity();
   hodlInitSp();

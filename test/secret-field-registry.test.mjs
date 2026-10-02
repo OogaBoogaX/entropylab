@@ -19,6 +19,7 @@ const app = read("src/js/app.js");
 const shell = read("src/shell.html");
 const expandable = read("src/js/expandable.js");
 const psbtEditor = read("src/js/psbt-editor.js");
+const coreWallet = read("src/js/core-wallet-ui.js");
 
 // A named top-level function body in app.js, for "this id is cleared in
 // this function" probes.
@@ -144,6 +145,16 @@ const CLEARING_PATHS = [
     why: "the PSBT editor's file picker (reset on consume)",
     probe: () => assert.match(around(psbtEditor, `$("psbted-file")`), /file\.value = ""/, "#psbted-file must be reset on consume"),
   },
+  {
+    ids: ["core-add-text"],
+    why: "Core Wallet: the add-descriptor paste may carry an xprv",
+    probe: () => assert.match(coreWallet, /wipe\.onclick[\s\S]*?addText\.value = ""/, "the Core Wallet wipe must empty #core-add-text"),
+  },
+  {
+    ids: ["core-file"],
+    why: "the Core Wallet file picker (reset on consume)",
+    probe: () => assert.match(coreWallet, /file\.addEventListener\("change", \(\) => \{\s*const chosen = file\.files\?\.\[0\];\s*file\.value = "";/, "#core-file must be reset on consume"),
+  },
 ];
 
 const SECRET_FIELDS = CLEARING_PATHS.flatMap((row) => row.ids);
@@ -166,6 +177,9 @@ const PUBLIC_FIELDS = {
   "branch-range": "address window setting",
   "branch-start": "address window setting",
   "branch-start-harden": "hardening toggle",
+  "core-add-active": "editor policy checkbox",
+  "core-add-internal": "editor policy checkbox",
+  "core-reveal": "privacy reveal toggle — session state, not key material",
   "derivation-path": "public derivation path text",
   "journal-log-encrypt": "download-encryption checkbox",
   "journal-notes-encrypt": "download-encryption checkbox",
