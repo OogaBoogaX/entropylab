@@ -18,6 +18,13 @@ import {
   REF_WATCH_ONLY_RECORDS,
 } from "./wallet-export-reference.mjs";
 import {
+  GENERATED_MASTER_FINGERPRINT,
+  GENERATED_ROOT_TPRV,
+  GENERATED_ROWS,
+  GENERATED_SEED,
+  buildGeneratedUnitRecords,
+} from "./core-generated-fixture.mjs";
+import {
   PYTHON_SQLITE,
   b58checkDecode,
   b58checkEncode,
@@ -29,7 +36,9 @@ import {
   hexToBytes,
   publicKeyForPrivate,
   read,
+  ripemd160,
   serializeExtendedKey,
+  sha256,
   sqliteReadBack,
 } from "./wallet-export-harness.mjs";
 
@@ -103,7 +112,7 @@ test("the build and the shell register the module and the tab", () => {
   assert.match(template, /\/\*@@JS_CORE_WALLET@@\*\//);
   const app = read("src/js/app.js");
   assert.match(app, /import \{ initCoreWallet \} from "\.\/core-wallet-ui\.js"/);
-  assert.match(app, /initCoreWallet\(\{ deps: hodlWalletDatDeps\(\) \}\)/);
+  assert.match(app, /initCoreWallet\(\{ deps: hodlWalletDatDeps\(\), onImportIntoStation: hodlCoreImportIntoStation \}\)/);
 });
 
 test("parses a real Core watch-only wallet and verifies clean", () => {
@@ -334,4 +343,139 @@ test("unknown record types survive a rebuild byte-for-byte", () => {
   assert.equal(doc.others.length, 1);
   const reparsed = core.parseWalletDat(core.buildWalletDat(doc));
   assert.ok(reparsed.rows.some(([key, value]) => bytesToHex(key) === extra[0] && bytesToHex(value) === extra[1]));
+});
+
+// --- Key Station import (stationImports) -------------------------------------
+// Contract: import is offered only for secrets that provably ARE the node the
+// descriptor's embedded extended key names (its pubkey field matches the key
+// record's pubkey both ways), reassembled into a depth-0 root or depth-3
+// account xprv in the wallet's own network family. Watch-only wallets,
+// encrypted wallets (walletdescriptorcryptedkey), and secrets whose records
+// cannot be tied to that node must be refused, never guessed.
+
+// stationImports needs base58 encode and hash160 on top of the core deps;
+// both come from the harness's independent reference crypto here.
+const importDeps = {
+  ...coreDeps,
+  base58Encode: b58checkEncode,
+  hash160: (bytes) => ripemd160(sha256(bytes)).subarray(0, 4),
+};
+const parseHex = (records) => loadModule().core.parseWalletDat(
+  dbFromRecords(records.map(([key, value]) => [bytesToHex(hexToBytes(key)), bytesToHex(hexToBytes(value))])),
+);
+
+test("a Core-generated wallet imports as exactly one root key", () => {
+  const { core } = loadModule();
+  const doc = parseHex(GENERATED_ROWS);
+  const result = core.stationImports(doc, importDeps);
+  assert.equal(result.reason, null);
+  assert.equal(result.skipped, 0);
+  assert.equal(result.imports.length, 1, "six descriptors share one master key");
+  const [item] = result.imports;
+  assert.equal(item.kind, "root");
+  assert.equal(item.script, null, "a root import covers every script type");
+  assert.equal(item.internal, true);
+  assert.equal(item.external, true);
+  // Ground truth: GENERATED_ROOT_TPRV is the harness-serialized BIP32 root of
+  // the fixed fixture seed — assembly must reproduce it byte for byte.
+  assert.equal(item.xprv, GENERATED_ROOT_TPRV);
+  assert.equal(item.fingerprint, GENERATED_MASTER_FINGERPRINT);
+});
+
+test("an imported account-key wallet imports as one account xprv per script type", () => {
+  const { core } = loadModule();
+  const doc = parseRecords(REF_PRIVATE_RECORDS);
+  const result = core.stationImports(doc, importDeps);
+  assert.equal(result.reason, null);
+  assert.equal(result.skipped, 0);
+  assert.equal(result.imports.length, 4, "one import per (account key, script type)");
+  // Ground truth: the reference wallet's descriptors publish the account tprv
+  // itself; the assembled key must equal it exactly, script-mapped.
+  const refTprv = REF_PRIVATE_DESCRIPTORS[0].match(/(tprv[1-9A-HJ-NP-Za-km-z]{90,})/)[1];
+  const scripts = ["bip44", "bip49", "bip84", "bip86"];
+  for (const item of result.imports) {
+    assert.equal(item.kind, "account");
+    assert.equal(item.xprv, refTprv);
+    assert.ok(scripts.includes(item.script));
+    assert.equal(item.internal, true);
+    assert.equal(item.external, true);
+    // node fingerprint = the account key's HASH160 — independently computed
+    // from the reference account xpub's pubkey.
+    assert.equal(item.fingerprint, bytesToHex(ripemd160(sha256(b58checkDecode(REF_ACCOUNT_TPUB).slice(45, 78))).subarray(0, 4)));
+  }
+  assert.deepEqual(result.imports.map((item) => item.script).sort(), scripts);
+});
+
+test("a watch-only wallet has nothing to import", () => {
+  const { core } = loadModule();
+  const doc = parseRecords(REF_WATCH_ONLY_RECORDS);
+  const result = core.stationImports(doc, importDeps);
+  assert.equal(result.reason, "no-private-keys");
+  assert.deepEqual(result.imports, []);
+});
+
+test("an encrypted Core wallet is refused, not guessed at", () => {
+  const { core } = loadModule();
+  // Any walletdescriptorcryptedkey record marks an encrypted wallet: its
+  // secrets are not in the file in usable form. The name is 26 characters
+  // (0x1a); the payload shape is irrelevant to the refusal.
+  const crypted = ["1a77616c6c657464657363726970746f72637279707465646b6579" + "00".repeat(32) + "21" + "02".repeat(33), "f0" + "01".repeat(48)];
+  const doc = parseHex([...GENERATED_ROWS, crypted]);
+  const result = core.stationImports(doc, importDeps);
+  assert.equal(result.reason, "encrypted");
+  assert.deepEqual(result.imports, []);
+});
+
+test("key records whose secrets do not match their own pubkeys are refused", () => {
+  const { core } = loadModule();
+  const rows = GENERATED_ROWS.map(([key, value]) => [key, value]);
+  const keyPrefix = "1377616c6c657464657363726970746f726b6579"; // streamString("walletdescriptorkey")
+  const records = rows.filter(([key]) => key.startsWith(keyPrefix));
+  assert.ok(records.length > 1, "fixture wallet has key records to tamper");
+  // value = compactSize(214) || der(214) || hash; flip one secret byte in
+  // every record (the sole shared secret no longer proves itself anywhere).
+  for (const record of records) {
+    const value = hexToBytes(record[1]);
+    value[1 + 8] ^= 0x01;
+    record[1] = bytesToHex(value);
+  }
+  const doc = parseHex(rows);
+  const result = core.stationImports(doc, importDeps);
+  assert.equal(result.reason, "unsupported-key-records");
+  assert.deepEqual(result.imports, []);
+});
+
+test("a tampered secret record is skipped, while the proven copies still import", () => {
+  const { core } = loadModule();
+  const rows = GENERATED_ROWS.map(([key, value]) => [key, value]);
+  const keyPrefix = "1377616c6c657464657363726970746f726b6579"; // streamString("walletdescriptorkey")
+  const record = rows.find(([key]) => key.startsWith(keyPrefix));
+  const value = hexToBytes(record[1]);
+  value[1 + 8] ^= 0x01;
+  record[1] = bytesToHex(value);
+  const doc = parseHex(rows);
+  const result = core.stationImports(doc, importDeps);
+  // The other key records still prove the same master key; the corrupt one
+  // drops out and is counted.
+  assert.equal(result.reason, null);
+  assert.equal(result.skipped, 1);
+  assert.equal(result.imports.length, 1);
+  assert.equal(result.imports[0].xprv, GENERATED_ROOT_TPRV);
+});
+
+test("a record naming a node the descriptor's embedded key is not is refused", () => {
+  const { core } = loadModule();
+  // A copy of the generated wallet whose descriptors embed a DIFFERENT
+  // wallet's root tpub: the key records still carry the fixture's secret, so
+  // the assembled node would be someone else's account — refuse.
+  const other = sha256(new TextEncoder().encode("entropylab core-wallet import fixture other"));
+  const otherTpub = serializeExtendedKey(hdMasterFromSeed(other), 0x043587cf, false);
+  const records = [
+    ...GENERATED_ROWS.slice(0, 5),
+    ...buildGeneratedUnitRecords(GENERATED_SEED, { embeddedTpub: otherTpub }).map(([key, value]) => [bytesToHex(key), bytesToHex(value)]),
+  ];
+  const doc = parseHex(records);
+  const result = core.stationImports(doc, importDeps);
+  assert.equal(result.reason, "unsupported-key-records");
+  assert.deepEqual(result.imports, []);
 });

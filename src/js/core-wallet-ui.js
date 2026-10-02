@@ -36,7 +36,7 @@ const TONE_VERDICT = {
 };
 const toneVerdict = (tone) => TONE_VERDICT[tone] ?? ["psbt-warn", () => t("Unknown")];
 
-export const initCoreWallet = ({ deps } = {}) => {
+export const initCoreWallet = ({ deps, onImportIntoStation } = {}) => {
   const upload = document.getElementById("core-upload");
   if (!upload) return;
   const $ = (id) => document.getElementById(id);
@@ -161,6 +161,54 @@ export const initCoreWallet = ({ deps } = {}) => {
       <table class="psbted-pairs"><thead><tr><th>${tHtml("Record")}</th><th>${tHtml("Key (hex)")}</th><th>${tHtml("Value (hex)")}</th></tr></thead><tbody>${rows}</tbody></table>${more}`;
   };
 
+  // The Key Station import section: one import row per proven key the wallet
+  // carries (a Core-generated wallet collapses to its single root). Buttons
+  // stay disabled while any verification check fails — import is offered only
+  // for a file whose claims hold together.
+  const IMPORT_REASONS = {
+    "encrypted": () => t("This wallet is encrypted in Bitcoin Core; its key records are not usable here. Export its descriptors with listdescriptors to inspect elsewhere."),
+    "no-private-keys": () => t("Watch-only wallet — it holds no private keys, so there is nothing to import."),
+    "unsupported-key-records": () => t("No private key record in this wallet reassembles into a root or account key of a supported single-signature descriptor."),
+    "unknown-network": () => t("The wallet’s chain is unknown, so a key encoding cannot be chosen safely."),
+  };
+
+  const importSectionHtml = (result, failed) => {
+    if (!result) return ""; // import analysis threw; the report above stands alone
+    let body = "";
+    if (result.imports.length) {
+      const items = result.imports
+        .map((item, index) => {
+          const kindLabel = item.kind === "root"
+            ? t("Wallet root key — the wallet’s master key, covering every descriptor in it")
+            : t("Account key — {type}", { type: outputTypeName({ bip44: 0, bip49: 1, bip84: 2, bip86: 3 }[item.script] ?? -1) });
+          const branches = item.internal && item.external ? t("receive and change") : item.internal ? t("change") : t("receive");
+          return `<tr>
+            <td><strong>${escapeHtml(kindLabel)}</strong><br><span class="muted">${escapeHtml(t("Fingerprint {fingerprint} · {branches}", { fingerprint: item.fingerprint, branches }))}</span></td>
+            <td><button class="btn secondary" type="button" data-core-import-go="${index}" ${failed ? `disabled aria-disabled="true"` : ""}>${tHtml("Import into Key Station")}</button></td>
+          </tr>`;
+        })
+        .join("");
+      body = `<table class="psbted-pairs"><tbody>${items}</tbody></table>`
+        + `<p class="muted">${tHtml("The Key Station opens with the key filled in, nothing derived yet — press Derive Key there and compare the fingerprint before trusting any address. Nothing is saved or sent.")}</p>`;
+      if (failed) body += `<p class="psbt-warn">${tHtml("Import unlocks when every check above passes or warns.")}</p>`;
+      if (result.skipped) body += `<p class="muted">${tHtml("{count} private key record(s) stayed out: their shape is not an importable key.", { count: result.skipped })}</p>`;
+    } else {
+      body = `<p class="muted">${escapeHtml((IMPORT_REASONS[result?.reason] ?? IMPORT_REASONS["unsupported-key-records"])())}</p>`;
+      if (result?.skipped) body += `<p class="muted">${escapeHtml(t("{count} private key record(s) stayed out: their shape is not an importable key.", { count: result.skipped }))}</p>`;
+    }
+    return `${sectionHeadHtml(tHtml("Import into Key Station"), result?.imports?.length || undefined, tHtml("Move this wallet’s proven key material into the Key Station to review and derive there"))}${body}`;
+  };
+
+  const bindImportButtons = (result) => {
+    if (!result?.imports?.length) return;
+    out.querySelectorAll("[data-core-import-go]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const item = result.imports[Number(button.dataset.coreImportGo)];
+        if (item && typeof onImportIntoStation === "function") onImportIntoStation(item);
+      });
+    });
+  };
+
   const render = () => {
     if (!doc) {
       out.innerHTML = "";
@@ -177,13 +225,22 @@ export const initCoreWallet = ({ deps } = {}) => {
     } catch (exception) {
       checks = [{ tone: "bad", label: t("Verification"), detail: exception.message || String(exception) }];
     }
+    let imports = null;
+    try {
+      imports = hodlCoreWallet.stationImports(doc, deps);
+    } catch {
+      imports = null; // the verification report above still describes the wallet
+    }
+    const failed = checks.some((item) => item.tone === "bad");
     out.innerHTML = `
       ${checksHtml(checks)}
       ${walletRowsHtml()}
+      ${importSectionHtml(imports, failed)}
       ${sectionHeadHtml(tHtml("Descriptors"), doc.descriptors.length, tHtml("The wallet’s output descriptors, with their key caches and private key records"))}
       ${doc.descriptors.map((entry, index) => descriptorHtml(entry, index)).join("")}
       ${otherRecordsHtml()}`;
     out.dataset.added = String(added);
+    bindImportButtons(imports);
     addSection.hidden = false;
     setEnabled(download, true);
     setEnabled(wipe, true);

@@ -161,7 +161,13 @@ the limits of browser-memory cleanup.
   signs, private) can be appended; the rebuilt database is re-parsed and
   re-verified before it downloads, and records the tool does not decode are
   preserved byte-for-byte. As with Core, a private descriptor is refused by a
-  disable-private-keys wallet.
+  disable-private-keys wallet. A signing wallet's proven key material can also
+  move into a Key Station slot for review: the private key records are
+  reassembled into the exact root or account xprv they belong to (given the
+  descriptor's own public bookkeeping) — only when the secret provably matches
+  the record's pubkey and the embedded extended key — and the Key Station
+  opens with the key filled in for the user to derive and compare by hand.
+  Watch-only and Core-encrypted wallets are refused outright.
 - Derives BIP-85 child entropy from the active key's BIP32 root (or a pasted
   root xprv): English BIP-39 mnemonics (12–24 words), HD-seed WIF, XPRV, HEX,
   and Base64/Base85 passwords. Same parent, application, and index always

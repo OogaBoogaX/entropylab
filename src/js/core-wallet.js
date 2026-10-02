@@ -52,6 +52,7 @@ var hodlCoreWallet = (() => {
     return bytes;
   };
   const u16le = (value) => Uint8Array.of(value & 0xff, (value >>> 8) & 0xff);
+  const u32be = (value) => Uint8Array.of((value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff);
   const compactSize = (length) => {
     if (length < 253) return u8(length);
     if (length <= 0xffff) return concat(u8(253), u16le(length));
@@ -554,12 +555,122 @@ var hodlCoreWallet = (() => {
       tables: [{ name: "main", sql: MAIN_SQL, primaryKey: 0, rows }],
     });
 
+  // --- Key Station import -----------------------------------------------------
+  //
+  // A signing wallet.dat carries, per private descriptor, the raw secret of
+  // the extended key embedded in that descriptor's neutered public form. The
+  // embedded key itself publishes the node's whole public bookkeeping — depth,
+  // parent fingerprint, child number, chain code, pubkey — so the extended
+  // private key can be reassembled exactly, without inventing anything: for a
+  // wallet Core generated, the node is the BIP32 root (the stored secret is
+  // the 32-byte key Core fed to CExtKey::SetSeed); for an imported account
+  // descriptor, it is the account xprv. Both shapes are Key Station inputs.
+  //
+  // The contract is proof, not trust: the secret is imported only when
+  // pubkey(secret) == key record pubkey == the embedded extended key's own
+  // pubkey field, from a single-key descriptor of a known script type, and the
+  // node sits at BIP32 depth 0 (root) or 3 (account). Anything else is
+  // refused with a reason, never guessed at.
+  //
+  // deps: { base58Decode, base58Encode, publicKeyForPrivate, hash160 }
+  const XPRV_VERSION = { mainnet: 0x0488ade4, testnet: 0x04358394 }; // xprv / tprv
+  const IMPORT_SCRIPTS = { pkh: "bip44", "sh:wpkh": "bip49", wpkh: "bip84", tr: "bip86" };
+
+  const stationImports = (doc, deps) => {
+    const none = (reason) => ({ reason, skipped: 0, imports: [] });
+    if (doc.records.some((record) => record.name === "walletdescriptorcryptedkey")) return none("encrypted");
+    const signers = doc.descriptors.filter((entry) => entry.keys.length);
+    if (!signers.length) return none("no-private-keys");
+    // The four chains share two extended-key families: mainnet xprv/xpub, and
+    // tprv/tpub for every test chain (same split as hodlWalletExport).
+    const family = doc.network === "mainnet" ? "mainnet" : doc.network && hodlWalletExport.NETWORKS[doc.network] ? "testnet" : null;
+    if (!family) return none("unknown-network");
+    const version = XPRV_VERSION[family];
+
+    // One import per (node, script type); a Core-generated wallet collapses
+    // to a single root item because every descriptor names the same node.
+    const items = new Map();
+    let skipped = 0;
+    for (const entry of signers) {
+      const script = IMPORT_SCRIPTS[entry.functions.join(":")];
+      EXTENDED_PUB_GLOBAL.lastIndex = 0;
+      const pubs = entry.descriptor.match(EXTENDED_PUB_GLOBAL) || [];
+      if (!script || pubs.length !== 1) {
+        skipped += entry.keys.length;
+        continue;
+      }
+      let raw;
+      try {
+        raw = deps.base58Decode(pubs[0]);
+      } catch {
+        skipped += entry.keys.length;
+        continue;
+      }
+      if (raw.length !== 78) {
+        skipped += entry.keys.length;
+        continue;
+      }
+      const depth = raw[4];
+      if (depth !== 0 && depth !== 3) {
+        skipped += entry.keys.length;
+        continue;
+      }
+      // The branch this descriptor watches: "/0/*" receive, "/1/*" change.
+      const branch = entry.descriptor.match(/\/([01])['hH]?\/\*(?=\))/);
+      if (!branch) {
+        skipped += entry.keys.length;
+        continue;
+      }
+      for (const keyRecord of entry.keys) {
+        // Bitcoin Core CPrivKey DER form, checked before the secret is read.
+        const der = keyRecord.der;
+        if (der.length !== 214 || der[0] !== 0x30 || der[6] !== 0x04 || der[7] !== 0x20) {
+          skipped++;
+          continue;
+        }
+        const secret = der.slice(8, 40);
+        // The two-way node check: the secret's pubkey is the record's pubkey,
+        // and that pubkey is the embedded extended key's own.
+        let secretPubkey;
+        try {
+          secretPubkey = deps.publicKeyForPrivate(secret);
+        } catch {
+          skipped++;
+          continue;
+        }
+        if (!bytesEqual(secretPubkey, keyRecord.pubkey) || !bytesEqual(keyRecord.pubkey, raw.slice(45, 78))) {
+          skipped++;
+          continue;
+        }
+        const body = concat(u32be(version), raw.slice(4, 45), u8(0), secret);
+        const xprv = deps.base58Encode(body);
+        // Root items ignore the script (a root derives every type); account
+        // items keep one import per (account key, script type).
+        const key = depth === 0 ? `0::${bytesToHex(raw.slice(4))}` : `3:${script}:${bytesToHex(raw.slice(4))}`;
+        const item = items.get(key) ?? {
+          xprv,
+          fingerprint: bytesToHex(deps.hash160(secretPubkey)),
+          kind: depth === 0 ? "root" : "account",
+          script: depth === 0 ? null : script,
+          internal: false,
+          external: false,
+        };
+        if (branch[1] === "1") item.internal = true;
+        else item.external = true;
+        if (!items.has(key)) items.set(key, item);
+      }
+    }
+    const imports = [...items.values()];
+    return { reason: imports.length ? null : "unsupported-key-records", skipped, imports };
+  };
+
   return {
     parseWalletDat,
     verifyWalletDoc,
     unitFromDescriptor,
     appendDescriptorRows,
     buildWalletDat,
+    stationImports,
     flagNames,
     descriptorFunctions,
     bytesToHex,
