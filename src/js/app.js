@@ -1911,6 +1911,13 @@ function hodlCoreImportIntoStation(item) {
   if (item.kind === "account" && item.script) {
     source.fields.script = item.script;
     source.accountId = item.script;
+    // Keep the form's public path text in step with the script the account
+    // import chose — the derivation of an account key ignores it, but the
+    // key card's summary would otherwise read the m/84' default.
+    let purpose = { bip44: 44, bip49: 49, bip84: 84, bip86: 86 }[item.script], coinType = source.fields.network === "testnet" ? 1 : 0;
+    source.fields.purpose = `${purpose}'`;
+    source.fields.derivationAccountPath = `m/${purpose}'/${coinType}'/0'`;
+    source.fields.derivationPath = `m/${purpose}'/${coinType}'/0'/{0-1}/{0-9}`;
   }
   let labIndex = hodlFillLabFromKey(source);
   hodlActiveKey = labIndex;
