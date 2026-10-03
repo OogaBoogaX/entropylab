@@ -1166,5 +1166,7 @@
   "Add More Entropy": "f449e8640beedbff26bb549ed89ed5787822427548b2ce1e3195a552c7818739",
   "Derive Key Anyway": "bfa690aed014fec9b5ee11f0bee48751c59fe5cbf258b85a9e1400b4cfdf175b",
   "You have provided only about {bits} bits of entropy.": "f7211ea2ba61fda8272ea311993b13fdab2853de2b51385f231e2b1636e0c8b8",
-  "Recommended: {recommended} bits for a {words}-word seed": "867c9294ea6f59624e8a20f50be867b2a2133204b62db2ad592d9ecad86b5692"
+  "Recommended: {recommended} bits for a {words}-word seed": "867c9294ea6f59624e8a20f50be867b2a2133204b62db2ad592d9ecad86b5692",
+  "Show passphrase": "76880d3816ca32699f4dc8128054ee335382f405ac7ac2e96902ca41cd5490e0",
+  "Hidden by default: a passphrase on screen can be captured or seen": "1b5150c41730ac6d74efb1233b13e1a4798fd3c0b3b56812ad02f5c20311b80a"
 }
