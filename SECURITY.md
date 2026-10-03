@@ -344,6 +344,34 @@ all. They can outlast the page and the browser, and some outlast a restart:
   or erase that. Deleting the hibernation file afterwards does not reliably
   erase it on an SSD.
 
+**What the page keeps from other software.** Some browser features and
+extensions copy what the page shows or a field holds, and send it off the
+computer or keep it where the page cannot erase it. The
+Content-Security-Policy cannot stop them, because the browser or the
+extension sends the text, not the page. Each offers an opt-out, and
+EntropyLab uses it:
+
+- Browser translation. Chrome's and Edge's built-in translators send the
+  page's text to Google or Microsoft. Everything that shows a seed word, a
+  key or a typed secret is marked `translate="no"`, so it is not sent, and a
+  warning appears if the page is translated anyway. Firefox translates on the
+  device.
+- Writing aids. Edge's text prediction, which sends what you type to
+  Microsoft, is off for the whole page. Every field opts out of Grammarly,
+  which sends field text to its servers whatever the spell-check setting.
+- Password managers. Every field except the Journal's file password opts out
+  of 1Password, LastPass, Bitwarden and Dashlane, so a BIP39 passphrase is
+  never offered to a cloud-synced vault.
+- Session restore. Chrome saves field contents in its session-restore files
+  on disk unless a field is marked `autocomplete="off"`. Every field is.
+- The screen. Revealed private values are masked again when the window loses
+  focus or is hidden, and after five minutes without input, so that Windows
+  Recall, a screen share or a phone's app-switcher picture is less likely to
+  catch them.
+
+These opt-outs only work when the software honors them. They do not stop an
+extension that ignores them, or one written to steal.
+
 **What to do about it.**
 
 - For real funds, use a dedicated computer that stays offline, with full-disk

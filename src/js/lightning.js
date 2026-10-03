@@ -140,15 +140,15 @@ function hodlLnRender() {
       ${hodlLnCopyButton("ln-node-pubkey", "Copy node pubkey")}
       <p class="muted">Identity key path <code>${escapeHtml(r.path)}</code>${aezeed ? ` · coin type ${r.coinType} (${r.coinType === 1 ? "testnet" : "mainnet"})` : " · the LDK node identity does not depend on the network"}</p>
       ${aezeed ? `<p class="muted">Internal (key-derivation) version ${r.internalVersion} · wallet birthday day ${r.birthdayDays} (${escapeHtml(hodlLnBirthdayIso(r.birthdayTimestamp))} UTC, day 0 = Bitcoin genesis). Rescans from the birthday recover on-chain funds; channel funds need the node's channel backup.</p>` : `<p class="muted">Derived the ldk-node way: BIP39 seed → master key → its private key re-seeds a second BIP32 tree → node secret at <code>m/0'</code>.</p>`}
-      <label class="choice"><input type="checkbox" id="ln-reveal" ${secrets ? "checked" : ""}> <span>Reveal the root private key${aezeed ? " and decoded entropy" : ""}</span></label>
+      <label class="choice"><input type="checkbox" id="ln-reveal" data-private-reveal ${secrets ? "checked" : ""}> <span>Reveal the root private key${aezeed ? " and decoded entropy" : ""}</span></label>
       ${secrets ? `
         ${aezeed ? `<p class="label">Decoded entropy (the BIP32 master seed)</p>
-        <p class="psbt-kv" id="ln-entropy">${hex.encode(r.entropy)}</p>
+        <p class="psbt-kv" id="ln-entropy" translate="no">${hex.encode(r.entropy)}</p>
         ${hodlLnCopyButton("ln-entropy", "Copy entropy")}
         <p class="label">Salt</p>
         <p class="psbt-kv">${hex.encode(r.salt)}</p>` : ""}
         <p class="label">BIP32 root private key (xprv)</p>
-        <p class="psbt-kv" id="ln-root-xprv">${escapeHtml(r.rootXprv)}</p>
+        <p class="psbt-kv" id="ln-root-xprv" translate="no">${escapeHtml(r.rootXprv)}</p>
         ${hodlLnCopyButton("ln-root-xprv", "Copy root xprv")}
         <p class="muted">The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.</p>` : `<p class="muted">Private material stays hidden until you reveal it.</p>`}
     </div>`;

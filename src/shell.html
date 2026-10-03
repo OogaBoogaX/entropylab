@@ -36,6 +36,9 @@
     <aside class="online-warning no-print" id="online-warning" role="alert" hidden>
       <div class="online-warning-text" data-i18n-rich><strong>Online version</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab.html" download="entropylab.html">Download EntropyLab</a> and run the HTML file offline on a trusted, air-gapped computer. On iPhone, Safari users can choose Share → Add to Home Screen → Open as Web App; after the first load, disconnect all networks before reopening it. Cached availability is not proof of an air gap.</div>
     </aside>
+    <aside class="online-warning no-print" id="translated-warning" role="alert" hidden>
+      <div class="online-warning-text" data-i18n-rich><strong>Page translated</strong> Your browser sent this page's text to an online translation service. EntropyLab withholds the seed words, keys and typed secrets it shows, but do not rely on that: turn translation off for this page and use EntropyLab's language menu instead.</div>
+    </aside>
     <!-- TODO: This copy is being kept for the network-detected modal that will
          replace the banner. Verbatim, with the lead-in as the modal's title:
          "Network detected:" / "This computer has an active network adapter — it
@@ -122,16 +125,16 @@ words, pick one of the checksum words.</span></span>
       </div>
       <p class="label" id="dice-label">Dice rolls (D6)</p>
       <div class="seed-word-meta label-description"><p class="muted" id="dice-meta" aria-live="polite"><span class="meta-value is-short">0</span> of 99 recommended rolls<br><span class="meta-value is-short">0.0</span> bits estimated</p></div>
-      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" aria-hidden="true"></pre><textarea id="dice" placeholder="415263415263…" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="dice-meta"></textarea></div>
+      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" translate="no" aria-hidden="true"></pre><textarea id="dice" placeholder="415263415263…" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="dice-meta"></textarea></div>
       <div class="dice-input-pad faces-1-6"><button type="button" data-d="1">1</button><button type="button" data-d="2">2</button><button type="button" data-d="3">3</button><button type="button" data-d="4">4</button><button type="button" data-d="5">5</button><button type="button" data-d="6">6</button></div>
       <div class="seed-word-copy-row"><p class="label">Derived seed phrase</p><span class="copy-status" aria-live="polite"></span><button type="button" class="copy-button boxed-copy-button" data-copy-seed-phrase disabled aria-label="Copy seed phrase" title="Copy seed phrase"></button></div>
-      <div id="dice-words" class="dice-word-grid" aria-label="24 seed-word slots"></div>
-      <div id="last-words" class="row last-word-options"></div>
+      <div id="dice-words" translate="no" class="dice-word-grid" aria-label="24 seed-word slots"></div>
+      <div id="last-words" translate="no" class="row last-word-options"></div>
     </div>
       <div class="passphrase-field" id="passphrase-field">
         <label for="pass">Passphrase (optional)</label>
         <div class="passphrase-keyboard-tools" id="passphrase-keyboard-toggle-host" hidden></div>
-        <div class="dice-input-shell passphrase-input-shell"><pre class="dice-input-highlight" id="passphrase-highlight" aria-hidden="true"></pre><input id="pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a BIP39 passphrase, or leave blank for none" aria-describedby="passphrase-bip39-status" /></div>
+        <div class="dice-input-shell passphrase-input-shell"><pre class="dice-input-highlight" id="passphrase-highlight" translate="no" aria-hidden="true"></pre><input id="pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a BIP39 passphrase, or leave blank for none" aria-describedby="passphrase-bip39-status" /></div>
         <p class="field-note passphrase-bip39-status" id="passphrase-bip39-status" aria-live="polite" hidden></p>
       </div>
       <div class="passphrase-keyboard-host" id="passphrase-keyboard-host" hidden></div>
@@ -817,11 +820,11 @@ words, pick one of the checksum words.</span></span>
         </div>
         <div id="journal-create-panel">
           <label class="field"><span class="journal-password-label"><span>Journal password (optional)</span><span class="journal-password-validation" id="journal-create-password-status" role="status" aria-live="polite" hidden></span></span>
-            <input id="journal-create-password" type="password" placeholder="Leave blank for no password" autocomplete="new-password" aria-describedby="journal-create-password-note journal-create-password-status">
+            <input id="journal-create-password" type="password" data-password-manager placeholder="Leave blank for no password" autocomplete="new-password" aria-describedby="journal-create-password-note journal-create-password-status">
             <span class="field-note" id="journal-create-password-note">A password protects Journal files and encrypted downloads. Leave it blank to create without password protection; anyone with the file can open it. Passwords cannot be recovered.</span>
           </label>
           <label class="field"><span class="journal-password-label"><span>Confirm password (optional)</span><span class="journal-password-validation" id="journal-create-confirm-status" role="status" aria-live="polite" hidden></span></span>
-            <input id="journal-create-confirm" type="password" placeholder="Repeat password or leave blank" autocomplete="new-password" aria-describedby="journal-create-confirm-status">
+            <input id="journal-create-confirm" type="password" data-password-manager placeholder="Repeat password or leave blank" autocomplete="new-password" aria-describedby="journal-create-confirm-status">
           </label>
           <div class="row bip85-actions journal-create-actions tool-actions">
             <button class="btn primary" id="journal-create" type="button">Create journal</button>
@@ -833,7 +836,7 @@ words, pick one of the checksum words.</span></span>
             <input id="journal-file" type="file" accept=".json,application/json">
           </label>
           <label class="field">Journal password (if used)
-            <input id="journal-open-password" type="password" placeholder="Leave blank if the file has no password" autocomplete="off">
+            <input id="journal-open-password" type="password" data-password-manager placeholder="Leave blank if the file has no password" autocomplete="off">
           </label>
           <div class="row bip85-actions tool-actions">
             <button class="btn primary" id="journal-unlock" type="button">Open journal</button>

@@ -114,6 +114,8 @@ import {
 } from "./journal.js";
 import { keyVaultIdentity, parseKeyVault, serializeKeyVault } from "./keymanager.js";
 import { copyText } from "./clipboard.js";
+import { initTextServiceOptOuts, initTranslationWarning } from "./text-services.js";
+import { initConcealOnLeave } from "./conceal-on-leave.js";
 const hodlBip39Wordlist = Object.freeze(bip39English);
 function hodlNote(key, vars) {
   return vars == null ? { key } : { key, vars };
@@ -691,6 +693,8 @@ if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entro
 var hodlRootEl = document.getElementById("btc-calc");
 if (!hodlRootEl) throw new Error("#app missing");
 hodlRootEl.innerHTML = hodlShellHtml;if (/^(www\.)?entropylab\.online$/i.test(location.hostname)) document.getElementById("online-warning")?.removeAttribute("hidden");
+initTextServiceOptOuts();
+initTranslationWarning();
 var hodlKeyModes = ["dice", "cards", "hex", "seed", "key"], hodlBrainLabAck = { scalar: false, hd: false }, hodlCardRanks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"], hodlDirectCardRanks = ["A", "2", "3", "4", "5", "6", "7", "8"], hodlCardSuits = [{ code: "S", symbol: "♠", label: "Spades", red: false }, { code: "H", symbol: "♥", label: "Hearts", red: true }, { code: "C", symbol: "♣", label: "Clubs", red: false }, { code: "D", symbol: "♦", label: "Diamonds", red: true }], hodlCardSuit = "", hodlCardRank = "", hodlCardMethod = "hashed", hodlSeedMethod = "words", hodlSeedZeroIndexed = false, hodlCardColemanSymbols = false, hodlKeyMode = "dice", hodlDiceMethod = "coldcard", hodlTargetWordCount = 24, hodlEntropyFormat = "hex", hodlDiceCoinPositions = [], hodlPickedLastWord = "", hodlWalletResult = null, hodlRevealPrivate = false, hodlWalletDatBirthday = "genesis", hodlModesEl = hodlElement("#modes"), hodlFormEl = hodlElement("#form"), hodlOutEl = hodlElement("#out");
 function hodlDiceFieldName(method = hodlDiceMethod) {
   if (method === "coleman") return "colemanDice";
@@ -1607,7 +1611,7 @@ function hodlPublicFieldHtml(label, value, vars, labelClass = "label", copyable 
 }
 function hodlPrivateValue(value, className = "secret private-field-value", revealed = hodlRevealPrivate) {
   let mask = "************", text = String(value ?? "\u2014");
-  if (revealed) return `<span class="${className}">${hodlEscapeHtml(text)}</span>`;
+  if (revealed) return `<span class="${className}" translate="no">${hodlEscapeHtml(text)}</span>`;
   let bullets = "\u2022".repeat(Math.max(Array.from(text).length, mask.length));
   return `<span class="${className} secret-placeholder"><span class="secret-placeholder-mask" aria-hidden="true">${bullets}</span><span class="secret-placeholder-message" aria-hidden="true">${mask}</span><span class="secret-placeholder-label">${hodlT("Private value hidden")}</span></span>`;
 }
@@ -1695,7 +1699,7 @@ function hodlWalletMessages(wallet, idPrefix) {
 // their own switch id and description.
 function hodlPrivacyBarMarkup({ id = "reveal", revealed = hodlRevealPrivate, describedBy = "recovery-sheet-disclosure" } = {}) {
   return `<label class="privacy-bar${revealed ? " is-revealed" : ""}">
-    <input type="checkbox" role="switch" id="${id}" ${revealed ? "checked" : ""}${describedBy ? ` aria-describedby="${describedBy}"` : ""} />
+    <input type="checkbox" role="switch" id="${id}" data-private-reveal ${revealed ? "checked" : ""}${describedBy ? ` aria-describedby="${describedBy}"` : ""} />
     <span class="privacy-bar-state">${revealed ? hodlT("Private data visible") : hodlT("Private data hidden")}</span>
     <span class="privacy-bar-hint">${revealed ? hodlT("Hide it before sharing your screen or stepping away") : hodlT("Reveal only offline, on an air-gapped computer")}</span>
   </label>`;
@@ -2815,7 +2819,7 @@ function hodlSeedPhraseMask(count) {
 }
 function hodlSeedPhraseField(label, value) {
   let text = String(value ?? "\u2014");
-  if (hodlRevealPrivate) return `<p class="private-field seed-phrase-field"><span class="label">${hodlEscapeHtml(label)}</span><span class="secret private-field-value seed-phrase-value">${hodlSeedPhraseTokens(text)}</span></p>`;
+  if (hodlRevealPrivate) return `<p class="private-field seed-phrase-field"><span class="label">${hodlEscapeHtml(label)}</span><span class="secret private-field-value seed-phrase-value" translate="no">${hodlSeedPhraseTokens(text)}</span></p>`;
   return `<p class="private-field seed-phrase-field"><span class="label">${hodlEscapeHtml(label)}</span><span class="secret private-field-value secret-placeholder seed-phrase-value"><span class="secret-placeholder-mask" aria-hidden="true">${hodlSeedPhraseTokens(text, true)}</span><span class="secret-placeholder-message" aria-hidden="true">************</span><span class="secret-placeholder-label">${hodlT("Private value hidden")}</span></span></p>`;
 }
 function hodlSeedQrDigits(mnemonic) {
@@ -2847,7 +2851,7 @@ function hodlSeedQrExport(mnemonic, options = {}) {
     if (bytes) compact = `<div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="CompactSeedQR">${hodlUqrRenderSvg(bytes, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("CompactSeedQR. Same seed, smaller binary code.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport.")}</p></div>`;
   } catch {
   }
-  return `<details class="wallet-advanced seed-qr-export"><summary>${hodlT("SeedQR")}</summary>${passNote ? `<p class="muted">${passNote}</p>` : ""}<div class="seed-qr-pair"><div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="SeedQR">${hodlUqrRenderSvg(digits, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("SeedQR. Numeric.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport, Coldcard Q.")}</p><p class="muted mono">${hodlEscapeHtml(digits)}</p></div>${compact}</div></details>`;
+  return `<details class="wallet-advanced seed-qr-export"><summary>${hodlT("SeedQR")}</summary>${passNote ? `<p class="muted">${passNote}</p>` : ""}<div class="seed-qr-pair"><div class="watch-only-qr seed-qr"><div class="qr qr-seed" aria-label="SeedQR">${hodlUqrRenderSvg(digits, { ecc: "L", border: 4, pixelSize: 4, blackColor: "#111111", whiteColor: "#ffffff" })}</div><p class="muted">${hodlT("SeedQR. Numeric.")}</p><p class="muted">${hodlT("Compatible with: SeedSigner, Krux, Jade, Passport, Coldcard Q.")}</p><p class="muted mono" translate="no">${hodlEscapeHtml(digits)}</p></div>${compact}</div></details>`;
 }
 var hodlSeedLengths = Object.freeze({
   12: Object.freeze({ words: 12, bits: 128, bytes: 16, hexChars: 32, hashRolls: 50, partialWords: 11, candidates: 128 }),
@@ -4603,7 +4607,7 @@ function hodlBrainOutputMarkup(output = "scalar", acked = hodlBrainAcked(output)
     ${hodlSwitchRowMarkup("brain-lab-ack", hodlT("I understand"), { note: hodlT("Required once this session, in page memory only."), checked: acked })}
     <div id="brain-lab-zone" ${hd ? "" : "hidden"}>
       <p class="field-note" id="brain-lab-help">UTF-8 text is hashed with SHA-256. The 32-byte digest is BIP39 entropy for a 24-word seed. Nothing is derived until you press Derive Key.</p>
-      <p class="field-note" id="brain-lab-hex" aria-live="polite">SHA-256 hex appears here. 24 words appear only after Derive Key.</p>
+      <p class="field-note" id="brain-lab-hex" translate="no" aria-live="polite">SHA-256 hex appears here. 24 words appear only after Derive Key.</p>
     </div>
   </div>`;
 }
@@ -5231,7 +5235,7 @@ function hodlSwitchRowMarkup(id, label, { note = "", checked = false, rowClass =
 // form runs no update, and the panel is its immediate next sibling so
 // hodlShowCalculations can find the row from the panel.
 function hodlCalculationsSwitchMarkup(name, panelId, note, checked) {
-  return `${hodlSwitchRowMarkup(`show-${name}-calculations`, hodlT("Show calculations"), { note, checked, rowClass: "manual-calculations-row", hidden: true })}<div id="${panelId}" class="manual-calculations-container" hidden></div>`;
+  return `${hodlSwitchRowMarkup(`show-${name}-calculations`, hodlT("Show calculations"), { note, checked, rowClass: "manual-calculations-row", hidden: true })}<div id="${panelId}" class="manual-calculations-container" translate="no" hidden></div>`;
 }
 function hodlShowCalculations(panel, markup, open) {
   // The switch answers to the calculations, not to the method: offering it
@@ -5950,12 +5954,12 @@ function hodlRenderKeyForm() {
       </div>
       <p class="label" id="dice-label">${diceLabel}</p>
       ${hodlSeedMetaRowMarkup("dice-meta", true)}
-      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" aria-hidden="true"></pre><textarea id="dice" placeholder="${dicePlaceholder}" aria-describedby="dice-meta"></textarea></div>
+      <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" translate="no" aria-hidden="true"></pre><textarea id="dice" placeholder="${dicePlaceholder}" aria-describedby="dice-meta"></textarea></div>
       ${dicePad}
       ${hodlDiceMethod === "bitbox" || hodlDiceMethod === "dplus" ? hodlCalculationsSwitchMarkup("manual", "dice-manual-calculations", hodlT("show how direct word selection produces each BIP39 index"), hodlManualCalculationsOpen) : ""}
       ${hodlDiceFairnessControlsMarkup(hodlDiceMethod, hodlKeys[hodlActiveKey]?.showDiceFairness)}
       ${hodlDerivedSeedRowMarkup()}
-      <div id="dice-words" class="dice-word-grid" aria-label="${hodlT("{n} seed-word slots", { n: config.words })}"></div><div id="last-words" class="row last-word-options"></div>`;
+      <div id="dice-words" translate="no" class="dice-word-grid" aria-label="${hodlT("{n} seed-word slots", { n: config.words })}"></div><div id="last-words" translate="no" class="row last-word-options"></div>`;
     let input = document.getElementById("dice");
     input.dataset.previousValue = input.value;
     let fairnessToggle = document.getElementById("dice-fairness-toggle");
@@ -6028,15 +6032,15 @@ function hodlRenderKeyForm() {
       ${direct ? "" : `<div class="switch-row"><label class="switch-toggle"><input type="checkbox" id="cards-ian-coleman" aria-describedby="cards-ian-coleman-note" ${hodlCardColemanSymbols ? "checked" : ""} /><span class="label">Match Ian Coleman method</span></label><p class="switch-note" id="cards-ian-coleman-note">show and hash A\u2660 2\u2663 instead of As 2c</p></div>`}
       <p class="label" id="cards-input-label">${inputLabel}</p>
       ${hodlSeedMetaRowMarkup("cards-meta")}
-      <div class="dice-input-shell cards-input-shell"><pre class="dice-input-highlight" id="cards-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${placeholder}" autocomplete="off" spellcheck="false" autocapitalize="off" aria-labelledby="cards-input-label" aria-describedby="cards-help cards-meta"></textarea></div>
+      <div class="dice-input-shell cards-input-shell"><pre class="dice-input-highlight" id="cards-highlight" translate="no" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${placeholder}" autocomplete="off" spellcheck="false" autocapitalize="off" aria-labelledby="cards-input-label" aria-describedby="cards-help cards-meta"></textarea></div>
       ${direct ? "" : `<div class="card-suit-pad" role="group" aria-label="${hodlT("Suit")}">${suitPad}</div>`}
       <div class="card-rank-pad dice-input-pad${direct ? " direct-card-rank-pad" : ""}" role="group" aria-label="${hodlT(direct ? "Rank-only draw" : "Rank")}">${rankPad}</div>
       <div class="card-controls-row"><label class="switch-toggle card-visibility-toggle"><input type="checkbox" id="show-cards" aria-controls="dealt-cards" ${showCards ? "checked" : ""} /><span class="label">${hodlT("Show cards")}</span></label><button class="card-undo-button seed-keyboard-delete" id="card-undo" type="button" aria-label="${hodlT("Undo last card")}" title="${hodlT("Undo last card")}" disabled><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg><span>${hodlT("Undo")}</span></button></div>
       <aside class="cards-reshuffle" id="cards-reshuffle" hidden></aside>
-      <div class="dealt-cards" id="dealt-cards" aria-live="polite"${showCards ? "" : " hidden"}></div>
+      <div class="dealt-cards" id="dealt-cards" translate="no" aria-live="polite"${showCards ? "" : " hidden"}></div>
       ${direct ? hodlCalculationsSwitchMarkup("manual", "cards-manual-calculations", hodlT("show how direct card selection produces each BIP39 index"), hodlManualCalculationsOpen) : ""}
       ${hodlDerivedSeedRowMarkup()}
-      <div id="dice-words" class="dice-word-grid" aria-label="${hodlT("{n} seed-word slots", { n: config.words })}"></div>
+      <div id="dice-words" translate="no" class="dice-word-grid" aria-label="${hodlT("{n} seed-word slots", { n: config.words })}"></div>
     `;
     let input = document.getElementById(inputId);
     input.onbeforeinput = direct ? (event) => hodlHandleGroupedSeparatorDelete(input, event) : (event) => {
@@ -6136,12 +6140,12 @@ function hodlRenderKeyForm() {
       <div class="choice-grid entropy-format-grid">${formatChoices}</div>
       <p class="label" id="entropy-input-label">${format.label} entropy for a ${config.words}-word seed</p>
       ${hodlSeedMetaRowMarkup("entropy-meta", true, keyboardToggle)}
-      <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" id="entropy-input-highlight" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${hodlT("Exactly {digits} {unit}", { digits: format.digits, unit: formatUnit })}" aria-labelledby="entropy-input-label" aria-describedby="entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="${usesKeyboard ? "off" : format.base > 10 ? "characters" : "off"}"></textarea></div>
+      <div class="dice-input-shell entropy-input-shell"><pre class="dice-input-highlight" id="entropy-input-highlight" translate="no" aria-hidden="true"></pre><textarea id="${inputId}" placeholder="${hodlT("Exactly {digits} {unit}", { digits: format.digits, unit: formatUnit })}" aria-labelledby="entropy-input-label" aria-describedby="entropy-meta" autocomplete="off" spellcheck="false" autocapitalize="${usesKeyboard ? "off" : format.base > 10 ? "characters" : "off"}"></textarea></div>
       ${numberBaseKeyboard}
       ${entropyPad}
       ${["bin", "base4", "base8", "hex"].includes(format.id) ? hodlCalculationsSwitchMarkup("number-base", "number-base-calculations", hodlT("show how each BIP39 word number is calculated"), state?.showNumberBaseCalculations) : ""}
       ${hodlDerivedSeedRowMarkup()}
-      <div id="entropy-words" class="dice-word-grid" aria-label="${hodlT("{n} seed-word slots", { n: config.words })}"></div>`;
+      <div id="entropy-words" translate="no" class="dice-word-grid" aria-label="${hodlT("{n} seed-word slots", { n: config.words })}"></div>`;
     hodlFormEl.querySelectorAll('input[name="entropy-format"]').forEach((radio) => {
       radio.onchange = () => {
         let state2 = hodlKeys[hodlActiveKey], previous = document.getElementById(hodlEntropyFormat);
@@ -6202,7 +6206,7 @@ function hodlRenderKeyForm() {
       };
     });
     if (numbers) {
-      hodlFormEl.innerHTML = `${choices}<p class="label" id="seed-number-label">${hodlT("Your {words} BIP39 word numbers", { words: config.words })}</p>${hodlSeedMetaRowMarkup("seed-number-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-zero-index", hodlT("Use zero-indexed word numbers"), { note: hodlT("0–2047 instead of the default 1–2048"), checked: hodlSeedZeroIndexed })}</div><div class="dice-input-shell seed-number-input-shell"><pre class="dice-input-highlight" id="seed-number-highlight" aria-hidden="true"></pre><textarea id="seed-numbers" inputmode="numeric" placeholder="${hodlT(hodlSeedZeroIndexed ? "0 1 2 …" : "1 2 3 …")}" aria-labelledby="seed-number-label" aria-describedby="seed-number-meta" autocomplete="off" spellcheck="false"></textarea></div><div class="dice-input-pad seed-number-pad" role="group" aria-label="${hodlT("BIP39 word number keypad")}">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => `<button type="button" data-seed-number-digit="${digit}" aria-label="${hodlT("Enter {n}", { n: digit })}">${digit}</button>`).join("")}<button type="button" class="seed-keyboard-delete seed-number-delete" data-seed-number-delete aria-label="${hodlT("Delete previous digit")}"><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button><button type="button" class="seed-number-next" data-seed-number-space>${hodlT("Next word")}</button></div>${hodlSeedPhraseRowMarkup(hodlT("Your seed phrase"))}<div id="seed-number-words" class="dice-word-grid" aria-label="${hodlT("{n} seed-word slots", { n: config.words })}"></div>`;
+      hodlFormEl.innerHTML = `${choices}<p class="label" id="seed-number-label">${hodlT("Your {words} BIP39 word numbers", { words: config.words })}</p>${hodlSeedMetaRowMarkup("seed-number-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-zero-index", hodlT("Use zero-indexed word numbers"), { note: hodlT("0–2047 instead of the default 1–2048"), checked: hodlSeedZeroIndexed })}</div><div class="dice-input-shell seed-number-input-shell"><pre class="dice-input-highlight" id="seed-number-highlight" translate="no" aria-hidden="true"></pre><textarea id="seed-numbers" inputmode="numeric" placeholder="${hodlT(hodlSeedZeroIndexed ? "0 1 2 …" : "1 2 3 …")}" aria-labelledby="seed-number-label" aria-describedby="seed-number-meta" autocomplete="off" spellcheck="false"></textarea></div><div class="dice-input-pad seed-number-pad" role="group" aria-label="${hodlT("BIP39 word number keypad")}">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => `<button type="button" data-seed-number-digit="${digit}" aria-label="${hodlT("Enter {n}", { n: digit })}">${digit}</button>`).join("")}<button type="button" class="seed-keyboard-delete seed-number-delete" data-seed-number-delete aria-label="${hodlT("Delete previous digit")}"><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button><button type="button" class="seed-number-next" data-seed-number-space>${hodlT("Next word")}</button></div>${hodlSeedPhraseRowMarkup(hodlT("Your seed phrase"))}<div id="seed-number-words" translate="no" class="dice-word-grid" aria-label="${hodlT("{n} seed-word slots", { n: config.words })}"></div>`;
       let input = document.getElementById("seed-numbers"), update = () => {
         let parsed = hodlRenderSeedNumberInputState(input, config.words, hodlSeedZeroIndexed), entered = parsed.entries.length, cue = null;
         hodlRenderDiceWordGrid(document.getElementById("seed-number-words"), parsed.wordSlots, config.words, false);
@@ -6247,7 +6251,7 @@ function hodlRenderKeyForm() {
       update();
       return;
     }
-    hodlFormEl.innerHTML = `${choices}<p class="label">Your ${config.words}-word seed phrase</p>${hodlSeedMetaRowMarkup("seed-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-autocomplete", hodlT("Autocomplete BIP39 words"), { checked: autocompleteEnabled })}${hodlSeedKeyboardToggleMarkup()}</div><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" aria-hidden="true"></pre><textarea id="seed" placeholder="Enter exactly ${config.words} BIP39 words" aria-describedby="seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>${hodlSeedKeyboardMarkup()}<div id="last-words" class="row last-word-options"></div>`;
+    hodlFormEl.innerHTML = `${choices}<p class="label">Your ${config.words}-word seed phrase</p>${hodlSeedMetaRowMarkup("seed-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-autocomplete", hodlT("Autocomplete BIP39 words"), { checked: autocompleteEnabled })}${hodlSeedKeyboardToggleMarkup()}</div><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" translate="no" aria-hidden="true"></pre><textarea id="seed" placeholder="Enter exactly ${config.words} BIP39 words" aria-describedby="seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>${hodlSeedKeyboardMarkup()}<div id="last-words" translate="no" class="row last-word-options"></div>`;
     let input = document.getElementById("seed"), update = () => {
       let rawValue = input.value, value = rawValue.trim(), meta = hodlElement("#seed-meta"), picker = hodlElement("#last-words"), analysis = hodlRenderSeedInputState(input, config.words);
       if (hodlLooksExtendedKey(value)) {
@@ -6314,7 +6318,7 @@ function hodlRenderKeyForm() {
     <p class="label" id="private-key-input-label">${hodlT("Private key or recovery passphrase")}</p>
     ${hodlSeedMetaRowMarkup("private-key-meta", true, hodlPrivateKeyKeyboardToggleMarkup())}
     ${hodlBrainWalletTrimToggleMarkup()}
-    <div class="dice-input-shell private-key-input-shell"><pre class="dice-input-highlight" id="private-key-highlight" aria-hidden="true"></pre><textarea id="key" placeholder="${hodlT("5… / K… / L…")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div><div class="passphrase-keyboard-host" id="private-keyboard-host" hidden></div></div>`;
+    <div class="dice-input-shell private-key-input-shell"><pre class="dice-input-highlight" id="private-key-highlight" translate="no" aria-hidden="true"></pre><textarea id="key" placeholder="${hodlT("5… / K… / L…")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div><div class="passphrase-keyboard-host" id="private-keyboard-host" hidden></div></div>`;
   hodlBindKeyFields();
   hodlRenderPassphraseKeyboard();
 }
@@ -10573,7 +10577,7 @@ function hodlBip85ChildFingerprint(result) {
 // word by word from its word count.
 function hodlBip85PrivateValue(read, length, words = 0) {
   let mask = "************";
-  if (hodlBip85Reveal) return `<span class="secret private-field-value">${hodlEscapeHtml(String(read() ?? "\u2014"))}</span>`;
+  if (hodlBip85Reveal) return `<span class="secret private-field-value" translate="no">${hodlEscapeHtml(String(read() ?? "\u2014"))}</span>`;
   let bullets = words ? hodlSeedPhraseMask(words) : "\u2022".repeat(Math.max(length, mask.length));
   return `<span class="secret private-field-value secret-placeholder"><span class="secret-placeholder-mask" aria-hidden="true">${bullets}</span><span class="secret-placeholder-message" aria-hidden="true">${mask}</span><span class="secret-placeholder-label">${hodlT("Private value hidden")}</span></span>`;
 }
@@ -15519,7 +15523,7 @@ function hodlJournalShowEditor(entry) {
 // passphrase, and its length would narrow a search for either.
 function hodlJournalPrivateValue(value) {
   let mask = "************", text = String(value ?? "\u2014");
-  if (hodlJournalReveal) return `<span class="secret private-field-value">${hodlEscapeHtml(text)}</span>`;
+  if (hodlJournalReveal) return `<span class="secret private-field-value" translate="no">${hodlEscapeHtml(text)}</span>`;
   let bullets = "\u2022".repeat(mask.length);
   return `<span class="secret private-field-value secret-placeholder"><span class="secret-placeholder-mask" aria-hidden="true">${bullets}</span><span class="secret-placeholder-message" aria-hidden="true">${mask}</span><span class="secret-placeholder-label">Private value hidden</span></span>`;
 }
@@ -15543,7 +15547,7 @@ function hodlJournalOpenView(id) {
       </div>
       <div class="wallet-data-actions no-print">
         <label class="reveal-private-toggle">
-          <input type="checkbox" id="journal-reveal" ${hodlJournalReveal ? "checked" : ""} aria-describedby="journal-private-description">
+          <input type="checkbox" id="journal-reveal" data-private-reveal ${hodlJournalReveal ? "checked" : ""} aria-describedby="journal-private-description">
           <span>Show seed <span class="reveal-private-toggle-note">(air-gap only)</span></span>
         </label>
         <button class="btn secondary" id="journal-copy-input" type="button">Copy input</button>
@@ -16233,7 +16237,7 @@ function hodlRenderVanityOut() {
       return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.index}${run.accountHardened ? "'" : ""}</td><td class="mono">${hodlEscapeHtml(hodlDisplayDerivationPath(match.path))}</td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
     }
     let secret = hodlVanityReveal
-      ? `<span class="mono vanity-pass-text table-private-field-value">${hodlEscapeHtml(match.passphrase)}</span>`
+      ? `<span class="mono vanity-pass-text table-private-field-value" translate="no">${hodlEscapeHtml(match.passphrase)}</span>`
       : `<span class="mono vanity-pass-text" aria-hidden="true">${hodlEscapeHtml("•".repeat(12))}</span><span class="sr-only">${hodlT("Passphrase hidden — turn on the Private data switch above to reveal")}</span>`;
     return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, "Copy passphrase")}</span></td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
   }).join("");
@@ -16922,6 +16926,22 @@ function hodlInitTheme() {
     if (!hodlStoredThemeMode()) hodlApplyTheme(hodlReadThemeMode());
   });
 }
+// Leaving the page hides every revealed private value (conceal-on-leave.js
+// says when). The tabs not on screen drop their flag first, so none comes
+// back revealed; then each switch on screen is turned off through its own
+// change handler, so its view re-renders masked exactly as a click would.
+// Five minutes untouched is long enough to copy a phrase onto paper.
+var hodlRevealIdleMs = 5 * 60 * 1000;
+function hodlConcealPrivateValues() {
+  for (let state of [...hodlKeys, ...hodlBip85Children, ...hodlSpAddresses]) state.reveal = false;
+  if (hodlSpVerifyMatches) hodlSpVerifyMatches.reveal = false;
+  hodlRevealPrivate = hodlBip85Reveal = hodlVanityReveal = hodlJournalReveal = false;
+  for (let toggle of document.querySelectorAll("input[data-private-reveal]")) {
+    if (!toggle.checked || !toggle.isConnected) continue;
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+}
 function hodlInitSecretFieldAutoClear() {
   let clearSecretFields = () => {
     hodlInvalidateDerivation();
@@ -17140,6 +17160,7 @@ async function hodlBoot() {
   hodlInitMsigManager();
   hodlInitSpBench();
   hodlInitClearActionState();
+  initConcealOnLeave({ conceal: hodlConcealPrivateValues, idleMs: hodlRevealIdleMs });
   hodlInitSecretFieldAutoClear();
   hodlInitNetworkPicker();
   hodlInitTheme();

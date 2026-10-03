@@ -5906,6 +5906,210 @@
     document.querySelector('#workspace [data-workspace="calc"]').click();
   });
 
+  // Browser translation (Chrome's and Edge's built-in translators) sends the
+  // page's text to an online service, and the CSP cannot stop it, because the
+  // browser sends it, not the page. translate="no" withholds an element's
+  // text. Every element that shows a typed or derived secret must be withheld,
+  // whatever markup builds it. Secrets: the BIP39 vector 7f…7f with passphrase
+  // TREZOR (trezor/python-mnemonic vectors.json) and the WIF of private key 1.
+  await test("text that shows a secret is withheld from browser translation", async () => {
+    const words = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const entropyHex = "7f".repeat(16);
+    const seedHex = "2e8905819b8723fe2c1d161860e5ee1830318dbf49a83bd451cfb8440c28bd6fa457fe1296106559a3c80937a1c1069be3a3a5bd381ee6260e8d9739fce1f607";
+    const rootXprv = "xprv9s21ZrQH143K2gA81bYFHqU68xz1cX2APaSq5tt6MFSLeXnCKV1RVUJt9FWNTbrrryem4ZckN8k4Ls1H6nwdvDTvnV7zEXs2HgPezuVccsq";
+    const skip = "script, style, template, textarea";
+    const where = (element) => `${element.closest("[id]")?.id || element.tagName}`;
+    // The smallest elements that show `text`: it may be split across child
+    // spans (a highlight mirror marks each token), so text nodes alone miss it.
+    const holders = (text) => [...document.body.querySelectorAll("*")].filter((element) =>
+      !element.closest(skip) && element.textContent.includes(text) && ![...element.children].some((child) => child.textContent.includes(text)));
+    const shown = (text, label) => {
+      const found = holders(text);
+      assert(found.length > 0, `${label} is not on the page, so this check would pass vacuously`);
+      const leaks = found.filter((element) => element.translate !== false).map(where);
+      assert(leaks.length === 0, `${label} is open to browser translation in: ${leaks.join(", ")}`);
+    };
+    // A seed word shown on its own (a word grid, a revealed phrase), and any
+    // WIF, extended private key or SeedQR digit string.
+    const nodeLeaks = () => {
+      const wordSet = new Set(words.split(" ")), leaks = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const parent = node.parentElement, text = node.data.trim();
+        if (!parent || !text || parent.closest(skip) || parent.translate === false) continue;
+        if (wordSet.has(text) || /\b[5KLc][1-9A-HJ-NP-Za-km-z]{50,51}\b/.test(text) || /[xyztuv]prv[1-9A-HJ-NP-Za-km-z]{100,}/.test(text) || /\d{48}/.test(text)) leaks.push(`${where(parent)}: ${text.slice(0, 24)}`);
+      }
+      return leaks;
+    };
+    let keyDerived = false;
+    try {
+      document.querySelector('#workspace [data-workspace="calc"]').click();
+      await until(() => !document.getElementById("key-manager").hidden, "key workspace");
+      chooseSeedWords(12);
+      // Typed transcripts: each input's highlight mirror repeats what is typed.
+      const typed = async (mode, id, text, label, choose) => {
+        await chooseMode(mode);
+        choose?.();
+        const field = await until(() => document.getElementById(id), `#${id}`);
+        input(field, text);
+        await wait(0);
+        // The mirror repeats the field as the input filter left it.
+        assert(field.value, `${label} was filtered out of #${id}`);
+        shown(field.value, label);
+        input(field, "");
+      };
+      await typed("Dice rolls", "dice", "1234561234561234", "a typed dice transcript");
+      await typed("Number bases", "hex", entropyHex, "typed entropy hex", () => document.querySelector('input[name="entropy-format"][value="hex"]').click());
+      await typed("Cards", "cards", "AS 2H 3C 4D 5S", "a typed card transcript");
+      await typed("Private key", "key", "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn", "a typed WIF");
+
+      // Derived and revealed: the phrase, its entropy and seed, the root key,
+      // the passphrase and every address key.
+      await chooseMode("Seed phrase");
+      input(document.getElementById("seed"), words);
+      input(document.getElementById("pass"), "TREZOR");
+      await wait(0);
+      shown("TREZOR", "the typed passphrase");
+      await until(() => !document.getElementById("go").disabled, "Derive Key to enable");
+      document.getElementById("go").click();
+      keyDerived = true;
+      await until(() => document.getElementById("reveal"), "the derived wallet's privacy switch");
+      if (!document.getElementById("reveal").checked) document.getElementById("reveal").click();
+      await until(() => document.getElementById("out").textContent.includes(entropyHex), "revealed recovery material");
+      shown(entropyHex, "the revealed entropy hex");
+      shown(seedHex, "the revealed master seed");
+      shown("TREZOR", "the revealed passphrase");
+      if (holders(rootXprv).length) shown(rootXprv, "the revealed root xprv");
+      assert(holders("legal").length > 0, "the revealed phrase is not on the page");
+      const leaks = nodeLeaks();
+      assert(leaks.length === 0, `secrets open to browser translation: ${leaks.join(" | ")}`);
+    } finally {
+      if (document.getElementById("reveal")?.checked) document.getElementById("reveal").click();
+      if (document.getElementById("pass")) input(document.getElementById("pass"), "");
+      if (keyDerived) {
+        await until(() => !document.getElementById("delete-key").disabled, "Delete current key to enable");
+        document.getElementById("delete-key").click();
+      }
+      chooseSeedWords(24);
+    }
+  });
+
+  // Third-party text services read fields, not the page: Grammarly sends
+  // field text to its servers, password managers offer to save a field into
+  // a synced vault, Edge's text prediction sends typing to Microsoft, and
+  // Chrome's session restore writes field contents to disk unless a field
+  // says autocomplete="off". Every field the page has built by now, and one
+  // added or focused later, must carry the vendors' documented opt-outs.
+  await test("every text field the page builds opts out of third-party text services", async () => {
+    const grammarly = { "data-gramm": "false", "data-gramm_editor": "false", "data-enable-grammarly": "false" };
+    const managers = { "data-1p-ignore": "", "data-lpignore": "true", "data-bwignore": "", "data-form-type": "other" };
+    const nonText = new Set(["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"]);
+    const problems = (field) => {
+      const expected = { ...grammarly, ...(field.hasAttribute("data-password-manager") ? {} : managers) };
+      const missing = Object.entries(expected).filter(([name, value]) => field.getAttribute(name) !== value).map(([name]) => name);
+      if (!field.getAttribute("autocomplete")) missing.push("autocomplete");
+      return missing;
+    };
+    equal(document.documentElement.getAttribute("writingsuggestions"), "false");
+    const fields = [...document.querySelectorAll("input, textarea")].filter((field) => field.tagName === "TEXTAREA" || !nonText.has(field.type));
+    assert(fields.length > 40, `only ${fields.length} text fields found`);
+    const bad = fields.map((field) => [field, problems(field)]).filter(([, missing]) => missing.length);
+    assert(bad.length === 0, "fields missing opt-outs: " + bad.map(([field, missing]) => `#${field.id || field.className}: ${missing.join(" ")}`).join("; "));
+
+    const added = document.createElement("textarea");
+    document.body.append(added);
+    await wait(0);
+    const missingLater = problems(added);
+    added.remove();
+    assert(missingLater.length === 0, `a field added later is missing ${missingLater.join(" ")}`);
+    // Inserted and focused in one task: the focus listener stamps it before
+    // the observer runs. The event is dispatched, because a headless window
+    // without system focus does not fire focus events for focus().
+    const focused = document.createElement("input");
+    document.body.append(focused);
+    focused.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    const missingOnFocus = problems(focused);
+    focused.remove();
+    assert(missingOnFocus.length === 0, `a field focused as it is added is missing ${missingOnFocus.join(" ")}`);
+  });
+
+  // Chrome marks a page it has translated with a class on the root; the text
+  // has left by then, so the page can only say so.
+  await test("a machine-translated page raises the translation warning", async () => {
+    const warning = document.getElementById("translated-warning");
+    assert(warning && warning.hidden, "the translation warning should start hidden");
+    try {
+      document.documentElement.classList.add("translated-ltr");
+      await until(() => !warning.hidden, "the translation warning");
+    } finally {
+      document.documentElement.classList.remove("translated-ltr");
+      warning.hidden = true;
+    }
+  });
+
+  // A revealed secret left on screen is what Windows Recall snapshots, a
+  // screen share broadcasts and iOS saves as the app-switcher picture.
+  // Leaving the page (focus lost, page hidden) masks it again, through the
+  // same switch a click uses, and a tab that was off screen comes back masked.
+  await test("revealed private values are masked again when the user leaves the page", async () => {
+    const words = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const entropyHex = "7f".repeat(16);
+    const reveal = () => document.getElementById("reveal");
+    const revealed = () => document.getElementById("out").textContent.includes(entropyHex);
+    const showSecrets = async (label) => {
+      if (!reveal().checked) reveal().click();
+      await until(() => reveal()?.checked && revealed(), label);
+    };
+    let keyTab = null;
+    try {
+      document.querySelector('#workspace [data-workspace="calc"]').click();
+      await until(() => !document.getElementById("key-manager").hidden, "key workspace");
+      chooseSeedWords(12);
+      await chooseMode("Seed phrase");
+      input(document.getElementById("seed"), words);
+      await until(() => !document.getElementById("go").disabled, "Derive Key to enable");
+      document.getElementById("go").click();
+      await until(() => reveal(), "the derived wallet's privacy switch");
+      keyTab = document.getElementById("calc-card").getAttribute("aria-labelledby");
+
+      await showSecrets("revealed recovery material");
+      window.dispatchEvent(new Event("blur"));
+      await until(() => !revealed(), "the secrets to be masked after the window lost focus");
+      assert(!reveal().checked, "the privacy switch stayed on after the window lost focus");
+
+      await showSecrets("recovery material revealed again");
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+      try {
+        document.dispatchEvent(new Event("visibilitychange"));
+      } finally {
+        delete document.visibilityState;
+      }
+      await until(() => !revealed(), "the secrets to be masked after the page was hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await wait(0);
+      assert(!revealed(), "the page showing again brought the secrets back");
+
+      // Off screen: revealed in its tab, then another tab is shown when the
+      // user leaves. Coming back, the first tab must not be revealed.
+      await showSecrets("recovery material revealed for the tab test");
+      document.getElementById("key-tab-lab").click();
+      await until(() => document.getElementById("calc-card").getAttribute("aria-labelledby") !== keyTab, "the other tab");
+      window.dispatchEvent(new Event("blur"));
+      await wait(0);
+      document.getElementById(keyTab).click();
+      await until(() => document.getElementById("calc-card").getAttribute("aria-labelledby") === keyTab && reveal(), "the derived key's tab again");
+      assert(!reveal().checked && !revealed(), "a tab that was off screen came back revealed");
+    } finally {
+      if (reveal()?.checked) reveal().click();
+      if (keyTab && document.getElementById(keyTab)) {
+        document.getElementById(keyTab).click();
+        await until(() => !document.getElementById("delete-key").disabled, "Delete current key to enable");
+        document.getElementById("delete-key").click();
+      }
+      chooseSeedWords(24);
+    }
+  });
+
   await test("hosted application makes only expected same-origin connections", () => {
     const resources = performance.getEntriesByType("resource").map((entry) => entry.name);
     const observed = [...state.network.map((entry) => entry.url), ...resources];

@@ -408,7 +408,7 @@ test("direct dice, direct cards and number bases expose BIP39 calculations befor
   assert.match(appSource, /hodlShowCalculations\(panel, hodlManualCalculationMarkup\(method, value, targetWords\), hodlManualCalculationsOpen\);/);
   assert.match(appSource, /hodlShowCalculations\(panel, rows\.length \? `[\s\S]*?` : "", toggle\.checked\);/);
   // The row is the panel's immediate previous sibling in every form that has one.
-  assert.match(appSource, /\)\}<div id="\$\{panelId\}" class="manual-calculations-container" hidden><\/div>`/);
+  assert.match(appSource, /\)\}<div id="\$\{panelId\}" class="manual-calculations-container" translate="no" hidden><\/div>`/);
   assert.doesNotMatch(appSource, /\("\(show how (direct (word|card) selection|each BIP39 word number)/);
   assert.doesNotMatch(appSource, /number-base-calculations-(toggle|panel)/);
   assert.match(appSource, /function hodlManualCalculationMarkup\(method, value, targetWords = hodlTargetWordCount\)/);
@@ -434,7 +434,7 @@ test("Seed phrase offers one-based or zero-based BIP39 word-number entry", () =>
   assert.match(appSource, /number <= 204 \|\| number > maximum/);
   assert.match(appSource, /class="dice-input-pad seed-number-pad"/);
   assert.match(appSource, /\[0, 1, 2, 3, 4, 5, 6, 7, 8, 9\]/);
-  assert.match(appSource, /id="seed-number-words" class="dice-word-grid"/);
+  assert.match(appSource, /id="seed-number-words" translate="no" class="dice-word-grid"/);
   assert.match(appSource, /passphrase = !keyMode \|\| hdBrain/);
 });
 
@@ -597,7 +597,7 @@ test("seed phrase mode has a lowercase Jade-style on-screen keyboard", () => {
   assert.match(app, /\.\.\."0123456789"/);
   assert.match(app, /\.\.\."abcdef"/);
   assert.match(app, /keyboard\.classList\.toggle\("private-key-hex-options",hexOnly\)/);
-  assert.match(app, /id="private-key-highlight" aria-hidden="true"/);
+  assert.match(app, /id="private-key-highlight" translate="no" aria-hidden="true"/);
   assert.match(app, /function hodlPrivateKeyInputAnalysis\(value,kind,network,trimBrainWallet=hodlBrainWalletTrimEnabled\(\)\)/);
   assert.match(app, /function hodlRenderPrivateKeyInputState\(input\)/);
   assert.match(app, /function hodlHexPrivateKeyPrefix\(value\)/);
