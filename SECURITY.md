@@ -347,7 +347,10 @@ all. They can outlast the page and the browser, and some outlast a restart:
 **What to do about it.**
 
 - For real funds, use a dedicated computer that stays offline, with full-disk
-  encryption on and hibernation off before you load a key.
+  encryption on and hibernation off before you load a key. The
+  [computer hardening checklist](docs/Computer_Hardening_Checklist.md) gives
+  the steps for Windows, macOS and Linux, and the browser settings that copy
+  what is on the page.
 - Avoid the clipboard for secrets where you can. If you use it, turn off
   clipboard history and sync first.
 - When you are done, close the browser and restart the computer. That is a

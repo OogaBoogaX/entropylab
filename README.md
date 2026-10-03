@@ -374,7 +374,8 @@ Download the self-contained `entropylab.html` from the
 computer, disconnect that computer from all networks, and open the file in a
 modern browser. For sensitive wallet material, use a dedicated air-gapped
 machine and verify important addresses and descriptors with an independent
-wallet or signing device before receiving funds.
+wallet or signing device before receiving funds. Before loading a real key, work
+through the [computer hardening checklist](docs/Computer_Hardening_Checklist.md).
 
 To build the HTML file yourself, see [Building from source](#building-from-source).
 
