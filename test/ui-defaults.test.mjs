@@ -2315,7 +2315,8 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
     assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Start account\s*<input id="vanity-account-start" inputmode="numeric"[^>]*value="0"/);
     assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Accounts to try\s*<input id="vanity-account-count" inputmode="numeric"[^>]*value="100000"/);
     assert.match(markup, /<input id="vanity-workers" type="number" min="1" max="64"/);
-    assert.match(markup, /id="vanity-estimate" aria-live="polite"/);
+    // Announced through its parent: see the live-region test below.
+    assert.match(markup, /id="vanity-estimate"/);
     assert.match(markup, /id="vanity-go" type="button"[^>]*>/);
     assert.match(markup, /id="vanity-progress" role="progressbar"[^>]*hidden>/);
     assert.doesNotMatch(markup, /id="vanity-stop"/);
@@ -2411,6 +2412,21 @@ test("the private recovery section lists the BIP39 passphrase beside the seed ph
   // Rendered right after the words, through the same masked private field as
   // the entropy and seed hex; absent when no passphrase is in use.
   assert.match(appSource, /fields\.push\(hodlSeedPhraseField\(`Your seed phrase[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(wallet\.passphraseUsed && wallet\.passphrase\?\.length\) fields\.push\(hodlPrivateKeyFieldHtml\("BIP39 passphrase", [^\n]*\(\) => hodlResultPassphrase\(wallet\)\)\);\n\s*if \(wallet\.entropy\)/);
+});
+
+// The estimate's grey note is hidden while there is no valid prefix, so it
+// cannot be the live region itself: a region that enters the accessibility
+// tree together with its first text is often not announced. Its parent is
+// the region, rendered from the start, and the note is the content.
+test("the vanity estimate speaks through a live region that is never hidden", () => {
+  const note = shell.match(/<p([^>]*\bid="vanity-estimate"[^>]*)>/);
+  assert.ok(note, "the estimate note is missing");
+  assert.match(note[1], /\shidden(\s|=|$|>)/, "fixture: the note no longer starts hidden");
+  assert.doesNotMatch(note[1], /\saria-live=/, "the hidden note is its own live region");
+  const region = shell.match(/<(\w+)([^>]*)>\s*<p[^>]*\bid="vanity-estimate"/);
+  assert.ok(region, "the estimate is not wrapped in a region of its own");
+  assert.match(region[2], /\saria-live="polite"/, "the estimate's parent is not a polite live region");
+  assert.doesNotMatch(region[2], /\shidden(\s|=|$)/, "the live region starts hidden");
 });
 
 test("the vanity estimate is timed from a device sample, and Stop on first find halts the grind at the first match", () => {

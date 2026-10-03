@@ -1833,6 +1833,12 @@
     // worker, PBKDF2 + BIP32 in WASM, the match protocol, and the rendering.
     equal(document.querySelector('#vanity-method-tabs [data-vanity-method-option="passphrase"]').getAttribute("aria-pressed"), "true", "the passphrase grind is the default method");
     assert(!document.querySelector('#vanity-card [data-vanity-method="passphrase"]').hidden && document.querySelector('#vanity-card [data-vanity-method="derivation"]').hidden, "the passphrase grind shows counter fields, not account fields");
+    // An estimate with nothing to say draws nothing, while the live region
+    // that announces it stays rendered, so the first estimate is spoken.
+    const vanityEstimate = document.getElementById("vanity-estimate");
+    input(document.getElementById("vanity-prefix"), "");
+    assert(vanityEstimate.hidden && getComputedStyle(vanityEstimate).display === "none", "an empty vanity estimate still draws its box");
+    assert(vanityEstimate.parentElement.getAttribute("aria-live") === "polite" && getComputedStyle(vanityEstimate.parentElement).display !== "none", "the vanity estimate's live region is not rendered ahead of the first estimate");
     input(document.getElementById("vanity-prefix"), "bc1qyl");
     input(document.getElementById("vanity-length"), "1");
     input(document.getElementById("vanity-start"), "0");
@@ -1844,6 +1850,7 @@
     input(document.getElementById("vanity-count"), "62");
     assert(!document.getElementById("vanity-go").disabled, "Start Grinding did not re-enable once the range size was back");
     assert(document.getElementById("vanity-estimate").textContent.includes("1 in 1,024"), "the estimate line prices two free bech32 characters");
+    assert(getComputedStyle(vanityEstimate).display !== "none", "a vanity estimate with text is not shown");
     // The device sample taken on tab entry turns the odds into a time.
     await until(() => /expect a match roughly every/.test(document.getElementById("vanity-estimate").textContent), "the estimate to be timed from the device sample", 60000);
     assert(/on 1 worker,/.test(document.getElementById("vanity-estimate").textContent), "the estimate scales by the worker count");
