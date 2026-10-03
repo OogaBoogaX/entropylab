@@ -1154,5 +1154,18 @@
   "Type the number seven to prove you read this.": "Digite o número sete para provar que você leu isto.",
   "Type the number eight to prove you read this.": "Digite o número oito para provar que você leu isto.",
   "Type the number nine to prove you read this.": "Digite o número nove para provar que você leu isto.",
-  "Dismiss the experimental software warning": "Descartar o aviso de software experimental"
+  "Dismiss the experimental software warning": "Descartar o aviso de software experimental",
+  "Show QR code for {label}": "Mostrar código QR para {label}",
+  "QR": "QR",
+  "Close": "Fechar",
+  "Animated UR · part {n} of {total}. Keep scanning until your signer has every part.": "UR animado · parte {n} de {total}. Continue escaneando até que seu signatário tenha todas as partes.",
+  "This value is too large for a single QR code.": "Este valor é muito grande para um único código QR.",
+  "Shared fingerprint": "Impressão digital compartilhada",
+  "Low entropy": "Baixa entropia",
+  "A key derived from less entropy than recommended is not secure and can be guessed. Add more entropy unless you are only testing with this key.": "Uma chave derivada de menos entropia do que o recomendado não é segura e pode ser adivinhada. Adicione mais entropia, a menos que você esteja apenas testando com esta chave.",
+  "Don't show again": "Não mostrar novamente",
+  "Add More Entropy": "Adicionar Mais Entropia",
+  "Derive Key Anyway": "Derivar Chave Mesmo Assim",
+  "You have provided only about {bits} bits of entropy.": "Você forneceu apenas cerca de {bits} bits de entropia.",
+  "Recommended: {recommended} bits for a {words}-word seed": "Recomendado: {recommended} bits para uma semente de {words} palavras"
 }
