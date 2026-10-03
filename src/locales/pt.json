@@ -1167,5 +1167,7 @@
   "Add More Entropy": "Adicionar Mais Entropia",
   "Derive Key Anyway": "Derivar Chave Mesmo Assim",
   "You have provided only about {bits} bits of entropy.": "Você forneceu apenas cerca de {bits} bits de entropia.",
-  "Recommended: {recommended} bits for a {words}-word seed": "Recomendado: {recommended} bits para uma semente de {words} palavras"
+  "Recommended: {recommended} bits for a {words}-word seed": "Recomendado: {recommended} bits para uma semente de {words} palavras",
+  "Show passphrase": "Mostrar frase secreta",
+  "Hidden by default: a passphrase on screen can be captured or seen": "Oculta por padrão: uma frase secreta na tela pode ser capturada ou vista"
 }
