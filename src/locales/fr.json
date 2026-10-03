@@ -1169,5 +1169,15 @@
   "You have provided only about {bits} bits of entropy.": "Vous n'avez fourni qu'environ {bits} bits d'entropie.",
   "Recommended: {recommended} bits for a {words}-word seed": "Recommandé : {recommended} bits pour une phrase secrète de {words} mots",
   "Show passphrase": "Afficher la phrase de passe",
-  "Hidden by default: a passphrase on screen can be captured or seen": "Cachée par défaut : une phrase de passe à l'écran peut être capturée ou vue"
+  "Hidden by default: a passphrase on screen can be captured or seen": "Cachée par défaut : une phrase de passe à l'écran peut être capturée ou vue",
+  "Session ended": "Session terminée",
+  "EntropyLab wiped every key, seed and field this page held. A Vanity grind cut short mid-run is the one exception: its workers are stopped, not wiped — closing the tab covers them.": "EntropyLab a effacé toutes les clés, phrases secrètes et champs que cette page contenait. Une génération Vanity interrompue en cours est la seule exception : ses processus sont arrêtés, pas effacés — fermer l'onglet les couvre.",
+  "Close this tab now, or quit the browser: that is what erases the copies the browser keeps for itself. Reloading starts a new session but does not erase them.": "Fermez cet onglet maintenant, ou quittez le navigateur : c'est ce qui efface les copies que le navigateur conserve pour lui-même. Le rechargement démarre une nouvelle session mais ne les efface pas.",
+  "The clipboard was emptied. Clipboard history and cloud clipboard sync keep their own copies of what was copied.": "Le presse-papiers a été vidé. L'historique du presse-papiers et la synchronisation du presse-papiers cloud conservent leurs propres copies de ce qui a été copié.",
+  "Chrome and Edge keep running after the last window closes unless “Continue running background apps” is off in their System settings.": "Chrome et Edge continuent de s'exécuter après la fermeture de la dernière fenêtre, sauf si « Continuer à exécuter les applications en arrière-plan » est désactivé dans leurs paramètres Système.",
+  "End this session?": "Terminer cette session ?",
+  "EntropyLab wipes every key, seed and field on this page, empties the clipboard if it copied something, and asks the browser to close this tab. Anything you have not written down or saved is lost.": "EntropyLab efface toutes les clés, phrases secrètes et champs de cette page, vide le presse-papiers s'il a copié quelque chose, et demande au navigateur de fermer cet onglet. Tout ce que vous n'avez pas noté ou sauvegardé est perdu.",
+  "End Session": "Terminer la session",
+  "End session: wipe this page and close the tab": "Terminer la session : effacer cette page et fermer l'onglet",
+  "End session": "Terminer la session"
 }
