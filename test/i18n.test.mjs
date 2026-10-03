@@ -11,7 +11,7 @@ import { collectSources } from "../scripts/i18n-sources.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const readCatalog = (code) => JSON.parse(execFileSync("cat", [join(root, "src/locales", `${code}.json`)], { encoding: "utf8" }));
+const readCatalog = (code) => JSON.parse(readFileSync(join(root, "src/locales", `${code}.json`), "utf8"));
 
 test("the English source text is the key: no en.json catalog ships", () => {
   assert.deepEqual(
@@ -34,7 +34,7 @@ test("catalog content is valid and drift is report-only", () => {
 // a translation source, or i18n:sync prunes its translations as dead.
 test("labels passed to the field helpers are translation sources", async () => {
   const sources = await collectSources(root), known = new Set(sources instanceof Map ? sources.keys() : sources);
-  const app = execFileSync("cat", [join(root, "src/js/app.js")], { encoding: "utf8" });
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
   const labels = [...app.matchAll(/\bhodl(?:Public|Private|PrivateKey)FieldHtml\("((?:[^"\\]|\\.)*)"/g)].map((match) => JSON.parse(`"${match[1]}"`));
   assert.ok(labels.length > 10, "fixture: the field helpers have literal labels");
   assert.deepEqual(labels.filter((label) => !known.has(label)), []);

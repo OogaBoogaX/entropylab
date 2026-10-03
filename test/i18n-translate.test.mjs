@@ -3,7 +3,7 @@
 // sidecar bookkeeping are all deterministic and must hold on every run.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, existsSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, existsSync, cpSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -44,9 +44,11 @@ const stubClient = ({ failKeys = [], auditFail = [] } = {}) => {
 const gappedRoot = async (gaps) => {
   const dir = tmp();
   mkdirSync(join(dir, "src/locales/.sources"), { recursive: true });
-  symlinkSync(join(root, "src/js"), join(dir, "src/js"));
-  symlinkSync(join(root, "src/shell.html"), join(dir, "src/shell.html"));
-  symlinkSync(join(root, "src/index.html"), join(dir, "src/index.html"));
+  // Copy the extraction inputs so Windows does not need symlink privileges.
+  cpSync(join(root, "src/js"), join(dir, "src/js"), { recursive: true });
+  cpSync(join(root, "src/shell.html"), join(dir, "src/shell.html"));
+  cpSync(join(root, "src/index.html"), join(dir, "src/index.html"));
+  writeFileSync(join(dir, "package.json"), '{"type":"module"}');
   const { sources, catalog } = await languageWorkload(root, "es");
   const removable = Object.keys(catalog).filter((key) => sources.has(key));
   assert.ok(removable.length >= gaps, "need translated keys to punch out");
