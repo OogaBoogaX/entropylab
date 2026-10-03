@@ -1154,5 +1154,18 @@
   "Type the number seven to prove you read this.": "7c1398481b8b0b9a97d0ea4a69d0493fff282d0678689e0f703e52bca04b6039",
   "Type the number eight to prove you read this.": "394d386c31e724b773777389211d3907b2a9afd51768547cd658384601192ea7",
   "Type the number nine to prove you read this.": "e31283b4069dc29319a710ae2ed630ed4891e25d8f1dc757bb00daf9c1cb451c",
-  "Dismiss the experimental software warning": "dfb467eca3e81b9735f0ebeaae81418b950801e343c1f4e0e912658abf423039"
+  "Dismiss the experimental software warning": "dfb467eca3e81b9735f0ebeaae81418b950801e343c1f4e0e912658abf423039",
+  "Show QR code for {label}": "6cbd8ef321e56aacd9922dbd90ce391e95243e63136a0e8b8493c72af9ce0982",
+  "QR": "a439fba430a33b87ab005d350187fb06e2d7e8ff35d3d029ad4f09cec942ada0",
+  "Close": "7d9eb7acb13e24625c404401d8e88b2350e32162455885f18276cf802f7701ed",
+  "Animated UR · part {n} of {total}. Keep scanning until your signer has every part.": "3ea0274278e64948e008ab6f7d04c56263a70e00010ea4fc354594406d3a4ea6",
+  "This value is too large for a single QR code.": "8787305b68dc8c9b160891573863bc2cb60c57c4dff95708892cabe6ded3012c",
+  "Shared fingerprint": "8ace0024f0d27c5b2269421cdba756bd1c053e6fdba8cdca561b23461494c85f",
+  "Low entropy": "d478fe971603a3ad19b30dbfb959b5611080f88d70a1ffe2714b745f8f038150",
+  "A key derived from less entropy than recommended is not secure and can be guessed. Add more entropy unless you are only testing with this key.": "1fc5f8a51d94b84a96a4f093111a7214cd75365bbb97c2272b3f04daaf341e32",
+  "Don't show again": "d16d035f63448e2e38afec505fd9910a31983a971660510e7996fb2b656d02de",
+  "Add More Entropy": "f449e8640beedbff26bb549ed89ed5787822427548b2ce1e3195a552c7818739",
+  "Derive Key Anyway": "bfa690aed014fec9b5ee11f0bee48751c59fe5cbf258b85a9e1400b4cfdf175b",
+  "You have provided only about {bits} bits of entropy.": "f7211ea2ba61fda8272ea311993b13fdab2853de2b51385f231e2b1636e0c8b8",
+  "Recommended: {recommended} bits for a {words}-word seed": "867c9294ea6f59624e8a20f50be867b2a2133204b62db2ad592d9ecad86b5692"
 }
