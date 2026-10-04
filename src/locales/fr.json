@@ -1179,5 +1179,6 @@
   "EntropyLab wipes every key, seed and field on this page, empties the clipboard if it copied something, and asks the browser to close this tab. Anything you have not written down or saved is lost.": "EntropyLab efface toutes les clés, phrases secrètes et champs de cette page, vide le presse-papiers s'il a copié quelque chose, et demande au navigateur de fermer cet onglet. Tout ce que vous n'avez pas noté ou sauvegardé est perdu.",
   "End Session": "Terminer la session",
   "End session: wipe this page and close the tab": "Terminer la session : effacer cette page et fermer l'onglet",
-  "Download HTML file": "Télécharger le fichier HTML"
+  "Download HTML file": "Télécharger le fichier HTML",
+  "<strong>Page translated</strong> Your browser sent this page's text to an online translation service. EntropyLab withholds the seed words, keys and typed secrets it shows, but do not rely on that: turn translation off for this page and use EntropyLab's language menu instead.": "<strong>Page traduite</strong> Votre navigateur a envoyé le texte de cette page à un service de traduction en ligne. EntropyLab ne divulgue pas les mots de la phrase secrète, les clés et les secrets saisis, mais ne vous y fiez pas : désactivez la traduction pour cette page et utilisez le menu de langue d'EntropyLab à la place."
 }
