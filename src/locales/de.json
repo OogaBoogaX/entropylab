@@ -1179,5 +1179,5 @@
   "EntropyLab wipes every key, seed and field on this page, empties the clipboard if it copied something, and asks the browser to close this tab. Anything you have not written down or saved is lost.": "EntropyLab löscht jeden Schlüssel, Seed und jedes Feld auf dieser Seite, leert die Zwischenablage, falls etwas kopiert wurde, und bittet den Browser, diesen Tab zu schließen. Alles, was Sie nicht aufgeschrieben oder gespeichert haben, geht verloren.",
   "End Session": "Sitzung beenden",
   "End session: wipe this page and close the tab": "Sitzung beenden: Seite löschen und Tab schließen",
-  "End session": "Sitzung beenden"
+  "Download HTML file": "HTML-Datei herunterladen"
 }
