@@ -1178,5 +1178,5 @@
   "EntropyLab wipes every key, seed and field on this page, empties the clipboard if it copied something, and asks the browser to close this tab. Anything you have not written down or saved is lost.": "d0f04e49064c6bc4990412a955f5004ff2ae28b6c27dc81834d09c18c31b4274",
   "End Session": "eb3abe97b4ce125cd0f48c47d558c56b6a7e7c89e5d4206210a11c82aeba5fb2",
   "End session: wipe this page and close the tab": "20e254f790f14909a177b62d2b233cd4f6de3b3542f92f40842f3aefa370593b",
-  "End session": "f00b921ff35b90459979a0f710c73c7f0a129595a0cad9be51f9e427649614d8"
+  "Download HTML file": "c4b0d12ab295d99d71fadc981f0190c51f6dacd0ff07a1603ee92198c7537d4e"
 }
