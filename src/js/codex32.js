@@ -29,14 +29,11 @@ const BECH32_INV = [
   0, 1, 20, 24, 10, 8, 12, 29, 5, 11, 4, 9, 6, 28, 26, 31,
   22, 18, 17, 23, 2, 25, 16, 19, 3, 21, 14, 30, 13, 7, 27, 15,
 ];
-// Complete MS1 string length → checksum characters. These are the master-seed
-// sizes BIP-93 still allows.
-const COMPLETE_CHECKSUM = new Map([[48, 13], [54, 13], [61, 13], [67, 13], [74, 13], [127, 15]]);
-// Header + payload, no checksum. Some of these lengths are also a shorter
-// complete string; a valid checksum wins, otherwise the characters are the
-// payload and a checksum is appended. Nothing is substituted.
-const INCOMPLETE_CHECKSUM = new Map([[35, 13], [41, 13], [48, 13], [54, 13], [61, 13], [112, 15]]);
-const SEED_LENGTHS = new Set([16, 20, 24, 28, 32, 64]);
+// Support 128-, 256-, and 512-bit seeds only. Complete and checksum-free
+// lengths are disjoint, so a failed checksum cannot become a longer payload.
+const COMPLETE_CHECKSUM = new Map([[48, 13], [74, 13], [127, 15]]);
+const INCOMPLETE_CHECKSUM = new Map([[35, 13], [61, 13], [112, 15]]);
+const SEED_LENGTHS = new Set([16, 32, 64]);
 
 function polymod(values, { shift, mask, generators, target }) {
   let residue = 0x23181b3n;
@@ -153,9 +150,12 @@ export function completeCodex32Checksum(input) {
   if (COMPLETE_CHECKSUM.has(text.length)) {
     const values = dataValues(text);
     if (verifyChecksum(values)) return text;
-    if (!INCOMPLETE_CHECKSUM.has(text.length)) {
-      throw new Error("Checksum does not match. This calculator does not search for a transcription error.");
-    }
+    throw new Error("Checksum does not match. This calculator does not search for a transcription error.");
+  }
+  // A valid 24-byte complete string is also 61 characters. Refuse it rather
+  // than treat its existing checksum as part of a 32-byte payload.
+  if (text.length === 61 && verifyChecksum(dataValues(text))) {
+    throw new Error("MS1 master seed length is not supported; use 16, 32, or 64 bytes.");
   }
   const checksumLength = INCOMPLETE_CHECKSUM.get(text.length);
   if (!checksumLength) throw new Error("That is not an MS1 header and payload, or a complete MS1 string.");

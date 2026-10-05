@@ -36,14 +36,38 @@ test("BIP-93 unshared secrets decode to the published master seeds", () => {
     [secret3, "ffeeddccbbaa99887766554433221100"],
     [v4, "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100"],
     [v5, "dc5423251cb87175ff8110c8531d0952d8d73e1194e95b5f19d6f9df7c01111104c9baecdfea8cccc677fb9ddc8aec5553b86e528bcadfdcc201c17c638c47e9"],
-    ["ms10seedsqqqsyqcyq5rqwzqfpg9scrgwpugpzysn9vaqzzvs20xnl", "000102030405060708090a0b0c0d0e0f10111213"],
-    ["ms10seedsyqsjygeyy5nzw2pf9g4jctfw9ucrzv3nxs6nvdau84gz0632s0xs", "202122232425262728292a2b2c2d2e2f3031323334353637"],
-    ["ms10seedsgpq5ys6yg4rywjzfff95cn2wfag9z5jn2324v46ct9d9hrcduqw8c3lccl", "404142434445464748494a4b4c4d4e4f505152535455565758595a5b"],
+
   ];
   for (const [codex, seed] of cases) {
     const parsed = parseCodex32(codex);
     assert.equal(parsed.index, "s");
     assert.equal(parsed.masterSeedHex, seed);
+  }
+});
+
+test("unsupported 20-, 24-, and 28-byte BIP-93 seeds and payloads are rejected", () => {
+  const cases = [
+    ["ms10seedsqqqsyqcyq5rqwzqfpg9scrgwpugpzysn9vaqzzvs20xnl", "000102030405060708090a0b0c0d0e0f10111213"],
+    ["ms10seedsyqsjygeyy5nzw2pf9g4jctfw9ucrzv3nxs6nvdau84gz0632s0xs", "202122232425262728292a2b2c2d2e2f3031323334353637"],
+    ["ms10seedsgpq5ys6yg4rywjzfff95cn2wfag9z5jn2324v46ct9d9hrcduqw8c3lccl", "404142434445464748494a4b4c4d4e4f505152535455565758595a5b"],
+  ];
+  for (const [codex] of cases) {
+    assert.throws(() => parseCodex32(codex), /supported/);
+    assert.throws(() => completeCodex32Checksum(codex), /MS1/);
+    assert.throws(() => completeCodex32Checksum(codex.slice(0, -13)), /MS1|Checksum/);
+  }
+});
+
+test("mistyped complete 128-bit seeds never become longer valid seeds", () => {
+  const typo = "ms10testsxxxxxxxxxxxqxxxxxxxxxxxxxx4nzvca9cmczlw";
+  assert.equal(typo.length, 48);
+  assert.throws(() => parseCodex32(typo), /Checksum/);
+  assert.throws(() => completeCodex32Checksum(typo), /Checksum/);
+  for (const complete of [v1, v4, v5.toLowerCase(), shareA.toLowerCase()]) {
+    for (let i = 9; i < complete.length; i++) {
+      const typo = complete.slice(0, i) + (complete[i] === "q" ? "p" : "q") + complete.slice(i + 1);
+      assert.throws(() => completeCodex32Checksum(typo), /Checksum/, `position ${i}`);
+    }
   }
 });
 
@@ -61,10 +85,7 @@ test("Calculate Checksum does not substitute a character to repair a bad payload
   assert.throws(() => parseCodex32(flipped), /does not search for a transcription error/);
   const bad = "ms10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxve740yyge2ghq";
   assert.throws(() => parseCodex32(bad), /checksum/i);
-  const appended = completeCodex32Checksum(bad);
-  assert.ok(appended.startsWith(bad), "completion must keep every typed character");
-  assert.ok(appended.length > bad.length);
-  assert.notEqual(appended.slice(0, bad.length), v1);
+  assert.throws(() => completeCodex32Checksum(bad), /checksum/i);
 });
 
 test("the same shares always recover the same secret and derive the same share", () => {

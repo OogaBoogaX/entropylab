@@ -786,7 +786,7 @@ words, pick one of the checksum words.</span></span>
       <section class="card no-print tool-card" id="codex32-card" role="tabpanel" hidden>
         <label class="field">MS1 strings
           <textarea id="codex32-shares" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="One MS1 string per line" aria-describedby="codex32-shares-help"></textarea>
-          <span class="field-note" id="codex32-shares-help">Calculate Checksum takes one header and payload, without a checksum. Recover and Derive take exactly the threshold number of valid MS1 strings. Other prefixes are rejected. A 48, 54, or 61 character string whose checksum does not match is treated as a header and payload and completed; characters are never substituted to repair it.</span>
+          <span class="field-note" id="codex32-shares-help">Calculate Checksum takes one header and payload, without a checksum. Recover and Derive take exactly the threshold number of valid MS1 strings. Other prefixes are rejected. Only 16-, 32-, and 64-byte seeds (128, 256, and 512 bits) are supported. A complete string with a failed checksum is rejected; characters are never substituted to repair it.</span>
         </label>
         <label class="field">New share index
           <input id="codex32-index" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="1" aria-describedby="codex32-index-help">
