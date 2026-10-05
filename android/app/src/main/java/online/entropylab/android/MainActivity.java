@@ -55,12 +55,11 @@ public final class MainActivity extends Activity {
         WebSettings settings = page.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setBlockNetworkLoads(true);
-        settings.setAllowFileAccess(true);
+        // file:///android_asset/ URLs stay reachable even with file access off.
+        settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setDomStorageEnabled(false);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        settings.setAllowFileAccessFromFileURLs(false);
-        settings.setAllowUniversalAccessFromFileURLs(false);
         page.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
