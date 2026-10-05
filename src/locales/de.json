@@ -1185,5 +1185,15 @@
   "Signed practice coins": "Signierte Übungsmünzen",
   "same formats as testnet · tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "gleiche Formate wie Testnet · tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · Coin-Typ 1'",
   "Local sandbox coins": "Lokale Sandbox-Münzen",
-  "addresses m…/n…, 2…, bcrt1q…, bcrt1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "Adressen m…/n…, 2…, bcrt1q…, bcrt1p… · tpub/upub/vpub · WIF 9/c · Coin-Typ 1'"
+  "addresses m…/n…, 2…, bcrt1q…, bcrt1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "Adressen m…/n…, 2…, bcrt1q…, bcrt1p… · tpub/upub/vpub · WIF 9/c · Coin-Typ 1'",
+  "INFO": "INFO",
+  "Security log started. Events stay in this page for this session.": "Sicherheitslog gestartet. Ereignisse bleiben für diese Sitzung auf dieser Seite.",
+  "WARN": "WARNUNG",
+  "ONLINE: your browser reports a network connection. Do not enter wallet secrets on a connected device.": "ONLINE: Ihr Browser meldet eine Netzwerkverbindung. Geben Sie keine Wallet-Geheimnisse auf einem verbundenen Gerät ein.",
+  "OFFLINE: your browser reports no network connection. This does not prove an air gap.": "OFFLINE: Ihr Browser meldet keine Netzwerkverbindung. Dies beweist keinen Air Gap.",
+  "Connection status is unavailable. Treat this device as connected.": "Verbindungsstatus ist nicht verfügbar. Behandeln Sie dieses Gerät als verbunden.",
+  "Browser page translation detected. An online translator may receive page text. Turn it off and use EntropyLab's language menu.": "Browser-Seitenübersetzung erkannt. Ein Online-Übersetzer kann den Seiteninhalt empfangen. Schalten Sie ihn aus und verwenden Sie das Sprachmenü von EntropyLab.",
+  "Security log": "Sicherheitslog",
+  "Live": "Live",
+  "Connection and browser warnings for this session. No secrets recorded.": "Verbindungs- und Browserwarnungen für diese Sitzung. Keine Geheimnisse aufgezeichnet."
 }
