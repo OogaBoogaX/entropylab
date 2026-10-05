@@ -921,7 +921,6 @@
   "You supply dice, cards, hex, a seed, or a key. EntropyLab derives the BIP-39 seed, master fingerprint, xpubs, and receive addresses. It does not generate entropy for you. Nothing leaves this page.": "203304325838d099542c164c7d1e8e74a7febc51c00b0b27134592dfc565994b",
   "Derivation method": "30c0c34005af3ebdba5c8c33edac3b99c31b2f2c0655c36b50d7932c1c632e92",
   "Edit Input": "aefdb759b9640cc47ee624018c07424251ac0d166a71cee129f3c2b36efe64e7",
-  "of 99 recommended rolls": "de930804b924a81121102f4dc2815dc7ea5be4be5d6df56fb673ece13244a228",
   "bits estimated": "318b8d5cea612e1e33ae432727c4ea39d899169965b3698ee854f3b82bf8236e",
   "Passphrase (optional)": "c0ba3c99e4e3726a3bd14b493467adf0525a1eec8d761ebcee7196bbde5dc005",
   "BIP-88 full path template · edit directly to use a custom path": "42410ab4da19c9eebad0648decc1278558c8f15c8f1cb671285d5f5d179d0e5c",
@@ -1191,5 +1190,6 @@
   "Connection and browser warnings for this session. No secrets recorded.": "2efbff57449cf3d3ab8f663fb684c2d7121e92efbb80cdc4278d2e9a2273302c",
   "End Session: wipe this page and close the tab": "151dcf70b6d6e7919c106ab709a8380a0e0ce3eaa2dd9258c8812c942afc936e",
   "Clear Station": "c40a6bab07c4a95a85205e0fbedaf4a9ac600a4ce4215ff037104963f0be26d4",
-  "Clear Inspectors": "14f0c2a7a87b169ae4bb94dc9205738afe6a1f0a031a2c23e8d043c370013d15"
+  "Clear Inspectors": "14f0c2a7a87b169ae4bb94dc9205738afe6a1f0a031a2c23e8d043c370013d15",
+  "of 100 recommended rolls": "ddf21cd02aeb62711edf54cb7f35c816b77a7681e25eef0ec91eabc5d1552bf7"
 }
