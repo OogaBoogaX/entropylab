@@ -727,7 +727,7 @@ const noneZero = (keys) => keys.every((key) => key.some((byte) => byte !== 0));
 const walletBuilderParts = loadAppFunctions(["hodlAccountExportFamily", "hodlSerializeExtendedKey", "hodlExtendedKeyVersions", "hodlNetworkFamily",
   "hodlDescriptorWithChecksum", "hodlScriptDescriptor", "hodlWatchOnlyMultipathDescriptor", "hodlOriginPathComponent", "hodlAddressBranchLabel",
   "hodlDeriveAddressRows", "hodlBuildMultisigCosignerExports", "hodlCoinTypeFromNetwork", "hodlNote"]);
-const walletKeepers = ["hodlCopyPrivateNode", "hodlKeepPrivateNode"].filter((name) => app.includes(`function ${name}(`));
+const walletKeepers = ["hodlCopyPrivateNode", "hodlKeepPrivateNode", "hodlNodeHasPrivateKey"].filter((name) => app.includes(`function ${name}(`));
 const bip84Definition = { id: "bip84", label: "Native SegWit", bip: "BIP84", script: "p2wpkh", purpose: 84, purposeHardened: true };
 
 async function derivationHarness({ failAtAddress = 0, identity = () => "bip32-vector-1", single = false, seedWords = false } = {}) {

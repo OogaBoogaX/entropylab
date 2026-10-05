@@ -7,11 +7,11 @@ export const SECURITY_LOG_LIMIT = 100;
 
 const eventSpec = (code) => {
   switch (code) {
-    case "session-started": return { level: "info", label: t("INFO"), message: t("Security log started. Events stay in this page for this session.") };
-    case "network-online": return { level: "warning", label: t("WARN"), message: t("ONLINE: your browser reports a network connection. Do not enter wallet secrets on a connected device.") };
-    case "network-offline": return { level: "info", label: t("INFO"), message: t("OFFLINE: your browser reports no network connection. This does not prove an air gap.") };
-    case "network-unknown": return { level: "warning", label: t("WARN"), message: t("Connection status is unavailable. Treat this device as connected.") };
-    case "page-translated": return { level: "warning", label: t("WARN"), message: t("Browser page translation detected. An online translator may receive page text. Turn it off and use EntropyLab's language menu.") };
+    case "session-started": return { level: "info", label: t("INFO"), message: t("Security log started.") };
+    case "network-online": return { level: "warning", label: t("WARN"), message: t("Network status: online (reported by the browser).") };
+    case "network-offline": return { level: "info", label: t("INFO"), message: t("Network status: offline (reported by the browser; not proof of an air gap).") };
+    case "network-unknown": return { level: "warning", label: t("WARN"), message: t("Network status: unavailable.") };
+    case "page-translated": return { level: "warning", label: t("WARN"), message: t("Browser page translation detected.") };
     default: return null;
   }
 };

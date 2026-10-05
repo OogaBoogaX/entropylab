@@ -265,19 +265,27 @@ button:not(:disabled):active *,
 .sources:has(+ .sources) { padding-bottom: 0; }
 /* A fine-print list steps its items like the Sources paragraphs above it. */
 .sources ul { display: grid; gap: var(--space-component); padding-left: var(--indent-list); }
-.security-log { padding: 0; overflow: hidden; }
+.security-log { max-width: 600px; margin: var(--space-lede) auto; padding: 0; overflow: hidden; border-radius: 0; }
 .security-log-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-component); padding: var(--inset-toolbar); border-bottom: 1px solid var(--border); }
-.security-log-header h2 { display: flex; align-items: center; gap: var(--space-control); margin: 0; font-size: var(--text-body); }
+/* The title is a heading for structure but wears the shared label style,
+   not the serif display face h2 carries elsewhere. */
+.security-log-header h2 { display: flex; align-items: center; gap: var(--space-control); margin: 0; font-family: var(--sans); font-size: var(--text-label); font-weight: 600; letter-spacing: normal; color: var(--fg); }
 .security-log-header svg { color: var(--muted); flex-shrink: 0; }
-.security-log-live { display: flex; align-items: center; gap: var(--space-snug); color: var(--muted); font-family: var(--mono); font-size: var(--text-data-small); }
-.security-log-live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue-bright); }
-.security-log-note { margin: 0; padding: var(--inset-toolbar); }
+/* The note closes the log as a footer that mirrors the header bar. */
+.security-log-note { margin: 0; padding: var(--space-control) var(--space-component); border-top: 1px solid var(--border); text-align: center; color: var(--faint); font-size: var(--text-caption); line-height: 1.4; }
 .security-log-output { list-style: none; margin: 0; padding: var(--inset-panel); background: var(--bg); font-family: var(--mono); font-size: var(--text-data-small); line-height: 1.6; max-height: 260px; overflow: auto; }
 .security-log-output li { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); gap: var(--space-control); padding: var(--space-tight) 0; overflow-wrap: anywhere; }
 .security-log-output time { color: var(--faint); font-variant-numeric: tabular-nums; }
 .security-log-output [data-security-level] { color: var(--blue-ink); }
-.security-log-output [data-level="warning"] [data-security-level], .security-log-output [data-level="warning"] [data-security-message] { color: var(--danger-bright); }
-@media (max-width: 520px) { .card.security-log { padding: 0; } .security-log-output li { grid-template-columns: max-content minmax(0, 1fr); } .security-log-output [data-security-message] { grid-column: 1 / -1; } }
+.security-log-output [data-security-message] { color: var(--muted-strong); }
+/* A faint hairline between entries, half the border grey. */
+.security-log-output li + li { border-top: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
+/* Only the level tag carries the colour; every message stays in the text
+   colour. A warning's tag takes the muted red. */
+.security-log-output [data-level="warning"] [data-security-level] { color: var(--danger); }
+/* Phones keep the three columns: the message wraps beside its time and tag
+   rather than dropping below them. */
+@media (max-width: 520px) { .card.security-log { padding: 0; } }
 .warn { background: color-mix(in oklab, var(--danger) 12%, var(--bg)); border-color: color-mix(in oklab, var(--danger) 40%, var(--border)); }
 .muted { color: var(--muted); font-size: var(--text-body); line-height: 1.5; }
 /* The pitch is a set of discrete claims rather than prose, so it reads as a
@@ -1124,8 +1132,18 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 .network-picker-option[data-network="signet"] .network-picker-option-coin { fill: var(--signet); }
 .network-picker-option[data-network="regtest"] .network-picker-option-coin { fill: var(--faint); }
 .network-picker-option[aria-checked="true"] strong { color: var(--accent); }
-.network-picker-option-text { font-size: var(--text-control-small); }
-.network-picker-option-desc { display: block; margin-top: var(--space-hairline); color: var(--muted); font-size: var(--text-note); line-height: 1.45; }
+/* The text column fills the row beside the coin, so its lines wrap
+   against the menu's width rather than against their own content. */
+.network-picker-option-text { flex: 1 1 auto; min-width: 0; font-size: var(--text-control-small); }
+/* The technical line reads as data: the address, key and WIF prefixes and
+   the coin type, in the small monospace the app uses for values. Each group
+   holds together with its trailing dot, so a line only breaks between
+   groups. */
+.network-picker-option-desc > span { white-space: nowrap; }
+/* The addresses always take the first line and the key and WIF prefixes the
+   second, so every option breaks in the same place. */
+.network-picker-option-desc > .network-picker-option-addresses { display: block; }
+.network-picker-option-desc { display: block; margin-top: var(--space-hairline); color: var(--muted); font-family: var(--mono); font-size: var(--text-data-small); line-height: 1.5; }
 /* min-width: 0 lets the row shrink on narrow screens rather than pushing the
    controls out of the bar. */
 .download-controls { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-control); margin-left: auto; min-width: 0; }
@@ -1194,6 +1212,20 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
   background: transparent; color: var(--fg); text-align: left; cursor: pointer;
 }
 :is(.custom-select-option[aria-selected="true"], .network-picker-option[aria-checked="true"]) { background: var(--option-selected-ground); color: var(--accent); }
+/* The chosen option also carries a check at its right edge, so the current
+   choice does not rest on the ground colour alone. Drawn as a mask in the
+   accent; every option keeps room for it so the text never moves. */
+.custom-select-option, .network-picker-option { position: relative; padding-right: calc(10px + 14px + var(--space-control)); }
+:is(.custom-select-option[aria-selected="true"], .network-picker-option[aria-checked="true"])::after {
+  content: ""; position: absolute; right: 10px; top: 50%; width: 14px; height: 14px; transform: translateY(-50%);
+  background: var(--accent); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* The language list is a column of short codes: the selected ground marks
+   the choice there, with no check and no room kept for one. */
+.locale-control .custom-select-option { padding-right: 10px; }
+.locale-control .custom-select-option::after { content: none; }
+/* In the network menu the check sits on the name's line, beside the coin. */
+.network-picker-option[aria-checked="true"]::after { top: calc(8px + 10px); }
 .custom-select-option:disabled { background: transparent; color: var(--faint); cursor: not-allowed; opacity: .48; }
 /* One option state for every list, the network menu included: the chosen
    option sits on the page's own ground (as in the field it fills) in the

@@ -100,6 +100,45 @@
   });
 
   if (new URLSearchParams(location.search).get("offline-test") === "1") {
+    // This fresh file:// session exercises Edge independently of the hosted
+    // Chrome case below: a latched Chrome warning cannot make this pass.
+    await test("Edge-style translation markers open Important and latch a security-log warning", async () => {
+      const warning = document.getElementById("translated-warning");
+      const important = document.getElementById("important");
+      const output = document.getElementById("security-log-output");
+      const events = () => output.querySelectorAll('[data-event="page-translated"]').length;
+      const wrapper = document.createElement("div");
+      const child = document.createElement("span");
+      wrapper.append(child);
+      const wasOpen = important.open;
+      try {
+        important.open = false;
+        assert(warning.hidden && events() === 0, "translation was already detected before injection");
+        child.setAttribute("_mstfoo", "123");
+        child.setAttribute("data-ms-editor", "false");
+        document.body.append(wrapper);
+        await wait(0);
+        assert(warning.hidden && events() === 0 && !important.open, "non-translation mutations triggered detection");
+        wrapper.remove();
+        // Synthetic Edge output only; never invoke an online translator.
+        child.setAttribute("_msttexthash", "123");
+        document.body.append(wrapper);
+        await until(() => events() === 1, "Edge translation security event");
+        assert(!warning.hidden && warning.getClientRects().length > 0, "the translation warning is not visible");
+        assert(important.open, "translation did not open Important");
+        child.setAttribute("_msthash", "456");
+        child.setAttribute("_mstmutation", "1");
+        await wait(0);
+        equal(events(), 1);
+        wrapper.remove();
+        await wait(0);
+        assert(!warning.hidden, "removing Edge markers hid the warning");
+        equal(events(), 1);
+      } finally {
+        wrapper.remove();
+        important.open = wasOpen;
+      }
+    });
     await test("offline mode keeps online-only presentation disabled", () => {
       const warning = document.getElementById("online-warning");
       const logo = document.querySelector(".site-logo");
@@ -1876,6 +1915,12 @@
     // worker, PBKDF2 + BIP32 in WASM, the match protocol, and the rendering.
     equal(document.querySelector('#vanity-method-tabs [data-vanity-method-option="passphrase"]').getAttribute("aria-pressed"), "true", "the passphrase grind is the default method");
     assert(!document.querySelector('#vanity-card [data-vanity-method="passphrase"]').hidden && document.querySelector('#vanity-card [data-vanity-method="derivation"]').hidden, "the passphrase grind shows counter fields, not account fields");
+    // An estimate with nothing to say draws nothing, while the live region
+    // that announces it stays rendered, so the first estimate is spoken.
+    const vanityEstimate = document.getElementById("vanity-estimate");
+    input(document.getElementById("vanity-prefix"), "");
+    assert(vanityEstimate.hidden && getComputedStyle(vanityEstimate).display === "none", "an empty vanity estimate still draws its box");
+    assert(vanityEstimate.parentElement.getAttribute("aria-live") === "polite" && getComputedStyle(vanityEstimate.parentElement).display !== "none", "the vanity estimate's live region is not rendered ahead of the first estimate");
     input(document.getElementById("vanity-prefix"), "bc1qyl");
     input(document.getElementById("vanity-length"), "1");
     input(document.getElementById("vanity-start"), "0");
@@ -1887,6 +1932,7 @@
     input(document.getElementById("vanity-count"), "62");
     assert(!document.getElementById("vanity-go").disabled, "Start Grinding did not re-enable once the range size was back");
     assert(document.getElementById("vanity-estimate").textContent.includes("1 in 1,024"), "the estimate line prices two free bech32 characters");
+    assert(getComputedStyle(vanityEstimate).display !== "none", "a vanity estimate with text is not shown");
     // The device sample taken on tab entry turns the odds into a time.
     await until(() => /expect a match roughly every/.test(document.getElementById("vanity-estimate").textContent), "the estimate to be timed from the device sample", 60000);
     assert(/on 1 worker,/.test(document.getElementById("vanity-estimate").textContent), "the estimate scales by the worker count");
@@ -4234,10 +4280,10 @@
     } finally {
       document.getElementById("psbt-wipe").click();
     }
-    // End Session leaves nothing selected and nothing to act on.
-    assert(!on("psbt-go") && !on("psbt-download") && !on("psbt-wipe"), "End Session left a PSBT action enabled");
-    equal(selected("psbt-session-keys").length, 0, "End Session left a chip selected");
-    assert(document.getElementById("psbt-session").textContent.includes("Session ended"), "End Session did not confirm itself");
+    // Clear Inspectors leaves nothing selected and nothing to act on.
+    assert(!on("psbt-go") && !on("psbt-download") && !on("psbt-wipe"), "Clear Inspectors left a PSBT action enabled");
+    equal(selected("psbt-session-keys").length, 0, "Clear Inspectors left a chip selected");
+    assert(document.getElementById("psbt-session").textContent.includes("cleared"), "Clear Inspectors did not confirm itself");
     // The confirmation belongs to the session that ended. Inspecting a new PSBT
     // without a key starts over, so the line must say so, not repeat "ended".
     input(text, psbt);

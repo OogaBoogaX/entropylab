@@ -99,12 +99,12 @@ test("the network picker sets the network every tool defaults to", () => {
     assert.match(markup, /<strong[^>]*>Testnet<\/strong>/);
     assert.match(markup, /<strong[^>]*>Signet<\/strong>/);
     assert.match(markup, /<strong[^>]*>Regtest<\/strong>/);
-    assert.match(markup, /xpub\/ypub\/zpub · WIF 5\/K\/L · coin type 0'/);
-    assert.match(markup, /tpub\/upub\/vpub · WIF 9\/c · coin type 1'/);
-    // Signet shares the testnet formats; regtest shares the key formats but
-    // renders SegWit with the bcrt HRP — the options say so (issue #329).
-    assert.match(markup, /data-network="signet"[\s\S]*?same formats as testnet/);
-    assert.match(markup, /data-network="regtest"[\s\S]*?bcrt1q…, bcrt1p…/);
+    // Each option names its key-version prefixes; signet shares testnet's
+    // formats and regtest renders SegWit with the bcrt HRP (issue #329).
+    assert.match(markup, /data-network="mainnet"[\s\S]*?xpub ypub zpub[\s\S]*?WIF 5 K L/);
+    assert.match(markup, /data-network="testnet"[\s\S]*?tpub upub vpub[\s\S]*?WIF 9 c/);
+    assert.match(markup, /data-network="signet"[\s\S]*?testnet[\s\S]*?tb1q…[\s\S]*?tpub upub vpub/);
+    assert.match(markup, /data-network="regtest"[\s\S]*?bcrt1q… bcrt1p…/);
     // And the menu says plainly that no connection is ever made.
     assert.match(markup, /This page never connects to any network/);
   }
@@ -820,7 +820,7 @@ test("key derivation shows the relevant paste-ready multisig co-signer exports",
   assert.match(appWhitespace, /accountId:"bip86",kind:"p2tr",label:"Taproot (?:·|\\xB7) BIP86",family:"x"/);
   assert.match(app, /accountPath=definition\.accountPath\|\|`m\/48'\/\$\{coinType\}'\/\$\{accountIndex\}'\/\$\{definition\.scriptIndex\}'`/);
   assert.match(app, /value:`\[\$\{masterFingerprint\}\/\$\{originPath\}\]\$\{publicKey\}`/);
-  assert.match(app, /multisigCosignerExports:root\.privateKey\?hodlBuildMultisigCosignerExports\(root,network,accountIndex,masterFingerprint,coinType\):\[\]/);
+  assert.match(app, /multisigCosignerExports:hodlNodeHasPrivateKey\(root\)\?hodlBuildMultisigCosignerExports\(root,network,accountIndex,masterFingerprint,coinType\):\[\]/);
   assert.match(app, /function hodlRenderMultisigCosignerExport\(exports,accountId\)/);
   assert.match(app, /exports\.filter\(candidate=>candidate\.accountId===accountId\)/);
   assert.match(app, /\$\{hodlSlip132WatchFields\(account,hodlWalletResult\)\}\s*\$\{hodlImportedCoreRecoveryExport\(hodlWalletResult,account\)\}\s*\$\{hodlRenderMultisigCosignerExport\(hodlWalletResult.multisigCosignerExports,account\.def\.id\)\}/);
@@ -1572,7 +1572,6 @@ test("dice rolls hide Pearson chi-squared fairness behind a text expand button",
   // The pre-boot markup shows the same shape the app renders: the meta row in
   // its wrapper above the input, two lines, each number a coloured value.
   assert.match(shell, /<div class="seed-word-meta label-description"><p class="muted" id="dice-meta" aria-live="polite">/);
-  assert.match(shell, /<span class="meta-value is-short">0<\/span> of 99 recommended rolls<br><span class="meta-value is-short">0\.0<\/span> bits estimated/);
   assert.match(shell, /id="dice-meta"[\s\S]*?<div class="dice-input-shell">[\s\S]*?<div class="dice-input-pad/);
   // No trace of the single-line form with its trailing method restatement.
   assert.doesNotMatch(shell, /0\.0 bits estimated · 24-word seed/);
@@ -2041,10 +2040,10 @@ test("Key Station stays put and a derived key opens a fingerprint tab with a sum
     assert.match(markup, /id="key-edit-inputs"/);
     assert.match(markup, /id="key-summary-path"/);
     assert.match(markup, /Open Key Station to derive another key/);
-    assert.match(markup, /Base 10 \[0-9\] \/ Hashed rolls \(recommended\)/);
+    assert.match(markup, /Base 10 \[0-9\] \/ Hashed rolls/);
     assert.match(markup, /Dice \[1-6\] \/ Hashed rolls/);
   }
-  assert.match(appSource, /hodlT\("Base 10 \[0-9\] \/ Hashed rolls \(recommended\)"\)/);
+  assert.match(appSource, /hodlT\("Base 10 \[0-9\] \/ Hashed rolls"\)/);
   assert.match(appSource, /hodlT\("Dice \[1-6\] \/ Hashed rolls"\)/);
   assert.match(appSource, /function hodlSizeKeySummaryLifehash\(\) \{[\s\S]*getBoundingClientRect\(\)\.height[\s\S]*image\.style\.height = image\.style\.width = `\$\{height\}px`/);
   assert.match(appSource, /function hodlSnapshotKeySummary\(/);
@@ -2305,7 +2304,8 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
     assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Start account\s*<input id="vanity-account-start" inputmode="numeric"[^>]*value="0"/);
     assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Accounts to try\s*<input id="vanity-account-count" inputmode="numeric"[^>]*value="100000"/);
     assert.match(markup, /<input id="vanity-workers" type="number" min="1" max="64"/);
-    assert.match(markup, /id="vanity-estimate" aria-live="polite"/);
+    // Announced through its parent: see the live-region test below.
+    assert.match(markup, /id="vanity-estimate"/);
     assert.match(markup, /id="vanity-go" type="button"[^>]*>/);
     assert.match(markup, /id="vanity-progress" role="progressbar"[^>]*hidden>/);
     assert.doesNotMatch(markup, /id="vanity-stop"/);
@@ -2402,6 +2402,19 @@ test("the private recovery section lists the BIP39 passphrase beside the seed ph
   // Rendered right after the words, through the same masked private field as
   // the entropy and seed hex; absent when no passphrase is in use.
   assert.match(appSource, /fields\.push\(hodlSeedPhraseField\(`Your seed phrase[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(wallet\.passphraseUsed && wallet\.passphrase\?\.length\) fields\.push\(hodlPrivateKeyFieldHtml\("BIP39 passphrase", [^\n]*\(\) => hodlResultPassphrase\(wallet\)\)\);\n\s*if \(wallet\.entropy\)/);
+});
+
+// The estimate's grey note is hidden while there is no valid prefix, so it
+// cannot be the live region itself. Its parent is rendered from the start.
+test("the vanity estimate speaks through a live region that is never hidden", () => {
+  const note = shell.match(/<p([^>]*\bid="vanity-estimate"[^>]*)>/);
+  assert.ok(note, "the estimate note is missing");
+  assert.match(note[1], /\shidden(\s|=|$|>)/, "fixture: the note no longer starts hidden");
+  assert.doesNotMatch(note[1], /\saria-live=/, "the hidden note is its own live region");
+  const region = shell.match(/<(\w+)([^>]*)>\s*<p[^>]*\bid="vanity-estimate"/);
+  assert.ok(region, "the estimate is not wrapped in a region of its own");
+  assert.match(region[2], /\saria-live="polite"/, "the estimate's parent is not a polite live region");
+  assert.doesNotMatch(region[2], /\shidden(\s|=|$)/, "the live region starts hidden");
 });
 
 test("the vanity estimate is timed from a device sample, and Stop on first find halts the grind at the first match", () => {

@@ -54,6 +54,12 @@ Guidelines for AI coding agents.
   Chrome/Chromium, Microsoft Edge — and skips the absent ones).
 - Make the smallest change that works. No refactors, reformatting, or new
   dependencies. This governs logic and functionality.
+- **Read [docs/UI_Patterns.md](docs/UI_Patterns.md) before touching UI
+  code** — `src/css/styles.css`, `src/shell.html`, or markup and styling
+  built in `src/js/`. It lists the design tokens (text sizes, spacing,
+  insets, radii, colours) and the shared patterns every UI change must use:
+  no raw values where a token exists, no per-tool tokens, one pattern per
+  control.
 - **UI and design work is the exception**, and is currently a site-wide
   cleanup led by the project's design lead. There, reuse outranks minimalism:
   before adding a style or a block of markup, look for the paradigm it

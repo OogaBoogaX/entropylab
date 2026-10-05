@@ -1,5 +1,5 @@
 import { createModal } from "./modal.js";
-import { copyText, showCopiedIcon } from "./clipboard.js";
+import { copyText, resetCopiedIcon, showCopiedIcon } from "./clipboard.js";
 // Expandable cells: one standard truncation for long text in dense UI tables,
 // with a click-to-expand overlay window for viewing (and, when the cell is
 // editable, editing) the full value.
@@ -117,10 +117,9 @@ export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon =
     const editable = "expEdit" in target.dataset;
     text.readOnly = !editable;
     apply.hidden = !editable;
-    // A check left over from the last opening goes back to the copy icon.
-    clearTimeout(copyButton.copiedTimer);
-    copyButton.classList.remove("is-copied");
-    copyButton.innerHTML = copyIcon();
+    // A check left over from the last opening goes back to the copy icon
+    // and its label.
+    resetCopiedIcon(copyButton, { copyIcon: copyIcon() });
     modal.show(text, target);
   };
 

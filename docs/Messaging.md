@@ -140,8 +140,9 @@ air-gapped computer.
 
 - **Bob** owns a hardware wallet but doesn't feel comfortable trusting the
   seed phrase it gave him. He rolls dice, turns the rolls into a new seed
-  phrase with EntropyLab, and loads it onto his hardware wallet. Now he only
-  needs to trust the device for signing transactions.
+  phrase with EntropyLab on an offline computer, and loads it onto his
+  hardware wallet. Now he only needs to trust the hardware wallet for signing
+  transactions.
 - **Alice** has used her hardware wallet for years and wants to be sure her
   paper backup really restores it. She enters the seed phrase into
   EntropyLab and confirms that the receive addresses match the ones her

@@ -47,16 +47,15 @@ function loadSlice(name) {
 // The predicate's dependencies, extracted from app.js exactly as the cards
 // suite does, with the seed-length table carrying the hash-roll
 // recommendations the app ships.
-const hodlSeedLengths = {
-  12: { words: 12, bits: 128, bytes: 16, hashRolls: 50 },
-  15: { words: 15, bits: 160, bytes: 20, hashRolls: 62 },
-  18: { words: 18, bits: 192, bytes: 24, hashRolls: 75 },
-  21: { words: 21, bits: 224, bytes: 28, hashRolls: 87 },
-  24: { words: 24, bits: 256, bytes: 32, hashRolls: 99 },
-};
-function hodlSeedConfig(words = 24) {
-  return hodlSeedLengths[Number(words)] || hodlSeedLengths[24];
-}
+const seedLengthsStart = app.indexOf("var hodlSeedLengths =");
+const seedLengthsEnd = app.indexOf("var hodlEntropyFormats =", seedLengthsStart);
+assert.ok(seedLengthsStart >= 0 && seedLengthsEnd > seedLengthsStart);
+const hodlSeedConfig = new Function(`
+  var hodlTargetWordCount = 24;
+  ${app.slice(seedLengthsStart, seedLengthsEnd)}
+  ${loadSlice("hodlSeedConfig")}
+  return hodlSeedConfig;
+`)();
 const hodlSplitDiceString = new Function(`${loadSlice("hodlSplitDiceString")}; return hodlSplitDiceString;`)();
 const hodlDiceEntropyBits = new Function(`${loadSlice("hodlDiceEntropyBits")}; return hodlDiceEntropyBits;`)();
 const hodlNormalizeCardToken = new Function(`${loadSlice("hodlNormalizeCardToken")}; return hodlNormalizeCardToken;`)();
@@ -94,18 +93,24 @@ const cards = (n) => {
 
 test("hashed dice below the recommended rolls warn with the estimate", () => {
   const warning = hodlLowEntropyWarningFor("dice", "coldcard", rolls(10), 24);
-  assert.ok(warning, "10 of 99 rolls did not warn");
+  assert.ok(warning, "short transcript did not warn");
   assert.equal(warning.bits, "25.8");
   assert.equal(warning.recommended, 256);
   assert.equal(warning.words, 24);
-  assert.deepEqual(warning.detail, { key: "{have} of {n} recommended rolls", vars: { have: 10, n: 99 } });
+  assert.ok(warning.detail.key);
+  assert.deepEqual(warning.detail.vars, { have: 10, n: 100 });
   const coleman = hodlLowEntropyWarningFor("dice", "coleman", rolls(10), 24);
   assert.ok(coleman, "the Keystone dice method did not warn either");
 });
 
 test("hashed dice at or above the recommendation derive without a warning", () => {
-  assert.equal(hodlLowEntropyWarningFor("dice", "coldcard", rolls(99), 24), null);
-  assert.equal(hodlLowEntropyWarningFor("dice", "coldcard", rolls(120), 24), null);
+  for (const method of ["coldcard", "coleman"]) {
+    const short = hodlLowEntropyWarningFor("dice", method, rolls(99), 24);
+    assert.ok(short, `${method}: 99 rolls must still warn`);
+    assert.deepEqual(short.detail.vars, { have: 99, n: 100 });
+    assert.equal(hodlLowEntropyWarningFor("dice", method, rolls(100), 24), null);
+    assert.equal(hodlLowEntropyWarningFor("dice", method, rolls(120), 24), null);
+  }
   assert.equal(hodlLowEntropyWarningFor("dice", "coldcard", rolls(50), 12), null, "12-word recommendation is 50 rolls");
   const short12 = hodlLowEntropyWarningFor("dice", "coldcard", rolls(49), 12);
   assert.ok(short12 && short12.recommended === 128 && short12.detail.vars.n === 50, "12-word threshold did not follow the seed-length table");

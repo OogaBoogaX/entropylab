@@ -238,7 +238,9 @@ material. Its security posture rests on the following model:
   recovery experiments. EntropyLab does not claim that hashing a short input
   makes it secure. When the entered transcript is below the recommended
   entropy target, the result displays a prominent warning with the estimated
-  supplied entropy and says to use it only for testing. Users who intend to
+  supplied entropy and says to use it only for testing. Both hashed-dice
+  methods recommend 100 rolls for a 24-word seed; 99 rolls still trigger the
+  below-recommendation warning. Users who intend to
   secure funds must meet the displayed roll/card recommendation and verify
   their procedure independently.
 - Brain wallet — lab hashes the exact UTF-8 text with unsalted SHA-256 and
@@ -375,9 +377,18 @@ EntropyLab uses it:
 
 - Browser translation. Chrome's and Edge's built-in translators send the
   page's text to Google or Microsoft. Everything that shows a seed word, a
-  key or a typed secret is marked `translate="no"`, so it is not sent, and a
-  warning appears if the page is translated anyway. Firefox translates on the
-  device.
+  key or a typed secret is marked `translate="no"`, the preventive opt-out
+  for browsers that honor it. EntropyLab warns when it detects Chrome/Google
+  translation through `translated-ltr` / `translated-rtl` classes on the
+  document root or Edge/Microsoft translation through `_msthash`,
+  `_msttexthash`, or `_mstmutation` attributes anywhere in the document.
+  It checks at initialization and observes relevant attribute changes and
+  inserted subtrees. Detection opens Important, keeps the warning visible
+  even if markers disappear, and records one security-log event through the
+  detection callback. This is best-effort, browser-marker-based detection
+  after the fact, not prevention or proof of which text was sent. The markers
+  are not a security boundary or a guaranteed future browser API. Firefox
+  translates on the device.
 - Writing aids. Edge's text prediction, which sends what you type to
   Microsoft, is off for the whole page. Every field opts out of Grammarly,
   which sends field text to its servers whatever the spell-check setting.
@@ -401,6 +412,14 @@ extension that ignores them, or one written to steal.
   [computer hardening checklist](docs/Computer_Hardening_Checklist.md) gives
   the steps for Windows, macOS and Linux, and the browser settings that copy
   what is on the page.
+- Developers can inspect browser-memory residue with the
+  [residue audit harness](docs/Residue_Audit.md) (`npm run test:residue`),
+  which drives Chrome/Edge with a public fixture, requires a clean baseline
+  and positive controls, and scans process captures for actual derived secrets.
+  The positive capture precedes output and clipboard verification; those
+  checks return digests, never private-key text, through the debugging pipe.
+  Missing captures invalidate the run; uncalibrated needles prove nothing.
+  Its zero is not proof, and automation can add copies — see the doc.
 - Avoid the clipboard for secrets where you can. If you use it, turn off
   clipboard history and sync first.
 - When you are done, press End session in the header. It wipes the page,

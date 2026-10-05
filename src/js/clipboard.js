@@ -11,6 +11,8 @@
 // stay inside its focus trap. Removing the focused field drops focus to the
 // body, outside a modal's trap and Escape handler, so focus then goes back
 // to whatever held it before the copy.
+import { t as hodlTText } from "./i18n.js";
+
 const fallbackCopy = (text, host) => {
   const focused = document.activeElement;
   const field = document.createElement("textarea");
@@ -74,16 +76,24 @@ export const clearClipboard = async ({ host = document.body } = {}) => {
   return cleared;
 };
 
+// A boxed copy control at rest: the clipboard icon and its label, with any
+// pending return from the check cancelled. A dialog calls this when it opens
+// again, so a check cut short by closing it does not outlive its timer.
+export const resetCopiedIcon = (button, { copyIcon = "", label = hodlTText("Copy") } = {}) => {
+  clearTimeout(button.copiedTimer);
+  button.classList.remove("is-copied");
+  button.innerHTML = copyIcon;
+  button.setAttribute("aria-label", label);
+  button.title = label;
+};
+
 // The icon-button confirmation every boxed copy control shows: the clipboard
 // icon turns to a green check for a moment, then back. The icons come from the
-// caller (app.js owns the glyphs), and a new copy restarts the timer.
-export const showCopiedIcon = (button, { copyIcon = "", copiedIcon = "", label = "Copy", copiedLabel = "Copied", ms = 1600 } = {}) => {
-  const reset = () => {
-    button.classList.remove("is-copied");
-    button.innerHTML = copyIcon;
-    button.setAttribute("aria-label", label);
-    button.title = label;
-  };
+// caller (app.js owns the glyphs), and a new copy restarts the timer. The
+// labels are set from script, after the boot i18n sweep has run, so they come
+// from the translator in the page's language.
+export const showCopiedIcon = (button, { copyIcon = "", copiedIcon = "", label = hodlTText("Copy"), copiedLabel = hodlTText("Copied"), ms = 1600 } = {}) => {
+  const reset = () => resetCopiedIcon(button, { copyIcon, label });
   clearTimeout(button.copiedTimer);
   button.classList.add("is-copied");
   button.innerHTML = copiedIcon;

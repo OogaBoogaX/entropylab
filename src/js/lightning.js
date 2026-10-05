@@ -233,7 +233,7 @@ export function hodlInitLn({ journalLog } = {}) {
     }
     document.getElementById("ln-out").innerHTML = "";
     document.getElementById("ln-error").textContent = "";
-    document.getElementById("ln-session").textContent = "Session ended and accessible fields were cleared (best effort).";
+    document.getElementById("ln-session").textContent = "Accessible fields were cleared (best effort).";
   };
   for (const id of ["ln-format", "ln-network"]) {
     document.getElementById(id)?.addEventListener("change", () => {
