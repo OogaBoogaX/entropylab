@@ -919,7 +919,6 @@
   "You supply dice, cards, hex, a seed, or a key. EntropyLab derives the BIP-39 seed, master fingerprint, xpubs, and receive addresses. It does not generate entropy for you. Nothing leaves this page.": "Sie stellen Würfel, Karten, Hex, einen Seed oder einen Schlüssel bereit. EntropyLab leitet den BIP-39-Seed, den Master-Fingerabdruck, xpubs und Empfangsadressen ab. Es generiert keine Entropie für Sie. Nichts verlässt diese Seite.",
   "Derivation method": "Ableitungsmethode",
   "Edit Input": "Eingabe bearbeiten",
-  "of 99 recommended rolls": "von 99 empfohlenen Würfen",
   "bits estimated": "geschätzte Bits",
   "Passphrase (optional)": "Passphrase (optional)",
   "BIP-88 full path template · edit directly to use a custom path": "BIP-88 vollständige Pfadvorlage · direkt bearbeiten, um einen benutzerdefinierten Pfad zu verwenden",
@@ -1191,5 +1190,6 @@
   "Connection and browser warnings for this session. No secrets recorded.": "Verbindungs- und Browserwarnungen für diese Sitzung. Keine Geheimnisse aufgezeichnet.",
   "End Session: wipe this page and close the tab": "Sitzung beenden: Diese Seite löschen und den Tab schließen",
   "Clear Station": "Station löschen",
-  "Clear Inspectors": "Inspektoren löschen"
+  "Clear Inspectors": "Inspektoren löschen",
+  "of 100 recommended rolls": "von 100 empfohlenen Würfen"
 }
