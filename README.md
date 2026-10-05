@@ -27,6 +27,12 @@ import from restoring cleared secrets. Locking the journal also invalidates
 pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
 
+- A live **Security log** below Important shows the browser's initial
+  connection status, online/offline changes, and detected browser translation
+  with local timestamps. It keeps the last 100 fixed messages in page memory,
+  records no wallet data, and clears when the session ends or the page is left.
+  It sends no network probes; an Offline report is not proof of an air gap.
+
 - Accepts dice rolls, coin flips, playing-card transcripts, number-base
   transcripts (binary through base64), hexadecimal entropy, BIP39 seed
   phrases, extended keys, WIF keys, raw private keys, and Casascius mini

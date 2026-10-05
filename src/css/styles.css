@@ -265,6 +265,19 @@ button:not(:disabled):active *,
 .sources:has(+ .sources) { padding-bottom: 0; }
 /* A fine-print list steps its items like the Sources paragraphs above it. */
 .sources ul { display: grid; gap: var(--space-component); padding-left: var(--indent-list); }
+.security-log { padding: 0; overflow: hidden; }
+.security-log-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-component); padding: var(--inset-toolbar); border-bottom: 1px solid var(--border); }
+.security-log-header h2 { display: flex; align-items: center; gap: var(--space-control); margin: 0; font-size: var(--text-body); }
+.security-log-header svg { color: var(--muted); flex-shrink: 0; }
+.security-log-live { display: flex; align-items: center; gap: var(--space-snug); color: var(--muted); font-family: var(--mono); font-size: var(--text-data-small); }
+.security-log-live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue-bright); }
+.security-log-note { margin: 0; padding: var(--inset-toolbar); }
+.security-log-output { list-style: none; margin: 0; padding: var(--inset-panel); background: var(--bg); font-family: var(--mono); font-size: var(--text-data-small); line-height: 1.6; max-height: 260px; overflow: auto; }
+.security-log-output li { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); gap: var(--space-control); padding: var(--space-tight) 0; overflow-wrap: anywhere; }
+.security-log-output time { color: var(--faint); font-variant-numeric: tabular-nums; }
+.security-log-output [data-security-level] { color: var(--blue-ink); }
+.security-log-output [data-level="warning"] [data-security-level], .security-log-output [data-level="warning"] [data-security-message] { color: var(--danger-bright); }
+@media (max-width: 520px) { .card.security-log { padding: 0; } .security-log-output li { grid-template-columns: max-content minmax(0, 1fr); } .security-log-output [data-security-message] { grid-column: 1 / -1; } }
 .warn { background: color-mix(in oklab, var(--danger) 12%, var(--bg)); border-color: color-mix(in oklab, var(--danger) 40%, var(--border)); }
 .muted { color: var(--muted); font-size: var(--text-body); line-height: 1.5; }
 /* The pitch is a set of discrete claims rather than prose, so it reads as a

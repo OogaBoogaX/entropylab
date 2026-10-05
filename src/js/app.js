@@ -118,6 +118,7 @@ import { clearClipboard as hodlClearClipboard, copyText } from "./clipboard.js";
 import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
 import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-session.js";
 import { initTextServiceOptOuts, initTranslationWarning } from "./text-services.js";
+import { initSecurityLog } from "./security-log.js";
 import { initConcealOnLeave } from "./conceal-on-leave.js";
 const hodlBip39Wordlist = Object.freeze(bip39English);
 function hodlNote(key, vars) {
@@ -718,7 +719,8 @@ var hodlRootEl = document.getElementById("btc-calc");
 if (!hodlRootEl) throw new Error("#app missing");
 hodlRootEl.innerHTML = hodlShellHtml;if (/^(www\.)?entropylab\.online$/i.test(location.hostname)) document.getElementById("online-warning")?.removeAttribute("hidden");
 initTextServiceOptOuts();
-initTranslationWarning();
+var hodlSecurityLog = initSecurityLog();
+initTranslationWarning(document, () => hodlSecurityLog?.record("page-translated"));
 var hodlKeyModes = ["dice", "cards", "hex", "seed", "key"], hodlBrainLabAck = { scalar: false, hd: false }, hodlCardRanks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"], hodlDirectCardRanks = ["A", "2", "3", "4", "5", "6", "7", "8"], hodlCardSuits = [{ code: "S", symbol: "♠", label: "Spades", red: false }, { code: "H", symbol: "♥", label: "Hearts", red: true }, { code: "C", symbol: "♣", label: "Clubs", red: false }, { code: "D", symbol: "♦", label: "Diamonds", red: true }], hodlCardSuit = "", hodlCardRank = "", hodlCardMethod = "hashed", hodlSeedMethod = "words", hodlSeedZeroIndexed = false, hodlCardColemanSymbols = false, hodlKeyMode = "dice", hodlDiceMethod = "coldcard", hodlTargetWordCount = 24, hodlEntropyFormat = "hex", hodlDiceCoinPositions = [], hodlPickedLastWord = "", hodlWalletResult = null, hodlRevealPrivate = false, hodlWalletDatBirthday = "genesis", hodlModesEl = hodlElement("#modes"), hodlFormEl = hodlElement("#form"), hodlOutEl = hodlElement("#out");
 function hodlDiceFieldName(method = hodlDiceMethod) {
   if (method === "coleman") return "colemanDice";
@@ -17366,6 +17368,7 @@ function hodlApplyLocale() {
   hodlRefreshPsbtLocale();
   hodlApplyTheme(hodlReadThemeMode());
   hodlRefreshWorkspaceErrors();
+  hodlSecurityLog?.refresh();
   document.querySelectorAll("#msig-keys textarea").forEach((ta) => {
     if (ta.value) hodlCheckXpub(ta);
   });

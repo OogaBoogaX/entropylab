@@ -164,29 +164,33 @@ test("a machine-translated page shows the translation warning and keeps it up", 
   };
   try {
     const { doc, html, warning } = page("");
+    let detections = 0;
     assert.ok(warning?.hidden, "the warning must start hidden");
     const important = doc.getElementById("important");
     assert.ok(important && warning.closest("#important") === important, "the warning must sit in the Important section");
     important.removeAttribute("open");
-    initTranslationWarning(warning.ownerDocument);
+    initTranslationWarning(warning.ownerDocument, () => detections++);
     const observer = observers.at(-1);
     assert.equal(observer.target, html);
     assert.deepEqual(observer.options, { attributes: true, attributeFilter: ["class"] });
     html.setAttribute("class", "translated-pending some-theme");
     observer.callback([]);
     assert.ok(warning.hidden, "a class other than Chrome's marker must not show the warning");
+    assert.equal(detections, 0);
     html.setAttribute("class", "some-theme translated-ltr");
     observer.callback([]);
     assert.equal(warning.hidden, false, "translated-ltr must show the warning");
     assert.ok(important.hasAttribute("open"), "showing the warning must open the Important section");
+    assert.equal(detections, 1, "the security log must be notified of translation");
     assert.ok(observer.disconnected);
     html.setAttribute("class", "");
     assert.equal(warning.hidden, false, "showing the original again must not hide it: the text was already sent");
 
     // A page already translated when the app boots warns at once.
     const late = page("translated-rtl");
-    initTranslationWarning(late.warning.ownerDocument);
+    initTranslationWarning(late.warning.ownerDocument, () => detections++);
     assert.equal(late.warning.hidden, false, "translated-rtl must show the warning");
+    assert.equal(detections, 2, "translation already present at boot must be logged too");
   } finally {
     globalThis.MutationObserver = original;
   }
