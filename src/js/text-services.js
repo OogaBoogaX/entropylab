@@ -62,24 +62,42 @@ export function initTextServiceOptOuts(doc = document) {
 // Browser translation is the one service the page can see after the fact.
 // Chrome's and Edge's built-in translators send the page's text to an online
 // service; translate="no" withholds what is inside it, and the page marks
-// every element that shows a secret. Chrome then marks the root with a
-// translated-ltr or translated-rtl class. By then the text has been sent, so
-// the warning cannot undo anything: it says what happened and stays up. It is
+// every element that shows a secret. Chrome/Google marks the root with a
+// translated-ltr or translated-rtl class; Edge/Microsoft adds _msthash,
+// _msttexthash or _mstmutation attributes to elements. These are best-effort
+// browser markers, not a security boundary or a guaranteed future API.
+// Detection is after the fact, not prevention: the warning cannot undo a
+// transmission and does not prove which text was sent. It stays up. It is
 // a bullet in the Important section, so showing it opens that section too:
 // a warning inside a closed disclosure would go unseen. The callback records
 // the detection in the security log.
+const EDGE_TRANSLATION_ATTRIBUTES = ["_msthash", "_msttexthash", "_mstmutation"];
+const EDGE_TRANSLATION_SELECTOR = EDGE_TRANSLATION_ATTRIBUTES.map((name) => `[${name}]`).join(", ");
+const hasEdgeTranslationMarker = (node) => node.nodeType === 1
+  && (node.matches(EDGE_TRANSLATION_SELECTOR) || node.querySelector(EDGE_TRANSLATION_SELECTOR));
+
 export function initTranslationWarning(doc = document, onDetected = () => {}) {
   const warning = doc.getElementById("translated-warning");
   if (!warning) return;
   const root = doc.documentElement;
-  const observer = new MutationObserver(() => check());
-  const check = () => {
-    if (!/(^|\s)translated-(ltr|rtl)(\s|$)/.test(root.getAttribute("class") || "")) return;
+  let detected = false;
+  const observer = new MutationObserver((records) => check(records.some((record) => {
+    if (record.type === "attributes") {
+      return EDGE_TRANSLATION_ATTRIBUTES.includes(record.attributeName) && record.target.hasAttribute(record.attributeName);
+    }
+    return record.type === "childList" && Array.from(record.addedNodes).some(hasEdgeTranslationMarker);
+  })));
+  const check = (edgeDetected) => {
+    if (detected || (!edgeDetected && !/(^|\s)translated-(ltr|rtl)(\s|$)/.test(root.getAttribute("class") || ""))) return;
+    detected = true;
     warning.removeAttribute("hidden");
     warning.closest("details")?.setAttribute("open", "");
     observer.disconnect();
     onDetected();
   };
-  observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-  check();
+  observer.observe(root, {
+    attributes: true, attributeFilter: ["class", ...EDGE_TRANSLATION_ATTRIBUTES],
+    childList: true, subtree: true,
+  });
+  check(hasEdgeTranslationMarker(root));
 }

@@ -123,7 +123,7 @@ test("a custom coin type warns that mainnet version bytes are used (issue #357)"
   // format is never mistaken for the intended coin's.
   const api2 = new Function(
     "hodlHDKey", "hodlBase58Check", "hodlExtendedKeyVersions", "hodlNote", "hodlHex",
-    `${["hodlNetworkFamily", "hodlCoinTypeFromNetwork", "hodlNetworkFromCoinType", "hodlReadExtendedKeyVersion", "hodlReversionExtendedKey", "hodlSerializeExtendedKey", "hodlRootWalletResult"].map(loadSlice).join("\n")}
+    `${["hodlNetworkFamily", "hodlCoinTypeFromNetwork", "hodlNetworkFromCoinType", "hodlReadExtendedKeyVersion", "hodlReversionExtendedKey", "hodlSerializeExtendedKey", "hodlNodeHasPrivateKey", "hodlRootWalletResult"].map(loadSlice).join("\n")}
      var hodlError = (k) => new Error(k);
      return { hodlRootWalletResult, hodlNetworkFromCoinType };`,
   )(

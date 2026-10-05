@@ -191,7 +191,9 @@ test("parseChildIndex accepts plain decimal notation only (audit A1H-3)", () => 
 test("watch-only roots cannot derive children", () => {
   let watch = HDKey.fromExtendedKey(root.publicExtendedKey);
   assert.equal(watch.privateKey, null);
-  assert.throws(() => deriveBip39(watch, { words: 12 }), /private key|Watch-only/);
+  // Refused inside derive(): the fully-hardened path rejects a watch-only
+  // node before any private key exists, with no copying preflight (#546).
+  assert.throws(() => deriveBip39(watch, { words: 12 }), /private key|Watch-only|hardened child key/);
 });
 
 test("wiping a result discards secret bytes", () => {

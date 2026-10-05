@@ -82,7 +82,11 @@ export function assertValidSecp256k1Secret(bytes) {
 
 export function deriveBip85Entropy(root, path) {
   if (!root || typeof root.derive !== "function") throw new Error("BIP-85 needs a BIP32 root private key.");
-  if (!root.privateKey) throw new Error("BIP-85 needs a BIP32 root private key. Watch-only keys cannot derive children.");
+  // No private-key preflight: a truthiness read of the getter would copy the
+  // key out and drop it unzeroed. The fully-hardened path refuses a watch-only
+  // node in derive() ("Could not derive hardened child key") before any
+  // private material exists, and the final child's getter copy is the one
+  // wiped in finally — the only private key this function ever reads.
   let child = root.derive(path), key = child.privateKey;
   try {
     if (!key) throw new Error("BIP-85 needs a BIP32 root private key. Watch-only keys cannot derive children.");

@@ -24,6 +24,7 @@
 import { renderSVG as uqrRenderSvg } from "uqr";
 import { createModal } from "./modal.js";
 import { copyText, showCopiedIcon } from "./clipboard.js";
+import { tHtml as hodlT, t as hodlTText, tAttr as hodlTAttr } from "./i18n.js";
 
 const NETWORK_TAG_ID = "network-status";
 
@@ -58,19 +59,21 @@ const openOverlay = (url, label, opener) => {
   if (!overlayEl) return;
   const qrSvg = referenceQrSvg(url);
   const card = overlayEl.querySelector(".qr-ref-card");
+  // Built on every opening, long after the boot i18n sweep, so its words go
+  // through the translators (under the names the catalog extractor reads).
   card.innerHTML = `
     <p class="modal-title qr-ref-title">${escapeHtml(label)}</p>
-    <div class="qr-ref-qr" aria-label="QR code for ${escapeHtml(url)}">${qrSvg}</div>
+    <div class="qr-ref-qr" aria-label="${hodlTAttr("QR code for {url}", { url })}">${qrSvg}</div>
     <p class="qr-ref-url mono">${escapeHtml(url)}</p>
-    <p class="qr-ref-hint muted">Scan with a phone camera to open this reference on an online device.</p>
+    <p class="qr-ref-hint muted">${hodlT("Scan with a phone camera to open this reference on an online device.")}</p>
     <div class="row modal-actions">
-      <button type="button" class="copy-button boxed-copy-button" id="qr-ref-copy" aria-label="Copy URL" title="Copy URL">${icons.copy()}</button>
-      <button class="btn red" id="qr-ref-close" type="button">Close</button>
+      <button type="button" class="copy-button boxed-copy-button" id="qr-ref-copy" aria-label="${hodlTAttr("Copy URL")}" title="${hodlTAttr("Copy URL")}">${icons.copy()}</button>
+      <button class="btn red" id="qr-ref-close" type="button">${hodlT("Close")}</button>
     </div>`;
   const copyBtn = card.querySelector("#qr-ref-copy");
   copyBtn.addEventListener("click", () => {
     copyText(url, { host: overlayEl }).then((copied) => {
-      if (copied && modal.isOpen()) showCopiedIcon(copyBtn, { copyIcon: icons.copy(), copiedIcon: icons.copied(), label: "Copy URL" });
+      if (copied && modal.isOpen()) showCopiedIcon(copyBtn, { copyIcon: icons.copy(), copiedIcon: icons.copied(), label: hodlTText("Copy URL") });
     });
   });
   card.querySelector("#qr-ref-close").addEventListener("click", closeOverlay);
