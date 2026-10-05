@@ -66,8 +66,9 @@ export function initTextServiceOptOuts(doc = document) {
 // translated-ltr or translated-rtl class. By then the text has been sent, so
 // the warning cannot undo anything: it says what happened and stays up. It is
 // a bullet in the Important section, so showing it opens that section too:
-// a warning inside a closed disclosure would go unseen.
-export function initTranslationWarning(doc = document) {
+// a warning inside a closed disclosure would go unseen. The callback records
+// the detection in the security log.
+export function initTranslationWarning(doc = document, onDetected = () => {}) {
   const warning = doc.getElementById("translated-warning");
   if (!warning) return;
   const root = doc.documentElement;
@@ -77,6 +78,7 @@ export function initTranslationWarning(doc = document) {
     warning.removeAttribute("hidden");
     warning.closest("details")?.setAttribute("open", "");
     observer.disconnect();
+    onDetected();
   };
   observer.observe(root, { attributes: true, attributeFilter: ["class"] });
   check();

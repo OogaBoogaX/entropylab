@@ -62,6 +62,43 @@
 
   await wait(500);
 
+  await test("security log follows Important and starts with browser connectivity", () => {
+    const log = document.getElementById("security-log");
+    const output = document.getElementById("security-log-output");
+    equal(document.getElementById("important").nextElementSibling, log);
+    assert(output && output.getAttribute("role") === "log", "security events are not accessible as a log");
+    const rows = [...output.children];
+    equal(rows[0]?.dataset.event, "session-started");
+    equal(rows[1]?.dataset.event, navigator.onLine ? "network-online" : "network-offline");
+    assert(rows.every((row) => row.querySelector("time")?.dateTime && row.querySelector("[data-security-message]")?.textContent), "an event lacks its timestamp or message");
+  });
+
+  await test("security log and header follow connectivity changes without a network probe", () => {
+    const output = document.getElementById("security-log-output");
+    const original = Object.getOwnPropertyDescriptor(navigator, "onLine");
+    const before = state.network.length;
+    try {
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+      window.dispatchEvent(new Event("online"));
+      const count = output.children.length;
+      window.dispatchEvent(new Event("online"));
+      equal(output.children.length, count);
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+      window.dispatchEvent(new Event("offline"));
+      equal(output.lastElementChild.dataset.event, "network-offline");
+      equal(document.getElementById("network-status").dataset.state, "offline");
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+      window.dispatchEvent(new Event("online"));
+      equal(output.lastElementChild.dataset.event, "network-online");
+      equal(document.getElementById("network-status").dataset.state, "online");
+      equal(state.network.length, before);
+    } finally {
+      if (original) Object.defineProperty(navigator, "onLine", original);
+      else delete navigator.onLine;
+      window.dispatchEvent(new Event(navigator.onLine ? "online" : "offline"));
+    }
+  });
+
   if (new URLSearchParams(location.search).get("offline-test") === "1") {
     await test("offline mode keeps online-only presentation disabled", () => {
       const warning = document.getElementById("online-warning");
@@ -6271,6 +6308,28 @@
     }
   });
 
+  await test("browser translation adds a latched warning to the security log", async () => {
+    // Earlier tests deliberately dispatch pagehide; resume the public log
+    // through the same persisted-pageshow boundary a restored page uses.
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+    const output = document.getElementById("security-log-output");
+    const root = document.documentElement;
+    const original = root.getAttribute("class");
+    try {
+      root.classList.add("translated-ltr");
+      await until(() => output.querySelector('[data-event="page-translated"]'), "translation security event");
+      assert(!document.getElementById("translated-warning").hidden, "the existing translation alert did not appear");
+      const count = output.children.length;
+      root.classList.remove("translated-ltr");
+      await wait(0);
+      equal(output.children.length, count);
+      equal(output.lastElementChild.dataset.event, "page-translated");
+    } finally {
+      if (original === null) root.removeAttribute("class");
+      else root.setAttribute("class", original);
+    }
+  });
+
   // End session wipes what the page holds and asks the browser to close the
   // tab, the one step the residue audit found removes every copy. It ends the
   // page, so it runs after every test that needs one. window.close and the
@@ -6305,6 +6364,7 @@
     const memories = window.__entropyLabWasmMemory();
     assert(memories.every((buffer) => new Uint8Array(buffer).some((b) => b !== 0)), "a module's memory was empty before End session");
     const button = document.getElementById("end-session");
+    const securityOutput = document.getElementById("security-log-output");
     const overlay = () => document.getElementById("end-session-overlay");
     assert(button && overlay(), "End session control or its dialog is missing");
     // Cancel ends nothing.
@@ -6322,6 +6382,7 @@
     equal(written.at(-1), "");
     equal(closed, 1);
     assert(!document.getElementById("btc-calc"), "the app's page survived End session");
+    equal(securityOutput.children.length, 0);
     assert(!document.body.textContent.includes("legal winner"), "the ended screen shows the session's words");
     let refused = "";
     try {

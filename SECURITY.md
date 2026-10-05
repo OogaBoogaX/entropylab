@@ -19,6 +19,16 @@ material. Its security posture rests on the following model:
 
 - The tool is self-contained and designed for offline, air-gapped use. It does
   not intentionally transmit sensitive data to any server.
+- The Security log below Important records initial browser-reported
+  connectivity, connectivity changes, and detected browser translation.
+  Its API accepts only fixed event codes, never arbitrary messages, errors,
+  user input or wallet material. The last 100 events and local timestamps
+  stay in page memory; pagehide (including End session) clears them. A
+  back/forward-cache restore starts fresh and retains any latched translation
+  warning. No status probe or log export is sent over the network or saved
+  in browser storage. Browser connectivity does not establish internet
+  reachability or a physical air gap, and the translation marker does not
+  identify the translation service or prove what text it received.
 - The hosted site registers a service worker only on the exact HTTPS
   `entropylab.online` or `www.entropylab.online` origin. It stores only the
   self-contained application entry points in a content-versioned cache so an

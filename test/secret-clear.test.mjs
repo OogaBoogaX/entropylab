@@ -1083,11 +1083,14 @@ test("changing the language outside Keys keeps the selected key's wallet", async
       "hodlUpdateCoinTypeHelp", "hodlUpdateDerivationPathPreview", "hodlUpdateMsigScriptDetection",
       "hodlUpdateMsigAccount", "hodlShowMsig", "hodlRefreshKeyResult", "hodlRefreshPsbtLocale", "hodlApplyTheme", "hodlRefreshWorkspaceErrors"])
       context[name] = () => {};
+    let logRefreshes = 0;
+    context.hodlSecurityLog = { refresh: () => logRefreshes++ };
     vm.runInContext(functionSource("hodlApplyLocale"), context);
     leaveKeys("msig");
     // The Multisig workspace shows its own result, or none.
     context.hodlWalletResult = shown;
     context.hodlApplyLocale();
+    assert.equal(logRefreshes, 1, "the security log must refresh with the locale");
     assert.equal(state.result, result, `${shown ? "with" : "without"} a multisig result: the language change dropped the key's wallet`);
     context.hodlDisposeDroppedWallets();
     assert.deepEqual(keys, vectorRowKeys, "the language change got the selected wallet zeroed");
