@@ -1185,5 +1185,15 @@
   "Signed practice coins": "Pièces d'entraînement signées",
   "same formats as testnet · tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "mêmes formats que testnet · tb1q…, tb1p… · tpub/upub/vpub · WIF 9/c · type de pièce 1'",
   "Local sandbox coins": "Pièces de bac à sable local",
-  "addresses m…/n…, 2…, bcrt1q…, bcrt1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "adresses m…/n…, 2…, bcrt1q…, bcrt1p… · tpub/upub/vpub · WIF 9/c · type de pièce 1'"
+  "addresses m…/n…, 2…, bcrt1q…, bcrt1p… · tpub/upub/vpub · WIF 9/c · coin type 1'": "adresses m…/n…, 2…, bcrt1q…, bcrt1p… · tpub/upub/vpub · WIF 9/c · type de pièce 1'",
+  "INFO": "INFO",
+  "Security log started. Events stay in this page for this session.": "Journal de sécurité démarré. Les événements restent sur cette page pour cette session.",
+  "WARN": "AVERTISSEMENT",
+  "ONLINE: your browser reports a network connection. Do not enter wallet secrets on a connected device.": "EN LIGNE : votre navigateur signale une connexion réseau. N'entrez pas de secrets de portefeuille sur un appareil connecté.",
+  "OFFLINE: your browser reports no network connection. This does not prove an air gap.": "HORS LIGNE : votre navigateur ne signale aucune connexion réseau. Cela ne prouve pas un air gap.",
+  "Connection status is unavailable. Treat this device as connected.": "L'état de la connexion est indisponible. Traitez cet appareil comme s'il était connecté.",
+  "Browser page translation detected. An online translator may receive page text. Turn it off and use EntropyLab's language menu.": "Traduction de page du navigateur détectée. Un traducteur en ligne peut recevoir le texte de la page. Désactivez-la et utilisez le menu de langue d'EntropyLab.",
+  "Security log": "Journal de sécurité",
+  "Live": "En direct",
+  "Connection and browser warnings for this session. No secrets recorded.": "Avertissements de connexion et de navigateur pour cette session. Aucun secret enregistré."
 }
