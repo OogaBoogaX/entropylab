@@ -51,6 +51,7 @@ import { initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFr
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
+import { hodlInitCodex32 } from "./codex32.js";
 import { hodlTapKeySigs, hodlTapScriptSigs, hodlTapSighashProblems } from "./psbt-schnorr.js";
 import {
   buildImportDescriptorsJson,
@@ -14193,6 +14194,8 @@ function hodlShowWorkspace(id) {
   document.getElementById("sp-card").hidden = id !== "sp";
   document.getElementById("vanity-card").hidden = id !== "vanity";
   document.getElementById("ln-card").hidden = id !== "ln";
+  document.getElementById("codex32-card").hidden = id !== "codex32";
+  document.getElementById("codex32-tool-intro").hidden = id !== "codex32";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
   ["bip85", "sp", "msig", "calc", "vanity", "ln"].forEach((tool) => {
@@ -14346,8 +14349,8 @@ async function hodlLoadTestKeys() {
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
 var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "PSBT", "PSBT"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity"], ...(__ENTROPYLAB_TEST_HOOKS__ ? [["journal", "Journal", "Journal"]] : [])];
-// Lightning and Journal are held back from release navigation while their
-// implementations remain in source. Test builds keep Journal reachable so its
+// Lightning, Journal, and Codex32 are held back from release navigation while their
+// implementations remain in source. Codex32 is an MS1 calculator only. Test builds keep Journal reachable so its
 // behavior and backup compatibility stay covered until the UI is ready.
 var hodlPsbtTool = "inspector";
 function hodlSyncPsbtTool() {
@@ -16822,6 +16825,7 @@ function hodlInitWorkspace() {
   hodlInitVanity();
   hodlInitSp();
   hodlInitLn({ journalLog: hodlJournalLog });
+  hodlInitCodex32();
 }
 var hodlKeyClearSyncQueued = false, hodlMsigClearSyncQueued = false, hodlDeriveSyncQueued = false;
 function hodlQueueKeyClearButtonSync() {
@@ -17239,6 +17243,12 @@ function hodlInitSecretFieldAutoClear() {
     let lnOut = document.getElementById("ln-out"), lnError = document.getElementById("ln-error");
     if (lnOut) lnOut.innerHTML = "";
     if (lnError) lnError.textContent = "";
+    let codex32Shares = document.getElementById("codex32-shares"), codex32Index = document.getElementById("codex32-index");
+    if (codex32Shares) codex32Shares.value = "";
+    if (codex32Index) codex32Index.value = "";
+    let codex32Out = document.getElementById("codex32-out"), codex32Error = document.getElementById("codex32-error");
+    if (codex32Out) codex32Out.textContent = "";
+    if (codex32Error) codex32Error.textContent = "";
     // Found vanity passphrases and the brought-in salt are private key
     // material; stop the grinder and drop them too. The cancelled grinder
     // keeps the run's words and passphrase in its callbacks, so drop it with

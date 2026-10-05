@@ -51,7 +51,7 @@
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="BIP-85 Child"><span class="workspace-tab-full">BIP-85 Child</span><span class="workspace-tab-short">BIP-85</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Silent Payments"><span class="workspace-tab-full">Silent Payments</span><span class="workspace-tab-short">SP</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Vanity Address"><span class="workspace-tab-full">Vanity Address</span><span class="workspace-tab-short">Vanity</span></button>
-        <!-- Lightning and Journal are held back; see hodlWorkspaceTabs in app.js. -->
+        <!-- Lightning, Journal, and Codex32 are held back; see hodlWorkspaceTabs in app.js. -->
       </div>
     </nav>
       <div class="workspace-panel" id="workspace-panel">
@@ -778,6 +778,28 @@ words, pick one of the checksum words.</span></span>
         <p class="err" id="ln-error" role="alert"></p>
         <div id="ln-out" aria-live="polite"></div>
         <p class="muted">Seeds and derived keys remain in this page only and are never stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      </section>
+    <div class="tool-intro edge-note is-info" id="codex32-tool-intro" hidden>
+        <h2>Codex32 MS1</h2>
+        <p class="muted tool-intro-note">BIP-93 master-seed strings only. You supply the shares. Checksum, recover, and derive are deterministic. This does not generate a wallet or split a seed. Nothing leaves this page.</p>
+      </div>
+      <section class="card no-print tool-card" id="codex32-card" role="tabpanel" hidden>
+        <label class="field">MS1 strings
+          <textarea id="codex32-shares" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="One MS1 string per line" aria-describedby="codex32-shares-help"></textarea>
+          <span class="field-note" id="codex32-shares-help">Calculate Checksum takes one header and payload, without a checksum. Recover and Derive take exactly the threshold number of valid MS1 strings. Other prefixes are rejected.</span>
+        </label>
+        <label class="field">New share index
+          <input id="codex32-index" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="1" aria-describedby="codex32-index-help">
+          <span class="field-note" id="codex32-index-help">One bech32 character, used only by Derive share. Not used for checksum or recovery.</span>
+        </label>
+        <div class="row tool-actions">
+          <button class="btn primary" id="codex32-checksum" type="button">Calculate Checksum</button>
+          <button class="btn secondary" id="codex32-recover" type="button">Recover secret</button>
+          <button class="btn secondary" id="codex32-derive" type="button">Derive share</button>
+          <button class="btn red" id="codex32-clear" type="button">Clear</button>
+        </div>
+        <p class="err" id="codex32-error" role="alert"></p>
+        <pre class="mono" id="codex32-out" aria-live="polite"></pre>
       </section>
     <div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>
         <h2>Entropy Journal</h2>
