@@ -282,6 +282,18 @@ material. Its security posture rests on the following model:
 - Material involving loss of funds (incorrect derivations, exfiltration of
   secret data, injected script execution in the generated HTML, unexpected
   network egress) is treated as a security issue.
+- The Android wrapper in `android/` embeds the pinned v1.0.0rc1 release
+  `entropylab.html` (vendored bytes, SHA-256
+  `7f8685814e2bab0c80f75dd6d2cff1b3354bee51faecd65942a73e12968808a0`, verified
+  against that release's signed checksum manifest) in a WebView. Its offline
+  guarantee is enforced by the platform: the manifest requests no permissions
+  (including `INTERNET`), the WebView blocks network loads and refuses any
+  load that is not the bundled asset, backups and device transfer are
+  excluded, and a SHA-256 pin check fails closed at build time and again
+  before the calculator opens. The wrapper adds the Android WebView
+  (Chromium) to the trusted computing base — a WebView or WebView-update
+  compromise is a risk the plain HTML path does not carry. It is a
+  debug-build-only artifact and has not been tested on a physical device.
 
 ## What the page can and cannot erase
 
