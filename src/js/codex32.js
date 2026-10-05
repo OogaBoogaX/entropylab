@@ -235,6 +235,7 @@ export function deriveCodex32Share(shares, index) {
   const parsed = shareSet(shares);
   const character = canonicalize(index);
   if (character.length !== 1 || !CHAR_AT.has(character)) throw new Error("Share index must be one bech32 character.");
+  if (character === "s") throw new Error("Deriving to index s recovers the secret; use Recover secret instead.");
   if (parsed.some((share) => share.index === character)) throw new Error("That share index is already in the set.");
   const data = interpolate(parsed.map((share) => share.data), CHAR_AT.get(character));
   const text = encodeData(data);

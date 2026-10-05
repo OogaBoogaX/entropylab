@@ -786,11 +786,11 @@ words, pick one of the checksum words.</span></span>
       <section class="card no-print tool-card" id="codex32-card" role="tabpanel" hidden>
         <label class="field">MS1 strings
           <textarea id="codex32-shares" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="One MS1 string per line" aria-describedby="codex32-shares-help"></textarea>
-          <span class="field-note" id="codex32-shares-help">Calculate Checksum takes one header and payload, without a checksum. Recover and Derive take exactly the threshold number of valid MS1 strings. Other prefixes are rejected.</span>
+          <span class="field-note" id="codex32-shares-help">Calculate Checksum takes one header and payload, without a checksum. Recover and Derive take exactly the threshold number of valid MS1 strings. Other prefixes are rejected. A 48, 54, or 61 character string whose checksum does not match is treated as a header and payload and completed; characters are never substituted to repair it.</span>
         </label>
         <label class="field">New share index
           <input id="codex32-index" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="1" aria-describedby="codex32-index-help">
-          <span class="field-note" id="codex32-index-help">One bech32 character, used only by Derive share. Not used for checksum or recovery.</span>
+          <span class="field-note" id="codex32-index-help">One bech32 character, used only by Derive share. Not used for checksum or recovery. Index s is refused: deriving to it would reveal the secret.</span>
         </label>
         <div class="row tool-actions">
           <button class="btn primary" id="codex32-checksum" type="button">Calculate Checksum</button>
