@@ -68,6 +68,8 @@ test("an extended private key is refused and not encoded", () => {
 test("the watch-only QR button uses the shared animated overlay, not a new tab", () => {
   assert.match(app, /kind === "watch"/);
   assert.match(app, /watchOnly:\s*true/);
-  assert.match(app, /BIP 388 wallet policy/);
+  // The label must reach the field through the translation call site; the
+  // copy itself is content, not contract (AGENTS.md).
+  assert.match(app, /hodlCopyFieldHtml\(hodlTText\("BIP 388 wallet policy"\)/);
   assert.doesNotMatch(app, /workspace.*watch-only-ur|data-tab="ur"/);
 });

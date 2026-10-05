@@ -199,7 +199,7 @@ export function hodlUrParsePart(raw) {
   return { type, seq, count, payload, fountain, part };
 }
 
-function hodlUrEncodeMessage(type, message, options = {}) {
+export function hodlUrEncodeMessage(type, message, options = {}) {
   if (!/^[a-z0-9-]+$/.test(type)) throw new Error("Bad UR type.");
   if (!(message instanceof Uint8Array) || !message.length) throw new Error("Need UR message bytes.");
   const maxBytes = Number.isFinite(options.maxBytes) ? options.maxBytes : 200;
