@@ -1190,5 +1190,8 @@
   "Network status: offline (reported by the browser; not proof of an air gap).": "Netzwerkstatus: offline (vom Browser gemeldet; kein Beweis für einen Air Gap).",
   "Network status: unavailable.": "Netzwerkstatus: nicht verfügbar.",
   "Browser page translation detected.": "Browserseitenübersetzung erkannt.",
-  "Important notes": "Wichtige Hinweise"
+  "Important notes": "Wichtige Hinweise",
+  "QR code for {url}": "QR-Code für {url}",
+  "Scan with a phone camera to open this reference on an online device.": "Scannen Sie mit der Kamera eines Telefons, um diese Referenz auf einem Online-Gerät zu öffnen.",
+  "Copy URL": "URL kopieren"
 }

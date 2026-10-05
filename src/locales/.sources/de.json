@@ -1190,5 +1190,8 @@
   "Network status: offline (reported by the browser; not proof of an air gap).": "054ae3a70758ce6ca17023afe7e2f0830ec990625ea17698f4d1c1912f2d75bc",
   "Network status: unavailable.": "e75192a2c34ccbc551c212f0b1c37402d5d956fcb9b365eb2d1251625fce3748",
   "Browser page translation detected.": "8e918b94621936c0188b8bc06da5ae86adf04107cd161aa4f8c4c4f1091c72d3",
-  "Important notes": "ddc2d03c2a4906f2a1044ece7a9e5f14854ce594fe6ad3dba3e9fe70e8e4cab2"
+  "Important notes": "ddc2d03c2a4906f2a1044ece7a9e5f14854ce594fe6ad3dba3e9fe70e8e4cab2",
+  "QR code for {url}": "5fa78a5d79fc8cb7d49bbc068a27ae31d0769959a44bad9b75501b38f4d76aa0",
+  "Scan with a phone camera to open this reference on an online device.": "e26d9771c0480d38bdb75018089b1837f297d7e8895474005499dc758c6384ec",
+  "Copy URL": "b26d1037f1c2da31a0296d915982f12049f91bfedb998b105ce967b73a796699"
 }
