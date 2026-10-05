@@ -1,8 +1,27 @@
 # EntropyLab Android wrapper
 
-This directory is a thin Android wrapper around the release file `entropylab.html` that already sits at the repository root. It does not generate entropy, sign, store keys, or add a workspace tab. It does not rebuild WASM and it does not modify `src/`.
+This directory is a thin Android wrapper around the **release** file `entropylab.html`. It does not generate entropy, sign, store keys, or add a workspace tab. It does not rebuild WASM and it does not modify `src/`.
 
-The wrapper embeds that HTML only after its SHA-256 matches both `SHA256SUMS.txt` and `ENTROPYLAB_HTML.sha256` (the pin file in this directory). A mismatch fails the build and, if one were ever packaged, blocks the calculator from opening.
+## Pinned release bytes
+
+The HTML the APK embeds is **vendored** at `app/src/main/assets/entropylab.html`. These are the published **v1.0.0rc1** release bytes, SHA-256 `7f8685814e2bab0c80f75dd6d2cff1b3354bee51faecd65942a73e12968808a0`, taken from the GitHub release and verified against that release's `SHA256SUMS.txt`/`SHA256SUMS.asc` before committing. The same digest is the pin in `ENTROPYLAB_HTML.sha256`.
+
+The wrapper deliberately does **not** package the `entropylab.html` at the repository root: that file is a CI artifact rebuilt and recommitted on every merge to `rock`, so a pin against it goes stale on merge. The vendored asset changes only when this module is deliberately updated to a new release.
+
+The build and the app both fail closed on the pin:
+
+- `verifyEntropylabHtml` (Gradle, wired into `preBuild`) hashes the vendored asset and refuses the build unless it matches `ENTROPYLAB_HTML.sha256`.
+- At runtime the app re-hashes the packaged asset and compares it to the pin baked into `BuildConfig.HTML_SHA256`; a mismatch shows a blocking message and the calculator will not open.
+- `HtmlPinTest` (below) additionally pins both to the attested release digest, so the pin file cannot drift from the release it claims to be.
+
+### Updating to a future release
+
+1. Download `entropylab.html`, `SHA256SUMS.txt`, and `SHA256SUMS.asc` from the new GitHub release tag.
+2. Verify: `gpg --verify SHA256SUMS.asc SHA256SUMS.txt`, then `sha256sum -c SHA256SUMS.txt`.
+3. Replace `app/src/main/assets/entropylab.html` with the verified file.
+4. Write the new digest into `ENTROPYLAB_HTML.sha256` (`<sha256>  entropylab.html`).
+5. Update the `RELEASE_SHA256` constant in `app/src/test/java/online/entropylab/android/HtmlPinTest.java` and the tag named in this section.
+6. Run `HtmlPinTest` and `./gradlew :app:assembleDebug`; the packaged asset must hash to the new digest.
 
 ## What the app does
 
@@ -20,13 +39,13 @@ JDK 17 or newer, and an Android SDK with platform 36. Point `ANDROID_HOME` at th
 ./gradlew :app:assembleDebug
 ```
 
-The debug APK is `app/build/outputs/apk/debug/app-debug.apk` only after that command succeeds. This README does not claim an APK exists.
+The debug APK is `app/build/outputs/apk/debug/app-debug.apk` only after that command succeeds. This README does not claim an APK exists. Only debug builds have been produced; the wrapper has not been tested on a physical device.
 
-The JVM pin check does not need the SDK:
+The JVM pin check does not need the SDK. From this directory:
 
 ```sh
 javac -d build/pincheck app/src/main/java/online/entropylab/android/HtmlPin.java app/src/test/java/online/entropylab/android/HtmlPinTest.java
-java -cp build/pincheck online.entropylab.android.HtmlPinTest ..
+java -cp build/pincheck online.entropylab.android.HtmlPinTest
 ```
 
-`HtmlPinTest` hashes `../entropylab.html` and compares it to `../SHA256SUMS.txt` and `ENTROPYLAB_HTML.sha256`.
+`HtmlPinTest` hashes `app/src/main/assets/entropylab.html` and compares it to `ENTROPYLAB_HTML.sha256` and the attested v1.0.0rc1 release digest.

@@ -5,8 +5,10 @@ plugins {
 }
 
 val repoRoot = rootProject.projectDir.parentFile
-val htmlFile = repoRoot.resolve("entropylab.html")
-val sumsFile = repoRoot.resolve("SHA256SUMS.txt")
+// The packaged bytes are the vendored v1.0.0rc1 release asset, pinned by
+// ENTROPYLAB_HTML.sha256 — not the repo-root entropylab.html, which CI
+// rebuilds and recommits on every merge to rock.
+val htmlFile = project.file("src/main/assets/entropylab.html")
 val pinFile = rootProject.projectDir.resolve("ENTROPYLAB_HTML.sha256")
 
 fun sha256Hex(file: File): String {
@@ -37,22 +39,14 @@ val pinnedHash = hashToken(pinFile.readText(), "pin file")
 
 tasks.register("verifyEntropylabHtml") {
     inputs.file(htmlFile)
-    inputs.file(sumsFile)
     inputs.file(pinFile)
     doLast {
         val actual = sha256Hex(htmlFile)
         val pin = hashToken(pinFile.readText(), "pin file")
-        val sums = hashToken(sumsFile.readText(), "SHA256SUMS.txt")
-        if (actual != pin || actual != sums) {
-            throw GradleException("Refusing to embed entropylab.html: SHA-256 $actual pin $pin SHA256SUMS $sums")
+        if (actual != pin) {
+            throw GradleException("Refusing to package entropylab.html: SHA-256 $actual pin $pin")
         }
     }
-}
-
-val embedHtml = tasks.register<Copy>("embedEntropylabHtml") {
-    dependsOn("verifyEntropylabHtml")
-    from(htmlFile)
-    into(layout.buildDirectory.dir("generated/entropylab-assets"))
 }
 
 android {
@@ -83,8 +77,6 @@ android {
             isMinifyEnabled = false
         }
     }
-
-    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/entropylab-assets"))
 }
 
-tasks.named("preBuild").configure { dependsOn(embedHtml) }
+tasks.named("preBuild").configure { dependsOn("verifyEntropylabHtml") }

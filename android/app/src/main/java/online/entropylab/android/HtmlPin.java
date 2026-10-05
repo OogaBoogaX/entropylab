@@ -33,11 +33,10 @@ public final class HtmlPin {
         throw new IllegalArgumentException("pin does not name entropylab.html");
     }
 
-    public static void check(String actual, String pinText, String sumsText) {
+    public static void check(String actual, String pinText) {
         String pin = hashToken(pinText);
-        String sums = hashToken(sumsText);
-        if (!actual.equals(pin) || !actual.equals(sums)) {
-            throw new IllegalStateException("Refusing entropylab.html: SHA-256 " + actual + " pin " + pin + " SHA256SUMS " + sums);
+        if (!actual.equals(pin)) {
+            throw new IllegalStateException("Refusing entropylab.html: SHA-256 " + actual + " pin " + pin);
         }
     }
 }
