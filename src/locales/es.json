@@ -283,8 +283,6 @@
   "{n} rolls of a fair six-sided die ≈ {bits} bits.": "{n} tiradas de un dado justo de seis caras ≈ {bits} bits.",
   "Only {have} of {need} recommended fair-die rolls were entered. The {words}-word phrase is deterministic, but its security cannot exceed the approximately {bits} bits supplied. Use only for testing until the recommendation is met.": "Solo se ingresaron {have} de las {need} tiradas recomendadas de un dado justo. La frase de {words} palabras es determinista, pero su seguridad no puede superar los aproximadamente {bits} bits aportados. Úsala solo para pruebas hasta cumplir la recomendación.",
   "All {n} rolls, including {extra} beyond the recommendation, are included in the hash.": "Todas las {n} tiradas, incluidas {extra} más allá de la recomendación, se incluyen en el hash.",
-  "Hashed rolls / Dice [1-6]: convert every 6 to 0, SHA-256 hash the complete mapped digit string, then use the first {bits} bits for the selected {words}-word seed. This matches the method used by Keystone.": "Tiradas con hash / Dados [1-6]: convierte cada 6 en 0, aplica SHA-256 a la cadena completa de dígitos mapeados y usa los primeros {bits} bits para la semilla de {words} palabras seleccionada. Esto coincide con el método usado por Keystone.",
-  "Hashed rolls / Base 10 [0-9]: SHA-256 hash the complete original dice digit string, then use the first {bits} bits for the selected {words}-word seed. This matches COLDCARD and SeedSigner.": "Tiradas con hash / Base 10 [0-9]: aplica SHA-256 a la cadena original completa de dígitos de los dados y usa los primeros {bits} bits para la semilla de {words} palabras seleccionada. Esto coincide con COLDCARD y SeedSigner.",
   "D++: {groups} of {target} positional D8 + D16 + D16 groups entered; {valid} valid ({have} of {need} required results).": "D++: {groups} de {target} grupos posicionales D8 + D16 + D16 ingresados; {valid} válidos ({have} de {need} resultados requeridos).",
   "D++ D16 results use the hexadecimal faces 0 through F exactly as shown on the dice.": "Los resultados D++ D16 usan las caras hexadecimales 0 a F exactamente como se muestran en los dados.",
   "{die} result {value}": "Resultado {die} {value}",
@@ -744,7 +742,6 @@
   "Dice rolls (each word five D6 and a sixth D6 as a coin flip)": "Tiradas de dados (cada palabra cinco D6 y un sexto D6 como lanzamiento de moneda)",
   "Dice rolls (D6)": "Tiradas de dados (D6)",
   "Dice roll options": "Opciones de tirada de dados",
-  "Dice [1-6] / Hashed rolls": "Dados [1-6] / Tiradas con hash",
   "show how direct word selection produces each BIP39 index": "muestra cómo la selección directa de palabras produce cada índice BIP39",
   "Card options": "Opciones de cartas",
   "Undo": "Deshacer",
@@ -1183,7 +1180,6 @@
   "Clear Station": "Borrar estación",
   "Clear Inspectors": "Borrar inspectores",
   "of 100 recommended rolls": "de las 100 tiradas recomendadas",
-  "Base 10 [0-9] / Hashed rolls": "Base 10 [0-9] / Tiradas con hash",
   " (1–3 Heads, 4–6 Tails)": " (1–3 Caras, 4–6 Cruces)",
   "Security log started.": "Registro de seguridad iniciado.",
   "Network status: online (reported by the browser).": "Estado de red: en línea (informado por el navegador).",
@@ -1193,5 +1189,9 @@
   "Important notes": "Notas importantes",
   "QR code for {url}": "Código QR para {url}",
   "Scan with a phone camera to open this reference on an online device.": "Escanea con la cámara de un teléfono para abrir esta referencia en un dispositivo en línea.",
-  "Copy URL": "Copiar URL"
+  "Copy URL": "Copiar URL",
+  "Hashed rolls / Base 6 [0-5]: convert every 6 to 0, SHA-256 hash the complete mapped digit string, then use the first {bits} bits for the selected {words}-word seed. This matches the method used by Keystone.": "Tiradas hash / Base 6 [0-5]: convierte cada 6 en 0, hashea SHA-256 la cadena de dígitos mapeada completa, luego usa los primeros {bits} bits para la semilla seleccionada de {words} palabras. Esto coincide con el método utilizado por Keystone.",
+  "Hashed rolls / Base 10 [1-6]: SHA-256 hash the complete original dice digit string, then use the first {bits} bits for the selected {words}-word seed. This matches COLDCARD and SeedSigner.": "Tiradas hash / Base 10 [1-6]: hashea SHA-256 la cadena de dígitos de dados original completa, luego usa los primeros {bits} bits para la semilla seleccionada de {words} palabras. Esto coincide con COLDCARD y SeedSigner.",
+  "Base 10 [1-6] / Hashed rolls": "Base 10 [1-6] / Tiradas hash",
+  "Base 6 [0-5] / Hashed rolls": "Base 6 [0-5] / Tiradas hash"
 }
