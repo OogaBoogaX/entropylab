@@ -1,7 +1,8 @@
 // The footer build stamp: the page closes with the version, the short commit
 // hash and a LifeHash of the commit, so any downloaded copy identifies the
 // exact source revision it was built from. The build stamps the tokens
-// (git rev-parse HEAD, "unknown" without git metadata); the app renders the
+// (the last commit that changed a build input, "unknown" without git
+// metadata; build-commit.test.mjs owns which commit); the app renders the
 // LifeHash at boot from the stamped data-commit. The ui-defaults suite owns
 // the footer markup shape; this suite owns the stamping and wiring.
 // Run with `npm test` (part of the default suite).
@@ -16,8 +17,7 @@ const read = (path) => readFileSync(join(root, path), "utf8");
 
 test("the build stamps the commit tokens from git, with a snapshot fallback", () => {
   const build = read("scripts/build.mjs");
-  assert.match(build, /execFileSync\("git", \["rev-parse", "HEAD"\]/);
-  assert.match(build, /return "unknown";/);
+  assert.match(read("scripts/build-commit.mjs"), /return "unknown";/);
   assert.match(build, /!\/\^\(\?:\[0-9a-f\]\{40\}\|unknown\)\$\/\.test\(commit\)/);
   assert.match(build, /\.split\("\{\{COMMIT\}\}"\)\.join\(commit\)/);
   assert.match(build, /\.split\("\{\{COMMIT_SHORT\}\}"\)\.join\(commit === "unknown" \? "unknown" : commit\.slice\(0, 7\)\)/);
