@@ -283,8 +283,6 @@
   "{n} rolls of a fair six-sided die ≈ {bits} bits.": "{n} lancers d'un dé équitable à six faces ≈ {bits} bits.",
   "Only {have} of {need} recommended fair-die rolls were entered. The {words}-word phrase is deterministic, but its security cannot exceed the approximately {bits} bits supplied. Use only for testing until the recommendation is met.": "Seuls {have} des {need} lancers de dé équitable recommandés ont été saisis. La phrase secrète de {words} mots est déterministe, mais sa sécurité ne peut pas dépasser les environ {bits} bits fournis. À n'utiliser que pour des tests jusqu'à ce que la recommandation soit atteinte.",
   "All {n} rolls, including {extra} beyond the recommendation, are included in the hash.": "Les {n} lancers, y compris {extra} au-delà de la recommandation, sont inclus dans le hachage.",
-  "Hashed rolls / Dice [1-6]: convert every 6 to 0, SHA-256 hash the complete mapped digit string, then use the first {bits} bits for the selected {words}-word seed. This matches the method used by Keystone.": "Lancers hachés / Dés [1-6] : convertissez chaque 6 en 0, calculez le SHA-256 de la chaîne de chiffres mappée complète, puis utilisez les {bits} premiers bits pour la phrase secrète de {words} mots sélectionnée. Identique à la méthode utilisée par Keystone.",
-  "Hashed rolls / Base 10 [0-9]: SHA-256 hash the complete original dice digit string, then use the first {bits} bits for the selected {words}-word seed. This matches COLDCARD and SeedSigner.": "Lancers hachés / Base 10 [0-9] : calculez le SHA-256 de la chaîne originale complète de chiffres des dés, puis utilisez les {bits} premiers bits pour la phrase secrète de {words} mots sélectionnée. Identique à COLDCARD et SeedSigner.",
   "D++: {groups} of {target} positional D8 + D16 + D16 groups entered; {valid} valid ({have} of {need} required results).": "D++ : {groups} sur {target} groupes positionnels D8 + D16 + D16 saisis ; {valid} valides ({have} sur {need} résultats requis).",
   "D++ D16 results use the hexadecimal faces 0 through F exactly as shown on the dice.": "Les résultats D++ D16 utilisent les faces hexadécimales 0 à F exactement comme indiquées sur les dés.",
   "{die} result {value}": "Résultat {die} {value}",
@@ -748,7 +746,6 @@
   "Dice rolls (each word five D6 and a sixth D6 as a coin flip)": "Lancers de dés (chaque mot cinq D6 et un sixième D6 comme pile ou face)",
   "Dice rolls (D6)": "Lancers de dés (D6)",
   "Dice roll options": "Options de lancer de dés",
-  "Dice [1-6] / Hashed rolls": "Dés [1-6] / Lancers hachés",
   "show how direct word selection produces each BIP39 index": "montre comment la sélection directe de mots produit chaque index BIP39",
   "Card options": "Options de cartes",
   "Undo": "Annuler",
@@ -1184,7 +1181,6 @@
   "Clear Station": "Effacer la station",
   "Clear Inspectors": "Effacer les inspecteurs",
   "of 100 recommended rolls": "sur 100 lancers recommandés",
-  "Base 10 [0-9] / Hashed rolls": "Base 10 [0-9] / Lancers hachés",
   "Security log started.": "Journal de sécurité démarré.",
   "Network status: online (reported by the browser).": "État du réseau : en ligne (rapporté par le navigateur).",
   "Network status: offline (reported by the browser; not proof of an air gap).": "État du réseau : hors ligne (rapporté par le navigateur ; pas une preuve d'air gap).",
@@ -1193,5 +1189,9 @@
   "Important notes": "Notes importantes",
   "QR code for {url}": "Code QR pour {url}",
   "Scan with a phone camera to open this reference on an online device.": "Scannez avec la caméra d'un téléphone pour ouvrir cette référence sur un appareil en ligne.",
-  "Copy URL": "Copier l'URL"
+  "Copy URL": "Copier l'URL",
+  "Hashed rolls / Base 6 [0-5]: convert every 6 to 0, SHA-256 hash the complete mapped digit string, then use the first {bits} bits for the selected {words}-word seed. This matches the method used by Keystone.": "Lancers de dés hachés / Base 6 [0-5] : convertissez chaque 6 en 0, hachez SHA-256 la chaîne de chiffres mappée complète, puis utilisez les {bits} premiers bits pour la graine sélectionnée de {words} mots. Ceci correspond à la méthode utilisée par Keystone.",
+  "Hashed rolls / Base 10 [1-6]: SHA-256 hash the complete original dice digit string, then use the first {bits} bits for the selected {words}-word seed. This matches COLDCARD and SeedSigner.": "Lancers de dés hachés / Base 10 [1-6] : hachez SHA-256 la chaîne de chiffres des dés d'origine complète, puis utilisez les {bits} premiers bits pour la graine sélectionnée de {words} mots. Ceci correspond à COLDCARD et SeedSigner.",
+  "Base 10 [1-6] / Hashed rolls": "Base 10 [1-6] / Lancers de dés hachés",
+  "Base 6 [0-5] / Hashed rolls": "Base 6 [0-5] / Lancers de dés hachés"
 }
