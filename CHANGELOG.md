@@ -6,7 +6,7 @@ Release notes for EntropyLab. Each release is a single self-contained
 ## v1.0.0rc2 — unreleased
 
 Second release candidate for 1.0.0. Source commit
-`c503e17b324ac7c6c9dfe77510fe8d3756b77fee`.
+`7f48ec43dd8bb93734842918b07fbf896fdc8a7b`.
 
 ### Secrets and session hygiene
 
@@ -51,6 +51,10 @@ Second release candidate for 1.0.0. Source commit
 
 ### Build, CI, and tooling
 
+- The footer stamps the last commit that changed a build input instead of
+  HEAD, so docs, changelog, and signature commits no longer change
+  `entropylab.html` or invalidate signed release sums; builds refuse a
+  shallow clone (#819).
 - Release secrets are read only from the rock-locked release environment
   (#702), and the OpenTimestamps client is hash-locked and kept away from the
   push token (#703).
