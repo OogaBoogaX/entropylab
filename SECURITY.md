@@ -19,6 +19,13 @@ material. Its security posture rests on the following model:
 
 - The tool is self-contained and designed for offline, air-gapped use. It does
   not intentionally transmit sensitive data to any server.
+- The optional feature guide renders only bundled, translated plain text. It
+  accepts known lesson IDs and keeps only lesson progress in page memory;
+  it reads no wallet inputs, saves nothing in browser storage, and makes no
+  network calls. Pagehide (including End Session) clears progress and closes
+  it; a back/forward-cache restore starts fresh. Only an explicit Open this
+  tool action invokes normal released-tool navigation. A completed lesson
+  is not a security verdict or an endorsement of the user's environment.
 - The Security log below Important records initial browser-reported
   connectivity, connectivity changes, and detected browser translation.
   Its API accepts only fixed event codes, never arbitrary messages, errors,
