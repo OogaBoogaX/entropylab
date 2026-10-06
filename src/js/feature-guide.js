@@ -1,5 +1,5 @@
 import { createModal } from "./modal.js";
-import { featureGuideLessons, featureGuideEntries } from "./feature-guide-content.js";
+import { featureGuideLessons, featureGuideEntries, featureGuideRoutes, featureGuideCheck } from "./feature-guide-content.js";
 
 // This state contains only public lesson IDs and progress, never wallet data.
 export function createFeatureGuideSession(lessons, availableTools) {
@@ -27,7 +27,7 @@ export function createFeatureGuideSession(lessons, availableTools) {
 
 export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win = window }) {
   const session = createFeatureGuideSession(featureGuideLessons(), availableTools);
-  let modal = null, active = true;
+  let modal = null, active = true, route = null;
   const element = (tag, text = "", className = "", id = "") => {
     const node = document.createElement(tag);
     node.textContent = text;
@@ -47,7 +47,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
     if (modal) return;
     modal = createModal({
       id: "feature-guide-overlay", className: "feature-guide-overlay", card: "",
-      focusables: () => [...modal.overlay.querySelectorAll("button, summary")].filter((node) => !node.disabled && !node.closest("[hidden]")),
+      focusables: () => [...modal.overlay.querySelectorAll("button, summary")].filter((node) => !node.disabled && !node.closest("[hidden]") && (node.tagName === "SUMMARY" || !node.closest("details") || node.closest("details").open)),
       onDismiss: close,
     });
     // Every word is rendered through a text sink, including catalog values.
@@ -73,26 +73,48 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       const intro = element("p", hodlTText("Small lessons, at your pace. Start with the basics or pick a feature. No wallet secrets are needed. Your place is kept only until this page is reloaded or left."));
       content.append(intro);
       if (lesson) content.append(button(hodlTText("Continue learning: {lesson}", { lesson: lesson.title }), "resume", "guide-resume"));
-      const list = element("div", "", "guide-lessons");
-      for (const item of lessons) {
-        const choice = button("", "choose", `guide-lesson-${item.id}`, item.id);
-        choice.append(element("strong", item.title), element("span", item.summary, "muted"));
-        if (view.completed.includes(item.id)) choice.append(element("span", hodlTText("Read this session"), "field-note"));
-        list.append(choice);
-      }
-      focus = element("h3", hodlTText("Choose a lesson"));
-      content.append(focus, list);
+      const choices = (items, action, prefix) => {
+        const list = element("div", "", "guide-lessons");
+        for (const item of items) {
+          const choice = button("", action, `${prefix}${item.id}`, item.id);
+          choice.append(element("strong", item.title));
+          if (item.summary) choice.append(element("span", item.summary, "muted"));
+          if (view.completed.includes(item.id)) choice.append(element("span", hodlTText("Read this session"), "field-note"));
+          list.append(choice);
+        }
+        return list;
+      };
+      focus = element("h3", hodlTText("What would you like to understand?"));
+      content.append(focus, choices(featureGuideRoutes(hodlTText), "route", "guide-route-"));
+      const browse = element("details", "", "", "guide-browse");
+      browse.append(element("summary", hodlTText("Browse all lessons")), choices(lessons.filter(item => !["lightning", "journal"].includes(item.id)), "choose", "guide-lesson-"));
+      const unreleased = element("details");
+      unreleased.append(element("summary", hodlTText("Unreleased features and their limits")), choices(lessons.filter(item => ["lightning", "journal"].includes(item.id)), "choose", "guide-lesson-"));
+      content.append(browse, unreleased);
     } else {
       footer.append(button(hodlTText("Contents"), "contents", "guide-contents"));
       const status = element("p", view.mode === "complete" ? hodlTText("Lesson finished · {lesson}", { lesson: lesson.title }) : hodlTText("Step {step} of {total} · {lesson}", { step: view.index + 1, total: lesson.steps.length, lesson: lesson.title }), "field-note", "guide-progress");
       status.setAttribute("role", "status");
       status.setAttribute("aria-live", "polite");
       content.append(status);
+      if (route) content.append(element("p", hodlTText("Route: {route} · Lesson {step} of {total}", { route: route.title, step: route.lessons.indexOf(view.lessonId) + 1, total: route.lessons.length }), "field-note"));
+      if (["basics", "keys", "settings", "results", "exports", "bip85"].includes(lesson.id)) {
+        const story = element("details", "", "", "guide-story");
+        story.append(element("summary", hodlTText("See how the pieces fit")));
+        const chain = element("ol", "", "guide-chain");
+        const labels = [hodlTText("Your input"), hodlTText("Recovery material"), hodlTText("Keys"), hodlTText("Addresses")];
+        const current = { keys: 0, exports: 1, settings: 2, bip85: 2, results: 3 }[lesson.id] ?? Math.min(3, Math.max(0, view.index - 2));
+        labels.forEach((label, index) => { const node = element("li", label); if (index === current) node.setAttribute("aria-current", "step"); chain.append(node); });
+        story.append(chain, element("p", hodlTText("Your input follows a deterministic recipe into recovery material, keys, and addresses. Settings affect the recipe. This diagram calculates nothing."), "field-note"));
+        content.append(story);
+      }
       if (view.mode === "complete") {
         content.dataset.guideComplete = lesson.id;
         focus = element("h3", hodlTText("A little clearer, one lesson at a time"));
         content.append(focus, element("p", hodlTText("You can revisit this lesson whenever you like. Reading a lesson does not certify a wallet, device, or transaction safe.")));
         content.append(button(hodlTText("Read this lesson again"), "restart", "guide-restart"));
+        const nextId = route?.lessons[route.lessons.indexOf(view.lessonId) + 1];
+        if (nextId) content.append(button(hodlTText("Continue route: {lesson}", { lesson: lessons.find(item => item.id === nextId).title }), "route-next", "guide-route-next", nextId));
       } else {
         const step = lesson.steps[view.index];
         const body = element("section", "", "guide-step", "guide-step");
@@ -107,16 +129,29 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
         body.append(check, limit);
         if (step.term) {
           const details = element("details");
-          details.append(element("summary", step.term[0]), element("p", step.term[1]));
+          details.append(element("summary", hodlTText("Explain this word: {word}", { word: step.term[0] })), element("p", step.term[1]));
           body.append(details);
         }
         content.append(body);
+      }
+      const quiz = featureGuideCheck(lesson.id, hodlTText);
+      if (quiz && view.mode === "lesson") {
+        const details = element("details", "", "", "guide-check");
+        details.append(element("summary", hodlTText("Try a quick check (optional)")), element("p", quiz[0]));
+        const answers = element("div", "", "row");
+        quiz[1].forEach((answer, index) => answers.append(button(answer, "answer", `guide-answer-${index}`, String(index))));
+        const feedback = element("p", "", "field-note", "guide-feedback");
+        feedback.setAttribute("role", "status");
+        details.append(answers, feedback);
+        content.append(details);
       }
       const actions = element("div", "", "modal-actions-end");
       const back = button(hodlTText("Back"), "back", "guide-back");
       back.disabled = view.index === 0;
       actions.append(back);
       if (view.mode === "lesson") actions.append(button(hodlTText(view.index + 1 === lesson.steps.length ? "Finish lesson" : "Next"), "next", "guide-next"));
+      const next = actions.querySelector("#guide-next");
+      if (next) next.className = "btn primary";
       footer.append(actions);
       if (view.tool) {
         const open = button(hodlTText("Open this tool"), "open-tool", "guide-open-tool");
@@ -131,7 +166,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
   const open = (id, opener) => {
     if (!active) return;
     ensureModal();
-    if (id) session.choose(id); else session.contents();
+    if (id) { route = null; session.choose(id); } else session.contents();
     modal.show(render(), opener);
   };
   const click = (event) => {
@@ -147,7 +182,26 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       if (view.tool) { modal.hide({ restoreFocus: false }); onOpenTool(view.tool, view.lessonId); }
       return;
     }
-    if (action === "choose") session.choose(control.dataset.guideLesson);
+    if (action === "answer") {
+      const quiz = featureGuideCheck(session.view().lessonId, hodlTText);
+      if (!quiz) return;
+      const feedback = document.getElementById("guide-feedback");
+      const correct = Number(control.dataset.guideLesson) === quiz[2];
+      feedback.dataset.guideCorrect = String(correct);
+      feedback.textContent = (correct ? hodlTText("That's right. ") : hodlTText("Take another look. ")) + quiz[3];
+      return;
+    }
+    if (action === "route") {
+      route = featureGuideRoutes(hodlTText).find(item => item.id === control.dataset.guideLesson) ?? null;
+      if (!route) return;
+      session.choose(route.lessons[0]);
+    }
+    else if (action === "route-next") {
+      const id = route?.lessons[route.lessons.indexOf(session.view().lessonId) + 1];
+      if (!id || session.view().mode !== "complete") return;
+      session.choose(id);
+    }
+    else if (action === "choose") { route = null; session.choose(control.dataset.guideLesson); }
     else if (action === "restart") session.choose(session.view().lessonId);
     else if (action === "contents") session.contents();
     else if (["back", "next", "resume"].includes(action)) session[action]();
@@ -166,6 +220,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
   win.addEventListener("pagehide", () => {
     active = false;
     session.clear();
+    route = null;
     modal?.hide({ restoreFocus: false });
     document.getElementById("feature-guide-dialog")?.replaceChildren();
   });
@@ -176,6 +231,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       for (const entry of document.querySelectorAll("[data-guide-open]")) {
         if (entry.dataset.guideOpen) entry.textContent = hodlTText("Explain this tool");
       }
+      if (route) route = featureGuideRoutes(hodlTText).find(item => item.id === route.id);
       if (active && modal?.isOpen()) {
         const id = document.activeElement?.id;
         render();

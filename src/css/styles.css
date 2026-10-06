@@ -1313,6 +1313,10 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 .guide-lessons { display: grid; gap: var(--space-control); }
 .guide-lessons > .btn { display: grid; gap: var(--space-control); height: auto; text-align: start; white-space: normal; padding: var(--inset-box); }
 .guide-lessons > .btn > .muted { font-size: var(--text-body); font-weight: normal; }
+.guide-chain { display: flex; flex-wrap: wrap; gap: var(--space-control); padding-left: var(--indent-list); }
+.guide-chain li { padding: var(--inset-chip); margin-right: var(--space-component); }
+.guide-chain [aria-current] { color: var(--accent); font-weight: bold; border-bottom: 1px solid var(--accent); }
+#guide-check > * + *, #guide-story > * + *, #guide-browse > * + * { margin-top: var(--space-component); }
 .modal-title { margin: 0 0 var(--space-section); font-weight: 600; font-size: var(--text-heading-small); overflow-wrap: anywhere; }
 @media (max-width: 520px) { .modal-card { padding: var(--inset-card); } }
 /* The gate alone fades in, and wears the danger frame its warning calls for. */

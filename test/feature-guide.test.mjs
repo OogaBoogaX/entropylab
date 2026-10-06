@@ -163,3 +163,24 @@ test("guide entry and app lifecycle wiring belong to the source shell and boot",
   assert.match(app, /hodlFeatureGuide\s*=\s*initFeatureGuide\(/);
   assert.match(app, /hodlFeatureGuide\?\.refresh\(\)/);
 });
+test("optional routes advance only explicitly and reject unknown routes", () => withPage(({ guide, click, doc, opened, opener }) => {
+  guide.open(null, opener);
+  click('#guide-route-recovery');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'exports-public');
+  while (doc.getElementById('guide-next')) click('#guide-next');
+  click('#guide-route-next');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'multisig-quorum');
+  assert.deepEqual(opened, []);
+  click('#guide-contents');
+  click('#guide-lesson-basics');
+  assert.equal(doc.getElementById('guide-route-next'), null);
+}));
+test("optional checks give feedback without advancing or touching wallet data", () => withPage(({ guide, click, doc, opener }) => {
+  guide.open('basics', opener);
+  const before = doc.getElementById('guide-step').dataset.guideStep;
+  click('#guide-answer-0');
+  assert.equal(doc.getElementById('guide-feedback').dataset.guideCorrect, 'false');
+  click('#guide-answer-1');
+  assert.equal(doc.getElementById('guide-feedback').dataset.guideCorrect, 'true');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, before);
+}));

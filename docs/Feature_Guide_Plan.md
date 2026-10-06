@@ -205,3 +205,26 @@ A study with independent novice readers has not been performed; that remains
 useful human usability feedback, not a condition for using or replaying the
 implemented guide. Optional glossary expansion, a goal-based choice tree and
 worked-example illustrations remain future ideas.
+
+### Optional UX follow-up
+
+Four goal-based routes now organize the existing lessons. Browse all lessons
+and unreleased availability notes are separate disclosures. Only Guide gains
+these controls: core tool views retain their existing entry points. Routes
+advance only when selected explicitly; closing and resuming preserves the route.
+Expandable public-information diagrams highlight the current stage, and four
+optional ungraded checks explain common misunderstandings without blocking Next.
+Closed disclosures are excluded from keyboard focus traversal.
+
+The unchanged security contract above also applies to route selection and
+answers. Initial focused red failed on the missing route and answer controls;
+the same eight focused tests now pass with I/O, secret-access and randomness
+sentinels active. Hosted/offline browser coverage also exercises both answers.
+The artifact grows by 4,113 bytes over the first guide implementation, to
+6,922,576 bytes (33.8 KiB total over the pre-guide baseline). This extends the
+original provisional 30 KiB budget by 3.8 KiB for the approved UX follow-up.
+No dependencies, media, storage, or runtime requests were added. Verify and
+reproduce pass; desktop/phone dark/light review retains visible navigation
+and no horizontal overflow, including expanded optional sections.
+Final follow-up `npm run build && npm test`: 2,129 passed, zero failed,
+10 skipped; Chrome hosted/offline passes, Firefox/Edge remain unavailable.

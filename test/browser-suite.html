@@ -114,7 +114,13 @@
       equal(dialog.getAttribute("role"), "dialog");
       equal(dialog.getAttribute("aria-modal"), "true");
       assert(document.getElementById(dialog.getAttribute("aria-labelledby")), "guide has no accessible title");
-      document.getElementById("guide-lesson-basics").click();
+      document.getElementById("guide-route-wallet").click();
+      document.getElementById("guide-check").open = true;
+      document.getElementById("guide-answer-0").click();
+      equal(document.getElementById("guide-feedback").dataset.guideCorrect, "false");
+      document.getElementById("guide-answer-1").click();
+      equal(document.getElementById("guide-feedback").dataset.guideCorrect, "true");
+      document.getElementById("guide-story").open = true;
       assert(document.getElementById("guide-back").disabled, "first step can go backwards");
       document.getElementById("guide-next").click();
       const second = document.getElementById("guide-step").dataset.guideStep;
@@ -125,7 +131,7 @@
       equal(document.getElementById("guide-step").dataset.guideStep, second);
       document.getElementById("guide-contents").click();
       // Every catalog route finishes and can be read again, including availability notes.
-      const ids = [...document.querySelectorAll("[data-guide-lesson]")].map((node) => node.dataset.guideLesson);
+      const ids = [...document.querySelectorAll('[data-guide-action="choose"]')].map((node) => node.dataset.guideLesson);
       for (const id of ids) {
         document.getElementById(`guide-lesson-${id}`).click();
         let count = 0;

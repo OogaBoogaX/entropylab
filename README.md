@@ -398,7 +398,9 @@ To build the HTML file yourself, see [Building from source](#building-from-sourc
 Choose **Guide** above the tool tabs for an eight-step beginner walkthrough
 or individual feature lessons. **Explain this tool** in each released tool's
 introduction opens its lesson directly. Every step explains the feature,
-what to check, and its limits. No wallet secrets are needed.
+what to check, and its limits. No wallet secrets are needed. Optional goal-based
+routes group lessons; Browse all lessons keeps direct access. Expandable diagrams
+and ungraded quick checks live only inside Guide and never block progress.
 
 Back, Contents, Close, and replay are always available. Closing retains your
 place for this page session; **Continue learning** resumes it. Reloading or

@@ -19,6 +19,8 @@ material. Its security posture rests on the following model:
 
 - The tool is self-contained and designed for offline, air-gapped use. It does
   not intentionally transmit sensitive data to any server.
+- Optional guide routes, diagrams, and ungraded checks use only bundled public
+  content and transient learning state; answers never reach wallet inputs.
 - The optional feature guide renders only bundled, translated plain text. It
   accepts known lesson IDs and keeps only lesson progress in page memory;
   it reads no wallet inputs, saves nothing in browser storage, and makes no

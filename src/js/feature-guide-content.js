@@ -201,3 +201,21 @@ export function featureGuideLessons(hodlTText = (text) => text) {
     ] },
   ];
 }
+
+export function featureGuideRoutes(hodlTText = (text) => text) {
+  return [
+    { id: "wallet", title: hodlTText("Understand wallets"), lessons: ["basics", "keys", "settings", "results"] },
+    { id: "recovery", title: hodlTText("Prepare for recovery"), lessons: ["exports", "multisig", "session"] },
+    { id: "transaction", title: hodlTText("Understand a transaction"), lessons: ["inspect", "edit", "nonce"] },
+    { id: "advanced", title: hodlTText("Explore advanced tools"), lessons: ["bip85", "silent", "vanity"] },
+  ];
+}
+export function featureGuideCheck(id, hodlTText) {
+  const checks = {
+    basics: [hodlTText("Which lets someone spend bitcoin?"), [hodlTText("A receiving address"), hodlTText("A private key")], 1, hodlTText("An address is a destination you can share. A private key grants spending power and must stay secret.")],
+    exports: [hodlTText("Does a watch-only sheet replace a secret recovery backup?"), [hodlTText("Yes"), hodlTText("No")], 1, hodlTText("Watch-only helps you check addresses. Recovery still needs the original secrets and wallet settings.")],
+    inspect: [hodlTText("Does a completed check mean a transaction is safe to sign?"), [hodlTText("Yes"), hodlTText("No")], 1, hodlTText("A check covers only its stated scope. Independently verify the destination, amount, change, and fee.")],
+    bip85: [hodlTText("Can someone with the parent derive its BIP85 children?"), [hodlTText("Yes"), hodlTText("No")], 0, hodlTText("Protect the parent: access to it threatens all children derived from it.")],
+  };
+  return checks[id];
+}
