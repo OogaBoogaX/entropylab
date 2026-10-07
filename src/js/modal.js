@@ -25,13 +25,23 @@ export const createModal = ({ id, className, card, focusables, onDismiss }) => {
   overlay.innerHTML = card;
   document.body.append(overlay);
   let opener = null;
+  let background = null, backgroundWasInert = false;
   const show = (focus, from = document.activeElement) => {
     opener = from;
+    if (overlay.hidden) {
+      background = document.getElementById("btc-calc");
+      if (background) {
+        backgroundWasInert = background.inert;
+        background.inert = true;
+      }
+    }
     overlay.hidden = false;
     focus?.focus();
   };
   const hide = ({ restoreFocus = true } = {}) => {
     overlay.hidden = true;
+    if (background) background.inert = backgroundWasInert;
+    background = null;
     const target = opener;
     opener = null;
     if (restoreFocus) target?.focus?.({ preventScroll: true });

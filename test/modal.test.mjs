@@ -23,9 +23,12 @@ const fakeDocument = () => {
       focus() { focused.push(name); document.activeElement = this; },
     };
   };
-  const body = { children: [], append(node) { this.children.push(node); } };
-  const document = { body, activeElement: null, createElement: () => element("overlay") };
-  return { document, element, focused };
+  const background = element("background");
+  background.id = "btc-calc";
+  background.inert = false;
+  const body = { children: [background], append(node) { this.children.push(node); } };
+  const document = { body, activeElement: null, createElement: () => element("overlay"), getElementById: (id) => id === "btc-calc" ? background : null };
+  return { document, element, focused, background };
 };
 const withDocument = (fake, run) => {
   const saved = globalThis.document;
@@ -42,7 +45,7 @@ test("the shell builds one hidden overlay with the card, and show focuses and hi
   withDocument(fake, () => {
     let dismissed = 0;
     const modal = createModal({ id: "x-overlay", className: "x-overlay", card: "<div class=\"modal-card\"></div>", focusables: () => [], onDismiss: () => dismissed++ });
-    assert.equal(fake.document.body.children.length, 1);
+    assert.equal(fake.document.body.children.length, 2);
     assert.equal(modal.overlay.className, "modal-overlay x-overlay no-print");
     assert.equal(modal.overlay.id, "x-overlay");
     assert.equal(modal.overlay.innerHTML, "<div class=\"modal-card\"></div>");
@@ -50,9 +53,11 @@ test("the shell builds one hidden overlay with the card, and show focuses and hi
     const opener = fake.element("opener"), close = fake.element("close");
     modal.show(close, opener);
     assert.equal(modal.isOpen(), true);
+    assert.equal(fake.background.inert, true, "the background remains interactive while a modal is open");
     assert.deepEqual(fake.focused, ["close"], "show did not focus the given control");
     modal.hide();
     assert.equal(modal.isOpen(), false);
+    assert.equal(fake.background.inert, false, "closing the modal did not restore the background");
     assert.deepEqual(fake.focused, ["close", "opener"], "hide did not return focus to the opener");
     modal.show(close, opener);
     modal.hide({ restoreFocus: false });
