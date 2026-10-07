@@ -960,6 +960,12 @@ h3.label { font-family: inherit; letter-spacing: inherit; }
 .table-private-field-value { display: inline-grid; white-space: nowrap; }
 .private-field-value:not(.secret-placeholder),
 .table-private-field-value:not(.secret-placeholder) { color: var(--blue); }
+.private-copy-value {
+  min-width: 0; padding: 0; border: 0; background: none;
+  text-align: left; cursor: pointer; user-select: none; -webkit-user-select: none;
+}
+.private-copy-value:hover { color: var(--selection-accent-ink); }
+.private-copy-value:focus-visible { outline: 2px solid var(--accent); outline-offset: var(--space-hairline); }
 .secret-placeholder { display: grid; color: var(--muted); }
 .secret-placeholder > .secret-placeholder-mask,
 .secret-placeholder > .secret-placeholder-message { grid-area: 1 / 1; }
@@ -2223,6 +2229,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   letter-spacing: 0.05em; cursor: pointer; vertical-align: middle;
 }
 .addr-qr-image { cursor: pointer; }
+.addr-qr-image[data-private] { cursor: default; }
 .addr-qr-image svg { width: 220px; height: 220px; }
 /* The address copies on a click, on the text or the icon trailing it; the
    icon is the shared copy button, and the text lights with it on hover. */
@@ -2232,6 +2239,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   font-size: var(--text-data-small); overflow-wrap: anywhere; cursor: pointer;
 }
 .addr-qr-address:hover { color: var(--selection-accent-ink); }
+.addr-qr-address[data-private] { user-select: none; -webkit-user-select: none; }
 /* Every viewer modal closes on one row: copy at the start, the actions that
    answer it (Apply, then a red Close) together at the end. */
 .modal-actions { margin-top: var(--space-component); justify-content: space-between; }

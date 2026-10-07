@@ -5,9 +5,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { addressQrButtonHtml } from "../src/js/address-qr.js";
+import { addressQrButtonHtml, privateQrButtonHtml } from "../src/js/address-qr.js";
 
 const ADDRESS = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+const WIF = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
+
+test("a private QR button identifies a row without carrying its WIF", () => {
+  const html = privateQrButtonHtml({ address: ADDRESS, path: "m/84'/0'/0'/0/0", index: 0, branch: 0, privateKey: WIF }, "Receive address #0");
+  assert.ok(html.includes('data-private-qr-branch="0"'));
+  assert.ok(html.includes('data-private-qr-index="0"'));
+  assert.ok(html.includes('data-private-qr-path="m/84&#39;/0&#39;/0&#39;/0/0"'));
+  assert.ok(html.includes(`data-private-qr-address="${ADDRESS}"`));
+  assert.ok(!html.includes(WIF), "a private QR button retained the key");
+  assert.equal(privateQrButtonHtml({ address: ADDRESS, path: "", index: 0, branch: 0 }, "Receive address #0"), "", "a row without a path must not offer QR");
+});
 
 test("an empty address renders no button", () => {
   assert.equal(addressQrButtonHtml(""), "");
@@ -53,7 +64,7 @@ test("a payload can ask the overlay for an animated sequence", () => {
 // (Behavioral checks live in test/browser-suite.html; these pin the wiring.)
 test("closing the overlay releases the address text and title", () => {
   const module = readFileSync(new URL("../src/js/address-qr.js", import.meta.url), "utf8");
-  const close = module.slice(module.indexOf("const close = () => {"), module.indexOf("const open = (target) => {"));
+  const close = module.slice(module.indexOf("const close = ("), module.indexOf("const open = (target) => {"));
   assert.match(close, /text\.textContent = ""/, "close() must clear #addr-qr-address");
   assert.match(close, /title\.textContent = ""/, "close() must clear #addr-qr-title");
   assert.match(close, /note\.textContent = ""/, "close() must clear #addr-qr-note");

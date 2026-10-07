@@ -1833,10 +1833,12 @@
       assert(document.getElementById("journal-view").textContent.includes(entryInput), "The stored input survived the load");
       assert(document.getElementById("journal-view").textContent.includes(entryNotes), "The stored notes survived the load");
       assert(!document.getElementById("journal-view").textContent.includes(entryPhrase), "The stored seed stays masked until revealed");
+      assert(document.getElementById("journal-copy-phrase").disabled, "a hidden Journal seed can still be copied");
       const reveal = document.getElementById("journal-reveal");
       reveal.checked = true;
       reveal.dispatchEvent(new Event("change", { bubbles: true }));
       await until(() => document.getElementById("journal-view").textContent.includes(entryPhrase), "stored seed revealed after load");
+      equal(await copiedBy(document.querySelector('#journal-view [data-private-copy]')), entryPhrase);
 
       // The notepad stores encrypted by default and loads back through upload.
       document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
@@ -2005,6 +2007,7 @@
     assert(cells[1].textContent.trim() === "0", "the hit is counter 0");
     const secretCell = cells[2].querySelector(".mono");
     assert(/^•+$/.test(secretCell.textContent), "the passphrase is masked until revealed");
+    assert(row.querySelector('[data-vanity-copy]').disabled, "a hidden Vanity passphrase can still be copied");
     assert(cells[3].textContent.includes("bc1qylthc2drk6x5q0czdljal99vqwed9tja80z06d"), "the hit address is the pinned vector");
     assert(row.querySelector("[data-vanity-apply]"), "every match offers Update key");
     // Each passphrase row shows the identity Update key will leave behind:
@@ -2014,6 +2017,7 @@
     assert(row.querySelector(".vanity-key img").dataset.fingerprint === "c55401c7", "the LifeHash is the new fingerprint's");
     document.getElementById("vanity-reveal").click();
     await until(() => document.querySelector("#vanity-out .vanity-secret .mono").textContent === "correct horse battery staplea", "the reveal toggle to show the full passphrase");
+    equal(await copiedBy(document.querySelector('#vanity-out [data-private-copy]')), "correct horse battery staplea");
     // Update key writes the passphrase to the key and re-derives it in place:
     // the tab keeps its slot, takes the new fingerprint, and shows the vanity
     // address as its first receive address.
@@ -4828,6 +4832,44 @@
     await until(() => document.getElementById("addr-qr-overlay")?.hidden, "address QR overlay close");
     assert(!overlay.querySelector("#addr-qr-image svg"), "The closed overlay kept its QR code");
     assert(!copyButton.classList.contains("is-copied"), "The closed overlay kept its copied state");
+  });
+
+  await test("a revealed WIF copies and opens a private QR, then auto-conceal clears both", async () => {
+    const table = () => document.querySelector('#acct [data-address-table="hd-receive"]');
+    const row = () => table()?.querySelector('tbody tr');
+    const hidden = row();
+    assert(hidden && !hidden.querySelector('[data-private-qr]'), "a hidden WIF offered a QR control");
+    assert(!hidden.querySelector('[data-private-copy]'), "a hidden WIF offered a copy control");
+    let reveal = document.getElementById('reveal');
+    assert(reveal && !reveal.checked, "the test needs a hidden HD result");
+    try {
+      reveal.click();
+      const shown = row();
+      const copy = shown?.querySelector('[data-private-copy]');
+      const qr = shown?.querySelector('[data-private-qr]');
+      assert(copy && qr, "a revealed WIF lacks a copy or QR control");
+      const wif = copy.textContent.trim();
+      assert(/^[5KLc9][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(wif), "the copy control does not show a WIF");
+      assert(getComputedStyle(copy).userSelect === "none", "the revealed WIF can still be selected");
+      equal(await copiedBy(copy), wif);
+      assert(!qr.outerHTML.includes(wif), "the QR button carries the private key");
+      qr.click();
+      const overlay = await until(() => !document.getElementById('addr-qr-overlay')?.hidden && document.getElementById('addr-qr-overlay'), "private QR overlay");
+      equal(overlay.querySelector('#addr-qr-title').textContent, `WIF for Receive address #${shown.querySelector('th').textContent.trim()}`);
+      equal(overlay.querySelector('#addr-qr-address').textContent, wif);
+      assert(getComputedStyle(overlay.querySelector('#addr-qr-address')).userSelect === "none", "the shown WIF in the QR overlay can still be selected");
+      assert(overlay.querySelector('#addr-qr-private-warning')?.textContent, "the private QR has no warning");
+      assert(document.getElementById('btc-calc').inert, "the background is interactive behind the private QR");
+      window.dispatchEvent(new Event('blur'));
+      await until(() => overlay.hidden, "private QR conceal on blur");
+      assert(!document.getElementById('btc-calc').inert, "conceal left the background inert");
+      assert(!overlay.querySelector('#addr-qr-image svg'), "conceal left a scannable WIF QR");
+      assert(!row()?.querySelector('[data-private-copy], [data-private-qr]'), "conceal left WIF actions visible");
+    } finally {
+      reveal = document.getElementById('reveal');
+      if (reveal?.checked) reveal.click();
+      document.getElementById('addr-qr-close')?.click();
+    }
   });
 
   await test("each key keeps its own open groups, and a new key starts with them closed", async () => {

@@ -126,7 +126,7 @@ test("a PSBT too large for one code is scanned as a UR sequence, not truncated",
   assert.doesNotMatch(editor, /QR_LIMIT/);
 
   const app = read("src/js/app.js");
-  assert.match(app, /hodlInitAddressQr\(hodlQrSvg, \{ copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup \}, \{ frames: hodlPsbtQrFrames \}\)/);
+  assert.match(app, /hodlInitAddressQr\(hodlQrSvg, \{ copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup \}, \{ frames: hodlPsbtQrFrames, privateValue: hodlPrivateQrValue \}\)/);
   assert.match(app, /plan\.mode === "ur" \? plan\.parts : null/);
 
   const overlay = read("src/js/address-qr.js");

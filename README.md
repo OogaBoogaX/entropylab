@@ -63,6 +63,10 @@ the limits of browser-memory cleanup.
   Every row of the address tables has a QR button that opens that address as
   a scannable QR code, so any derived address — not just the first — can be
   verified on a signing device without retyping it.
+  Revealed, read-only private values can be clicked to copy; they cannot be
+  text-selected, and hidden values cannot be copied. A revealed address WIF
+  also has a QR button. Its popup identifies the WIF as a private key and
+  closes when private data is hidden.
 - Supports legacy, nested SegWit, native SegWit, and Taproot single-signature
   address types. Derivation-scheme presets cover the BIP44, BIP49, BIP84,
   BIP86, and six-level BIP48 layouts and label each path level accordingly.

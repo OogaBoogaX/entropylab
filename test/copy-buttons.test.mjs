@@ -7,9 +7,8 @@
 // Station).
 //
 // Security contract: a copy button holds no secret in any attribute or
-// property, and its click puts on the clipboard exactly the text it always
-// did; the disabled state, the aria-label and title (also after the "copied"
-// timeout) and what a click does when there is nothing to copy do not change.
+// property. A revealed child copies its published text, while a hidden child
+// cannot copy. The copied state never retains the secret.
 //
 // Expected values: the published BIP39 vectors (trezor/python-mnemonic
 // vectors.json), each cross-checked below against @scure/bip39 from its
@@ -377,14 +376,15 @@ function childState(spec, index) {
   const result = deriveApplication(BIP85_MASTER, spec);
   return { isLab: false, id: index, name: `child ${index}`, result, reveal: false, fingerprint: "0badc0de", fingerprintKind: "child", network: "mainnet", parentFingerprint: "f00dcafe" };
 }
-function bip85Page(document, active) {
+function bip85Page(document, active, revealed = true) {
   // The parent sits in the page too, in the station's root field.
   document.body.innerHTML = '<input id="bip85-key"><div id="bip85-out"></div>';
   document.getElementById("bip85-key").value = BIP85_MASTER.privateExtendedKey;
-  const children = [{ isLab: true, id: 0, name: "BIP-85 Station", result: null, reveal: false, fingerprint: "", fingerprintKind: "" }, ...CHILDREN.map(([, spec], index) => childState(spec, index + 1))];
+  const children = [{ isLab: true, id: 0, name: "BIP-85 Station", result: null, reveal: false, fingerprint: "", fingerprintKind: "" }, ...CHILDREN.map(([, spec], index) => ({ ...childState(spec, index + 1), reveal: revealed }))];
   station.__set.hodlBip85Children(children);
   const show = (index) => {
     station.__set.hodlActiveBip85(index);
+    station.__set.hodlBip85Reveal(Boolean(children[index]?.reveal));
     station.hodlRenderBip85Out();
     return document.getElementById("bip85-copy");
   };
@@ -394,6 +394,14 @@ function bip85Page(document, active) {
 test("the BIP-85 fixtures are the published children", () => {
   for (const [, spec, secret] of CHILDREN) assert.equal(deriveApplication(BIP85_MASTER, spec).secret, secret);
 });
+
+test("BIP-85 refuses to copy a hidden child", withPage("works", async (document) => {
+  const { button } = bip85Page(document, 1, false);
+  assert.equal(document.getElementById("bip85-reveal").hasAttribute("checked"), false);
+  button.click();
+  await settle();
+  assert.deepEqual(written, [], "a hidden child reached the clipboard");
+}));
 
 for (const [index, [name, , secret]] of CHILDREN.entries()) {
   test(`BIP-85 ${name}: the button holds no secret in any attribute or property`, withPage("works", async (document) => {

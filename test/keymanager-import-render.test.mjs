@@ -262,14 +262,19 @@ const source = [
   loadSlice("hodlEscapeHtml"),
   loadSlice("hodlDisplayDerivationPath"),
   loadSlice("hodlAddressIndexHtml"),
+  loadSlice("hodlAddressRowLabel"),
+  loadSlice("hodlPrivateCopyMarkup"),
   loadSlice("hodlPrivateValue"),
   loadSlice("hodlAddressTableRows"),
 ].join("\n");
 const loadRows = (revealPrivate = false) =>
-  new Function("hodlRevealPrivate", "hodlT", "hodlAddressQrButton", `${source}; return hodlAddressTableRows;`)(
+  new Function("hodlRevealPrivate", "hodlT", "hodlTAttr", "hodlAddressQrButton", "hodlPrivateQrButton", "hodlRowWifCell", `${source}; return hodlAddressTableRows;`)(
     revealPrivate,
-    (text, vars) => text.replace("{n}", String(vars?.n ?? "{n}")),
+    (text, vars) => text.replace(/\{(\w+)\}/g, (part, key) => String(vars?.[key] ?? part)),
+    (text, vars) => text.replace(/\{(\w+)\}/g, (part, key) => String(vars?.[key] ?? part)).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"),
     addressQrButtonHtml,
+    () => "",
+    (row) => row.wif,
   );
 
 const ATTACK_INDEX = '<svg onload="alert(document.domain)">';

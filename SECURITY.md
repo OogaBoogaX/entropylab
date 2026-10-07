@@ -340,6 +340,10 @@ cannot overwrite them:
   the clipboard. The few tools that take the words as text build them too:
   the Silent Payments key field, the Vanity passphrase grind, and the
   Journal.
+  Revealed read-only values are copy controls, with text selection disabled;
+  this is a usability choice, not a barrier to reading or capturing them.
+  A revealed WIF QR adds a scannable copy of a spending key while its viewer
+  is open. Hiding private data closes that viewer and drops its QR and text.
 - The Journal and the Key Manager. The notepad and every entry are text, and
   so is a file once it is decrypted.
 - JavaScript numbers. The Silent Payments calculations turn a key into a

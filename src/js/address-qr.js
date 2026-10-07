@@ -38,12 +38,20 @@ export const addressQrButtonHtml = (address, label, { animate = "" } = {}) => {
   return `<button type="button" class="addr-qr no-print" data-address-qr="${escapeHtml(value)}" data-address-qr-label="${escapeHtml(caption)}"${animated} aria-label="${tAttr("Show QR code for {label}", { label: caption })}">${tHtml("QR")}</button>`;
 };
 
+// A WIF button identifies its current address row, not the private key. The
+// click resolves the row from live wallet state and encodes the WIF then.
+export const privateQrButtonHtml = (row, label) => {
+  if (!row?.privateKey || !row.address || !row.path || !Number.isSafeInteger(row.branch) || row.branch < 0 || !Number.isSafeInteger(row.index) || row.index < 0) return "";
+  const caption = t("WIF for {label}", { label: String(label ?? "") });
+  return `<button type="button" class="addr-qr no-print" data-private-qr data-private-qr-branch="${row.branch}" data-private-qr-index="${row.index}" data-private-qr-path="${escapeHtml(row.path)}" data-private-qr-address="${escapeHtml(row.address)}" aria-label="${tAttr("Show QR code for {label}", { label: caption })}">${tHtml("QR")}</button>`;
+};
+
 // One shared overlay for every address table. `renderQr` is injected by the
 // caller (app.js passes its hodlQrSvg) so the QR options — error correction,
 // colors, size — stay defined next to every other QR the app renders. The
 // copy and copied icons come in the same way, so the address copy control
 // wears the glyphs every other copy button in the app does.
-export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
+export const initAddressQr = (renderQr, icons = {}, { frames = null, privateValue = null } = {}) => {
   if (typeof renderQr !== "function" || document.getElementById("addr-qr-overlay")) return;
   // The address text and the copy button both copy. Only the button takes a
   // tab stop, so a keyboard reaches one copy control, not two. The button sits
@@ -58,6 +66,8 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
     card: `
     <div class="modal-card addr-qr-card" role="dialog" aria-modal="true" aria-labelledby="addr-qr-title">
       <p class="modal-title addr-qr-title" id="addr-qr-title"></p>
+      <p class="edge-note is-private" id="addr-qr-private-warning" hidden></p>
+      <p class="field-note" id="addr-qr-path" translate="no" hidden></p>
       <div class="qr addr-qr-image" id="addr-qr-image"></div>
       <p class="field-note addr-qr-note" id="addr-qr-note" aria-live="polite"></p>
       <p class="addr-qr-address-row">
@@ -72,6 +82,8 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
   });
   const overlay = modal.overlay;
   const title = overlay.querySelector("#addr-qr-title"),
+    privateWarning = overlay.querySelector("#addr-qr-private-warning"),
+    path = overlay.querySelector("#addr-qr-path"),
     image = overlay.querySelector("#addr-qr-image"),
     note = overlay.querySelector("#addr-qr-note"),
     text = overlay.querySelector("#addr-qr-address"),
@@ -79,16 +91,18 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
     copiedNote = overlay.querySelector("#addr-qr-copied"),
     closeButton = overlay.querySelector("#addr-qr-close");
   closeButton.textContent = t("Close");
-  const copyLabel = t("Copy address"),
+  const addressCopyLabel = t("Copy address"),
     copyIcon = icons.copy?.() ?? "",
     copiedIcon = icons.copied?.() ?? "";
-  text.title = copyLabel;
-  image.title = copyLabel;
+  text.title = addressCopyLabel;
+  image.title = addressCopyLabel;
   let payload = "", // the full value; the line above may show it shortened
+    privateMode = false,
     frameTimer = 0, // cycling a UR sequence, when the payload needs one
     copiedTimer = 0;
 
   const resetCopied = () => {
+    const copyLabel = privateMode ? t("Copy WIF") : addressCopyLabel;
     clearTimeout(copiedTimer);
     copyButton.classList.remove("is-copied");
     copyButton.innerHTML = copyIcon;
@@ -120,16 +134,24 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
   };
   resetCopied();
 
-  const close = () => {
-    modal.hide();
+  const close = ({ restoreFocus = true } = {}) => {
+    modal.hide({ restoreFocus });
     clearInterval(frameTimer);
     frameTimer = 0;
     note.textContent = "";
     // The payload can be an edited PSBT: no textual copy stays either.
     title.textContent = "";
+    privateWarning.textContent = "";
+    privateWarning.hidden = true;
+    path.textContent = "";
+    path.hidden = true;
+    overlay.querySelector(".modal-card").removeAttribute("aria-describedby");
     text.textContent = "";
+    delete text.dataset.private;
     image.replaceChildren(); // drop the rendered QR so a closed overlay holds no stale address
+    delete image.dataset.private;
     payload = "";
+    privateMode = false;
     resetCopied();
   };
   // The overlay is a body-level sibling of every wiped view, so station and
@@ -140,25 +162,57 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
     frameTimer = 0;
     note.textContent = "";
     title.textContent = "";
+    privateWarning.textContent = "";
+    privateWarning.hidden = true;
+    path.textContent = "";
+    path.hidden = true;
+    overlay.querySelector(".modal-card").removeAttribute("aria-describedby");
     text.textContent = "";
+    delete text.dataset.private;
     image.replaceChildren();
+    delete image.dataset.private;
     payload = "";
+    privateMode = false;
+    resetCopied();
   };
   addEventListener("pagehide", teardown);
   addEventListener("pageshow", (event) => {
     if (event.persisted) teardown();
   });
   const open = (target) => {
-    const value = target.dataset.addressQr ?? "";
+    let secret = null;
+    if (target.hasAttribute("data-private-qr")) {
+      try { secret = privateValue?.(target); } catch { return; }
+    }
+    if (target.hasAttribute("data-private-qr") && !secret) return;
+    const value = secret?.value ?? target.dataset.addressQr ?? "";
     if (!value) return;
     clearInterval(frameTimer);
     frameTimer = 0;
-    title.textContent = target.dataset.addressQrLabel || value;
+    privateMode = Boolean(secret);
+    title.textContent = secret ? t("WIF for {label}", { label: secret.label }) : target.dataset.addressQrLabel || value;
+    privateWarning.hidden = !privateMode;
+    privateWarning.textContent = privateMode ? t("This QR contains a private key. Anyone who scans or copies it can spend from this address.") : "";
+    path.hidden = !privateMode;
+    path.textContent = privateMode ? secret.path : "";
+    if (privateMode) {
+      overlay.querySelector(".modal-card").setAttribute("aria-describedby", "addr-qr-private-warning");
+      image.dataset.private = "";
+      text.dataset.private = "";
+      text.title = t("Copy WIF");
+      image.removeAttribute("title");
+    } else {
+      overlay.querySelector(".modal-card").removeAttribute("aria-describedby");
+      delete image.dataset.private;
+      delete text.dataset.private;
+      text.title = addressCopyLabel;
+      image.title = addressCopyLabel;
+    }
     payload = value;
     text.textContent = value.length > DISPLAY_LIMIT ? shortenMiddle(value) : value;
     // A payload the provider splits is scanned as a sequence: one code could
     // not hold it, and a truncated code would hand the signer a broken file.
-    const kind = target.dataset.addressQrAnimate || "";
+    const kind = privateMode ? "" : target.dataset.addressQrAnimate || "";
     const parts = kind && typeof frames === "function" ? frames(value, kind) : null;
     if (Array.isArray(parts) && parts.length > 1) {
       let frame = 0;
@@ -183,11 +237,12 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
   };
 
   document.addEventListener("click", (event) => {
-    const target = event.target.closest?.("[data-address-qr]");
+    const target = event.target.closest?.("[data-address-qr], [data-private-qr]");
     if (target) open(target);
   });
-  closeButton.addEventListener("click", close);
+  closeButton.addEventListener("click", () => close());
   text.addEventListener("click", copy);
   copyButton.addEventListener("click", copy);
-  image.addEventListener("click", copy);
+  image.addEventListener("click", () => { if (!privateMode) copy(); });
+  return { closePrivate: () => { if (privateMode) close({ restoreFocus: false }); } };
 };
