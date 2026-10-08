@@ -36,6 +36,15 @@ some processes. Capture failures are reported and invalidate the run; they
 are not interpreted as zero residue. Reports retain the capture tool's diagnostic
 tail (up to 8,192 characters). The harness does not change OS permissions.
 
+On Windows, run the harness from an elevated prompt; a non-elevated ProcDump
+cannot attach to all of Chrome's processes. Elevated Chrome and Edge relaunch
+themselves de-elevated and exit, which would close the debugging pipe, so on
+Windows the harness launches them with `--do-not-de-elevate`. The browser
+process therefore runs elevated; its renderers keep their usual sandbox.
+ProcDump's piped output is UTF-16LE and is decoded before its result is
+checked. Dump file names avoid ProcDump's name substitutions (`PID`,
+`PROCESSNAME`, `YYMMDD`, `HHMMSS`, `EXCEPTIONCODE`).
+
 If `MEMPROCFS_MOUNT` is set, the optional live-file path scans per-process
 files instead of creating dumps. It recognizes `<mount>/<pid>/` and
 `<mount>/proc/<pid>/`; other layouts are recorded as unavailable. A recognized
@@ -67,7 +76,7 @@ driver is injected. The staged file itself must contain none of the needles.
 Node drives the UI through Chromium's debugging pipe. Fixture text arrives
 through native input events, never evaluated JavaScript source, page globals,
 or checkpoint URLs. Values returned by the browser are compared on the host;
-protocol object groups are released. Revealed output and clipboard verification
+protocol object groups are released. Revealed output verification
 return only SHA-256 digests, rather than secret text, through the debugging pipe.
 No debugging TCP listener is opened.
 
@@ -81,13 +90,16 @@ master xprv and first WIF must match the host's expected fixture.
 | `before-input` | App booted; no fixture entered; complete captures and no needle hits |
 | `after-derive` | Derive clicked and the completed wallet rendered |
 | `after-reveal` | Private values are revealed; capture precedes output verification and all clipboard actions |
-| `after-copy` | The app's seed-copy control ran and the clipboard equals the fixture mnemonic |
+| `after-copy` | The app's seed-copy control ran and showed its copied state |
 | `after-wipe` | End Session completed and the ended screen is present |
 | `after-tab-close` | The fixture tab is confirmed closed; surviving processes are enumerated again |
 
-The clipboard is cleared before the copy step to prevent a stale value passing
-the check. The check reads the clipboard after the real app copy; it never
-substitutes a successful mock write. Clipboard failure aborts the run.
+The harness never touches the clipboard itself: only the app's Copy seed phrase
+button does. The copy is confirmed by the button's copied state, which the app
+sets only after its own clipboard write succeeded; a failed or blocked copy
+aborts the run. Reading the clipboard back left a copy of the mnemonic in the
+browser process after the tab closed (2026-10-06: Chrome's only one, and 2 of
+Edge's 4), so the harness does not verify the clipboard's contents.
 A blank keeper tab lets the browser process survive closing the fixture tab.
 
 After the `after-reveal` capture, digests of the rendered private fields are
@@ -101,7 +113,7 @@ must also succeed for a complete valid run.
 adapter and `Input.insertText` as the manual harness. It checks trusted,
 cancelable `beforeinput`, a masked passphrase field, and the independently
 pinned wallet. Blocking the edit must reject the wrong xprv; blocking the real
-Copy seed phrase action must reject the clipboard check. These tests require
+Copy seed phrase action must fail the copy confirmation. These tests require
 Chrome/Chromium or Edge, skip explicitly when neither is installed, and run with
 `npm run test:browser`. The unit mock still assigns `.value`; it proves
 ordering, not native event delivery.
@@ -140,7 +152,7 @@ representations and times on this OS/browser. A hit proves those bytes were in
 the captured data; it does not identify which app, browser, debugger or OS
 subsystem retained a copy.
 
-Automation, protocol input/return buffers, and clipboard verification can add
+Automation and protocol input/return buffers can add
 copies of their own. The positive capture precedes output reads and clipboard
 actions, and private-key output is never returned as plaintext over CDP. Input
 buffers can still supply mnemonic/passphrase hits. Later verification reads and
@@ -156,10 +168,38 @@ in the Ubuntu 24.04 development environment failed at `before-input`:
 invalid, and the driver refused to enter fixture data. This exercises actual
 capture failure handling, not successful acquisition or erasure. A successful
 gcore/ProcDump run on a host permitting capture remains required for measured
-residue results; ProcDump has not been run for this change.
+residue results.
+
+On 2026-10-05, a real ProcDump attempt (v12.01) against Chrome on Windows 11
+failed at `before-input`: a subset of Chrome's processes are protected (their
+command line is unreadable and a non-elevated ProcDump attach is refused,
+exiting `No process matching the specified PID`), so those captures were
+skipped and the fail-closed harness invalidated the run. A full-tree Chrome
+capture on Windows requires running the harness elevated, or a Chromium build
+without protected processes. The exit-code handling itself is unit-tested;
+end-to-end measured residue on Windows still needs an elevated run.
+
+On 2026-10-06, elevated attempts (ProcDump v12.01, Chrome 154.0.8037.98) found
+three further Windows problems, now fixed and unit-tested. Elevated Chrome
+de-elevated and closed the pipe before `before-input`. Every complete dump was
+refused, because ProcDump's UTF-16LE output never matched `Dump 1 complete`,
+and because `-pid<n>` in the requested name was expanded by ProcDump. Two
+start-up renderers exited during the sweep.
 
 Process captures are sequential, not an atomic snapshot, and processes can
-appear or exit between enumeration and capture. The test does not cover swap,
+appear or exit between enumeration and capture. Before each checkpoint's sweep
+the harness waits until the browser's process tree, enumerated every 2 s, has
+stayed unchanged for 20 s at `before-input` (Chrome retires start-up renderers
+for about half a minute) and for 6 s at later checkpoints, giving up after 120 s
+and 60 s. A set still changing then is captured as last seen, and the report
+says so. A process that exits during the sweep is recorded as an exit, not a
+failed capture, only when ProcDump reports `No process matching the specified
+PID` and a successful fresh enumeration of the browser's tree no longer lists
+it; the report lists every exit. A failed process query, malformed output or
+missing browser root stops the run as invalid, rather than confirming an exit.
+Any other capture failure still invalidates the run,
+as does a checkpoint that scanned no process. An exited process was not scanned
+at that checkpoint. The test does not cover swap,
 hibernation, old crash dumps, GPU buffers, clipboard history or every browser
 encoding. Results do not generalize to another browser/OS build. See the
 [Computer Hardening Checklist](Computer_Hardening_Checklist.md) for disk and OS

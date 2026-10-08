@@ -35,6 +35,9 @@
   const equal = (actual, expected) => {
     if (actual !== expected) throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   };
+  // A check this browser cannot run is reported as skipped, with its reason,
+  // never silently passed.
+  const skipped = (name, reason) => results.push({ name, ok: true, skip: reason });
   // What clicking a copy button puts on the clipboard: the buttons build it on
   // the click and hold no copy of it, so the click is the only way to read it.
   const copiedBy = async (button) => {
@@ -52,7 +55,7 @@
   };
   const report = (filename) => {
     const text = results.map((result) =>
-      [result.ok ? "ok" : "not ok", result.name, result.error || ""].join("\t")
+      [result.skip ? "skip" : result.ok ? "ok" : "not ok", result.name, result.skip || result.error || ""].join("\t")
     ).join("\n") + "\n";
     window.__downloadTestReport(filename, text);
   };
@@ -354,7 +357,7 @@
         const currentStation = tabs.firstElementChild, selected = tabs.children[1];
         return selected.classList.contains("active") && selected.getBoundingClientRect().left >= currentStation.getBoundingClientRect().right - 1;
       }, "the selected derived key tab to clear the pinned Station");
-      equal(document.getElementById("key-summary-method").textContent, "Dice rolls: Base 10 [0-9] / Hashed rolls", "the key overview names the method before its sub-method");
+      equal(document.getElementById("key-summary-method").textContent, "Dice rolls: Base 10 [1-6] / Hashed rolls", "the key overview names the method before its sub-method");
       const summaryLifehash = await until(() => {
         const image = document.getElementById("key-summary-lifehash");
         return !image.hidden ? image : null;
@@ -1670,6 +1673,30 @@
     }
   });
 
+  // What assistive tech is told about a tool tab matches what it does: it
+  // names the panels it shows, and opening the tool shows one of them.
+  await test("each tool tab points at the panels it opens", async () => {
+    const tabs = [...document.querySelectorAll("#workspace-tabs [data-workspace]")];
+    assert(tabs.length > 0, "No tool tabs found");
+    try {
+      for (const tab of tabs) {
+        const name = tab.getAttribute("aria-label");
+        const ids = (tab.getAttribute("aria-controls") || "").split(" ").filter(Boolean);
+        assert(ids.length > 0, `${name} names no panel`);
+        const panels = ids.map((id) => document.getElementById(id));
+        assert(panels.every(Boolean), `${name} points at a missing panel among: ${ids.join(" ")}`);
+        tab.click();
+        await until(
+          () => tab.getAttribute("aria-selected") === "true" && panels.some((panel) => !panel.hidden),
+          `${name} to show one of the panels it names`,
+        );
+      }
+    } finally {
+      document.querySelector('#workspace [data-workspace="calc"]').click();
+      await until(() => !document.getElementById("key-manager").hidden, "key workspace");
+    }
+  });
+
   await test("a disabled primary action looks unavailable, but a stopping derivation stays red", async () => {
     // Read after the colour transitions settle; a mid-fade value would pass
     // or fail by timing alone.
@@ -2264,9 +2291,16 @@
     equal(getComputedStyle(body).borderTopLeftRadius, "0px", "the page tab should join directly to the top-left of the editor");
     equal(getComputedStyle(pageTabs[0]).backgroundColor, getComputedStyle(notesWrap).backgroundColor, "the selected page tab should use the editor background");
     body.focus();
-    equal(getComputedStyle(body).outlineStyle, "none", "the focused editor should replace the browser outline with its connected page outline");
-    await until(() => getComputedStyle(pageTabs[0]).borderTopColor === getComputedStyle(body).borderTopColor, "the focused editor outline to climb around its active page tab");
-    equal(getComputedStyle(pageTabs[0], "::after").backgroundColor, getComputedStyle(notesWrap).backgroundColor, "the active page tab should mask the editor outline beneath it");
+    // Focus styling needs a window that holds focus. Headless Firefox on
+    // Windows never gets one: document.hasFocus() stays false and :focus never
+    // matches, so these checks could only fail or pass vacuously there.
+    if (document.hasFocus()) {
+      equal(getComputedStyle(body).outlineStyle, "none", "the focused editor should replace the browser outline with its connected page outline");
+      await until(() => getComputedStyle(pageTabs[0]).borderTopColor === getComputedStyle(body).borderTopColor, "the focused editor outline to climb around its active page tab");
+      equal(getComputedStyle(pageTabs[0], "::after").backgroundColor, getComputedStyle(notesWrap).backgroundColor, "the active page tab should mask the editor outline beneath it");
+    } else {
+      skipped("Journal notepad: the focused editor outline and its page tab mask", "this browser window never takes focus (document.hasFocus() is false)");
+    }
     assert(notesCopy && notesCopy.classList.contains("copy-button"), "the notepad should reuse the clipboard icon button");
     equal(Math.round(notesCopy.getBoundingClientRect().top - notesWrap.getBoundingClientRect().top), 10, "the notepad copy button should align with the bottom of the first text line");
     equal(Math.round(notesWrap.getBoundingClientRect().right - notesCopy.getBoundingClientRect().right), 12, "the notepad copy button should sit in the top-right corner");
@@ -2571,7 +2605,7 @@
     document.querySelector('#journal-tool-tabs [data-journal-tool="state"]').click();
     await until(() => !document.getElementById("journal-state-card").hidden, "session state");
     const stateText = document.getElementById("journal-state-text");
-    assert(stateText.readOnly && stateText.getAttribute("aria-readonly") === "true", "the live session snapshot should be read-only");
+    assert(stateText.readOnly, "the live session snapshot should be read-only");
     assert(!document.getElementById("journal-state-capture"), "the live session snapshot should not need a Capture button");
     await until(() => stateText.value.includes("ENTROPYLAB SESSION STATE"), "the live session snapshot to populate");
     const snap = stateText.value;

@@ -25,7 +25,7 @@ export function initSecurityLog({ doc = document, win = window, nav = navigator,
 
   const rowFor = ({ code, at }) => {
     const spec = eventSpec(code);
-    const row = doc.createElement("li");
+    const row = doc.createElement("div");
     row.dataset.event = code;
     row.dataset.level = spec.level;
     const time = doc.createElement("time");

@@ -13,18 +13,18 @@
     </div>
   </div>
   <div class="wrap">
-    <aside class="beta-warning no-print" id="beta-warning" role="alert">
+    <div class="beta-warning no-print" id="beta-warning" role="alert">
       <div class="beta-warning-text" data-i18n-rich><strong>Experimental software</strong> EntropyLab is experimental and should be used only for testing and educational purposes.</div>
       <button type="button" class="beta-warning-dismiss" id="beta-warning-dismiss" aria-label="Dismiss the experimental software warning"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-    </aside>
+    </div>
 <noscript>
-      <aside class="beta-warning no-print" role="alert">
+      <div class="beta-warning no-print" role="alert">
         <div class="beta-warning-text"><strong>JavaScript is required</strong> EntropyLab performs wallet calculations locally inside your browser. With JavaScript disabled the calculator cannot derive keys or addresses. Enable JavaScript, then run this file offline on an air-gapped computer.</div>
-      </aside>
+      </div>
     </noscript>
-    <aside class="online-warning no-print" id="online-warning" role="alert" hidden>
+    <div class="online-warning no-print" id="online-warning" role="alert" hidden>
       <div class="online-warning-text" data-i18n-rich><strong>Online version</strong> Do not enter seed phrases, private keys, or other wallet secrets on an internet-connected device. <a href="entropylab.html" download="entropylab.html">Download EntropyLab</a> and run the HTML file offline on a trusted, air-gapped computer. On iPhone, Safari users can choose Share → Add to Home Screen → Open as Web App; after the first load, disconnect all networks before reopening it. Cached availability is not proof of an air gap.</div>
-    </aside>
+    </div>
     <!-- TODO: This copy is being kept for the network-detected modal that will
          replace the banner. Verbatim, with the lead-in as the modal's title:
          "Network detected:" / "This computer has an active network adapter — it
@@ -45,12 +45,12 @@
     <nav class="workspace no-print" id="workspace">
       <button type="button" class="workspace-more" id="workspace-more" aria-controls="workspace-tabs" aria-label="Scroll the tool list to see more tools" hidden>More tools<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
       <div class="workspace-tabs" id="workspace-tabs" role="tablist" aria-label="Tool">
-        <button type="button" class="workspace-tab active" role="tab" aria-selected="true" aria-label="Keys"><span class="workspace-tab-full">Keys</span><span class="workspace-tab-short">Keys</span></button>
-        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Multi Signature"><span class="workspace-tab-full">Multi Signature</span><span class="workspace-tab-short">MultiSig</span></button>
-        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="PSBT"><span class="workspace-tab-full">PSBT</span><span class="workspace-tab-short">PSBT</span></button>
-        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="BIP-85 Child"><span class="workspace-tab-full">BIP-85 Child</span><span class="workspace-tab-short">BIP-85</span></button>
-        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Silent Payments"><span class="workspace-tab-full">Silent Payments</span><span class="workspace-tab-short">SP</span></button>
-        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-label="Vanity Address"><span class="workspace-tab-full">Vanity Address</span><span class="workspace-tab-short">Vanity</span></button>
+        <button type="button" class="workspace-tab active" role="tab" aria-selected="true" aria-controls="calc-card" aria-label="Keys"><span class="workspace-tab-full">Keys</span><span class="workspace-tab-short">Keys</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="msig-card" aria-label="Multi Signature"><span class="workspace-tab-full">Multi Signature</span><span class="workspace-tab-short">MultiSig</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="psbt-card psbted-card nonce-card" aria-label="PSBT"><span class="workspace-tab-full">PSBT</span><span class="workspace-tab-short">PSBT</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="bip85-card" aria-label="BIP-85 Child"><span class="workspace-tab-full">BIP-85 Child</span><span class="workspace-tab-short">BIP-85</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="sp-card" aria-label="Silent Payments"><span class="workspace-tab-full">Silent Payments</span><span class="workspace-tab-short">SP</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="vanity-card" aria-label="Vanity Address"><span class="workspace-tab-full">Vanity Address</span><span class="workspace-tab-short">Vanity</span></button>
         <!-- Lightning, Journal, and Codex32 are held back; see hodlWorkspaceTabs in app.js. -->
       </div>
     </nav>
@@ -59,13 +59,13 @@
         <h2>Create. Derive. Verify.</h2>
         <p class="muted tool-intro-note">You supply dice, cards, hex, a seed, or a key. EntropyLab derives the BIP-39 seed, master fingerprint, xpubs, and receive addresses. It does not generate entropy for you. Nothing leaves this page.</p>
       </div>
-      <section class="key-manager no-print" id="key-manager">
+      <div class="key-manager no-print" id="key-manager">
       <div class="key-tab-strip"><div class="key-tabs" id="key-tabs" role="tablist" aria-label="Keys"></div><div class="add-item-control"><button class="add-key" id="add-key" type="button" aria-label="Open Key Station to derive another key" aria-describedby="add-key-tooltip" disabled>+</button><span class="add-item-tooltip" id="add-key-tooltip" role="tooltip">Open Key Station to derive another key</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-key" type="button" aria-label="Delete current key" aria-describedby="delete-key-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-key-tooltip" role="tooltip">Delete this key</span></div></div>
-    </section>
-    <section class="card no-print tool-card" id="calc-card" role="tabpanel" hidden>
+    </div>
+    <div class="card no-print tool-card" id="calc-card" role="tabpanel" hidden>
       <div class="key-mode-select" id="modes"><p class="label" id="key-method-label">Derivation method</p></div>
       <div class="key-summary" id="key-summary" hidden>
-        <img class="key-summary-lifehash" id="key-summary-lifehash" width="72" height="72" alt="" hidden>
+        <img class="key-summary-lifehash" id="key-summary-lifehash" width="72" height="72" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" hidden>
         <div class="key-summary-text">
           <code class="key-summary-fingerprint" id="key-summary-fingerprint"></code>
           <p class="key-summary-meta" id="key-summary-method"></p>
@@ -78,7 +78,7 @@
       <p class="edge-note is-public" id="key-edit-note" role="status" hidden></p>
       <div class="global-sync-host" id="global-sync-host"></div>
       <section class="seed-length-control" id="seed-length" aria-labelledby="seed-length-label">
-        <p class="label" id="seed-length-label">Seed phrase length</p>
+        <h3 class="label" id="seed-length-label">Seed phrase length</h3>
         <div class="seed-length-select">
           <select id="seed-length-select" aria-labelledby="seed-length-label"><option value="12">12 words</option><option value="15">15 words</option><option value="18">18 words</option><option value="21">21 words</option><option value="24" selected="selected">24 words</option></select>
         </div>
@@ -88,11 +88,11 @@
       <p class="label">Dice roll options</p>
       <div class="choice-grid">
       <label class="choice"><input type="radio" name="dm" value="coldcard" checked="checked">
-        <span><strong>Base 10 [0-9] / Hashed rolls</strong>
+        <span><strong>Base 10 [1-6] / Hashed rolls</strong>
         <span class="desc">SHA-256 of the original dice digit string, matching the method used by COLDCARD and SeedSigner. Every entered roll is included.</span></span>
       </label>
       <label class="choice"><input type="radio" name="dm" value="coleman">
-        <span><strong>Dice [1-6] / Hashed rolls</strong>
+        <span><strong>Base 6 [0-5] / Hashed rolls</strong>
         <span class="desc">Convert every rolled 6 to 0, hash the complete
 digit string with SHA-256, then use the selected BIP39 entropy length.
 This matches the method used by Keystone, and all rolls are included.</span></span>
@@ -114,26 +114,26 @@ words, pick one of the checksum words.</span></span>
       <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" translate="no" aria-hidden="true"></pre><textarea id="dice" placeholder="415263415263…" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="dice-meta"></textarea></div>
       <div class="dice-input-pad faces-1-6"><button type="button" data-d="1">1</button><button type="button" data-d="2">2</button><button type="button" data-d="3">3</button><button type="button" data-d="4">4</button><button type="button" data-d="5">5</button><button type="button" data-d="6">6</button></div>
       <div class="seed-word-copy-row"><p class="label">Derived seed phrase</p><span class="copy-status" aria-live="polite"></span><button type="button" class="copy-button boxed-copy-button" data-copy-seed-phrase disabled aria-label="Copy seed phrase" title="Copy seed phrase"></button></div>
-      <div id="dice-words" translate="no" class="dice-word-grid" aria-label="24 seed-word slots"></div>
+      <div id="dice-words" translate="no" class="dice-word-grid" role="group" aria-label="24 seed-word slots"></div>
       <div id="last-words" translate="no" class="row last-word-options"></div>
     </div>
       <div class="passphrase-field" id="passphrase-field">
         <label for="pass">Passphrase (optional)</label>
         <div class="passphrase-keyboard-tools" id="passphrase-keyboard-toggle-host" hidden></div>
-        <div class="dice-input-shell passphrase-input-shell"><pre class="dice-input-highlight" id="passphrase-highlight" translate="no" aria-hidden="true"></pre><input id="pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none" aria-describedby="passphrase-bip39-status" /></div>
+        <div class="dice-input-shell passphrase-input-shell"><pre class="dice-input-highlight" id="passphrase-highlight" translate="no" aria-hidden="true"></pre><input id="pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none" aria-describedby="passphrase-bip39-status"></div>
         <p class="field-note passphrase-bip39-status" id="passphrase-bip39-status" aria-live="polite" hidden></p>
       </div>
       <div class="passphrase-keyboard-host" id="passphrase-keyboard-host" hidden></div>
       <div class="master-fingerprint-preview" id="master-fingerprint-preview" role="status" aria-live="polite" aria-atomic="true">
         <p class="label master-fingerprint-heading">Master fingerprint</p>
         <div class="master-fingerprint-card is-disabled" id="base-master-fingerprint-card" role="group" data-state="unavailable" aria-label="Base seed master fingerprint unavailable">
-          <span class="master-fingerprint-lifehash-frame" aria-hidden="true"><img class="master-fingerprint-lifehash" id="base-master-fingerprint-lifehash" alt="" width="96" height="96" hidden /></span>
+          <span class="master-fingerprint-lifehash-frame" aria-hidden="true"><img class="master-fingerprint-lifehash" id="base-master-fingerprint-lifehash" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" width="96" height="96" hidden></span>
           <span class="master-fingerprint-label">Base seed</span>
           <code class="master-fingerprint-value" id="base-master-fingerprint"></code>
         </div>
         <span class="master-fingerprint-arrow is-disabled" id="master-fingerprint-arrow" aria-hidden="true">→</span>
         <div class="master-fingerprint-card master-fingerprint-derived is-disabled" id="passphrase-master-fingerprint-card" role="group" data-state="unavailable" aria-label="With passphrase master fingerprint unavailable">
-          <span class="master-fingerprint-lifehash-frame" aria-hidden="true"><img class="master-fingerprint-lifehash" id="passphrase-master-fingerprint-lifehash" alt="" width="96" height="96" hidden /></span>
+          <span class="master-fingerprint-lifehash-frame" aria-hidden="true"><img class="master-fingerprint-lifehash" id="passphrase-master-fingerprint-lifehash" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" width="96" height="96" hidden></span>
           <span class="master-fingerprint-label">With passphrase</span>
           <code class="master-fingerprint-value" id="passphrase-master-fingerprint"></code>
         </div>
@@ -193,19 +193,19 @@ words, pick one of the checksum words.</span></span>
       <p class="field-note address-estimate derivation-estimate edge-note is-muted" id="address-estimate" role="status">Measuring this device…</p>
       <div class="derive-progress" id="derive-progress" role="progressbar" aria-label="Key derivation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
       <div class="row key-action-row current-item-actions tool-actions">
-        <button class="btn primary" id="go" disabled aria-disabled="true">Derive Key</button>
-        <button class="btn secondary" id="key-update" type="button" aria-describedby="key-edit-note" hidden disabled aria-disabled="true">Update Existing Key</button>
-        <button class="btn red clear-current-action" id="wipe" type="button" disabled aria-disabled="true">Clear Current Key</button>
+        <button class="btn primary" id="go" disabled>Derive Key</button>
+        <button class="btn secondary" id="key-update" type="button" aria-describedby="key-edit-note" hidden disabled>Update Existing Key</button>
+        <button class="btn red clear-current-action" id="wipe" type="button" disabled>Clear Current Key</button>
       </div>
       <p class="err" id="error"></p>
       </div>
       <div id="out"></div>
-    </section>
+    </div>
       <div class="tool-intro edge-note is-info" id="vanity-tool-intro" hidden>
         <h2>Grind a vanity address from a key you already hold</h2>
         <p class="muted tool-intro-note">Walks either the passphrase or the account number until the address matches your prefix. Same key and same counter always give the same address. Key Station matches can be written back; BIP-85 children stay unchanged. Generates no new entropy.</p>
       </div>
-      <section class="card no-print tool-card" id="vanity-card" role="tabpanel" hidden>
+      <div class="card no-print tool-card" id="vanity-card" role="tabpanel" hidden>
         <section class="edge-note-titled" aria-labelledby="vanity-grind-heading">
           <h3 class="edge-note-title is-private" id="vanity-grind-heading">Before you grind</h3>
           <div class="edge-note is-private" id="vanity-grind-warning" role="note">
@@ -230,7 +230,7 @@ words, pick one of the checksum words.</span></span>
         <div class="vanity-source-block tool-section" id="vanity-source-block" hidden>
         <p class="label">Selected key</p>
         <div class="key-summary" id="vanity-source">
-          <img class="key-summary-lifehash" id="vanity-source-lifehash" width="72" height="72" alt="" hidden>
+          <img class="key-summary-lifehash" id="vanity-source-lifehash" width="72" height="72" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" hidden>
           <div class="key-summary-text">
             <code class="key-summary-fingerprint" id="vanity-source-name"></code>
             <p class="key-summary-meta" id="vanity-source-kind"></p>
@@ -317,17 +317,17 @@ words, pick one of the checksum words.</span></span>
         <div class="row current-item-actions tool-actions">
           <button class="btn primary" id="vanity-go" type="button">Start Grinding</button>
           <div class="derive-progress" id="vanity-progress" role="progressbar" aria-label="Vanity grinding progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
-          <button class="btn red clear-current-action" id="vanity-wipe" type="button" disabled aria-disabled="true">Clear Results</button>
+          <button class="btn red clear-current-action" id="vanity-wipe" type="button" disabled>Clear Results</button>
         </div>
-      </section>
+      </div>
       <div class="tool-intro edge-note is-info" id="bip85-tool-intro" hidden>
         <h2>Child seeds from a parent key</h2>
         <p class="muted tool-intro-note">Same parent, same settings, same child every time. English BIP-39 children match COLDCARD. No new entropy is generated.</p>
       </div>
-      <section class="key-manager no-print" id="bip85-manager" hidden>
+      <div class="key-manager no-print" id="bip85-manager" hidden>
         <div class="key-tab-strip"><div class="key-tabs" id="bip85-tabs" role="tablist" aria-label="BIP-85 child seeds"></div><div class="add-item-control"><button class="add-key" id="add-bip85" type="button" aria-label="Open BIP-85 Station to derive another child" aria-describedby="add-bip85-tooltip">+</button><span class="add-item-tooltip" id="add-bip85-tooltip" role="tooltip">Open BIP-85 Station</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-bip85" type="button" aria-label="Delete current BIP-85 child" aria-describedby="delete-bip85-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-bip85-tooltip" role="tooltip">Delete this BIP-85 child</span></div></div>
-      </section>
-      <section class="card no-print tool-card" id="bip85-card" role="tabpanel" hidden>
+      </div>
+      <div class="card no-print tool-card" id="bip85-card" role="tabpanel" hidden>
       <div class="bip85-bench" id="bip85-bench">
       <section class="edge-note-titled" aria-labelledby="bip85-safety-heading">
         <h3 class="edge-note-title is-private" id="bip85-safety-heading">Safety notes</h3>
@@ -380,20 +380,20 @@ words, pick one of the checksum words.</span></span>
       <p class="edge-note is-muted bip85-path-row">Path <code id="bip85-path">m/83696968'/39'/0'/24'/0'</code></p>
       <p class="err" id="bip85-error" role="alert"></p>
       <div class="row bip85-actions current-item-actions tool-actions">
-        <button class="btn primary" id="bip85-go" type="button" disabled aria-disabled="true">Derive Child Key</button>
-        <button class="btn red clear-current-action" id="bip85-wipe" type="button" disabled aria-disabled="true">Clear Parent Key</button>
+        <button class="btn primary" id="bip85-go" type="button" disabled>Derive Child Key</button>
+        <button class="btn red clear-current-action" id="bip85-wipe" type="button" disabled>Clear Parent Key</button>
       </div>
       </div>
       <div id="bip85-out" aria-live="polite"></div>
-    </section>
+    </div>
       <div class="tool-intro edge-note is-info" id="msig-tool-intro" hidden>
         <h2>Build a watch-only multisig</h2>
         <p class="muted tool-intro-note">You supply individual co-signer xpubs, choose from keys entered in the Key Station, or paste in an existing multisig wallet descriptor. Verify the derived addresses, or any other info needed to setup a watch-only multisig wallet.</p>
       </div>
-      <section class="key-manager no-print" id="msig-manager" hidden>
+      <div class="key-manager no-print" id="msig-manager" hidden>
       <div class="key-tab-strip"><div class="key-tabs" id="msig-tabs" role="tablist" aria-label="Multisigs"></div><div class="add-item-control"><button class="add-key" id="add-msig" type="button" aria-label="Open MS Station to derive another multisig" aria-describedby="add-msig-tooltip" disabled>+</button><span class="add-item-tooltip" id="add-msig-tooltip" role="tooltip">Open MS Station</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-msig" type="button" aria-label="Delete current multisig" aria-describedby="delete-msig-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-msig-tooltip" role="tooltip">Delete this multisig</span></div></div>
-    </section>
-    <section class="card no-print tool-card" id="msig-card" role="tabpanel" hidden>
+    </div>
+    <div class="card no-print tool-card" id="msig-card" role="tabpanel" hidden>
       <div class="key-summary" id="msig-summary" hidden>
         <div class="key-summary-text">
           <code class="key-summary-fingerprint" id="msig-summary-policy"></code>
@@ -409,7 +409,7 @@ words, pick one of the checksum words.</span></span>
         <label class="field"><span class="muted label-value">Paste a wallet-exported multisig descriptor here — the quorum, script type, key order, and co-signer xpubs will be filled in below.</span>
           <textarea id="msig-descriptor" placeholder="wsh(sortedmulti(2,[fingerprint/48h/0h/0h/2h]Zpub…/0/*, …))" autocomplete="off" spellcheck="false" aria-describedby="msig-descriptor-help"></textarea>
         </label>
-        <button class="btn secondary" id="msig-descriptor-import" type="button" disabled aria-disabled="true">Import Descriptor</button>
+        <button class="btn secondary" id="msig-descriptor-import" type="button" disabled>Import Descriptor</button>
         <p class="field-note edge-note is-muted" id="msig-descriptor-help">Only accepts watch-only public keys; a descriptor carrying private keys will be refused.</p>
         <p class="hint" id="msig-descriptor-status" role="status" hidden></p>
       </details>
@@ -464,7 +464,7 @@ words, pick one of the checksum words.</span></span>
       <div class="key-settings msig-output-settings">
         <!-- Parsed co-signer origins remain the internal source of truth for
              these values; they are not one editable global derivation path. -->
-        <div id="msig-origin-state" hidden aria-hidden="true">
+        <div id="msig-origin-state" hidden>
           <input id="msig-purpose" type="number" value="48"><input id="msig-purpose-harden" type="checkbox" checked>
           <input id="msig-network" type="number" value="0"><input id="msig-network-harden" type="checkbox" checked>
           <input id="msig-account" type="text" value="" disabled><input id="msig-account-harden" type="checkbox" checked>
@@ -499,23 +499,23 @@ words, pick one of the checksum words.</span></span>
       <p class="field-note address-estimate derivation-estimate edge-note is-muted" id="msig-address-estimate" role="status">Measuring this device…</p>
       <p class="edge-note is-private msig-spec-warning" id="msig-spec-warning" role="status" hidden></p>
       <div class="row current-item-actions tool-actions">
-        <button class="btn primary" id="msig-go" type="button" aria-describedby="msig-script-warning msig-spec-warning" disabled aria-disabled="true">Derive Multisig</button>
-        <button class="btn secondary" id="msig-update" type="button" aria-describedby="msig-edit-note msig-script-warning msig-spec-warning" hidden disabled aria-disabled="true">Update Existing Multisig</button>
+        <button class="btn primary" id="msig-go" type="button" aria-describedby="msig-script-warning msig-spec-warning" disabled>Derive Multisig</button>
+        <button class="btn secondary" id="msig-update" type="button" aria-describedby="msig-edit-note msig-script-warning msig-spec-warning" hidden disabled>Update Existing Multisig</button>
         <div class="derive-progress" id="msig-derive-progress" role="progressbar" aria-label="Multisig derivation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete" hidden><span class="derive-progress-track"><span class="derive-progress-bar"></span></span><span class="derive-progress-label">0%</span></div>
-        <button class="btn red clear-current-action" id="msig-wipe" type="button" disabled aria-disabled="true">Clear Current Multisig</button>
+        <button class="btn red clear-current-action" id="msig-wipe" type="button" disabled>Clear Current Multisig</button>
       </div>
       <p class="err" id="msig-error"></p>
       </div>
       <div id="msig-out"></div>
-    </section>
+    </div>
     <div class="tool-intro edge-note is-info" id="sp-tool-intro" hidden>
         <h2>Silent Payments, offline</h2>
         <p class="muted tool-intro-note" data-i18n-rich>Get an <code>sp1q…</code> address to reuse. Print the URI and DNS text if you want to publish it. Make a sender output or check pasted outputs against your scan key. No chain. No network.</p>
       </div>
-      <section class="key-manager no-print" id="sp-manager" hidden>
+      <div class="key-manager no-print" id="sp-manager" hidden>
         <div class="key-tab-strip"><div class="key-tabs" id="sp-tabs" role="tablist" aria-label="Silent Payments"></div><div class="add-item-control"><button class="add-key" id="add-sp" type="button" aria-label="Open SP Station to derive another address" aria-describedby="add-sp-tooltip">+</button><span class="add-item-tooltip" id="add-sp-tooltip" role="tooltip">Open SP Station</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-sp" type="button" aria-label="Delete current silent payment address" aria-describedby="delete-sp-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-sp-tooltip" role="tooltip">Delete this silent payment address</span></div></div>
-      </section>
-      <section class="card no-print tool-card" id="sp-card" role="tabpanel" hidden>
+      </div>
+      <div class="card no-print tool-card" id="sp-card" role="tabpanel" hidden>
       <div id="sp-bench">
       <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       <p class="label" id="sp-mode-label">Mode</p>
@@ -589,14 +589,14 @@ words, pick one of the checksum words.</span></span>
       <p class="err" id="sp-error" role="alert"></p>
       <p class="edge-note is-muted" id="sp-session" aria-live="polite">No session key. Receive and verify need a seed or root xprv.</p>
       <div class="row psbt-actions tool-actions current-item-actions">
-        <button class="btn primary" id="sp-derive" type="button" disabled aria-disabled="true" data-sp-action="receive">Derive silent payment address</button>
-        <button class="btn primary" id="sp-send-go" type="button" disabled aria-disabled="true" data-sp-action="send" hidden>Compute taproot outputs</button>
-        <button class="btn primary" id="sp-verify-go" type="button" disabled aria-disabled="true" data-sp-action="verify" hidden>Scan pasted outputs</button>
-        <button class="btn red clear-current-action" id="sp-wipe" type="button" disabled aria-disabled="true">Clear Station</button>
+        <button class="btn primary" id="sp-derive" type="button" disabled data-sp-action="receive">Derive silent payment address</button>
+        <button class="btn primary" id="sp-send-go" type="button" disabled data-sp-action="send" hidden>Compute taproot outputs</button>
+        <button class="btn primary" id="sp-verify-go" type="button" disabled data-sp-action="verify" hidden>Scan pasted outputs</button>
+        <button class="btn red clear-current-action" id="sp-wipe" type="button" disabled>Clear Station</button>
       </div>
       </div>
       <div id="sp-address-view" hidden></div>
-    </section>
+    </div>
     <div class="tool-intro-stack" id="psbt-tool-intros" hidden>
     <div class="tool-intro edge-note is-info active" id="psbt-tool-intro" aria-hidden="false">
         <h2>See what’s in a transaction</h2>
@@ -611,7 +611,7 @@ words, pick one of the checksum words.</span></span>
         <p class="muted tool-intro-note">Paste a PSBT or a signed transaction. Every ECDSA signature’s nonce is compared for reuse — the sign of a bad or leaking hardware wallet. Add a key to check RFC 6979, or a Jade transcript to verify anti-exfil.</p>
       </div>
     </div>
-    <section class="key-manager no-print" id="psbt-manager" hidden>
+    <div class="key-manager no-print" id="psbt-manager" hidden>
       <div class="key-tab-strip">
         <div class="key-tabs" id="psbt-tool-tabs" role="tablist" aria-label="PSBT stations">
           <button class="tab key-tab active" id="psbt-inspector-tab" type="button" role="tab" aria-selected="true" aria-controls="psbt-card" data-psbt-tool="inspector"><span class="key-tab-label">PSBT Inspector</span></button>
@@ -619,8 +619,8 @@ words, pick one of the checksum words.</span></span>
           <button class="tab key-tab" id="psbt-nonce-tab" type="button" role="tab" aria-selected="false" aria-controls="nonce-card" data-psbt-tool="nonce"><span class="key-tab-label">Nonce Inspector</span></button>
         </div>
       </div>
-    </section>
-      <section class="card no-print tool-card" id="psbt-card" role="tabpanel" hidden>
+    </div>
+      <div class="card no-print tool-card" id="psbt-card" role="tabpanel" hidden>
       <p class="edge-note is-public">A “PSBT” is a Partially Signed Bitcoin Transaction.</p>
       <label class="field">PSBT v0 or raw transaction (base64 or hex)
         <textarea id="psbt-text" placeholder="cHNidP8B… or 020000000001…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
@@ -650,29 +650,29 @@ words, pick one of the checksum words.</span></span>
       </div>
       <p class="err" id="psbt-error" role="alert"></p>
       <div class="row psbt-actions tool-actions current-item-actions">
-        <button class="btn primary" id="psbt-go" type="button" disabled aria-disabled="true">Inspect</button>
+        <button class="btn primary" id="psbt-go" type="button" disabled>Inspect</button>
         <button class="btn secondary" id="psbt-upload" type="button">Upload .psbt File</button>
         <input type="file" id="psbt-file" accept=".psbt,.txn,.txt,.hex" hidden>
-        <button class="btn secondary" id="psbt-download" type="button" disabled aria-disabled="true">Download .psbt</button>
-        <button class="btn red clear-current-action" id="psbt-wipe" type="button" disabled aria-disabled="true">Clear Inspectors</button>
+        <button class="btn secondary" id="psbt-download" type="button" disabled>Download .psbt</button>
+        <button class="btn red clear-current-action" id="psbt-wipe" type="button" disabled>Clear Inspectors</button>
       </div>
-    </section>
-      <section class="card no-print tool-card" id="psbted-card" role="tabpanel" hidden>
+    </div>
+      <div class="card no-print tool-card" id="psbted-card" role="tabpanel" hidden>
       <label class="field">PSBT v0 (base64 or hex)
         <textarea id="psbted-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </label>
       <div class="row psbt-actions psbted-actions tool-actions current-item-actions">
-        <button class="btn primary" id="psbted-load" type="button" disabled aria-disabled="true">Load PSBT</button>
+        <button class="btn primary" id="psbted-load" type="button" disabled>Load PSBT</button>
         <button class="btn secondary" id="psbted-upload" type="button">Upload .psbt File</button>
         <input type="file" id="psbted-file" accept=".psbt,.txt,.hex" hidden>
-        <button class="btn red clear-current-action" id="psbted-wipe" type="button" disabled aria-disabled="true">Clear Editor</button>
+        <button class="btn red clear-current-action" id="psbted-wipe" type="button" disabled>Clear Editor</button>
       </div>
       <div class="switch-row" id="psbted-insane-row"><label class="switch-toggle"><input type="checkbox" id="psbted-insane" aria-describedby="psbted-insane-note"><span class="label">Insane editing</span></label><p class="switch-note" id="psbted-insane-note">Disable the consensus layer: edits are no longer checked against Bitcoin's rules (transaction sanity, UTXO claims, signatures, witness data) and a violating result builds and exports anyway. The problem list still reports what it finds.</p><p class="edge-note is-private">“Insane editing” is for deliberately broken files only.</p></div>
       <p class="err" id="psbted-error" role="alert"></p>
       <p class="label" id="psbted-editor-label">Editor</p>
       <div id="psbted-out" role="region" aria-labelledby="psbted-editor-label" aria-live="polite"></div>
       <section class="psbted-compare" id="psbted-compare">
-        <p class="label">Compare with another PSBT</p>
+        <h3 class="label">Compare with another PSBT</h3>
         <p class="muted label-description">Paste a second PSBT to see what changed relative to the one in the editor. The comparison reads the decoded contents, so reordered maps are not a difference; transaction, signing-state, and metadata changes are reported separately. It describes differences only — it does not judge whether a change is safe.</p>
         <label class="field">Other PSBT (base64 or hex)
           <textarea id="psbted-compare-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
@@ -684,12 +684,12 @@ words, pick one of the checksum words.</span></span>
         </div>
         <p class="err" id="psbted-compare-error" role="alert"></p>
         <div class="row psbt-actions psbted-actions tool-actions">
-          <button class="btn secondary" id="psbted-compare-go" type="button" disabled aria-disabled="true">Compare</button>
-          <button class="btn secondary" id="psbted-compare-clear" type="button" disabled aria-disabled="true">Clear Comparison</button>
+          <button class="btn secondary" id="psbted-compare-go" type="button" disabled>Compare</button>
+          <button class="btn secondary" id="psbted-compare-clear" type="button" disabled>Clear Comparison</button>
         </div>
       </section>
-    </section>
-      <section class="card no-print tool-card" id="nonce-card" role="tabpanel" hidden>
+    </div>
+      <div class="card no-print tool-card" id="nonce-card" role="tabpanel" hidden>
       <label class="field">PSBT v0 or signed raw transaction (base64 or hex)
         <textarea id="nonce-text" placeholder="cHNidP8B… or 020000000001…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </label>
@@ -735,17 +735,17 @@ words, pick one of the checksum words.</span></span>
       </div>
       <p class="err" id="nonce-error" role="alert"></p>
       <div class="row psbt-actions tool-actions current-item-actions">
-        <button class="btn primary" id="nonce-go" type="button" disabled aria-disabled="true">Inspect Nonces</button>
+        <button class="btn primary" id="nonce-go" type="button" disabled>Inspect Nonces</button>
         <button class="btn secondary" id="nonce-upload" type="button">Upload .psbt File</button>
         <input type="file" id="nonce-file" accept=".psbt,.txn,.txt,.hex" hidden>
-        <button class="btn red clear-current-action" id="nonce-wipe" type="button" disabled aria-disabled="true">Clear Inspectors</button>
+        <button class="btn red clear-current-action" id="nonce-wipe" type="button" disabled>Clear Inspectors</button>
       </div>
-    </section>
+    </div>
       <div class="tool-intro edge-note is-info" id="ln-tool-intro" hidden>
         <h2>Derive a Lightning node key</h2>
         <p class="muted tool-intro-note">LND seed → LND node key. BIP-39 seed → LDK node key. Decode only. Does not create a seed. Nothing leaves this page.</p>
       </div>
-      <section class="card no-print tool-card" id="ln-card" role="tabpanel" hidden>
+      <div class="card no-print tool-card" id="ln-card" role="tabpanel" hidden>
         <div class="ln-grid tool-section">
           <label class="field">Seed format
             <select id="ln-format" aria-describedby="ln-format-help">
@@ -778,7 +778,7 @@ words, pick one of the checksum words.</span></span>
         <p class="err" id="ln-error" role="alert"></p>
         <div id="ln-out" aria-live="polite"></div>
         <p class="muted">Seeds and derived keys remain in this page only and are never stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
-      </section>
+      </div>
     <div class="tool-intro edge-note is-info" id="codex32-tool-intro" hidden>
         <h2>Codex32 MS1</h2>
         <p class="muted tool-intro-note">BIP-93 master-seed strings only. You supply the shares. Checksum, recover, and derive are deterministic. This does not generate a wallet or split a seed. Nothing leaves this page.</p>
@@ -805,22 +805,22 @@ words, pick one of the checksum words.</span></span>
         <h2>Entropy Journal</h2>
         <p class="muted tool-intro-note">A local notebook of entropy you already produced. Password is optional. No password means anyone with the file can open it. Not a password manager. Does not generate entropy.</p>
         <div class="row journal-global-actions tool-actions">
-          <button class="btn secondary green journal-download-action" id="journal-global-download" type="button" disabled aria-disabled="true"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span>Download journal</span></button>
-          <button class="btn red clear-current-action" id="journal-global-clear" type="button" disabled aria-disabled="true">Clear journal</button>
+          <button class="btn secondary green journal-download-action" id="journal-global-download" type="button" disabled><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span>Download journal</span></button>
+          <button class="btn red clear-current-action" id="journal-global-clear" type="button" disabled>Clear journal</button>
         </div>
       </div>
-    <section class="key-manager no-print" id="journal-manager" hidden>
+    <div class="key-manager no-print" id="journal-manager" hidden>
       <div class="key-tab-strip">
         <div class="key-tabs" id="journal-tool-tabs" role="tablist" aria-label="Journal stations">
-          <button class="tab key-tab is-lab" id="journal-book-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-card" aria-disabled="true" data-journal-tool="book" disabled>Entries</button>
-          <button class="tab key-tab is-lab" id="journal-notes-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-notes-card" aria-disabled="true" data-journal-tool="notes" disabled>Notepad</button>
-          <button class="tab key-tab is-lab" id="journal-keymanager-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-keymanager-card" aria-disabled="true" data-journal-tool="keymanager" disabled>Key manager</button>
-          <button class="tab key-tab is-lab" id="journal-state-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-state-card" aria-disabled="true" data-journal-tool="state" disabled>Session state</button>
-          <button class="tab key-tab is-lab" id="journal-log-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-log-card" aria-disabled="true" data-journal-tool="log" disabled>Session log</button>
+          <button class="tab key-tab is-lab" id="journal-book-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-card" data-journal-tool="book" disabled>Entries</button>
+          <button class="tab key-tab is-lab" id="journal-notes-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-notes-card" data-journal-tool="notes" disabled>Notepad</button>
+          <button class="tab key-tab is-lab" id="journal-keymanager-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-keymanager-card" data-journal-tool="keymanager" disabled>Key manager</button>
+          <button class="tab key-tab is-lab" id="journal-state-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-state-card" data-journal-tool="state" disabled>Session state</button>
+          <button class="tab key-tab is-lab" id="journal-log-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-log-card" data-journal-tool="log" disabled>Session log</button>
         </div>
       </div>
-    </section>
-      <section class="card no-print tool-card" id="journal-card" role="region" aria-label="Journal" hidden>
+    </div>
+      <section class="card no-print tool-card" id="journal-card" aria-label="Journal" hidden>
       <div id="journal-locked-panel">
         <div class="row segmented-control" id="journal-gate-modes" role="group" aria-label="Journal start">
           <button type="button" class="tab active" data-journal-gate="create" aria-pressed="true">Create</button>
@@ -853,7 +853,7 @@ words, pick one of the checksum words.</span></span>
       </div>
       <div id="journal-work-panel" hidden>
         <div class="journal-status" id="journal-status">
-          <img class="journal-status-lifehash" id="journal-lifehash" width="48" height="48" alt="" hidden>
+          <img class="journal-status-lifehash" id="journal-lifehash" width="48" height="48" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" hidden>
           <div>
             <p class="journal-status-title" id="journal-status-title">Journal open</p>
             <p class="muted" id="journal-status-note">No entries yet. Download the journal file after you add one.</p>
@@ -960,7 +960,7 @@ words, pick one of the checksum words.</span></span>
         <span class="desc">Same rule as the recovery sheet. Off by default. The file is then a secret — treat the download like a seed backup.</span></span>
       </label>
       <label class="field">Session snapshot
-        <textarea id="journal-state-text" spellcheck="false" autocomplete="off" autocapitalize="off" readonly aria-readonly="true"></textarea>
+        <textarea id="journal-state-text" spellcheck="false" autocomplete="off" autocapitalize="off" readonly></textarea>
       </label>
       <div class="row psbt-actions tool-actions">
         <div class="journal-download-options"><button class="btn secondary green journal-download-action journal-file-button" id="journal-state-download" type="button" aria-label="Download session state" title="Download session state"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Download session state</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-state-encrypt" type="checkbox" checked><span>Use Journal file encryption</span></label></div>
@@ -1001,15 +1001,15 @@ words, pick one of the checksum words.</span></span>
         <li data-i18n-rich><strong>Anything you copy or paste may be kept</strong> by clipboard history and synced to your other devices.</li>
         <li data-i18n-rich><strong>Your keys may stay in memory</strong> after you finish, so close the browser and restart the computer. It is a precaution, not a guarantee.</li>
         <li data-i18n-rich><strong>This page never connects to any network</strong> — the network preference choice sets the address formats, key versions, and validation checks the EntropyLab tools use.</li>
-        <li id="translated-warning" role="alert" data-i18n-rich hidden><strong>Page translated:</strong> Your browser sent this page's text to an online translation service. EntropyLab withholds the seed words, keys and typed secrets it shows, but do not rely on that: turn translation off for this page and use EntropyLab's language menu instead.</li>
+        <li id="translated-warning" hidden><span role="alert" data-i18n-rich><strong>Page translated:</strong> Your browser sent this page's text to an online translation service. EntropyLab withholds the seed words, keys and typed secrets it shows, but do not rely on that: turn translation off for this page and use EntropyLab's language menu instead.</span></li>
       </ul>
     </details>
     <section class="card security-log no-print" id="security-log" aria-labelledby="security-log-title">
       <div class="security-log-header">
         <h2 id="security-log-title"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false"><path d="m4 6 5 5-5 5M13 17h7"/></svg>Security log</h2>
       </div>
-      <ol class="security-log-output" id="security-log-output" role="log" aria-label="Security events" aria-live="polite" aria-relevant="additions" tabindex="0" data-i18n-skip></ol>
+      <div class="security-log-output" id="security-log-output" role="log" aria-label="Security events" aria-live="polite" aria-relevant="additions" tabindex="0" data-i18n-skip></div>
       <p class="security-log-note">Connection and browser warnings for this session. No secrets recorded.</p>
     </section>
-    <footer class="page-footer muted no-print"><div>Team Ooga Booga</div><div class="page-footer-emoji">🪨 🔥 🎲 🍌</div><div data-i18n-skip>Since 964013 · <span class="page-footer-build">v{{VERSION}} · commit <code>{{COMMIT_SHORT}}</code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="{{COMMIT}}" width="20" height="20" alt="LifeHash of the build commit" hidden></span></div><div class="page-footer-links"><div class="network-picker" id="network-picker" data-network="mainnet"> <button type="button" class="network-picker-button header-button" id="network-picker-button" aria-haspopup="menu" aria-expanded="false" aria-controls="network-picker-menu" aria-label="Bitcoin network: Bitcoin. Change the network the tools derive and check for"><svg class="network-picker-glyph" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><circle class="network-picker-coin" cx="12" cy="12" r="12"/><path class="network-picker-b" fill-rule="evenodd" d="M17.288 10.291c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zM14.278 14.511c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zM14.688 10.271c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006z"/></svg><span class="network-picker-label control-label" id="network-picker-label">Bitcoin</span><svg class="network-picker-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></button> <div class="network-picker-menu" id="network-picker-menu" role="menu" aria-label="Bitcoin network" hidden> <p class="label network-picker-title">Network preference</p><p class="field-note label-description network-picker-help">For derivation and verification use only. This page never connects to any network.</p> <button type="button" class="network-picker-option" role="menuitemradio" aria-checked="true" data-network="mainnet"><svg class="network-picker-option-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><circle class="network-picker-option-coin" cx="12" cy="12" r="12"/><path class="network-picker-b" fill-rule="evenodd" d="M17.288 10.291c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zM14.278 14.511c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zM14.688 10.271c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006z"/></svg><span class="network-picker-option-text"><span class="network-picker-option-head"><strong>Bitcoin</strong><span class="network-picker-option-kind">Real coins</span></span><span class="network-picker-option-desc" data-i18n-skip><span class="network-picker-option-addresses">bc1q… bc1p… 1… 3…</span> <span>xpub ypub zpub ·</span> <span>WIF 5 K L</span></span></span></button> <button type="button" class="network-picker-option" role="menuitemradio" aria-checked="false" data-network="testnet"><svg class="network-picker-option-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><circle class="network-picker-option-coin" cx="12" cy="12" r="12"/><path class="network-picker-b" fill-rule="evenodd" d="M17.288 10.291c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zM14.278 14.511c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zM14.688 10.271c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006z"/></svg><span class="network-picker-option-text"><span class="network-picker-option-head"><strong>Testnet</strong><span class="network-picker-option-kind">Practice coins</span></span><span class="network-picker-option-desc" data-i18n-skip><span class="network-picker-option-addresses">tb1q… tb1p… m… n… 2…</span> <span>tpub upub vpub ·</span> <span>WIF 9 c</span></span></span></button> <button type="button" class="network-picker-option" role="menuitemradio" aria-checked="false" data-network="signet"><svg class="network-picker-option-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><circle class="network-picker-option-coin" cx="12" cy="12" r="12"/><path class="network-picker-b" fill-rule="evenodd" d="M17.288 10.291c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zM14.278 14.511c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zM14.688 10.271c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006z"/></svg><span class="network-picker-option-text"><span class="network-picker-option-head"><strong>Signet</strong><span class="network-picker-option-kind">Signed practice coins</span></span><span class="network-picker-option-desc" data-i18n-skip><span class="network-picker-option-addresses">testnet plus · tb1q… tb1p…</span> <span>tpub upub vpub ·</span> <span>WIF 9 c</span></span></span></button> <button type="button" class="network-picker-option" role="menuitemradio" aria-checked="false" data-network="regtest"><svg class="network-picker-option-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><circle class="network-picker-option-coin" cx="12" cy="12" r="12"/><path class="network-picker-b" fill-rule="evenodd" d="M17.288 10.291c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zM14.278 14.511c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zM14.688 10.271c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006z"/></svg><span class="network-picker-option-text"><span class="network-picker-option-head"><strong>Regtest</strong><span class="network-picker-option-kind">Local sandbox coins</span></span><span class="network-picker-option-desc" data-i18n-skip><span class="network-picker-option-addresses">bcrt1q… bcrt1p… m… n… 2…</span> <span>tpub upub vpub ·</span> <span>WIF 9 c</span></span></span></button> </div> </div><label class="locale-control"><span class="sr-only">Language</span><select id="locale-select" class="header-button locale-select" aria-label="Language"><option value="en">EN</option></select></label><button type="button" class="theme-toggle" id="theme-toggle" data-theme-mode="dark" aria-label="Theme: dark. Switch to light"><svg class="theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><svg class="theme-icon-light" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button><a class="btn secondary blue github-repo-link" href="https://github.com/OogaBoogaX/entropylab" target="_blank" rel="noopener noreferrer" aria-label="View the EntropyLab GitHub repository in a new tab"><svg class="github-mark" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="control-label">GitHub</span></a></div></footer>
+    <footer class="page-footer muted no-print"><div>Team Ooga Booga</div><div class="page-footer-emoji">🪨 🔥 🎲 🍌</div><div data-i18n-skip>Since 964013 · <span class="page-footer-build">v{{VERSION}} · commit <code>{{COMMIT_SHORT}}</code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="{{COMMIT}}" width="20" height="20" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="LifeHash of the build commit" hidden></span></div><div class="page-footer-links"><div class="network-picker" id="network-picker" data-network="mainnet"> <button type="button" class="network-picker-button header-button" id="network-picker-button" aria-haspopup="menu" aria-expanded="false" aria-controls="network-picker-menu" aria-label="Bitcoin network: Bitcoin. Change the network the tools derive and check for"><svg class="network-picker-glyph" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><circle class="network-picker-coin" cx="12" cy="12" r="12"/><path class="network-picker-b" fill-rule="evenodd" d="M17.288 10.291c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zM14.278 14.511c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zM14.688 10.271c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006z"/></svg><span class="network-picker-label control-label" id="network-picker-label">Bitcoin</span><svg class="network-picker-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></button> <div class="network-picker-menu" id="network-picker-menu" role="menu" aria-label="Bitcoin network" hidden> <p class="label network-picker-title">Network preference</p><p class="field-note label-description network-picker-help">For derivation and verification use only. This page never connects to any network.</p> <button type="button" class="network-picker-option" role="menuitemradio" aria-checked="true" data-network="mainnet"><svg class="network-picker-option-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><circle class="network-picker-option-coin" cx="12" cy="12" r="12"/><path class="network-picker-b" fill-rule="evenodd" d="M17.288 10.291c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zM14.278 14.511c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zM14.688 10.271c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006z"/></svg><span class="network-picker-option-text"><span class="network-picker-option-head"><strong>Bitcoin</strong><span class="network-picker-option-kind">Real coins</span></span><span class="network-picker-option-desc" data-i18n-skip><span class="network-picker-option-addresses">bc1q… bc1p… 1… 3…</span> <span>xpub ypub zpub ·</span> <span>WIF 5 K L</span></span></span></button> <button type="button" class="network-picker-option" role="menuitemradio" aria-checked="false" data-network="testnet"><svg class="network-picker-option-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><circle class="network-picker-option-coin" cx="12" cy="12" r="12"/><path class="network-picker-b" fill-rule="evenodd" d="M17.288 10.291c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zM14.278 14.511c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zM14.688 10.271c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006z"/></svg><span class="network-picker-option-text"><span class="network-picker-option-head"><strong>Testnet</strong><span class="network-picker-option-kind">Practice coins</span></span><span class="network-picker-option-desc" data-i18n-skip><span class="network-picker-option-addresses">tb1q… tb1p… m… n… 2…</span> <span>tpub upub vpub ·</span> <span>WIF 9 c</span></span></span></button> <button type="button" class="network-picker-option" role="menuitemradio" aria-checked="false" data-network="signet"><svg class="network-picker-option-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><circle class="network-picker-option-coin" cx="12" cy="12" r="12"/><path class="network-picker-b" fill-rule="evenodd" d="M17.288 10.291c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zM14.278 14.511c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zM14.688 10.271c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006z"/></svg><span class="network-picker-option-text"><span class="network-picker-option-head"><strong>Signet</strong><span class="network-picker-option-kind">Signed practice coins</span></span><span class="network-picker-option-desc" data-i18n-skip><span class="network-picker-option-addresses">testnet plus · tb1q… tb1p…</span> <span>tpub upub vpub ·</span> <span>WIF 9 c</span></span></span></button> <button type="button" class="network-picker-option" role="menuitemradio" aria-checked="false" data-network="regtest"><svg class="network-picker-option-glyph" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><circle class="network-picker-option-coin" cx="12" cy="12" r="12"/><path class="network-picker-b" fill-rule="evenodd" d="M17.288 10.291c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01zM14.278 14.511c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37zM14.688 10.271c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006z"/></svg><span class="network-picker-option-text"><span class="network-picker-option-head"><strong>Regtest</strong><span class="network-picker-option-kind">Local sandbox coins</span></span><span class="network-picker-option-desc" data-i18n-skip><span class="network-picker-option-addresses">bcrt1q… bcrt1p… m… n… 2…</span> <span>tpub upub vpub ·</span> <span>WIF 9 c</span></span></span></button> </div> </div><label class="locale-control"><span class="sr-only">Language</span><select id="locale-select" class="header-button locale-select" aria-label="Language"><option value="en">EN</option></select></label><button type="button" class="theme-toggle" id="theme-toggle" data-theme-mode="dark" aria-label="Theme: dark. Switch to light"><svg class="theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><svg class="theme-icon-light" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button><a class="btn secondary blue github-repo-link" href="https://github.com/OogaBoogaX/entropylab" target="_blank" rel="noopener noreferrer" aria-label="View the EntropyLab GitHub repository in a new tab"><svg class="github-mark" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="control-label">GitHub</span></a></div></footer>
   </div>

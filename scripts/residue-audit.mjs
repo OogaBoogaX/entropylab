@@ -155,23 +155,45 @@ export const scanFile = async (file, needles) => {
 
 export const processTree = ({ pid, platform: os = platform, exec = spawnSync } = {}) => {
   const pids = new Set([pid]);
+  // An unavailable process list is not evidence that a child exited. This
+  // query also supplies captureAll's independent confirmation of an exit.
+  const query = (binary, args) => {
+    const result = exec(binary, args, { encoding: "utf8" });
+    if (result.error || result.status !== 0 || !result.stdout?.trim()) {
+      throw new ResidueToolError(`could not enumerate browser processes with ${binary}: ${result.error?.message || result.stderr?.trim() || `exit ${result.status}, empty or unavailable output`}`);
+    }
+    return result.stdout;
+  };
+  const validPid = value => Number.isSafeInteger(value) && value >= 0;
   if (os === "win32") {
     // wmic is deprecated; use PowerShell's CIM query for parent links.
-    const out = exec("powershell", ["-NoProfile", "-Command",
-      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json"], { encoding: "utf8" }).stdout;
-    try {
-      const rows = JSON.parse(out || "[]"), list = Array.isArray(rows) ? rows : [rows];
-      let grew = true;
-      while (grew) {
-        grew = false;
-        for (const row of list) if (pids.has(row.ParentProcessId) && !pids.has(row.ProcessId)) { pids.add(row.ProcessId); grew = true; }
-      }
-    } catch { /* keep the root pid only */ }
+    const out = query("powershell", ["-NoProfile", "-Command",
+      "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json"]);
+    let rows;
+    try { rows = JSON.parse(out); }
+    catch { throw new ResidueToolError("could not enumerate browser processes: invalid PowerShell JSON"); }
+    const list = Array.isArray(rows) ? rows : [rows];
+    if (!list.every(row => validPid(row?.ProcessId) && validPid(row?.ParentProcessId))
+      || !list.some(row => row.ProcessId === pid)) {
+      throw new ResidueToolError("could not enumerate browser processes: malformed PowerShell process list or missing browser root");
+    }
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const row of list) if (pids.has(row.ParentProcessId) && !pids.has(row.ProcessId)) { pids.add(row.ProcessId); grew = true; }
+    }
   } else {
-    const out = exec("ps", ["-eo", "pid=,ppid="], { encoding: "utf8" }).stdout || "";
+    const out = query("ps", ["-eo", "pid=,ppid="]);
+    const lines = out.trim().split(/\r?\n/);
+    if (!lines.every(line => /^\s*\d+\s+\d+\s*$/.test(line))) {
+      throw new ResidueToolError("could not enumerate browser processes: malformed ps output");
+    }
+    const rows = lines.map(line => line.trim().split(/\s+/).map(Number));
+    if (!rows.every(row => row.every(validPid)) || !rows.some(([cpid]) => cpid === pid)) {
+      throw new ResidueToolError("could not enumerate browser processes: malformed ps process list or missing browser root");
+    }
     const children = new Map();
-    for (const line of out.split("\n")) {
-      const [cpid, ppid] = line.trim().split(/\s+/).map(Number);
+    for (const [cpid, ppid] of rows) {
       if (cpid) (children.get(ppid) || children.set(ppid, []).get(ppid)).push(cpid);
     }
     const queue = [pid];
@@ -182,11 +204,47 @@ export const processTree = ({ pid, platform: os = platform, exec = spawnSync } =
   return [...pids];
 };
 
+// Chrome keeps starting and retiring helpers for a while after launch (spare
+// renderers, component-update unzippers), and a sweep takes seconds per
+// process, so a process listed at the start can be gone before its turn. That
+// fails the run closed. Capture a set only once it has stayed unchanged for
+// stableMs; one still changing at the deadline is captured as last seen and
+// reported as unsettled.
+export const settleProcessTree = async ({ enumerate, intervalMs = 2000, stableMs = intervalMs, timeoutMs = 30000, sleep: wait = sleep, now = Date.now } = {}) => {
+  const start = now();
+  const same = (a, b) => a.length === b.length && a.every(pid => b.includes(pid));
+  let pids = enumerate(), since = start;
+  while (now() - start < timeoutMs) {
+    await wait(intervalMs);
+    const next = enumerate();
+    if (!same(pids, next)) { pids = next; since = now(); continue; }
+    if (now() - since >= stableMs) return { pids: next, settled: true, waitedMs: now() - start };
+  }
+  return { pids, settled: false, waitedMs: now() - start };
+};
+
+// Chrome retired start-up renderers 15-33 s after launch, up to 10 s apart
+// (Chrome 154, 2026-10-06), so the baseline waits for a longer quiet spell.
+const SETTLE = { "before-input": { stableMs: 20000, timeoutMs: 120000 } };
+const SETTLE_DEFAULT = { stableMs: 6000, timeoutMs: 60000 };
+
 // --- Capture ----------------------------------------------------------------
+
+// ProcDump v12.01 writes UTF-16LE (no BOM) when its output is a pipe; gcore
+// writes UTF-8. Decode by the bytes, so a dumper that changes encoding still
+// matches and its diagnostic stays readable in the report.
+export const decodeToolOutput = (bytes) => {
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return bytes.subarray(2).toString("utf16le");
+  let zeros = 0;
+  for (let i = 1; i < bytes.length; i += 2) if (bytes[i] === 0) zeros++;
+  return zeros > bytes.length / 4 ? bytes.toString("utf16le") : bytes.toString("utf8");
+};
 
 const MAX_DUMP_BYTES = 4 * 1024 * 1024 * 1024; // post-capture retention limit, not a disk quota
 export const capture = async ({ tool, pid, outDir, checkpoint, execFile = spawn } = {}) => {
-  const out = join(outDir, `${checkpoint}-pid${pid}.dmp`);
+  // ProcDump expands PROCESSNAME, PID, EXCEPTIONCODE, YYMMDD and HHMMSS in a
+  // dump file name, ignoring case, so the name must contain none of them.
+  const out = join(outDir, `${checkpoint}-${pid}.dmp`);
   if (tool.memprocfs) return { pid, out: null, skipped: "memprocfs-live" };
   const args = tool.kind === "procdump"
     ? ["-ma", "-accepteula", String(pid), out]
@@ -194,18 +252,43 @@ export const capture = async ({ tool, pid, outDir, checkpoint, execFile = spawn 
   await new Promise((resolve, reject) => {
     const child = execFile(tool.binary, args, { stdio: "pipe" });
     // Drain both pipes: a verbose dumper must not block on a full output pipe.
-    // Keep only a bounded diagnostic tail for denied/failed captures.
-    let diagnostic = "";
-    const record = chunk => { diagnostic = (diagnostic + chunk.toString()).slice(-8192); };
-    child.stdout?.on("data", record); child.stderr?.on("data", record);
+    // Keep only a bounded diagnostic tail for denied/failed captures, as bytes
+    // per stream until close, trimmed by whole UTF-16 code units.
+    const tails = new Map();
+    const record = stream => chunk => {
+      const bytes = Buffer.concat([tails.get(stream) || Buffer.alloc(0), Buffer.from(chunk)]);
+      const excess = Math.max(0, bytes.length - 16384);
+      tails.set(stream, bytes.subarray(excess + (excess % 2)));
+    };
+    child.stdout?.on("data", record("stdout")); child.stderr?.on("data", record("stderr"));
     child.on("error", reject);
-    child.on("close", code => code === 0 ? resolve()
-      : reject(new Error(`${tool.kind} exited ${code} on pid ${pid}${diagnostic.trim() ? `: ${diagnostic.trim()}` : ""}`)));
+    // The two dumpers report success differently. gcore exits 0 on success
+    // and nonzero on a real failure (ptrace denial, dead pid). ProcDump
+    // exits 1 after a successful one-shot dump — but it can also leave a
+    // partial file and exit nonzero after "Dump 1 error: ...", so its exit
+    // code alone is not the success signal. Fail closed: a ProcDump capture
+    // counts only on an unambiguous successful completion ("Dump 1 complete"
+    // with no "Dump 1 error"); any other output is a failure. A leftover or
+    // truncated file must never be mistaken for a complete capture.
+    child.on("close", code => {
+      const diagnostic = [...tails.values()].map(decodeToolOutput).join("\n").slice(-8192);
+      if (tool.kind === "procdump") {
+        const completed = /Dump 1 complete/i.test(diagnostic) && !/Dump 1 error/i.test(diagnostic);
+        if (completed) resolve();
+        else reject(new Error(`procdump exited ${code} on pid ${pid} without completing the dump${diagnostic.trim() ? `: ${diagnostic.trim()}` : ""}`));
+      } else if (code === 0) resolve();
+      else reject(new Error(`${tool.kind} exited ${code} on pid ${pid}${diagnostic.trim() ? `: ${diagnostic.trim()}` : ""}`));
+    });
   });
   const file = tool.kind === "gcore" ? `${out}.${pid}` : out;
   if (existsSync(file) && statSync(file).size > MAX_DUMP_BYTES) {
     rmSync(file, { force: true });
     throw new ResidueToolError(`capture of pid ${pid} exceeded ${MAX_DUMP_BYTES} bytes; deleted. Re-run with --browser-process to dump less.`);
+  }
+  // An empty dump holds no memory; treat it as no capture, never as clean.
+  if (existsSync(file) && statSync(file).size === 0) {
+    rmSync(file, { force: true });
+    return { pid, out: null, skipped: "empty dump written" };
   }
   return { pid, out: existsSync(file) ? file : null, skipped: existsSync(file) ? null : "no dump written" };
 };
@@ -218,8 +301,11 @@ const controlPassed = (checkpoint) =>
   Boolean(checkpoint) && checkpoint.name === CONTROL_CHECKPOINT
   && CONTROL_LABELS.every(label => checkpoint.hits.some(hit => hit.label === label && hit.count > 0));
 
+// A verified exit (see captureAll) is accounted for, but a checkpoint must
+// still have scanned at least one process.
 const capturedCompletely = checkpoint => Boolean(checkpoint?.entries?.length)
-  && checkpoint.entries.every(entry => entry.scanned > 0 && !entry.skipped);
+  && checkpoint.entries.some(entry => entry.scanned > 0)
+  && checkpoint.entries.every(entry => entry.exited || (entry.scanned > 0 && !entry.skipped));
 const cleanBaseline = checkpoint => capturedCompletely(checkpoint) && checkpoint.hits.length === 0;
 
 export const assessRun = (results) => {
@@ -246,7 +332,8 @@ export const assessRun = (results) => {
 export const writeReports = ({ outDir, meta, results }) => {
   const blind = (checkpoint) =>
     !checkpoint.hits.length && Array.isArray(checkpoint.entries) && checkpoint.entries.length > 0
-    && checkpoint.entries.every((entry) => entry.skipped);
+    && checkpoint.entries.every((entry) => entry.skipped || entry.exited);
+  const exits = results.reduce((sum, checkpoint) => sum + (checkpoint.entries || []).filter((entry) => entry.exited).length, 0);
 
   const json = {
     tool: "residue-audit",
@@ -262,6 +349,7 @@ export const writeReports = ({ outDir, meta, results }) => {
   lines.push(json.assessment.valid ? "Controls passed. Zero hits still do not prove erasure." : "**INVALID RUN**", "");
   for (const reason of json.assessment.reasons) lines.push(`- ${reason}`);
   if (meta.error) lines.push(`- Run stopped: ${meta.error}`);
+  if (exits) lines.push("", `**${exits} process${exits === 1 ? "" : "es"} exited before ${exits === 1 ? "its" : "their"} capture** (listed under each checkpoint); nothing of ${exits === 1 ? "it" : "them"} was scanned there.`);
   lines.push("", "| Needle | Pre-wipe calibration |", "|---|---|");
   for (const row of json.assessment.coverage) lines.push(`| ${row.label} | ${row.calibrated ? "Observed after a clean baseline" : "NOT CALIBRATED — a later zero is inconclusive"} |`);
   lines.push("");
@@ -270,17 +358,20 @@ export const writeReports = ({ outDir, meta, results }) => {
       : controlPassed(checkpoint) ? " — POSITIVE CONTROL PASSED" : " — POSITIVE CONTROL FAILED (run invalid)";
     // A checkpoint where every capture was skipped captured nothing; say so
     // rather than reporting a clean zero nobody scanned for.
-    const blindNote = blind(checkpoint) ? ` — SKIPPED: no dump was captured (${[...new Set(checkpoint.entries.map((entry) => entry.skipped))].join("; ")})` : "";
+    const blindNote = blind(checkpoint) ? ` — SKIPPED: no dump was captured (${[...new Set(checkpoint.entries.map((entry) => entry.skipped || entry.exited))].join("; ")})` : "";
     lines.push(`## ${checkpoint.name}${suffix}${blindNote}`, "");
+    if (checkpoint.settle && !checkpoint.settle.settled) {
+      lines.push(`The browser's process set was still changing after ${Math.round(checkpoint.settle.waitedMs / 1000)} s; the last set seen was captured.`, "");
+    }
     if (!checkpoint.hits.length) lines.push(blind(checkpoint) ? "No dump was scanned." : "No hits.", "");
     else {
       lines.push("| pid | secret | encoding | hits |", "|---|---|---|---|");
       for (const hit of checkpoint.hits) lines.push(`| ${hit.pid} | ${hit.label} | ${hit.encoding} | ${hit.count} |`);
       lines.push("");
     }
-    const skips = (checkpoint.entries || []).filter((entry) => entry.skipped);
+    const skips = (checkpoint.entries || []).filter((entry) => entry.skipped || entry.exited);
     if (skips.length) {
-      for (const entry of skips) lines.push(`- pid ${entry.pid}: not captured — ${entry.skipped}`);
+      for (const entry of skips) lines.push(entry.exited ? `- pid ${entry.pid}: ${entry.exited}` : `- pid ${entry.pid}: not captured — ${entry.skipped}`);
       lines.push("");
     }
   }
@@ -366,11 +457,10 @@ export const driveSession = async (page, secrets, checkpoint) => {
   for (const label of ["mnemonic", "xprv", "wif"]) {
     if (!output.includes(fingerprint(secrets[label]))) throw new ResidueToolError(`the revealed wallet does not match the fixture's ${label}`);
   }
-  // Remove any pre-existing clipboard value, then verify the real write. An
+  // The app's real Copy seed phrase, confirmed by its own copied state. An
   // xpub click, permission rejection, or a no-op must not pass this checkpoint.
-  await page.evaluate(`navigator.clipboard.writeText("")`);
   await page.click("#form [data-copy-seed-phrase]");
-  await page.waitForClipboard(secrets.mnemonic);
+  await page.waitForSeedCopy();
   await checkpoint("after-copy");
   await page.click("#end-session");
   await page.click("#end-session-confirm");
@@ -449,12 +539,14 @@ export const createPage = async (client, origin) => {
       }
       throw new ResidueToolError("timed out waiting for a browser state transition");
     },
-    async waitForClipboard(expected) {
+    // The app's Copy seed phrase shows its copied state only after its own
+    // clipboard write succeeded. Reading the clipboard back instead left a
+    // copy of the mnemonic in the browser process after the tab closed
+    // (2026-10-06), so the harness never touches the clipboard itself.
+    async waitForSeedCopy() {
       const deadline = Date.now() + 5000;
-      const expectedDigest = fingerprint(expected);
       while (Date.now() < deadline) {
-        const [actual] = await page.evaluate(digestValues(`[await navigator.clipboard.readText()]`));
-        if (actual === expectedDigest) return;
+        if (await page.evaluate(`Boolean(document.querySelector("#form [data-copy-seed-phrase]")?.classList.contains("is-copied"))`)) return;
         await sleep(100);
       }
       throw new ResidueToolError("secret copy did not succeed; after-copy was not captured");
@@ -537,14 +629,17 @@ const chromiumSandboxArgs = () => {
   return [];
 };
 
-export const spawnBrowser = (engine, { profile, logPath }) => {
+export const spawnBrowser = (engine, { profile, logPath, platform: os = platform, spawnProcess = spawn }) => {
   const logFd = openSync(logPath, "w");
   const args = [
     "--headless", ...chromiumSandboxArgs(), "--no-first-run", "--no-default-browser-check",
     "--disable-gpu", "--disable-dev-shm-usage", "--window-size=1280,800",
+    // Elevated Chrome and Edge on Windows otherwise relaunch themselves
+    // de-elevated and exit, closing the pipe; ProcDump needs the elevation.
+    ...(os === "win32" ? ["--do-not-de-elevate"] : []),
     `--user-data-dir=${profile}`, "--remote-debugging-pipe", "about:blank",
   ];
-  const child = spawn(engine.binary, args, { stdio: ["ignore", logFd, logFd, "pipe", "pipe"] });
+  const child = spawnProcess(engine.binary, args, { stdio: ["ignore", logFd, logFd, "pipe", "pipe"] });
   closeSync(logFd);
   child.on("error", () => {}); // surfaced by the missing pid check in main()
   return child;
@@ -665,7 +760,12 @@ const scanLive = async ({ mount, pid, needles, hits }) => {
   return { pid, out: null, scanned, ...(complaints.length ? { skipped: complaints.join("; ") } : {}) };
 };
 
-const captureAll = async ({ tool, pids, outDir, checkpoint, needles }) => {
+// A process that exits between enumeration and its turn leaves nothing to
+// capture. Only ProcDump's own "No process matching the specified PID",
+// confirmed by the pid's absence from a fresh enumeration (`running`), is
+// recorded as an exit; every other failure leaves the checkpoint incomplete.
+const NO_SUCH_PROCESS = /No process matching the specified PID can be found/;
+export const captureAll = async ({ tool, pids, outDir, checkpoint, needles, running = () => true, execFile }) => {
   const entries = [], hits = [];
   for (const pid of pids) {
     let entry;
@@ -676,7 +776,7 @@ const captureAll = async ({ tool, pids, outDir, checkpoint, needles }) => {
       // the audit: record the failure per process. Incomplete captures still
       // invalidate the run even when other processes contain control hits.
       try {
-        entry = await capture({ tool, pid, outDir, checkpoint });
+        entry = await capture({ tool, pid, outDir, checkpoint, execFile });
         if (entry.out) {
           try {
             addHits(hits, pid, await scanFile(entry.out, needles));
@@ -686,7 +786,9 @@ const captureAll = async ({ tool, pids, outDir, checkpoint, needles }) => {
           }
         }
       } catch (error) {
-        entry = { pid, out: null, skipped: `capture failed: ${error.message}` };
+        entry = NO_SUCH_PROCESS.test(error.message) && !running(pid)
+          ? { pid, out: null, exited: "exited before capture: ProcDump found no such process, and a fresh enumeration no longer lists it" }
+          : { pid, out: null, skipped: `capture failed: ${error.message}` };
       }
     }
     entries.push(entry);
@@ -723,11 +825,15 @@ export const main = async (argv = process.argv.slice(2), { log = console.log, de
     const page = await createPage(client, origin);
     await driveSession(page, secrets, async checkpoint => {
       if (checkpoint !== CHECKPOINTS[results.length]) throw new ResidueToolError("unexpected checkpoint order");
-      const pids = options.browserProcessOnly ? [child.pid] : processTree({ pid: child.pid });
-      const captured = await captureAll({ tool, pids, outDir, checkpoint, needles });
-      const result = { name: checkpoint, ...captured };
+      const { pids, ...settle } = options.browserProcessOnly
+        ? { pids: [child.pid], settled: true, waitedMs: 0 }
+        : await settleProcessTree({ enumerate: () => processTree({ pid: child.pid }), ...(SETTLE[checkpoint] || SETTLE_DEFAULT) });
+      const running = pid => processTree({ pid: child.pid }).includes(pid);
+      const captured = await captureAll({ tool, pids, outDir, checkpoint, needles, running });
+      const result = { name: checkpoint, settle, ...captured };
       results.push(result);
-      log(`residue-audit: ${checkpoint}: ${captured.entries.length} process(es), ${captured.hits.reduce((sum, hit) => sum + hit.count, 0)} hit(s)`);
+      const exited = captured.entries.filter(entry => entry.exited).length;
+      log(`residue-audit: ${checkpoint}: ${captured.entries.length} process(es), ${captured.hits.reduce((sum, hit) => sum + hit.count, 0)} hit(s)${exited ? `; ${exited} exited before capture` : ""}${settle.settled ? "" : `; process set still changing after ${Math.round(settle.waitedMs / 1000)} s`}`);
       if (checkpoint === "before-input" && !cleanBaseline(result)) {
         throw new ResidueToolError("baseline is contaminated or incompletely captured; refusing to enter fixture data");
       }

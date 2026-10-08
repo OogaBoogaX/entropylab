@@ -85,7 +85,9 @@ test("pagehide and persisted pageshow release the overlay contents", () => {
   assert.match(teardown, /release\(\)/, "the teardown must run the same release as close()");
 });
 
-// Minimal fake page drives the real dialog.
+// A minimal fake page drives the real dialog: every element it asks for by id
+// is a stub, a click lands on an expandable cell, and the clipboard takes the
+// text.
 const fakeElement = (props = {}) => {
   const listeners = {}, attributes = {};
   return {
@@ -102,7 +104,13 @@ const fakeElement = (props = {}) => {
 const withExpandDialog = async (run) => {
   const parts = {}, documentListeners = {};
   const overlay = fakeElement({ querySelector: (selector) => (parts[selector] ??= fakeElement()), querySelectorAll: () => [] });
-  const page = { body: { append() {} }, activeElement: null, getElementById: () => null, createElement: () => overlay, addEventListener: (type, fn) => { (documentListeners[type] ??= []).push(fn); } };
+  const page = {
+    body: { append() {} },
+    activeElement: null,
+    getElementById: () => null,
+    createElement: () => overlay,
+    addEventListener: (type, fn) => { (documentListeners[type] ??= []).push(fn); },
+  };
   const saved = { document: globalThis.document, navigator: globalThis.navigator, addEventListener: globalThis.addEventListener };
   Object.defineProperty(globalThis, "document", { value: page, configurable: true, writable: true });
   Object.defineProperty(globalThis, "navigator", { value: { clipboard: { writeText: async () => {} } }, configurable: true, writable: true });
@@ -110,20 +118,33 @@ const withExpandDialog = async (run) => {
   try {
     initExpandable({ copy: () => "<copy>", copied: () => "<check>" });
     const cell = fakeElement({ dataset: { exp: "00ff" } });
-    await run({ copyButton: parts["#exp-copy"], open: () => documentListeners.click.forEach((fn) => fn({ target: { closest: () => cell } })), close: () => parts["#exp-close"].fire("click"), copy: async () => { parts["#exp-copy"].fire("click"); await new Promise((resolve) => setImmediate(resolve)); } });
+    await run({
+      copyButton: parts["#exp-copy"],
+      open: () => documentListeners.click.forEach((fn) => fn({ target: { closest: () => cell } })),
+      close: () => parts["#exp-close"].fire("click"),
+      copy: async () => {
+        parts["#exp-copy"].fire("click");
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+    });
   } finally {
     Object.defineProperty(globalThis, "document", { value: saved.document, configurable: true, writable: true });
     Object.defineProperty(globalThis, "navigator", { value: saved.navigator, configurable: true, writable: true });
-    if (saved.addEventListener === undefined) delete globalThis.addEventListener; else globalThis.addEventListener = saved.addEventListener;
+    if (saved.addEventListener === undefined) delete globalThis.addEventListener;
+    else globalThis.addEventListener = saved.addEventListener;
   }
 };
 
+// Closing within the check's 1.6 s and opening again must not keep the check:
+// opening cancels its timer, so opening has to restore the label as well.
 test("reopening the expand dialog clears a copy check cut short", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   await withExpandDialog(async ({ copyButton, open, close, copy }) => {
-    open(); await copy();
+    open();
+    await copy();
     assert.equal(copyButton.getAttribute("aria-label"), "Copied", "fixture: the copy did not confirm");
-    close(); open();
+    close();
+    open();
     assert.equal(copyButton.innerHTML, "<copy>", "the reopened dialog kept the check");
     assert.equal(copyButton.getAttribute("aria-label"), "Copy", "the reopened dialog kept the copied label");
     assert.equal(copyButton.title, "Copy");

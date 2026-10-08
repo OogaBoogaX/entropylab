@@ -6,19 +6,19 @@
 // to rock after each merge so the file stays downloadable. The Pages workflow
 // copies it to a deployment-only index.html so both / and /entropylab.html
 // serve the same application. The output is byte-for-byte reproducible from
-// the sources, the version declared in package.json, and the commit the
-// build is cut from (stamped into the footer).
+// the sources, the version declared in package.json, and the last commit
+// that changed a build input (stamped into the footer; see build-commit.mjs).
 //
 // The browser test harness builds a staging variant with
 // `--test-hooks --out <dir>`: it compiles in the suite's test bridge (see
 // src/js/app.js) and writes the files outside the repository root. The
 // release build leaves the flag off, so no test code reaches entropylab.html.
-import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
+import { buildCommit } from "./build-commit.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const SRC = join(root, "src");
@@ -38,15 +38,10 @@ if (!/^\d+(?:\.\d+)*$/.test(version)) {
   throw new Error(`Invalid version in package.json: ${version}`);
 }
 
-// The footer identifies the exact source revision the build was cut from; a
-// build from a snapshot without git metadata stamps "unknown".
-const commit = (() => {
-  try {
-    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-  } catch {
-    return "unknown";
-  }
-})();
+// The footer identifies the exact source revision the build was cut from: the
+// last commit that changed a build input. A build from a snapshot without git
+// metadata stamps "unknown"; a shallow clone is refused.
+const commit = buildCommit(root);
 if (!/^(?:[0-9a-f]{40}|unknown)$/.test(commit)) {
   throw new Error(`Unexpected git commit id: ${commit}`);
 }
@@ -85,7 +80,7 @@ const siteLogo = `<span class="site-logo" aria-hidden="true">${logoSvg("logo-dar
 const favicon = readFileSync(join(root, "assets/favicon.png")).toString("base64");
 const faviconSvg = read("assets/favicon.svg").trim()
   .replace(/\s+/g, " ")
-  .replace(/[#<>"%]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  .replace(/[#<>"% ]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 // The app bundle is minified with legalComments "none", which strips the
 // generated WASM module's header comment — but that module compiles in the
 // MIT-licensed AEZ v5 vendored at entropylab-wasm/src/aez/ (zears 0.2.1),
@@ -132,7 +127,11 @@ const jsMain = buildSync({
   loader: { ".html": "text" },
   banner: { js: wasmAezNotice },
   define: { __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false" },
-}).outputFiles[0].text.split(siteLogoSpan).join(siteLogo);
+}).outputFiles[0].text.split(siteLogoSpan).join(siteLogo)
+  // @scure/base probes TextDecoder with "A0+" and a DEL (U+007F). Its source
+  // spells DEL as an escape, but esbuild writes the character itself, which
+  // HTML forbids in a script. Put the escape back: the string is unchanged.
+  .split(String.fromCharCode(0x7f)).join(String.fromCharCode(92) + "x7f");
 const jsSqliteWriter = read("js/sqlite-writer.js");
 const jsWalletExport = read("js/wallet-export.js");
 const jsOnline = read("js/online.js");
@@ -177,6 +176,15 @@ const worker = workerTemplate.split("{{PWA_VERSION}}").join(pwaVersion);
 
 for (const leftover of `${html}\n${worker}`.match(/\/\*@@|{{(?:VERSION|PWA_VERSION|COMMIT|COMMIT_SHORT)}}/g) || []) {
   throw new Error(`Unreplaced build token in output: ${leftover}`);
+}
+// HTML forbids control characters other than whitespace, and noncharacters,
+// anywhere in a document. A dependency that starts emitting one fails the
+// build here rather than shipping a page that does not conform.
+for (const char of html) {
+  const code = char.codePointAt(0);
+  const control = (code < 0x20 && ![0x09, 0x0a, 0x0c, 0x0d].includes(code)) || (code >= 0x7f && code <= 0x9f);
+  const nonCharacter = (code >= 0xfdd0 && code <= 0xfdef) || (code & 0xfffe) === 0xfffe;
+  if (control || nonCharacter) throw new Error(`Code point HTML forbids in output: U+${code.toString(16).toUpperCase().padStart(4, "0")}`);
 }
 
 if (outDir === root) {

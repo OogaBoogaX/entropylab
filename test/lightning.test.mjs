@@ -108,7 +108,7 @@ const shell = read("src/shell.html");
 const appSource = read("src/js/app.js");
 
 test("the Lightning card ships in the shell with its controls", () => {
-  assert.match(shell, /<section class="card no-print tool-card" id="ln-card" role="tabpanel" hidden>/);
+  assert.match(shell, /<div class="card no-print tool-card" id="ln-card" role="tabpanel" hidden>/);
   for (const id of ["ln-format", "ln-network", "ln-seed", "ln-pass", "ln-go", "ln-wipe", "ln-session", "ln-error", "ln-out"]) {
     assert.ok(shell.includes(`id="${id}"`), `${id} is missing from the shell`);
   }

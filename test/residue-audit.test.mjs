@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import vm from "node:vm";
 import { PassThrough } from "node:stream";
 import { EventEmitter } from "node:events";
@@ -75,8 +75,15 @@ const exerciseDriver = async ({ copyWorks = true, wrongInput = false, wrongWalle
     Object.defineProperty(el, "textContent", { get() { state.outputRead = true; return text; } });
     return el;
   };
-  const seedCopy = element({ click() { if (copyWorks) state.clipboard = secrets.mnemonic; } });
-  const publicCopy = element({ click() { if (copyWorks) state.clipboard = "xpub-public-key"; } });
+  // Like the app, a copy button shows its "copied" state only after its own
+  // clipboard write succeeded.
+  const copyButton = text => {
+    const button = element({ copied: false, click() { if (copyWorks) { state.clipboard = text; button.copied = true; } } });
+    button.classList = { contains: name => name === "is-copied" && button.copied };
+    return button;
+  };
+  const seedCopy = copyButton(secrets.mnemonic);
+  const publicCopy = copyButton("xpub-public-key");
   const select = (selector) => {
     if (selector.includes("data-session-ended")) return state.ended ? element() : null;
     if (selector.includes("data-copy-seed-phrase")) return seedCopy;
@@ -117,6 +124,9 @@ const exerciseDriver = async ({ copyWorks = true, wrongInput = false, wrongWalle
       assert.fail(expression);
     },
     waitForClipboard: async expected => { state.clipboardRead = true; if (state.clipboard !== expected) throw new Error("secret copy did not succeed"); },
+    waitForSeedCopy: async () => {
+      if (!await page.evaluate(`document.querySelector("#form [data-copy-seed-phrase]").classList.contains("is-copied")`)) throw new Error("secret copy did not succeed");
+    },
     close: async () => { state.closed = true; },
   };
   // Execute the old implementation as well: the regressions first fail on its
@@ -141,6 +151,17 @@ test("regression: after-copy follows a successful secret copy, not an xpub copy"
 
 test("regression: a refused clipboard write prevents after-copy", async () => {
   await assert.rejects(exerciseDriver({ copyWorks: false }), /copy/);
+});
+
+test("observer regression: the driver never touches the clipboard; only the app's Copy button does", async () => {
+  // Contract: the harness neither clears nor reads the clipboard. Reading it
+  // back left a copy of the mnemonic in the browser process after the tab
+  // closed: Chrome's only one, and 2 of Edge's 4 (2026-10-06, measured with
+  // and without the read-back). The copy is confirmed by the app's own copied
+  // state instead, which it sets only after its write succeeded.
+  const { state, expressions } = await exerciseDriver();
+  assert.equal(state.clipboardRead, false, "the driver read the clipboard back");
+  assert.deepEqual(expressions.filter(expression => expression.includes("navigator.clipboard")), [], "the driver called the Clipboard API itself");
 });
 
 test("driver rejects a changed input or a wallet that differs from the fixture", async () => {
@@ -181,6 +202,226 @@ test("capture regression: a denied capture records the tool's diagnostic", async
       return child;
     };
     await assert.rejects(audit.capture({ tool: { kind: "gcore", binary: "gcore" }, pid: 123, outDir: dir, checkpoint: "before-input", execFile }), /ptrace: Operation not permitted/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// A fake ProcDump that reproduces the given stdout, writes a file of the
+// given size at the target path (or not), and exits with the given code.
+// `encoding: "utf16le"` and `substitute: true` reproduce what ProcDump v12.01
+// does on Windows 11 (seen 2026-10-06): its piped output is UTF-16LE with no
+// BOM, and it expands the file-name substitutions `procdump -?` lists
+// (PROCESSNAME, PID, EXCEPTIONCODE, YYMMDD, HHMMSS). The "pid" in
+// "before-input-pid28876.dmp" was expanded, so matching ignores case. The
+// folder part of the path is left alone. `written` is the file it wrote.
+const PROCDUMP_SUBSTITUTIONS = { PROCESSNAME: "chrome", EXCEPTIONCODE: "0x00000000", YYMMDD: "261006", HHMMSS: "084522" };
+const fakeProcdump = ({ output, fileBytes = null, code, encoding = "utf8", substitute = false }) => {
+  const execFile = (binary, args) => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough(); child.stderr = new PassThrough();
+    setImmediate(() => {
+      if (fileBytes !== null) {
+        const target = args[args.length - 1], pid = args[args.length - 2];
+        const name = substitute
+          ? basename(target).replace(/PROCESSNAME|PID|EXCEPTIONCODE|YYMMDD|HHMMSS/gi, token => PROCDUMP_SUBSTITUTIONS[token.toUpperCase()] ?? pid)
+          : basename(target);
+        execFile.written = join(dirname(target), name);
+        writeFileSync(execFile.written, Buffer.alloc(fileBytes, 1));
+      }
+      child.stdout.end(Buffer.from(output, encoding));
+      child.emit("exit", code); child.emit("close", code);
+    });
+    return child;
+  };
+  return execFile;
+};
+
+// ProcDump v12.01's stdout for one full dump on Windows 11 (2026-10-06,
+// pid 28876), with the dump folder shortened.
+const PROCDUMP_V12_SUCCESS = [
+  "",
+  "ProcDump v12.01 - Sysinternals process dump utility",
+  "Copyright (C) 2009-2026 Mark Russinovich and Andrew Richards",
+  "Sysinternals - www.sysinternals.com",
+  "",
+  "[08:45:20]Dump 1 info: Available space: 77670146048",
+  "[08:45:20]Dump 1 initiated: C:\\residue\\before-input-2887628876.dmp",
+  "[08:45:20]Dump 1 writing: Estimated dump file size is 573 MB.",
+  "[08:45:22]Dump 1 complete: 573 MB written in 2.0 seconds",
+  "[08:45:22]Dump count reached.",
+  "",
+].join("\r\n");
+
+test("capture: a successful ProcDump one-shot dump exits 1 and is accepted", async () => {
+  // Contract: ProcDump exits 1 after a successful one-shot dump, having
+  // printed "Dump 1 complete" (verified against ProcDump v12.01 on Windows).
+  // gcore keeps the Unix contract (0 success, nonzero failure) covered above.
+  const dir = tmp();
+  try {
+    const execFile = fakeProcdump({ output: "[14:32:04]Dump 1 complete: 235 MB written in 3.9 seconds\n[14:32:05]Dump count reached.\n", fileBytes: 64, code: 1 });
+    const result = await audit.capture({ tool: { kind: "procdump", binary: "procdump64" }, pid: 4242, outDir: dir, checkpoint: "before-input", execFile });
+    assert.equal(result.out, execFile.written, "a ProcDump success resolves the dump file it wrote");
+    assert.equal(result.skipped, null);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("capture: a failed ProcDump run that leaves a file is rejected, not counted as captured", async () => {
+  // Contract: fail closed. ProcDump can exit nonzero after "Dump 1 error: ..."
+  // and still leave a partial file at the target path. That file must not be
+  // mistaken for a complete capture. Verified output shape from ProcDump
+  // v12.01's error line.
+  const dir = tmp();
+  try {
+    const execFile = fakeProcdump({ output: "[14:32:04]Dump 1 error: Error writing dump file: Access is denied.\n", fileBytes: 64, code: 2 });
+    await assert.rejects(
+      audit.capture({ tool: { kind: "procdump", binary: "procdump64" }, pid: 4242, outDir: dir, checkpoint: "before-input", execFile }),
+      /without completing the dump|Dump 1 error/,
+    );
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("capture: an empty ProcDump dump file is no capture, never a clean one", async () => {
+  // Contract: a zero-byte dump holds no memory, so it must be treated as no
+  // capture (skipped), not as a scanned-clean process.
+  const dir = tmp();
+  try {
+    const execFile = fakeProcdump({ output: "[14:32:04]Dump 1 complete: 0 MB written in 0.1 seconds\n[14:32:05]Dump count reached.\n", fileBytes: 0, code: 1 });
+    const result = await audit.capture({ tool: { kind: "procdump", binary: "procdump64" }, pid: 4242, outDir: dir, checkpoint: "before-input", execFile });
+    assert.equal(result.out, null);
+    assert.equal(result.skipped, "empty dump written");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("capture: ProcDump's real UTF-16LE output is decoded, so a complete dump is accepted", async () => {
+  // Contract: a ProcDump capture counts on "Dump 1 complete" without
+  // "Dump 1 error", whatever encoding ProcDump writes. v12.01 writes UTF-16LE
+  // to a pipe; read as UTF-8 it never matched, so all 9 complete dumps of the
+  // elevated 2026-10-06 run were refused.
+  const dir = tmp();
+  try {
+    const execFile = fakeProcdump({ output: PROCDUMP_V12_SUCCESS, encoding: "utf16le", fileBytes: 64, code: 1 });
+    const result = await audit.capture({ tool: { kind: "procdump", binary: "procdump64" }, pid: 28876, outDir: dir, checkpoint: "before-input", execFile });
+    assert.equal(result.skipped, null);
+    assert.equal(result.out, execFile.written);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("capture: UTF-16LE ProcDump failures are still refused, with a readable diagnostic", async () => {
+  // Contract: decoding must not turn a failure into a capture. "Dump 1 error"
+  // with a leftover file, and v12.01's "No process matching" refusal (seen
+  // 2026-10-06 for a renderer that had exited), stay failures, and the report
+  // shows ProcDump's words rather than NUL-separated bytes.
+  const dir = tmp();
+  try {
+    const failures = [
+      { output: PROCDUMP_V12_SUCCESS.replace("Dump 1 complete: 573 MB written in 2.0 seconds", "Dump 1 error: Error writing dump file: Access is denied."), fileBytes: 64, code: 2, expected: /without completing the dump: [\s\S]*Dump 1 error: Error writing dump file: Access is denied\./ },
+      { output: "\r\nProcDump v12.01 - Sysinternals process dump utility\r\n\r\nNo process matching the specified PID can be found.\r\n", code: -2, expected: /without completing the dump: [\s\S]*No process matching the specified PID can be found\./ },
+    ];
+    for (const { output, fileBytes = null, code, expected } of failures) {
+      const execFile = fakeProcdump({ output, encoding: "utf16le", fileBytes, code });
+      await assert.rejects(audit.capture({ tool: { kind: "procdump", binary: "procdump64" }, pid: 24488, outDir: dir, checkpoint: "before-input", execFile }), expected);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("capture: the dump ProcDump wrote is found after its documented file-name substitutions, at every checkpoint", async () => {
+  // Contract: a completed dump is scanned where ProcDump wrote it. ProcDump
+  // expands PROCESSNAME, PID, EXCEPTIONCODE, YYMMDD and HHMMSS in the file
+  // name (`procdump -?`, v12.01), so "before-input-pid28876.dmp" was written
+  // as "before-input-2887628876.dmp" and reported as "no dump written".
+  const dir = tmp();
+  try {
+    for (const checkpoint of CHECKPOINTS) {
+      const execFile = fakeProcdump({ output: "[08:45:22]Dump 1 complete: 573 MB written in 2.0 seconds\r\n", fileBytes: 64, code: 1, substitute: true });
+      const result = await audit.capture({ tool: { kind: "procdump", binary: "procdump64" }, pid: 28876, outDir: dir, checkpoint, execFile });
+      assert.equal(result.skipped, null, checkpoint);
+      assert.equal(result.out, execFile.written, checkpoint);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("browser launch: Windows Chromium is told not to de-elevate, so an elevated harness keeps its pipe", () => {
+  // Contract: an elevated harness (needed for ProcDump to reach Chrome's
+  // processes) must keep the browser it launched. Elevated Chrome
+  // 154.0.8037.98 and Edge 154.0.4258.53 relaunch themselves de-elevated and
+  // exit 0 at once, closing the debugging pipe, unless given
+  // --do-not-de-elevate (2026-10-06). Linux has no de-elevation.
+  const dir = tmp();
+  const launches = new Map();
+  const spawnProcess = (binary, args) => {
+    launches.set(binary, args);
+    const child = new EventEmitter(); child.pid = 1;
+    return child;
+  };
+  try {
+    for (const os of ["win32", "linux"]) {
+      audit.spawnBrowser({ binary: `residue-test-no-browser-${os}` }, { profile: dir, logPath: join(dir, `${os}.log`), platform: os, spawnProcess });
+    }
+    const windows = launches.get("residue-test-no-browser-win32"), linux = launches.get("residue-test-no-browser-linux");
+    assert.ok(windows?.includes("--do-not-de-elevate"), "Windows launch keeps an elevated browser");
+    assert.ok(windows.includes("--remote-debugging-pipe"));
+    assert.ok(linux && !linux.includes("--do-not-de-elevate"), "Linux launch is unchanged");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("process tree: a checkpoint captures a process set only once it stops changing", async () => {
+  // Contract: the capture list is a set seen unchanged on two consecutive
+  // enumerations, in any order; a set still changing at the deadline is
+  // captured as last seen and marked unsettled, never trimmed or dropped.
+  // On 2026-10-06 two Chrome start-up renderers exited mid-sweep, failing the
+  // run closed.
+  const run = async (sets, options = {}) => {
+    let clock = 0, index = 0;
+    const polls = [];
+    const result = await audit.settleProcessTree({
+      enumerate: () => { polls.push(clock); return sets[Math.min(index++, sets.length - 1)]; },
+      sleep: async ms => { clock += ms; },
+      now: () => clock,
+      intervalMs: 1000,
+      timeoutMs: 5000,
+      ...options,
+    });
+    return { ...result, polls };
+  };
+  const startup = await run([[1, 2, 3, 4, 5], [1, 2, 3], [3, 1, 2]]);
+  assert.equal(startup.settled, true);
+  assert.deepEqual([...startup.pids].sort(), [1, 2, 3]);
+  assert.deepEqual(startup.polls, [0, 1000, 2000]);
+  assert.equal(startup.waitedMs, 2000);
+
+  const quiet = await run([[7, 8], [8, 7]]);
+  assert.equal(quiet.settled, true);
+  assert.deepEqual(quiet.polls, [0, 1000]);
+
+  const churning = await run([[1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7]]);
+  assert.equal(churning.settled, false);
+  assert.deepEqual(churning.pids, [1, 6], "the last set seen before the deadline is captured");
+  assert.deepEqual(churning.polls, [0, 1000, 2000, 3000, 4000, 5000]);
+
+  // Chrome retired start-up renderers 15-33 s after launch, up to 10 s apart
+  // (2026-10-06), so a brief agreement is not a quiet spell. With stableMs the
+  // set must stay unchanged that long; a change restarts the wait.
+  const pause = await run([[1, 2, 3], [1, 2, 3], [1, 2], [1, 2], [1, 2], [1, 2]], { stableMs: 3000 });
+  assert.equal(pause.settled, true);
+  assert.deepEqual(pause.pids, [1, 2], "the set seen before the late exit is not captured");
+  assert.equal(pause.waitedMs, 5000);
+});
+
+test("reports say when a checkpoint's process set never settled", () => {
+  const dir = tmp();
+  try {
+    const entries = [{ pid: 1, scanned: 1, skipped: null }];
+    const results = [
+      { name: "before-input", settle: { settled: false, waitedMs: 30000 }, entries, hits: [] },
+      { name: "after-derive", settle: { settled: true, waitedMs: 2000 }, entries, hits: [] },
+    ];
+    const { mdPath } = writeReports({ outDir: dir, meta: { platform: "win32", browser: "chrome", tool: "procdump" }, results });
+    const md = readFileSync(mdPath, "utf8");
+    const section = name => {
+      const start = md.indexOf(`## ${name}`), end = md.indexOf("\n## ", start + 1);
+      return md.slice(start, end === -1 ? undefined : end);
+    };
+    assert.match(section("before-input"), /still changing after 30 s/);
+    assert.doesNotMatch(section("after-derive"), /still changing/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -285,6 +526,150 @@ test("a missing private-key control invalidates the run; unseen seed bytes are u
   assert.equal(assessment.coverage.find(row => row.label === "xprv").calibrated, true);
   results[2].hits = results[2].hits.filter(hit => hit.label !== "wif");
   assert.equal(audit.assessRun(results).valid, false);
+});
+
+// Exit rule (the user's decision, 2026-10-06): a process that verifiably
+// exited between enumeration and its capture is recorded as an exit, not as
+// an incomplete capture. On 2026-10-06 Chrome's PassageEmbeddingsService shut
+// itself down mid-sweep at after-reveal and invalidated an otherwise complete
+// run.
+const EXITED = { pid: 20204, out: null, exited: "exited before capture" };
+
+test("a process that verifiably exited before its capture does not make a checkpoint incomplete", () => {
+  // Contract: an exit counts as accounted for. The run stays valid only if
+  // every other process was captured and scanned, each checkpoint scanned at
+  // least one process, and both controls hold.
+  const withExits = completeMeasurements();
+  withExits[0].entries.push(EXITED);
+  withExits[2].entries.push(EXITED);
+  assert.deepEqual(audit.assessRun(withExits).reasons, []);
+
+  const onlyExits = completeMeasurements();
+  onlyExits[4].entries = [EXITED];
+  assert.equal(audit.assessRun(onlyExits).valid, false, "a checkpoint that scanned nothing is still incomplete");
+
+  const exitAndFailure = completeMeasurements();
+  exitAndFailure[2].entries.push(EXITED, { pid: 456, skipped: "capture failed: access denied" });
+  assert.equal(audit.assessRun(exitAndFailure).valid, false, "an exit does not excuse another process's failed capture");
+
+  const controlGone = completeMeasurements();
+  controlGone[2] = { name: "after-reveal", entries: [{ pid: 123, scanned: 1 }, EXITED], hits: [] };
+  assert.equal(audit.assessRun(controlGone).valid, false, "the positive control is unchanged");
+});
+
+test("capture: only ProcDump's no-such-process refusal, confirmed by a fresh enumeration, is recorded as an exit", async () => {
+  // Contract: ProcDump v12.01 prints "No process matching the specified PID
+  // can be found." for an exited pid (2026-10-06). That alone is not enough:
+  // the pid must also be missing from a fresh enumeration. Any other failure,
+  // or any other tool, stays a failed capture.
+  const noProcess = "\r\nProcDump v12.01 - Sysinternals process dump utility\r\n\r\nNo process matching the specified PID can be found.\r\n";
+  const dumpError = PROCDUMP_V12_SUCCESS.replace("Dump 1 complete: 573 MB written in 2.0 seconds", "Dump 1 error: Error writing dump file: Access is denied.");
+  const gcoreGone = () => {
+    const child = new EventEmitter();
+    child.stdout = new PassThrough(); child.stderr = new PassThrough();
+    setImmediate(() => { child.stdout.end(""); child.stderr.end("ptrace: No such process.\n"); child.emit("exit", 1); child.emit("close", 1); });
+    return child;
+  };
+  const dir = tmp();
+  try {
+    const sweep = async ({ kind = "procdump", output, execFile = fakeProcdump({ output, encoding: "utf16le", code: -2 }), running }) =>
+      (await audit.captureAll({ tool: { kind, binary: kind }, pids: [20204], outDir: dir, checkpoint: "after-reveal", needles: makeNeedles(), running, execFile })).entries[0];
+
+    const gone = await sweep({ output: noProcess, running: () => false });
+    assert.match(gone.exited, /exited before capture/);
+    assert.equal(gone.skipped, undefined);
+
+    const stillListed = await sweep({ output: noProcess, running: () => true });
+    assert.equal(stillListed.exited, undefined);
+    assert.match(stillListed.skipped, /capture failed: [\s\S]*No process matching/);
+
+    const unchecked = await sweep({ output: noProcess, running: undefined });
+    assert.equal(unchecked.exited, undefined, "without a fresh enumeration nothing is recorded as an exit");
+
+    const otherFailure = await sweep({ output: dumpError, running: () => false });
+    assert.equal(otherFailure.exited, undefined);
+    assert.match(otherFailure.skipped, /Dump 1 error/);
+
+    const gcore = await sweep({ kind: "gcore", execFile: gcoreGone, running: () => false });
+    assert.equal(gcore.exited, undefined);
+    assert.match(gcore.skipped, /No such process/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// A missing PID is evidence only after a successful, well-formed query.
+// In particular, ProcDump's refusal can also occur for a protected process;
+// a failed CIM query must not turn that refusal into a verified exit.
+test("process tree accepts complete Windows and Unix process listings", () => {
+  const rows = [
+    { ProcessId: 300, ParentProcessId: 200 },
+    { ProcessId: 100, ParentProcessId: 1 },
+    { ProcessId: 400, ParentProcessId: 1 },
+    { ProcessId: 200, ParentProcessId: 100 },
+  ];
+  for (const [platform, stdout] of [["win32", JSON.stringify(rows)], ["linux", "300 200\n100 1\n400 1\n200 100\n"]]) {
+    const pids = audit.processTree({ pid: 100, platform, exec: () => ({ status: 0, stdout }) });
+    assert.deepEqual(pids.sort((a, b) => a - b), [100, 200, 300]);
+  }
+  assert.deepEqual(audit.processTree({ pid: 100, platform: "win32", exec: () => ({
+    status: 0, stdout: JSON.stringify({ ProcessId: 100, ParentProcessId: 1 }),
+  }) }), [100], "PowerShell may serialize a single result as an object");
+});
+
+test("process tree rejects failed or malformed enumerations instead of assuming only the root remains", () => {
+  for (const [platform, stdout, malformed] of [
+    ["win32", '[{"ProcessId":100,"ParentProcessId":1}]', ["not JSON", "null", "[]", "{}", '[{"ProcessId":100}]', '[{"ProcessId":"100","ParentProcessId":1}]', '[{"ProcessId":200,"ParentProcessId":1}]']],
+    ["linux", "100 1\n", ["not a process table", "100\n", "100 1 unexpected\n", "200 1\n"]],
+  ]) {
+    const failures = [
+      { status: 1, stdout, stderr: "process query failed" },
+      { status: null, signal: "SIGTERM", stdout },
+      { status: 0, error: new Error("spawn failed"), stdout },
+      { status: 0, stdout: "" },
+      ...malformed.map(stdout => ({ status: 0, stdout })),
+    ];
+    for (const result of failures) {
+      assert.throws(() => audit.processTree({ pid: 100, platform, exec: () => result }),
+        ResidueToolError, `${platform}: ${JSON.stringify(result)}`);
+    }
+  }
+});
+
+test("capture regression: a failed fresh enumeration cannot certify a process exit", async () => {
+  const dir = tmp();
+  const noProcess = "No process matching the specified PID can be found.\r\n";
+  const sweep = result => audit.captureAll({
+    tool: { kind: "procdump", binary: "procdump64" }, pids: [200], outDir: dir,
+    checkpoint: "after-wipe", needles: makeNeedles(),
+    execFile: fakeProcdump({ output: noProcess, encoding: "utf16le", code: -2 }),
+    running: pid => audit.processTree({ pid: 100, platform: "win32", exec: () => result }).includes(pid),
+  });
+  try {
+    for (const result of [
+      { status: 1, stdout: "", stderr: "Get-CimInstance failed" },
+      { status: null, error: new Error("powershell unavailable"), stdout: "" },
+      { status: 0, stdout: "invalid JSON" },
+    ]) await assert.rejects(sweep(result), ResidueToolError);
+
+    const gone = await sweep({ status: 0, stdout: '[{"ProcessId":100,"ParentProcessId":1}]' });
+    assert.ok(gone.entries[0].exited, "a successful fresh enumeration can confirm absence");
+    const present = await sweep({ status: 0, stdout: '[{"ProcessId":100,"ParentProcessId":1},{"ProcessId":200,"ParentProcessId":100}]' });
+    assert.equal(present.entries[0].exited, undefined);
+    assert.match(present.entries[0].skipped, /capture failed/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("reports list every process that exited before its capture", () => {
+  const dir = tmp();
+  try {
+    const results = completeMeasurements();
+    results[2].entries.push(EXITED);
+    const { mdPath, jsonPath } = writeReports({ outDir: dir, meta: { platform: "win32", browser: "chrome", tool: "procdump" }, results });
+    const md = readFileSync(mdPath, "utf8");
+    assert.match(md.slice(0, md.indexOf("| Needle |")), /1 process exited before its capture/);
+    const reveal = md.slice(md.indexOf("## after-reveal"), md.indexOf("\n## after-copy"));
+    assert.match(reveal, /- pid 20204: exited before capture/);
+    assert.equal(JSON.parse(readFileSync(jsonPath, "utf8")).checkpoints[2].entries[1].exited, "exited before capture");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("the checkpoint list is the documented order, with the positive control before the wipe", () => {

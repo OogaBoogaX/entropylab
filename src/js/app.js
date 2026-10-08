@@ -3759,8 +3759,8 @@ function hodlDiceEntropy(value, method, targetWords = hodlTargetWordCount) {
   if (rolls.length < config.hashRolls) warnings.push(hodlNote("Only {have} of {need} recommended fair-die rolls were entered. The {words}-word phrase is deterministic, but its security cannot exceed the approximately {bits} bits supplied. Use only for testing until the recommendation is met.", { have: rolls.length, need: config.hashRolls, words: config.words, bits: sourceBits.toFixed(1) }));
   else if (rolls.length > config.hashRolls) notes.push(hodlNote("All {n} rolls, including {extra} beyond the recommendation, are included in the hash.", { n: rolls.length, extra: rolls.length - config.hashRolls }));
   let hashInput = method === "coleman" ? hodlIanColemanDiceString(rolls) : rolls.join(""), digest = hodlSha256(new TextEncoder().encode(hashInput)), bytes = digest.slice(0, config.bytes);
-  if (method === "coleman") notes.push(hodlNote("Hashed rolls / Dice [1-6]: convert every 6 to 0, SHA-256 hash the complete mapped digit string, then use the first {bits} bits for the selected {words}-word seed. This matches the method used by Keystone.", { bits: config.bits, words: config.words }));
-  else notes.push(hodlNote("Hashed rolls / Base 10 [0-9]: SHA-256 hash the complete original dice digit string, then use the first {bits} bits for the selected {words}-word seed. This matches COLDCARD and SeedSigner.", { bits: config.bits, words: config.words }));
+  if (method === "coleman") notes.push(hodlNote("Hashed rolls / Base 6 [0-5]: convert every 6 to 0, SHA-256 hash the complete mapped digit string, then use the first {bits} bits for the selected {words}-word seed. This matches the method used by Keystone.", { bits: config.bits, words: config.words }));
+  else notes.push(hodlNote("Hashed rolls / Base 10 [1-6]: SHA-256 hash the complete original dice digit string, then use the first {bits} bits for the selected {words}-word seed. This matches COLDCARD and SeedSigner.", { bits: config.bits, words: config.words }));
   return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: config.bits, sourceBits, method: method === "coleman" ? "ian-coleman-dice-sha256" : "coldcard-sha256", notes, warnings };
 }
 function hodlNumberBaseEntropy(value, format, targetWords = hodlTargetWordCount) {
@@ -6113,10 +6113,10 @@ function hodlRenderKeyForm() {
       <p class="label">${hodlT("Dice roll options")}</p>
       <div class="choice-grid">
       <label class="choice"><input type="radio" name="dm" value="coldcard" ${hodlDiceMethod === "coldcard" ? "checked" : ""} />
-        <span><strong>${hodlT("Base 10 [0-9] / Hashed rolls")}</strong><span class="desc">${hodlT("SHA-256 of the original dice digit string, matching the method used by COLDCARD and SeedSigner. The first {bits} bits become the selected {words}-word seed; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
+        <span><strong>${hodlT("Base 10 [1-6] / Hashed rolls")}</strong><span class="desc">${hodlT("SHA-256 of the original dice digit string, matching the method used by COLDCARD and SeedSigner. The first {bits} bits become the selected {words}-word seed; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
       </label>
       <label class="choice"><input type="radio" name="dm" value="coleman" ${hodlDiceMethod === "coleman" ? "checked" : ""} />
-        <span><strong>${hodlT("Dice [1-6] / Hashed rolls")}</strong><span class="desc">${hodlT("Convert each 6 to 0 and SHA-256 the complete mapped digit string, matching the method used by Keystone. Use the first {bits} bits; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
+        <span><strong>${hodlT("Base 6 [0-5] / Hashed rolls")}</strong><span class="desc">${hodlT("Convert each 6 to 0 and SHA-256 the complete mapped digit string, matching the method used by Keystone. Use the first {bits} bits; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
       </label>
       <label class="choice"><input type="radio" name="dm" value="bitbox" ${hodlDiceMethod === "bitbox" ? "checked" : ""} />
         <span><strong>${hodlT("BitBox diceware / Direct word selection")}</strong><span class="desc">${hodlT("Use five dice showing 1–4, then a coin (or 6th die: 1–3 heads, 4–6 tails). Build {partialWords} lookup-table words, then choose 1 of {candidates} valid final checksum words.", { partialWords: config.partialWords, candidates: config.candidates })}</span></span>
@@ -6132,7 +6132,7 @@ function hodlRenderKeyForm() {
       ${hodlDiceMethod === "bitbox" || hodlDiceMethod === "dplus" ? hodlCalculationsSwitchMarkup("manual", "dice-manual-calculations", hodlT("show how direct word selection produces each BIP39 index"), hodlManualCalculationsOpen) : ""}
       ${hodlDiceFairnessControlsMarkup(hodlDiceMethod, hodlKeys[hodlActiveKey]?.showDiceFairness)}
       ${hodlDerivedSeedRowMarkup()}
-      <div id="dice-words" translate="no" class="dice-word-grid" aria-label="${hodlTAttr("{n} seed-word slots", { n: config.words })}"></div><div id="last-words" translate="no" class="row last-word-options"></div>`;
+      <div id="dice-words" translate="no" class="dice-word-grid" role="group" aria-label="${hodlTAttr("{n} seed-word slots", { n: config.words })}"></div><div id="last-words" translate="no" class="row last-word-options"></div>`;
     let input = document.getElementById("dice");
     input.dataset.previousValue = input.value;
     let fairnessToggle = document.getElementById("dice-fairness-toggle");
@@ -6213,7 +6213,7 @@ function hodlRenderKeyForm() {
       <div class="dealt-cards" id="dealt-cards" translate="no" aria-live="polite"${showCards ? "" : " hidden"}></div>
       ${direct ? hodlCalculationsSwitchMarkup("manual", "cards-manual-calculations", hodlT("show how direct card selection produces each BIP39 index"), hodlManualCalculationsOpen) : ""}
       ${hodlDerivedSeedRowMarkup()}
-      <div id="dice-words" translate="no" class="dice-word-grid" aria-label="${hodlTAttr("{n} seed-word slots", { n: config.words })}"></div>
+      <div id="dice-words" translate="no" class="dice-word-grid" role="group" aria-label="${hodlTAttr("{n} seed-word slots", { n: config.words })}"></div>
     `;
     let input = document.getElementById(inputId);
     input.onbeforeinput = direct ? (event) => hodlHandleGroupedSeparatorDelete(input, event) : (event) => {
@@ -6318,7 +6318,7 @@ function hodlRenderKeyForm() {
       ${entropyPad}
       ${["bin", "base4", "base8", "hex"].includes(format.id) ? hodlCalculationsSwitchMarkup("number-base", "number-base-calculations", hodlT("show how each BIP39 word number is calculated"), state?.showNumberBaseCalculations) : ""}
       ${hodlDerivedSeedRowMarkup()}
-      <div id="entropy-words" translate="no" class="dice-word-grid" aria-label="${hodlTAttr("{n} seed-word slots", { n: config.words })}"></div>`;
+      <div id="entropy-words" translate="no" class="dice-word-grid" role="group" aria-label="${hodlTAttr("{n} seed-word slots", { n: config.words })}"></div>`;
     hodlFormEl.querySelectorAll('input[name="entropy-format"]').forEach((radio) => {
       radio.onchange = () => {
         let state2 = hodlKeys[hodlActiveKey], previous = document.getElementById(hodlEntropyFormat);
@@ -6379,7 +6379,7 @@ function hodlRenderKeyForm() {
       };
     });
     if (numbers) {
-      hodlFormEl.innerHTML = `${choices}<p class="label" id="seed-number-label">${hodlT("Your {words} BIP39 word numbers", { words: config.words })}</p>${hodlSeedMetaRowMarkup("seed-number-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-zero-index", hodlT("Use zero-indexed word numbers"), { note: hodlT("0–2047 instead of the default 1–2048"), checked: hodlSeedZeroIndexed })}</div><div class="dice-input-shell seed-number-input-shell"><pre class="dice-input-highlight" translate="no" id="seed-number-highlight" aria-hidden="true"></pre><textarea id="seed-numbers" inputmode="numeric" placeholder="${hodlTAttr(hodlSeedZeroIndexed ? "0 1 2 …" : "1 2 3 …")}" aria-labelledby="seed-number-label" aria-describedby="seed-number-meta" autocomplete="off" spellcheck="false"></textarea></div><div class="dice-input-pad seed-number-pad" role="group" aria-label="${hodlTAttr("BIP39 word number keypad")}">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => `<button type="button" data-seed-number-digit="${digit}" aria-label="${hodlTAttr("Enter {n}", { n: digit })}">${digit}</button>`).join("")}<button type="button" class="seed-keyboard-delete seed-number-delete" data-seed-number-delete aria-label="${hodlTAttr("Delete previous digit")}"><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button><button type="button" class="seed-number-next" data-seed-number-space>${hodlT("Next word")}</button></div>${hodlSeedPhraseRowMarkup(hodlT("Your seed phrase"))}<div id="seed-number-words" translate="no" class="dice-word-grid" aria-label="${hodlTAttr("{n} seed-word slots", { n: config.words })}"></div>`;
+      hodlFormEl.innerHTML = `${choices}<p class="label" id="seed-number-label">${hodlT("Your {words} BIP39 word numbers", { words: config.words })}</p>${hodlSeedMetaRowMarkup("seed-number-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-zero-index", hodlT("Use zero-indexed word numbers"), { note: hodlT("0–2047 instead of the default 1–2048"), checked: hodlSeedZeroIndexed })}</div><div class="dice-input-shell seed-number-input-shell"><pre class="dice-input-highlight" translate="no" id="seed-number-highlight" aria-hidden="true"></pre><textarea id="seed-numbers" inputmode="numeric" placeholder="${hodlTAttr(hodlSeedZeroIndexed ? "0 1 2 …" : "1 2 3 …")}" aria-labelledby="seed-number-label" aria-describedby="seed-number-meta" autocomplete="off" spellcheck="false"></textarea></div><div class="dice-input-pad seed-number-pad" role="group" aria-label="${hodlTAttr("BIP39 word number keypad")}">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => `<button type="button" data-seed-number-digit="${digit}" aria-label="${hodlTAttr("Enter {n}", { n: digit })}">${digit}</button>`).join("")}<button type="button" class="seed-keyboard-delete seed-number-delete" data-seed-number-delete aria-label="${hodlTAttr("Delete previous digit")}"><svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><path d="M9 2h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9L2 9l7-7Z"/><path d="m12 6 6 6m0-6-6 6"/></svg></button><button type="button" class="seed-number-next" data-seed-number-space>${hodlT("Next word")}</button></div>${hodlSeedPhraseRowMarkup(hodlT("Your seed phrase"))}<div id="seed-number-words" translate="no" class="dice-word-grid" role="group" aria-label="${hodlTAttr("{n} seed-word slots", { n: config.words })}"></div>`;
       let input = document.getElementById("seed-numbers"), update = () => {
         let parsed = hodlRenderSeedNumberInputState(input, config.words, hodlSeedZeroIndexed), entered = parsed.entries.length, cue = null;
         hodlRenderDiceWordGrid(document.getElementById("seed-number-words"), parsed.wordSlots, config.words, false);
@@ -12982,8 +12982,8 @@ function hodlKeySummaryMethod(state) {
     key: "Private key",
   }[state.mode] || "";
   let submethod = state.mode === "dice" ? {
-    coldcard: "Base 10 [0-9] / Hashed rolls",
-    coleman: "Dice [1-6] / Hashed rolls",
+    coldcard: "Base 10 [1-6] / Hashed rolls",
+    coleman: "Base 6 [0-5] / Hashed rolls",
     bitbox: "BitBox diceware / Direct word selection",
     dplus: "D++ / Direct word selection",
   }[state.diceMethod || "coldcard"] : state.mode === "cards"
@@ -16805,6 +16805,12 @@ function hodlInitWorkspace() {
     button.dataset.workspace = id;
     button.setAttribute("role", "tab");
     button.setAttribute("aria-selected", String(active));
+    // The panels the tab shows: one card, or for PSBT and Journal whichever
+    // of their stations is current.
+    button.setAttribute("aria-controls", {
+      psbt: "psbt-card psbted-card nonce-card",
+      journal: "journal-card journal-notes-card journal-keymanager-card journal-state-card journal-log-card",
+    }[id] ?? `${id}-card`);
     let fullLabel = document.createElement("span"), shortLabel = document.createElement("span");
     fullLabel.className = "workspace-tab-full";
     shortLabel.className = "workspace-tab-short";

@@ -232,6 +232,9 @@ const iconButton = () => {
   };
 };
 
+// The labels are set from script, after the boot i18n sweep has run, so they
+// have to come from the translator: in a translated page the check and the
+// label it returns to are both in that language.
 test("the copy check and the label it returns to read in the page's language", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   hodlSetLocale("es", false);
@@ -249,6 +252,8 @@ test("the copy check and the label it returns to read in the page's language", (
   }
 });
 
+// A dialog that opens again resets its copy control; the check's pending
+// return must not fire afterwards and overwrite the label it was given.
 test("a reset restores the icon and label and cancels the check's pending return", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const button = iconButton();

@@ -3,16 +3,25 @@
 EntropyLab wipes what a web page can reach. Press **End session** in the header
 when you are done: it wipes the page, zeroes the WebAssembly memory, empties
 the clipboard if EntropyLab copied something there, and asks the browser to
-close the tab. Closing the tab lets the browser's own copies go with it. Some
-copies are out of any page's reach: the operating system writes memory to disk
-(the pagefile or swap, the hibernation file, crash dumps), and some browser and
-system features copy what you type or see. This checklist shuts those doors. Do
-it **before** you load a real key.
+close the tab. Closing the tab and fully quitting the browser end processes
+that can retain secret copies and release their memory. This reduces exposure
+but does not prove that every copy was erased. Some copies are out of any
+page's reach: the operating system writes memory to disk (the pagefile or swap,
+the hibernation file, crash dumps), and some browser and system features copy
+what you type or see. This checklist reduces those risks. Do it **before** you
+load a real key.
 
 A residue audit on 2026-10-03 (Chrome, Edge and Firefox on Windows 11) found
-no secret in any browser profile file, and in Chrome and Edge no copy left once
-the tab was closed. What it cannot see is what the operating system had
-already paged out or saved, which is what this list covers.
+no matching fixture bytes in the browser profile files it inspected, or in the
+captured Chrome and Edge processes after the tab closed. Later measured runs
+on Windows 11 on 2026-10-06 (Chrome 154.0.8037.98 and Edge 154.0.4258.53) found
+2 or 3 mnemonic matches in Edge's main process after *Copy seed phrase* and
+tab closure. No matching fixture bytes were found in the captured Chrome
+processes, or in the captured Edge processes when the phrase was not copied.
+These findings apply to those runs and configurations. They do not establish
+erasure of freed memory after quitting, and cannot see what the operating
+system had already paged out or saved. This list covers ways to reduce those
+additional exposures.
 
 ## Every computer
 
@@ -28,8 +37,14 @@ already paged out or saved, which is what this list covers.
       off in it unless you allowed them.
 - [ ] **Press End session when you are done.** It is in the header. It wipes
       the page and asks the browser to close the tab. If the tab stays open,
-      close it yourself: that removes the browser's copies and reclaims a
-      Vanity grind stopped mid-run.
+      close it yourself to let the browser release the tab's resources,
+      including a Vanity grind stopped mid-run.
+- [ ] **Then quit the browser, not just the tab.** The browser's main process
+      can keep copies after the tab closes, out of the page's reach: the Edge
+      runs above found mnemonic matches after *Copy seed phrase*. Quitting
+      ends that process. Make sure quitting really quits (see *Browsers*
+      below). Writing a phrase down instead of copying it avoids sending it
+      through the clipboard.
 - [ ] **Shut down when you are done; do not sleep.** Sleep keeps memory
       powered, and hibernation writes it to disk.
 - [ ] **Do not run EntropyLab in a virtual machine you suspend or
@@ -52,7 +67,9 @@ already paged out or saved, which is what this list covers.
     - Chrome: Settings → System → *Continue running background apps when
       Google Chrome is closed*.
     - Edge: Settings → System and performance → *Continue running background
-      extensions and apps when Microsoft Edge is closed*.
+      extensions and apps when Microsoft Edge is closed*, and *Startup boost*,
+      which can start Edge at sign-in and restart it in the background after
+      the last window closes.
 - [ ] **Turn off crash reporting.** A crash report can include the page's
       memory.
     - Chrome: Settings → You and Google → Sync and Google services → *Help
