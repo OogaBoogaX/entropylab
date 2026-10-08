@@ -62,3 +62,5 @@ ran as linux/amd64 under Rosetta (Colima 0.10.3, Lima 2.2.0,
 Virtualization.framework) with four cargo jobs and networking off
 (`--network none`, `CARGO_NET_OFFLINE=true`, `npm ci --offline`). The page
 was also built natively on the ARM64 host. His report is on #630.
+Here's the Reproductions edit page. Paste this row at the very end of the table:
+| 2026-10-07 | `7f48ec4` (v1.0.0rc2) | `entropylab.html`, from the committed WASM modules | `93295d7a001ec831f70b649e4078206a2f2eec7ffcacade8af9f8339a8e26361` | Debian GNU/Linux 13.7 (trixie) virtual machine run by an AI assistant, x86_64, Linux 6.12, Node v22.23.2, npm 10.9.8, on the host (no container) | breagoth |
