@@ -6,19 +6,19 @@
 // to rock after each merge so the file stays downloadable. The Pages workflow
 // copies it to a deployment-only index.html so both / and /entropylab.html
 // serve the same application. The output is byte-for-byte reproducible from
-// the sources, the version declared in package.json, and the commit the
-// build is cut from (stamped into the footer).
+// the sources, the version declared in package.json, and the last commit
+// that changed a build input (stamped into the footer; see build-commit.mjs).
 //
 // The browser test harness builds a staging variant with
 // `--test-hooks --out <dir>`: it compiles in the suite's test bridge (see
 // src/js/app.js) and writes the files outside the repository root. The
 // release build leaves the flag off, so no test code reaches entropylab.html.
-import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
+import { buildCommit } from "./build-commit.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const SRC = join(root, "src");
@@ -38,15 +38,10 @@ if (!/^\d+(?:\.\d+)*$/.test(version)) {
   throw new Error(`Invalid version in package.json: ${version}`);
 }
 
-// The footer identifies the exact source revision the build was cut from; a
-// build from a snapshot without git metadata stamps "unknown".
-const commit = (() => {
-  try {
-    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
-  } catch {
-    return "unknown";
-  }
-})();
+// The footer identifies the exact source revision the build was cut from: the
+// last commit that changed a build input. A build from a snapshot without git
+// metadata stamps "unknown"; a shallow clone is refused.
+const commit = buildCommit(root);
 if (!/^(?:[0-9a-f]{40}|unknown)$/.test(commit)) {
   throw new Error(`Unexpected git commit id: ${commit}`);
 }
