@@ -25,7 +25,7 @@ test("residue driver uses native input and rejects missed input or copy", { time
     for (const fault of ["none", "passphrase", "copy"]) {
       const blocked = fault === "passphrase";
       const name = blocked ? "blocked beforeinput rejects the wrong xprv"
-        : fault === "copy" ? "a blocked copy cannot pass the clipboard digest check" : "trusted beforeinput reaches the masked vault";
+        : fault === "copy" ? "a blocked copy cannot pass the copy confirmation" : "trusted beforeinput reaches the masked vault";
       await t.test(name, async () => {
         const profile = join(staged.workDir, `${fault}-profile`);
         const logPath = join(staged.workDir, `${fault}.log`);
@@ -35,11 +35,10 @@ test("residue driver uses native input and rejects missed input or copy", { time
         const secrets = audit.makeSecrets(), checkpoints = [], replies = [];
         const observedClient = {
           async send(...args) {
+            // Only the app's Copy button may use the clipboard: a read-back
+            // leaves a copy of the mnemonic in the browser process.
+            if (args[0] === "Runtime.evaluate") assert.ok(!args[1].expression.includes("navigator.clipboard"), "the driver used the Clipboard API itself");
             const result = await client.send(...args);
-            if (args[0] === "Runtime.evaluate" && args[1].expression.includes("clipboard.readText")) {
-              assert.equal(result.result.value.length, 1);
-              assert.match(result.result.value[0], /^[a-f0-9]{64}$/, "clipboard read returned plaintext through CDP");
-            }
             replies.push(result);
             return result;
           },

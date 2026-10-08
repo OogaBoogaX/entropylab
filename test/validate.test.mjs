@@ -266,7 +266,18 @@ test("OpenTimestamps stamps the tested HTML off the Pages/test critical path", (
 // no run (the bot's own [skip ci] proof upgrades) change no sources, so the
 // build rebases over them rather than going unpublished. The step's own script
 // runs here against a scratch rock, one commit deep like the job's checkout.
-const shellTools = ["bash", "git"].every((tool) => spawnSync(tool, ["--version"], { stdio: "ignore" }).status === 0);
+//
+// On Windows, the first `bash` on PATH can be WSL's launcher
+// (C:\Windows\System32\bash.exe, the only one on a PowerShell PATH). It runs the
+// script inside Linux, where these Windows paths and variables do not arrive,
+// so use the bash that ships with the Git for Windows on PATH.
+const gitBash = () => {
+  const execPath = spawnSync("git", ["--exec-path"], { encoding: "utf8" }).stdout?.trim();
+  const candidate = execPath && join(execPath, "..", "..", "..", "bin", "bash.exe");
+  return candidate && existsSync(candidate) ? candidate : null;
+};
+const bash = process.platform === "win32" ? gitBash() : "bash";
+const shellTools = Boolean(bash) && [bash, "git"].every((tool) => spawnSync(tool, ["--version"], { stdio: "ignore" }).status === 0);
 test("the artifact commit rebases over [skip ci] commits and steps aside for newer sources", { skip: !shellTools && "needs bash and git" }, () => {
   const workflow = read(".github/workflows/ci-cd.yml");
   const artifact = workflowJob(workflow, "artifact");
@@ -302,7 +313,7 @@ test("the artifact commit rebases over [skip ci] commits and steps aside for new
     const before = landed ? commit(seed, landed.file, landed.subject) : tested;
     const output = join(dir, "github-output");
     writeFileSync(output, "");
-    const result = spawnSync("bash", ["-e", "-c", script], { cwd: work, env: { ...env, GITHUB_SHA: tested, GITHUB_OUTPUT: output }, encoding: "utf8" });
+    const result = spawnSync(bash, ["-e", "-c", script], { cwd: work, env: { ...env, GITHUB_SHA: tested, GITHUB_OUTPUT: output }, encoding: "utf8" });
     const tip = git(remote, "rev-parse", "rock");
     return {
       tested, before, tip, status: result.status, log: `${result.stdout}${result.stderr}`,
@@ -391,7 +402,7 @@ test("the release check rejects assets that describe other bytes than the releas
     for (const [file, body] of Object.entries(assets)) {
       if (body !== null) writeFileSync(join(release, file), body);
     }
-    const result = spawnSync("bash", ["-c", script], { cwd: runnerTemp, env: { ...process.env, RUNNER_TEMP: runnerTemp, GITHUB_WORKSPACE: root }, encoding: "utf8" });
+    const result = spawnSync(bash, ["-c", script], { cwd: runnerTemp, env: { ...process.env, RUNNER_TEMP: runnerTemp, GITHUB_WORKSPACE: root }, encoding: "utf8" });
     return { status: result.status, log: `${result.stdout}${result.stderr}` };
   };
   try {

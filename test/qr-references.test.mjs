@@ -53,6 +53,11 @@ test("referenceQrSvg handles a long URL without throwing", () => {
   assert.match(svg, /^<svg/);
 });
 
+// The popup's card is built each time it opens, after the boot i18n sweep, so
+// every word on it has to come from the translators, and so be a source the
+// catalog extractor collects. A minimal fake page drives the real popup: the
+// network tag reads offline, a click lands on an external link, and the card
+// records the markup it is given.
 const URL_SHOWN = "https://example.com/reference", LINK_TEXT = "Example reference";
 const fakeElement = (props = {}) => {
   const listeners = {}, attributes = {};
@@ -71,7 +76,13 @@ const withReferencePopup = async (run) => {
   const buttons = {}, documentListeners = {};
   const card = fakeElement({ querySelector: (selector) => (buttons[selector] ??= fakeElement()) });
   const overlay = fakeElement({ querySelector: (selector) => (selector === ".qr-ref-card" ? card : null), querySelectorAll: () => [] });
-  const page = { body: { append() {} }, activeElement: null, getElementById: (id) => (id === "network-status" ? { dataset: { state: "offline" } } : null), createElement: () => overlay, addEventListener: (type, fn) => { (documentListeners[type] ??= []).push(fn); } };
+  const page = {
+    body: { append() {} },
+    activeElement: null,
+    getElementById: (id) => (id === "network-status" ? { dataset: { state: "offline" } } : null),
+    createElement: () => overlay,
+    addEventListener: (type, fn) => { (documentListeners[type] ??= []).push(fn); },
+  };
   const saved = globalThis.document;
   Object.defineProperty(globalThis, "document", { value: page, configurable: true, writable: true });
   try {
@@ -83,10 +94,18 @@ const withReferencePopup = async (run) => {
     Object.defineProperty(globalThis, "document", { value: saved, configurable: true, writable: true });
   }
 };
-const decodeEntities = (text) => text.replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16))).replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec))).replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+const decodeEntities = (text) =>
+  text
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+// Every text node and every aria-label/title in the card, QR drawing aside.
 const shownStrings = (html) => {
   const markup = html.replace(/<svg[\s\S]*?<\/svg>/g, "");
-  return [...[...markup.matchAll(/>([^<]*)</g)].map((match) => match[1]), ...[...markup.matchAll(/\s(?:aria-label|title)="([^"]*)"/g)].map((match) => match[1])].map((text) => normalize(decodeEntities(text))).filter(Boolean);
+  return [
+    ...[...markup.matchAll(/>([^<]*)</g)].map((match) => match[1]),
+    ...[...markup.matchAll(/\s(?:aria-label|title)="([^"]*)"/g)].map((match) => match[1]),
+  ].map((text) => normalize(decodeEntities(text))).filter(Boolean);
 };
 
 test("every word the reference QR popup shows is a translation source", async () => {
@@ -94,6 +113,7 @@ test("every word the reference QR popup shows is a translation source", async ()
   await withReferencePopup(async ({ card }) => {
     const shown = shownStrings(card.innerHTML);
     assert.ok(shown.length > 3, "fixture: the popup rendered no card");
+    // The link's own text and its address are the page's, not the popup's.
     const own = shown.filter((text) => text !== LINK_TEXT && text !== URL_SHOWN).map((text) => text.replace(URL_SHOWN, "{url}"));
     assert.deepEqual(own.filter((text) => !sources.has(text)), [], "the popup shows text that is never translated");
   });

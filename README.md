@@ -3,7 +3,8 @@
 EntropyLab is a self-contained Bitcoin key and wallet calculator designed for
 offline, air-gapped use. It converts user-supplied entropy, seed phrases, and
 private keys into wallet recovery information without intentionally sending
-sensitive data to a server.
+sensitive data to a server. The whole application is one HTML file, and its
+markup passes the W3C HTML validator with zero errors.
 
 Current version: **v1.0.0**
 
@@ -620,9 +621,10 @@ npm ci
 npm run build
 ```
 
-To modify the Rust bindings (`entropylab-wasm/`, `psbt-wasm/`), Rust (with the
-`wasm32-unknown-unknown` target, installed automatically by rustup) is also
-required; regenerate the committed artifacts with `npm run build:wasm`.
+To modify the Rust bindings (`entropylab-wasm/`, `psbt-wasm/`, `vanity-wasm/`),
+Rust (with the `wasm32-unknown-unknown` target, installed automatically by
+rustup) is also required; regenerate the committed artifacts with
+`npm run build:wasm`.
 
 Build output (generated; CI rebuilds it for every run and commits it back to
 `rock` after each merge so the file stays downloadable from the repository):

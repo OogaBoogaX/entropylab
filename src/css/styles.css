@@ -274,12 +274,12 @@ button:not(:disabled):active *,
 /* The note closes the log as a footer that mirrors the header bar. */
 .security-log-note { margin: 0; padding: var(--space-control) var(--space-component); border-top: 1px solid var(--border); text-align: center; color: var(--faint); font-size: var(--text-caption); line-height: 1.4; }
 .security-log-output { list-style: none; margin: 0; padding: var(--inset-panel); background: var(--bg); font-family: var(--mono); font-size: var(--text-data-small); line-height: 1.6; max-height: 260px; overflow: auto; }
-.security-log-output li { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); gap: var(--space-control); padding: var(--space-tight) 0; overflow-wrap: anywhere; }
+.security-log-output > div { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); gap: var(--space-control); padding: var(--space-tight) 0; overflow-wrap: anywhere; }
 .security-log-output time { color: var(--faint); font-variant-numeric: tabular-nums; }
 .security-log-output [data-security-level] { color: var(--blue-ink); }
 .security-log-output [data-security-message] { color: var(--muted-strong); }
 /* A faint hairline between entries, half the border grey. */
-.security-log-output li + li { border-top: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
+.security-log-output > div + div { border-top: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
 /* Only the level tag carries the colour; every message stays in the text
    colour. A warning's tag takes the muted red. */
 .security-log-output [data-level="warning"] [data-security-level] { color: var(--danger); }
@@ -648,6 +648,8 @@ input[type="checkbox"]:not(:disabled):hover {
 }
 label.field { display: block; margin-top: var(--space-component); font-size: var(--text-label); font-weight: 600; }
 .label { font-size: var(--text-label); font-weight: 600; margin: var(--space-section) 0 var(--space-control); color: var(--fg); }
+/* A section heading can use the same appearance as a field label. */
+h3.label { font-family: inherit; letter-spacing: inherit; }
 /* The part of a label that changes with a selection, set in regular weight so
    the fixed title still reads as the title. */
 .label-value { font-weight: 400; }
@@ -1097,7 +1099,7 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
    stays on screen wherever the button sits. */
 .network-picker-menu {
   position: absolute; z-index: 100; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: 340px;
-  max-width: calc(100vw - 2 * var(--gutter-page));
+  max-width: calc(100vw - var(--gutter-page) * 2);
   text-align: left;
   padding: var(--inset-menu); border: 1px solid var(--border); border-radius: var(--radius-container);
   background: var(--surface-2); box-shadow: 0 16px 36px var(--scrim);
@@ -1218,7 +1220,7 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 .custom-select-option, .network-picker-option { position: relative; padding-right: calc(10px + 14px + var(--space-control)); }
 :is(.custom-select-option[aria-selected="true"], .network-picker-option[aria-checked="true"])::after {
   content: ""; position: absolute; right: 10px; top: 50%; width: 14px; height: 14px; transform: translateY(-50%);
-  background: var(--accent); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  background: var(--accent); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat; mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E"); mask-position: center; mask-size: contain; mask-repeat: no-repeat;
 }
 /* The language list is a column of short codes: the selected ground marks
    the choice there, with no check and no room kept for one. */
@@ -2684,8 +2686,10 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface-2);
   box-shadow: inset 0 1px 3px rgb(0 0 0 / .7);
 }
+/* The 0% fallback is never used (the slider always sets the position, inline
+   and from script); it gives the HTML conformance checker a type to check. */
 .msig-threshold-track span {
-  position: absolute; top: -1px; bottom: -1px; left: var(--msig-m-position); right: calc(100% - var(--msig-n-position));
+  position: absolute; top: -1px; bottom: -1px; left: var(--msig-m-position); right: calc(100% - var(--msig-n-position, 0%));
   min-width: 0; border-radius: var(--radius-pill); background: var(--accent);
   box-shadow: 0 0 10px color-mix(in oklab, var(--accent) 38%, transparent);
 }
