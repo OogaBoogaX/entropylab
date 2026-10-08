@@ -11,7 +11,7 @@ import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { buildBip388PolicyText } from "../src/js/bip388-policy.js";
 import { descriptorChecksum } from "../src/js/core-importdescriptors.js";
-import { WATCH_ONLY_QR_STATIC_MAX_CHARS, hodlUrDecodeWatchOnly, watchOnlyQrPlan } from "../src/js/psbt-ur.js";
+import { WATCH_ONLY_QR_STATIC_MAX_CHARS, hodlUrDecodeWatchOnly, watchOnlyQrPlan, hodlCborBstr, hodlUrEncodeMessage } from "../src/js/psbt-ur.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -73,3 +73,42 @@ test("the watch-only QR button uses the shared animated overlay, not a new tab",
   assert.match(app, /hodlCopyFieldHtml\(hodlTText\("BIP 388 wallet policy"\)/);
   assert.doesNotMatch(app, /workspace.*watch-only-ur|data-tab="ur"/);
 });
+
+// SLIP-132 private version bytes (mainnet/testnet, single/multisig).
+// Fixed BIP39 fixture above; no funding material is generated.
+const privateVersions = [
+  ["xprv", 0x0488ade4], ["yprv", 0x049d7878], ["zprv", 0x04b2430c],
+  ["Yprv", 0x0295b005], ["Zprv", 0x02aa7a99], ["tprv", 0x04358394],
+  ["uprv", 0x044a4e28], ["vprv", 0x045f18bc], ["Uprv", 0x024285b5],
+  ["Vprv", 0x02575048],
+];
+for (const [prefix, privateVersion] of privateVersions) {
+  test(`${prefix} private material is refused on encode and decode`, () => {
+    const key = HDKey.fromMasterSeed(seed, { private: privateVersion, public: 0x0488b21e }).privateExtendedKey;
+    assert.ok(key.startsWith(prefix));
+    for (const text of [key, `wpkh(${key}/0/*)`, `Name: wallet\nPolicy: wpkh(@0/**)\nKey: ${key}`]) {
+      assert.throws(() => watchOnlyQrPlan(text), /private key/);
+      // Use the generic transport to bypass the watch-only encoder guard;
+      // decode must independently reject both single and multipart payloads.
+      for (const maxBytes of [2000, 40]) {
+        const parts = hodlUrEncodeMessage("bytes", hodlCborBstr(new TextEncoder().encode(text)), { maxBytes });
+        assert.throws(() => hodlUrDecodeWatchOnly(parts.join("\n")), /private key/);
+      }
+    }
+  });
+}
+
+for (const [length, mode] of [[1000, "static"], [1001, "ur"]]) {
+  test(`exactly ${length} characters selects ${mode}`, () => {
+    // The planner transports opaque public text; descriptor validity is
+    // checked elsewhere. These fixed ASCII fixtures pin the QR boundary.
+    const text = "a".repeat(length);
+    const plan = watchOnlyQrPlan(text);
+    assert.equal(plan.mode, mode);
+    if (mode === "static") assert.equal(plan.text, text);
+    else {
+      assert.ok(plan.parts.length > 1);
+      assert.equal(hodlUrDecodeWatchOnly(plan.parts.join("\n")), text);
+    }
+  });
+}
