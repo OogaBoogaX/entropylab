@@ -4,7 +4,6 @@ plugins {
     id("com.android.application")
 }
 
-val repoRoot = rootProject.projectDir.parentFile
 // The packaged bytes are the vendored v1.0.0rc1 release asset, pinned by
 // ENTROPYLAB_HTML.sha256 — not the repo-root entropylab.html, which CI
 // rebuilds and recommits on every merge to rock.
@@ -30,10 +29,11 @@ fun hashToken(text: String, label: String): String {
     return line.split(Regex("\\s+")).first()
 }
 
-val packageVersion = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"")
-    .find(repoRoot.resolve("package.json").readText())
-    ?.groupValues?.get(1)
-    ?: throw GradleException("package.json has no version")
+// Release identity moves with the digest, independently of root package.json.
+val releaseVersion = rootProject.projectDir.resolve("ENTROPYLAB_HTML.version").readText().trim()
+if (!Regex("[0-9]+\\.[0-9]+\\.[0-9]+[A-Za-z0-9.-]*").matches(releaseVersion)) {
+    throw GradleException("Invalid embedded release version")
+}
 
 val pinnedHash = hashToken(pinFile.readText(), "pin file")
 
@@ -58,9 +58,9 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = packageVersion
+        versionName = releaseVersion
         buildConfigField("String", "HTML_SHA256", "\"$pinnedHash\"")
-        buildConfigField("String", "ENTROPYLAB_VERSION", "\"$packageVersion\"")
+        buildConfigField("String", "ENTROPYLAB_VERSION", "\"$releaseVersion\"")
     }
 
     buildFeatures {

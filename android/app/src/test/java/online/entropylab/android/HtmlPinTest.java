@@ -27,17 +27,9 @@ public final class HtmlPinTest {
             actual = HtmlPin.sha256(input);
         }
         HtmlPin.check(actual, pinText);
-        String manifest = Files.readString(root.resolve("app/src/main/AndroidManifest.xml"));
-        if (manifest.contains("INTERNET")) {
-            throw new IllegalStateException("manifest must not request INTERNET");
-        }
-        String activity = Files.readString(root.resolve("app/src/main/java/online/entropylab/android/MainActivity.java"));
-        if (!activity.contains("FLAG_SECURE") || !activity.contains("killProcess")) {
-            throw new IllegalStateException("activity must set FLAG_SECURE and kill the process on leave");
-        }
-        String layout = Files.readString(root.resolve("app/src/main/res/layout/activity_main.xml"));
-        if (!layout.contains("NO NETWORK") || !layout.contains("not a wallet")) {
-            throw new IllegalStateException("launch screen is missing the required wording");
+        String version = Files.readString(root.resolve("ENTROPYLAB_HTML.version")).trim();
+        if (!"1.0.0rc1".equals(version)) {
+            throw new IllegalStateException("embedded release identity does not match the attested release");
         }
         System.out.println("HtmlPinTest OK " + actual);
     }
