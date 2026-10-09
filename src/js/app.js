@@ -12802,6 +12802,9 @@ function hodlKeyManagerUseInStation(state) {
     return;
   }
   let identity = keyVaultIdentity(state), existing = hodlKeys.find((candidate) => !candidate.isLab && keyVaultIdentity(candidate) === identity);
+  // Installing or focusing a key changes the active tab; cancel any in-flight
+  // derivation so its commit cannot land on the wrong key.
+  hodlInvalidateDerivation();
   if (existing) hodlActiveKey = hodlKeys.indexOf(existing);
   else {
     let pending = hodlKeyManagerPending.indexOf(state);
@@ -12817,6 +12820,8 @@ function hodlKeyManagerUseInStation(state) {
 function hodlKeyManagerUseAllInStation() {
   let states = hodlKeyManagerStates().filter((state) => !state.needsDerivation && !hodlKeys.includes(state));
   if (!states.length) return;
+  // Pushing keys and moving the active tab cancels any in-flight derivation.
+  hodlInvalidateDerivation();
   states.forEach((state) => {
     let pending = hodlKeyManagerPending.indexOf(state);
     if (pending < 0) return;
@@ -12832,6 +12837,9 @@ function hodlKeyManagerUseAllInStation() {
 function hodlKeyManagerIgnore(state) {
   let identity = keyVaultIdentity(state), station = hodlKeys.indexOf(state), pending = hodlKeyManagerPending.indexOf(state);
   if (station >= 0) {
+    // Removing a station key shifts the active tab; cancel any in-flight
+    // derivation so its commit cannot land on the key that takes its place.
+    hodlInvalidateDerivation();
     hodlKeys.splice(station, 1);
     if (hodlActiveKey > station) hodlActiveKey--;
     else if (hodlActiveKey === station) hodlActiveKey = Math.min(station, hodlKeys.length - 1);
@@ -13744,6 +13752,9 @@ function hodlRenderKeyTabs() {
 }
 function hodlSelectKey(index) {
   if (index === hodlActiveKey || !hodlKeys[index]) return;
+  // Switching tabs mid-derivation must cancel it: the pending commit would
+  // otherwise land on the tab being switched to (the wipe path already does).
+  hodlInvalidateDerivation();
   hodlCaptureKey();
   hodlActiveKey = index;
   hodlRenderKeyTabs();
@@ -13760,6 +13771,9 @@ function hodlDeleteActiveKey() {
     hodlSyncKeyAddButton();
     return;
   }
+  // Removing the active key mid-derivation cancels it, so its commit cannot
+  // land on whatever tab the splice makes active.
+  hodlInvalidateDerivation();
   if (hodlJournalUnlocked()) {
     hodlKeyManagerDetachFromStation(state);
     return;
@@ -14256,6 +14270,9 @@ function hodlRenderMsigTabs() {
 }
 function hodlSelectMsig(index) {
   if (index === hodlActiveMsig || !hodlMsigs[index]) return;
+  // Same mid-derivation guard as the key-tab switch: the pending multisig
+  // commit must not land on the tab being switched to.
+  hodlInvalidateDerivation();
   hodlCaptureMsig();
   hodlActiveMsig = index;
   hodlRenderMsigTabs();
@@ -14272,6 +14289,8 @@ function hodlDeleteActiveMsig() {
     hodlSyncMsigAddButton();
     return;
   }
+  // Same mid-derivation guard as the key-tab delete above.
+  hodlInvalidateDerivation();
   let deletedIndex = hodlActiveMsig, deletedState = state;
   hodlMsigs.splice(deletedIndex, 1);
   hodlNextMsigNumber = hodlMsigs.length ? hodlMsigs.reduce((latest, state) => Math.max(latest, state.number), 0) + 1 : deletedState.number;
