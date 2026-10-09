@@ -79,6 +79,10 @@ the limits of browser-memory cleanup.
   the rest of the path and ranges unchanged. Unchecking restores the original
   purpose and its hardening. Paths, keys, addresses, and exports update together;
   account-level imports and public-only roots cannot use this option.
+  With matching checked, viewing a script tab also updates the input purpose
+  and derivation path; **Edit Input** starts from that displayed path. For
+  example, viewing Taproot changes the input purpose to `86h`; entering an
+  `84h` path while Taproot remains selected starts the next key unchecked.
  - Supports numeric coin-type and account indexes for single-signature and
    multisignature derivation. Purpose, coin type, and account indexes are
    hardened by default; the starting address index is unhardened by default.
