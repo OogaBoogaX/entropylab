@@ -2431,7 +2431,7 @@
     const originalTabs = new Set(tabs().map((tab) => tab.dataset.keyNumber));
     const row = () => document.querySelector('#acct [data-address-table] tbody tr[aria-rowindex="2"]');
     const path = () => row()?.querySelector("td")?.textContent.trim();
-    const address = () => row()?.querySelector("[data-copy-field]")?.textContent.trim();
+    const address = () => row()?.querySelector("[data-address-qr]")?.parentElement.querySelector("[data-public-value]")?.textContent.trim();
     const matching = () => document.getElementById("key-match-purpose");
     const derive = async (fullPath, copyCurrent = false) => {
       document.getElementById(copyCurrent ? "key-edit-inputs" : "key-tab-lab").click();
@@ -2547,7 +2547,7 @@
       const matching = () => document.getElementById("key-match-purpose");
       const row = () => document.querySelector('#acct [data-address-table] tbody tr[aria-rowindex="2"]');
       const path = () => row()?.querySelector("td")?.textContent.trim();
-      const address = () => row()?.querySelector("[data-copy-field]")?.textContent.trim();
+      const address = () => row()?.querySelector("[data-address-qr]")?.parentElement.querySelector("[data-public-value]")?.textContent.trim();
       const originalPath = `m/${enteredPurpose.replace("h", "'")}/0'/0'/0/0`;
       try {
         document.getElementById("key-tab-lab").click();
