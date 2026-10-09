@@ -94,10 +94,8 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       focus = element("h3", hodlTText("What would you like to understand?"));
       content.append(focus, choices(featureGuideRoutes(hodlTText), "route", "guide-route-"));
       const browse = element("details", "", "", "guide-browse");
-      browse.append(element("summary", hodlTText("Browse all lessons")), choices(lessons.filter(item => !["lightning", "journal"].includes(item.id)), "choose", "guide-lesson-"));
-      const unreleased = element("details");
-      unreleased.append(element("summary", hodlTText("Unreleased features and their limits")), choices(lessons.filter(item => ["lightning", "journal"].includes(item.id)), "choose", "guide-lesson-"));
-      content.append(browse, unreleased);
+      browse.append(element("summary", hodlTText("Browse all lessons")), choices(lessons, "choose", "guide-lesson-"));
+      content.append(browse);
     } else {
       footer.append(button(hodlTText("Contents"), "contents", "guide-contents"));
       const status = element("p", view.mode === "complete" ? hodlTText("Lesson finished · {lesson}", { lesson: lesson.title }) : hodlTText("Step {step} of {total} · {lesson}", { step: view.index + 1, total: lesson.steps.length, lesson: lesson.title }), "field-note", "guide-progress");

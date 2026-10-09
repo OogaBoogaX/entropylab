@@ -3,6 +3,17 @@
 Release notes for EntropyLab. Each release is a single self-contained
 `entropylab.html`; verify it against the signed `SHA256SUMS.txt` before use.
 
+## Unreleased
+
+- **Derived-key default addresses change from rc2** (#828): with the default
+  BIP84 / Native SegWit input, **Match derivation purpose to script type** starts
+  checked. Legacy, Nested SegWit, and Taproot now use `44h`, `49h`, and `86h`
+  instead of `84h`; Native SegWit stays at `84h`. Their watch-only descriptors,
+  `wallet.dat` exports, and recovery sheets follow those paths. Uncheck to
+  restore the originally entered purpose and hardening for every script type,
+  including the rc2 default of `84h` across all four tabs. The rest of the path
+  and ranges stay unchanged.
+
 ## v1.0.0rc2 — 2026-10-07
 
 Second release candidate for 1.0.0. Source commit

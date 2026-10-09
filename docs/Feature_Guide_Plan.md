@@ -1,5 +1,8 @@
 # EntropyLab feature guide: implementation plan
 
+Release timing: held for after v1.0.0. Hidden Lightning/Journal lessons are
+omitted per maintainer review.
+
 Status: implemented on feature-guide-wizard. Original planning base: upstream/rock at
 2ee665940195bb61188e339fecfdbe18a80920b4. Branch: feature-guide-wizard.
 
@@ -73,13 +76,11 @@ the device holding its key is safe.” Keep jokes out of risk explanations.
 | Silent Payments | Reusable payment code, receive labels, scan/spend roles, send calculation, pasted output verification, URI and DNS text | No chain scanning, DNS lookup, broadcasting or automatic payments. Scan secrets affect privacy; spend secrets control money. Publishing DNS text requires separate action outside the app. |
 | Vanity Address | Deterministic passphrase/account search, expected time, stop/resume, found result and explicit Update key | Looks do not improve security. Time is an estimate. Preserve the found passphrase/path; Update key changes the wallet. Opening a lesson never starts a search or benchmark. |
 | Session and safety controls | Clear/end session, reveal, on-screen keyboards, local security log, startup checks, theme/language and offline external-link QR behavior | No guaranteed secure erasure; browser keyboards are not malware protection. Security log records browser signals, not proof of network isolation. |
-| Lightning: availability note | Explain node-identity recovery and supported aezeed/BIP39 conventions | Currently hidden from release navigation; not a payment/channel recovery promise and never creates seeds. Do not expose its hidden workspace through the guide. |
-| Journal: availability note | Explain notebook, notepad, input-only key manager, snapshots/logs and explicit file download/restore | Currently hidden from release navigation. No browser wallet storage; blank-password files have no access protection. Imported inputs require review and fresh derivation. Closing loses unsaved work. Do not expose hidden controls. |
 
 Before implementation, map every catalog row to current source behavior
 and stable feature IDs on this branch. Coverage follows actual released
-capabilities, not proposed features or the older PR branch. Hidden features
-receive honest availability notes, with full lessons enabled only when
+capabilities, not proposed features or the older PR branch. Hidden feature
+lessons are omitted and will be added only when
 their release navigation becomes available.
 
 ## Implementation
@@ -160,9 +161,10 @@ Avoid demo-wallet injection in v1; it adds unnecessary risk and state.
 
 ## Implementation and validation record
 
-Implemented: 15 selectable lessons (37 steps), including the eight-step
-basics route, released-feature lessons and honest Lightning/Journal
-availability notes. Guide remains above the tool tabs after intro dismissal;
+Implemented: 13 selectable lessons (33 steps), including the eight-step
+basics route and released-feature lessons. Lightning and Journal lessons
+are omitted until those tabs ship. Guide remains above the tool tabs after
+intro dismissal;
 eight tool introductions share one contextual-entry builder. Close/resume,
 completion/replay, keyboard focus and locale refresh use the shared modal.
 The body scrolls while the header and navigation remain visible.
@@ -209,7 +211,7 @@ worked-example illustrations remain future ideas.
 ### Optional UX follow-up
 
 Four goal-based routes now organize the existing lessons. Browse all lessons
-and unreleased availability notes are separate disclosures. Only Guide gains
+contains only released features. Only Guide gains
 these controls: core tool views retain their existing entry points. Routes
 advance only when selected explicitly; closing and resuming preserves the route.
 Expandable public-information diagrams highlight the current stage, and four

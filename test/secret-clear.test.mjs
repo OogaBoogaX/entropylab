@@ -745,7 +745,7 @@ async function derivationHarness({ failAtAddress = 0, identity = () => "bip32-ve
     // Every progress step yields, and each yield waits for the test.
     performance: { now: () => (clock += 20) }, setTimeout: () => 0, clearTimeout() {},
     hodlDerivationPause() { const gate = deferred(); pauses.push(gate); return gate.promise; },
-    hodlResetDerivationProgress() {}, hodlSetDerivationButtonState() {}, hodlSyncDeriveButton() {}, hodlSyncMsigDeriveButton() {},
+    hodlResetDerivationProgress() {}, hodlSetDerivationButtonState() {}, hodlSyncDeriveButton() {}, hodlSyncMsigDeriveButton() {}, hodlSyncPurposeMatchControls() {},
     // The rows come from the real row builder; the real account and wallet
     // builders then assemble them into the result a derivation commits.
     async hodlEntropyWalletWithProgress(entropy, passphrase, network, count, accountIndex, addressStart, tracker) {
@@ -1134,6 +1134,7 @@ test("saving a vanity passphrase match to its key zeroes the wallet the key had"
   const previous = await derive("before-vanity"), source = context.hodlKeys[context.hodlActiveKey], previousResult = source.result;
   const run = { sourceKind: "key", sourceId: source.id, sourceLabel: "key", method: "passphrase", script: "p2wpkh", path: [84, 0, 0, 0, 0], pathText: "m/84'/0'/0'/0/0" };
   Object.assign(context, {
+    hodlScriptTypes: (await loadAppFunctions(["hodlScriptTypes"])).hodlScriptTypes,
     hodlVanityMatches: [{ passphrase: "vanity passphrase", index: null, savedTo: "" }], hodlVanityRun: run, hodlVanityApplying: false,
     hodlVanityPlan: () => ({ node: null, pathPrefix: [], path: run.path }), hodlWorkspace: "vanity", hodlSpSource: "", hodlBip85Source: "",
     hodlRenderVanityOut() {}, hodlVanitySyncControls() {}, hodlVanityKeyLabel: () => "key", hodlVanitySetStatus() {}, hodlVanitySyncSource() {},

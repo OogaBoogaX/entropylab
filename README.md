@@ -71,6 +71,18 @@ the limits of browser-memory cleanup.
   ranges. The default derives receive and change branches `{0-1}` and address
   indexes `{0-9}`, displayed as a full BIP-88 path template. Typing `h` or `'`
   after a preset index enables its Harden control.
+  Derived HD keys with a root private key offer an optional **Match derivation
+  purpose to script type** checkbox. It starts checked when the entered purpose
+  matches the selected script type's standard hardened purpose; a different
+  purpose or hardening starts unchecked. When checked, it derives each
+  script type at its standard hardened purpose (44h, 49h, 84h, or 86h), keeping
+  the rest of the path and ranges unchanged. Unchecking restores the original
+  purpose and its hardening. Paths, keys, addresses, and exports update together;
+  account-level imports and public-only roots cannot use this option.
+  With matching checked, viewing a script tab also updates the input purpose
+  and derivation path; **Edit Input** starts from that displayed path. For
+  example, viewing Taproot changes the input purpose to `86h`; entering an
+  `84h` path while Taproot remains selected starts the next key unchecked.
  - Supports numeric coin-type and account indexes for single-signature and
    multisignature derivation. Purpose, coin type, and account indexes are
    hardened by default; the starting address index is unhardened by default.
@@ -413,8 +425,7 @@ Reading lessons does not derive, reveal, import, or change wallet material.
 **Open this tool** explicitly leaves the guide and uses normal tool
 navigation, which can change displayed results and runs Vanity's usual
 benchmark on entry. The guide explains limitations; it does not certify a
-wallet, transaction, or computer safe. Hidden Lightning and Journal features
-have availability notes and cannot be opened through the guide.
+wallet, transaction, or computer safe. Lightning and Journal lessons are omitted until their tabs ship.
 
 ### iPhone home-screen app
 

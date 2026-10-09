@@ -195,26 +195,6 @@ export function featureGuideLessons(hodlTText = (text) => text) {
         hodlTText("Save recovery information securely first. Close the tab or quit if it stays open."),
         hodlTText("Offline status and translation detection are best-effort signals. Startup tests and memory cleanup have limits. Nothing in this guide certifies the computer safe.")),
     ] },
-    { id: "lightning", title: hodlTText("Lightning: availability note"), summary: hodlTText("About the unreleased node-identity tool."), steps: [
-      step("lightning-status", hodlTText("This workspace is not in release navigation"),
-        hodlTText("Lightning is held back for interface polishing. Its code derives node identity public keys from existing material: LND aezeed cipher seeds or the documented ldk-node BIP39 convention."),
-        hodlTText("Follow your node software's backup and recovery documentation."),
-        hodlTText("The guide does not unlock hidden tools. Node identity derivation is not a promise to recover channels, payments, or a whole Lightning node.")),
-      step("lightning-limits", hodlTText("Different seed formats have different rules"),
-        hodlTText("An aezeed cipher seed and a BIP39 seed phrase use different recovery recipes. Supported aezeed decoding detects a wrong cipher passphrase, while an ordinary BIP39 passphrase usually makes a different valid wallet."),
-        hodlTText("Identify the original seed format and software before recovery."),
-        hodlTText("This feature decodes existing material; it never creates seeds. Revealed roots and decoded entropy are secrets.")),
-    ] },
-    { id: "journal", title: hodlTText("Journal: availability note"), summary: hodlTText("About the unreleased notebook and backup tools."), steps: [
-      step("journal-status", hodlTText("This workspace is not in release navigation"),
-        hodlTText("Journal is held back for backup/restore polishing. It groups an entropy notebook, notepad, input-only Key Manager, summary, and log. Create or open a journal, then explicitly download files to keep work."),
-        hodlTText("Keep a recovery plan separate from the open browser tab."),
-        hodlTText("The guide does not unlock hidden tools. A journal without a password provides no access protection. Closing the page loses unsaved work.")),
-      step("journal-imports", hodlTText("Imported inputs must be checked again"),
-        hodlTText("Key Manager imports source inputs and settings as unverified material. Review and re-derive each key; do not trust cached addresses or fingerprints. Notes and logs use the unlocked journal's download protection settings."),
-        hodlTText("Check file protection and fresh derivation against an independent recovery record."),
-        hodlTText("A password is only as strong as what you choose. Journal files can contain secrets; logs and public references can still reveal relationships.")),
-    ] },
   ];
 }
 

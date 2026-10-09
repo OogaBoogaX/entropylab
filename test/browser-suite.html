@@ -1403,6 +1403,63 @@
     }
   });
 
+  // Switching key tabs while a derivation is in flight must cancel it: the
+  // commit otherwise writes the derived wallet into the switched-to key's
+  // state, corrupting that key and losing the wallet actually derived. The
+  // second seed's long address window keeps the build busy long enough for
+  // the tab click to land mid-derivation.
+  await test("switching key tabs mid-derivation does not commit to the switched-to key", async () => {
+    const strip = document.getElementById("key-tabs");
+    const fingerprintOf = (id) => document.getElementById(id)?.querySelector("[data-fingerprint]")?.dataset.fingerprint || null;
+    const uncaughtBefore = state.uncaught.length;
+    try {
+      document.querySelector('#workspace [data-workspace="calc"]').click();
+      await until(() => !document.getElementById("key-manager").hidden, "key workspace");
+      chooseSeedWords(12);
+      await chooseMode("Seed phrase");
+      input(document.getElementById("seed"), "legal winner thank year wave sausage worth useful legal winner thank yellow");
+      await until(() => !document.getElementById("go").disabled, "Derive Key to enable");
+      document.getElementById("go").click();
+      await until(() => document.getElementById("key-tab-2"), "the first derived key tab");
+      const firstFingerprint = await until(() => fingerprintOf("key-tab-2"), "the first key tab's LifeHash");
+      // Back on the Key Station, a different seed with a long address window.
+      // The commit replaced the lab with a fresh dice-mode one, so the mode
+      // and word count are chosen again before the seed field exists.
+      document.getElementById("key-tab-lab").click();
+      await wait(0);
+      chooseSeedWords(12);
+      await chooseMode("Seed phrase");
+      input(document.getElementById("seed"), "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong");
+      input(document.getElementById("address-range"), "2000");
+      await until(() => !document.getElementById("go").disabled, "Derive Key to enable for the second seed");
+      document.getElementById("go").click();
+      await until(() => {
+        const progress = document.getElementById("derive-progress");
+        return !progress.hidden && Number(progress.getAttribute("aria-valuenow")) > 0;
+      }, "the second derivation to be running");
+      document.getElementById("key-tab-2").click();
+      await until(() => !document.getElementById("go").dataset.derivationState, "the derivation to settle");
+      await wait(150);
+      assert(!document.getElementById("key-tab-3"), "the interrupted derivation committed a new key anyway (or the tab click landed after it finished)");
+      equal(fingerprintOf("key-tab-2"), firstFingerprint, "the switched-to key's wallet changed underneath it");
+      equal(state.uncaught.length, uncaughtBefore, "the cancellation surfaced an uncaught error: " + state.uncaught.slice(uncaughtBefore).join(" | "));
+    } finally {
+      // Leave the Key Station as the tests that follow expect it: no derived
+      // key tabs, a blank 24-word lab form with the default address window.
+      while (document.getElementById("key-tab-2")) {
+        document.getElementById("key-tab-2").click();
+        await until(() => !document.getElementById("delete-key").disabled, "Delete current key to enable");
+        document.getElementById("delete-key").click();
+        await wait(0);
+      }
+      document.getElementById("key-tab-lab").click();
+      const wipe = document.getElementById("wipe");
+      if (!wipe.disabled) wipe.click();
+      chooseSeedWords(24);
+    }
+    equal(strip.children.length, 1, "cleanup should leave only Key Station");
+  });
+
   await test("Base64 uses the shared case, number, and symbol keyboard", async () => {
     chooseSeedWords(24);
     await chooseMode("Number bases");
@@ -2357,6 +2414,181 @@
     document.getElementById("key-tab-lab").click();
     document.getElementById("wipe").click();
   });
+  // Contract: root-private HD keys may replace only the purpose with the selected
+  // standard and restore it exactly; every displayed/exported key must derive at
+  // that path, and another key's path and checkbox must remain untouched.
+  await test("derived-key purpose matching rederives published vectors and preserves per-key paths", async () => {
+    const tabs = () => [...document.querySelectorAll("#key-tabs [data-key-number]")].filter((tab) => tab.id !== "key-tab-lab");
+    const originalTabs = new Set(tabs().map((tab) => tab.dataset.keyNumber));
+    const row = () => document.querySelector('#acct [data-address-table] tbody tr[aria-rowindex="2"]');
+    const path = () => row()?.querySelector("td")?.textContent.trim();
+    const address = () => row()?.querySelector("[data-copy-field]")?.textContent.trim();
+    const matching = () => document.getElementById("key-match-purpose");
+    const derive = async (fullPath, copyCurrent = false) => {
+      document.getElementById(copyCurrent ? "key-edit-inputs" : "key-tab-lab").click();
+      input(document.getElementById("derivation-path"), fullPath);
+      const before = tabs().length;
+      await until(() => !document.getElementById("go").disabled, "custom purpose derivation ready");
+      document.getElementById("go").click();
+      await until(() => tabs().length === before + 1 && path(), "custom purpose key result");
+      return document.querySelector('#key-tabs [aria-selected="true"]').dataset.keyNumber;
+    };
+    const select = async (number) => {
+      document.querySelector(`#key-tabs [data-key-number="${number}"]`).click();
+      await until(() => path(), "selected key result");
+    };
+    const sheet = async () => {
+      state.lastBlob = null;
+      document.getElementById("save").click();
+      return (await until(() => state.lastBlob, "purpose-matched recovery sheet")).text();
+    };
+    try {
+      document.getElementById("key-tab-lab").click();
+      await chooseMode("Seed phrase");
+      chooseSeedWords(12);
+      input(document.getElementById("seed"), vectors[0].mnemonic);
+      input(document.getElementById("pass"), "");
+      const script = document.getElementById("script-type");
+      script.value = "bip84";
+      script.dispatchEvent(new Event("change", { bubbles: true }));
+      const first = await derive("m/100h/0h/0h/0/0");
+      const originalAddress = address();
+      equal(path(), "m/100'/0'/0'/0/0");
+      assert(matching(), "A root-private HD key must offer purpose matching");
+      assert(!matching().checked, "Purpose matching must start unchecked");
+      matching().click();
+      await until(() => path() === "m/84'/0'/0'/0/0", "checkbox to derive the selected standard immediately");
+      // BIP84/BIP86 publish the two witness vectors; the legacy and nested
+      // constants are independently pinned by the existing startup vectors.
+      for (const [id, purpose, expected] of [
+        ["bip84", 84, "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"],
+        ["bip44", 44, "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA"],
+        ["bip49", 49, "37VucYSaXLCAsxYyAPfbSi9eh4iEcbShgf"],
+        ["bip86", 86, "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"],
+      ]) {
+        document.getElementById(`account-tab-${id}`).click();
+        await until(() => path() === `m/${purpose}'/0'/0'/0/0`, `${id} purpose derivation`);
+        equal(address(), expected);
+        equal(document.getElementById(`account-tab-${id}`).getAttribute("aria-pressed"), "true");
+        assert(document.getElementById("key-summary-path").textContent.includes(`m/${purpose}'/0'/0'/0/0`), "Summary disagrees with the derived path");
+        const exported = await sheet();
+        assert(exported.includes(expected) && exported.includes(`/${purpose}h/0h/0h]`), "Recovery sheet disagrees with the derived address or descriptor origin");
+      }
+      matching().click();
+      await until(() => path() === "m/100'/0'/0'/0/0", "the original hardened purpose to return");
+      equal(document.getElementById("account-tab-bip86").getAttribute("aria-pressed"), "true");
+      document.getElementById("account-tab-bip84").click();
+      equal(path(), "m/100'/0'/0'/0/0");
+      equal(address(), originalAddress);
+      matching().click();
+      await until(() => path() === "m/84'/0'/0'/0/0", "first key matched again");
+
+      const second = await derive("m/100/0h/3h/777/{2-3}h/{7-9}h", true);
+      assert(!matching().checked, "A new key inherited another key's purpose matching");
+      matching().click();
+      await until(() => path() === "m/84'/0'/3'/777/2'/7'", "deep path to preserve its suffix and hardening");
+      const assertWindow = (purpose) => {
+        const tables = [...document.querySelectorAll("#acct [data-address-table]")];
+        equal(tables.length, 2);
+        for (const [offset, table] of tables.entries()) {
+          const rows = [...table.querySelectorAll("tbody tr[aria-rowindex]")];
+          equal(rows.length, 3);
+          for (const [index, entry] of rows.entries()) equal(entry.querySelector("td").textContent.trim(), `m/${purpose}/0'/3'/777/${offset + 2}'/${index + 7}'`);
+        }
+      };
+      assertWindow("84'");
+      assert(document.getElementById("key-summary-path").textContent.includes("/777/{2-3}'/{7-9}'"), "Summary lost the custom branch or address range");
+      document.getElementById("reveal").click();
+      assert(matching().checked, "A result rerender lost purpose matching");
+      document.getElementById("reveal").click();
+      await select(first);
+      assert(matching().checked, "Switching keys lost the first key's setting");
+      equal(path(), "m/84'/0'/0'/0/0");
+      await select(second);
+      matching().click();
+      await until(() => path() === "m/100/0'/3'/777/2'/7'", "the original unhardened purpose to return");
+      assertWindow("100");
+      const restoredSheet = await sheet();
+      assert(!restoredSheet.includes("/100h/") && restoredSheet.includes("m/100/0'/3'/777/3'/9'"), "Recovery sheet changed the original purpose or omitted the range endpoint");
+      await select(first);
+      assert(matching().checked, "Unchecking the second key changed the first key");
+      equal(path(), "m/84'/0'/0'/0/0");
+    } finally {
+      for (const tab of tabs().filter((tab) => !originalTabs.has(tab.dataset.keyNumber))) {
+        const current = document.querySelector(`#key-tabs [data-key-number="${tab.dataset.keyNumber}"]`);
+        if (current?.getAttribute("aria-selected") !== "true") current?.click();
+        document.getElementById("delete-key").click();
+      }
+      document.getElementById("key-tab-lab").click();
+      document.getElementById("wipe").click();
+    }
+  });
+  // Matching defaults depend on the entered hardened purpose and selected
+  // script. A manual opt-out is durable even when the path remains standard.
+  for (const [scriptId, enteredPurpose, expectedAddress, defaultsOn] of [
+    ["bip44", "44h", "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA", true],
+    ["bip49", "49h", "37VucYSaXLCAsxYyAPfbSi9eh4iEcbShgf", true],
+    ["bip84", "84h", "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu", true],
+    ["bip86", "86h", "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr", true],
+    ["bip84", "84", null, false],
+    ["bip84", "44h", null, false],
+  ]) {
+    await test(`derived-key purpose matching defaults ${defaultsOn ? "on" : "off"} for ${scriptId} at ${enteredPurpose}`, async () => {
+      const originalTabs = new Set([...document.querySelectorAll("#key-tabs [data-key-number]")].map((tab) => tab.dataset.keyNumber));
+      const matching = () => document.getElementById("key-match-purpose");
+      const row = () => document.querySelector('#acct [data-address-table] tbody tr[aria-rowindex="2"]');
+      const path = () => row()?.querySelector("td")?.textContent.trim();
+      const address = () => row()?.querySelector("[data-copy-field]")?.textContent.trim();
+      const originalPath = `m/${enteredPurpose.replace("h", "'")}/0'/0'/0/0`;
+      try {
+        document.getElementById("key-tab-lab").click();
+        await chooseMode("Seed phrase");
+        chooseSeedWords(12);
+        input(document.getElementById("seed"), vectors[0].mnemonic);
+        input(document.getElementById("pass"), "");
+        const script = document.getElementById("script-type");
+        script.value = scriptId;
+        script.dispatchEvent(new Event("change", { bubbles: true }));
+        input(document.getElementById("derivation-path"), `m/${enteredPurpose}/0h/0h/0/0`);
+        await until(() => !document.getElementById("go").disabled, "standard-purpose derivation ready");
+        document.getElementById("go").click();
+        await until(() => matching() && !matching().disabled && path() === originalPath, "standard-purpose result");
+        if (expectedAddress) equal(address(), expectedAddress);
+        equal(matching().checked, defaultsOn);
+        const keyNumber = document.querySelector('#key-tabs [aria-selected="true"]').dataset.keyNumber;
+        const nextScript = scriptId === "bip84" ? "bip86" : "bip84";
+        const nextPurpose = nextScript === "bip84" ? 84 : 86;
+        document.getElementById(`account-tab-${nextScript}`).click();
+        if (defaultsOn) {
+          await until(() => path() === `m/${nextPurpose}'/0'/0'/0/0`, "default-enabled script change");
+          equal(address(), nextScript === "bip84" ? "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu" : "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr");
+          matching().click();
+          await until(() => !matching().disabled && !matching().checked && path() === originalPath, "manual opt-out restores initial standard");
+          equal(document.getElementById(`account-tab-${nextScript}`).getAttribute("aria-pressed"), "true");
+        } else equal(path(), originalPath);
+        document.getElementById(`account-tab-${scriptId}`).click();
+        equal(path(), originalPath);
+        if (expectedAddress) equal(address(), expectedAddress);
+        document.getElementById("reveal").click();
+        assert(!matching().checked, "Rerender re-enabled purpose matching after opting out");
+        document.getElementById("reveal").click();
+        document.getElementById("key-tab-lab").click();
+        document.querySelector(`#key-tabs [data-key-number="${keyNumber}"]`).click();
+        assert(!matching().checked, "Returning to a key changed its purpose-matching choice");
+        equal(path(), originalPath);
+        document.getElementById(`account-tab-${nextScript}`).click();
+        equal(path(), originalPath);
+      } finally {
+        for (const tab of [...document.querySelectorAll("#key-tabs [data-key-number]")].filter((tab) => !originalTabs.has(tab.dataset.keyNumber))) {
+          const current = document.querySelector(`#key-tabs [data-key-number="${tab.dataset.keyNumber}"]`);
+          if (current?.getAttribute("aria-selected") !== "true") current?.click();
+          document.getElementById("delete-key").click();
+        }
+        document.getElementById("key-tab-lab").click();
+        document.getElementById("wipe").click();
+      }
+    });
+  }
   await test("Journal notepad stamps notes, session state stays live, and the log omits secrets", async () => {
     document.querySelector('#workspace [data-workspace="journal"]').click();
     // Earlier tests can leave Journal on Session state or Session log; pick
@@ -4658,6 +4890,7 @@
     const recoveryText = recovery.textContent;
     assert(recoveryText.includes("Bitcoin Core descriptor") && recoveryText.includes("wpkh(xpub6CatWdiZiodm") && recoveryText.includes("/<0;1>/*)#3r0wrtd9"), "Core descriptor is missing or incorrect");
     assert(!document.getElementById("error").textContent, "SLIP-132 derivation failed");
+    assert(!document.getElementById("key-match-purpose"), "An imported account xpub cannot change its ancestral purpose");
   });
 
   await test("a known BIP39 wallet can be derived through the UI", async () => {

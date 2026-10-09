@@ -9,6 +9,17 @@ import { createFeatureGuideSession, initFeatureGuide } from "../src/js/feature-g
 import { featureGuideLessons, featureGuideEntries } from "../src/js/feature-guide-content.js";
 import { collectSources } from "../scripts/i18n-sources.mjs";
 
+test("guide catalog omits held-back workspace lessons", () => {
+  const lessons = featureGuideLessons();
+  assert.ok(lessons.length > 0);
+  for (const id of ["lightning", "journal"]) {
+    assert.equal(lessons.some(lesson => lesson.id === id || lesson.tool === id), false);
+    const session = createFeatureGuideSession(lessons, featureGuideEntries.map(entry => entry.tool));
+    session.choose(id);
+    assert.equal(session.view().lessonId, null);
+  }
+});
+
 const fixtures = [
   { id: "basics", steps: [{ id: "one" }, { id: "two" }] },
   { id: "keys", tool: "calc", steps: [{ id: "keys-one" }] },
