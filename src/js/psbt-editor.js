@@ -16,7 +16,9 @@ import { addressFromScript } from "./addresses.js";
 import { hodlNeutralizeControls } from "./i18n-sanitize.js";
 import { psbtInspectDoc, psbtBuildBytes, psbtWasmReady } from "./psbt-wasm.js";
 import { comparePsbtDocs } from "./psbt-diff.js";
-import { copyText } from "./clipboard.js";
+import { copyText, showCopiedIcon } from "./clipboard.js";
+import { privateCopyButtonHtml } from "./private-data.js";
+import { publicValueHtml } from "./public-data.js";
 import { expandableHtml, EXPAND_LIMIT, initExpandable } from "./expandable.js";
 import { psbtVizHtml } from "./psbt-viz.js";
 import { parseOpReturn } from "./opreturn.js";
@@ -256,6 +258,43 @@ const describePair = (pair, network) => {
   }
 };
 
+// Only the decoder's typed public fields get direct copy actions. Unknown
+// or proprietary pair bytes can contain private material and retain the
+// deliberate clipboard-only expandable readout.
+const pairNoteHtml = (pair, network, copyIcon) => {
+  const d = pair.decodeError ? null : pair.decoded;
+  const pub = (value, label, preview = value) => publicValueHtml(value, { label, preview, copyIcon });
+  const origin = () => `${pub(d.fingerprint, "fingerprint")} · path ${publicValueHtml(d.path, { clipboard: false })}`;
+  if (d) switch (pair.name) {
+    case "PSBT_GLOBAL_XPUB":
+      return `${pub(d.xpub, "xpub", shorten(d.xpub))} · ${origin()}`;
+    case "PSBT_IN_PARTIAL_SIG":
+      return `${pub(d.pubkey, "pubkey", shorten(d.pubkey))} · sig ${escapeHtml(shorten(d.signature))} · ${escapeHtml(d.sighash)}`;
+    case "PSBT_IN_BIP32_DERIVATION":
+    case "PSBT_OUT_BIP32_DERIVATION":
+      return `${pub(d.pubkey, "pubkey", shorten(d.pubkey))} · ${origin()}`;
+    case "PSBT_IN_TAP_SCRIPT_SIG":
+      return `${pub(d.xonly, "xonly", shorten(d.xonly))} · leaf ${escapeHtml(shorten(d.leafHash))} · sig ${escapeHtml(shorten(d.signature))} · ${escapeHtml(d.sighash)}`;
+    case "PSBT_IN_TAP_BIP32_DERIVATION":
+    case "PSBT_OUT_TAP_BIP32_DERIVATION":
+      return `${pub(d.xonly, "xonly", shorten(d.xonly))} · ${origin()} · ${d.leafHashes.length} leaf hash(es)`;
+    case "PSBT_IN_TAP_INTERNAL_KEY":
+    case "PSBT_OUT_TAP_INTERNAL_KEY":
+      return pub(d.xonly, "xonly");
+    case "PSBT_IN_WITNESS_UTXO": {
+      const address = addressFor(d.scriptPubKey, network);
+      if (address) return `${escapeHtml(String(d.value))} sats · ${pub(address, "Address")} · ${expandableHtml(d.asm, { label: "scriptPubKey" })}`;
+      break;
+    }
+    case "PSBT_IN_NON_WITNESS_UTXO": {
+      const address = d.prevout && addressFor(d.prevout.scriptPubKey, network);
+      if (address) return `txid ${escapeHtml(d.txid)} · ${d.outputCount} outputs · prevout ${d.prevout.vout}: ${escapeHtml(String(d.prevout.value))} sats ${pub(address, "Address")}`;
+      break;
+    }
+  }
+  return expandableHtml(describePair(pair, network).text, { label: `${pair.name || "pair"} — decoded` });
+};
+
 // The editable document is the inspect document; the WASM ignores the
 // decorative fields (name/decoded) on build and reads key/value hex only.
 export const psbtEditorBuildDoc = (doc) => ({
@@ -342,8 +381,10 @@ const formatSats = (value) => {
 
 // One-line presentation of an output script, the same fallback chain as the
 // editor's output rows: address, OP_RETURN summary, ASM, else raw hex.
-const scriptCell = (scriptHex, asm, network) => {
-  const text = addressFor(scriptHex, network) || opReturnSummary(scriptHex)?.text || asm || String(scriptHex ?? "");
+const scriptCell = (scriptHex, asm, network, copyIcon) => {
+  const address = addressFor(scriptHex, network);
+  if (address) return publicValueHtml(address, { label: "Address", copyIcon });
+  const text = opReturnSummary(scriptHex)?.text || asm || String(scriptHex ?? "");
   return expandableHtml(text, { label: "scriptPubKey" });
 };
 
@@ -364,7 +405,7 @@ const diffTable = (rows) =>
 
 // The transaction-section rows: version/locktime, per-input and per-output
 // fields, and whole inputs/outputs appearing or disappearing.
-const txDiffRows = (changes, before, after, network) =>
+const txDiffRows = (changes, before, after, network, copyIcon) =>
   changes
     .filter((change) => change.category === "transaction")
     .map((change) => {
@@ -373,14 +414,14 @@ const txDiffRows = (changes, before, after, network) =>
         const cell =
           change.scope === "input"
             ? `<span class="psbted-hex">${expandableHtml(String(element.txid), { label: `Input ${change.index} previous txid` })}</span> : ${escapeHtml(String(element.vout))}`
-            : `${escapeHtml(formatSats(element.value))}<br>${scriptCell(element.scriptPubKey, element.asm, network)}`;
+            : `${escapeHtml(formatSats(element.value))}<br>${scriptCell(element.scriptPubKey, element.asm, network, copyIcon)}`;
         return diffRow(change, escapeHtml(`${capitalize(change.scope)} ${change.index}`), change.kind === "added" ? emDash : cell, change.kind === "added" ? cell : emDash);
       }
       const name = change.field.split(".").pop();
       const label = change.scope === "transaction" ? capitalize(name) : `${capitalize(change.scope)} ${change.index} · ${{ txid: "previous txid", vout: "prevout index", value: "value", scriptPubKey: "scriptPubKey" }[name] || name}`;
       const side = (value, doc) => {
         if (name === "value") return escapeHtml(formatSats(value));
-        if (name === "scriptPubKey") return scriptCell(value, doc?.tx?.outputs?.[change.index]?.asm, network);
+        if (name === "scriptPubKey") return scriptCell(value, doc?.tx?.outputs?.[change.index]?.asm, network, copyIcon);
         if (name === "txid") return `<span class="psbted-hex">${expandableHtml(String(value), { label })}</span>`;
         return escapeHtml(String(value ?? ""));
       };
@@ -390,17 +431,17 @@ const txDiffRows = (changes, before, after, network) =>
 // One key-value pair cell of a map diff: the typed one-line decode when the
 // pair has one, otherwise (or when undecodable) the raw value hex — the same
 // two presentations the editor's pair tables use.
-const pairCell = (pair, network) => {
+const pairCell = (pair, network, copyIcon) => {
   if (!pair) return emDash;
   const name = pair.name || "pair";
   const note = describePair(pair, network);
   const parts = [];
-  if (note.text) parts.push(`<span${note.tone ? ` class="psbted-note-${note.tone}"` : ""}>${expandableHtml(note.text, { label: `${name} — decoded` })}</span>`);
+  if (note.text) parts.push(`<span${note.tone ? ` class="psbted-note-${note.tone}"` : ""}>${pairNoteHtml(pair, network, copyIcon)}</span>`);
   if (!pair.decoded || !note.text) parts.push(`<span class="psbted-hex">${expandableHtml(pair.value, { label: `${name} — value (hex)` })}</span>`);
   return parts.join("<br>");
 };
 
-const mapDiffRows = (changes, scope, index, before, after, network) =>
+const mapDiffRows = (changes, scope, index, before, after, network, copyIcon) =>
   changes
     .filter((change) => change.scope === scope && change.index === index)
     .map((change) => {
@@ -408,10 +449,10 @@ const mapDiffRows = (changes, scope, index, before, after, network) =>
       const beforePair = mapOf(before).find((pair) => pair.key === change.key) || null;
       const afterPair = mapOf(after).find((pair) => pair.key === change.key) || null;
       const field = change.name ? `<span class="psbted-hex">${escapeHtml(change.name)}</span>` : escapeHtml(`Unknown pair (type 0x${change.key.slice(0, 2)})`);
-      return diffRow(change, field, pairCell(beforePair, network), pairCell(afterPair, network));
+      return diffRow(change, field, pairCell(beforePair, network, copyIcon), pairCell(afterPair, network, copyIcon));
     });
 
-export const psbtDiffHtml = (diff, before, after, network) => {
+export const psbtDiffHtml = (diff, before, after, network, { copyIcon = () => "" } = {}) => {
   if (diff.equal) return `<p class="psbted-note-ok">Semantically identical — the underlying transaction, the signing state, and the metadata all match.</p>`;
   const summary = [
     diff.transactionChanged
@@ -433,18 +474,18 @@ export const psbtDiffHtml = (diff, before, after, network) => {
     summary.push(`<p class="psbted-note-warn">Fee (from PSBT-claimed input amounts): ${escapeHtml(formatSats(feeBefore))} → ${escapeHtml(formatSats(feeAfter))}.</p>`);
 
   const sections = [];
-  const txRows = txDiffRows(diff.changes, before, after, network);
+  const txRows = txDiffRows(diff.changes, before, after, network, copyIcon);
   if (txRows.length) sections.push(`<section class="psbted-map"><h3>Transaction</h3>${diffTable(txRows)}</section>`);
   const mapSections = (scope, title) => {
     const indexes = [...new Set(diff.changes.filter((change) => change.scope === scope).map((change) => change.index))].sort((a, b) => a - b);
     for (const index of indexes) {
-      const rows = mapDiffRows(diff.changes, scope, index, before, after, network);
+      const rows = mapDiffRows(diff.changes, scope, index, before, after, network, copyIcon);
       if (rows.length) sections.push(`<section class="psbted-map"><h3>${title} ${index} key-value map</h3>${diffTable(rows)}</section>`);
     }
   };
   mapSections("input-map", "Input");
   mapSections("output-map", "Output");
-  const globalRows = mapDiffRows(diff.changes, "global", null, before, after, network);
+  const globalRows = mapDiffRows(diff.changes, "global", null, before, after, network, copyIcon);
   if (globalRows.length) sections.push(`<section class="psbted-map"><h3>Global key-value map</h3>${diffTable(globalRows)}</section>`);
 
   return `<p class="muted">before = the PSBT in the editor · after = the pasted PSBT. Only differences are listed.</p>${summary.join("")}${sections.join("")}`;
@@ -645,7 +686,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
           <td role="cell" class="psbted-name">${escapeHtml(pair.name || "Unvalidated pair")}<br><span class="muted">type 0x${escapeHtml(pair.key.slice(0, 2))}</span></td>
           <td role="cell" class="psbted-hex">${cellLabel(KV_COLUMNS.key)}${expandableHtml(pair.key, { label: `Key bytes for ${name} (hex)` })}</td>
           <td role="cell">${cellLabel(KV_COLUMNS.value)}${locked ? `<span class="muted">managed by the transaction section</span>` : valueCell}</td>
-          <td role="cell"${tone}>${cellLabel(KV_COLUMNS.decoded)}${expandableHtml(note.text, { label: `${name} — decoded` })}</td>
+          <td role="cell"${tone}>${cellLabel(KV_COLUMNS.decoded)}${pairNoteHtml(pair, network(), copyIcon)}</td>
           <td role="cell" class="psbted-del-cell">${locked ? "" : `<button type="button" class="btn red psbted-del" data-kind="${kind}" data-map="${mapIndex}" data-pair="${pairIndex}" aria-label="Delete ${escapeHtml(pair.name || "pair")}">×</button>`}</td>
         </tr>`;
       })
@@ -720,7 +761,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
           <td role="cell">${cellLabel("Output")}${index}</td>
           <td role="cell">${cellLabel(TXOUT_COLUMNS.value)}<input class="psbted-num" data-txout-val="${index}" value="${escapeHtml(String(output.value))}" inputmode="numeric" aria-label="Output ${index} value in sats"></td>
           <td role="cell">${cellLabel(TXOUT_COLUMNS.script)}<input class="psbted-txid" data-txout-script="${index}" value="${escapeHtml(output.scriptPubKey)}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Output ${index} scriptPubKey (hex)">
-            <span class="${opret?.burn ? "psbted-note-warn" : "muted"} psbted-addr">${escapeHtml(addr || opret?.text || output.asm || "")}</span>
+            <span class="${opret?.burn ? "psbted-note-warn" : "muted"} psbted-addr">${addr ? publicValueHtml(addr, { label: "Address", copyIcon }) : escapeHtml(opret?.text || output.asm || "")}</span>
             <span class="psbted-build"><input data-build-script="${index}" placeholder="address · OP_… ASM · 0x raw hex · text" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Build output ${index} scriptPubKey from an address, ASM, or OP_RETURN text"><select data-build-mode="${index}" aria-label="Output ${index} script builder mode"><option value="auto" selected>Auto-detect</option><option value="opreturn-text">OP_RETURN text</option><option value="opreturn-hex">OP_RETURN hex</option><option value="asm">Script ASM</option></select><button type="button" class="btn secondary" data-build-apply="${index}">Set Script</button></span></td>
           <td role="cell" class="psbted-del-cell"><button type="button" class="btn red psbted-del" data-txout-del="${index}" aria-label="Delete output ${index}">×</button></td>
         </tr>`;
@@ -733,7 +774,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
       const sub =
         kind === "input"
           ? `Spends <span class="psbt-address">${escapeHtml(tx.inputs[index].txid)}:${escapeHtml(String(tx.inputs[index].vout))}</span>`
-          : `Pays <span class="psbt-amount">${escapeHtml(String(tx.outputs[index].value))} sats</span>${addressFor(tx.outputs[index].scriptPubKey, network()) ? ` to <span class="psbted-out-address">${escapeHtml(addressFor(tx.outputs[index].scriptPubKey, network()))}</span>` : ""}`;
+          : `Pays <span class="psbt-amount">${escapeHtml(String(tx.outputs[index].value))} sats</span>${addressFor(tx.outputs[index].scriptPubKey, network()) ? ` to ${publicValueHtml(addressFor(tx.outputs[index].scriptPubKey, network()), { copyIcon, className: "psbted-out-address" })}` : ""}`;
       return `<section class="psbted-map" data-psbted-section="${kind}:${index}" tabindex="-1"><h3 class="psbted-section-label">${kind === "input" ? "Input" : "Output"} ${index} key-value map</h3><p class="muted label-description">${sub}</p>${pairRows(kind, map, index)}</section>`;
     };
     // The unsigned-transaction section, rendered either inline (the default)
@@ -758,7 +799,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
       <p class="edge-note is-public">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
       <p class="psbt-kv"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · ${tx.inputs.length} input(s) · ${tx.outputs.length} output(s)<br><span class="psbt-amount">fee ${fee}</span><br>${verdict}<br>${sanity}</p>
 
-      ${psbtVizHtml(doc, network())}
+      ${psbtVizHtml(doc, network(), { copyIcon })}
 
       ${txSection()}
 
@@ -806,13 +847,11 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     box.innerHTML = `
       ${stale ? `<p class="psbted-note-warn" id="psbted-stale-note">The fields do not build right now — this is the last valid build. Export is unavailable until they build again.</p>` : ""}
       ${verdictLine}
-      <p class="label copy-field-label" id="psbted-result-b64-label">Edited PSBT (base64)${stale ? "" : addressQrButtonHtml(b64, "Edited PSBT (base64)", { animate: "psbt" })}<span class="copy-status copy-field-status" id="psbted-copied-b64" aria-live="polite"></span></p>
-      <div class="psbted-result-value" id="psbted-result-b64" aria-labelledby="psbted-result-b64-label">${stale ? "" : escapeHtml(b64)}</div>
-      <p class="label copy-field-label" id="psbted-result-hex-label">Edited PSBT (hex)${stale ? "" : addressQrButtonHtml(hex, "Edited PSBT (hex)", { animate: "psbt" })}<span class="copy-status copy-field-status" id="psbted-copied-hex" aria-live="polite"></span></p>
-      <div class="psbted-result-value" id="psbted-result-hex" aria-labelledby="psbted-result-hex-label">${stale ? "" : escapeHtml(hex)}</div>
+      <p class="label copy-field-label" id="psbted-result-b64-label">Edited PSBT (base64)${stale ? "" : addressQrButtonHtml(b64, "Edited PSBT (base64)", { animate: "psbt" })}${privateCopyButtonHtml(copyIcon, { id: "psbted-copy-b64", disabled: stale, attribute: "data-psbt-result-copy" })}</p>
+      <div class="psbted-result-value" id="psbted-result-b64" data-private-value data-i18n-skip translate="no" aria-labelledby="psbted-result-b64-label">${stale ? "" : escapeHtml(b64)}</div>
+      <p class="label copy-field-label" id="psbted-result-hex-label">Edited PSBT (hex)${stale ? "" : addressQrButtonHtml(hex, "Edited PSBT (hex)", { animate: "psbt" })}${privateCopyButtonHtml(copyIcon, { id: "psbted-copy-hex", disabled: stale, attribute: "data-psbt-result-copy" })}</p>
+      <div class="psbted-result-value" id="psbted-result-hex" data-private-value data-i18n-skip translate="no" aria-labelledby="psbted-result-hex-label">${stale ? "" : escapeHtml(hex)}</div>
       <div class="row psbt-actions tool-actions">
-        <button class="btn secondary" id="psbted-copy-b64" type="button"${gated}>Copy Edited Base64</button>
-        <button class="btn secondary" id="psbted-copy-hex" type="button"${gated}>Copy Edited Hex</button>
         <button class="btn secondary" id="psbted-download" type="button"${gated}>Download Edited .psbt</button>
       </div>
 `;
@@ -820,24 +859,18 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     // Every handler re-checks stale: the keystroke path only disables these
     // buttons, and a synthetic dispatchEvent still fires a disabled button's
     // handlers, which close over the last valid build's bytes (issue #320).
-    // A copy confirms on its own label, beside the QR button, the way every
-    // other long value in the app confirms.
+    // The clipboard briefly becomes a checkmark after a successful copy.
     const confirmCopy = (id) => {
-      const note = $(id);
-      if (!note) return;
-      note.innerHTML = `${copiedIcon()}Copied`;
-      clearTimeout(note.copiedTimer);
-      note.copiedTimer = setTimeout(() => {
-        if (note.isConnected) note.textContent = "";
-      }, 1600);
+      const button = $(id);
+      if (button) showCopiedIcon(button, { copyIcon: copyIcon(), copiedIcon: copiedIcon() });
     };
     $("psbted-copy-b64").onclick = () => {
       if (stale) return;
-      copyText(b64).then((copied) => { if (copied) confirmCopy("psbted-copied-b64"); });
+      copyText(b64).then((copied) => { if (copied) confirmCopy("psbted-copy-b64"); });
     };
     $("psbted-copy-hex").onclick = () => {
       if (stale) return;
-      copyText(hex).then((copied) => { if (copied) confirmCopy("psbted-copied-hex"); });
+      copyText(hex).then((copied) => { if (copied) confirmCopy("psbted-copy-hex"); });
     };
     // The binary download round-trips with wallet software: Sparrow and
     // Coldcard read the .psbt file this produces.
@@ -1324,7 +1357,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
           setCompareError(exception.message || String(exception));
           return;
         }
-        compareOut.innerHTML = `${psbtDiffHtml(comparePsbtDocs(beforeDoc, afterDoc), beforeDoc, afterDoc, network())}
+        compareOut.innerHTML = `${psbtDiffHtml(comparePsbtDocs(beforeDoc, afterDoc), beforeDoc, afterDoc, network(), { copyIcon })}
         <footer class="psbted-sanitize-compare">${psbtSanitizeHtml(beforeDoc, "Editor PSBT")}${psbtSanitizeHtml(afterDoc, "Pasted PSBT")}</footer>`;
       })
       .catch((exception) => setCompareError(exception.message || String(exception)));

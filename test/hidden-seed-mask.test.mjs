@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 import { mnemonicToEntropy, mnemonicToSeedSync } from "@scure/bip39";
 import { wordlist as bip39English } from "@scure/bip39/wordlists/english.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
+import { MiniDocument } from "./mini-dom.mjs";
 
 const inert = new Proxy(function () {}, { get: (target, key) => key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inert, apply: () => inert, construct: () => inert });
 Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
@@ -52,7 +53,12 @@ test("a hidden seed phrase looks the same whatever its words are", () => {
   for (const [count, phrases] of [[12, twelve], [24, twentyFour]]) {
     const hidden = phrases.map((phrase) => view.hodlSeedPhraseField(label(count), phrase));
     assert.deepEqual(new Set(hidden).size, 1, `${count} words: the hidden field depends on the words`);
-    for (const phrase of phrases) for (const word of new Set(phrase.split(" "))) assert.ok(!hidden[0].includes(word), `${count} words: the hidden field shows "${word}"`);
+    const document = new MiniDocument();
+    document.body.innerHTML = hidden[0];
+    // Check data, including concealed attributes, without treating an HTML
+    // attribute name such as "title" as a leaked BIP39 word.
+    const values = [document.body.textContent, ...document.body.querySelectorAll("*").flatMap((node) => node.getAttributeNames().map((name) => node.getAttribute(name)))];
+    for (const phrase of phrases) for (const word of new Set(phrase.split(" "))) assert.ok(values.every((value) => !value.includes(word)), `${count} words: the hidden field shows "${word}"`);
   }
 });
 
