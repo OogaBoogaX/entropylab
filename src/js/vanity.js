@@ -307,9 +307,16 @@ export class VanityGrinder {
       failed = true;
       this.callbacks.onError?.(message);
       finish(true);
+      // End the run id too: a late message from a torn-down worker must not be
+      // answered with the grind job (the key material is already zeroed) nor
+      // deliver a match — the same drop cancel() gets by bumping the id.
+      this.runId += 1;
     };
 
     buckets.forEach((bucket, index) => {
+      // A failed spawn ends the run; do not spawn the remaining buckets into
+      // the torn-down pool.
+      if (failed) return;
       let spawned;
       try {
         spawned = this.spawn();

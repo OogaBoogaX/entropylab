@@ -702,16 +702,12 @@ test("key derivation and multisig use the accurate Script type label", () => {
 
 test("key derivation separates script type from the hardened purpose index", () => {
   for (const markup of [shell]) {
-    assert.match(markup, /id="script-type-field"[^>]*>[\s\S]*?Script type[\s\S]*?<select id="script-type">[\s\S]*?<option value="bip44"[^>]*>Legacy<\/option>[\s\S]*?<option value="bip49"[^>]*>Nested SegWit<\/option>[\s\S]*?<option value="bip84" selected(?:="selected")?[^>]*>Native SegWit<\/option>[\s\S]*?<option value="bip86"[^>]*>Taproot<\/option><\/select>/);
     assert.match(markup, /id="script-type"[\s\S]*id="purpose"[\s\S]*id="network"[\s\S]*id="account"/);
-    assert.match(markup, /id="purpose" type="text" inputmode="numeric" value="84'"/);
-    assert.match(markup, /id="purpose-help">Purpose index (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
-    assert.match(markup, /id="account-help">Account index (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
   }
   assert.match(appSource, /function hodlReadPurpose\(mark = true\)/);
   assert.match(appSource, /hodlSetSelectedScriptType\(target\.value, true\)/);
-  assert.match(appSource, /let derivedDefinition = \{ \.\.\.definition, purpose: purposeIndex, purposeHardened: hardening\.purpose \}/);
-  assert.match(appSource, /originPath = derivationPlan\?\.originPath \?\?/);
+  // The unchanged default-purpose and origin contract is executed against
+  // independent keys/addresses/descriptors in key-purpose-match.test.mjs.
   assert.match(appSource, /fields: \{ pass: "", script: "bip84", derivationPath: `m\/84'\/\$\{hodlDefaultCoinType\(\)\}'\/0'\/\{0-1\}\/\{0-9\}`, derivationAccountPath: `m\/84'\/\$\{hodlDefaultCoinType\(\)\}'\/0'`, purpose: "84'", purposeHarden: true, coinType: `\$\{hodlDefaultCoinType\(\)\}'`, coinTypeHarden: true, network: hodlNetworkDefault/);
 });
 

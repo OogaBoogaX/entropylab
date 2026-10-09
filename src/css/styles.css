@@ -3077,6 +3077,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
      stack as matching strips: same edge, padding and lettering. */
   --toolbar-row-padding: var(--inset-toolbar); --toolbar-row-font: var(--text-control-small); --toolbar-row-weight: 600;
 }
+.key-view > .switch-row + .key-view-toolbar { margin-top: 0; }
 /* The script type stays one horizontal strip at every width: it never wraps,
    so the shared stacking never engages, and on phones the two SegWit labels
    shorten to fit instead. */
