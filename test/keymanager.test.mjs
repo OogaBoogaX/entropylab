@@ -26,6 +26,7 @@ function stationHarness(keys, pending, ignored = []) {
     hodlKeys: keys, hodlKeyManagerPending: pending, hodlKeyManagerIgnored: ignored,
     hodlActiveKey: 0, keyVaultIdentity,
     hodlJournalLog: (...args) => calls.push(args),
+    hodlInvalidateDerivation: () => calls.push(["invalidate"]),
     hodlRenderKeyTabs: () => calls.push(["tabs"]),
     hodlKeyManagerRender: () => calls.push(["manager"]),
     hodlShowWorkspace: (id) => calls.push(["workspace", id]),
@@ -50,12 +51,13 @@ test("Add all transfers pending keys once, preserving existing and ignored keys"
   assert.equal(JSON.stringify([first, second, lab, ignored]), before);
   assert.deepEqual(ignoredKeys, [ignored]);
   assert.deepEqual(calls, [
+    ["invalidate"],
     ["key-manager-use", "11111111", "journal"], ["key-manager-use", "22222222", "journal"],
     ["tabs"], ["manager"], ["workspace", "calc"],
   ]);
   context.hodlKeyManagerUseAllInStation();
   assert.equal(keys.length, 4);
-  assert.equal(calls.length, 5, "repeated activation does nothing");
+  assert.equal(calls.length, 6, "repeated activation does nothing");
 });
 
 test("Add all ignores duplicate identities and does nothing without pending keys", () => {

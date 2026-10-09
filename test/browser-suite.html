@@ -1281,6 +1281,63 @@
     }
   });
 
+  // Switching key tabs while a derivation is in flight must cancel it: the
+  // commit otherwise writes the derived wallet into the switched-to key's
+  // state, corrupting that key and losing the wallet actually derived. The
+  // second seed's long address window keeps the build busy long enough for
+  // the tab click to land mid-derivation.
+  await test("switching key tabs mid-derivation does not commit to the switched-to key", async () => {
+    const strip = document.getElementById("key-tabs");
+    const fingerprintOf = (id) => document.getElementById(id)?.querySelector("[data-fingerprint]")?.dataset.fingerprint || null;
+    const uncaughtBefore = state.uncaught.length;
+    try {
+      document.querySelector('#workspace [data-workspace="calc"]').click();
+      await until(() => !document.getElementById("key-manager").hidden, "key workspace");
+      chooseSeedWords(12);
+      await chooseMode("Seed phrase");
+      input(document.getElementById("seed"), "legal winner thank year wave sausage worth useful legal winner thank yellow");
+      await until(() => !document.getElementById("go").disabled, "Derive Key to enable");
+      document.getElementById("go").click();
+      await until(() => document.getElementById("key-tab-2"), "the first derived key tab");
+      const firstFingerprint = await until(() => fingerprintOf("key-tab-2"), "the first key tab's LifeHash");
+      // Back on the Key Station, a different seed with a long address window.
+      // The commit replaced the lab with a fresh dice-mode one, so the mode
+      // and word count are chosen again before the seed field exists.
+      document.getElementById("key-tab-lab").click();
+      await wait(0);
+      chooseSeedWords(12);
+      await chooseMode("Seed phrase");
+      input(document.getElementById("seed"), "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong");
+      input(document.getElementById("address-range"), "2000");
+      await until(() => !document.getElementById("go").disabled, "Derive Key to enable for the second seed");
+      document.getElementById("go").click();
+      await until(() => {
+        const progress = document.getElementById("derive-progress");
+        return !progress.hidden && Number(progress.getAttribute("aria-valuenow")) > 0;
+      }, "the second derivation to be running");
+      document.getElementById("key-tab-2").click();
+      await until(() => !document.getElementById("go").dataset.derivationState, "the derivation to settle");
+      await wait(150);
+      assert(!document.getElementById("key-tab-3"), "the interrupted derivation committed a new key anyway (or the tab click landed after it finished)");
+      equal(fingerprintOf("key-tab-2"), firstFingerprint, "the switched-to key's wallet changed underneath it");
+      equal(state.uncaught.length, uncaughtBefore, "the cancellation surfaced an uncaught error: " + state.uncaught.slice(uncaughtBefore).join(" | "));
+    } finally {
+      // Leave the Key Station as the tests that follow expect it: no derived
+      // key tabs, a blank 24-word lab form with the default address window.
+      while (document.getElementById("key-tab-2")) {
+        document.getElementById("key-tab-2").click();
+        await until(() => !document.getElementById("delete-key").disabled, "Delete current key to enable");
+        document.getElementById("delete-key").click();
+        await wait(0);
+      }
+      document.getElementById("key-tab-lab").click();
+      const wipe = document.getElementById("wipe");
+      if (!wipe.disabled) wipe.click();
+      chooseSeedWords(24);
+    }
+    equal(strip.children.length, 1, "cleanup should leave only Key Station");
+  });
+
   await test("Base64 uses the shared case, number, and symbol keyboard", async () => {
     chooseSeedWords(24);
     await chooseMode("Number bases");
