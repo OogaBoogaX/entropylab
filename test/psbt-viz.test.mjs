@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { psbtInspectDoc } from "../src/js/psbt-wasm.js";
 import { psbtVizHtml } from "../src/js/psbt-viz.js";
 import { addressFromScript } from "../src/js/addresses.js";
+import { MiniDocument } from "./mini-dom.mjs";
 
 // BIP-174 valid vector 2 (same file as in test/psbt-wasm.test.mjs): two
 // inputs — a finalized P2PKH scriptSig with no amount claim and a nested
@@ -23,6 +24,22 @@ const VALID_HEX =
 const VALID = new Uint8Array(VALID_HEX.match(/.{2}/g).map((b) => parseInt(b, 16)));
 
 const inspectValid = () => psbtInspectDoc(VALID);
+
+test("diagram addresses supply full public copy payloads without replacing navigation", () => {
+  const document = new MiniDocument();
+  document.body.innerHTML = psbtVizHtml(inspectValid(), "mainnet", { copyIcon: () => '<svg data-test-copy-icon></svg>' });
+  const values = document.querySelectorAll("[data-public-value]");
+  assert.equal(values.length, 3);
+  assert.deepEqual(values.slice(1).map((value) => value.dataset.copyValue), [
+    "1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe", "1B9N1re3RYdB7RPhsNS92vbYQegYWZW3og",
+  ]);
+  for (const value of values) {
+    assert.equal(value.closest("[data-viz]"), null, "copy must not also navigate");
+    assert.ok(value.closest("[data-copy-group]").querySelector("[data-public-copy]"));
+  }
+  assert.equal(document.querySelectorAll("[data-viz]").length, 5);
+  assert.equal(document.querySelectorAll("button button").length, 0);
+});
 
 // The diagram groups read-only sats with narrow no-break spaces; keep the
 // escape visible instead of hiding invisible characters in assertions.

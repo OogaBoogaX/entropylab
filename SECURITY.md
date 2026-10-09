@@ -323,6 +323,19 @@ shuts its workers and their module down when a run ends. The
 browser can still make copies of its own while it manages memory, which the
 page cannot reach.
 
+Private readouts disable browser text selection with `user-select: none`,
+including displayed seed words and per-address WIFs. Copying uses a deliberate
+clipboard icon beside the label or value's table row; clicking the value itself
+does not copy. The controls read the current shown value at activation and do
+not keep secrets in their attributes. Concealed values have no displayed copy
+control. Editable input fields still support normal selection and editing.
+Public derivation values remain selectable and copy when clicked; their labels
+offer a clipboard icon when no QR button is available. Public copy controls
+read the current value, and shortened public previews copy the complete value.
+This reduces accidental selection and copying; it does not hide revealed text
+from the browser, extensions, screenshots, or developer tools, and does not
+protect clipboard history or sync.
+
 **What the page cannot erase.** Some copies stay in the browser's memory
 until the browser reuses that memory. The page can let go of them, but
 cannot overwrite them:

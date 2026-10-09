@@ -583,6 +583,7 @@ textarea { display: block; min-height: 96px; letter-spacing: 0.08em; }
   display: grid; place-items: center; flex: 0 0 var(--box-size, 44px); width: var(--box-size, 44px); min-height: var(--box-size, 44px); height: auto; padding: var(--inset-icon-button);
   border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface-2); color: var(--muted);
 }
+.copy-button.boxed-copy-button { --box-size: 26px; }
 .seed-keyboard-toggle[aria-expanded="true"] { color: var(--selection-accent); border-color: var(--selection-accent); }
 .seed-keyboard-toggle svg { display: block; width: 30px; height: 22px; }
 .seed-keyboard-icon-case { fill: none; stroke: currentColor; stroke-width: 2.5; }
@@ -923,7 +924,7 @@ h3.label { font-family: inherit; letter-spacing: inherit; }
   flex: 0 0 auto; display: grid; place-items: center;
   width: 21px; height: 21px; padding: 0; border: 0; background: transparent; color: var(--faint);
 }
-.copy-button svg { display: block; width: 16px; height: 16px; }
+.copy-button svg { display: block; width: 14px; height: 14px; }
 .seed-copy-icon-clip, .seed-copy-icon-board { fill: none; stroke: currentColor; stroke-width: 2; }
 .copy-button:disabled { color: var(--faint); cursor: not-allowed; }
 .copy-button:not(:disabled) { color: var(--selection-accent); }
@@ -932,7 +933,9 @@ h3.label { font-family: inherit; letter-spacing: inherit; }
    plain ink at rest, orange only under the pointer. */
 .copy-button.boxed-copy-button:not(:disabled) { color: var(--fg); }
 .copy-button.is-copied, .copy-button.is-copied:not(:disabled),
-.copy-button.is-copied:not(:disabled):hover { color: var(--ok-bright); }
+.copy-button.is-copied:not(:disabled):hover {
+  --hover-edge: var(--ok-bright); --hover-ink: var(--ok-bright); color: var(--ok-bright);
+}
 .dice-word-grid {
   --dice-word-rows: var(--dice-word-rows-wide);
   display: grid; grid-auto-flow: column; grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -955,12 +958,27 @@ h3.label { font-family: inherit; letter-spacing: inherit; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* Public readouts act like text while remaining keyboard-copyable. Keep this
+   base before the value typography so compact and fingerprint sizes win. */
+.addr-text {
+  min-width: 0; margin: 0; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; vertical-align: middle;
+}
+.addr-text:hover { color: var(--selection-accent-ink); }
+[data-public-value] { user-select: text; -webkit-user-select: text; }
+/* Private material is copied with its controls rather than text selection.
+   Apply this to descendants too: user-select is not inherited in Firefox. */
+[data-private-value], [data-private-value] * {
+  user-select: none; -webkit-user-select: none;
+}
+[data-public-inline] { display: inline-flex; align-items: center; gap: var(--space-control); min-width: 0; max-width: 100%; }
+td[data-private-field] .boxed-copy-button { display: inline-grid; margin-left: var(--space-control); vertical-align: middle; }
 .secret { font-family: var(--mono); font-size: var(--text-data); word-break: break-all; }
 .private-field-value { display: block; margin-top: var(--space-hairline); line-height: 1.55; }
-.table-private-field-value { display: inline-grid; white-space: nowrap; }
 .private-field-value:not(.secret-placeholder),
 .table-private-field-value:not(.secret-placeholder) { color: var(--blue); }
 .secret-placeholder { display: grid; color: var(--muted); }
+.table-private-field-value { display: inline-grid; white-space: nowrap; vertical-align: middle; }
 .secret-placeholder > .secret-placeholder-mask,
 .secret-placeholder > .secret-placeholder-message { grid-area: 1 / 1; }
 .secret-placeholder-mask { visibility: hidden; user-select: none; }
@@ -1805,6 +1823,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .journal-keymanager-badge.is-included { color: var(--ok); }
 .journal-keymanager-name { flex: 1 1 16rem; margin-top: var(--space-component); }
 .journal-keymanager-details { display: grid; grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr); gap: var(--space-control) var(--space-component); margin: var(--space-component) 0 0; }
+.journal-keymanager-details > [data-copy-group] { display: contents; }
 .journal-keymanager-details dt { color: var(--muted); font-size: var(--text-label-small); font-weight: 700; }
 .journal-keymanager-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .journal-keymanager-entry-actions { margin-top: var(--space-component); }
@@ -1881,9 +1900,6 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .vanity-prefix-plus { flex: 0 0 auto; color: var(--muted); font-size: var(--text-body); }
 .vanity-prefix-row input:not([type="radio"]):not([type="checkbox"]) { width: 100%; min-width: 0; margin-top: 0; text-align: center; }
 .vanity-secret { display: inline-flex; align-items: center; gap: var(--space-snug); }
-/* In the match table the copy box takes the Update Key button's height, so
-   every control in the row sits on one line. */
-.vanity-secret { --box-size: 36px; }
 /* The selected key, restated where the grind reads from it with the key
    view's own summary block (.key-summary), then its starting passphrase
    verbatim. */
@@ -2157,6 +2173,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
    output amount field sits above the overlay so it stays editable. The box
    stands down while the pointer is on that field, which answers for itself. */
 .psbted-viz-open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.psbted-viz-box > [data-public-inline] { position: relative; z-index: 1; }
 .psbted-viz-open {
   display: flex; gap: var(--space-control); align-items: baseline; width: 100%; min-height: 0; margin: 0; padding: 0;
   border: none; border-radius: var(--radius-small); background: none; color: inherit; font-size: var(--text-compact); text-align: left;
@@ -2193,11 +2210,11 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .exp-len { color: var(--muted); font-size: var(--text-caption); white-space: nowrap; }
 /* The overlay mirrors the disclaimer gate: dimmed page, one centered card. */
 .exp-meta { margin: var(--space-tight) 0 0; }
-.exp-card textarea {
+.exp-card textarea, #exp-readout {
   min-height: 240px; max-height: 55vh; margin-top: var(--space-control);
   font-family: var(--mono); font-size: var(--text-field-small); overflow-wrap: anywhere;
 }
-.exp-card textarea[readonly] { color: var(--muted); }
+#exp-readout { color: var(--muted); white-space: pre-wrap; overflow: auto; }
 /* The QR reference overlay mirrors the expandable and disclaimer overlays:
    a dimmed backdrop with one centered card, dismissed by clicking outside
    or pressing Escape. Shown when an external link is clicked while the
@@ -2207,11 +2224,6 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .qr-ref-url { margin: var(--space-component) 0 0; font-size: var(--text-note); overflow-wrap: anywhere; word-break: break-all; }
 .qr-ref-hint { margin: var(--space-related) 0 0; }
 /* Per-address QR: compact button in each address-table row, one shared overlay. */
-.addr-text {
-  min-width: 0; margin: 0; padding: 0; border: 0; background: none;
-  color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer;
-}
-.addr-text:hover { color: var(--selection-accent-ink); }
 /* In a table the address itself names what was copied, so the mark stands
    alone beside its QR button. */
 .copy-field-status.is-icon-only {
@@ -3016,7 +3028,8 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .wallet-table-public table { min-width: 700px; }
 .wallet-table-private table { min-width: 660px; }
 .wallet-table tbody tr:not(.address-virtual-spacer) { height: 34px; }
-.wallet-table tbody tr:not(.address-virtual-spacer) > * { white-space: nowrap; }
+.wallet-table-private tbody tr:not(.address-virtual-spacer) > * { padding-block: var(--space-hairline); }
+.wallet-table tbody tr:not(.address-virtual-spacer) > * { white-space: nowrap; vertical-align: middle; }
 .wallet-table .address-virtual-spacer, .wallet-table .address-virtual-spacer td { padding: 0; border: 0; line-height: 0; }
 @media (max-width: 520px) {
   .derive-progress { order: 3; flex-basis: 100%; }
@@ -3104,7 +3117,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .private-field > .label { display: inline-flex; align-items: center; margin: 0; }
 /* A table column holding private values titles itself the same way. */
 .private-heading { display: inline-flex; align-items: center; }
-.private-field.is-revealed > .label, .private-heading.is-revealed { color: var(--danger-bright); }
+.private-field.is-revealed > .copy-field-label, .private-heading.is-revealed { color: var(--danger-bright); }
 .privacy-bar-state { color: var(--fg); font-weight: var(--toolbar-row-weight, 600); }
 .privacy-bar-hint { font-size: var(--text-note); }
 .privacy-bar.is-revealed {
