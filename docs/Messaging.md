@@ -148,9 +148,9 @@ air-gapped computer.
   to enter the seed phrase and confirm that the receive addresses match the
   ones her wallet shows, without ever restoring it on a second device.
 - **Carol** is setting up a 2-of-3 multisig with two family members. She
-  collects each co-signer's extended public key, uses EntropyLab on an offline
-  computer to build the watch-only wallet, and checks the descriptor and first
-  addresses on every signing device before anyone sends funds to it.
+  collects each co-signer's extended public key, uses EntropyLab to build the
+  watch-only wallet, and checks the descriptor and first addresses on every
+  signing device before anyone sends funds to it.
 - **Dave** has inherited his father's bitcoin: a seed phrase and a note
   saying "the old wallet". He uses EntropyLab on an offline computer to try
   the common derivation paths and address types until he finds the addresses
@@ -166,11 +166,11 @@ air-gapped computer.
   wallet can always be recreated from the backup he already has.
 - **Grace** runs Bitcoin workshops. On a test network, she walks her class
   from a handful of dice rolls to a seed phrase, derivation paths, keys, and
-  addresses. She uses EntropyLab on an offline computer to show every step on
-  screen instead of describing a black box.
-- **Heidi** is a developer building wallet software. She uses EntropyLab on
-  an offline computer to check her library's regtest derivations, comparing
-  seeds, fingerprints, descriptors, and addresses step by step.
+  addresses. She uses EntropyLab to show every step on screen instead of
+  describing a black box.
+- **Heidi** is a developer building wallet software. She uses EntropyLab to
+  check her library's regtest derivations, comparing seeds, fingerprints,
+  descriptors, and addresses step by step.
 - **Ivan** writes a blog and wants to accept donations with one address he
   can publish once, without every donation landing on the same visible
   address. He uses EntropyLab on an offline computer to derive a Silent
