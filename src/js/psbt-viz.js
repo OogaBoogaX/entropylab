@@ -52,8 +52,47 @@ const shortenMiddle = (text, head = 10, tail = 8) => {
 // Editable fields (the output sats inputs) stay raw for typing.
 const groupSats = (value) => String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
-// Well-known script templates, tagged like a block explorer would. Anything
-// else returns null and the box falls back to the raw script hex.
+// Witness programs today's consensus rules leave undefined. A witness program
+// is OP_0..OP_16 followed by one direct push of 2-40 bytes (BIP141). Defined:
+// v0 with 20 or 32 bytes (BIP141) and v1 with 32 bytes (BIP341). Any other
+// v0 length fails every spend, so nothing can ever spend it. v1 at another
+// length, and v2-v16 at any length, are spendable by anyone until a soft fork
+// defines them (BIP460, for one, proposes v2). v1 <4e73> is pay-to-anchor
+// (P2A, BIP-433), spendable by anyone on purpose. These are notes, never a
+// block: BIP350 says wallets must be able to pay future versions.
+export const witnessProgramNote = (scriptHex) => {
+  const match = /^(00|5[1-9a-f]|60)([0-9a-f]{2})([0-9a-f]*)$/.exec(String(scriptHex ?? "").toLowerCase());
+  if (!match) return null;
+  const bytes = parseInt(match[2], 16);
+  if (bytes < 2 || bytes > 40 || match[3].length !== bytes * 2) return null;
+  const version = match[1] === "00" ? 0 : parseInt(match[1], 16) - 0x50;
+  if (version === 0) {
+    if (bytes === 20 || bytes === 32) return null;
+    return { label: `SegWit v0, ${bytes}-byte (unspendable)`, tone: "bad", note: (index) => `Output #${index} is a ${bytes}-byte SegWit v0 program: no one can ever spend it.` };
+  }
+  if (version === 1) {
+    if (bytes === 32) return null;
+    if (match[3] === "4e73") return { label: "P2A (anchor)", tone: "info", note: (index) => `Output #${index} is a pay-to-anchor (P2A): anyone can spend it, by design, to bump the fee.` };
+    return { label: `SegWit v1, ${bytes}-byte (undefined)`, tone: "warn", note: (index) => `Output #${index} pays to a ${bytes}-byte SegWit v1 program, which Taproot does not define. Until a soft fork does, anyone can spend it.` };
+  }
+  return { label: `SegWit v${version} (not active)`, tone: "warn", note: (index) => `Output #${index} pays to SegWit v${version}, which no active soft fork defines. Until one does, anyone can spend it.` };
+};
+
+// The editor summary's notes for those outputs, one per output, each on its
+// own line after the transaction's validity line.
+const NOTE_STYLE = { warn: ["psbted-note-warn", "⚠ "], bad: ["psbted-note-bad", "✕ "], info: ["muted", ""] };
+export const psbtOutputNotesHtml = (doc) => (doc?.tx?.outputs ?? [])
+  .map((output, index) => {
+    const found = witnessProgramNote(output.scriptPubKey);
+    if (!found) return "";
+    const [className, mark] = NOTE_STYLE[found.tone];
+    return `<br><span class="${className}">${mark}${escapeHtml(found.note(index))}</span>`;
+  })
+  .join("");
+
+// Well-known script templates, tagged like a block explorer would, then the
+// undefined witness programs above. Anything else returns null and the box
+// falls back to the raw script hex.
 const scriptKind = (scriptHex, asm) => {
   const hex = String(scriptHex ?? "");
   if (/^76a914[0-9a-f]{40}88ac$/i.test(hex)) return "P2PKH";
@@ -62,7 +101,7 @@ const scriptKind = (scriptHex, asm) => {
   if (/^0020[0-9a-f]{64}$/i.test(hex)) return "P2WSH";
   if (/^5120[0-9a-f]{64}$/i.test(hex)) return "P2TR";
   if (/^6a/i.test(hex) || String(asm ?? "").startsWith("OP_RETURN")) return "OP_RETURN";
-  return null;
+  return witnessProgramNote(hex)?.label ?? null;
 };
 
 // The amount an input claims to spend, resolved as a set so map order cannot
@@ -150,12 +189,14 @@ const outputBox = (doc, index, network) => {
   const kind = scriptKind(output.scriptPubKey, output.asm);
   const label = address ? shortenMiddle(address) : kind === "OP_RETURN" ? "OP_RETURN" : shortenMiddle(output.scriptPubKey, 12, 10) || "(empty script)";
   // The sub-line adds what the label does not already say: the script
-  // template for addressed outputs, the asm for data-carrier/raw scripts.
-  const sub = address ? (kind ?? "script") : shortenMiddle(output.asm || output.scriptPubKey, 24, 12) || "script";
+  // template for addressed outputs and for a recognised script without an
+  // address (a v0 program of the wrong length), the asm for data-carrier/raw
+  // scripts.
+  const sub = address || (kind && kind !== "OP_RETURN") ? (kind ?? "script") : shortenMiddle(output.asm || output.scriptPubKey, 24, 12) || "script";
   return `<div class="psbted-viz-box">
     <button type="button" class="psbted-viz-open" data-viz="output:${index}" aria-label="Output ${index}, ${escapeHtml(address ?? label)}: go to this output's PSBT fields">
       <span class="psbted-viz-idx">#${index}</span>
-      <span class="psbted-viz-id ${address || !kind ? "psbted-viz-out" : "psbted-viz-tag"}"${address ? ` title="${escapeHtml(address)}"` : ""}>${escapeHtml(label)}</span>
+      <span class="psbted-viz-id ${address || kind !== "OP_RETURN" ? "psbted-viz-out" : "psbted-viz-tag"}"${address ? ` title="${escapeHtml(address)}"` : ""}>${escapeHtml(label)}</span>
     </button>
     <p class="psbted-viz-amount"><input class="psbted-viz-sats" data-txout-val="${index}" value="${escapeHtml(String(output.value))}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Output ${index} value in sats"> sats</p>
     <p class="psbted-viz-sub"><span class="muted">${escapeHtml(sub)}</span></p>

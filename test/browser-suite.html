@@ -3651,6 +3651,15 @@
     document.getElementById("network-picker-button").click();
     document.querySelector('#network-picker-menu [data-network="mainnet"]').click();
     await until(() => outText().includes("1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"), "mainnet re-decode on picker change");
+    // An output to a witness version no soft fork defines gets a summary
+    // warning and a diagram label: until one does, anyone can spend it.
+    const firstOutputScript = document.querySelector('[data-txout-script="0"]');
+    const originalOutputScript = firstOutputScript.value;
+    input(firstOutputScript, "5220" + "44".repeat(32));
+    await until(() => outText().includes("Output #0 pays to SegWit v2, which no active soft fork defines"), "future-segwit warning");
+    assert(vizText().includes("SegWit v2 (not active)"), "the diagram does not label the SegWit v2 output");
+    input(firstOutputScript, originalOutputScript);
+    await until(() => !outText().includes("no active soft fork defines"), "the warning cleared with the original output");
     // The loaded PSBT builds at once: both readouts without a click, each
     // titled by a label that carries its QR button.
     assert((document.getElementById("psbted-result-b64") || {}).textContent.startsWith("cHNidP8B"), "result did not follow the load");

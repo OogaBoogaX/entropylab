@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { psbtInspectDoc } from "../src/js/psbt-wasm.js";
 import { psbtVizHtml } from "../src/js/psbt-viz.js";
+import * as vizModule from "../src/js/psbt-viz.js";
 import { addressFromScript } from "../src/js/addresses.js";
 
 // BIP-174 valid vector 2 (same file as in test/psbt-wasm.test.mjs): two
@@ -322,4 +323,75 @@ test("the testnet network renders testnet addresses", () => {
   const testnet = psbtVizHtml(inspectValid(), "testnet");
   assert.ok(mainnet.includes("1BonMcawnm"), "mainnet address missing");
   assert.ok(!testnet.includes("1BonMcawnm"), "testnet render kept the mainnet address");
+});
+
+// Witness programs the consensus rules leave undefined (BIP141, BIP341,
+// BIP350; P2A from BIP-433). Contract: an output the rules define (v0 with a
+// 20- or 32-byte program, v1 with a 32-byte one) or that is not a witness
+// program at all gets no note. v2-v16, and v1 at any other length, warn that
+// anyone can spend the output until a soft fork defines it (drafts such as
+// BIP460 propose v2). v1 <4e73> is pay-to-anchor, anyone-can-spend by design.
+// v0 at any other length can never be spent. Notes never block export: BIP350
+// says wallets must be able to pay future versions.
+const program = (version, bytes) => `${version === 0 ? "00" : (0x50 + version).toString(16)}${bytes.toString(16).padStart(2, "0")}${"ab".repeat(bytes)}`;
+
+test("witness programs the consensus rules leave undefined are classified, and defined ones are not", () => {
+  const { witnessProgramNote } = vizModule;
+  assert.equal(typeof witnessProgramNote, "function");
+  const notWitnessOrDefined = [
+    program(0, 20), program(0, 32), program(1, 32), // P2WPKH, P2WSH, P2TR
+    `76a914${"11".repeat(20)}88ac`, `a914${"11".repeat(20)}87`, "6a046f726469", // P2PKH, P2SH, OP_RETURN
+    "", "00", "0001ff", // empty, OP_0 alone, a 1-byte push (programs are 2-40 bytes)
+    program(2, 41), // a 41-byte push is not a witness program
+    `5220${"ab".repeat(31)}`, // the push length disagrees with the bytes
+  ];
+  for (const script of notWitnessOrDefined) assert.equal(witnessProgramNote(script), null, script);
+
+  const v2 = witnessProgramNote(program(2, 32));
+  assert.equal(v2.label, "SegWit v2 (not active)");
+  assert.equal(v2.tone, "warn");
+  assert.equal(v2.note(1), "Output #1 pays to SegWit v2, which no active soft fork defines. Until one does, anyone can spend it.");
+  assert.equal(witnessProgramNote(program(16, 2)).label, "SegWit v16 (not active)");
+  assert.equal(witnessProgramNote(program(2, 40)).label, "SegWit v2 (not active)");
+  assert.equal(witnessProgramNote(program(2, 32).toUpperCase())?.label, "SegWit v2 (not active)", "hex case does not matter");
+
+  const odd = witnessProgramNote(program(1, 20));
+  assert.equal(odd.label, "SegWit v1, 20-byte (undefined)");
+  assert.equal(odd.tone, "warn");
+  assert.equal(odd.note(2), "Output #2 pays to a 20-byte SegWit v1 program, which Taproot does not define. Until a soft fork does, anyone can spend it.");
+  assert.equal(witnessProgramNote("51020000").label, "SegWit v1, 2-byte (undefined)", "only 4e73 is P2A");
+
+  const anchor = witnessProgramNote("51024e73");
+  assert.equal(anchor.label, "P2A (anchor)");
+  assert.equal(anchor.tone, "info");
+  assert.equal(anchor.note(3), "Output #3 is a pay-to-anchor (P2A): anyone can spend it, by design, to bump the fee.");
+
+  const burned = witnessProgramNote(program(0, 25));
+  assert.equal(burned.label, "SegWit v0, 25-byte (unspendable)");
+  assert.equal(burned.tone, "bad");
+  assert.equal(burned.note(4), "Output #4 is a 25-byte SegWit v0 program: no one can ever spend it.");
+});
+
+test("the diagram labels undefined witness programs instead of a bare 'script'", () => {
+  const scripts = [program(2, 32), program(1, 20), "51024e73", program(0, 25)];
+  const doc = syntheticDoc();
+  doc.tx.outputs = scripts.map((scriptPubKey) => ({ value: "1", scriptPubKey, asm: "" }));
+  doc.outputs = scripts.map(() => []);
+  const html = psbtVizHtml(doc, "mainnet");
+  for (const label of ["SegWit v2 (not active)", "SegWit v1, 20-byte (undefined)", "P2A (anchor)", "SegWit v0, 25-byte (unspendable)"]) {
+    assert.ok(html.includes(label), `${label} missing from the diagram`);
+  }
+});
+
+test("the editor summary carries one note per undefined witness output, and none otherwise", () => {
+  const { psbtOutputNotesHtml } = vizModule;
+  assert.equal(typeof psbtOutputNotesHtml, "function");
+  assert.equal(psbtOutputNotesHtml(inspectValid()), "", "P2PKH outputs get no note");
+  const doc = syntheticDoc();
+  doc.tx.outputs = [program(0, 20), program(2, 32), "51024e73", program(0, 25)].map((scriptPubKey) => ({ value: "1", scriptPubKey, asm: "" }));
+  const html = psbtOutputNotesHtml(doc);
+  assert.doesNotMatch(html, /Output #0/, "a defined P2WPKH output got a note");
+  assert.match(html, /<span class="psbted-note-warn">⚠ Output #1 pays to SegWit v2, which no active soft fork defines\./);
+  assert.match(html, /<span class="muted">Output #2 is a pay-to-anchor \(P2A\)/);
+  assert.match(html, /<span class="psbted-note-bad">✕ Output #3 is a 25-byte SegWit v0 program: no one can ever spend it\.<\/span>/);
 });

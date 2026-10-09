@@ -18,7 +18,7 @@ import { psbtInspectDoc, psbtBuildBytes, psbtWasmReady } from "./psbt-wasm.js";
 import { comparePsbtDocs } from "./psbt-diff.js";
 import { copyText } from "./clipboard.js";
 import { expandableHtml, EXPAND_LIMIT, initExpandable } from "./expandable.js";
-import { psbtVizHtml } from "./psbt-viz.js";
+import { psbtOutputNotesHtml, psbtVizHtml } from "./psbt-viz.js";
 import { parseOpReturn } from "./opreturn.js";
 import { buildOutputScript } from "./script-builder.js";
 import { hodlUrEncodePsbt } from "./psbt-ur.js";
@@ -756,7 +756,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     out.innerHTML = `
       <p class="edge-note ${stale ? "is-private" : "is-muted"}" id="psbted-status" aria-live="polite">${stale ? "The fields do not build right now — see the error above; the result below is the last valid build." : "Every edit rebuilds the PSBT immediately; the fields show rust-bitcoin's decode of the current build."}</p>
       <p class="edge-note is-public">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
-      <p class="psbt-kv"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · ${tx.inputs.length} input(s) · ${tx.outputs.length} output(s)<br><span class="psbt-amount">fee ${fee}</span><br>${verdict}<br>${sanity}</p>
+      <p class="psbt-kv"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · ${tx.inputs.length} input(s) · ${tx.outputs.length} output(s)<br><span class="psbt-amount">fee ${fee}</span><br>${verdict}<br>${sanity}${psbtOutputNotesHtml(doc)}</p>
 
       ${psbtVizHtml(doc, network())}
 
