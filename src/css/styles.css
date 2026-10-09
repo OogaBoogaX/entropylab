@@ -936,6 +936,11 @@ h3.label { font-family: inherit; letter-spacing: inherit; }
 .copy-button.is-copied:not(:disabled):hover {
   --hover-edge: var(--ok-bright); --hover-ink: var(--ok-bright); color: var(--ok-bright);
 }
+/* The copied tick matches the other copy confirmations (20px, 2.5 stroke).
+   A boxed button gives up padding instead of growing, so nothing moves. */
+.copy-button.is-copied svg { width: 20px; height: 20px; }
+.copy-button.is-copied .seed-copy-icon-board { stroke-width: 2.5; }
+.copy-button.boxed-copy-button.is-copied { padding: 2px; }
 .dice-word-grid {
   --dice-word-rows: var(--dice-word-rows-wide);
   display: grid; grid-auto-flow: column; grid-template-columns: repeat(3, minmax(0, 1fr));

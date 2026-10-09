@@ -76,9 +76,17 @@
       unselectableReadout(value);
       equal(await copiedBy(value), null);
       assert(copy && !copy.disabled, "the shown private value has no available clipboard control");
-      const labelText = copy.parentElement.textContent;
+      const labelText = copy.parentElement.textContent, box = copy.getBoundingClientRect();
       equal(await copiedBy(copy), expected);
       equal(copy.parentElement.textContent, labelText);
+      // The green "Copied" tick is sized to be noticed at a glance, and the
+      // control keeps its box so nothing beside it moves.
+      if (copy.classList.contains("copy-button")) {
+        await until(() => copy.classList.contains("is-copied"), "the copied confirmation");
+        const tick = copy.querySelector("svg").getBoundingClientRect(), copied = copy.getBoundingClientRect();
+        assert(tick.width >= 19.5 && tick.height >= 19.5, `the copied tick is ${tick.width}x${tick.height}px; it should be 20px`);
+        assert(Math.abs(copied.width - box.width) < 0.5 && Math.abs(copied.height - box.height) < 0.5, "the copied confirmation resized its clipboard control");
+      }
     } finally {
       for (const node of opened) node.open = false;
     }
