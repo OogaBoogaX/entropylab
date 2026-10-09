@@ -336,6 +336,13 @@ This reduces accidental selection and copying; it does not hide revealed text
 from the browser, extensions, screenshots, or developer tools, and does not
 protect clipboard history or sync.
 
+Copying can also leave copies in the browser's own processes after End session
+and tab closure. In the Windows 11 measurements described in
+[#816](https://github.com/OogaBoogaX/entropylab/issues/816), Edge 154.0.4258.53
+retained copied seed words until Edge itself quit. Quit the browser completely
+after use; ending its processes releases their memory but does not prove that
+every copy was erased.
+
 **What the page cannot erase.** Some copies stay in the browser's memory
 until the browser reuses that memory. The page can let go of them, but
 cannot overwrite them:
@@ -440,9 +447,9 @@ extension that ignores them, or one written to steal.
   EntropyLab copied something there (as far as the page can tell — it
   cannot read the clipboard to check), and asks the browser to close the
   tab.
-  Closing the tab is what erases the copies above: in a 2026-10-03 audit it
-  was the only step that left no copy of a secret in any Chrome or Edge
-  process. A tab you opened straight to the file closes; if it stays open,
+  Closing the tab releases its resources, but the browser's main process can
+  retain copied secrets as described above. A tab you opened straight to the
+  file closes; if it stays open,
   close it yourself. Chrome and Edge keep running after the last window
   closes unless "Continue running background apps" is off in their System
   settings.

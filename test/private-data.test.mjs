@@ -9,7 +9,7 @@ import { privateCopyButtonHtml, initPrivateCopy } from "../src/js/private-data.j
 import { hodlInitLn, hodlLnWipeMem } from "../src/js/lightning.js";
 import { hodlApplyStaticI18n, hodlSetLocale } from "../src/js/i18n.js";
 
-const app = await loadAppFunctions(["hodlPrivateFieldHtml", "hodlPrivateFieldMarkup", "hodlJournalPrivateValue", "hodlBip85SecretField"], {
+const app = await loadAppFunctions(["hodlPrivateFieldHtml", "hodlPrivateFieldMarkup", "hodlSeedPhraseField", "hodlJournalPrivateValue", "hodlBip85SecretField"], {
   stubs: { hodlRevealPrivate: true, hodlJournalReveal: true, hodlBip85Reveal: true },
 });
 
@@ -93,6 +93,28 @@ test("an intentional clipboard click copies only its field, with accessible conf
   assert.equal(button.getAttribute("aria-label"), initialLabel);
 }));
 
+test("recovery clipboard controls have distinct accessible names and restore them after copying", () => withPage(async ({ document, click }) => {
+  document.body.innerHTML = [
+    app.hodlSeedPhraseField("Your seed phrase · 12 words", PHRASE),
+    ...["BIP39 passphrase", "BIP39 entropy hex", "Master seed hex", "Master xprv"].map((label) => app.hodlPrivateFieldHtml(label, SECRET)),
+  ].join("");
+  const buttons = document.querySelectorAll("[data-private-copy]");
+  const names = buttons.map((button) => button.getAttribute("aria-label"));
+  assert.equal(buttons.length, 5);
+  assert.ok(names.every(Boolean));
+  assert.equal(new Set(names).size, buttons.length, "each recovery control identifies its own field");
+  for (const button of buttons) {
+    const name = button.getAttribute("aria-label");
+    assert.equal(button.title, name);
+    assertNoSecret(button, SECRET);
+    assertNoSecret(button, PHRASE);
+    await click(button);
+    mock.timers.tick(1600);
+    assert.equal(button.getAttribute("aria-label"), name);
+    assert.equal(button.title, name);
+  }
+}));
+
 for (const secret of [PHRASE, "  leading and trailing \t\n", " ", "<tag> & literal characters"]) {
   test(`copy preserves the exact displayed text ${JSON.stringify(secret)}`, () => withPage(async ({ document, writes, click }) => {
     const { button } = field(document, secret);
@@ -111,10 +133,13 @@ for (const locale of ["es", "pt", "fr", "de"]) {
       const secret = "  account  ";
       document.body.innerHTML = render(secret);
       const button = document.querySelector("[data-private-copy]");
-      const originalLabel = button.getAttribute("aria-label");
+      // Use an existing catalog entry to prove the sweep ran; new contextual
+      // labels may still be waiting for the post-merge translation workflow.
+      const translationProbe = field(document, "unrelated secret").button;
+      const originalLabel = translationProbe.getAttribute("aria-label");
       hodlSetLocale(locale, false);
       hodlApplyStaticI18n();
-      assert.notEqual(button.getAttribute("aria-label"), originalLabel, "copy controls still translate");
+      assert.notEqual(translationProbe.getAttribute("aria-label"), originalLabel, "copy controls still translate");
       await click(button);
       assert.deepEqual(writes, [secret], "a catalog key used as private data is never translated");
     }));
