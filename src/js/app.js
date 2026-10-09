@@ -827,6 +827,9 @@ function hodlRenderKeyResult() {
       let i = document.createElement("button");
       i.type = "button", i.id = `account-tab-${o.def.id}`, i.className = "tab account-tab" + (o.def.id === r.def.id ? " active" : ""), i.dataset.account = o.def.id, hodlSetScriptTabLabel(i, o.def), i.setAttribute("aria-pressed", String(o.def.id === r.def.id)), i.onclick = () => hodlShowAccount(o.def.id), n.appendChild(i);
     }), hodlShowAccount(r.def.id);
+    let purposeMatch = document.getElementById("key-match-purpose");
+    if (purposeMatch) purposeMatch.onchange = () => hodlTogglePurposeMatch(purposeMatch.checked);
+    hodlSyncPurposeMatchControls();
     hodlWatchKeyGroups();
   }
   let active = hodlKeys[hodlActiveKey];
@@ -1245,11 +1248,16 @@ async function hodlAccountResultWithProgress(node, definition, network, count, o
   }
   return hodlAccountResult(node, definition, network, count, { ...options, addressBranches });
 }
-async function hodlRootWalletWithProgress(root, network, count, source, accountIndex, addressStart, tracker, purposeIndex, coinType = hodlCoinTypeFromNetwork(network), hardening = hodlDefaultHardening(), branchStart = 0, branchRange = 2, derivationPlan = null) {
+async function hodlRootWalletWithProgress(root, network, count, source, accountIndex, addressStart, tracker, purposeIndex, coinType = hodlCoinTypeFromNetwork(network), hardening = hodlDefaultHardening(), branchStart = 0, branchRange = 2, derivationPlan = null, matchPurpose = derivationPlan?.matchPurpose === true) {
+  matchPurpose = Boolean(matchPurpose && root.depth === 0 && hodlNodeHasPrivateKey(root));
+  let originalPurpose = matchPurpose ? derivationPlan ? hodlParseCustomDerivationPath(derivationPlan.accountPath).components[0] : { index: purposeIndex, hardened: hardening.purpose } : null;
   let addressCount = Math.min(Math.max(count, 1), hodlMaxAddressRange), masterFingerprint = hodlFingerprintHex(root.fingerprint), accounts = [];
   tracker.setTotal(addressCount * hodlScriptTypes.length * branchRange);
   for (let definition of hodlScriptTypes) {
-    let derivedDefinition = { ...definition, purpose: purposeIndex, purposeHardened: hardening.purpose }, accountPath = derivationPlan?.accountPath || hodlAccountPath(derivedDefinition, coinType, accountIndex, hardening), node = root.derive(accountPath), originPath = derivationPlan?.originPath ?? `${hodlOriginPathComponent(purposeIndex, hardening.purpose)}/${hodlOriginPathComponent(coinType, hardening.coinType)}/${hodlOriginPathComponent(accountIndex, hardening.account)}`;
+    let purpose = matchPurpose ? definition.purpose : purposeIndex, purposeHardened = matchPurpose || hardening.purpose;
+    let derivedDefinition = { ...definition, purpose, purposeHardened }, accountPath = derivationPlan?.accountPath || hodlAccountPath(derivedDefinition, coinType, accountIndex, hardening);
+    if (matchPurpose) accountPath = accountPath.replace(/^m\/[^/]+/, `m/${purpose}'`);
+    let node = root.derive(accountPath), originPath = matchPurpose ? hodlParseCustomDerivationPath(accountPath).originPath : derivationPlan?.originPath ?? `${hodlOriginPathComponent(purpose, purposeHardened)}/${hodlOriginPathComponent(coinType, hardening.coinType)}/${hodlOriginPathComponent(accountIndex, hardening.account)}`;
     let account;
     try {
       account = await hodlAccountResultWithProgress(node, derivedDefinition, network, addressCount, { accountPath, accountIndex, masterFingerprint, originFingerprint: masterFingerprint, originPath, addressStart, branchHardened: hardening.branch, addressHardened: hardening.address, branchStart, branchRange }, tracker);
@@ -1258,7 +1266,97 @@ async function hodlRootWalletWithProgress(root, network, count, source, accountI
     }
     accounts.push(account);
   }
-  return hodlRootWalletResult(root, network, source, accountIndex, masterFingerprint, accounts, coinType);
+  let result = hodlRootWalletResult(root, network, source, accountIndex, masterFingerprint, accounts, coinType);
+  if (matchPurpose) Object.assign(result, { purposeMatch: true, originalPurpose });
+  return result;
+}
+function hodlCanMatchPurpose(wallet) {
+  return Boolean(wallet?.kind === "hd" && !wallet.imported && wallet.rootNode?.depth === 0 && hodlNodeHasPrivateKey(wallet.rootNode) && wallet.accounts?.length);
+}
+// Build a replacement without touching the live wallet. Its owned secret
+// copies join the existing derivation cleanup, including cancellation.
+async function hodlWalletWithPurposeMatch(wallet, enabled, originalPurpose, tracker) {
+  if (!hodlCanMatchPurpose(wallet)) throw hodlError("Changing derivation purpose requires a root private key.");
+  let original = wallet.originalPurpose ?? originalPurpose;
+  if (!original || !Number.isSafeInteger(original.index) || original.index < 0 || original.index > hodlMaxPurpose || typeof original.hardened !== "boolean") throw hodlError("The original derivation purpose is invalid.");
+  let account = wallet.accounts[0], parsed = hodlParseCustomDerivationPath(account.accountPath), branches = hodlAccountAddressBranches(account), rows = branches[0]?.rows;
+  if (!parsed.components.length || !rows?.length) throw hodlError("The original derivation path is unavailable.");
+  let accountPath = parsed.path.replace(/^m\/[^/]+/, `m/${hodlPathComponent(original.index, original.hardened)}`), plan = hodlParseCustomDerivationPath(accountPath);
+  let hardening = { purpose: original.hardened, coinType: parsed.components[1]?.hardened ?? true, account: parsed.components[2]?.hardened ?? true, branch: account.branchHardened, address: account.addressHardened };
+  let source = { ...wallet };
+  for (let field of ["entropy", "seed", "passphrase"]) if (ArrayBuffer.isView(wallet[field])) {
+    source[field] = Uint8Array.from(wallet[field]);
+    hodlActiveDerivation?.rowKeys?.push(source[field]);
+  }
+  let result = await hodlRootWalletWithProgress(wallet.rootNode, wallet.network, rows.length, source, account.accountIndex, rows[0].index, tracker, original.index, wallet.coinType, hardening, account.branchStart, account.branchRange, { accountPath, originPath: plan.originPath }, enabled);
+  return { ...wallet, ...result, warnings: wallet.warnings, purposeMatch: enabled, originalPurpose: { ...original } };
+}
+function hodlSyncPurposeMatchPath(state, account) {
+  if (!state?.result?.originalPurpose || !account) return;
+  let purpose = hodlParseCustomDerivationPath(account.accountPath).components[0], branches = hodlAccountAddressBranches(account), rows = branches[0].rows;
+  let path = hodlDerivationPathDisplay(account.accountPath, { start: account.branchStart, end: account.branchStart + account.branchRange - 1, range: account.branchRange }, { start: rows[0].index, end: rows.at(-1).index, range: rows.length }, { branch: account.branchHardened, address: account.addressHardened });
+  Object.assign(state.fields, { purpose: hodlPathComponent(purpose.index, purpose.hardened), purposeHarden: purpose.hardened, derivationAccountPath: account.accountPath, derivationPath: path });
+  hodlSetAdvancedDerivationIndex("purpose", purpose);
+  let input = document.getElementById("derivation-path");
+  if (input) {
+    input.value = path;
+    input.dataset.accountPath = account.accountPath;
+  }
+  hodlSnapshotKeySummary(state);
+  hodlPaintKeySummary();
+}
+function hodlSyncPurposeMatchControls() {
+  let checkbox = document.getElementById("key-match-purpose"), busy = Boolean(hodlActiveDerivation);
+  if (!checkbox) return;
+  checkbox.checked = Boolean(hodlWalletResult?.purposeMatch);
+  checkbox.disabled = busy;
+  document.getElementById("key-purpose-match")?.setAttribute("aria-busy", String(busy));
+  document.querySelectorAll("#acct-tabs button").forEach((button) => { button.disabled = busy; });
+  let error = document.getElementById("key-purpose-error");
+  if (error) error.textContent = hodlFormatErrorSpec(hodlKeys[hodlActiveKey]?.errorSpec);
+}
+async function hodlApplyPurposeMatch(state, enabled, progress) {
+  let previous = state?.result, generation = hodlDerivationGeneration, control = hodlActiveDerivation;
+  let ensureActive = () => {
+    hodlAssertDerivationActive(generation, control);
+    if (hodlKeys[hodlActiveKey] !== state || state.result !== previous) throw new HodlDerivationCancelledError();
+  };
+  try {
+    ensureActive();
+    if (state.isLab || !hodlCanMatchPurpose(previous)) return false;
+    let original = previous.originalPurpose ?? hodlParseCustomDerivationPath(previous.accounts[0].accountPath).components[0];
+    let result = await hodlWalletWithPurposeMatch(previous, enabled, original, { setTotal: (total) => progress.setTotal(total), step: () => { ensureActive(); return progress.step(); } });
+    ensureActive();
+    // Commit settings and outputs together. The key object/id stays the same,
+    // so other stations keep their selection of this root.
+    state.result = result;
+    hodlWalletResult = result;
+    hodlCommittedResults.add(result);
+    state.errorSpec = null;
+    state.error = "";
+    hodlRestoreKey();
+    hodlJournalCaptureDerivedKey(state);
+    hodlDisposeDroppedWallets();
+    return true;
+  } catch (error) {
+    if (error instanceof HodlDerivationCancelledError) throw error;
+    ensureActive();
+    state.errorSpec = hodlErrorSpecFrom(error, "Could not update derivation purpose");
+    state.error = hodlFormatErrorSpec(state.errorSpec);
+    hodlSetWorkspaceError("key", state.errorSpec);
+    return false;
+  }
+}
+async function hodlTogglePurposeMatch(enabled) {
+  let state = hodlKeys[hodlActiveKey];
+  if (hodlActiveDerivation || !state || state.isLab || !hodlCanMatchPurpose(state.result)) return;
+  try {
+    let pending = hodlDeriveWithProgress("key", (progress) => hodlApplyPurposeMatch(state, enabled, progress));
+    hodlSyncPurposeMatchControls();
+    await pending;
+  } finally {
+    hodlSyncPurposeMatchControls();
+  }
 }
 async function hodlMnemonicWalletWithProgress(value, passphrase, network, count, source, accountIndex, addressStart, tracker, purposeIndex, coinType = hodlCoinTypeFromNetwork(network), hardening = hodlDefaultHardening(), branchStart = 0, branchRange = 2, derivationPlan = null) {
   let validation = hodlValidateMnemonic(value);
@@ -1636,6 +1734,7 @@ function hodlShowAccount(id) {
   if (!account) return;
   hodlSetSelectedScriptType(id);
   hodlSyncAccountTabs(id);
+  hodlSyncPurposeMatchPath(hodlKeys[hodlActiveKey], account);
   let branches = hodlAccountAddressBranches(account), hasPrivate = hodlAccountHasPrivate(account);
   // The selected script type adds its groups to the card list: every address,
   // the private keys, and the watch-only exports. The address tables already
@@ -1900,6 +1999,7 @@ function hodlHdWalletData(wallet, accountMarkup = "") {
   let identityGroup = hodlKeyGroupMarkup("identity", hodlT("Wallet identity"), `<p class="edge-note is-public">${hodlT("These values identify the wallet or enable watch-only use, but do not authorize spending. Treat them as privacy-sensitive because extended public keys and descriptors can reveal wallet addresses, balances, and transaction history.")}</p><div class="wallet-data-fields">${fingerprint}${parentFingerprint}${nodeFingerprint}${rootPublic}${importedPublic}${source}</div>`);
   return `<div class="key-view hd-key-view">
     ${hodlWalletMessages(wallet, "wallet")}
+    ${hodlCanMatchPurpose(wallet) && !hodlKeys[hodlActiveKey]?.isLab ? `<div class="switch-row no-print" id="key-purpose-match"><label class="switch-toggle"><input id="key-match-purpose" type="checkbox" aria-describedby="key-match-purpose-help"><span class="label">${hodlT("Match derivation purpose to script type")}</span></label><p class="switch-note" id="key-match-purpose-help">${hodlT("When checked, each script type uses its standard hardened purpose: Legacy 44h, Nested SegWit 49h, Native SegWit 84h, or Taproot 86h. Viewing a script tab also updates the input purpose and path, so Edit Input starts from the displayed path. Uncheck to restore the original purpose and hardening. The rest of the path stays unchanged.")}</p><p class="edge-note is-private" id="key-purpose-error" role="status"></p></div>` : ""}
     <div class="key-view-toolbar no-print">
       <div class="row segmented-control" id="acct-tabs" role="group" aria-label="${hodlTAttr("Script type")}"></div>
       ${hasPrivate ? hodlPrivacyBarMarkup() : ""}
@@ -2729,6 +2829,7 @@ async function hodlDeriveWithProgress(kind, derive, buttonId) {
     if (hodlActiveDerivation === control) hodlActiveDerivation = null;
     hodlSyncDeriveButton();
     hodlSyncMsigDeriveButton();
+    hodlSyncPurposeMatchControls();
   }
 }
 function hodlImportedExtendedKeyDepth() {
@@ -7207,6 +7308,9 @@ async function hodlCalculateKey(progress, action = "derive") {
     // switches family (e.g. coin type 0' under a signet picker) drops the
     // picker chain with it.
     let derivationPlan = hodlKeyMode === "key" && !hodlBrainHdActive() ? null : hodlReadDerivationPlan(), coinType = derivationPlan?.coinType ?? hodlReadCoinType(document.getElementById("network")), network = derivationPlan?.network ?? hodlNetworkFromCoinType(coinType), chain = hodlNetworkFamily(hodlNetworkChoice) === network ? hodlNetworkChoice : network, addressWindow = hodlKeyMode === "key" ? { start: 0, range: 1 } : hodlReadAddressWindow(), branchWindow = hodlKeyMode === "key" ? { start: 0, range: 2 } : hodlReadBranchWindow(), count = addressWindow.range, addressStart = addressWindow.start, branchStart = branchWindow.start, branchRange = branchWindow.range, passphrase = (passphraseCopy = hodlPassphraseFieldBytes()), scriptType = hodlSelectedScriptType(), purpose = derivationPlan?.purpose ?? 84, account = derivationPlan?.accountIndex ?? 0, hardening = derivationPlan?.hardening ?? hodlDefaultHardening();
+    // Only the entered purpose decides the initial link; custom suffixes and
+    // a manually unchecked result are never inferred again while rendering.
+    if (derivationPlan) derivationPlan.matchPurpose = hardening.purpose && purpose === hodlScriptDefinition(scriptType).purpose;
     if ((hodlKeyMode !== "key" || hodlBrainHdActive()) && hodlPassphraseBip39Enabled() && passphrase) {
       let passphraseAnalysis = hodlAnalyzeBip39Passphrase(document.getElementById("pass")?.value ?? "");
       if (passphraseAnalysis.invalidRanges.length || passphraseAnalysis.incomplete || passphraseAnalysis.trailingSeparator) throw hodlError("Correct the highlighted BIP39-word passphrase inconsistencies before deriving.");
@@ -12728,6 +12832,9 @@ function hodlKeyManagerUseInStation(state) {
     return;
   }
   let identity = keyVaultIdentity(state), existing = hodlKeys.find((candidate) => !candidate.isLab && keyVaultIdentity(candidate) === identity);
+  // Installing or focusing a key changes the active tab; cancel any in-flight
+  // derivation so its commit cannot land on the wrong key.
+  hodlInvalidateDerivation();
   if (existing) hodlActiveKey = hodlKeys.indexOf(existing);
   else {
     let pending = hodlKeyManagerPending.indexOf(state);
@@ -12743,6 +12850,8 @@ function hodlKeyManagerUseInStation(state) {
 function hodlKeyManagerUseAllInStation() {
   let states = hodlKeyManagerStates().filter((state) => !state.needsDerivation && !hodlKeys.includes(state));
   if (!states.length) return;
+  // Pushing keys and moving the active tab cancels any in-flight derivation.
+  hodlInvalidateDerivation();
   states.forEach((state) => {
     let pending = hodlKeyManagerPending.indexOf(state);
     if (pending < 0) return;
@@ -12758,6 +12867,9 @@ function hodlKeyManagerUseAllInStation() {
 function hodlKeyManagerIgnore(state) {
   let identity = keyVaultIdentity(state), station = hodlKeys.indexOf(state), pending = hodlKeyManagerPending.indexOf(state);
   if (station >= 0) {
+    // Removing a station key shifts the active tab; cancel any in-flight
+    // derivation so its commit cannot land on the key that takes its place.
+    hodlInvalidateDerivation();
     hodlKeys.splice(station, 1);
     if (hodlActiveKey > station) hodlActiveKey--;
     else if (hodlActiveKey === station) hodlActiveKey = Math.min(station, hodlKeys.length - 1);
@@ -13670,6 +13782,9 @@ function hodlRenderKeyTabs() {
 }
 function hodlSelectKey(index) {
   if (index === hodlActiveKey || !hodlKeys[index]) return;
+  // Switching tabs mid-derivation must cancel it: the pending commit would
+  // otherwise land on the tab being switched to (the wipe path already does).
+  hodlInvalidateDerivation();
   hodlCaptureKey();
   hodlActiveKey = index;
   hodlRenderKeyTabs();
@@ -13686,6 +13801,9 @@ function hodlDeleteActiveKey() {
     hodlSyncKeyAddButton();
     return;
   }
+  // Removing the active key mid-derivation cancels it, so its commit cannot
+  // land on whatever tab the splice makes active.
+  hodlInvalidateDerivation();
   if (hodlJournalUnlocked()) {
     hodlKeyManagerDetachFromStation(state);
     return;
@@ -14182,6 +14300,9 @@ function hodlRenderMsigTabs() {
 }
 function hodlSelectMsig(index) {
   if (index === hodlActiveMsig || !hodlMsigs[index]) return;
+  // Same mid-derivation guard as the key-tab switch: the pending multisig
+  // commit must not land on the tab being switched to.
+  hodlInvalidateDerivation();
   hodlCaptureMsig();
   hodlActiveMsig = index;
   hodlRenderMsigTabs();
@@ -14198,6 +14319,8 @@ function hodlDeleteActiveMsig() {
     hodlSyncMsigAddButton();
     return;
   }
+  // Same mid-derivation guard as the key-tab delete above.
+  hodlInvalidateDerivation();
   let deletedIndex = hodlActiveMsig, deletedState = state;
   hodlMsigs.splice(deletedIndex, 1);
   hodlNextMsigNumber = hodlMsigs.length ? hodlMsigs.reduce((latest, state) => Math.max(latest, state.number), 0) + 1 : deletedState.number;
@@ -16698,6 +16821,8 @@ async function hodlVanityApplyMatch(index) {
   try {
     let labIndex = hodlFillLabFromKey(state), draft = hodlKeys[labIndex];
     draft.fields.pass = hodlStoredPassphraseBytes(match.passphrase);
+    let definition = hodlScriptTypes.find((candidate) => candidate.script === run.script);
+    if (definition) draft.accountId = draft.fields.script = definition.id;
     if (match.index !== null) {
       draft.fields.account = `${match.index}${run.accountHardened ? "'" : ""}`;
       draft.fields.accountHarden = run.accountHardened;
