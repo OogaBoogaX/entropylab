@@ -12733,6 +12733,9 @@ function hodlKeyManagerUseAllInStation() {
 function hodlKeyManagerIgnore(state) {
   let identity = keyVaultIdentity(state), station = hodlKeys.indexOf(state), pending = hodlKeyManagerPending.indexOf(state);
   if (station >= 0) {
+    // Removing a station key shifts the active tab; cancel any in-flight
+    // derivation so its commit cannot land on the key that takes its place.
+    hodlInvalidateDerivation();
     hodlKeys.splice(station, 1);
     if (hodlActiveKey > station) hodlActiveKey--;
     else if (hodlActiveKey === station) hodlActiveKey = Math.min(station, hodlKeys.length - 1);
