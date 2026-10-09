@@ -115,12 +115,7 @@
       equal(dialog.getAttribute("aria-modal"), "true");
       assert(document.getElementById(dialog.getAttribute("aria-labelledby")), "guide has no accessible title");
       document.getElementById("guide-route-wallet").click();
-      document.getElementById("guide-check").open = true;
-      document.getElementById("guide-answer-0").click();
-      equal(document.getElementById("guide-feedback").dataset.guideCorrect, "false");
-      document.getElementById("guide-answer-1").click();
-      equal(document.getElementById("guide-feedback").dataset.guideCorrect, "true");
-      document.getElementById("guide-story").open = true;
+      assert(!document.getElementById("guide-check"), "quiz precedes concepts");
       assert(document.getElementById("guide-back").disabled, "first step can go backwards");
       document.getElementById("guide-next").click();
       const second = document.getElementById("guide-step").dataset.guideStep;
@@ -129,6 +124,18 @@
       assert(overlay().hidden, "Close left guide visible");
       entry.click(); document.getElementById("guide-resume").click();
       equal(document.getElementById("guide-step").dataset.guideStep, second);
+      while (!document.getElementById("guide-check")) document.getElementById("guide-next").click();
+      document.getElementById("guide-check").open = true;
+      document.getElementById("guide-answer-0").click();
+      equal(document.getElementById("guide-feedback").dataset.guideCorrect, "false");
+      document.getElementById("guide-answer-1").click();
+      equal(document.getElementById("guide-feedback").dataset.guideCorrect, "true");
+      equal(document.activeElement, document.getElementById("guide-feedback"));
+      document.getElementById("guide-next").click();
+      document.getElementById("guide-close").click(); entry.click();
+      assert(!document.getElementById("guide-resume"), "completed lesson resumes its finish screen");
+      document.getElementById("guide-continue-route").click();
+      equal(document.getElementById("guide-step").dataset.guideStep, "keys-methods");
       document.getElementById("guide-contents").click();
       // Every catalog route finishes and can be read again, including availability notes.
       const ids = [...document.querySelectorAll('[data-guide-action="choose"]')].map((node) => node.dataset.guideLesson);
@@ -162,6 +169,38 @@
       equal(document.querySelector('#workspace-tabs [aria-selected="true"]').dataset.workspace, activeTool);
       equal(state.network.length, network);
     } finally {
+      document.getElementById("guide-close")?.click();
+    }
+  });
+
+  await test("guide feedback and finish actions stay usable in a narrow short dialog", () => {
+    const entry = document.getElementById("guide-open"); entry.click();
+    const dialog = document.getElementById("feature-guide-dialog");
+    // Exercise the real scroll container under phone-sized constraints;
+    // separate visual captures use the actual 320px mobile viewport.
+    dialog.style.width = "320px"; dialog.style.maxHeight = "480px";
+    try {
+      document.getElementById("guide-start-basics").click();
+      while (!document.getElementById("guide-check")) document.getElementById("guide-next").click();
+      document.getElementById("guide-check").open = true;
+      document.getElementById("guide-answer-1").scrollIntoView({ block: "center" });
+      document.getElementById("guide-answer-1").click();
+      const content = document.getElementById("guide-content");
+      const feedback = document.getElementById("guide-feedback").getBoundingClientRect();
+      const box = content.getBoundingClientRect();
+      assert(feedback.top >= box.top - 1 && feedback.bottom <= box.bottom + 1, "answer feedback is clipped");
+      equal(document.activeElement, document.getElementById("guide-feedback"));
+      document.getElementById("guide-next").click();
+      const a = document.getElementById("guide-restart").getBoundingClientRect();
+      const b = document.getElementById("guide-route-next").getBoundingClientRect();
+      const gap = b.top >= a.bottom ? b.top - a.bottom : b.left - a.right;
+      const rhythm = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-control"));
+      assert(gap >= rhythm - 1, "finish buttons touch");
+      assert(content.scrollWidth <= content.clientWidth, "narrow guide overflows horizontally");
+      document.getElementById("guide-finish-inspect").click();
+      equal(document.getElementById("guide-step").dataset.guideStep, "inspect-worksheet");
+    } finally {
+      dialog.style.width = ""; dialog.style.maxHeight = "";
       document.getElementById("guide-close")?.click();
     }
   });

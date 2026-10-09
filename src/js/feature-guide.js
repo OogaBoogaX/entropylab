@@ -43,6 +43,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
     return node;
   };
   const close = () => modal?.hide();
+  const nextRouteLesson = (view) => route?.lessons[route.lessons.indexOf(view.lessonId) + 1];
   const ensureModal = () => {
     if (modal) return;
     modal = createModal({
@@ -72,7 +73,13 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
     if (view.mode === "contents") {
       const intro = element("p", hodlTText("Small lessons, at your pace. Start with the basics or pick a feature. No wallet secrets are needed. Your place is kept only until this page is reloaded or left."));
       content.append(intro);
-      if (lesson) content.append(button(hodlTText("Continue learning: {lesson}", { lesson: lesson.title }), "resume", "guide-resume"));
+      if (lesson && view.index < lesson.steps.length) content.append(button(hodlTText("Continue learning: {lesson}", { lesson: lesson.title }), "resume", "guide-resume"));
+      else if (lesson && nextRouteLesson(view)) {
+        const next = lessons.find(item => item.id === nextRouteLesson(view));
+        content.append(button(hodlTText("Continue route: {lesson}", { lesson: next.title }), "continue-route", "guide-continue-route"));
+      }
+      content.append(button(hodlTText("New here? Start with the basics"), "route", "guide-start-basics", "wallet"));
+      content.append(element("p", hodlTText("Read {count} of {total} lessons this session", { count: view.completed.length, total: lessons.length }), "field-note", "guide-session-progress"));
       const choices = (items, action, prefix) => {
         const list = element("div", "", "guide-lessons");
         for (const item of items) {
@@ -97,14 +104,15 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       status.setAttribute("role", "status");
       status.setAttribute("aria-live", "polite");
       content.append(status);
-      if (route) content.append(element("p", hodlTText("Route: {route} · Lesson {step} of {total}", { route: route.title, step: route.lessons.indexOf(view.lessonId) + 1, total: route.lessons.length }), "field-note"));
-      if (["basics", "keys", "settings", "results", "exports", "bip85"].includes(lesson.id)) {
+      if (route) status.textContent = hodlTText("{route} · Lesson {lessonNumber} of {lessonTotal} · {progress}", { route: route.title, lessonNumber: route.lessons.indexOf(view.lessonId) + 1, lessonTotal: route.lessons.length, progress: status.textContent });
+      const currentStep = lesson.steps[view.index];
+      if (currentStep?.diagramStage) {
         const story = element("details", "", "", "guide-story");
         story.append(element("summary", hodlTText("See how the pieces fit")));
         const chain = element("ol", "", "guide-chain");
         const labels = [hodlTText("Your input"), hodlTText("Recovery material"), hodlTText("Keys"), hodlTText("Addresses")];
-        const current = { keys: 0, exports: 1, settings: 2, bip85: 2, results: 3 }[lesson.id] ?? Math.min(3, Math.max(0, view.index - 2));
-        labels.forEach((label, index) => { const node = element("li", label); if (index === current) node.setAttribute("aria-current", "step"); chain.append(node); });
+        const stages = ["input", "recovery", "keys", "addresses"];
+        labels.forEach((label, index) => { const node = element("li", label); node.dataset.guideStage = stages[index]; if (stages[index] === currentStep.diagramStage) node.setAttribute("aria-current", "step"); chain.append(node); });
         story.append(chain, element("p", hodlTText("Your input follows a deterministic recipe into recovery material, keys, and addresses. Settings affect the recipe. This diagram calculates nothing."), "field-note"));
         content.append(story);
       }
@@ -112,9 +120,18 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
         content.dataset.guideComplete = lesson.id;
         focus = element("h3", hodlTText("A little clearer, one lesson at a time"));
         content.append(focus, element("p", hodlTText("You can revisit this lesson whenever you like. Reading a lesson does not certify a wallet, device, or transaction safe.")));
-        content.append(button(hodlTText("Read this lesson again"), "restart", "guide-restart"));
+        const finishActions = element("div", "", "row", "guide-finish-actions");
+        finishActions.append(button(hodlTText("Read this lesson again"), "restart", "guide-restart"));
         const nextId = route?.lessons[route.lessons.indexOf(view.lessonId) + 1];
-        if (nextId) content.append(button(hodlTText("Continue route: {lesson}", { lesson: lessons.find(item => item.id === nextId).title }), "route-next", "guide-route-next", nextId));
+        if (nextId) finishActions.append(button(hodlTText("Continue route: {lesson}", { lesson: lessons.find(item => item.id === nextId).title }), "route-next", "guide-route-next", nextId));
+        content.append(finishActions);
+        content.append(element("h4", hodlTText("Choose another lesson"), "label"));
+        const links = element("div", "", "guide-lessons", "guide-finish-lessons");
+        for (const id of ["keys", "multisig", "inspect", "bip85", "silent", "vanity"]) {
+          const item = lessons.find(item => item.id === id);
+          links.append(button(item.title, "choose", `guide-finish-${id}`, id));
+        }
+        content.append(links);
       } else {
         const step = lesson.steps[view.index];
         const body = element("section", "", "guide-step", "guide-step");
@@ -134,7 +151,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
         }
         content.append(body);
       }
-      const quiz = featureGuideCheck(lesson.id, hodlTText);
+      const quiz = featureGuideCheck(currentStep?.id, hodlTText);
       if (quiz && view.mode === "lesson") {
         const details = element("details", "", "", "guide-check");
         details.append(element("summary", hodlTText("Try a quick check (optional)")), element("p", quiz[0]));
@@ -142,6 +159,8 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
         quiz[1].forEach((answer, index) => answers.append(button(answer, "answer", `guide-answer-${index}`, String(index))));
         const feedback = element("p", "", "field-note", "guide-feedback");
         feedback.setAttribute("role", "status");
+        feedback.setAttribute("aria-live", "polite");
+        feedback.tabIndex = -1;
         details.append(answers, feedback);
         content.append(details);
       }
@@ -183,12 +202,14 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       return;
     }
     if (action === "answer") {
-      const quiz = featureGuideCheck(session.view().lessonId, hodlTText);
+      const quiz = featureGuideCheck(featureGuideLessons().find(item => item.id === session.view().lessonId)?.steps[session.view().index]?.id, hodlTText);
       if (!quiz) return;
       const feedback = document.getElementById("guide-feedback");
       const correct = Number(control.dataset.guideLesson) === quiz[2];
       feedback.dataset.guideCorrect = String(correct);
       feedback.textContent = (correct ? hodlTText("That's right. ") : hodlTText("Take another look. ")) + quiz[3];
+      feedback.focus();
+      feedback.scrollIntoView?.({ block: "nearest" });
       return;
     }
     if (action === "route") {
@@ -196,9 +217,11 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       if (!route) return;
       session.choose(route.lessons[0]);
     }
-    else if (action === "route-next") {
-      const id = route?.lessons[route.lessons.indexOf(session.view().lessonId) + 1];
-      if (!id || session.view().mode !== "complete") return;
+    else if (["route-next", "continue-route"].includes(action)) {
+      const view = session.view();
+      const id = nextRouteLesson(view);
+      const lesson = featureGuideLessons().find(item => item.id === view.lessonId);
+      if (!id || view.index !== lesson?.steps.length) return;
       session.choose(id);
     }
     else if (action === "choose") { route = null; session.choose(control.dataset.guideLesson); }

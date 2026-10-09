@@ -8,11 +8,27 @@ export const featureGuideEntries = [
 ];
 
 export function featureGuideLessons(hodlTText = (text) => text) {
-  const step = (id, title, body, check, limit, example = "", term = null) => ({ id, title, body, check, limit, example, term });
+  const glossary = {
+    "basics-safety": [hodlTText("air gap"), hodlTText("A computer isolated from every network, including Wi-Fi, Bluetooth, and wired connections. The browser cannot prove this isolation.")],
+    "basics-family": [hodlTText("seed phrase"), hodlTText("Recovery words that can rebuild a family of wallet keys. A private key is a spending secret; an address is a destination you can share.")],
+    "basics-input": [hodlTText("entropy"), hodlTText("Unpredictability in the original input. Changing its format or hashing it does not create more unpredictability.")],
+    "basics-recipe": [hodlTText("BIP39 passphrase and derivation path"), hodlTText("A BIP39 passphrase is extra exact text combined with seed words to select a wallet. A derivation path is a sequence of numbered branches leading to a key or address.")],
+    "basics-sharing": [hodlTText("watch-only descriptor and xpub"), hodlTText("A descriptor describes a wallet's address recipe. An xpub is an extended public key: it can derive public keys and addresses for a branch, but cannot spend. Watch-only descriptors contain public information, not spending secrets.")],
+    "basics-check": [hodlTText("master fingerprint and signing device"), hodlTText("A master fingerprint is a short identifier of the root key, not proof of identity. A signing device uses private keys to authorize spending; EntropyLab does not sign.")],
+    "basics-backup": [hodlTText("multisig policy"), hodlTText("The recipe describing which signers belong to a wallet and how many must agree to spend. Keep it with a recovery plan and enough independent signer backups.")],
+    "basics-ready": [hodlTText("PSBT"), hodlTText("A Partially Signed Bitcoin Transaction is a file carrying a proposed transaction and information for signers to review. Reading it is not permission to sign.")],
+  };
+  // Explicit concept metadata: no step-index guesses about what a diagram teaches.
+  const stages = {
+    "basics-family": "keys", "basics-input": "input", "basics-recipe": "recovery", "basics-sharing": "addresses", "basics-backup": "recovery",
+    "keys-methods": "input", "keys-labs": "input", "settings-phrase": "recovery", "settings-path": "keys", "results-recognize": "addresses", "results-edit": "keys",
+    "exports-public": "addresses", "exports-core": "recovery", "exports-transfer": "recovery", "bip85-recipe": "recovery", "bip85-use": "recovery",
+  };
+  const step = (id, title, body, check, limit, example = "", term = null) => ({ id, title, body, check, limit, example, term: term ?? glossary[id], diagramStage: stages[id] });
   return [
     { id: "basics", title: hodlTText("Start with the basics"), summary: hodlTText("Eight steps from your own randomness to checks and backups."), steps: [
       step("basics-safety", hodlTText("First, make a safe place to learn"),
-        hodlTText("Learn without wallet secrets. EntropyLab is experimental. For real recovery material, verify the downloaded HTML and use a trusted computer isolated from all networks."),
+        hodlTText("Learn with practice material only, never real recovery secrets. EntropyLab is experimental and its startup warning is for advanced users only; this guide explains concepts, not readiness to secure funds. Before using real recovery material, follow the repository README’s Verifying the download instructions: compare the HTML with SHA256SUMS.txt for byte integrity, and verify the GitHub/Sigstore artifact attestation for build provenance. The checksum manifest alone does not authenticate the producer. Use a trusted computer isolated from all networks."),
         hodlTText("Keep your seed phrase and private keys put away. This tour needs neither."),
         hodlTText("An Offline label is a browser signal, not proof of an air gap. This app cannot protect a compromised computer, clipboard history, screenshots, or a printer.")),
       step("basics-family", hodlTText("Your wallet is a family of keys"),
@@ -22,7 +38,7 @@ export function featureGuideLessons(hodlTText = (text) => text) {
         hodlTText("An address is a payment destination. A private key is permission to spend. Knowing the destination does not give you permission.")),
       step("basics-input", hodlTText("You bring the randomness"),
         hodlTText("Entropy means unpredictability. You supply dice, coins, cards, or existing recovery material. A fixed recipe turns it into wallet information; EntropyLab never invents secret randomness."),
-        hodlTText("Record the exact input and method. Follow the recommended input amount. Never use a memorable sentence or this guide's examples for funds."),
+        hodlTText("If you record the exact input and method, protect that record like a seed phrase: the rolls or other input plus the recipe can rebuild the wallet. Follow the recommended input amount. Never use a memorable sentence or this guide's practice examples for funds."),
         hodlTText("Hashing cannot add unpredictability. A short transcript can produce a long phrase while still being weak. A dice fairness panel cannot certify that your input is secure."),
         hodlTText("A blender changes ingredients without creating more. Hashing is similar: different-looking output, but weak input stays weak.")),
       step("basics-recipe", hodlTText("Keep the whole recipe"),
@@ -51,12 +67,12 @@ export function featureGuideLessons(hodlTText = (text) => text) {
     ] },
     { id: "keys", tool: "calc", title: hodlTText("Keys: bring your own input"), summary: hodlTText("Choose an input method for your recovery material."), steps: [
       step("keys-methods", hodlTText("Pick the method that matches your material"),
-        hodlTText("Key Station accepts dice, coins, cards, number bases, hex, seed phrases, and existing keys. Record the dice method and rolls. WIF, raw, and mini keys describe individual private keys; extended keys describe a wallet branch."),
+        hodlTText("Key Station offers Dice rolls, Cards, Number bases, Seed phrase, and Private key. For coins choose Binary (Base 2) under Number bases; for hex choose Hexadecimal (Base 16). If you record dice rolls and the method, protect them like a seed phrase: the input plus recipe can rebuild the wallet. WIF, raw, and mini keys describe individual private keys; extended keys describe a wallet branch."),
         hodlTText("Choose your input type. Follow its instructions and warnings before Derive Key."),
         hodlTText("A valid input is not necessarily strong or safe. Recommended roll counts matter; a fairness test is only a statistical hint."),
         "", [hodlTText("What is hex?"), hodlTText("Hexadecimal writes numbers using 0–9 and a–f. It is an encoding, not extra randomness.")]),
       step("keys-labs", hodlTText("Understand previews and lab modes"),
-        hodlTText("Optional method sync shows other representations of your input; it starts off, and hashed inputs sync one way. Brain wallet lab hashes exact typed text into recovery material. It is separate from a BIP39 passphrase."),
+        hodlTText("Sync entropy across methods shows other representations of your input; it starts off, and hashed inputs sync one way. Brain wallet under Private key hashes exact typed text into recovery material. It is separate from a BIP39 passphrase."),
         hodlTText("Explore transformations with worthless examples separate from real wallets."),
         hodlTText("Human-chosen text is often guessable even after hashing into 24 words. The guide never fills seed fields or creates demo wallets.")),
     ] },
@@ -73,7 +89,7 @@ export function featureGuideLessons(hodlTText = (text) => text) {
     ] },
     { id: "results", tool: "calc", title: hodlTText("Keys: results and stations"), summary: hodlTText("Recognize keys, check addresses, and edit station entries."), steps: [
       step("results-recognize", hodlTText("Read the public side first"),
-        hodlTText("Results show a fingerprint, LifeHash picture, public wallet information, and addresses. Address-row QR buttons help comparison without retyping. Private recovery information has a reveal control."),
+        hodlTText("Results show a fingerprint, LifeHash picture, public wallet information, and addresses. Address-row QR buttons help comparison without retyping. The Private data hidden checkbox controls whether private recovery information is concealed. Revealing it exposes secrets."),
         hodlTText("Compare addresses independently; use fingerprints and pictures only as recognition aids."),
         hodlTText("Fingerprints are short and can collide. A matching picture is not authentication, and a QR code does not encrypt its contents.")),
       step("results-edit", hodlTText("Keep new and existing keys straight"),
@@ -204,18 +220,18 @@ export function featureGuideLessons(hodlTText = (text) => text) {
 
 export function featureGuideRoutes(hodlTText = (text) => text) {
   return [
-    { id: "wallet", title: hodlTText("Understand wallets"), lessons: ["basics", "keys", "settings", "results"] },
-    { id: "recovery", title: hodlTText("Prepare for recovery"), lessons: ["exports", "multisig", "session"] },
-    { id: "transaction", title: hodlTText("Understand a transaction"), lessons: ["inspect", "edit", "nonce"] },
-    { id: "advanced", title: hodlTText("Explore advanced tools"), lessons: ["bip85", "silent", "vanity"] },
+    { id: "wallet", title: hodlTText("Understand wallets"), summary: hodlTText("Start with the basics, then learn inputs, settings, and results."), lessons: ["basics", "keys", "settings", "results"] },
+    { id: "recovery", title: hodlTText("Prepare for recovery"), summary: hodlTText("Distinguish public exports from spending backups and plan signer recovery."), lessons: ["exports", "multisig", "session"] },
+    { id: "transaction", title: hodlTText("Understand a transaction"), summary: hodlTText("Read a proposed payment, compare edits, and understand check limits."), lessons: ["inspect", "edit", "nonce"] },
+    { id: "advanced", title: hodlTText("Explore advanced tools"), summary: hodlTText("Learn child recovery material, Silent Payments, and vanity search limits."), lessons: ["bip85", "silent", "vanity"] },
   ];
 }
 export function featureGuideCheck(id, hodlTText) {
   const checks = {
-    basics: [hodlTText("Which lets someone spend bitcoin?"), [hodlTText("A receiving address"), hodlTText("A private key")], 1, hodlTText("An address is a destination you can share. A private key grants spending power and must stay secret.")],
-    exports: [hodlTText("Does a watch-only sheet replace a secret recovery backup?"), [hodlTText("Yes"), hodlTText("No")], 1, hodlTText("Watch-only helps you check addresses. Recovery still needs the original secrets and wallet settings.")],
-    inspect: [hodlTText("Does a completed check mean a transaction is safe to sign?"), [hodlTText("Yes"), hodlTText("No")], 1, hodlTText("A check covers only its stated scope. Independently verify the destination, amount, change, and fee.")],
-    bip85: [hodlTText("Can someone with the parent derive its BIP85 children?"), [hodlTText("Yes"), hodlTText("No")], 0, hodlTText("Protect the parent: access to it threatens all children derived from it.")],
+    "basics-ready": [hodlTText("Which lets someone spend bitcoin?"), [hodlTText("A receiving address"), hodlTText("A private key")], 1, hodlTText("An address is a destination you can share. A private key grants spending power and must stay secret.")],
+    "exports-transfer": [hodlTText("Does a watch-only sheet replace a secret recovery backup?"), [hodlTText("Yes"), hodlTText("No")], 1, hodlTText("Watch-only helps you check addresses. Recovery still needs the original secrets and wallet settings.")],
+    "inspect-verdict": [hodlTText("Does a completed check mean a transaction is safe to sign?"), [hodlTText("Yes"), hodlTText("No")], 1, hodlTText("A check covers only its stated scope. Independently verify the destination, amount, change, and fee.")],
+    "bip85-use": [hodlTText("Can someone with the parent derive its BIP85 children?"), [hodlTText("Yes"), hodlTText("No")], 0, hodlTText("Protect the parent: access to it threatens all children derived from it.")],
   };
   return checks[id];
 }

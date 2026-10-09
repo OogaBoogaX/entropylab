@@ -228,3 +228,29 @@ reproduce pass; desktop/phone dark/light review retains visible navigation
 and no horizontal overflow, including expanded optional sections.
 Final follow-up `npm run build && npm test`: 2,129 passed, zero failed,
 10 skipped; Chrome hosted/offline passes, Firefox/Edge remain unavailable.
+
+### Feedback follow-up (2026-10-09)
+
+Responded to [the submitted beginner review](https://github.com/OogaBoogaX/entropylab/pull/818#issuecomment-6074601934).
+The reviewer’s reported runs are their evidence, not this follow-up’s tests.
+Our Chrome reproduction confirmed clipped quiz feedback and touching desktop
+finish buttons. Shared row spacing and focused/scrolled plain-text feedback
+fix those outcomes, verified at desktop and 320px mobile widths in both themes.
+
+Checks now appear once after the relevant lesson concepts. Completed-route
+reopening offers an explicit next lesson; finish screens offer lesson links.
+A direct basics entry, route summaries, a single combined progress line, and
+first-use glossary terms improve discovery. Diagram stages are assigned to
+concept IDs rather than inferred from step position. Exact UI labels and an
+adjacent seed-equivalent warning clarify recorded-input handling. Download
+instructions distinguish checksum integrity from artifact-attestation
+provenance; they do not describe SHA256SUMS.txt as signed. The advanced-user
+warning remains, and practice examples must never hold real recovery secrets.
+
+Initial new focused regressions failed on early quiz rendering and completed
+route reopening against 00f416b; all 11 focused tests pass after the change.
+Local `npm run build && npm test`: 2,135 passed, zero failed, 10 skipped,
+including all 130 Chrome hosted/offline integration checks. Verify, two-path
+reproduce, and report-only i18n validation pass. Locale catalogs are unchanged.
+Physical-phone, screen-reader, and further independent novice retesting remain
+human validation gaps; desktop mobile emulation does not establish those.

@@ -21,6 +21,9 @@ material. Its security posture rests on the following model:
   not intentionally transmit sensitive data to any server.
 - Optional guide routes, diagrams, and ungraded checks use only bundled public
   content and transient learning state; answers never reach wallet inputs.
+  Original dice/input records plus their recipe can rebuild a wallet and must
+  be protected like seed phrases. Download checksums establish byte integrity;
+  GitHub/Sigstore attestations establish build provenance, not device safety.
 - The optional feature guide renders only bundled, translated plain text. It
   accepts known lesson IDs and keeps only lesson progress in page memory;
   it reads no wallet inputs, saves nothing in browser storage, and makes no

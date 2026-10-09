@@ -177,10 +177,49 @@ test("optional routes advance only explicitly and reject unknown routes", () => 
 }));
 test("optional checks give feedback without advancing or touching wallet data", () => withPage(({ guide, click, doc, opener }) => {
   guide.open('basics', opener);
+  for (let i = 1; i < featureGuideLessons().find(item => item.id === 'basics').steps.length; i++) click('#guide-next');
   const before = doc.getElementById('guide-step').dataset.guideStep;
   click('#guide-answer-0');
   assert.equal(doc.getElementById('guide-feedback').dataset.guideCorrect, 'false');
   click('#guide-answer-1');
   assert.equal(doc.getElementById('guide-feedback').dataset.guideCorrect, 'true');
+  assert.equal(doc.activeElement, doc.getElementById('guide-feedback'));
   assert.equal(doc.getElementById('guide-step').dataset.guideStep, before);
+}));
+
+test("checks appear once after lesson concepts, never on earlier steps", () => withPage(({ guide, click, doc, opener }) => {
+  for (const id of ['basics', 'exports', 'inspect', 'bip85']) {
+    guide.open(id, opener);
+    const lesson = featureGuideLessons().find(item => item.id === id);
+    for (let i = 0; i < lesson.steps.length; i++) {
+      assert.equal(!!doc.getElementById('guide-check'), i === lesson.steps.length - 1, `${id} step ${i}`);
+      click('#guide-next');
+    }
+    assert.equal(doc.getElementById('guide-check'), null);
+  }
+}));
+test("completed route reopening offers the next lesson, while interruptions resume the same step", () => withPage(({ guide, click, doc, opened, opener }) => {
+  guide.open(null, opener); click('#guide-route-wallet');
+  while (doc.getElementById('guide-next')) click('#guide-next');
+  click('#guide-close'); guide.open(null, opener);
+  assert.equal(doc.getElementById('guide-resume'), null);
+  click('#guide-continue-route');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'keys-methods');
+  click('#guide-next'); click('#guide-close'); guide.open(null, opener); click('#guide-resume');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'keys-labs');
+  while (doc.getElementById('guide-next')) click('#guide-next');
+  assert.ok(doc.getElementById('guide-finish-lessons'));
+  click('#guide-finish-bip85');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'bip85-recipe');
+  assert.deepEqual(opened, []);
+}));
+
+test("diagram highlights are bound to concept IDs and first-use basics terms are explained", () => withPage(({ guide, click, doc, opener }) => {
+  guide.open('basics', opener);
+  assert.equal(doc.getElementById('guide-story'), null);
+  click('#guide-next');
+  assert.equal(doc.querySelector('[aria-current="step"]').dataset.guideStage, 'keys');
+  click('#guide-next');
+  assert.equal(doc.querySelector('[aria-current="step"]').dataset.guideStage, 'input');
+  assert.ok(featureGuideLessons().find(item => item.id === 'basics').steps.every(item => item.term?.length === 2));
 }));
