@@ -689,6 +689,49 @@ test("VanityGrinder pool: stop before worker readiness never dispatches key mate
   for (const record of spawns) assert.ok(!record.types.includes("grind"), "no worker ever received the grind job carrying the mnemonic");
 });
 
+// A spawn failure mid-loop must end the run there: no further spawn attempts,
+// and no worker — spawned before the failure and torn down, or hypothetically
+// after it — ever receives the grind job (which carries the key material, by
+// then zeroed) or delivers a match afterwards.
+test("VanityGrinder pool: a mid-loop spawn failure stops the run — no more spawns, no grind jobs, no matches", () => {
+  const spawns = [];
+  let attempts = 0;
+  const failingSpawn = () => {
+    attempts += 1;
+    if (attempts === 2) throw new Error("worker spawn blocked");
+    const record = { types: [], terminated: false, worker: null };
+    record.worker = {
+      onmessage: null,
+      onerror: null,
+      postMessage: (message) => { record.types.push(message?.type); },
+      terminate: () => { record.terminated = true; },
+    };
+    spawns.push(record);
+    return { worker: record.worker, url: null };
+  };
+  const errors = [];
+  const matches = [];
+  const dones = [];
+  const grinder = new VanityGrinder({
+    onError: (message) => errors.push(message),
+    onMatch: (match) => matches.push(match),
+    onDone: (result) => dones.push(result),
+  }, failingSpawn);
+  grinder.start({ method: "passphrase", script: "p2wpkh", prefix: "bc1q", start: 0n, count: 16n, workers: 3, passLen: 1, mnemonic: MNEMONIC, passphrase: PASSPHRASE, path: [84 + H, H, H, 0, 0] });
+  assert.equal(attempts, 2, "the spawn loop stops at the failed worker");
+  assert.equal(errors.length, 1, "the failure is reported once");
+  assert.equal(dones.length, 1);
+  assert.equal(dones[0].stopped, true);
+  assert.equal(spawns.length, 1, "only the pre-failure worker exists");
+  assert.equal(spawns[0].terminated, true, "the pre-failure worker is terminated");
+  // A late "ready" or "progress" from the torn-down worker must not be answered
+  // with the grind job nor surface a match.
+  spawns[0].worker.onmessage?.({ data: { type: "ready" } });
+  spawns[0].worker.onmessage?.({ data: { type: "progress", done: 1n, matches: [{ counter: 0n, passphrase: "a", payload: new Uint8Array(66) }] } });
+  for (const record of spawns) assert.ok(!record.types.includes("grind"), "no worker ever received the grind job");
+  assert.equal(matches.length, 0, "no match is delivered after the failure");
+});
+
 test("VanityGrinder pool runs the passphrase grind and reports the full candidate passphrase", async () => {
   // A found passphrase reads as the starting passphrase followed by the
   // counter odometer string, on the key's own path.

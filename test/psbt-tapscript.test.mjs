@@ -115,11 +115,28 @@ test("disasm treats PUSHDATA opcodes as unknown and misreads their payload", () 
   assert.deepEqual(hodlDisasmTapscript(new Uint8Array()), []);
 });
 
+test("BIP-341 annex rule: only with at least two witness elements may the last element be the annex", () => {
+  // BIP-341: "If there are at least two witness elements, and the first byte
+  // of the last element is 0x50, this last element is called annex a and is
+  // removed from the witness stack." A lone 64-byte witness element starting
+  // with 0x50 is a key-path Schnorr signature, not an annex — about 1 in 256
+  // key-path spends. (psbt-wasm/src/verify.rs applies the same >= 2 rule.)
+  const sig = new Uint8Array(64);
+  sig[0] = 0x50;
+  const keyPath = hodlTapWitnessPath([sig]);
+  assert.equal(keyPath.path, "key", "a lone 0x50-prefixed 64-byte element is the key-path signature");
+  assert.equal(keyPath.annex, null, "a single-element witness has no annex");
+  assert.equal(sig.length, 64, "the signature element is not consumed");
+  const withAnnex = hodlTapWitnessPath([new Uint8Array(64), Uint8Array.of(0x50, 1)]);
+  assert.equal(withAnnex.path, "key");
+  assert.ok(withAnnex.annex, "with two or more elements the 0x50-prefixed last element is the annex");
+});
+
 test("witness path classification handles edge stacks", () => {
   assert.deepEqual(hodlTapWitnessPath([]), { path: "empty", annex: null, control: null, script: null });
   const annexOnly = hodlTapWitnessPath([Uint8Array.of(0x50, 9)]);
-  assert.equal(annexOnly.path, "unknown", "an annex alone is not a spend path");
-  assert.ok(annexOnly.annex, "the annex is still reported");
+  assert.equal(annexOnly.path, "unknown", "a lone 0x50-prefixed element is not a spend path");
+  assert.equal(annexOnly.annex, null, "BIP-341: a single witness element is never the annex");
   assert.equal(hodlTapWitnessPath([new Uint8Array(65)]).path, "key", "65-byte signature with sighash byte");
   assert.equal(hodlTapWitnessPath([new Uint8Array(63)]).path, "unknown", "63 bytes is neither key nor script path");
   const badControl = hodlTapWitnessPath([new Uint8Array(64), Uint8Array.of(0x20, ...new Uint8Array(32)), new Uint8Array(10)]);
