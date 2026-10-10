@@ -417,6 +417,28 @@ through the [computer hardening checklist](docs/Computer_Hardening_Checklist.md)
 
 To build the HTML file yourself, see [Building from source](#building-from-source).
 
+### Feature guide
+
+Choose **Guide** above the tool tabs for an eight-step beginner walkthrough
+or individual feature lessons. **Explain this tool** in each released tool's
+introduction opens its lesson directly. Every step explains the feature,
+what to check, and its limits. No wallet secrets are needed. Optional goal-based
+routes group lessons with summaries; **New here? Start with the basics** opens the beginner route and Browse all lessons keeps direct access. Expandable diagrams
+and ungraded quick checks live only inside Guide and never block progress. Each check appears once, after its lesson concepts. First-use basics terms have expandable explanations.
+
+Back, Contents, Close, and replay are always available. Closing retains your
+place for this page session; **Continue learning** resumes an unfinished lesson. After a route lesson finishes, an explicit **Continue route** action opens the next lesson. Finish screens also link to feature lessons, without opening tools. Reloading or
+leaving the page resets progress. Completing a lesson never removes Guide.
+The lessons are bundled in the downloaded HTML and work without network or
+browser storage. New lesson translations fall back to English until the
+translation workflow fills them.
+
+Reading lessons does not derive, reveal, import, or change wallet material.
+**Open this tool** explicitly leaves the guide and uses normal tool
+navigation, which can change displayed results and runs Vanity's usual
+benchmark on entry. The guide explains limitations; it does not certify a
+wallet, transaction, or computer safe. Lightning and Journal lessons are omitted until their tabs ship.
+
 ### iPhone home-screen app
 
 On iPhone, open [entropylab.online](https://entropylab.online) in Safari, then
