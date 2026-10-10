@@ -6976,6 +6976,42 @@
     button.click();
     assert(!overlay().hidden, "End session did not ask first");
     equal(document.activeElement?.id, "end-session-cancel");
+    // Only Edge adds the quit-Edge warning (#816). The harness names the
+    // engine it launched, independently of the page's own detection.
+    const engine = new URLSearchParams(location.search).get("engine");
+    if (engine) equal(Boolean(overlay().querySelector("#end-session-edge")), engine === "edge");
+    // A short screen keeps the title, End Session and Cancel in view and
+    // scrolls the warning between them. The card is capped at the viewport;
+    // squeezing it to its size on a 320x568 phone exercises the real scroller
+    // in every engine, with a stand-in where the Edge paragraph is absent.
+    {
+      const card = overlay().querySelector("#end-session-dialog"), text = card.querySelector(".end-session-text");
+      const inset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--inset-modal"));
+      const cap = parseFloat(getComputedStyle(card).maxHeight);
+      assert(Math.abs(cap - (innerHeight - 2 * inset)) < 1, `the End session card is not capped at the viewport (max-height ${getComputedStyle(card).maxHeight})`);
+      const standIn = overlay().querySelector("#end-session-edge") ? null : text.appendChild(Object.assign(document.createElement("p"), { textContent: document.getElementById("end-session-message").textContent.repeat(2) }));
+      card.style.width = "272px";
+      card.style.maxHeight = "520px";
+      try {
+        const inside = (node, box) => { const rect = node.getBoundingClientRect(); return rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5; };
+        const cardBox = card.getBoundingClientRect();
+        for (const id of ["end-session-title", "end-session-confirm", "end-session-cancel"]) assert(inside(document.getElementById(id), cardBox), `${id} is cut off on a short screen`);
+        const icon = card.querySelector(".modal-warning-icon").getBoundingClientRect();
+        assert(Math.abs(icon.height - 48) < 0.5, `only the warning may shrink; the icon is ${icon.height}px tall`);
+        assert(text.scrollHeight > text.clientHeight, "the squeezed warning does not scroll");
+        // Scrolling brings each end of the warning into view.
+        const visible = (y, box) => y >= box.top - 0.5 && y <= box.bottom + 0.5;
+        text.scrollTop = text.scrollHeight;
+        assert(visible(text.lastElementChild.getBoundingClientRect().bottom, text.getBoundingClientRect()), "the end of the warning cannot be reached");
+        text.scrollTop = 0;
+        assert(visible(text.firstElementChild.getBoundingClientRect().top, text.getBoundingClientRect()), "the start of the warning cannot be reached");
+      } finally {
+        card.style.width = "";
+        card.style.maxHeight = "";
+        standIn?.remove();
+        text.scrollTop = 0;
+      }
+    }
     document.getElementById("end-session-cancel").click();
     assert(overlay().hidden && document.getElementById("btc-calc") && leaves.length === 0 && closed === 0, "Cancel ended the session");
 

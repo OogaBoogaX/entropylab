@@ -345,8 +345,10 @@ const tail = (file, maxLines = 120) => {
 // concurrently and fail on any failed check in either report.
 const runEngine = (engine, staging, port) => async () => {
   const { downloadDir, onlineProfile, offlineProfile } = stageEngine(engine, staging.workDir);
-  const onlineUrl = `http://127.0.0.1:${port}/browser-tests.html?online-preview=1&test-keys=8`;
-  const offlineUrl = `${pathToFileURL(staging.testHtmlPath).href}?offline-test=1`;
+  // `engine` tells the suite which browser this is, independently of the
+  // page's own detection (End session's Edge warning).
+  const onlineUrl = `http://127.0.0.1:${port}/browser-tests.html?online-preview=1&test-keys=8&engine=${engine.id}`;
+  const offlineUrl = `${pathToFileURL(staging.testHtmlPath).href}?offline-test=1&engine=${engine.id}`;
   const onlineLog = join(staging.workDir, `${engine.id}-online.log`);
   const offlineLog = join(staging.workDir, `${engine.id}-offline.log`);
   const browsers = [

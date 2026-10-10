@@ -24,9 +24,29 @@
 //      showing.
 //
 // Steps 2 and 3 come from the caller, so the suite can drive the sequence.
+//
+// Edge is the exception to "closing the tab is enough". Measured on
+// 2026-10-06 (Windows 11, Edge 154): after Copy seed phrase, Edge's browser
+// process still held 2 or 3 copies of the phrase once the tab closed, until
+// Edge itself was quit. So in Edge the dialog, which everyone sees before
+// the tab closes, also says to quit Edge. Other browsers see no change.
 
 import { t } from "./i18n.js";
 import { createModal } from "./modal.js";
+
+// Microsoft Edge, from its brand in navigator.userAgentData where the browser
+// has one, else the token Edge puts in its user agent: "Edg/" on desktop,
+// "EdgA/" on Android, "EdgiOS/" on iOS. Read on this device only.
+export const isEdge = (nav) => {
+  const brands = nav?.userAgentData?.brands;
+  if (Array.isArray(brands) && brands.some((entry) => entry?.brand === "Microsoft Edge")) return true;
+  return /\bEdg(?:A|iOS)?\//.test(String(nav?.userAgent ?? ""));
+};
+
+// The dialog's extra warning in Edge; null in every other browser.
+export const endSessionEdgeWarning = (nav) => isEdge(nav)
+  ? t("You are using Microsoft Edge. In our tests, Edge kept copies of a copied seed phrase after the tab closed, until Edge itself was quit. Assume it does the same with any secret you copy, such as a private key. Quit Edge completely, and turn off Startup boost and background apps in its System settings.")
+  : null;
 
 // Static card skeleton; its words are set through textContent at init, so no
 // translated text lands in a template attribute.
@@ -108,6 +128,14 @@ export const initEndSessionConfirm = (onEnd) => {
     cancelButton = overlay.querySelector("#end-session-cancel");
   overlay.querySelector("#end-session-title").textContent = t("End this session?");
   overlay.querySelector("#end-session-message").textContent = t("EntropyLab wipes every key, seed and field on this page, empties the clipboard if it copied something, and asks the browser to close this tab. Anything you have not written down or saved is lost.");
+  const edgeWarning = endSessionEdgeWarning(globalThis.navigator);
+  if (edgeWarning) {
+    const paragraph = document.createElement("p");
+    paragraph.id = "end-session-edge";
+    paragraph.textContent = edgeWarning;
+    overlay.querySelector(".end-session-text").append(paragraph);
+    overlay.querySelector("#end-session-dialog").setAttribute("aria-describedby", "end-session-message end-session-edge");
+  }
   confirmButton.textContent = t("End Session");
   cancelButton.textContent = t("Cancel");
   const focusables = [confirmButton, cancelButton];
