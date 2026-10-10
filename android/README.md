@@ -28,7 +28,9 @@ The build and the app both fail closed on the pin:
 - Opens the bundled release HTML in a WebView. There is no URL bar. Loads that are not that asset are ignored. Network loads are blocked, and the manifest does not request `INTERNET`.
 - The launch screen shows the EntropyLab version, the SHA-256 of the embedded HTML, the words `NO NETWORK`, and that this is a calculator, not a wallet, and it does not keep keys.
 - `FLAG_SECURE` is set so the recents thumbnail is blank.
-- Leaving the app finishes the task and kills the process. The next open is a cold start.
+- Rotation, resizing and declared keyboard configuration changes redraw the same live WebView without reloading the calculator. Its session stays only in that in-memory instance.
+- Leaving the app finishes the task and kills the process. The next open is a cold start. Process death and unhandled activity recreation also return to the launch screen.
+- No calculator or view-hierarchy state is saved in an Android saved-state Bundle. Activity destruction detaches and destroys its WebView; this does not prove secure erasure inside the platform.
 - DOM storage and the HTTP cache are off. Nothing is written to a keystore.
 
 ## Build
@@ -55,7 +57,9 @@ java -cp build/pincheck online.entropylab.android.HtmlPinTest
 The Android wrapper workflow explicitly runs the standalone `HtmlPinTest` main,
 builds `assembleDebug`, then hashes the HTML extracted from the APK and checks
 `aapt dump permissions` on the merged APK for zero requested permissions.
-These checks do not establish device lifecycle or WebView behavior.
+The workflow also runs `python3 android/lifecycle-check.py`: the actual wrapper callbacks execute against deterministic Android test doubles, covering launch and repeated rotation, empty saved-state output, background shutdown, cold creation/return and WebView cleanup. The pre-fix test failed because rotation recreated the WebView and discarded disposable input. Dispatch follows [Android’s documented configuration-change contract](https://developer.android.com/develop/adaptive-apps/cookbook/webview-state).
+
+These callback tests are not an emulator and do not establish real device lifecycle or WebView behavior.
 
 Device acceptance still requires opening the calculator, backgrounding and
 returning (a cold launch), rotation, screenshot and recents protection, and

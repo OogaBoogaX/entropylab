@@ -19,6 +19,16 @@ material. Its security posture rests on the following model:
 
 - The tool is self-contained and designed for offline, air-gapped use. It does
   not intentionally transmit sensitive data to any server.
+- The Security log below Important records initial browser-reported
+  connectivity, connectivity changes, and detected browser translation.
+  Its API accepts only fixed event codes, never arbitrary messages, errors,
+  user input or wallet material. The last 100 events and local timestamps
+  stay in page memory; pagehide (including End session) clears them. A
+  back/forward-cache restore starts fresh and retains any latched translation
+  warning. No status probe or log export is sent over the network or saved
+  in browser storage. Browser connectivity does not establish internet
+  reachability or a physical air gap, and the translation marker does not
+  identify the translation service or prove what text it received.
 - The hosted site registers a service worker only on the exact HTTPS
   `entropylab.online` or `www.entropylab.online` origin. It stores only the
   self-contained application entry points in a content-versioned cache so an
@@ -228,7 +238,9 @@ material. Its security posture rests on the following model:
   recovery experiments. EntropyLab does not claim that hashing a short input
   makes it secure. When the entered transcript is below the recommended
   entropy target, the result displays a prominent warning with the estimated
-  supplied entropy and says to use it only for testing. Users who intend to
+  supplied entropy and says to use it only for testing. Both hashed-dice
+  methods recommend 100 rolls for a 24-word seed; 99 rolls still trigger the
+  below-recommendation warning. Users who intend to
   secure funds must meet the displayed roll/card recommendation and verify
   their procedure independently.
 - Brain wallet — lab hashes the exact UTF-8 text with unsalted SHA-256 and
@@ -294,6 +306,12 @@ material. Its security posture rests on the following model:
   (Chromium) to the trusted computing base — a WebView or WebView-update
   compromise is a risk the plain HTML path does not carry. It is a
   debug-build-only artifact and has not been tested on a physical device.
+  Declared rotation/size/keyboard changes redraw the live WebView without
+  persisting its calculator session. Saved-state bundles contain no view or
+  calculator state. Genuine backgrounding still removes the task and kills
+  the process; destruction detaches and destroys the WebView. Process death
+  or unhandled recreation starts at the launch screen. Callback tests use
+  Android test doubles; real device lifecycle and erasure remain unproven.
 
 ## What the page can and cannot erase
 
@@ -322,6 +340,26 @@ PSBT module also wipes the whole-file copies its exports assemble. Vanity
 shuts its workers and their module down when a run ends. The
 browser can still make copies of its own while it manages memory, which the
 page cannot reach.
+
+Private readouts disable browser text selection with `user-select: none`,
+including displayed seed words and per-address WIFs. Copying uses a deliberate
+clipboard icon beside the label or value's table row; clicking the value itself
+does not copy. The controls read the current shown value at activation and do
+not keep secrets in their attributes. Concealed values have no displayed copy
+control. Editable input fields still support normal selection and editing.
+Public derivation values remain selectable and copy when clicked; their labels
+offer a clipboard icon when no QR button is available. Public copy controls
+read the current value, and shortened public previews copy the complete value.
+This reduces accidental selection and copying; it does not hide revealed text
+from the browser, extensions, screenshots, or developer tools, and does not
+protect clipboard history or sync.
+
+Copying can also leave copies in the browser's own processes after End session
+and tab closure. In the Windows 11 measurements described in
+[#816](https://github.com/OogaBoogaX/entropylab/issues/816), Edge 154.0.4258.53
+retained copied seed words until Edge itself quit. Quit the browser completely
+after use; ending its processes releases their memory but does not prove that
+every copy was erased.
 
 **What the page cannot erase.** Some copies stay in the browser's memory
 until the browser reuses that memory. The page can let go of them, but
@@ -377,9 +415,18 @@ EntropyLab uses it:
 
 - Browser translation. Chrome's and Edge's built-in translators send the
   page's text to Google or Microsoft. Everything that shows a seed word, a
-  key or a typed secret is marked `translate="no"`, so it is not sent, and a
-  warning appears if the page is translated anyway. Firefox translates on the
-  device.
+  key or a typed secret is marked `translate="no"`, the preventive opt-out
+  for browsers that honor it. EntropyLab warns when it detects Chrome/Google
+  translation through `translated-ltr` / `translated-rtl` classes on the
+  document root or Edge/Microsoft translation through `_msthash`,
+  `_msttexthash`, or `_mstmutation` attributes anywhere in the document.
+  It checks at initialization and observes relevant attribute changes and
+  inserted subtrees. Detection opens Important, keeps the warning visible
+  even if markers disappear, and records one security-log event through the
+  detection callback. This is best-effort, browser-marker-based detection
+  after the fact, not prevention or proof of which text was sent. The markers
+  are not a security boundary or a guaranteed future browser API. Firefox
+  translates on the device.
 - Writing aids. Edge's text prediction, which sends what you type to
   Microsoft, is off for the whole page. Every field opts out of Grammarly,
   which sends field text to its servers whatever the spell-check setting.
@@ -403,6 +450,14 @@ extension that ignores them, or one written to steal.
   [computer hardening checklist](docs/Computer_Hardening_Checklist.md) gives
   the steps for Windows, macOS and Linux, and the browser settings that copy
   what is on the page.
+- Developers can inspect browser-memory residue with the
+  [residue audit harness](docs/Residue_Audit.md) (`npm run test:residue`),
+  which drives Chrome/Edge with a public fixture, requires a clean baseline
+  and positive controls, and scans process captures for actual derived secrets.
+  The positive capture precedes output and clipboard verification; those
+  checks return digests, never private-key text, through the debugging pipe.
+  Missing captures invalidate the run; uncalibrated needles prove nothing.
+  Its zero is not proof, and automation can add copies — see the doc.
 - Avoid the clipboard for secrets where you can. If you use it, turn off
   clipboard history and sync first.
 - When you are done, press End session in the header. It wipes the page,
@@ -410,9 +465,9 @@ extension that ignores them, or one written to steal.
   EntropyLab copied something there (as far as the page can tell — it
   cannot read the clipboard to check), and asks the browser to close the
   tab.
-  Closing the tab is what erases the copies above: in a 2026-10-03 audit it
-  was the only step that left no copy of a secret in any Chrome or Edge
-  process. A tab you opened straight to the file closes; if it stays open,
+  Closing the tab releases its resources, but the browser's main process can
+  retain copied secrets as described above. A tab you opened straight to the
+  file closes; if it stays open,
   close it yourself. Chrome and Edge keep running after the last window
   closes unless "Continue running background apps" is off in their System
   settings.

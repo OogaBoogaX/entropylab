@@ -140,43 +140,47 @@ air-gapped computer.
 
 - **Bob** owns a hardware wallet but doesn't feel comfortable trusting the
   seed phrase it gave him. He rolls dice, turns the rolls into a new seed
-  phrase with EntropyLab, and loads it onto his hardware wallet. Now he only
-  needs to trust the device for signing transactions.
+  phrase with EntropyLab on an offline computer, and loads it onto his
+  hardware wallet. Now he only needs to trust the hardware wallet for signing
+  transactions.
 - **Alice** has used her hardware wallet for years and wants to be sure her
-  paper backup really restores it. She enters the seed phrase into
-  EntropyLab and confirms that the receive addresses match the ones her
-  wallet shows, without ever restoring it on a second device.
+  paper backup really restores it. She uses EntropyLab on an offline computer
+  to enter the seed phrase and confirm that the receive addresses match the
+  ones her wallet shows, without ever restoring it on a second device.
 - **Carol** is setting up a 2-of-3 multisig with two family members. She
-  collects each co-signer's extended public key, builds the watch-only
-  wallet in EntropyLab, and checks the descriptor and first addresses on
-  every signing device before anyone sends funds to it.
+  collects each co-signer's extended public key, uses EntropyLab to build the
+  watch-only wallet, and checks the descriptor and first addresses on every
+  signing device before anyone sends funds to it.
 - **Dave** has inherited his father's bitcoin: a seed phrase and a note
-  saying "the old wallet". He uses EntropyLab to try the common derivation
-  paths and address types until he finds the addresses that hold the funds,
-  so he knows exactly how to recover them.
+  saying "the old wallet". He uses EntropyLab on an offline computer to try
+  the common derivation paths and address types until he finds the addresses
+  that hold the funds, so he knows exactly how to recover them.
 - **Erin** is about to sign a large transaction prepared on her online
-  computer. Before she signs, she loads her seed and opens the PSBT in
-  EntropyLab, and confirms where the money is going, how much comes back to
-  her as change, and what fee she is paying.
+  computer. Before she signs, she transfers the PSBT and uses EntropyLab on
+  an offline computer to load her seed, inspect the PSBT, and confirm where
+  the money is going, how much comes back to her as change, and what fee she
+  is paying.
 - **Frank** wants a separate wallet on his phone for everyday spending, but
-  doesn't want another backup to manage. He derives a BIP-85 child seed from
-  his main seed in EntropyLab, so the phone wallet can always be recreated
-  from the backup he already has.
+  doesn't want another backup to manage. He uses EntropyLab on an offline
+  computer to derive a BIP-85 child seed from his main seed, so the phone
+  wallet can always be recreated from the backup he already has.
 - **Grace** runs Bitcoin workshops. On a test network, she walks her class
   from a handful of dice rolls to a seed phrase, derivation paths, keys, and
-  addresses, using EntropyLab's interactive UI to show every step on screen
-  instead of describing a black box.
-- **Heidi** is a developer building wallet software. She checks her
-  library's derivations against EntropyLab on regtest, comparing seeds,
-  fingerprints, descriptors, and addresses step by step.
+  addresses. She uses EntropyLab to show every step on screen instead of
+  describing a black box.
+- **Heidi** is a developer building wallet software. She uses EntropyLab to
+  check her library's regtest derivations, comparing seeds, fingerprints,
+  descriptors, and addresses step by step.
 - **Ivan** writes a blog and wants to accept donations with one address he
   can publish once, without every donation landing on the same visible
-  address. He derives a Silent Payment address from his seed in EntropyLab,
-  confirms it matches the one his Silent Payments wallet shows, and adds the
-  DNS record EntropyLab prints to his domain so donors can pay a name instead
-  of a long code.
+  address. He uses EntropyLab on an offline computer to derive a Silent
+  Payment address from his seed and confirm it matches the one his Silent
+  Payments wallet shows. From a separate connected computer, he adds the DNS
+  record EntropyLab prints to his domain so donors can pay a name instead of
+  a long code.
 - **Judy** runs a small shop and wants a payment address customers can
-  recognise at a glance. She uses EntropyLab to search for a vanity address
-  starting with a few letters of her shop's name, derived from her own seed, and writes down
-  the passphrase or account number it finds. The address stays recoverable
-  from her existing backup, with no new key to keep safe.
+  recognise at a glance. She uses EntropyLab on an offline computer to search
+  for a vanity address starting with a few letters of her shop's name,
+  derived from her own seed, and writes down the passphrase or account number
+  it finds. The address stays recoverable from her existing backup, with no
+  new key to keep safe.

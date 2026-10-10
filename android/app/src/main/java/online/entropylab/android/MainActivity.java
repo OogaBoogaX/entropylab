@@ -1,9 +1,11 @@
 package online.entropylab.android;
 
 import android.app.Activity;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.WindowManager;
+import android.view.ViewGroup;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -70,6 +72,34 @@ public final class MainActivity extends Activity {
         findViewById(R.id.launch).setVisibility(android.view.View.GONE);
         page.setVisibility(android.view.View.VISIBLE);
         page.loadUrl("file:///android_asset/entropylab.html");
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        // Keep the existing DOM/JavaScript session only in this live WebView.
+        // Redraw for the new dimensions; never load the asset again here.
+        WebView page = findViewById(R.id.page);
+        if (page != null) page.invalidate();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        // Deliberately omit super: do not serialize view hierarchy or calculator
+        // state into Android's saved-state bundle. Recreation starts at launch.
+    }
+
+    @Override
+    protected void onDestroy() {
+        WebView page = findViewById(R.id.page);
+        if (page != null) {
+            page.stopLoading();
+            if (page.getParent() instanceof ViewGroup) {
+                ((ViewGroup) page.getParent()).removeView(page);
+            }
+            page.destroy();
+        }
+        super.onDestroy();
     }
 
     @Override

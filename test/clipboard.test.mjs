@@ -14,7 +14,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const { copyText } = await import("../src/js/clipboard.js");
+const { copyText, resetCopiedIcon, showCopiedIcon } = await import("../src/js/clipboard.js");
+const { hodlSetLocale } = await import("../src/js/i18n.js");
+const ES = JSON.parse(readFileSync(join(root, "src/locales/es.json"), "utf8"));
 
 // A page with just enough DOM for the fallback: the fields it appends, what
 // execCommand saw selected, and whether each field was emptied and removed.
@@ -217,4 +219,50 @@ test("a clear the browser refuses reports false", async () => {
   assert.equal(await runWith(page, () => module.copyText(PHRASE)), true);
   allow = false;
   assert.equal(await runWith(page, () => module.clearClipboard()), false);
+});
+
+// A boxed copy control, as the confirmation sees it.
+const iconButton = () => {
+  const attributes = {};
+  return {
+    innerHTML: "", title: "", isConnected: true,
+    classList: { add() {}, remove() {} },
+    setAttribute(name, value) { attributes[name] = String(value); },
+    getAttribute(name) { return name in attributes ? attributes[name] : null; },
+  };
+};
+
+// The labels are set from script, after the boot i18n sweep has run, so they
+// have to come from the translator: in a translated page the check and the
+// label it returns to are both in that language.
+test("the copy check and the label it returns to read in the page's language", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  hodlSetLocale("es", false);
+  try {
+    const button = iconButton();
+    showCopiedIcon(button, { copyIcon: "<copy>", copiedIcon: "<check>" });
+    assert.equal(button.getAttribute("aria-label"), ES.Copied, "the check's label is not in the page's language");
+    assert.equal(button.title, ES.Copied);
+    t.mock.timers.tick(1600);
+    assert.equal(button.innerHTML, "<copy>");
+    assert.equal(button.getAttribute("aria-label"), ES.Copy, "the label the check returns to is not in the page's language");
+    assert.equal(button.title, ES.Copy);
+  } finally {
+    hodlSetLocale("en", false);
+  }
+});
+
+// A dialog that opens again resets its copy control; the check's pending
+// return must not fire afterwards and overwrite the label it was given.
+test("a reset restores the icon and label and cancels the check's pending return", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const button = iconButton();
+  showCopiedIcon(button, { copyIcon: "<copy>", copiedIcon: "<check>", label: "Copy URL" });
+  resetCopiedIcon(button, { copyIcon: "<copy>", label: "Copy URL" });
+  assert.equal(button.innerHTML, "<copy>");
+  assert.equal(button.getAttribute("aria-label"), "Copy URL");
+  assert.equal(button.title, "Copy URL");
+  button.setAttribute("aria-label", "relabelled after the reset");
+  t.mock.timers.tick(1600);
+  assert.equal(button.getAttribute("aria-label"), "relabelled after the reset", "the cancelled return still fired");
 });

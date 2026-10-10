@@ -3,7 +3,8 @@
 EntropyLab is a self-contained Bitcoin key and wallet calculator designed for
 offline, air-gapped use. It converts user-supplied entropy, seed phrases, and
 private keys into wallet recovery information without intentionally sending
-sensitive data to a server.
+sensitive data to a server. The whole application is one HTML file, and its
+markup passes the W3C HTML validator with zero errors.
 
 Current version: **v1.0.0**
 
@@ -27,12 +28,25 @@ import from restoring cleared secrets. Locking the journal also invalidates
 pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
 
+- A live **Security log** below Important shows the browser's initial
+  connection status, online/offline changes, and detected browser translation
+  with local timestamps. It keeps the last 100 fixed messages in page memory,
+  records no wallet data, and clears when the session ends or the page is left.
+  It sends no network probes; an Offline report is not proof of an air gap.
+  Translation detection uses Chrome/Google's `translated-ltr` /
+  `translated-rtl` document-root classes or Edge/Microsoft's `_msthash`,
+  `_msttexthash`, or `_mstmutation` DOM attributes. This is best-effort
+  detection after the fact using browser markers, not prevention or a
+  guaranteed future browser API. Secret-bearing surfaces retain the
+  preventive `translate="no"` opt-out; see [SECURITY.md](SECURITY.md).
+
 - Accepts dice rolls, coin flips, playing-card transcripts, number-base
   transcripts (binary through base64), hexadecimal entropy, BIP39 seed
   phrases, extended keys, WIF keys, raw private keys, and Casascius mini
   private keys. Optional live chi-squared fairness analysis flags biased dice
   as rolls are entered for hashed-dice and BitBox input. D++ omits the panel
   because a complete transcript cannot reach the panel's Pearson threshold.
+  Both hashed-dice methods recommend 100 rolls for a 24-word seed phrase.
   All five BIP39 phrase lengths (12, 15, 18, 21, and 24 words) are supported
   for every entropy entry method. A separate **Brain wallet — lab** mode hashes
   exact UTF-8 text with SHA-256 and uses the 32-byte digest as 256-bit BIP39
@@ -57,6 +71,18 @@ the limits of browser-memory cleanup.
   ranges. The default derives receive and change branches `{0-1}` and address
   indexes `{0-9}`, displayed as a full BIP-88 path template. Typing `h` or `'`
   after a preset index enables its Harden control.
+  Derived HD keys with a root private key offer an optional **Match derivation
+  purpose to script type** checkbox. It starts checked when the entered purpose
+  matches the selected script type's standard hardened purpose; a different
+  purpose or hardening starts unchecked. When checked, it derives each
+  script type at its standard hardened purpose (44h, 49h, 84h, or 86h), keeping
+  the rest of the path and ranges unchanged. Unchecking restores the original
+  purpose and its hardening. Paths, keys, addresses, and exports update together;
+  account-level imports and public-only roots cannot use this option.
+  With matching checked, viewing a script tab also updates the input purpose
+  and derivation path; **Edit Input** starts from that displayed path. For
+  example, viewing Taproot changes the input purpose to `86h`; entering an
+  `84h` path while Taproot remains selected starts the next key unchecked.
  - Supports numeric coin-type and account indexes for single-signature and
    multisignature derivation. Purpose, coin type, and account indexes are
    hardened by default; the starting address index is unhardened by default.
@@ -348,6 +374,18 @@ the limits of browser-memory cleanup.
   re-prefixed only when the path/script match: x = legacy, y = nested BIP49,
   z = native BIP84, Y = nested BIP48 multisig, Z = native BIP48 native-msig.
   Testnet uses t / u / v / U / V. There is no Taproot SLIP prefix.
+- Displayed private recovery material cannot be highlighted. Use the clipboard
+  icon beside its label (or in its table row) to copy it. This covers seed-word
+  previews, WIFs, extended private keys, private descriptors, entropy and seed
+  hex, BIP-85 children, Silent Payments and Lightning secrets, and Journal
+  readouts. Clipboard icons appear only when their private values are revealed;
+  successful copying briefly shows a green checkmark. Editable input fields
+  retain normal text editing.
+- Public derivation values remain highlightable and copy when clicked.
+  Their labels provide a compact clipboard icon where there is no QR button;
+  QR-backed values keep their QR action without a duplicate clipboard icon.
+  This includes fingerprints, public keys, extended public keys, descriptors,
+  and addresses across the derivation tools.
 - Gates each release behind a two-step disclaimer: the first step warns that
   the software is experimental, and the second names what the browser cannot
   protect (keys paged to disk, clipboard history, memory surviving close) and
@@ -410,7 +448,9 @@ displays the bundled asset, so its offline guarantee comes from the platform,
 not from the page alone. The trade-off is that the Android WebView (Chromium)
 becomes part of the trusted computing base. It is a locally built debug
 package, not a distributed app, and has not been tested on a physical device.
-Build instructions and the pin-update procedure are in
+Rotation redraws the same in-memory WebView; genuine backgrounding ends the
+process and returns to a cold launch. No calculator state is serialized for
+activity or process restoration. Build instructions and the pin-update procedure are in
 [android/README.md](android/README.md).
 
 ### Verifying the download
@@ -621,9 +661,10 @@ npm ci
 npm run build
 ```
 
-To modify the Rust bindings (`entropylab-wasm/`, `psbt-wasm/`), Rust (with the
-`wasm32-unknown-unknown` target, installed automatically by rustup) is also
-required; regenerate the committed artifacts with `npm run build:wasm`.
+To modify the Rust bindings (`entropylab-wasm/`, `psbt-wasm/`, `vanity-wasm/`),
+Rust (with the `wasm32-unknown-unknown` target, installed automatically by
+rustup) is also required; regenerate the committed artifacts with
+`npm run build:wasm`.
 
 Build output (generated; CI rebuilds it for every run and commits it back to
 `rock` after each merge so the file stays downloadable from the repository):

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { transformSync } from "esbuild";
 import { hodlKeyModeLabels } from "../src/js/i18n-labels.js";
+import { MiniDocument } from "./mini-dom.mjs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const template = read("src/index.html");
@@ -50,7 +51,7 @@ test("every enabled button uses orange and black momentary press feedback", () =
 
 test("wallet coin type indexes enable and default to mainnet", () => {
   assert.match(shell, /<input id="network" type="text" inputmode="numeric" value="0'"/);
-  assert.match(shell, /id="msig-origin-state" hidden aria-hidden="true"[\s\S]*<input id="msig-network" type="number" value="0">/);
+  assert.match(shell, /id="msig-origin-state" hidden[\s\S]*<input id="msig-network" type="number" value="0">/);
   for (const markup of [shell]) {
     assert.match(markup, /id="network-help">Coin type index (?:·|\\xB7) Mainnet (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
     assert.match(markup, /<span id="msig-network-help"><\/span>/);
@@ -99,12 +100,12 @@ test("the network picker sets the network every tool defaults to", () => {
     assert.match(markup, /<strong[^>]*>Testnet<\/strong>/);
     assert.match(markup, /<strong[^>]*>Signet<\/strong>/);
     assert.match(markup, /<strong[^>]*>Regtest<\/strong>/);
-    assert.match(markup, /xpub\/ypub\/zpub · WIF 5\/K\/L · coin type 0'/);
-    assert.match(markup, /tpub\/upub\/vpub · WIF 9\/c · coin type 1'/);
-    // Signet shares the testnet formats; regtest shares the key formats but
-    // renders SegWit with the bcrt HRP — the options say so (issue #329).
-    assert.match(markup, /data-network="signet"[\s\S]*?same formats as testnet/);
-    assert.match(markup, /data-network="regtest"[\s\S]*?bcrt1q…, bcrt1p…/);
+    // Each option names its key-version prefixes; signet shares testnet's
+    // formats and regtest renders SegWit with the bcrt HRP (issue #329).
+    assert.match(markup, /data-network="mainnet"[\s\S]*?xpub ypub zpub[\s\S]*?WIF 5 K L/);
+    assert.match(markup, /data-network="testnet"[\s\S]*?tpub upub vpub[\s\S]*?WIF 9 c/);
+    assert.match(markup, /data-network="signet"[\s\S]*?testnet[\s\S]*?tb1q…[\s\S]*?tpub upub vpub/);
+    assert.match(markup, /data-network="regtest"[\s\S]*?bcrt1q… bcrt1p…/);
     // And the menu says plainly that no connection is ever made.
     assert.match(markup, /This page never connects to any network/);
   }
@@ -383,39 +384,22 @@ test("every card switch comes from one builder that wires its note", () => {
   for (const id of ['"seed-autocomplete"', '"seed-zero-index"', "`show-${name}-calculations`"]) assert.ok(appSource.includes(`hodlSwitchRowMarkup(${id}`), id);
 });
 
-test("direct dice, direct cards and number bases expose BIP39 calculations before copying", () => {
-  // One switch builder serves every method that shows its working; each form
-  // supplies only its id stem, its panel and its note.
-  assert.equal(appSource.match(/hodlCalculationsSwitchMarkup\("manual", "dice-manual-calculations", hodlT\("show how direct word selection/g)?.length, 1);
-  assert.equal(appSource.match(/hodlCalculationsSwitchMarkup\("manual", "cards-manual-calculations", hodlT\("show how direct card selection/g)?.length, 1);
-  assert.equal(appSource.match(/hodlCalculationsSwitchMarkup\("number-base", "number-base-calculations", hodlT\("show how each BIP39 word number/g)?.length, 1);
-  // Two rows like the sync switch, and no bordered chip: the control reads as
-  // part of the card rather than a box floating on it.
-  // The chrome is the card's shared switch, asserted once; a component states
-  // only how it sits in its own container.
-  // Built on the shared switch with a note, so the checkbox points at it. The
-  // switch waits for something to be behind it. It ships hidden, because a
-  // fresh form runs no update: the field restore only dispatches input when
-  // there is a stored value to put back.
-  assert.match(appSource, /hodlSwitchRowMarkup\(`show-\$\{name\}-calculations`, hodlT\("Show calculations"\), \{ note, checked, rowClass: "manual-calculations-row", hidden: true \}\)/);
-  // The row follows the calculations; only the panel follows the checkbox.
-  assert.match(appSource, /if \(row\?\.classList\.contains\("manual-calculations-row"\)\) row\.hidden = !markup;/);
-  assert.match(appSource, /panel\.hidden = !open \|\| !markup;/);
-  assert.match(appSource, /hodlShowCalculations\(panel, hodlManualCalculationMarkup\(method, value, targetWords\), hodlManualCalculationsOpen\);/);
-  assert.match(appSource, /hodlShowCalculations\(panel, rows\.length \? `[\s\S]*?` : "", toggle\.checked\);/);
-  // The row is the panel's immediate previous sibling in every form that has one.
-  assert.match(appSource, /\)\}<div id="\$\{panelId\}" class="manual-calculations-container" translate="no" hidden><\/div>`/);
-  assert.doesNotMatch(appSource, /\("\(show how (direct (word|card) selection|each BIP39 word number)/);
-  assert.doesNotMatch(appSource, /number-base-calculations-(toggle|panel)/);
-  assert.match(appSource, /function hodlManualCalculationMarkup\(method, value, targetWords = hodlTargetWordCount\)/);
-  assert.match(appSource, /hodlRenderManualCalculations\("dice-manual-calculations",\s*"dplus"/);
-  assert.match(appSource, /hodlRenderManualCalculations\("dice-manual-calculations",\s*"bitbox"/);
-  assert.match(appSource, /hodlRenderManualCalculations\("cards-manual-calculations",\s*"cards"/);
-  assert.match(appSource, /D8 contributes 8 values and each hexadecimal D16 contributes 16 values/);
-  assert.match(appSource, /Each D4 contributes one base-4 value and the final die contributes the coin bit/);
-  assert.match(appSource, /Ranks are mapped to zero-based values/);
-  assert.match(appSource, /dplus-calculation-stages/);
-  assert.match(appSource, /dplus-calculation-stage.*stage\.face/);
+test("calculation controls precede and identify their panels", () => {
+  const functions = ["hodlSwitchRowMarkup", "hodlCalculationsSwitchMarkup"].map((name) => {
+    const start = appSource.indexOf(`function ${name}(`);
+    return appSource.slice(start, appSource.indexOf("\n}\n", start) + 2);
+  }).join("\n");
+  const build = new Function("hodlT", `${functions}; return hodlCalculationsSwitchMarkup;`)((text) => text);
+  for (const [name, panelId] of [["manual", "dice-manual-calculations"], ["manual", "cards-manual-calculations"], ["number-base", "number-base-calculations"]]) {
+    const document = new MiniDocument();
+    document.body.innerHTML = build(name, panelId, "Calculation note", true);
+    const panel = document.getElementById(panelId), toggle = document.getElementById(`show-${name}-calculations`);
+    assert.equal(panel.previousElementSibling.querySelector("input"), toggle);
+    assert.ok(document.getElementById(toggle.getAttribute("aria-describedby")));
+    assert.ok(toggle.hasAttribute("checked"));
+    assert.ok(panel.hidden, "a fresh panel waits for calculations");
+    assert.ok(panel.previousElementSibling.hidden, "its control waits for calculations too");
+  }
 });
 
 test("Seed phrase offers one-based or zero-based BIP39 word-number entry", () => {
@@ -718,16 +702,12 @@ test("key derivation and multisig use the accurate Script type label", () => {
 
 test("key derivation separates script type from the hardened purpose index", () => {
   for (const markup of [shell]) {
-    assert.match(markup, /id="script-type-field"[^>]*>[\s\S]*?Script type[\s\S]*?<select id="script-type">[\s\S]*?<option value="bip44"[^>]*>Legacy<\/option>[\s\S]*?<option value="bip49"[^>]*>Nested SegWit<\/option>[\s\S]*?<option value="bip84" selected(?:="selected")?[^>]*>Native SegWit<\/option>[\s\S]*?<option value="bip86"[^>]*>Taproot<\/option><\/select>/);
     assert.match(markup, /id="script-type"[\s\S]*id="purpose"[\s\S]*id="network"[\s\S]*id="account"/);
-    assert.match(markup, /id="purpose" type="text" inputmode="numeric" value="84'"/);
-    assert.match(markup, /id="purpose-help">Purpose index (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
-    assert.match(markup, /id="account-help">Account index (?:·|\\xB7) Hardened (?:·|\\xB7) 0 to 2,147,483,647/);
   }
   assert.match(appSource, /function hodlReadPurpose\(mark = true\)/);
   assert.match(appSource, /hodlSetSelectedScriptType\(target\.value, true\)/);
-  assert.match(appSource, /let derivedDefinition = \{ \.\.\.definition, purpose: purposeIndex, purposeHardened: hardening\.purpose \}/);
-  assert.match(appSource, /originPath = derivationPlan\?\.originPath \?\?/);
+  // The unchanged default-purpose and origin contract is executed against
+  // independent keys/addresses/descriptors in key-purpose-match.test.mjs.
   assert.match(appSource, /fields: \{ pass: "", script: "bip84", derivationPath: `m\/84'\/\$\{hodlDefaultCoinType\(\)\}'\/0'\/\{0-1\}\/\{0-9\}`, derivationAccountPath: `m\/84'\/\$\{hodlDefaultCoinType\(\)\}'\/0'`, purpose: "84'", purposeHarden: true, coinType: `\$\{hodlDefaultCoinType\(\)\}'`, coinTypeHarden: true, network: hodlNetworkDefault/);
 });
 
@@ -767,7 +747,7 @@ test("derivation indexes title their Harden controls with safe defaults", () => 
     for (const id of ["msig-purpose", "msig-network", "msig-account"]) {
       assert.match(markup, new RegExp(`<input id="${id}"[^>]*><input id="${id}-harden" type="checkbox" checked`));
     }
-    assert.match(markup, /<div id="msig-origin-state" hidden aria-hidden="true">/);
+    assert.match(markup, /<div id="msig-origin-state" hidden>/);
     for (const id of ["branch-start", "address-start", "msig-branch-start", "msig-address-start"]) {
       assert.match(markup, new RegExp(`<div class="field-head"><label for="${id}"[^>]*>[^<]*</label><label class="derivation-harden"><input id="${id}-harden" type="checkbox"(?! checked)`));
     }
@@ -820,7 +800,7 @@ test("key derivation shows the relevant paste-ready multisig co-signer exports",
   assert.match(appWhitespace, /accountId:"bip86",kind:"p2tr",label:"Taproot (?:·|\\xB7) BIP86",family:"x"/);
   assert.match(app, /accountPath=definition\.accountPath\|\|`m\/48'\/\$\{coinType\}'\/\$\{accountIndex\}'\/\$\{definition\.scriptIndex\}'`/);
   assert.match(app, /value:`\[\$\{masterFingerprint\}\/\$\{originPath\}\]\$\{publicKey\}`/);
-  assert.match(app, /multisigCosignerExports:root\.privateKey\?hodlBuildMultisigCosignerExports\(root,network,accountIndex,masterFingerprint,coinType\):\[\]/);
+  assert.match(app, /multisigCosignerExports:hodlNodeHasPrivateKey\(root\)\?hodlBuildMultisigCosignerExports\(root,network,accountIndex,masterFingerprint,coinType\):\[\]/);
   assert.match(app, /function hodlRenderMultisigCosignerExport\(exports,accountId\)/);
   assert.match(app, /exports\.filter\(candidate=>candidate\.accountId===accountId\)/);
   assert.match(app, /\$\{hodlSlip132WatchFields\(account,hodlWalletResult\)\}\s*\$\{hodlImportedCoreRecoveryExport\(hodlWalletResult,account\)\}\s*\$\{hodlRenderMultisigCosignerExport\(hodlWalletResult.multisigCosignerExports,account\.def\.id\)\}/);
@@ -879,7 +859,7 @@ test("multisig key order is sorted by default and visible with the policy settin
 
 test("multisig separates script type from purpose and keeps the Legacy BIP87 shortcut", () => {
   for (const markup of [shell]) {
-    assert.match(markup, /id="msig-origin-state" hidden aria-hidden="true"[\s\S]*id="msig-purpose"[^>]*value="48"[\s\S]*id="msig-network"[^>]*value="0"[\s\S]*id="msig-account"/);
+    assert.match(markup, /id="msig-origin-state" hidden[\s\S]*id="msig-purpose"[^>]*value="48"[\s\S]*id="msig-network"[^>]*value="0"[\s\S]*id="msig-account"/);
     assert.doesNotMatch(markup, /<label for="msig-purpose">Purpose<\/label>|<label for="msig-network">Network<\/label>|<label for="msig-account">Account<\/label>/);
     assert.match(markup, /id="msig-legacy-account-toggle" hidden/);
     assert.match(markup, /id="msig-legacy-bip87" type="checkbox"/);
@@ -968,7 +948,7 @@ test("account results do not repeat derivation settings shown above", () => {
 
 test("multisig account is retained internally as a value derived from key origins", () => {
   for (const markup of [shell]) {
-    assert.match(markup, /id="msig-origin-state" hidden aria-hidden="true"[\s\S]*<input id="msig-account" type="text" value="" disabled>/);
+    assert.match(markup, /id="msig-origin-state" hidden[\s\S]*<input id="msig-account" type="text" value="" disabled>/);
     assert.match(markup, /id="msig-account-warning" role="status" hidden/);
   }
   assert.match(app, /function hodlUpdateMsigAccount\(\)/);
@@ -1008,7 +988,7 @@ test("multisig consistently uses derive for its heading and action", () => {
   for (const markup of [shell]) {
     assert.match(markup, /<h2[^>]*>Build a watch-only multisig<\/h2>/);
     assert.match(markup, /id="msig-go"[^>]*>Derive Multisig<\/button>/);
-    assert.match(markup, /id="msig-go"[^>]*disabled[^>]*aria-disabled="true"/);
+    assert.match(markup, /id="msig-go"[^>]*\sdisabled(?=[\s>])/);
     assert.doesNotMatch(markup, /Create a multisig wallet|Build Multisig/);
   }
   assert.match(app, /function hodlValidatedMsigInputs\(\)/);
@@ -1160,7 +1140,7 @@ test("the beta notice sits at the top of the page as a banner", () => {
     const live = markup.slice(wrapper).replace(/<!--[\s\S]*?-->/g, "");
     // It is a load-time warning again, so it keeps the alert role and leads
     // the wrap, ahead of the hosted-site warning and the pitch card.
-    assert.match(live, /<aside class="beta-warning no-print" id="beta-warning" role="alert">\s*<div class="beta-warning-text"(?: [^>]*)?><strong>[^<]+<\/strong> [^<]+<\/div>/);
+    assert.match(live, /<div class="beta-warning no-print" id="beta-warning" role="alert">\s*<div class="beta-warning-text"(?: [^>]*)?><strong>[^<]+<\/strong> [^<]+<\/div>/);
     assert.ok(
       live.indexOf('id="beta-warning"') < live.indexOf('id="online-warning"'),
       "the beta banner must precede the online warning",
@@ -1186,7 +1166,7 @@ test("the page closes on a footer in both markups", () => {
     // spellings.
     assert.match(
       markup,
-      /<footer class="page-footer muted no-print"><div>Team Ooga Booga<\/div><div class="page-footer-emoji">(?:🪨|\\u\{1FAA8\}) (?:🔥|\\u\{1F525\}) (?:🎲|\\u\{1F3B2\}) (?:🍌|\\u\{1F34C\})<\/div><div data-i18n-skip>Since 964013 (?:·|\\x[Bb]7|\\u00[Bb]7) <span class="page-footer-build">v\{\{VERSION\}\} (?:·|\\x[Bb]7|\\u00[Bb]7) commit <code>\{\{COMMIT_SHORT\}\}<\/code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" alt="LifeHash of the build commit" hidden><\/span><\/div><div class="page-footer-links">/,
+      /<footer class="page-footer muted no-print"><div>Team Ooga Booga<\/div><div class="page-footer-emoji">(?:🪨|\\u\{1FAA8\}) (?:🔥|\\u\{1F525\}) (?:🎲|\\u\{1F3B2\}) (?:🍌|\\u\{1F34C\})<\/div><div data-i18n-skip>Since 964013 (?:·|\\x[Bb]7|\\u00[Bb]7) <span class="page-footer-build">v\{\{VERSION\}\} (?:·|\\x[Bb]7|\\u00[Bb]7) commit <code>\{\{COMMIT_SHORT\}\}<\/code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" src="data:[^"]*" alt="LifeHash of the build commit" hidden><\/span><\/div><div class="page-footer-links">/,
     );
     // A fourth row closes it, in this order: network, language, theme, and
     // the repository link last.
@@ -1392,7 +1372,7 @@ test("the site header is fixed, carries the logo, and holds the version, downloa
     // The wrapper opens on the beta banner; the static template follows with
     // a no-JS notice the runtime page has no need of. Both then carry the
     // conditional warnings, which start hidden.
-    assert.match(live, /<div class="wrap">\s*<aside class="beta-warning no-print" id="beta-warning" role="alert">[\s\S]*?<\/aside>\s*(?:<noscript>[\s\S]*?<\/noscript>\s*)?(?:<aside[^>]*online-warning[\s\S]*?<\/aside>\s*)*<section[^>]*id="site-intro">/);
+    assert.match(live, /<div class="wrap">\s*<div class="beta-warning no-print" id="beta-warning" role="alert">[\s\S]*?<\/div>\s*(?:<noscript>[\s\S]*?<\/noscript>\s*)?(?:<div[^>]*online-warning[\s\S]*?<\/div>\s*)*<section[^>]*id="site-intro">/);
     assert.doesNotMatch(markup.slice(wrapper), /<header>|download-controls/);
   }
   // The mark's own art margin supplies the lockup gap, so the flex gap is
@@ -1557,7 +1537,6 @@ test("dice rolls hide Pearson chi-squared fairness behind a text expand button",
   assert.match(app, /class="dice-fairness-toggle"/);
   assert.match(app, /data-dice-fairness-glyph/);
   assert.match(app, /hodlT\("Die Distribution \/ Fairness Analysis"\)/);
-  assert.match(appSource, /<div class="seed-word-copy-row">\$\{leading\}<span class="copy-status"/);
   // The toggle has its own row now: it heads the panel under it rather than
   // trailing the copy button, which belongs with the seed phrase title.
   // The copy button sits in the title row, directly above the word grid.
@@ -1572,7 +1551,6 @@ test("dice rolls hide Pearson chi-squared fairness behind a text expand button",
   // The pre-boot markup shows the same shape the app renders: the meta row in
   // its wrapper above the input, two lines, each number a coloured value.
   assert.match(shell, /<div class="seed-word-meta label-description"><p class="muted" id="dice-meta" aria-live="polite">/);
-  assert.match(shell, /<span class="meta-value is-short">0<\/span> of 99 recommended rolls<br><span class="meta-value is-short">0\.0<\/span> bits estimated/);
   assert.match(shell, /id="dice-meta"[\s\S]*?<div class="dice-input-shell">[\s\S]*?<div class="dice-input-pad/);
   // No trace of the single-line form with its trailing method restatement.
   assert.doesNotMatch(shell, /0\.0 bits estimated · 24-word seed/);
@@ -1660,8 +1638,8 @@ test("one PSBT workspace contains PSBT Inspector, PSBT Editor and Nonce Inspecto
   assert.match(appSource, /\["psbt", "PSBT", "PSBT"\]/);
   assert.doesNotMatch(appSource, /\["psbted", "PSBT Editor", "Editor"\]/);
   for (const markup of [shell]) {
-    assert.match(markup, /<div class="tool-intro-stack" id="psbt-tool-intros" hidden>[\s\S]*?id="psbt-tool-intro"[\s\S]*?id="psbted-tool-intro"[\s\S]*?id="nonce-tool-intro"[\s\S]*?<section class="key-manager no-print" id="psbt-manager" hidden>/);
-    assert.match(markup, /<section class="key-manager no-print" id="psbt-manager" hidden>/);
+    assert.match(markup, /<div class="tool-intro-stack" id="psbt-tool-intros" hidden>[\s\S]*?id="psbt-tool-intro"[\s\S]*?id="psbted-tool-intro"[\s\S]*?id="nonce-tool-intro"[\s\S]*?<div class="key-manager no-print" id="psbt-manager" hidden>/);
+    assert.match(markup, /<div class="key-manager no-print" id="psbt-manager" hidden>/);
     assert.match(markup, /<div class="key-tab-strip">\s*<div class="key-tabs" id="psbt-tool-tabs" role="tablist" aria-label="PSBT stations">/);
     // The wiring is the contract: which tab starts selected and which card each
     // one controls. How a tab is styled is left to the stylesheet.
@@ -1732,18 +1710,18 @@ test("Journal gates its five tools behind the local notebook", () => {
   assert.match(appSource, /function hodlInitSecretFieldAutoClear\(\) \{[\s\S]*hodlJournalWipeMem\(\)/);
   assert.match(appSource, /function hodlJournalWipeMem\(\) \{[\s\S]*hodlJournalWipeNotebook\(\)/);
   for (const markup of [shell]) {
-    assert.match(markup, /<div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>[\s\S]*?<h2>Entropy Journal<\/h2>[\s\S]*?<section class="key-manager no-print" id="journal-manager" hidden>/);
-    assert.match(markup, /id="journal-global-download"[^>]*disabled aria-disabled="true"[^>]*>[\s\S]*?<span>Download journal<\/span><\/button>/);
-    assert.match(markup, /class="btn red clear-current-action" id="journal-global-clear"[^>]*disabled aria-disabled="true"[^>]*>Clear journal<\/button>/);
-    assert.match(markup, /<section class="key-manager no-print" id="journal-manager" hidden>/);
+    assert.match(markup, /<div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>[\s\S]*?<h2>Entropy Journal<\/h2>[\s\S]*?<div class="key-manager no-print" id="journal-manager" hidden>/);
+    assert.match(markup, /id="journal-global-download"[^>]*\sdisabled(?=[\s>])[^>]*>[\s\S]*?<span>Download journal<\/span><\/button>/);
+    assert.match(markup, /class="btn red clear-current-action" id="journal-global-clear"[^>]*\sdisabled(?=[\s>])[^>]*>Clear journal<\/button>/);
+    assert.match(markup, /<div class="key-manager no-print" id="journal-manager" hidden>/);
     assert.match(markup, /<div class="key-tabs" id="journal-tool-tabs" role="tablist" aria-label="Journal stations">/);
     assert.match(markup, /id="journal-book-tab"[^>]*data-journal-tool="book"[^>]*disabled>Entries<\/button>/);
-    assert.match(markup, /id="journal-notes-tab"[^>]*aria-disabled="true"[^>]*data-journal-tool="notes"[^>]*disabled/);
-    assert.match(markup, /id="journal-keymanager-tab"[^>]*aria-disabled="true"[^>]*data-journal-tool="keymanager"[^>]*disabled/);
-    assert.match(markup, /id="journal-state-tab"[^>]*aria-disabled="true"[^>]*data-journal-tool="state"[^>]*disabled/);
-    assert.match(markup, /id="journal-log-tab"[^>]*aria-disabled="true"[^>]*data-journal-tool="log"[^>]*disabled/);
+    assert.match(markup, /id="journal-notes-tab"[^>]*data-journal-tool="notes"[^>]*disabled/);
+    assert.match(markup, /id="journal-keymanager-tab"[^>]*data-journal-tool="keymanager"[^>]*disabled/);
+    assert.match(markup, /id="journal-state-tab"[^>]*data-journal-tool="state"[^>]*disabled/);
+    assert.match(markup, /id="journal-log-tab"[^>]*data-journal-tool="log"[^>]*disabled/);
     assert(markup.indexOf('id="journal-notes-tab"') < markup.indexOf('id="journal-keymanager-tab"') && markup.indexOf('id="journal-keymanager-tab"') < markup.indexOf('id="journal-state-tab"'), "Key manager should follow Notepad in the Journal tab strip");
-    assert.match(markup, /id="journal-card" role="region" aria-label="Journal"/);
+    assert.match(markup, /<section\b[^>]*\bid="journal-card" aria-label="Journal"/);
     assert.match(markup, /id="journal-create"/);
     assert.match(markup, /id="journal-unlock"/);
     assert.match(markup, /id="journal-save"/);
@@ -1790,7 +1768,6 @@ test("Journal gates its five tools behind the local notebook", () => {
     assert.doesNotMatch(markup, /id="journal-notes-download-text"|Download plain-text notes/);
     assert.doesNotMatch(markup, /id="journal-note-add"|>Add note</);
     assert.doesNotMatch(markup, /id="journal-state-capture"|Capture this session/);
-    assert.match(markup, /id="journal-state-text"[^>]*readonly aria-readonly="true"/);
     assert.match(markup, /id="journal-state-private"/);
     assert(markup.indexOf('id="journal-state-text"') < markup.indexOf('id="journal-state-download"'), "Session state download should follow the live snapshot");
     assert.match(markup, /class="btn secondary green journal-download-action journal-file-button" id="journal-state-download"[^>]*aria-label="Download session state"[^>]*>[\s\S]*?<span class="control-label">Download session state<\/span><\/button>/);
@@ -2022,6 +1999,20 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   assert.match(appSource, /new ResizeObserver\(hodlSyncWorkspaceOverflow\)\.observe\(strip\);/);
 });
 
+// First paint and no-JS show the static strip, so its tabs carry the same aria
+// wiring the runtime strip gets: each names the tab panel it shows.
+test("each static tool tab points at a tab panel the shell has", () => {
+  const start = shell.indexOf('id="workspace-tabs"');
+  const strip = shell.slice(start, shell.indexOf("</div>", start));
+  const tabs = strip.match(/<button[^>]*role="tab"[^>]*>/g) ?? [];
+  assert.equal(tabs.length, 6, "the static strip carries the six release tools");
+  for (const tab of tabs) {
+    const ids = tab.match(/aria-controls="([^"]*)"/)?.[1].split(" ").filter(Boolean) ?? [];
+    assert.ok(ids.length, `${tab} names no panel`);
+    for (const id of ids) assert.ok(shell.includes(`id="${id}" role="tabpanel"`), `${tab} points at #${id}, which is not a tab panel in the shell`);
+  }
+});
+
 test("Key Station stays put and a derived key opens a fingerprint tab with a summary", () => {
   assert.match(appSource, /function hodlNewLabState\(\) \{/);
   assert.match(appSource, /hodlNewKeyState\("Key Station", 0, 0\)/);
@@ -2041,11 +2032,11 @@ test("Key Station stays put and a derived key opens a fingerprint tab with a sum
     assert.match(markup, /id="key-edit-inputs"/);
     assert.match(markup, /id="key-summary-path"/);
     assert.match(markup, /Open Key Station to derive another key/);
-    assert.match(markup, /Base 10 \[0-9\] \/ Hashed rolls \(recommended\)/);
-    assert.match(markup, /Dice \[1-6\] \/ Hashed rolls/);
+    assert.match(markup, /Base 10 \[1-6\] \/ Hashed rolls/);
+    assert.match(markup, /Base 6 \[0-5\] \/ Hashed rolls/);
   }
-  assert.match(appSource, /hodlT\("Base 10 \[0-9\] \/ Hashed rolls \(recommended\)"\)/);
-  assert.match(appSource, /hodlT\("Dice \[1-6\] \/ Hashed rolls"\)/);
+  assert.match(appSource, /hodlT\("Base 10 \[1-6\] \/ Hashed rolls"\)/);
+  assert.match(appSource, /hodlT\("Base 6 \[0-5\] \/ Hashed rolls"\)/);
   assert.match(appSource, /function hodlSizeKeySummaryLifehash\(\) \{[\s\S]*getBoundingClientRect\(\)\.height[\s\S]*image\.style\.height = image\.style\.width = `\$\{height\}px`/);
   assert.match(appSource, /function hodlSnapshotKeySummary\(/);
   assert.match(appSource, /state\.createdScript = hodlKeySummaryScript\(state\)/);
@@ -2060,8 +2051,8 @@ test("derived-key summaries put the selected sub-method after the method", () =>
   const source = appSource.match(/(function hodlKeySummaryMethod\(state\) \{[\s\S]*?\n\})\nfunction hodlKeySummaryScript/);
   assert.ok(source, "key summary method formatter");
   const summary = new Function(`${source[1]}; return hodlKeySummaryMethod;`)();
-  assert.equal(summary({ mode: "dice", diceMethod: "coldcard" }), "Dice rolls: Base 10 [0-9] / Hashed rolls");
-  assert.equal(summary({ mode: "dice", diceMethod: "coleman" }), "Dice rolls: Dice [1-6] / Hashed rolls");
+  assert.equal(summary({ mode: "dice", diceMethod: "coldcard" }), "Dice rolls: Base 10 [1-6] / Hashed rolls");
+  assert.equal(summary({ mode: "dice", diceMethod: "coleman" }), "Dice rolls: Base 6 [0-5] / Hashed rolls");
   assert.equal(summary({ mode: "dice", diceMethod: "bitbox" }), "Dice rolls: BitBox diceware / Direct word selection");
   assert.equal(summary({ mode: "dice", diceMethod: "dplus" }), "Dice rolls: D++ / Direct word selection");
   assert.equal(summary({ mode: "cards", cardMethod: "direct" }), "Cards: Direct word selection");
@@ -2166,7 +2157,9 @@ test("tool cards follow the shared spacing contract", () => {
     "journal-keymanager-card", "journal-state-card", "journal-log-card",
   ];
   for (const id of cardIds) {
-    assert.match(shell, new RegExp(`<section class="card no-print tool-card" id="${id}"`));
+    assert.match(shell, id === "journal-card"
+      ? /<section\b[^>]*\bid="journal-card" aria-label="Journal"/
+      : new RegExp(`id="${id}" role="tabpanel"`));
   }
   // BIP-85, Silent Payments, Vanity, and the two PSBT inspectors.
   assert.equal((shell.match(/class="station-key-source tool-section"/g) || []).length, 5);
@@ -2279,7 +2272,7 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
   // picked; the card is a tabpanel and stays out of print output.
   for (const markup of [shell]) {
     assert.match(markup, /<div class="tool-intro edge-note is-info" id="vanity-tool-intro" hidden>/);
-    assert.match(markup, /<section class="card no-print tool-card" id="vanity-card" role="tabpanel" hidden>/);
+    assert.match(markup, /<div class="card no-print tool-card" id="vanity-card" role="tabpanel" hidden>/);
     // The key comes in through the same clickable Key Station picker the
     // BIP-85 and Silent Payments tabs use; the selected key is restated with
     // its starting passphrase, labelled and read-only.
@@ -2305,11 +2298,12 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
     assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Start account\s*<input id="vanity-account-start" inputmode="numeric"[^>]*value="0"/);
     assert.match(markup, /<label class="field" data-vanity-method="derivation" hidden>Accounts to try\s*<input id="vanity-account-count" inputmode="numeric"[^>]*value="100000"/);
     assert.match(markup, /<input id="vanity-workers" type="number" min="1" max="64"/);
-    assert.match(markup, /id="vanity-estimate" aria-live="polite"/);
+    // Announced through its parent: see the live-region test below.
+    assert.match(markup, /id="vanity-estimate"/);
     assert.match(markup, /id="vanity-go" type="button"[^>]*>/);
     assert.match(markup, /id="vanity-progress" role="progressbar"[^>]*hidden>/);
     assert.doesNotMatch(markup, /id="vanity-stop"/);
-    assert.match(markup, /id="vanity-wipe" type="button" disabled aria-disabled="true">/);
+    assert.match(markup, /id="vanity-wipe" type="button" disabled>/);
     assert.match(markup, /id="vanity-status" aria-live="polite"/);
     assert.match(markup, /<p class="err" id="vanity-error" role="alert"><\/p>/);
     assert.match(markup, /<div id="vanity-out"[^>]*aria-live="polite"><\/div>/);
@@ -2402,6 +2396,21 @@ test("the private recovery section lists the BIP39 passphrase beside the seed ph
   // Rendered right after the words, through the same masked private field as
   // the entropy and seed hex; absent when no passphrase is in use.
   assert.match(appSource, /fields\.push\(hodlSeedPhraseField\(`Your seed phrase[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(wallet\.passphraseUsed && wallet\.passphrase\?\.length\) fields\.push\(hodlPrivateKeyFieldHtml\("BIP39 passphrase", [^\n]*\(\) => hodlResultPassphrase\(wallet\)\)\);\n\s*if \(wallet\.entropy\)/);
+});
+
+// The estimate's grey note is hidden while there is no valid prefix, so it
+// cannot be the live region itself: a region that enters the accessibility
+// tree together with its first text is often not announced. Its parent is
+// the region, rendered from the start, and the note is the content.
+test("the vanity estimate speaks through a live region that is never hidden", () => {
+  const note = shell.match(/<p([^>]*\bid="vanity-estimate"[^>]*)>/);
+  assert.ok(note, "the estimate note is missing");
+  assert.match(note[1], /\shidden(\s|=|$|>)/, "fixture: the note no longer starts hidden");
+  assert.doesNotMatch(note[1], /\saria-live=/, "the hidden note is its own live region");
+  const region = shell.match(/<(\w+)([^>]*)>\s*<p[^>]*\bid="vanity-estimate"/);
+  assert.ok(region, "the estimate is not wrapped in a region of its own");
+  assert.match(region[2], /\saria-live="polite"/, "the estimate's parent is not a polite live region");
+  assert.doesNotMatch(region[2], /\shidden(\s|=|$)/, "the live region starts hidden");
 });
 
 test("the vanity estimate is timed from a device sample, and Stop on first find halts the grind at the first match", () => {

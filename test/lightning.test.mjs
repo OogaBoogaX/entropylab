@@ -108,7 +108,7 @@ const shell = read("src/shell.html");
 const appSource = read("src/js/app.js");
 
 test("the Lightning card ships in the shell with its controls", () => {
-  assert.match(shell, /<section class="card no-print tool-card" id="ln-card" role="tabpanel" hidden>/);
+  assert.match(shell, /<div class="card no-print tool-card" id="ln-card" role="tabpanel" hidden>/);
   for (const id of ["ln-format", "ln-network", "ln-seed", "ln-pass", "ln-go", "ln-wipe", "ln-session", "ln-error", "ln-out"]) {
     assert.ok(shell.includes(`id="${id}"`), `${id} is missing from the shell`);
   }
@@ -122,7 +122,7 @@ test("the workspace switcher retains the held-back Lightning implementation", ()
   assert.match(appSource, /getElementById\("ln-card"\)\.hidden = id !== "ln"/);
   assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity", "ln"\]\.forEach/);
   assert.match(appSource, /import \{ hodlInitLn, hodlLnWipeMem \} from "\.\/lightning\.js"/);
-  assert.match(appSource, /hodlInitLn\(\{ journalLog: hodlJournalLog \}\)/);
+  assert.match(appSource, /hodlInitLn\(\{ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup \}\)/);
 });
 
 test("a format or network change wipes the derived result", () => {

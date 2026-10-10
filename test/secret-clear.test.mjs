@@ -441,7 +441,7 @@ test("journal Lock empties the snapshot, the notepad and the session log", () =>
   // the session log are free text the user pasted keystrokes into. #522:
   // a locked journal keeps none of it (#625 review follow-up).
   const elements = new Map([
-    ["journal-state-text", { value: "24 seed words and xprvs", dataset: {} }],
+    ["journal-state-text", { textContent: "24 seed words and xprvs", dataset: {} }],
     ["journal-state-private", { checked: true, dataset: {} }],
     ["journal-status-note", { textContent: "", dataset: {} }],
     ["journal-notes-text", { value: "dice rolls and brain text", dataset: {} }],
@@ -462,7 +462,7 @@ test("journal Lock empties the snapshot, the notepad and the session log", () =>
     hodlJournalTool: "book",
   });
   vm.runInContext(`${functionSource("hodlJournalLock")}\nhodlJournalLock();`, context);
-  assert.equal(elements.get("journal-state-text").value, "", "Lock left the session snapshot filled");
+  assert.equal(elements.get("journal-state-text").textContent, "", "Lock left the session snapshot filled");
   assert.equal(elements.get("journal-state-private").checked, false, "Lock left the private toggle ticked");
   assert.equal(elements.get("journal-notes-text").value, "", "Lock left the notepad filled");
   assert.equal(elements.get("journal-log-out").textContent, "No events yet.", "Lock left the session log rendered");
@@ -727,7 +727,7 @@ const noneZero = (keys) => keys.every((key) => key.some((byte) => byte !== 0));
 const walletBuilderParts = loadAppFunctions(["hodlAccountExportFamily", "hodlSerializeExtendedKey", "hodlExtendedKeyVersions", "hodlNetworkFamily",
   "hodlDescriptorWithChecksum", "hodlScriptDescriptor", "hodlWatchOnlyMultipathDescriptor", "hodlOriginPathComponent", "hodlAddressBranchLabel",
   "hodlDeriveAddressRows", "hodlBuildMultisigCosignerExports", "hodlCoinTypeFromNetwork", "hodlNote"]);
-const walletKeepers = ["hodlCopyPrivateNode", "hodlKeepPrivateNode"].filter((name) => app.includes(`function ${name}(`));
+const walletKeepers = ["hodlCopyPrivateNode", "hodlKeepPrivateNode", "hodlNodeHasPrivateKey"].filter((name) => app.includes(`function ${name}(`));
 const bip84Definition = { id: "bip84", label: "Native SegWit", bip: "BIP84", script: "p2wpkh", purpose: 84, purposeHardened: true };
 
 async function derivationHarness({ failAtAddress = 0, identity = () => "bip32-vector-1", single = false, seedWords = false } = {}) {
@@ -745,7 +745,7 @@ async function derivationHarness({ failAtAddress = 0, identity = () => "bip32-ve
     // Every progress step yields, and each yield waits for the test.
     performance: { now: () => (clock += 20) }, setTimeout: () => 0, clearTimeout() {},
     hodlDerivationPause() { const gate = deferred(); pauses.push(gate); return gate.promise; },
-    hodlResetDerivationProgress() {}, hodlSetDerivationButtonState() {}, hodlSyncDeriveButton() {}, hodlSyncMsigDeriveButton() {},
+    hodlResetDerivationProgress() {}, hodlSetDerivationButtonState() {}, hodlSyncDeriveButton() {}, hodlSyncMsigDeriveButton() {}, hodlSyncPurposeMatchControls() {},
     // The rows come from the real row builder; the real account and wallet
     // builders then assemble them into the result a derivation commits.
     async hodlEntropyWalletWithProgress(entropy, passphrase, network, count, accountIndex, addressStart, tracker) {
@@ -1083,11 +1083,14 @@ test("changing the language outside Keys keeps the selected key's wallet", async
       "hodlUpdateCoinTypeHelp", "hodlUpdateDerivationPathPreview", "hodlUpdateMsigScriptDetection",
       "hodlUpdateMsigAccount", "hodlShowMsig", "hodlRefreshKeyResult", "hodlRefreshPsbtLocale", "hodlApplyTheme", "hodlRefreshWorkspaceErrors"])
       context[name] = () => {};
+    let logRefreshes = 0;
+    context.hodlSecurityLog = { refresh: () => logRefreshes++ };
     vm.runInContext(functionSource("hodlApplyLocale"), context);
     leaveKeys("msig");
     // The Multisig workspace shows its own result, or none.
     context.hodlWalletResult = shown;
     context.hodlApplyLocale();
+    assert.equal(logRefreshes, 1, "the security log must refresh with the locale");
     assert.equal(state.result, result, `${shown ? "with" : "without"} a multisig result: the language change dropped the key's wallet`);
     context.hodlDisposeDroppedWallets();
     assert.deepEqual(keys, vectorRowKeys, "the language change got the selected wallet zeroed");
@@ -1129,6 +1132,7 @@ test("saving a vanity passphrase match to its key zeroes the wallet the key had"
   const previous = await derive("before-vanity"), source = context.hodlKeys[context.hodlActiveKey], previousResult = source.result;
   const run = { sourceKind: "key", sourceId: source.id, sourceLabel: "key", method: "passphrase", script: "p2wpkh", path: [84, 0, 0, 0, 0], pathText: "m/84'/0'/0'/0/0" };
   Object.assign(context, {
+    hodlScriptTypes: (await loadAppFunctions(["hodlScriptTypes"])).hodlScriptTypes,
     hodlVanityMatches: [{ passphrase: "vanity passphrase", index: null, savedTo: "" }], hodlVanityRun: run, hodlVanityApplying: false,
     hodlVanityPlan: () => ({ node: null, pathPrefix: [], path: run.path }), hodlWorkspace: "vanity", hodlSpSource: "", hodlBip85Source: "",
     hodlRenderVanityOut() {}, hodlVanitySyncControls() {}, hodlVanityKeyLabel: () => "key", hodlVanitySetStatus() {}, hodlVanitySyncSource() {},

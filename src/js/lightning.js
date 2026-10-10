@@ -24,7 +24,8 @@ import { aezeedDecode, BITCOIN_GENESIS_TIMESTAMP } from "./aezeed.js";
 import { wordlist as bip39English } from "./bip39-english.js";
 import { hex } from "./coders.js";
 import { t } from "./i18n.js";
-import { copyText } from "./clipboard.js";
+import { privateCopyButtonHtml } from "./private-data.js";
+import { publicFieldHtml, publicValueHtml } from "./public-data.js";
 
 // ── Derivations (DOM-free, unit-tested directly) ────────────────────────────
 
@@ -82,6 +83,7 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "
 let hodlLnLast = null; // last successful derivation, kept for the reveal toggle
 let hodlLnReveal = false;
 let hodlLnJournalLog = () => {};
+let hodlLnCopyIcon = () => "";
 
 const hodlLnNote = "No node key derived. Enter a seed phrase and derive.";
 
@@ -104,7 +106,7 @@ const hodlLnNormalize = (text) => String(text || "").trim().toLowerCase().replac
 
 const hodlLnBirthdayIso = (timestamp) => new Date(timestamp * 1000).toISOString().slice(0, 10);
 
-const hodlLnCopyButton = (target, label) => `<button type="button" class="btn secondary psbt-copy" data-ln-copy="${target}">${escapeHtml(label)}</button>`;
+const hodlLnPrivateField = (id, label, value) => `<div class="private-field is-revealed" data-private-field><p class="label copy-field-label">${escapeHtml(label)}${privateCopyButtonHtml(hodlLnCopyIcon)}</p><p class="psbt-kv" id="${id}" data-private-value data-i18n-skip translate="no">${escapeHtml(value)}</p></div>`;
 
 function hodlLnValidateBip39(words) {
   if (words.length === 0) throw Object.assign(new Error("Type or paste your seed phrase."), { key: "Type or paste your seed phrase." });
@@ -135,21 +137,14 @@ function hodlLnRender() {
   const implementation = aezeed ? "LND" : "LDK (ldk-node)";
   output.innerHTML = `
     <div class="ln-result">
-      <p class="label">${escapeHtml(implementation)} node identity public key</p>
-      <p class="psbt-kv" id="ln-node-pubkey">${escapeHtml(r.nodePubKey)}</p>
-      ${hodlLnCopyButton("ln-node-pubkey", "Copy node pubkey")}
-      <p class="muted">Identity key path <code>${escapeHtml(r.path)}</code>${aezeed ? ` · coin type ${r.coinType} (${r.coinType === 1 ? "testnet" : "mainnet"})` : " · the LDK node identity does not depend on the network"}</p>
+      ${publicFieldHtml(`${escapeHtml(implementation)} node identity public key`, r.nodePubKey, { id: "ln-node-pubkey", copyIcon: hodlLnCopyIcon })}
+      <p class="muted">Identity key path ${publicValueHtml(r.path, { clipboard: false })}${aezeed ? ` · coin type ${r.coinType} (${r.coinType === 1 ? "testnet" : "mainnet"})` : " · the LDK node identity does not depend on the network"}</p>
       ${aezeed ? `<p class="muted">Internal (key-derivation) version ${r.internalVersion} · wallet birthday day ${r.birthdayDays} (${escapeHtml(hodlLnBirthdayIso(r.birthdayTimestamp))} UTC, day 0 = Bitcoin genesis). Rescans from the birthday recover on-chain funds; channel funds need the node's channel backup.</p>` : `<p class="muted">Derived the ldk-node way: BIP39 seed → master key → its private key re-seeds a second BIP32 tree → node secret at <code>m/0'</code>.</p>`}
       <label class="choice"><input type="checkbox" id="ln-reveal" data-private-reveal ${secrets ? "checked" : ""}> <span>Reveal the root private key${aezeed ? " and decoded entropy" : ""}</span></label>
       ${secrets ? `
-        ${aezeed ? `<p class="label">Decoded entropy (the BIP32 master seed)</p>
-        <p class="psbt-kv" id="ln-entropy" translate="no">${hex.encode(r.entropy)}</p>
-        ${hodlLnCopyButton("ln-entropy", "Copy entropy")}
-        <p class="label">Salt</p>
-        <p class="psbt-kv">${hex.encode(r.salt)}</p>` : ""}
-        <p class="label">BIP32 root private key (xprv)</p>
-        <p class="psbt-kv" id="ln-root-xprv" translate="no">${escapeHtml(r.rootXprv)}</p>
-        ${hodlLnCopyButton("ln-root-xprv", "Copy root xprv")}
+        ${aezeed ? `${hodlLnPrivateField("ln-entropy", "Decoded entropy (the BIP32 master seed)", hex.encode(r.entropy))}
+        ${hodlLnPrivateField("ln-salt", "Salt", hex.encode(r.salt))}` : ""}
+        ${hodlLnPrivateField("ln-root-xprv", "BIP32 root private key (xprv)", r.rootXprv)}
         <p class="muted">The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.</p>` : `<p class="muted">Private material stays hidden until you reveal it.</p>`}
     </div>`;
   document.getElementById("ln-reveal")?.addEventListener("change", (event) => {
@@ -220,10 +215,11 @@ function hodlLnSyncFormat() {
 // Wires the Lightning card. `journalLog` is the app's hodlJournalLog; the
 // module takes it as an option instead of importing app.js (same shape as
 // initPsbtEditor's options object).
-export function hodlInitLn({ journalLog } = {}) {
+export function hodlInitLn({ journalLog, copyIcon = () => "" } = {}) {
   const go = document.getElementById("ln-go");
   if (!go) return;
   if (typeof journalLog === "function") hodlLnJournalLog = journalLog;
+  hodlLnCopyIcon = copyIcon;
   go.onclick = hodlRunLn;
   document.getElementById("ln-wipe").onclick = () => {
     hodlLnWipeMem();
@@ -233,7 +229,7 @@ export function hodlInitLn({ journalLog } = {}) {
     }
     document.getElementById("ln-out").innerHTML = "";
     document.getElementById("ln-error").textContent = "";
-    document.getElementById("ln-session").textContent = "Session ended and accessible fields were cleared (best effort).";
+    document.getElementById("ln-session").textContent = "Accessible fields were cleared (best effort).";
   };
   for (const id of ["ln-format", "ln-network"]) {
     document.getElementById(id)?.addEventListener("change", () => {
@@ -245,15 +241,6 @@ export function hodlInitLn({ journalLog } = {}) {
       hodlLnSyncFormat();
     });
   }
-  document.getElementById("ln-out").addEventListener("click", (event) => {
-    const button = event.target.closest?.("[data-ln-copy]");
-    if (!button) return;
-    const node = document.getElementById(button.dataset.lnCopy);
-    if (!node) return;
-    // The entropy (16 bytes, the BIP32 master seed) is too short for the
-    // shape classifier, so the controls say which copies are secret.
-    copyText(node.textContent || "");
-  });
   document.getElementById("ln-session").textContent = hodlLnNote;
   hodlLnSyncFormat();
 }

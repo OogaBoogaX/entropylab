@@ -9,6 +9,7 @@
         android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTask">
             <intent-filter>

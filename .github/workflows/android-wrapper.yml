@@ -22,6 +22,10 @@ jobs:
         run: |
           javac --release 17 -d build/pincheck app/src/main/java/online/entropylab/android/HtmlPin.java app/src/test/java/online/entropylab/android/HtmlPinTest.java
           java -cp build/pincheck online.entropylab.android.HtmlPinTest
+      # Callback tests execute the actual wrapper against deterministic doubles.
+      # They do not substitute for emulator/device acceptance.
+      - name: Check rotation and cold-start lifecycle contract
+        run: python3 android/lifecycle-check.py
       - name: Install pinned SDK components
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0"'
       - name: Build debug APK

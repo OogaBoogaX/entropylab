@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { psbtInspectDoc, psbtBuildBytes } from "../src/js/psbt-wasm.js";
 import { psbtEditorBuildDoc, psbtDiffHtml } from "../src/js/psbt-editor.js";
 import { comparePsbtDocs } from "../src/js/psbt-diff.js";
+import { MiniDocument } from "./mini-dom.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -42,6 +43,38 @@ const doc = (overrides = {}) => ({
   inputs: [[{ key: "01", value: "cc", name: "PSBT_IN_WITNESS_UTXO" }]],
   outputs: [[]],
   ...overrides,
+});
+
+test("decoded public keys and origins are separate exact copy targets, while raw private-capable fields stay private", () => {
+  const pubkey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+  const xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+  const fingerprint = "3442193e";
+  const before = doc({ globals: [], inputs: [[]] });
+  const after = doc({ globals: [
+    { key: "01aa", value: "bb", name: "PSBT_GLOBAL_XPUB", decoded: { xpub, fingerprint, path: "m/0'" } },
+    { key: "fcaa", value: "private-opaque-value", name: "PSBT_GLOBAL_PROPRIETARY", decoded: { prefixText: "private-prefix", subtype: 0, keydata: "00" } },
+  ], inputs: [[
+    { key: `06${pubkey}`, value: "cc", name: "PSBT_IN_BIP32_DERIVATION", decoded: { pubkey, fingerprint, path: "m/0'" } },
+    { key: "17", value: pubkey.slice(2), name: "PSBT_IN_TAP_INTERNAL_KEY", decoded: { xonly: pubkey.slice(2) } },
+  ]] });
+  const document = new MiniDocument();
+  document.body.innerHTML = psbtDiffHtml(comparePsbtDocs(before, after), before, after, "mainnet", { copyIcon: () => '<svg data-test-copy-icon></svg>' });
+  const values = document.querySelectorAll("[data-public-value]");
+  for (const expected of [pubkey, xpub, fingerprint, pubkey.slice(2)]) {
+    const value = values.find((node) => (node.dataset.copyValue ?? node.textContent) === expected);
+    assert.ok(value, `missing exact public copy payload ${expected}`);
+    assert.ok(value.closest("[data-copy-group]").querySelector("[data-public-copy]"));
+  }
+  assert.equal(values.some((value) => value.textContent.includes("private-")), false);
+  assert.ok(document.querySelector("[data-private-value]"));
+});
+
+test("comparison output addresses use the public copy contract", () => {
+  const before = doc();
+  const after = doc({ tx: { ...doc().tx, outputs: [{ value: 1000, scriptPubKey: "76a914768a40bbd740cbe81d988e71de2a4d5c71396b1d88ac" }] } });
+  const document = new MiniDocument();
+  document.body.innerHTML = psbtDiffHtml(comparePsbtDocs(before, after), before, after, "mainnet");
+  assert.ok(document.querySelectorAll("[data-public-value]").some((value) => value.textContent === "1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe"));
 });
 
 test("a proprietary prefix's bidi and invisible characters are neutralized in the diff report (audit S36-2)", () => {

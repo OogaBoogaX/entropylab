@@ -350,7 +350,7 @@ test("both markups ship the multisig wallet descriptor import panel and the app 
     assert.ok(markup.includes('id="msig-descriptor"'), "descriptor textarea");
     assert.ok(markup.includes('id="msig-descriptor-import"'), "import button");
     assert.ok(markup.includes('id="msig-descriptor-status"'), "status line");
-    assert.ok(markup.includes('id="msig-descriptor-import" type="button" disabled aria-disabled="true"'), "the import button ships disabled — the descriptor field starts empty");
+    assert.ok(markup.includes('id="msig-descriptor-import" type="button" disabled'), "the import button ships disabled — the descriptor field starts empty");
     assert.ok(markup.indexOf('id="msig-import"') < markup.indexOf('class="msig-threshold-labels"'), "descriptor import comes before manual quorum selection");
   }
   assert.ok(app.includes('addEventListener("click", hodlImportMsigDescriptor)'), "the import button is wired");

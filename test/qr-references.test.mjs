@@ -1,10 +1,13 @@
 // Tests for the pure half of src/js/qr-references.js — the link classifier
 // and the QR SVG renderer. initQrReferences is DOM-bound and covered by the
-// Firefox browser suite (test/browser-suite.html).
+// Firefox browser suite (test/browser-suite.html); that every word the popup
+// shows is translatable is checked here through a minimal fake page.
 // Run with `npm test` (part of the default and CI suites).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isOfflineLink, referenceQrSvg } from "../src/js/qr-references.js";
+import { fileURLToPath } from "node:url";
+import { initQrReferences, isOfflineLink, referenceQrSvg } from "../src/js/qr-references.js";
+import { collectSources, normalize } from "../scripts/i18n-sources.mjs";
 
 test("isOfflineLink accepts http and https anchors", () => {
   const make = (href) => ({ tagName: "A", getAttribute: () => href });
@@ -48,4 +51,70 @@ test("referenceQrSvg handles a long URL without throwing", () => {
   const longUrl = "https://example.com/" + "a".repeat(200);
   const svg = referenceQrSvg(longUrl);
   assert.match(svg, /^<svg/);
+});
+
+// The popup's card is built each time it opens, after the boot i18n sweep, so
+// every word on it has to come from the translators, and so be a source the
+// catalog extractor collects. A minimal fake page drives the real popup: the
+// network tag reads offline, a click lands on an external link, and the card
+// records the markup it is given.
+const URL_SHOWN = "https://example.com/reference", LINK_TEXT = "Example reference";
+const fakeElement = (props = {}) => {
+  const listeners = {}, attributes = {};
+  return {
+    hidden: false, innerHTML: "", title: "", isConnected: true,
+    classList: { add() {}, remove() {}, contains: () => false },
+    setAttribute(name, value) { attributes[name] = String(value); },
+    getAttribute(name) { return name in attributes ? attributes[name] : null; },
+    addEventListener(type, fn) { (listeners[type] ??= []).push(fn); },
+    fire(type, event = {}) { for (const fn of listeners[type] ?? []) fn(event); },
+    focus() {},
+    ...props,
+  };
+};
+const withReferencePopup = async (run) => {
+  const buttons = {}, documentListeners = {};
+  const card = fakeElement({ querySelector: (selector) => (buttons[selector] ??= fakeElement()) });
+  const overlay = fakeElement({ querySelector: (selector) => (selector === ".qr-ref-card" ? card : null), querySelectorAll: () => [] });
+  const page = {
+    body: { append() {} },
+    activeElement: null,
+    getElementById: (id) => (id === "network-status" ? { dataset: { state: "offline" } } : null),
+    createElement: () => overlay,
+    addEventListener: (type, fn) => { (documentListeners[type] ??= []).push(fn); },
+  };
+  const saved = globalThis.document;
+  Object.defineProperty(globalThis, "document", { value: page, configurable: true, writable: true });
+  try {
+    initQrReferences({ copy: () => '<svg data-icon="copy"></svg>', copied: () => '<svg data-icon="check"></svg>' });
+    const link = { tagName: "A", textContent: LINK_TEXT, getAttribute: () => URL_SHOWN, focus() {} };
+    documentListeners.click.forEach((fn) => fn({ target: { closest: () => link }, preventDefault() {} }));
+    await run({ card, copyButton: buttons["#qr-ref-copy"] });
+  } finally {
+    Object.defineProperty(globalThis, "document", { value: saved, configurable: true, writable: true });
+  }
+};
+const decodeEntities = (text) =>
+  text
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+// Every text node and every aria-label/title in the card, QR drawing aside.
+const shownStrings = (html) => {
+  const markup = html.replace(/<svg[\s\S]*?<\/svg>/g, "");
+  return [
+    ...[...markup.matchAll(/>([^<]*)</g)].map((match) => match[1]),
+    ...[...markup.matchAll(/\s(?:aria-label|title)="([^"]*)"/g)].map((match) => match[1]),
+  ].map((text) => normalize(decodeEntities(text))).filter(Boolean);
+};
+
+test("every word the reference QR popup shows is a translation source", async () => {
+  const sources = await collectSources(fileURLToPath(new URL("..", import.meta.url)));
+  await withReferencePopup(async ({ card }) => {
+    const shown = shownStrings(card.innerHTML);
+    assert.ok(shown.length > 3, "fixture: the popup rendered no card");
+    // The link's own text and its address are the page's, not the popup's.
+    const own = shown.filter((text) => text !== LINK_TEXT && text !== URL_SHOWN).map((text) => text.replace(URL_SHOWN, "{url}"));
+    assert.deepEqual(own.filter((text) => !sources.has(text)), [], "the popup shows text that is never translated");
+  });
 });

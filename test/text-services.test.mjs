@@ -18,9 +18,11 @@
 // standard's writingsuggestions="false", inherited from the root.
 //
 // Browser translation sends the page's text to an online service too, and
-// the page can only see it afterwards: Chrome marks a translated page with a
-// translated-ltr or translated-rtl class on the root. Contract: either class
-// shows the warning, any other class does not, and it stays up. The warning
+// the page can only see it afterwards: Chrome/Google marks the root with
+// translated-ltr or translated-rtl; Edge/Microsoft adds _msthash,
+// _msttexthash or _mstmutation attributes. Contract: these exact signals,
+// present at boot or added later, show the warning and notify once; unrelated
+// attributes, classes and DOM changes do not. The warning stays up and
 // is a bullet in the Important section, so showing it also opens that
 // section: a warning inside a closed disclosure is not seen.
 // The live page, with its observers, is covered in the browser suite.
@@ -164,30 +166,171 @@ test("a machine-translated page shows the translation warning and keeps it up", 
   };
   try {
     const { doc, html, warning } = page("");
+    let detections = 0;
     assert.ok(warning?.hidden, "the warning must start hidden");
     const important = doc.getElementById("important");
     assert.ok(important && warning.closest("#important") === important, "the warning must sit in the Important section");
     important.removeAttribute("open");
-    initTranslationWarning(warning.ownerDocument);
+    initTranslationWarning(warning.ownerDocument, () => detections++);
     const observer = observers.at(-1);
     assert.equal(observer.target, html);
-    assert.deepEqual(observer.options, { attributes: true, attributeFilter: ["class"] });
+    assert.deepEqual(observer.options, {
+      attributes: true, attributeFilter: ["class", "_msthash", "_msttexthash", "_mstmutation"],
+      childList: true, subtree: true,
+    });
     html.setAttribute("class", "translated-pending some-theme");
     observer.callback([]);
     assert.ok(warning.hidden, "a class other than Chrome's marker must not show the warning");
+    assert.equal(detections, 0);
     html.setAttribute("class", "some-theme translated-ltr");
     observer.callback([]);
     assert.equal(warning.hidden, false, "translated-ltr must show the warning");
     assert.ok(important.hasAttribute("open"), "showing the warning must open the Important section");
+    assert.equal(detections, 1, "the security log must be notified of translation");
     assert.ok(observer.disconnected);
     html.setAttribute("class", "");
     assert.equal(warning.hidden, false, "showing the original again must not hide it: the text was already sent");
 
     // A page already translated when the app boots warns at once.
     const late = page("translated-rtl");
-    initTranslationWarning(late.warning.ownerDocument);
+    initTranslationWarning(late.warning.ownerDocument, () => detections++);
     assert.equal(late.warning.hidden, false, "translated-rtl must show the warning");
+    assert.equal(detections, 2, "translation already present at boot must be logged too");
   } finally {
     globalThis.MutationObserver = original;
   }
+});
+
+function translationFixture(t, beforeInit = () => {}) {
+  const doc = new MiniDocument();
+  const html = doc.createElement("html");
+  const head = doc.createElement("head");
+  html.append(head, doc.body);
+  doc.documentElement = html;
+  doc.body.innerHTML = '<details id="important"><p id="translated-warning" hidden></p></details><div id="content"></div>';
+  const warning = doc.getElementById("translated-warning");
+  const important = doc.getElementById("important");
+  const content = doc.getElementById("content");
+  const observers = [];
+  const original = globalThis.MutationObserver;
+  t.after(() => { globalThis.MutationObserver = original; });
+  globalThis.MutationObserver = class {
+    constructor(callback) { this.callback = callback; observers.push(this); }
+    observe(target, options) { this.target = target; this.options = options; }
+    disconnect() { this.disconnected = true; }
+  };
+  let detections = 0;
+  beforeInit({ doc, html, head, content });
+  initTranslationWarning(doc, () => detections++);
+  assert.equal(observers.length, 1);
+  const [observer] = observers;
+  return {
+    doc, html, content, warning, observer,
+    assertDetected() {
+      assert.equal(warning.hidden, false, "translation must show the warning");
+      assert.ok(important.hasAttribute("open"), "translation must open Important");
+      assert.equal(detections, 1, "translation must notify exactly once");
+      assert.equal(observer.disconnected, true, "the detector must stop observing after detection");
+    },
+    assertNotDetected() {
+      assert.equal(warning.hidden, true);
+      assert.equal(important.hasAttribute("open"), false);
+      assert.equal(detections, 0);
+      assert.ok(!observer.disconnected, "the detector must keep watching");
+    },
+  };
+}
+
+for (const marker of ["_msthash", "_msttexthash", "_mstmutation"]) {
+  for (const location of ["html", "head", "content"]) {
+    test(`Edge ${marker} present at initialization on ${location} warns immediately`, (t) => {
+      // Attribute presence counts, even when the value is empty.
+      translationFixture(t, (page) => page[location].setAttribute(marker, "")).assertDetected();
+    });
+  }
+
+  test(`Edge ${marker} added to an existing element warns`, (t) => {
+    const page = translationFixture(t);
+    page.assertNotDetected();
+    page.content.setAttribute(marker, "123");
+    page.observer.callback([{ type: "attributes", target: page.content, attributeName: marker }]);
+    page.assertDetected();
+  });
+}
+
+test("translation observer watches subtree additions and only relevant attributes", (t) => {
+  const { html, observer } = translationFixture(t);
+  assert.equal(observer.target, html);
+  assert.equal(observer.options.subtree, true);
+  assert.equal(observer.options.childList, true);
+  assert.equal(observer.options.attributes, true);
+  assert.deepEqual(new Set(observer.options.attributeFilter), new Set(["class", "_msthash", "_msttexthash", "_mstmutation"]));
+});
+
+for (const [label, markup] of [
+  ["new element with _msttexthash", '<span _msttexthash="123"></span>'],
+  ["inserted wrapper with a nested _msthash", '<div><section><span _msthash="123"></span></section></div>'],
+]) {
+  test(`Edge ${label} warns`, (t) => {
+    const page = translationFixture(t);
+    const holder = page.doc.createElement("div");
+    holder.innerHTML = markup;
+    const inserted = holder.firstChild;
+    page.content.append(inserted);
+    page.observer.callback([{ type: "childList", target: page.content, addedNodes: [inserted] }]);
+    page.assertDetected();
+  });
+}
+
+for (const [attribute, value] of [
+  ["_mstfoo", "123"], ["_msthash-extra", "123"], ["data-ms-editor", "false"],
+  ["writingsuggestions", "false"], ["data-1p-ignore", ""], ["data-lpignore", "true"],
+  ["class", "translated-pending some-theme"],
+]) {
+  test(`${attribute} is not a translation signal at boot or on mutation`, (t) => {
+    const page = translationFixture(t, ({ content }) => content.setAttribute(attribute, value));
+    page.assertNotDetected();
+    page.content.setAttribute(attribute, value);
+    page.observer.callback([{ type: "attributes", target: page.content, attributeName: attribute }]);
+    page.assertNotDetected();
+    const wrapper = page.doc.createElement("div");
+    const child = page.doc.createElement("span");
+    child.setAttribute(attribute, value);
+    wrapper.append(child);
+    page.content.append(wrapper);
+    page.observer.callback([{ type: "childList", target: page.content, addedNodes: [wrapper] }]);
+    page.assertNotDetected();
+  });
+}
+
+test("ordinary subtree and text insertion do not warn; Chrome classes only count on the root", (t) => {
+  const page = translationFixture(t);
+  const wrapper = page.doc.createElement("div");
+  wrapper.innerHTML = '<span class="translated-ltr">ordinary text</span>';
+  const text = page.doc.createTextNode("more text");
+  page.content.append(wrapper, text);
+  page.observer.callback([{ type: "childList", target: page.content, addedNodes: [wrapper, text] }]);
+  page.assertNotDetected();
+  wrapper.setAttribute("class", "translated-rtl");
+  page.observer.callback([{ type: "attributes", target: wrapper, attributeName: "class" }]);
+  page.assertNotDetected();
+});
+
+test("multiple Edge and Chrome signals notify once and stay latched after markers disappear", (t) => {
+  const page = translationFixture(t);
+  const markers = ["_msthash", "_msttexthash", "_mstmutation"];
+  const records = markers.map((attributeName) => {
+    page.content.setAttribute(attributeName, "123");
+    return { type: "attributes", target: page.content, attributeName };
+  });
+  page.observer.callback(records);
+  page.assertDetected();
+  page.html.setAttribute("class", "translated-ltr translated-rtl");
+  // Explicitly exercise the one-shot guard even if a callback is repeated.
+  page.observer.callback([...records, { type: "attributes", target: page.html, attributeName: "class" }]);
+  page.assertDetected();
+  for (const marker of markers) page.content.removeAttribute(marker);
+  page.html.removeAttribute("class");
+  page.observer.callback(records);
+  page.assertDetected();
 });

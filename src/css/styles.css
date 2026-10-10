@@ -265,6 +265,27 @@ button:not(:disabled):active *,
 .sources:has(+ .sources) { padding-bottom: 0; }
 /* A fine-print list steps its items like the Sources paragraphs above it. */
 .sources ul { display: grid; gap: var(--space-component); padding-left: var(--indent-list); }
+.security-log { max-width: 600px; margin: var(--space-lede) auto; padding: 0; overflow: hidden; border-radius: 0; }
+.security-log-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-component); padding: var(--inset-toolbar); border-bottom: 1px solid var(--border); }
+/* The title is a heading for structure but wears the shared label style,
+   not the serif display face h2 carries elsewhere. */
+.security-log-header h2 { display: flex; align-items: center; gap: var(--space-control); margin: 0; font-family: var(--sans); font-size: var(--text-label); font-weight: 600; letter-spacing: normal; color: var(--fg); }
+.security-log-header svg { color: var(--muted); flex-shrink: 0; }
+/* The note closes the log as a footer that mirrors the header bar. */
+.security-log-note { margin: 0; padding: var(--space-control) var(--space-component); border-top: 1px solid var(--border); text-align: center; color: var(--faint); font-size: var(--text-caption); line-height: 1.4; }
+.security-log-output { list-style: none; margin: 0; padding: var(--inset-panel); background: var(--bg); font-family: var(--mono); font-size: var(--text-data-small); line-height: 1.6; max-height: 260px; overflow: auto; }
+.security-log-output > div { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); gap: var(--space-control); padding: var(--space-tight) 0; overflow-wrap: anywhere; }
+.security-log-output time { color: var(--faint); font-variant-numeric: tabular-nums; }
+.security-log-output [data-security-level] { color: var(--blue-ink); }
+.security-log-output [data-security-message] { color: var(--muted-strong); }
+/* A faint hairline between entries, half the border grey. */
+.security-log-output > div + div { border-top: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
+/* Only the level tag carries the colour; every message stays in the text
+   colour. A warning's tag takes the muted red. */
+.security-log-output [data-level="warning"] [data-security-level] { color: var(--danger); }
+/* Phones keep the three columns: the message wraps beside its time and tag
+   rather than dropping below them. */
+@media (max-width: 520px) { .card.security-log { padding: 0; } }
 .warn { background: color-mix(in oklab, var(--danger) 12%, var(--bg)); border-color: color-mix(in oklab, var(--danger) 40%, var(--border)); }
 .muted { color: var(--muted); font-size: var(--text-body); line-height: 1.5; }
 /* The pitch is a set of discrete claims rather than prose, so it reads as a
@@ -562,6 +583,7 @@ textarea { display: block; min-height: 96px; letter-spacing: 0.08em; }
   display: grid; place-items: center; flex: 0 0 var(--box-size, 44px); width: var(--box-size, 44px); min-height: var(--box-size, 44px); height: auto; padding: var(--inset-icon-button);
   border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface-2); color: var(--muted);
 }
+.copy-button.boxed-copy-button { --box-size: 26px; }
 .seed-keyboard-toggle[aria-expanded="true"] { color: var(--selection-accent); border-color: var(--selection-accent); }
 .seed-keyboard-toggle svg { display: block; width: 30px; height: 22px; }
 .seed-keyboard-icon-case { fill: none; stroke: currentColor; stroke-width: 2.5; }
@@ -627,6 +649,8 @@ input[type="checkbox"]:not(:disabled):hover {
 }
 label.field { display: block; margin-top: var(--space-component); font-size: var(--text-label); font-weight: 600; }
 .label { font-size: var(--text-label); font-weight: 600; margin: var(--space-section) 0 var(--space-control); color: var(--fg); }
+/* A section heading can use the same appearance as a field label. */
+h3.label { font-family: inherit; letter-spacing: inherit; }
 /* The part of a label that changes with a selection, set in regular weight so
    the fixed title still reads as the title. */
 .label-value { font-weight: 400; }
@@ -900,7 +924,7 @@ label.field { display: block; margin-top: var(--space-component); font-size: var
   flex: 0 0 auto; display: grid; place-items: center;
   width: 21px; height: 21px; padding: 0; border: 0; background: transparent; color: var(--faint);
 }
-.copy-button svg { display: block; width: 16px; height: 16px; }
+.copy-button svg { display: block; width: 14px; height: 14px; }
 .seed-copy-icon-clip, .seed-copy-icon-board { fill: none; stroke: currentColor; stroke-width: 2; }
 .copy-button:disabled { color: var(--faint); cursor: not-allowed; }
 .copy-button:not(:disabled) { color: var(--selection-accent); }
@@ -909,7 +933,14 @@ label.field { display: block; margin-top: var(--space-component); font-size: var
    plain ink at rest, orange only under the pointer. */
 .copy-button.boxed-copy-button:not(:disabled) { color: var(--fg); }
 .copy-button.is-copied, .copy-button.is-copied:not(:disabled),
-.copy-button.is-copied:not(:disabled):hover { color: var(--ok-bright); }
+.copy-button.is-copied:not(:disabled):hover {
+  --hover-edge: var(--ok-bright); --hover-ink: var(--ok-bright); color: var(--ok-bright);
+}
+/* The copied tick matches the other copy confirmations (20px, 2.5 stroke).
+   A boxed button gives up padding instead of growing, so nothing moves. */
+.copy-button.is-copied svg { width: 20px; height: 20px; }
+.copy-button.is-copied .seed-copy-icon-board { stroke-width: 2.5; }
+.copy-button.boxed-copy-button.is-copied { padding: 2px; }
 .dice-word-grid {
   --dice-word-rows: var(--dice-word-rows-wide);
   display: grid; grid-auto-flow: column; grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -932,12 +963,27 @@ label.field { display: block; margin-top: var(--space-component); font-size: var
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* Public readouts act like text while remaining keyboard-copyable. Keep this
+   base before the value typography so compact and fingerprint sizes win. */
+.addr-text {
+  min-width: 0; margin: 0; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; vertical-align: middle;
+}
+.addr-text:hover { color: var(--selection-accent-ink); }
+[data-public-value] { user-select: text; -webkit-user-select: text; }
+/* Private material is copied with its controls rather than text selection.
+   Apply this to descendants too: user-select is not inherited in Firefox. */
+[data-private-value], [data-private-value] * {
+  user-select: none; -webkit-user-select: none;
+}
+[data-public-inline] { display: inline-flex; align-items: center; gap: var(--space-control); min-width: 0; max-width: 100%; }
+td[data-private-field] .boxed-copy-button { display: inline-grid; margin-left: var(--space-control); vertical-align: middle; }
 .secret { font-family: var(--mono); font-size: var(--text-data); word-break: break-all; }
 .private-field-value { display: block; margin-top: var(--space-hairline); line-height: 1.55; }
-.table-private-field-value { display: inline-grid; white-space: nowrap; }
 .private-field-value:not(.secret-placeholder),
 .table-private-field-value:not(.secret-placeholder) { color: var(--blue); }
 .secret-placeholder { display: grid; color: var(--muted); }
+.table-private-field-value { display: inline-grid; white-space: nowrap; vertical-align: middle; }
 .secret-placeholder > .secret-placeholder-mask,
 .secret-placeholder > .secret-placeholder-message { grid-area: 1 / 1; }
 .secret-placeholder-mask { visibility: hidden; user-select: none; }
@@ -1076,7 +1122,7 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
    stays on screen wherever the button sits. */
 .network-picker-menu {
   position: absolute; z-index: 100; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: 340px;
-  max-width: calc(100vw - 2 * var(--gutter-page));
+  max-width: calc(100vw - var(--gutter-page) * 2);
   text-align: left;
   padding: var(--inset-menu); border: 1px solid var(--border); border-radius: var(--radius-container);
   background: var(--surface-2); box-shadow: 0 16px 36px var(--scrim);
@@ -1111,8 +1157,18 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 .network-picker-option[data-network="signet"] .network-picker-option-coin { fill: var(--signet); }
 .network-picker-option[data-network="regtest"] .network-picker-option-coin { fill: var(--faint); }
 .network-picker-option[aria-checked="true"] strong { color: var(--accent); }
-.network-picker-option-text { font-size: var(--text-control-small); }
-.network-picker-option-desc { display: block; margin-top: var(--space-hairline); color: var(--muted); font-size: var(--text-note); line-height: 1.45; }
+/* The text column fills the row beside the coin, so its lines wrap
+   against the menu's width rather than against their own content. */
+.network-picker-option-text { flex: 1 1 auto; min-width: 0; font-size: var(--text-control-small); }
+/* The technical line reads as data: the address, key and WIF prefixes and
+   the coin type, in the small monospace the app uses for values. Each group
+   holds together with its trailing dot, so a line only breaks between
+   groups. */
+.network-picker-option-desc > span { white-space: nowrap; }
+/* The addresses always take the first line and the key and WIF prefixes the
+   second, so every option breaks in the same place. */
+.network-picker-option-desc > .network-picker-option-addresses { display: block; }
+.network-picker-option-desc { display: block; margin-top: var(--space-hairline); color: var(--muted); font-family: var(--mono); font-size: var(--text-data-small); line-height: 1.5; }
 /* min-width: 0 lets the row shrink on narrow screens rather than pushing the
    controls out of the bar. */
 .download-controls { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-control); margin-left: auto; min-width: 0; }
@@ -1181,6 +1237,20 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
   background: transparent; color: var(--fg); text-align: left; cursor: pointer;
 }
 :is(.custom-select-option[aria-selected="true"], .network-picker-option[aria-checked="true"]) { background: var(--option-selected-ground); color: var(--accent); }
+/* The chosen option also carries a check at its right edge, so the current
+   choice does not rest on the ground colour alone. Drawn as a mask in the
+   accent; every option keeps room for it so the text never moves. */
+.custom-select-option, .network-picker-option { position: relative; padding-right: calc(10px + 14px + var(--space-control)); }
+:is(.custom-select-option[aria-selected="true"], .network-picker-option[aria-checked="true"])::after {
+  content: ""; position: absolute; right: 10px; top: 50%; width: 14px; height: 14px; transform: translateY(-50%);
+  background: var(--accent); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / contain no-repeat; mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E"); mask-position: center; mask-size: contain; mask-repeat: no-repeat;
+}
+/* The language list is a column of short codes: the selected ground marks
+   the choice there, with no check and no room kept for one. */
+.locale-control .custom-select-option { padding-right: 10px; }
+.locale-control .custom-select-option::after { content: none; }
+/* In the network menu the check sits on the name's line, beside the coin. */
+.network-picker-option[aria-checked="true"]::after { top: calc(8px + 10px); }
 .custom-select-option:disabled { background: transparent; color: var(--faint); cursor: not-allowed; opacity: .48; }
 /* One option state for every list, the network menu included: the chosen
    option sits on the page's own ground (as in the field it fills) in the
@@ -1758,6 +1828,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .journal-keymanager-badge.is-included { color: var(--ok); }
 .journal-keymanager-name { flex: 1 1 16rem; margin-top: var(--space-component); }
 .journal-keymanager-details { display: grid; grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr); gap: var(--space-control) var(--space-component); margin: var(--space-component) 0 0; }
+.journal-keymanager-details > [data-copy-group] { display: contents; }
 .journal-keymanager-details dt { color: var(--muted); font-size: var(--text-label-small); font-weight: 700; }
 .journal-keymanager-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .journal-keymanager-entry-actions { margin-top: var(--space-component); }
@@ -1834,9 +1905,6 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .vanity-prefix-plus { flex: 0 0 auto; color: var(--muted); font-size: var(--text-body); }
 .vanity-prefix-row input:not([type="radio"]):not([type="checkbox"]) { width: 100%; min-width: 0; margin-top: 0; text-align: center; }
 .vanity-secret { display: inline-flex; align-items: center; gap: var(--space-snug); }
-/* In the match table the copy box takes the Update Key button's height, so
-   every control in the row sits on one line. */
-.vanity-secret { --box-size: 36px; }
 /* The selected key, restated where the grind reads from it with the key
    view's own summary block (.key-summary), then its starting passphrase
    verbatim. */
@@ -2110,6 +2178,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
    output amount field sits above the overlay so it stays editable. The box
    stands down while the pointer is on that field, which answers for itself. */
 .psbted-viz-open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.psbted-viz-box > [data-public-inline] { position: relative; z-index: 1; }
 .psbted-viz-open {
   display: flex; gap: var(--space-control); align-items: baseline; width: 100%; min-height: 0; margin: 0; padding: 0;
   border: none; border-radius: var(--radius-small); background: none; color: inherit; font-size: var(--text-compact); text-align: left;
@@ -2146,11 +2215,11 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .exp-len { color: var(--muted); font-size: var(--text-caption); white-space: nowrap; }
 /* The overlay mirrors the disclaimer gate: dimmed page, one centered card. */
 .exp-meta { margin: var(--space-tight) 0 0; }
-.exp-card textarea {
+.exp-card textarea, #exp-readout {
   min-height: 240px; max-height: 55vh; margin-top: var(--space-control);
   font-family: var(--mono); font-size: var(--text-field-small); overflow-wrap: anywhere;
 }
-.exp-card textarea[readonly] { color: var(--muted); }
+#exp-readout { color: var(--muted); white-space: pre-wrap; overflow: auto; }
 /* The QR reference overlay mirrors the expandable and disclaimer overlays:
    a dimmed backdrop with one centered card, dismissed by clicking outside
    or pressing Escape. Shown when an external link is clicked while the
@@ -2160,11 +2229,6 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .qr-ref-url { margin: var(--space-component) 0 0; font-size: var(--text-note); overflow-wrap: anywhere; word-break: break-all; }
 .qr-ref-hint { margin: var(--space-related) 0 0; }
 /* Per-address QR: compact button in each address-table row, one shared overlay. */
-.addr-text {
-  min-width: 0; margin: 0; padding: 0; border: 0; background: none;
-  color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer;
-}
-.addr-text:hover { color: var(--selection-accent-ink); }
 /* In a table the address itself names what was copied, so the mark stands
    alone beside its QR button. */
 .copy-field-status.is-icon-only {
@@ -2639,8 +2703,10 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface-2);
   box-shadow: inset 0 1px 3px rgb(0 0 0 / .7);
 }
+/* The 0% fallback is never used (the slider always sets the position, inline
+   and from script); it gives the HTML conformance checker a type to check. */
 .msig-threshold-track span {
-  position: absolute; top: -1px; bottom: -1px; left: var(--msig-m-position); right: calc(100% - var(--msig-n-position));
+  position: absolute; top: -1px; bottom: -1px; left: var(--msig-m-position); right: calc(100% - var(--msig-n-position, 0%));
   min-width: 0; border-radius: var(--radius-pill); background: var(--accent);
   box-shadow: 0 0 10px color-mix(in oklab, var(--accent) 38%, transparent);
 }
@@ -2967,7 +3033,8 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .wallet-table-public table { min-width: 700px; }
 .wallet-table-private table { min-width: 660px; }
 .wallet-table tbody tr:not(.address-virtual-spacer) { height: 34px; }
-.wallet-table tbody tr:not(.address-virtual-spacer) > * { white-space: nowrap; }
+.wallet-table-private tbody tr:not(.address-virtual-spacer) > * { padding-block: var(--space-hairline); }
+.wallet-table tbody tr:not(.address-virtual-spacer) > * { white-space: nowrap; vertical-align: middle; }
 .wallet-table .address-virtual-spacer, .wallet-table .address-virtual-spacer td { padding: 0; border: 0; line-height: 0; }
 @media (max-width: 520px) {
   .derive-progress { order: 3; flex-basis: 100%; }
@@ -3010,6 +3077,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
      stack as matching strips: same edge, padding and lettering. */
   --toolbar-row-padding: var(--inset-toolbar); --toolbar-row-font: var(--text-control-small); --toolbar-row-weight: 600;
 }
+.key-view > .switch-row + .key-view-toolbar { margin-top: 0; }
 /* The script type stays one horizontal strip at every width: it never wraps,
    so the shared stacking never engages, and on phones the two SegWit labels
    shorten to fit instead. */
@@ -3055,7 +3123,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 .private-field > .label { display: inline-flex; align-items: center; margin: 0; }
 /* A table column holding private values titles itself the same way. */
 .private-heading { display: inline-flex; align-items: center; }
-.private-field.is-revealed > .label, .private-heading.is-revealed { color: var(--danger-bright); }
+.private-field.is-revealed > .copy-field-label, .private-heading.is-revealed { color: var(--danger-bright); }
 .privacy-bar-state { color: var(--fg); font-weight: var(--toolbar-row-weight, 600); }
 .privacy-bar-hint { font-size: var(--text-note); }
 .privacy-bar.is-revealed {

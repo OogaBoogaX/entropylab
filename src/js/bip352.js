@@ -300,14 +300,16 @@ export function deriveSilentPaymentKeys(masterSeed, { coinType = 0, account = 0 
   if (!Number.isInteger(coinType) || coinType < 0 || coinType > 0x7fffffff) throw new Error("coin_type is out of range.");
   if (!Number.isInteger(account) || account < 0 || account > 0x7fffffff) throw new Error("account is out of range.");
   const root = HDKey.fromMasterSeed(masterSeed);
-  if (!root.privateKey) throw new Error("Watch-only keys cannot derive BIP-352 scan/spend paths (they are hardened).");
+  if (!root.hasPrivateKey) throw new Error("Watch-only keys cannot derive BIP-352 scan/spend paths (they are hardened).");
   const scanPath = `m/${BIP352_PURPOSE}'/${coinType}'/${account}'/1'/0`;
   const spendPath = `m/${BIP352_PURPOSE}'/${coinType}'/${account}'/0'/0`;
   const scanNode = root.derive(scanPath);
   const spendNode = root.derive(spendPath);
-  if (!scanNode.privateKey || !spendNode.privateKey) throw new Error("BIP-352 child keys are missing private material.");
-  const scanPriv = scanNode.privateKey.slice();
-  const spendPriv = spendNode.privateKey.slice();
+  if (!scanNode.hasPrivateKey || !spendNode.hasPrivateKey) throw new Error("BIP-352 child keys are missing private material.");
+  // The getter copies, so one read per key is the whole private material;
+  // the session owns these copies and no slice() duplicates are made.
+  const scanPriv = scanNode.privateKey;
+  const spendPriv = spendNode.privateKey;
   const scanPub = secp256k1.getPublicKey(scanPriv, true);
   const spendPub = secp256k1.getPublicKey(spendPriv, true);
   const keys = {
@@ -323,7 +325,7 @@ export function deriveSilentPaymentKeys(masterSeed, { coinType = 0, account = 0 
     spendPoint: Point.fromBytes(spendPub),
     fingerprint: root.fingerprint,
   };
-  // The result owns fresh slices; the derivation nodes are dead copies.
+  // The result owns the getter copies; the derivation nodes are dead.
   scanNode.wipePrivateData();
   spendNode.wipePrivateData();
   root.wipePrivateData();
