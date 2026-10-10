@@ -575,7 +575,7 @@ test("every gate and publication path consumes the single tested candidate (issu
   }
   // The repository artifact cannot be committed when unit or browser tests
   // fail, or when a second in-image WASM build disagrees with the candidate.
-  for (const dependency of ["build", "verify", "test-ci", "test-browser", "build-wasm", "fuzz-lifehash", "fuzz-msig", "reproduce"]) {
+  for (const dependency of ["build", "verify", "test-ci", "test-browser", "build-wasm", "fuzz-lifehash", "fuzz-lifehash-cpp", "fuzz-msig", "reproduce"]) {
     assert.ok(jobNeeds(workflowJob(workflow, "artifact")).includes(dependency), `artifact needs ${dependency}`);
   }
 });
@@ -592,7 +592,7 @@ test("third-party actions are immutable and deployment is test-gated", () => {
   const rebuild = workflowSteps(workflowJob(workflow, "build-wasm")).find((step) => BUILD_WASM_COMMAND.test(step)) ?? "";
   assert.match(rebuild, IN_IMAGE_BUILD, "build-wasm rebuilds the bindings inside the pinned dev image");
   assert.deepEqual(wasmGateProblems(workflow), []);
-  for (const dependency of ["build", "verify", "test-ci", "test-browser", "build-wasm", "fuzz-lifehash", "fuzz-msig", "reproduce"]) {
+  for (const dependency of ["build", "verify", "test-ci", "test-browser", "build-wasm", "fuzz-lifehash", "fuzz-lifehash-cpp", "fuzz-msig", "reproduce"]) {
     assert.ok(jobNeeds(workflowJob(workflow, "deploy")).includes(dependency), `deploy needs ${dependency}`);
   }
 });
