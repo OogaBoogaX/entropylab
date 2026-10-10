@@ -7,6 +7,7 @@ import {
   hodlBytewordsDecode,
   hodlCborBstr,
   hodlUrPartCbor,
+  hodlUrEncodeMessage,
   hodlUrEncodePsbt,
   hodlUrDecodePsbt,
 } from "../src/js/psbt-ur.js";
@@ -175,4 +176,27 @@ test("legacy pre-MUR fragments still decode", () => {
   const decoded = hodlUrDecodePsbt(parts);
   assert.equal(hexEncode(decoded.psbt), hexEncode(psbt));
   assert.equal(decoded.parts, chunks.length);
+});
+
+// Blockchain Commons bc-ur (C++ reference implementation) test.cpp
+// "test_ur_encoder": the published ur:bytes serialization of the same
+// 256-byte Xoshiro256("Wolf") message as above, as a CBOR byte string split
+// at the reference encoder's nominal 29-byte fragment length (its 30-byte
+// maximum reduced by find_nominal_fragment_length: ceil(259/9) = 29). This is
+// the encode path watchOnlyQrPlan uses (hodlCborBstr + hodlUrEncodeMessage).
+const BC_UR_REFERENCE_PARTS = [
+  "ur:bytes/1-9/lpadascfadaxcywenbpljkhdcahkadaemejtswhhylkepmykhhtsytsnoyoyaxaedsuttydmmhhpktpmsrjtdkgslpgh",
+  "ur:bytes/2-9/lpaoascfadaxcywenbpljkhdcagwdpfnsboxgwlbaawzuefywkdplrsrjynbvygabwjldapfcsgmghhkhstlrdcxaefz",
+  "ur:bytes/3-9/lpaxascfadaxcywenbpljkhdcahelbknlkuejnbadmssfhfrdpsbiegecpasvssovlgeykssjykklronvsjksopdzmol",
+  "ur:bytes/4-9/lpaaascfadaxcywenbpljkhdcasotkhemthydawydtaxneurlkosgwcekonertkbrlwmplssjtammdplolsbrdzcrtas",
+  "ur:bytes/5-9/lpahascfadaxcywenbpljkhdcatbbdfmssrkzmcwnezelennjpfzbgmuktrhtejscktelgfpdlrkfyfwdajldejokbwf",
+  "ur:bytes/6-9/lpamascfadaxcywenbpljkhdcackjlhkhybssklbwefectpfnbbectrljectpavyrolkzczcpkmwidmwoxkilghdsowp",
+  "ur:bytes/7-9/lpatascfadaxcywenbpljkhdcavszmwnjkwtclrtvaynhpahrtoxmwvwatmedibkaegdosftvandiodagdhthtrlnnhy",
+  "ur:bytes/8-9/lpayascfadaxcywenbpljkhdcadmsponkkbbhgsoltjntegepmttmoonftnbuoiyrehfrtsabzsttorodklubbuyaetk",
+  "ur:bytes/9-9/lpasascfadaxcywenbpljkhdcajskecpmdckihdyhphfotjojtfmlnwmadspaxrkytbztpbauotbgtgtaeaevtgavtny",
+];
+
+test("ur:bytes encode matches the published bc-ur reference strings", () => {
+  const message = concat(...MUR_FRAGMENTS.map(hex)).slice(0, MUR_MESSAGE_LEN);
+  assert.deepEqual(hodlUrEncodeMessage("bytes", hodlCborBstr(message), { maxBytes: 29 }), BC_UR_REFERENCE_PARTS);
 });

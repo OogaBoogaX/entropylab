@@ -199,33 +199,38 @@ export function hodlUrParsePart(raw) {
   return { type, seq, count, payload, fountain, part };
 }
 
-export function hodlUrEncodePsbt(psbt, options = {}) {
-  if (!(psbt instanceof Uint8Array) || !psbt.length) throw new Error("Need PSBT bytes to encode a UR.");
-  // The UR payload is the untagged CBOR byte string: the type component
-  // already carries tag 310's information (BCR-2020-005).
-  const message = hodlCborBstr(psbt);
+export function hodlUrEncodeMessage(type, message, options = {}) {
+  if (!/^[a-z0-9-]+$/.test(type)) throw new Error("Bad UR type.");
+  if (!(message instanceof Uint8Array) || !message.length) throw new Error("Need UR message bytes.");
   const maxBytes = Number.isFinite(options.maxBytes) ? options.maxBytes : 200;
-  if (message.length <= maxBytes) return ["ur:crypto-psbt/" + hodlBytewordsEncode(message, "minimal")];
-  // BCR-2024-001 fixed-rate parts: equal-length fragments (the last one
-  // zero-padded), each carrying the whole message's length and CRC-32 so
-  // reassembly is verified, not just concatenated.
+  if (message.length <= maxBytes) return ["ur:" + type + "/" + hodlBytewordsEncode(message, "minimal")];
+  // Same BCR-2024-001 fixed-rate parts crypto-psbt already uses. Not a new
+  // dialect and not a fountain code: equal-length fragments, the last one
+  // zero-padded, each carrying the whole message's length and CRC-32.
   const count = Math.ceil(message.length / maxBytes);
   const checksum = crc32Number(message);
   const parts = [];
   for (let i = 0; i < count; i++) {
     let fragment = message.slice(i * maxBytes, (i + 1) * maxBytes);
     if (fragment.length < maxBytes) fragment = concatBytes(fragment, new Uint8Array(maxBytes - fragment.length));
-    parts.push("ur:crypto-psbt/" + (i + 1) + "-" + count + "/" + hodlBytewordsEncode(hodlUrPartCbor(i + 1, count, message.length, checksum, fragment), "minimal"));
+    parts.push("ur:" + type + "/" + (i + 1) + "-" + count + "/" + hodlBytewordsEncode(hodlUrPartCbor(i + 1, count, message.length, checksum, fragment), "minimal"));
   }
   return parts;
 }
 
-export function hodlUrDecodePsbt(raw) {
+export function hodlUrEncodePsbt(psbt, options = {}) {
+  if (!(psbt instanceof Uint8Array) || !psbt.length) throw new Error("Need PSBT bytes to encode a UR.");
+  // The UR payload is the untagged CBOR byte string: the type component
+  // already carries tag 310's information (BCR-2020-005).
+  return hodlUrEncodeMessage("crypto-psbt", hodlCborBstr(psbt), options);
+}
+
+function hodlUrReassemble(raw, emptyMessage, acceptType) {
   const pieces = Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/).filter(Boolean);
-  if (!pieces.length) throw new Error("Paste a UR crypto-psbt.");
+  if (!pieces.length) throw new Error(emptyMessage);
   const parsed = pieces.map(hodlUrParsePart);
   const type = parsed[0].type;
-  if (type !== "crypto-psbt" && type !== "psbt") throw new Error("This UR is " + type + ", not crypto-psbt.");
+  acceptType(type);
   if (parsed.some((part) => part.type !== type)) throw new Error("Mixed UR types.");
   if (parsed.some((part) => part.fountain)) {
     throw new Error("Fountain UR fragments (seq > count) are not assembled yet. Display only: scan sequential 1-N parts.");
@@ -234,14 +239,14 @@ export function hodlUrDecodePsbt(raw) {
   if (parsed.some((part) => part.count !== count)) throw new Error("UR fragment counts do not match.");
   if (count === 1) {
     if (parsed.length !== 1) throw new Error("A single-part UR should be pasted once.");
-    return { type, psbt: hodlCborUnwrapPsbt(parsed[0].payload), parts: 1 };
+    return { type, message: parsed[0].payload, parts: 1 };
   }
   const slots = Array.from({ length: count }, () => null);
   for (const part of parsed) {
     if (part.seq < 1 || part.seq > count) throw new Error("UR fragment index is out of range.");
     // A second fragment for an already-filled sequence number would silently
-    // overwrite it — with fragments spliced from two different PSBTs the
-    // reassembly would decode to a transaction neither sender produced.
+    // overwrite it — with fragments spliced from two different messages the
+    // reassembly would decode to bytes neither sender produced.
     // Exact repeats (the same fragment pasted twice) are idempotent;
     // conflicting ones are rejected (issue #364).
     const existing = slots[part.seq - 1];
@@ -273,11 +278,49 @@ export function hodlUrDecodePsbt(raw) {
     if (crc32Number(message) !== standard.checksum) {
       throw new Error("UR message checksum failed: the reassembled message is not the one the fragments belong to.");
     }
-    return { type, psbt: hodlCborUnwrapPsbt(message), parts: count };
+    return { type, message, parts: count };
   }
   if (ordered.some((part) => part.part)) throw new Error("Mixed UR fragment formats: some parts carry MUR metadata and some do not.");
   // Legacy pre-MUR fragments: raw chunks tied only by per-chunk checksums.
-  return { type, psbt: hodlCborUnwrapPsbt(concatBytes(...ordered.map((part) => part.payload))), parts: count };
+  return { type, message: concatBytes(...ordered.map((part) => part.payload)), parts: count };
+}
+
+export function hodlUrDecodePsbt(raw) {
+  const assembled = hodlUrReassemble(raw, "Paste a UR crypto-psbt.", (type) => {
+    if (type !== "crypto-psbt" && type !== "psbt") throw new Error("This UR is " + type + ", not crypto-psbt.");
+  });
+  return { type: assembled.type, psbt: hodlCborUnwrapPsbt(assembled.message), parts: assembled.parts };
+}
+
+// Watch-only descriptor and BIP-388 policy text. Same UR family as
+// crypto-psbt: ur:bytes is the untagged CBOR byte string in BCR-2020-005,
+// and a payload past one QR uses the same fixed-rate MUR parts. Not a
+// signing protocol. An extended private key is refused.
+const WATCH_ONLY_PRIVATE_KEY = /\b(?:[xyztuv]prv|[YZUV]prv)[1-9A-HJ-NP-Za-km-z]{90,}/;
+export const WATCH_ONLY_QR_STATIC_MAX_CHARS = 1000;
+
+function assertWatchOnlyText(value) {
+  if (WATCH_ONLY_PRIVATE_KEY.test(value)) throw new Error("Watch-only QR refused an extended private key.");
+}
+
+export function watchOnlyQrPlan(text) {
+  const value = String(text ?? "");
+  assertWatchOnlyText(value);
+  if (value.length <= WATCH_ONLY_QR_STATIC_MAX_CHARS) return { mode: "static", text: value };
+  const message = hodlCborBstr(new TextEncoder().encode(value));
+  const parts = hodlUrEncodeMessage("bytes", message, { maxBytes: 200 }).map((part) => part.toUpperCase());
+  if (parts.length < 2) throw new Error("A payload past one QR must split into UR parts.");
+  return { mode: "ur", parts };
+}
+
+export function hodlUrDecodeWatchOnly(raw) {
+  const assembled = hodlUrReassemble(raw, "Paste a UR bytes payload.", (type) => {
+    if (type !== "bytes") throw new Error("This UR is " + type + ", not bytes.");
+  });
+  const bytes = hodlCborUnwrapPsbt(assembled.message);
+  const value = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  assertWatchOnlyText(value);
+  return value;
 }
 
 export { WORDS };
