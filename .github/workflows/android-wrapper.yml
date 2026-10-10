@@ -1,0 +1,36 @@
+name: Android wrapper
+
+on:
+  pull_request:
+    paths: ['android/**', '.github/workflows/android-wrapper.yml']
+  push:
+    branches: [rock]
+    paths: ['android/**', '.github/workflows/android-wrapper.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Run standalone release pin checks
+        working-directory: android
+        run: |
+          javac --release 17 -d build/pincheck app/src/main/java/online/entropylab/android/HtmlPin.java app/src/test/java/online/entropylab/android/HtmlPinTest.java
+          java -cp build/pincheck online.entropylab.android.HtmlPinTest
+      # Callback tests execute the actual wrapper against deterministic doubles.
+      # They do not substitute for emulator/device acceptance.
+      - name: Check rotation and cold-start lifecycle contract
+        run: python3 android/lifecycle-check.py
+      - name: Install pinned SDK components
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0"'
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon
+      - name: Verify packaged bytes and merged permissions
+        working-directory: android
+        run: python3 verify-apk.py app/build/outputs/apk/debug/app-debug.apk "$ANDROID_HOME/build-tools/35.0.0/aapt"

@@ -437,6 +437,22 @@ For sensitive or long-term use, the recommended path remains the downloaded,
 verified `entropylab.html` on a dedicated air-gapped computer. The downloaded
 file is still self-contained and never registers the hosted service worker.
 
+### Android wrapper (experimental)
+
+The `android/` directory builds a debug APK that embeds the pinned v1.0.0rc1
+release `entropylab.html` (vendored at `android/app/src/main/assets/`, SHA-256
+checked against `android/ENTROPYLAB_HTML.sha256` at build time and again
+before the calculator opens). The app requests no Android permissions —
+including `INTERNET` — blocks network loads in its WebView, and only ever
+displays the bundled asset, so its offline guarantee comes from the platform,
+not from the page alone. The trade-off is that the Android WebView (Chromium)
+becomes part of the trusted computing base. It is a locally built debug
+package, not a distributed app, and has not been tested on a physical device.
+Rotation redraws the same in-memory WebView; genuine backgrounding ends the
+process and returns to a cold launch. No calculator state is serialized for
+activity or process restoration. Build instructions and the pin-update procedure are in
+[android/README.md](android/README.md).
+
 ### Verifying the download
 
 Every merge to `rock` publishes a `SHA256SUMS.txt` checksum manifest for
