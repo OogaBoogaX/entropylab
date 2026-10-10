@@ -176,6 +176,34 @@
 
   await wait(500);
 
+  await test("MS1 calculator rejects mistyped complete seeds and clears stale results", () => {
+    const input = document.getElementById("codex32-shares");
+    const index = document.getElementById("codex32-index");
+    const out = document.getElementById("codex32-out");
+    const error = document.getElementById("codex32-error");
+    const valid = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw";
+    input.value = valid.slice(0, -13);
+    document.getElementById("codex32-checksum").click();
+    equal(out.textContent, valid + "\n318c6318c6318c6318c6318c6318c631");
+    input.value = "ms10testsxxxxxxxxxxxqxxxxxxxxxxxxxx4nzvca9cmczlw";
+    document.getElementById("codex32-checksum").click();
+    equal(out.textContent, "");
+    assert(/Checksum/.test(error.textContent), "mistyped seed must report checksum failure");
+    input.value = "MS12NAMEA320ZYXWVUTSRQPNMLKJHGFEDCAXRPP870HKKQRM\nMS12NAMECACDEFGHJKLMNPQRSTUVWXYZ023FTR2GDZMPY6PN";
+    document.getElementById("codex32-recover").click();
+    equal(out.textContent, "ms12names6xqguzttxkeqnjsjzv4jv3nz5k3kwgsphuh6evw\nd1808e096b35b209ca12132b264662a5");
+    index.value = "d";
+    document.getElementById("codex32-derive").click();
+    equal(out.textContent, "ms12namedll4f8jlh4e5vdvuldlfxu2jhdnlsm97xvenrxeg");
+    index.value = "s";
+    document.getElementById("codex32-derive").click();
+    equal(out.textContent, "");
+    assert(error.textContent.length > 0, "derive-to-secret must fail");
+    document.getElementById("codex32-clear").click();
+    equal(input.value, ""); equal(index.value, "");
+    equal(out.textContent, ""); equal(error.textContent, "");
+  });
+
   await test("security log follows Important and starts with browser connectivity", () => {
     const log = document.getElementById("security-log");
     const output = document.getElementById("security-log-output");
