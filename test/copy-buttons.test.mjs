@@ -7,9 +7,8 @@
 // Station).
 //
 // Security contract: a copy button holds no secret in any attribute or
-// property, and its click puts on the clipboard exactly the text it always
-// did; the disabled state, the aria-label and title (also after the "copied"
-// timeout) and what a click does when there is nothing to copy do not change.
+// property. A revealed child copies its published text; hidden children and
+// detached controls cannot copy. Confirmation never retains the secret.
 //
 // Expected values: the published BIP39 vectors (trezor/python-mnemonic
 // vectors.json), each cross-checked below against @scure/bip39 from its
@@ -36,6 +35,7 @@ const inert = new Proxy(function () {}, { get: (target, key) => key === Symbol.t
 Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
 const seed = await loadAppFunctions(["hodlRenderDiceWordGrid", "hodlCopySeedPhraseButton", "hodlDerivedSeedRowMarkup"]);
 const station = await loadAppFunctions(["hodlRenderBip85Out", "hodlCopyBip85Child"], { stubs: { hodlFillKeyTabLifehash: () => {} }, settable: ["hodlBip85Children", "hodlActiveBip85", "hodlBip85Reveal"] });
+const publicReadouts = await loadAppFunctions(["hodlVanityKeyMarkup", "hodlSetMasterFingerprintCard"]);
 delete globalThis.document;
 delete globalThis.window;
 
@@ -82,6 +82,34 @@ const withPage = (mode, body) => async () => {
     leave();
   }
 };
+
+test("a vanity fingerprint supplies its exact public value to both copy controls", withPage("works", async (document) => {
+  document.body.innerHTML = publicReadouts.hodlVanityKeyMarkup("73c5da0a");
+  const value = document.querySelector("[data-public-value]");
+  assert.ok(value, "the fingerprint is exposed through the public-value interface");
+  assert.equal(value.textContent, "73c5da0a");
+  assert.ok(value.hasAttribute("data-copy-field"));
+  assert.ok(value.closest("[data-copy-group]").querySelector("[data-public-copy]"));
+  document.body.innerHTML = publicReadouts.hodlVanityKeyMarkup("");
+  assert.equal(document.querySelector("[data-public-copy]"), null);
+}));
+
+test("fingerprint previews offer direct copying only while a value is available", withPage("works", async (document) => {
+  document.body.innerHTML = '<div id="card" data-copy-group><button id="fingerprint" data-copy-field data-public-value></button><span data-copy-status aria-live="polite"></span></div>';
+  const card = document.getElementById("card"), value = document.getElementById("fingerprint");
+  const status = card.querySelector("[data-copy-status]");
+  assert.equal(publicReadouts.hodlSetMasterFingerprintCard(card, value, "73c5da0a", null), true);
+  assert.equal(value.textContent, "73c5da0a");
+  assert.ok(value.hasAttribute("data-copy-field"));
+  assert.equal(card.querySelector("[data-public-copy]"), null);
+  assert.equal(status.closest("[data-copy-group]"), value.closest("[data-copy-group]"));
+  assert.equal(value.disabled, false);
+  assert.equal(publicReadouts.hodlSetMasterFingerprintCard(card, value, "", null), false);
+  assert.equal(value.textContent, "");
+  assert.equal(card.querySelector("[data-public-copy]"), null);
+  assert.equal(status.textContent, "");
+  assert.equal(value.disabled, true);
+}));
 
 // Everything a button holds as text: each attribute (name and value), its
 // markup, and every string reachable from its own properties (the ones page
@@ -377,14 +405,15 @@ function childState(spec, index) {
   const result = deriveApplication(BIP85_MASTER, spec);
   return { isLab: false, id: index, name: `child ${index}`, result, reveal: false, fingerprint: "0badc0de", fingerprintKind: "child", network: "mainnet", parentFingerprint: "f00dcafe" };
 }
-function bip85Page(document, active) {
+function bip85Page(document, active, revealed = true) {
   // The parent sits in the page too, in the station's root field.
   document.body.innerHTML = '<input id="bip85-key"><div id="bip85-out"></div>';
   document.getElementById("bip85-key").value = BIP85_MASTER.privateExtendedKey;
-  const children = [{ isLab: true, id: 0, name: "BIP-85 Station", result: null, reveal: false, fingerprint: "", fingerprintKind: "" }, ...CHILDREN.map(([, spec], index) => childState(spec, index + 1))];
+  const children = [{ isLab: true, id: 0, name: "BIP-85 Station", result: null, reveal: false, fingerprint: "", fingerprintKind: "" }, ...CHILDREN.map(([, spec], index) => ({ ...childState(spec, index + 1), reveal: revealed }))];
   station.__set.hodlBip85Children(children);
   const show = (index) => {
     station.__set.hodlActiveBip85(index);
+    station.__set.hodlBip85Reveal(Boolean(children[index]?.reveal));
     station.hodlRenderBip85Out();
     return document.getElementById("bip85-copy");
   };
@@ -394,6 +423,28 @@ function bip85Page(document, active) {
 test("the BIP-85 fixtures are the published children", () => {
   for (const [, spec, secret] of CHILDREN) assert.equal(deriveApplication(BIP85_MASTER, spec).secret, secret);
 });
+
+test("BIP-85 refuses to copy a hidden child", withPage("works", async (document) => {
+  const { button } = bip85Page(document, 1);
+  station.__set.hodlBip85Reveal(false);
+  button.click();
+  await settle();
+  assert.deepEqual(written, [], "a hidden child reached the clipboard");
+}));
+
+test("BIP-85 renders no clipboard control for a concealed child", withPage("works", async (document) => {
+  const { button } = bip85Page(document, 1, false);
+  assert.equal(button, null);
+  assert.equal(document.querySelector("[data-private-copy]"), null);
+}));
+
+test("BIP-85 refuses a detached control after switching children", withPage("works", async (document) => {
+  const { button, show } = bip85Page(document, 1);
+  show(2);
+  button.click();
+  await settle();
+  assert.deepEqual(written, [], "a stale control copied the new child");
+}));
 
 for (const [index, [name, , secret]] of CHILDREN.entries()) {
   test(`BIP-85 ${name}: the button holds no secret in any attribute or property`, withPage("works", async (document) => {

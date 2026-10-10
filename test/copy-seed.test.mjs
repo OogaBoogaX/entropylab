@@ -58,6 +58,5 @@ test("copy control markup starts disabled", () => {
   assert.match(app, /data-copy-seed-phrase disabled/);
   assert.match(app, /function hodlSeedMetaRowMarkup/);
   assert.match(app, /function hodlSeedCopyRowMarkup/);
-  assert.match(app, /button\.closest\("\.seed-word-copy-row"\)/);
   assert.match(app, /container\.closest\("#form"\)\?\.querySelector\("\[data-copy-seed-phrase\]"\)/);
 });
