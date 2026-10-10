@@ -7,7 +7,18 @@
 //   ours:    fromFingerprint(fp, moduleSize) -> PNG data URL -> decoded RGB
 //   theirs:  LifeHash.makeFrom(hexToBytes(fp), version2, moduleSize, false).colors
 // Both hash the RAW fingerprint bytes (Sparrow/toucan's convention), so the
-// fuzzer also guards that the app stays Sparrow-compatible. Comparing the
+// fuzzer also guards that the app stays Sparrow-compatible.
+//
+// The app follows the Blockchain Commons C++ reference's single-precision
+// colour arithmetic (fmodf modulo, powf/sqrtf luminance), which the package
+// computes in double precision; the two disagree on roughly 1% of
+// fingerprints. "theirs" is therefore the pinned package with exactly those
+// two functions swapped for the C++ semantics (see loadReferencePackage), so
+// the fuzzer keeps checking everything else — hashing, the Game of Life, bit
+// reading, gradient selection, symmetry, PNG encoding and scaling. The float32
+// arithmetic itself is pinned by C++ reference vectors, here (VECTORS, which
+// the substituted package must also reproduce) and in test/lifehash.test.mjs,
+// and fuzzed against the compiled reference by fuzz-cpp.mjs. Comparing the
 // app's final PNG (rather than internals) also covers the hand-rolled PNG
 // encoder and the module-size scaling.
 //
@@ -18,77 +29,63 @@
 //
 // Run: npm --prefix fuzzing run fuzz:lifehash
 //      FUZZ_ITERATIONS=5000 FUZZ_SEED=0x1234 node fuzzing/lifehash/fuzz.mjs
-import { readFileSync } from "node:fs";
-import { createHash, webcrypto } from "node:crypto";
-import { inflateSync } from "node:zlib";
-import { LifeHash, LifeHashVersion } from "lifehash";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  ITERATIONS, MODULE_SIZES, SEED, decodePngRgb, firstDifference, hexToBytes, nextFingerprint, ours, sha256Hex,
+} from "./common.mjs";
 
-const ITERATIONS = Number.parseInt(process.env.FUZZ_ITERATIONS ?? "1000", 10);
-const SEED = BigInt(process.env.FUZZ_SEED ?? "0x9e3779b97f4a7c15");
-const MODULE_SIZES = [1, 2, 3]; // the app renders at 3; 1 and 2 cover the raw grid and scaling
-
-// --- EntropyLab side: evaluate the shipped module with its browser globals,
-// the same shim test/lifehash.test.mjs uses, so the fuzzer exercises the
-// exact code the app ships.
-const src = readFileSync(new URL("../../src/js/lifehash.js", import.meta.url), "utf8");
-const btoa = (s) => Buffer.from(s, "binary").toString("base64");
-const ours = new Function("crypto", "btoa", "TextEncoder", `${src}; return hodlLifeHash;`)(webcrypto, btoa, TextEncoder);
-
-// --- PNG -> raw RGB. Our encoder writes one filter-0 scanline per row; a
-// non-zero filter byte means the encoder changed and this harness is stale.
-const decodePngRgb = (dataUrl) => {
-  const png = Buffer.from(dataUrl.split(",")[1], "base64");
-  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
-  if (!png.subarray(0, 8).equals(Buffer.from(sig))) throw new Error("bad PNG signature");
-  let width = 0, height = 0;
-  const idat = [];
-  for (let at = 8; at < png.length;) {
-    const length = png.readUInt32BE(at);
-    const type = png.subarray(at + 4, at + 8).toString("ascii");
-    const data = png.subarray(at + 8, at + 8 + length);
-    if (type === "IHDR") {
-      width = data.readUInt32BE(0);
-      height = data.readUInt32BE(4);
-      if (data[8] !== 8 || data[9] !== 2) throw new Error("expected 8-bit truecolour PNG");
-    }
-    if (type === "IDAT") idat.push(data);
-    at += 8 + length + 4; // skip CRC
+// Copy the pinned package to a scratch directory and substitute the C++
+// reference's float32 modulo and luminance. Each replacement must match the
+// package source exactly once, so a package change fails here, loudly.
+const loadReferencePackage = async () => {
+  const pkg = dirname(createRequire(import.meta.url).resolve("lifehash/package.json"));
+  // Beside the package in node_modules, so its own dependencies still resolve.
+  const dir = mkdtempSync(join(dirname(pkg), ".lifehash-ref-"));
+  try {
+    cpSync(pkg, dir, { recursive: true });
+    const patch = (file, from, to) => {
+      const path = join(dir, "src/lifehash", file);
+      const text = readFileSync(path, "utf8");
+      if (text.split(from).length !== 2) throw new Error(`lifehash package changed: ${file} no longer matches the float32 patch`);
+      writeFileSync(path, text.replace(from, to));
+    };
+    patch(
+      "math-utils.js",
+      "return ((dividend % divisor) + divisor) % divisor;",
+      "const f = Math.fround; return f(f(f(dividend) % f(divisor)) + f(divisor)) % f(divisor);",
+    );
+    patch(
+      "Color.js",
+      `return Math.sqrt(Math.pow(0.299 * this.r, 2) +
+            Math.pow(0.587 * this.g, 2) +
+            Math.pow(0.114 * this.b, 2));`,
+      `const f = Math.fround, sq = (x) => f(f(x) * f(x));
+        return f(Math.sqrt(f(f(sq(0.299 * this.r) + sq(0.587 * this.g)) + sq(0.114 * this.b))));`,
+    );
+    return await import(pathToFileURL(join(dir, "src/index.js")).href);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
-  const raw = inflateSync(Buffer.concat(idat));
-  const stride = width * 3;
-  if (raw.length !== (stride + 1) * height) throw new Error("unexpected inflated size");
-  const rgb = new Uint8Array(stride * height);
-  for (let y = 0; y < height; y += 1) {
-    if (raw[y * (stride + 1)] !== 0) throw new Error(`unsupported PNG filter ${raw[y * (stride + 1)]}`);
-    rgb.set(raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1)), y * stride);
-  }
-  return { width, height, rgb };
 };
+const { LifeHash, LifeHashVersion } = await loadReferencePackage();
 
-// --- Deterministic PRNG (xorshift64*).
-let prngState = SEED & 0xffffffffffffffffn;
-if (prngState === 0n) throw new Error("FUZZ_SEED must be non-zero");
-const nextByte = () => {
-  prngState ^= prngState << 13n; prngState &= 0xffffffffffffffffn;
-  prngState ^= prngState >> 7n;
-  prngState ^= prngState << 17n; prngState &= 0xffffffffffffffffn;
-  return Number((prngState >> 56n) & 0xffn);
-};
-// The app only ever hashes 8-hex-digit master fingerprints, so that is the
-// fuzz domain.
-const nextFingerprint = () => [...Array(4)].map(() => nextByte().toString(16).padStart(2, "0")).join("");
-
-const sha256Hex = (bytes) => createHash("sha256").update(Buffer.from(bytes)).digest("hex");
-
-// Non-vacuity guard: the same vectors test/lifehash.test.mjs pins, generated
-// from the canonical implementation over the raw fingerprint bytes (Sparrow's
+// Non-vacuity guard: a subset of the vectors test/lifehash.test.mjs pins,
+// generated by the C++ reference over the raw fingerprint bytes (Sparrow's
 // convention). Both sides must reproduce them before any fuzzing happens — a
-// fuzzer whose comparisons silently no-op must fail here, loudly.
+// fuzzer whose comparisons silently no-op must fail here, loudly. The last
+// three are cases the unpatched package gets wrong, so they also prove the
+// float32 substitution took effect.
 const VECTORS = [
   { input: "73c5da0a", rgb: "09da10ffd57a4f58616a5eda313d3f0c861e79b93e1b609a012f9c3530b427b5" },
   { input: "00000000", rgb: "9003d9fd366ec3aa06f54d6797485114ec00c61bf85c0efafa91bd2e40176d5b" },
   { input: "ffffffff", rgb: "e856f1b33dfd8eef83151de7407c3d4861581ce09f11f11f2dfc6b0219a1e51b" },
   { input: "b8688df1", rgb: "d44ba038c1389003c955a6f17accfb87c98fce4e8c98c9e2a44c71067b6521fe" },
+  { input: "e3aa047b", rgb: "39c5d326ab09d98cda029cb9799b5c35bdb88ab8b7b799ee6a97cf6c5d0754d6" },
+  { input: "a68bbd2f", rgb: "1c8f5b3a9d49d0b2e4785a040d271e8e361fc24b42e87b504b7ecf09cc211a13" },
+  { input: "a5f29c5c", rgb: "4c811efc7660757cb40aacccf38f810c0dc02732eed6ee009a3cd21db95d1958" },
 ];
 // Edge inputs beyond the PRNG stream: boundary nibbles, repeated bytes, and
 // uppercase variants (hex decoding is case-insensitive on both sides, so
@@ -97,9 +94,6 @@ const FIXED = [
   "00000000", "ffffffff", "01234567", "89abcdef", "deadbeef", "aaaaaaaa", "55555555", "0f0f0f0f", "f0f0f0f0",
   ...VECTORS.map((v) => v.input.toUpperCase()),
 ];
-
-// Case-insensitive hex decode, mirroring Sparrow's Utils.hexToBytes.
-const hexToBytes = (hex) => Uint8Array.from(Buffer.from(hex.toLowerCase(), "hex"));
 
 let comparisons = 0;
 const fail = (fingerprint, moduleSize, message) => {
@@ -113,21 +107,8 @@ const fail = (fingerprint, moduleSize, message) => {
 const compare = async (fingerprint, moduleSize, theirsFp = fingerprint) => {
   const oursPng = decodePngRgb(await ours.fromFingerprint(fingerprint, moduleSize));
   const theirs = LifeHash.makeFrom(hexToBytes(theirsFp), LifeHashVersion.version2, moduleSize, false);
-  if (oursPng.width !== theirs.width || oursPng.height !== theirs.height) {
-    fail(fingerprint, moduleSize, `dimensions ${oursPng.width}x${oursPng.height} vs ${theirs.width}x${theirs.height}`);
-  }
-  const rgb = Uint8Array.from(theirs.colors);
-  for (let i = 0; i < rgb.length; i += 1) {
-    if (oursPng.rgb[i] !== rgb[i]) {
-      const pixel = Math.floor(i / 3), channel = "rgb"[i % 3];
-      fail(
-        fingerprint,
-        moduleSize,
-        `pixel (${pixel % oursPng.width}, ${Math.floor(pixel / oursPng.width)}) channel ${channel}: ` +
-        `ours ${oursPng.rgb[i]} vs theirs ${rgb[i]}`,
-      );
-    }
-  }
+  const difference = firstDifference(oursPng, theirs.width, theirs.height, Uint8Array.from(theirs.colors));
+  if (difference) fail(fingerprint, moduleSize, difference);
   comparisons += 1;
   return oursPng;
 };
@@ -135,9 +116,9 @@ const compare = async (fingerprint, moduleSize, theirsFp = fingerprint) => {
 // 1. Pinned-vector guard on both sides (module size 1, raw 32x32 RGB).
 for (const { input, rgb } of VECTORS) {
   const oursPng = await compare(input, 1);
-  if (sha256Hex(oursPng.rgb) !== rgb) fail(input, 1, "EntropyLab no longer reproduces the pinned canonical vector");
+  if (sha256Hex(oursPng.rgb) !== rgb) fail(input, 1, "EntropyLab no longer reproduces the pinned C++ reference vector");
   const theirs = LifeHash.makeFrom(hexToBytes(input), LifeHashVersion.version2, 1, false);
-  if (sha256Hex(theirs.colors) !== rgb) fail(input, 1, "the pinned `lifehash` package no longer reproduces the canonical vector");
+  if (sha256Hex(theirs.colors) !== rgb) fail(input, 1, "the float32-patched `lifehash` package no longer reproduces the C++ reference vector");
 }
 
 // 2. Fixed edge inputs, at every module size; uppercase variants compare

@@ -20,9 +20,11 @@
 // re-expressed for this project (closures instead of classes, flat arrays
 // instead of grid objects, WebCrypto, a hand-rolled PNG encoder), but it
 // follows those sources function-by-function and retains fragments of their
-// expression, so their licenses apply to this file. Correctness is pinned
-// bit-for-bit against the canonical package (test/lifehash.test.mjs,
-// fuzzing/lifehash/fuzz.mjs).
+// expression, so their licenses apply to this file. The colour arithmetic
+// follows the C++ reference (0444dbed5615fbc9a98163608c6499c025b7873b) where
+// the JS package does not — float32 modulo and luminance — and correctness is
+// pinned bit-for-bit against C++ reference vectors (test/lifehash.test.mjs)
+// and differentially against the package (fuzzing/lifehash/fuzz.mjs).
 //
 // Unlike the rest of EntropyLab (public domain, see LICENSE), THIS FILE IS
 // NOT PUBLIC DOMAIN. Copies and derivative works — including the built
@@ -188,7 +190,12 @@ const hodlLifeHash = (() => {
   const interpolate = (a, b, t) => t * (b - a) + a;
   const lerpFraction = (fromA, fromB, t) => (fromA - t) / (fromA - fromB);
   const lerp = (fromA, fromB, toC, toD, t) => interpolate(toC, toD, lerpFraction(fromA, fromB, t));
-  const modulo = (a, b) => ((a % b) + b) % b;
+  // The C++ reference computes this with fmodf, rounding each argument to
+  // single precision; just below an integer the result can round to 0. That
+  // artifact is reproduced deliberately — the reference's pixels are the
+  // contract, not the smoother double-precision interpolation.
+  const f32 = Math.fround;
+  const modulo = (a, b) => f32(f32(f32(a) % f32(b)) + f32(b)) % f32(b);
 
   const rgb = (r, g, b) => ({ r, g, b });
   const lerpColor = (c1, c2, t) => {
@@ -197,7 +204,10 @@ const hodlLifeHash = (() => {
   };
   const lighten = (c, t) => lerpColor(c, rgb(1, 1, 1), t);
   const darken = (c, t) => lerpColor(c, rgb(0, 0, 0), t);
-  const luminance = (c) => Math.sqrt((0.299 * c.r) ** 2 + (0.587 * c.g) ** 2 + (0.114 * c.b) ** 2);
+  // Single precision like the reference's powf/sqrtf: luminance only orders
+  // colours, so a float32 rounding difference can flip which one is darker.
+  const square = (x) => f32(f32(x) * f32(x));
+  const luminance = (c) => f32(Math.sqrt(f32(f32(square(0.299 * c.r) + square(0.587 * c.g)) + square(0.114 * c.b))));
 
   const fromUint8 = (r, g, b) => rgb(r / 255, g / 255, b / 255);
   const spectrumCmykSafe = blendMany([
@@ -442,5 +452,5 @@ const hodlLifeHash = (() => {
     return out;
   };
 
-  return { fromDigest, fromFingerprint, _internals: { runGameOfLife, buildFracGrid, selectGradient, renderColors, encodePng, makeBitEnumerator } };
+  return { fromDigest, fromFingerprint, _internals: { runGameOfLife, buildFracGrid, selectGradient, renderColors, encodePng, makeBitEnumerator, modulo, luminance } };
 })();
