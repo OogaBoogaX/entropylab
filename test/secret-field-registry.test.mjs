@@ -89,7 +89,7 @@ const CLEARING_PATHS = [
     why: "Session snapshot: with the private box ticked it holds the whole session's recovery texts",
     probe: (id) => {
       assert.ok(journalWipe.includes(`"${id}"`), `#${id} must be dropped by the journal Clear`);
-      if (id === "journal-state-text") assert.match(journalLock, /stateText\.value = ""/, "Lock must empty the snapshot");
+      if (id === "journal-state-text") assert.match(journalLock, /stateText\.textContent = ""/, "Lock must empty the snapshot");
       else assert.match(journalLock, /privateBox\.checked = false/, "Lock must untick the private box");
     },
   },

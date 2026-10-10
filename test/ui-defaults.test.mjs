@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { transformSync } from "esbuild";
 import { hodlKeyModeLabels } from "../src/js/i18n-labels.js";
+import { MiniDocument } from "./mini-dom.mjs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const template = read("src/index.html");
@@ -383,39 +384,22 @@ test("every card switch comes from one builder that wires its note", () => {
   for (const id of ['"seed-autocomplete"', '"seed-zero-index"', "`show-${name}-calculations`"]) assert.ok(appSource.includes(`hodlSwitchRowMarkup(${id}`), id);
 });
 
-test("direct dice, direct cards and number bases expose BIP39 calculations before copying", () => {
-  // One switch builder serves every method that shows its working; each form
-  // supplies only its id stem, its panel and its note.
-  assert.equal(appSource.match(/hodlCalculationsSwitchMarkup\("manual", "dice-manual-calculations", hodlT\("show how direct word selection/g)?.length, 1);
-  assert.equal(appSource.match(/hodlCalculationsSwitchMarkup\("manual", "cards-manual-calculations", hodlT\("show how direct card selection/g)?.length, 1);
-  assert.equal(appSource.match(/hodlCalculationsSwitchMarkup\("number-base", "number-base-calculations", hodlT\("show how each BIP39 word number/g)?.length, 1);
-  // Two rows like the sync switch, and no bordered chip: the control reads as
-  // part of the card rather than a box floating on it.
-  // The chrome is the card's shared switch, asserted once; a component states
-  // only how it sits in its own container.
-  // Built on the shared switch with a note, so the checkbox points at it. The
-  // switch waits for something to be behind it. It ships hidden, because a
-  // fresh form runs no update: the field restore only dispatches input when
-  // there is a stored value to put back.
-  assert.match(appSource, /hodlSwitchRowMarkup\(`show-\$\{name\}-calculations`, hodlT\("Show calculations"\), \{ note, checked, rowClass: "manual-calculations-row", hidden: true \}\)/);
-  // The row follows the calculations; only the panel follows the checkbox.
-  assert.match(appSource, /if \(row\?\.classList\.contains\("manual-calculations-row"\)\) row\.hidden = !markup;/);
-  assert.match(appSource, /panel\.hidden = !open \|\| !markup;/);
-  assert.match(appSource, /hodlShowCalculations\(panel, hodlManualCalculationMarkup\(method, value, targetWords\), hodlManualCalculationsOpen\);/);
-  assert.match(appSource, /hodlShowCalculations\(panel, rows\.length \? `[\s\S]*?` : "", toggle\.checked\);/);
-  // The row is the panel's immediate previous sibling in every form that has one.
-  assert.match(appSource, /\)\}<div id="\$\{panelId\}" class="manual-calculations-container" translate="no" hidden><\/div>`/);
-  assert.doesNotMatch(appSource, /\("\(show how (direct (word|card) selection|each BIP39 word number)/);
-  assert.doesNotMatch(appSource, /number-base-calculations-(toggle|panel)/);
-  assert.match(appSource, /function hodlManualCalculationMarkup\(method, value, targetWords = hodlTargetWordCount\)/);
-  assert.match(appSource, /hodlRenderManualCalculations\("dice-manual-calculations",\s*"dplus"/);
-  assert.match(appSource, /hodlRenderManualCalculations\("dice-manual-calculations",\s*"bitbox"/);
-  assert.match(appSource, /hodlRenderManualCalculations\("cards-manual-calculations",\s*"cards"/);
-  assert.match(appSource, /D8 contributes 8 values and each hexadecimal D16 contributes 16 values/);
-  assert.match(appSource, /Each D4 contributes one base-4 value and the final die contributes the coin bit/);
-  assert.match(appSource, /Ranks are mapped to zero-based values/);
-  assert.match(appSource, /dplus-calculation-stages/);
-  assert.match(appSource, /dplus-calculation-stage.*stage\.face/);
+test("calculation controls precede and identify their panels", () => {
+  const functions = ["hodlSwitchRowMarkup", "hodlCalculationsSwitchMarkup"].map((name) => {
+    const start = appSource.indexOf(`function ${name}(`);
+    return appSource.slice(start, appSource.indexOf("\n}\n", start) + 2);
+  }).join("\n");
+  const build = new Function("hodlT", `${functions}; return hodlCalculationsSwitchMarkup;`)((text) => text);
+  for (const [name, panelId] of [["manual", "dice-manual-calculations"], ["manual", "cards-manual-calculations"], ["number-base", "number-base-calculations"]]) {
+    const document = new MiniDocument();
+    document.body.innerHTML = build(name, panelId, "Calculation note", true);
+    const panel = document.getElementById(panelId), toggle = document.getElementById(`show-${name}-calculations`);
+    assert.equal(panel.previousElementSibling.querySelector("input"), toggle);
+    assert.ok(document.getElementById(toggle.getAttribute("aria-describedby")));
+    assert.ok(toggle.hasAttribute("checked"));
+    assert.ok(panel.hidden, "a fresh panel waits for calculations");
+    assert.ok(panel.previousElementSibling.hidden, "its control waits for calculations too");
+  }
 });
 
 test("Seed phrase offers one-based or zero-based BIP39 word-number entry", () => {
@@ -1553,7 +1537,6 @@ test("dice rolls hide Pearson chi-squared fairness behind a text expand button",
   assert.match(app, /class="dice-fairness-toggle"/);
   assert.match(app, /data-dice-fairness-glyph/);
   assert.match(app, /hodlT\("Die Distribution \/ Fairness Analysis"\)/);
-  assert.match(appSource, /<div class="seed-word-copy-row">\$\{leading\}<span class="copy-status"/);
   // The toggle has its own row now: it heads the panel under it rather than
   // trailing the copy button, which belongs with the seed phrase title.
   // The copy button sits in the title row, directly above the word grid.
@@ -1785,7 +1768,6 @@ test("Journal gates its five tools behind the local notebook", () => {
     assert.doesNotMatch(markup, /id="journal-notes-download-text"|Download plain-text notes/);
     assert.doesNotMatch(markup, /id="journal-note-add"|>Add note</);
     assert.doesNotMatch(markup, /id="journal-state-capture"|Capture this session/);
-    assert.match(markup, /id="journal-state-text"[^>]*\sreadonly(?=[\s>])/);
     assert.match(markup, /id="journal-state-private"/);
     assert(markup.indexOf('id="journal-state-text"') < markup.indexOf('id="journal-state-download"'), "Session state download should follow the live snapshot");
     assert.match(markup, /class="btn secondary green journal-download-action journal-file-button" id="journal-state-download"[^>]*aria-label="Download session state"[^>]*>[\s\S]*?<span class="control-label">Download session state<\/span><\/button>/);

@@ -216,7 +216,7 @@ block with a coloured left edge and a lightly tinted ground.
 
 Copy, theme and keyboard toggles are `.boxed-copy-button` /
 `.theme-toggle` / `.seed-keyboard-toggle`: one square chrome, sized by
-`--box-size` (44px by default, smaller where a table needs it). An
+`--box-size` (44px by default; clipboard buttons share a compact 26px size with 14px icons). An
 icon-only button carries an accessible name and a `title` for its hover
 label.
 
@@ -254,6 +254,27 @@ All copying goes through `copyText()` in `src/js/clipboard.js`; the icon
 confirmation is `showCopiedIcon()`. A secret is built at the moment of the
 click and handed straight to `copyText()`, never stored on the control. No
 other module writes the clipboard (a test guards this).
+
+Private readouts carry `data-private-value`, which disables text selection for
+that value and its descendants. A `data-private-field` wraps the value and its
+label-row clipboard control, built by `privateCopyButtonHtml()` in
+`src/js/private-data.js`. Only actual shown values carry the marker; concealed
+placeholders never do and have no clipboard control. The shared handler reads
+the current value on click and preserves its exact whitespace. Copy feedback
+is the temporary green checkmark, without adjacent visible status text.
+Editable input fields keep normal editing.
+Revealed private fields color their `.copy-field-label` with `--danger-bright`;
+private table headings use `.private-heading.is-revealed` for the same cue.
+
+Public derivation readouts carry `data-public-value` and remain selectable.
+`publicFieldHtml()` and `publicValueHtml()` in `src/js/public-data.js` group a
+clickable value with its label using `data-copy-group`. A `data-public-copy`
+clipboard reads that group's current value. When a field has a QR button, the
+QR replaces the label clipboard; a click on the value confirms beside the QR.
+Short public previews use `data-copy-value` only to retain their complete public
+payload for copying. Private data must never use that attribute.
+Initial identity and summary cards omit clipboard icons; their public values
+copy on click and show only the temporary checkmark.
 
 ### Disclosures and section bands
 

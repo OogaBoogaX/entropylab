@@ -30,7 +30,8 @@ import {
 import { secp256k1 } from "../src/js/secp256k1.js";
 import { parseRecipientLines } from "../src/js/bip321.js";
 import { decodeSilentPaymentAddress, p2trAddressFromXonly } from "../src/js/bip352.js";
-import { tHtml, tAttr } from "../src/js/i18n.js";
+import { tHtml, tAttr, t as tText } from "../src/js/i18n.js";
+import { loadAppFunctions } from "./app-slice-harness.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -234,7 +235,7 @@ test("UI construction wipes byte keys on success and throw, and suppresses the s
   }
 });
 
-test("SP send discloses unused fallback text safely and keeps the published outputs (#399 F4)", () => {
+test("SP send discloses unused fallback text safely and keeps the published outputs (#399 F4)", async () => {
   const vector = JSON.parse(readFileSync(join(root, "test/fixtures/bip352-send-and-receive.json"), "utf8"))[0].sending[0];
   const sp = vector.given.recipients[0].address;
   const fallback = "175tWpb8K1S7NmH4Zx6rewF9WQrcZv245W"; // BIP-321 example
@@ -244,11 +245,12 @@ test("SP send discloses unused fallback text safely and keeps the published outp
   let actualOutputs;
   // Run the app's real renderer and parser against published BIP-352 inputs.
   // Only session-key lookup is replaced: these are fixed public test scalars.
+  const readouts = await loadAppFunctions(["hodlPublicInlineHtml", "hodlSpCopyGroupHtml"]);
   const render = new Function(
     "document", "hodlSpParseRecipients", "hodlSpHrp", "hodlSpNetwork", "decodeSilentPaymentAddress",
     "hodlSpParseVins", "hodlSpDeriveVinKeys", "hodlSpWipeVinKeys", "createSilentPaymentOutputs",
-    "p2trAddressFromXonly", "hodlT", "hodlTAttr",
-    `${loadSlice("hodlSpEscape")}; ${loadSlice("hodlSpCopyGroupHtml")}; ${loadSlice("hodlRenderSpSend")}; return hodlRenderSpSend;`,
+    "p2trAddressFromXonly", "hodlT", "hodlTAttr", "hodlTText", "hodlPublicInlineHtml", "hodlSpCopyGroupHtml",
+    `${loadSlice("hodlSpEscape")}; ${loadSlice("hodlRenderSpSend")}; return hodlRenderSpSend;`,
   )(
     document, parseRecipientLines, () => "sp", () => "mainnet", decodeSilentPaymentAddress,
     () => vector.given.vin, (vins) => vins, hodlSpWipeVinKeys,
@@ -257,7 +259,7 @@ test("SP send discloses unused fallback text safely and keeps the published outp
       actualOutputs = result.outputs;
       return result;
     },
-    p2trAddressFromXonly, tHtml, tAttr,
+    p2trAddressFromXonly, tHtml, tAttr, tText, readouts.hodlPublicInlineHtml, readouts.hodlSpCopyGroupHtml,
   );
   for (const path of ["", fallback, '<img src=x onerror="alert(1)">']) {
     recipients.value = `bitcoin:${path}?sp=${sp}`;

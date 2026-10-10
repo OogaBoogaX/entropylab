@@ -67,7 +67,7 @@
       <div class="key-summary" id="key-summary" hidden>
         <img class="key-summary-lifehash" id="key-summary-lifehash" width="72" height="72" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" hidden>
         <div class="key-summary-text">
-          <code class="key-summary-fingerprint" id="key-summary-fingerprint"></code>
+          <span data-copy-group data-public-inline><button type="button" class="addr-text key-summary-fingerprint" id="key-summary-fingerprint" data-copy-field data-public-value data-i18n-skip translate="no" disabled></button><span class="copy-status copy-field-status" data-copy-status aria-live="polite"></span></span>
           <p class="key-summary-meta" id="key-summary-method"></p>
           <p class="key-summary-meta" id="key-summary-script"></p>
           <p class="key-summary-meta key-summary-path" id="key-summary-path"></p>
@@ -126,16 +126,16 @@ words, pick one of the checksum words.</span></span>
       <div class="passphrase-keyboard-host" id="passphrase-keyboard-host" hidden></div>
       <div class="master-fingerprint-preview" id="master-fingerprint-preview" role="status" aria-live="polite" aria-atomic="true">
         <p class="label master-fingerprint-heading">Master fingerprint</p>
-        <div class="master-fingerprint-card is-disabled" id="base-master-fingerprint-card" role="group" data-state="unavailable" aria-label="Base seed master fingerprint unavailable">
+        <div class="master-fingerprint-card is-disabled" id="base-master-fingerprint-card" role="group" data-copy-group data-state="unavailable" aria-label="Base seed master fingerprint unavailable">
           <span class="master-fingerprint-lifehash-frame" aria-hidden="true"><img class="master-fingerprint-lifehash" id="base-master-fingerprint-lifehash" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" width="96" height="96" hidden></span>
-          <span class="master-fingerprint-label">Base seed</span>
-          <code class="master-fingerprint-value" id="base-master-fingerprint"></code>
+          <span class="master-fingerprint-label copy-field-label">Base seed<span class="copy-status copy-field-status" data-copy-status aria-live="polite"></span></span>
+          <button type="button" class="addr-text master-fingerprint-value" id="base-master-fingerprint" data-copy-field data-public-value data-i18n-skip translate="no" disabled></button>
         </div>
         <span class="master-fingerprint-arrow is-disabled" id="master-fingerprint-arrow" aria-hidden="true">→</span>
-        <div class="master-fingerprint-card master-fingerprint-derived is-disabled" id="passphrase-master-fingerprint-card" role="group" data-state="unavailable" aria-label="With passphrase master fingerprint unavailable">
+        <div class="master-fingerprint-card master-fingerprint-derived is-disabled" id="passphrase-master-fingerprint-card" role="group" data-copy-group data-state="unavailable" aria-label="With passphrase master fingerprint unavailable">
           <span class="master-fingerprint-lifehash-frame" aria-hidden="true"><img class="master-fingerprint-lifehash" id="passphrase-master-fingerprint-lifehash" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" width="96" height="96" hidden></span>
-          <span class="master-fingerprint-label">With passphrase</span>
-          <code class="master-fingerprint-value" id="passphrase-master-fingerprint"></code>
+          <span class="master-fingerprint-label copy-field-label">With passphrase<span class="copy-status copy-field-status" data-copy-status aria-live="polite"></span></span>
+          <button type="button" class="addr-text master-fingerprint-value" id="passphrase-master-fingerprint" data-copy-field data-public-value data-i18n-skip translate="no" disabled></button>
         </div>
       </div>
       <div class="key-settings" id="key-settings">
@@ -232,7 +232,7 @@ words, pick one of the checksum words.</span></span>
         <div class="key-summary" id="vanity-source">
           <img class="key-summary-lifehash" id="vanity-source-lifehash" width="72" height="72" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" hidden>
           <div class="key-summary-text">
-            <code class="key-summary-fingerprint" id="vanity-source-name"></code>
+            <span data-copy-group data-public-inline><button type="button" class="addr-text key-summary-fingerprint" id="vanity-source-name" data-copy-field data-public-value data-i18n-skip translate="no" disabled></button><span class="copy-status copy-field-status" data-copy-status aria-live="polite"></span></span>
             <p class="key-summary-meta" id="vanity-source-kind"></p>
             <p class="key-summary-meta key-summary-path" id="vanity-source-path"></p>
           </div>
@@ -959,9 +959,10 @@ words, pick one of the checksum words.</span></span>
         <span><strong>Include private recovery material</strong>
         <span class="desc">Same rule as the recovery sheet. Off by default. The file is then a secret — treat the download like a seed backup.</span></span>
       </label>
-      <label class="field">Session snapshot
-        <textarea id="journal-state-text" spellcheck="false" autocomplete="off" autocapitalize="off" readonly></textarea>
-      </label>
+      <div class="field" data-private-field>
+        <p class="label copy-field-label">Session snapshot<span id="journal-state-copy"></span></p>
+        <pre class="journal-log" id="journal-state-text" data-private-value data-i18n-skip translate="no"></pre>
+      </div>
       <div class="row psbt-actions tool-actions">
         <div class="journal-download-options"><button class="btn secondary green journal-download-action journal-file-button" id="journal-state-download" type="button" aria-label="Download session state" title="Download session state"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Download session state</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-state-encrypt" type="checkbox" checked><span>Use Journal file encryption</span></label></div>
       </div>

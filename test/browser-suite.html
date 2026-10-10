@@ -40,18 +40,129 @@
   const skipped = (name, reason) => results.push({ name, ok: true, skip: reason });
   // What clicking a copy button puts on the clipboard: the buttons build it on
   // the click and hold no copy of it, so the click is the only way to read it.
-  const copiedBy = async (button) => {
+  const copiedBy = async (button, activate = () => button.click()) => {
     const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
     let copied = null;
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { copied = text; } } });
     try {
-      button.click();
+      activate();
       await wait(0);
     } finally {
       if (original) Object.defineProperty(navigator, "clipboard", original);
       else delete navigator.clipboard;
     }
     return copied;
+  };
+  // Private readouts share one selection policy, including every nested word
+  // or calculated digit. Check the browser's result, not stylesheet text.
+  const unselectableReadout = (value) => {
+    assert(value, "the key-material readout is missing");
+    for (const node of [value, ...value.querySelectorAll("*")]) {
+      assert(getComputedStyle(node).userSelect === "none", "a key-material readout or its descendant is selectable");
+    }
+  };
+  const privateReadout = async (value, expected, copy = value?.closest("[data-private-field]")?.querySelector("[data-private-copy], [data-bip85-copy]")) => {
+    assert(value, "the private readout is missing");
+    const opened = [];
+    for (let node = value.parentElement; node; node = node.parentElement) {
+      if (node.tagName === "DETAILS" && !node.open) {
+        node.open = true;
+        opened.push(node);
+      }
+    }
+    try {
+      if (opened.length) await new Promise((resolve) => requestAnimationFrame(resolve));
+      equal(value.textContent, expected);
+      unselectableReadout(value);
+      equal(await copiedBy(value), null);
+      assert(copy && !copy.disabled, "the shown private value has no available clipboard control");
+      const labelText = copy.parentElement.textContent, box = copy.getBoundingClientRect();
+      equal(await copiedBy(copy), expected);
+      equal(copy.parentElement.textContent, labelText);
+      // The green "Copied" tick is sized to be noticed at a glance, and the
+      // control keeps its box so nothing beside it moves.
+      if (copy.classList.contains("copy-button")) {
+        await until(() => copy.classList.contains("is-copied"), "the copied confirmation");
+        const tick = copy.querySelector("svg").getBoundingClientRect(), copied = copy.getBoundingClientRect();
+        assert(tick.width >= 19.5 && tick.height >= 19.5, `the copied tick is ${tick.width}x${tick.height}px; it should be 20px`);
+        assert(Math.abs(copied.width - box.width) < 0.5 && Math.abs(copied.height - box.height) < 0.5, "the copied confirmation resized its clipboard control");
+      }
+    } finally {
+      for (const node of opened) node.open = false;
+    }
+  };
+  const publicReadout = async (value, expected, qrExpected = false) => {
+    assert(value, "the public readout is missing");
+    const opened = [];
+    for (let node = value.parentElement; node; node = node.parentElement) {
+      if (node.tagName === "DETAILS" && !node.open) {
+        node.open = true;
+        opened.push(node);
+      }
+    }
+    try {
+      if (opened.length) await new Promise((resolve) => requestAnimationFrame(resolve));
+      assert(getComputedStyle(value).userSelect !== "none", "the public readout cannot be highlighted");
+      equal(await copiedBy(value), expected);
+      equal(value.textContent.trim(), expected);
+      const group = value.closest("[data-copy-group]");
+      assert(group, "the public readout has no control group");
+      const qr = group.querySelector("[data-address-qr]"), copy = group.querySelector("[data-public-copy]");
+      if (qrExpected) {
+        assert(qr, "the public readout has no QR control");
+        assert(!copy, "a QR-backed public readout also offers a clipboard icon");
+      } else {
+        assert(!qr && copy, "the public readout has no label clipboard control");
+        assert(!copy.parentElement.contains(value), "the public clipboard control is beside the value instead of its label");
+        assert(copy.compareDocumentPosition(value) & Node.DOCUMENT_POSITION_FOLLOWING, "the public clipboard control does not precede its value");
+        equal(await copiedBy(copy), expected);
+      }
+    } finally {
+      for (const node of opened) node.open = false;
+    }
+  };
+  const addressRowsAligned = async (container) => {
+    const opened = [];
+    for (let node = container.parentElement; node; node = node.parentElement) {
+      if (node.tagName === "DETAILS" && !node.open) {
+        node.open = true;
+        opened.push(node);
+      }
+    }
+    try {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const rows = [...container.querySelectorAll("tbody tr[aria-rowindex]")];
+      assert(rows.length >= 3, "alignment needs several derived address rows");
+      const center = (rect) => rect.top + rect.height / 2;
+      for (const row of [rows[0], rows[Math.floor(rows.length / 2)], rows.at(-1)]) {
+        const rowCenter = center(row.getBoundingClientRect());
+        const privateCell = row.querySelector("[data-private-field]");
+        const address = row.querySelector("[data-address-qr]")?.parentElement.querySelector("[data-public-value]");
+        const values = [
+          ["address", address],
+          ["QR control", row.querySelector("[data-address-qr]")],
+          ["WIF", privateCell?.querySelector("[data-private-value]") || privateCell?.firstElementChild],
+          ["clipboard control", row.querySelector("[data-private-copy]")],
+        ].filter(([, node]) => node);
+        const rects = values.map(([label, node]) => [label, node.getBoundingClientRect()]);
+        for (const [index, label] of [[0, "index"], [1, "path"]]) {
+          const range = document.createRange();
+          range.selectNodeContents(row.children[index]);
+          rects.push([label, range.getBoundingClientRect()]);
+        }
+        for (const [label, rect] of rects) {
+          assert(rect.height > 0, `${label} is not rendered for the alignment check`);
+          const offset = center(rect) - rowCenter;
+          assert(Math.abs(offset) <= 2, `row ${row.getAttribute("aria-rowindex")} ${label} is ${offset.toFixed(2)}px off its vertical center`);
+        }
+        await publicReadout(address, address?.textContent.trim(), true);
+        const path = row.children[1].querySelector("[data-public-value]");
+        assert(path && getComputedStyle(path).userSelect !== "none", "the derivation path cannot be highlighted");
+        equal(await copiedBy(path), path.textContent.trim());
+      }
+    } finally {
+      for (const node of opened) node.open = false;
+    }
   };
   const report = (filename) => {
     const text = results.map((result) =>
@@ -273,14 +384,15 @@
   // The first address the key view derived: the top row of its first address
   // table. It reads content only, so it works while the group is collapsed.
   const firstAcctAddress = () => {
-    const row = document.querySelector('#acct [data-address-table] tbody tr:not(.address-virtual-spacer)');
+    const row = document.querySelector('#acct [data-address-table] tbody tr[aria-rowindex]');
     if (!row) return null;
+    const qr = row.querySelector("[data-address-qr]");
     return {
       table: row.closest("[data-address-table]")?.dataset.addressTable,
       index: row.querySelector("th")?.textContent.trim(),
       path: row.querySelector("td")?.textContent.trim() || "",
-      address: row.querySelector(".addr-text")?.textContent.trim() || "",
-      qrLabel: row.querySelector(".addr-qr")?.dataset.addressQrLabel,
+      address: qr?.parentElement.querySelector("[data-public-value]")?.textContent.trim() || "",
+      qrLabel: qr?.dataset.addressQrLabel,
     };
   };
 
@@ -862,6 +974,8 @@
     const cardCopy = document.querySelector('[data-copy-seed-phrase]');
     assert(cardCopy && !cardCopy.disabled && (await copiedBy(cardCopy)).split(" ").length === 24, "Testing seed preview was not copyable");
     assert(!dealt.hidden && dealt.textContent.includes("A"), "Show cards did not reveal the dealt card");
+    unselectableReadout(dealt);
+    equal(await copiedBy(dealt), null);
     equal(dealt.getBoundingClientRect().height, emptyHistoryHeight);
     input(cards, "AS ZZ");
     await wait(0);
@@ -1009,6 +1123,16 @@
     assert(copy && !copy.disabled, "Partial seed-word copy control remained disabled");
     equal(await copiedBy(copy), "abandon");
     assert(!("phrase" in copy.dataset), "the copy control kept the phrase in data-phrase");
+    await privateReadout(document.querySelector('#entropy-words [data-word]'), "abandon", copy);
+    const calculations = document.getElementById("show-number-base-calculations");
+    calculations.click();
+    try {
+      const value = document.querySelector('#number-base-calculations [data-private-value]');
+      assert(value?.querySelector('[data-calculation-word="1"]')?.textContent.includes("abandon"), "the calculations omit the seed-word result");
+      await privateReadout(value, value.textContent);
+    } finally {
+      calculations.click();
+    }
     input(binary, "");
   });
 
@@ -1922,6 +2046,10 @@
       reveal.checked = true;
       reveal.dispatchEvent(new Event("change", { bubbles: true }));
       await until(() => document.getElementById("journal-view").textContent.includes(entryPhrase), "stored seed revealed after load");
+      for (const [id, expected] of [["journal-copy-input", entryInput], ["journal-copy-phrase", entryPhrase]]) {
+        const copy = document.getElementById(id);
+        await privateReadout(copy?.closest("[data-private-field]")?.querySelector("[data-private-value]"), expected, copy);
+      }
 
       // The notepad stores encrypted by default and loads back through upload.
       document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
@@ -2088,17 +2216,20 @@
     let row = document.querySelector("#vanity-out table tbody tr");
     let cells = [...row.children];
     assert(cells[1].textContent.trim() === "0", "the hit is counter 0");
-    const secretCell = cells[2].querySelector(".mono");
+    const secretCell = cells[2].querySelector('[aria-hidden="true"]');
     assert(/^•+$/.test(secretCell.textContent), "the passphrase is masked until revealed");
+    assert(!row.querySelector("[data-vanity-copy]"), "the concealed passphrase offers a clipboard control");
     assert(cells[3].textContent.includes("bc1qylthc2drk6x5q0czdljal99vqwed9tja80z06d"), "the hit address is the pinned vector");
     assert(row.querySelector("[data-vanity-apply]"), "every match offers Update key");
     // Each passphrase row shows the identity Update key will leave behind:
     // the new master fingerprint with its LifeHash.
-    equal(row.querySelector(".vanity-key code").textContent, "c55401c7", "the row shows the fingerprint the new passphrase yields");
-    await until(() => !row.querySelector(".vanity-key img").hidden && row.querySelector(".vanity-key img").src.startsWith("data:image/png"), "the row's LifeHash to render");
-    assert(row.querySelector(".vanity-key img").dataset.fingerprint === "c55401c7", "the LifeHash is the new fingerprint's");
+    const vanityLifehash = row.querySelector("[data-vanity-lifehash]");
+    await publicReadout(vanityLifehash.parentElement.querySelector("[data-public-value]"), "c55401c7");
+    await until(() => !vanityLifehash.hidden && vanityLifehash.src.startsWith("data:image/png"), "the row's LifeHash to render");
+    assert(vanityLifehash.dataset.fingerprint === "c55401c7", "the LifeHash is the new fingerprint's");
     document.getElementById("vanity-reveal").click();
-    await until(() => document.querySelector("#vanity-out .vanity-secret .mono").textContent === "correct horse battery staplea", "the reveal toggle to show the full passphrase");
+    await until(() => document.querySelector("#vanity-out [data-private-value]")?.textContent === "correct horse battery staplea", "the reveal toggle to show the full passphrase");
+    await privateReadout(document.querySelector("#vanity-out [data-private-value]"), "correct horse battery staplea", document.querySelector("#vanity-out [data-vanity-copy]"));
     // Update key writes the passphrase to the key and re-derives it in place:
     // the tab keeps its slot, takes the new fingerprint, and shows the vanity
     // address as its first receive address.
@@ -2328,7 +2459,7 @@
     const originalTabs = new Set(tabs().map((tab) => tab.dataset.keyNumber));
     const row = () => document.querySelector('#acct [data-address-table] tbody tr[aria-rowindex="2"]');
     const path = () => row()?.querySelector("td")?.textContent.trim();
-    const address = () => row()?.querySelector("[data-copy-field]")?.textContent.trim();
+    const address = () => row()?.querySelector("[data-address-qr]")?.parentElement.querySelector("[data-public-value]")?.textContent.trim();
     const matching = () => document.getElementById("key-match-purpose");
     const derive = async (fullPath, copyCurrent = false) => {
       document.getElementById(copyCurrent ? "key-edit-inputs" : "key-tab-lab").click();
@@ -2444,7 +2575,7 @@
       const matching = () => document.getElementById("key-match-purpose");
       const row = () => document.querySelector('#acct [data-address-table] tbody tr[aria-rowindex="2"]');
       const path = () => row()?.querySelector("td")?.textContent.trim();
-      const address = () => row()?.querySelector("[data-copy-field]")?.textContent.trim();
+      const address = () => row()?.querySelector("[data-address-qr]")?.parentElement.querySelector("[data-public-value]")?.textContent.trim();
       const originalPath = `m/${enteredPurpose.replace("h", "'")}/0'/0'/0/0`;
       try {
         document.getElementById("key-tab-lab").click();
@@ -2837,19 +2968,20 @@
     document.querySelector('#journal-tool-tabs [data-journal-tool="state"]').click();
     await until(() => !document.getElementById("journal-state-card").hidden, "session state");
     const stateText = document.getElementById("journal-state-text");
-    assert(stateText.readOnly, "the live session snapshot should be read-only");
+    assert(!stateText.isContentEditable && !stateText.matches("input, textarea"), "the live session snapshot should be a non-editable readout");
     assert(!document.getElementById("journal-state-capture"), "the live session snapshot should not need a Capture button");
-    await until(() => stateText.value.includes("ENTROPYLAB SESSION STATE"), "the live session snapshot to populate");
-    const snap = stateText.value;
+    await until(() => stateText.textContent.includes("ENTROPYLAB SESSION STATE"), "the live session snapshot to populate");
+    const snap = stateText.textContent;
     assert(/ENTROPYLAB SESSION STATE/.test(snap), "opening Session state should show the current snapshot");
     assert(!/kitchen table dice/.test(snap), "notes are not the session snapshot");
     const includePrivate = document.getElementById("journal-state-private");
     includePrivate.checked = true;
     includePrivate.dispatchEvent(new Event("change", { bubbles: true }));
-    await until(() => stateText.value.includes("Private material: INCLUDED"), "the live snapshot to include private material");
+    await until(() => stateText.textContent.includes("Private material: INCLUDED"), "the live snapshot to include private material");
+    await privateReadout(stateText, stateText.textContent);
     includePrivate.checked = false;
     includePrivate.dispatchEvent(new Event("change", { bubbles: true }));
-    await until(() => stateText.value.includes("Private material: omitted"), "the live snapshot to omit private material again");
+    await until(() => stateText.textContent.includes("Private material: omitted"), "the live snapshot to omit private material again");
     state.lastBlob = null;
     state.downloadName = "";
     document.getElementById("journal-state-download").click();
@@ -3108,7 +3240,7 @@
       await wait(0);
     }
   });
-  await test("An SP address tab copies its address from the text, the QR, and the button", async () => {
+  await test("An SP address tab copies its address from the text and QR without a duplicate clipboard control", async () => {
     document.querySelector('#workspace [data-workspace="sp"]').click();
     await until(() => !document.getElementById("sp-card").hidden, "Silent Payments workspace");
     document.getElementById("sp-tab-bench").click();
@@ -3118,7 +3250,10 @@
     const value = await until(() => document.getElementById("sp-address-value"), "SP address tab");
     const address = value.textContent.trim();
     const group = value.closest("[data-copy-group]");
-    const status = group.querySelector(".copy-field-status");
+    const status = group.querySelector("[data-copy-status]");
+    const qr = group.querySelector("[data-copy-value]");
+    assert(qr?.querySelector("svg"), "the address has no QR copy target");
+    assert(!group.querySelector("[data-public-copy]"), "the QR-backed address offers a duplicate clipboard control");
     const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
     let copied = null;
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { copied = text; } } });
@@ -3131,7 +3266,7 @@
         equal(copied, address, "a copy target copied the wrong value");
         assert(status.querySelector("svg"), "the copy confirmation lost its check mark");
       }
-      equal(group.querySelectorAll("[data-copy-value]").length, 2, "the QR and the button should both copy the address");
+      equal(group.querySelectorAll("[data-copy-value]").length, 1, "the QR should be the address's only additional copy target");
     } finally {
       if (original) Object.defineProperty(navigator, "clipboard", original);
       else delete navigator.clipboard;
@@ -3154,6 +3289,10 @@
     document.getElementById("sp-reveal").click();
     await until(() => /[0-9a-f]{64}/.test(document.getElementById("sp-scan-priv")?.textContent || ""), "revealed scan private key");
     assert(/spscan1/.test(document.getElementById("sp-spscan").textContent) && /spspend1/.test(document.getElementById("sp-spspend").textContent), "revealing did not show the descriptors");
+    for (const id of privateIds) {
+      const value = document.getElementById(id).querySelector("[data-private-value]");
+      await privateReadout(value, value.textContent);
+    }
     document.getElementById("sp-reveal").click();
     await until(() => !/[0-9a-f]{64}/.test(document.getElementById("sp-scan-priv")?.textContent || "x".repeat(64)), "hidden again");
     document.getElementById("delete-sp").click();
@@ -3193,7 +3332,7 @@
     await until(() => !document.getElementById("journal-manager").hidden, "Journal audit workspace");
     document.getElementById("journal-state-tab").click();
     const stateText = document.getElementById("journal-state-text");
-    await until(() => stateText.value.includes("ENTROPYLAB SESSION STATE"), "automatic session-state refresh");
+    await until(() => stateText.textContent.includes("ENTROPYLAB SESSION STATE"), "automatic session-state refresh");
     document.getElementById("journal-log-tab").click();
     const auditLog = document.getElementById("journal-log-out").textContent;
     assert(/app\ttheme  (?:light|dark)/.test(auditLog), "theme changes should be logged");
@@ -3252,6 +3391,12 @@
       await until(() => document.getElementById("ln-entropy"), "reveal to show the entropy");
       equal(document.getElementById("ln-entropy").textContent, "000102030405060708090a0b0c0d0e0f", "decoded entropy");
       assert(document.getElementById("ln-root-xprv").textContent.startsWith("xprv"), "the root xprv is shown");
+      await privateReadout(document.getElementById("ln-entropy"), "000102030405060708090a0b0c0d0e0f");
+      for (const id of ["ln-root-xprv", "ln-salt"]) {
+        const value = document.getElementById(id);
+        assert(value && value.textContent, `${id} is missing after reveal`);
+        await privateReadout(value, value.textContent);
+      }
       // Changing the network select wipes even a revealed result; switching
       // back and re-deriving reproduces the mainnet key.
       const network = document.getElementById("ln-network");
@@ -3714,9 +3859,20 @@
     if (!ackBox().checked) ackBox().click();
     const brainInput = await until(() => document.getElementById("key"), "brain-wallet input");
     input(brainInput, "correct horse battery staple");
+    document.querySelector('input[name="bo"][value="hd"]').click();
+    if (!ackBox().checked) ackBox().click();
+    input(document.getElementById("key"), "correct horse battery staple");
+    const digest = await until(() => document.querySelector("#brain-lab-hex [data-private-value]"), "brain-wallet SHA-256 preview");
+    // SHA-256 of the literal fixture, independently checked with Python hashlib.
+    await privateReadout(digest, "c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a", document.getElementById("brain-lab-copy"));
+    document.querySelector('input[name="bo"][value="scalar"]').click();
     const derive = await until(() => !document.getElementById("go").disabled && document.getElementById("go"), "brain-wallet derive button");
     derive.click();
     await until(() => document.getElementById("out").textContent.trim(), "derived brain wallet");
+    for (const pattern of [/^0[23][0-9a-f]{64}$/, /^04[0-9a-f]{128}$/]) {
+      const value = [...document.querySelectorAll("#out [data-public-value]")].find((node) => pattern.test(node.textContent.trim()));
+      await publicReadout(value, value?.textContent.trim());
+    }
     const secretShowing = () => {
       const text = document.getElementById("out").textContent;
       // The revealed digest and chain code run together past 64 characters, so
@@ -4632,6 +4788,10 @@
     await until(() => (document.getElementById("psbted-result-hex") || { textContent: "" }).textContent.includes(longValue.slice(0, -2) + "cd") || document.getElementById("psbted-error").textContent, "editor rebuild");
     equal(document.getElementById("psbted-error").textContent, "", "editor rebuild failed");
     assert(document.getElementById("psbted-result-hex").textContent.includes(longValue.slice(0, -2) + "cd"), "overlay edit did not reach the rebuilt PSBT");
+    for (const encoding of ["b64", "hex"]) {
+      const value = document.getElementById(`psbted-result-${encoding}`);
+      await privateReadout(value, value.textContent, document.getElementById(`psbted-copy-${encoding}`));
+    }
     // A long key truncates read-only and Escape closes the overlay. The table
     // re-rendered after each structural edit, so the add controls are fresh
     // elements — re-query them.
@@ -4647,13 +4807,16 @@
     assert(keyCell.dataset.expEdit === undefined, "key cell must not be editable");
     keyCell.click();
     await until(() => !overlay.hidden, "overlay did not reopen");
-    equal(document.getElementById("exp-text").value, longKey, "overlay does not hold the full key");
-    assert(document.getElementById("exp-text").readOnly && document.getElementById("exp-apply").hidden, "key cell opened editable");
-    document.getElementById("exp-text").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    const readout = document.getElementById("exp-readout");
+    equal(readout?.textContent, longKey);
+    assert(document.getElementById("exp-text").hidden && !readout.isContentEditable && document.getElementById("exp-apply").hidden, "key cell opened editable");
+    await privateReadout(readout, longKey, document.getElementById("exp-copy"));
+    document.getElementById("exp-copy").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     assert(overlay.hidden, "Escape did not close the overlay");
     // A closed overlay keeps none of the expanded value: the field can carry
     // an entire previous transaction or a pasted xprv.
     equal(document.getElementById("exp-text").value, "", "closed overlay still holds the full value");
+    equal(document.getElementById("exp-readout").textContent, "", "closed overlay still holds the full readout");
     equal(document.getElementById("exp-title").textContent, "", "closed overlay still holds the title");
     equal(document.getElementById("exp-meta").textContent, "", "closed overlay still holds the size meta");
     input(box, "");
@@ -4694,6 +4857,15 @@
   });
 
   await test("PSBT editor flow diagram opens, edits, and re-decodes a map", async () => {
+    // Earlier tests inspect the startup disclaimer without dismissing it.
+    // Complete its acknowledgement before checking real pointer targets.
+    if (document.getElementById("beta-disclaimer")) {
+      document.getElementById("beta-disclaimer-accept").click();
+      const digit = Array.from({ length: 10 }, (_, n) => n).find((n) => !document.getElementById(`beta-disclaimer-proof-text-${n}`).hidden);
+      input(document.getElementById("beta-disclaimer-proof"), String(digit));
+      document.getElementById("beta-disclaimer-confirm").click();
+      await until(() => !document.getElementById("beta-disclaimer"), "startup disclaimer acknowledgement");
+    }
     // Same BIP-174 valid vector 2 as the editor cases above.
     const vector = "cHNidP8BAKACAAAAAqsJSaCMWvfEm4IS9Bfi8Vqz9cM9zxU4IagTn4d6W3vkAAAAAAD+////qwlJoIxa98SbghL0F+LxWrP1wz3PFTghqBOfh3pbe+QBAAAAAP7///8CYDvqCwAAAAAZdqkUdopAu9dAy+gdmI5x3ipNXHE5ax2IrI4kAAAAAAAAGXapFG9GILVT+glechue4O/p+gOcykWXiKwAAAAAAAEHakcwRAIgR1lmF5fAGwNrJZKJSGhiGDR9iYZLcZ4ff89X0eURZYcCIFMJ6r9Wqk2Ikf/REf3xM286KdqGbX+EhtdVRs7tr5MZASEDXNxh/HupccC1AaZGoqg7ECy0OIEhfKaC3Ibi1z+ogpIAAQEgAOH1BQAAAAAXqRQ1RebjO4MsRwUPJNPuuTycA5SLx4cBBBYAFIXRNTfy4mVAWjTbr6nj3aAfuCMIAAAA";
     document.querySelector('#workspace [data-workspace="psbt"]').click();
@@ -4735,6 +4907,28 @@
       const boxRect = viz.querySelector(`[data-viz="output:${i}"]`).closest(".psbted-viz-box").getBoundingClientRect();
       assert(x1 < x2, `output ${i} connector does not flow right`);
       assert(Math.abs(y2 - (boxRect.top - vizRect.top + boxRect.height / 2)) < 1, `output ${i} connector does not end at its box`);
+    }
+    // Copy controls sit over the stretched navigation target. Hit-test their
+    // actual positions so a value.click() cannot hide an intercepted pointer.
+    const outputNavigation = document.querySelector('#psbted-out [data-viz="output:0"]');
+    const outputBox = outputNavigation.parentElement;
+    const publicValue = outputBox.querySelector("[data-public-value]");
+    const publicCopy = outputBox.querySelector("[data-public-copy]");
+    assert(publicValue && publicCopy, "the flow output has no public address copy controls");
+    assert(!outputBox.querySelector("button button"), "the flow output nests interactive buttons");
+    assert(!publicValue.closest("[data-viz]") && !publicCopy.closest("[data-viz]"), "copying an address also activates navigation");
+    // Full mainnet destination of output 0 in BIP-174 valid vector 2, also
+    // pinned by test/psbt-viz.test.mjs; the diagram shows an abbreviated label.
+    const fullAddress = "1BonMcawnmL4XMxEcofTWqTXxtk9K7hEWe";
+    for (const control of [publicValue, publicCopy]) {
+      control.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const rect = control.getBoundingClientRect(), x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      assert(hit && (hit === control || control.contains(hit)), `the flow ${control === publicValue ? "value" : "clipboard"} is intercepted by ${hit?.tagName || "nothing"}#${hit?.id || ""} [data-viz=${hit?.closest("[data-viz]")?.dataset.viz || ""}] at ${x.toFixed(1)},${y.toFixed(1)}`);
+      const focused = document.activeElement;
+      equal(await copiedBy(control, () => hit.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: x, clientY: y }))), fullAddress);
+      equal(document.activeElement, focused);
     }
     // A box is a link to its own section: nothing moves, the section is
     // focused and lit for a moment, and the map still renders exactly once.
@@ -5049,13 +5243,22 @@
     await until(() => !document.getElementById("key-manager").hidden, "key workspace after Journal key reference test");
   });
 
+  await test("public fingerprints and watch-only exports allow text selection and copying", async () => {
+    const values = [...document.querySelectorAll("#out [data-copy-group] [data-public-value]")];
+    for (const [pattern, qr] of [[/^[0-9a-f]{8}$/, false], [/^[xtuvyzYZUV]pub[1-9A-HJ-NP-Za-km-z]+$/, true], [/^(?:wpkh|sh|tr|pkh|wsh)\(/, true]]) {
+      const value = values.find((node) => pattern.test(node.textContent.trim()));
+      await publicReadout(value, value?.textContent.trim(), qr);
+    }
+  });
+
   await test("every address row opens a QR overlay showing that row's address", async () => {
-    const row = document.querySelector('#acct [data-address-table="hd-receive"] tbody tr');
+    const row = document.querySelector('#acct [data-address-table="hd-receive"] tbody tr[aria-rowindex]');
     const index = row?.querySelector("th")?.textContent.trim();
-    const address = row?.querySelector(".addr-text")?.textContent.trim();
-    const button = row?.querySelector(".addr-qr");
+    const button = row?.querySelector("[data-address-qr]");
+    const address = button?.parentElement.querySelector("[data-public-value]")?.textContent.trim();
     assert(row && index && address, "The receive table row is missing");
     assert(button, "The receive address row has no QR button");
+    await publicReadout(button.parentElement.querySelector("[data-public-value]"), address, true);
     equal(button.dataset.addressQr, address, "The QR button carries a different address than the row");
     equal(button.getAttribute("aria-label"), `Show QR code for Address #${index}`, "The QR button aria-label is wrong");
     button.click();
@@ -5066,6 +5269,7 @@
     equal(overlay.querySelector("#addr-qr-title").textContent, `Address #${index}`, "The overlay title is wrong");
     const overlayAddress = overlay.querySelector("#addr-qr-address");
     equal(overlayAddress.textContent, address, "The overlay shows a different address than the row");
+    assert(getComputedStyle(overlayAddress).userSelect !== "none", "the public QR value cannot be highlighted");
     const addressRange = document.createRange();
     addressRange.selectNodeContents(overlayAddress);
     equal(addressRange.getClientRects().length, 1, "The native SegWit address wraps in the overlay");
@@ -5149,6 +5353,17 @@
     bip85Workspace.click();
     await until(() => !document.getElementById("bip85-manager").hidden, "BIP-85 Station");
     const tabs = document.getElementById("bip85-tabs");
+    const childReadouts = async () => {
+      const copy = document.getElementById("bip85-copy");
+      assert(!copy && !document.querySelector("#bip85-out [data-private-copy]"), "a concealed BIP-85 child offers a clipboard control");
+      document.getElementById("bip85-reveal").click();
+      const values = [...document.querySelectorAll("#bip85-out [data-private-value]")];
+      equal(values.length, 2);
+      for (const value of values) await privateReadout(value, value.textContent);
+      document.getElementById("bip85-reveal").click();
+      assert(!document.querySelector("#bip85-out [data-private-value]"), "concealing left the child or its entropy on the page");
+      assert(!document.querySelector("#bip85-out [data-private-copy], #bip85-copy"), "concealing left a child clipboard control on the page");
+    };
     equal(tabs.children.length, 1, "BIP-85 did not start with only its Station");
     assert(tabs.children[0].textContent.includes("BIP-85 Station"), "BIP-85 Station tab is mislabeled");
     assert(tabs.children[0].querySelector(".bip85-bench-icon"), "BIP-85 bench tab is missing its seedling icon");
@@ -5194,6 +5409,7 @@
     }
     assert([...document.querySelectorAll("#msig-keys .msig-session-key")].some((chip) => chip.dataset.keyId?.startsWith("bip85:") && chip.textContent.includes(firstChildFingerprint)), "MS Station did not offer the BIP-85 HD child");
     assert(!document.getElementById("delete-bip85").disabled, "The child delete control did not become available");
+    await childReadouts();
 
     document.querySelector('#workspace [data-workspace="journal"]').click();
     document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
@@ -5277,6 +5493,7 @@
       input(document.getElementById("bip85-index"), index);
       document.getElementById("bip85-go").click();
       await until(() => tabs.children.length === 3 && document.querySelector("#bip85-out .key-summary"), `${app} BIP-85 child`);
+      await childReadouts();
       const fingerprint = tabs.children[2].querySelector(".key-tab-label")?.textContent.trim();
       assert(childChip("psbt-session-keys", fingerprint) && childChip("nonce-session-keys", fingerprint), `${app} was not offered to PSBT and Nonce`);
       for (const id of ["bip85-session-keys", "sp-session-keys", "vanity-session-keys"]) {
@@ -5303,6 +5520,7 @@
     input(document.getElementById("bip85-index"), "4");
     document.getElementById("bip85-go").click();
     await until(() => tabs.children.length === 3 && document.querySelector("#bip85-out .key-summary"), "non-key BIP-85 hex output");
+    await childReadouts();
     const hexChildId = `bip85:${tabs.children[2].id.slice("bip85-tab-".length)}`;
     for (const id of ["bip85-session-keys", "sp-session-keys", "vanity-session-keys", "psbt-session-keys", "nonce-session-keys"]) {
       assert(!document.querySelector(`#${id} [data-key-id="${hexChildId}"]`), `${id} offered HEX entropy as a key`);
@@ -5771,6 +5989,35 @@
     await until(() => document.querySelector('#acct [data-address-table="hd-change"] table[aria-rowcount="6"]'), "restored standard branch tables");
   });
 
+  await test("receive and change WIFs copy only from their clipboard controls", async () => {
+    const reveal = () => document.getElementById("reveal");
+    const wasRevealed = reveal()?.checked;
+    assert(reveal(), "the derived key has no privacy control");
+    try {
+      if (wasRevealed) reveal().click();
+      for (const branch of ["hd-receive", "hd-change"]) {
+        await addressRowsAligned(document.querySelector(`#acct [data-address-table="${branch}"]`));
+      }
+      reveal().click();
+      for (const branch of ["hd-receive", "hd-change"]) {
+        const table = document.querySelector(`#acct [data-address-table="${branch}"]`);
+        assert(table, `${branch} is missing`);
+        const values = [...table.querySelectorAll("[data-private-value]")];
+        assert(values.length > 0, `${branch} has no revealed WIFs`);
+        for (const value of values) {
+          assert(/^[5KLc9][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(value.textContent), "the private address readout is not a WIF");
+          await privateReadout(value, value.textContent);
+        }
+        await addressRowsAligned(table);
+      }
+      reveal().click();
+      assert(!document.querySelector('#acct [data-private-value]'), "concealing left WIF readouts in the table");
+      assert(!document.querySelector('#acct [data-private-copy]'), "concealing left a WIF clipboard control in the table");
+    } finally {
+      if (Boolean(reveal()?.checked) !== Boolean(wasRevealed)) reveal()?.click();
+    }
+  });
+
   await test("large address ranges scroll continuously with a bounded number of rendered rows", async () => {
     const range = document.getElementById("address-range");
     const derive = document.getElementById("go");
@@ -5810,6 +6057,27 @@
     await until(() => renderedRows().at(-1)?.querySelector("th")?.textContent.trim() === "36", "last virtualized address row");
     assert(renderedRows().length <= 24, "The virtualized table accumulated rows while scrolling");
     equal(scroller.scrollTop > 0, true, "The address table did not retain a continuous scroll position");
+    const hiddenRowHeight = renderedRows()[0].getBoundingClientRect().height;
+
+    const reveal = () => document.getElementById("reveal");
+    const wasRevealed = reveal().checked;
+    try {
+      if (!wasRevealed) reveal().click();
+      const shown = document.querySelector('#acct [data-address-table="hd-receive"]');
+      const scrollArea = shown.querySelector("table").parentElement;
+      scrollArea.closest("details")?.setAttribute("open", "");
+      const firstWif = shown.querySelector("[data-private-value]");
+      await privateReadout(firstWif, firstWif?.textContent);
+      equal(firstWif.closest("tr").getBoundingClientRect().height, hiddenRowHeight);
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+      scrollArea.dispatchEvent(new Event("scroll"));
+      const lastRow = await until(() => [...shown.querySelectorAll("tbody tr[aria-rowindex]")].find((row) => row.querySelector("th")?.textContent.trim() === "36"), "last revealed virtual address row");
+      const lastWif = lastRow.querySelector("[data-private-value]");
+      await privateReadout(lastWif, lastWif?.textContent);
+      equal(lastRow.getBoundingClientRect().height, hiddenRowHeight);
+    } finally {
+      if (Boolean(reveal()?.checked) !== Boolean(wasRevealed)) reveal()?.click();
+    }
 
     input(range, "5");
     derive.click();
@@ -6045,7 +6313,7 @@
       equal(document.getElementById(originalTab.id).textContent.trim(), name, "The multisig tab did not display its saved name");
     };
     await renameSource("Household savings");
-    const addresses = () => [...document.querySelectorAll('#msig-out [data-address-table="msig-receive"] [data-copy-field]')].map((button) => button.textContent).join();
+    const addresses = () => [...document.querySelectorAll('#msig-out [data-address-table="msig-receive"] [data-address-qr]')].map((button) => button.parentElement.querySelector("[data-public-value]").textContent).join();
     const originalAddresses = addresses(), originalStart = document.getElementById("msig-address-start").value;
     document.getElementById("msig-edit-inputs").click();
     await until(() => !document.getElementById("msig-lab").hidden, "editable inputs in MS Station");
@@ -6337,6 +6605,8 @@
       await until(() => document.getElementById("reveal"), "the derived wallet's privacy switch");
       if (!document.getElementById("reveal").checked) document.getElementById("reveal").click();
       await until(() => document.getElementById("out").textContent.includes(vectors[0].seed), "the seed of the published vector with passphrase TREZOR");
+      const seedQrDigits = "000000000000000000000000000000000000000000000003";
+      await privateReadout([...document.querySelectorAll("#out [data-private-value]")].find((value) => value.textContent === seedQrDigits), seedQrDigits);
       // The key keeps the passphrase as bytes; a station that takes it as
       // text gets the text, not the bytes' numbers. (Vanity's grind reads it
       // the same way; its own test extends a key's passphrase.)
@@ -6612,6 +6882,24 @@
       keyTab = document.getElementById("calc-card").getAttribute("aria-labelledby");
 
       await showSecrets("revealed recovery material");
+      const readouts = [...document.querySelectorAll("#out [data-private-value]")];
+      const entropy = readouts.find((node) => node.textContent === entropyHex);
+      const group = entropy?.closest("details"), copy = entropy?.closest("[data-private-field]")?.querySelector("[data-private-copy]");
+      assert(group && copy && !copy.disabled, "the revealed recovery group has no available clipboard control");
+      const wasOpen = group.open;
+      try {
+        group.open = false;
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        assert(await copiedBy(copy) === null, "a closed private recovery group reached the clipboard");
+        await privateReadout(entropy, entropyHex, copy);
+      } finally {
+        group.open = wasOpen;
+      }
+      for (const expected of [words, entropyHex]) {
+        const value = readouts.find((node) => node.textContent === expected);
+        await privateReadout(value, expected);
+      }
+      for (const value of readouts) await privateReadout(value, value.textContent);
       window.dispatchEvent(new Event("blur"));
       await until(() => !revealed(), "the secrets to be masked after the window lost focus");
       assert(!reveal().checked, "the privacy switch stayed on after the window lost focus");
@@ -6688,6 +6976,10 @@
     await until(() => document.getElementById("reveal"), "the derived wallet's privacy switch");
     if (!document.getElementById("reveal").checked) document.getElementById("reveal").click();
     const copy = await until(() => document.querySelector("#out [data-copy-field]"), "a copy button in the derived wallet");
+    for (let node = copy.parentElement; node; node = node.parentElement) {
+      if (node.tagName === "DETAILS") node.open = true;
+    }
+    await new Promise((resolve) => requestAnimationFrame(resolve));
 
     const written = [], leaves = [];
     let closed = 0;

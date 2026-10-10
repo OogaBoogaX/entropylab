@@ -14,7 +14,9 @@ import { mnemonicToSeedSync, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { HDKey } from "@scure/bip32";
 import { p2wpkh } from "@scure/btc-signer";
+import { loadAppFunctions } from "./app-slice-harness.mjs";
 import { addressQrButtonHtml } from "../src/js/address-qr.js";
+import { t, tAttr } from "../src/js/i18n.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -256,8 +258,9 @@ test("invalid source inputs cannot fall back to the imported cached wallet", asy
   assert.equal(c.hodlKeys.every(state => !state.result), true);
 });
 
-// The real escaping helpers and table renderer from app.js; hodlPrivateValue
-// (the WIF cell) is sliced too, with its two globals stubbed.
+// The real table renderer and its shared escaping and copy helpers, without
+// the unrelated page state initialized alongside the app's reveal flag.
+const readouts = await loadAppFunctions(["hodlPublicInlineHtml", "hodlPrivateCopyButton"]);
 const source = [
   loadSlice("hodlEscapeHtml"),
   loadSlice("hodlDisplayDerivationPath"),
@@ -266,10 +269,8 @@ const source = [
   loadSlice("hodlAddressTableRows"),
 ].join("\n");
 const loadRows = (revealPrivate = false) =>
-  new Function("hodlRevealPrivate", "hodlT", "hodlAddressQrButton", `${source}; return hodlAddressTableRows;`)(
-    revealPrivate,
-    (text, vars) => text.replace("{n}", String(vars?.n ?? "{n}")),
-    addressQrButtonHtml,
+  new Function("hodlRevealPrivate", "hodlT", "hodlTText", "hodlTAttr", "hodlAddressQrButton", "hodlPublicInlineHtml", "hodlPrivateCopyButton", `${source}; return hodlAddressTableRows;`)(
+    revealPrivate, t, t, tAttr, addressQrButtonHtml, readouts.hodlPublicInlineHtml, readouts.hodlPrivateCopyButton,
   );
 
 const ATTACK_INDEX = '<svg onload="alert(document.domain)">';
