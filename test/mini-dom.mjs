@@ -139,6 +139,10 @@ export class MiniElement {
     clear(this);
     insert(this, [parseHtml(me(this).doc, String(html))]);
   }
+  insertAdjacentHTML(position, html) {
+    if (position !== "beforeend") throw new Error(`mini-dom: unsupported insertAdjacentHTML position "${position}"`);
+    insert(this, [parseHtml(me(this).doc, String(html))]);
+  }
   get outerHTML() {
     const own = me(this), attrs = [...own.attrs].map(([name, value]) => ` ${name}="${value}"`).join("");
     return `<${own.tag}${attrs}>${this.innerHTML}</${own.tag}>`;

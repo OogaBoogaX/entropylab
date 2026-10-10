@@ -45,15 +45,16 @@ export const addressQrButtonHtml = (address, label, { animate = "" } = {}) => {
 // wears the glyphs every other copy button in the app does.
 export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
   if (typeof renderQr !== "function" || document.getElementById("addr-qr-overlay")) return;
+  let privatePayload = false;
   // The address text and the copy button both copy. Only the button takes a
   // tab stop, so a keyboard reaches one copy control, not two. The button sits
-  // with Close in the actions row, copy on the left and Close on the right, so
-  // the address keeps the card's full width. The icon turning to a check is the
+  // beside the label, so the address keeps the card's full width.
+  // The icon turning to a check is the
   // visible confirmation; the note speaks it, unseen.
   const modal = createModal({
     id: "addr-qr-overlay",
     className: "addr-qr-overlay",
-    focusables: () => [text, copyButton, closeButton],
+    focusables: () => privatePayload ? [copyButton, closeButton] : [text, copyButton, closeButton],
     onDismiss: () => close(),
     card: `
     <div class="modal-card addr-qr-card" role="dialog" aria-modal="true" aria-labelledby="addr-qr-title">
@@ -77,10 +78,11 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
     text = overlay.querySelector("#addr-qr-address"),
     copyButton = overlay.querySelector("#addr-qr-copy"),
     copiedNote = overlay.querySelector("#addr-qr-copied"),
-    closeButton = overlay.querySelector("#addr-qr-close");
+    closeButton = overlay.querySelector("#addr-qr-close"),
+    actions = copyButton.parentElement;
   closeButton.textContent = t("Close");
-  const copyLabel = t("Copy address"),
-    copyIcon = icons.copy?.() ?? "",
+  let copyLabel = t("Copy address");
+  const copyIcon = icons.copy?.() ?? "",
     copiedIcon = icons.copied?.() ?? "";
   text.title = copyLabel;
   image.title = copyLabel;
@@ -159,6 +161,19 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
     // A payload the provider splits is scanned as a sequence: one code could
     // not hold it, and a truncated code would hand the signer a broken file.
     const kind = target.dataset.addressQrAnimate || "";
+    privatePayload = kind === "psbt";
+    copyLabel = privatePayload ? t("Copy PSBT") : t("Copy address");
+    // A PSBT may contain proprietary private-key fields. Its text and image
+    // are readouts; only the label's clipboard deliberately copies the bytes.
+    text.setAttribute("data-i18n-skip", "");
+    text.setAttribute(privatePayload ? "data-private-value" : "data-public-value", "");
+    text.removeAttribute(privatePayload ? "data-public-value" : "data-private-value");
+    text.disabled = privatePayload;
+    text.title = image.title = privatePayload ? "" : copyLabel;
+    text.style.cursor = image.style.cursor = privatePayload ? "default" : "";
+    actions.style.justifyContent = "flex-end";
+    title.classList.add("copy-field-label");
+    title.append(copyButton);
     const parts = kind && typeof frames === "function" ? frames(value, kind) : null;
     if (Array.isArray(parts) && parts.length > 1) {
       let frame = 0;
@@ -187,7 +202,7 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
     if (target) open(target);
   });
   closeButton.addEventListener("click", close);
-  text.addEventListener("click", copy);
+  text.addEventListener("click", () => { if (!privatePayload) copy(); });
   copyButton.addEventListener("click", copy);
-  image.addEventListener("click", copy);
+  image.addEventListener("click", () => { if (!privatePayload) copy(); });
 };

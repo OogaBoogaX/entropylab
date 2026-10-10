@@ -441,7 +441,7 @@ test("journal Lock empties the snapshot, the notepad and the session log", () =>
   // the session log are free text the user pasted keystrokes into. #522:
   // a locked journal keeps none of it (#625 review follow-up).
   const elements = new Map([
-    ["journal-state-text", { value: "24 seed words and xprvs", dataset: {} }],
+    ["journal-state-text", { textContent: "24 seed words and xprvs", dataset: {} }],
     ["journal-state-private", { checked: true, dataset: {} }],
     ["journal-status-note", { textContent: "", dataset: {} }],
     ["journal-notes-text", { value: "dice rolls and brain text", dataset: {} }],
@@ -462,7 +462,7 @@ test("journal Lock empties the snapshot, the notepad and the session log", () =>
     hodlJournalTool: "book",
   });
   vm.runInContext(`${functionSource("hodlJournalLock")}\nhodlJournalLock();`, context);
-  assert.equal(elements.get("journal-state-text").value, "", "Lock left the session snapshot filled");
+  assert.equal(elements.get("journal-state-text").textContent, "", "Lock left the session snapshot filled");
   assert.equal(elements.get("journal-state-private").checked, false, "Lock left the private toggle ticked");
   assert.equal(elements.get("journal-notes-text").value, "", "Lock left the notepad filled");
   assert.equal(elements.get("journal-log-out").textContent, "No events yet.", "Lock left the session log rendered");

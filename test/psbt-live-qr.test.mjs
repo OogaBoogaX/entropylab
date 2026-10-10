@@ -73,7 +73,7 @@ test("stale builds disable every export boundary, not just the styling (issue #3
   // renderResult gates copy/download and both readouts.
   assert.match(editor, /const gated = stale \? " disabled" : ""/);
   for (const id of ["psbted-copy-b64", "psbted-copy-hex", "psbted-download"]) {
-    assert.ok(editor.includes(`id="${id}"`), `${id} must exist`);
+    assert.ok(editor.includes(`id="${id}"`) || editor.includes(`id: "${id}"`), `${id} must exist in markup or the shared control builder`);
   }
   assert.match(editor, /if \(stale\) return;/); // no handlers run while stale
   // The keystroke path applies the same gating to the already-rendered panel.

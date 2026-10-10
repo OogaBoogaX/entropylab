@@ -374,6 +374,18 @@ the limits of browser-memory cleanup.
   re-prefixed only when the path/script match: x = legacy, y = nested BIP49,
   z = native BIP84, Y = nested BIP48 multisig, Z = native BIP48 native-msig.
   Testnet uses t / u / v / U / V. There is no Taproot SLIP prefix.
+- Displayed private recovery material cannot be highlighted. Use the clipboard
+  icon beside its label (or in its table row) to copy it. This covers seed-word
+  previews, WIFs, extended private keys, private descriptors, entropy and seed
+  hex, BIP-85 children, Silent Payments and Lightning secrets, and Journal
+  readouts. Clipboard icons appear only when their private values are revealed;
+  successful copying briefly shows a green checkmark. Editable input fields
+  retain normal text editing.
+- Public derivation values remain highlightable and copy when clicked.
+  Their labels provide a compact clipboard icon where there is no QR button;
+  QR-backed values keep their QR action without a duplicate clipboard icon.
+  This includes fingerprints, public keys, extended public keys, descriptors,
+  and addresses across the derivation tools.
 - Gates each release behind a two-step disclaimer: the first step warns that
   the software is experimental, and the second names what the browser cannot
   protect (keys paged to disk, clipboard history, memory surviving close) and

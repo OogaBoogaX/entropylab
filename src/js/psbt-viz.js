@@ -21,6 +21,7 @@
 import { addressFromScript } from "./addresses.js";
 import { hex as hexCoder } from "./coders.js";
 import { psbtCostFactsFromDoc } from "./psbt-cost.js";
+import { publicValueHtml } from "./public-data.js";
 
 const escapeHtml = (text) =>
   String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -122,7 +123,7 @@ const costHtml = (doc) => {
   return `<span title="exact serialized transaction size">${facts.vsize} vB · ${facts.weight} WU</span>${rate}`;
 };
 
-const inputBox = (doc, index, network) => {
+const inputBox = (doc, index, network, copyIcon) => {
   const input = doc.tx.inputs[index];
   const pairs = doc.inputs[index] ?? [];
   const claim = claimedPrevout(pairs);
@@ -137,14 +138,15 @@ const inputBox = (doc, index, network) => {
   return `<div class="psbted-viz-box">
     <button type="button" class="psbted-viz-open" data-viz="input:${index}" aria-label="Input ${index}, ${escapeHtml(address ?? label)}: go to this input's PSBT fields">
       <span class="psbted-viz-idx">#${index}</span>
-      <span class="psbted-viz-id psbted-viz-in"${address ? ` title="${escapeHtml(address)}"` : ""}>${escapeHtml(label)}</span>
+      ${address ? "" : `<span class="psbted-viz-id psbted-viz-in">${escapeHtml(label)}</span>`}
     </button>
+    ${address ? publicValueHtml(address, { copyIcon, preview: label, className: "psbted-viz-id psbted-viz-in" }) : ""}
     <p class="psbted-viz-amount psbt-amount">${conflict ? `<span class="psbted-note-bad">conflicting claims: ${groupSats(conflict[0])} vs ${groupSats(conflict[1])} sats</span>` : claim ? `${groupSats(claim.value)} sats` : `<span class="muted">no amount claim</span>`}</p>
     <p class="psbted-viz-sub" title="spends ${escapeHtml(input.txid)}:${escapeHtml(String(input.vout))}">${kind ? `<span class="psbted-viz-kind">${escapeHtml(kind)}</span> · ` : ""}<span class="psbted-viz-status ${status.tone}">${escapeHtml(status.text)}</span></p>
   </div>`;
 };
 
-const outputBox = (doc, index, network) => {
+const outputBox = (doc, index, network, copyIcon) => {
   const output = doc.tx.outputs[index];
   const address = addressFor(output.scriptPubKey, network);
   const kind = scriptKind(output.scriptPubKey, output.asm);
@@ -155,8 +157,9 @@ const outputBox = (doc, index, network) => {
   return `<div class="psbted-viz-box">
     <button type="button" class="psbted-viz-open" data-viz="output:${index}" aria-label="Output ${index}, ${escapeHtml(address ?? label)}: go to this output's PSBT fields">
       <span class="psbted-viz-idx">#${index}</span>
-      <span class="psbted-viz-id ${address || !kind ? "psbted-viz-out" : "psbted-viz-tag"}"${address ? ` title="${escapeHtml(address)}"` : ""}>${escapeHtml(label)}</span>
+      ${address ? "" : `<span class="psbted-viz-id ${!kind ? "psbted-viz-out" : "psbted-viz-tag"}">${escapeHtml(label)}</span>`}
     </button>
+    ${address ? publicValueHtml(address, { copyIcon, preview: label, className: "psbted-viz-id psbted-viz-out" }) : ""}
     <p class="psbted-viz-amount"><input class="psbted-viz-sats" data-txout-val="${index}" value="${escapeHtml(String(output.value))}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Output ${index} value in sats"> sats</p>
     <p class="psbted-viz-sub"><span class="muted">${escapeHtml(sub)}</span></p>
   </div>`;
@@ -167,9 +170,9 @@ const outputBox = (doc, index, network) => {
 // its own section below, so the diagram holds no selection of its own. The
 // SVG layer ships empty: psbt-editor.js measures the laid-out boxes and
 // draws the connector paths into it (no layout in this pure module).
-export const psbtVizHtml = (doc, network) => {
-  const inputs = doc.tx.inputs.map((_, index) => inputBox(doc, index, network)).join("");
-  const outputs = doc.tx.outputs.map((_, index) => outputBox(doc, index, network)).join("");
+export const psbtVizHtml = (doc, network, { copyIcon = () => "" } = {}) => {
+  const inputs = doc.tx.inputs.map((_, index) => inputBox(doc, index, network, copyIcon)).join("");
+  const outputs = doc.tx.outputs.map((_, index) => outputBox(doc, index, network, copyIcon)).join("");
   // Column totals ride in the hint lines; the inputs side can only total
   // when every input carries a claim (doc.totalIn is null otherwise).
   const inputsHint = doc.totalIn === null
