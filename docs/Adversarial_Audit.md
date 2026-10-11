@@ -3,7 +3,7 @@
 Branch: `review/adversarial-audit`. Starting commit: `741d7f2` (also the
 local `rock` tip). The branch had no prior review commits or saved findings.
 This review uses the local checkout; it does not establish that the remote
-branch has no newer commits.
+branch will remain unchanged after the fetched revision.
 
 Review performed with GPT-6 (OpenAI Codex).
 
@@ -12,6 +12,11 @@ it still pointed to `741d7f2`. All three fixes passed source review. The final
 focused tests were replayed against an isolated archive of that original
 commit: seven tests failed for the claimed defects. The same 47 focused tests
 all passed against the fixed sources.
+
+A final review of the nonce comparison and report/error paths found two
+additional medium-severity issues, A4 and A5 below. No critical or high issue
+was confirmed in the reviewed scope; that assessment is bounded by the scope
+and validation described here.
 
 ## Objectives and scope
 
@@ -113,6 +118,53 @@ and passes on the map-based assembly.
 Existing published Bytewords/MUR vectors, conflict checks, whole-message
 checksums, and legacy fragment support remain in coverage.
 
+### A4 — Collision-heavy nonce groups exhaust memory (medium)
+
+Contract: preserve exact nonce comparison results within 32,768 candidate
+pairs across the whole inspection, and explicitly refuse larger collision
+sets without allocating their pairs or recording a completed verdict.
+
+Grouping by r avoided all-pairs work for ordinary distinct nonces, but a
+single collision-heavy group still produced quadratic work and result arrays.
+A 135,072-byte PSBT with 3,000 partial signatures sharing r required 4,498,500
+pairs. Running the real parser and comparator in an isolated Node worker
+with a 128 MB old-space limit exhausted the worker heap; a distinct-r control
+completed in 5 ms. Both UI inspectors reach this comparator. Opening crafted
+input could freeze or terminate the tab; no key disclosure was demonstrated.
+
+Plan executed: first add a rejected-collision regression and observe the
+missing exception, then preflight the sum of each group's n*(n-1)/2 before
+constructing any pairs. The same fixture now throws the deliberate limit
+error. This is an availability bound, not a consensus rule; unusually large
+benign repeated-signature sets are also refused.
+
+`nonce comparison refuses collision floods before constructing unbounded
+pair lists` covers 256 accepted and 257 refused identical-r records, the
+exact whole-file boundary, multiple groups that collectively exceed it, and
+10,000 distinct nonces that remain accepted. The existing grouped-comparison
+reference test retains its verdict checks. A handler-level regression runs
+the actual renderers and comparator through both inspectors for PSBT and raw
+transaction input: prior output clears, the error surfaces, and no new nonce
+verdict is recorded. Input acquisition and unrelated UI services are stubbed.
+
+### A5 — Repeated-nonce reports also claim no repetition (medium)
+
+Contract: a same-key repeated-r warning must never coexist with a no-repeat
+assurance; distinct readable r values may still report no repetition.
+
+The PSBT and raw-transaction renderers appended the reuse warning, then ran
+a separate cross-key/incomplete/clean conditional chain. With same-key reuse
+and no cross-key or unreadable records, that second chain also appended the
+false no-repeat line. The warning and stored verdict were present, which
+limits the impact, but the contradictory safety message could mislead users.
+
+Plan executed: run both real renderers on fixed same-key signatures with
+r=1/r=1 and r=1/r=2 controls; observe the false assurance in each repeated
+case; require empty reused and possible-reuse buckets before emitting it.
+Tests assert only the safety-critical no-repeat substring and the stored
+verdict, not CSS or full presentation copy. They use readable DER without
+prevouts and intentionally establish possible reuse, not signature validity.
+
 ## Validation
 
 Initial red and subsequent green for A1/A2:
@@ -127,9 +179,22 @@ Initial red and subsequent green for A3:
 node --test test/psbt-ur.test.mjs
 ```
 
+Initial red and subsequent green for A4 and A5, respectively:
+
+```sh
+node --test test/psbt-nonce-reuse.test.mjs
+node --test test/psbt-nonce-render.test.mjs
+```
+
+The A4 initial failure was a missing expected exception. Both A5 renderer
+tests failed because the repeated-r report contained the no-repeat claim.
+The additional handler test covers the unchanged error-handling contract
+and passed without changing those handlers. The combined nonce comparison,
+rendering, analysis-status, and finalized-signature suites pass all 28 tests.
+
 Final validation passed:
 
-- `npm run build && npm test`: 2,249 tests, 2,239 passed, zero failures,
+- `npm run build && npm test`: 2,253 tests, 2,243 passed, zero failures,
   10 skipped. Chrome ran the hosted/offline browser suite and the native-input
   residue-driver checks. Firefox and Edge are absent; eight optional live
   Bitcoin Core checks were skipped because bitcoind is absent.
@@ -138,6 +203,13 @@ Final validation passed:
   two staging paths. This host check does not repeat the canonical Docker
   image's cross-environment WASM reproducibility check.
 - `git diff --check`: passed.
+- `npm audit --json`: zero known advisories in the pinned npm dependency tree
+  at review time. This does not certify unreported or non-npm vulnerabilities.
+- `HDKEY_FUZZ_ITERATIONS=1000 PSBT_FUZZ_ITERATIONS=1000 node --test
+  test/hdkey-differential-fuzz.test.mjs test/psbt-differential-fuzz.test.mjs`:
+  all four differential tests passed using the existing independent references.
+- `node --test test/ci-completeness.test.mjs`: all three checks passed with
+  the new renderer suite staged and registered in `test:ci`.
 
 The first sandboxed full-suite attempt could not bind loopback servers.
 The successful suite ran with approved access for the local browser and

@@ -174,6 +174,13 @@ material. Its security posture rests on the following model:
   Taproot/Schnorr nonces are not analyzed. The report marks these cases
   incomplete; a completed individual check is not a security conclusion for
   the transaction.
+- PSBT and raw-transaction nonce analysis refuses an inspection requiring
+  more than 32,768 same-r candidate-pair comparisons across all nonce groups.
+  This bounds collision-driven pair allocation; it is separate from the
+  digest-reconstruction budget. Even benign repeated signatures can exceed
+  this resource limit. Refusal clears the attempted report and surfaces an
+  error, without recording a nonce verdict. Repeated-nonce warnings suppress
+  the no-repeat assurance in both report formats.
 - The optional ECDSA nonce-history file is an explicit user download and never
   uses browser storage or the network. It contains check timestamps, master
   fingerprints when available, raw `r` values, domain-separated SHA-256

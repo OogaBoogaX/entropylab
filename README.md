@@ -33,6 +33,9 @@ created, while preserving the caller's root. The sequential PSBT UR decoder API
 deduplicates identical fragments and allocates only for supplied fragments;
 invalid sequence numbers are refused. Large transaction scripts serialize
 without depending on the browser's function-argument limit.
+Nonce reports never pair a repeated-nonce warning with a no-repeat claim.
+Inputs requiring more than 32,768 same-r pair comparisons are refused with
+an explicit error before those pairs are allocated.
 
 - A live **Security log** below Important shows the browser's initial
   connection status, online/offline changes, and detected browser translation
