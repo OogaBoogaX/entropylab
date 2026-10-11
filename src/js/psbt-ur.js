@@ -186,6 +186,9 @@ export function hodlUrParsePart(raw) {
   const type = match[1];
   const seq = match[2] ? Number(match[2]) : 1;
   const count = match[3] ? Number(match[3]) : 1;
+  if (!Number.isSafeInteger(seq) || seq < 1 || !Number.isSafeInteger(count) || count < 1) {
+    throw new Error("UR sequence and count must be positive safe integers.");
+  }
   const payload = hodlBytewordsDecode(match[4].replace(/-/g, ""));
   // A sequence number past the part count marks a multi-part fountain code.
   const fountain = Boolean(match[2] && seq > count);
@@ -236,7 +239,8 @@ export function hodlUrDecodePsbt(raw) {
     if (parsed.length !== 1) throw new Error("A single-part UR should be pasted once.");
     return { type, psbt: hodlCborUnwrapPsbt(parsed[0].payload), parts: 1 };
   }
-  const slots = Array.from({ length: count }, () => null);
+  // Retain only supplied fragments, never allocate from an untrusted count.
+  const slots = new Map();
   for (const part of parsed) {
     if (part.seq < 1 || part.seq > count) throw new Error("UR fragment index is out of range.");
     // A second fragment for an already-filled sequence number would silently
@@ -244,18 +248,18 @@ export function hodlUrDecodePsbt(raw) {
     // reassembly would decode to a transaction neither sender produced.
     // Exact repeats (the same fragment pasted twice) are idempotent;
     // conflicting ones are rejected (issue #364).
-    const existing = slots[part.seq - 1];
+    const existing = slots.get(part.seq);
     if (existing) {
-      if (eq(existing, part.payload)) continue;
+      if (eq(existing.payload, part.payload)) continue;
       throw new Error("Duplicate UR fragment " + part.seq + " with different content.");
     }
-    slots[part.seq - 1] = part.payload;
+    slots.set(part.seq, part);
   }
-  if (slots.some((slot) => !slot)) {
-    const have = slots.reduce((n, slot) => n + (slot ? 1 : 0), 0);
+  if (slots.size !== count) {
+    const have = slots.size;
     throw new Error("Need all " + count + " sequential UR fragments (have " + have + "). Fountain recovery is not implemented.");
   }
-  const ordered = parsed.slice().sort((a, b) => a.seq - b.seq);
+  const ordered = [...slots.values()].sort((a, b) => a.seq - b.seq);
   const standard = ordered[0].part;
   if (standard) {
     // BCR-2024-001 fixed-rate reassembly: every part must carry the same
