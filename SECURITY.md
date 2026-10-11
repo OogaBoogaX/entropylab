@@ -111,7 +111,9 @@ material. Its security posture rests on the following model:
   including temporary BIP32 serialized key/chain-code views after master
   derivation, child derivation, and extended-key import (also on failure).
   Returned HDKey nodes keep independent copies; this cleanup does not wipe
-  caller-owned seed buffers. A derived wallet, a BIP-85 child, and each
+  caller-owned seed buffers. Rejected HD derivation paths also wipe the last
+  intermediate private child created before the error; the caller-owned root
+  remains usable. A derived wallet, a BIP-85 child, and each
   station's copy of a key hold their secrets only as byte arrays and HDKey
   nodes; words, WIF, xprv and hex text are built only where a secret is
   shown, copied or exported, or where a tool takes it as text. The layer also

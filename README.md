@@ -28,6 +28,12 @@ import from restoring cleared secrets. Locking the journal also invalidates
 pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
 
+Rejected HD derivation paths wipe any intermediate private child already
+created, while preserving the caller's root. Sequential PSBT UR imports
+deduplicate identical fragments and allocate only for supplied fragments;
+invalid sequence numbers are refused. Large transaction scripts serialize
+without depending on the browser's function-argument limit.
+
 - A live **Security log** below Important shows the browser's initial
   connection status, online/offline changes, and detected browser translation
   with local timestamps. It keeps the last 100 fixed messages in page memory,
