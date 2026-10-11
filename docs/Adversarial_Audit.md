@@ -266,3 +266,75 @@ mock-API tests. No external review API was invoked.
 No locale catalogs, dependencies, generated WASM modules, or unrelated
 Android work are part of these fixes. The generated HTML is excluded from
 the review commits even though this checkout tracks it.
+
+## Exact-candidate recovery verification
+
+The follow-up checked the unmodified `entropylab-candidate` HTML downloaded
+from [CI run 38176311703](https://github.com/OogaBoogaX/entropylab/actions/runs/38176311703),
+for PR head `3f3c53c16a42eb2d43b2eda52f9d47e74298b16e`. Its SHA-256 matched
+the run's checksum manifest:
+
+```text
+8dd69de8c17642a3d1d447eb20dbc50aa78a8a9e4506b182e1078fd140afff7a
+```
+
+The locally rebuilt HTML has the same digest, and all three downloaded WASM
+modules match the checked-in modules byte-for-byte. That CI run completed
+successfully, including Firefox integration and the canonical image's
+cross-environment reproducibility checks. This is the PR candidate, not a
+newly published or signed release; the maintainer's release hold still applies.
+
+The opt-in `test/candidate-recovery.mjs` takes an existing HTML file and never
+builds, instruments, or replaces its code. It drives the real UI with native
+text input in Chrome, disables browser networking after each page load, and
+reads the rendered recovery values. The oracle runs separately in Node:
+Node PBKDF2 plus the already-pinned `@scure/bip39`, `@scure/bip32`,
+`@scure/btc-signer`, and `@scure/base`. Published
+[BIP84](https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki) and
+[BIP86](https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki)
+addresses anchor the reference and UI comparisons. Only public deterministic
+test material is used; it must never receive funds.
+
+Contract unchanged: supported recovery inputs must reproduce independently
+determined seed/key/address results; malformed recovery inputs must not enable
+derivation. This adds coverage only, so no production change or artificial
+initial failure is required.
+
+```sh
+node test/candidate-recovery.mjs /absolute/path/to/entropylab.html
+```
+
+The complete run passed:
+
+- 80 mnemonic recoveries: all five BIP39 entropy lengths, all four supported
+  networks, and BIP44/49/84/86. Passphrases cover empty, ASCII, composed and
+  decomposed Unicode, and leading/trailing whitespace.
+- 20 hex recoveries: all five lengths with zero, all-ones, alternating-byte,
+  and incrementing-byte inputs, including leading-zero preservation.
+- 32 extended-key imports: root private and account public imports for each
+  network/script combination. A bare account xpub has no authenticated full
+  origin; the check requires the correct relative suffix and no invented
+  master path.
+- 792 receive/change address comparisons at indices 0, 1, and 2; private
+  imports also match the independent WIF encoding. Mnemonic/hex cases match
+  the mnemonic, entropy bytes, PBKDF2 seed, master private key, and account
+  public key. Watch-only imports expose no private recovery values.
+- Every accepted case conceals private output until reveal and clears the
+  rendered recovery/address output on Wipe. This checks DOM state, not memory
+  erasure.
+- Five refusals: bad mnemonic checksum, extra word, unknown word, corrupted
+  xprv checksum, and corrupted xpub checksum. Derivation stays disabled and
+  no address result appears.
+- Zero observed external HTTP(S) requests and zero uncaught browser exceptions
+  during these flows. Existing network-silence suites cover the broader API
+  contract.
+
+`npm run build && npm test` passed again: 2,253 tests, 2,243 passed, zero
+failures, and the same 10 local optional skips described above.
+`npm run verify` and `git diff --check` passed. This follow-up adds only the
+audit harness and documentation; the tested application bytes are unchanged.
+
+No additional application defect or critical/high finding was confirmed.
+This was a further GPT-6 review using independent reference implementations,
+not a separate third-party auditor's sign-off. Agreement on this finite corpus
+does not prove every input, device, dependency, or security claim correct.
