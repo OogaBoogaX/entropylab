@@ -171,6 +171,7 @@ function hodlRefreshWorkspaceErrors() {
   hodlSetWorkspaceError("msig", hodlMsigErrorSpec);
 }
 function hodlDiceEntropyBits(e) {
+  // Capacity assuming independent fair rolls, not measured unpredictability.
   return e <= 0 ? 0 : e * Math.log2(6);
 }
 function hodlSplitDiceString(e) {
@@ -3406,6 +3407,8 @@ function hodlDiceFairnessFaceLabel(label) {
   return String(label ?? "");
 }
 function hodlDiceFairnessAssess(rolls, labels, title) {
+  // Face counts discard ordering: a predictable cycle can score chi = 0.
+  // The CDF is a reference percentile, never the probability the die is fair.
   let faces = Array.isArray(labels) && labels.length ? labels.map((label) => String(label)) : [], n = (rolls || []).length, sides = faces.length, minimum = hodlDiceMinimumRolls(sides);
   let counts = faces.map((label) => ({ label, count: 0 })), indexByLabel = new Map(faces.map((label, index) => [label, index]));
   for (let roll of rolls || []) {
@@ -3459,8 +3462,8 @@ function hodlDiceFairnessNote(report) {
   if (!report.n) return "";
   let title = report.title === "Coin" ? hodlTText("Coin") : report.title;
   if (!report.enough) return hodlTText("{n} of {minimum} minimum {title} rolls for Pearson’s χ² test · {remaining} more needed.", { n: report.n, minimum: report.minimum, title, remaining: report.remaining });
-  let robust = report.minimum * 2, quality = report.n >= robust ? hodlTText("Enough rolls to reasonably assess fairness.") : hodlTText("Minimum reached. {n} more would make the estimate more robust.", { n: robust - report.n });
-  return hodlTText("A fair {title} would score χ² below {chi} in {percent}% of tests. {quality}", { title, chi: hodlFormatFairnessNumber(report.chi), percent: hodlFormatFairnessNumber(report.cdf * 100), quality });
+  let robust = report.minimum * 2, quality = report.n >= robust ? hodlTText("Sample exceeds the minimum count for this frequency test.") : hodlTText("Minimum count reached. Another {n} rolls would double that minimum.", { n: robust - report.n });
+  return hodlTText("χ² {chi} is at approximately the {percent}% reference percentile, assuming independent fair {title} rolls. {quality}", { title, chi: hodlFormatFairnessNumber(report.chi), percent: hodlFormatFairnessNumber(report.cdf * 100), quality });
 }
 function hodlDiceFairnessMarkup(reports) {
   return (reports || []).filter((report) => report.n > 0).map((report) => {
@@ -3509,7 +3512,7 @@ function hodlRenderDiceFairness(value, method, targetWords = hodlTargetWordCount
   if (row?.classList.contains("dice-fairness-row")) row.hidden = !markup;
   panel.hidden = !open || !markup;
   panel.dataset.tone = open ? hodlDiceFairnessTone(reports) : "muted";
-  panel.innerHTML = open ? (markup ? `${markup}<p class="dice-fairness-caveat">${hodlT("Pearson’s χ² goodness-of-fit. A lucky streak can look biased, and a biased die can look fair until more rolls arrive. This check does not block derivation.")}</p>` : `<p class="dice-fairness-note">${hodlT("Enter rolls to run Pearson’s χ² test.")}</p>`) : "";
+  panel.innerHTML = open ? (markup ? `${markup}<p class="dice-fairness-caveat">${hodlT("This checks face counts only. It cannot establish independence, unpredictability, or entropy. Repeating 123456 can give balanced counts. The percentile is not the probability that the die is fair. This check does not block derivation.")}</p>` : `<p class="dice-fairness-note">${hodlT("Enter rolls to run Pearson’s χ² test.")}</p>`) : "";
   panel.setAttribute("aria-label", hodlTText("Die Distribution / Fairness Analysis"));
 }
 function hodlDiceControlValue(button) {
@@ -3913,6 +3916,8 @@ function hodlCardNeeded(targetWords = hodlTargetWordCount) {
   return { first: 52, extra: 52 };
 }
 function hodlCardWithoutReplacementBits(count) {
+  // Capacity of a uniformly shuffled deck; the transcript cannot prove that
+  // the real shuffle was uniform or that a second shuffle was independent.
   let bits = 0, n = Math.min(Math.max(0, Number(count) || 0), 52);
   for (let i = 0; i < n; i++) bits += Math.log2(52 - i);
   return bits;
@@ -10301,7 +10306,7 @@ function hodlCompareNonces(rValues) {
   // A consolidation PSBT can carry thousands of signatures; an all-pairs
   // scan of them froze the inspector (audit C3-3). Buckets only ever form
   // between records sharing one r value, so group by r first and compare
-  // within groups — same pairs, same verdicts.
+  // within groups — same pairs and verdicts within the comparison budget.
   let byR = new Map();
   for (let record of rValues) {
     let tag = hodlHex.encode(record.r);

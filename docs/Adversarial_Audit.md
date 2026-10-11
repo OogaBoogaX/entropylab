@@ -32,6 +32,17 @@ entropy conversion paths, translation sanitizer, WASM boundary cleanup,
 passphrase storage, and session teardown. Existing vector, differential,
 network, state, and browser tests supplement that source inspection.
 
+The follow-up education pass makes the project's user-protection goals
+explicit in the scan:
+
+| Contract | Existing evidence reviewed | Limit that the explanation must preserve |
+| --- | --- | --- |
+| Preserve supplied bits and method-specific transcripts | Number-base, hashed-dice, cards, BitBox, D++, and global-sync suites | Length/capacity is not measured unpredictability; synchronization and hashing add none |
+| Reproduce Bitcoin recovery data | Published BIP39/BIP32 vectors and independent HD-key comparisons | A valid checksum is not proof of secrecy or the intended wallet; a wrong BIP39 passphrase still derives a seed |
+| Explain source statistics honestly | Pearson CDF/threshold tests and a balanced deterministic sequence | Frequency tests do not establish independent, unpredictable rolls |
+| Keep transaction claims separate from verification | PSBT amount, sighash, nonce, consensus, and analysis-status suites | Offline inspection cannot establish chain state or overall safety to sign |
+| Keep secrets local and control exposure | Network, entropy-source, session-wipe, and browser suites | Browser-memory cleanup is best effort; a test pass is not guaranteed erasure |
+
 This is a bounded code review, not a formal proof or an independent audit of
 every dependency or Rust cryptographic primitive. No review can certify
 "100% accurate" UI data: PSBT amounts are supplied claims, chain state is
@@ -165,6 +176,37 @@ Tests assert only the safety-critical no-repeat substring and the stored
 verdict, not CSS or full presentation copy. They use readable DER without
 prevouts and intentionally establish possible reuse, not signature validity.
 
+### Education follow-up — Frequency balance is not certified entropy
+
+The dice panel labeled a balanced transcript "Looks pretty fair" and described
+larger samples as enough to assess fairness. Its test already used the fully
+predictable sequence `123456` repeated five times: Pearson's face-count
+statistic correctly returns zero, but that does not establish randomness.
+
+The labels now describe frequency warnings. The note states the independent,
+fair-roll assumption, identifies the CDF as a reference percentile, and says
+that the check cannot establish independence, unpredictability, or entropy.
+Source comments distinguish dice/card capacity formulas from measurements.
+README and SECURITY explain source assumptions, hash-output length, checksum
+limits, and BIP39 passphrase recovery, with primary references to
+[NIST SP 800-22](https://csrc.nist.gov/pubs/sp/800/22/r1/upd1/final) and
+[BIP39](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki).
+
+This is an educational correction, not a derivation or statistical-algorithm
+change. The existing balanced-sequence test now also checks that sorted runs
+with identical counts produce the same report; it passed before and after the
+wording change. Browser assertions check the existing `data-tone` state
+instead of pinning the old labels. Before/after captures were inspected at
+1280px and 390px widths in dark and light themes. No styles or locale catalogs
+changed. The nonce-comparison comment was also qualified to state that pair
+and verdict preservation applies within its newly enforced budget.
+
+The maintainer's [release-hold comment](https://github.com/OogaBoogaX/entropylab/pull/841#issuecomment-6113811756)
+discusses the original three fixes. A4/A5 and this educational correction were
+added afterward and are explicitly described in the PR; they have not been
+represented as approved by that comment. The requested hold until after the
+`v1.0.0` tag remains part of the PR description.
+
 ## Validation
 
 Initial red and subsequent green for A1/A2:
@@ -191,6 +233,12 @@ tests failed because the repeated-r report contained the no-repeat claim.
 The additional handler test covers the unchanged error-handling contract
 and passed without changing those handlers. The combined nonce comparison,
 rendering, analysis-status, and finalized-signature suites pass all 28 tests.
+
+Education follow-up coverage, green before and after the wording change:
+
+```sh
+node --test test/dice-fairness.test.mjs
+```
 
 Final validation passed:
 

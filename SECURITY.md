@@ -252,6 +252,14 @@ material. Its security posture rests on the following model:
   below-recommendation warning. Users who intend to
   secure funds must meet the displayed roll/card recommendation and verify
   their procedure independently.
+- Input bit counts are capacity estimates under source assumptions, not
+  measurements of unpredictability. Dice estimates assume independent fair
+  rolls; card estimates assume uniform shuffles and independent reshuffles.
+  The Pearson χ² panel checks only face frequencies: even a predictable
+  repeated sequence can receive no frequency warning. Its percentile is not
+  a probability that the source is fair. Neither a favorable frequency result
+  nor a valid BIP39 checksum certifies safe key material. Hashing does not
+  increase the entropy supplied by the user.
 - Brain wallet — lab hashes the exact UTF-8 text with unsalted SHA-256 and
   treats the digest as BIP39 entropy. Guessable text is stolen coins. A valid
   24-word mnemonic from that hash is not the same wallet as hashing the text
