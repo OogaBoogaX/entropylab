@@ -29,8 +29,8 @@ pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
 
 Rejected HD derivation paths wipe any intermediate private child already
-created, while preserving the caller's root. Sequential PSBT UR imports
-deduplicate identical fragments and allocate only for supplied fragments;
+created, while preserving the caller's root. The sequential PSBT UR decoder API
+deduplicates identical fragments and allocates only for supplied fragments;
 invalid sequence numbers are refused. Large transaction scripts serialize
 without depending on the browser's function-argument limit.
 

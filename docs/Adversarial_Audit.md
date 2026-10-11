@@ -7,6 +7,12 @@ branch has no newer commits.
 
 Review performed with GPT-6 (OpenAI Codex).
 
+Pre-PR re-review fetched the parent repository's `rock` branch and confirmed
+it still pointed to `741d7f2`. All three fixes passed source review. The final
+focused tests were replayed against an isolated archive of that original
+commit: seven tests failed for the claimed defects. The same 47 focused tests
+all passed against the fixed sources.
+
 ## Objectives and scope
 
 EntropyLab converts user-supplied material deterministically into Bitcoin
@@ -47,6 +53,11 @@ the caller root` in `test/hdkey-bip39-wasm.test.mjs`. The pre-fix failure was
 `true !== false` for a retained intermediate's `hasPrivateKey`. The accepted
 case uses published BIP32 vector 1.
 
+The re-review also covers an injected child-derivation exception (checking
+that the exact error propagates), multi-level successful derivation, zeroing
+of discarded buffers, and retention of the returned private child. Its
+successful output is compared to the existing pinned `@scure/bip32` reference.
+
 ### A2 — Large scripts fail transaction serialization
 
 Contract: structurally decodable large scripts serialize byte-for-byte,
@@ -67,7 +78,7 @@ argument-limit failure` in `test/tx-sighash-wasm.test.mjs`.
 
 ### A3 — Sequential UR duplicates and attacker-controlled allocation
 
-Contract: complete sequential fragments reconstruct the exact payload;
+Contract: complete sequential multipart fragments reconstruct the exact payload;
 identical repeats are idempotent; conflicts, incomplete sets, and zero or
 unsafe sequence integers are refused without allocation driven by the
 declared count.
@@ -79,6 +90,11 @@ bytes were sliced away and concealed the defect. The declared count also
 controlled an array allocation before completeness was checked. Zero sequence
 numbers could pass the single-fragment branch.
 
+Impact is confined to the decoder module API: the current application UI
+imports the UR encoder for QR output, not this decoder. These are real decoder
+correctness and resource-handling bugs, but this review does not claim a
+currently reachable UI import exploit.
+
 Plan executed: add early-repeat, invalid-sequence, and enormous-count
 regressions; reproduce checksum failure, missing rejection, and invalid array
 length; replace slots with a map of supplied fragments, assemble its unique
@@ -89,6 +105,10 @@ Regressions in `test/psbt-ur.test.mjs`:
 - `repeating an early UR fragment preserves the assembled bytes`
 - `UR sequencing rejects zero and unsafe integers before assembly`
 - `a huge declared UR count is refused without allocating count-sized slots`
+
+The legacy-fragment test also checks out-of-order fragments with an exact
+repeat against the original fixed PSBT bytes; this fails on the old decoder
+and passes on the map-based assembly.
 
 Existing published Bytewords/MUR vectors, conflict checks, whole-message
 checksums, and legacy fragment support remain in coverage.
@@ -109,7 +129,7 @@ node --test test/psbt-ur.test.mjs
 
 Final validation passed:
 
-- `npm run build && npm test`: 2,248 tests, 2,238 passed, zero failures,
+- `npm run build && npm test`: 2,249 tests, 2,239 passed, zero failures,
   10 skipped. Chrome ran the hosted/offline browser suite and the native-input
   residue-driver checks. Firefox and Edge are absent; eight optional live
   Bitcoin Core checks were skipped because bitcoind is absent.

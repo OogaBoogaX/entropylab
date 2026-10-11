@@ -56,6 +56,42 @@ test("failed HD paths wipe intermediate private buffers and preserve the caller 
   }
 });
 
+test("a child-derivation error wipes the last intermediate and success retains only the returned private node", () => {
+  const seed = hexToBytes("000102030405060708090a0b0c0d0e0f");
+  const root = HDKey.fromMasterSeed(seed);
+  const rootKey = root.privateKey;
+  const original = HDKey.prototype.deriveChild;
+  const nodes = [], buffers = [];
+  const failure = new Error("injected child derivation failure");
+  let inject = true;
+  HDKey.prototype.deriveChild = function (index) {
+    if (inject && this !== root) throw failure;
+    const node = original.call(this, index);
+    nodes.push(node);
+    buffers.push(node._privateKey);
+    return node;
+  };
+  try {
+    assert.throws(() => root.derive("m/0'/1"), (error) => error === failure);
+    assert.equal(nodes.length, 1);
+    assert.equal(nodes[0].hasPrivateKey, false);
+    assert.ok(buffers[0].every((byte) => byte === 0));
+    assert.deepEqual(root.privateKey, rootKey);
+    inject = false;
+    const child = root.derive("m/0'/1");
+    assert.equal(nodes[1].hasPrivateKey, false);
+    assert.ok(buffers[1].every((byte) => byte === 0));
+    assert.equal(child.hasPrivateKey, true);
+    assert.equal(child.privateExtendedKey, ScureHDKey.fromMasterSeed(seed).derive("m/0'/1").privateExtendedKey);
+    child.wipePrivateData();
+  } finally {
+    HDKey.prototype.deriveChild = original;
+    for (const node of nodes) node.wipePrivateData();
+    root.wipePrivateData();
+    rootKey.fill(0);
+  }
+});
+
 // BIP32 test vector 1 (https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)
 test("BIP32 published vector 1: master and m/0'", () => {
   const root = HDKey.fromMasterSeed(hexToBytes("000102030405060708090a0b0c0d0e0f"));

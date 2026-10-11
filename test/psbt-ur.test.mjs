@@ -193,4 +193,5 @@ test("legacy pre-MUR fragments still decode", () => {
   const decoded = hodlUrDecodePsbt(parts);
   assert.equal(hexEncode(decoded.psbt), hexEncode(psbt));
   assert.equal(decoded.parts, chunks.length);
+  assert.deepEqual(hodlUrDecodePsbt([parts[1], parts[0], ...parts.slice(1)]).psbt, psbt);
 });
