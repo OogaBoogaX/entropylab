@@ -27,6 +27,35 @@ const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const hexToBytes = (hex) => new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
 const bytesToHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 
+test("failed HD paths wipe intermediate private buffers and preserve the caller root", () => {
+  for (const path of ["m/0'/bad", "m/0'/2147483648", "m/0'/1/bad"]) {
+    const root = HDKey.fromMasterSeed(hexToBytes("000102030405060708090a0b0c0d0e0f"));
+    const rootKey = root.privateKey;
+    const nodes = [], buffers = [];
+    const original = HDKey.prototype.deriveChild;
+    HDKey.prototype.deriveChild = function (index) {
+      const node = original.call(this, index);
+      nodes.push(node);
+      buffers.push(node._privateKey);
+      return node;
+    };
+    try {
+      assert.throws(() => root.derive(path), /invalid child index|Invalid index/);
+      assert.ok(nodes.length > 0);
+      for (const node of nodes) assert.equal(node.hasPrivateKey, false, path);
+      for (const buffer of buffers) assert.ok(buffer.every((byte) => byte === 0), path);
+      assert.deepEqual(root.privateKey, rootKey);
+      // Published BIP32 vector 1 proves a successful child stays usable.
+      const child = root.derive("m/0'");
+      assert.equal(child.privateExtendedKey, "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7");
+      child.wipePrivateData();
+    } finally {
+      HDKey.prototype.deriveChild = original;
+      root.wipePrivateData();
+    }
+  }
+});
+
 // BIP32 test vector 1 (https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)
 test("BIP32 published vector 1: master and m/0'", () => {
   const root = HDKey.fromMasterSeed(hexToBytes("000102030405060708090a0b0c0d0e0f"));
