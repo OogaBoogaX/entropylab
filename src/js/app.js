@@ -10309,6 +10309,14 @@ function hodlCompareNonces(rValues) {
     if (!group) byR.set(tag, (group = []));
     group.push(record);
   }
+  // Identical attacker-supplied r values collapse into one quadratic bucket.
+  // Bound total candidate pairs before allocating any result pairs; refusing
+  // the inspection must never be mistaken for a completed clean comparison.
+  let comparisons = 0;
+  for (let group of byR.values()) {
+    comparisons += group.length * (group.length - 1) / 2;
+    if (comparisons > 32768) throw new Error("Nonce comparison limit exceeded: too many signatures share the same r value.");
+  }
   for (let group of byR.values()) {
     if (group.length < 2) continue;
     for (let first = 0; first < group.length; first++)
