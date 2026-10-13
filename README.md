@@ -386,6 +386,7 @@ the limits of browser-memory cleanup.
   QR-backed values keep their QR action without a duplicate clipboard icon.
   This includes fingerprints, public keys, extended public keys, descriptors,
   and addresses across the derivation tools.
+  QR popups place their copy button at the bottom left, opposite Close.
 - Gates each release behind a two-step disclaimer: the first step warns that
   the software is experimental, and the second names what the browser cannot
   protect (keys paged to disk, clipboard history, memory surviving close) and

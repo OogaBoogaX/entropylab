@@ -48,8 +48,8 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
   let privatePayload = false;
   // The address text and the copy button both copy. Only the button takes a
   // tab stop, so a keyboard reaches one copy control, not two. The button sits
-  // beside the label, so the address keeps the card's full width.
-  // The icon turning to a check is the
+  // with Close in the actions row, copy on the left and Close on the right, so
+  // the address keeps the card's full width. The icon turning to a check is the
   // visible confirmation; the note speaks it, unseen.
   const modal = createModal({
     id: "addr-qr-overlay",
@@ -78,8 +78,7 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
     text = overlay.querySelector("#addr-qr-address"),
     copyButton = overlay.querySelector("#addr-qr-copy"),
     copiedNote = overlay.querySelector("#addr-qr-copied"),
-    closeButton = overlay.querySelector("#addr-qr-close"),
-    actions = copyButton.parentElement;
+    closeButton = overlay.querySelector("#addr-qr-close");
   closeButton.textContent = t("Close");
   let copyLabel = t("Copy address");
   const copyIcon = icons.copy?.() ?? "",
@@ -164,16 +163,13 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
     privatePayload = kind === "psbt";
     copyLabel = privatePayload ? t("Copy PSBT") : t("Copy address");
     // A PSBT may contain proprietary private-key fields. Its text and image
-    // are readouts; only the label's clipboard deliberately copies the bytes.
+    // are readouts; only the copy button deliberately copies the bytes.
     text.setAttribute("data-i18n-skip", "");
     text.setAttribute(privatePayload ? "data-private-value" : "data-public-value", "");
     text.removeAttribute(privatePayload ? "data-public-value" : "data-private-value");
     text.disabled = privatePayload;
     text.title = image.title = privatePayload ? "" : copyLabel;
     text.style.cursor = image.style.cursor = privatePayload ? "default" : "";
-    actions.style.justifyContent = "flex-end";
-    title.classList.add("copy-field-label");
-    title.append(copyButton);
     const parts = kind && typeof frames === "function" ? frames(value, kind) : null;
     if (Array.isArray(parts) && parts.length > 1) {
       let frame = 0;
