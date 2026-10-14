@@ -72,7 +72,7 @@ test("pagehide and persisted pageshow release the overlay contents", () => {
 });
 
 // Security contract: a PSBT (whose proprietary fields may carry private
-// keys) copies only through the clipboard icon; text/image clicks must be
+// keys) copies only through the copy button; text/image clicks must be
 // inert. Public address previews retain their existing copy interactions.
 const PSBT = readFileSync(new URL("fixtures/psbt/p2wpkh-1in-2out.b64", import.meta.url), "utf8").trim();
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -134,22 +134,30 @@ test("PSBT QR readouts and images do not copy when clicked", () => withOverlay(a
 }));
 
 for (const fallback of [false, true]) {
-  test(`the PSBT title's clipboard copies the full payload${fallback ? " through the fallback" : ""}`, () => withOverlay(async ({ document, writes, click, open }) => {
+  test(`the PSBT copy button copies the full payload${fallback ? " through the fallback" : ""}`, () => withOverlay(async ({ document, writes, click, open }) => {
     await open(PSBT, "psbt");
     const button = document.getElementById("addr-qr-copy");
-    assert.equal(button.parentElement, document.getElementById("addr-qr-title"), "the private payload's copy control belongs beside its label");
     await click(button);
     assert.deepEqual(writes, [PSBT], "the full PSBT is copied even if the readout is abbreviated");
     assert.equal(document.querySelector("textarea"), null);
   }, { fallback }));
 }
 
+test("the QR copy button stays before Close in the actions row across reopenings", () => withOverlay(async ({ document, click, open }) => {
+  const copyButton = document.getElementById("addr-qr-copy");
+  const closeButton = document.getElementById("addr-qr-close");
+  const actions = closeButton.parentElement;
+  for (const [value, kind] of [[ADDRESS, ""], [PSBT, "psbt"], [ADDRESS, ""]]) {
+    await open(value, kind);
+    assert.deepEqual([...actions.children].map((button) => button.id), [copyButton.id, closeButton.id]);
+    await click(closeButton);
+  }
+}));
+
 test("returning to a public address restores text and QR-image copying", () => withOverlay(async ({ document, writes, click, open }) => {
   await open(PSBT, "psbt");
   await click(document.getElementById("addr-qr-close"));
   await open(ADDRESS);
-  const button = document.getElementById("addr-qr-copy");
-  assert.equal(button.parentElement, document.getElementById("addr-qr-title"));
   for (const id of ["addr-qr-address", "addr-qr-image", "addr-qr-copy"]) await click(document.getElementById(id));
   assert.deepEqual(writes, [ADDRESS, ADDRESS, ADDRESS]);
 }));

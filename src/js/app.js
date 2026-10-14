@@ -9993,9 +9993,20 @@ function hodlPsbtReferenceVerdict(psbt) {
       problems = [];
     if (doc.rustBitcoinError) problems.push("rust-bitcoin: " + doc.rustBitcoinError);
     for (let problem of doc.problems || []) if (problem.severity === "error") problems.push(problem.scope + ": " + problem.message);
-    // The document's error count is taken before its list truncation.
-    let unlisted = Math.max(0, (doc.errorCount ?? problems.length) - problems.length);
-    verdict = problems.length ? { state: "problem", problems, unlisted } : { state: "complete", problems: [], unlisted: 0 };
+    // The document's error count is taken before its list truncation: a
+    // crafted file can pad the capped (64-entry) problem list with earlier
+    // warnings so every error drops out of view, and the cross-check must
+    // still fail (audit C2-C).
+    let errorTotal = doc.errorCount ?? problems.length,
+      unlisted = Math.max(0, errorTotal - problems.length);
+    // No listed error to show: name what the cap hid, else the banner's
+    // entry list would be empty (the row is counted, not repeated, so it is
+    // not added to `unlisted` a second time).
+    if (unlisted && !problems.length) {
+      problems.push("rust-bitcoin: " + unlisted + " error-severity problem(s) hidden by the 64-problem display cap");
+      unlisted = 0;
+    }
+    verdict = errorTotal || problems.length ? { state: "problem", problems, unlisted } : { state: "complete", problems: [], unlisted: 0 };
   } catch (exception) {
     let message = exception instanceof Error ? exception.message : String(exception);
     verdict = /not initialized/.test(message)
@@ -10302,13 +10313,21 @@ function hodlCompareNonces(rValues) {
   // A consolidation PSBT can carry thousands of signatures; an all-pairs
   // scan of them froze the inspector (audit C3-3). Buckets only ever form
   // between records sharing one r value, so group by r first and compare
-  // within groups — same pairs, same verdicts.
+  // within groups — same pairs and verdicts within the comparison budget.
   let byR = new Map();
   for (let record of rValues) {
     let tag = hodlHex.encode(record.r);
     let group = byR.get(tag);
     if (!group) byR.set(tag, (group = []));
     group.push(record);
+  }
+  // Identical attacker-supplied r values collapse into one quadratic bucket.
+  // Bound total candidate pairs before allocating any result pairs; refusing
+  // the inspection must never be mistaken for a completed clean comparison.
+  let comparisons = 0;
+  for (let group of byR.values()) {
+    comparisons += group.length * (group.length - 1) / 2;
+    if (comparisons > 32768) throw new Error("Nonce comparison limit exceeded: too many signatures share the same r value.");
   }
   for (let group of byR.values()) {
     if (group.length < 2) continue;
@@ -10451,15 +10470,19 @@ function hodlPsbtRecordNonceInspection(kind, rValues, sourceTag, verdict, checke
   }
 }
 
+// Both private-key resolvers return { key, owned } or null. `owned: true`
+// marks the canonical WIF/hex session buffer: the session owns it and
+// hodlPsbtWipeMem clears it, so the caller must never zero it. `owned: false`
+// marks a fresh HDKey getter copy, which the caller must zero when done.
 function hodlPrivForPub(pubkey) {
   if (hodlPsbtPriv) {
     let compressed = hodlSecp256k1.getPublicKey(hodlPsbtPriv, true), uncompressed = hodlSecp256k1.getPublicKey(hodlPsbtPriv, false);
-    if (hodlEq(compressed, pubkey) || hodlEq(uncompressed, pubkey)) return hodlPsbtPriv;
+    if (hodlEq(compressed, pubkey) || hodlEq(uncompressed, pubkey)) return { key: hodlPsbtPriv, owned: true };
   }
   if (hodlPsbtHd) {
     try {
-      let rootPubkey = hodlPsbtHd.publicKey;
-      if (rootPubkey && hodlEq(rootPubkey, pubkey)) return hodlPsbtHd.privateKey;
+      let rootPubkey = hodlPsbtHd.publicKey, key = rootPubkey && hodlEq(rootPubkey, pubkey) ? hodlPsbtHd.privateKey : null;
+      if (key) return { key, owned: false };
     } catch {
     }
   }
@@ -10478,9 +10501,9 @@ function hodlPrivFromPath(entries, pubkey) {
         node = next;
       }
       if (node.publicKey && hodlEq(node.publicKey, pubkey)) {
-        let privateKey = node.privateKey; // a copy; the caller signs with it
+        let privateKey = node.privateKey; // a getter copy; the caller signs with it and zeroes it
         if (node !== hodlPsbtHd) node.wipePrivateData();
-        return privateKey;
+        if (privateKey) return { key: privateKey, owned: false };
       }
       if (node !== hodlPsbtHd) node.wipePrivateData();
     } catch {
@@ -12326,88 +12349,97 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
           format: "der",
           lowS: !1
         }) : null,
-        privateKey = hodlPrivForPub(signature.pubkey) || hodlPrivFromPath(entries, signature.pubkey),
-        masterFingerprint = hodlPsbtMasterFingerprint(entries, signature.pubkey, Boolean(privateKey && hodlPsbtHd)),
         message = hodlT("Need the matching key in this session to check RFC 6979 and low-r grind."),
         className = "muted";
       let suffixForPolicy = signature.raw.length >= 2 ? signature.sighash : null,
         sighashProblems = hodlSighashProblems(declaredSighash, suffixForPolicy);
       if (sighashProblems.length) policyProblems++;
-      if (!parts && !looseR) {
-        uninspected += 1;
-        policyIncomplete += 1;
-        message = hodlT("Signature is not DER and its nonce cannot be inspected.");
-        className = "psbt-warn";
-        if (sighashProblems.length) {
-          message = hodlT("Signature policy problem: {problems}", { problems: sighashProblems.join(" ") });
-          className = "psbt-bad";
-        }
-      } else {
-        rValues.push({
-          input: index,
-          r: looseR,
-          hex: hodlHex.encode(looseR),
-          pubkey: hodlCompressedPubkey(signature.pubkey),
-          masterFingerprint,
-          sighash,
-          valid: parts ? signatureValid : null
-        });
-        if (sighashProblems.length) {
-          // An unsafe or conflicting sighash policy blocks every other check.
-          message = hodlT("Signature policy problem: {problems}", { problems: sighashProblems.join(" ") });
-          className = "psbt-bad";
-        } else if (overBudget) {
-          message = hodlT("Signature not inspected: this file carries more SIGHASH_ALL signatures than the per-file check budget covers.");
+      // Resolve the matching session key only for a row with a readable r.
+      // Whatever else happens on the row — compare, refusal, or the budget
+      // exit — a getter copy held in `privateKey` is zeroed in the finally
+      // below; the canonical session buffer (owned) is left to
+      // hodlPsbtWipeMem.
+      let privateKey = null;
+      try {
+        if (!parts && !looseR) {
+          uninspected += 1;
+          policyIncomplete += 1;
+          message = hodlT("Signature is not DER and its nonce cannot be inspected.");
           className = "psbt-warn";
-          unsupportedNonceChecks += 1;
-        } else if (!parts) {
-          message = hodlT("Signature is not strict DER. Its r value is still compared for nonce reuse.");
-          className = "psbt-warn"
-        } else if (signatureValid === !1) {
-          message = hodlT("This signature does not verify against the reconstructed input digest.");
-          className = "psbt-warn";
-        } else if (transcript) {
-          let opening = transcript.openings.length === 1 ? transcript.openings[0] : transcript.openings[ecdsaIndex];
-          if (!opening) {
-            message = hodlT("No Jade opening R was provided for this signature.");
-            className = "psbt-warn";
-          } else try {
-            if (hodlAntiExfilCommitOk(parts.r, opening, transcript.host)) {
-              message = hodlT("Matches Jade anti-exfil (sign-to-contract). Host entropy mixed into the nonce. Not a leak.");
-              className = "psbt-ok";
-            } else {
-              message = hodlT("Does not match this Jade anti-exfil transcript. Signature r is not R + H(R||ρ)G.");
-              className = "psbt-warn";
-              if (privateKey && sighash) try {
-                let cmp = hodlRfc6979Compare(sighash, privateKey, parts.r);
-                if (cmp.ok) {
-                  message += " " + cmp.message;
-                  className = cmp.className;
-                } else message += " " + hodlT("Also does not match RFC 6979 or low-r grind.");
-              } catch (exception) {
-                message += " " + (exception.message || String(exception));
-              }
-            }
-          } catch (exception) {
-            message = hodlT("Could not verify Jade anti-exfil: {error}", { error: exception.message || String(exception) });
-            className = "psbt-warn";
+          if (sighashProblems.length) {
+            message = hodlT("Signature policy problem: {problems}", { problems: sighashProblems.join(" ") });
+            className = "psbt-bad";
           }
-        } else if (privateKey && sighash) try {
-          let cmp = hodlRfc6979Compare(sighash, privateKey, parts.r);
-          message = cmp.message;
-          className = cmp.className;
-        } catch (exception) {
-          message = hodlT("Could not recompute this signature: {error}", { error: exception.message || String(exception) });
-          className = "psbt-warn";
-          unsupportedNonceChecks += 1;
+        } else {
+          privateKey = hodlPrivForPub(signature.pubkey) || hodlPrivFromPath(entries, signature.pubkey);
+          rValues.push({
+            input: index,
+            r: looseR,
+            hex: hodlHex.encode(looseR),
+            pubkey: hodlCompressedPubkey(signature.pubkey),
+            masterFingerprint: hodlPsbtMasterFingerprint(entries, signature.pubkey, Boolean(privateKey && hodlPsbtHd)),
+            sighash,
+            valid: parts ? signatureValid : null
+          });
+          if (sighashProblems.length) {
+            // An unsafe or conflicting sighash policy blocks every other check.
+            message = hodlT("Signature policy problem: {problems}", { problems: sighashProblems.join(" ") });
+            className = "psbt-bad";
+          } else if (overBudget) {
+            message = hodlT("Signature not inspected: this file carries more SIGHASH_ALL signatures than the per-file check budget covers.");
+            className = "psbt-warn";
+            unsupportedNonceChecks += 1;
+          } else if (!parts) {
+            message = hodlT("Signature is not strict DER. Its r value is still compared for nonce reuse.");
+            className = "psbt-warn"
+          } else if (signatureValid === !1) {
+            message = hodlT("This signature does not verify against the reconstructed input digest.");
+            className = "psbt-warn";
+          } else if (transcript) {
+            let opening = transcript.openings.length === 1 ? transcript.openings[0] : transcript.openings[ecdsaIndex];
+            if (!opening) {
+              message = hodlT("No Jade opening R was provided for this signature.");
+              className = "psbt-warn";
+            } else try {
+              if (hodlAntiExfilCommitOk(parts.r, opening, transcript.host)) {
+                message = hodlT("Matches Jade anti-exfil (sign-to-contract). Host entropy mixed into the nonce. Not a leak.");
+                className = "psbt-ok";
+              } else {
+                message = hodlT("Does not match this Jade anti-exfil transcript. Signature r is not R + H(R||ρ)G.");
+                className = "psbt-warn";
+                if (privateKey && sighash) try {
+                  let cmp = hodlRfc6979Compare(sighash, privateKey.key, parts.r);
+                  if (cmp.ok) {
+                    message += " " + cmp.message;
+                    className = cmp.className;
+                  } else message += " " + hodlT("Also does not match RFC 6979 or low-r grind.");
+                } catch (exception) {
+                  message += " " + (exception.message || String(exception));
+                }
+              }
+            } catch (exception) {
+              message = hodlT("Could not verify Jade anti-exfil: {error}", { error: exception.message || String(exception) });
+              className = "psbt-warn";
+            }
+          } else if (privateKey && sighash) try {
+            let cmp = hodlRfc6979Compare(sighash, privateKey.key, parts.r);
+            message = cmp.message;
+            className = cmp.className;
+          } catch (exception) {
+            message = hodlT("Could not recompute this signature: {error}", { error: exception.message || String(exception) });
+            className = "psbt-warn";
+            unsupportedNonceChecks += 1;
+          }
+          else if (privateKey && !scriptCode) {
+            message = hodlT("Matching key found, but this input script is not yet supported for RFC 6979 comparison.");
+            className = "psbt-warn";
+            unsupportedNonceChecks += 1;
+          } else if (!privateKey || !sighash) {
+            unsupportedNonceChecks += 1;
+          }
         }
-        else if (privateKey && !scriptCode) {
-          message = hodlT("Matching key found, but this input script is not yet supported for RFC 6979 comparison.");
-          className = "psbt-warn";
-          unsupportedNonceChecks += 1;
-        } else if (!privateKey || !sighash) {
-          unsupportedNonceChecks += 1;
-        }
+      } finally {
+        if (privateKey && !privateKey.owned) privateKey.key.fill(0);
       }
       ecdsaIndex += 1;
       rows.push({ input: index, message, className, pubkey: hodlHex.encode(signature.pubkey) });
@@ -12440,7 +12472,9 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   else if (possible.length) nonceHtml.push("<p class='psbt-warn'><strong>Possible repeated nonce for the same public key.</strong> The message digests could not both be reconstructed, so verify these signatures independently before treating this as a key leak.</p>");
   if (crossKey.length) nonceHtml.push("<p class='psbt-bad'><strong>Same r value claimed under different public keys.</strong> " + crossKey.length + " pair(s) share an r value but name different keys — a mislabeled signature field can hide real nonce reuse this way. Verify every signature against its input's key independently before signing or broadcasting.</p>");
   else if (uninspected) nonceHtml.push("<p class='psbt-warn'><strong>Incomplete nonce coverage.</strong> Some ECDSA signatures could not be inspected, so this is not a clean verdict.</p>");
-  else if (rValues.length >= 2) nonceHtml.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this PSBT.</p>");
+  else if (rValues.length >= 2) {
+    if (!reused.length && !possible.length) nonceHtml.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this PSBT.</p>");
+  }
   else if (rValues.length === 1) nonceHtml.push("<p class='muted'>Only one ECDSA signature with a readable r is present. Nonce reuse cannot be judged from this file alone.</p>");
   else nonceHtml.push("<p class='muted'>No ECDSA signatures with a readable r value are present, so there is no nonce to compare yet.</p>");
   if (rValues.length) nonceHtml.push("<p class='psbt-kv'>r values:<br>" + rValues.map(value => hodlEscapeHtml(value.hex) + " (input " + value.input + ")").join("<br>") + "</p>");
@@ -12548,7 +12582,9 @@ function hodlRenderRawTx(tx, nonceSourceTag = new Uint8Array(), nonceCheckedAt =
   if (reused.length || possible.length) verdictHtml.push("<p class='psbt-bad'><strong>Repeated nonce r for the same public key.</strong> Message digests cannot be rebuilt from a raw transaction without prevouts, so treat this as a warning and do not broadcast until the signatures are checked independently.</p>");
   if (crossKey.length) verdictHtml.push("<p class='psbt-warn'><strong>Same r value claimed under different public keys.</strong> A key association in a raw transaction is read from the script, not verified; verify these signatures independently before broadcast.</p>");
   else if (uninspected) verdictHtml.push("<p class='psbt-warn'><strong>Incomplete nonce coverage.</strong> Some ECDSA signatures could not be inspected.</p>");
-  else if (rValues.length >= 2) verdictHtml.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this transaction.</p>");
+  else if (rValues.length >= 2) {
+    if (!reused.length && !possible.length) verdictHtml.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this transaction.</p>");
+  }
   else if (rValues.length === 1) verdictHtml.push("<p class='muted'>Only one ECDSA signature with a readable r is present. Nonce reuse cannot be judged from this file alone.</p>");
   else verdictHtml.push("<p class='muted'>No ECDSA signatures with a readable r and public key were found.</p>");
   nonceHtml.push(...verdictHtml);
@@ -15254,6 +15290,10 @@ function hodlInitJournalToolTabs() {
     await hodlKeyManagerImportFile(keyManagerFile.files?.[0]);
     keyManagerFile.value = "";
   };
+  // The snapshot must follow the box on every change, not only when the tab
+  // opens: otherwise the conceal sweep's untick (or a manual one) leaves the
+  // private recovery texts rendered (security.md B4).
+  document.getElementById("journal-state-private")?.addEventListener("change", () => hodlJournalRefreshSessionState());
   let stateDownload = document.getElementById("journal-state-download");
   if (stateDownload) stateDownload.onclick = async () => {
     hodlJournalRefreshSessionState();

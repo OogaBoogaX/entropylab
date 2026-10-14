@@ -4,10 +4,11 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { hodlLocaleCodes, hodlSelectableLocales, hodlNormalizeLocale, t, tHtml, hodlSetLocale, hodlGetLocale } from "../src/js/i18n.js";
 import * as labelTables from "../src/js/i18n-labels.js";
 import { collectSources } from "../scripts/i18n-sources.mjs";
+import { MiniDocument, MiniNodeFilter } from "./mini-dom.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -157,5 +158,107 @@ test("the enum-family label tables are non-empty strings keyed by their enum val
       else if (value && typeof value === "object") Object.values(value).forEach(walk);
     };
     walk(table);
+  }
+});
+
+// The content sweep (hodlApplyStaticI18n and its lookup helpers) is
+// module-private, and i18n.js builds its sanitized catalogs from the
+// committed JSON at import time, so the real module can never see a hostile
+// value. To still run the app's own sweep against one, the test loads the
+// sweep section of i18n.js verbatim — from the sweep comment block through
+// hodlApplyStaticI18n — rebounding only the two catalog tables and the
+// active locale (the same run-the-real-code approach as
+// test/app-slice-harness.mjs; nothing is re-implemented).
+async function loadSweep(catalogs) {
+  const source = readFileSync(join(root, "src/js/i18n.js"), "utf8");
+  const start = source.indexOf("// The content sweep translates the DOM in place");
+  const end = source.indexOf("export function hodlReadStoredLocale");
+  assert.ok(start >= 0 && end > start, "the i18n.js sweep section markers moved");
+  const module = [
+    'let hodlLocale = "zz";',
+    `const hodlLocaleTextCatalogs = { zz: ${JSON.stringify(catalogs.text ?? {})} };`,
+    `const hodlLocaleHtmlCatalogs = { zz: ${JSON.stringify(catalogs.html ?? {})} };`,
+    source.slice(start, end),
+  ].join("\n");
+  const directory = mkdtempSync(join(tmpdir(), "entropylab-i18n-sweep-"));
+  writeFileSync(join(directory, "sweep.mjs"), module);
+  try {
+    return await import(pathToFileURL(join(directory, "sweep.mjs")).href);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+// A page for the sweep: the mini-dom supplies the tree walk, get/setAttribute
+// and innerHTML parsing the sweep drives.
+function sweepPage(markup) {
+  const document = new MiniDocument();
+  globalThis.document = document;
+  globalThis.NodeFilter = MiniNodeFilter;
+  document.body.innerHTML = markup;
+  return document;
+}
+function leavePage() {
+  delete globalThis.document;
+  delete globalThis.NodeFilter;
+}
+
+test("a non-string catalog value is not a translation: the sweep leaves the DOM untouched (audit B6)", async () => {
+  const sweep = await loadSweep({
+    text: {
+      // The finding's payload shape: an array coerces to its markup at a sink.
+      "Text key": ['<img src=x onerror="globalThis.__entropyLabPwned = true">'],
+      "Attr key": { injected: "value" },
+      // An empty string was never a translation: it falls back to the source.
+      "Blank key": "",
+      "Clean text": "Translated text",
+      "Clean attr": "Translated attr",
+    },
+    html: {
+      "Rich key": ['<img src=x onerror="globalThis.__entropyLabPwned = true">'],
+      "<em>Clean rich</em>": "<strong>Translated rich</strong>",
+    },
+  });
+  const document = sweepPage([
+    "<p>Text key</p>",
+    "<p>Blank key</p>",
+    "<p>Clean text</p>",
+    '<button aria-label="Attr key" title="Clean attr">Do</button>',
+    "<div data-i18n-rich>Rich key</div>",
+    "<div data-i18n-rich><em>Clean rich</em></div>",
+  ].join(""));
+  try {
+    sweep.hodlApplyStaticI18n(document);
+    const [textParagraph, blankParagraph, cleanParagraph] = document.querySelectorAll("p");
+    const button = document.querySelector("button");
+    const [rich, cleanRich] = document.querySelectorAll("[data-i18n-rich]");
+    assert.equal(textParagraph.textContent, "Text key");
+    assert.equal(blankParagraph.textContent, "Blank key");
+    assert.equal(button.getAttribute("aria-label"), "Attr key");
+    assert.equal(rich.innerHTML, "Rich key");
+    assert.equal(document.querySelectorAll("img").length, 0, "no catalog markup reached the live DOM");
+    // Clean string hits still translate, in place.
+    assert.equal(cleanParagraph.textContent, "Translated text");
+    assert.equal(button.getAttribute("title"), "Translated attr");
+    assert.equal(cleanRich.innerHTML, "<strong>Translated rich</strong>");
+  } finally {
+    leavePage();
+  }
+});
+
+test("the sweep never takes a translation from a catalog's prototype chain (audit B6)", async () => {
+  const sweep = await loadSweep({ text: {}, html: {} });
+  const document = sweepPage('<p title="Proto attr">Proto key</p>');
+  Object.prototype["Proto key"] = "polluted text";
+  Object.prototype["Proto attr"] = "polluted attr";
+  try {
+    sweep.hodlApplyStaticI18n(document);
+    const paragraph = document.querySelector("p");
+    assert.equal(paragraph.textContent, "Proto key");
+    assert.equal(paragraph.getAttribute("title"), "Proto attr");
+  } finally {
+    leavePage();
+    delete Object.prototype["Proto key"];
+    delete Object.prototype["Proto attr"];
   }
 });

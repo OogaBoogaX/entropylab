@@ -10,6 +10,7 @@ import { createJournal, wipeJournal } from "../src/js/journal.js";
 import { createBase58check, hex } from "@scure/base";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
+import { MiniDocument } from "./mini-dom.mjs";
 import { HDKey } from "../src/js/hdkey.js";
 import { hex as appHex } from "../src/js/coders.js";
 import { keyVaultIdentity } from "../src/js/keymanager.js";
@@ -470,6 +471,106 @@ test("journal Lock empties the snapshot, the notepad and the session log", () =>
   assert.equal(journal.pages[0].notesText, "", "Lock left notepad text behind");
   assert.equal(journal.log.length, 0, "Lock left the session log in memory");
   assert.equal(journal.stateText, "", "Lock left the snapshot's in-memory text");
+});
+
+// Conceal-on-leave (blur, visibility-hidden, five idle minutes — all landing
+// in hodlConcealPrivateValues) must mask the session-state snapshot too
+// (security.md B4): with #journal-state-private ticked, #journal-state-text
+// holds the whole session's recovery texts, and the sweep used to untick
+// only input[data-private-reveal] switches — this plain checkbox was neither
+// marked nor wired, so abandoned text stayed on screen.
+
+// The real wiring: journal tool init (binds the box), the conceal sweep, and
+// the snapshot refresh, over a mini DOM whose #journal-state-private is the
+// exact tag the shell ships. The slice's state is shared between the two
+// tests, so each harness rebuilds its page and child list.
+let journalConcealSlice = null;
+async function loadJournalConcealSlice() {
+  // The fixture never reaches these branches (no Key Station key is derived,
+  // the journal workspace stays hidden, no key-manager file moves): stubbed
+  // to keep a wide but unused closure out of the slice.
+  const stubs = {
+    hodlRecoverySheetText: () => "",
+    hodlJournalFillWallets: () => {},
+    hodlJournalShowWork: () => {},
+    hodlRenderJournalNotes: () => {},
+    hodlKeyManagerRender: () => {},
+    hodlKeyManagerDownload: () => {},
+    hodlKeyManagerImportFile: async () => {},
+    hodlRenderJournalPageTabs: () => {},
+    hodlJournalRestorePage: () => {},
+    hodlInitTabDrag: () => {},
+  };
+  if (!journalConcealSlice) {
+    const inert = new Proxy(function () {}, { get: (target, key) => key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inert, apply: () => inert, construct: () => inert });
+    // The slice's load-time form-element lookups need a document to call into.
+    Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
+    try {
+      journalConcealSlice = await loadAppFunctions(["hodlInitJournalToolTabs", "hodlConcealPrivateValues", "hodlJournalRefreshSessionState"], { stubs, settable: ["hodlBip85Children"] });
+    } finally {
+      delete globalThis.__ENTROPYLAB_TEST_HOOKS__;
+      delete globalThis.document;
+      delete globalThis.window;
+    }
+  }
+  return journalConcealSlice;
+}
+function journalSessionStateHarness(slice) {
+  // The box must come from the shell itself: only the shipped tag decides
+  // whether the conceal sweep's input[data-private-reveal] selector sees it.
+  const boxTag = readFileSync(join(root, "src/shell.html"), "utf8").match(/<input\s[^>]*\bid="journal-state-private"[^>]*>/);
+  assert.ok(boxTag, "#journal-state-private is no longer in the shell");
+  const page = new MiniDocument();
+  globalThis.document = page;
+  page.body.innerHTML = '<div id="journal-tool-tabs"></div><div id="journal-page-tabs"></div><div id="journal-keymanager-tabs"></div>'
+    + '<section id="journal-card"></section><section id="journal-notes-card"></section>'
+    + '<section id="journal-keymanager-card"></section><section id="journal-log-card"></section>'
+    + `<section id="journal-state-card"><label>${boxTag[0]}</label><pre id="journal-state-text"></pre></section>`;
+  slice.hodlInitJournalToolTabs();
+  const secret = "bip85-child-secret-0fe1d2c3";
+  slice.__set.hodlBip85Children([{ id: 9, isLab: false, name: "Child A", fingerprint: "deadbeef", result: { app: "bip39", secret } }]);
+  const box = page.getElementById("journal-state-private"), text = page.getElementById("journal-state-text");
+  return {
+    box, text, secret,
+    change: () => box.dispatchEvent(new Event("change", { bubbles: true })),
+    done: () => { slice.__set.hodlBip85Children([]); delete globalThis.document; },
+  };
+}
+
+test("conceal-on-leave masks the session-state snapshot and unticks its box", async () => {
+  const slice = await loadJournalConcealSlice();
+  const page = journalSessionStateHarness(slice);
+  try {
+    page.box.checked = true;
+    page.change();
+    // The on-screen state the user stepped away from, however it got there.
+    slice.hodlJournalRefreshSessionState();
+    assert.ok(page.text.textContent.includes(page.secret), "the ticked box should put private material into the snapshot");
+    slice.hodlConcealPrivateValues();
+    assert.equal(page.box.checked, false, "conceal left the snapshot's private box ticked");
+    assert.ok(!page.text.textContent.includes(page.secret), "conceal left private recovery material in the rendered snapshot");
+    assert.ok(page.text.textContent.includes("Private material: omitted"), "conceal did not re-render the snapshot masked");
+  } finally {
+    page.done();
+  }
+});
+
+test("the session-state private box re-renders the snapshot on change", async () => {
+  const slice = await loadJournalConcealSlice();
+  const page = journalSessionStateHarness(slice);
+  try {
+    slice.hodlJournalRefreshSessionState();
+    assert.ok(!page.text.textContent.includes(page.secret), "an unticked box should render no private material");
+    page.box.checked = true;
+    page.change();
+    assert.ok(page.text.textContent.includes(page.secret), "ticking the box did not re-render the snapshot with private material");
+    page.box.checked = false;
+    page.change();
+    assert.ok(!page.text.textContent.includes(page.secret), "unticking the box left private recovery material in the snapshot");
+    assert.ok(page.text.textContent.includes("Private material: omitted"), "unticking the box did not re-render the snapshot masked");
+  } finally {
+    page.done();
+  }
 });
 
 test("pagehide and persisted pageshow end the PSBT session, reports included", () => {

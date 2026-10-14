@@ -206,6 +206,25 @@ test("a hostile catalog value can only reach t() and tHtml() sanitized", () => {
   assert.equal(hodlSanitizeTextCatalog(dirty)["Greeting"], 'Hello <img src=x onerror="alert(1)">');
 });
 
+test("non-string catalog values are dropped by both catalog views, never passed through (audit B6)", () => {
+  // JSON catalogs can carry arrays, objects, numbers — a value the sweep
+  // assigns to innerHTML coerces to its string payload. The sanitizer is the
+  // trust boundary, so it must refuse the entry, not pass it through.
+  const dirty = {
+    "Array value": ['<img src=x onerror="alert(1)">'],
+    "Object value": { injected: "<img src=x onerror=alert(1)>" },
+    "Number value": 7,
+    "Boolean value": true,
+    "Null value": null,
+    "Clean value": "Use <strong>care</strong>",
+  };
+  const html = hodlSanitizeCatalog(dirty), text = hodlSanitizeTextCatalog(dirty);
+  assert.deepEqual(Object.keys(html), ["Clean value"]);
+  assert.deepEqual(Object.keys(text), ["Clean value"]);
+  assert.equal(html["Clean value"], "Use <strong>care</strong>");
+  assert.equal(text["Clean value"], "Use care");
+});
+
 test("a __proto__ key in a JSON-parsed catalog cannot mutate the sanitized catalog's prototype", () => {
   // JSON.parse creates an own "__proto__" property; assigning it onto a plain
   // object would hit the Object.prototype setter instead of adding an entry.

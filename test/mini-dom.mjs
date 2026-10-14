@@ -14,8 +14,11 @@
 //     translation sweep (i18n.js) runs over the fixture;
 //   - a select reports its options, selected index and value, so the custom
 //     select (enhanced-inputs.js) can mirror one;
-//   - listeners added to an element or the document are recorded (never
-//     dispatched), so a test can count what a re-render leaves behind.
+//   - listeners added to an element or the document are recorded, so a test
+//     can count what a re-render leaves behind. `dispatchEvent` runs the
+//     listeners the target itself carries (an `on*`-property handler
+//     included), with no capture or bubble walk: the switches the conceal
+//     sweep toggles are wired on the elements themselves.
 // Selectors: tag, #id, .class, [attr], [attr=value], compounds, descendant
 // chains and comma lists. Anything else throws, so an unsupported selector
 // fails loudly rather than matching nothing.
@@ -264,6 +267,12 @@ export class MiniElement {
   addEventListener(type, listener) { addListener(this, type, listener); }
   removeEventListener(type, listener) { removeListener(this, type, listener); }
   listenerCount(type) { return countListeners(this, type); }
+  dispatchEvent(event) {
+    const handler = this["on" + event.type];
+    if (typeof handler === "function") handler.call(this, event);
+    for (const listener of [...(listeners.get(this)?.get(event.type) ?? [])]) listener.call(this, event);
+    return true;
+  }
   focus() {}
   select() {}
   click() {

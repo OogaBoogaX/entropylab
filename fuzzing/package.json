@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Differential fuzzers: reference implementations (iancoleman/bip39, AndreasGassmann/lifehash, scure) vs EntropyLab outputs. Separate dependency tree from the app; the app's package.json is untouched.",
+  "description": "Differential fuzzers: reference implementations (iancoleman/bip39, AndreasGassmann/lifehash, the bc-lifehash C++ reference, scure) vs EntropyLab outputs. Separate dependency tree from the app; the app's package.json is untouched.",
   "license": "Unlicense",
   "scripts": {
     "fuzz:lifehash": "node lifehash/fuzz.mjs",
+    "fuzz:lifehash-cpp": "node lifehash/fuzz-cpp.mjs",
     "fuzz:msig": "node msig/fuzz.mjs"
   },
   "dependencies": {
