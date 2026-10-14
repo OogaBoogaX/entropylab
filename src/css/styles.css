@@ -938,8 +938,8 @@ h3.label { font-family: inherit; letter-spacing: inherit; }
 }
 /* The copied tick matches the other copy confirmations (20px, 2.5 stroke).
    A boxed button gives up padding instead of growing, so nothing moves. */
-.copy-button.is-copied svg { width: 20px; height: 20px; }
-.copy-button.is-copied .seed-copy-icon-board { stroke-width: 2.5; }
+.copy-button.is-copied svg, .addr-qr-copy-done svg { width: 20px; height: 20px; }
+:is(.copy-button.is-copied, .addr-qr-copy-done) .seed-copy-icon-board { stroke-width: 2.5; }
 .copy-button.boxed-copy-button.is-copied { padding: 2px; }
 .dice-word-grid {
   --dice-word-rows: var(--dice-word-rows-wide);
@@ -1350,6 +1350,20 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 :is(.disclaimer-text, .end-session-text) p { max-width: 400px; margin: 0 auto var(--space-component); }
 :is(.disclaimer-text, .end-session-text) p:last-child { margin-bottom: 0; }
 .end-session-card .tool-actions { justify-content: center; }
+/* On a short screen (the Edge warning makes the card taller) the title and
+   both buttons stay in view and only the warning scrolls between them. As a
+   flex column the text and button margins add instead of collapsing, so the
+   text keeps only the difference: a card that fits keeps its --space-intro
+   gap and lays out as before. */
+.end-session-card {
+  display: flex; flex-direction: column;
+  max-height: calc(100vh - 2 * var(--inset-modal)); max-height: calc(100dvh - 2 * var(--inset-modal));
+}
+.end-session-card > * { flex-shrink: 0; }
+.end-session-card > .end-session-text {
+  flex-shrink: 1; min-height: 0; overflow-y: auto;
+  margin-bottom: calc(var(--space-intro) - var(--space-component));
+}
 /* The second step's answer: a one-digit field left of the button, which stays
    disabled until the reader types 3. The field takes the button's height. */
 .disclaimer-proof-row { display: flex; justify-content: center; align-items: center; gap: var(--space-control); }
@@ -2249,6 +2263,13 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
   font-size: var(--text-data-small); overflow-wrap: anywhere; cursor: pointer;
 }
 .addr-qr-address:hover { color: var(--selection-accent-ink); }
+/* The QR copy button holds its "Copy" and ticked "Copied" labels in one grid
+   cell and shows one at a time, so confirming never changes its width. */
+.addr-qr-copy { display: inline-grid; align-items: center; }
+.addr-qr-copy > span, .addr-qr-copy-tick { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-snug); }
+.addr-qr-copy > span { grid-area: 1 / 1; }
+.addr-qr-copy:not(.is-copied) > .addr-qr-copy-done, .addr-qr-copy.is-copied > .addr-qr-copy-idle { visibility: hidden; }
+.addr-qr-copy-done svg { color: var(--ok-bright); }
 /* Every viewer modal closes on one row: copy at the start, the actions that
    answer it (Apply, then a red Close) together at the end. */
 .modal-actions { margin-top: var(--space-component); justify-content: space-between; }

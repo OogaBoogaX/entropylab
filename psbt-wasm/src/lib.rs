@@ -729,7 +729,7 @@ fn fingerprint_and_path(value: &[u8]) -> Result<(String, String), String> {
     Ok((fingerprint, path))
 }
 
-/// BIP-174 / BIP-370 / BIP-371 type names used by inspect and sanitize.
+/// BIP-174 / BIP-370 / BIP-371 / BIP-327 type names used by inspect and sanitize.
 pub(crate) fn pair_type_name(kind: &str, type_byte: u8) -> &'static str {
     match (kind, type_byte) {
         ("global", 0x00) => "PSBT_GLOBAL_UNSIGNED_TX",
@@ -766,6 +766,12 @@ pub(crate) fn pair_type_name(kind: &str, type_byte: u8) -> &'static str {
         ("input", 0x16) => "PSBT_IN_TAP_BIP32_DERIVATION",
         ("input", 0x17) => "PSBT_IN_TAP_INTERNAL_KEY",
         ("input", 0x18) => "PSBT_IN_TAP_MERKLE_ROOT",
+        // BIP-327 MuSig2: participant pubkeys, public nonces, and partial
+        // signatures are all signing-session material — the diff layer keys
+        // its signing classification off these names (audit B3).
+        ("input", 0x1a) => "PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS",
+        ("input", 0x1b) => "PSBT_IN_MUSIG2_PUB_NONCE",
+        ("input", 0x1c) => "PSBT_IN_MUSIG2_PARTIAL_SIG",
         ("input", 0xfc) => "PSBT_IN_PROPRIETARY",
         ("input", _) => "PSBT_IN_UNKNOWN",
         ("output", 0x00) => "PSBT_OUT_REDEEM_SCRIPT",
@@ -1908,6 +1914,27 @@ mod tests {
         version.0 = vec![0xfb, 0x00];
         let err = parse_raw(&join_maps(&maps)).expect_err("malformed version key");
         assert!(err.contains("PSBT_GLOBAL_VERSION must not carry key data"), "{err}");
+    }
+
+    // The inspect document names BIP-174 types because the diff layer
+    // (src/js/psbt-diff.js) classifies signing material by those names.
+    // BIP-327's MuSig2 input types are signing material: a swapped nonce or
+    // partial signature must surface by name, not as UNKNOWN (audit B3).
+    // The expected strings are BIP-327's own type identifiers.
+    #[test]
+    fn bip327_musig2_input_types_are_named() {
+        assert_eq!(
+            pair_type_name("input", 0x1a),
+            "PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS"
+        );
+        assert_eq!(pair_type_name("input", 0x1b), "PSBT_IN_MUSIG2_PUB_NONCE");
+        assert_eq!(pair_type_name("input", 0x1c), "PSBT_IN_MUSIG2_PARTIAL_SIG");
+        // Unassigned bytes keep the UNKNOWN fallback: 0x19 is unassigned,
+        // 0x1d and up are not BIP-327's, and the names are input-scoped only.
+        assert_eq!(pair_type_name("input", 0x19), "PSBT_IN_UNKNOWN");
+        assert_eq!(pair_type_name("input", 0x1d), "PSBT_IN_UNKNOWN");
+        assert_eq!(pair_type_name("output", 0x1a), "PSBT_OUT_UNKNOWN");
+        assert_eq!(pair_type_name("global", 0x1a), "PSBT_GLOBAL_UNKNOWN");
     }
 
 }

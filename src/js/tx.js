@@ -141,13 +141,18 @@ const layoutReader = (bytes) => {
 // the tx was synthesized from PSBT v2 fields and has no `raw`.
 export function serializeTx(tx) {
   const out = [];
+  // Scripts are attacker-sized; spreading them into push exceeds the engine's
+  // argument limit well below the inspection size cap.
+  const append = (bytes) => { for (const byte of bytes) out.push(byte); };
   const u32 = (v) => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
   const varint = (n) => (n < 0xfd ? [n] : n < 0x10000 ? [0xfd, n & 255, (n >>> 8) & 255] : [0xfe, ...u32(n)]);
   out.push(...u32(tx.version >>> 0));
   out.push(...varint(tx.inputs.length));
   for (const input of tx.inputs) {
     const script = input.scriptSig ?? input.script ?? new Uint8Array();
-    out.push(...input.txid, ...u32(input.vout), ...varint(script.length), ...script, ...u32(input.sequence));
+    out.push(...input.txid, ...u32(input.vout), ...varint(script.length));
+    append(script);
+    out.push(...u32(input.sequence));
   }
   out.push(...varint(tx.outputs.length));
   for (const output of tx.outputs) {
@@ -163,7 +168,8 @@ export function serializeTx(tx) {
     for (let i = 0; i < 8; i++) {
       out.push(Number((amount >> BigInt(8 * i)) & 255n));
     }
-    out.push(...varint(output.script.length), ...output.script);
+    out.push(...varint(output.script.length));
+    append(output.script);
   }
   out.push(...u32(tx.locktime >>> 0));
   return new Uint8Array(out);

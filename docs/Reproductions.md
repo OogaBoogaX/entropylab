@@ -39,6 +39,7 @@ A row records one match: what was rebuilt, where, and the SHA-256 it matched.
 | 2026-09-29 | `cb55bd9` (v1.0.0) | `src/js/psbt-wasm-b64.js`, `npm run build:wasm` | `98f801939635980600edfe9ab7320ee3f76c046cd2f90baa01a0dcf2defad468` | the dev image (see the note), linux/amd64 under Rosetta in Colima 0.10.3 on the same Mac, network off | w-s-bitcoin |
 | 2026-09-29 | `cb55bd9` (v1.0.0) | `src/js/vanity-wasm-b64.js`, `npm run build:wasm` | `8f9b26cf68b8f77584564b5ecc957d55db5ec7bcc75f3b1195046f69cb2a57f1` | the dev image (see the note), linux/amd64 under Rosetta in Colima 0.10.3 on the same Mac, network off | w-s-bitcoin |
 | 2026-09-29 | `cb55bd9` (v1.0.0) | `entropylab.html`, from the modules rebuilt above | `2b9828abadad8030588d2de512d73519f7ce06d3764fd5c3e1caaed34693131a` | the dev image (see the note), linux/amd64 under Rosetta in Colima 0.10.3 on the same Mac, network off | w-s-bitcoin |
+| 2026-10-07 | `7f48ec4` (v1.0.0rc2, #817) | `entropylab.html`, from the committed WASM modules | `93295d7a001ec831f70b649e4078206a2f2eec7ffcacade8af9f8339a8e26361` | Debian GNU/Linux 13.7 (trixie) virtual machine run by an AI assistant, x86_64, Linux 6.12, Node v22.23.2, npm 10.9.8, on the host (no container) | breagoth |
 
 For MrHodlX's rows, the dev image was built on his laptop on 2026-09-24
 from the Dockerfile as it stands at `cb55bd9` (unchanged since `8a9eae4`):

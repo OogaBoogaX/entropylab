@@ -3,7 +3,24 @@
 Release notes for EntropyLab. Each release is a single self-contained
 `entropylab.html`; verify it against the signed `SHA256SUMS.txt` before use.
 
-## Unreleased
+## v1.0.0 — 2026-10-11
+
+First stable release. Source commit
+`c1037ba3a20d0c6db1b3265a7385b2944ce827e6`, the same commit as v1.0.0rc3:
+`entropylab.html` is byte-identical to rc3 (SHA-256
+`bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d`), so
+`SHA256SUMS.txt` and the four rc3 signatures in `SHA256SUMS.asc` carry over
+unchanged.
+
+No changes since rc3. The release-candidate notes below describe what 1.0.0
+ships.
+
+## v1.0.0rc3 — 2026-10-10
+
+Third release candidate for 1.0.0. Source commit
+`c1037ba3a20d0c6db1b3265a7385b2944ce827e6`.
+
+### Behaviour changes from rc2
 
 - **Derived-key default addresses change from rc2** (#828): with the default
   BIP84 / Native SegWit input, **Match derivation purpose to script type** starts
@@ -13,6 +30,46 @@ Release notes for EntropyLab. Each release is a single self-contained
   restore the originally entered purpose and hardening for every script type,
   including the rc2 default of `84h` across all four tabs. The rest of the path
   and ranges stay unchanged.
+- **LifeHash icons match the Blockchain Commons C++ reference** pixel for pixel
+  (#831). About 1% of fingerprints, those on a float32 rounding boundary, show
+  a slightly different icon than in rc2. Fingerprints, keys, and addresses are
+  unchanged.
+
+### Secrets and session hygiene
+
+- Private readouts (recovery phrases, WIFs, private keys and descriptors,
+  entropy, BIP-85 outputs, and other secrets) can no longer be selected; they
+  copy only through explicit clipboard controls, and concealed, stale, or
+  wiped values never reach the clipboard. Public outputs copy on click, and
+  copy controls are consistent across tools (#827).
+- End session tells Microsoft Edge users to quit Edge completely, since Edge
+  kept copies of a copied seed phrase after the tab closed (#820, #816).
+
+### Correctness
+
+- Switching or removing saved key and multisig tabs during a derivation no
+  longer lets one key's wallet land in another tab's state; in-flight
+  derivations are cancelled (#830).
+- Vanity: a partial worker-spawn failure ends the run instead of grinding
+  zeroed key material and reporting matches for no real key (#830).
+- Tapscript: the BIP-341 annex is recognised only when the witness has at
+  least two elements (#830).
+
+### Build, CI, and tooling
+
+- New `fuzz-lifehash-cpp` CI job fuzzes LifeHash against the compiled C++
+  reference at a pinned commit and gates the artifact and deploy (#831).
+
+### Documentation
+
+- `SECURITY.md` describes the clipboard copies Edge keeps and recommends fully
+  quitting the browser (#827).
+- The messaging stories clarify where computers must stay offline (#823).
+
+### Translations
+
+- Automated catalog updates for DE, ES, FR, and PT cover the strings added
+  since rc2, including the Edge warning and the new copy labels (#836–#840).
 
 ## v1.0.0rc2 — 2026-10-07
 

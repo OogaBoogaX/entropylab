@@ -110,6 +110,24 @@ test("bad checksum is refused", () => {
   );
 });
 
+test("repeating an early UR fragment preserves the assembled bytes", () => {
+  const psbt = hex("70736274ff" + "aa".repeat(80));
+  const parts = hodlUrEncodePsbt(psbt, { maxBytes: 40 });
+  assert.deepEqual(hodlUrDecodePsbt([parts[0], ...parts]).psbt, psbt);
+});
+
+test("UR sequencing rejects zero and unsafe integers before assembly", () => {
+  const payload = hodlBytewordsEncode(hodlCborBstr(hex("70736274ff")), "minimal");
+  for (const sequence of ["0-1", "1-0", "1-9007199254740993", "9007199254740993-2"]) {
+    assert.throws(() => hodlUrDecodePsbt(`ur:crypto-psbt/${sequence}/${payload}`), /sequence.*positive safe integers/i);
+  }
+});
+
+test("a huge declared UR count is refused without allocating count-sized slots", () => {
+  const payload = hodlBytewordsEncode(hex("00"), "minimal");
+  assert.throws(() => hodlUrDecodePsbt(`ur:crypto-psbt/1-4294967296/${payload}`), /Need all/);
+});
+
 // BCR-2024-001 "testEncoderCBOR": the published part serialization for
 // message 916ec65c… (256 bytes, CRC-32 0x0167aa07) in 30-byte fragments.
 const MUR_MESSAGE_LEN = 256;
@@ -175,4 +193,5 @@ test("legacy pre-MUR fragments still decode", () => {
   const decoded = hodlUrDecodePsbt(parts);
   assert.equal(hexEncode(decoded.psbt), hexEncode(psbt));
   assert.equal(decoded.parts, chunks.length);
+  assert.deepEqual(hodlUrDecodePsbt([parts[1], parts[0], ...parts.slice(1)]).psbt, psbt);
 });

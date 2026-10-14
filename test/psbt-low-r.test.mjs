@@ -33,7 +33,9 @@ const hodlLe32Counter = new Function(`${loadSlice("hodlLe32Counter")}; return ho
 const hodlIsLowR = new Function(`${loadSlice("hodlIsLowR")}; return hodlIsLowR;`)();
 
 test("PSBT copy mentions Bitcoin Core-style low-r grinding", () => {
-  assert.match(app, /hodlRfc6979Compare\(\s*sighash\s*,\s*privateKey\s*,\s*parts\.r\s*\)/);
+  // The resolvers hand the render { key, owned } (audit C2-B); the compare is
+  // wired to the resolved key bytes.
+  assert.match(app, /hodlRfc6979Compare\(\s*sighash\s*,\s*privateKey\.key\s*,\s*parts\.r\s*\)/);
   assert.match(app, /extraEntropy\s*:\s*hodlLe32Counter\(\s*n\s*\)/);
   assert.match(app, /RFC 6979 comparison currently covers/);
 });

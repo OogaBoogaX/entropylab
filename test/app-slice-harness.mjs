@@ -81,12 +81,35 @@ function skipLiteral(index) {
   return -1;
 }
 
+// Index of a function body's opening brace. The parameter list ends at the
+// first ")" at depth 0 (literals inside default parameters are skipped); the
+// body opens after optional whitespace at "{" — written as ") {" in most of
+// app.js but "){" in a few declarations.
+function functionBodyOpen(start) {
+  let depth = 0;
+  for (let index = app.indexOf("(", start); index < app.length; index++) {
+    const skipped = skipLiteral(index);
+    if (skipped > index) {
+      index = skipped - 1;
+      continue;
+    }
+    const char = app[index];
+    if (char === "(") depth++;
+    else if (char === ")" && --depth === 0) {
+      let brace = index + 1;
+      while (/\s/.test(app[brace])) brace++;
+      if (app[brace] !== "{") throw new Error(`function at ${start} has no braced body`);
+      return brace;
+    }
+  }
+  throw new Error(`unterminated parameter list at ${start}`);
+}
+
 // A declaration's full source: a function through its closing brace, a
 // variable statement through its terminating semicolon or line.
 function sourceAt(kind, start) {
   let depth = 0, opened = false;
-  // A function body opens at ") {", past any braces in default parameters.
-  for (let index = kind === "function" ? app.indexOf(") {", start) + 2 : start; index < app.length; index++) {
+  for (let index = kind === "function" ? functionBodyOpen(start) : start; index < app.length; index++) {
     const skipped = skipLiteral(index);
     if (skipped > index) {
       index = skipped - 1;

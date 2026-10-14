@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseRawTx, serializeTx } from "../src/js/tx.js";
 import { sha256 } from "../src/js/hashes.js";
+import { secp256k1 } from "../src/js/secp256k1.js";
 import { psbtInspectDoc } from "../src/js/psbt-wasm.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -118,6 +119,77 @@ const hodlPsbtReferenceVerdict = new Function(
   "psbtInspectDoc",
   `${loadSlice("hodlPsbtReferenceVerdict")}; return hodlPsbtReferenceVerdict;`,
 )(psbtInspectDoc);
+
+// A crafted file can evict every error from the reference crate's problem
+// list: the list caps at 64 entries in collection order while the severity
+// counts are taken before truncation (the producer's pinned fixture is
+// test/psbt-wasm.test.mjs's "a truncated problem list still reports its true
+// severity totals"). `warningSigs` junk partial signatures on input 0
+// (warning-severity, collected first) pad the list; `badWitnesses` further
+// inputs each carry a malformed final witness for a P2WPKH claim
+// (error-severity, collected last).
+const evictionFixture = (warningSigs, badWitnesses) => {
+  const vi = (n) => (n < 0xfd ? [n] : [0xfd, n & 0xff, n >> 8]);
+  const bytes = [];
+  const push = (...chunks) => { for (const chunk of chunks.flat(2)) bytes.push(chunk); };
+  // Unsigned transaction: 1 + badWitnesses inputs, one 1000-sat OP_TRUE output.
+  const tx = [2, 0, 0, 0, 1 + badWitnesses];
+  for (let i = 1 + badWitnesses; i > 0; i--) tx.push(...new Array(32).fill(0xa0 + i), 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff);
+  tx.push(1, 0xe8, 0x03, 0, 0, 0, 0, 0, 0, 1, 0x51, 0, 0, 0, 0);
+  push([0x70, 0x73, 0x62, 0x74, 0xff], [0x01, 0x00], vi(tx.length), tx, 0x00);
+  const witnessUtxo = (fill) => [0x50, 0xc3, 0, 0, 0, 0, 0, 0, 0x16, 0x00, 0x14, ...new Array(20).fill(fill)];
+  // Input 0's map: the witness-UTXO claim plus well-formed partial
+  // signatures under distinct *valid* junk keys (small scalar multiples, so
+  // rust-bitcoin parses the file and the severities are left to the
+  // signature check, which fails them as warnings).
+  push(vi(1), [0x01], vi(31), witnessUtxo(0x11));
+  for (let i = 0; i < warningSigs; i++) {
+    const priv = new Uint8Array(32);
+    priv[30] = (i >> 8) & 0xff;
+    priv[31] = 1 + (i & 0xff);
+    push(vi(34), [0x02, ...secp256k1.getPublicKey(priv, true)], vi(9), [0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01]);
+  }
+  push(0x00);
+  // One input per error: same claim shape, plus a three-item final witness.
+  const badWitness = [0x03, 0x01, 0xaa, 0x01, 0xbb, 0x01, 0xcc];
+  for (let input = 1; input <= badWitnesses; input++) {
+    push(vi(1), [0x01], vi(31), witnessUtxo(0x20 + input));
+    push(vi(1), [0x08], vi(badWitness.length), badWitness, 0x00);
+  }
+  push(0x00); // the one output's (empty) map
+  return Uint8Array.from(bytes);
+};
+
+test("truncation-evicted errors still fail the reference cross-check (audit C2-C)", () => {
+  const raw = evictionFixture(65, 1);
+  // The doc is the pinned attack shape: the kept list is warnings-only while
+  // an error sits behind the display cap. The cross-check verdict must read
+  // the pre-truncation errorCount, not the truncated list, or the banner
+  // and the report's cross-check row read as clean.
+  const doc = psbtInspectDoc(raw);
+  assert.equal(doc.problemsTruncated, true);
+  assert.ok(doc.problems.every((problem) => problem.severity === "warning"), "the kept entries are all warnings");
+  assert.equal(doc.errorCount, 1);
+  assert.equal(doc.problemCount, 66);
+  const verdict = hodlPsbtReferenceVerdict({ raw });
+  assert.equal(verdict.state, "problem");
+  assert.deepEqual(verdict.problems.length, 1, "evicted errors surface as a named row, not silence");
+  assert.match(verdict.problems[0], /1 error-severity problem\(s\) hidden by the .*display cap/);
+  assert.equal(verdict.unlisted, 0, "the placeholder names the hidden errors, so they are not counted twice");
+});
+
+test("an error that survived the cap is listed and the evicted one stays counted (audit C2-C)", () => {
+  const raw = evictionFixture(63, 2);
+  const doc = psbtInspectDoc(raw);
+  assert.equal(doc.problemsTruncated, true);
+  assert.equal(doc.errorCount, 2);
+  assert.equal(doc.problems.filter((problem) => problem.severity === "error").length, 1, "one error survived the cap");
+  const verdict = hodlPsbtReferenceVerdict({ raw });
+  assert.equal(verdict.state, "problem");
+  assert.equal(verdict.unlisted, 1, "the evicted error is counted for the banner's continuation line");
+  assert.ok(verdict.problems.some((problem) => /final witness/.test(problem)), "the surviving error is listed");
+  assert.ok(!verdict.problems.some((problem) => /display cap/.test(problem)), "listed errors need no placeholder");
+});
 
 test("the reference cross-check flags a BIP-174-invalid file the JS parser renders (audit C3-6)", () => {
   const varint = (n) => (n < 0xfd ? [n] : [0xfd, n & 0xff, n >> 8]);

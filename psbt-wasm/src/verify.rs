@@ -784,7 +784,13 @@ fn check_final_witness(
     let items: Vec<&[u8]> = witness.iter().collect();
     match spend {
         Spend::P2wpkh | Spend::WrappedP2wpkh(_) => {
-            let program = &claim.script_pubkey.as_bytes()[2..22];
+            let program = match spend {
+                Spend::P2wpkh => &claim.script_pubkey.as_bytes()[2..22],
+                // Wrapped: the claim is the P2SH wrapper; the program lives
+                // in the redeem script.
+                Spend::WrappedP2wpkh(redeem) => &redeem.as_bytes()[2..22],
+                _ => unreachable!(),
+            };
             if items.len() != 2 {
                 problems.push(Problem::error(
                     scope,
@@ -1483,6 +1489,63 @@ mod tests {
         let badmap = || {
             vec![
                 pair("01", &witness_utxo_value(&other_claim)),
+                pair("08", &hex_encode(&encode::serialize(&witness))),
+            ]
+        };
+        let problems = analyze(&tx, &[badmap()]);
+        assert!(problems.iter().any(|p| p.code == "final_witness_bad" && p.severity == ERROR));
+        assert!(gate_error(&tx, &[badmap()]).is_some());
+    }
+
+    /// A P2SH-P2WPKH input: the claim is the P2SH wrapper, so the witness
+    /// program the final witness's key must hash to lives in the redeem
+    /// script, not in the claim's scriptPubKey (audit B1). An honest
+    /// finalized wrapped spend passes; the same witness against a claim that
+    /// wraps a different key's program is an error.
+    #[test]
+    fn a_valid_wrapped_p2wpkh_final_witness_passes_and_a_wrong_key_is_an_error() {
+        let secp = Secp256k1::new();
+        let key = SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let pubkey = bitcoin::PublicKey::new(key.public_key(&secp));
+        let (tx, _) = fixture();
+        let redeem = ScriptBuf::new_p2wpkh(&pubkey.wpubkey_hash().unwrap());
+        let claim = TxOut {
+            value: Amount::from_sat(50_000),
+            script_pubkey: ScriptBuf::new_p2sh(&redeem.script_hash()),
+        };
+        let mut cache = SighashCache::new(&tx);
+        let sighash = cache
+            .p2wpkh_signature_hash(0, &redeem, claim.value, EcdsaSighashType::All)
+            .unwrap();
+        let message = Message::from_digest_slice(&sighash.to_byte_array()).unwrap();
+        let sig = secp.sign_ecdsa(&message, &key);
+        let mut sig_bytes = sig.serialize_der().to_vec();
+        sig_bytes.push(0x01);
+        let witness = Witness::from_slice(&[sig_bytes, pubkey.to_bytes()]);
+        // A wrapped spend's final scriptSig pushes exactly the redeem script.
+        let script_sig = ScriptBuf::from_bytes([[redeem.as_bytes().len() as u8].as_slice(), redeem.as_bytes()].concat());
+        let map = vec![
+            pair("01", &witness_utxo_value(&claim)),
+            pair("04", &hex_encode(redeem.as_bytes())),
+            pair("07", &hex_encode(script_sig.as_bytes())),
+            pair("08", &hex_encode(&encode::serialize(&witness))),
+        ];
+        let problems = analyze(&tx, &[map]);
+        assert!(problems.is_empty(), "{problems:?}");
+
+        // The claim wraps a different key's program: the same witness must be named.
+        let other_key = SecretKey::from_slice(&[2u8; 32]).unwrap();
+        let other_redeem = ScriptBuf::new_p2wpkh(&bitcoin::PublicKey::new(other_key.public_key(&secp)).wpubkey_hash().unwrap());
+        let other_claim = TxOut {
+            value: Amount::from_sat(50_000),
+            script_pubkey: ScriptBuf::new_p2sh(&other_redeem.script_hash()),
+        };
+        let other_script_sig = ScriptBuf::from_bytes([[other_redeem.as_bytes().len() as u8].as_slice(), other_redeem.as_bytes()].concat());
+        let badmap = || {
+            vec![
+                pair("01", &witness_utxo_value(&other_claim)),
+                pair("04", &hex_encode(other_redeem.as_bytes())),
+                pair("07", &hex_encode(other_script_sig.as_bytes())),
                 pair("08", &hex_encode(&encode::serialize(&witness))),
             ]
         };

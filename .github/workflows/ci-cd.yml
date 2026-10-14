@@ -65,7 +65,7 @@ jobs:
         # input (scripts/build-commit.mjs), which a shallow clone cannot see
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -98,7 +98,7 @@ jobs:
         with:
           subject-path: entropylab.html
       - name: Upload the checksum manifest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: entropylab-sha256sums
           path: |
@@ -110,7 +110,7 @@ jobs:
         id: digest
         run: echo "sha256=$(sha256sum entropylab.html | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Upload the tested candidate for downstream jobs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: entropylab-candidate
           path: |
@@ -154,7 +154,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -187,7 +187,7 @@ jobs:
       - name: Test the freshly built bindings
         run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/psbt-sanitize.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs test/aezeed-wasm.test.mjs test/self-test-wasm.test.mjs
       - name: Upload the freshly tested WASM modules
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: entropylab-wasm
           path: |
@@ -235,7 +235,7 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -268,7 +268,7 @@ jobs:
         # input (scripts/build-commit.mjs), which a shallow clone cannot see
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -317,7 +317,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Run network-check tests
@@ -330,7 +330,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -353,7 +353,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -369,7 +369,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -392,7 +392,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Run descriptor tests
@@ -404,7 +404,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -419,7 +419,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -439,13 +439,33 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install locked fuzzing dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund --prefix fuzzing
       - name: Run the LifeHash differential fuzzer
         run: npm --prefix fuzzing run fuzz:lifehash
+
+  # ── Fuzz: the shipped LifeHash against the Blockchain Commons C++ ─────────
+  # reference itself, compiled from a pinned commit (fetched and verified by
+  # the fuzzer). No substitutions: pixels must match the reference exactly,
+  # float32 rounding artifacts included. Same locked fuzzing/ tree and
+  # determinism as the job above; the runner's c++ builds the reference.
+
+  fuzz-lifehash-cpp:
+    name: Fuzz · LifeHash vs C++ reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install locked fuzzing dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix fuzzing
+      - name: Run the LifeHash C++ reference fuzzer
+        run: npm --prefix fuzzing run fuzz:lifehash-cpp
 
   # ── Fuzz: multisig wallet outputs (addresses, descriptors, checksums) ────
   # vs an independent scure BIP32/script stack, plus co-signer suffix
@@ -457,7 +477,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install locked fuzzing dependencies
@@ -475,7 +495,7 @@ jobs:
   artifact:
     name: Artifact · commit tested site after merge
     if: github.ref == 'refs/heads/rock' && github.event_name == 'push'
-    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-msig, reproduce]
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce]
     runs-on: ubuntu-latest
     environment: release
     timeout-minutes: 10
@@ -485,7 +505,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -627,7 +647,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -667,7 +687,7 @@ jobs:
         # input (scripts/build-commit.mjs), which a shallow clone cannot see
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -754,7 +774,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Run the translation-only gate
@@ -773,7 +793,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     if: github.ref == 'refs/heads/rock' && github.event_name != 'pull_request'
-    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-msig, reproduce]
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
