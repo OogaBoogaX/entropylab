@@ -72,7 +72,14 @@ material. Its security posture rests on the following model:
    Rosetta). The page alone also rebuilds to the same bytes on each of those
    hosts without the image. [docs/Reproductions.md](docs/Reproductions.md)
    records each rebuild by commit. Build-host paths are remapped out of the
-   binary.
+   binary. The image is the boundary: the page and the modules are
+   reproducible inside it. Its Dockerfile pins the base image, the package
+   snapshot and the tool versions, but the compilers in it are prebuilt
+   binaries, trusted as a seed, and the built image is not itself
+   bit-for-bit reproducible. This is not a full-source bootstrap:
+   EntropyLab's Rust, clang and WASM toolchain has not been built from
+   source, and no one has checked that such a build would give the same
+   modules.
   iOS/macOS Lockdown Mode disables WebAssembly. Exclude the site in Safari
   or use a host that can compile WASM. There is no JavaScript secp256k1
   fallback; a host that cannot run the module is treated as broken.
