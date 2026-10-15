@@ -6,6 +6,10 @@
 
 export const CORE_IMPORT_RANGE_END = 1000;
 
+// BIP32's last unhardened child index: the deepest address a window can
+// display, and the deepest Core can watch on a ranged descriptor.
+const CORE_IMPORT_MAX_INDEX = 0x7fffffff;
+
 // Every SLIP-132 private family, capital multisig prefixes included.
 const PRIVATE_KEY = /\b(?:[xyztuv]prv|[YZUV]prv)[1-9A-HJ-NP-Za-km-z]{90,}/;
 const EXTENDED_PUB = /((?:xpub|tpub|ypub|upub|zpub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{90,})/g;
@@ -118,24 +122,48 @@ function resolveTimestamp(timestamp) {
   throw new Error("timestamp must be 0 or \"now\"");
 }
 
-function descriptorEntry(descriptor, internal, timestamp, codec, label) {
+// The watched range mirrors the wallet.dat export (wallet-export.js
+// branchRangeFromRows): it starts at 0 — a fresh Core wallet's first
+// getnewaddress is this wallet's receive index 0 — and runs Core's default
+// lookahead past the deepest displayed address, so a window shown above row
+// 1000 is still watched (audit B7b). A caller that cannot say which indexes
+// it displays gets Core's default lookahead. Anything the descriptor cannot
+// climb to is refused outright, never silently clipped.
+//
+// Core's import bound: ParseDescriptorRange refuses a range whose span
+// reaches 1,000,000 ("Range is too large"). With the start pinned at 0 that
+// bound bites at a displayed end of 999,000 — deeper JSON would fail loudly
+// on the online node, so refuse at export instead (#861 review).
+function resolveRangeEnd(displayedEnd) {
+  if (displayedEnd === undefined || displayedEnd === null) return CORE_IMPORT_RANGE_END;
+  if (!Number.isSafeInteger(displayedEnd) || displayedEnd < 0 || displayedEnd > CORE_IMPORT_MAX_INDEX) {
+    throw new Error("Address range end must be a whole number from 0 to 2,147,483,647.");
+  }
+  if (displayedEnd + CORE_IMPORT_RANGE_END >= 1000000) {
+    throw new Error("Bitcoin Core importdescriptors refuses a range span of 1,000,000 or more, so an address window ending at 999,000 or deeper cannot be exported. Show a shallower window and export again.");
+  }
+  return Math.min(displayedEnd + CORE_IMPORT_RANGE_END, CORE_IMPORT_MAX_INDEX);
+}
+
+function descriptorEntry(descriptor, internal, timestamp, codec, label, rangeEnd) {
   return {
     desc: canonicalizeWatchDescriptor(descriptor, codec, label),
     active: true,
     internal,
     timestamp,
-    range: [0, CORE_IMPORT_RANGE_END],
+    range: [0, rangeEnd],
   };
 }
 
-export function buildImportDescriptorsJson({ receiveDescriptor, changeDescriptor, timestamp, decode, encode } = {}) {
+export function buildImportDescriptorsJson({ receiveDescriptor, changeDescriptor, timestamp, decode, encode, rangeEnd } = {}) {
   const receive = String(receiveDescriptor ?? "").trim();
   const change = String(changeDescriptor ?? "").trim();
   if (!receive && !change) throw new Error("No watch-only descriptors to export.");
   const codec = decode && encode ? { decode, encode } : null;
+  const resolvedRangeEnd = resolveRangeEnd(rangeEnd);
   const entries = [];
-  if (receive) entries.push(descriptorEntry(receive, false, resolveTimestamp(timestamp), codec, "Receive descriptor"));
-  if (change) entries.push(descriptorEntry(change, true, resolveTimestamp(timestamp), codec, "Change descriptor"));
+  if (receive) entries.push(descriptorEntry(receive, false, resolveTimestamp(timestamp), codec, "Receive descriptor", resolvedRangeEnd));
+  if (change) entries.push(descriptorEntry(change, true, resolveTimestamp(timestamp), codec, "Change descriptor", resolvedRangeEnd));
   if (receive && change) assertMatchingWatchDescriptors(entries[0].desc, entries[1].desc);
   return JSON.stringify(entries, null, 2);
 }

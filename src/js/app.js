@@ -1,4 +1,4 @@
-import { sha256 as hodlSha256 } from "./hashes.js";
+import { sha256 as hodlSha256, hash160 as hodlHash160 } from "./hashes.js";
 // secp256k1 operations run in the libsecp256k1 WebAssembly module; the facade
 // is a drop-in for the noble/curves surface this file uses (see
 // src/js/secp256k1.js). App boot waits for the module to be ready.
@@ -525,7 +525,9 @@ function hodlResultSecretBytes(result) {
 // (#546 B2): the BIP39 passphrase and a Casascius mini key, which nothing can
 // rebuild from the keys they make. The text is built only to show or export
 // it, exactly as typed: a leading U+FEFF is part of a passphrase (BIP39 hashes
-// it), not a byte-order mark to drop.
+// it), not a byte-order mark to drop — this decoder and the salt decode in
+// bip39.js both keep it, so the bytes, their text and external NFKD
+// implementers all derive the same wallet.
 function hodlTypedText(bytes) {
   return new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
 }
@@ -2131,6 +2133,19 @@ function hodlMsigCoreImportCodec() {
     encode: (bytes) => hodlBase58Check.encode(bytes)
   };
 }
+// The deepest address index the result displays on the two branches the Core
+// exports watch (receive/change): the importdescriptors JSON must see past
+// it, exactly as the wallet.dat writer does (wallet-export.js
+// branchRangeFromRows). Reads the same rows that lookup reads.
+function hodlMsigDisplayedAddressEnd(wallet) {
+  let end = null;
+  for (const branch of [0, 1]) {
+    const branchRows = wallet?.addressBranches?.find((entry) => entry?.branch === branch)?.rows;
+    const rows = Array.isArray(branchRows) ? branchRows : branch === 0 ? wallet?.receive : wallet?.change;
+    for (const row of rows ?? []) if (Number.isSafeInteger(row?.index) && row.index >= 0) end = end === null ? row.index : Math.max(end, row.index);
+  }
+  return end;
+}
 function hodlMsigCoreImportDescriptorsJson() {
   if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
   if (!hodlWalletResult.receiveDescriptor && !hodlWalletResult.changeDescriptor) return "";
@@ -2140,22 +2155,44 @@ function hodlMsigCoreImportDescriptorsJson() {
     changeDescriptor: hodlWalletResult.changeDescriptor,
     timestamp: hodlWalletDatBirthday === "now" ? "now" : 0,
     decode: codec.decode,
-    encode: codec.encode
+    encode: codec.encode,
+    rangeEnd: hodlMsigDisplayedAddressEnd(hodlWalletResult)
   });
 }
 function hodlMsigCoreImportDescriptorsMarkup() {
   if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
   if (!hodlWalletResult.receiveDescriptor && !hodlWalletResult.changeDescriptor) return "";
+  // A fresh Core wallet's first getnewaddress is this wallet's receive index
+  // 0. When the displayed window starts deeper, that index is not in the
+  // table — say so rather than pointing at a table that cannot show it.
+  const receiveRows = hodlWalletResult.addressBranches?.find((entry) => entry?.branch === 0)?.rows ?? hodlWalletResult.receive ?? [];
+  const showsIndexZero = (receiveRows ?? []).some((row) => row?.index === 0);
+  const coreNote = showsIndexZero
+    ? hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress must match receive index 0 here.")
+    : hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress is this wallet's receive index 0, which is not in the address window shown above — display from index 0 or verify it on a signer before funding.");
   // The footer the key view uses: the Downloads title, what the export is, the
   // birthday titled the way a field is, then the two saves splitting the row.
   // The ids stay msig’s own, so both views wear the same shape without two
   // elements answering to one label.
   return `<div class="wallet-data-actions msig-data-actions no-print" id="msig-core-importdescriptors">
     <div class="msig-downloads-head"><p class="label">${hodlT("Downloads")}</p><p class="muted label-description">${hodlT("Import the watch-only wallet descriptor into Sparrow or another wallet.")}</p></div>
-    <p class="edge-note is-public" id="msig-core-importdescriptors-help">${hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress must match receive index 0 here.")}</p>
+    <p class="edge-note is-public" id="msig-core-importdescriptors-help">${coreNote}</p>
     <div class="wallet-birthday-field"><p class="label" id="msig-birthday-label">${hodlT("Wallet birthday")}</p><p class="muted label-description wallet-dat-birthday-help" id="msig-birthday-help">${hodlT("Bitcoin Core only auto-scans history back to the birthday. Choose “New keys” only for entropy created right now; recovering older keys with today's birthday can look empty until you run <code>rescanblockchain 0</code> in Bitcoin Core.")}</p><select data-wallet-dat-birthday aria-labelledby="msig-birthday-label" aria-describedby="msig-birthday-help msig-core-importdescriptors-help"><option value="genesis"${hodlWalletDatBirthday === "genesis" ? " selected" : ""}>${hodlT("Recovering keys · scan from genesis")}</option><option value="now"${hodlWalletDatBirthday === "now" ? " selected" : ""}>${hodlT("New keys · created today")}</option></select></div>
     <button class="btn secondary green" id="msig-save-importdescriptors" type="button">${hodlT("Save Core Watch-only JSON")}</button>
     <button class="btn secondary" id="msig-copy-importdescriptors" type="button">${hodlT("Copy Core importdescriptors")}</button>
+    <button class="btn secondary green save-wallet-dat" id="msig-download-wallet-dat" type="button" aria-describedby="msig-core-importdescriptors-help msig-birthday-help">${hodlWalletExport.walletDatButtonLabel(false)}</button>
+  </div>`;
+}
+// The BIP 388 wallet policy export (template + co-signer xpubs), one block
+// shaped like the policy-sheet block. Registration-capable wallets and
+// signers read it; the policy semantics check happens in bip388-policy.js.
+function hodlMsigBip388Markup() {
+  if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
+  if (!hodlWalletResult.receiveDescriptor) return "";
+  return `<div class="wallet-data-actions no-print" id="msig-bip388">
+    <button class="btn secondary green" id="msig-save-bip388" type="button">${hodlT("Save BIP 388 wallet policy")}</button>
+    <button class="btn secondary" id="msig-copy-bip388" type="button">${hodlT("Copy BIP 388 wallet policy")}</button>
+    <p class="muted" id="msig-bip388-help">${hodlT("BIP 388 wallet policy (template and co-signer xpubs) for wallets that register policies. Watch-only; no private keys.")}</p>
   </div>`;
 }
 function hodlCopyMsigCoreImportDescriptors() {
@@ -4424,7 +4461,7 @@ function hodlStoredPassphraseBytes(value) {
   return value ? new TextEncoder().encode(String(value)) : "";
 }
 function hodlPassphraseText(value) {
-  return ArrayBuffer.isView(value) ? new TextDecoder().decode(value) : String(value ?? "");
+  return ArrayBuffer.isView(value) ? hodlTypedText(value) : String(value ?? "");
 }
 function hodlStorePassphrase(state) {
   if (!state?.fields) return;
@@ -9775,6 +9812,8 @@ function hodlShowMsig() {
         ${hodlAddressMatchMarkup()}
       `, "account-address-section")}
       ${hodlMsigCoreImportDescriptorsMarkup()}
+      ${hodlMsigPolicySheetMarkup()}
+      ${hodlMsigBip388Markup()}
     </section>`;
   hodlBindAddressVirtualization(hodlAddressBranchVirtualConfigs(branches, false, "msig"));
   hodlWatchMsigGroups();
@@ -12062,6 +12101,67 @@ function hodlSessionOwnership(network) {
   if (hodlPsbtPriv) return indexSingleKey(hodlPsbtPriv, network, (key, compressed) => hodlSecp256k1.getPublicKey(key, compressed));
   return new Map();
 }
+// Raw byte scan: any script that a key can spend from embeds that key (or its
+// hash160 in key-hash constructions) literally, whatever template wraps it.
+function hodlBytesContain(haystack, needle) {
+  if (!needle.length || needle.length > haystack.length) return false;
+  for (let i = 0; i + needle.length <= haystack.length; i++) {
+    let match = true;
+    for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) { match = false; break; }
+    if (match) return true;
+  }
+  return false;
+}
+// PSBT_OUT_REDEEM_SCRIPT (0x00) / PSBT_OUT_WITNESS_SCRIPT (0x01) carry the
+// construction script of a script-hash output — multisig coordinators attach
+// them to change along with the per-cosigner derivation records. Only a
+// script that hashes to the output script itself is this output's
+// construction; anything else is an unattached claim and proves nothing.
+function hodlScriptMembership(entries, script, pubkey) {
+  let keyHash = hodlHash160(pubkey), member = false;
+  let scan = (construction) => {
+    if (hodlBytesContain(construction, pubkey) || hodlBytesContain(construction, keyHash)) member = true;
+  };
+  for (let entry of hodlFind(entries, 1)) {
+    if (entry.keydata.length || !entry.val.length) continue;
+    try {
+      if (hodlEq(script, p2wshScript(entry.val)) || hodlEq(script, p2shScript(p2wshScript(entry.val)))) scan(entry.val);
+    } catch {
+    }
+  }
+  for (let entry of hodlFind(entries, 0)) {
+    if (entry.keydata.length || !entry.val.length) continue;
+    try {
+      if (hodlEq(script, p2shScript(entry.val))) scan(entry.val);
+    } catch {
+    }
+  }
+  return member;
+}
+// A record is a lie only when it is provably false: the output pays one key
+// and it is not the verified one (destination-swap). The P2PKH/P2WPKH/P2TR
+// scriptPubKeys are the whole template, so their shape alone proves the
+// construction; P2SH is ambiguous — it may wrap a multisig — until its
+// redeem script reveals a single-key program. Reaching this helper at all
+// means the output is not one of the verified key's own templates (that was
+// checked first), so a matched shape is a matched *other* key.
+function hodlForeignSingleKeyScript(entries, script) {
+  if (script.length === 25 && script[0] === 0x76 && script[1] === 0xa9 && script[2] === 0x14 && script[23] === 0x88 && script[24] === 0xac) return true;
+  if (script.length === 22 && script[0] === 0x00 && script[1] === 0x14) return true;
+  if (script.length === 34 && script[0] === 0x51 && script[1] === 0x20) return true;
+  if (script.length === 23 && script[0] === 0xa9 && script[1] === 0x14 && script[22] === 0x87) {
+    for (let entry of hodlFind(entries, 0)) {
+      if (entry.keydata.length || !entry.val.length) continue;
+      let linked = false;
+      try {
+        linked = hodlEq(script, p2shScript(entry.val));
+      } catch {
+      }
+      if (linked && entry.val.length === 22 && entry.val[0] === 0x00 && entry.val[1] === 0x14) return true;
+    }
+  }
+  return false;
+}
 function hodlDeclaredOutput(entries, script, network) {
   if (!hodlPsbtHd || !entries || !script) return null;
   let fingerprint = hodlFingerprintHex(hodlPsbtHd.fingerprint), declared = null;
@@ -12092,9 +12192,24 @@ function hodlDeclaredOutput(entries, script, network) {
         } catch {
         }
       }
-      if (!encoded) return { state: "lie", path: label };
-      let chain = path.length >= 2 ? path[path.length - 2] : null;
-      declared = { state: "ours", path: label, role: chain === 1 ? "change" : chain === 0 ? "receive" : "key" };
+      if (encoded) {
+        let chain = path.length >= 2 ? path[path.length - 2] : null;
+        declared = { state: "ours", path: label, role: chain === 1 ? "change" : chain === 0 ? "receive" : "key" };
+        continue;
+      }
+      // A script-hash output (multisig change; audit B8) pays a script, not
+      // a key. Finding the key in its script is membership, not control —
+      // <user> OP_DROP <attacker> OP_CHECKSIG contains the key and the
+      // attacker spends alone (#851 review) — so membership only rides the
+      // unverifiable verdict as a muted note; it never verifies.
+      let member = hodlScriptMembership(entries, script, node.publicKey);
+      if (hodlForeignSingleKeyScript(entries, script)) return { state: "lie", path: label };
+      // Otherwise the claim is unverifiable from this map — which is not a
+      // lie. A later record may still prove ownership.
+      if (!declared || declared.state !== "ours") {
+        let noted = member || Boolean(declared && declared.state === "unknown" && declared.member);
+        declared = { state: "unknown", path: label, member: noted };
+      }
     } catch {
       return { state: "lie", path: label };
     }
@@ -12138,6 +12253,10 @@ function hodlRenderOutputHtml(output, index, network, map, entries) {
   } else if (declared && declared.state === "ours") {
     extra = "<br>" + hodlEscapeHtml((declared.role === "change" ? "change" : "this wallet") + " \xB7 " + declared.path + " (verified)");
     className = "psbt-ok";
+  } else if (declared && declared.state === "unknown") {
+    extra = "<br><span class='muted'>claims " + hodlEscapeHtml(declared.path) + (declared.member
+      ? " \xB7 your key appears in this output's script; its other keys are not verified"
+      : " \xB7 cannot be verified for this script type") + "</span>";
   } else if (scan.state === "external") {
     extra = "<br>not in this wallet (accounts 0\u20132, 50 receive + 50 change, four script types)";
   } else if (scan.state === "no-session") {
