@@ -130,32 +130,60 @@ function sourceAt(kind, start) {
 }
 
 // Top-level declarations, by name. One variable statement may declare several
-// names (var a = 1, b = 2); each maps to that whole statement.
+// names (var a = 1, b = 2); each name maps to that statement for the
+// reference walk, but emission takes only the needed declarators (see
+// statementDeclarators below): app.js packs data declarations and load-time
+// DOM bindings into single var statements (var hodlTargetWordCount = 24, …,
+// hodlOutEl = hodlElement("#out")), and executing the whole statement in a
+// headless slice throws on the missing document.
 const declarations = new Map();
+// Statement start offset → its declarators in source order, so the emitted
+// slice keeps exactly the declarators the closure reaches.
+const statementDeclarators = new Map();
 for (const match of app.matchAll(/^(?:async )?function (hodl\w+)\(/gm)) declarations.set(match[1], { kind: "function", start: match.index });
 for (const match of app.matchAll(/^(?:const|let|var) (?=hodl)/gm)) {
+  const keyword = match[0].trim();
   const statement = sourceAt("variable", match.index);
   // Declarator names sit at bracket depth 0, after the keyword or a comma.
-  let depth = 0, expectName = true;
-  for (let i = match[0].length; i < statement.length; i++) {
-    const skipped = skipLiteral(match.index + i);
+  let depth = 0, expectName = true, declaratorStart = -1, declaratorName = null;
+  const declarators = [];
+  const closeDeclarator = (end) => {
+    if (declaratorName === null) return;
+    const text = statement.slice(declaratorStart, end).replace(/[\s;]+$/, "");
+    if (!declarations.has(declaratorName)) declarations.set(declaratorName, { kind: "variable", start: match.index, declarator: text });
+    declarators.push({ name: declaratorName, text });
+    declaratorName = null;
+  };
+  for (let i = match[0].length; i <= statement.length; i++) {
+    const skipped = i < statement.length ? skipLiteral(match.index + i) : -1;
     if (skipped > match.index + i) {
       i = skipped - match.index - 1;
       continue;
     }
-    const char = statement[i];
+    const char = statement[i]; // undefined at the end closes the last declarator
+    if (char === undefined || (depth === 0 && char === ",")) {
+      closeDeclarator(i);
+      expectName = true;
+      continue;
+    }
     if ("{[(".includes(char)) depth++;
     else if ("}])".includes(char)) depth--;
-    else if (depth === 0 && char === ",") expectName = true;
     else if (depth === 0 && expectName && /[A-Za-z_$]/.test(char)) {
-      const name = statement.slice(i).match(/^[\w$]+/)[0];
-      if (!declarations.has(name)) declarations.set(name, { kind: "variable", start: match.index });
+      declaratorName = statement.slice(i).match(/^[\w$]+/)[0];
+      declaratorStart = i;
       expectName = false;
-      i += name.length - 1;
+      i += declaratorName.length - 1;
     }
   }
+  statementDeclarators.set(match.index, { keyword, declarators });
 }
-const declarationSource = (name) => sourceAt(declarations.get(name).kind, declarations.get(name).start);
+// The reference walk sees a declaration's own extent only: a whole function,
+// but for a variable just its declarator — sibling declarators in a shared
+// var statement are not references (var a = 1, b = 2 does not make a need b).
+const declarationSource = (name) => {
+  const declaration = declarations.get(name);
+  return declaration.kind === "function" ? sourceAt("function", declaration.start) : declaration.declarator;
+};
 
 // Top-level statements that fill a declared variable at load, such as a loop
 // pushing rows into a lookup table. One travels with any variable it names.
@@ -216,16 +244,27 @@ export async function loadAppFunctions(names, { stubs = {}, settable = [] } = {}
   }
   for (const name of names) if (!included.has(name)) throw new Error(`app.js has no top-level ${name}`);
   // Declarations in source order, so top-level constants are initialized
-  // before anything that reads them at load.
+  // before anything that reads them at load. A variable statement emits only
+  // the declarators the closure reached, never its untouched siblings.
   const starts = [...new Set([...included].map((name) => declarations.get(name).start))].sort((a, b) => a - b);
   const bodies = [
-    ...starts.map((start) => ({ start, source: sourceAt(app.startsWith("function", start) || app.startsWith("async function", start) ? "function" : "variable", start) })),
+    ...starts.map((start) => {
+      if (app.startsWith("function", start) || app.startsWith("async function", start)) return { start, source: sourceAt("function", start) };
+      const { keyword, declarators } = statementDeclarators.get(start);
+      const needed = declarators.filter((declarator) => included.has(declarator.name));
+      return { start, source: `${keyword} ${needed.map((declarator) => declarator.text).join(", ")};` };
+    }),
     ...statements,
   ].sort((a, b) => a.start - b.start).map((entry) => entry.source);
   const words = new Set(bodies.join("\n").match(/\b[A-Za-z_$][\w$]*\b/g));
   const importStatements = new Set([...imports].filter(([local]) => words.has(local) && !(local in stubs)).map(([, statement]) => statement));
   const source = [
     ...importStatements,
+    // app.js reads this esbuild define at module scope (scripts/build.mjs
+    // substitutes it; production gets false). A slice that reaches one of
+    // the guarded statements through its closure must see the same value,
+    // not a ReferenceError.
+    "const __ENTROPYLAB_TEST_HOOKS__ = false;",
     ...Object.keys(stubs).map((name) => `const ${name} = globalThis.__appSliceStubs[${JSON.stringify(name)}];`),
     ...bodies,
     `export { ${names.join(", ")} };`,

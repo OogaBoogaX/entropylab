@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import vm from "node:vm";
 import { mnemonicToSeedSync } from "@scure/bip39";
+import { mnemonicToEntropy, bip39English } from "../src/js/bip39.js";
 import { HDKey } from "@scure/bip32";
 import { bech32m } from "@scure/base";
 import { NETWORK, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer";
@@ -796,73 +797,111 @@ test("vanityBenchmark samples every method on fixed constants and reports candid
   assert.match(vanityJs, /export function vanityBenchmark\(spawn = spawnBlobWorker\) \{/);
 });
 
-// Security contract: applying a singlesig vanity match must save and select
-// the searched script at the searched path, even when the source key had a
-// different selected script; a changed source path is still refused. Silent
-// Payment matches must not change the source's singlesig script selection.
+// Security contract (#399 F3, audit B5): applying a singlesig vanity match
+// must save and select the searched script at the searched path, even when
+// the source key had a different selected script; a changed source path is
+// still refused. Silent Payment matches must not change the source's
+// singlesig script selection. Update key additionally fails closed before
+// anything is written when the source key no longer carries the identity the
+// grind snapshot (its master fingerprint — editing the words or passphrase
+// changes it), and when the match's recorded address does not equal the
+// address independently re-derived from the key's own words or root at the
+// match's concrete path.
 // The real Apply Match and Calculate Key controllers call the real wallet
 // builder; only form/commit plumbing is replaced. Expected addresses use the
 // independent @scure derivation above, not an output copied from the app.
-test("Vanity Update Key preserves the searched script and path across initial purpose matching", async () => {
+const applyScriptIds = { p2pkh: "bip44", "p2sh-p2wpkh": "bip49", p2wpkh: "bip84", p2tr: "bip86" };
+// The master fingerprint Update key anchors a run to, as the app records it.
+const applyFingerprintOf = (words, passphrase) => (HDKey.fromMasterSeed(mnemonicToSeedSync(words, passphrase)).fingerprint >>> 0).toString(16).padStart(8, "0");
+// The address an honest match records: the derivation grind substitutes the
+// found account into the path, and a Silent Payment code covers the match's
+// account scan and spend keys (BIP-352).
+const applyRecordedAddress = (method, script) => {
+  const passphrase = method === "passphrase" ? PASSPHRASE + "a" : PASSPHRASE, account = method === "derivation" ? 3 : 0;
+  return script === "sp" ? silentPaymentFor(masterFor(passphrase), account) : expectedAddress(passphrase, script, `m/84'/0'/${account}'/0/0`);
+};
+// The real pieces these harnesses run. The match verifier is loaded
+// optionally: pre-fix sources ship no such function, and their apply path
+// then runs unverified — the defect the refusal tests pin.
+const applyApiPromise = (async () => {
+  const inert = new Proxy(function () {}, { get: (_, key) => key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inert, apply: () => inert, construct: () => inert });
+  Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
+  try {
+    const api = await loadAppFunctions(["hodlMnemonicWalletWithProgress", "hodlScriptDefinition", "hodlScriptTypes"]);
+    let verifyMatch = null;
+    try {
+      ({ hodlVanityMatchAddress: verifyMatch } = await loadAppFunctions(["hodlVanityMatchAddress"]));
+    } catch {
+      // Pre-fix sources ship no such function; their apply path runs
+      // unverified, which is the defect the refusal tests pin.
+    }
+    return { ...api, hodlVanityMatchAddress: verifyMatch };
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
+})();
+// One Update key scenario: a key tab for the test mnemonic with the grind's
+// snapshot of its fingerprint, and one match recording `address`.
+async function vanityApplyHarness({ method, script, address = applyRecordedAddress(method, script) }) {
+  const api = await applyApiPromise;
   const app = readFileSync(join(root, "src/js/app.js"), "utf8");
   const extract = name => {
     const match = app.match(new RegExp(`^(?:async )?function ${name}\\([^]*?^}`, "m"));
     assert.ok(match, name);
     return match[0];
   };
-  const inert = new Proxy(function () {}, { get: (_, key) => key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inert, apply: () => inert, construct: () => inert });
-  Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
-  let api;
-  try {
-    api = await loadAppFunctions(["hodlMnemonicWalletWithProgress", "hodlScriptDefinition", "hodlScriptTypes"]);
-  } finally {
-    delete globalThis.document;
-    delete globalThis.window;
-  }
-  const scriptIds = { p2pkh: "bip44", "p2sh-p2wpkh": "bip49", p2wpkh: "bip84", p2tr: "bip86" };
-  for (const method of ["passphrase", "derivation"]) for (const script of [...Object.keys(scriptIds), "sp"]) {
+  const passphrase = method === "passphrase" ? PASSPHRASE + "a" : PASSPHRASE, index = method === "derivation" ? 3 : null;
+  const fingerprint = applyFingerprintOf(MNEMONIC, PASSPHRASE);
+  const source = { id: 7, name: "Vanity source", accountId: "bip84", fields: { script: "bip84", pass: PASSPHRASE, purpose: "84'", account: "0'", derivationAccountPath: "m/84'/0'/0'" }, result: { masterIdentity: "before", masterFingerprint: fingerprint, entropy: mnemonicToEntropy(MNEMONIC, bip39English) } };
+  const lab = { isLab: true, fields: {} }, runPath = script === "sp" ? [352 + H, H, H] : [84 + H, H, H, 0, 0];
+  const run = { sourceKind: "key", sourceId: source.id, sourceLabel: source.name, sourceFingerprint: fingerprint, method, script, passphrase: PASSPHRASE, path: runPath, pathText: vanityPathString(runPath), accountHardened: true };
+  const match = { passphrase, index, address, savedTo: "" }, elements = { "calc-card": { hidden: false }, "vanity-error": { textContent: "" } };
+  const context = vm.createContext({
+    Uint8Array, ArrayBuffer, TextEncoder, TextDecoder,
+    document: { getElementById: id => elements[id] || null },
+    hodlKeys: [lab, source], hodlActiveKey: 1, hodlActiveDerivation: null, hodlDerivationGeneration: 0,
+    hodlWalletResult: source.result, hodlCommittedResults: new Set(), hodlWalletDatBirthday: "genesis",
+    hodlKeyMode: "seed", hodlTargetWordCount: 12, hodlSeedMethod: "words", hodlNetworkChoice: "mainnet",
+    hodlVanityMatches: [match], hodlVanityRun: run, hodlVanityApplying: false,
+    hodlWorkspace: "vanity", hodlSpSource: "", hodlBip85Source: "", hodlOutEl: { innerHTML: "" },
+    hodlScriptTypes: api.hodlScriptTypes, hodlScriptDefinition: api.hodlScriptDefinition,
+    hodlVanityPlan: () => ({ node: null, pathPrefix: [], path: runPath }),
+    hodlVanityMatchAddress: api.hodlVanityMatchAddress || (() => { throw new Error("the match verifier is not wired"); }),
+    hodlTText: (text, values) => String(text).replace(/\{(\w+)\}/g, (mark, key) => String(values?.[key] ?? mark)),
+    hodlFillLabFromKey: state => { context.hodlKeys[0] = { ...state, isLab: true, fields: { ...state.fields }, result: null }; return 0; },
+    hodlStoredPassphraseBytes: value => encoder.encode(value),
+    hodlRestoreKey() {}, hodlRenderKeyTabs() {}, hodlRenderVanityOut() {}, hodlVanitySyncControls() {},
+    hodlVanityKeyLabel: state => state.name, hodlVanitySetStatus() {}, hodlVanitySyncSource() {},
+    hodlDisposeDroppedWallets() {}, hodlPickSpSessionKey() {}, hodlPickBip85SessionKey() {},
+    hodlSetWorkspaceError: (_, spec) => { if (spec) throw new Error(spec.raw || spec.message || "derive failed"); },
+    hodlErrorSpecFrom: error => ({ raw: error.message }), hodlAssertDerivationActive() {},
+    HodlDerivationCancelledError: class extends Error {},
+    hodlNetworkFamily: value => value, hodlPassphraseBip39Enabled: () => false,
+    hodlReadAddressWindow: () => ({ start: 0, range: 1 }), hodlReadBranchWindow: () => ({ start: 0, range: 1 }),
+    hodlPassphraseFieldBytes: () => Uint8Array.from(context.hodlKeys[context.hodlActiveKey].fields.pass),
+    hodlSelectedScriptType: () => context.hodlKeys[context.hodlActiveKey].accountId,
+    hodlSelectedSeedInput: () => ({ value: MNEMONIC, extended: false }),
+    hodlValidateTargetMnemonic: value => ({ ok: true, words: value.split(" ") }), hodlThrowIfFailed() {},
+    hodlReadDerivationPlan: () => {
+      const fields = context.hodlKeys[context.hodlActiveKey].fields, account = Number(fields.account.replace("'", ""));
+      return { network: "mainnet", coinType: 0, purpose: 84, accountIndex: account, accountPath: `m/84'/0'/${account}'`, originPath: `84h/0h/${account}h`, hardening: { purpose: true, coinType: true, account: true, branch: false, address: false } };
+    },
+    hodlMnemonicWalletWithProgress: api.hodlMnemonicWalletWithProgress,
+    hodlConfirmKeyFingerprint: async () => true,
+    hodlSetSelectedScriptType: id => { const state = context.hodlKeys[context.hodlActiveKey]; state.accountId = id; state.fields.script = id; },
+    hodlCaptureKey: () => { context.hodlKeys[context.hodlActiveKey].result = context.hodlWalletResult; },
+    hodlCommitDerivedKey: () => { const draft = context.hodlKeys[0]; Object.assign(source, { fields: draft.fields, accountId: draft.accountId, result: draft.result }); context.hodlKeys[0] = lab; context.hodlActiveKey = 1; },
+    hodlJournalLog() {}, hodlSnapshotKeySummary() {}, hodlJournalCaptureDerivedKey() {}, hodlFocusWalletResult() {},
+    hodlDeriveWithProgress: (_, derive) => derive({ setTotal() {}, step() {} }),
+  });
+  vm.runInContext(["hodlCalculateKey", "hodlVanityApplyMatch"].map(extract).join("\n"), context);
+  return { context, elements, match, source, run };
+}
+test("Vanity Update Key preserves the searched script and path across initial purpose matching", async () => {
+  for (const method of ["passphrase", "derivation"]) for (const script of [...Object.keys(applyScriptIds), "sp"]) {
     const passphrase = method === "passphrase" ? PASSPHRASE + "a" : PASSPHRASE, index = method === "derivation" ? 3 : null;
-    const source = { id: 7, name: "Vanity source", accountId: "bip84", fields: { script: "bip84", pass: PASSPHRASE, purpose: "84'", account: "0'", derivationAccountPath: "m/84'/0'/0'" }, result: { masterIdentity: "before" } };
-    const lab = { isLab: true, fields: {} }, runPath = script === "sp" ? [352 + H, H, H] : [84 + H, H, H, 0, 0];
-    const run = { sourceKind: "key", sourceId: source.id, sourceLabel: source.name, method, script, path: runPath, pathText: vanityPathString(runPath), accountHardened: true };
-    const match = { passphrase, index, savedTo: "" }, elements = { "calc-card": { hidden: false }, "vanity-error": { textContent: "" } };
-    const context = vm.createContext({
-      Uint8Array, ArrayBuffer, TextEncoder, TextDecoder,
-      document: { getElementById: id => elements[id] || null },
-      hodlKeys: [lab, source], hodlActiveKey: 1, hodlActiveDerivation: null, hodlDerivationGeneration: 0,
-      hodlWalletResult: source.result, hodlCommittedResults: new Set(), hodlWalletDatBirthday: "genesis",
-      hodlKeyMode: "seed", hodlTargetWordCount: 12, hodlSeedMethod: "words", hodlNetworkChoice: "mainnet",
-      hodlVanityMatches: [match], hodlVanityRun: run, hodlVanityApplying: false,
-      hodlWorkspace: "vanity", hodlSpSource: "", hodlBip85Source: "", hodlOutEl: { innerHTML: "" },
-      hodlScriptTypes: api.hodlScriptTypes, hodlScriptDefinition: api.hodlScriptDefinition,
-      hodlVanityPlan: () => ({ node: null, pathPrefix: [], path: runPath }),
-      hodlFillLabFromKey: state => { context.hodlKeys[0] = { ...state, isLab: true, fields: { ...state.fields }, result: null }; return 0; },
-      hodlStoredPassphraseBytes: value => encoder.encode(value),
-      hodlRestoreKey() {}, hodlRenderKeyTabs() {}, hodlRenderVanityOut() {}, hodlVanitySyncControls() {},
-      hodlVanityKeyLabel: state => state.name, hodlVanitySetStatus() {}, hodlVanitySyncSource() {},
-      hodlDisposeDroppedWallets() {}, hodlPickSpSessionKey() {}, hodlPickBip85SessionKey() {},
-      hodlSetWorkspaceError: (_, spec) => { if (spec) throw new Error(spec.raw || spec.message || "derive failed"); },
-      hodlErrorSpecFrom: error => ({ raw: error.message }), hodlAssertDerivationActive() {},
-      HodlDerivationCancelledError: class extends Error {},
-      hodlNetworkFamily: value => value, hodlPassphraseBip39Enabled: () => false,
-      hodlReadAddressWindow: () => ({ start: 0, range: 1 }), hodlReadBranchWindow: () => ({ start: 0, range: 1 }),
-      hodlPassphraseFieldBytes: () => Uint8Array.from(context.hodlKeys[context.hodlActiveKey].fields.pass),
-      hodlSelectedScriptType: () => context.hodlKeys[context.hodlActiveKey].accountId,
-      hodlSelectedSeedInput: () => ({ value: MNEMONIC, extended: false }),
-      hodlValidateTargetMnemonic: value => ({ ok: true, words: value.split(" ") }), hodlThrowIfFailed() {},
-      hodlReadDerivationPlan: () => {
-        const fields = context.hodlKeys[context.hodlActiveKey].fields, account = Number(fields.account.replace("'", ""));
-        return { network: "mainnet", coinType: 0, purpose: 84, accountIndex: account, accountPath: `m/84'/0'/${account}'`, originPath: `84h/0h/${account}h`, hardening: { purpose: true, coinType: true, account: true, branch: false, address: false } };
-      },
-      hodlMnemonicWalletWithProgress: api.hodlMnemonicWalletWithProgress,
-      hodlConfirmKeyFingerprint: async () => true,
-      hodlSetSelectedScriptType: id => { const state = context.hodlKeys[context.hodlActiveKey]; state.accountId = id; state.fields.script = id; },
-      hodlCaptureKey: () => { context.hodlKeys[context.hodlActiveKey].result = context.hodlWalletResult; },
-      hodlCommitDerivedKey: () => { const draft = context.hodlKeys[0]; Object.assign(source, { fields: draft.fields, accountId: draft.accountId, result: draft.result }); context.hodlKeys[0] = lab; context.hodlActiveKey = 1; },
-      hodlJournalLog() {}, hodlSnapshotKeySummary() {}, hodlJournalCaptureDerivedKey() {}, hodlFocusWalletResult() {},
-      hodlDeriveWithProgress: (_, derive) => derive({ setTotal() {}, step() {} }),
-    });
-    vm.runInContext(["hodlCalculateKey", "hodlVanityApplyMatch"].map(extract).join("\n"), context);
+    const { context, elements, match, source } = await vanityApplyHarness({ method, script });
     await context.hodlVanityApplyMatch(0);
     const where = `${method}, ${script}`;
     assert.equal(elements["vanity-error"].textContent, "", where);
@@ -871,12 +910,82 @@ test("Vanity Update Key preserves the searched script and path across initial pu
       assert.equal(source.accountId, "bip84", `${where}: changed the unrelated singlesig selection`);
       assert.equal(source.result.rootNode.publicExtendedKey, masterFor(passphrase).publicExtendedKey);
     } else {
-      const account = source.result.accounts.find(item => item.def.id === scriptIds[script]), path = `m/84'/0'/${index ?? 0}'/0/0`;
+      const account = source.result.accounts.find(item => item.def.id === applyScriptIds[script]), path = `m/84'/0'/${index ?? 0}'/0/0`;
       assert.equal(account.receive[0].address, expectedAddress(passphrase, script, path), `${where}: saved a different address from the match`);
       assert.equal(account.receive[0].path, path, where);
-      assert.equal(source.accountId, scriptIds[script], `${where}: did not select the saved script`);
-      assert.equal(source.fields.script, scriptIds[script], where);
+      assert.equal(source.accountId, applyScriptIds[script], `${where}: did not select the saved script`);
+      assert.equal(source.fields.script, applyScriptIds[script], where);
       assert.equal(source.result.purposeMatch === true, script === "p2wpkh", where);
+    }
+  }
+});
+// Audit B5: a match record whose address does not correspond to its own
+// counter/passphrase (a worker-side record/payload mismatch) must not be
+// written to the key. The refusal happens before anything is written.
+test("Vanity Update Key refuses a match whose recorded address the key does not derive (B5)", async () => {
+  for (const method of ["passphrase", "derivation"]) {
+    // The recorded address belongs to a different passphrase: valid, but not
+    // what this match's counter/passphrase derives.
+    const wrong = expectedAddress(PASSPHRASE + "z", "p2wpkh", method === "derivation" ? "m/84'/0'/3'/0/0" : undefined);
+    const { context, elements, match, source } = await vanityApplyHarness({ method, script: "p2wpkh", address: wrong });
+    await context.hodlVanityApplyMatch(0);
+    const where = `${method}: an inconsistent match record`;
+    assert.notEqual(elements["vanity-error"].textContent, "", `${where} raised no refusal`);
+    assert.equal(match.savedTo, "", `${where} was reported saved`);
+    assert.equal(source.fields.pass, PASSPHRASE, `${where} still wrote the match's passphrase`);
+    assert.equal(source.result.masterIdentity, "before", `${where} replaced the key's wallet`);
+  }
+});
+// Audit B5: the grind survives navigation, so the source key can be edited
+// while it runs; the run is anchored to the key's master fingerprint at
+// start, and applying onto a changed key is refused before anything is
+// written — the path-components check cannot see a words edit.
+test("Vanity Update Key refuses once the source key has changed since the grind started (B5)", async () => {
+  const changedWords = Array(23).fill("abandon").join(" ") + " art";
+  for (const method of ["passphrase", "derivation"]) {
+    const { context, elements, match, source } = await vanityApplyHarness({ method, script: "p2wpkh" });
+    // The mid-grind edit: other words, so another key — entropy and master
+    // fingerprint change together, and the fingerprint is the anchor.
+    source.result.entropy = mnemonicToEntropy(changedWords, bip39English);
+    source.result.masterFingerprint = applyFingerprintOf(changedWords, PASSPHRASE);
+    await context.hodlVanityApplyMatch(0);
+    const where = `${method}: a match applied onto a re-keyed key`;
+    assert.notEqual(elements["vanity-error"].textContent, "", `${where} raised no refusal`);
+    assert.equal(match.savedTo, "", `${where} was reported saved`);
+    assert.equal(source.fields.pass, PASSPHRASE, `${where} still wrote the match's passphrase`);
+    assert.equal(source.result.masterIdentity, "before", `${where} replaced the key's wallet`);
+  }
+});
+// Companion to the B5 anchor: a passphrase grind's first Update key writes a
+// new passphrase, so the key's master fingerprint changes to the identity the
+// run just wrote — the run must re-anchor to it, or every further honest
+// match from the same run is refused (#859 review). An edit made after the
+// apply moves the fingerprint again and must still be refused.
+test("Vanity Update Key applies a second honest match from the same run, and still refuses a later edit (B5)", async () => {
+  for (const method of ["passphrase", "derivation"]) {
+    const { context, elements, match, source } = await vanityApplyHarness({ method, script: "p2wpkh" });
+    const secondPass = PASSPHRASE + "b";
+    const second = method === "passphrase"
+      ? { passphrase: secondPass, index: null, address: expectedAddress(secondPass, "p2wpkh", "m/84'/0'/0'/0/0"), savedTo: "" }
+      : { passphrase: PASSPHRASE, index: 4, address: expectedAddress(PASSPHRASE, "p2wpkh", "m/84'/0'/4'/0/0"), savedTo: "" };
+    context.hodlVanityMatches.push(second);
+    await context.hodlVanityApplyMatch(0);
+    const first = `${method}: the first match`;
+    assert.equal(elements["vanity-error"].textContent, "", first);
+    assert.ok(match.savedTo, `${first} was not saved`);
+    elements["vanity-error"].textContent = "";
+    await context.hodlVanityApplyMatch(1);
+    assert.equal(elements["vanity-error"].textContent, "", `${method}: the second honest match`);
+    assert.ok(second.savedTo, `${method}: the second honest match was refused`);
+    if (method === "passphrase") {
+      // An edit after the apply moves the key off the re-anchored identity.
+      source.result.masterFingerprint = "00000000";
+      const third = { passphrase: secondPass, index: null, address: second.address, savedTo: "" };
+      context.hodlVanityMatches.push(third);
+      elements["vanity-error"].textContent = "";
+      await context.hodlVanityApplyMatch(2);
+      assert.notEqual(elements["vanity-error"].textContent, "", `${method}: a match applied onto a re-keyed key after the re-anchor raised no refusal`);
+      assert.equal(third.savedTo, "", `${method}: the post-edit match was reported saved`);
     }
   }
 });

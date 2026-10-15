@@ -1200,5 +1200,7 @@
   "SeedQR digits": "1266263791ffa843eee910812fa8313f89aa8c062c6b4aaf6f1430011d49733a",
   "Output public key": "2186329e8f1d1b33d9db81d8a5c1be4e8fa3de0d1c4da3662d34218394b9e7cf",
   "Public key": "4ee252fb736effa218e4be9d11200e1bccb04fff1e69230cf25dce947a1a10bb",
-  "You are using Microsoft Edge. In our tests, Edge kept copies of a copied seed phrase after the tab closed, until Edge itself was quit. Assume it does the same with any secret you copy, such as a private key. Quit Edge completely, and turn off Startup boost and background apps in its System settings.": "76d6f19ae0731bff1f22e5e2550b9dc844ee7b94670ed40bca4564609930f962"
+  "You are using Microsoft Edge. In our tests, Edge kept copies of a copied seed phrase after the tab closed, until Edge itself was quit. Assume it does the same with any secret you copy, such as a private key. Quit Edge completely, and turn off Startup boost and background apps in its System settings.": "76d6f19ae0731bff1f22e5e2550b9dc844ee7b94670ed40bca4564609930f962",
+  "Key {key} changed since this grind started — its matches belong to the key it was. Grind again.": "878d19c95f2cb4e5c92ba72f6a6915df7fa00022b179984e76787223425cb197",
+  "Key {key} derives {found} at this match's path, not the recorded address {expected} — the match record is inconsistent. Nothing was changed; grind again.": "3c4b625b4c422d46bdb6b9148e2767e03bb156e9d696c5940a9bcb044df18c17"
 }

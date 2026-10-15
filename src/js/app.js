@@ -16493,7 +16493,10 @@ function hodlVanityPlan(state, method, scriptId) {
     ? [352 + VANITY_HARDENED, VANITY_HARDENED, (accountComponents[2] & VANITY_MAX_INDEX) + VANITY_HARDENED]
     : [...accountComponents, index(fields.branchStart, Boolean(fields.branchHarden)), index(fields.addressStart, Boolean(fields.addressHarden))];
   let passphrase = validateVanityPassphrase(hodlPassphraseText(fields.pass));
-  let plan = { method, script: scriptId, sourceId: state.id, sourceLabel: label, passphrase, accountHardened: path[2] >= VANITY_HARDENED };
+  // The run anchors to the key's identity as it stands at grind start: an
+  // edit to the words or passphrase changes the master fingerprint, which is
+  // what Update key compares before writing (audit B5).
+  let plan = { method, script: scriptId, sourceId: state.id, sourceLabel: label, sourceFingerprint: result.masterFingerprint || "", passphrase, accountHardened: path[2] >= VANITY_HARDENED };
   if (method === "passphrase") {
     if (!hodlResultHasSeed(result)) throw new Error(`Key ${label} has no seed words (root xprv), so its passphrase cannot be extended — switch to the derivation grind.`);
     // The grinder's workers take the words as text.
@@ -16755,7 +16758,7 @@ function hodlRunVanity() {
   hodlVanityFound = 0;
   // The run's key, method, and passphrase are fixed at start; snapshot them
   // so the results (and Update key) cannot drift if the form changes mid-grind.
-  hodlVanityRun = { method: inputs.method, script: inputs.script, sourceId: inputs.sourceId, sourceLabel: inputs.sourceLabel, sourceKind: hodlVanitySourceState()?.isBip85Child ? "bip85" : "key", passphrase: inputs.passphrase, accountHardened: inputs.accountHardened, path: [...inputs.pathPrefix, ...inputs.path], pathText: vanityPathString([...inputs.pathPrefix, ...inputs.path]) };
+  hodlVanityRun = { method: inputs.method, script: inputs.script, sourceId: inputs.sourceId, sourceLabel: inputs.sourceLabel, sourceFingerprint: inputs.sourceFingerprint, sourceKind: hodlVanitySourceState()?.isBip85Child ? "bip85" : "key", passphrase: inputs.passphrase, accountHardened: inputs.accountHardened, path: [...inputs.pathPrefix, ...inputs.path], pathText: vanityPathString([...inputs.pathPrefix, ...inputs.path]) };
   hodlRenderVanityOut();
   hodlVanityRunning = true;
   hodlVanitySyncControls();
@@ -16805,6 +16808,45 @@ function hodlRunVanity() {
   // The grinder copied the parent node for its workers; this copy is dead.
   if (inputs.node) inputs.node.fill(0);
 }
+// The address the key itself derives for this match: from the key's own seed
+// words (or root xprv) with the match's passphrase or account, at the match's
+// concrete path — computed here the way hodlVanityMatchFingerprint re-derives
+// a row's identity, never from the worker's record. Update key requires the
+// recorded address to equal this before it writes anything, so a worker-side
+// record/payload mismatch fails closed (audit B5).
+function hodlVanityMatchAddress(match, run, state) {
+  let root = null, node = null, scan = null, spend = null;
+  try {
+    if (run.method === "passphrase") {
+      let mnemonic = hodlResultMnemonic(state.result);
+      if (!mnemonic) throw new Error("The key has no seed words, so this match's passphrase cannot be checked.");
+      let seed = hodlMnemonicToSeed(mnemonic, match.passphrase);
+      try {
+        root = hodlHDKey.fromMasterSeed(seed);
+      } finally {
+        seed.fill(0);
+      }
+    } else {
+      root = hodlSeedSessionRoot(state.result, run.passphrase);
+    }
+    if (!root) throw new Error("The key carries no key material to check this match against.");
+    // The derivation grind's counter slot is the account component; the match
+    // substitutes the index it found, keeping the grind's hardened bit — the
+    // same concrete path its row shows.
+    let path = [...run.path];
+    if (run.method === "derivation") path[2] = (match.index | (path[2] & VANITY_HARDENED)) >>> 0;
+    node = root.derive(vanityPathString(path));
+    if ((VANITY_SCRIPTS[run.script] ?? VANITY_SCRIPTS.p2wpkh).code !== 4) return hodlAddressOrThrow(run.script, node.publicKey, "mainnet");
+    scan = node.derive("m/1'/0");
+    spend = node.derive("m/0'/0");
+    return encodeSilentPaymentAddress(hodlSecp256k1.Point.fromBytes(scan.publicKey), hodlSecp256k1.Point.fromBytes(spend.publicKey), "sp");
+  } finally {
+    root?.wipePrivateData();
+    node?.wipePrivateData();
+    scan?.wipePrivateData();
+    spend?.wipePrivateData();
+  }
+}
 // Update key: write the match back to its key and re-derive, through the same
 // Edit input → Derive path the Keys tab uses by hand. The key keeps its tab
 // (id, colour, custom name) even when a new passphrase gives it a new
@@ -16820,6 +16862,13 @@ async function hodlVanityApplyMatch(index) {
   let state = hodlKeys.find((candidate) => candidate.id === run.sourceId && !candidate.isLab);
   if (!state) {
     if (error) error.textContent = `Key ${run.sourceLabel} is no longer in Key Station, so there is nothing to update.`;
+    return;
+  }
+  // The grind is anchored to the key it started on (audit B5): an edit to the
+  // words or passphrase since makes these matches foreign to the key standing
+  // here, and the path check below cannot see it.
+  if ((state.result?.masterFingerprint || "") !== run.sourceFingerprint) {
+    if (error) error.textContent = hodlTText("Key {key} changed since this grind started — its matches belong to the key it was. Grind again.", { key: hodlVanityKeyLabel(state) });
     return;
   }
   if (hodlActiveDerivation) {
@@ -16844,6 +16893,20 @@ async function hodlVanityApplyMatch(index) {
     if (error) error.textContent = hodlTText("Key {key} now derives at {now}, but this match was ground at {then}. Set the path back on the Keys tab, or grind again.", { key: hodlVanityKeyLabel(state), now: hodlDisplayDerivationPath(vanityPathString(path)), then: hodlDisplayDerivationPath(run.pathText) });
     return;
   }
+  // Fail closed on the record itself (audit B5): the address the key will
+  // derive for the match is recomputed from the key's own material and must
+  // equal the address the grind recorded before anything is written.
+  let recomputed;
+  try {
+    recomputed = hodlVanityMatchAddress(match, run, state);
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+    return;
+  }
+  if (recomputed !== match.address) {
+    if (error) error.textContent = hodlTText("Key {key} derives {found} at this match's path, not the recorded address {expected} — the match record is inconsistent. Nothing was changed; grind again.", { key: hodlVanityKeyLabel(state), found: recomputed, expected: match.address || "(none recorded)" });
+    return;
+  }
   hodlVanityApplying = true;
   hodlRenderVanityOut();
   hodlVanitySyncControls();
@@ -16866,6 +16929,9 @@ async function hodlVanityApplyMatch(index) {
     if (!active || active.isLab || !active.result) throw new Error(active?.error || "Deriving the updated key failed.");
     let updated = hodlKeys[hodlActiveKey];
     match.savedTo = hodlVanityKeyLabel(updated);
+    // The key now carries the identity this run just wrote; later matches
+    // from the same run are still checked against it (audit B5).
+    run.sourceFingerprint = updated.result?.masterFingerprint || run.sourceFingerprint;
     // A tool that had this key loaded is holding the old seed: reload it so
     // its chip, fingerprint, and LifeHash follow the key.
     if (hodlSpSource === "key:" + updated.id) hodlPickSpSessionKey(updated);

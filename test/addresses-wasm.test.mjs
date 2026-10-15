@@ -233,6 +233,25 @@ test("descriptorDerive refuses hardened steps on public keys instead of trapping
   assert.match(descriptorDerive(`wpkh(${root.privateExtendedKey}/0'/*)`, 0, "mainnet").address, /^bc1q/);
 });
 
+// Contract: descriptorDerive takes a whole-number index from 0 to 2^31 - 1
+// and refuses everything else before the WASM sees it. The WASM reads the
+// index as a u32, so without the check 2^32 + 5 derived index 5 and 1.5
+// derived index 1 (found by the mutation-testing pilot: every mutant of the
+// check survived). Expected addresses: the published BIP84 vector for index 0,
+// @scure/bip32 + @scure/btc-signer for the last non-hardened index.
+test("descriptorDerive refuses indexes outside 0 to 2^31 - 1 instead of wrapping them", async () => {
+  const { HDKey: ScureHDKey } = await import("@scure/bip32");
+  const { mnemonicToSeedSync } = await import("@scure/bip39");
+  const account = ScureHDKey.fromMasterSeed(mnemonicToSeedSync("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")).derive("m/84'/0'/0'");
+  const descriptor = `wpkh(${account.publicExtendedKey}/0/*)`;
+  const expected = (index) => p2wpkh(account.deriveChild(0).deriveChild(index).publicKey, NETWORK).address;
+  assert.equal(descriptorDerive(descriptor, 0, "mainnet").address, "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu");
+  assert.equal(descriptorDerive(descriptor, 2 ** 31 - 1, "mainnet").address, expected(2 ** 31 - 1));
+  for (const index of [2 ** 32 + 5, 2 ** 31, 1.5, -1, Number.NaN, Infinity, 2 ** 53, "5", null, undefined]) {
+    assert.throws(() => descriptorDerive(descriptor, index, "mainnet"), /0 to 2,147,483,647/, String(index));
+  }
+});
+
 test("base58check and coders match @scure/base", async () => {
   const { createBase58check, hex: scureHex, base64: scureBase64 } = await import("@scure/base");
   const { sha256 } = await import("../src/js/hashes.js");

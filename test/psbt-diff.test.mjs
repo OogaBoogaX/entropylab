@@ -9,6 +9,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SigHash, Transaction, p2wpkh } from "@scure/btc-signer";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { psbtInspectDoc, psbtBuildBytes } from "../src/js/psbt-wasm.js";
 import { psbtEditorBuildDoc, psbtDiffHtml } from "../src/js/psbt-editor.js";
 import { comparePsbtDocs } from "../src/js/psbt-diff.js";
@@ -451,4 +453,204 @@ test("a clean pair of documents still earns the identity headline", () => {
   const html = psbtDiffHtml(comparePsbtDocs(before, doc()), before, doc(), "mainnet");
   assert.match(html, /Semantically identical/);
   assert.doesNotMatch(html, /equality cannot be claimed for an invalid document/);
+});
+
+// --- Every compared field reaches the verdict --------------------------------
+// The report's headline lines are the verdict a user acts on, so each field
+// the engine compares must move them on its own. A mutation run on rock
+// 02e402e found these unguarded: dropping any one of them from psbt-diff.js
+// (or the per-index row filter from psbtDiffHtml) left the suite green while
+// the report would read "Semantically identical", "Signing state unchanged" or
+// "The underlying transaction is unchanged" for a PSBT that differs.
+
+// The report's section for one map, found by its heading.
+const reportSection = (html, title) => {
+  const document = new MiniDocument();
+  document.body.innerHTML = html;
+  const section = document.querySelectorAll("section").find((node) => node.querySelector("h3")?.textContent === title);
+  assert.ok(section, `the report has no "${title}" section`);
+  return section;
+};
+
+test("each unsigned-transaction field, changed alone, is a transaction change", () => {
+  const base = doc().tx;
+  const input = (patch) => ({ ...base, inputs: [{ ...base.inputs[0], ...patch }] });
+  const output = (patch) => ({ ...base, outputs: [{ ...base.outputs[0], ...patch }] });
+  const cases = [
+    ["transaction", null, "version", 2, 1, { ...base, version: 1 }],
+    ["transaction", null, "locktime", 0, 800000, { ...base, locktime: 800000 }],
+    ["input", 0, "input[0].txid", "11".repeat(32), "33".repeat(32), input({ txid: "33".repeat(32) })],
+    ["input", 0, "input[0].vout", 0, 1, input({ vout: 1 })],
+    ["input", 0, "input[0].scriptSig", "", "00", input({ scriptSig: "00" })],
+    ["input", 0, "input[0].sequence", 4294967295, 4294967293, input({ sequence: 4294967293 })],
+    ["output", 0, "output[0].value", 1000, 999, output({ value: 999 })],
+    ["output", 0, "output[0].scriptPubKey", "0014" + "22".repeat(20), "0014" + "33".repeat(20), output({ scriptPubKey: "0014" + "33".repeat(20) })],
+  ];
+  for (const [scope, index, field, before, after, tx] of cases) {
+    const result = comparePsbtDocs(doc(), doc({ tx }));
+    assert.equal(result.equal, false, `a ${field} change compared equal`);
+    assert.equal(result.transactionChanged, true, `a ${field} change is not a transaction change`);
+    assert.equal(result.signingChanged, false);
+    assert.equal(result.metadataChanged, false);
+    assert.deepEqual(result.changes, [{ scope, index, field, kind: "changed", before, after, category: "transaction" }]);
+  }
+});
+
+test("a version, locktime, prevout-index or sequence edit made by an independent PSBT library is a transaction change", () => {
+  // Real PSBTs built by @scure/btc-signer (an independent implementation) and
+  // decoded by the inspector the Compare tool runs on both sides, so the field
+  // names compared are the decoder's own, not the mock's.
+  const script = p2wpkh(secp256k1.getPublicKey(new Uint8Array(32).fill(1), true)).script;
+  const signerPsbt = ({ version = 2, lockTime = 0, index = 0, sequence = 0xffffffff } = {}) => {
+    const tx = new Transaction({ version, lockTime });
+    tx.addInput({ txid: "11".repeat(32), index, sequence, witnessUtxo: { script, amount: 150000n } });
+    tx.addOutput({ script, amount: 100000n });
+    return psbtInspectDoc(tx.toPSBT(0));
+  };
+  const before = signerPsbt();
+  for (const [field, edit, from, to] of [
+    ["version", { version: 1 }, 2, 1],
+    ["locktime", { lockTime: 800000 }, 0, 800000],
+    ["input[0].vout", { index: 1 }, 0, 1],
+    ["input[0].sequence", { sequence: 0xfffffffd }, 0xffffffff, 0xfffffffd],
+  ]) {
+    const after = signerPsbt(edit);
+    const result = comparePsbtDocs(before, after);
+    assert.equal(result.equal, false, `a real ${field} edit compared equal`);
+    assert.equal(result.transactionChanged, true);
+    assert.equal(result.signingChanged, false);
+    assert.equal(result.metadataChanged, false);
+    assert.deepEqual(result.changes.map(({ field: changed, before: was, after: now }) => ({ field: changed, before: was, after: now })), [{ field, before: from, after: to }]);
+    const html = psbtDiffHtml(result, before, after, "mainnet");
+    assert.match(html, /✕ The underlying transaction changed/);
+    assert.doesNotMatch(html, /Semantically identical/);
+  }
+});
+
+test("an input or output added or removed on its own is a transaction change", () => {
+  // The older test above adds an output and removes an input together, so
+  // either classification alone kept transactionChanged true.
+  const base = doc();
+  const twoInputs = doc({ tx: { ...base.tx, inputs: [...base.tx.inputs, { txid: "33".repeat(32), vout: 1, scriptSig: "", sequence: 4294967295 }] }, inputs: [...base.inputs, []] });
+  const twoOutputs = doc({ tx: { ...base.tx, outputs: [...base.tx.outputs, { value: 500, scriptPubKey: "0014" + "33".repeat(20) }] }, outputs: [[], []] });
+  for (const [label, before, after, scope, kind] of [
+    ["input added", base, twoInputs, "input", "added"],
+    ["input removed", twoInputs, base, "input", "removed"],
+    ["output added", base, twoOutputs, "output", "added"],
+    ["output removed", twoOutputs, base, "output", "removed"],
+  ]) {
+    const result = comparePsbtDocs(before, after);
+    assert.equal(result.transactionChanged, true, `${label}: not a transaction change`);
+    assert.equal(result.signingChanged, false);
+    assert.equal(result.metadataChanged, false);
+    assert.deepEqual(result.changes.map(({ scope: changed, index, kind: how, category }) => ({ scope: changed, index, kind: how, category })), [{ scope, index: 1, kind, category: "transaction" }]);
+    const html = psbtDiffHtml(result, before, after, "mainnet");
+    assert.match(html, /✕ The underlying transaction changed/, label);
+    assert.doesNotMatch(html, /✓ The underlying transaction is unchanged/, label);
+  }
+});
+
+// A real round trip with one changed pair on input 0 must read as signing:
+// the transaction and the metadata unchanged, and the report must say so.
+const assertSigningChange = (before, after, name) => {
+  assert.equal(after.inputs[0].find((pair) => pair.name === name)?.name, name, `${name} must not surface as PSBT_IN_UNKNOWN`);
+  const result = comparePsbtDocs(before, after);
+  assert.equal(result.equal, false);
+  assert.equal(result.transactionChanged, false);
+  assert.equal(result.metadataChanged, false, `${name} change must not read as metadata`);
+  assert.equal(result.signingChanged, true, `${name} change must read as signing`);
+  assert.deepEqual(
+    result.changes.map(({ kind, category, name: changedName }) => ({ kind, category, name: changedName })),
+    [{ kind: "changed", category: "signing", name }],
+  );
+  const html = psbtDiffHtml(result, before, after, "mainnet");
+  assert.match(html, /⚠ Signing state changed/);
+  assert.doesNotMatch(html, /Signing state unchanged/);
+};
+
+test("a final scriptSig and both taproot signature fields are signing changes (BIP-174 0x07, BIP-371 0x13/0x14)", () => {
+  // Same real round trip as the MuSig2 test. Value shapes: 0x07 is script
+  // bytes; 0x13 a 64-byte Schnorr signature; 0x14 is keyed by an x-only
+  // pubkey (secp256k1's generator x here) and a 32-byte leaf hash.
+  const generatorX = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+  const cases = [
+    { name: "PSBT_IN_FINAL_SCRIPTSIG", key: "07", before: "160014" + "11".repeat(20), after: "160014" + "33".repeat(20) },
+    { name: "PSBT_IN_TAP_KEY_SIG", key: "13", before: "11".repeat(64), after: "22".repeat(64) },
+    { name: "PSBT_IN_TAP_SCRIPT_SIG", key: "14" + generatorX + "55".repeat(32), before: "11".repeat(64), after: "22".repeat(64) },
+  ];
+  for (const { name, key, before, after } of cases) {
+    const withPair = (value) => {
+      const draft = fixtureDoc();
+      draft.inputs[0].push({ key, value });
+      return rebuild(draft);
+    };
+    assertSigningChange(withPair(before), withPair(after), name);
+  }
+});
+
+test("a swapped final witness is a signing change, not metadata (BIP-174 0x08, finalized by an independent signer)", () => {
+  // The editor's builder verifies a final witness against its previous
+  // output, so both sides come from @scure/btc-signer: the same P2WPKH spend
+  // signed and finalized once with SIGHASH_ALL and once with
+  // ALL|ANYONECANPAY. Finalizing drops everything but the UTXO and the final
+  // witness, so the witness is the only pair that differs.
+  const key = new Uint8Array(32).fill(1);
+  const script = p2wpkh(secp256k1.getPublicKey(key, true)).script;
+  const finalized = (sighashType) => {
+    const tx = new Transaction();
+    tx.addInput({ txid: "11".repeat(32), index: 0, witnessUtxo: { script, amount: 150000n }, ...(sighashType ? { sighashType } : {}) });
+    tx.addOutput({ script, amount: 100000n });
+    tx.sign(key, sighashType ? [sighashType] : undefined);
+    tx.finalize();
+    return psbtInspectDoc(tx.toPSBT(0));
+  };
+  assertSigningChange(finalized(), finalized(SigHash.ALL_ANYONECANPAY), "PSBT_IN_FINAL_SCRIPTWITNESS");
+});
+
+test("output key-value maps are compared: a re-pointed or stripped change-output derivation is reported under that output", () => {
+  // The fixture's output 1 carries PSBT_OUT_BIP32_DERIVATION, the record a
+  // wallet reads to recognise its own change. Re-pointing it to another
+  // master fingerprint, or stripping it, must not compare equal.
+  const before = fixtureDoc();
+  const derivation = before.outputs[1].find((pair) => pair.name === "PSBT_OUT_BIP32_DERIVATION");
+  assert.ok(derivation && derivation.value.startsWith("12345678"), "fixture output 1 must carry a derivation from fingerprint 12345678");
+  const isDerivation = (pair) => pair.name === "PSBT_OUT_BIP32_DERIVATION";
+  for (const [kind, edit, shown] of [
+    ["changed", (pairs) => pairs.map((pair) => (isDerivation(pair) ? { key: pair.key, value: "87654321" + pair.value.slice(8) } : pair)), ["12345678", "87654321"]],
+    ["removed", (pairs) => pairs.filter((pair) => !isDerivation(pair)), ["12345678"]],
+  ]) {
+    const draft = structuredClone(before);
+    draft.outputs[1] = edit(draft.outputs[1]);
+    const after = rebuild(draft);
+    const result = comparePsbtDocs(before, after);
+    assert.equal(result.equal, false, `a ${kind} output derivation compared equal`);
+    assert.equal(result.metadataChanged, true);
+    assert.equal(result.transactionChanged, false);
+    assert.equal(result.signingChanged, false);
+    assert.deepEqual(
+      result.changes.map(({ scope, index, kind: how, name }) => ({ scope, index, kind: how, name })),
+      [{ scope: "output-map", index: 1, kind, name: "PSBT_OUT_BIP32_DERIVATION" }],
+    );
+    const html = psbtDiffHtml(result, before, after, "mainnet");
+    assert.match(html, /⚠ PSBT metadata changed/);
+    assert.doesNotMatch(html, /Semantically identical/);
+    const section = reportSection(html, "Output 1 key-value map").textContent;
+    for (const fingerprint of shown) assert.ok(section.includes(fingerprint), `the output 1 row does not show fingerprint ${fingerprint}`);
+  }
+});
+
+test("each map change is listed only under its own input", () => {
+  // A row looks its values up in its section's own map, so a misfiled row
+  // shows a dash rather than the other input's value; counting the rows is
+  // what catches it.
+  const pair = (key, value) => ({ key, value, name: null });
+  const tx = { ...doc().tx, inputs: [doc().tx.inputs[0], { txid: "33".repeat(32), vout: 1, scriptSig: "", sequence: 4294967295 }] };
+  const before = doc({ tx, inputs: [[pair("fc01", "a0a0")], [pair("fc02", "b0b0")]] });
+  const after = doc({ tx, inputs: [[pair("fc01", "a1a1")], [pair("fc02", "b1b1")]] });
+  const html = psbtDiffHtml(comparePsbtDocs(before, after), before, after, "mainnet");
+  for (const [index, was, now] of [[0, "a0a0", "a1a1"], [1, "b0b0", "b1b1"]]) {
+    const rows = reportSection(html, `Input ${index} key-value map`).querySelector("tbody").querySelectorAll("tr");
+    assert.equal(rows.length, 1, `input ${index}'s section lists another input's change`);
+    assert.ok(rows[0].textContent.includes(was) && rows[0].textContent.includes(now), `input ${index}'s row does not show ${was} → ${now}`);
+  }
 });
