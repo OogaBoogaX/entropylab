@@ -259,6 +259,24 @@ test("OpenTimestamps stamps the tested HTML off the Pages/test critical path", (
   }
 });
 
+test("jobs that read repository secrets run inside a GitHub Environment", () => {
+  // A same-repo pull_request run receives repository secrets and runs the
+  // workflow from the PR's own ref, so any secret-bearing job must be fenced
+  // behind a GitHub Environment (audit SC-1). `GITHUB_TOKEN` is the
+  // workflow's own ephemeral credential, not a stored secret, so it is
+  // exempt. Deployment branches on the environment keep the secrets off
+  // untrusted refs entirely; this guard is the in-repo tripwire for a job
+  // added later without one.
+  for (const name of readdirSync(join(root, ".github/workflows")).filter((file) => file.endsWith(".yml"))) {
+    const workflow = read(join(".github/workflows", name));
+    for (const match of workflow.matchAll(/^ {2}([\w-]+):\n[\s\S]*?(?=^  [\w-]+:|(?![\s\S]))/gm)) {
+      const job = match[0];
+      if (!/\$\{\{\s*secrets\.(?!GITHUB_TOKEN\b)/.test(job)) continue;
+      assert.match(job, /^ {4}environment:/m, `${name}: job "${match[1]}" reads a secret but declares no environment`);
+    }
+  }
+});
+
 // Rock only ever carries a site built from the sources beneath it. A merge
 // that lands while a run tests starts its own run, which builds and publishes
 // the newer sources, so the older build is superseded: it is not pushed over
