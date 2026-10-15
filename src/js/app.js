@@ -1,4 +1,4 @@
-import { sha256 as hodlSha256 } from "./hashes.js";
+import { sha256 as hodlSha256, hash160 as hodlHash160 } from "./hashes.js";
 // secp256k1 operations run in the libsecp256k1 WebAssembly module; the facade
 // is a drop-in for the noble/curves surface this file uses (see
 // src/js/secp256k1.js). App boot waits for the module to be ready.
@@ -524,7 +524,9 @@ function hodlResultSecretBytes(result) {
 // (#546 B2): the BIP39 passphrase and a Casascius mini key, which nothing can
 // rebuild from the keys they make. The text is built only to show or export
 // it, exactly as typed: a leading U+FEFF is part of a passphrase (BIP39 hashes
-// it), not a byte-order mark to drop.
+// it), not a byte-order mark to drop — this decoder and the salt decode in
+// bip39.js both keep it, so the bytes, their text and external NFKD
+// implementers all derive the same wallet.
 function hodlTypedText(bytes) {
   return new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
 }
@@ -2130,6 +2132,19 @@ function hodlMsigCoreImportCodec() {
     encode: (bytes) => hodlBase58Check.encode(bytes)
   };
 }
+// The deepest address index the result displays on the two branches the Core
+// exports watch (receive/change): the importdescriptors JSON must see past
+// it, exactly as the wallet.dat writer does (wallet-export.js
+// branchRangeFromRows). Reads the same rows that lookup reads.
+function hodlMsigDisplayedAddressEnd(wallet) {
+  let end = null;
+  for (const branch of [0, 1]) {
+    const branchRows = wallet?.addressBranches?.find((entry) => entry?.branch === branch)?.rows;
+    const rows = Array.isArray(branchRows) ? branchRows : branch === 0 ? wallet?.receive : wallet?.change;
+    for (const row of rows ?? []) if (Number.isSafeInteger(row?.index) && row.index >= 0) end = end === null ? row.index : Math.max(end, row.index);
+  }
+  return end;
+}
 function hodlMsigCoreImportDescriptorsJson() {
   if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
   if (!hodlWalletResult.receiveDescriptor && !hodlWalletResult.changeDescriptor) return "";
@@ -2139,22 +2154,44 @@ function hodlMsigCoreImportDescriptorsJson() {
     changeDescriptor: hodlWalletResult.changeDescriptor,
     timestamp: hodlWalletDatBirthday === "now" ? "now" : 0,
     decode: codec.decode,
-    encode: codec.encode
+    encode: codec.encode,
+    rangeEnd: hodlMsigDisplayedAddressEnd(hodlWalletResult)
   });
 }
 function hodlMsigCoreImportDescriptorsMarkup() {
   if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
   if (!hodlWalletResult.receiveDescriptor && !hodlWalletResult.changeDescriptor) return "";
+  // A fresh Core wallet's first getnewaddress is this wallet's receive index
+  // 0. When the displayed window starts deeper, that index is not in the
+  // table — say so rather than pointing at a table that cannot show it.
+  const receiveRows = hodlWalletResult.addressBranches?.find((entry) => entry?.branch === 0)?.rows ?? hodlWalletResult.receive ?? [];
+  const showsIndexZero = (receiveRows ?? []).some((row) => row?.index === 0);
+  const coreNote = showsIndexZero
+    ? hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress must match receive index 0 here.")
+    : hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress is this wallet's receive index 0, which is not in the address window shown above — display from index 0 or verify it on a signer before funding.");
   // The footer the key view uses: the Downloads title, what the export is, the
   // birthday titled the way a field is, then the two saves splitting the row.
   // The ids stay msig’s own, so both views wear the same shape without two
   // elements answering to one label.
   return `<div class="wallet-data-actions msig-data-actions no-print" id="msig-core-importdescriptors">
     <div class="msig-downloads-head"><p class="label">${hodlT("Downloads")}</p><p class="muted label-description">${hodlT("Import the watch-only wallet descriptor into Sparrow or another wallet.")}</p></div>
-    <p class="edge-note is-public" id="msig-core-importdescriptors-help">${hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress must match receive index 0 here.")}</p>
+    <p class="edge-note is-public" id="msig-core-importdescriptors-help">${coreNote}</p>
     <div class="wallet-birthday-field"><p class="label" id="msig-birthday-label">${hodlT("Wallet birthday")}</p><p class="muted label-description wallet-dat-birthday-help" id="msig-birthday-help">${hodlT("Bitcoin Core only auto-scans history back to the birthday. Choose “New keys” only for entropy created right now; recovering older keys with today's birthday can look empty until you run <code>rescanblockchain 0</code> in Bitcoin Core.")}</p><select data-wallet-dat-birthday aria-labelledby="msig-birthday-label" aria-describedby="msig-birthday-help msig-core-importdescriptors-help"><option value="genesis"${hodlWalletDatBirthday === "genesis" ? " selected" : ""}>${hodlT("Recovering keys · scan from genesis")}</option><option value="now"${hodlWalletDatBirthday === "now" ? " selected" : ""}>${hodlT("New keys · created today")}</option></select></div>
     <button class="btn secondary green" id="msig-save-importdescriptors" type="button">${hodlT("Save Core Watch-only JSON")}</button>
     <button class="btn secondary" id="msig-copy-importdescriptors" type="button">${hodlT("Copy Core importdescriptors")}</button>
+    <button class="btn secondary green save-wallet-dat" id="msig-download-wallet-dat" type="button" aria-describedby="msig-core-importdescriptors-help msig-birthday-help">${hodlWalletExport.walletDatButtonLabel(false)}</button>
+  </div>`;
+}
+// The BIP 388 wallet policy export (template + co-signer xpubs), one block
+// shaped like the policy-sheet block. Registration-capable wallets and
+// signers read it; the policy semantics check happens in bip388-policy.js.
+function hodlMsigBip388Markup() {
+  if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
+  if (!hodlWalletResult.receiveDescriptor) return "";
+  return `<div class="wallet-data-actions no-print" id="msig-bip388">
+    <button class="btn secondary green" id="msig-save-bip388" type="button">${hodlT("Save BIP 388 wallet policy")}</button>
+    <button class="btn secondary" id="msig-copy-bip388" type="button">${hodlT("Copy BIP 388 wallet policy")}</button>
+    <p class="muted" id="msig-bip388-help">${hodlT("BIP 388 wallet policy (template and co-signer xpubs) for wallets that register policies. Watch-only; no private keys.")}</p>
   </div>`;
 }
 function hodlCopyMsigCoreImportDescriptors() {
@@ -4423,7 +4460,7 @@ function hodlStoredPassphraseBytes(value) {
   return value ? new TextEncoder().encode(String(value)) : "";
 }
 function hodlPassphraseText(value) {
-  return ArrayBuffer.isView(value) ? new TextDecoder().decode(value) : String(value ?? "");
+  return ArrayBuffer.isView(value) ? hodlTypedText(value) : String(value ?? "");
 }
 function hodlStorePassphrase(state) {
   if (!state?.fields) return;
@@ -9774,6 +9811,8 @@ function hodlShowMsig() {
         ${hodlAddressMatchMarkup()}
       `, "account-address-section")}
       ${hodlMsigCoreImportDescriptorsMarkup()}
+      ${hodlMsigPolicySheetMarkup()}
+      ${hodlMsigBip388Markup()}
     </section>`;
   hodlBindAddressVirtualization(hodlAddressBranchVirtualConfigs(branches, false, "msig"));
   hodlWatchMsigGroups();
@@ -9992,9 +10031,20 @@ function hodlPsbtReferenceVerdict(psbt) {
       problems = [];
     if (doc.rustBitcoinError) problems.push("rust-bitcoin: " + doc.rustBitcoinError);
     for (let problem of doc.problems || []) if (problem.severity === "error") problems.push(problem.scope + ": " + problem.message);
-    // The document's error count is taken before its list truncation.
-    let unlisted = Math.max(0, (doc.errorCount ?? problems.length) - problems.length);
-    verdict = problems.length ? { state: "problem", problems, unlisted } : { state: "complete", problems: [], unlisted: 0 };
+    // The document's error count is taken before its list truncation: a
+    // crafted file can pad the capped (64-entry) problem list with earlier
+    // warnings so every error drops out of view, and the cross-check must
+    // still fail (audit C2-C).
+    let errorTotal = doc.errorCount ?? problems.length,
+      unlisted = Math.max(0, errorTotal - problems.length);
+    // No listed error to show: name what the cap hid, else the banner's
+    // entry list would be empty (the row is counted, not repeated, so it is
+    // not added to `unlisted` a second time).
+    if (unlisted && !problems.length) {
+      problems.push("rust-bitcoin: " + unlisted + " error-severity problem(s) hidden by the 64-problem display cap");
+      unlisted = 0;
+    }
+    verdict = errorTotal || problems.length ? { state: "problem", problems, unlisted } : { state: "complete", problems: [], unlisted: 0 };
   } catch (exception) {
     let message = exception instanceof Error ? exception.message : String(exception);
     verdict = /not initialized/.test(message)
@@ -10301,13 +10351,21 @@ function hodlCompareNonces(rValues) {
   // A consolidation PSBT can carry thousands of signatures; an all-pairs
   // scan of them froze the inspector (audit C3-3). Buckets only ever form
   // between records sharing one r value, so group by r first and compare
-  // within groups — same pairs, same verdicts.
+  // within groups — same pairs and verdicts within the comparison budget.
   let byR = new Map();
   for (let record of rValues) {
     let tag = hodlHex.encode(record.r);
     let group = byR.get(tag);
     if (!group) byR.set(tag, (group = []));
     group.push(record);
+  }
+  // Identical attacker-supplied r values collapse into one quadratic bucket.
+  // Bound total candidate pairs before allocating any result pairs; refusing
+  // the inspection must never be mistaken for a completed clean comparison.
+  let comparisons = 0;
+  for (let group of byR.values()) {
+    comparisons += group.length * (group.length - 1) / 2;
+    if (comparisons > 32768) throw new Error("Nonce comparison limit exceeded: too many signatures share the same r value.");
   }
   for (let group of byR.values()) {
     if (group.length < 2) continue;
@@ -10450,15 +10508,19 @@ function hodlPsbtRecordNonceInspection(kind, rValues, sourceTag, verdict, checke
   }
 }
 
+// Both private-key resolvers return { key, owned } or null. `owned: true`
+// marks the canonical WIF/hex session buffer: the session owns it and
+// hodlPsbtWipeMem clears it, so the caller must never zero it. `owned: false`
+// marks a fresh HDKey getter copy, which the caller must zero when done.
 function hodlPrivForPub(pubkey) {
   if (hodlPsbtPriv) {
     let compressed = hodlSecp256k1.getPublicKey(hodlPsbtPriv, true), uncompressed = hodlSecp256k1.getPublicKey(hodlPsbtPriv, false);
-    if (hodlEq(compressed, pubkey) || hodlEq(uncompressed, pubkey)) return hodlPsbtPriv;
+    if (hodlEq(compressed, pubkey) || hodlEq(uncompressed, pubkey)) return { key: hodlPsbtPriv, owned: true };
   }
   if (hodlPsbtHd) {
     try {
-      let rootPubkey = hodlPsbtHd.publicKey;
-      if (rootPubkey && hodlEq(rootPubkey, pubkey)) return hodlPsbtHd.privateKey;
+      let rootPubkey = hodlPsbtHd.publicKey, key = rootPubkey && hodlEq(rootPubkey, pubkey) ? hodlPsbtHd.privateKey : null;
+      if (key) return { key, owned: false };
     } catch {
     }
   }
@@ -10477,9 +10539,9 @@ function hodlPrivFromPath(entries, pubkey) {
         node = next;
       }
       if (node.publicKey && hodlEq(node.publicKey, pubkey)) {
-        let privateKey = node.privateKey; // a copy; the caller signs with it
+        let privateKey = node.privateKey; // a getter copy; the caller signs with it and zeroes it
         if (node !== hodlPsbtHd) node.wipePrivateData();
-        return privateKey;
+        if (privateKey) return { key: privateKey, owned: false };
       }
       if (node !== hodlPsbtHd) node.wipePrivateData();
     } catch {
@@ -12038,6 +12100,67 @@ function hodlSessionOwnership(network) {
   if (hodlPsbtPriv) return indexSingleKey(hodlPsbtPriv, network, (key, compressed) => hodlSecp256k1.getPublicKey(key, compressed));
   return new Map();
 }
+// Raw byte scan: any script that a key can spend from embeds that key (or its
+// hash160 in key-hash constructions) literally, whatever template wraps it.
+function hodlBytesContain(haystack, needle) {
+  if (!needle.length || needle.length > haystack.length) return false;
+  for (let i = 0; i + needle.length <= haystack.length; i++) {
+    let match = true;
+    for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) { match = false; break; }
+    if (match) return true;
+  }
+  return false;
+}
+// PSBT_OUT_REDEEM_SCRIPT (0x00) / PSBT_OUT_WITNESS_SCRIPT (0x01) carry the
+// construction script of a script-hash output — multisig coordinators attach
+// them to change along with the per-cosigner derivation records. Only a
+// script that hashes to the output script itself is this output's
+// construction; anything else is an unattached claim and proves nothing.
+function hodlScriptMembership(entries, script, pubkey) {
+  let keyHash = hodlHash160(pubkey), member = false;
+  let scan = (construction) => {
+    if (hodlBytesContain(construction, pubkey) || hodlBytesContain(construction, keyHash)) member = true;
+  };
+  for (let entry of hodlFind(entries, 1)) {
+    if (entry.keydata.length || !entry.val.length) continue;
+    try {
+      if (hodlEq(script, p2wshScript(entry.val)) || hodlEq(script, p2shScript(p2wshScript(entry.val)))) scan(entry.val);
+    } catch {
+    }
+  }
+  for (let entry of hodlFind(entries, 0)) {
+    if (entry.keydata.length || !entry.val.length) continue;
+    try {
+      if (hodlEq(script, p2shScript(entry.val))) scan(entry.val);
+    } catch {
+    }
+  }
+  return member;
+}
+// A record is a lie only when it is provably false: the output pays one key
+// and it is not the verified one (destination-swap). The P2PKH/P2WPKH/P2TR
+// scriptPubKeys are the whole template, so their shape alone proves the
+// construction; P2SH is ambiguous — it may wrap a multisig — until its
+// redeem script reveals a single-key program. Reaching this helper at all
+// means the output is not one of the verified key's own templates (that was
+// checked first), so a matched shape is a matched *other* key.
+function hodlForeignSingleKeyScript(entries, script) {
+  if (script.length === 25 && script[0] === 0x76 && script[1] === 0xa9 && script[2] === 0x14 && script[23] === 0x88 && script[24] === 0xac) return true;
+  if (script.length === 22 && script[0] === 0x00 && script[1] === 0x14) return true;
+  if (script.length === 34 && script[0] === 0x51 && script[1] === 0x20) return true;
+  if (script.length === 23 && script[0] === 0xa9 && script[1] === 0x14 && script[22] === 0x87) {
+    for (let entry of hodlFind(entries, 0)) {
+      if (entry.keydata.length || !entry.val.length) continue;
+      let linked = false;
+      try {
+        linked = hodlEq(script, p2shScript(entry.val));
+      } catch {
+      }
+      if (linked && entry.val.length === 22 && entry.val[0] === 0x00 && entry.val[1] === 0x14) return true;
+    }
+  }
+  return false;
+}
 function hodlDeclaredOutput(entries, script, network) {
   if (!hodlPsbtHd || !entries || !script) return null;
   let fingerprint = hodlFingerprintHex(hodlPsbtHd.fingerprint), declared = null;
@@ -12068,9 +12191,24 @@ function hodlDeclaredOutput(entries, script, network) {
         } catch {
         }
       }
-      if (!encoded) return { state: "lie", path: label };
-      let chain = path.length >= 2 ? path[path.length - 2] : null;
-      declared = { state: "ours", path: label, role: chain === 1 ? "change" : chain === 0 ? "receive" : "key" };
+      if (encoded) {
+        let chain = path.length >= 2 ? path[path.length - 2] : null;
+        declared = { state: "ours", path: label, role: chain === 1 ? "change" : chain === 0 ? "receive" : "key" };
+        continue;
+      }
+      // A script-hash output (multisig change; audit B8) pays a script, not
+      // a key. Finding the key in its script is membership, not control —
+      // <user> OP_DROP <attacker> OP_CHECKSIG contains the key and the
+      // attacker spends alone (#851 review) — so membership only rides the
+      // unverifiable verdict as a muted note; it never verifies.
+      let member = hodlScriptMembership(entries, script, node.publicKey);
+      if (hodlForeignSingleKeyScript(entries, script)) return { state: "lie", path: label };
+      // Otherwise the claim is unverifiable from this map — which is not a
+      // lie. A later record may still prove ownership.
+      if (!declared || declared.state !== "ours") {
+        let noted = member || Boolean(declared && declared.state === "unknown" && declared.member);
+        declared = { state: "unknown", path: label, member: noted };
+      }
     } catch {
       return { state: "lie", path: label };
     }
@@ -12114,6 +12252,10 @@ function hodlRenderOutputHtml(output, index, network, map, entries) {
   } else if (declared && declared.state === "ours") {
     extra = "<br>" + hodlEscapeHtml((declared.role === "change" ? "change" : "this wallet") + " \xB7 " + declared.path + " (verified)");
     className = "psbt-ok";
+  } else if (declared && declared.state === "unknown") {
+    extra = "<br><span class='muted'>claims " + hodlEscapeHtml(declared.path) + (declared.member
+      ? " \xB7 your key appears in this output's script; its other keys are not verified"
+      : " \xB7 cannot be verified for this script type") + "</span>";
   } else if (scan.state === "external") {
     extra = "<br>not in this wallet (accounts 0\u20132, 50 receive + 50 change, four script types)";
   } else if (scan.state === "no-session") {
@@ -12325,88 +12467,97 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
           format: "der",
           lowS: !1
         }) : null,
-        privateKey = hodlPrivForPub(signature.pubkey) || hodlPrivFromPath(entries, signature.pubkey),
-        masterFingerprint = hodlPsbtMasterFingerprint(entries, signature.pubkey, Boolean(privateKey && hodlPsbtHd)),
         message = hodlT("Need the matching key in this session to check RFC 6979 and low-r grind."),
         className = "muted";
       let suffixForPolicy = signature.raw.length >= 2 ? signature.sighash : null,
         sighashProblems = hodlSighashProblems(declaredSighash, suffixForPolicy);
       if (sighashProblems.length) policyProblems++;
-      if (!parts && !looseR) {
-        uninspected += 1;
-        policyIncomplete += 1;
-        message = hodlT("Signature is not DER and its nonce cannot be inspected.");
-        className = "psbt-warn";
-        if (sighashProblems.length) {
-          message = hodlT("Signature policy problem: {problems}", { problems: sighashProblems.join(" ") });
-          className = "psbt-bad";
-        }
-      } else {
-        rValues.push({
-          input: index,
-          r: looseR,
-          hex: hodlHex.encode(looseR),
-          pubkey: hodlCompressedPubkey(signature.pubkey),
-          masterFingerprint,
-          sighash,
-          valid: parts ? signatureValid : null
-        });
-        if (sighashProblems.length) {
-          // An unsafe or conflicting sighash policy blocks every other check.
-          message = hodlT("Signature policy problem: {problems}", { problems: sighashProblems.join(" ") });
-          className = "psbt-bad";
-        } else if (overBudget) {
-          message = hodlT("Signature not inspected: this file carries more SIGHASH_ALL signatures than the per-file check budget covers.");
+      // Resolve the matching session key only for a row with a readable r.
+      // Whatever else happens on the row — compare, refusal, or the budget
+      // exit — a getter copy held in `privateKey` is zeroed in the finally
+      // below; the canonical session buffer (owned) is left to
+      // hodlPsbtWipeMem.
+      let privateKey = null;
+      try {
+        if (!parts && !looseR) {
+          uninspected += 1;
+          policyIncomplete += 1;
+          message = hodlT("Signature is not DER and its nonce cannot be inspected.");
           className = "psbt-warn";
-          unsupportedNonceChecks += 1;
-        } else if (!parts) {
-          message = hodlT("Signature is not strict DER. Its r value is still compared for nonce reuse.");
-          className = "psbt-warn"
-        } else if (signatureValid === !1) {
-          message = hodlT("This signature does not verify against the reconstructed input digest.");
-          className = "psbt-warn";
-        } else if (transcript) {
-          let opening = transcript.openings.length === 1 ? transcript.openings[0] : transcript.openings[ecdsaIndex];
-          if (!opening) {
-            message = hodlT("No Jade opening R was provided for this signature.");
-            className = "psbt-warn";
-          } else try {
-            if (hodlAntiExfilCommitOk(parts.r, opening, transcript.host)) {
-              message = hodlT("Matches Jade anti-exfil (sign-to-contract). Host entropy mixed into the nonce. Not a leak.");
-              className = "psbt-ok";
-            } else {
-              message = hodlT("Does not match this Jade anti-exfil transcript. Signature r is not R + H(R||ρ)G.");
-              className = "psbt-warn";
-              if (privateKey && sighash) try {
-                let cmp = hodlRfc6979Compare(sighash, privateKey, parts.r);
-                if (cmp.ok) {
-                  message += " " + cmp.message;
-                  className = cmp.className;
-                } else message += " " + hodlT("Also does not match RFC 6979 or low-r grind.");
-              } catch (exception) {
-                message += " " + (exception.message || String(exception));
-              }
-            }
-          } catch (exception) {
-            message = hodlT("Could not verify Jade anti-exfil: {error}", { error: exception.message || String(exception) });
-            className = "psbt-warn";
+          if (sighashProblems.length) {
+            message = hodlT("Signature policy problem: {problems}", { problems: sighashProblems.join(" ") });
+            className = "psbt-bad";
           }
-        } else if (privateKey && sighash) try {
-          let cmp = hodlRfc6979Compare(sighash, privateKey, parts.r);
-          message = cmp.message;
-          className = cmp.className;
-        } catch (exception) {
-          message = hodlT("Could not recompute this signature: {error}", { error: exception.message || String(exception) });
-          className = "psbt-warn";
-          unsupportedNonceChecks += 1;
+        } else {
+          privateKey = hodlPrivForPub(signature.pubkey) || hodlPrivFromPath(entries, signature.pubkey);
+          rValues.push({
+            input: index,
+            r: looseR,
+            hex: hodlHex.encode(looseR),
+            pubkey: hodlCompressedPubkey(signature.pubkey),
+            masterFingerprint: hodlPsbtMasterFingerprint(entries, signature.pubkey, Boolean(privateKey && hodlPsbtHd)),
+            sighash,
+            valid: parts ? signatureValid : null
+          });
+          if (sighashProblems.length) {
+            // An unsafe or conflicting sighash policy blocks every other check.
+            message = hodlT("Signature policy problem: {problems}", { problems: sighashProblems.join(" ") });
+            className = "psbt-bad";
+          } else if (overBudget) {
+            message = hodlT("Signature not inspected: this file carries more SIGHASH_ALL signatures than the per-file check budget covers.");
+            className = "psbt-warn";
+            unsupportedNonceChecks += 1;
+          } else if (!parts) {
+            message = hodlT("Signature is not strict DER. Its r value is still compared for nonce reuse.");
+            className = "psbt-warn"
+          } else if (signatureValid === !1) {
+            message = hodlT("This signature does not verify against the reconstructed input digest.");
+            className = "psbt-warn";
+          } else if (transcript) {
+            let opening = transcript.openings.length === 1 ? transcript.openings[0] : transcript.openings[ecdsaIndex];
+            if (!opening) {
+              message = hodlT("No Jade opening R was provided for this signature.");
+              className = "psbt-warn";
+            } else try {
+              if (hodlAntiExfilCommitOk(parts.r, opening, transcript.host)) {
+                message = hodlT("Matches Jade anti-exfil (sign-to-contract). Host entropy mixed into the nonce. Not a leak.");
+                className = "psbt-ok";
+              } else {
+                message = hodlT("Does not match this Jade anti-exfil transcript. Signature r is not R + H(R||ρ)G.");
+                className = "psbt-warn";
+                if (privateKey && sighash) try {
+                  let cmp = hodlRfc6979Compare(sighash, privateKey.key, parts.r);
+                  if (cmp.ok) {
+                    message += " " + cmp.message;
+                    className = cmp.className;
+                  } else message += " " + hodlT("Also does not match RFC 6979 or low-r grind.");
+                } catch (exception) {
+                  message += " " + (exception.message || String(exception));
+                }
+              }
+            } catch (exception) {
+              message = hodlT("Could not verify Jade anti-exfil: {error}", { error: exception.message || String(exception) });
+              className = "psbt-warn";
+            }
+          } else if (privateKey && sighash) try {
+            let cmp = hodlRfc6979Compare(sighash, privateKey.key, parts.r);
+            message = cmp.message;
+            className = cmp.className;
+          } catch (exception) {
+            message = hodlT("Could not recompute this signature: {error}", { error: exception.message || String(exception) });
+            className = "psbt-warn";
+            unsupportedNonceChecks += 1;
+          }
+          else if (privateKey && !scriptCode) {
+            message = hodlT("Matching key found, but this input script is not yet supported for RFC 6979 comparison.");
+            className = "psbt-warn";
+            unsupportedNonceChecks += 1;
+          } else if (!privateKey || !sighash) {
+            unsupportedNonceChecks += 1;
+          }
         }
-        else if (privateKey && !scriptCode) {
-          message = hodlT("Matching key found, but this input script is not yet supported for RFC 6979 comparison.");
-          className = "psbt-warn";
-          unsupportedNonceChecks += 1;
-        } else if (!privateKey || !sighash) {
-          unsupportedNonceChecks += 1;
-        }
+      } finally {
+        if (privateKey && !privateKey.owned) privateKey.key.fill(0);
       }
       ecdsaIndex += 1;
       rows.push({ input: index, message, className, pubkey: hodlHex.encode(signature.pubkey) });
@@ -12439,7 +12590,9 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   else if (possible.length) nonceHtml.push("<p class='psbt-warn'><strong>Possible repeated nonce for the same public key.</strong> The message digests could not both be reconstructed, so verify these signatures independently before treating this as a key leak.</p>");
   if (crossKey.length) nonceHtml.push("<p class='psbt-bad'><strong>Same r value claimed under different public keys.</strong> " + crossKey.length + " pair(s) share an r value but name different keys — a mislabeled signature field can hide real nonce reuse this way. Verify every signature against its input's key independently before signing or broadcasting.</p>");
   else if (uninspected) nonceHtml.push("<p class='psbt-warn'><strong>Incomplete nonce coverage.</strong> Some ECDSA signatures could not be inspected, so this is not a clean verdict.</p>");
-  else if (rValues.length >= 2) nonceHtml.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this PSBT.</p>");
+  else if (rValues.length >= 2) {
+    if (!reused.length && !possible.length) nonceHtml.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this PSBT.</p>");
+  }
   else if (rValues.length === 1) nonceHtml.push("<p class='muted'>Only one ECDSA signature with a readable r is present. Nonce reuse cannot be judged from this file alone.</p>");
   else nonceHtml.push("<p class='muted'>No ECDSA signatures with a readable r value are present, so there is no nonce to compare yet.</p>");
   if (rValues.length) nonceHtml.push("<p class='psbt-kv'>r values:<br>" + rValues.map(value => hodlEscapeHtml(value.hex) + " (input " + value.input + ")").join("<br>") + "</p>");
@@ -12547,7 +12700,9 @@ function hodlRenderRawTx(tx, nonceSourceTag = new Uint8Array(), nonceCheckedAt =
   if (reused.length || possible.length) verdictHtml.push("<p class='psbt-bad'><strong>Repeated nonce r for the same public key.</strong> Message digests cannot be rebuilt from a raw transaction without prevouts, so treat this as a warning and do not broadcast until the signatures are checked independently.</p>");
   if (crossKey.length) verdictHtml.push("<p class='psbt-warn'><strong>Same r value claimed under different public keys.</strong> A key association in a raw transaction is read from the script, not verified; verify these signatures independently before broadcast.</p>");
   else if (uninspected) verdictHtml.push("<p class='psbt-warn'><strong>Incomplete nonce coverage.</strong> Some ECDSA signatures could not be inspected.</p>");
-  else if (rValues.length >= 2) verdictHtml.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this transaction.</p>");
+  else if (rValues.length >= 2) {
+    if (!reused.length && !possible.length) verdictHtml.push("<p class='psbt-ok'>No repeated ECDSA nonce r values were found for the same public key in this transaction.</p>");
+  }
   else if (rValues.length === 1) verdictHtml.push("<p class='muted'>Only one ECDSA signature with a readable r is present. Nonce reuse cannot be judged from this file alone.</p>");
   else verdictHtml.push("<p class='muted'>No ECDSA signatures with a readable r and public key were found.</p>");
   nonceHtml.push(...verdictHtml);
@@ -15253,6 +15408,10 @@ function hodlInitJournalToolTabs() {
     await hodlKeyManagerImportFile(keyManagerFile.files?.[0]);
     keyManagerFile.value = "";
   };
+  // The snapshot must follow the box on every change, not only when the tab
+  // opens: otherwise the conceal sweep's untick (or a manual one) leaves the
+  // private recovery texts rendered (security.md B4).
+  document.getElementById("journal-state-private")?.addEventListener("change", () => hodlJournalRefreshSessionState());
   let stateDownload = document.getElementById("journal-state-download");
   if (stateDownload) stateDownload.onclick = async () => {
     hodlJournalRefreshSessionState();
@@ -16452,7 +16611,10 @@ function hodlVanityPlan(state, method, scriptId) {
     ? [352 + VANITY_HARDENED, VANITY_HARDENED, (accountComponents[2] & VANITY_MAX_INDEX) + VANITY_HARDENED]
     : [...accountComponents, index(fields.branchStart, Boolean(fields.branchHarden)), index(fields.addressStart, Boolean(fields.addressHarden))];
   let passphrase = validateVanityPassphrase(hodlPassphraseText(fields.pass));
-  let plan = { method, script: scriptId, sourceId: state.id, sourceLabel: label, passphrase, accountHardened: path[2] >= VANITY_HARDENED };
+  // The run anchors to the key's identity as it stands at grind start: an
+  // edit to the words or passphrase changes the master fingerprint, which is
+  // what Update key compares before writing (audit B5).
+  let plan = { method, script: scriptId, sourceId: state.id, sourceLabel: label, sourceFingerprint: result.masterFingerprint || "", passphrase, accountHardened: path[2] >= VANITY_HARDENED };
   if (method === "passphrase") {
     if (!hodlResultHasSeed(result)) throw new Error(`Key ${label} has no seed words (root xprv), so its passphrase cannot be extended — switch to the derivation grind.`);
     // The grinder's workers take the words as text.
@@ -16714,7 +16876,7 @@ function hodlRunVanity() {
   hodlVanityFound = 0;
   // The run's key, method, and passphrase are fixed at start; snapshot them
   // so the results (and Update key) cannot drift if the form changes mid-grind.
-  hodlVanityRun = { method: inputs.method, script: inputs.script, sourceId: inputs.sourceId, sourceLabel: inputs.sourceLabel, sourceKind: hodlVanitySourceState()?.isBip85Child ? "bip85" : "key", passphrase: inputs.passphrase, accountHardened: inputs.accountHardened, path: [...inputs.pathPrefix, ...inputs.path], pathText: vanityPathString([...inputs.pathPrefix, ...inputs.path]) };
+  hodlVanityRun = { method: inputs.method, script: inputs.script, sourceId: inputs.sourceId, sourceLabel: inputs.sourceLabel, sourceFingerprint: inputs.sourceFingerprint, sourceKind: hodlVanitySourceState()?.isBip85Child ? "bip85" : "key", passphrase: inputs.passphrase, accountHardened: inputs.accountHardened, path: [...inputs.pathPrefix, ...inputs.path], pathText: vanityPathString([...inputs.pathPrefix, ...inputs.path]) };
   hodlRenderVanityOut();
   hodlVanityRunning = true;
   hodlVanitySyncControls();
@@ -16764,6 +16926,45 @@ function hodlRunVanity() {
   // The grinder copied the parent node for its workers; this copy is dead.
   if (inputs.node) inputs.node.fill(0);
 }
+// The address the key itself derives for this match: from the key's own seed
+// words (or root xprv) with the match's passphrase or account, at the match's
+// concrete path — computed here the way hodlVanityMatchFingerprint re-derives
+// a row's identity, never from the worker's record. Update key requires the
+// recorded address to equal this before it writes anything, so a worker-side
+// record/payload mismatch fails closed (audit B5).
+function hodlVanityMatchAddress(match, run, state) {
+  let root = null, node = null, scan = null, spend = null;
+  try {
+    if (run.method === "passphrase") {
+      let mnemonic = hodlResultMnemonic(state.result);
+      if (!mnemonic) throw new Error("The key has no seed words, so this match's passphrase cannot be checked.");
+      let seed = hodlMnemonicToSeed(mnemonic, match.passphrase);
+      try {
+        root = hodlHDKey.fromMasterSeed(seed);
+      } finally {
+        seed.fill(0);
+      }
+    } else {
+      root = hodlSeedSessionRoot(state.result, run.passphrase);
+    }
+    if (!root) throw new Error("The key carries no key material to check this match against.");
+    // The derivation grind's counter slot is the account component; the match
+    // substitutes the index it found, keeping the grind's hardened bit — the
+    // same concrete path its row shows.
+    let path = [...run.path];
+    if (run.method === "derivation") path[2] = (match.index | (path[2] & VANITY_HARDENED)) >>> 0;
+    node = root.derive(vanityPathString(path));
+    if ((VANITY_SCRIPTS[run.script] ?? VANITY_SCRIPTS.p2wpkh).code !== 4) return hodlAddressOrThrow(run.script, node.publicKey, "mainnet");
+    scan = node.derive("m/1'/0");
+    spend = node.derive("m/0'/0");
+    return encodeSilentPaymentAddress(hodlSecp256k1.Point.fromBytes(scan.publicKey), hodlSecp256k1.Point.fromBytes(spend.publicKey), "sp");
+  } finally {
+    root?.wipePrivateData();
+    node?.wipePrivateData();
+    scan?.wipePrivateData();
+    spend?.wipePrivateData();
+  }
+}
 // Update key: write the match back to its key and re-derive, through the same
 // Edit input → Derive path the Keys tab uses by hand. The key keeps its tab
 // (id, colour, custom name) even when a new passphrase gives it a new
@@ -16779,6 +16980,13 @@ async function hodlVanityApplyMatch(index) {
   let state = hodlKeys.find((candidate) => candidate.id === run.sourceId && !candidate.isLab);
   if (!state) {
     if (error) error.textContent = `Key ${run.sourceLabel} is no longer in Key Station, so there is nothing to update.`;
+    return;
+  }
+  // The grind is anchored to the key it started on (audit B5): an edit to the
+  // words or passphrase since makes these matches foreign to the key standing
+  // here, and the path check below cannot see it.
+  if ((state.result?.masterFingerprint || "") !== run.sourceFingerprint) {
+    if (error) error.textContent = hodlTText("Key {key} changed since this grind started — its matches belong to the key it was. Grind again.", { key: hodlVanityKeyLabel(state) });
     return;
   }
   if (hodlActiveDerivation) {
@@ -16803,6 +17011,20 @@ async function hodlVanityApplyMatch(index) {
     if (error) error.textContent = hodlTText("Key {key} now derives at {now}, but this match was ground at {then}. Set the path back on the Keys tab, or grind again.", { key: hodlVanityKeyLabel(state), now: hodlDisplayDerivationPath(vanityPathString(path)), then: hodlDisplayDerivationPath(run.pathText) });
     return;
   }
+  // Fail closed on the record itself (audit B5): the address the key will
+  // derive for the match is recomputed from the key's own material and must
+  // equal the address the grind recorded before anything is written.
+  let recomputed;
+  try {
+    recomputed = hodlVanityMatchAddress(match, run, state);
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+    return;
+  }
+  if (recomputed !== match.address) {
+    if (error) error.textContent = hodlTText("Key {key} derives {found} at this match's path, not the recorded address {expected} — the match record is inconsistent. Nothing was changed; grind again.", { key: hodlVanityKeyLabel(state), found: recomputed, expected: match.address || "(none recorded)" });
+    return;
+  }
   hodlVanityApplying = true;
   hodlRenderVanityOut();
   hodlVanitySyncControls();
@@ -16825,6 +17047,9 @@ async function hodlVanityApplyMatch(index) {
     if (!active || active.isLab || !active.result) throw new Error(active?.error || "Deriving the updated key failed.");
     let updated = hodlKeys[hodlActiveKey];
     match.savedTo = hodlVanityKeyLabel(updated);
+    // The key now carries the identity this run just wrote; later matches
+    // from the same run are still checked against it (audit B5).
+    run.sourceFingerprint = updated.result?.masterFingerprint || run.sourceFingerprint;
     // A tool that had this key loaded is holding the old seed: reload it so
     // its chip, fingerprint, and LifeHash follow the key.
     if (hodlSpSource === "key:" + updated.id) hodlPickSpSessionKey(updated);

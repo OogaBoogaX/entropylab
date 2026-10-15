@@ -211,6 +211,28 @@ test("grouped nonce comparison returns the same buckets as the all-pairs scan (a
   }
 });
 
+test("nonce comparison refuses collision floods before constructing unbounded pair lists", () => {
+  // Contract: preserve exact comparisons within the budget and reject larger
+  // collision sets, rather than allocating n*(n-1)/2 pairs or returning clean.
+  const records = (count, r = rOf("11".repeat(32))) => Array.from({ length: count }, (_, input) => ({
+    input, r, pubkey: G_COMPRESSED, sighash: null, valid: null,
+  }));
+  const accepted = hodlCompareNonces(records(256));
+  assert.equal(accepted.possible.length, 256 * 255 / 2);
+  // 32640 + 120 + 6 + 1 + 1 reaches the exact whole-file boundary.
+  const atLimit = [256, 16, 4, 2, 2].flatMap((count, i) => records(count, rOf((i + 1).toString(16))));
+  assert.equal(hodlCompareNonces(atLimit).possible.length, 32768);
+  assert.throws(() => hodlCompareNonces([...atLimit, ...records(2, rOf("06"))]), /nonce comparison limit/i);
+  assert.throws(() => hodlCompareNonces(records(257)), /nonce comparison limit/i);
+  // The limit covers the whole file, not each individually small group.
+  assert.throws(() => hodlCompareNonces([
+    ...records(200), ...records(200, rOf("22".repeat(32))),
+  ]), /nonce comparison limit/i);
+  // Many unique nonces require no pair comparisons and remain supported.
+  const distinct = records(10000).map((record, i) => ({ ...record, r: rOf((i + 1).toString(16)) }));
+  assert.deepEqual(hodlCompareNonces(distinct), { reused: [], possible: [], crossKey: [] });
+});
+
 test("render suppresses a clean verdict when a signature cannot be inspected", () => {
   const render = loadSlice("hodlRenderPsbt");
   assert.match(render, /uninspected\s*\+=\s*1/);

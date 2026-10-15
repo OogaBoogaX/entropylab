@@ -217,12 +217,12 @@ const hodlCatalogKeySafe = (key) => key !== "__proto__";
 
 export function hodlSanitizeCatalog(catalog) {
   let clean = {};
-  for (let [key, value] of Object.entries(catalog ?? {})) if (hodlCatalogKeySafe(key)) clean[key] = typeof value === "string" ? hodlSanitizeCatalogHtml(value) : value;
+  for (let [key, value] of Object.entries(catalog ?? {})) if (hodlCatalogKeySafe(key) && typeof value === "string") clean[key] = hodlSanitizeCatalogHtml(value);
   return clean;
 }
 
 export function hodlSanitizeTextCatalog(catalog) {
   let clean = {};
-  for (let [key, value] of Object.entries(catalog ?? {})) if (hodlCatalogKeySafe(key)) clean[key] = typeof value === "string" ? hodlSanitizeCatalogText(value) : value;
+  for (let [key, value] of Object.entries(catalog ?? {})) if (hodlCatalogKeySafe(key) && typeof value === "string") clean[key] = hodlSanitizeCatalogText(value);
   return clean;
 }

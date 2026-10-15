@@ -19,6 +19,10 @@
 // Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { runInNewContext } from "node:vm";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { mnemonicToSeedSync as scureSeed } from "@scure/bip39";
 import { PassphraseVault, VAULT_MASK, bindVaultField } from "../src/js/passphrase-vault.js";
 import { mnemonicToSeedSync } from "../src/js/bip39.js";
@@ -235,4 +239,39 @@ test("the seed from passphrase bytes equals the seed from its text", () => {
   const expected = hex(scureSeed(MNEMONIC, composed));
   assert.equal(hex(mnemonicToSeedSync(MNEMONIC, utf8(composed))), expected);
   assert.equal(hex(mnemonicToSeedSync(MNEMONIC, utf8(decomposed))), expected);
+});
+
+// A leading U+FEFF is passphrase content, not a byte-order mark: NFKD keeps
+// it, so the salt built from the passphrase's UTF-8 bytes must be the salt
+// built from its text, and both must match the reference implementation,
+// which hashes the BOM (audit C2-E). The byte path decodes the stored bytes
+// once to normalize them; a default TextDecoder would strip the leading
+// EF BB BF and derive a different wallet than the text path (and than
+// Electrum and other NFKD keepers) for the same typed passphrase.
+test("a leading U+FEFF in a passphrase is hashed, by bytes and by text alike", () => {
+  const passphrase = "﻿correct horse battery staple";
+  const expected = hex(scureSeed(MNEMONIC, passphrase));
+  assert.equal(hex(mnemonicToSeedSync(MNEMONIC, passphrase)), expected, "the text path keeps U+FEFF");
+  assert.equal(hex(mnemonicToSeedSync(MNEMONIC, utf8(passphrase))), expected, "the byte path keeps U+FEFF");
+  assert.notEqual(expected, hex(scureSeed(MNEMONIC, passphrase.slice(1))), "U+FEFF is hashed, not silently dropped");
+});
+
+// The key-file export writes the passphrase as text through
+// hodlPassphraseText (app.js), and an imported key re-derives from that
+// text. If the text loses a leading U+FEFF the export → import round trip
+// opens a different wallet than the one on screen (#856 review): the slice
+// below runs the shipping helpers from app.js, not a copy.
+test("a U+FEFF-leading passphrase survives the key-file text seam", () => {
+  const root = dirname(dirname(fileURLToPath(import.meta.url)));
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const slice = (name, next) => app.slice(app.indexOf(`function ${name}(`), app.indexOf(`function ${next}(`));
+  const context = { TextDecoder };
+  runInNewContext(slice("hodlTypedText", "hodlResultPassphrase") + slice("hodlPassphraseText", "hodlStorePassphrase"), context);
+  const passphrase = "﻿correct horse battery staple";
+  const bytes = utf8(passphrase);
+  const exportedText = context.hodlPassphraseText(bytes); // export: bytes → text
+  assert.equal(exportedText, passphrase, "the exported text keeps the leading U+FEFF");
+  const expected = hex(scureSeed(MNEMONIC, passphrase));
+  assert.equal(hex(mnemonicToSeedSync(MNEMONIC, bytes)), expected, "the wallet the Key tab derives");
+  assert.equal(hex(mnemonicToSeedSync(MNEMONIC, utf8(exportedText))), expected, "the wallet after export → import");
 });

@@ -41,16 +41,17 @@ export const addressQrButtonHtml = (address, label, { animate = "" } = {}) => {
 // One shared overlay for every address table. `renderQr` is injected by the
 // caller (app.js passes its hodlQrSvg) so the QR options — error correction,
 // colors, size — stay defined next to every other QR the app renders. The
-// copy and copied icons come in the same way, so the address copy control
-// wears the glyphs every other copy button in the app does.
+// copied tick comes in the same way, so the copy button confirms with the
+// glyph every other copy control in the app does.
 export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
   if (typeof renderQr !== "function" || document.getElementById("addr-qr-overlay")) return;
   let privatePayload = false;
   // The address text and the copy button both copy. Only the button takes a
   // tab stop, so a keyboard reaches one copy control, not two. The button sits
-  // beside the label, so the address keeps the card's full width.
-  // The icon turning to a check is the
-  // visible confirmation; the note speaks it, unseen.
+  // with Close in the actions row, copy on the left and Close on the right, so
+  // the address keeps the card's full width. Its label turning to a ticked
+  // "Copied" is the visible confirmation; the note speaks it, unseen. Both
+  // labels stay in the button, stacked, so it holds the wider one's width.
   const modal = createModal({
     id: "addr-qr-overlay",
     className: "addr-qr-overlay",
@@ -66,7 +67,7 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
         <span class="sr-only" id="addr-qr-copied" aria-live="polite"></span>
       </p>
       <div class="row modal-actions">
-        <button type="button" class="copy-button boxed-copy-button addr-qr-copy" id="addr-qr-copy"></button>
+        <button type="button" class="btn secondary addr-qr-copy" id="addr-qr-copy"><span class="addr-qr-copy-idle" data-copy-label="idle"></span><span class="addr-qr-copy-done"><span class="addr-qr-copy-tick" data-copy-tick></span><span data-copy-label="done"></span></span></button>
         <button class="btn red" id="addr-qr-close" type="button"></button>
       </div>
     </div>`,
@@ -78,12 +79,12 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
     text = overlay.querySelector("#addr-qr-address"),
     copyButton = overlay.querySelector("#addr-qr-copy"),
     copiedNote = overlay.querySelector("#addr-qr-copied"),
-    closeButton = overlay.querySelector("#addr-qr-close"),
-    actions = copyButton.parentElement;
+    closeButton = overlay.querySelector("#addr-qr-close");
   closeButton.textContent = t("Close");
   let copyLabel = t("Copy address");
-  const copyIcon = icons.copy?.() ?? "",
-    copiedIcon = icons.copied?.() ?? "";
+  copyButton.querySelector('[data-copy-label="idle"]').textContent = t("Copy");
+  copyButton.querySelector('[data-copy-label="done"]').textContent = t("Copied");
+  copyButton.querySelector("[data-copy-tick]").innerHTML = icons.copied?.() ?? "";
   text.title = copyLabel;
   image.title = copyLabel;
   let payload = "", // the full value; the line above may show it shortened
@@ -93,14 +94,12 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
   const resetCopied = () => {
     clearTimeout(copiedTimer);
     copyButton.classList.remove("is-copied");
-    copyButton.innerHTML = copyIcon;
     copyButton.setAttribute("aria-label", copyLabel);
     copyButton.title = copyLabel;
     copiedNote.textContent = "";
   };
   const showCopied = () => {
     copyButton.classList.add("is-copied");
-    copyButton.innerHTML = copiedIcon;
     copyButton.setAttribute("aria-label", t("Copied"));
     copyButton.title = t("Copied");
     copiedNote.textContent = t("Copied");
@@ -164,16 +163,13 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
     privatePayload = kind === "psbt";
     copyLabel = privatePayload ? t("Copy PSBT") : t("Copy address");
     // A PSBT may contain proprietary private-key fields. Its text and image
-    // are readouts; only the label's clipboard deliberately copies the bytes.
+    // are readouts; only the copy button deliberately copies the bytes.
     text.setAttribute("data-i18n-skip", "");
     text.setAttribute(privatePayload ? "data-private-value" : "data-public-value", "");
     text.removeAttribute(privatePayload ? "data-public-value" : "data-private-value");
     text.disabled = privatePayload;
     text.title = image.title = privatePayload ? "" : copyLabel;
     text.style.cursor = image.style.cursor = privatePayload ? "default" : "";
-    actions.style.justifyContent = "flex-end";
-    title.classList.add("copy-field-label");
-    title.append(copyButton);
     const parts = kind && typeof frames === "function" ? frames(value, kind) : null;
     if (Array.isArray(parts) && parts.length > 1) {
       let frame = 0;

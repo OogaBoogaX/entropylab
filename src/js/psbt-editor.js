@@ -446,21 +446,39 @@ const mapDiffRows = (changes, scope, index, before, after, network, copyIcon) =>
     .filter((change) => change.scope === scope && change.index === index)
     .map((change) => {
       const mapOf = (doc) => (scope === "global" ? doc.globals : scope === "input-map" ? doc.inputs?.[index] : doc.outputs?.[index]) || [];
-      const beforePair = mapOf(before).find((pair) => pair.key === change.key) || null;
-      const afterPair = mapOf(after).find((pair) => pair.key === change.key) || null;
+      // Duplicate keys make a bare key lookup ambiguous, so the change
+      // carries each side's occurrence ordinal within its key group
+      // (psbt-diff.js); the row must show that exact pair, not the first.
+      const withKey = (doc) => mapOf(doc).filter((pair) => pair.key === change.key);
+      const beforePair = change.beforeOrdinal == null ? null : withKey(before)[change.beforeOrdinal] || null;
+      const afterPair = change.afterOrdinal == null ? null : withKey(after)[change.afterOrdinal] || null;
       const field = change.name ? `<span class="psbted-hex">${escapeHtml(change.name)}</span>` : escapeHtml(`Unknown pair (type 0x${change.key.slice(0, 2)})`);
       return diffRow(change, field, pairCell(beforePair, network, copyIcon), pairCell(afterPair, network, copyIcon));
     });
 
+// A document rust-bitcoin rejects, whose unsigned transaction is
+// consensus-invalid, or whose duplicate-key sanitize family is in problem
+// state is not one the decoded comparison can vouch for: the views it
+// compared are already suspect (audit B2). Equality verdicts are withheld
+// while either compared document is in that state.
+const docBlocksEqualityClaims = (doc) =>
+  Boolean(doc?.rustBitcoinError || doc?.txSanityError) || doc?.sanitize?.duplicateKeys?.state === "problem";
+
 export const psbtDiffHtml = (diff, before, after, network, { copyIcon = () => "" } = {}) => {
-  if (diff.equal) return `<p class="psbted-note-ok">Semantically identical — the underlying transaction, the signing state, and the metadata all match.</p>`;
+  const blocked = docBlocksEqualityClaims(before) || docBlocksEqualityClaims(after);
+  if (diff.equal && !blocked) return `<p class="psbted-note-ok">Semantically identical — the underlying transaction, the signing state, and the metadata all match.</p>`;
   const summary = [
+    ...(blocked
+      ? [`<p class="psbted-note-warn">⚠ At least one compared PSBT is invalid (rust-bitcoin rejected it, its unsigned transaction would not be accepted by a node, or it carries duplicate keys) — equality cannot be claimed for an invalid document; the lines below describe only what the decode could read.</p>`]
+      : []),
     diff.transactionChanged
       ? `<p class="psbted-note-bad">✕ The underlying transaction changed — review every input and output before using either PSBT.</p>`
       : `<p class="psbted-note-ok">✓ The underlying transaction is unchanged.</p>`,
     diff.signingChanged
       ? `<p class="psbted-note-warn">⚠ Signing state changed (signatures, sighash types, final scripts).</p>`
-      : `<p class="muted">Signing state unchanged.</p>`,
+      : blocked
+        ? `<p class="psbted-note-warn">⚠ Signing state cannot be confirmed unchanged — equality cannot be claimed for an invalid document.</p>`
+        : `<p class="muted">Signing state unchanged.</p>`,
     diff.metadataChanged
       ? `<p class="psbted-note-warn">⚠ PSBT metadata changed (key-value pairs outside the transaction).</p>`
       : `<p class="muted">PSBT metadata unchanged.</p>`,
