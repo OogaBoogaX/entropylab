@@ -117,6 +117,9 @@ the limits of browser-memory cleanup.
   rather than skipped — verifies optional Jade
   anti-exfil (sign-to-contract) transcripts without a key, and can compare supported
   SegWit v0 SIGHASH_ALL signatures with RFC 6979, including Bitcoin Core-style low-r grinding, in a temporary session.
+  A signature on a script containing OP_CODESEPARATOR is reported as
+  unverifiable rather than compared, because its digest commits to the script
+  from just past the last executed separator.
   Every input's declared sighash policy and each signature's appended sighash
   byte are decoded without a key; anything other than exact SIGHASH_ALL (or
   Taproot's equivalent SIGHASH_DEFAULT) is a
