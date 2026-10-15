@@ -69,6 +69,29 @@ test("the ended screen mentions the clipboard only when it was cleared", () => {
   assert.equal(paragraphs(true), paragraphs(false) + 1);
 });
 
+// Contract: the ended screen says the clipboard was emptied only when the
+// clear reported success. A clear that reports false, or that the browser
+// refuses (a rejection), must not leave that claim on the screen. The test
+// above pins the screen; this pins what endSession hands it (found by the
+// mutation-testing pilot: `.catch(() => true)` and dropping
+// `{ clipboardCleared }` both passed every test).
+test("End session claims an emptied clipboard only when the clear succeeded", async () => {
+  const screenParagraphs = (cleared) => {
+    const doc = new MiniDocument();
+    renderSessionEnded(doc, { clipboardCleared: cleared });
+    return doc.querySelectorAll("[data-session-ended] p").length;
+  };
+  for (const [label, clearClipboard, cleared] of [
+    ["cleared", async () => true, true],
+    ["not cleared", async () => false, false],
+    ["refused", async () => { throw new Error("NotAllowedError"); }, false],
+  ]) {
+    const { doc, win } = fakePage();
+    await endSession({ win, doc, clearClipboard });
+    assert.equal(doc.querySelectorAll("[data-session-ended] p").length, screenParagraphs(cleared), label);
+  }
+});
+
 // Microsoft Edge. Measured on 2026-10-06 (Windows 11, Chrome 154.0.8037.98
 // and Edge 154.0.4258.53): after Copy seed phrase, Edge's browser process
 // still held 2 or 3 copies of the phrase once the tab closed, until Edge

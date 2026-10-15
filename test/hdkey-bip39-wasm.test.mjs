@@ -12,9 +12,10 @@
 //     the rust-bip39 crate's English list (single source of truth check).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import * as scureBip39 from "@scure/bip39";
 import { wordlist as scureEnglish } from "@scure/bip39/wordlists/english.js";
@@ -416,3 +417,107 @@ for (const operation of ["master", "child"]) {
     assert.equal(root.privateExtendedKey, wipeVectorXprv);
   });
 }
+
+// Contract: privateExtendedKey returns the published serialization, and every
+// byte buffer hdkey.js allocates to build it (the 33-byte key field and the
+// 78-byte body that holds the key and chain code) is zero when it returns.
+// observeHdKeyTemporaries sees only slice/subarray copies, so this observes
+// `new Uint8Array(n)` made directly by hdkey.js. The constructor is proxied,
+// not subclassed, so the buffers stay plain Uint8Arrays and instanceof checks
+// elsewhere keep passing. Found by the mutation-testing pilot: deleting either
+// fill(0) passed every test that reaches hdkey.js.
+function observeHdKeyAllocations(operation) {
+  const RealUint8Array = globalThis.Uint8Array, allocated = [];
+  const Observed = new Proxy(RealUint8Array, {
+    construct(target, args, newTarget) {
+      const bytes = Reflect.construct(target, args, newTarget === Observed ? target : newTarget);
+      if (new Error().stack.split("\n")[2]?.includes("/src/js/hdkey.js:")) allocated.push(bytes);
+      return bytes;
+    },
+  });
+  let result;
+  globalThis.Uint8Array = Observed;
+  try { result = operation(); } finally { globalThis.Uint8Array = RealUint8Array; }
+  return { result, allocated };
+}
+
+test("privateExtendedKey clears the key field and the serialization it builds", () => {
+  // BIP32 test vector 1: m and m/0H.
+  const root = HDKey.fromMasterSeed(hexToBytes(wipeVectorSeed));
+  const child = root.deriveChild(0x80000000);
+  for (const [node, expected] of [
+    [root, wipeVectorXprv],
+    [child, "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7"],
+  ]) {
+    const { result, allocated } = observeHdKeyAllocations(() => node.privateExtendedKey);
+    assert.equal(result, expected);
+    assert.deepEqual(allocated.map((bytes) => bytes.length).sort((a, b) => a - b), [33, 78], "observes the key field and the body");
+    for (const bytes of allocated) assert.ok(bytes.every((byte) => byte === 0), `the ${bytes.length}-byte buffer still holds key material`);
+    // The node itself is untouched: the getter wipes its own copies only.
+    assert.equal(node.privateExtendedKey, expected);
+  }
+  child.wipePrivateData();
+  root.wipePrivateData();
+});
+
+// Contract: when a CKD step reports the BIP32 retry verdict (I_L >= n, or a
+// child at infinity; WASM code 1), deriveChild proceeds with the next index,
+// exactly as BIP32 specifies, and refuses once no next index exists (2^32 - 1
+// for a private parent, 2^31 - 1 for a public one). No real vector exists
+// (about 2^-128 per step) and the WASM exports are frozen, so the test loads
+// a copy of hdkey.js whose only change routes the CKD call through a stub
+// that reports the retry verdict at chosen indexes and calls the real WASM
+// export otherwise. @scure/bip32 is the oracle for the node that results.
+// The #359 test above pins the same wiring by source text; this one runs it.
+async function loadHdKeyWithCkdStub() {
+  const source = readFileSync(join(repoRoot, "src/js/hdkey.js"), "utf8");
+  const call = "wasm()[fn](p, index >>> 0, outPtr)";
+  assert.equal(source.split(call).length, 2, "hdkey.js must make exactly one CKD call in this form; update the seam with it");
+  const srcUrl = pathToFileURL(join(repoRoot, "src/js/")).href;
+  const patched = source
+    .replace(call, "globalThis.__hdkeyCkdStub(fn, p, index >>> 0, outPtr)")
+    .replace(/from "\.\/([^"]+)"/g, (_, file) => `from "${srcUrl}${file}"`);
+  const dir = mkdtempSync(join(tmpdir(), "hdkey-ckd-stub-"));
+  try {
+    writeFileSync(join(dir, "hdkey.mjs"), patched);
+    return (await import(pathToFileURL(join(dir, "hdkey.mjs")).href)).HDKey;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("a BIP32 retry verdict derives the next index, and the last index refuses (issue #359)", async () => {
+  const StubbedHDKey = await loadHdKeyWithCkdStub();
+  let retryAt = new Set();
+  globalThis.__hdkeyCkdStub = (fn, p, index, outPtr) => retryAt.has(index) ? 1 : wasmExports()[fn](p, index, outPtr);
+  try {
+    const seed = hexToBytes(wipeVectorSeed);
+    const root = StubbedHDKey.fromMasterSeed(seed);
+    const publicRoot = root.neutered();
+    const oracle = ScureHDKey.fromMasterSeed(seed);
+    const H = 0x80000000;
+    // Control: with no retry verdict the copy derives exactly what scure does.
+    assert.equal(root.deriveChild(5).privateExtendedKey, oracle.deriveChild(5).privateExtendedKey);
+    // One retry verdict: the next index, for private normal, private hardened
+    // and public children.
+    retryAt = new Set([5, H + 5]);
+    for (const [parent, index, expected] of [
+      [root, 5, oracle.deriveChild(6).privateExtendedKey],
+      [root, H + 5, oracle.deriveChild(H + 6).privateExtendedKey],
+      [publicRoot, 5, oracle.deriveChild(6).publicExtendedKey],
+    ]) {
+      const child = parent.deriveChild(index);
+      assert.equal(child.index, index + 1, `retry at ${index}`);
+      assert.equal(parent === publicRoot ? child.publicExtendedKey : child.privateExtendedKey, expected, `retry at ${index}`);
+    }
+    // Consecutive verdicts keep moving forward.
+    retryAt = new Set([5, 6]);
+    assert.equal(root.deriveChild(5).privateExtendedKey, oracle.deriveChild(7).privateExtendedKey);
+    // The last index has no next one: refuse instead of wrapping or guessing.
+    retryAt = new Set([2 ** 32 - 1, H - 1]);
+    assert.throws(() => root.deriveChild(2 ** 32 - 1), /cannot retry child derivation at index 4294967295/);
+    assert.throws(() => publicRoot.deriveChild(H - 1), /cannot retry child derivation at index 2147483647/);
+  } finally {
+    delete globalThis.__hdkeyCkdStub;
+  }
+});
