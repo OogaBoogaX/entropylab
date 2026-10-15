@@ -117,6 +117,9 @@ the limits of browser-memory cleanup.
   rather than skipped — verifies optional Jade
   anti-exfil (sign-to-contract) transcripts without a key, and can compare supported
   SegWit v0 SIGHASH_ALL signatures with RFC 6979, including Bitcoin Core-style low-r grinding, in a temporary session.
+  A signature on a script containing OP_CODESEPARATOR is reported as
+  unverifiable rather than compared, because its digest commits to the script
+  from just past the last executed separator.
   Every input's declared sighash policy and each signature's appended sighash
   byte are decoded without a key; anything other than exact SIGHASH_ALL (or
   Taproot's equivalent SIGHASH_DEFAULT) is a
@@ -494,6 +497,19 @@ modules it publishes: the artifact commit and the Pages deploy wait for that
 check. A host clang build is not those bytes. Rebuilds on other machines that
 matched the published hashes, the page and the modules alike, are recorded in
 [docs/Reproductions.md](docs/Reproductions.md), with how to add one.
+
+The boundary is the image. The page and the WASM modules are reproducible
+inside it: same commit, same digest. The Dockerfile pins the Ubuntu base by
+digest, the package archive to one snapshot, and the Node, Rust and clang
+versions; the image built from it is not itself bit-for-bit reproducible (the
+three builders in docs/Reproductions.md got three image digests and the same
+outputs). Its compilers are prebuilt binaries, trusted as a seed. This is not
+a full-source bootstrap. Full-source chains exist, from a few hundred bytes of
+hex assembler (hex0, GNU Mes) up to GCC and, in Guix, on to Rust through
+mrustc, but EntropyLab's toolchain has not been built that way, and no one
+has checked that such a build gives the same compiler or the same modules.
+EntropyLab claims byte-identical builds inside the pinned image, not that the
+compiler was built from an inspectable seed.
 
 The checksum detects accidental corruption. The attestation (Sigstore) says
 this repository's CI built those bytes. OpenTimestamps says the digest

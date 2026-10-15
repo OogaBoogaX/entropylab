@@ -52,6 +52,7 @@ ${[
   "hodlConcatBytes",
   "hodlBip143",
   "hodlInputScriptCode",
+  "hodlScriptHasCodeSeparator",
   "hodlScriptPushes",
   "hodlWitnessStackItems",
   "hodlLooksPubkey",
