@@ -168,8 +168,10 @@ material. Its security posture rests on the following model:
 - PSBT analysis is explicitly bounded. EntropyLab does not independently fetch
   or verify previous outputs, its output-ownership search covers only the
   displayed account/address range and supported script types, RFC 6979 replay
-  needs a matching session key plus a supported SegWit v0 digest, and
-  Taproot/Schnorr nonces are not analyzed. The report marks these cases
+  needs a matching session key plus a supported SegWit v0 digest, a signature
+  on a script containing OP_CODESEPARATOR is reported as unverifiable rather
+  than verified or replayed, and Taproot/Schnorr nonces are not analyzed.
+  The report marks these cases
   incomplete; a completed individual check is not a security conclusion for
   the transaction.
 - The optional ECDSA nonce-history file is an explicit user download and never
