@@ -50,7 +50,7 @@ test("JSON.parse of the export is an array of length 2", () => {
   assert.equal(entries.length, 2);
 });
 
-test("receive is external, change is internal, both active, range matches wallet.dat", () => {
+test("receive is external, change is internal, both active, default range matches wallet.dat", () => {
   const walletSrc = read("src/js/wallet-export.js");
   const range = walletSrc.match(/const RANGE_END = (\d+)/);
   assert.equal(CORE_IMPORT_RANGE_END, Number(range[1]));
@@ -59,8 +59,68 @@ test("receive is external, change is internal, both active, range matches wallet
   assert.equal(internal.internal, true);
   assert.equal(external.active, true);
   assert.equal(internal.active, true);
-  assert.deepEqual(external.range, [0, 1000]);
-  assert.deepEqual(internal.range, [0, 1000]);
+  // No displayed-window number handed over: the range keeps Core's default
+  // lookahead, ending at 0 + RANGE_END, exactly as wallet-export.js's
+  // branchRangeFromRows reports a wallet it was given no rows for.
+  assert.deepEqual(external.range, [0, CORE_IMPORT_RANGE_END]);
+  assert.deepEqual(internal.range, [0, CORE_IMPORT_RANGE_END]);
+});
+
+test("the import range runs past the displayed address window like the wallet.dat export (audit B7b)", () => {
+  // The wallet.dat side pins this arithmetic outright (wallet-export.test.mjs
+  // "descriptor ranges cover displayed addresses plus a recovery gap"): rows
+  // indexed 5000..5002 are watched through 5002 + 1000 = 6002, start pinned
+  // to 0 so a fresh Core wallet's first getnewaddress is receive index 0.
+  // The msig screen can display address windows up to 2^31-1; an export that
+  // still said [0, 1000] would leave every shown address above 1000 unwatched.
+  const [external, internal] = parse(buildImportDescriptorsJson({ receiveDescriptor: receive, changeDescriptor: change, rangeEnd: 5002 }));
+  assert.deepEqual(external.range, [0, 6002]);
+  assert.deepEqual(internal.range, [0, 6002]);
+  // A window ending at 0 is exactly Core's default range.
+  const [zero] = parse(buildImportDescriptorsJson({ receiveDescriptor: receive, rangeEnd: 0 }));
+  assert.deepEqual(zero.range, [0, CORE_IMPORT_RANGE_END]);
+  // The deepest windows (up to the last unhardened BIP32 child index) are
+  // refused outright: Core's own import bound — a range span under
+  // 1,000,000 — is tighter than the index bound, so [0, 2^31-1] would be
+  // JSON the online node rejects. The Core-bound test below pins the exact
+  // refusal boundary (999,000) against a port of ParseDescriptorRange.
+});
+
+test("a displayed window the export cannot cover is refused (audit B7b)", () => {
+  // Core can watch at most 0..2^31-1; deeper or malformed window ends must
+  // fail loudly instead of shipping an import that misses displayed rows.
+  for (const rangeEnd of [-1, 0.5, Number.NaN, "5002", 2147483648, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER]) {
+    assert.throws(
+      () => buildImportDescriptorsJson({ receiveDescriptor: receive, changeDescriptor: change, rangeEnd }),
+      /a whole number from 0 to 2,147,483,647/,
+    );
+  }
+});
+
+// Bitcoin Core's own import bound (ParseDescriptorRange, src/rpc/util.cpp,
+// applied by importdescriptors): a range whose span reaches 1,000,000 is
+// refused at import with "Range is too large". The range start is pinned at
+// 0, so a displayed end of 999,000 would export [0, 1000000] — JSON Core
+// rejects on the online node. Refuse those ends at build time (#861 review).
+// coreRangeError is a port of Core's check, the independent oracle.
+const coreRangeError = ([low, high]) =>
+  low < 0 ? "Range should be greater or equal than 0"
+  : Math.floor(high / 2 ** 31) !== 0 ? "End of range is too high"
+  : low > high ? "Range specified as [begin,end] must not have begin after end"
+  : high - low >= 1000000 ? "Range is too large"
+  : null;
+test("a window Core's importdescriptors would refuse at import is refused at export (audit B7b)", () => {
+  for (const rangeEnd of [5002, 998998, 998999]) {
+    const [entry] = parse(buildImportDescriptorsJson({ receiveDescriptor: receive, rangeEnd }));
+    assert.equal(coreRangeError(entry.range), null, `shown end ${rangeEnd} produces a range Core accepts`);
+  }
+  for (const rangeEnd of [999000, 5000000, 2147482647, 2147483647]) {
+    assert.throws(
+      () => buildImportDescriptorsJson({ receiveDescriptor: receive, changeDescriptor: change, rangeEnd }),
+      /importdescriptors refuses a range span/,
+      `shown end ${rangeEnd} must be refused, not exported as JSON Core rejects`,
+    );
+  }
 });
 
 test("default timestamp is number 0; now mode is the string now", () => {
@@ -183,15 +243,28 @@ test("the builder never talks to the network", () => {
   assert.doesNotMatch(source, /\bfetch\b|XMLHttpRequest|WebSocket|RTCPeerConnection|sendBeacon|WebTransport/);
 });
 
-test("MS Station result markup wires copy/save and wallet.dat; no new workspace tab", () => {
+test("MS Station result markup renders every documented export; no new workspace tab", () => {
   const app = read("src/js/app.js");
   const shell = read("src/shell.html");
+  // Audit B7a: README.md/llms.txt promise the msig wallet.dat, the watch-only
+  // policy sheet (print + save) and the BIP 388 policy (copy + save); every
+  // one of those controls must appear in the markup hodlShowMsig renders, and
+  // hodlShowMsig must interpolate each builder, not a copy of it.
   assert.match(app, /id="msig-copy-importdescriptors"/);
   assert.match(app, /id="msig-save-importdescriptors"/);
+  assert.match(app, /id="msig-download-wallet-dat"/);
+  assert.match(app, /id="msig-print-policy-sheet"/);
+  assert.match(app, /id="msig-save-policy-sheet"/);
+  assert.match(app, /id="msig-copy-bip388"/);
+  assert.match(app, /id="msig-save-bip388"/);
   assert.match(app, /hodlT\("Copy Core importdescriptors"\)/);
   assert.match(app, /hodlT\("Save Core Watch-only JSON"\)/);
   assert.match(app, /buildImportDescriptorsJson/);
-  assert.match(app, /function hodlShowMsig\(/);
+  const showStart = app.indexOf("function hodlShowMsig(");
+  const show = app.slice(showStart, app.indexOf("\nvar ", showStart));
+  assert.match(show, /\$\{hodlMsigCoreImportDescriptorsMarkup\(\)\}/);
+  assert.match(show, /\$\{hodlMsigPolicySheetMarkup\(\)\}/);
+  assert.match(show, /\$\{hodlMsigBip388Markup\(\)\}/);
   assert.doesNotMatch(shell, /msig-copy-importdescriptors|msig-save-importdescriptors/);
   assert.doesNotMatch(shell, /id="workspace-tabs"[\s\S]{0,2000}importdescriptors/);
   assert.match(shell, /id="workspace-tabs"/);

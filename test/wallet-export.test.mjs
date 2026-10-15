@@ -20,8 +20,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { canonicalizeWatchDescriptor } from "../src/js/core-importdescriptors.js";
@@ -73,6 +73,9 @@ import { BITCOIND, CHAIN_FIXTURES, waitForChainNodeExit, withChainNode } from ".
 const sqliteSrc = read("src/js/sqlite-writer.js");
 const walletSrc = read("src/js/wallet-export.js");
 const app = read("src/js/app.js");
+// Absolute file URL into src/js/, for the real export modules the app's msig
+// handlers call (the harness writes its module outside the source tree).
+const srcUrl = (name) => pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "src/js", name)).href;
 
 
 // --- reference wallets ------------------------------------------------------
@@ -673,8 +676,17 @@ const extract = (startNeedle, endNeedle) => {
 // The UI harness executes the real app.js controls and download handler in a
 // module scope where the vendor globals they read (tr, Cs, sr, le, Gt, xe,
 // cr) are backed by the reference implementations above.
+// The UI harness executes the real app.js controls and download handler in a
+// module scope where the vendor globals they read (tr, Cs, sr, le, Gt, xe,
+// cr) are backed by the reference implementations above. The export modules
+// the msig handlers reach (policy sheet, BIP 388 policy, Core JSON) are the
+// app's own, imported from src/ — only the browser edges (clipboard, print,
+// QR, workspace error line) are stubbed and recorded.
 const harnessSource = `
 import { createHash, createHmac } from "node:crypto";
+import { canPrintPolicySheet, policySheetFilename, policySheetHtml, policySheetText } from ${JSON.stringify(srcUrl("msig-policy-sheet.js"))};
+import { buildBip388PolicyText, bip388PolicyFilename } from ${JSON.stringify(srcUrl("bip388-policy.js"))};
+import { buildImportDescriptorsJson, canonicalizeWatchDescriptor, coreImportDescriptorsFilename } from ${JSON.stringify(srcUrl("core-importdescriptors.js"))};
 const FIELD_P = ${FIELD_P.toString()}n;
 const ORDER_N = ${ORDER_N.toString()}n;
 const BASE_G = [${BASE_G[0].toString()}n, ${BASE_G[1].toString()}n];
@@ -684,6 +696,13 @@ const CHECKSUM_CHARSET = ${JSON.stringify(CHECKSUM_CHARSET)};
 ${[modPow, pointAdd, pointMul, serPub, unserPub, bigintBytes, b58encode, b58checkDecode, b58checkEncode, sha256, ripemd160, bytesToHex, descriptorChecksum, deriveBranchBody, publicKeyForPrivate, hdNodeFrom].map((fn) => `const ${fn.name} = ${fn.toString()};`).join("\n")}
 const captured = { blob: null, name: "" };
 const elements = new Map();
+const copies = [], calls = [];
+const copyText = (text) => { copies.push(String(text)); return Promise.resolve(false); };
+const hodlTText = (source) => source;
+const hodlQrSvg = () => "";
+const hodlSetWorkspaceError = (scope, spec) => { calls.push(["workspace-error", scope, spec]); };
+const hodlErrorSpecFrom = (error) => ({ raw: String(error?.message ?? error) });
+const window = { print: () => { calls.push(["print"]); }, addEventListener() {}, removeEventListener() {} };
 const URL = {
   createObjectURL: (blob) => { captured.blob = blob; return "blob:mock"; },
   revokeObjectURL: () => {},
@@ -695,11 +714,12 @@ const document = {
   createElement: () => ({ click() { captured.name = this.download; } }),
   getElementById: (id) => elements.get(id) ?? null,
   querySelectorAll: (selector) => [...elements.values()].filter((element) => element.matches?.(selector)),
+  body: { appendChild() {}, classList: { add() {}, remove() {} } },
 };
 let hodlWalletResult = null, hodlRevealPrivate = false, hodlWalletDatBirthday = "genesis";
 const hodlSha256 = (bytes) => sha256(bytes);
 const hodlDescriptorChecksum = descriptorChecksum;
-const hodlBase58Check = { decode: b58checkDecode };
+const hodlBase58Check = { decode: b58checkDecode, encode: b58checkEncode };
 const hodlReversionExtendedKey = (text, version) => {
   const raw = b58checkDecode(text).slice();
   raw[0] = (version >>> 24) & 255; raw[1] = (version >>> 16) & 255; raw[2] = (version >>> 8) & 255; raw[3] = version & 255;
@@ -715,9 +735,12 @@ ${extract("function hodlPrivateDataControls", "function hodlWalletMessages")}
 ${extract("function hodlWalletDatDeps", "function hodlFocusWalletResult")}
 ${sqliteSrc}
 ${walletSrc}
+// Tolerates an app.js without this markup function so the pre-fix tree fails
+// on the render assertions, not on the harness import.
+const msigBip388Markup = typeof hodlMsigBip388Markup === "function" ? hodlMsigBip388Markup : () => "";
 const setResult = (value, flag) => { hodlWalletResult = value; hodlRevealPrivate = flag; };
 const setWalletDatBirthday = (value) => { hodlWalletDatBirthday = value; };
-export { captured, elements, hodlPrivateDataControls, hodlSaveRecoveryControl, hodlDownloadWalletDat, hodlBindWalletResultActions, hodlMsigCoreImportDescriptorsMarkup, setResult, setWalletDatBirthday };
+export { captured, elements, copies, calls, hodlPrivateDataControls, hodlSaveRecoveryControl, hodlDownloadWalletDat, hodlBindWalletResultActions, hodlMsigCoreImportDescriptorsMarkup, hodlMsigPolicySheetMarkup, msigBip388Markup, hodlBindMsigCoreImportDescriptors, setResult, setWalletDatBirthday };
 `;
 
 // Keep the transient harness out of test/ so parallel suites that list the
@@ -834,6 +857,149 @@ test("binding attaches the download to #download-wallet-dat and tolerates missin
   ui.elements.get("download-wallet-dat").click();
   assert.equal(ui.captured.name, "watch-only-wallet.dat");
   ui.elements.clear();
+});
+
+// --- Audit B7: the msig result renders and wires every documented export ----
+//
+// README.md/llms.txt promise the watch-only wallet.dat, the importdescriptors
+// JSON, the one-page policy sheet and the BIP 388 policy for a derived
+// multisig; B7a found the wallet.dat/policy-sheet/BIP-388 controls bound but
+// never rendered, and B7b found the JSON range unable to cover a displayed
+// address window above index 1000.
+
+// A displayable 2-of-3 result, shaped the way MS Station's hodlWalletResult
+// carries one: the same keys as MSIG_WALLET, with a first receive row the
+// policy sheet can print. BIP173's published example address stands in for
+// the derived row (the sheet's content layout is pinned in
+// msig-policy-sheet.test.mjs; here only the wiring matters).
+const MSIG_VIEW_WALLET = {
+  ...MSIG_WALLET,
+  addressStart: 0,
+  receive: [
+    { index: 0, address: "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", path: "m/48'/0'/0'/2'/0/0" },
+    { index: 1 },
+  ],
+};
+
+const MSIG_EXPORT_CONTROLS = [
+  "msig-save-importdescriptors",
+  "msig-copy-importdescriptors",
+  "msig-download-wallet-dat",
+  "msig-print-policy-sheet",
+  "msig-save-policy-sheet",
+  "msig-copy-bip388",
+  "msig-save-bip388",
+];
+
+// An element double for the msig export controls: the binder hardens each
+// button through cloneNode/replaceWith before addEventListener, so the double
+// replays both steps and keeps the attached listener for a click.
+const stubControl = (id) => ({
+  id,
+  listeners: {},
+  classList: { add() {}, remove() {} },
+  isConnected: false,
+  textContent: "",
+  cloneNode() { return { ...this, listeners: {} }; },
+  replaceWith(node) { ui.elements.set(node.id, node); },
+  addEventListener(type, fn) { this.listeners[type] = fn; },
+  click() { this.listeners.click?.(); },
+});
+
+test("a derived msig renders every documented export control (audit B7a)", () => {
+  ui.setResult(MSIG_VIEW_WALLET, false);
+  const html = `${ui.hodlMsigCoreImportDescriptorsMarkup()}\n${ui.hodlMsigPolicySheetMarkup()}\n${ui.msigBip388Markup()}`;
+  for (const id of MSIG_EXPORT_CONTROLS) assert.ok(html.includes(`id="${id}"`), `the rendered msig output is missing #${id}`);
+});
+
+test("the msig export binder tolerates elements that were never rendered", () => {
+  ui.setResult(MSIG_VIEW_WALLET, false);
+  assert.doesNotThrow(() => ui.hodlBindMsigCoreImportDescriptors());
+});
+
+test("every rendered msig export control fires its handler through the real binder (audit B7a)", () => {
+  ui.setResult(MSIG_VIEW_WALLET, false);
+  for (const id of MSIG_EXPORT_CONTROLS) ui.elements.set(id, stubControl(id));
+  ui.hodlBindMsigCoreImportDescriptors();
+
+  // The Core JSON download carries the importdescriptors array...
+  ui.captured.name = "";
+  ui.elements.get("msig-save-importdescriptors").click();
+  assert.equal(ui.captured.name, "entropylab-msig-2of3-importdescriptors.json");
+  const saved = JSON.parse(ui.captured.blob.parts[0]);
+  assert.equal(saved.length, 2);
+  assert.equal(saved[0].internal, false);
+  assert.equal(saved[1].internal, true);
+  // ...and the copy variant hands the same entries to the clipboard.
+  ui.elements.get("msig-copy-importdescriptors").click();
+  assert.deepEqual(JSON.parse(ui.copies.at(-1)), saved);
+
+  // The watch-only wallet.dat downloads through the app's own build path.
+  ui.captured.name = "";
+  ui.captured.blob = null;
+  ui.elements.get("msig-download-wallet-dat").click();
+  assert.equal(ui.captured.name, "entropylab-msig-2of3-watch-only-wallet.dat");
+  assert.equal(ui.captured.blob.type, "application/octet-stream");
+  assert.ok(ui.captured.blob.parts[0].length > 1000, "wallet.dat bytes were built");
+
+  // The policy sheet prints and saves.
+  ui.calls.length = 0;
+  ui.elements.get("msig-print-policy-sheet").click();
+  assert.deepEqual(ui.calls, [["print"]], "the print control must reach window.print");
+  ui.captured.name = "";
+  ui.elements.get("msig-save-policy-sheet").click();
+  assert.equal(ui.captured.name, "entropylab-msig-2of3-watch-only-policy.txt");
+  assert.match(ui.captured.blob.parts[0], /WATCH-ONLY MULTISIG POLICY SHEET/);
+
+  // The BIP 388 policy copies and saves (semantics checked in
+  // bip388-policy.test.mjs; here the template proves the wiring).
+  ui.elements.get("msig-copy-bip388").click();
+  assert.match(ui.copies.at(-1), /descriptor_template: wsh\(sortedmulti\(2,@0\/\*\*,@1\/\*\*,@2\/\*\*\)\)/);
+  ui.captured.name = "";
+  ui.elements.get("msig-save-bip388").click();
+  assert.equal(ui.captured.name, "entropylab-msig-2of3-bip388.txt");
+
+  assert.deepEqual(ui.calls.filter(([name]) => name === "workspace-error"), []);
+  ui.elements.clear();
+});
+
+test("the Core JSON download covers the displayed address window plus Core's lookahead (audit B7b)", () => {
+  // The same arithmetic the wallet.dat records pin above: displayed receive
+  // rows 5000..5002 are watched through 6002, start pinned to 0.
+  ui.setResult({
+    kind: "msig",
+    network: "mainnet",
+    script: "p2wsh",
+    m: 2,
+    n: 3,
+    sorted: true,
+    receiveDescriptor: MSIG_WALLET.receiveDescriptor,
+    changeDescriptor: MSIG_WALLET.changeDescriptor,
+    receive: [{ index: 5000 }, { index: 5001 }, { index: 5002 }],
+    change: [{ index: 5000 }],
+  }, false);
+  for (const id of ["msig-save-importdescriptors", "msig-copy-importdescriptors"]) ui.elements.set(id, stubControl(id));
+  ui.hodlBindMsigCoreImportDescriptors();
+  ui.captured.blob = null;
+  ui.elements.get("msig-save-importdescriptors").click();
+  const entries = JSON.parse(ui.captured.blob.parts[0]);
+  for (const entry of entries) assert.deepEqual(entry.range, [0, 6002], "saved JSON range");
+  ui.elements.get("msig-copy-importdescriptors").click();
+  for (const entry of JSON.parse(ui.copies.at(-1))) assert.deepEqual(entry.range, [0, 6002], "copied JSON range");
+  ui.elements.clear();
+});
+
+test("the Core note qualifies its index-0 claim once the window starts deeper (audit B7b copy)", () => {
+  ui.setResult(MSIG_VIEW_WALLET, false);
+  assert.match(ui.hodlMsigCoreImportDescriptorsMarkup(), /index 0 here/);
+  ui.setResult({
+    ...MSIG_VIEW_WALLET,
+    receive: [{ index: 5000, address: MSIG_VIEW_WALLET.receive[0].address, path: "m/48'/0'/0'/2'/0/5000" }],
+    change: [{ index: 5000 }],
+  }, false);
+  const html = ui.hodlMsigCoreImportDescriptorsMarkup();
+  assert.doesNotMatch(html, /index 0 here/);
+  assert.match(html, /index 0/);
 });
 
 // --- Bitcoin Core integration (skipped where bitcoind is not installed) ----

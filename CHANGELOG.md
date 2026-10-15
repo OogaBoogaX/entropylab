@@ -3,6 +3,15 @@
 Release notes for EntropyLab. Each release is a single self-contained
 `entropylab.html`; verify it against the signed `SHA256SUMS.txt` before use.
 
+## Unreleased
+
+- **Passphrases starting with U+FEFF derive a different wallet than in
+  v1.0.0** (audit C2-E): the BIP39 salt now hashes the leading U+FEFF the way
+  the BIP39 reference does, and key-file export/import round-trips it
+  byte-faithfully. A passphrase that begins with U+FEFF (pasted, never typed)
+  opened the BOM-less wallet in v1.0.0; to reach that old wallet, enter the
+  passphrase without the leading U+FEFF.
+
 ## v1.0.0 — 2026-10-11
 
 First stable release. Source commit

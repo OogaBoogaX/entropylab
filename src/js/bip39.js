@@ -15,7 +15,11 @@ import { wordlist as bip39English } from "./bip39-english.js";
 export { bip39English };
 
 const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder();
+// ignoreBOM: a leading U+FEFF is passphrase content (NFKD keeps it, BIP39
+// hashes it), not an encoding signature to drop — the salt from passphrase
+// bytes in saltFor must equal the salt from the same passphrase as text.
+// entropyToMnemonic's decode is unaffected: its words are plain ASCII.
+const textDecoder = new TextDecoder("utf-8", { ignoreBOM: true });
 
 const PHRASE_CAP = 1024; // a 24-word phrase is at most ~250 bytes
 const ENTROPY_CAP = 64; // BIP39 entropy is 16..32 bytes

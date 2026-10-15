@@ -6,6 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { HDKey as ScureHDKey } from "@scure/bip32";
+import { mnemonicToSeedSync } from "@scure/bip39";
+import { NETWORK, p2wpkh } from "@scure/btc-signer";
 import { createJournal, wipeJournal } from "../src/js/journal.js";
 import { createBase58check, hex } from "@scure/base";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -1228,13 +1230,28 @@ test("a wallet another tab still shows keeps its row keys when one tab drops it"
 test("saving a vanity passphrase match to its key zeroes the wallet the key had", async () => {
   // A passphrase match is a new wallet (new fingerprint): the Keys tab files
   // it as a new tab, then the match folds it back into the key it came from,
-  // which drops that key's previous wallet.
+  // which drops that key's previous wallet. Update key now verifies the match
+  // against the key's own material before writing (audit B5): the key gets
+  // the vector words so the honest address — derived here with @scure from
+  // those words and the match's passphrase at the ground path — passes.
   const { context, derive, setIdentity, driveUntil, held } = await stationHarness();
   const previous = await derive("before-vanity"), source = context.hodlKeys[context.hodlActiveKey], previousResult = source.result;
-  const run = { sourceKind: "key", sourceId: source.id, sourceLabel: "key", method: "passphrase", script: "p2wpkh", path: [84, 0, 0, 0, 0], pathText: "m/84'/0'/0'/0/0" };
+  const honestAddress = p2wpkh(ScureHDKey.fromMasterSeed(mnemonicToSeedSync(seedVector.words, "vanity passphrase")).derive("m/84/0/0/0/0").publicKey, NETWORK).address;
+  source.result.entropy = hex.decode(seedVector.entropy);
+  const run = { sourceKind: "key", sourceId: source.id, sourceLabel: "key", sourceFingerprint: source.result.masterFingerprint, method: "passphrase", script: "p2wpkh", path: [84, 0, 0, 0, 0], pathText: "m/84'/0'/0'/0/0" };
+  const inert = new Proxy(function () {}, { get: (_, key) => key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inert, apply: () => inert, construct: () => inert });
+  Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
+  let applyParts;
+  try {
+    applyParts = await loadAppFunctions(["hodlScriptTypes", "hodlVanityMatchAddress"]);
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+  }
   Object.assign(context, {
-    hodlScriptTypes: (await loadAppFunctions(["hodlScriptTypes"])).hodlScriptTypes,
-    hodlVanityMatches: [{ passphrase: "vanity passphrase", index: null, savedTo: "" }], hodlVanityRun: run, hodlVanityApplying: false,
+    hodlScriptTypes: applyParts.hodlScriptTypes,
+    hodlVanityMatchAddress: applyParts.hodlVanityMatchAddress,
+    hodlVanityMatches: [{ passphrase: "vanity passphrase", index: null, address: honestAddress, savedTo: "" }], hodlVanityRun: run, hodlVanityApplying: false,
     hodlVanityPlan: () => ({ node: null, pathPrefix: [], path: run.path }), hodlWorkspace: "vanity", hodlSpSource: "", hodlBip85Source: "",
     hodlRenderVanityOut() {}, hodlVanitySyncControls() {}, hodlVanityKeyLabel: () => "key", hodlVanitySetStatus() {}, hodlVanitySyncSource() {},
     hodlPickSpSessionKey() {}, hodlPickBip85SessionKey() {},
