@@ -249,7 +249,7 @@ test("the seed from passphrase bytes equals the seed from its text", () => {
 // EF BB BF and derive a different wallet than the text path (and than
 // Electrum and other NFKD keepers) for the same typed passphrase.
 test("a leading U+FEFF in a passphrase is hashed, by bytes and by text alike", () => {
-  const passphrase = "﻿correct horse battery staple";
+  const passphrase = "\uFEFFcorrect horse battery staple";
   const expected = hex(scureSeed(MNEMONIC, passphrase));
   assert.equal(hex(mnemonicToSeedSync(MNEMONIC, passphrase)), expected, "the text path keeps U+FEFF");
   assert.equal(hex(mnemonicToSeedSync(MNEMONIC, utf8(passphrase))), expected, "the byte path keeps U+FEFF");
@@ -267,7 +267,7 @@ test("a U+FEFF-leading passphrase survives the key-file text seam", () => {
   const slice = (name, next) => app.slice(app.indexOf(`function ${name}(`), app.indexOf(`function ${next}(`));
   const context = { TextDecoder };
   runInNewContext(slice("hodlTypedText", "hodlResultPassphrase") + slice("hodlPassphraseText", "hodlStorePassphrase"), context);
-  const passphrase = "﻿correct horse battery staple";
+  const passphrase = "\uFEFFcorrect horse battery staple";
   const bytes = utf8(passphrase);
   const exportedText = context.hodlPassphraseText(bytes); // export: bytes → text
   assert.equal(exportedText, passphrase, "the exported text keeps the leading U+FEFF");

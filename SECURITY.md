@@ -118,7 +118,11 @@ material. Its security posture rests on the following model:
   including temporary BIP32 serialized key/chain-code views after master
   derivation, child derivation, and extended-key import (also on failure).
   Returned HDKey nodes keep independent copies; this cleanup does not wipe
-  caller-owned seed buffers. A derived wallet, a BIP-85 child, and each
+  caller-owned seed buffers. With the fixes merged in
+  [PR #843](https://github.com/OogaBoogaX/entropylab/pull/843), rejected HD
+  derivation paths also wipe the last intermediate private child created
+  before the error; the caller-owned root remains usable. A derived wallet,
+  a BIP-85 child, and each
   station's copy of a key hold their secrets only as byte arrays and HDKey
   nodes; words, WIF, xprv and hex text are built only where a secret is
   shown, copied or exported, or where a tool takes it as text. The layer also
@@ -181,6 +185,15 @@ material. Its security posture rests on the following model:
   The report marks these cases
   incomplete; a completed individual check is not a security conclusion for
   the transaction.
+- With the fixes merged in
+  [PR #843](https://github.com/OogaBoogaX/entropylab/pull/843), PSBT and
+  raw-transaction nonce analysis refuses an inspection requiring
+  more than 32,768 same-r candidate-pair comparisons across all nonce groups.
+  This bounds collision-driven pair allocation; it is separate from the
+  digest-reconstruction budget. Even benign repeated signatures can exceed
+  this resource limit. Refusal clears the attempted report and surfaces an
+  error, without recording a nonce verdict. Repeated-nonce warnings suppress
+  the no-repeat assurance in both report formats.
 - The optional ECDSA nonce-history file is an explicit user download and never
   uses browser storage or the network. It contains check timestamps, master
   fingerprints when available, raw `r` values, domain-separated SHA-256
@@ -252,6 +265,14 @@ material. Its security posture rests on the following model:
   below-recommendation warning. Users who intend to
   secure funds must meet the displayed roll/card recommendation and verify
   their procedure independently.
+- Input bit counts are capacity estimates under source assumptions, not
+  measurements of unpredictability. Dice estimates assume independent fair
+  rolls; card estimates assume uniform shuffles and independent reshuffles.
+  The Pearson χ² panel checks only face frequencies: even a predictable
+  repeated sequence can receive no frequency warning. Its percentile is not
+  a probability that the source is fair. Neither a favorable frequency result
+  nor a valid BIP39 checksum certifies safe key material. Hashing does not
+  increase the entropy supplied by the user.
 - Brain wallet — lab hashes the exact UTF-8 text with unsalted SHA-256 and
   treats the digest as BIP39 entropy. Guessable text is stolen coins. A valid
   24-word mnemonic from that hash is not the same wallet as hashing the text
