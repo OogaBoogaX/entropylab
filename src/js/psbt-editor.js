@@ -312,7 +312,7 @@ export const psbtEditorBuildDoc = (doc) => ({
 // Input-map key types whose values commit to the unsigned transaction:
 // partial signatures (0x02), final scriptSig (0x07), final witness (0x08),
 // Taproot key/script signatures (0x13/0x14), and the MuSig2 signing-session
-// material (BIP-327): public nonces (0x1b) and partial signatures (0x1c) are
+// material (BIP-373): public nonces (0x1b) and partial signatures (0x1c) are
 // bound to the message like any signature. Any edit to the transaction
 // changes every digest those values commit to, so keeping them would leave a
 // rebuilt PSBT looking signed while its signatures are invalid (issues #325,

@@ -440,3 +440,43 @@ test("a WIF/hex session key reaches the compare and is never zeroed by the rende
   }
   assert.ok(sessionKey.every((b) => b === 0), "End Session still clears the session buffer");
 });
+
+// ---- app.js hodlPrivFromPath: a path walk that throws partway (#867) ----
+//
+// Security contract: when a child derivation throws partway down a PSBT
+// input's BIP32 path, the intermediate node the walk had reached is wiped,
+// as HDKey.derive wipes its own since #843; the session root never is. The
+// throw is the practically unreachable invalid-child case, so the session
+// root is a stand-in around a real HDKey whose first child refuses the
+// next step.
+test("hodlPrivFromPath wipes the intermediate it reached when a later child derivation throws (#867)", async () => {
+  const slice = await loadAppFunctions(["hodlPrivFromPath"], { settable: ["hodlPsbtHd"] });
+  const root = HDKey.fromMasterSeed(SEED);
+  const target = root.derive("m/0'/0");
+  let reached = null, rootWiped = false;
+  const sessionRoot = {
+    fingerprint: root.fingerprint,
+    deriveChild(index) {
+      reached = root.deriveChild(index);
+      reached.deriveChild = () => {
+        throw new Error("invalid child");
+      };
+      return reached;
+    },
+    wipePrivateData() {
+      rootWiped = true;
+    },
+  };
+  slice.__set.hodlPsbtHd(sessionRoot);
+  try {
+    const found = slice.hodlPrivFromPath([psbtBip32Entry(target.publicKey, root.fingerprint, PSBT_CHILD_PATH)], target.publicKey);
+    assert.equal(found, null, "a path that fails to derive yields no key");
+    assert.ok(reached, "the walk reached m/0' before the next step threw");
+    assert.equal(reached.hasPrivateKey, false, "the reached intermediate (m/0') is wiped");
+    assert.equal(rootWiped, false, "the session root is not wiped");
+  } finally {
+    slice.__set.hodlPsbtHd(null);
+    target.wipePrivateData();
+    root.wipePrivateData();
+  }
+});
