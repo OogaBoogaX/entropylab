@@ -28,6 +28,16 @@ import from restoring cleared secrets. Locking the journal also invalidates
 pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
 
+The code fixes merged in [PR #843](https://github.com/OogaBoogaX/entropylab/pull/843)
+provide the following behavior. Rejected HD derivation paths wipe any intermediate
+private child already created, while preserving the caller's root. The sequential
+PSBT UR decoder API deduplicates identical fragments and allocates only for supplied fragments;
+invalid sequence numbers are refused. Large transaction scripts serialize
+without depending on the browser's function-argument limit.
+Nonce reports never pair a repeated-nonce warning with a no-repeat claim.
+Inputs requiring more than 32,768 same-r pair comparisons are refused with
+an explicit error before those pairs are allocated.
+
 - A live **Security log** below Important shows the browser's initial
   connection status, online/offline changes, and detected browser translation
   with local timestamps. It keeps the last 100 fixed messages in page memory,
@@ -615,6 +625,26 @@ Short inputs are useful for deterministic tests, demonstrations, and recovery
 experiments, so they are accepted with a warning. Hashing a short transcript
 does not add entropy. Never secure funds with an input below the displayed
 recommendation.
+
+### Do enough input bits or a good dice score prove my wallet is secure?
+
+No. Displayed bit counts describe the input's capacity under assumptions:
+dice rolls must be independent and fair, and card deals must come from
+uniformly shuffled decks with independent reshuffles. The app cannot infer
+those properties from the transcript. Hashing or converting the input to
+24 words does not increase its unpredictability.
+
+The dice panel checks face frequencies only. Repeating `123456` has balanced
+counts but is predictable. Its χ² percentile is not the probability that
+the die is fair, and passing the check does not certify randomness. This
+limitation is consistent with [NIST's guidance on statistical randomness
+tests](https://csrc.nist.gov/pubs/sp/800/22/r1/upd1/final).
+
+A valid BIP39 checksum checks internal consistency; it does not prove that
+the phrase is secret, random, or the intended backup. Every BIP39 passphrase
+produces a seed, so a mistyped passphrase can lead to a different wallet
+without an error. Verify the intended wallet independently before funding it.
+See the [BIP39 specification](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki).
 
 ### How should I report a possible security problem?
 
