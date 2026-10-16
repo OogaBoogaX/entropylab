@@ -159,7 +159,7 @@ test("dropSigningPairs removes exactly the transaction-committing fields (issues
   assert.ok(psbtBuildBytes(psbtEditorBuildDoc(doc)).length > 0);
 });
 
-test("dropSigningPairs removes MuSig2 session material but keeps participant pubkeys (BIP-327, issue #325)", () => {
+test("dropSigningPairs removes MuSig2 session material but keeps participant pubkeys (BIP-373, issue #325)", () => {
   const doc = fixtureDoc();
   doc.inputs[0].push(
     { key: "1a" + "02".repeat(33), value: "02" + "03".repeat(33) }, // participant pubkeys: message-independent, stay
