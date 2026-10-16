@@ -127,8 +127,9 @@ const hodlPsbtReferenceVerdict = new Function(
 // severity totals"). `warningSigs` junk partial signatures on input 0
 // (warning-severity, collected first) pad the list; `badWitnesses` further
 // inputs each carry a malformed final witness for a P2WPKH claim
-// (error-severity, collected last).
-const evictionFixture = (warningSigs, badWitnesses) => {
+// (error-severity, collected last). `outputPairs` are raw bytes appended to
+// the one output's map.
+const evictionFixture = (warningSigs, badWitnesses, outputPairs = []) => {
   const vi = (n) => (n < 0xfd ? [n] : [0xfd, n & 0xff, n >> 8]);
   const bytes = [];
   const push = (...chunks) => { for (const chunk of chunks.flat(2)) bytes.push(chunk); };
@@ -156,7 +157,7 @@ const evictionFixture = (warningSigs, badWitnesses) => {
     push(vi(1), [0x01], vi(31), witnessUtxo(0x20 + input));
     push(vi(1), [0x08], vi(badWitness.length), badWitness, 0x00);
   }
-  push(0x00); // the one output's (empty) map
+  push(outputPairs, 0x00); // the one output's map
   return Uint8Array.from(bytes);
 };
 
@@ -189,6 +190,25 @@ test("an error that survived the cap is listed and the evicted one stays counted
   assert.equal(verdict.unlisted, 1, "the evicted error is counted for the banner's continuation line");
   assert.ok(verdict.problems.some((problem) => /final witness/.test(problem)), "the surviving error is listed");
   assert.ok(!verdict.problems.some((problem) => /display cap/.test(problem)), "listed errors need no placeholder");
+});
+
+test("a rust-bitcoin rejection does not hide an evicted error from the count (#867)", () => {
+  // A duplicate unknown output key (0xf0, key data 01) makes rust-bitcoin
+  // reject the file while this crate still reads it, and the fixture's one
+  // real error sits behind the display cap. The verdict lists the
+  // rust-bitcoin line, which the crate's errorCount does not include, so it
+  // must not stand in for the evicted error.
+  const duplicate = [2, 0xf0, 0x01, 1, 0x00];
+  const raw = evictionFixture(65, 1, [...duplicate, ...duplicate]);
+  const doc = psbtInspectDoc(raw);
+  assert.match(doc.rustBitcoinError, /duplicate key/);
+  assert.equal(doc.errorCount, 1, "the crate counts its own one error");
+  assert.ok(doc.problems.every((problem) => problem.severity === "warning"), "that error is behind the cap");
+  const verdict = hodlPsbtReferenceVerdict({ raw });
+  assert.equal(verdict.state, "problem");
+  assert.equal(verdict.problems.length, 1);
+  assert.match(verdict.problems[0], /^rust-bitcoin: duplicate key/);
+  assert.equal(verdict.unlisted, 1, "the evicted error is still counted for the banner");
 });
 
 test("the reference cross-check flags a BIP-174-invalid file the JS parser renders (audit C3-6)", () => {

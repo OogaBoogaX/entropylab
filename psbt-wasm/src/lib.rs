@@ -729,7 +729,7 @@ fn fingerprint_and_path(value: &[u8]) -> Result<(String, String), String> {
     Ok((fingerprint, path))
 }
 
-/// BIP-174 / BIP-370 / BIP-371 / BIP-327 type names used by inspect and sanitize.
+/// BIP-174 / BIP-370 / BIP-371 / BIP-373 type names used by inspect and sanitize.
 pub(crate) fn pair_type_name(kind: &str, type_byte: u8) -> &'static str {
     match (kind, type_byte) {
         ("global", 0x00) => "PSBT_GLOBAL_UNSIGNED_TX",
@@ -766,9 +766,10 @@ pub(crate) fn pair_type_name(kind: &str, type_byte: u8) -> &'static str {
         ("input", 0x16) => "PSBT_IN_TAP_BIP32_DERIVATION",
         ("input", 0x17) => "PSBT_IN_TAP_INTERNAL_KEY",
         ("input", 0x18) => "PSBT_IN_TAP_MERKLE_ROOT",
-        // BIP-327 MuSig2: participant pubkeys, public nonces, and partial
-        // signatures are all signing-session material — the diff layer keys
-        // its signing classification off these names (audit B3).
+        // BIP-373 MuSig2 fields (the scheme itself is BIP-327): participant
+        // pubkeys, public nonces, and partial signatures are all
+        // signing-session material — the diff layer keys its signing
+        // classification off these names (audit B3).
         ("input", 0x1a) => "PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS",
         ("input", 0x1b) => "PSBT_IN_MUSIG2_PUB_NONCE",
         ("input", 0x1c) => "PSBT_IN_MUSIG2_PARTIAL_SIG",
@@ -782,6 +783,9 @@ pub(crate) fn pair_type_name(kind: &str, type_byte: u8) -> &'static str {
         ("output", 0x05) => "PSBT_OUT_TAP_INTERNAL_KEY",
         ("output", 0x06) => "PSBT_OUT_TAP_TREE",
         ("output", 0x07) => "PSBT_OUT_TAP_BIP32_DERIVATION",
+        // BIP-373: the aggregate key's participant list. Metadata, not
+        // signing material, but named like its input-side twin.
+        ("output", 0x08) => "PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS",
         ("output", 0xfc) => "PSBT_OUT_PROPRIETARY",
         ("output", _) => "PSBT_OUT_UNKNOWN",
         _ => "PSBT_UNKNOWN",
@@ -1918,11 +1922,11 @@ mod tests {
 
     // The inspect document names BIP-174 types because the diff layer
     // (src/js/psbt-diff.js) classifies signing material by those names.
-    // BIP-327's MuSig2 input types are signing material: a swapped nonce or
+    // BIP-373's MuSig2 input types are signing material: a swapped nonce or
     // partial signature must surface by name, not as UNKNOWN (audit B3).
-    // The expected strings are BIP-327's own type identifiers.
+    // The expected strings are BIP-373's own type identifiers.
     #[test]
-    fn bip327_musig2_input_types_are_named() {
+    fn bip373_musig2_types_are_named() {
         assert_eq!(
             pair_type_name("input", 0x1a),
             "PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS"
@@ -1930,9 +1934,14 @@ mod tests {
         assert_eq!(pair_type_name("input", 0x1b), "PSBT_IN_MUSIG2_PUB_NONCE");
         assert_eq!(pair_type_name("input", 0x1c), "PSBT_IN_MUSIG2_PARTIAL_SIG");
         // Unassigned bytes keep the UNKNOWN fallback: 0x19 is unassigned,
-        // 0x1d and up are not BIP-327's, and the names are input-scoped only.
+        // 0x1d and up are not BIP-373's, and on outputs BIP-373 assigns 0x08
+        // (participant pubkeys) only.
         assert_eq!(pair_type_name("input", 0x19), "PSBT_IN_UNKNOWN");
         assert_eq!(pair_type_name("input", 0x1d), "PSBT_IN_UNKNOWN");
+        assert_eq!(
+            pair_type_name("output", 0x08),
+            "PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS"
+        );
         assert_eq!(pair_type_name("output", 0x1a), "PSBT_OUT_UNKNOWN");
         assert_eq!(pair_type_name("global", 0x1a), "PSBT_GLOBAL_UNKNOWN");
     }

@@ -200,9 +200,9 @@ test("sighash type is classified as a signing change", () => {
   assert.equal(result.changes[0].name, "PSBT_IN_SIGHASH_TYPE");
 });
 
-test("MuSig2 (BIP-327) input pairs are named and classified as signing changes (audit B3)", () => {
+test("MuSig2 (BIP-373) input pairs are named and classified as signing changes (audit B3)", () => {
   // Real round-trips through the decoder on both sides, so the pair names
-  // come from psbtInspectDoc. Shapes follow BIP-327: keydata is the
+  // come from psbtInspectDoc. Shapes follow BIP-373: keydata is the
   // participant pubkey (33 bytes) plus the aggregate pubkey (33 bytes); the
   // value is a participant-pubkey list, a 66-byte public nonce, or a
   // 32-byte partial signature. A swapped nonce is the key-extraction class.
@@ -445,6 +445,46 @@ test("a pasted PSBT hiding a duplicate sighash behind a matching first record re
   assert.match(html, /Signing state changed/);
   assert.match(html, /PSBT_IN_SIGHASH_TYPE/);
   assert.match(html, /02000000/, "the hidden record's value must appear in the report");
+  assert.match(html, /equality cannot be claimed for an invalid document/);
+});
+
+test("the committed fixture with a raw duplicate sighash record is gated and reports the hidden pair (audit B2, real bytes)", () => {
+  // The same attack as above, built from bytes rather than a hand-written
+  // document: a second PSBT_IN_SIGHASH_TYPE (SIGHASH_NONE) is appended to
+  // input 0 of the committed fixture, so the decoder itself must set the
+  // fields the gate reads (#867).
+  const raw = Buffer.from(readFileSync(join(root, "test", "fixtures", "psbt", "p2wpkh-1in-2out.b64"), "utf8").trim(), "base64");
+  const compact = (n) => (n < 0xfd ? [n] : [0xfd, n & 0xff, n >> 8]);
+  const readCompact = (at) => (raw[at] < 0xfd ? [raw[at], 1] : [raw.readUInt16LE(at + 1), 3]);
+  // BIP-174 maps after the 5-byte magic: [global, input 0, outputs...].
+  const maps = [];
+  for (let at = 5; at < raw.length; ) {
+    const pairs = [];
+    for (;;) {
+      const [keyLength, keySize] = readCompact(at);
+      at += keySize;
+      if (!keyLength) break;
+      const key = raw.subarray(at, (at += keyLength));
+      const [valueLength, valueSize] = readCompact(at);
+      at += valueSize;
+      pairs.push([key, raw.subarray(at, (at += valueLength))]);
+    }
+    maps.push(pairs);
+  }
+  const firstSighash = maps[1].find(([key]) => key.length === 1 && key[0] === 0x03);
+  assert.ok(firstSighash, "the fixture's input 0 carries a sighash record");
+  assert.equal(Buffer.from(firstSighash[1]).toString("hex"), "01000000", "the fixture signs SIGHASH_ALL");
+  maps[1].push([Buffer.from([0x03]), Buffer.from([0x02, 0x00, 0x00, 0x00])]);
+  const tampered = Uint8Array.from([...raw.subarray(0, 5), ...maps.flatMap((pairs) => [...pairs.flatMap(([key, value]) => [...compact(key.length), ...key, ...compact(value.length), ...value]), 0x00])]);
+  const before = fixtureDoc();
+  const after = psbtInspectDoc(tampered);
+  assert.match(after.rustBitcoinError, /duplicate key/);
+  assert.equal(after.sanitize.duplicateKeys.state, "problem");
+  const html = psbtDiffHtml(comparePsbtDocs(before, after), before, after, "mainnet");
+  assert.doesNotMatch(html, /Semantically identical/);
+  assert.doesNotMatch(html, /Signing state unchanged\./);
+  assert.match(html, /Signing state changed/);
+  assert.match(html, /PSBT_IN_SIGHASH_TYPE[\s\S]*SIGHASH_NONE \(0x2\)/, "the hidden record must appear in the report, decoded");
   assert.match(html, /equality cannot be claimed for an invalid document/);
 });
 

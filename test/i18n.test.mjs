@@ -262,3 +262,22 @@ test("the sweep never takes a translation from a catalog's prototype chain (audi
     delete Object.prototype["Proto attr"];
   }
 });
+
+test("t() and tHtml() never take a translation from a catalog's prototype chain (#867)", () => {
+  // The page sweeps refuse inherited catalog hits (audit B6, above). The
+  // lookups behind t() and tHtml() must refuse them too, or a polluted
+  // Object.prototype supplies markup that tHtml() hands to an HTML sink.
+  const source = "zz-source-not-in-any-catalog";
+  const [ownSource, ownText] = Object.entries(readCatalog("de")).find(([key, value]) => typeof value === "string" && value && value !== key && !/[<>&{}]/.test(key + value));
+  hodlSetLocale("de", false);
+  Object.prototype[source] = "<img src=x onerror=alert(1)>polluted";
+  try {
+    assert.equal(t(source), source, "t() falls back to the English source");
+    assert.equal(tHtml(source), source, "tHtml() falls back to the English source");
+    assert.equal(t(ownSource), ownText, "an own catalog entry still translates in t()");
+    assert.equal(tHtml(ownSource), ownText, "an own catalog entry still translates in tHtml()");
+  } finally {
+    delete Object.prototype[source];
+    hodlSetLocale("en", false);
+  }
+});

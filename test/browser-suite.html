@@ -1759,7 +1759,8 @@
       Object.defineProperty(encryptedJournalInput, "files", { configurable: true, value: [new File([encryptedJournalText], "entropylab-journal.json", { type: "application/json" })] });
       encryptedJournalInput.dispatchEvent(new Event("change", { bubbles: true }));
       input(document.getElementById("journal-open-password"), journalPassword);
-      await wait(250);
+      // No pause before Unlock: the change handler reads the file
+      // asynchronously, and Unlock must wait for that read, not race it.
       document.getElementById("journal-unlock").click();
       await until(() => !document.getElementById("journal-card").hidden && !document.getElementById("journal-work-panel").hidden || document.getElementById("journal-error").textContent, "successful Journal file open result");
       assert(!document.getElementById("journal-work-panel").hidden, `Opening the encrypted Journal failed: ${document.getElementById("journal-error").textContent}`);
@@ -1999,7 +2000,6 @@
       document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
       setFiles(document.getElementById("journal-file"), new File([journalText], "entropylab-journal.json", { type: "application/json" }));
       input(document.getElementById("journal-open-password"), "a long enough but wrong password");
-      await wait(250); // the change handler reads the file asynchronously
       document.getElementById("journal-unlock").click();
       await until(() => document.getElementById("journal-error").textContent.includes("password is incorrect"), "wrong-password error on open");
       assert(document.getElementById("journal-work-panel").hidden, "A wrong password must not open the work panel");
