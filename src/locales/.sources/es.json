@@ -1276,5 +1276,8 @@
   "Saved to key {key}: account {n} is now on the key — its master fingerprint and LifeHash changed from {from} to {key}. Open the Keys tab to review and export it.": "68cb34930674ce5b88ee4c38c49e770467f9d2b291fc09622ab7aad9b4cab50f",
   "Saved to key {key}: account {n} is now on the key. Open the Keys tab to review and export it.": "9a7dc840fb239c48247e0560ab53aca57d02c7130a7abf136511a06dd18df0c0",
   "Saved to key {key}: the new passphrase is now on the key — its master fingerprint and LifeHash changed from {from} to {key}. Open the Keys tab to review and export it.": "4b6c58bb8c3ecd5ce713ae42adc6ec9dccc13f0ed396b61cbd79dbf365e39a57",
-  "Saved to key {key}: the new passphrase is now on the key. Open the Keys tab to review and export it.": "3d74c778ed951b740a632a6a20ec516ff5e7848bfa6c2935dc4f6b1971bc41dd"
+  "Saved to key {key}: the new passphrase is now on the key. Open the Keys tab to review and export it.": "3d74c778ed951b740a632a6a20ec516ff5e7848bfa6c2935dc4f6b1971bc41dd",
+  "Key {key} was imported as a root xprv: it has no seed words, so its passphrase cannot be extended — only the derivation grind is available.": "b362d28a844d4fe7458884e5a6a4fed7574f7350ca5b0a0a181a19f4542dc608",
+  "Copied verbatim from key {key}'s Optional BIP39 passphrase on the Keys tab. Passphrase grind: candidates are that passphrase followed by the counter characters. Derivation grind: this exact passphrase, with the account index changing.": "d281f6e2793e457da24e1307b09c69d68c1ec9b65abab4058fe60aa154519d31",
+  "Key {key} has no passphrase. Passphrase grind: candidates are the counter characters alone. Derivation grind: no passphrase, with the account index changing.": "097c2f49d26e8a6d231634e0e3060771b6fccbe6ef179d0b240896e784d00062"
 }
