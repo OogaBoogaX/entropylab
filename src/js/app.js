@@ -5739,7 +5739,11 @@ function hodlBytesFromBits(bits) {
   return bytes;
 }
 function hodlGlobalSyncIsHashedMode() {
-  if (hodlKeyMode === "dice") return hodlDiceMethod === "coldcard" || hodlDiceMethod === "coleman";
+  // One-way, not literally hashed: both D20 methods derive through
+  // hodlDiceEntropy and nothing writes a roll transcript back, so sync
+  // publishes their bits and leaves the rolls alone. Classifying the
+  // converted method as two-way sends its transcript to the BitBox parser.
+  if (hodlKeyMode === "dice") return hodlDiceMethod === "coldcard" || hodlDiceMethod === "coleman" || hodlDiceMethod === "d20" || hodlDiceMethod === "d20hash";
   if (hodlKeyMode === "cards") return hodlCardMethod === "hashed";
   if (hodlKeyMode === "key") {
     let kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value || hodlKeys[hodlActiveKey]?.fields?.keyKind, "");

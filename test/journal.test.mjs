@@ -318,6 +318,42 @@ test("entries store the raw input, phrase, label, ISO time, and optional wallet 
   assert.deepEqual(METHODS, ["dice", "coin", "hex", "brain", "seed", "cards"]);
 });
 
+// Every dice method records its OWN transcript. The methods share one
+// textarea and each keeps its rolls in its own field, so a method whose field
+// the snapshot does not know falls through to the D6 field and records a
+// transcript that derives a different wallet — and copies the rolls of
+// whichever method was used before into an unrelated entry.
+test("a session key snapshot records the transcript of the method that was used", () => {
+  const fields = {
+    dice: "415263415263",
+    colemanDice: "614523614523",
+    bitboxDice: "111111 222224",
+    dplusDice: "100 2AF",
+    d20Dice: "14 7 20 3 11 2 19 5",
+  };
+  const cases = [
+    ["coldcard", "dice"],
+    ["coleman", "colemanDice"],
+    ["bitbox", "bitboxDice"],
+    ["dplus", "dplusDice"],
+    ["d20", "d20Dice"],
+    ["d20hash", "d20Dice"],
+  ];
+  for (const [diceMethod, field] of cases) {
+    const snap = snapshotFromKeyState({
+      id: 7,
+      isLab: false,
+      mode: "dice",
+      diceMethod,
+      name: "deadbeef",
+      fields,
+      result: { mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow", masterFingerprint: "deadbeef" },
+    });
+    assert.equal(snap.input, fields[field], `${diceMethod}: recorded another method's transcript`);
+    assert.equal(snap.diceMethod, diceMethod, `${diceMethod}: recorded as a different method`);
+  }
+});
+
 test("a session key snapshot prefers the live dice / brain / seed transcript", () => {
   const dice = snapshotFromKeyState({
     id: 4,
