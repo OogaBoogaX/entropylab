@@ -3973,8 +3973,9 @@ function hodlD20EntropyBits(rolls) {
 function hodlD20MinimumRolls(bits) {
   // A D20 carries log2(20) = 4.32 bits, so bits/4 rolls always clear the target
   // and leave a margin. That margin is what makes the final truncation even:
-  // 20^(bits/4) exceeds 2^bits by enough that no output is measurably likelier
-  // than another (1 part in 1,262 at 128 bits, 1 in 1,593,092 at 256).
+  // floor(20^(bits/4) / 2^bits) is how many transcripts share each output, so
+  // no output is measurably likelier than another (1 part in 1,262 at 128 bits,
+  // 1 in 1,593,091 at 256). test/dice-d20.test.mjs pins it at every size.
   return Math.ceil(bits / 4);
 }
 function hodlD20Transcript(rolls) {

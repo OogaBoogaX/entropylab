@@ -81,6 +81,37 @@ test("a D20 transcript needs bits/4 rolls, which covers the entropy target", () 
   }
 });
 
+// The margin the bits/4 rule leaves is what makes the final truncation even,
+// and both hodlD20MinimumRolls' comment and the pull request description quote
+// it. Nothing checked those figures, so a wrong one reached review: the 160,
+// 192 and 224-bit rows of the description's table were out by factors of four,
+// eighteen and seventy-six, while the two ends were right. floor(R) depends on
+// nothing in this file - it is floor(20^(bits/4) / 2^bits) - so this computes
+// it exactly and compares against figures arrived at twice independently, here
+// and by the upstream reviewer of the same change.
+test("the bits/4 rule leaves the margin the comment and description quote", () => {
+  const expected = { 128: 1262n, 160: 7523n, 192: 44841n, 224: 267276n, 256: 1593091n };
+  for (const words of SIZES) {
+    const config = api.hodlSeedConfig(words);
+    const rolls = BigInt(api.hodlD20MinimumRolls(config.bits));
+    const floorR = 20n ** rolls / 2n ** BigInt(config.bits);
+    assert.equal(floorR, expected[config.bits], `${config.bits}-bit: floor(R) is not the quoted margin`);
+    // Each output's preimage holds floor(R) or ceil(R) transcripts, so the
+    // likeliest beats the rarest by at most ceil(R)/floor(R). A margin of one
+    // would make some output twice as likely as another.
+    assert.ok(floorR > 1000n, `${config.bits}-bit: margin too small to call the truncation even`);
+  }
+  // The margin grows with the entropy target, so a larger seed is never the
+  // worse-conditioned one.
+  const margins = SIZES.map((words) => {
+    const config = api.hodlSeedConfig(words);
+    return 20n ** BigInt(api.hodlD20MinimumRolls(config.bits)) / 2n ** BigInt(config.bits);
+  });
+  for (let at = 1; at < margins.length; at++) {
+    assert.ok(margins[at] > margins[at - 1], `${SIZES[at]} words: margin did not grow`);
+  }
+});
+
 test("the base-20 fraction expands to bits that are fixed by inspection", () => {
   const config = api.hodlSeedConfig(24);
   const n = api.hodlD20MinimumRolls(config.bits);
