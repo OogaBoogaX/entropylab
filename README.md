@@ -208,6 +208,8 @@ an explicit error before those pairs are allocated.
   Hybrid URIs with an ordinary Bitcoin fallback address still use Silent
   Payments; the results identify the fallback address as not used.
   This is a calculator: it does not scan the chain or resolve names.
+- BIP-47 v1 payment-code calculator on the Silent Payments tab. Notification
+  address is public. Decode-only for notification txs. Parked post-0.2.0.
 - Grinds vanity addresses for a Key Station key or a compatible BIP-85 child
   (Vanity tab), picked through the same chip picker as BIP-85 and Silent
   Payments. Two methods: the **passphrase grind** extends the key's BIP39
