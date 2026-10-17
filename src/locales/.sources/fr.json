@@ -1278,5 +1278,6 @@
   "Saved to key {key}: account {n} is now on the key — its master fingerprint and LifeHash changed from {from} to {key}. Open the Keys tab to review and export it.": "68cb34930674ce5b88ee4c38c49e770467f9d2b291fc09622ab7aad9b4cab50f",
   "Saved to key {key}: account {n} is now on the key. Open the Keys tab to review and export it.": "9a7dc840fb239c48247e0560ab53aca57d02c7130a7abf136511a06dd18df0c0",
   "Saved to key {key}: the new passphrase is now on the key — its master fingerprint and LifeHash changed from {from} to {key}. Open the Keys tab to review and export it.": "4b6c58bb8c3ecd5ce713ae42adc6ec9dccc13f0ed396b61cbd79dbf365e39a57",
-  "Saved to key {key}: the new passphrase is now on the key. Open the Keys tab to review and export it.": "3d74c778ed951b740a632a6a20ec516ff5e7848bfa6c2935dc4f6b1971bc41dd"
+  "Saved to key {key}: the new passphrase is now on the key. Open the Keys tab to review and export it.": "3d74c778ed951b740a632a6a20ec516ff5e7848bfa6c2935dc4f6b1971bc41dd",
+  "Prefix “{prefix}” matches about 1 in {count} {type} candidates on average.": "0a43ed7e4eed8bb6c6329062daee694f89448aab9a23ee2d9ed1dabf82a0d56d"
 }
