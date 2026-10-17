@@ -1249,7 +1249,7 @@
   "Each row is a new BIP39 passphrase for key {key}: the starting passphrase followed by the counter characters. With this key's seed words it derives {where}. Update key writes the passphrase to the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet. Anyone holding the words and this passphrase holds the coins.": "Jede Zeile ist eine neue BIP39-Passphrase für den Schlüssel {key}: die Start-Passphrase gefolgt von den Zählerzeichen. Mit den Seed-Wörtern dieses Schlüssels leitet es {where} ab. Der Schlüssel-Update schreibt die Passphrase in den Schlüssel und leitet ihn neu ab, sodass die Registerkarte „Schlüssel“, seine Exporte und das Journal diese Wallet anzeigen. Jeder, der die Wörter und diese Passphrase besitzt, besitzt die Coins.",
   "Counter": "Zähler",
   "Passphrase": "Passphrase",
-  "Key after update": "Schlüssel nach Update",
+  "Key after update": "Schlüssel nach Aktualisierung",
   "Matching vanity addresses table": "Tabelle passender Vanity-Adressen",
   "Matching vanity addresses": "Passende Vanity-Adressen",
   "Pick a Key Station key first": "Wählen Sie zuerst einen Key Station-Schlüssel",
@@ -1278,5 +1278,6 @@
   "Saved to key {key}: the new passphrase is now on the key. Open the Keys tab to review and export it.": "Gespeichert auf Schlüssel {key}: Die neue Passphrase ist jetzt auf dem Schlüssel. Öffnen Sie die Registerkarte „Schlüssel“, um sie zu überprüfen und zu exportieren.",
   "Bring in Key Station key {key}": "Schlüssel {key} aus der Key Station importieren",
   "At about {rate} candidates/s on {n} workers, expect a match roughly every {every}.": "Bei etwa {rate} Kandidaten/s mit {n} Workern ist ein Treffer etwa alle {every} zu erwarten.",
-  "Passphrase grind: each candidate is a full BIP39 seed stretch.": "Passphrase-Durchmusterung: Jeder Kandidat ist eine vollständige BIP39 Seed-Dehnung."
+  "Passphrase grind: each candidate is a full BIP39 seed stretch.": "Passphrase-Durchmusterung: Jeder Kandidat ist eine vollständige BIP39 Seed-Dehnung.",
+  "Each row is a BIP32 account index of key {key} — with its passphrase unchanged, {where} starts with the prefix. Update key sets that account on the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet.": "Jede Zeile ist ein BIP32-Kontoindex des Schlüssels {key} — mit unveränderter Passphrase, {where} beginnt mit dem Präfix. \"Schlüssel aktualisieren\" setzt dieses Konto auf dem Schlüssel und leitet es neu ab, sodass die Registerkarte \"Schlüssel\", dessen Exporte und das \"Journal\" diese Wallet anzeigen."
 }

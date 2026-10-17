@@ -1278,5 +1278,6 @@
   "Saved to key {key}: the new passphrase is now on the key. Open the Keys tab to review and export it.": "3d74c778ed951b740a632a6a20ec516ff5e7848bfa6c2935dc4f6b1971bc41dd",
   "Bring in Key Station key {key}": "0753f910123d0b0b9291b0692342bc8fc64d17f69fd27cb74dbe538bf5adcb1b",
   "At about {rate} candidates/s on {n} workers, expect a match roughly every {every}.": "7c55fe3693b901deddc5241b1437907ddf389e772a0dc8904afc539f2bd2ee04",
-  "Passphrase grind: each candidate is a full BIP39 seed stretch.": "30ae67a67ef28e083d9f7d7189ac13a14176711b19d6c061e9c653b92e021151"
+  "Passphrase grind: each candidate is a full BIP39 seed stretch.": "30ae67a67ef28e083d9f7d7189ac13a14176711b19d6c061e9c653b92e021151",
+  "Each row is a BIP32 account index of key {key} — with its passphrase unchanged, {where} starts with the prefix. Update key sets that account on the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet.": "c1731cdc9f85c00752840303a11c60c7aed8544c177917bb334b5f0a8278b3aa"
 }
