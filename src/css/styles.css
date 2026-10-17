@@ -1317,6 +1317,29 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
   border: 1px solid var(--border); border-radius: var(--radius-container); background: var(--surface);
   box-shadow: 0 16px 36px var(--scrim);
 }
+/* Guide uses the shared modal, notes, buttons and spacing rhythm. */
+.guide-entry { margin-bottom: var(--space-section); font-size: var(--text-body); }
+.guide-explain { margin-top: var(--space-component); }
+.feature-guide-card {
+  --modal-width: 640px;
+  max-height: calc(100dvh - var(--space-lede)); box-sizing: border-box;
+  display: flex; flex-direction: column;
+  font-size: var(--text-base); overflow-wrap: anywhere;
+}
+.feature-guide-card > .row { justify-content: space-between; flex: 0 0 auto; }
+.feature-guide-card .modal-title { margin: 0; }
+.guide-content { margin-top: var(--space-section); min-height: 0; overflow-y: auto; }
+.guide-content p { margin: 0; line-height: 1.6; }
+.feature-guide-card .guide-content > * + *, .feature-guide-card .guide-step > * + * { margin-top: var(--space-component); }
+.guide-content h3 { margin-bottom: 0; font-size: var(--text-heading-small); }
+.guide-content .label { margin: 0 0 var(--space-control); }
+.guide-lessons { display: grid; gap: var(--space-control); }
+.guide-lessons > .btn { display: grid; gap: var(--space-control); height: auto; text-align: start; white-space: normal; padding: var(--inset-box); }
+.guide-lessons > .btn > .muted { font-size: var(--text-body); font-weight: normal; }
+.guide-chain { display: flex; flex-wrap: wrap; gap: var(--space-control); padding-left: var(--indent-list); }
+.guide-chain li { padding: var(--inset-chip); margin-right: var(--space-component); }
+.guide-chain [aria-current] { color: var(--accent); font-weight: bold; border-bottom: 1px solid var(--accent); }
+#guide-check > * + *, #guide-story > * + *, #guide-browse > * + * { margin-top: var(--space-component); }
 .modal-title { margin: 0 0 var(--space-section); font-weight: 600; font-size: var(--text-heading-small); overflow-wrap: anywhere; }
 @media (max-width: 520px) { .modal-card { padding: var(--inset-card); } }
 /* The gate alone fades in, and wears the danger frame its warning calls for. */

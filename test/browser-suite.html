@@ -213,6 +213,128 @@
     }
   });
 
+  await test("feature guide replays, deep-links and leaves wallet inputs and network untouched", () => {
+    const entry = document.getElementById("guide-open");
+    const before = [...document.querySelectorAll("#calc-card input, #calc-card textarea, #calc-card select")].map((node) => [node.id, node.value, node.checked]);
+    const network = state.network.length;
+    const activeTool = document.querySelector('#workspace-tabs [aria-selected="true"]').dataset.workspace;
+    const overlay = () => document.getElementById("feature-guide-overlay");
+    try {
+      entry.focus(); entry.click();
+      const dialog = document.getElementById("feature-guide-dialog");
+      equal(dialog.getAttribute("role"), "dialog");
+      equal(dialog.getAttribute("aria-modal"), "true");
+      assert(document.getElementById(dialog.getAttribute("aria-labelledby")), "guide has no accessible title");
+      document.getElementById("guide-route-wallet").click();
+      assert(!document.getElementById("guide-check"), "quiz precedes concepts");
+      assert(document.getElementById("guide-back").disabled, "first step can go backwards");
+      document.getElementById("guide-next").click();
+      const second = document.getElementById("guide-step").dataset.guideStep;
+      document.getElementById("guide-close").click();
+      equal(document.activeElement, entry);
+      assert(overlay().hidden, "Close left guide visible");
+      entry.click(); document.getElementById("guide-resume").click();
+      equal(document.getElementById("guide-step").dataset.guideStep, second);
+      while (!document.getElementById("guide-check")) document.getElementById("guide-next").click();
+      document.getElementById("guide-check").open = true;
+      document.getElementById("guide-answer-0").click();
+      equal(document.getElementById("guide-feedback").dataset.guideCorrect, "false");
+      document.getElementById("guide-answer-1").click();
+      equal(document.getElementById("guide-feedback").dataset.guideCorrect, "true");
+      equal(document.activeElement, document.getElementById("guide-feedback"));
+      document.getElementById("guide-next").click();
+      document.getElementById("guide-close").click(); entry.click();
+      assert(!document.getElementById("guide-resume"), "completed lesson resumes its finish screen");
+      document.getElementById("guide-continue-route").click();
+      equal(document.getElementById("guide-step").dataset.guideStep, "keys-methods");
+      document.getElementById("guide-contents").click();
+      // Every catalog route finishes and can be read again, including availability notes.
+      const ids = [...document.querySelectorAll('[data-guide-action="choose"]')].map((node) => node.dataset.guideLesson);
+      for (const id of ids) {
+        document.getElementById(`guide-lesson-${id}`).click();
+        let count = 0;
+        while (document.getElementById("guide-next")) {
+          assert(++count <= 8, "lesson navigation did not terminate");
+          document.getElementById("guide-next").click();
+        }
+        equal(document.getElementById("guide-content").dataset.guideComplete, id);
+        if (id === "journal" || id === "lightning") assert(!document.getElementById("guide-open-tool"), "hidden tool has navigation");
+        document.getElementById("guide-restart").click();
+        assert(document.getElementById("guide-back").disabled, "replay did not start at first step");
+        document.getElementById("guide-contents").click();
+      }
+      document.getElementById("guide-close").click();
+      document.querySelector('#calc-tool-intro [data-guide-open]').click();
+      assert(document.getElementById("guide-step"), "context entry did not open a lesson");
+      document.getElementById("guide-back").focus();
+      // Shared modal trap: Shift+Tab from the first available control wraps.
+      const close = document.getElementById("guide-close");
+      close.focus();
+      close.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+      const focusable = [...dialog.querySelectorAll("button, summary")].filter(node => !node.disabled && !node.closest("[hidden]"));
+      equal(document.activeElement, focusable.at(-1));
+      overlay().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      assert(overlay().hidden, "Escape did not close guide");
+      equal(document.activeElement, document.querySelector('#calc-tool-intro [data-guide-open]'));
+      equal(JSON.stringify([...document.querySelectorAll("#calc-card input, #calc-card textarea, #calc-card select")].map((node) => [node.id, node.value, node.checked])), JSON.stringify(before));
+      equal(document.querySelector('#workspace-tabs [aria-selected="true"]').dataset.workspace, activeTool);
+      equal(state.network.length, network);
+    } finally {
+      document.getElementById("guide-close")?.click();
+    }
+  });
+
+  await test("guide feedback and finish actions stay usable in a narrow short dialog", () => {
+    const entry = document.getElementById("guide-open"); entry.click();
+    const dialog = document.getElementById("feature-guide-dialog");
+    // Exercise the real scroll container under phone-sized constraints;
+    // separate visual captures use the actual 320px mobile viewport.
+    dialog.style.width = "320px"; dialog.style.maxHeight = "480px";
+    try {
+      document.getElementById("guide-start-basics").click();
+      while (!document.getElementById("guide-check")) document.getElementById("guide-next").click();
+      document.getElementById("guide-check").open = true;
+      document.getElementById("guide-answer-1").scrollIntoView({ block: "center" });
+      document.getElementById("guide-answer-1").click();
+      const content = document.getElementById("guide-content");
+      const feedback = document.getElementById("guide-feedback").getBoundingClientRect();
+      const box = content.getBoundingClientRect();
+      assert(feedback.top >= box.top - 1 && feedback.bottom <= box.bottom + 1, "answer feedback is clipped");
+      equal(document.activeElement, document.getElementById("guide-feedback"));
+      document.getElementById("guide-next").click();
+      const a = document.getElementById("guide-restart").getBoundingClientRect();
+      const b = document.getElementById("guide-route-next").getBoundingClientRect();
+      const gap = b.top >= a.bottom ? b.top - a.bottom : b.left - a.right;
+      const rhythm = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-control"));
+      assert(gap >= rhythm - 1, "finish buttons touch");
+      assert(content.scrollWidth <= content.clientWidth, "narrow guide overflows horizontally");
+      document.getElementById("guide-finish-inspect").click();
+      equal(document.getElementById("guide-step").dataset.guideStep, "inspect-worksheet");
+    } finally {
+      dialog.style.width = ""; dialog.style.maxHeight = "";
+      document.getElementById("guide-close")?.click();
+    }
+  });
+
+  await test("guide opens only the explicitly selected released tool", () => {
+    const entry = document.getElementById("guide-open");
+    const initialWorkspace = document.querySelector('#workspace-tabs [aria-selected="true"]').dataset.workspace;
+    const initialPsbtTool = document.querySelector('#psbt-tool-tabs [aria-selected="true"]').dataset.psbtTool;
+    const cases = [["keys", "calc", null], ["inspect", "psbt", "inspector"], ["edit", "psbt", "editor"], ["nonce", "psbt", "nonce"]];
+    try {
+      for (const [lesson, workspace, subtool] of cases) {
+        entry.click(); document.getElementById(`guide-lesson-${lesson}`).click();
+        document.getElementById("guide-open-tool").click();
+        assert(document.getElementById("feature-guide-overlay").hidden, "tool action left guide open");
+        equal(document.querySelector('#workspace-tabs [aria-selected="true"]').dataset.workspace, workspace);
+        if (subtool) equal(document.querySelector('#psbt-tool-tabs [aria-selected="true"]').dataset.psbtTool, subtool);
+      }
+    } finally {
+      document.querySelector(`#psbt-tool-tabs [data-psbt-tool="${initialPsbtTool}"]`).click();
+      document.querySelector(`#workspace-tabs [data-workspace="${initialWorkspace}"]`).click();
+    }
+  });
+
   if (new URLSearchParams(location.search).get("offline-test") === "1") {
     // This fresh file:// session exercises Edge independently of the hosted
     // Chrome case below: a latched Chrome warning cannot make this pass.

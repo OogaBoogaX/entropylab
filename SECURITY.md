@@ -15,10 +15,19 @@ always use the latest version, available from the
 ## Security Considerations
 
 EntropyLab handles Bitcoin private keys, seed phrases, and other secret wallet
-material. Its security posture rests on the following model:
+material. Original dice/input records plus their recipe can rebuild a wallet
+and must be protected like seed phrases. Its security posture rests on the
+following model:
 
 - The tool is self-contained and designed for offline, air-gapped use. It does
   not intentionally transmit sensitive data to any server.
+- The optional feature guide renders only bundled, translated plain text. It
+  accepts known lesson IDs and keeps only lesson progress in page memory;
+  it reads no wallet inputs, saves nothing in browser storage, and makes no
+  network calls. Pagehide (including End Session) clears progress and closes
+  it; a back/forward-cache restore starts fresh. Only an explicit Open this
+  tool action invokes normal released-tool navigation. A completed lesson
+  is not a security verdict or an endorsement of the user's environment.
 - The Security log below Important records initial browser-reported
   connectivity, connectivity changes, and detected browser translation.
   Its API accepts only fixed event codes, never arbitrary messages, errors,
@@ -41,7 +50,9 @@ material. Its security posture rests on the following model:
 - The downloaded `entropylab.html` remains the recommended path for sensitive
   use. It is one self-contained file, does not register the hosted service
   worker from `file://` or another host, and should be verified before transfer
-  to a dedicated computer that is disconnected from every network.
+  to a dedicated computer that is disconnected from every network. Download
+  checksums establish byte integrity; GitHub/Sigstore attestations establish
+  build provenance, not device safety.
 - EntropyLab's own secp256k1 curve operations (public-key derivation, ECDSA
   signing and verification in PSBT inspection, curve point math) and its
   cryptographic hashes (SHA-256/SHA-512/RIPEMD-160/HMAC/PBKDF2) run on
