@@ -368,7 +368,7 @@ export const METHOD_LABELS = Object.freeze({
   cards: "Playing cards",
 });
 const ENTRY_VARIANTS = Object.freeze({
-  diceMethod: Object.freeze({ coldcard: "COLDCARD / SeedSigner", coleman: "Ian Coleman / Keystone", bitbox: "BitBox diceware", dplus: "D++ direct word selection" }),
+  diceMethod: Object.freeze({ coldcard: "COLDCARD / SeedSigner", coleman: "Ian Coleman / Keystone", bitbox: "BitBox diceware", dplus: "D++ direct word selection", d20: "D20 base-20 conversion", d20hash: "D20 hashed rolls" }),
   entropyFormat: Object.freeze({ bin: "Binary (Base 2)", base4: "Quaternary (Base 4)", base8: "Base 8", hex: "Hexadecimal (Base 16)", base32: "Base32 (Bech32)", base64: "Base64" }),
   cardMethod: Object.freeze({ hashed: "Hashed transcript", direct: "Direct word selection" }),
   seedMethod: Object.freeze({ words: "Direct words", numbers: "BIP39 word numbers" }),
@@ -562,6 +562,7 @@ export function snapshotFromKeyState(state, phrase = state?.result?.mnemonic || 
     if (state.diceMethod === "dplus") input = fields.dplusDice || "";
     else if (state.diceMethod === "bitbox") input = fields.bitboxDice || "";
     else if (state.diceMethod === "coleman" && Object.prototype.hasOwnProperty.call(fields, "colemanDice")) input = fields.colemanDice || "";
+    else if (state.diceMethod === "d20" || state.diceMethod === "d20hash") input = fields.d20Dice || "";
     else input = fields.dice || "";
   } else if (mode === "cards") {
     method = "cards";

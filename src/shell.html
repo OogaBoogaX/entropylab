@@ -108,7 +108,20 @@ words, pick one of the checksum words.</span></span>
         <span><strong>D++ / Direct word selection</strong>
         <span class="desc">Roll one D8 and two D16 dice for each lookup-table word, then use the per-size final rolls for the checksum word.</span></span>
       </label>
+      <label class="choice"><input type="radio" name="dm" value="d20">
+        <span><strong>Base 20 [1-20] / Converted rolls</strong>
+        <span class="desc">Read the rolls as a base-20 fraction, first roll most
+significant, expanded to the selected BIP39 entropy length. 64 rolls are
+required for 24 words; nothing is hashed.</span></span>
+      </label>
+      <label class="choice"><input type="radio" name="dm" value="d20hash">
+        <span><strong>Base 20 [1-20] / Hashed rolls</strong>
+        <span class="desc">SHA-256 of the faces joined by a hyphen, using the
+first bits of the digest for the selected BIP39 entropy length. 64 rolls are
+required for 24 words, and every roll beyond them is included.</span></span>
+      </label>
       </div>
+      <p class="edge-note is-info" id="dice-method-rationale">Why this one: hashing spreads a die's imperfections across the whole seed, and it is what COLDCARD and SeedSigner do, so the same rolls can be entered again on those devices.</p>
       <p class="label" id="dice-label">Dice rolls (D6)</p>
       <div class="seed-word-meta label-description"><p class="muted" id="dice-meta" aria-live="polite"><span class="meta-value is-short">0</span> of 100 recommended rolls<br><span class="meta-value is-short">0.0</span> bits estimated</p></div>
       <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" translate="no" aria-hidden="true"></pre><textarea id="dice" placeholder="415263415263…" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="dice-meta"></textarea></div>
@@ -964,6 +977,7 @@ words, pick one of the checksum words.</span></span>
       <p data-i18n-rich>bitaddress.org: <a href="https://github.com/pointbiz/bitaddress.org" target="_blank" rel="noopener noreferrer">github.com/pointbiz/bitaddress.org</a> — pull <code>bitaddress.org.html</code>, or <code>src/ninja.key.js</code>, <code>ninja.detailwallet.js</code>, <code>ninja.paperwallet.js</code>, <code>bitcoinjs-lib.eckey.js</code>.</p>
       <p data-i18n-rich>BitBox02 diceware: <a href="https://blog.bitbox.swiss/en/roll-the-dice-generate-your-own-seed/" target="_blank" rel="noopener noreferrer">roll-the-dice-generate-your-own-seed</a> — lookup table is the BIP39 English list in order.</p>
       <p data-i18n-rich>D++ D8 &amp; D16 method: <a href="https://thesimplestbitcoinbook.net/wp-content/uploads/2023/09/Roll-Your-Own-Seed-Phrase-PDF.pdf" target="_blank" rel="noopener noreferrer">Roll Your Own Bitcoin Seed Phrase</a> — the published 24-word workflow uses one D8 labeled 1–8 and two hexadecimal D16 dice labeled 0–F per word, then a final D8.</p>
+      <p data-i18n-rich>D20 methods: EntropyLab's own. <strong>Converted</strong> reads the rolls as a base-20 fraction, most significant first, and expands it to the entropy length; <code>bits/4</code> rolls leave enough margin that no output is measurably likelier than another, and further rolls shrink that margin by 20&times; each. It assumes a fair die — every roll holds a fixed place, so an uneven die's bias reaches the result whatever the roll count. <strong>Hashed</strong> is SHA-256 over the faces joined by <code>-</code>, reproducible with <code>sha256sum</code>; the digest depends on every roll together, which evens out an uneven die as the conversion cannot. Taking the low bits instead of the fraction would silently drop the earliest rolls once the count passes half the entropy length, because 20 = 2²·5.</p>
       <p data-i18n-rich>Die Distribution / Fairness Analysis (Pearson’s χ²): <a href="https://rpg.stackexchange.com/questions/70802/how-can-i-test-whether-a-die-is-fair" target="_blank" rel="noopener noreferrer">How can I test whether a die is fair?</a> — live check while entering rolls, following the <a href="https://dicefairness.johnellmore.com/" target="_blank" rel="noopener noreferrer">Dice Fairness Tester</a> thresholds.</p>
       <p data-i18n-rich>Jade anti-exfil (sign-to-contract): <a href="https://blog.blockstream.com/anti-exfil-stopping-key-exfiltration/" target="_blank" rel="noopener noreferrer">Anti-Exfil: Stopping Key Exfiltration</a> — secp256k1-zkp <code>ecdsa_s2c</code> / <code>anti_exfil_host_verify</code>.</p>
       <p data-i18n-rich>BIP-85 deterministic entropy: <a href="https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki" target="_blank" rel="noopener noreferrer">bip-0085.mediawiki</a> — HMAC-SHA512 of a fully hardened child; English BIP-39 / WIF / XPRV / HEX / password applications match COLDCARD.</p>

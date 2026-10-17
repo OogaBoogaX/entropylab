@@ -82,6 +82,34 @@ test("hashed methods publish one way without being overwritten", () => {
   assert.doesNotMatch(loadSlice("hodlGlobalSyncControlMarkup"), /disabled/);
 });
 
+// A dice method that global sync cannot write back must be classified one-way,
+// or hodlGlobalSyncCurrentBits falls past the hodlDiceEntropy branch and past
+// the dplus branch and reads the transcript with the BitBox five-D6-per-word
+// parser, reporting a near-zero bit count for a perfectly good transcript.
+// The authority for "cannot write back" is hodlApplyGlobalSync itself: the
+// fields it assigns are the two-way methods, and every other dice method is
+// one-way. Derived from that function, not from the classifier under test.
+test("every dice method global sync cannot refill is classified one-way", () => {
+  const apply = loadSlice("hodlApplyGlobalSync");
+  const writable = new Set();
+  for (const [method, field] of [["coldcard", "dice"], ["coleman", "colemanDice"], ["bitbox", "bitboxDice"], ["dplus", "dplusDice"], ["d20", "d20Dice"], ["d20hash", "d20Dice"]]) {
+    if (new RegExp(`fields\\.${field}\\s*=`).test(apply)) writable.add(method);
+  }
+  assert.deepEqual([...writable].sort(), ["bitbox", "dplus"], "the set of refillable dice methods moved");
+
+  const classify = new Function(`
+    let hodlKeyMode = "dice", hodlDiceMethod = "coldcard", hodlCardMethod = "", hodlKeys = [], hodlActiveKey = 0;
+    const document = { querySelector: () => null };
+    function hodlNormalizePrivateKeyKind() { return ""; }
+    ${loadSlice("hodlGlobalSyncIsHashedMode")}
+    return (method) => { hodlDiceMethod = method; return hodlGlobalSyncIsHashedMode(); };
+  `)();
+
+  for (const method of ["coldcard", "coleman", "bitbox", "dplus", "d20", "d20hash"]) {
+    assert.equal(classify(method), !writable.has(method), `${method}: classification disagrees with what hodlApplyGlobalSync can refill`);
+  }
+});
+
 test("each dice method has an isolated transcript", () => {
   const fieldName = loadSlice("hodlDiceFieldName");
   assert.match(app, /colemanDice: ""/);
