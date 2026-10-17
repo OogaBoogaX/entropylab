@@ -992,7 +992,7 @@
   "Clear Comparison": "Limpar Comparação",
   "PSBT v0 or signed raw transaction (base64 or hex)": "PSBT v0 ou transação bruta assinada (base64 ou hex)",
   "Inspect with key": "Inspecionar com chave",
-  "Add a key to check each signature against RFC 6979 and low-r grinding, so an unexpected nonce can be told apart from a deterministic one.": "Adicione uma chave para verificar cada assinatura contra RFC 6979 e moagem low-r, para que um nonce inesperado possa ser distinguido de um determinístico.",
+  "Add a key to check each signature against RFC 6979 and low-r grinding, so an unexpected nonce can be told apart from a deterministic one.": "Adicione uma chave para verificar cada assinatura contra RFC 6979 e o grind low-r, para que um nonce inesperado possa ser distinguido de um determinístico.",
   "Enter a BIP39 seed phrase, root xprv/tprv, WIF, or 64-character hex.": "Insira uma frase semente BIP39, xprv/tprv raiz, WIF ou hex de 64 caracteres.",
   "Jade anti-exfil transcript (optional)": "Transcrição anti-exfiltração Jade (opcional)",
   "Jade anti-exfil transcript": "Transcrição anti-exfiltração Jade",
