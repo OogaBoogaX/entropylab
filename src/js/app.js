@@ -5589,6 +5589,21 @@ function hodlDicePreviewWords(value, method, targetWords = hodlTargetWordCount) 
     let parsed2 = hodlDPlusRolls(value, targetWords);
     return [...parsed2.wordSlots, ...parsed2.finalWord ? [parsed2.finalWord] : []];
   }
+  if (method === "d20" || method === "d20hash") {
+    // Preview whatever is entered, as the hashed D6 preview does. The bytes
+    // come from the same arithmetic the derivation uses, so the grid firms up
+    // into the phrase the finished transcript produces instead of guessing.
+    let d20 = hodlSplitD20String(value);
+    if (d20.leftover.length || !d20.rolls.length) return [];
+    let d20Bytes = method === "d20hash"
+      ? hodlSha256(new TextEncoder().encode(hodlD20Transcript(d20.rolls))).slice(0, config.bytes)
+      : hodlD20FractionBytes(d20.rolls, config.bits);
+    try {
+      return hodlEntropyToMnemonic(d20Bytes, hodlBip39Wordlist).split(" ");
+    } catch {
+      return [];
+    }
+  }
   let parsed = hodlSplitDiceString(value), analysis = hodlAnalyzeDiceInput(value, method, targetWords);
   if (parsed.leftover.length || analysis.coinDerivedCount || !parsed.rolls.length) return [];
   let bytes;
