@@ -10235,6 +10235,15 @@ function hodlFinalSigs(entries, witnessUtxo, tx, index, signatureChecks) {
     }
   }
   let signatures = [], uninspected = 0, scriptCode = hodlInputScriptCode(entries, witnessUtxo);
+  // Once finalized, a P2WSH script survives only as the witness's last item.
+  // Its keys are candidates too, now that scriptCode proved it the committed
+  // script; verification below still decides which one signed.
+  if (scriptCode) {
+    try {
+      for (let push of hodlScriptPushes(scriptCode)) if (hodlLooksPubkey(push)) candidates.push(push);
+    } catch {
+    }
+  }
   // A script containing OP_CODESEPARATOR has no reconstructable digest here:
   // BIP-143 commits from just past the last executed separator, which this
   // full-script digest is not (audit C2-D). Such a digest must not pin a key
@@ -10283,15 +10292,27 @@ function hodlBip32(entries, pubkey) {
 }
 function hodlInputScriptCode(entries, witnessUtxo) {
   if (!witnessUtxo) return null;
-  let outputScript = witnessUtxo.script, redeem = (hodlFind(entries, 4).find((entry) => entry.keydata.length === 0) || {}).val, witnessScript = (hodlFind(entries, 5).find((entry) => entry.keydata.length === 0) || {}).val;
+  let unkeyed = (type) => (hodlFind(entries, type).find((entry) => entry.keydata.length === 0) || {}).val;
+  let outputScript = witnessUtxo.script, redeem = unkeyed(4), witnessScript = unkeyed(5), finalScriptSig = unkeyed(7), finalWitness = unkeyed(8);
+  // A finalizer removes the redeem (0x04) and witness (0x05) script fields
+  // (BIP-174), but the spend still carries both: the redeem script is the
+  // final scriptSig's last push and the witness script the final witness's
+  // last item. They are read from there only when their own field is absent,
+  // and only kept if they hash to what the previous output commits to, so a
+  // final field cannot swap in a different script (the crate does the same
+  // for #866). Without this, a finalized wrapped or P2WSH input had no digest:
+  // its RFC 6979 check was skipped and a reused nonce was never confirmed.
   try {
     let isP2sh = outputScript.length === 23 && outputScript[0] === 169 && outputScript[1] === 20 && outputScript[22] === 135;
     if (isP2sh) {
+      if (!redeem && finalScriptSig) redeem = hodlScriptPushes(finalScriptSig).pop();
       if (!redeem || !hodlEq(p2shScript(redeem), outputScript)) return null;
       outputScript = redeem;
     }
     if (outputScript.length === 22 && outputScript[0] === 0 && outputScript[1] === 20) return hodlConcatBytes(Uint8Array.of(118, 169, 20), outputScript.slice(2), Uint8Array.of(136, 172));
-    if (outputScript.length === 34 && outputScript[0] === 0 && outputScript[1] === 32 && witnessScript) {
+    if (outputScript.length === 34 && outputScript[0] === 0 && outputScript[1] === 32) {
+      if (!witnessScript && finalWitness) witnessScript = hodlWitnessStackItems(finalWitness).pop();
+      if (!witnessScript) return null;
       let committed = p2wshScript(witnessScript);
       return hodlEq(committed, outputScript) ? witnessScript : null;
     }
