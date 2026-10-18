@@ -1385,5 +1385,6 @@
   "MS Station": "MS-Station",
   "MS Station, selected": "MS-Station, ausgewählt",
   "MS Station. Activate to derive a multisig.": "MS-Station. Aktivieren, um eine Multisignatur abzuleiten.",
-  "Derive a multisig": "Eine Multisignatur ableiten"
+  "Derive a multisig": "Eine Multisignatur ableiten",
+  "Match Ian Coleman method": "Ian Coleman-Methode abgleichen"
 }
