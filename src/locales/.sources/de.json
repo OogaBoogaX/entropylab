@@ -1496,5 +1496,7 @@
   "Raw-transaction inspect does not reconstruct sighashes. Paste the PSBT when you still can; use this path for a fully signed hex dump from a hardware wallet or Bitcoin Core.": "d868870deb67f69901a3c98e15d873fc984b3950263c2ff17be3d0b367b8c5d9",
   "Session key: outputs compared against {count} derived scripts (accounts 0–2, 50 receive + 50 change, four types).": "da80ebec5795a34b5ae2901ce30da218973f240ef2cebe84792e9f39da9b765f",
   "claims {path} · your key appears in this output's script; its other keys are not verified": "22f08f8b0f1d241ae4d97ea8f59c69eadb7823c6901ab7bf5d66c8cdc30bd52f",
-  "claims {path} · cannot be verified for this script type": "90b21409b90557419784cdb2bb24376235776578e19cf44d50a2c0d77dbec90e"
+  "claims {path} · cannot be verified for this script type": "90b21409b90557419784cdb2bb24376235776578e19cf44d50a2c0d77dbec90e",
+  "PSBT lies:": "2be4fb839ffdbfa4aa24b7e7b7992091d8f7fac3b151c67525286085157d29d3",
+  "claims {path} but this session key does not produce this output. Do not sign.": "95636e20a54241dc5da4553a36d8b128a9d0ebd78678d33b7327f8fa02149cfd"
 }
