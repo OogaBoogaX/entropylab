@@ -1497,5 +1497,6 @@
   "Some ECDSA signatures could not be inspected.": "8060c7ec41c8df803d0745f2bc98e4866a3a6c10dc13e903f1620e0e27dc29db",
   "No repeated ECDSA nonce r values were found for the same public key in this transaction.": "7881264efcd54690ac0015547cf3f942c907f4df0294c295b3c339358db8f3b6",
   "No ECDSA signatures with a readable r and public key were found.": "3184661dc03e4dd49773314e487a4617b9ca0f1cfb7a7ce4b8b0f4ae31ba4cc7",
-  "Raw-transaction inspect does not reconstruct sighashes. Paste the PSBT when you still can; use this path for a fully signed hex dump from a hardware wallet or Bitcoin Core.": "d868870deb67f69901a3c98e15d873fc984b3950263c2ff17be3d0b367b8c5d9"
+  "Raw-transaction inspect does not reconstruct sighashes. Paste the PSBT when you still can; use this path for a fully signed hex dump from a hardware wallet or Bitcoin Core.": "d868870deb67f69901a3c98e15d873fc984b3950263c2ff17be3d0b367b8c5d9",
+  "PSBT lies:": "2be4fb839ffdbfa4aa24b7e7b7992091d8f7fac3b151c67525286085157d29d3"
 }
