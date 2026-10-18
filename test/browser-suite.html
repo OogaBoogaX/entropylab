@@ -35,6 +35,11 @@
   const equal = (actual, expected) => {
     if (actual !== expected) throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   };
+  const workspaceCount = (id) => {
+    const badge = document.querySelector(`[data-workspace-count="${id}"]`);
+    assert(badge, `missing ${id} count badge`);
+    return badge.hidden ? 0 : Number(badge.textContent);
+  };
   // A check this browser cannot run is reported as skipped, with its reason,
   // never silently passed.
   const skipped = (name, reason) => results.push({ name, ok: true, skip: reason });
@@ -175,6 +180,18 @@
   const versionHeader = `ENTROPYLAB ${currentVersion?.toUpperCase()}`;
 
   await wait(500);
+
+  await test("workspace badges count fixtures, exclude benches, and preserve tab names", () => {
+    equal(workspaceCount("calc"), Number(document.documentElement.dataset.testKeys || 0));
+    for (const id of ["msig", "bip85", "sp", "vanity"]) equal(workspaceCount(id), 0);
+    assert(!document.querySelector('[data-workspace="psbt"] [data-workspace-count]'), "inspection acquired a generated-item badge");
+    const keyTab = document.querySelector('#workspace-tabs [data-workspace="calc"]');
+    assert(keyTab.getAttribute("aria-label"), "the tab lost its accessible name");
+    if (workspaceCount("calc")) assert(keyTab.getAttribute("aria-description"), "the count is not described accessibly");
+    const badge = keyTab.querySelector("[data-workspace-count]");
+    equal(badge.getAttribute("aria-hidden"), "true");
+    equal(badge.querySelectorAll("button, a, input").length, 0);
+  });
 
   await test("security log follows Important and starts with browser connectivity", () => {
     const log = document.getElementById("security-log");
@@ -596,6 +613,8 @@
   });
 
   await test("the locale switch translates the shell and restores English on the way back", async () => {
+    const countBefore = workspaceCount("calc");
+    const badge = document.querySelector('[data-workspace-count="calc"]');
     const select = document.getElementById("locale-select");
     assert(select, "Locale select is missing");
     const pitchItem = document.querySelector(".pitch-list li");
@@ -615,12 +634,18 @@
     assert(richBanner.querySelector("strong")?.textContent === "Versión en línea", "Rich banner did not translate: " + richBanner.textContent);
     equal(download.getAttribute("aria-label"), "Descargar EntropyLab", "aria-label did not translate");
     equal(modeOption.textContent, "Tiradas de dados", "The method dropdown did not re-render in Spanish");
+    equal(workspaceCount("calc"), countBefore);
+    equal(document.querySelector('[data-workspace-count="calc"]'), badge);
+    const keyTab = document.querySelector('#workspace-tabs [data-workspace="calc"]');
+    equal(keyTab.querySelector('[data-workspace-label="full"]').textContent, keyTab.getAttribute("aria-label"));
+    assert(keyTab.querySelector('[data-workspace-label="short"]').textContent, "the short tab name disappeared");
     // Switching back restores the English originals, not a stale translation.
     select.value = "en";
     select.dispatchEvent(new Event("change", { bubbles: true }));
     await wait(0);
     equal(pitchItem.textContent, "Save this air-gapped bitcoin calculator to a removable drive and open it on a computer that never goes online.", "Switching back did not restore the English original");
     equal(modeOption.textContent, "Dice rolls", "The method dropdown did not restore English");
+    equal(workspaceCount("calc"), countBefore);
     assert(localStorage.getItem("entropylab-locale") === "en", "The locale choice should be stored as English again");
   });
 
@@ -1404,6 +1429,7 @@
     const pickers = ["bip85-session-keys", "sp-session-keys", "psbt-session-keys", "nonce-session-keys", "vanity-session-keys", "msig-keys"];
     const offered = (id) => [...document.querySelectorAll(`#${id} [data-key-id]`)].map((chip) => chip.dataset.keyId);
     const before = new Set(pickers.flatMap(offered));
+    const keyCountBefore = workspaceCount("calc");
     let keyId = null;
     try {
       document.querySelector('#workspace [data-workspace="calc"]').click();
@@ -1415,10 +1441,12 @@
       document.getElementById("go").click();
       keyId = await until(() => offered("sp-session-keys").find((id) => !before.has(id)), "the derived key in the SP picker");
       for (const id of pickers.slice(0, 5)) assert(offered(id).includes(keyId), `#${id} did not offer the derived key`);
+      equal(workspaceCount("calc"), keyCountBefore + 1);
       await until(() => !document.getElementById("wipe").disabled, "Wipe to enable");
       document.getElementById("wipe").click();
       await wait(0);
       for (const id of pickers) assert(!offered(id).includes(keyId), `#${id} still offers the wiped key`);
+      equal(workspaceCount("calc"), keyCountBefore);
     } finally {
       // Leave the Key Station as the tests that follow expect it, even when
       // this one fails: the derived key's tab (active since it was derived)
@@ -2201,11 +2229,13 @@
     equal(vanityGo.textContent.trim(), "Start Grinding", "The grinder action did not return to Start Grinding");
     assert(Math.abs(vanityGo.getBoundingClientRect().width - vanityGoWidth) < 0.5, "Start grinding changed width after the run");
     assert(document.querySelectorAll("#vanity-out table tbody tr").length === 1, "exactly one match is listed");
+    equal(workspaceCount("vanity"), 1);
     assert(/1 match\b/.test(document.getElementById("vanity-status").textContent), "the status counts the single match");
     first.click();
     await wait(0);
     assert(!first.checked, "the Stop on first find checkbox switches off again");
     document.getElementById("vanity-wipe").click();
+    equal(workspaceCount("vanity"), 0);
     await until(() => !document.querySelector("#vanity-out table"), "Clear results to drop the table");
     input(document.getElementById("vanity-start"), "0");
     document.getElementById("vanity-go").click();
@@ -2299,6 +2329,7 @@
     equal(row.children[1].textContent.trim(), "1'", "the hit is account 1");
     assert(row.children[3].textContent.includes("sp1qqtjetnp0fgkeulzm"), "the row shows the 116-character Silent Payment code");
     document.getElementById("vanity-wipe").click();
+    equal(workspaceCount("vanity"), 0);
     await until(() => !document.querySelector("#vanity-out table"), "Clear results to drop the table");
     // Leave Key Station as the tests that follow expect it: no derived key,
     // no passphrase.
@@ -2408,6 +2439,7 @@
     // Leave Key Station as the tests that follow expect it.
     await openVanity();
     document.getElementById("vanity-wipe").click();
+    equal(workspaceCount("vanity"), 0);
     await openKeys();
     [...document.querySelectorAll("#key-tabs > *")].find((tab) => tab.textContent.includes("c55401c7")).click();
     await until(() => !document.getElementById("delete-key").disabled, "Delete current key to enable");
@@ -3091,6 +3123,7 @@
     const start = tabs().length;
     await derive("", "73c5da0a");
     equal(tabs().length, start + 1, "Derive did not add exactly one address tab");
+    equal(workspaceCount("sp"), start);
     assert(document.getElementById("sp-address-value")?.textContent.startsWith("sp1q"), "The address tab did not show its address");
     assert(document.getElementById("sp-bench").hidden, "The station form stayed visible on an address tab");
     bench().click();
@@ -3102,6 +3135,7 @@
     // The same address again selects its tab instead of adding one.
     await derive("", "73c5da0a");
     equal(tabs().length, start + 2, "Deriving an existing address added a duplicate tab");
+    equal(workspaceCount("sp"), start + 1);
     // End Session clears the station and leaves the address tabs.
     bench().click();
     input(document.getElementById("sp-key"), seed);
@@ -3116,6 +3150,7 @@
     tabs().find((tab) => tab.textContent.trim() === "73c5da0a").click();
     document.getElementById("delete-sp").click();
     await until(() => tabs().length === start, "second address tab deletion");
+    equal(workspaceCount("sp"), start - 1);
     assert(document.getElementById("delete-sp").disabled, "Minus stayed available on the station tab");
   });
   await test("SP address tabs are keyed by the derived keys, not the wallet fingerprint (GHSA-6rr2-5r82-grwc)", async () => {
@@ -5395,6 +5430,7 @@
     document.getElementById("bip85-index").value = "0";
     document.getElementById("bip85-go").click();
     await until(() => tabs.children.length === 2 && document.querySelector("#bip85-out .key-summary"), "first BIP-85 child tab");
+    equal(workspaceCount("bip85"), 1);
     const firstTab = tabs.children[1];
     assert(/^[0-9a-f]{8}$/.test(firstTab.querySelector(".key-tab-label")?.textContent || ""), "The first BIP-85 child tab did not show an XFP");
     await until(() => !firstTab.querySelector(".key-tab-lifehash")?.hidden, "first BIP-85 child LifeHash");
@@ -5460,6 +5496,7 @@
     input(document.getElementById("bip85-index"), "1");
     document.getElementById("bip85-go").click();
     await until(() => tabs.children.length === 3 && document.querySelector("#bip85-out .key-summary"), "second BIP-85 child tab");
+    equal(workspaceCount("bip85"), 2);
     const secondFingerprint = tabs.children[2].querySelector(".key-tab-label")?.textContent.trim();
     childChip("sp-session-keys", secondFingerprint).click();
     // An SP address derived from the child lives in its own tab until the
@@ -6366,6 +6403,7 @@
     await until(() => document.getElementById("msig-lab").hidden || document.getElementById("msig-error").textContent, "updated source result");
     assert(!document.getElementById("msig-error").textContent, "Updating the source failed to derive");
     equal(walletTabs().length, originalCount + 1, "Update Existing created another wallet tab");
+    equal(workspaceCount("msig"), originalCount + 1);
     equal(document.querySelector('#msig-tabs [aria-selected="true"]').id, originalTab.id, "Update Existing selected a different wallet");
     equal(document.getElementById(originalTab.id).textContent.trim(), "Family savings", "Update Existing lost the source tab name");
     equal(document.querySelector('#msig-out [data-address-table="msig-receive"] tbody th').textContent.trim(), "23", "Update Existing did not derive the changed window");
@@ -7051,8 +7089,10 @@
     assert(overlay().hidden && document.getElementById("btc-calc") && leaves.length === 0 && closed === 0, "Cancel ended the session");
 
     button.click();
+    const countBadges = [...document.querySelectorAll("[data-workspace-count]")];
     document.getElementById("end-session-confirm").click();
     await until(() => document.querySelector("[data-session-ended]"), "the ended screen");
+    assert(countBadges.every((badge) => badge.hidden && badge.textContent === ""), "session clearing left generated-item counts behind");
     window.close = close;
     assert(leaves.length === 1 && leaves[0] === false, "End session did not run the page's leave-wipes");
     equal(written.at(-1), "");

@@ -43,7 +43,7 @@ function functionSource(name) {
 // model it, and the encoders a VM context lacks.
 const passphraseHelpers = ["hodlPassphraseVaultActive", "hodlPassphraseFieldBytes", "hodlStoredPassphraseBytes", "hodlPassphraseText", "hodlStorePassphrase", "hodlShowStoredPassphrase", "hodlClearPassphraseField", "hodlClearStationPassphrase"];
 function createContext(sandbox) {
-  const context = vm.createContext({ hodlPassphraseVaultField: null, hodlPassphraseShown: false, hodlStationPassphraseFields: null, TextEncoder, TextDecoder, ...sandbox });
+  const context = vm.createContext({ hodlPassphraseVaultField: null, hodlPassphraseShown: false, hodlStationPassphraseFields: null, hodlSyncWorkspaceCounts() {}, TextEncoder, TextDecoder, ...sandbox });
   for (const name of passphraseHelpers) vm.runInContext(functionSource(name), context);
   return context;
 }

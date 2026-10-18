@@ -758,6 +758,11 @@ To remove generated files, run `npm run clean`.
 └── versions/archived/      Historical releases excluded from the picker
 ```
 
+Tool tabs show the number of retained generated items: keys, multisig wallets,
+BIP-85 children, Silent Payment receive addresses, and listed vanity matches.
+Empty stations and cleared results do not count; zero-count badges stay hidden.
+PSBT inspections are not generated items and have no badge.
+
 ## Development and deployment
 
 The toolchain is npm and Node.js (>=20.19). Install the exact dependency tree

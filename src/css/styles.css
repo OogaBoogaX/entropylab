@@ -1524,6 +1524,15 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 /* Full names by default; the short forms wait for the narrow breakpoint, the
    same width at which the header drops its control labels. */
 .workspace-tab-short { display: none; }
+.workspace-tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-inline-start: var(--space-snug); padding-inline: var(--space-tight);
+  min-width: 1.75em; height: 1.75em; box-sizing: border-box;
+  border-radius: var(--radius-pill); font-size: var(--text-tag); line-height: 1;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in oklab, var(--danger) 85%, var(--selection-fg)); color: var(--on-color);
+}
+.workspace-tab-count[hidden] { display: none; }
 /* The panel completes the folder: the strip's rule is its top edge, so the
    chosen tab and the tool below it read as one enclosure. Transparent, so the
    cards inside keep the surface-on-ground contrast they have everywhere else
