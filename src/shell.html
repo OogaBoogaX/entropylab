@@ -597,6 +597,77 @@ words, pick one of the checksum words.</span></span>
       </div>
       <div id="sp-address-view" hidden></div>
     </div>
+      <section class="card no-print tool-card" id="bip47-card" role="tabpanel" hidden>
+      <div class="row no-print segmented-control" id="bip47-modes">
+        <button class="tab active" type="button" data-bip47-mode="self" aria-pressed="true">Own code</button>
+        <button class="tab" type="button" data-bip47-mode="decode" aria-pressed="false">Decode</button>
+        <button class="tab" type="button" data-bip47-mode="pairs" aria-pressed="false">Pair addresses</button>
+        <button class="tab" type="button" data-bip47-mode="tx" aria-pressed="false">Notification tx</button>
+        <button class="tab" type="button" data-bip47-mode="blind" aria-pressed="false">Blind payload</button>
+      </div>
+      <p class="muted">BIP-47 payment code (version 1) calculator, sharing the Silent Payments session key above on its own account — it never touches the m/352' scan/spend keys. Payment codes don't say which network they're for; addresses below are for the network selected above.</p>
+      <div id="bip47-self">
+        <p class="muted">Your payment code, its features byte, and its public notification address, derived from the session key.</p>
+        <div class="row psbt-actions tool-actions">
+          <button class="btn primary" id="bip47-self-go" type="button" disabled>Show my payment code</button>
+        </div>
+      </div>
+      <div id="bip47-decode" hidden>
+        <label class="field">Counterparty payment code
+          <input id="bip47-code-input" placeholder="PM8T…" spellcheck="false" autocomplete="off">
+          <span class="field-note">A payment code (also called a PayNym in Sparrow) is a string. Never ask for the counterparty's mnemonic.</span>
+        </label>
+        <div class="row psbt-actions tool-actions">
+          <button class="btn primary" id="bip47-decode-go" type="button" disabled>Decode payment code</button>
+        </div>
+      </div>
+      <div id="bip47-pairs" hidden>
+        <label class="field">Counterparty payment code
+          <input id="bip47-pair-code" placeholder="PM8T…" spellcheck="false" autocomplete="off">
+        </label>
+        <label class="field">Start index
+          <input id="bip47-pair-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+        </label>
+        <div class="row psbt-actions tool-actions">
+          <button class="btn primary" id="bip47-send-go" type="button" disabled>Compute send addresses (us → them)</button>
+          <button class="btn primary" id="bip47-receive-go" type="button" disabled>Compute receive addresses (them → us)</button>
+        </div>
+      </div>
+      <div id="bip47-txdecode" hidden>
+        <label class="field">Notification transaction (raw hex)
+          <textarea id="bip47-tx" placeholder="01000000…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          <span class="field-note">P2PKH designated inputs are in the BIP-47 text. P2WPKH and P2SH-P2WPKH designated inputs are common practice, but not in the BIP-47 text.</span>
+        </label>
+        <label class="field">Designated public key (only when the transaction can't expose one)
+          <input id="bip47-tx-manual" placeholder="02… / 03…, or 04… (33 or 65 bytes, hex)" spellcheck="false" autocomplete="off">
+          <span class="field-note">P2PK, multisig, and other unrecognized first inputs need the designated public key pasted here. BIP-47 allows this fallback.</span>
+        </label>
+        <div class="row psbt-actions tool-actions">
+          <button class="btn primary" id="bip47-tx-go" type="button" disabled>Decode notification transaction</button>
+        </div>
+      </div>
+      <div id="bip47-blind" hidden>
+        <label class="field">Designated input private key (WIF or hex)
+          <input id="bip47-blind-key" placeholder="K…, L…, 5…, or 64 hex characters" spellcheck="false" autocomplete="off" autocapitalize="off">
+          <span class="field-note">The BIP says the designated input MUST NOT be easily linkable to your notification address. This card rejects the notification key itself.</span>
+        </label>
+        <label class="field">That input's outpoint (txid:vout)
+          <input id="bip47-blind-outpoint" placeholder="863cfb…:1" spellcheck="false" autocomplete="off">
+        </label>
+        <label class="field">Counterparty payment code
+          <input id="bip47-blind-code" placeholder="PM8T…" spellcheck="false" autocomplete="off">
+        </label>
+        <div class="row psbt-actions tool-actions">
+          <button class="btn primary" id="bip47-blind-go" type="button" disabled>Blind our payment code</button>
+        </div>
+      </div>
+      <div class="row psbt-actions tool-actions">
+        <button class="btn secondary" id="bip47-wipe" type="button">End session / clear fields</button>
+      </div>
+      <p class="err" id="bip47-error" role="alert"></p>
+      <div id="bip47-out" aria-live="polite"></div>
+      <p class="muted">The notification address and its private key sit under the BIP-47 account. Session keys remain in this page only and are never intentionally stored or sent.</p>
+    </section>
     <div class="tool-intro-stack" id="psbt-tool-intros" hidden>
     <div class="tool-intro edge-note is-info active" id="psbt-tool-intro" aria-hidden="false">
         <h2>See what’s in a transaction</h2>
