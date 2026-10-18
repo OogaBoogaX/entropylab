@@ -64,6 +64,10 @@ const api = new Function(
     "hodlBinaryPreviewWords",
     "hodlHexPreviewWords",
     "hodlDicePreviewWords",
+    "hodlSplitD20String",
+    "hodlD20MinimumRolls",
+    "hodlD20Transcript",
+    "hodlD20FractionBytes",
   ].map(loadSlice).join("\n")}
   function hodlDPlusRolls() { throw new Error("the D++ branch is covered by dplus.test.mjs"); }
   return {
@@ -133,5 +137,46 @@ test("the dice preview hides when the transcript is unusable", () => {
     assert.deepEqual(hodlDicePreviewWords("1234", "coldcard", 24), [], "coin-derived digits are not preview entropy");
   } finally {
     api.setCoinPositions([]);
+  }
+});
+
+// D20 previews: the grid must show what the entered rolls already derive, by
+// the same arithmetic the final derivation uses — the base-20 fraction for
+// the converted method, SHA-256 of the hyphen-joined faces for the hashed
+// one. Expected entropy is fixed by inspection (all 1s is the fraction zero;
+// a leading 11 over 1s is exactly one half), and @scure/bip39 turns it into
+// the reference mnemonic.
+const d20Faces = (list) => list.join(" ");
+const d20Repeat = (face, count) => d20Faces(Array.from({ length: count }, () => face));
+const mnemonicOf = (bytes) => entropyToMnemonic(bytes, wordlist).split(" ");
+
+test("the converted D20 preview expands the rolls as a base-20 fraction", () => {
+  const zero = new Uint8Array(32);
+  assert.deepEqual(hodlDicePreviewWords(d20Repeat(1, 64), "d20", 24), mnemonicOf(zero), "all 1s is the fraction zero");
+  const half = new Uint8Array(32);
+  half[0] = 0x80;
+  assert.deepEqual(hodlDicePreviewWords(d20Faces([11, ...Array(63).fill(1)]), "d20", 24), mnemonicOf(half), "a leading 11 over 1s is one half");
+});
+
+test("the hashed D20 preview is SHA-256 over the hyphen-joined faces", () => {
+  const rolls = Array.from({ length: 64 }, (unused, index) => (index % 20) + 1);
+  const reference = mnemonicOf(hodlSha256(new TextEncoder().encode(rolls.join("-"))).slice(0, 32));
+  assert.deepEqual(hodlDicePreviewWords(d20Faces(rolls), "d20hash", 24), reference);
+});
+
+test("a D20 preview appears below the recommended roll count, as the D6 preview does", () => {
+  for (const method of ["d20", "d20hash"]) {
+    const partial = hodlDicePreviewWords(d20Repeat(7, 12), method, 24);
+    assert.equal(partial.length, 24, `${method}: a short transcript previewed nothing`);
+  }
+});
+
+test("the D20 preview hides when the transcript is unusable", () => {
+  for (const method of ["d20", "d20hash"]) {
+    assert.deepEqual(hodlDicePreviewWords("", method, 24), [], `${method}: empty`);
+    assert.deepEqual(hodlDicePreviewWords("   ", method, 24), [], `${method}: whitespace`);
+    assert.deepEqual(hodlDicePreviewWords("1 2 21", method, 24), [], `${method}: face above 20`);
+    assert.deepEqual(hodlDicePreviewWords("1 2 0", method, 24), [], `${method}: face below 1`);
+    assert.deepEqual(hodlDicePreviewWords("1 2 X", method, 24), [], `${method}: non-numeric`);
   }
 });
