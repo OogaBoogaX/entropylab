@@ -1613,5 +1613,6 @@
   "No matching silent payment outputs for this scan key and label set.": "Nenhuma saída de silent payment correspondente para este conjunto de chave de escaneamento e rótulo.",
   "{count} matching output.": "{count} saída correspondente.",
   "{count} matching outputs.": "{count} saídas correspondentes.",
-  "Manual session key entered. It will be validated when you use this Station.": "Chave de sessão manual inserida. Ela será validada quando você usar esta Estação."
+  "Manual session key entered. It will be validated when you use this Station.": "Chave de sessão manual inserida. Ela será validada quando você usar esta Estação.",
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "Este arquivo não tem proteção por senha — qualquer pessoa com ele pode ler ou alterar suas entradas. Pressione Abrir diário novamente para aceitá-lo."
 }
