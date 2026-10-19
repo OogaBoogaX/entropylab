@@ -1613,5 +1613,6 @@
   "{count} matching output.": "24e7a1f9df9932a9d70192fae2508ad3432df97cc181eadfd57000a94fcf0e9e",
   "{count} matching outputs.": "93b17798fb80e6452f84ebe3e283c1e3d4c139af280cc860858b4e7d67bbdcec",
   "Manual session key entered. It will be validated when you use this Station.": "49bb3b660f287220bfb0ab47a1acbc3a6fc34bb34a86b2c94118ecaf2b48c683",
-  "Spend path": "f8a440e58a82bc0766fc9f1fd09af539d531cfe902d9b9a62117d14bb2a285d0"
+  "Spend path": "f8a440e58a82bc0766fc9f1fd09af539d531cfe902d9b9a62117d14bb2a285d0",
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "4c8d2df7496ff99bc78f59b5d4eb680645f95f3f015b4a3dafc1f846afab8fa7"
 }

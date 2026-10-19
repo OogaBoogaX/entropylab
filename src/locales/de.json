@@ -1613,5 +1613,6 @@
   "{count} matching output.": "{count} passende Ausgabe.",
   "{count} matching outputs.": "{count} passende Ausgaben.",
   "Manual session key entered. It will be validated when you use this Station.": "Manueller Sitzungsschlüssel eingegeben. Er wird validiert, wenn Sie diese Station verwenden.",
-  "Spend path": "Ausgabepfad"
+  "Spend path": "Ausgabepfad",
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "Diese Datei ist nicht passwortgeschützt – jeder, der sie hat, kann ihre Einträge lesen oder ändern. Drücken Sie erneut auf „Journal öffnen“, um sie zu akzeptieren."
 }
