@@ -1612,5 +1612,6 @@
   "No matching silent payment outputs for this scan key and label set.": "37c5ad4bffc80a668377acd06411aa5a078ce39b10a4466b26e930e5b6059977",
   "{count} matching output.": "24e7a1f9df9932a9d70192fae2508ad3432df97cc181eadfd57000a94fcf0e9e",
   "{count} matching outputs.": "93b17798fb80e6452f84ebe3e283c1e3d4c139af280cc860858b4e7d67bbdcec",
-  "Manual session key entered. It will be validated when you use this Station.": "49bb3b660f287220bfb0ab47a1acbc3a6fc34bb34a86b2c94118ecaf2b48c683"
+  "Manual session key entered. It will be validated when you use this Station.": "49bb3b660f287220bfb0ab47a1acbc3a6fc34bb34a86b2c94118ecaf2b48c683",
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "4c8d2df7496ff99bc78f59b5d4eb680645f95f3f015b4a3dafc1f846afab8fa7"
 }
