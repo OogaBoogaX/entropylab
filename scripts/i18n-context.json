@@ -1,0 +1,1768 @@
+{
+  "Need the matching key in this session to check RFC 6979 and low-r grind.": {
+    "note": "\"Low-r grind\" is Bitcoin Core's term of art: it signs again until the signature's r value is low, which saves one byte. It is not milling or crushing. Keep the term in English, as this catalog's other low-r strings do.",
+    "noteByLanguage": {
+      "fr": "French writes the term \"grind low-r\" (\"le grind low-r\", \"au grind low-r\"); \"meulage\" means grinding with a wheel and \"broyage\" crushing. Return exactly: La clé correspondante est nécessaire dans cette session pour vérifier RFC 6979 et le grind low-r."
+    },
+    "retranslate": {
+      "fr": "La clé correspondante est nécessaire dans cette session pour vérifier RFC 6979 et le meulage low-r."
+    },
+    "exact": {
+      "fr": "La clé correspondante est nécessaire dans cette session pour vérifier RFC 6979 et le grind low-r."
+    }
+  },
+  "Also does not match RFC 6979 or low-r grind.": {
+    "note": "\"Low-r grind\" is Bitcoin Core's term of art: it signs again until the signature's r value is low, which saves one byte. It is not milling or crushing. Keep the term in English, as this catalog's other low-r strings do.",
+    "noteByLanguage": {
+      "fr": "French writes the term \"grind low-r\" (\"le grind low-r\", \"au grind low-r\"); \"meulage\" means grinding with a wheel and \"broyage\" crushing. Return exactly: Ne correspond pas non plus à RFC 6979 ni au grind low-r."
+    },
+    "retranslate": {
+      "fr": "Ne correspond pas non plus à RFC 6979 ni au meulage low-r."
+    },
+    "exact": {
+      "fr": "Ne correspond pas non plus à RFC 6979 ni au grind low-r."
+    }
+  },
+  "Matches RFC 6979 (plain deterministic nonce). r is high; Bitcoin Core would grind this one.": {
+    "note": "\"Low-r grind\" is Bitcoin Core's term of art: it signs again until the signature's r value is low, which saves one byte. It is not milling or crushing. Keep the term in English, as this catalog's other low-r strings do.",
+    "noteByLanguage": {
+      "fr": "French keeps the term in English here as Spanish (\"haría grind de este\") and Portuguese (\"faria grind neste\") do; \"meulerait\" means would grind with a grinding wheel. Return exactly: Correspond à RFC 6979 (nonce déterministe simple). r est élevé ; Bitcoin Core ferait un grind de celui-ci."
+    },
+    "retranslate": {
+      "fr": "Correspond à RFC 6979 (nonce déterministe simple). r est élevé ; Bitcoin Core meulerait celui-ci."
+    },
+    "exact": {
+      "fr": "Correspond à RFC 6979 (nonce déterministe simple). r est élevé ; Bitcoin Core ferait un grind de celui-ci."
+    }
+  },
+  "Matches RFC 6979 with Bitcoin Core-style low-r grind (retry {n}). Saves one byte. Not a leak.": {
+    "note": "\"Low-r grind\" is Bitcoin Core's term of art: it signs again until the signature's r value is low, which saves one byte. It is not milling or crushing. Keep the term in English, as this catalog's other low-r strings do.",
+    "noteByLanguage": {
+      "fr": "French writes the term \"grind low-r\" (\"le grind low-r\", \"au grind low-r\"); \"meulage\" means grinding with a wheel and \"broyage\" crushing. Return exactly: Correspond à RFC 6979 avec grind low-r de style Bitcoin Core (nouvelle tentative {n}). Économise un octet. Pas une fuite."
+    },
+    "retranslate": {
+      "fr": "Correspond à RFC 6979 avec meulage low-r de style Bitcoin Core (nouvelle tentative {n}). Économise un octet. Pas une fuite."
+    },
+    "exact": {
+      "fr": "Correspond à RFC 6979 avec grind low-r de style Bitcoin Core (nouvelle tentative {n}). Économise un octet. Pas une fuite."
+    }
+  },
+  "Does not match plain RFC 6979 or Bitcoin Core-style low-r grind. Honest signers may add other auxiliary randomness. A mismatch alone is not evidence of compromise. Reused r on two different messages is the real alarm.": {
+    "note": "\"Low-r grind\" is Bitcoin Core's term of art: it signs again until the signature's r value is low, which saves one byte. It is not milling or crushing. Keep the term in English, as this catalog's other low-r strings do.",
+    "noteByLanguage": {
+      "fr": "French writes the term \"grind low-r\" (\"le grind low-r\", \"au grind low-r\"); \"meulage\" means grinding with a wheel and \"broyage\" crushing. Return exactly: Ne correspond pas à RFC 6979 simple ni au grind low-r de style Bitcoin Core. Les signataires honnêtes peuvent ajouter un autre aléa auxiliaire. Un écart à lui seul n'est pas une preuve de compromission. Un r réutilisé sur deux messages différents est la vraie alarme."
+    },
+    "retranslate": {
+      "fr": "Ne correspond pas à RFC 6979 simple ni au meulage low-r de style Bitcoin Core. Les signataires honnêtes peuvent ajouter un autre aléa auxiliaire. Un écart à lui seul n'est pas une preuve de compromission. Un r réutilisé sur deux messages différents est la vraie alarme."
+    },
+    "exact": {
+      "fr": "Ne correspond pas à RFC 6979 simple ni au grind low-r de style Bitcoin Core. Les signataires honnêtes peuvent ajouter un autre aléa auxiliaire. Un écart à lui seul n'est pas une preuve de compromission. Un r réutilisé sur deux messages différents est la vraie alarme."
+    }
+  },
+  "Add a key to check each signature against RFC 6979 and low-r grinding, so an unexpected nonce can be told apart from a deterministic one.": {
+    "note": "\"Low-r grind\" is Bitcoin Core's term of art: it signs again until the signature's r value is low, which saves one byte. It is not milling or crushing. Keep the term in English, as this catalog's other low-r strings do.",
+    "noteByLanguage": {
+      "fr": "French writes the term \"grind low-r\" (\"le grind low-r\", \"au grind low-r\"); \"meulage\" means grinding with a wheel and \"broyage\" crushing. Return exactly: Ajoutez une clé pour vérifier chaque signature par rapport à la norme RFC 6979 et au grind low-r, afin de distinguer un nonce inattendu d'un nonce déterministe.",
+      "es": "This English sentence says \"low-r grinding\"; Spanish writes the term \"el low-r grind\", exactly as its other five low-r strings do (\"comprobar RFC 6979 y el low-r grind\"). Dropping the \"-ing\" is this catalog's settled form of the term, not a change of meaning. \"molienda\" means milling. Return exactly: Agrega una clave para verificar cada firma contra RFC 6979 y el low-r grind, para que un nonce inesperado se pueda distinguir de uno determinista.",
+      "pt": "Portuguese writes the term \"o grind low-r\", as its other low-r strings do; \"moagem\" means milling. Return exactly: Adicione uma chave para verificar cada assinatura contra RFC 6979 e o grind low-r, para que um nonce inesperado possa ser distinguido de um determinístico."
+    },
+    "retranslate": {
+      "fr": "Ajoutez une clé pour vérifier chaque signature par rapport à la norme RFC 6979 et au broyage low-r, afin de distinguer un nonce inattendu d'un nonce déterministe.",
+      "es": "Agrega una clave para verificar cada firma contra RFC 6979 y la molienda low-r, para que un nonce inesperado se pueda distinguir de uno determinista.",
+      "pt": "Adicione uma chave para verificar cada assinatura contra RFC 6979 e moagem low-r, para que um nonce inesperado possa ser distinguido de um determinístico."
+    },
+    "exact": {
+      "fr": "Ajoutez une clé pour vérifier chaque signature par rapport à la norme RFC 6979 et au grind low-r, afin de distinguer un nonce inattendu d'un nonce déterministe.",
+      "es": "Agrega una clave para verificar cada firma contra RFC 6979 y el low-r grind, para que un nonce inesperado se pueda distinguir de uno determinista.",
+      "pt": "Adicione uma chave para verificar cada assinatura contra RFC 6979 e o grind low-r, para que um nonce inesperado possa ser distinguido de um determinístico."
+    }
+  },
+  "Output public key": {
+    "note": "A label, not an instruction. \"Output\" is a noun here: a transaction output. The string labels the x-only public key of a Taproot output this tool generated, in the Silent Payments send results.",
+    "noteByLanguage": {
+      "de": "Write it like the other German labels (\"Public key\" is \"Öffentlicher Schlüssel\"), with the catalog's word for a transaction output (\"Output\", as in \"Taproot-Output-Schlüssel\"). Return exactly: Öffentlicher Output-Schlüssel"
+    },
+    "retranslate": {
+      "de": "Öffentlichen Schlüssel ausgeben"
+    },
+    "exact": {
+      "de": "Öffentlicher Output-Schlüssel"
+    }
+  },
+  "You are using Microsoft Edge. In our tests, Edge kept copies of a copied seed phrase after the tab closed, until Edge itself was quit. Assume it does the same with any secret you copy, such as a private key. Quit Edge completely, and turn off Startup boost and background apps in its System settings.": {
+    "note": "Only the name of Edge's \"Startup boost\" setting is wrong in the committed translation. Return the committed translation unchanged except for that name: the same words, word order, punctuation, quotation marks and capitalization.",
+    "noteByLanguage": {
+      "de": "Edge itself calls the setting \"Startup-Boost\". Return exactly: Sie verwenden Microsoft Edge. In unseren Tests hat Edge Kopien einer kopierten Seed-Phrase gespeichert, nachdem der Tab geschlossen wurde, bis Edge selbst beendet wurde. Gehen Sie davon aus, dass es dasselbe mit allen geheimen Informationen tut, die Sie kopieren, wie z. B. einem privaten Schlüssel. Beenden Sie Edge vollständig und deaktivieren Sie \"Startup-Boost\" und \"Hintergrund-Apps\" in den Systemeinstellungen.",
+      "es": "Edge itself calls the setting \"Inicio rápido\". Return exactly: Estás usando Microsoft Edge. En nuestras pruebas, Edge conservó copias de una frase semilla copiada después de cerrar la pestaña, hasta que se cerró el propio Edge. Asume que hace lo mismo con cualquier secreto que copies, como una clave privada. Cierra Edge por completo y desactiva el inicio rápido y las aplicaciones en segundo plano en su configuración del Sistema.",
+      "fr": "Edge itself calls the setting \"Démarrage rapide\". Return exactly: Vous utilisez Microsoft Edge. Lors de nos tests, Edge a conservé des copies d'une phrase secrète copiée après la fermeture de l'onglet, jusqu'à ce qu'Edge lui-même soit arrêté. Supposez qu'il en soit de même pour tout secret que vous copiez, tel qu'une clé privée. Quittez Edge complètement, et désactivez le démarrage rapide et les applications en arrière-plan dans ses paramètres Système.",
+      "pt": "Edge itself calls the setting \"Início rápido\". Return exactly: Você está usando o Microsoft Edge. Em nossos testes, o Edge manteve cópias de uma frase-semente copiada após o fechamento da aba, até que o próprio Edge fosse encerrado. Presuma que ele faz o mesmo com qualquer segredo que você copiar, como uma chave privada. Encerre o Edge completamente e desative o início rápido e os aplicativos em segundo plano nas configurações do Sistema."
+    },
+    "retranslate": {
+      "de": "Sie verwenden Microsoft Edge. In unseren Tests hat Edge Kopien einer kopierten Seed-Phrase gespeichert, nachdem der Tab geschlossen wurde, bis Edge selbst beendet wurde. Gehen Sie davon aus, dass es dasselbe mit allen geheimen Informationen tut, die Sie kopieren, wie z. B. einem privaten Schlüssel. Beenden Sie Edge vollständig und deaktivieren Sie \"Startanreicherung\" und \"Hintergrund-Apps\" in den Systemeinstellungen.",
+      "es": "Estás usando Microsoft Edge. En nuestras pruebas, Edge conservó copias de una frase semilla copiada después de cerrar la pestaña, hasta que se cerró el propio Edge. Asume que hace lo mismo con cualquier secreto que copies, como una clave privada. Cierra Edge por completo y desactiva el impulso de inicio y las aplicaciones en segundo plano en su configuración del Sistema.",
+      "fr": "Vous utilisez Microsoft Edge. Lors de nos tests, Edge a conservé des copies d'une phrase secrète copiée après la fermeture de l'onglet, jusqu'à ce qu'Edge lui-même soit arrêté. Supposez qu'il en soit de même pour tout secret que vous copiez, tel qu'une clé privée. Quittez Edge complètement, et désactivez l'accélérateur de démarrage et les applications en arrière-plan dans ses paramètres Système.",
+      "pt": "Você está usando o Microsoft Edge. Em nossos testes, o Edge manteve cópias de uma frase-semente copiada após o fechamento da aba, até que o próprio Edge fosse encerrado. Presuma que ele faz o mesmo com qualquer segredo que você copiar, como uma chave privada. Encerre o Edge completamente e desative a inicialização rápida e os aplicativos em segundo plano nas configurações do Sistema."
+    },
+    "exact": {
+      "de": "Sie verwenden Microsoft Edge. In unseren Tests hat Edge Kopien einer kopierten Seed-Phrase gespeichert, nachdem der Tab geschlossen wurde, bis Edge selbst beendet wurde. Gehen Sie davon aus, dass es dasselbe mit allen geheimen Informationen tut, die Sie kopieren, wie z. B. einem privaten Schlüssel. Beenden Sie Edge vollständig und deaktivieren Sie \"Startup-Boost\" und \"Hintergrund-Apps\" in den Systemeinstellungen.",
+      "es": "Estás usando Microsoft Edge. En nuestras pruebas, Edge conservó copias de una frase semilla copiada después de cerrar la pestaña, hasta que se cerró el propio Edge. Asume que hace lo mismo con cualquier secreto que copies, como una clave privada. Cierra Edge por completo y desactiva el inicio rápido y las aplicaciones en segundo plano en su configuración del Sistema.",
+      "fr": "Vous utilisez Microsoft Edge. Lors de nos tests, Edge a conservé des copies d'une phrase secrète copiée après la fermeture de l'onglet, jusqu'à ce qu'Edge lui-même soit arrêté. Supposez qu'il en soit de même pour tout secret que vous copiez, tel qu'une clé privée. Quittez Edge complètement, et désactivez le démarrage rapide et les applications en arrière-plan dans ses paramètres Système.",
+      "pt": "Você está usando o Microsoft Edge. Em nossos testes, o Edge manteve cópias de uma frase-semente copiada após o fechamento da aba, até que o próprio Edge fosse encerrado. Presuma que ele faz o mesmo com qualquer segredo que você copiar, como uma chave privada. Encerre o Edge completamente e desative o início rápido e os aplicativos em segundo plano nas configurações do Sistema."
+    }
+  },
+  "BIP39 passphrase": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Phrase de passe BIP39"
+    },
+    "retranslate": {
+      "fr": "Phrase secrète BIP39"
+    },
+    "exact": {
+      "fr": "Phrase de passe BIP39"
+    }
+  },
+  "Boundary whitespace trimming leaves an empty passphrase · enter non-whitespace text or turn trimming off": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: La suppression des espaces blancs en bordure laisse une phrase de passe vide · entrez du texte non blanc ou désactivez la suppression"
+    },
+    "retranslate": {
+      "fr": "La suppression des espaces blancs en bordure laisse une phrase secrète vide · entrez du texte non blanc ou désactivez la suppression"
+    },
+    "exact": {
+      "fr": "La suppression des espaces blancs en bordure laisse une phrase de passe vide · entrez du texte non blanc ou désactivez la suppression"
+    }
+  },
+  "Pick a key to grind. {station} settings come along as set there; BIP-85 children use an empty passphrase and the default account path. A key with seed words supports both methods, a root-xprv key the derivation grind only.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: Choisissez une clé pour la recherche. Les paramètres {station} sont ceux définis là-bas ; les enfants BIP-85 utilisent une phrase de passe vide et le chemin de compte par défaut. Une clé avec des mots de départ prend en charge les deux méthodes, une clé racine xprv uniquement l'essai par dérivation.",
+      "de": "German calls the vanity search \"Durchmusterung\" (as in \"Derivations-Durchmusterung\"); \"Mahlen\" and \"Schleifen\" mean milling and sanding. Return exactly: Wählen Sie einen Schlüssel zum Durchmustern aus. Die {station}-Einstellungen werden wie dort festgelegt übernommen; BIP-85-Kinder verwenden eine leere Passphrase und den Standard-Account-Pfad. Ein Schlüssel mit Seed-Wörtern unterstützt beide Methoden, ein Root-xprv-Schlüssel nur die Derivations-Durchmusterung.",
+      "es": "Spanish calls the vanity search \"búsqueda\" (as in \"Progreso de búsqueda vanity\") and the derivation method \"prueba por derivación\"; \"moler\" and \"molienda\" mean milling. Return exactly: Elige una clave para la búsqueda. La configuración de {station} se mantiene como se estableció allí; los hijos BIP-85 usan una frase de contraseña vacía y la ruta de cuenta predeterminada. Una clave con palabras semilla admite ambos métodos, una clave raíz xprv solo la prueba por derivación.",
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: Escolha uma chave para a busca. As configurações de {station} vêm como definidas lá; os filhos BIP-85 usam uma frase secreta vazia e o caminho da conta padrão. Uma chave com palavras semente suporta ambos os métodos, uma chave raiz xprv apenas o teste por derivação."
+    },
+    "retranslate": {
+      "fr": "Choisissez une clé à broyer. Les paramètres {station} sont ceux définis là-bas ; les enfants BIP-85 utilisent une phrase de passe vide et le chemin de compte par défaut. Une clé avec des mots de départ prend en charge les deux méthodes, une clé racine xprv uniquement le broyage par dérivation.",
+      "de": "Wählen Sie einen Schlüssel zum Mahlen aus. Die {station}-Einstellungen werden wie dort festgelegt übernommen; BIP-85-Kinder verwenden eine leere Passphrase und den Standard-Account-Pfad. Ein Schlüssel mit Seed-Wörtern unterstützt beide Methoden, ein Root-xprv-Schlüssel nur das Ableitungs-Mahlen.",
+      "es": "Elige una clave para moler. La configuración de {station} se mantiene como se estableció allí; los hijos BIP-85 usan una frase de contraseña vacía y la ruta de cuenta predeterminada. Una clave con palabras semilla admite ambos métodos, una clave raíz xprv solo la molienda de derivación.",
+      "pt": "Escolha uma chave para moer. As configurações de {station} vêm como definidas lá; os filhos BIP-85 usam uma frase secreta vazia e o caminho da conta padrão. Uma chave com palavras semente suporta ambos os métodos, uma chave raiz xprv apenas a moagem de derivação."
+    },
+    "exact": {
+      "fr": "Choisissez une clé pour la recherche. Les paramètres {station} sont ceux définis là-bas ; les enfants BIP-85 utilisent une phrase de passe vide et le chemin de compte par défaut. Une clé avec des mots de départ prend en charge les deux méthodes, une clé racine xprv uniquement l'essai par dérivation.",
+      "de": "Wählen Sie einen Schlüssel zum Durchmustern aus. Die {station}-Einstellungen werden wie dort festgelegt übernommen; BIP-85-Kinder verwenden eine leere Passphrase und den Standard-Account-Pfad. Ein Schlüssel mit Seed-Wörtern unterstützt beide Methoden, ein Root-xprv-Schlüssel nur die Derivations-Durchmusterung.",
+      "es": "Elige una clave para la búsqueda. La configuración de {station} se mantiene como se estableció allí; los hijos BIP-85 usan una frase de contraseña vacía y la ruta de cuenta predeterminada. Una clave con palabras semilla admite ambos métodos, una clave raíz xprv solo la prueba por derivación.",
+      "pt": "Escolha uma chave para a busca. As configurações de {station} vêm como definidas lá; os filhos BIP-85 usam uma frase secreta vazia e o caminho da conta padrão. Uma chave com palavras semente suporta ambos os métodos, uma chave raiz xprv apenas o teste por derivação."
+    }
+  },
+  "The passphrase stays as it is; each candidate is the next BIP32 account index. A BIP-85 child stays unchanged; copy any match you need.": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: La phrase de passe reste telle quelle ; chaque candidat est l'index de compte BIP32 suivant. Un enfant BIP-85 reste inchangé ; copiez toute correspondance dont vous avez besoin."
+    },
+    "retranslate": {
+      "fr": "La phrase secrète reste telle quelle ; chaque candidat est l'index de compte BIP32 suivant. Un enfant BIP-85 reste inchangé ; copiez toute correspondance dont vous avez besoin."
+    },
+    "exact": {
+      "fr": "La phrase de passe reste telle quelle ; chaque candidat est l'index de compte BIP32 suivant. Un enfant BIP-85 reste inchangé ; copiez toute correspondance dont vous avez besoin."
+    }
+  },
+  "Each candidate extends the BIP-85 child's seed words with a new passphrase. The child stays unchanged; copy any match you need.": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Chaque candidat étend les mots de départ de l'enfant BIP-85 avec une nouvelle phrase de passe. L'enfant reste inchangé ; copiez toute correspondance dont vous avez besoin."
+    },
+    "retranslate": {
+      "fr": "Chaque candidat étend les mots de départ de l'enfant BIP-85 avec une nouvelle phrase secrète. L'enfant reste inchangé ; copiez toute correspondance dont vous avez besoin."
+    },
+    "exact": {
+      "fr": "Chaque candidat étend les mots de départ de l'enfant BIP-85 avec une nouvelle phrase de passe. L'enfant reste inchangé ; copiez toute correspondance dont vous avez besoin."
+    }
+  },
+  "Matching passphrases": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Phrases de passe correspondantes"
+    },
+    "retranslate": {
+      "fr": "Phrases secrètes correspondantes"
+    },
+    "exact": {
+      "fr": "Phrases de passe correspondantes"
+    }
+  },
+  "Passphrase hidden — turn on the Private data switch above to reveal": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Phrase de passe masquée — activez le commutateur Données privées ci-dessus pour révéler"
+    },
+    "retranslate": {
+      "fr": "Phrase secrète masquée — activez le commutateur Données privées ci-dessus pour révéler"
+    },
+    "exact": {
+      "fr": "Phrase de passe masquée — activez le commutateur Données privées ci-dessus pour révéler"
+    }
+  },
+  "Each match derives from the selected BIP-85 child. The child remains fixed by its parent, application, and index; copy a matching address or passphrase rather than changing the child.": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Chaque correspondance dérive de l'enfant BIP-85 sélectionné. L'enfant reste fixe par son parent, son application et son index ; copiez une adresse ou une phrase de passe correspondante plutôt que de changer l'enfant.",
+      "pt": "A BIP-85 child is a derived key, not a person: this catalog calls it \"filho\" (\"Filho BIP-85\"). Return exactly: Cada correspondência deriva do filho BIP-85 selecionado. O filho permanece fixo por seu pai, aplicativo e índice; copie um endereço ou frase secreta correspondente em vez de alterar o filho."
+    },
+    "retranslate": {
+      "fr": "Chaque correspondance dérive de l'enfant BIP-85 sélectionné. L'enfant reste fixe par son parent, son application et son index ; copiez une adresse ou une phrase secrète correspondante plutôt que de changer l'enfant.",
+      "pt": "Cada correspondência deriva da criança BIP-85 selecionada. A criança permanece fixa por seu pai, aplicativo e índice; copie um endereço ou frase secreta correspondente em vez de alterar a criança."
+    },
+    "exact": {
+      "fr": "Chaque correspondance dérive de l'enfant BIP-85 sélectionné. L'enfant reste fixe par son parent, son application et son index ; copiez une adresse ou une phrase de passe correspondante plutôt que de changer l'enfant.",
+      "pt": "Cada correspondência deriva do filho BIP-85 selecionado. O filho permanece fixo por seu pai, aplicativo e índice; copie um endereço ou frase secreta correspondente em vez de alterar o filho."
+    }
+  },
+  "Passphrase (optional)": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Phrase de passe (facultatif)"
+    },
+    "retranslate": {
+      "fr": "Phrase secrète (facultatif)"
+    },
+    "exact": {
+      "fr": "Phrase de passe (facultatif)"
+    }
+  },
+  "Walks either the passphrase or the account number until the address matches your prefix. Same key and same counter always give the same address. Key Station matches can be written back; BIP-85 children stay unchanged. Generates no new entropy.": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Parcourt soit la phrase de passe, soit le numéro de compte jusqu'à ce que l'adresse corresponde à votre préfixe. La même clé et le même compteur donnent toujours la même adresse. Les correspondances Key Station peuvent être réécrites ; les enfants BIP-85 restent inchangés. Ne génère pas de nouvelle entropie."
+    },
+    "retranslate": {
+      "fr": "Parcourt soit la phrase secrète, soit le numéro de compte jusqu'à ce que l'adresse corresponde à votre préfixe. La même clé et le même compteur donnent toujours la même adresse. Les correspondances Key Station peuvent être réécrites ; les enfants BIP-85 restent inchangés. Ne génère pas de nouvelle entropie."
+    },
+    "exact": {
+      "fr": "Parcourt soit la phrase de passe, soit le numéro de compte jusqu'à ce que l'adresse corresponde à votre préfixe. La même clé et le même compteur donnent toujours la même adresse. Les correspondances Key Station peuvent être réécrites ; les enfants BIP-85 restent inchangés. Ne génère pas de nouvelle entropie."
+    }
+  },
+  "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for the same seed words.": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Chaque candidat est la phrase de passe de départ suivie des caractères du compteur, étirée en une seed (2 048 tours PBKDF2) et dérivée au chemin de la clé. Une correspondance est une nouvelle phrase de passe pour les mêmes mots de seed."
+    },
+    "retranslate": {
+      "fr": "Chaque candidat est la phrase secrète de départ suivie des caractères du compteur, étirée en une seed (2 048 tours PBKDF2) et dérivée au chemin de la clé. Une correspondance est une nouvelle phrase secrète pour les mêmes mots de seed."
+    },
+    "exact": {
+      "fr": "Chaque candidat est la phrase de passe de départ suivie des caractères du compteur, étirée en une seed (2 048 tours PBKDF2) et dérivée au chemin de la clé. Une correspondance est une nouvelle phrase de passe pour les mêmes mots de seed."
+    }
+  },
+  "Enter a passphrase, or leave blank for none": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Entrez une phrase de passe, ou laissez vide pour aucune"
+    },
+    "retranslate": {
+      "fr": "Entrez une phrase secrète, ou laissez vide pour aucune"
+    },
+    "exact": {
+      "fr": "Entrez une phrase de passe, ou laissez vide pour aucune"
+    }
+  },
+  "Scan public key": {
+    "note": "A label, not an instruction: it names the Silent Payments scan public key in the receive results, next to the \"Spend public key\" label.",
+    "noteByLanguage": {
+      "de": "Write it like the German label for \"Spend public key\" (\"Öffentlicher Schlüssel zum Ausgeben\"). Return exactly: Öffentlicher Schlüssel zum Scannen",
+      "es": "Write it like the Spanish label for \"Spend public key\" (\"Clave pública de gasto\"). Return exactly: Clave pública de exploración",
+      "fr": "Write it like the French label for \"Spend public key\" (\"Clé publique de dépense\"). Return exactly: Clé publique de balayage",
+      "pt": "Write it like the Portuguese label for \"Spend public key\" (\"Chave pública de gastos\"). Return exactly: Chave pública de varredura"
+    },
+    "retranslate": {
+      "de": "Öffentlichen Schlüssel scannen",
+      "es": "Escanear clave pública",
+      "fr": "Scanner la clé publique",
+      "pt": "Escanear chave pública"
+    },
+    "exact": {
+      "de": "Öffentlicher Schlüssel zum Scannen",
+      "es": "Clave pública de exploración",
+      "fr": "Clé publique de balayage",
+      "pt": "Chave pública de varredura"
+    }
+  },
+  "Scan private key": {
+    "note": "A label, not an instruction: it names the Silent Payments scan private key in the receive results, next to the \"Spend private key\" label.",
+    "noteByLanguage": {
+      "de": "Write it like the German label for \"Spend public key\" (\"Öffentlicher Schlüssel zum Ausgeben\"). Return exactly: Privater Schlüssel zum Scannen",
+      "es": "Write it like the Spanish label for \"Spend public key\" (\"Clave pública de gasto\"). Return exactly: Clave privada de exploración",
+      "fr": "Write it like the French label for \"Spend public key\" (\"Clé publique de dépense\"). Return exactly: Clé privée de balayage",
+      "pt": "Write it like the Portuguese label for \"Spend public key\" (\"Chave pública de gastos\"). Return exactly: Chave privada de varredura"
+    },
+    "retranslate": {
+      "de": "Privaten Schlüssel scannen",
+      "es": "Escanear clave privada",
+      "fr": "Scanner la clé privée",
+      "pt": "Escanear chave privada"
+    },
+    "exact": {
+      "de": "Privater Schlüssel zum Scannen",
+      "es": "Clave privada de exploración",
+      "fr": "Clé privée de balayage",
+      "pt": "Chave privada de varredura"
+    }
+  },
+  "Spend private key": {
+    "note": "A label, not an instruction: it names a Silent Payments spend private key, next to the \"Scan private key\" label.",
+    "noteByLanguage": {
+      "de": "Write it like the German label for \"Spend public key\" (\"Öffentlicher Schlüssel zum Ausgeben\"). Return exactly: Privater Schlüssel zum Ausgeben"
+    },
+    "retranslate": {
+      "de": "Privaten Schlüssel ausgeben"
+    },
+    "exact": {
+      "de": "Privater Schlüssel zum Ausgeben"
+    }
+  },
+  "BIP-392 spend": {
+    "note": "A label, not an instruction: it names the BIP-392 spend descriptor (spspend), next to the \"BIP-392 watch-only\" label.",
+    "noteByLanguage": {
+      "de": "Use the same phrasing as the German key labels (\"Öffentlicher Schlüssel zum Ausgeben\"). Return exactly: BIP-392 zum Ausgeben"
+    },
+    "retranslate": {
+      "de": "BIP-392 ausgeben"
+    },
+    "exact": {
+      "de": "BIP-392 zum Ausgeben"
+    }
+  },
+  "Upload .psbt File": {
+    "noteByLanguage": {
+      "fr": "\"Upload\" means opening a file from this device. French \"télécharger\" means download; this catalog uses \"téléverser\" for upload. Return exactly: Téléverser le fichier .psbt"
+    },
+    "retranslate": {
+      "fr": "Télécharger le fichier .psbt"
+    },
+    "exact": {
+      "fr": "Téléverser le fichier .psbt"
+    }
+  },
+  "Upload Nonce History": {
+    "noteByLanguage": {
+      "fr": "\"Upload\" means opening a file from this device. French \"télécharger\" means download; this catalog uses \"téléverser\" for upload. Return exactly: Téléverser l'historique des nonces"
+    },
+    "retranslate": {
+      "fr": "Télécharger l'historique des nonces"
+    },
+    "exact": {
+      "fr": "Téléverser l'historique des nonces"
+    }
+  },
+  "No nonce history in memory. Inspect a PSBT or upload a history file.": {
+    "noteByLanguage": {
+      "fr": "\"Upload\" means opening a file from this device. French \"télécharger\" means download; this catalog uses \"téléverser\" for upload. Return exactly: Aucun historique de nonce en mémoire. Inspectez un PSBT ou téléversez un fichier d'historique."
+    },
+    "retranslate": {
+      "fr": "Aucun historique de nonce en mémoire. Inspectez un PSBT ou téléchargez un fichier d'historique."
+    },
+    "exact": {
+      "fr": "Aucun historique de nonce en mémoire. Inspectez un PSBT ou téléversez un fichier d'historique."
+    }
+  },
+  "Journal open": {
+    "note": "A status heading, not an instruction: it says the Journal is open.",
+    "noteByLanguage": {
+      "de": "German text already says \"Journal geöffnet\" for this status (\"Journal geöffnet · Passwortgeschützt\"). Return exactly: Journal geöffnet"
+    },
+    "retranslate": {
+      "de": "Journal öffnen"
+    },
+    "exact": {
+      "de": "Journal geöffnet"
+    }
+  },
+  "Child status": {
+    "noteByLanguage": {
+      "pt": "A BIP-85 child is a derived key, not a person: this catalog calls it \"filho\" (\"Filho BIP-85\"). Return exactly: Status do filho"
+    },
+    "retranslate": {
+      "pt": "Status da criança"
+    },
+    "exact": {
+      "pt": "Status do filho"
+    }
+  },
+  "Real coins": {
+    "noteByLanguage": {
+      "fr": "\"pièces\" is feminine. Return exactly: Vraies pièces"
+    },
+    "retranslate": {
+      "fr": "Vrais pièces"
+    },
+    "exact": {
+      "fr": "Vraies pièces"
+    }
+  },
+  "Clear Parent Key": {
+    "noteByLanguage": {
+      "es": "\"Parent\" is the BIP-85 parent key, whose derived keys this catalog calls \"clave hija\"; \"principal\" means main. Return exactly: Borrar clave padre"
+    },
+    "retranslate": {
+      "es": "Borrar clave principal"
+    },
+    "exact": {
+      "es": "Borrar clave padre"
+    }
+  },
+  "Keys": {
+    "note": "A tab name: the main tab, where keys are created and imported. The same string is the tab's short name on narrow screens.",
+    "noteByLanguage": {
+      "de": "German text already names this tab \"Schlüssel\" (\"im Reiter Schlüssel\"). Return exactly: Schlüssel"
+    },
+    "retranslate": {
+      "de": "Keys"
+    },
+    "exact": {
+      "de": "Schlüssel"
+    }
+  },
+  "Derive a key in {station} or BIP-85 Station first. Seed words support both grind methods; a root xprv supports the derivation grind only.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\" (as in \"Derivations-Durchmusterung\"); \"Mahlen\" and \"Schleifen\" mean milling and sanding. Return exactly: Leiten Sie zuerst einen Schlüssel in {station} oder BIP-85 Station ab. Seed-Wörter unterstützen beide Durchmusterungsmethoden; ein Root-xprv unterstützt nur die Derivations-Durchmusterung.",
+      "es": "Spanish calls the vanity search \"búsqueda\" (as in \"Progreso de búsqueda vanity\") and the derivation method \"prueba por derivación\"; \"moler\" and \"molienda\" mean milling. Return exactly: Deriva una clave primero en {station} o en la Estación BIP-85. Las palabras semilla admiten ambos métodos de búsqueda; una raíz xprv solo admite la prueba por derivación.",
+      "fr": "French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: Dérivez d'abord une clé dans {station} ou la Station BIP-85. Les mots de départ prennent en charge les deux méthodes de recherche ; une racine xprv prend en charge uniquement l'essai par dérivation.",
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: Derive uma chave em {station} ou na Estação BIP-85 primeiro. Palavras semente suportam ambos os métodos de busca; uma raiz xprv suporta apenas o teste por derivação."
+    },
+    "retranslate": {
+      "de": "Leiten Sie zuerst einen Schlüssel in {station} oder BIP-85 Station ab. Seed-Wörter unterstützen beide Mahlmethoden; ein Root-xprv unterstützt nur das Ableitungs-Mahlen.",
+      "es": "Deriva una clave primero en {station} o en la Estación BIP-85. Las palabras semilla admiten ambos métodos de molienda; una raíz xprv solo admite la molienda de derivación.",
+      "fr": "Dérivez d'abord une clé dans {station} ou la Station BIP-85. Les mots de départ prennent en charge les deux méthodes de broyage ; une racine xprv prend en charge uniquement le broyage par dérivation.",
+      "pt": "Derive uma chave em {station} ou na Estação BIP-85 primeiro. Palavras semente suportam ambos os métodos de moagem; uma raiz xprv suporta apenas a moagem de derivação."
+    },
+    "exact": {
+      "de": "Leiten Sie zuerst einen Schlüssel in {station} oder BIP-85 Station ab. Seed-Wörter unterstützen beide Durchmusterungsmethoden; ein Root-xprv unterstützt nur die Derivations-Durchmusterung.",
+      "es": "Deriva una clave primero en {station} o en la Estación BIP-85. Las palabras semilla admiten ambos métodos de búsqueda; una raíz xprv solo admite la prueba por derivación.",
+      "fr": "Dérivez d'abord une clé dans {station} ou la Station BIP-85. Les mots de départ prennent en charge les deux méthodes de recherche ; une racine xprv prend en charge uniquement l'essai par dérivation.",
+      "pt": "Derive uma chave em {station} ou na Estação BIP-85 primeiro. Palavras semente suportam ambos os métodos de busca; uma raiz xprv suporta apenas o teste por derivação."
+    }
+  },
+  "Choose your settings above, then click Start Grinding. Matches appear here.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\" (as in \"Derivations-Durchmusterung\"); \"Mahlen\" and \"Schleifen\" mean milling and sanding. Return exactly: Wählen Sie Ihre Einstellungen oben aus und klicken Sie dann auf \"Durchmusterung starten\". Übereinstimmungen erscheinen hier.",
+      "es": "Spanish calls the vanity search \"búsqueda\" (as in \"Progreso de búsqueda vanity\") and the derivation method \"prueba por derivación\"; \"moler\" and \"molienda\" mean milling. Return exactly: Elige tu configuración arriba, luego haz clic en Iniciar búsqueda. Las coincidencias aparecen aquí.",
+      "fr": "French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: Choisissez vos paramètres ci-dessus, puis cliquez sur Démarrer la recherche. Les correspondances apparaissent ici.",
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: Escolha suas configurações acima e clique em Iniciar Busca. As correspondências aparecem aqui."
+    },
+    "retranslate": {
+      "de": "Wählen Sie Ihre Einstellungen oben aus und klicken Sie dann auf \"Mahlen starten\". Übereinstimmungen erscheinen hier.",
+      "es": "Elige tu configuración arriba, luego haz clic en Iniciar Molienda. Las coincidencias aparecen aquí.",
+      "fr": "Choisissez vos paramètres ci-dessus, puis cliquez sur Démarrer le broyage. Les correspondances apparaissent ici.",
+      "pt": "Escolha suas configurações acima e clique em Iniciar Moagem. As correspondências aparecem aqui."
+    },
+    "exact": {
+      "de": "Wählen Sie Ihre Einstellungen oben aus und klicken Sie dann auf \"Durchmusterung starten\". Übereinstimmungen erscheinen hier.",
+      "es": "Elige tu configuración arriba, luego haz clic en Iniciar búsqueda. Las coincidencias aparecen aquí.",
+      "fr": "Choisissez vos paramètres ci-dessus, puis cliquez sur Démarrer la recherche. Les correspondances apparaissent ici.",
+      "pt": "Escolha suas configurações acima e clique em Iniciar Busca. As correspondências aparecem aqui."
+    }
+  },
+  "Stop grinding": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\" (as in \"Derivations-Durchmusterung\"); \"Mahlen\" and \"Schleifen\" mean milling and sanding. Return exactly: Durchmusterung stoppen",
+      "es": "Spanish calls the vanity search \"búsqueda\" (as in \"Progreso de búsqueda vanity\") and the derivation method \"prueba por derivación\"; \"moler\" and \"molienda\" mean milling. Return exactly: Detener la búsqueda",
+      "fr": "French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: Arrêter la recherche",
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: Parar busca"
+    },
+    "retranslate": {
+      "de": "Schleifen stoppen",
+      "es": "Detener la molienda",
+      "fr": "Arrêter le broyage",
+      "pt": "Parar moagem"
+    },
+    "exact": {
+      "de": "Durchmusterung stoppen",
+      "es": "Detener la búsqueda",
+      "fr": "Arrêter la recherche",
+      "pt": "Parar busca"
+    }
+  },
+  "Start Grinding": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\" (as in \"Derivations-Durchmusterung\"); \"Mahlen\" and \"Schleifen\" mean milling and sanding. Return exactly: Durchmusterung starten",
+      "es": "Spanish calls the vanity search \"búsqueda\" (as in \"Progreso de búsqueda vanity\") and the derivation method \"prueba por derivación\"; \"moler\" and \"molienda\" mean milling. Return exactly: Iniciar búsqueda",
+      "fr": "French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: Démarrer la recherche",
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: Iniciar Busca"
+    },
+    "retranslate": {
+      "de": "Schleifen starten",
+      "es": "Iniciar molienda",
+      "fr": "Démarrer le broyage",
+      "pt": "Iniciar Moagem"
+    },
+    "exact": {
+      "de": "Durchmusterung starten",
+      "es": "Iniciar búsqueda",
+      "fr": "Démarrer la recherche",
+      "pt": "Iniciar Busca"
+    }
+  },
+  "Key {key} now derives at {now}, but this match was ground at {then}. Set the path back on the Keys tab, or grind again.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\" (as in \"Derivations-Durchmusterung\"); \"Mahlen\" and \"Schleifen\" mean milling and sanding. The Keys tab is \"Schlüssel\". Return exactly: Schlüssel {key} wird jetzt unter {now} abgeleitet, aber dieser Treffer wurde unter {then} gefunden. Setzen Sie den Pfad auf der Registerkarte „Schlüssel“ zurück oder starten Sie die Durchmusterung erneut.",
+      "es": "Spanish calls the vanity search \"búsqueda\" (as in \"Progreso de búsqueda vanity\") and the derivation method \"prueba por derivación\"; \"moler\" and \"molienda\" mean milling. Return exactly: La clave {key} ahora se deriva en {now}, pero esta coincidencia se encontró en {then}. Establece la ruta de regreso en la pestaña Claves o busca de nuevo.",
+      "fr": "French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: La clé {key} dérive maintenant à {now}, mais cette correspondance a été trouvée à {then}. Rétablissez le chemin dans l'onglet Clés, ou recommencez la recherche.",
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: A chave {key} agora deriva em {now}, mas esta correspondência foi encontrada em {then}. Defina o caminho de volta na guia Chaves ou busque novamente."
+    },
+    "retranslate": {
+      "de": "Schlüssel {key} wird jetzt unter {now} abgeleitet, aber dieser Treffer wurde unter {then} geschliffen. Setzen Sie den Pfad auf der Registerkarte „Keys“ zurück oder schleifen Sie erneut.",
+      "es": "La clave {key} ahora se deriva en {now}, pero esta coincidencia se molió en {then}. Establece la ruta de regreso en la pestaña Claves o muele de nuevo.",
+      "fr": "La clé {key} dérive maintenant à {now}, mais cette correspondance a été broyée à {then}. Rétablissez le chemin dans l'onglet Clés, ou broyez à nouveau.",
+      "pt": "A chave {key} agora deriva em {now}, mas esta correspondência foi moída em {then}. Defina o caminho de volta na guia Chaves ou moa novamente."
+    },
+    "exact": {
+      "de": "Schlüssel {key} wird jetzt unter {now} abgeleitet, aber dieser Treffer wurde unter {then} gefunden. Setzen Sie den Pfad auf der Registerkarte „Schlüssel“ zurück oder starten Sie die Durchmusterung erneut.",
+      "es": "La clave {key} ahora se deriva en {now}, pero esta coincidencia se encontró en {then}. Establece la ruta de regreso en la pestaña Claves o busca de nuevo.",
+      "fr": "La clé {key} dérive maintenant à {now}, mais cette correspondance a été trouvée à {then}. Rétablissez le chemin dans l'onglet Clés, ou recommencez la recherche.",
+      "pt": "A chave {key} agora deriva em {now}, mas esta correspondência foi encontrada em {then}. Defina o caminho de volta na guia Chaves ou busque novamente."
+    }
+  },
+  "EntropyLab wiped every key, seed and field this page held. A Vanity grind cut short mid-run is the one exception: its workers are stopped, not wiped — closing the tab covers them.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\" (as in \"Derivations-Durchmusterung\"); \"Mahlen\" and \"Schleifen\" mean milling and sanding. Return exactly: EntropyLab hat jeden Schlüssel, Seed und jedes Feld auf dieser Seite gelöscht. Eine mittendrin abgebrochene Vanity-Durchmusterung ist die einzige Ausnahme: ihre Worker werden gestoppt, nicht gelöscht — das Schließen des Tabs deckt sie ab."
+    },
+    "retranslate": {
+      "de": "EntropyLab hat jeden Schlüssel, Seed und jedes Feld auf dieser Seite gelöscht. Ein mittendrin abgebrochener Vanity-Grind ist die einzige Ausnahme: seine Worker werden gestoppt, nicht gelöscht — das Schließen des Tabs deckt sie ab."
+    },
+    "exact": {
+      "de": "EntropyLab hat jeden Schlüssel, Seed und jedes Feld auf dieser Seite gelöscht. Eine mittendrin abgebrochene Vanity-Durchmusterung ist die einzige Ausnahme: ihre Worker werden gestoppt, nicht gelöscht — das Schließen des Tabs deckt sie ab."
+    }
+  },
+  "Key {key} changed since this grind started — its matches belong to the key it was. Grind again.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\" (as in \"Derivations-Durchmusterung\"); \"Mahlen\" and \"Schleifen\" mean milling and sanding. Return exactly: Der Schlüssel {key} hat sich seit Beginn dieser Durchmusterung geändert — seine Übereinstimmungen gehören zu dem Schlüssel, der er war. Starten Sie die Durchmusterung erneut.",
+      "es": "Spanish calls the vanity search \"búsqueda\" (as in \"Progreso de búsqueda vanity\") and the derivation method \"prueba por derivación\"; \"moler\" and \"molienda\" mean milling. Return exactly: La clave {key} cambió desde que comenzó esta búsqueda — sus coincidencias pertenecen a la clave que era. Vuelve a buscar.",
+      "fr": "French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: La clé {key} a changé depuis le début de cette recherche — ses correspondances appartiennent à la clé qu'elle était. Recommencez la recherche.",
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: A chave {key} mudou desde que esta busca começou — suas correspondências pertencem à chave que era. Busque novamente."
+    },
+    "retranslate": {
+      "de": "Der Schlüssel {key} hat sich seit Beginn dieses Grinds geändert — seine Übereinstimmungen gehören zu dem Schlüssel, der er war. Grind erneut.",
+      "es": "La clave {key} cambió desde que comenzó este grind — sus coincidencias pertenecen a la clave que era. Vuelve a hacer el grind.",
+      "fr": "La clé {key} a changé depuis le début de ce grind — ses correspondances appartiennent à la clé qu'elle était. Recommencez le grind.",
+      "pt": "A chave {key} mudou desde que esta moagem começou — suas correspondências pertencem à chave que era. Moa novamente."
+    },
+    "exact": {
+      "de": "Der Schlüssel {key} hat sich seit Beginn dieser Durchmusterung geändert — seine Übereinstimmungen gehören zu dem Schlüssel, der er war. Starten Sie die Durchmusterung erneut.",
+      "es": "La clave {key} cambió desde que comenzó esta búsqueda — sus coincidencias pertenecen a la clave que era. Vuelve a buscar.",
+      "fr": "La clé {key} a changé depuis le début de cette recherche — ses correspondances appartiennent à la clé qu'elle était. Recommencez la recherche.",
+      "pt": "A chave {key} mudou desde que esta busca começou — suas correspondências pertencem à chave que era. Busque novamente."
+    }
+  },
+  "Key {key} derives {found} at this match's path, not the recorded address {expected} — the match record is inconsistent. Nothing was changed; grind again.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\" (as in \"Derivations-Durchmusterung\"); \"Mahlen\" and \"Schleifen\" mean milling and sanding. Return exactly: Der Schlüssel {key} leitet {found} auf dem Pfad dieser Übereinstimmung ab, nicht die aufgezeichnete Adresse {expected} — der Übereinstimmungsdatensatz ist inkonsistent. Es wurde nichts geändert; starten Sie die Durchmusterung erneut.",
+      "es": "Spanish calls the vanity search \"búsqueda\" (as in \"Progreso de búsqueda vanity\") and the derivation method \"prueba por derivación\"; \"moler\" and \"molienda\" mean milling. Return exactly: La clave {key} deriva {found} en la ruta de esta coincidencia, no la dirección registrada {expected} — el registro de coincidencia es inconsistente. No se cambió nada; vuelve a buscar.",
+      "fr": "French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: La clé {key} dérive {found} au chemin de cette correspondance, pas à l'adresse enregistrée {expected} — l'enregistrement de la correspondance est incohérent. Rien n'a été modifié ; recommencez la recherche.",
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: A chave {key} deriva {found} no caminho desta correspondência, não o endereço registrado {expected} — o registro da correspondência é inconsistente. Nada foi alterado; busque novamente."
+    },
+    "retranslate": {
+      "de": "Der Schlüssel {key} leitet {found} auf dem Pfad dieser Übereinstimmung ab, nicht die aufgezeichnete Adresse {expected} — der Übereinstimmungsdatensatz ist inkonsistent. Es wurde nichts geändert; grind erneut.",
+      "es": "La clave {key} deriva {found} en la ruta de esta coincidencia, no la dirección registrada {expected} — el registro de coincidencia es inconsistente. No se cambió nada; vuelve a hacer el grind.",
+      "fr": "La clé {key} dérive {found} au chemin de cette correspondance, pas à l'adresse enregistrée {expected} — l'enregistrement de la correspondance est incohérent. Rien n'a été modifié ; recommencez le grind.",
+      "pt": "A chave {key} deriva {found} no caminho desta correspondência, não o endereço registrado {expected} — o registro da correspondência é inconsistente. Nada foi alterado; moa novamente."
+    },
+    "exact": {
+      "de": "Der Schlüssel {key} leitet {found} auf dem Pfad dieser Übereinstimmung ab, nicht die aufgezeichnete Adresse {expected} — der Übereinstimmungsdatensatz ist inkonsistent. Es wurde nichts geändert; starten Sie die Durchmusterung erneut.",
+      "es": "La clave {key} deriva {found} en la ruta de esta coincidencia, no la dirección registrada {expected} — el registro de coincidencia es inconsistente. No se cambió nada; vuelve a buscar.",
+      "fr": "La clé {key} dérive {found} au chemin de cette correspondance, pas à l'adresse enregistrée {expected} — l'enregistrement de la correspondance est incohérent. Rien n'a été modifié ; recommencez la recherche.",
+      "pt": "A chave {key} deriva {found} no caminho desta correspondência, não o endereço registrado {expected} — o registro da correspondência é inconsistente. Nada foi alterado; busque novamente."
+    }
+  },
+  "Grind a vanity address from a key you already hold": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "fr": "French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: Rechercher une adresse vanity à partir d'une clé que vous possédez déjà",
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: Busque um endereço vanity a partir de uma chave que você já possui"
+    },
+    "retranslate": {
+      "fr": "Triturer une adresse vanity à partir d'une clé que vous possédez déjà",
+      "pt": "Moa um endereço vanity a partir de uma chave que você já possui"
+    },
+    "exact": {
+      "fr": "Rechercher une adresse vanity à partir d'une clé que vous possédez déjà",
+      "pt": "Busque um endereço vanity a partir de uma chave que você já possui"
+    }
+  },
+  "Before you grind": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
+    "noteByLanguage": {
+      "fr": "French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: Avant la recherche",
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: Antes de buscar"
+    },
+    "retranslate": {
+      "fr": "Avant de triturer",
+      "pt": "Antes de moer"
+    },
+    "exact": {
+      "fr": "Avant la recherche",
+      "pt": "Antes de buscar"
+    }
+  },
+  "Key {key} was imported as a root xprv: it has no seed words, so its passphrase cannot be extended — only the derivation grind is available.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing. \"Passphrase grind\" and \"Derivation grind\" are the names of its two methods (buttons on the same screen).",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\"; the methods are \"Passphrasen-Durchmusterung\" (Passphrase grind) and \"Derivations-Durchmusterung\" (Derivation grind), and \"the grinder\" is \"die Durchmusterung\".",
+      "es": "Spanish calls the vanity search \"búsqueda\"; the methods are \"Prueba de frases de contraseña\" (Passphrase grind) and \"Prueba por derivación\" (Derivation grind), and \"the grinder\" is \"el probador\".",
+      "fr": "French calls the vanity search \"recherche\"; the methods are \"Essai de phrases de passe\" (Passphrase grind) and \"Essai par dérivation\" (Derivation grind), and \"the grinder\" is \"le testeur\".",
+      "pt": "Portuguese calls the vanity search \"busca\"; the methods are \"Teste de frases-senha\" (Passphrase grind) and \"Teste por derivação\" (Derivation grind), and \"the grinder\" is \"o testador\"."
+    }
+  },
+  "Copied verbatim from key {key}'s Optional BIP39 passphrase on the Keys tab. Passphrase grind: candidates are that passphrase followed by the counter characters. Derivation grind: this exact passphrase, with the account index changing.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing. \"Passphrase grind\" and \"Derivation grind\" are the names of its two methods (buttons on the same screen).",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\"; the methods are \"Passphrasen-Durchmusterung\" (Passphrase grind) and \"Derivations-Durchmusterung\" (Derivation grind), and \"the grinder\" is \"die Durchmusterung\".",
+      "es": "Spanish calls the vanity search \"búsqueda\"; the methods are \"Prueba de frases de contraseña\" (Passphrase grind) and \"Prueba por derivación\" (Derivation grind), and \"the grinder\" is \"el probador\".",
+      "fr": "French calls the vanity search \"recherche\"; the methods are \"Essai de phrases de passe\" (Passphrase grind) and \"Essai par dérivation\" (Derivation grind), and \"the grinder\" is \"le testeur\".",
+      "pt": "Portuguese calls the vanity search \"busca\"; the methods are \"Teste de frases-senha\" (Passphrase grind) and \"Teste por derivação\" (Derivation grind), and \"the grinder\" is \"o testador\"."
+    }
+  },
+  "Key {key} has no passphrase. Passphrase grind: candidates are the counter characters alone. Derivation grind: no passphrase, with the account index changing.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing. \"Passphrase grind\" and \"Derivation grind\" are the names of its two methods (buttons on the same screen).",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\"; the methods are \"Passphrasen-Durchmusterung\" (Passphrase grind) and \"Derivations-Durchmusterung\" (Derivation grind), and \"the grinder\" is \"die Durchmusterung\".",
+      "es": "Spanish calls the vanity search \"búsqueda\"; the methods are \"Prueba de frases de contraseña\" (Passphrase grind) and \"Prueba por derivación\" (Derivation grind), and \"the grinder\" is \"el probador\".",
+      "fr": "French calls the vanity search \"recherche\"; the methods are \"Essai de phrases de passe\" (Passphrase grind) and \"Essai par dérivation\" (Derivation grind), and \"the grinder\" is \"le testeur\".",
+      "pt": "Portuguese calls the vanity search \"busca\"; the methods are \"Teste de frases-senha\" (Passphrase grind) and \"Teste por derivação\" (Derivation grind), and \"the grinder\" is \"o testador\"."
+    }
+  },
+  "Derivation grind: each candidate is a few BIP32 child steps.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing. \"Passphrase grind\" and \"Derivation grind\" are the names of its two methods (buttons on the same screen).",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\"; the methods are \"Passphrasen-Durchmusterung\" (Passphrase grind) and \"Derivations-Durchmusterung\" (Derivation grind), and \"the grinder\" is \"die Durchmusterung\".",
+      "es": "Spanish calls the vanity search \"búsqueda\"; the methods are \"Prueba de frases de contraseña\" (Passphrase grind) and \"Prueba por derivación\" (Derivation grind), and \"the grinder\" is \"el probador\".",
+      "fr": "French calls the vanity search \"recherche\"; the methods are \"Essai de phrases de passe\" (Passphrase grind) and \"Essai par dérivation\" (Derivation grind), and \"the grinder\" is \"le testeur\".",
+      "pt": "Portuguese calls the vanity search \"busca\"; the methods are \"Teste de frases-senha\" (Passphrase grind) and \"Teste por derivação\" (Derivation grind), and \"the grinder\" is \"o testador\"."
+    }
+  },
+  "Passphrase grind: each candidate is a full BIP39 seed stretch.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing. \"Passphrase grind\" and \"Derivation grind\" are the names of its two methods (buttons on the same screen).",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\"; the methods are \"Passphrasen-Durchmusterung\" (Passphrase grind) and \"Derivations-Durchmusterung\" (Derivation grind), and \"the grinder\" is \"die Durchmusterung\".",
+      "es": "Spanish calls the vanity search \"búsqueda\"; the methods are \"Prueba de frases de contraseña\" (Passphrase grind) and \"Prueba por derivación\" (Derivation grind), and \"the grinder\" is \"el probador\".",
+      "fr": "French calls the vanity search \"recherche\"; the methods are \"Essai de phrases de passe\" (Passphrase grind) and \"Essai par dérivation\" (Derivation grind), and \"the grinder\" is \"le testeur\".",
+      "pt": "Portuguese calls the vanity search \"busca\"; the methods are \"Teste de frases-senha\" (Passphrase grind) and \"Teste por derivação\" (Derivation grind), and \"the grinder\" is \"o testador\"."
+    }
+  },
+  "Pick a Key Station key first — the grinder searches that key's passphrase or account index.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing. \"Passphrase grind\" and \"Derivation grind\" are the names of its two methods (buttons on the same screen).",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\"; the methods are \"Passphrasen-Durchmusterung\" (Passphrase grind) and \"Derivations-Durchmusterung\" (Derivation grind), and \"the grinder\" is \"die Durchmusterung\".",
+      "es": "Spanish calls the vanity search \"búsqueda\"; the methods are \"Prueba de frases de contraseña\" (Passphrase grind) and \"Prueba por derivación\" (Derivation grind), and \"the grinder\" is \"el probador\".",
+      "fr": "French calls the vanity search \"recherche\"; the methods are \"Essai de phrases de passe\" (Passphrase grind) and \"Essai par dérivation\" (Derivation grind), and \"the grinder\" is \"le testeur\".",
+      "pt": "Portuguese calls the vanity search \"busca\"; the methods are \"Teste de frases-senha\" (Passphrase grind) and \"Teste por derivação\" (Derivation grind), and \"the grinder\" is \"o testador\"."
+    }
+  },
+  "Key {key} has no seed words (root xprv), so its passphrase cannot be extended — switch to the derivation grind.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing. \"Passphrase grind\" and \"Derivation grind\" are the names of its two methods (buttons on the same screen).",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\"; the methods are \"Passphrasen-Durchmusterung\" (Passphrase grind) and \"Derivations-Durchmusterung\" (Derivation grind), and \"the grinder\" is \"die Durchmusterung\".",
+      "es": "Spanish calls the vanity search \"búsqueda\"; the methods are \"Prueba de frases de contraseña\" (Passphrase grind) and \"Prueba por derivación\" (Derivation grind), and \"the grinder\" is \"el probador\".",
+      "fr": "French calls the vanity search \"recherche\"; the methods are \"Essai de phrases de passe\" (Passphrase grind) and \"Essai par dérivation\" (Derivation grind), and \"the grinder\" is \"le testeur\".",
+      "pt": "Portuguese calls the vanity search \"busca\"; the methods are \"Teste de frases-senha\" (Passphrase grind) and \"Teste por derivação\" (Derivation grind), and \"the grinder\" is \"o testador\"."
+    }
+  },
+  "Key {key} is watch-only; the derivation grind needs private material.": {
+    "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing. \"Passphrase grind\" and \"Derivation grind\" are the names of its two methods (buttons on the same screen).",
+    "noteByLanguage": {
+      "de": "German calls the vanity search \"Durchmusterung\"; the methods are \"Passphrasen-Durchmusterung\" (Passphrase grind) and \"Derivations-Durchmusterung\" (Derivation grind), and \"the grinder\" is \"die Durchmusterung\".",
+      "es": "Spanish calls the vanity search \"búsqueda\"; the methods are \"Prueba de frases de contraseña\" (Passphrase grind) and \"Prueba por derivación\" (Derivation grind), and \"the grinder\" is \"el probador\".",
+      "fr": "French calls the vanity search \"recherche\"; the methods are \"Essai de phrases de passe\" (Passphrase grind) and \"Essai par dérivation\" (Derivation grind), and \"the grinder\" is \"le testeur\".",
+      "pt": "Portuguese calls the vanity search \"busca\"; the methods are \"Teste de frases-senha\" (Passphrase grind) and \"Teste por derivação\" (Derivation grind), and \"the grinder\" is \"o testador\"."
+    }
+  },
+  "Passphrase": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Phrase de passe"
+    },
+    "retranslate": {
+      "fr": "Phrase secrète"
+    },
+    "exact": {
+      "fr": "Phrase de passe"
+    }
+  },
+  "Each row is a BIP32 account index of key {key} — with its passphrase unchanged, {where} starts with the prefix. Update key sets that account on the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet.": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Chaque ligne est un index de compte BIP32 de la clé {key} — avec sa phrase de passe inchangée, {where} commence par le préfixe. La mise à jour de la clé définit ce compte sur la clé et le redérive, de sorte que l'onglet Clés, ses exportations et le Journal affichent ce portefeuille."
+    },
+    "retranslate": {
+      "fr": "Chaque ligne est un index de compte BIP32 de la clé {key} — avec sa phrase secrète inchangée, {where} commence par le préfixe. La mise à jour de la clé définit ce compte sur la clé et le redérive, de sorte que l'onglet Clés, ses exportations et le Journal affichent ce portefeuille."
+    },
+    "exact": {
+      "fr": "Chaque ligne est un index de compte BIP32 de la clé {key} — avec sa phrase de passe inchangée, {where} commence par le préfixe. La mise à jour de la clé définit ce compte sur la clé et le redérive, de sorte que l'onglet Clés, ses exportations et le Journal affichent ce portefeuille."
+    }
+  },
+  "Each row is a new BIP39 passphrase for key {key}: the starting passphrase followed by the counter characters. With this key's seed words it derives {where}. Update key writes the passphrase to the key and re-derives it, so the Keys tab, its exports, and the Journal show this wallet. Anyone holding the words and this passphrase holds the coins.": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. The seed words stay \"les mots de la phrase secrète\". Return exactly: Chaque ligne est une nouvelle phrase de passe BIP39 pour la clé {key} : la phrase de passe de départ suivie des caractères du compteur. Avec les mots de la phrase secrète de cette clé, elle dérive {where}. La mise à jour de la clé écrit la phrase de passe dans la clé et la redérive, de sorte que l'onglet Clés, ses exportations et le Journal affichent ce portefeuille. Quiconque détient les mots et cette phrase de passe détient les pièces."
+    },
+    "retranslate": {
+      "fr": "Chaque ligne est une nouvelle phrase secrète BIP39 pour la clé {key} : la phrase secrète de départ suivie des caractères du compteur. Avec les mots de la phrase secrète de cette clé, elle dérive {where}. La mise à jour de la clé écrit la phrase secrète dans la clé et la redérive, de sorte que l'onglet Clés, ses exportations et le Journal affichent ce portefeuille. Quiconque détient les mots et cette phrase secrète détient les pièces."
+    },
+    "exact": {
+      "fr": "Chaque ligne est une nouvelle phrase de passe BIP39 pour la clé {key} : la phrase de passe de départ suivie des caractères du compteur. Avec les mots de la phrase secrète de cette clé, elle dérive {where}. La mise à jour de la clé écrit la phrase de passe dans la clé et la redérive, de sorte que l'onglet Clés, ses exportations et le Journal affichent ce portefeuille. Quiconque détient les mots et cette phrase de passe détient les pièces."
+    }
+  },
+  "Starting workers — extending key {key}'s passphrase with the counter characters…": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Démarrage des workers — extension de la phrase de passe de la clé {key} avec les caractères du compteur…"
+    },
+    "retranslate": {
+      "fr": "Démarrage des workers — extension de la phrase secrète de la clé {key} avec les caractères du compteur…"
+    },
+    "exact": {
+      "fr": "Démarrage des workers — extension de la phrase de passe de la clé {key} avec les caractères du compteur…"
+    }
+  },
+  "Key after update": {
+    "noteByLanguage": {
+      "de": "German names this update \"Aktualisierung\", as in \"Schlüssel aktualisieren\" (the Update Key button). Return exactly: Schlüssel nach Aktualisierung"
+    },
+    "retranslate": {
+      "de": "Schlüssel nach Update"
+    },
+    "exact": {
+      "de": "Schlüssel nach Aktualisierung"
+    }
+  },
+  "Update Key": {
+    "noteByLanguage": {
+      "es": "Spanish buttons and headers are sentence case, as in \"Iniciar búsqueda\" and \"Borrar clave padre\". Return exactly: Actualizar clave"
+    },
+    "retranslate": {
+      "es": "Actualizar Clave"
+    },
+    "exact": {
+      "es": "Actualizar clave"
+    }
+  },
+  "Hardened": {
+    "noteByLanguage": {
+      "de": "Hardened derivation is \"Gehärtet\" and unhardened \"Ungehärtet\" in this catalog, as in \"Zweck-Index · Gehärtet\" and \"Erster abzuleitender Adressindex · Ungehärtet\". Return exactly: Gehärtet",
+      "fr": "Hardened derivation is \"Durci\" and unhardened \"Non endurci\" in this catalog, as in \"Index d'objectif · Durci\" and \"Premier index de réception et de monnaie à dériver · Non endurci\". Return exactly: Durci"
+    },
+    "retranslate": {
+      "de": "Abgehärtet",
+      "fr": "Hardened"
+    },
+    "exact": {
+      "de": "Gehärtet",
+      "fr": "Durci"
+    }
+  },
+  "Unhardened": {
+    "noteByLanguage": {
+      "de": "Hardened derivation is \"Gehärtet\" and unhardened \"Ungehärtet\" in this catalog, as in \"Zweck-Index · Gehärtet\" and \"Erster abzuleitender Adressindex · Ungehärtet\". Return exactly: Ungehärtet",
+      "fr": "Hardened derivation is \"Durci\" and unhardened \"Non endurci\" in this catalog, as in \"Index d'objectif · Durci\" and \"Premier index de réception et de monnaie à dériver · Non endurci\". Return exactly: Non endurci"
+    },
+    "retranslate": {
+      "de": "Nicht gehärtet",
+      "fr": "Non durci"
+    },
+    "exact": {
+      "de": "Ungehärtet",
+      "fr": "Non endurci"
+    }
+  },
+  "Purpose index · {hardening} · 0 to 2,147,483,647": {
+    "noteByLanguage": {
+      "de": "This catalog writes \"Zweck-Index\" and \"Konto-Index\" with a hyphen. Return exactly: Zweck-Index · {hardening} · 0 bis 2.147.483.647",
+      "fr": "This catalog writes \"Index d'objectif\" and \"Index du compte\". Return exactly: Index d'objectif · {hardening} · 0 à 2 147 483 647"
+    },
+    "retranslate": {
+      "de": "Zweckindex · {hardening} · 0 bis 2.147.483.647",
+      "fr": "Index de but · {hardening} · 0 à 2 147 483 647"
+    },
+    "exact": {
+      "de": "Zweck-Index · {hardening} · 0 bis 2.147.483.647",
+      "fr": "Index d'objectif · {hardening} · 0 à 2 147 483 647"
+    }
+  },
+  "Account index · {hardening} · 0 to 2,147,483,647": {
+    "noteByLanguage": {
+      "de": "This catalog writes \"Zweck-Index\" and \"Konto-Index\" with a hyphen. Return exactly: Konto-Index · {hardening} · 0 bis 2.147.483.647",
+      "fr": "This catalog writes \"Index d'objectif\" and \"Index du compte\". Return exactly: Index du compte · {hardening} · 0 à 2 147 483 647",
+      "pt": "This catalog writes \"Índice da conta\". Return exactly: Índice da conta · {hardening} · 0 a 2.147.483.647"
+    },
+    "retranslate": {
+      "de": "Kontoindex · {hardening} · 0 bis 2.147.483.647",
+      "fr": "Index de compte · {hardening} · 0 à 2 147 483 647",
+      "pt": "Índice de conta · {hardening} · 0 a 2.147.483.647"
+    },
+    "exact": {
+      "de": "Konto-Index · {hardening} · 0 bis 2.147.483.647",
+      "fr": "Index du compte · {hardening} · 0 à 2 147 483 647",
+      "pt": "Índice da conta · {hardening} · 0 a 2.147.483.647"
+    }
+  },
+  "Account index · {hardening} · Derived from co-signer key origins.": {
+    "noteByLanguage": {
+      "de": "This catalog writes \"Zweck-Index\" and \"Konto-Index\" with a hyphen. Return exactly: Konto-Index · {hardening} · Abgeleitet von den Ursprüngen der Co-Signer-Schlüssel.",
+      "fr": "This catalog writes \"Index d'objectif\" and \"Index du compte\". Return exactly: Index du compte · {hardening} · Dérivé des origines de clé du co-signataire.",
+      "pt": "This catalog writes \"Índice da conta\". Return exactly: Índice da conta · {hardening} · Derivado das origens das chaves do co-signatário."
+    },
+    "retranslate": {
+      "de": "Kontoindex · {hardening} · Abgeleitet von den Ursprüngen der Co-Signer-Schlüssel.",
+      "fr": "Index de compte · {hardening} · Dérivé des origines de clé du co-signataire.",
+      "pt": "Índice de conta · {hardening} · Derivado das origens das chaves do co-signatário."
+    },
+    "exact": {
+      "de": "Konto-Index · {hardening} · Abgeleitet von den Ursprüngen der Co-Signer-Schlüssel.",
+      "fr": "Index du compte · {hardening} · Dérivé des origines de clé du co-signataire.",
+      "pt": "Índice da conta · {hardening} · Derivado das origens das chaves do co-signatário."
+    }
+  },
+  "Account index · {hardening} · Co-signer key origins use different account numbers.": {
+    "noteByLanguage": {
+      "de": "This catalog writes \"Zweck-Index\" and \"Konto-Index\" with a hyphen. Return exactly: Konto-Index · {hardening} · Co-Signer-Schlüsselursprünge verwenden unterschiedliche Kontonummern.",
+      "pt": "This catalog calls a co-signer \"co-signatário\"; \"coassinante\" is not used. Return exactly: Índice da conta · {hardening} · Origens de chaves de co-signatário usam números de conta diferentes."
+    },
+    "retranslate": {
+      "de": "Kontoindex · {hardening} · Co-Signer-Schlüsselursprünge verwenden unterschiedliche Kontonummern.",
+      "pt": "Índice da conta · {hardening} · Origens de chaves de coassinante usam números de conta diferentes."
+    },
+    "exact": {
+      "de": "Konto-Index · {hardening} · Co-Signer-Schlüsselursprünge verwenden unterschiedliche Kontonummern.",
+      "pt": "Índice da conta · {hardening} · Origens de chaves de co-signatário usam números de conta diferentes."
+    }
+  },
+  "Account index · {hardening} · Derived from the co-signer account paths.": {
+    "noteByLanguage": {
+      "de": "This catalog writes \"Zweck-Index\" and \"Konto-Index\" with a hyphen. Return exactly: Konto-Index · {hardening} · Abgeleitet von den Co-Signer-Kontopfaden.",
+      "pt": "This catalog calls a co-signer \"co-signatário\"; \"coassinante\" is not used. Return exactly: Índice da conta · {hardening} · Derivado dos caminhos da conta do co-signatário."
+    },
+    "retranslate": {
+      "de": "Kontoindex · {hardening} · Abgeleitet von den Co-Signer-Kontopfaden.",
+      "pt": "Índice da conta · {hardening} · Derivado dos caminhos da conta do coassinante."
+    },
+    "exact": {
+      "de": "Konto-Index · {hardening} · Abgeleitet von den Co-Signer-Kontopfaden.",
+      "pt": "Índice da conta · {hardening} · Derivado dos caminhos da conta do co-signatário."
+    }
+  },
+  "First address branch to derive · 0 is Receive · 1 is Change · {hardening} · 0 to 2,147,483,647": {
+    "noteByLanguage": {
+      "de": "The branches are \"Empfang\" and \"Wechsel\", as in \"Leitet die Zweige Empfang und Wechsel ab\". Return exactly: Erster abzuleitender Adresszweig · 0 ist Empfang · 1 ist Wechsel · {hardening} · 0 bis 2.147.483.647",
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. This catalog writes \"Primera rama de direcciones a derivar · 0 es Recepción · 1 es Cambio\". Return exactly: Primera rama de direcciones a derivar · 0 es Recepción · 1 es Cambio · {hardening} · 0 a 2.147.483.647",
+      "fr": "The receive branch is the noun \"Réception\"; \"Recevoir\" is the verb. Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. This catalog writes \"Première branche d'adresses à dériver · 0 = Réception · 1 = Monnaie\". Return exactly: Première branche d'adresses à dériver · 0 = Réception · 1 = Monnaie · {hardening} · 0 à 2 147 483 647",
+      "pt": "Portuguese names the receive branch with the noun \"Recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"Receber\" is the verb. Bitcoin's change is \"Troco\" in this catalog; \"Troca\" and \"trocar\" mean exchange. This catalog writes \"Primeiro ramo de endereços a derivar · 0 é Recebimento · 1 é Troco\". Return exactly: Primeiro ramo de endereços a derivar · 0 é Recebimento · 1 é Troco · {hardening} · 0 a 2.147.483.647"
+    },
+    "retranslate": {
+      "de": "Erster abzuleitender Adresszweig · 0 ist Empfangen · 1 ist Wechselgeld · {hardening} · 0 bis 2.147.483.647",
+      "es": "Primera rama de dirección a derivar · 0 es Recibir · 1 es Cambio · {hardening} · 0 a 2.147.483.647",
+      "fr": "Première branche d'adresse à dériver · 0 est Recevoir · 1 est Changer · {hardening} · 0 à 2 147 483 647",
+      "pt": "Primeiro ramo de endereço a derivar · 0 é Receber · 1 é Troca · {hardening} · 0 a 2.147.483.647"
+    },
+    "exact": {
+      "de": "Erster abzuleitender Adresszweig · 0 ist Empfang · 1 ist Wechsel · {hardening} · 0 bis 2.147.483.647",
+      "es": "Primera rama de direcciones a derivar · 0 es Recepción · 1 es Cambio · {hardening} · 0 a 2.147.483.647",
+      "fr": "Première branche d'adresses à dériver · 0 = Réception · 1 = Monnaie · {hardening} · 0 à 2 147 483 647",
+      "pt": "Primeiro ramo de endereços a derivar · 0 é Recebimento · 1 é Troco · {hardening} · 0 a 2.147.483.647"
+    }
+  },
+  "Derives Receive and Change hardened branches · Max {max}": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change branch is \"Wechsel\" in this catalog, as in \"Empfangs- und Wechselindex\" and \"Wechseladressen\"; \"Wechselgeld\" and \"Änderung\" are not used for it. German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet die gehärteten Zweige Empfang und Wechsel ab · Max. {max}",
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva ramas endurecidas de recepción y cambio · Máx. {max}",
+      "fr": "The receive branch is the noun \"Réception\"; \"Recevoir\" is the verb. Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Dérive les branches durcies Réception et Monnaie · Max {max}",
+      "pt": "Portuguese names the receive branch with the noun \"Recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"Receber\" is the verb. Bitcoin's change is \"Troco\" in this catalog; \"Troca\" and \"trocar\" mean exchange. Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva os ramos endurecidos de Recebimento e Troco · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet gehärtete Empfangs- und Wechselgeldzweige ab · Max {max}",
+      "es": "Deriva ramas endurecidas de Recibir y Cambio · Máx {max}",
+      "fr": "Dérive les branches durcies Recevoir et Changer · Max {max}",
+      "pt": "Deriva ramos endurecidos de Receber e Troca · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet die gehärteten Zweige Empfang und Wechsel ab · Max. {max}",
+      "es": "Deriva ramas endurecidas de recepción y cambio · Máx. {max}",
+      "fr": "Dérive les branches durcies Réception et Monnaie · Max {max}",
+      "pt": "Deriva os ramos endurecidos de Recebimento e Troco · Máx. {max}"
+    }
+  },
+  "Derives Receive and Change branches · Max {max}": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change branch is \"Wechsel\" in this catalog, as in \"Empfangs- und Wechselindex\" and \"Wechseladressen\"; \"Wechselgeld\" and \"Änderung\" are not used for it. German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet die Zweige Empfang und Wechsel ab · Max. {max}",
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva ramas de recepción y cambio · Máx. {max}",
+      "fr": "The receive branch is the noun \"Réception\"; \"Recevoir\" is the verb. Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Dérive les branches Réception et Monnaie · Max {max}",
+      "pt": "Portuguese names the receive branch with the noun \"Recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"Receber\" is the verb. Bitcoin's change is \"Troco\" in this catalog; \"Troca\" and \"trocar\" mean exchange. Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva os ramos de Recebimento e Troco · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet Empfangs- und Wechselgeldzweige ab · Max {max}",
+      "es": "Deriva ramas de Recibir y Cambio · Máx {max}",
+      "fr": "Dérive les branches Recevoir et Changer · Max {max}",
+      "pt": "Deriva ramos de Receber e Troca · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet die Zweige Empfang und Wechsel ab · Max. {max}",
+      "es": "Deriva ramas de recepción y cambio · Máx. {max}",
+      "fr": "Dérive les branches Réception et Monnaie · Max {max}",
+      "pt": "Deriva os ramos de Recebimento e Troco · Máx. {max}"
+    }
+  },
+  "Derives Change hardened branch · Max {max}": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change branch is \"Wechsel\" in this catalog, as in \"Empfangs- und Wechselindex\" and \"Wechseladressen\"; \"Wechselgeld\" and \"Änderung\" are not used for it. German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet gehärteten Wechselzweig ab · Max. {max}",
+      "es": "Bitcoin's change is the noun \"cambio\", as in \"Primer índice de recepción y cambio a derivar\"; \"cambiar\" is the verb. Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva rama endurecida de cambio · Máx. {max}",
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Dérive la branche durcie Monnaie · Max {max}",
+      "pt": "Bitcoin's change is \"Troco\" in this catalog; \"Troca\" and \"trocar\" mean exchange. Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva ramo endurecido de Troco · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet gehärteten Wechselgeldzweig ab · Max {max}",
+      "es": "Deriva rama endurecida de Cambio · Máx {max}",
+      "fr": "Dérive la branche durcie Changer · Max {max}",
+      "pt": "Deriva ramo endurecido de Troca · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet gehärteten Wechselzweig ab · Max. {max}",
+      "es": "Deriva rama endurecida de cambio · Máx. {max}",
+      "fr": "Dérive la branche durcie Monnaie · Max {max}",
+      "pt": "Deriva ramo endurecido de Troco · Máx. {max}"
+    }
+  },
+  "Derives Change branch · Max {max}": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change branch is \"Wechsel\" in this catalog, as in \"Empfangs- und Wechselindex\" and \"Wechseladressen\"; \"Wechselgeld\" and \"Änderung\" are not used for it. German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet Wechselzweig ab · Max. {max}",
+      "es": "Bitcoin's change is the noun \"cambio\", as in \"Primer índice de recepción y cambio a derivar\"; \"cambiar\" is the verb. Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva rama de cambio · Máx. {max}",
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Dérive la branche Monnaie · Max {max}",
+      "pt": "Bitcoin's change is \"Troco\" in this catalog; \"Troca\" and \"trocar\" mean exchange. Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva ramo de Troco · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet Wechselgeldzweig ab · Max {max}",
+      "es": "Deriva rama de Cambio · Máx {max}",
+      "fr": "Dérive la branche Changer · Max {max}",
+      "pt": "Deriva ramo de Troca · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet Wechselzweig ab · Max. {max}",
+      "es": "Deriva rama de cambio · Máx. {max}",
+      "fr": "Dérive la branche Monnaie · Max {max}",
+      "pt": "Deriva ramo de Troco · Máx. {max}"
+    }
+  },
+  "Derives Receive hardened branch · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet gehärteten Empfangszweig ab · Max. {max}",
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva rama endurecida de recepción · Máx. {max}",
+      "fr": "The receive branch is the noun \"Réception\"; \"Recevoir\" is the verb. Return exactly: Dérive la branche durcie Réception · Max {max}",
+      "pt": "Portuguese names the receive branch with the noun \"Recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"Receber\" is the verb. Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva ramo endurecido de Recebimento · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet gehärteten Empfangszweig ab · Max {max}",
+      "es": "Deriva rama endurecida de Recibir · Máx {max}",
+      "fr": "Dérive la branche durcie Recevoir · Max {max}",
+      "pt": "Deriva ramo endurecido de Receber · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet gehärteten Empfangszweig ab · Max. {max}",
+      "es": "Deriva rama endurecida de recepción · Máx. {max}",
+      "fr": "Dérive la branche durcie Réception · Max {max}",
+      "pt": "Deriva ramo endurecido de Recebimento · Máx. {max}"
+    }
+  },
+  "Derives Receive branch · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet Empfangszweig ab · Max. {max}",
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva rama de recepción · Máx. {max}",
+      "fr": "The receive branch is the noun \"Réception\"; \"Recevoir\" is the verb. Return exactly: Dérive la branche Réception · Max {max}",
+      "pt": "Portuguese names the receive branch with the noun \"Recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"Receber\" is the verb. Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva ramo de Recebimento · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet Empfangszweig ab · Max {max}",
+      "es": "Deriva rama de Recibir · Máx {max}",
+      "fr": "Dérive la branche Recevoir · Max {max}",
+      "pt": "Deriva ramo de Receber · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet Empfangszweig ab · Max. {max}",
+      "es": "Deriva rama de recepción · Máx. {max}",
+      "fr": "Dérive la branche Réception · Max {max}",
+      "pt": "Deriva ramo de Recebimento · Máx. {max}"
+    }
+  },
+  "Derives {branches} hardened branch · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet gehärteten {branches}-Zweig ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva rama endurecida de {branches} · Máx. {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva ramo endurecido de {branches} · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet gehärteten {branches}-Zweig ab · Max {max}",
+      "es": "Deriva rama endurecida de {branches} · Máx {max}",
+      "pt": "Deriva ramo endurecido de {branches} · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet gehärteten {branches}-Zweig ab · Max. {max}",
+      "es": "Deriva rama endurecida de {branches} · Máx. {max}",
+      "pt": "Deriva ramo endurecido de {branches} · Máx. {max}"
+    }
+  },
+  "Derives {branches} branch · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet {branches}-Zweig ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva rama de {branches} · Máx. {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva ramo de {branches} · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet {branches}-Zweig ab · Max {max}",
+      "es": "Deriva rama de {branches} · Máx {max}",
+      "pt": "Deriva ramo de {branches} · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet {branches}-Zweig ab · Max. {max}",
+      "es": "Deriva rama de {branches} · Máx. {max}",
+      "pt": "Deriva ramo de {branches} · Máx. {max}"
+    }
+  },
+  "Derives {branches} hardened branches · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet gehärtete {branches}-Zweige ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva ramas endurecidas de {branches} · Máx. {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva ramos endurecidos de {branches} · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet gehärtete {branches}-Zweige ab · Max {max}",
+      "es": "Deriva ramas endurecidas de {branches} · Máx {max}",
+      "pt": "Deriva ramos endurecidos de {branches} · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet gehärtete {branches}-Zweige ab · Max. {max}",
+      "es": "Deriva ramas endurecidas de {branches} · Máx. {max}",
+      "pt": "Deriva ramos endurecidos de {branches} · Máx. {max}"
+    }
+  },
+  "Derives {branches} branches · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet {branches}-Zweige ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva ramas de {branches} · Máx. {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva ramos de {branches} · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet {branches}-Zweige ab · Max {max}",
+      "es": "Deriva ramas de {branches} · Máx {max}",
+      "pt": "Deriva ramos de {branches} · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet {branches}-Zweige ab · Max. {max}",
+      "es": "Deriva ramas de {branches} · Máx. {max}",
+      "pt": "Deriva ramos de {branches} · Máx. {max}"
+    }
+  },
+  "Derives {count} receive and {count} change addresses · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet {count} Empfangs- und {count} Wechseladressen ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva {count} direcciones de recepción y {count} de cambio · Máx. {max}",
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Dérive {count} adresses de réception et {count} adresses de monnaie · Max {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva {count} endereços de recebimento e {count} de troco · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet {count} Empfangs- und {count} Wechseladressen ab · Max {max}",
+      "es": "Deriva {count} direcciones de recepción y {count} de cambio · Máx {max}",
+      "fr": "Dérive {count} adresses de réception et {count} adresses de changement · Max {max}",
+      "pt": "Deriva {count} endereços de recebimento e {count} de troco · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet {count} Empfangs- und {count} Wechseladressen ab · Max. {max}",
+      "es": "Deriva {count} direcciones de recepción y {count} de cambio · Máx. {max}",
+      "fr": "Dérive {count} adresses de réception et {count} adresses de monnaie · Max {max}",
+      "pt": "Deriva {count} endereços de recebimento e {count} de troco · Máx. {max}"
+    }
+  },
+  "Derives {count} receive address · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet {count} Empfangsadresse ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva {count} dirección de recepción · Máx. {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva {count} endereço de recebimento · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet {count} Empfangsadresse ab · Max {max}",
+      "es": "Deriva {count} dirección de recepción · Máx {max}",
+      "pt": "Deriva {count} endereço de recebimento · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet {count} Empfangsadresse ab · Max. {max}",
+      "es": "Deriva {count} dirección de recepción · Máx. {max}",
+      "pt": "Deriva {count} endereço de recebimento · Máx. {max}"
+    }
+  },
+  "Derives {count} receive addresses · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet {count} Empfangsadressen ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva {count} direcciones de recepción · Máx. {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva {count} endereços de recebimento · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet {count} Empfangsadressen ab · Max {max}",
+      "es": "Deriva {count} direcciones de recepción · Máx {max}",
+      "pt": "Deriva {count} endereços de recebimento · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet {count} Empfangsadressen ab · Max. {max}",
+      "es": "Deriva {count} direcciones de recepción · Máx. {max}",
+      "pt": "Deriva {count} endereços de recebimento · Máx. {max}"
+    }
+  },
+  "Derives {count} change address · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet {count} Wechseladresse ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva {count} dirección de cambio · Máx. {max}",
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Dérive {count} adresse de monnaie · Max {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva {count} endereço de troco · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet {count} Wechseladresse ab · Max {max}",
+      "es": "Deriva {count} dirección de cambio · Máx {max}",
+      "fr": "Dérive {count} adresse de changement · Max {max}",
+      "pt": "Deriva {count} endereço de troco · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet {count} Wechseladresse ab · Max. {max}",
+      "es": "Deriva {count} dirección de cambio · Máx. {max}",
+      "fr": "Dérive {count} adresse de monnaie · Max {max}",
+      "pt": "Deriva {count} endereço de troco · Máx. {max}"
+    }
+  },
+  "Derives {count} change addresses · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet {count} Wechseladressen ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva {count} direcciones de cambio · Máx. {max}",
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Dérive {count} adresses de monnaie · Max {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva {count} endereços de troco · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet {count} Wechseladressen ab · Max {max}",
+      "es": "Deriva {count} direcciones de cambio · Máx {max}",
+      "fr": "Dérive {count} adresses de changement · Max {max}",
+      "pt": "Deriva {count} endereços de troco · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet {count} Wechseladressen ab · Max. {max}",
+      "es": "Deriva {count} direcciones de cambio · Máx. {max}",
+      "fr": "Dérive {count} adresses de monnaie · Max {max}",
+      "pt": "Deriva {count} endereços de troco · Máx. {max}"
+    }
+  },
+  "Derives {list} address · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet {list} Adresse ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva {list} dirección · Máx. {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva {list} endereço · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet {list} Adresse ab · Max {max}",
+      "es": "Deriva {list} dirección · Máx {max}",
+      "pt": "Deriva {list} endereço · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet {list} Adresse ab · Max. {max}",
+      "es": "Deriva {list} dirección · Máx. {max}",
+      "pt": "Deriva {list} endereço · Máx. {max}"
+    }
+  },
+  "Derives {list} addresses · Max {max}": {
+    "noteByLanguage": {
+      "de": "German abbreviates the maximum as \"Max.\" with a period, as in \"Leitet die Zweige Empfang und Wechsel ab · Max. 2\". Return exactly: Leitet {list} Adressen ab · Max. {max}",
+      "es": "Spanish abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva ramas de recepción y cambio · Máx. 2\". Return exactly: Deriva {list} direcciones · Máx. {max}",
+      "pt": "Portuguese abbreviates the maximum as \"Máx.\" with a period, as in \"Deriva os ramos de Recebimento e Troco · Máx. 2\". Return exactly: Deriva {list} endereços · Máx. {max}"
+    },
+    "retranslate": {
+      "de": "Leitet {list} Adressen ab · Max {max}",
+      "es": "Deriva {list} direcciones · Máx {max}",
+      "pt": "Deriva {list} endereços · Máx {max}"
+    },
+    "exact": {
+      "de": "Leitet {list} Adressen ab · Max. {max}",
+      "es": "Deriva {list} direcciones · Máx. {max}",
+      "pt": "Deriva {list} endereços · Máx. {max}"
+    }
+  },
+  "First receive and change index to derive · {hardening} · 0 to 2,147,483,647": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change branch is \"Wechsel\" in this catalog, as in \"Empfangs- und Wechselindex\" and \"Wechseladressen\"; \"Wechselgeld\" and \"Änderung\" are not used for it. Return exactly: Erster abzuleitender Empfangs- und Wechselindex · {hardening} · 0 bis 2.147.483.647",
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. Bitcoin's change is the noun \"cambio\", as in \"Primer índice de recepción y cambio a derivar\"; \"cambiar\" is the verb. Return exactly: Primer índice de recepción y cambio a derivar · {hardening} · 0 a 2.147.483.647",
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Premier index de réception et de monnaie à dériver · {hardening} · 0 à 2 147 483 647",
+      "pt": "Portuguese names the receive branch with the noun \"Recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"Receber\" is the verb. Bitcoin's change is \"Troco\" in this catalog; \"Troca\" and \"trocar\" mean exchange. This catalog writes \"a derivar\", as in \"Primeiro índice de endereço a derivar\". Return exactly: Primeiro índice de recebimento e troco a derivar · {hardening} · 0 a 2.147.483.647"
+    },
+    "retranslate": {
+      "de": "Erster abzuleitender Empfangs- und Wechselgeldindex · {hardening} · 0 bis 2.147.483.647",
+      "es": "Primer índice de recibir y cambiar a derivar · {hardening} · 0 a 2.147.483.647",
+      "fr": "Premier index de réception et de changement à dériver · {hardening} · 0 à 2 147 483 647",
+      "pt": "Primeiro índice de receber e trocar para derivar · {hardening} · 0 a 2.147.483.647"
+    },
+    "exact": {
+      "de": "Erster abzuleitender Empfangs- und Wechselindex · {hardening} · 0 bis 2.147.483.647",
+      "es": "Primer índice de recepción y cambio a derivar · {hardening} · 0 a 2.147.483.647",
+      "fr": "Premier index de réception et de monnaie à dériver · {hardening} · 0 à 2 147 483 647",
+      "pt": "Primeiro índice de recebimento e troco a derivar · {hardening} · 0 a 2.147.483.647"
+    }
+  },
+  "First change index to derive · {hardening} · 0 to 2,147,483,647": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change branch is \"Wechsel\" in this catalog, as in \"Empfangs- und Wechselindex\" and \"Wechseladressen\"; \"Wechselgeld\" and \"Änderung\" are not used for it. Return exactly: Erster abzuleitender Wechselindex · {hardening} · 0 bis 2.147.483.647",
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Premier index de monnaie à dériver · {hardening} · 0 à 2 147 483 647",
+      "pt": "Bitcoin's change is \"Troco\" in this catalog; \"Troca\" and \"trocar\" mean exchange. This catalog writes \"a derivar\", as in \"Primeiro índice de endereço a derivar\". Return exactly: Primeiro índice de troco a derivar · {hardening} · 0 a 2.147.483.647"
+    },
+    "retranslate": {
+      "de": "Erster abzuleitender Wechselgeldindex · {hardening} · 0 bis 2.147.483.647",
+      "fr": "Premier index de changement à dériver · {hardening} · 0 à 2 147 483 647",
+      "pt": "Primeiro índice de troca para derivar · {hardening} · 0 a 2.147.483.647"
+    },
+    "exact": {
+      "de": "Erster abzuleitender Wechselindex · {hardening} · 0 bis 2.147.483.647",
+      "fr": "Premier index de monnaie à dériver · {hardening} · 0 à 2 147 483 647",
+      "pt": "Primeiro índice de troco a derivar · {hardening} · 0 a 2.147.483.647"
+    }
+  },
+  "Watch-only change descriptor": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change branch is \"Wechsel\" in this catalog, as in \"Empfangs- und Wechselindex\" and \"Wechseladressen\"; \"Wechselgeld\" and \"Änderung\" are not used for it. Return exactly: Nur-Anzeige-Wechseldeskriptor",
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Descripteur de monnaie en lecture seule"
+    },
+    "retranslate": {
+      "de": "Nur-Anzeige-Änderungsdeskriptor",
+      "fr": "Descripteur de modification en lecture seule"
+    },
+    "exact": {
+      "de": "Nur-Anzeige-Wechseldeskriptor",
+      "fr": "Descripteur de monnaie en lecture seule"
+    }
+  },
+  "Spending change descriptor": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change branch is \"Wechsel\" in this catalog, as in \"Empfangs- und Wechselindex\" and \"Wechseladressen\"; \"Wechselgeld\" and \"Änderung\" are not used for it. Return exactly: Ausgaben-Wechseldeskriptor",
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Descripteur de monnaie de dépense"
+    },
+    "retranslate": {
+      "de": "Ausgaben-Änderungsdeskriptor",
+      "fr": "Descripteur de modification de dépense"
+    },
+    "exact": {
+      "de": "Ausgaben-Wechseldeskriptor",
+      "fr": "Descripteur de monnaie de dépense"
+    }
+  },
+  "Change addresses": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change branch is \"Wechsel\" in this catalog, as in \"Empfangs- und Wechselindex\" and \"Wechseladressen\"; \"Wechselgeld\" and \"Änderung\" are not used for it. Return exactly: Wechseladressen",
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\" and \"0 = monnaie (ne pas partager)\"; \"modification\", \"changement\" and \"Changer\" mean modifying. Return exactly: Adresses de monnaie"
+    },
+    "retranslate": {
+      "de": "Adressen für Wechselgeld",
+      "fr": "Adresses de modification"
+    },
+    "exact": {
+      "de": "Wechseladressen",
+      "fr": "Adresses de monnaie"
+    }
+  },
+  "First receive index to derive · {hardening} · 0 to 2,147,483,647": {
+    "noteByLanguage": {
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. Return exactly: Primer índice de recepción a derivar · {hardening} · 0 a 2.147.483.647",
+      "pt": "Portuguese names the receive branch with the noun \"Recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"Receber\" is the verb. This catalog writes \"a derivar\", as in \"Primeiro índice de endereço a derivar\". Return exactly: Primeiro índice de recebimento a derivar · {hardening} · 0 a 2.147.483.647"
+    },
+    "retranslate": {
+      "es": "Primer índice de recibir a derivar · {hardening} · 0 a 2.147.483.647",
+      "pt": "Primeiro índice de receber para derivar · {hardening} · 0 a 2.147.483.647"
+    },
+    "exact": {
+      "es": "Primer índice de recepción a derivar · {hardening} · 0 a 2.147.483.647",
+      "pt": "Primeiro índice de recebimento a derivar · {hardening} · 0 a 2.147.483.647"
+    }
+  },
+  "Hide on-screen passphrase keyboard": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Masquer le clavier de phrase de passe à l'écran",
+      "pt": "The passphrase field is labelled \"Frase secreta (opcional)\" in this catalog, so this is the \"frase secreta\" keyboard; \"senha\" means password. Return exactly: Ocultar teclado de frase secreta na tela"
+    },
+    "retranslate": {
+      "fr": "Masquer le clavier de phrase secrète à l'écran",
+      "pt": "Ocultar teclado de senha na tela"
+    },
+    "exact": {
+      "fr": "Masquer le clavier de phrase de passe à l'écran",
+      "pt": "Ocultar teclado de frase secreta na tela"
+    }
+  },
+  "Show on-screen passphrase keyboard": {
+    "noteByLanguage": {
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: Afficher le clavier de phrase de passe à l'écran",
+      "pt": "The passphrase field is labelled \"Frase secreta (opcional)\" in this catalog, so this is the \"frase secreta\" keyboard; \"senha\" means password. Return exactly: Mostrar teclado de frase secreta na tela"
+    },
+    "retranslate": {
+      "fr": "Afficher le clavier de phrase secrète à l'écran",
+      "pt": "Mostrar teclado de senha na tela"
+    },
+    "exact": {
+      "fr": "Afficher le clavier de phrase de passe à l'écran",
+      "pt": "Mostrar teclado de frase secreta na tela"
+    }
+  },
+  "{method}: {submethod}": {
+    "noteByLanguage": {
+      "fr": "French puts a space before a colon, as everywhere in this catalog (\"État du réseau : en ligne\"). Return exactly: {method} : {submethod}"
+    },
+    "retranslate": {
+      "fr": "{method}: {submethod}"
+    },
+    "exact": {
+      "fr": "{method} : {submethod}"
+    }
+  },
+  "First {branches} index to derive · {hardening} · 0 to 2,147,483,647": {
+    "noteByLanguage": {
+      "pt": "This catalog writes \"a derivar\", as in \"Primeiro índice de endereço a derivar\". Return exactly: Primeiro índice de {branches} a derivar · {hardening} · 0 a 2.147.483.647"
+    },
+    "retranslate": {
+      "pt": "Primeiro índice de {branches} para derivar · {hardening} · 0 a 2.147.483.647"
+    },
+    "exact": {
+      "pt": "Primeiro índice de {branches} a derivar · {hardening} · 0 a 2.147.483.647"
+    }
+  },
+  "ISSUES FOUND — ANALYSIS ALSO INCOMPLETE": {
+    "note": "The PSBT security report's overall verdict, shown as a banner in capital letters. Keep it in capitals."
+  },
+  "ISSUES FOUND": {
+    "note": "The PSBT security report's overall verdict, shown as a banner in capital letters. Keep it in capitals."
+  },
+  "ANALYSIS INCOMPLETE": {
+    "note": "The PSBT security report's overall verdict, shown as a banner in capital letters. Keep it in capitals."
+  },
+  "LISTED CHECKS COMPLETE": {
+    "note": "The PSBT security report's overall verdict, shown as a banner in capital letters. Keep it in capitals."
+  },
+  "Completed": {
+    "note": "The status a check row in the PSBT security report shows when its check ran on the data available. The note under the list (\"Completed means only that…\") names this status: use the same word in both."
+  },
+  "Completed means only that the named check ran on the information available here. It does not prove that the PSBT claims are true or that the transaction is safe to sign.": {
+    "note": "\"Completed\" is the status a check row above shows (the separate string \"Completed\"); use the same word for it here."
+  },
+  "RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding; a signature on a script containing OP_CODESEPARATOR is reported as unverifiable instead of compared. Jade anti-exfil is secp256k1-zkp sign-to-contract and needs the USB host nonce plus signer opening; QR / sign_psbt Jade does not run it yet. BitBox anti-klepto is a different construction. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER; the same r value claimed under two different public keys is flagged as a mislabeled field rather than skipped. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0–2, 50 receive + 50 change, all four script types. It does not talk to the chain.": {
+    "note": "\"Low-r grinding\" is Bitcoin Core's term of art: it signs again until the signature's r value is low, which saves one byte. It is not milling or crushing. Its words stay English (\"low-r\", \"grind\"), and the note for each language gives the exact form this catalog uses, articles and word order included; that form is the English term kept, not a translation of it.",
+    "noteByLanguage": {
+      "fr": "French writes the term \"grind low-r\" (\"le grind low-r\", \"au grind low-r\"); \"meulage\" means grinding with a wheel and \"broyage\" crushing.",
+      "es": "This English sentence says \"low-r grinding\"; Spanish writes the term \"el low-r grind\", as its other low-r strings do (\"comprobar RFC 6979 y el low-r grind\"). \"molienda\" means milling.",
+      "pt": "Portuguese writes the term \"o grind low-r\", as its other low-r strings do; \"moagem\" means milling. Portuguese names the receive branch with the noun \"recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"receber\" is the verb. Return exactly: A comparação RFC 6979 atualmente cobre assinaturas SegWit v0 P2WPKH e P2WSH usando SIGHASH_ALL, incluindo o grind low-r estilo Bitcoin Core; uma assinatura em um script contendo OP_CODESEPARATOR é relatada como não verificável em vez de comparada. O anti-exfil do Jade é secp256k1-zkp sign-to-contract e precisa do nonce do host USB mais a abertura do signatário; QR / sign_psbt Jade ainda não o executa. O anti-klepto do BitBox é uma construção diferente. A detecção de reutilização de nonce compara valores r para o mesmo ponto secp256k1, incluindo assinaturas carregadas por campos scriptSig/witness finalizados, codificações compactadas e não compactadas, e DER não estrito recuperável; o mesmo valor r reivindicado sob duas chaves públicas diferentes é sinalizado como um campo rotulado incorretamente em vez de ser ignorado. Um veredito limpo não é emitido quando uma assinatura não pode ser inspecionada. A detecção de inscrição lê envelopes OP_FALSE OP_IF \"ord\" em scripts tap-leaf e witnesses finalizados; ela não numera sats. A propriedade da saída é derivada da chave de sessão: contas 0–2, 50 de recebimento + 50 de troco, todos os quatro tipos de script. Ela não se comunica com a cadeia.",
+      "de": "German writes the term \"Low-r-Grinding\", as in \"mit Low-r-Grinding im Stil von Bitcoin Core\". The session key is \"Sitzungsschlüssel\" and an output \"Ausgabe\", as elsewhere in this catalog. Bitcoin's change is \"Wechsel\" in this catalog, as in \"0 ist Empfang · 1 ist Wechsel\" and \"Wechseladressen\"; \"Wechselgeld\" is not used for it. Return exactly: Der RFC 6979-Vergleich deckt derzeit SegWit v0 P2WPKH- und P2WSH-Signaturen mit SIGHASH_ALL ab, einschließlich Low-r-Grinding im Stil von Bitcoin Core; eine Signatur auf einem Skript, das OP_CODESEPARATOR enthält, wird als nicht verifizierbar gemeldet anstatt verglichen. Jade Anti-Exfil ist secp256k1-zkp sign-to-contract und benötigt die USB-Host-Nonce plus die Eröffnung des Signierers; QR / sign_psbt Jade führt dies noch nicht aus. BitBox Anti-Klepto ist eine andere Konstruktion. Die Nonce-Wiederverwendungs-Erkennung vergleicht r-Werte für denselben secp256k1-Punkt, einschließlich Signaturen, die von finalisierten scriptSig/witness-Feldern getragen werden, komprimierte und unkomprimierte Kodierungen sowie wiederherstellbare non-strict DER; derselbe r-Wert, der unter zwei verschiedenen öffentlichen Schlüsseln beansprucht wird, wird als falsch beschriftetes Feld gekennzeichnet, anstatt übersprungen zu werden. Ein eindeutiges Urteil wird nicht abgegeben, wenn eine Signatur nicht inspiziert werden kann. Die Inschriften-Erkennung liest OP_FALSE OP_IF „ord“-Umschläge in Tap-Leaf-Skripten und finalisierten Witnesses; sie nummeriert keine Sats. Der Ausgabe-Besitz wird vom Sitzungsschlüssel abgeleitet: Konten 0–2, 50 Empfang + 50 Wechsel, alle vier Skripttypen. Sie kommuniziert nicht mit der Kette."
+    },
+    "retranslate": {
+      "de": "Der RFC 6979-Vergleich deckt derzeit SegWit v0 P2WPKH- und P2WSH-Signaturen mit SIGHASH_ALL ab, einschließlich des Bitcoin Core-Stils „low-r grinding“; eine Signatur auf einem Skript, das OP_CODESEPARATOR enthält, wird als nicht verifizierbar gemeldet anstatt verglichen. Jade Anti-Exfil ist secp256k1-zkp sign-to-contract und benötigt die USB-Host-Nonce plus die Eröffnung des Signierers; QR / sign_psbt Jade führt dies noch nicht aus. BitBox Anti-Klepto ist eine andere Konstruktion. Die Nonce-Wiederverwendungs-Erkennung vergleicht r-Werte für denselben secp256k1-Punkt, einschließlich Signaturen, die von finalisierten scriptSig/witness-Feldern getragen werden, komprimierte und unkomprimierte Kodierungen sowie wiederherstellbare non-strict DER; derselbe r-Wert, der unter zwei verschiedenen öffentlichen Schlüsseln beansprucht wird, wird als falsch beschriftetes Feld gekennzeichnet, anstatt übersprungen zu werden. Ein eindeutiges Urteil wird nicht abgegeben, wenn eine Signatur nicht inspiziert werden kann. Die Inschriften-Erkennung liest OP_FALSE OP_IF „ord“-Umschläge in Tap-Leaf-Skripten und finalisierten Witnesses; sie nummeriert keine Sats. Der Output-Besitz wird vom Session-Schlüssel abgeleitet: Konten 0–2, 50 Empfang + 50 Wechselgeld, alle vier Skripttypen. Sie kommuniziert nicht mit der Kette.",
+      "pt": "A comparação RFC 6979 atualmente cobre assinaturas SegWit v0 P2WPKH e P2WSH usando SIGHASH_ALL, incluindo o grind low-r estilo Bitcoin Core; uma assinatura em um script contendo OP_CODESEPARATOR é relatada como não verificável em vez de comparada. O anti-exfil do Jade é secp256k1-zkp sign-to-contract e precisa do nonce do host USB mais a abertura do signatário; QR / sign_psbt Jade ainda não o executa. O anti-klepto do BitBox é uma construção diferente. A detecção de reutilização de nonce compara valores r para o mesmo ponto secp256k1, incluindo assinaturas carregadas por campos scriptSig/witness finalizados, codificações compactadas e não compactadas, e DER não estrito recuperável; o mesmo valor r reivindicado sob duas chaves públicas diferentes é sinalizado como um campo rotulado incorretamente em vez de ser ignorado. Um veredito limpo não é emitido quando uma assinatura não pode ser inspecionada. A detecção de inscrição lê envelopes OP_FALSE OP_IF \"ord\" em scripts tap-leaf e witnesses finalizados; ela não numera sats. A propriedade da saída é derivada da chave de sessão: contas 0–2, 50 recebem + 50 de troco, todos os quatro tipos de script. Ela não se comunica com a cadeia."
+    },
+    "exact": {
+      "de": "Der RFC 6979-Vergleich deckt derzeit SegWit v0 P2WPKH- und P2WSH-Signaturen mit SIGHASH_ALL ab, einschließlich Low-r-Grinding im Stil von Bitcoin Core; eine Signatur auf einem Skript, das OP_CODESEPARATOR enthält, wird als nicht verifizierbar gemeldet anstatt verglichen. Jade Anti-Exfil ist secp256k1-zkp sign-to-contract und benötigt die USB-Host-Nonce plus die Eröffnung des Signierers; QR / sign_psbt Jade führt dies noch nicht aus. BitBox Anti-Klepto ist eine andere Konstruktion. Die Nonce-Wiederverwendungs-Erkennung vergleicht r-Werte für denselben secp256k1-Punkt, einschließlich Signaturen, die von finalisierten scriptSig/witness-Feldern getragen werden, komprimierte und unkomprimierte Kodierungen sowie wiederherstellbare non-strict DER; derselbe r-Wert, der unter zwei verschiedenen öffentlichen Schlüsseln beansprucht wird, wird als falsch beschriftetes Feld gekennzeichnet, anstatt übersprungen zu werden. Ein eindeutiges Urteil wird nicht abgegeben, wenn eine Signatur nicht inspiziert werden kann. Die Inschriften-Erkennung liest OP_FALSE OP_IF „ord“-Umschläge in Tap-Leaf-Skripten und finalisierten Witnesses; sie nummeriert keine Sats. Der Ausgabe-Besitz wird vom Sitzungsschlüssel abgeleitet: Konten 0–2, 50 Empfang + 50 Wechsel, alle vier Skripttypen. Sie kommuniziert nicht mit der Kette.",
+      "pt": "A comparação RFC 6979 atualmente cobre assinaturas SegWit v0 P2WPKH e P2WSH usando SIGHASH_ALL, incluindo o grind low-r estilo Bitcoin Core; uma assinatura em um script contendo OP_CODESEPARATOR é relatada como não verificável em vez de comparada. O anti-exfil do Jade é secp256k1-zkp sign-to-contract e precisa do nonce do host USB mais a abertura do signatário; QR / sign_psbt Jade ainda não o executa. O anti-klepto do BitBox é uma construção diferente. A detecção de reutilização de nonce compara valores r para o mesmo ponto secp256k1, incluindo assinaturas carregadas por campos scriptSig/witness finalizados, codificações compactadas e não compactadas, e DER não estrito recuperável; o mesmo valor r reivindicado sob duas chaves públicas diferentes é sinalizado como um campo rotulado incorretamente em vez de ser ignorado. Um veredito limpo não é emitido quando uma assinatura não pode ser inspecionada. A detecção de inscrição lê envelopes OP_FALSE OP_IF \"ord\" em scripts tap-leaf e witnesses finalizados; ela não numera sats. A propriedade da saída é derivada da chave de sessão: contas 0–2, 50 de recebimento + 50 de troco, todos os quatro tipos de script. Ela não se comunica com a cadeia."
+    }
+  },
+  "change · {path}": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change is \"Wechsel\" in this catalog, as in \"0 ist Empfang · 1 ist Wechsel\" and \"Wechseladressen\"; \"Wechselgeld\" is not used for it. Return exactly: Wechsel · {path}"
+    },
+    "retranslate": {
+      "de": "Wechselgeld · {path}"
+    },
+    "exact": {
+      "de": "Wechsel · {path}"
+    }
+  },
+  "change · {path} (verified)": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change is \"Wechsel\" in this catalog, as in \"0 ist Empfang · 1 ist Wechsel\" and \"Wechseladressen\"; \"Wechselgeld\" is not used for it. Return exactly: Wechsel · {path} (verifiziert)"
+    },
+    "retranslate": {
+      "de": "Wechselgeld · {path} (verifiziert)"
+    },
+    "exact": {
+      "de": "Wechsel · {path} (verifiziert)"
+    }
+  },
+  "receive (this wallet) · {path}": {
+    "noteByLanguage": {
+      "de": "The receive branch is \"Empfang\", as in \"0 ist Empfang · 1 ist Wechsel\". Return exactly: Empfang (diese Wallet) · {path}",
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. Return exactly: recepción (esta billetera) · {path}",
+      "fr": "The receive branch is the noun \"réception\", as in \"Dérive les branches Réception et Monnaie\"; \"recevoir\" is the verb. Return exactly: réception (ce portefeuille) · {path}",
+      "pt": "Portuguese names the receive branch with the noun \"recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"receber\" is the verb. Return exactly: recebimento (esta carteira) · {path}"
+    },
+    "retranslate": {
+      "de": "Empfangen (diese Wallet) · {path}",
+      "es": "recibir (esta billetera) · {path}",
+      "fr": "recevoir (ce portefeuille) · {path}",
+      "pt": "receber (esta carteira) · {path}"
+    },
+    "exact": {
+      "de": "Empfang (diese Wallet) · {path}",
+      "es": "recepción (esta billetera) · {path}",
+      "fr": "réception (ce portefeuille) · {path}",
+      "pt": "recebimento (esta carteira) · {path}"
+    }
+  },
+  "not in this wallet (accounts 0–2, 50 receive + 50 change, four script types)": {
+    "noteByLanguage": {
+      "de": "The receive branch is \"Empfang\", as in \"0 ist Empfang · 1 ist Wechsel\". Bitcoin's change is \"Wechsel\" in this catalog, as in \"0 ist Empfang · 1 ist Wechsel\" and \"Wechseladressen\"; \"Wechselgeld\" is not used for it. Return exactly: nicht in dieser Wallet (Konten 0–2, 50 Empfang + 50 Wechsel, vier Skripttypen)",
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. Return exactly: no en esta billetera (cuentas 0–2, 50 de recepción + 50 de cambio, cuatro tipos de script)",
+      "fr": "The receive branch is the noun \"réception\", as in \"Dérive les branches Réception et Monnaie\"; \"recevoir\" is the verb. Return exactly: pas dans ce portefeuille (comptes 0-2, 50 réception + 50 monnaie, quatre types de scripts)",
+      "pt": "Portuguese names the receive branch with the noun \"recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"receber\" is the verb. Return exactly: não está nesta carteira (contas 0–2, 50 de recebimento + 50 de troco, quatro tipos de script)"
+    },
+    "retranslate": {
+      "de": "nicht in dieser Wallet (Konten 0–2, 50 Empfangen + 50 Wechselgeld, vier Skripttypen)",
+      "es": "no en esta billetera (cuentas 0–2, 50 recibir + 50 cambio, cuatro tipos de script)",
+      "fr": "pas dans ce portefeuille (comptes 0-2, 50 recevoir + 50 monnaie, quatre types de scripts)",
+      "pt": "não está nesta carteira (contas 0–2, 50 receber + 50 troco, quatro tipos de script)"
+    },
+    "exact": {
+      "de": "nicht in dieser Wallet (Konten 0–2, 50 Empfang + 50 Wechsel, vier Skripttypen)",
+      "es": "no en esta billetera (cuentas 0–2, 50 de recepción + 50 de cambio, cuatro tipos de script)",
+      "fr": "pas dans ce portefeuille (comptes 0-2, 50 réception + 50 monnaie, quatre types de scripts)",
+      "pt": "não está nesta carteira (contas 0–2, 50 de recebimento + 50 de troco, quatro tipos de script)"
+    }
+  },
+  "This output is not in the session wallet (accounts 0–2, 50 receive + 50 change, four script types).": {
+    "noteByLanguage": {
+      "de": "The receive branch is \"Empfang\", as in \"0 ist Empfang · 1 ist Wechsel\". Bitcoin's change is \"Wechsel\" in this catalog, as in \"0 ist Empfang · 1 ist Wechsel\" and \"Wechseladressen\"; \"Wechselgeld\" is not used for it. Return exactly: Diese Ausgabe befindet sich nicht in der Sitzungs-Wallet (Konten 0–2, 50 Empfang + 50 Wechsel, vier Skripttypen).",
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. Return exactly: Esta salida no está en la billetera de sesión (cuentas 0–2, 50 de recepción + 50 de cambio, cuatro tipos de script).",
+      "fr": "The receive branch is the noun \"réception\", as in \"Dérive les branches Réception et Monnaie\"; \"recevoir\" is the verb. Return exactly: Cette sortie n'est pas dans le portefeuille de session (comptes 0-2, 50 réception + 50 monnaie, quatre types de scripts).",
+      "pt": "Portuguese names the receive branch with the noun \"recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"receber\" is the verb. Return exactly: Esta saída não está na carteira de sessão (contas 0–2, 50 de recebimento + 50 de troco, quatro tipos de script)."
+    },
+    "retranslate": {
+      "de": "Diese Ausgabe befindet sich nicht in der Sitzungs-Wallet (Konten 0–2, 50 Empfangen + 50 Wechselgeld, vier Skripttypen).",
+      "es": "Esta salida no está en la billetera de sesión (cuentas 0–2, 50 recibir + 50 cambio, cuatro tipos de script).",
+      "fr": "Cette sortie n'est pas dans le portefeuille de session (comptes 0-2, 50 recevoir + 50 monnaie, quatre types de scripts).",
+      "pt": "Esta saída não está na carteira de sessão (contas 0–2, 50 receber + 50 troco, quatro tipos de script)."
+    },
+    "exact": {
+      "de": "Diese Ausgabe befindet sich nicht in der Sitzungs-Wallet (Konten 0–2, 50 Empfang + 50 Wechsel, vier Skripttypen).",
+      "es": "Esta salida no está en la billetera de sesión (cuentas 0–2, 50 de recepción + 50 de cambio, cuatro tipos de script).",
+      "fr": "Cette sortie n'est pas dans le portefeuille de session (comptes 0-2, 50 réception + 50 monnaie, quatre types de scripts).",
+      "pt": "Esta saída não está na carteira de sessão (contas 0–2, 50 de recebimento + 50 de troco, quatro tipos de script)."
+    }
+  },
+  "Session key: outputs compared against {count} derived scripts (accounts 0–2, 50 receive + 50 change, four types).": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change is \"Wechsel\" in this catalog, as in \"0 ist Empfang · 1 ist Wechsel\" and \"Wechseladressen\"; \"Wechselgeld\" is not used for it. \"Änderung\" means a modification. Return exactly: Sitzungsschlüssel: Ausgaben verglichen mit {count} abgeleiteten Skripten (Konten 0–2, 50 Empfang + 50 Wechsel, vier Typen).",
+      "es": "Spanish names the receive branch with the noun \"recepción\", as in \"Deriva ramas de recepción y cambio\"; \"recibir\" is the verb. Return exactly: Clave de sesión: salidas comparadas contra {count} scripts derivados (cuentas 0–2, 50 de recepción + 50 de cambio, cuatro tipos).",
+      "fr": "The receive branch is the noun \"réception\", as in \"Dérive les branches Réception et Monnaie\"; \"recevoir\" is the verb. Return exactly: Clé de session : sorties comparées à {count} scripts dérivés (comptes 0-2, 50 réception + 50 monnaie, quatre types).",
+      "pt": "Portuguese names the receive branch with the noun \"recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"receber\" is the verb. Return exactly: Chave de sessão: saídas comparadas com {count} scripts derivados (contas 0–2, 50 de recebimento + 50 de troco, quatro tipos)."
+    },
+    "retranslate": {
+      "de": "Sitzungsschlüssel: Ausgaben verglichen mit {count} abgeleiteten Skripten (Konten 0–2, 50 Empfang + 50 Änderung, vier Typen).",
+      "es": "Clave de sesión: salidas comparadas contra {count} scripts derivados (cuentas 0–2, 50 recibir + 50 cambio, cuatro tipos).",
+      "fr": "Clé de session : sorties comparées à {count} scripts dérivés (comptes 0-2, 50 recevoir + 50 monnaie, quatre types).",
+      "pt": "Chave de sessão: saídas comparadas com {count} scripts derivados (contas 0–2, 50 receber + 50 troco, quatro tipos)."
+    },
+    "exact": {
+      "de": "Sitzungsschlüssel: Ausgaben verglichen mit {count} abgeleiteten Skripten (Konten 0–2, 50 Empfang + 50 Wechsel, vier Typen).",
+      "es": "Clave de sesión: salidas comparadas contra {count} scripts derivados (cuentas 0–2, 50 de recepción + 50 de cambio, cuatro tipos).",
+      "fr": "Clé de session : sorties comparées à {count} scripts dérivés (comptes 0-2, 50 réception + 50 monnaie, quatre types).",
+      "pt": "Chave de sessão: saídas comparadas com {count} scripts derivados (contas 0–2, 50 de recebimento + 50 de troco, quatro tipos)."
+    }
+  },
+  "If you expected change, do not sign. A destination-swap can replace both the payment and the change.": {
+    "noteByLanguage": {
+      "de": "Bitcoin's change output is a \"Wechselausgabe\" here (\"Ausgabe\" is this catalog's output, \"Wechsel\" its change); \"Wechselgeld\" is not used for it. Return exactly: Wenn Sie eine Wechselausgabe erwartet haben, signieren Sie nicht. Ein Ziel-Swap kann sowohl die Zahlung als auch die Wechselausgabe ersetzen."
+    },
+    "retranslate": {
+      "de": "Wenn Sie Wechselgeld erwartet haben, signieren Sie nicht. Ein Ziel-Swap kann sowohl die Zahlung als auch das Wechselgeld ersetzen."
+    },
+    "exact": {
+      "de": "Wenn Sie eine Wechselausgabe erwartet haben, signieren Sie nicht. Ein Ziel-Swap kann sowohl die Zahlung als auch die Wechselausgabe ersetzen."
+    }
+  },
+  "input {n} declares {witness} BTC in its witness UTXO but {nonWitness} BTC in its non-witness UTXO (checked against the embedded previous transaction). Neither amount is trusted and the fee is left unknown.": {
+    "noteByLanguage": {
+      "es": "A transaction fee is \"comisión\" in this catalog, as in \"Comisiones de Tx\"; \"tarifa\" means a price list. Return exactly: la entrada {n} declara {witness} BTC en su UTXO de testigo pero {nonWitness} BTC en su UTXO sin testigo (verificado contra la transacción anterior incrustada). Ninguna cantidad es de confianza y la comisión se deja desconocida."
+    },
+    "retranslate": {
+      "es": "la entrada {n} declara {witness} BTC en su UTXO de testigo pero {nonWitness} BTC en su UTXO sin testigo (verificado contra la transacción anterior incrustada). Ninguna cantidad es de confianza y la tarifa se deja desconocida."
+    },
+    "exact": {
+      "es": "la entrada {n} declara {witness} BTC en su UTXO de testigo pero {nonWitness} BTC en su UTXO sin testigo (verificado contra la transacción anterior incrustada). Ninguna cantidad es de confianza y la comisión se deja desconocida."
+    }
+  },
+  "input {n} names different previous-output scripts in its witness UTXO and its non-witness UTXO (the non-witness side checked against the embedded previous transaction). Neither claim is trusted and the fee is left unknown.": {
+    "noteByLanguage": {
+      "es": "A transaction fee is \"comisión\" in this catalog, as in \"Comisiones de Tx\"; \"tarifa\" means a price list. Return exactly: La entrada {n} nombra diferentes scripts de salida previa en su UTXO de testigo y su UTXO no de testigo (el lado no de testigo se verifica contra la transacción previa incrustada). Ninguna reclamación es de confianza y la comisión se desconoce."
+    },
+    "retranslate": {
+      "es": "La entrada {n} nombra diferentes scripts de salida previa en su UTXO de testigo y su UTXO no de testigo (el lado no de testigo se verifica contra la transacción previa incrustada). Ninguna reclamación es de confianza y la tarifa se desconoce."
+    },
+    "exact": {
+      "es": "La entrada {n} nombra diferentes scripts de salida previa en su UTXO de testigo y su UTXO no de testigo (el lado no de testigo se verifica contra la transacción previa incrustada). Ninguna reclamación es de confianza y la comisión se desconoce."
+    }
+  },
+  "Fee unknown": {
+    "noteByLanguage": {
+      "es": "A transaction fee is \"comisión\" in this catalog, as in \"Comisiones de Tx\"; \"tarifa\" means a price list. Return exactly: Comisión desconocida"
+    },
+    "retranslate": {
+      "es": "Tarifa desconocida"
+    },
+    "exact": {
+      "es": "Comisión desconocida"
+    }
+  },
+  "Unverified fee (PSBT previous-output claims)": {
+    "noteByLanguage": {
+      "es": "A transaction fee is \"comisión\" in this catalog, as in \"Comisiones de Tx\"; \"tarifa\" means a price list. Return exactly: Comisión no verificada (reclamaciones de salida previa de PSBT)"
+    },
+    "retranslate": {
+      "es": "Tarifa no verificada (reclamaciones de salida previa de PSBT)"
+    },
+    "exact": {
+      "es": "Comisión no verificada (reclamaciones de salida previa de PSBT)"
+    }
+  },
+  "Fee unknown — some inputs do not include a claimed previous-output amount.": {
+    "noteByLanguage": {
+      "es": "A transaction fee is \"comisión\" in this catalog, as in \"Comisiones de Tx\"; \"tarifa\" means a price list. Return exactly: Comisión desconocida: algunas entradas no incluyen una cantidad de salida previa reclamada."
+    },
+    "retranslate": {
+      "es": "Tarifa desconocida: algunas entradas no incluyen una cantidad de salida previa reclamada."
+    },
+    "exact": {
+      "es": "Comisión desconocida: algunas entradas no incluyen una cantidad de salida previa reclamada."
+    }
+  },
+  "Previous outputs and fee": {
+    "noteByLanguage": {
+      "es": "A transaction fee is \"comisión\" in this catalog, as in \"Comisiones de Tx\"; \"tarifa\" means a price list. \"Previous\" qualifies the outputs only. Return exactly: Salidas anteriores y comisión"
+    },
+    "retranslate": {
+      "es": "Salidas y tarifa anteriores"
+    },
+    "exact": {
+      "es": "Salidas anteriores y comisión"
+    }
+  },
+  "Amounts and fee were calculated from PSBT-provided witness UTXO claims, but those claims were not checked against previous transactions or the blockchain.": {
+    "noteByLanguage": {
+      "es": "A transaction fee is \"comisión\" in this catalog, as in \"Comisiones de Tx\"; \"tarifa\" means a price list. Return exactly: Las cantidades y la comisión se calcularon a partir de las reclamaciones de UTXO de testigo proporcionadas por la PSBT, pero esas reclamaciones no se verificaron contra transacciones anteriores ni contra la cadena de bloques."
+    },
+    "retranslate": {
+      "es": "Las cantidades y la tarifa se calcularon a partir de las reclamaciones de UTXO de testigo proporcionadas por la PSBT, pero esas reclamaciones no se verificaron contra transacciones anteriores ni contra la cadena de bloques."
+    },
+    "exact": {
+      "es": "Las cantidades y la comisión se calcularon a partir de las reclamaciones de UTXO de testigo proporcionadas por la PSBT, pero esas reclamaciones no se verificaron contra transacciones anteriores ni contra la cadena de bloques."
+    }
+  },
+  "Not a PSBT. Input amounts and fee are unknown without previous outputs. RFC 6979 cannot be checked here. This is the last look before broadcast.": {
+    "noteByLanguage": {
+      "es": "A transaction fee is \"comisión\" in this catalog, as in \"Comisiones de Tx\"; \"tarifa\" means a price list. Return exactly: No es una PSBT. Las cantidades de entrada y la comisión son desconocidas sin salidas anteriores. RFC 6979 no se puede verificar aquí. Esta es la última vista antes de la transmisión."
+    },
+    "retranslate": {
+      "es": "No es una PSBT. Las cantidades de entrada y la tarifa son desconocidas sin salidas anteriores. RFC 6979 no se puede verificar aquí. Esta es la última vista antes de la transmisión."
+    },
+    "exact": {
+      "es": "No es una PSBT. Las cantidades de entrada y la comisión son desconocidas sin salidas anteriores. RFC 6979 no se puede verificar aquí. Esta es la última vista antes de la transmisión."
+    }
+  },
+  "Version {version} · locktime {locktime} · segwit. Fee unknown — previous output amounts are not in a raw transaction.": {
+    "noteByLanguage": {
+      "es": "A transaction fee is \"comisión\" in this catalog, as in \"Comisiones de Tx\"; \"tarifa\" means a price list. Return exactly: Versión {version} · locktime {locktime} · segwit. Comisión desconocida — las cantidades de salida anteriores no están en una transacción sin procesar."
+    },
+    "retranslate": {
+      "es": "Versión {version} · locktime {locktime} · segwit. Tarifa desconocida — las cantidades de salida anteriores no están en una transacción sin procesar."
+    },
+    "exact": {
+      "es": "Versión {version} · locktime {locktime} · segwit. Comisión desconocida — las cantidades de salida anteriores no están en una transacción sin procesar."
+    }
+  },
+  "Version {version} · locktime {locktime}. Fee unknown — previous output amounts are not in a raw transaction.": {
+    "noteByLanguage": {
+      "es": "A transaction fee is \"comisión\" in this catalog, as in \"Comisiones de Tx\"; \"tarifa\" means a price list. Return exactly: Versión {version} · locktime {locktime}. Comisión desconocida — las cantidades de salida anteriores no están en una transacción sin procesar."
+    },
+    "retranslate": {
+      "es": "Versión {version} · locktime {locktime}. Tarifa desconocida — las cantidades de salida anteriores no están en una transacción sin procesar."
+    },
+    "exact": {
+      "es": "Versión {version} · locktime {locktime}. Comisión desconocida — las cantidades de salida anteriores no están en una transacción sin procesar."
+    }
+  },
+  "A repeated ECDSA nonce was detected; open the Nonce Inspector for the affected signatures.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: Se detectó un nonce ECDSA repetido; abre el Inspector de Nonce para las firmas afectadas."
+    },
+    "retranslate": {
+      "es": "Se detectó un nonce ECDSA repetido; abra el Inspector de Nonce para las firmas afectadas."
+    },
+    "exact": {
+      "es": "Se detectó un nonce ECDSA repetido; abre el Inspector de Nonce para las firmas afectadas."
+    }
+  },
+  "A possible repeated ECDSA nonce for the same public key could not be confirmed from this file; open the Nonce Inspector and verify the signatures independently.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: No se pudo confirmar un posible nonce ECDSA repetido para la misma clave pública desde este archivo; abre el Inspector de Nonce y verifica las firmas de forma independiente."
+    },
+    "retranslate": {
+      "es": "No se pudo confirmar un posible nonce ECDSA repetido para la misma clave pública desde este archivo; abra el Inspector de Nonce y verifique las firmas de forma independiente."
+    },
+    "exact": {
+      "es": "No se pudo confirmar un posible nonce ECDSA repetido para la misma clave pública desde este archivo; abre el Inspector de Nonce y verifica las firmas de forma independiente."
+    }
+  },
+  "input {n} declares a malformed sighash policy. Do not sign until its policy is known.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: La entrada {n} declara una política de sighash mal formada. No firmes hasta que se conozca su política."
+    },
+    "retranslate": {
+      "es": "La entrada {n} declara una política de sighash mal formada. No firme hasta que se conozca su política."
+    },
+    "exact": {
+      "es": "La entrada {n} declara una política de sighash mal formada. No firmes hasta que se conozca su política."
+    }
+  },
+  "input {n} carries a Schnorr signature that is not valid under BIP341 (64 bytes, or 65 with a defined sighash byte). Do not sign until its policy is known.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: La entrada {n} lleva una firma Schnorr que no es válida según BIP341 (64 bytes, o 65 con un byte de sighash definido). No firmes hasta que se conozca su política."
+    },
+    "retranslate": {
+      "es": "La entrada {n} lleva una firma Schnorr que no es válida según BIP341 (64 bytes, o 65 con un byte de sighash definido). No firme hasta que se conozca su política."
+    },
+    "exact": {
+      "es": "La entrada {n} lleva una firma Schnorr que no es válida según BIP341 (64 bytes, o 65 con un byte de sighash definido). No firmes hasta que se conozca su política."
+    }
+  },
+  "input {n}: {problem} Do not sign until its policy is known.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: Entrada {n}: {problem} No firmes hasta que se conozca su política."
+    },
+    "retranslate": {
+      "es": "Entrada {n}: {problem} No firme hasta que se conozca su política."
+    },
+    "exact": {
+      "es": "Entrada {n}: {problem} No firmes hasta que se conozca su política."
+    }
+  },
+  "input {n} requests {policy}; that policy does not commit to all shown inputs. Do not accept the displayed outputs as what a signature will authorize.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: La entrada {n} solicita {policy}; esa política no se compromete con todas las entradas mostradas. No aceptes las salidas mostradas como lo que una firma autorizará."
+    },
+    "retranslate": {
+      "es": "La entrada {n} solicita {policy}; esa política no se compromete con todas las entradas mostradas. No acepte las salidas mostradas como lo que una firma autorizará."
+    },
+    "exact": {
+      "es": "La entrada {n} solicita {policy}; esa política no se compromete con todas las entradas mostradas. No aceptes las salidas mostradas como lo que una firma autorizará."
+    }
+  },
+  "input {n} requests {policy}; that policy does not commit to all shown outputs. Do not accept the displayed outputs as what a signature will authorize.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: La entrada {n} solicita {policy}; esa política no se compromete con todas las salidas mostradas. No aceptes las salidas mostradas como lo que una firma autorizará."
+    },
+    "retranslate": {
+      "es": "La entrada {n} solicita {policy}; esa política no se compromete con todas las salidas mostradas. No acepte las salidas mostradas como lo que una firma autorizará."
+    },
+    "exact": {
+      "es": "La entrada {n} solicita {policy}; esa política no se compromete con todas las salidas mostradas. No aceptes las salidas mostradas como lo que una firma autorizará."
+    }
+  },
+  "input {n} requests {policy}; that policy is not a defined sighash policy. Do not accept the displayed outputs as what a signature will authorize.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: La entrada {n} solicita {policy}; esa política no es una política de sighash definida. No aceptes las salidas mostradas como lo que una firma autorizará."
+    },
+    "retranslate": {
+      "es": "La entrada {n} solicita {policy}; esa política no es una política de sighash definida. No acepte las salidas mostradas como lo que una firma autorizará."
+    },
+    "exact": {
+      "es": "La entrada {n} solicita {policy}; esa política no es una política de sighash definida. No aceptes las salidas mostradas como lo que una firma autorizará."
+    }
+  },
+  "The same r value appears on different message digests. If both signatures are valid, the private key can be recovered. Do not broadcast this transaction.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: El mismo valor r aparece en diferentes resúmenes de mensaje. Si ambas firmas son válidas, se puede recuperar la clave privada. No transmitas esta transacción."
+    },
+    "retranslate": {
+      "es": "El mismo valor r aparece en diferentes resúmenes de mensaje. Si ambas firmas son válidas, se puede recuperar la clave privada. No transmita esta transacción."
+    },
+    "exact": {
+      "es": "El mismo valor r aparece en diferentes resúmenes de mensaje. Si ambas firmas son válidas, se puede recuperar la clave privada. No transmitas esta transacción."
+    }
+  },
+  "The message digests could not both be reconstructed, so verify these signatures independently before treating this as a key leak.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: Los resúmenes de mensaje no pudieron ser reconstruidos ambos, así que verifica estas firmas de forma independiente antes de tratar esto como una fuga de clave."
+    },
+    "retranslate": {
+      "es": "Los resúmenes de mensaje no pudieron ser reconstruidos ambos, así que verifique estas firmas de forma independiente antes de tratar esto como una fuga de clave."
+    },
+    "exact": {
+      "es": "Los resúmenes de mensaje no pudieron ser reconstruidos ambos, así que verifica estas firmas de forma independiente antes de tratar esto como una fuga de clave."
+    }
+  },
+  "{count} pair(s) share an r value but name different keys — a mislabeled signature field can hide real nonce reuse this way. Verify every signature against its input's key independently before signing or broadcasting.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: {count} par(es) comparten un valor r pero nombran claves diferentes — un campo de firma mal etiquetado puede ocultar la reutilización real del nonce de esta manera. Verifica cada firma contra la clave de su entrada de forma independiente antes de firmar o transmitir."
+    },
+    "retranslate": {
+      "es": "{count} par(es) comparten un valor r pero nombran claves diferentes — un campo de firma mal etiquetado puede ocultar la reutilización real del nonce de esta manera. Verifique cada firma contra la clave de su entrada de forma independiente antes de firmar o transmitir."
+    },
+    "exact": {
+      "es": "{count} par(es) comparten un valor r pero nombran claves diferentes — un campo de firma mal etiquetado puede ocultar la reutilización real del nonce de esta manera. Verifica cada firma contra la clave de su entrada de forma independiente antes de firmar o transmitir."
+    }
+  },
+  "Message digests cannot be rebuilt from a raw transaction without prevouts, so treat this as a warning and do not broadcast until the signatures are checked independently.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: Los resúmenes de mensajes no se pueden reconstruir a partir de una transacción sin procesar sin prevouts, así que trata esto como una advertencia y no lo transmitas hasta que las firmas se verifiquen de forma independiente."
+    },
+    "retranslate": {
+      "es": "Los resúmenes de mensajes no se pueden reconstruir a partir de una transacción sin procesar sin prevouts, así que trate esto como una advertencia y no lo transmita hasta que las firmas se verifiquen de forma independiente."
+    },
+    "exact": {
+      "es": "Los resúmenes de mensajes no se pueden reconstruir a partir de una transacción sin procesar sin prevouts, así que trata esto como una advertencia y no lo transmitas hasta que las firmas se verifiquen de forma independiente."
+    }
+  },
+  "A key association in a raw transaction is read from the script, not verified; verify these signatures independently before broadcast.": {
+    "noteByLanguage": {
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: Una asociación de clave en una transacción sin procesar se lee del script, no se verifica; verifica estas firmas de forma independiente antes de la transmisión."
+    },
+    "retranslate": {
+      "es": "Una asociación de clave en una transacción sin procesar se lee del script, no se verifica; verifique estas firmas de forma independiente antes de la transmisión."
+    },
+    "exact": {
+      "es": "Una asociación de clave en una transacción sin procesar se lee del script, no se verifica; verifica estas firmas de forma independiente antes de la transmisión."
+    }
+  },
+  "Compared with the loaded session key only within accounts 0–2, 50 receive and 50 change addresses, and four supported script types; outputs outside that range remain unclassified.": {
+    "noteByLanguage": {
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\"; \"changement\" means modifying. Return exactly: Comparé avec la clé de session chargée uniquement dans les comptes 0-2, 50 adresses de réception et 50 adresses de monnaie, et quatre types de scripts pris en charge ; les sorties en dehors de cette plage restent non classifiées."
+    },
+    "retranslate": {
+      "fr": "Comparé avec la clé de session chargée uniquement dans les comptes 0-2, 50 adresses de réception et 50 adresses de changement, et quatre types de scripts pris en charge ; les sorties en dehors de cette plage restent non classifiées."
+    },
+    "exact": {
+      "fr": "Comparé avec la clé de session chargée uniquement dans les comptes 0-2, 50 adresses de réception et 50 adresses de monnaie, et quatre types de scripts pris en charge ; les sorties en dehors de cette plage restent non classifiées."
+    }
+  },
+  "No session key was loaded, so output ownership and change derivation were not checked.": {
+    "noteByLanguage": {
+      "fr": "Bitcoin's change is \"monnaie\" in this catalog, as in \"Dérive les branches Réception et Monnaie\"; \"changement\" means modifying. Return exactly: Aucune clé de session n'a été chargée, la propriété des sorties et la dérivation de la monnaie n'ont donc pas été vérifiées."
+    },
+    "retranslate": {
+      "fr": "Aucune clé de session n'a été chargée, la propriété des sorties et la dérivation des changements n'ont donc pas été vérifiées."
+    },
+    "exact": {
+      "fr": "Aucune clé de session n'a été chargée, la propriété des sorties et la dérivation de la monnaie n'ont donc pas été vérifiées."
+    }
+  },
+  "PSBT lies:": {
+    "noteByLanguage": {
+      "es": "\"lies\" is the verb: the PSBT lies about this output. It claims a derivation path the loaded session key does not produce for it (the sentence after the label, \"claims {path} but …\", says so). Not the noun \"lies\". This catalog writes \"la PSBT\". Return exactly: La PSBT miente:",
+      "fr": "\"lies\" is the verb: the PSBT lies about this output. It claims a derivation path the loaded session key does not produce for it (the sentence after the label, \"claims {path} but …\", says so). Not the noun \"lies\". This catalog writes \"la PSBT\". Return exactly: La PSBT ment :",
+      "pt": "\"lies\" is the verb: the PSBT lies about this output. It claims a derivation path the loaded session key does not produce for it (the sentence after the label, \"claims {path} but …\", says so). Not the noun \"lies\". This catalog writes \"o PSBT\". Return exactly: O PSBT mente:"
+    },
+    "retranslate": {
+      "es": "Mentiras de PSBT:",
+      "fr": "Mensonges PSBT :",
+      "pt": "Mentiras do PSBT:"
+    },
+    "exact": {
+      "es": "La PSBT miente:",
+      "fr": "La PSBT ment :",
+      "pt": "O PSBT mente:"
+    },
+    "note": "\"lies\" is the verb: the PSBT lies about this output. It claims a derivation path the loaded session key does not produce for it (the sentence after the label, \"claims {path} but …\", says so). Not the noun \"lies\"."
+  },
+  "claims {path} but this session key does not produce this output. Do not sign.": {
+    "note": "\"claims {path}\": the PSBT states that this output is the session wallet's address at derivation path {path}; the session key derives a different output there, so the claim is false."
+  }
+}

@@ -1162,18 +1162,21 @@ pub unsafe extern "C" fn el_bech32m_encode(
             Err(_) => return -1,
         }
     }
-    let mut encoded = bech32::primitives::encode::Encoder::<_, Bech32m>::new(fes.into_iter(), &hrp)
+    let mut encoded = bech32::primitives::encode::Encoder::<_, Bech32m>::new(fes.iter().copied(), &hrp)
         .chars()
         .collect::<String>();
     // BIP352 spscan/spspend strings carry private keys, so the temporary
-    // encoded copy is wiped after it is written out.
+    // encoded copy is wiped after it is written out. `fes` is a second copy of
+    // the same 5-bit words; wipe its backing storage too (audit L11).
     if encoded.len() > cap {
         wipe_string(&mut encoded);
+        wipe(fes.as_mut_ptr() as *mut u8, fes.len());
         return -1;
     }
     std::ptr::copy_nonoverlapping(encoded.as_ptr(), out, encoded.len());
     let len = encoded.len() as i32;
     wipe_string(&mut encoded);
+    wipe(fes.as_mut_ptr() as *mut u8, fes.len());
     len
 }
 

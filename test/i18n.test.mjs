@@ -41,6 +41,89 @@ test("labels passed to the field helpers are translation sources", async () => {
   assert.deepEqual(labels.filter((label) => !known.has(label)), []);
 });
 
+// hodlFormatNote paints a { key, vars } note through hodlTText(key), but the
+// collector reads only the translating calls' first argument. A note written
+// as an object literal therefore never reached the catalogs: 34 of them (the
+// seed-phrase checks, dice and card input, the PSBT session line) read in
+// English in every language. Notes are built with hodlNote(), whose first
+// argument is collected; a literal may carry only text something else
+// already collects.
+test("a note object's English is a source the collector reads", async () => {
+  const sources = await collectSources(root), known = new Set(sources instanceof Map ? sources.keys() : sources);
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const texts = [...app.matchAll(/\{ key: "((?:[^"\\]|\\.)*)"(?=[ ,}])/g)]
+    .map((match) => JSON.parse(`"${match[1]}"`))
+    .filter((text) => /[A-Za-z]{2,} [A-Za-z]{2,}/.test(text));
+  assert.deepEqual(texts.filter((text) => !known.has(text)), []);
+  assert.ok(known.has("Type or paste your seed phrase."), "the seed-phrase prompt is a source");
+  assert.ok(known.has("Session key: BIP39 seed + passphrase. Kept in page memory only."), "the session line is a source");
+});
+
+// The MS Station co-signer refusals were built with new Error("…") and with
+// template literals, so the collector — which reads the first argument of a
+// translating call only — never saw them: every refusal in
+// hodlValidatedMsigInputs, hodlOriginScriptError and hodlMultisigAccountKeyError
+// read in English in every language. They are hodlError()/hodlNote() calls now,
+// which the collector reads (including both ternary branches). This slices the
+// three functions out of the app source and pins the whole set.
+function hodlFunctionSource(app, name) {
+  const start = app.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `app.js has no top-level ${name}`);
+  // The body opens at ") {": a default parameter may itself hold braces.
+  let depth = 0;
+  for (let index = app.indexOf(") {", start) + 2; index < app.length; index++) {
+    if (app[index] === "{") depth++;
+    else if (app[index] === "}" && --depth === 0) return app.slice(start, index + 1);
+  }
+  throw new Error(`unterminated ${name}`);
+}
+// The collector's own first-argument walk (scripts/i18n-sources.mjs), so the
+// literals checked here are exactly the ones it collects.
+function firstArgumentLiterals(source, start) {
+  const found = [];
+  let index = start, depth = 1;
+  while (index < source.length && depth > 0) {
+    const character = source[index];
+    if (character === '"') {
+      let end = index + 1;
+      while (end < source.length && source[end] !== '"') end += source[end] === "\\" ? 2 : 1;
+      found.push(JSON.parse(source.slice(index, end + 1)));
+      index = end + 1;
+      continue;
+    }
+    if ("([{".includes(character)) depth++;
+    else if (")]}".includes(character)) depth--;
+    else if (character === "," && depth === 1) break; // second argument: never a source
+    index++;
+  }
+  return found;
+}
+const englishSentence = (text) => /[A-Za-z]{2,} [A-Za-z]{2,}/.test(text);
+
+test("the multisig co-signer refusals are sources the collector reads", async () => {
+  const sources = await collectSources(root), known = new Set(sources instanceof Map ? sources.keys() : sources);
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const texts = [];
+  for (const name of ["hodlValidatedMsigInputs", "hodlOriginScriptError", "hodlMultisigAccountKeyError"]) {
+    const source = hodlFunctionSource(app, name);
+    for (const call of source.matchAll(/\bhodl(?:Error|Note)\(/g)) {
+      texts.push(...firstArgumentLiterals(source, call.index + call[0].length));
+    }
+    // Nothing user-facing may be left out of the collector's reach: no refusal
+    // built with new Error("…"), and no English sentence in a template literal.
+    const plainThrows = [...source.matchAll(/new Error\("((?:[^"\\]|\\.)*)"/g)]
+      .map((match) => JSON.parse(`"${match[1]}"`)).filter(englishSentence);
+    const templateLiterals = [...source.matchAll(/`((?:[^`\\]|\\.)*)`/g)].map((match) => match[1]);
+    assert.deepEqual(plainThrows, [], `${name} still builds an English refusal with new Error("…")`);
+    assert.deepEqual(templateLiterals.filter(englishSentence), [], `${name} still builds an English sentence in a template literal`);
+  }
+  assert.ok(texts.length >= 20, `fixture: the three functions have translating calls, found ${texts.length} literals`);
+  assert.deepEqual(texts.filter((text) => !known.has(text)), []);
+  assert.ok(known.has("Pick how many signatures out of how many keys."), "the threshold refusal is a source");
+  assert.ok(known.has("The account index must be hardened."), "the hardening refusal's branch is a source");
+  assert.ok(known.has("A Taproot origin must contain purpose, coin type, and account."), "a composed branch is a source");
+});
+
 test("module translator imports and aliases are translation sources", async (context) => {
   const fixture = mkdtempSync(join(tmpdir(), "entropylab-i18n-sources-"));
   context.after(() => rmSync(fixture, { recursive: true, force: true }));

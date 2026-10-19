@@ -225,10 +225,10 @@ test("UI construction wipes byte keys on success and throw, and suppresses the s
   setup();
   for(const fail of [false,true]){
     let saved;
-    const render=new Function("hodlSpParseRecipients","hodlSpHrp","decodeSilentPaymentAddress","hodlSpParseVins","hodlSpDeriveVinKeys","hodlSpWipeVinKeys","createSilentPaymentOutputs",
-      `${loadSlice("hodlRenderSpSend")}; return hodlRenderSpSend;`)(
-      ()=>({recipients:[]}),()=>"tsp",()=>{},()=>[vinOf(OWNED_SCRIPT)],hodlSpDeriveVinKeys,hodlSpWipeVinKeys,
-      (vins,recipients,options)=>{saved=vins;assert.equal(options.includePrivateKeySum,false);if(fail)throw new Error("construction failed");return {outputs:[]};});
+    const render=new Function("hodlSpParseRecipients","hodlSpHrp","hodlSpNetwork","decodeSilentPaymentAddress","hodlSpParseVins","hodlSpDeriveVinKeys","hodlSpWipeVinKeys","createSilentPaymentOutputs","hodlT",
+      `let hodlSpSendLast = null; ${loadSlice("hodlRenderSpSend")}; ${loadSlice("hodlPaintSpSend")}; return hodlRenderSpSend;`)(
+      ()=>({recipients:[]}),()=>"tsp",()=>"testnet",()=>{},()=>[vinOf(OWNED_SCRIPT)],hodlSpDeriveVinKeys,hodlSpWipeVinKeys,
+      (vins,recipients,options)=>{saved=vins;assert.equal(options.includePrivateKeySum,false);if(fail)throw new Error("construction failed");return {outputs:[]};},(text)=>text);
     const original=document.getElementById;document.getElementById=id=>id==="sp-out"?{}:original(id);
     if(fail)assert.throws(render,/construction failed/);else render();
     assert.ok(saved[0].private_key.every(b=>b===0));
@@ -250,7 +250,7 @@ test("SP send discloses unused fallback text safely and keeps the published outp
     "document", "hodlSpParseRecipients", "hodlSpHrp", "hodlSpNetwork", "decodeSilentPaymentAddress",
     "hodlSpParseVins", "hodlSpDeriveVinKeys", "hodlSpWipeVinKeys", "createSilentPaymentOutputs",
     "p2trAddressFromXonly", "hodlT", "hodlTAttr", "hodlTText", "hodlPublicInlineHtml", "hodlSpCopyGroupHtml",
-    `${loadSlice("hodlSpEscape")}; ${loadSlice("hodlRenderSpSend")}; return hodlRenderSpSend;`,
+    `let hodlSpSendLast = null; ${loadSlice("hodlSpEscape")}; ${loadSlice("hodlRenderSpSend")}; ${loadSlice("hodlPaintSpSend")}; return hodlRenderSpSend;`,
   )(
     document, parseRecipientLines, () => "sp", () => "mainnet", decodeSilentPaymentAddress,
     () => vector.given.vin, (vins) => vins, hodlSpWipeVinKeys,
@@ -321,4 +321,70 @@ test("P2TR tweak matches BIP-86 output scripts for both internal parities", () =
     } finally { secret.fill(0); tweaked.fill(0); }
   }
   assert.deepEqual([...parities].sort(), [2, 3]);
+});
+
+// Audit M6: derive("m") returns the session root itself. The resolver's
+// finally used to wipe that root, so a pasted path of "m" broke every later
+// operation. Refuse the root path (and never wipe it defensively).
+test("a path of 'm' is refused instead of wiping the session root", () => {
+  setup();
+  assert.throws(() => hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT, { path: "m" })]), /path must name a child/);
+  assert.throws(() => hodlSpDeriveVinKeys([vinOf(OWNED_SCRIPT, { path: "m'" })]), /path must name a child/);
+  assert.equal(SESSION.hasPrivateKey, true, "the session root must survive a rejected path");
+});
+
+test("a language switch paints the last send and scan again from what they kept", async () => {
+  // A marking translator stands in for a page language. The send keeps only
+  // its public result, so the repaint needs no session key, and what is left
+  // outside the marks is data: addresses, amounts, keys, K_max.
+  const mark = (key, vars) => "⟦" + String(key).replace(/\{(\w+)\}/g, (whole, name) => (vars?.[name] == null ? whole : String(vars[name]))) + "⟧";
+  const elements = { "sp-out": { innerHTML: "" }, "sp-session": { textContent: "" }, "sp-address-view": { hidden: true } };
+  let derived = 0;
+  const sp = await loadAppFunctions(["hodlRefreshSpLocale"], {
+    settable: ["hodlSpSendLast", "hodlSpVerifyMatches", "hodlSpSessionShown"],
+    stubs: {
+      document: { getElementById: (id) => elements[id] ?? null },
+      hodlT: mark, hodlTText: mark, hodlTAttr: mark,
+      hodlSpCopyGroupHtml: (label, id, address, extra = "") => `<div>${label} ${address}${extra}</div>`,
+      hodlPublicInlineHtml: (value) => value,
+      hodlPrivacyBarMarkup: () => "",
+      hodlPrivateFieldHtml: (label) => mark(label),
+      hodlPrivateFieldMarkup: (label) => label,
+      hodlPrivacyEyeMarkup: () => "",
+      hodlPrivateValue: () => "",
+      p2trAddressFromXonly: () => "bc1pdata",
+      spendPrivForOutput: () => { derived += 1; return new Uint8Array(32); },
+      hodlSpBytesToHex: () => "",
+      hodlRenderSpAddress: () => {},
+      hodlSpDeriveVinKeys: () => { derived += 1; return []; },
+      hodlSpDeriveSessionKeys: () => { derived += 1; },
+      hodlSpAddresses: [],
+      hodlActiveSp: 0,
+    },
+  });
+  const english = (html) => html.replace(/<[^>]*>/g, " ").replace(/⟦[^⟧]*⟧/g, " ").split(/[\s·:()…,.=]+/)
+    .filter((word) => /[A-Za-z]/.test(word) && !/^(?:bc1pdata|sp1qdata|bc1qdata|BTC|K|max|[0-9a-f]+)$/.test(word));
+
+  sp.__set.hodlSpSendLast({ network: "mainnet", outputs: ["aa", "aa"], alternatives: 2, lightning: true,
+    recipients: [{ address: "sp1qdata", fallbackAddress: "bc1qdata", amountSats: 1000 }] });
+  sp.__set.hodlSpSessionShown({ key: "Session key from {name} (BIP39 seed). Kept in page memory only.", vars: { name: { key: "existing key" } } });
+  sp.hodlRefreshSpLocale();
+  assert.deepEqual(english(elements["sp-out"].innerHTML), [], "the send repaints through the translator");
+  assert.match(elements["sp-out"].innerHTML, /⟦2 taproot outputs\.⟧/);
+  assert.match(elements["sp-out"].innerHTML, /⟦1 repeated output kept on purpose/);
+  assert.equal(elements["sp-session"].textContent, "⟦Session key from ⟦existing key⟧ (BIP39 seed). Kept in page memory only.⟧");
+
+  sp.__set.hodlSpSendLast({ network: "mainnet", outputs: [], alternatives: 0, lightning: false, recipients: [] });
+  sp.hodlRefreshSpLocale();
+  assert.match(elements["sp-out"].innerHTML, /exceeded K<sub>max<\/sub> = 2323\.⟧/, "K_max keeps its markup outside the catalog string");
+
+  sp.__set.hodlSpSendLast(null);
+  sp.__set.hodlSpVerifyMatches({ network: "mainnet", rows: [], reveal: false });
+  sp.hodlRefreshSpLocale();
+  assert.match(elements["sp-out"].innerHTML, /⟦No matching silent payment outputs/);
+  sp.__set.hodlSpVerifyMatches({ network: "mainnet", rows: [{ pub_key: "bb", label: 0, priv_key_tweak: "cc" }], reveal: false });
+  sp.hodlRefreshSpLocale();
+  assert.deepEqual(english(elements["sp-out"].innerHTML), [], "the scan repaints through the translator");
+  assert.match(elements["sp-out"].innerHTML, /⟦label m = 0 \(change\)⟧/);
+  assert.equal(derived, 0, "a repaint derives no key and scans nothing");
 });

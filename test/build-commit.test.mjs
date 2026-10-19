@@ -19,7 +19,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const COPIED = ["src", "scripts", "assets", "manifest.webmanifest", "package.json", "package-lock.json"];
+const COPIED = [
+  "src", "scripts", "assets", "manifest.webmanifest", "package.json", "package-lock.json",
+  "entropylab-wasm/src", "entropylab-wasm/Cargo.toml", "entropylab-wasm/Cargo.lock", "entropylab-wasm/rust-toolchain.toml",
+  "psbt-wasm/src", "psbt-wasm/Cargo.toml", "psbt-wasm/Cargo.lock", "psbt-wasm/rust-toolchain.toml",
+  "vanity-wasm/src", "vanity-wasm/Cargo.toml", "vanity-wasm/Cargo.lock", "vanity-wasm/rust-toolchain.toml",
+];
 
 const git = (cwd, ...args) => execFileSync("git", [
   "-c", "user.name=test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
@@ -87,10 +92,13 @@ test("a commit to any build input moves the stamp to that commit", { timeout: 30
     const touches = {
       "src/css/styles.css": "\n",
       "assets/favicon.png": "\0",
+      "assets/favicon.svg": "\n",
+      "assets/logo-dark.svg": "\n",
       "manifest.webmanifest": "\n",
       "package.json": "\n",
       "package-lock.json": "\n",
       "scripts/build.mjs": "\n// touched\n",
+      "psbt-wasm/src/lib.rs": "\n// touched\n",
     };
     for (const [path, suffix] of Object.entries(touches)) {
       appendFileSync(join(repo, path), suffix);
@@ -99,6 +107,29 @@ test("a commit to any build input moves the stamp to that commit", { timeout: 30
       commit(repo, "docs after the change");
       assert.equal(buildStamp(repo, join(dir, `out-${path.replace(/\W/g, "-")}`)).stamp, changed, `a change to ${path} must move the stamp`);
     }
+  });
+});
+
+test("an artifact-only change to a generated WASM module does not move the stamp", { timeout: 120000 }, () => {
+  withRepo(({ dir, repo, sources }) => {
+    appendFileSync(join(repo, "src/js/psbt-wasm-b64.js"), "\n// artifact-only\n");
+    const artifact = commit(repo, "artifact refresh only");
+    assert.notEqual(artifact, sources);
+    assert.equal(buildStamp(repo, join(dir, "out-artifact")).stamp, sources, "derived modules are not source-of-truth build inputs");
+  });
+});
+
+test("a dirty build input stamps unknown instead of a trusted commit", { timeout: 120000 }, () => {
+  withRepo(({ dir, repo, sources }) => {
+    appendFileSync(join(repo, "src/css/styles.css"), "\n/* uncommitted */\n");
+    assert.equal(buildStamp(repo, join(dir, "out-dirty")).stamp, "unknown");
+  });
+});
+
+test("an untracked file under a build input stamps unknown too", { timeout: 120000 }, () => {
+  withRepo(({ dir, repo, sources }) => {
+    writeFileSync(join(repo, "src/css/styles.css.bak"), "/* editor backup */\n");
+    assert.equal(buildStamp(repo, join(dir, "out-untracked")).stamp, "unknown", "untracked input files are not any commit either");
   });
 });
 

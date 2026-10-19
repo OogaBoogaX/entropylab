@@ -204,12 +204,12 @@ test("origin path must match key depth and script", () => {
   assert.equal(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "86h/0h/0h" }, "p2tr", "mainnet", 86), "");
   assert.equal(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "69420h/0h/0h" }, "p2tr", "mainnet", 69420), "");
   assert.equal(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "48h/69420h/0h/2h" }, "p2wsh", "mainnet", 48, 69420), "");
-  assert.match(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "48h/0h/0h/2h" }, "p2wsh", "mainnet", 48, 69420), /selected coin type/);
-  assert.match(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "84h/0h/0h" }, "p2tr", "mainnet", 86), /selected Purpose is 86h/);
+  assert.match(specText(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "48h/0h/0h/2h" }, "p2wsh", "mainnet", 48, 69420)), /selected coin type/);
+  assert.match(specText(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "84h/0h/0h" }, "p2tr", "mainnet", 86)), /selected Purpose is 86h/);
   // A spec card holds the account key itself: neither above nor below it.
-  assert.match(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "86h/0h/0h/0h" }, "p2tr", "mainnet", 86), /purpose, coin type, and account/);
-  assert.match(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "86h/0h" }, "p2tr", "mainnet", 86), /purpose, coin type, and account/);
-  assert.match(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "86h/1h/0h" }, "p2tr", "mainnet", 86), /0h/);
+  assert.match(specText(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "86h/0h/0h/0h" }, "p2tr", "mainnet", 86)), /purpose, coin type, and account/);
+  assert.match(specText(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "86h/0h" }, "p2tr", "mainnet", 86)), /purpose, coin type, and account/);
+  assert.match(specText(hodlOriginScriptError({ fingerprint: "73c5da0a", path: "86h/1h/0h" }, "p2tr", "mainnet", 86)), /0h/);
   assert.equal(hodlOriginPathIndexes("48h/1h/0h/2h").at(-1), 0x80000002);
 });
 test("multisig account is derived from BIP48 and BIP87 origins", () => {

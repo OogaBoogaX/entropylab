@@ -268,3 +268,20 @@ test("base58check and coders match @scure/base", async () => {
   assert.throws(() => base58checkDecode("0OIl"));
   assert.throws(() => hex.decode("xyz"));
 });
+
+test("descriptorDerive wipes its UTF-8 descriptor copy", () => {
+  const descriptor = "wpkh(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)";
+  const original = TextEncoder.prototype.encode;
+  let captured = null;
+  TextEncoder.prototype.encode = function (value) {
+    captured = original.call(this, value);
+    return captured;
+  };
+  try {
+    descriptorDerive(descriptor, 0, "mainnet");
+    assert.ok(captured, "the descriptor was encoded");
+    assert.ok(captured.every((byte) => byte === 0), "the descriptor copy is wiped after derivation");
+  } finally {
+    TextEncoder.prototype.encode = original;
+  }
+});

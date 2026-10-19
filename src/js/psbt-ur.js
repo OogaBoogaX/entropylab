@@ -237,7 +237,7 @@ export function hodlUrDecodePsbt(raw) {
   if (parsed.some((part) => part.count !== count)) throw new Error("UR fragment counts do not match.");
   if (count === 1) {
     if (parsed.length !== 1) throw new Error("A single-part UR should be pasted once.");
-    return { type, psbt: hodlCborUnwrapPsbt(parsed[0].payload), parts: 1 };
+    return { type, psbt: hodlCborUnwrapPsbt(parsed[0].payload), parts: 1, wholeMessageVerified: true };
   }
   // Retain only supplied fragments, never allocate from an untrusted count.
   const slots = new Map();
@@ -277,11 +277,15 @@ export function hodlUrDecodePsbt(raw) {
     if (crc32Number(message) !== standard.checksum) {
       throw new Error("UR message checksum failed: the reassembled message is not the one the fragments belong to.");
     }
-    return { type, psbt: hodlCborUnwrapPsbt(message), parts: count };
+    return { type, psbt: hodlCborUnwrapPsbt(message), parts: count, wholeMessageVerified: true };
   }
   if (ordered.some((part) => part.part)) throw new Error("Mixed UR fragment formats: some parts carry MUR metadata and some do not.");
   // Legacy pre-MUR fragments: raw chunks tied only by per-chunk checksums.
-  return { type, psbt: hodlCborUnwrapPsbt(concatBytes(...ordered.map((part) => part.payload))), parts: count };
+  // BCR-2020-005 legacy sequencing carries no whole-message checksum, so a
+  // reassembly of same-length fragments spliced across payloads cannot be
+  // refused here — the result says so instead of implying verification
+  // (audit L2).
+  return { type, psbt: hodlCborUnwrapPsbt(concatBytes(...ordered.map((part) => part.payload))), parts: count, wholeMessageVerified: false };
 }
 
 export { WORDS };
