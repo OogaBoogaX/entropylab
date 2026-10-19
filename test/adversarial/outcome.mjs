@@ -18,3 +18,23 @@ export const runFailures = (rows) =>
     if (row.choice === "broken") reasons.push('Jev verdict "broken"');
     return reasons.map((reason) => `${row.name}: ${reason}`);
   });
+
+// Whether Jev judged the run at all. A scenario without a verdict never fails
+// on its own (above), but with an API key configured, a run in which no
+// scenario got one is a judge outage or a refused key, not a judged run: on
+// 2026-10-09 a rejected key passed silently every night. That fails the run.
+// `keyConfigured` is false for local runs and forks without the secret.
+const UNJUDGED = "(none)";
+export const judgeFailures = (rows, keyConfigured) =>
+  keyConfigured && rows.length && rows.every((row) => row.choice === UNJUDGED)
+    ? [`Jev judged none of the ${rows.length} scenario(s): the judge was unreachable or refused the API key`]
+    : [];
+
+// The partial case only warns, naming the scenarios Jev did not judge: one
+// failed request is an outage worth seeing, not a verdict on the app.
+export const judgeWarnings = (rows, keyConfigured) => {
+  if (!keyConfigured) return [];
+  const missing = rows.filter((row) => row.choice === UNJUDGED);
+  if (!missing.length || missing.length === rows.length) return [];
+  return [`Jev gave no verdict for ${missing.length} of ${rows.length} scenario(s): ${missing.map((row) => row.name).join(", ")}`];
+};

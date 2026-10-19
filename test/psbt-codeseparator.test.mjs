@@ -50,7 +50,7 @@ const DECLARED = new Set([
   // Real imports (same modules app.js imports from).
   "hodlSha256", "hodlHash160", "hodlSecp256k1", "hodlHex", "p2shScript", "p2wshScript", "addressFromScript",
   "parseRawTx", "serializeTx", "hodlWasm", "hodlWasmIn", "hodlWasmOut", "psbtInspectDoc",
-  "hodlT", "hodlTText", "matchOwnership", "indexHdKey", "indexSingleKey", "pathLabel",
+  "hodlT", "hodlTText", "hodlTAttr", "matchOwnership", "indexHdKey", "indexSingleKey", "pathLabel",
   "hodlTapKeySigs", "hodlTapScriptSigs", "hodlTapSighashProblems",
   "inspectPsbtInscriptions", "describeEnvelope", "parseOpReturn", "describeOpReturn",
   "hodlPublicValueHtml",
@@ -69,6 +69,7 @@ const DECLARED_VARS = [
   "hodlJournalStateRefreshQueued", "hodlJournalKeys", "hodlJournalDoc", "hodlKeys",
   "hodlRecoverySheetText", "hodlMsigs", "hodlBip85Children", "hodlSpKeys",
   "hodlPsbtNonceHistory", "hodlJournalSnapshot", "hodlJournalStamp", "hodlJournal",
+  "hodlPsbtLast", "hodlNonceLast",
 ];
 DECLARED_VARS.forEach((name) => {
   assert.ok(!app.includes(`function ${name}(`), `${name} is an app.js function now — the closure must slice it, not redeclare it`);
@@ -110,7 +111,7 @@ import { p2shScript, p2wshScript, addressFromScript } from "../src/js/addresses.
 import { parseRawTx, serializeTx } from "../src/js/tx.js";
 import { wasmExports as hodlWasm, withInput as hodlWasmIn, withOutput as hodlWasmOut } from "../src/js/entropylab-wasm.js";
 import { psbtInspectDoc } from "../src/js/psbt-wasm.js";
-import { tHtml as hodlT, t as hodlTText } from "../src/js/i18n.js";
+import { tHtml as hodlT, t as hodlTText, tAttr as hodlTAttr } from "../src/js/i18n.js";
 import { matchOwnership, indexHdKey, indexSingleKey, pathLabel } from "../src/js/ownership.js";
 import { hodlTapKeySigs, hodlTapScriptSigs, hodlTapSighashProblems } from "../src/js/psbt-schnorr.js";
 import { inspectPsbtInscriptions, describeEnvelope } from "../src/js/inscription.js";
@@ -124,7 +125,7 @@ const hodlPrivateCopyButtonHtml = () => "";
 ${DECLARED_VARS.map((name) => `var ${name};`).join("\n")}
 export function hodlTestSetPriv(key) { hodlPsbtPriv = key; }
 ${closure(["hodlParsePsbt", "hodlRenderPsbt"])}
-export { hodlParsePsbt, hodlRenderPsbt, hodlInputScriptCode, hodlBip143 };
+export { hodlParsePsbt, hodlRenderPsbt, hodlInputScriptCode, hodlBip143, hodlFinalSigs };
 `;
 // Kept inside test/ only for the import instant so bare vendor imports
 // resolve; unlinked immediately after (same pattern as psbt-final-nonce).
@@ -260,4 +261,57 @@ test("control: a separator byte inside pushed data is not an opcode", () => {
   // PUSHDATA1 carries 0xab bytes as payload; the digest correctly covers the
   // full script, so the RFC-6979 verdict must remain exactly as before.
   assertControlUnchanged(render(buildPsbt(PUSHDATA_SCRIPT, PUSHDATA_SCRIPT)));
+});
+
+// --- finalized inputs (hodlFinalSigs) ----------------------------------------
+// A finalized input's signatures sit in its final witness, and hodlFinalSigs
+// attributes each to a key so the repeated-nonce pass can use it. Contract:
+// in a script containing OP_CODESEPARATOR, the full-script digest never
+// attributes a signature to a key; with more than one candidate key such a
+// signature stays unattributed and counts as uninspected. A script without a
+// separator still attributes by verification. Two candidate keys rule out
+// the single-candidate fallback, so only the digest could pin the signature.
+// The witness script stays in 0x05, which is what lets the inspector
+// reconstruct a digest at all.
+const OTHER_PUBKEY = secp256k1.getPublicKey(new Uint8Array(32).fill(9), true);
+const OP_DROP = 0x75;
+const TWO_KEY_CONTROL = Uint8Array.of(0x21, ...OTHER_PUBKEY, OP_DROP, ...PUSH_KEY, OP_CHECKSIG);
+const TWO_KEY_SEPARATED = Uint8Array.of(0x21, ...OTHER_PUBKEY, OP_DROP, OP_CODESEPARATOR, ...PUSH_KEY, OP_CHECKSIG);
+
+// Input 0's map entries for a finalized P2WSH spend of witnessScript whose
+// one signature, by SECRET, is over the BIP-143 digest of digestScript.
+function finalizedEntries(witnessScript, digestScript) {
+  const tx = { raw: unsignedTxBytes() };
+  const witnessUtxo = { amount: AMOUNT, script: p2wshScript(witnessScript) };
+  const digest = harness.hodlBip143(tx, 0, digestScript, AMOUNT, 1);
+  assert.ok(digest, "fixture digest");
+  const sig = Uint8Array.of(...derEncode(secp256k1.sign(digest, SECRET, { prehash: false, extraEntropy: false })), 0x01);
+  const entry = (type, val) => ({ type, keydata: new Uint8Array(), val: Uint8Array.from(val) });
+  const entries = [
+    entry(0x01, [...le64(AMOUNT), ...varBytes(witnessUtxo.script)]),
+    entry(0x05, witnessScript),
+    entry(0x08, [2, ...varBytes(sig), ...varBytes(witnessScript)]),
+  ];
+  return { entries, witnessUtxo, tx };
+}
+const finalSigs = ({ entries, witnessUtxo, tx }) => harness.hodlFinalSigs(entries, witnessUtxo, tx, 0, null);
+
+test("finalized codeseparated P2WSH: the full-script digest never attributes a signature to a key (#857 follow-up)", () => {
+  // Crafted: signed over the full separated script, so only the digest this
+  // inspector would reconstruct accepts it.
+  const crafted = finalSigs(finalizedEntries(TWO_KEY_SEPARATED, TWO_KEY_SEPARATED));
+  assert.equal(crafted.signatures.length, 0, "no key is pinned by a full-script digest");
+  assert.equal(crafted.uninspected, 1);
+  assert.equal(crafted.malformed, false);
+  // Honest: signed over the post-separator code, which consensus hashes.
+  const honest = finalSigs(finalizedEntries(TWO_KEY_SEPARATED, CONTROL_SCRIPT));
+  assert.equal(honest.signatures.length, 0);
+  assert.equal(honest.uninspected, 1);
+});
+
+test("control: a finalized two-key P2WSH script without separators attributes by verification", () => {
+  const control = finalSigs(finalizedEntries(TWO_KEY_CONTROL, TWO_KEY_CONTROL));
+  assert.equal(control.uninspected, 0);
+  assert.equal(control.signatures.length, 1);
+  assert.deepEqual([...control.signatures[0].pubkey], [...PUBKEY], "the verifying key, not the other candidate");
 });

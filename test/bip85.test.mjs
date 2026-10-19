@@ -263,3 +263,10 @@ test("the mnemonic load path follows the session network like the xprv path", ()
   assert.ok((useKey.match(/hodlNetworkFamily\(result\.network\) === "testnet"/g) || []).length >= 2, "mnemonic and xprv paths both read the session network");
   delete globalThis.hodlBip85Testnet;
 });
+
+test("a root path is refused without wiping the caller's root", () => {
+  const root = HDKey.fromExtendedKey(MASTER);
+  assert.throws(() => deriveBip85Entropy(root, "m"), /root/);
+  assert.throws(() => deriveBip85Entropy(root, "m'"), /root/);
+  assert.ok(root.privateKey, "the caller-owned root still has its private key");
+});

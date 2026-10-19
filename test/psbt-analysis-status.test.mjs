@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tHtml as hodlT, t as hodlTText, tAttr as hodlTAttr } from "../src/js/i18n.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -22,9 +23,9 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
 })[char]);
 const hodlPsbtAnalysisSummary = new Function(
-  "hodlEscapeHtml",
+  "hodlEscapeHtml", "hodlT", "hodlTAttr",
   `${loadSlice("hodlPsbtAnalysisSummary")}; return hodlPsbtAnalysisSummary;`,
-)(escapeHtml);
+)(escapeHtml, hodlT, hodlTAttr);
 
 const check = (state, label = "Nonce analysis") => ({ state, label, detail: `${state} detail` });
 
@@ -76,8 +77,9 @@ test("the report maps each implemented incomplete-analysis condition", () => {
 });
 
 const hodlPsbtNonceCheck = new Function(
+  "hodlTText",
   `${loadSlice("hodlPsbtNonceCheck")}; return hodlPsbtNonceCheck;`,
-)();
+)(hodlTText);
 const sig = { length: 1 };
 
 test("nonce status never claims no repeated r while a repeat is suspected", () => {

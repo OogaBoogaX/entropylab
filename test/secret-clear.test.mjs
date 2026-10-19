@@ -94,11 +94,11 @@ function raceHarness() {
     "hodlFocusWalletResult", "hodlJournalLog", "hodlSetWorkspaceError", "hodlJournalSetStatus",
     "hodlKeyManagerStatus", "hodlPsbtWipeMem", "hodlBip85WipeMem", "hodlSpWipeMem",
     "hodlLnWipeMem", "hodlRenderBip85Tabs", "hodlSyncBip85View", "hodlVanityCancel",
-    "hodlVanitySyncSource", "hodlVanitySyncControls", "hodlRefreshStationKeyPickers", "hodlRefreshMsigSessionPickers", "hodlSyncPsbtControls",
+    "hodlVanitySyncSource", "hodlVanitySyncControls", "hodlSetVanityError", "hodlVanitySetStatus", "hodlNote", "hodlRefreshStationKeyPickers", "hodlRefreshMsigSessionPickers", "hodlSyncPsbtControls",
     "hodlRestoreMsig"])
     context[name] = (...args) => { effects.push([name, ...args]); };
   vm.runInContext('class HodlDerivationCancelledError extends Error {}', context);
-  for (const name of ["hodlInvalidateDerivation", "hodlAssertDerivationActive", "hodlCalculateKey",
+  for (const name of ["hodlNote", "hodlInvalidateDerivation", "hodlAssertDerivationActive", "hodlCalculateKey",
     "hodlWipeActiveKey", "hodlJournalImportFile", "hodlKeyManagerImportFile", "hodlInitSecretFieldAutoClear",
     "hodlAccountAddressBranches", ...rowWipeHelpers.filter((name) => app.includes(`function ${name}(`))])
     vm.runInContext(functionSource(name), context);
@@ -342,7 +342,7 @@ test("Silent Payments private-bearing inputs and revealed output are cleared", (
   assert.match(lifecycle, /getElementById\("sp-out"\)/);
   assert.match(lifecycle, /spOut\.innerHTML\s*=\s*""/);
   assert.match(lifecycle, /spError\.textContent\s*=\s*""/);
-  assert.match(lifecycle, /spSession\.textContent\s*=\s*hodlSpNote/);
+  assert.match(lifecycle, /if \(spSession\) hodlPaintSpSession\(hodlSpNote\)/);
 });
 
 test("Silent Payments recipient, verify, and label fields are explicitly cleared", () => {
@@ -393,8 +393,12 @@ test("Vanity grinder salt, matches, and running workers are cleared", () => {
   const renderStart = app.indexOf("function hodlRenderVanityOut()");
   const render = app.slice(renderStart, app.indexOf("\nfunction ", renderStart + 1));
   assert.match(render, /box\.style\.removeProperty\("--vanity-pass-width"\)/);
-  assert.match(lifecycle, /getElementById\("vanity-error"\)/);
-  assert.match(lifecycle, /vanityError\.textContent\s*=\s*""/);
+  // The error line goes through its setter, which empties the element and
+  // drops the note a language switch would otherwise show again.
+  assert.match(lifecycle, /hodlSetVanityError\(null\)/);
+  const setErrorStart = app.indexOf("function hodlSetVanityError(");
+  const setError = app.slice(setErrorStart, app.indexOf("\nfunction ", setErrorStart + 1));
+  assert.match(setError, /hodlVanityErrorNote = note \|\| null;[\s\S]*getElementById\("vanity-error"\)[\s\S]*error\.textContent = !note \? ""/);
   // The grinder itself goes too: its callbacks close over the run's words and
   // passphrase, so cancelling alone keeps them reachable (audit A35-1).
   assert.match(lifecycle, /hodlVanityGrinder\s*=\s*null/);
@@ -599,7 +603,7 @@ test("pagehide and persisted pageshow end the PSBT session, reports included", (
     hodlSetPsbtError: () => errors.push("psbt"), hodlSetNonceError: () => errors.push("nonce"),
     hodlPaintPsbtSession() {}, hodlRefreshStationKeyPickers() {}, hodlSyncPsbtControls() {},
   });
-  vm.runInContext(`${functionSource("hodlEndPsbtSession")}\nhodlEndPsbtSession();`, context);
+  vm.runInContext(`${functionSource("hodlNote")}\n${functionSource("hodlEndPsbtSession")}\nhodlEndPsbtSession();`, context);
   assert.equal(context.hodlPsbtLast, null, "session end left the parsed report state");
   // (vm realms: assert.keys rather than deepEqual against a home-realm {}.)
   assert.equal(Object.keys(context.hodlPsbtInspected || {}).length, 0, "session end left run stamps");
@@ -1181,10 +1185,11 @@ test("changing the language outside Keys keeps the selected key's wallet", async
     Object.assign(context, {
       Event: class { constructor(type) { this.type = type; } }, hodlWorkspaceTabs: [], hodlKeyModeLabels: {},
       hodlKeyModeSelectEl: { options: [], dispatchEvent() {} }, hodlNetworkPickerRender: null, hodlReadThemeMode: () => "system",
+      hodlBip85Tabs: {}, hodlSpTabs: {},
     });
     for (const name of ["hodlRenderKeyForm", "hodlRestoreFormFields", "hodlUpdateSeedLengthControl", "hodlUpdateAddressEstimate",
       "hodlUpdateCoinTypeHelp", "hodlUpdateDerivationPathPreview", "hodlUpdateMsigScriptDetection",
-      "hodlUpdateMsigAccount", "hodlShowMsig", "hodlRefreshKeyResult", "hodlRefreshPsbtLocale", "hodlApplyTheme", "hodlRefreshWorkspaceErrors"])
+      "hodlUpdateMsigAccount", "hodlShowMsig", "hodlRefreshKeyResult", "hodlRefreshPsbtLocale", "hodlRefreshVanityLocale", "hodlRefreshStationKeyPickers", "hodlReindexMsigKeys", "hodlRenderBip85Out", "hodlRefreshSpLocale", "hodlRenderKeyTabs", "hodlRenderMsigTabs", "hodlRenderStationTabs", "hodlPaintKeySummary", "hodlUpdateHardeningHelp", "hodlApplyTheme", "hodlRefreshWorkspaceErrors"])
       context[name] = () => {};
     let logRefreshes = 0;
     context.hodlSecurityLog = { refresh: () => logRefreshes++ };
@@ -1252,9 +1257,13 @@ test("saving a vanity passphrase match to its key zeroes the wallet the key had"
     hodlScriptTypes: applyParts.hodlScriptTypes,
     hodlVanityMatchAddress: applyParts.hodlVanityMatchAddress,
     hodlVanityMatches: [{ passphrase: "vanity passphrase", index: null, address: honestAddress, savedTo: "" }], hodlVanityRun: run, hodlVanityApplying: false,
-    hodlVanityPlan: () => ({ node: null, pathPrefix: [], path: run.path }), hodlWorkspace: "vanity", hodlSpSource: "", hodlBip85Source: "",
+    hodlVanityPlan: () => ({ node: null, pathPrefix: [], path: run.path }), hodlWorkspace: "vanity", hodlSpSource: "", hodlBip85Source: "", hodlPsbtSource: "",
     hodlRenderVanityOut() {}, hodlVanitySyncControls() {}, hodlVanityKeyLabel: () => "key", hodlVanitySetStatus() {}, hodlVanitySyncSource() {},
     hodlPickSpSessionKey() {}, hodlPickBip85SessionKey() {},
+    // The station's error line keeps a note; here it shows the note's English key.
+    hodlNote: (key, vars) => (vars == null ? { key } : { key, vars }),
+    hodlErrorSpecFrom: (error) => ({ raw: error?.message ?? String(error) }),
+    hodlSetVanityError: (note) => { page["vanity-error"].textContent = !note ? "" : note.key ?? note.raw ?? ""; },
   });
   const page = { "calc-card": { hidden: false }, "vanity-error": { textContent: "" } }, byId = context.document.getElementById;
   context.document.getElementById = (id) => page[id] ?? byId(id);

@@ -217,7 +217,7 @@ test("MuSig2 (BIP-373) input pairs are named and classified as signing changes (
   for (const { name, key, before: valueBefore, after: valueAfter } of cases) {
     const withPair = (value) => {
       const draft = fixtureDoc();
-      draft.inputs[0].push({ key, value });
+      if (value !== null) draft.inputs[0].push({ key, value });
       return rebuild(draft);
     };
     const before = withPair(valueBefore);
@@ -592,7 +592,7 @@ test("an input or output added or removed on its own is a transaction change", (
 
 // A real round trip with one changed pair on input 0 must read as signing:
 // the transaction and the metadata unchanged, and the report must say so.
-const assertSigningChange = (before, after, name) => {
+const assertSigningChange = (before, after, name, expectedKind = "changed") => {
   assert.equal(after.inputs[0].find((pair) => pair.name === name)?.name, name, `${name} must not surface as PSBT_IN_UNKNOWN`);
   const result = comparePsbtDocs(before, after);
   assert.equal(result.equal, false);
@@ -601,7 +601,7 @@ const assertSigningChange = (before, after, name) => {
   assert.equal(result.signingChanged, true, `${name} change must read as signing`);
   assert.deepEqual(
     result.changes.map(({ kind, category, name: changedName }) => ({ kind, category, name: changedName })),
-    [{ kind: "changed", category: "signing", name }],
+    [{ kind: expectedKind, category: "signing", name }],
   );
   const html = psbtDiffHtml(result, before, after, "mainnet");
   assert.match(html, /⚠ Signing state changed/);
@@ -614,17 +614,21 @@ test("a final scriptSig and both taproot signature fields are signing changes (B
   // pubkey (secp256k1's generator x here) and a 32-byte leaf hash.
   const generatorX = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
   const cases = [
-    { name: "PSBT_IN_FINAL_SCRIPTSIG", key: "07", before: "160014" + "11".repeat(20), after: "160014" + "33".repeat(20) },
+    // A native P2WPKH input's final scriptSig must be empty (BIP-141), so
+    // exercise the field's signing classification by adding an empty one
+    // where the other side has none. A non-empty value is now correctly a
+    // consensus error and cannot round-trip through the build gate.
+    { name: "PSBT_IN_FINAL_SCRIPTSIG", key: "07", before: null, after: "", expectedKind: "added" },
     { name: "PSBT_IN_TAP_KEY_SIG", key: "13", before: "11".repeat(64), after: "22".repeat(64) },
     { name: "PSBT_IN_TAP_SCRIPT_SIG", key: "14" + generatorX + "55".repeat(32), before: "11".repeat(64), after: "22".repeat(64) },
   ];
-  for (const { name, key, before, after } of cases) {
+  for (const { name, key, before, after, expectedKind } of cases) {
     const withPair = (value) => {
       const draft = fixtureDoc();
-      draft.inputs[0].push({ key, value });
+      if (value !== null) draft.inputs[0].push({ key, value });
       return rebuild(draft);
     };
-    assertSigningChange(withPair(before), withPair(after), name);
+    assertSigningChange(withPair(before), withPair(after), name, expectedKind);
   }
 });
 

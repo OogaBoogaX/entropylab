@@ -21,7 +21,7 @@ function harness() {
     hodlNewMsigState: () => ({ id: nextId, number: nextId++, name: "New", fields: {} }),
     hodlNewMsigLabState: () => ({ id: 0, number: 0, isLab: true, fields: {}, result: null }),
     hodlMsigNameTaken: () => false, hodlMsigPolicyName: () => "2-of-3",
-    hodlTText: (text) => text,
+    hodlTText: (text, vars) => text.replace(/\{(\w+)\}/g, (whole, name) => (vars?.[name] == null ? whole : String(vars[name]))),
     hodlCaptureMsig() {}, hodlRenderMsigTabs() {}, hodlRestoreMsig() {}, hodlSelectMsigLab() {},
     hodlSelectMsig: (index) => { context.hodlActiveMsig = index; },
   });

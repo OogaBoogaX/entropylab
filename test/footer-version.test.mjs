@@ -26,6 +26,13 @@ test("the build stamps the commit tokens from git, with a snapshot fallback", ()
   assert.match(build, /\{\{\(\?:VERSION\|PWA_VERSION\|COMMIT\|COMMIT_SHORT\)\}\}/);
 });
 
+test("a push build fails if the page did not stamp a source commit", () => {
+  const workflow = read(".github/workflows/ci-cd.yml");
+  const build = workflow.match(/^  build:\n[\s\S]*?(?=^  [\w-]+:)/m)?.[0] ?? "";
+  // "unknown" means a build input was dirty in CI; a release must never ship it.
+  assert.match(build, /name: Check the footer stamped a source commit\n\s+if: github\.event_name == 'push'\n\s+run: grep -q 'data-commit="\[0-9a-f\]\\\{40\\\}"' entropylab\.html/);
+});
+
 test("both footers carry the build stamp and the LifeHash target", () => {
   for (const markup of [read("src/shell.html")]) {
     assert.match(markup, /<span class="page-footer-build">v\{\{VERSION\}\} · commit <code>\{\{COMMIT_SHORT\}\}<\/code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" src="data:[^"]*" alt="LifeHash of the build commit" hidden><\/span>/);

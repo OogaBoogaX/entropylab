@@ -64,7 +64,13 @@ export function taggedHash(tag, ...chunks) {
     bytes.set(chunk, offset);
     offset += chunk.length;
   }
-  return sha256(bytes);
+  try {
+    return sha256(bytes);
+  } finally {
+    // The chunks can include a Silent Payments scan private key or a shared
+    // secret; sha256 has copied what it needs before this returns.
+    bytes.fill(0);
+  }
 }
 
 export function serUint32(value) {
@@ -278,7 +284,12 @@ export function decodeSilentPaymentAddress(address, expectedHrp) {
 
 export function generateLabel(scanPriv, m) {
   const scalar = scanPriv instanceof Uint8Array ? scalarFromBytes(scanPriv) : scanPriv;
-  return scalarFromBytes(taggedHash("BIP0352/Label", bigToBytes32(scalar), serUint32(m)));
+  const scalarBytes = bigToBytes32(scalar);
+  try {
+    return scalarFromBytes(taggedHash("BIP0352/Label", scalarBytes, serUint32(m)));
+  } finally {
+    scalarBytes.fill(0); // embeds the scan private key
+  }
 }
 
 export function labeledSpendPoint(scanPriv, spendPoint, m) {

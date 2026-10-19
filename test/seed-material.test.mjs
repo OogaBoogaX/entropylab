@@ -12,7 +12,8 @@ import assert from "node:assert/strict";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import { mnemonicToSeedSync, entropyToMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
-import { hex } from "@scure/base";
+import { hex, createBase58check } from "@scure/base";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { renderSVG } from "uqr";
 import { VAULT_MASK } from "../src/js/passphrase-vault.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
@@ -27,6 +28,14 @@ const rootOf = (words, pass) => ScureHDKey.fromMasterSeed(mnemonicToSeedSync(wor
 const seedQrDigits = (words) => words.split(" ").map((word) => String(wordlist.indexOf(word)).padStart(4, "0")).join("");
 
 const inert = new Proxy(function () {}, { get: (target, key) => key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inert, apply: () => inert, construct: () => inert });
+const b58 = createBase58check(sha256);
+// Re-serialize an extended key with SLIP-132 version bytes: same payload, a
+// different prefix (Yprv 0x0295b005, Zprv 0x02aa7a99 — both multisig scope).
+const withVersion = (xkey, ver) => {
+  const payload = b58.decode(xkey);
+  new DataView(payload.buffer, payload.byteOffset).setUint32(0, ver);
+  return b58.encode(payload);
+};
 const load = async (names, stubs = {}, settable = []) => {
   Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
   try {
@@ -175,6 +184,20 @@ test("PSBT, BIP-85, SP and Vanity load the wallet's own root and words", async (
   assert.equal(vanity.hodlVanityPlan(state, "passphrase", "p2wpkh").mnemonic, vector.words, "the passphrase grind's words");
   const parent = expected.derive("m/84'/0'"), plan = vanity.hodlVanityPlan(state, "derivation", "p2wpkh");
   assert.equal(hex.encode(plan.node), hex.encode(parent.privateKey) + hex.encode(parent.chainCode), "the derivation grind's node");
+});
+
+// Key Station refuses a multisig extended key outright ("…is a multisig
+// extended key. Use it in Multi Signature…"). The BIP-85 root loader parsed
+// the same keys with no scope check: a depth-0 Yprv/Zprv loaded silently and
+// derived children as if it were an xprv root (audit L9).
+test("the BIP-85 root loader refuses multisig extended keys, like Key Station", async () => {
+  const bip85 = await load(["hodlBip85LoadXprv", "hodlBip85Root"], { hodlBip85WipeParent() {} });
+  const rootXprv = rootOf(VECTORS[0].words, "").privateExtendedKey;
+  assert.throws(() => bip85.hodlBip85LoadXprv(withVersion(rootXprv, 0x0295b005)), /multisig/i, "Yprv");
+  assert.throws(() => bip85.hodlBip85LoadXprv(withVersion(rootXprv, 0x02aa7a99)), /multisig/i, "Zprv");
+  assert.equal(bip85.hodlBip85Root, null, "a refused key must not become the parent");
+  bip85.hodlBip85LoadXprv(rootXprv);
+  assert.ok(bip85.hodlBip85Root.privateKey, "the singlesig root still loads");
 });
 
 // Station passphrase fields (SP, PSBT, Nonce) keep the passphrase in a vault.

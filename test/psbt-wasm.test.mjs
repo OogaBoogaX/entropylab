@@ -1048,3 +1048,74 @@ test("crafted PUSHDATA4 scripts can neither hang nor trap the module (#525)", as
     assert.ok(codes.includes("partial_sig_invalid"), `${name}: the sighash ran to completion, got [${codes}]`);
   }
 });
+
+// ── Finalization rules ─────────────────────────────────────────────────────
+// BIP-341 forbids an explicit SIGHASH_DEFAULT suffix, and BIP-141 requires an
+// empty scriptSig for native witness programs and the redeem-script push for
+// wrapped ones. The build gate must refuse each invalid finalization instead
+// of reporting it as clean.
+
+const fvLe32 = (n) => Uint8Array.of(n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255);
+const fvLe64 = (n) => {
+  const out = new Uint8Array(8);
+  new DataView(out.buffer).setBigUint64(0, BigInt(n), true);
+  return out;
+};
+const fvCompact = (n) => (n < 0xfd ? Uint8Array.of(n) : n <= 0xffff ? Uint8Array.of(0xfd, n & 255, (n >>> 8) & 255) : Uint8Array.of(0xfe, n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255));
+const fvPair = (key, value) => Uint8Array.from([...fvCompact(key.length), ...key, ...fvCompact(value.length), ...value]);
+const finalizationPsbt = (claimScript, extraPairs = []) => {
+  const tx = Uint8Array.from([
+    ...fvLe32(2), 1, ...new Uint8Array(32).fill(0xaa), ...fvLe32(0), 0, ...fvLe32(0xffffffff),
+    1, ...fvLe64(1000), ...fvCompact(claimScript.length), ...claimScript, ...fvLe32(0),
+  ]);
+  const txOut = Uint8Array.from([...fvLe64(5000), ...fvCompact(claimScript.length), ...claimScript]);
+  const bytes = [0x70, 0x73, 0x62, 0x74, 0xff, ...fvPair([0x00], tx), 0x00, ...fvPair([0x01], txOut)];
+  for (const [key, value] of extraPairs) bytes.push(...fvPair(key, value));
+  bytes.push(0x00, 0x00);
+  return Uint8Array.from(bytes);
+};
+
+test("a native SegWit final scriptSig must be empty (BIP-141)", () => {
+  const p2wpkh = Uint8Array.from([0x00, 0x14, ...new Uint8Array(20).fill(0x11)]);
+  const doc = psbtInspectDoc(finalizationPsbt(p2wpkh, [[[0x07], Uint8Array.of(0x51)]]));
+  const problem = doc.problems.find((entry) => entry.code === "final_scriptsig_bad");
+  assert.ok(problem, "the native-witness scriptSig rule is enforced");
+  assert.match(problem.message, /native SegWit input must be empty/);
+  assert.throws(() => rebuild(doc), /native SegWit input must be empty/);
+});
+
+test("a taproot signature must not append an explicit SIGHASH_DEFAULT byte (BIP-341)", () => {
+  const internal = unhex("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+  const claim = Uint8Array.from([0x51, 0x20, ...internal]);
+  const sig = unhex("e907831f80848d1069a5371b402410364bdf1c5f8307b0084c55f1ce2dca821525f66a4a85ea8b71e482a74f382d2ce5ebeee8fdb2172f477df4900d310536c0");
+  const witness = Uint8Array.from([0x01, 0x41, ...sig, 0x00]);
+  const doc = psbtInspectDoc(finalizationPsbt(claim, [[[0x08], witness]]));
+  const problem = doc.problems.find((entry) => entry.code === "final_witness_bad");
+  assert.ok(problem, "the explicit-default signature is refused");
+  assert.match(problem.message, /SIGHASH_DEFAULT/);
+  assert.throws(() => rebuild(doc), /SIGHASH_DEFAULT/);
+});
+
+test("a wrapped-segwit final witness must also carry its redeem script in scriptSig", () => {
+  const maps = splitPsbtMaps(VALID);
+  // VALID input 1 is P2SH-P2WPKH with a witness UTXO and redeem script. Add a
+  // final witness without the required final scriptSig.
+  const witness = Uint8Array.from([0x02, 0x01, 0xaa, 0x21, 0x02, ...new Uint8Array(32).fill(0x11)]);
+  maps[2].push([Uint8Array.of(0x08), witness]);
+  const doc = psbtInspectDoc(joinPsbtMaps(maps));
+  const problem = doc.problems.find((entry) => entry.code === "final_witness_bad" && /no final scriptSig/.test(entry.message));
+  assert.ok(problem, "a wrapped witness without its scriptSig is refused");
+});
+
+test("a PSBT with more than 100,000 total pairs is refused before JSON expansion (audit M5)", () => {
+  const le32 = (n) => Uint8Array.of(n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255);
+  const tx = [2, 0, 0, 0, 11];
+  for (let i = 0; i < 11; i++) tx.push(...new Uint8Array(32).fill(i), 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff);
+  tx.push(1, 0xe8, 0x03, 0, 0, 0, 0, 0, 0, 1, 0x51, 0, 0, 0, 0);
+  const pair = (j) => [Uint8Array.from([0x99, ...le32(j)]), Uint8Array.of(0)];
+  const maps = [[[Uint8Array.of(0x00), Uint8Array.from(tx)]]];
+  for (let map = 0; map < 10; map++) maps.push(Array.from({ length: 10_000 }, (_, j) => pair(j)));
+  maps.push([pair(0)]);
+  maps.push([]);
+  assert.throws(() => psbtInspectDoc(joinPsbtMaps(maps)), /too many key-value pairs to inspect safely/);
+});

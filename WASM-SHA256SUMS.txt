@@ -1,3 +1,3 @@
-6c5b1324b3d612eaac81470bbe4aa3a0bf11556b1c5a14a7f2aed5c4922e32df  src/js/entropylab-wasm-b64.js
-84090b2587b2774a631d5a63d550ec1c949e3845f84413eccbc87a33b1733123  src/js/psbt-wasm-b64.js
+ec0d9ebccad148f5aae5d828dd822945a8dea09d0739c1397e80cab29d21e515  src/js/entropylab-wasm-b64.js
+a26cc8cc86d7f355eae7943cdf6dbcf10e4df137cb500207a9ba038733e3e6ca  src/js/psbt-wasm-b64.js
 8f9b26cf68b8f77584564b5ecc957d55db5ec7bcc75f3b1195046f69cb2a57f1  src/js/vanity-wasm-b64.js

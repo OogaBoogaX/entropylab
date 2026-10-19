@@ -49,10 +49,14 @@ mod verify;
 const MAX_PSBT_BYTES: usize = 5_000_000;
 const MAX_JSON_BYTES: usize = 64_000_000;
 const MAX_PAIRS_PER_MAP: usize = 10_000;
+// Across all maps. A 5 MB file can hold about a million minimal pairs; the
+// inspector builds a JSON view for every one, so bound the total before the
+// 64 MB output check can run (audit M5).
+const MAX_TOTAL_PAIRS: usize = 100_000;
 const MAX_TX_ELEMENTS: usize = 100_000;
 // The problem list is display-facing; a hostile file (10k malformed pairs)
 // must not blow the JSON budget on findings alone.
-const MAX_PROBLEMS: usize = 64;
+pub(crate) const MAX_PROBLEMS: usize = 64;
 
 thread_local! {
     static LAST_ERROR: RefCell<String> = const { RefCell::new(String::new()) };
@@ -595,6 +599,12 @@ fn parse_raw(bytes: &[u8]) -> Result<RawPsbt, String> {
     }
     if off != bytes.len() {
         return Err("PSBT contains trailing data or extra maps".into());
+    }
+    let total_pairs = globals.len()
+        + inputs.iter().map(Vec::len).sum::<usize>()
+        + outputs.iter().map(Vec::len).sum::<usize>();
+    if total_pairs > MAX_TOTAL_PAIRS {
+        return Err("this PSBT has too many key-value pairs to inspect safely".into());
     }
     // BIP-370: PSBT_GLOBAL_TX_VERSION, _FALLBACK_LOCKTIME, _INPUT_COUNT,
     // _OUTPUT_COUNT, _TX_MODIFIABLE, and their per-input/per-output

@@ -106,14 +106,18 @@ function grind(msg) {
     return;
   }
   heap().set(keyBytes, keyPtr);
+  keyBytes.fill(0);
   var saltBytes = mode === 1 ? new Uint8Array(0) : bytesOf(msg.salt);
   if (saltBytes.length > MAX_SALT) {
+    wipeSecrets();
     postMessage({ type: "error", message: "vanity starting passphrase is longer than " + MAX_SALT + " bytes" });
     return;
   }
   heap().set(saltBytes, saltPtr);
+  saltBytes.fill(0);
   var path = Array.isArray(msg.path) ? msg.path : [];
   if (path.length === 0 || path.length > MAX_PATH) {
+    wipeSecrets();
     postMessage({ type: "error", message: "vanity derivation path has 1 to " + MAX_PATH + " components" });
     return;
   }

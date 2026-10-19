@@ -10,6 +10,9 @@ import { createHash } from "node:crypto";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { Transaction, p2pk, p2sh, p2wpkh, p2wsh } from "@scure/btc-signer";
+import { loadAppFunctions } from "./app-slice-harness.mjs";
+import { psbtWasmReady } from "../src/js/psbt-wasm.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -36,9 +39,11 @@ function loadSlice(name) {
 // Execute the app's own decoders in a module scope whose curve, hash, and
 // script/address helpers are the app's real WASM facades (never a
 // reimplementation). hodlBip143 itself now calls rust-bitcoin's SighashCache
-// through the WASM boundary.
+// through the WASM boundary. The curve is bound under app.js's own name: under
+// a stale one, hodlFinalSigs' verify throws inside its try, and every
+// signature falls back to the single-candidate rule unnoticed.
 const harnessSource = `
-import { secp256k1 as xe } from "../src/js/secp256k1.js";
+import { secp256k1 as hodlSecp256k1 } from "../src/js/secp256k1.js";
 import { hex as hodlHex } from "../src/js/coders.js";
 import { p2shScript, p2wshScript } from "../src/js/addresses.js";
 import { wasmExports as hodlWasm, withInput as hodlWasmIn, withOutput as hodlWasmOut } from "../src/js/entropylab-wasm.js";
@@ -282,4 +287,122 @@ test("the render loop merges final fields and never issues a clean verdict for u
   // An unsupported finalized input forces the incomplete-coverage warning.
   assert.match(render, /!signatures\.length && !finalMaterial\.signatures\.length && !finalMaterial\.uninspected/);
   assert.match(app, /signatures carried by finalized scriptSig\/witness fields/);
+});
+
+// --- finalized inputs whose script survives only in the final fields --------
+//
+// A finalizer removes the redeem (0x04) and witness (0x05) script fields
+// (BIP-174). The spend still carries both: the final scriptSig's last push and
+// the final witness's last item. Until they were read from there, a finalized
+// wrapped or P2WSH input had no digest, so its RFC 6979 check was skipped and a
+// reused nonce read as "possible" or "incomplete", never as reuse.
+
+const hash160 = (bytes) => createHash("ripemd160").update(createHash("sha256").update(Buffer.from(bytes)).digest()).digest();
+const p2shOf = (redeem) => Uint8Array.of(0xa9, 0x14, ...hash160(redeem), 0x87);
+const p2wshOf = (script) => Uint8Array.of(0x00, 0x20, ...createHash("sha256").update(Buffer.from(script)).digest());
+const push = (bytes) => Uint8Array.of(bytes.length, ...bytes);
+const unkeyed = (type, val) => ({ type, keydata: new Uint8Array(), val });
+// The P2WPKH program's BIP-143 scriptCode, built here, not by the app.
+const P2WPKH_SCRIPT_CODE = Uint8Array.of(0x76, 0xa9, 0x14, ...P2WPKH_SCRIPT.slice(2), 0x88, 0xac);
+const compressed = (priv) => {
+  const point = pointMul(priv);
+  return Uint8Array.of(point[1] & 1n ? 3 : 2, ...bytes32(point[0]));
+};
+// signWithNonce for any key, returned with its SIGHASH_ALL byte.
+const signAs = (priv, digest, k) => {
+  const z = BigInt("0x" + Buffer.from(digest).toString("hex"));
+  const r = pointMul(k)[0] % ORDER_N;
+  const s = (modPow(k, ORDER_N - 2n, ORDER_N) * ((z + r * priv) % ORDER_N)) % ORDER_N;
+  return Uint8Array.of(...derEncode(r, s), 1);
+};
+
+test("a finalized 2-of-2 P2WSH input's keys come from its final witness script", () => {
+  const otherPriv = 11n, other = compressed(otherPriv);
+  const witnessScript = Uint8Array.of(0x52, 33, ...PUBKEY, 33, ...other, 0x52, 0xae);
+  const redeem = p2wshOf(witnessScript);
+  for (const [label, outputScript, scriptSig] of [["P2WSH", redeem, []], ["P2SH-P2WSH", p2shOf(redeem), [unkeyed(7, push(redeem))]]]) {
+    const witnessUtxo = { amount: 1000n, script: outputScript };
+    const tx = makeTx(0);
+    const digest = harness.hodlBip143(tx, 0, witnessScript, witnessUtxo.amount, 1);
+    const stack = [new Uint8Array(), signAs(PRIV, digest, NONCE), signAs(otherPriv, digest, NONCE + 1n), witnessScript];
+    const entries = [witnessUtxoEntry(1000, outputScript), ...scriptSig, finalWitnessEntry(stack)];
+    assert.deepEqual(harness.hodlInputScriptCode(entries, witnessUtxo), witnessScript, label);
+    // Two keys, so only verification can say which one made each signature.
+    const result = harness.hodlFinalSigs(entries, witnessUtxo, tx, 0);
+    assert.equal(result.uninspected, 0, label);
+    assert.deepEqual(result.signatures.map((signature) => [...signature.pubkey]), [[...PUBKEY], [...other]], label);
+  }
+});
+
+test("a final-field script that does not hash to the previous output is not used", () => {
+  const otherPriv = 11n;
+  const committed = Uint8Array.of(33, ...PUBKEY, 0xac), carried = Uint8Array.of(33, ...compressed(otherPriv), 0xac);
+  const tx = makeTx(0);
+  const wshUtxo = { amount: 1000n, script: p2wshOf(committed) };
+  const signature = signAs(otherPriv, harness.hodlBip143(tx, 0, carried, wshUtxo.amount, 1), NONCE);
+  const wsh = [witnessUtxoEntry(1000, wshUtxo.script), finalWitnessEntry([signature, carried])];
+  assert.equal(harness.hodlInputScriptCode(wsh, wshUtxo), null);
+  const result = harness.hodlFinalSigs(wsh, wshUtxo, tx, 0);
+  assert.equal(result.signatures.length, 0);
+  assert.equal(result.uninspected, 1);
+  const shUtxo = { amount: 1000n, script: p2shOf(P2WPKH_SCRIPT) };
+  const otherProgram = Uint8Array.of(0x00, 0x14, ...hash160(compressed(otherPriv)));
+  assert.equal(harness.hodlInputScriptCode([witnessUtxoEntry(1000, shUtxo.script), unkeyed(7, push(otherProgram))], shUtxo), null);
+});
+
+// The whole inspector, as the PSBT tab runs it.
+const view = await loadAppFunctions(["hodlParsePsbt", "hodlRenderPsbt"], {
+  stubs: { document: { getElementById: () => null }, hodlPsbtRecordNonceInspection: () => {} },
+  settable: ["hodlPsbtPriv"],
+});
+await psbtWasmReady;
+const renderPsbt = (bytes) => view.hodlRenderPsbt(view.hodlParsePsbt(bytes), new Uint8Array(), new Date().toISOString(), "all");
+const compactSize = (n) => (n < 0xfd ? [n] : [0xfd, n & 0xff, n >> 8]);
+const varBytes = (bytes) => [...compactSize(bytes.length), ...bytes];
+const psbtOf = (unsignedTx, inputs, outputCount) => Uint8Array.from([
+  0x70, 0x73, 0x62, 0x74, 0xff, ...varBytes([0x00]), ...varBytes(unsignedTx), 0x00,
+  ...inputs.flatMap((entries) => [...entries.flatMap((entry) => [...varBytes([entry.type, ...entry.keydata]), ...varBytes(entry.val)]), 0x00]),
+  ...Array(outputCount).fill(0x00),
+]);
+const twoInputSpend = (payment) => {
+  const tx = new Transaction();
+  for (const index of [0, 1]) tx.addInput({ txid: "11".repeat(32), index, witnessUtxo: { script: payment.script, amount: 50_000n }, redeemScript: payment.redeemScript, witnessScript: payment.witnessScript });
+  tx.addOutputAddress("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", 90_000n);
+  return tx;
+};
+
+test("a finalized wrapped or P2WSH spend keeps its RFC 6979 verdicts", () => {
+  const payments = [p2sh(p2wpkh(PUBKEY)), p2wsh(p2pk(PUBKEY)), p2sh(p2wsh(p2pk(PUBKEY)))];
+  const tx = new Transaction();
+  payments.forEach((payment, index) => tx.addInput({ txid: "11".repeat(32), index, witnessUtxo: { script: payment.script, amount: 50_000n }, redeemScript: payment.redeemScript, witnessScript: payment.witnessScript }));
+  tx.addOutputAddress("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", 140_000n);
+  tx.sign(bytes32(PRIV));
+  tx.finalize();
+  // @scure/btc-signer, the independent finalizer, cleared both script fields.
+  payments.forEach((_, index) => {
+    assert.equal(tx.getInput(index).redeemScript, undefined);
+    assert.equal(tx.getInput(index).witnessScript, undefined);
+  });
+  view.__set.hodlPsbtPriv(bytes32(PRIV));
+  const html = renderPsbt(tx.toPSBT());
+  assert.equal((html.match(/Matches RFC 6979/g) || []).length, payments.length);
+  assert.match(html, /Nonce analysis<\/span> — <span class='psbt-ok'>Completed<\/span>/);
+});
+
+test("a finalized wrapped or P2WSH pair that reuses a nonce is reported as reuse", () => {
+  view.__set.hodlPsbtPriv(null);
+  const wrapped = p2sh(p2wpkh(PUBKEY)), native = p2wsh(p2pk(PUBKEY));
+  for (const [label, payment, scriptCode, finalFields] of [
+    ["P2SH-P2WPKH", wrapped, P2WPKH_SCRIPT_CODE, (signature) => [unkeyed(7, push(wrapped.redeemScript)), finalWitnessEntry([signature, PUBKEY])]],
+    ["P2WSH", native, native.witnessScript, (signature) => [finalWitnessEntry([signature, native.witnessScript])]],
+  ]) {
+    const unsigned = twoInputSpend(payment).unsignedTx;
+    const inputs = [0, 1].map((index) => [
+      witnessUtxoEntry(50_000, payment.script),
+      ...finalFields(signAs(PRIV, harness.hodlBip143({ raw: unsigned }, index, scriptCode, 50_000n, 1), NONCE)),
+    ]);
+    const html = renderPsbt(psbtOf(unsigned, inputs, 1));
+    assert.match(html, /Reused nonce detected for the same public key/, label);
+    assert.doesNotMatch(html, /Possible repeated nonce|Incomplete nonce coverage/, label);
+  }
 });

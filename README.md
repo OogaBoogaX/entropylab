@@ -491,6 +491,11 @@ docker compose run --rm dev bash -c "npm ci --ignore-scripts && npm run build"
 sha256sum entropylab.html       # compare with SHA256SUMS.txt
 ```
 
+One caveat after a Rust change: the stamped commit still carries the previous
+committed WASM modules, so check out the artifact commit that published the
+page (or any later commit whose `WASM-SHA256SUMS.txt` matches the published
+one) instead — it stamps the same commit.
+
 This rebuilds the HTML from source using the committed WASM modules as fixed
 inputs. Rebuilding those modules (`npm run build:wasm` inside the same image)
 uses the image's pinned clang. CI requires two such builds to match the

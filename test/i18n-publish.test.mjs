@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { publishLanguage, BRANCH_PREFIX, TRANSLATION_LABEL } from "../scripts/i18n-publish.mjs";
+import { githubRequest, publishLanguage, BRANCH_PREFIX, TRANSLATION_LABEL } from "../scripts/i18n-publish.mjs";
 import { hashSource } from "../scripts/i18n-validate.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,7 +34,10 @@ const treeSha = ({ base_tree, tree }) =>
 // rock sits at rockSha on tree "rocktree". An existing automation branch sits
 // at branchSha, on a commit whose tree and parents are scriptable: a branch
 // cut from an older rock, or one already holding a proposal on current rock.
-const stubGitHub = async ({ branchExists = false, prExists = false, cleanStatus = false, rockSha = "base0000", branchSha = "stale000", branchTree = "oldtree", branchParents = ["older000"] } = {}) => {
+// rockFiles is what rock's tree already holds, by path. notFoundPage names the
+// lookups ("branch", "label") that answer with a 404 page instead of
+// GitHub's JSON "Not Found".
+const stubGitHub = async ({ branchExists = false, prExists = false, cleanStatus = false, rockSha = "base0000", branchSha = "stale000", branchTree = "oldtree", branchParents = ["older000"], rockFiles = {}, notFoundPage = [] } = {}) => {
   const calls = [];
   const state = { rockSha, branchSha, prNumber: 7, prNode: "PR_node_7", writes: [], trees: [], commits: { [rockSha]: { tree: "rocktree", parents: ["older000"] } } };
   if (branchExists) state.commits[branchSha] = { tree: branchTree, parents: branchParents };
@@ -46,9 +49,11 @@ const stubGitHub = async ({ branchExists = false, prExists = false, cleanStatus 
       const parsed = body ? JSON.parse(body) : undefined;
       calls.push({ method: req.method, url: req.url, body: parsed });
       const reply = (status, data) => res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(data));
+      const page404 = () => res.writeHead(404, { "content-type": "text/html" }).end("<!DOCTYPE html>\n<html><body>Not Found</body></html>");
       const url = req.url;
       if (url === "/repos/o/r/git/ref/heads/rock") return reply(200, { object: { sha: state.rockSha } });
       if (url.startsWith("/repos/o/r/git/ref/heads/")) {
+        if (notFoundPage.includes("branch")) return page404();
         return branchExists ? reply(200, { object: { sha: state.branchSha } }) : reply(404, { message: "Not Found" });
       }
       if (url.startsWith("/repos/o/r/git/commits/") && req.method === "GET") {
@@ -59,6 +64,9 @@ const stubGitHub = async ({ branchExists = false, prExists = false, cleanStatus 
       if (url === "/repos/o/r/git/trees" && req.method === "POST") {
         state.trees.push(parsed);
         for (const entry of parsed.tree) state.writes.push({ path: entry.path, content: entry.content, mode: entry.mode, type: entry.type });
+        // Content-addressed, as on GitHub: writing exactly what rock's tree
+        // already holds yields rock's own tree id.
+        if (parsed.tree.every((entry) => rockFiles[entry.path] === entry.content)) return reply(201, { sha: parsed.base_tree });
         return reply(201, { sha: treeSha(parsed) });
       }
       if (url === "/repos/o/r/git/commits" && req.method === "POST") {
@@ -89,7 +97,7 @@ const stubGitHub = async ({ branchExists = false, prExists = false, cleanStatus 
       }
       if (url === "/repos/o/r/pulls" && req.method === "POST") return reply(201, { number: state.prNumber, node_id: state.prNode });
       if (url === `/repos/o/r/pulls/${state.prNumber}` && req.method === "PATCH") return reply(200, { number: state.prNumber, node_id: state.prNode });
-      if (url === `/repos/o/r/labels/${TRANSLATION_LABEL}`) return reply(404, { message: "Not Found" });
+      if (url === `/repos/o/r/labels/${TRANSLATION_LABEL}`) return notFoundPage.includes("label") ? page404() : reply(404, { message: "Not Found" });
       if (url === "/repos/o/r/labels" && req.method === "POST") return reply(201, { name: parsed.name });
       if (url === `/repos/o/r/issues/${state.prNumber}/labels` && req.method === "PUT") return reply(200, parsed.labels);
       if (url === "/repos/o/r" && req.method === "GET") return reply(200, { allow_squash_merge: true, allow_merge_commit: false, allow_rebase_merge: false });
@@ -135,6 +143,7 @@ test("fresh run: branch from rock tip, two file writes, PR opened, labelled, aut
     assert.equal(prCreate.body.head, `${BRANCH_PREFIX}es`);
     assert.equal(prCreate.body.base, "rock");
     assert.equal(prCreate.body.maintainer_can_modify, false);
+    assert.match(prCreate.body.body, /Touches exactly `src\/locales\/es\.json` and `src\/locales\/\.sources\/es\.json`/);
 
     const labels = calls.find((c) => c.method === "PUT" && c.url.includes("/labels"));
     assert.deepEqual(labels.body, { labels: [TRANSLATION_LABEL] });
@@ -147,6 +156,26 @@ test("fresh run: branch from rock tip, two file writes, PR opened, labelled, aut
   } finally {
     server.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a value-only refresh says its sidecar stays as is", async () => {
+  // The committed tree already holds these keys and their sidecar; only a
+  // value changes, as a scripts/i18n-context.json correction does (#862).
+  const dir = mkdtempSync(join(tmpdir(), "i18n-pub-"));
+  const repoRoot = mkdtempSync(join(tmpdir(), "i18n-pub-root-"));
+  const { server, calls, url } = await stubGitHub();
+  try {
+    proposals(join(repoRoot, "src/locales"), CATALOG);
+    proposals(dir, { ...CATALOG, Cancel: "Anular" });
+    await publishLanguage({ dir, lang: "es", repoRoot, repo: "o/r", token: "tok", apiUrl: url, log: quiet });
+    const prCreate = calls.find((c) => c.method === "POST" && c.url === "/repos/o/r/pulls");
+    assert.match(prCreate.body.title, /\(\+0 −0 ~1\)$/);
+    assert.match(prCreate.body.body, /Touches only `src\/locales\/es\.json`: its English keys are unchanged/);
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(repoRoot, { recursive: true, force: true });
   }
 });
 
@@ -210,6 +239,31 @@ test("rerun with the same proposal already on rock's current tip leaves the bran
   } finally {
     server.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a proposal rock's tip already holds publishes nothing (the #902/#903 race)", async () => {
+  // This run's checkout predates the merge of another run's PR for es, so
+  // its committed-catalog check still sees a change; rock's live tip already
+  // holds the files. With or without a branch left from that merged PR, no
+  // commit, branch move, PR, label or auto-merge may follow.
+  for (const branchExists of [false, true]) {
+    const dir = mkdtempSync(join(tmpdir(), "i18n-pub-"));
+    proposals(dir, CATALOG);
+    const file = (path) => readFileSync(join(dir, path), "utf8");
+    const rockFiles = { "src/locales/es.json": file("es.json"), "src/locales/.sources/es.json": file(".sources/es.json") };
+    const { server, calls, url } = await stubGitHub({ branchExists, rockFiles });
+    try {
+      const summary = await publish(dir, url);
+      assert.match(summary, /rock's tip already holds this proposal — nothing to publish/, `branch exists: ${branchExists}`);
+      for (const [method, prefix] of [["POST", "/repos/o/r/git/commits"], ["POST", "/repos/o/r/git/refs"], ["PATCH", "/repos/o/r/git/refs"], ["POST", "/repos/o/r/pulls"], ["PATCH", "/repos/o/r/pulls"]]) {
+        assert.ok(!calls.some((c) => c.method === method && c.url.startsWith(prefix)), `branch exists: ${branchExists}: no ${method} ${prefix}`);
+      }
+      assert.ok(!calls.some((c) => c.url === "/graphql" || c.url.includes("/labels")), `branch exists: ${branchExists}: no label, no auto-merge`);
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 
@@ -279,5 +333,60 @@ test("an immediately mergeable PR merges directly when auto-merge has nothing to
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a GitHub error page is reported with its status and call, not as a JSON parse error", async () => {
+  // Run 39066081254 (fr) failed with only "Unexpected token '<'": GitHub had
+  // answered with an HTML page, and the body was parsed before the status
+  // was read.
+  const replies = {
+    "/html-502": [502, "text/html", "<!DOCTYPE html>\n<html><body>Unicorn!</body></html>"],
+    "/html-200": [200, "text/html", "<!DOCTYPE html>\n<html></html>"],
+    "/json-422": [422, "application/json", JSON.stringify({ message: "Reference already exists" })],
+    "/json-200": [200, "application/json", JSON.stringify({ ok: true })],
+  };
+  const server = createServer((req, res) => {
+    const [status, type, body] = replies[req.url];
+    res.writeHead(status, { "content-type": type }).end(body);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const apiUrl = `http://127.0.0.1:${server.address().port}`;
+  const request = (path) => githubRequest({ apiUrl, token: "tok", method: "GET", path });
+  try {
+    await assert.rejects(request("/html-502"), (error) => {
+      assert.equal(error.message, "GitHub GET /html-502 → HTTP 502: a non-JSON response (an HTML page)");
+      assert.equal(error.status, 502);
+      return true;
+    });
+    await assert.rejects(request("/html-200"), { message: "GitHub GET /html-200 → HTTP 200: a non-JSON response (an HTML page)" });
+    await assert.rejects(request("/json-422"), { message: "GitHub GET /json-422 → HTTP 422: Reference already exists" });
+    assert.deepEqual(await request("/json-200"), { ok: true });
+  } finally {
+    server.close();
+  }
+});
+
+test("a 404 page that is not GitHub's JSON stops the publish; it never reads as a missing branch or label", async () => {
+  // GitHub's API says "Not Found" in JSON, and only that means "not there
+  // yet". Reading a 404 page from anything in between as absence would cut a
+  // new branch and open a pull request (branch lookup), or create the label
+  // (label lookup), on a failed response.
+  for (const [lookup, forbidden] of [
+    ["branch", ["POST /repos/o/r/git/commits", "POST /repos/o/r/git/refs", "PATCH /repos/o/r/git/refs/", "POST /repos/o/r/pulls"]],
+    ["label", ["POST /repos/o/r/labels", "PUT /repos/o/r/issues/", "POST /graphql"]],
+  ]) {
+    const dir = mkdtempSync(join(tmpdir(), "i18n-pub-"));
+    const { server, calls, url } = await stubGitHub({ notFoundPage: [lookup] });
+    try {
+      proposals(dir, CATALOG);
+      await assert.rejects(() => publish(dir, url), /→ HTTP 404: a non-JSON response \(an HTML page\)$/, `${lookup}: a 404 page did not stop the publish`);
+      for (const prefix of forbidden) {
+        assert.ok(!calls.some((call) => `${call.method} ${call.url}`.startsWith(prefix)), `${lookup}: ${prefix} after a 404 page`);
+      }
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });

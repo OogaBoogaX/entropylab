@@ -28,8 +28,18 @@ test("honest translations pass", () => {
   );
   valid("D++ D8 &amp; D16 method", "Método D++ D8 &amp; D16");
   valid("Raw & unparsed ampersand", "Y sin codificar & así");
-  // A translation may drop the source's link; it just cannot retarget one.
-  valid("See <a href=\"https://github.com/iancoleman/bip39\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a> docs", "Ver la documentación de BIP39");
+  // Word order may move a tagged word.
+  valid("Use <strong>{n}</strong> dice, then <code>roll</code>", "Con <code>roll</code>, usa <strong>{n}</strong> dados");
+});
+
+test("a translation keeps exactly the English formatting", () => {
+  // Every committed translation already does; this keeps it so (#862).
+  const link = "<a href=\"https://github.com/iancoleman/bip39\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a>";
+  invalid(`See ${link} docs`, "Ver la documentación de BIP39", "keeps the English formatting");
+  invalid("Plain label", "Etiqueta <strong>simple</strong>", "keeps the English formatting");
+  invalid("Fair dice: <strong>{n}</strong> sides", "Dados justos: {n} caras", "keeps the English formatting");
+  invalid("Fair dice: <strong>{n}</strong> sides", "Dados justos: <em>{n}</em> caras", "keeps the English formatting");
+  invalid("Run <code>x</code>", "Ejecuta <code>x</code> y <code>y</code>", "keeps the English formatting");
 });
 
 test("rejects empty and non-string values", () => {

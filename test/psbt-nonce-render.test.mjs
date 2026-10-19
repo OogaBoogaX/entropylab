@@ -9,8 +9,6 @@ const signature = (r) => Uint8Array.of(0x30, 6, 2, 1, r, 2, 1, 1, 1);
 const recorded = [];
 const app = await loadAppFunctions(["hodlRenderPsbt", "hodlRenderRawTx"], { stubs: {
   document: { getElementById: () => null },
-  hodlT: (text) => text,
-  hodlTText: (text) => text,
   hodlSessionOwnership: () => new Map(),
   hodlRenderOutputHtml: () => "",
   hodlOwnershipWarning: () => "",
@@ -91,5 +89,73 @@ test("both inspectors clear prior output and report collision-budget refusal wit
     assert.match(errors.at(-1).raw, /nonce comparison limit/i);
     assert.equal(events.at(-1), "inspect-error");
     assert.equal(recorded.length, recordsBefore);
+  }
+});
+
+test("a language switch paints both inspectors' last runs again, with the inputs those runs read", async () => {
+  // The inspector output is built from filled-in strings no catalog key
+  // matches, so the static sweep cannot carry it across a switch; the last
+  // run is painted again. It must be the same analysis: the run's network
+  // and Jade transcript, not whatever the page holds now, and no second
+  // nonce-history record. A session change drops the stored runs, so a
+  // switch can never re-read a PSBT under another key.
+  const outputs = { "psbt-out": { innerHTML: "inspect result" }, "nonce-out": { innerHTML: "nonce result" } };
+  const calls = [];
+  const refresh = await loadAppFunctions(["hodlRefreshPsbtLocale", "hodlPsbtWipeMem"], { settable: ["hodlPsbtLast", "hodlNonceLast"], stubs: {
+    document: { getElementById: (id) => outputs[id] ?? null },
+    hodlPaintPsbtSession: () => {},
+    hodlPaintPsbtKeyNotes: () => {},
+    hodlSetPsbtError: () => {},
+    hodlSetNonceError: () => {},
+    hodlPsbtSyncNonceHistoryControls: () => {},
+    hodlPsbtResetNonceInspection: () => {},
+    hodlRenderPsbt: (...args) => (calls.push(["psbt", ...args]), "repainted psbt " + args[3]),
+    hodlRenderRawTx: (...args) => (calls.push(["transaction", ...args]), "repainted transaction " + args[3]),
+  } });
+  const psbt = { psbt: true }, tx = { tx: true }, tag = new Uint8Array([1]);
+  refresh.__set.hodlPsbtLast({ kind: "psbt", parsed: psbt, sourceTag: tag, checkedAt: "t1", network: "testnet" });
+  refresh.__set.hodlNonceLast({ kind: "transaction", parsed: tx, sourceTag: tag, checkedAt: "t2", network: "signet", transcript: "" });
+  refresh.hodlRefreshPsbtLocale();
+  assert.equal(outputs["psbt-out"].innerHTML, "repainted psbt inspect");
+  assert.equal(outputs["nonce-out"].innerHTML, "repainted transaction nonce");
+  assert.deepEqual(calls, [
+    ["psbt", psbt, tag, "t1", "inspect", { network: "testnet", transcript: undefined, record: false }],
+    ["transaction", tx, tag, "t2", "nonce", { network: "signet", transcript: "", record: false }],
+  ]);
+
+  refresh.hodlPsbtWipeMem();
+  outputs["psbt-out"].innerHTML = outputs["nonce-out"].innerHTML = "kept";
+  refresh.hodlRefreshPsbtLocale();
+  assert.equal(calls.length, 2, "a wiped session leaves nothing to paint again");
+  assert.equal(outputs["psbt-out"].innerHTML, "kept");
+});
+
+test("every line the inspectors write goes through the translator", async () => {
+  // A marking translator stands in for a page language: what is left outside
+  // its marks once the markup is stripped is English no language reaches.
+  // Data stays as it is: hex (txids, r values, sequence), amounts, the BTC
+  // unit, and the "script …" form an address takes for a bare script.
+  const mark = (key, vars) => "⟦" + key.replace(/\{(\w+)\}/g, (whole, name) => (vars?.[name] == null ? whole : String(vars[name]))) + "⟧";
+  const pseudo = await loadAppFunctions(["hodlRenderPsbt", "hodlRenderRawTx"], { stubs: {
+    document: { getElementById: () => null },
+    hodlT: mark,
+    hodlTText: mark,
+    hodlTAttr: mark,
+    hodlSessionOwnership: () => new Map(),
+    hodlPublicInlineHtml: (text) => text,
+    hodlPsbtReferenceVerdict: () => ({ state: "complete" }),
+    hodlPrivForPub: () => null,
+    hodlPrivFromPath: () => null,
+    hodlPsbtMasterFingerprint: () => null,
+    hodlPsbtRecordNonceInspection: () => {},
+  } });
+  const english = (html) => html.replace(/<[^>]*>/g, " ").replace(/⟦[^⟧]*⟧/g, " ").split(/[\s·:()#,]+/)
+    .filter((word) => /[A-Za-z]/.test(word) && !/^(?:BTC|script|0x[0-9a-f]+|[0-9a-f]+)$/.test(word));
+  for (const nonces of [[1, 2], [1, 1], [1]]) {
+    const { tx, psbt } = fixture(nonces);
+    for (const view of ["inspect", "nonce", "all"]) {
+      assert.deepEqual(english(pseudo.hodlRenderPsbt(psbt, undefined, undefined, view)), [], `PSBT ${view} view, r values ${nonces}`);
+      assert.deepEqual(english(pseudo.hodlRenderRawTx(tx, undefined, undefined, view)), [], `transaction ${view} view, r values ${nonces}`);
+    }
   }
 });

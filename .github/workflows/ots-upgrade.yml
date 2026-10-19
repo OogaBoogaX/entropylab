@@ -45,6 +45,16 @@ jobs:
             exit 0
           fi
           OTS="$RUNNER_TEMP/ots/bin/ots"
+          # Bind the proof to this checkout before touching it: a proof left
+          # on rock for bytes the tree no longer carries must never be
+          # upgraded into a Bitcoin attestation and republished (audit L8).
+          # The stamp job replaces a stale proof on its next run.
+          ACTUAL=$(sha256sum entropylab.html | cut -d' ' -f1)
+          EXISTING=$("$OTS" info entropylab.html.ots 2>/dev/null | sed -n 's/^File sha256 hash: //p' | head -1 || true)
+          if [ "$EXISTING" != "$ACTUAL" ]; then
+            echo "Committed proof covers ${EXISTING:-an unknown digest}; rock's entropylab.html is $ACTUAL. Not upgrading; the stamp job will replace the stale proof."
+            exit 0
+          fi
           # ots upgrade entropylab.html.ots — completes a pending calendar receipt.
           # It exits non-zero whenever the timestamp is still incomplete, which
           # is the ordinary state until a calendar has a block attestation.
