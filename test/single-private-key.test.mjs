@@ -117,6 +117,15 @@ test("the recovery sheet carries the key only when private material is saved", a
   }
 });
 
+// The derive path asserts the WIF's network family before calling
+// (hodlAssertPrivateKeyKind), so hodlSingleKeyWallet never sees a mismatch
+// today. If a future caller skips that check, the wallet must fail loudly
+// rather than come back silently re-homed onto the WIF's network.
+test("a WIF whose network family mismatches the selected chain is refused, not silently re-homed", () => {
+  assert.throws(() => hodlSingleKeyWallet(wifOf(WIKI_KEY, "testnet", true), "mainnet", "wif"), /WIF is for/);
+  assert.throws(() => hodlSingleKeyWallet(WIKI_WIF, "testnet", "wif"), /WIF is for/);
+});
+
 // A station session (the PSBT inspector) takes its own copy, which it zeroes
 // when the session ends; zeroing it must leave the wallet's key intact.
 test("a station session gets its own copy of the key, which it can zero alone", async () => {

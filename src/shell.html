@@ -267,7 +267,7 @@ words, pick one of the checksum words.</span></span>
               </span>
               <span class="vanity-formula-col vanity-formula-input">
                 <span class="label vanity-formula-title">Custom chars</span>
-                <input id="vanity-prefix" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter your vanity characters here" aria-labelledby="vanity-prefix-label" aria-describedby="vanity-prefix-help">
+                <input id="vanity-prefix" autocomplete="off" spellcheck="false" autocapitalize="off" data-i18n-skip placeholder="Enter your vanity characters here" aria-labelledby="vanity-prefix-label" aria-describedby="vanity-prefix-help">
               </span>
               <span class="vanity-formula-col vanity-formula-op" aria-hidden="true">
                 <span class="label vanity-formula-title"></span>
@@ -826,6 +826,7 @@ words, pick one of the checksum words.</span></span>
           </label>
           <div class="row bip85-actions tool-actions">
             <button class="btn primary" id="journal-unlock" type="button">Open journal</button>
+            <span class="journal-create-ready" id="journal-open-ready" hidden><span class="journal-create-ready-arrow" aria-hidden="true">←</span> <span class="journal-open-ready-text">This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.</span></span>
           </div>
         </div>
       </div>

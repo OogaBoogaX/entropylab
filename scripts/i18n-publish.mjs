@@ -43,21 +43,38 @@ export async function githubRequest({ apiUrl = DEFAULT_API_URL, token, method, p
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!response.ok) {
-    const error = new Error(`GitHub ${method} ${path} → HTTP ${response.status}: ${(data && data.message) || text.slice(0, 200)}`);
+  // GitHub answers some failures (a 5xx during an incident) with an HTML
+  // page, not JSON. Parse after reading the status, so the error names the
+  // status and the call instead of "Unexpected token '<'".
+  let data = null, json = true;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      json = false;
+    }
+  }
+  if (!response.ok || !json) {
+    const detail = !json
+      ? `a non-JSON response (${text.trimStart().startsWith("<") ? "an HTML page" : JSON.stringify(text.slice(0, 80))})`
+      : (data && data.message) || text.slice(0, 200);
+    const error = new Error(`GitHub ${method} ${path} → HTTP ${response.status}: ${detail}`);
     error.status = response.status;
     error.data = data;
+    error.json = json;
     throw error;
   }
   return data;
 }
 
+// A lookup that answers 404 means "not there yet" only when GitHub's API said
+// so in JSON. A 404 page from anything in between is a failure, not absence:
+// treating it as absence would publish a new branch and pull request.
 const tryRequest = async (request) => {
   try {
     return await request();
   } catch (error) {
-    if (error.status === 404) return null;
+    if (error.status === 404 && error.json) return null;
     throw error;
   }
 };
@@ -106,7 +123,8 @@ const ensureLabel = async (ctx) => {
 // rock as soon as another translation merged there. The commit is built
 // before the branch moves, so the head never passes through rock itself (a
 // PR whose head is already on its base reads as merged). A branch already
-// holding these files on rock's tip is left alone.
+// holding these files on rock's tip is left alone. Returns null, touching
+// nothing, when rock's tip already holds the files.
 const commitOnRock = async (ctx, branch, files, message) => {
   const rockSha = (await githubRequest({ ...ctx, method: "GET", path: `/repos/${ctx.repo}/git/ref/heads/rock` })).object.sha;
   const rockCommit = await githubRequest({ ...ctx, method: "GET", path: `/repos/${ctx.repo}/git/commits/${rockSha}` });
@@ -116,6 +134,13 @@ const commitOnRock = async (ctx, branch, files, message) => {
     path: `/repos/${ctx.repo}/git/trees`,
     body: { base_tree: rockCommit.tree.sha, tree: files.map(({ path, content }) => ({ path, mode: "100644", type: "blob", content })) },
   });
+  // Trees are content-addressed: the same id as rock's own tree means rock's
+  // tip already holds these files. The usual cause is a race: this run's
+  // checkout was taken before another run's PR for the language merged, so
+  // publishLanguage's committed-catalog check read stale content. Committing would
+  // open a PR with no changes that auto-merges as an empty commit, as #902
+  // and #903 did.
+  if (tree.sha === rockCommit.tree.sha) return null;
   const existing = await tryRequest(() => githubRequest({ ...ctx, method: "GET", path: `/repos/${ctx.repo}/git/ref/heads/${encodeURIComponent(branch)}` }));
   if (existing) {
     const head = await githubRequest({ ...ctx, method: "GET", path: `/repos/${ctx.repo}/git/commits/${existing.object.sha}` });
@@ -187,11 +212,17 @@ export async function publishLanguage({ dir, lang, repoRoot = root, repo, token,
   const removed = Object.keys(committed).filter((key) => !(key in catalogNext)).length;
   const changed = Object.keys(catalogNext).filter((key) => key in committed && committed[key] !== catalogNext[key]).length;
   const title = `i18n(${lang}): automated translation update (+${added} −${removed} ~${changed})`;
+  // The sidecar hashes English keys only: a refresh of values alone leaves it
+  // byte-identical, so the PR's diff holds the catalog by itself.
+  const committedSidecarPath = join(repoRoot, "src/locales/.sources", `${lang}.json`);
+  const sidecarChanged = !existsSync(committedSidecarPath) || readFileSync(committedSidecarPath, "utf8") !== sidecarText;
   const body = [
     `Automated translation update for \`${lang}\` from the post-merge i18n workflow (issue #286).`,
     "",
     `- **+${added}** new translations, **−${removed}** obsolete keys pruned, **~${changed}** refreshed`,
-    "- Touches exactly `src/locales/" + lang + ".json` and `src/locales/.sources/" + lang + ".json`",
+    sidecarChanged
+      ? "- Touches exactly `src/locales/" + lang + ".json` and `src/locales/.sources/" + lang + ".json`"
+      : "- Touches only `src/locales/" + lang + ".json`: its English keys are unchanged, so `src/locales/.sources/" + lang + ".json` stays as is",
     "- Catalog and sidecar validated before publication; the translation-only CI gate re-checks both, plus the full suite",
     "- Auto-merge is enabled for the exact head SHA; missing or rejected strings fall back to English",
     "",
@@ -209,6 +240,7 @@ export async function publishLanguage({ dir, lang, repoRoot = root, repo, token,
     { path: `src/locales/${lang}.json`, content: catalogText },
     { path: `src/locales/.sources/${lang}.json`, content: sidecarText },
   ], message);
+  if (!headSha) return `${lang}: rock's tip already holds this proposal — nothing to publish`;
   log(`${lang}: ${branch} at ${headSha.slice(0, 10)} on rock`);
 
   const owner = repo.split("/")[0];

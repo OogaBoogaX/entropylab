@@ -91,3 +91,19 @@ test("no step that runs the OTS client can reach the release-push token", () => 
     assert.ok(all.indexOf(push) > Math.max(...runsOts.map((step) => all.indexOf(step))), "the push comes after every OTS step");
   }
 });
+
+test("the upgrade job binds the committed proof to rock's entropylab.html digest (audit L8)", () => {
+  // ots-upgrade upgrades and republishes whatever proof sits on rock. Without
+  // a digest check, a proof left on rock for bytes the tree no longer carries
+  // (an admin push, a reverted stamp commit) would be upgraded into a full
+  // Bitcoin attestation of the wrong artifact; only release-assets.yml would
+  // notice, at release time. The stamp job already compares digests the same
+  // way before deciding to re-stamp (ci-cd.yml, timestamp job).
+  const block = jobBlock(read(".github/workflows/ots-upgrade.yml"), "upgrade");
+  assert.ok(block, "ots-upgrade.yml:upgrade exists");
+  const upgrade = steps(block).find((step) => step.includes('"$OTS" upgrade'));
+  assert.ok(upgrade, "the upgrade step exists");
+  assert.match(upgrade, /sha256sum entropylab\.html/, "the checkout's HTML digest must be computed");
+  assert.match(upgrade, /"\$OTS" info entropylab\.html\.ots/, "the committed proof's digest must be read");
+  assert.match(upgrade, /if \[ "\$EXISTING" != "\$ACTUAL" \]/, "a digest mismatch must be refused before any upgrade");
+});

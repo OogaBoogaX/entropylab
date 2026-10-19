@@ -275,3 +275,78 @@ test("a U+FEFF-leading passphrase survives the key-file text seam", () => {
   assert.equal(hex(mnemonicToSeedSync(MNEMONIC, bytes)), expected, "the wallet the Key tab derives");
   assert.equal(hex(mnemonicToSeedSync(MNEMONIC, utf8(exportedText))), expected, "the wallet after export → import");
 });
+
+// Audit L9 ledger (input-parsing pass): setBytes decoded UTF-8 leniently —
+// overlong forms, surrogates, code points past U+10FFFF, truncated sequences
+// and stray continuation bytes were all silently accepted, and the poisoned
+// store later made text() throw a RangeError. No live path feeds malformed
+// bytes today; the hardening makes setBytes refuse them, so the vault's
+// invariant (bytes() is the standard encoding of what text() returns) holds
+// by validation, not by luck. Expected values are the WHATWG encoding rules:
+// overlong forms, surrogates D800-DFFF and code points above U+10FFFF are
+// not valid UTF-8.
+test("setBytes refuses malformed UTF-8 instead of poisoning the store (audit L9)", () => {
+  const rejects = (hexBytes, why) => {
+    const vault = new PassphraseVault();
+    vault.setText("keep");
+    assert.throws(() => vault.setBytes(hexBytes()), why);
+    assert.equal(vault.length, 0, `${why}: a refusal leaves the vault empty, not stale`);
+  };
+  // Overlong 2/3/4-byte encodings of '/'.
+  rejects(() => Uint8Array.of(0xc0, 0xaf), "overlong 2-byte form");
+  rejects(() => Uint8Array.of(0xe0, 0x80, 0xaf), "overlong 3-byte form");
+  rejects(() => Uint8Array.of(0xf0, 0x80, 0x80, 0xaf), "overlong 4-byte form");
+  // Surrogate range D800-DFFF and past U+10FFFF.
+  rejects(() => Uint8Array.of(0xed, 0xa0, 0x80), "a UTF-8-encoded surrogate is not a code point");
+  rejects(() => Uint8Array.of(0xf4, 0x90, 0x80, 0x80), "above U+10FFFF");
+  // Structure errors.
+  rejects(() => Uint8Array.of(0xc3), "a truncated sequence");
+  rejects(() => Uint8Array.of(0xc3, 0x28), "a broken continuation byte");
+  rejects(() => Uint8Array.of(0xf5, 0x80, 0x80, 0x80), "a lead byte beyond 0xf4");
+  rejects(() => Uint8Array.of(0x80), "a stray continuation byte");
+  // Canonical multi-byte input still round-trips through bytes() and text().
+  const vault = new PassphraseVault();
+  vault.setBytes(utf8("Grüße 🔑"));
+  assert.equal(vault.text(), "Grüße 🔑");
+  assert.equal(hex(vault.bytes()), hex(utf8("Grüße 🔑")));
+});
+
+// The vault's ENTRY paths take DOM strings, and a Windows WTF-16 clipboard
+// can deliver a lone surrogate. The intake used to store it as a code point,
+// bytes() then emitted the WTF-8 form (ED A0 80), and the strict setBytes
+// refused the vault's own bytes — uncaught, out of hodlShowStoredPassphrase
+// during a tab restore (app.js). TextEncoder's contract is the authority the
+// rest of the app already runs on: a lone surrogate encodes as U+FFFD
+// (EF BF BD), so the intake substitutes it and bytes() only ever produces
+// what setBytes accepts (Kimi K3's follow-up review on audit L9).
+test("lone surrogates never enter the vault: the intake matches TextEncoder's contract", () => {
+  // Array.from splits an unpaired surrogate into its own point and joins a
+  // pair into one, so anything surrogate-shaped at intake is unpaired.
+  const vault = new PassphraseVault();
+  vault.setText("a\uD800b");
+  assert.equal(vault.length, 3, "the lone surrogate is one stored point");
+  assert.equal(hex(vault.bytes()), hex(utf8("a\uFFFDb")), "bytes() encodes U+FFFD, never the WTF-8 form");
+  assert.equal(vault.text(), "a\uFFFDb");
+  assert.doesNotThrow(() => vault.setBytes(vault.bytes()), "the vault must consume its own bytes()");
+  assert.equal(vault.text(), "a\uFFFDb", "the round trip through bytes() preserves the store");
+  // The same contract on replace(), the typing / paste / composition path.
+  const pasted = new PassphraseVault();
+  pasted.setText("keep");
+  pasted.replace(4, 4, "\uDEAD");
+  assert.equal(hex(pasted.bytes()), hex(utf8("keep\uFFFD")), "a surrogate pasted mid-text");
+  assert.doesNotThrow(() => pasted.setBytes(pasted.bytes()));
+  assert.equal(pasted.text(), "keep\uFFFD");
+});
+
+// The decode accumulates the passphrase as code points before the store is
+// touched; the success path zeroes that array, so a refusal must not abandon
+// the decoded-so-far bytes un-wiped. Wipe discipline here is checked at the
+// source, as the residue guards do (the array is a local — its state is not
+// observable from outside).
+test("every setBytes refusal wipes the code points decoded so far (source guard)", () => {
+  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src/js/passphrase-vault.js"), "utf8");
+  const setBytes = source.slice(source.indexOf("setBytes(bytes)"), source.indexOf("get isAscii"));
+  assert.ok(setBytes.includes("setBytes(bytes)"), "the setBytes source was found");
+  assert.match(setBytes, /catch/, "the decode loop has no refusal path that wipes points");
+  assert.equal((setBytes.match(/points\.fill\(0\)/g) || []).length, 2, "exactly the success path and the refusal path zero points");
+});

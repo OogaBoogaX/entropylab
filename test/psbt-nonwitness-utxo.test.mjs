@@ -245,7 +245,7 @@ test("the report resolves claims as a set and flags conflicts (issue #350)", () 
   assert.match(app, /nonWitnessUtxo = hodlNonWitUtxo\(entries, tx\.inputs\[index\]\)/);
   assert.match(app, /witnessUtxo\.amount === nonWitnessUtxo\.amount/);
   assert.match(app, /conflictedInputs\.push\(index\)/);
-  assert.match(app, /Fee unknown<\/strong> — input\(s\) /);
+  assert.match(app, /hodlT\("Fee unknown"\) \+ "<\/strong> — " \+ hodlT\("input\(s\) \{inputs\} carry conflicting witness and non-witness UTXO amounts\."/);
   assert.match(app, /Conflicting previous-output claims:/);
   // The disclaimer must no longer claim non-witness amounts go unchecked.
   assert.match(app, /non-witness UTXO amounts are cross-checked against the embedded previous transaction/);

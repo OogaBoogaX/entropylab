@@ -3,11 +3,12 @@
 // saves the app-switcher picture to disk.
 //
 // Contract: the conceal callback runs when the window loses focus, when the
-// page becomes hidden (not when it becomes visible), and when no key, click,
-// touch or scroll has reached the page for the idle period; any of those
-// inputs restarts the idle period. The page's own hiding (each view
-// re-rendering masked, tabs off screen included) is covered in the browser
-// suite.
+// page becomes hidden (not when it becomes visible), when printing begins
+// (the print preview would otherwise render whatever is revealed — audit L5),
+// and when no key, click, touch or scroll has reached the page for the idle
+// period; any of those inputs restarts the idle period. The page's own
+// hiding (each view re-rendering masked, tabs off screen included) is covered
+// in the browser suite.
 // Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -61,6 +62,12 @@ test("becoming hidden conceals, and becoming visible does not", () => {
   assert.equal(p.calls(), 0);
   p.doc.visibilityState = "hidden";
   p.fire("doc", "visibilitychange");
+  assert.equal(p.calls(), 1);
+});
+
+test("beginning a print job conceals before the preview renders (audit L5)", () => {
+  const p = start();
+  p.fire("win", "beforeprint");
   assert.equal(p.calls(), 1);
 });
 

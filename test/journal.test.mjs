@@ -4,9 +4,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  IV_BYTES,
   JOURNAL_ITERATIONS,
   JOURNAL_EXPORT_VERSION,
   JOURNAL_LOG_LIMIT,
+  JOURNAL_MAX_ENTRIES,
+  JOURNAL_MAX_FILE_LENGTH,
+  JOURNAL_MAX_TEXT_LENGTH,
   JOURNAL_VERSION,
   METHODS,
   addEntry,
@@ -25,6 +29,7 @@ import {
   formatStamp,
   openDocument,
   openExport,
+  parseDocument,
   parseFile,
   removeEntry,
   searchEntries,
@@ -484,4 +489,36 @@ test("nonce findings stay out of the activity log and session state follows the 
   assert.match(app, /loaded: hodlPsbtNonceInspected/);
   assert.match(app, /getElementById\("nonce-text"\)\.addEventListener\("input", hodlPsbtResetNonceInspection\)/);
   assert.match(app, /hodlPsbtClearNonceHistory\(true\)/);
+});
+
+test("the Journal does not render its KDF verifier", () => {
+  const app = read("src/js/app.js");
+  assert.doesNotMatch(app, /hodlJournalFillLifehash\([^;]*verify/, "a captured LifeHash must not verify password guesses");
+});
+
+// Audit L9 ledger (journal pass): a journal file's size was unbounded at
+// every layer — the outer envelope, the entry count, and the per-entry
+// strings. A crafted (or merely huge) file could make JSON.parse, the entry
+// map, and the field strings allocate without bound on open. The caps mirror
+// the notebook's existing discipline (NOTEBOOK_MAX_PAGES /
+// NOTEBOOK_MAX_TEXT_LENGTH): generous for real journals, hard for hostile
+// ones.
+test("journal files and entries are size-bounded at every layer (audit L9)", () => {
+  const oversizedField = "x".repeat(JOURNAL_MAX_TEXT_LENGTH + 1);
+  assert.throws(
+    () => addEntry(emptyDocument(), { method: "dice", label: "big notes", notes: oversizedField }),
+    /too large/,
+    "a single entry's text cannot exceed the cap",
+  );
+  const many = { version: JOURNAL_VERSION, nextId: JOURNAL_MAX_ENTRIES + 2, entries: [] };
+  for (let i = 0; i < JOURNAL_MAX_ENTRIES + 1; i++) many.entries.push({ method: "dice", label: `entry ${i}`, input: "" });
+  assert.throws(() => parseDocument(JSON.stringify(many)), /at most/, "a document cannot carry more than the entry cap");
+  const full = emptyDocument();
+  for (let i = 0; i < JOURNAL_MAX_ENTRIES; i++) addEntry(full, { method: "dice", label: `entry ${i}`, input: "" });
+  assert.throws(() => addEntry(full, { method: "dice", label: "one more", input: "" }), /at most/, "in-session adds stop at the cap too");
+  assert.throws(() => parseFile("[".repeat(JOURNAL_MAX_FILE_LENGTH + 1)), /large/, "the outer file cannot exceed the cap");
+  // A real document still round-trips through the envelope (parseFile checks
+  // structure, not authenticity — that is AES-GCM's job).
+  const sealed = JSON.stringify(encodeFile({ iv: new Uint8Array(IV_BYTES), ciphertext: new Uint8Array(16), iterations: JOURNAL_ITERATIONS }));
+  assert.deepEqual(parseFile(sealed), { iv: new Uint8Array(IV_BYTES), ciphertext: new Uint8Array(16), iterations: JOURNAL_ITERATIONS });
 });

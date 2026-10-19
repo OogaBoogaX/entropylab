@@ -156,6 +156,6 @@ test("the report counts only parseable Schnorr signatures as present (issue #333
   assert.match(app, /tapSignatureCount \+= parsedTapSignatures/);
   // The condition and the number shown both count only parseable Schnorr
   // signatures; the wrapping span is presentation and may change.
-  assert.match(app, /signatures\.length \+ parsedTapSignatures \? "<span class='[^']*'>" \+ \(signatures\.length \+ parsedTapSignatures\) \+ " signature\(s\) present/);
+  assert.match(app, /signatures\.length \+ parsedTapSignatures \? "<span class='[^']*'>" \+ hodlT\("\{count\} signature\(s\) present", \{ count: signatures\.length \+ parsedTapSignatures \}\)/);
   assert.doesNotMatch(app, /tapSignatureCount \+= tapSignatures\.length/);
 });

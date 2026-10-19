@@ -864,7 +864,7 @@ async function vanityApplyHarness({ method, script, address = applyRecordedAddre
     hodlWalletResult: source.result, hodlCommittedResults: new Set(), hodlWalletDatBirthday: "genesis",
     hodlKeyMode: "seed", hodlTargetWordCount: 12, hodlSeedMethod: "words", hodlNetworkChoice: "mainnet",
     hodlVanityMatches: [match], hodlVanityRun: run, hodlVanityApplying: false,
-    hodlWorkspace: "vanity", hodlSpSource: "", hodlBip85Source: "", hodlOutEl: { innerHTML: "" },
+    hodlWorkspace: "vanity", hodlSpSource: "", hodlBip85Source: "", hodlPsbtSource: "", hodlOutEl: { innerHTML: "" },
     hodlScriptTypes: api.hodlScriptTypes, hodlScriptDefinition: api.hodlScriptDefinition,
     hodlVanityPlan: () => ({ node: null, pathPrefix: [], path: runPath }),
     hodlVanityMatchAddress: api.hodlVanityMatchAddress || (() => { throw new Error("the match verifier is not wired"); }),
@@ -894,8 +894,10 @@ async function vanityApplyHarness({ method, script, address = applyRecordedAddre
     hodlCommitDerivedKey: () => { const draft = context.hodlKeys[0]; Object.assign(source, { fields: draft.fields, accountId: draft.accountId, result: draft.result }); context.hodlKeys[0] = lab; context.hodlActiveKey = 1; },
     hodlJournalLog() {}, hodlSnapshotKeySummary() {}, hodlJournalCaptureDerivedKey() {}, hodlFocusWalletResult() {},
     hodlDeriveWithProgress: (_, derive) => derive({ setTotal() {}, step() {} }),
+    hodlVanityErrorNote: null,
   });
-  vm.runInContext(["hodlCalculateKey", "hodlVanityApplyMatch"].map(extract).join("\n"), context);
+  // The station's real error line: refusals land in #vanity-error as text.
+  vm.runInContext(["hodlNote", "hodlFormatNote", "hodlError", "hodlSetVanityError", "hodlCalculateKey", "hodlVanityApplyMatch"].map(extract).join("\n"), context);
   return { context, elements, match, source, run };
 }
 test("Vanity Update Key preserves the searched script and path across initial purpose matching", async () => {
@@ -988,4 +990,33 @@ test("Vanity Update Key applies a second honest match from the same run, and sti
       assert.equal(third.savedTo, "", `${method}: the post-edit match was reported saved`);
     }
   }
+});
+
+// Audit L10: the PSBT session is loaded by key id ("key:{id}") but the vanity
+// apply refreshed only the SP and BIP-85 sessions, so an updated key left the
+// PSBT station holding the OLD seed while its session line kept naming the
+// key. The apply must reload the PSBT session too — and if the key's new
+// shape has no session material, fall back to inspect-only instead of
+// aborting the apply.
+test("Vanity Update Key reloads a PSBT session loaded from the updated key (audit L10)", async () => {
+  const { context, elements, source } = await vanityApplyHarness({ method: "passphrase", script: "p2wpkh" });
+  context.hodlPsbtSource = "key:7";
+  const reloaded = [];
+  context.hodlUseActiveKeyForPsbt = (state) => reloaded.push(state);
+  await context.hodlVanityApplyMatch(0);
+  assert.equal(elements["vanity-error"].textContent, "", "the apply failed");
+  assert.deepEqual(reloaded, [source], "the PSBT session was not reloaded from the updated key");
+});
+test("Vanity Update Key leaves the PSBT session inspect-only when the key has no session material (audit L10)", async () => {
+  const { context, elements, match } = await vanityApplyHarness({ method: "passphrase", script: "p2wpkh" });
+  context.hodlPsbtSource = "key:7";
+  context.hodlUseActiveKeyForPsbt = () => { throw new Error("no session material"); };
+  let wiped = 0;
+  context.hodlPsbtWipeMem = () => { wiped += 1; };
+  context.hodlPaintPsbtSession = () => {};
+  context.hodlSyncPsbtControls = () => {};
+  await context.hodlVanityApplyMatch(0);
+  assert.equal(elements["vanity-error"].textContent, "", "the session reload failure must not abort the apply");
+  assert.ok(match.savedTo, "the match was not saved");
+  assert.equal(wiped, 1, "the stale session must be wiped to inspect-only");
 });

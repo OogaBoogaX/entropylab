@@ -344,7 +344,11 @@ export class VanityGrinder {
           }
           // Every worker gets its own copy of the key material (structured
           // clone); it lives in that worker's WASM memory until termination.
-          worker.postMessage({ type: "grind", mode, key: key.slice(), salt: salt.slice(), path: pathIndexes, counterSlot, prefix, passLen, start: bucket.start, count: bucket.count, script: scriptCode });
+          // Transfer each copy instead of structured-cloning it: the worker
+          // owns the buffer and wipes it after copying into WASM memory. A
+          // clone would leave a copy in the worker heap for the GC.
+          let keyCopy = key.slice(), saltCopy = salt.slice();
+          worker.postMessage({ type: "grind", mode, key: keyCopy.buffer, salt: saltCopy.buffer, path: pathIndexes, counterSlot, prefix, passLen, start: bucket.start, count: bucket.count, script: scriptCode }, [keyCopy.buffer, saltCopy.buffer]);
           handed += 1;
           if (handed === buckets.length) wipe();
         } else if (msg.type === "progress") {

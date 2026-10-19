@@ -56,19 +56,22 @@ test("the worker caches only the self-contained app and serves navigations offli
   assert.match(worker, /url\.origin !== self\.location\.origin/);
   assert.match(worker, /cache\.match\(event\.request, \{ ignoreSearch: true \}\)/);
   assert.doesNotMatch(worker, /caches\.match\(/);
-  assert.doesNotMatch(worker, /fetch\s*\(/);
   assert.doesNotMatch(worker, /addEventListener\("(?:push|sync|notificationclick)"/i);
+  // The network is touched only to precache the two documents at install
+  // time, and only with cache: "reload". The navigation handler itself must
+  // serve from the installed cache, never from the network.
+  const handler = worker.slice(worker.indexOf("respondWith"));
+  assert.doesNotMatch(handler, /fetch\(/);
+  assert.doesNotMatch(handler, /caches\.match\(/);
 });
 
 test("the worker's installed cache answers a same-origin offline launch without network access", async () => {
-  const listeners = new Map(), stored = new Map(), added = [];
+  const listeners = new Map(), stored = new Map(), put = [];
   const cache = {
-    async addAll(paths) {
-      added.push(...paths);
-      for (const path of paths) {
-        const key = typeof path === "string" ? path : path.url;
-        stored.set(key, `cached:${key}`);
-      }
+    async put(request, response) {
+      put.push(request);
+      const url = typeof request === "string" ? request : request.url;
+      stored.set(url, await response.text());
     },
     async match(request) {
       const url = typeof request === "string" ? request : new URL(request.url).pathname === "/" ? "./" : `.${new URL(request.url).pathname}`;
@@ -90,24 +93,40 @@ test("the worker's installed cache answers a same-origin offline launch without 
   class Request {
     constructor(url, options) { this.url = url; this.cache = options.cache; }
   }
-  runInNewContext(worker, { self, caches, URL, Promise, Request });
+  // Both precache responses carry this build's own worker-URL marker, as the
+  // generated documents do (audit L7).
+  const revision = (name) => `<!doctype html><script>navigator.serviceWorker.register("./service-worker.js?v={{PWA_VERSION}}")</script>${name}`;
+  const fetch = (request) => Promise.resolve({
+    ok: true,
+    status: 200,
+    clone() { return this; },
+    text: async () => revision(request.url === "./" ? "landing" : "app"),
+  });
+  runInNewContext(worker, { self, caches, URL, Promise, Request, fetch });
   let install;
   listeners.get("install")({ waitUntil(promise) { install = promise; } });
   await install;
-  assert.deepEqual(added.map((request) => [request.url, request.cache]), [["./", "reload"], ["./entropylab.html", "reload"]]);
+  assert.deepEqual(put.map((request) => [request.url, request.cache]), [["./", "reload"], ["./entropylab.html", "reload"]]);
   let response;
   listeners.get("fetch")({
     request: { mode: "navigate", method: "GET", url: "https://entropylab.online/" },
     respondWith(promise) { response = promise; },
   });
-  assert.equal(await response, "cached:./");
+  assert.equal(await response, revision("landing"));
 });
 
-test("a failed precache never activates or deletes the previous usable cache", async () => {
-  const listeners = new Map(), deleted = [];
+test("a rolling deploy never caches two different revisions under one cache name (audit L7)", async () => {
+  const listeners = new Map(), stored = new Map(), put = [], deleted = [];
   let skipped = false;
+  const cache = {
+    async put(request, response) {
+      put.push(request);
+      stored.set(request.url, await response.text());
+    },
+    async match(request) { return stored.get(request.url); },
+  };
   const caches = {
-    async open() { return { async addAll() { throw new Error("precache failed"); } }; },
+    async open() { return cache; },
     async keys() { return ["entropylab-offline-previous"]; },
     async delete(name) { deleted.push(name); return true; },
   };
@@ -120,7 +139,46 @@ test("a failed precache never activates or deletes the previous usable cache", a
   class Request {
     constructor(url, options) { this.url = url; this.cache = options.cache; }
   }
-  runInNewContext(worker, { self, caches, URL, Promise, Request });
+  // The landing page answers from this worker's revision while the app
+  // document already answers from the next one — the mixed pair the old
+  // addAll accepted.
+  const fetch = (request) => Promise.resolve({
+    ok: true,
+    status: 200,
+    clone() { return this; },
+    text: async () => request.url === "./"
+      ? `register("./service-worker.js?v={{PWA_VERSION}}")`
+      : `register("./service-worker.js?v=next-revision")`,
+  });
+  runInNewContext(worker, { self, caches, URL, Promise, Request, fetch });
+  let install;
+  listeners.get("install")({ waitUntil(promise) { install = promise; } });
+  await assert.rejects(install, /revision/, "a mixed-revision pair must fail the install");
+  assert.deepEqual(put.map((request) => request.url), ["./"], "only the own-revision document was cached before the foreign one failed");
+  assert.equal(stored.has("./entropylab.html"), false, "the foreign-revision document was never cached");
+  assert.equal(skipped, false, "the worker does not activate on a mixed precache");
+  assert.deepEqual(deleted, [], "the previous usable cache is kept");
+});
+
+test("a failed precache never activates or deletes the previous usable cache", async () => {
+  const listeners = new Map(), deleted = [];
+  let skipped = false;
+  const caches = {
+    async open() { return { async put() {} }; },
+    async keys() { return ["entropylab-offline-previous"]; },
+    async delete(name) { deleted.push(name); return true; },
+  };
+  const self = {
+    location: { href: "https://entropylab.online/service-worker.js", origin: "https://entropylab.online" },
+    clients: { async claim() {} },
+    async skipWaiting() { skipped = true; },
+    addEventListener(type, listener) { listeners.set(type, listener); },
+  };
+  class Request {
+    constructor(url, options) { this.url = url; this.cache = options.cache; }
+  }
+  const fetch = () => Promise.reject(new Error("precache failed"));
+  runInNewContext(worker, { self, caches, URL, Promise, Request, fetch });
   let install;
   listeners.get("install")({ waitUntil(promise) { install = promise; } });
   await assert.rejects(install, /precache failed/);

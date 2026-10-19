@@ -514,6 +514,13 @@ fn read_tap_sig(value: &[u8], what: &str) -> Result<(secp256k1::schnorr::Signatu
         65 => (&value[..64], value[64]),
         _ => return Err(format!("{what} must be 64 or 65 bytes")),
     };
+    // BIP-341 SIGHASH_DEFAULT exists only as the implicit 64-byte form: an
+    // appended 0x00 byte is not a valid encoding. from_consensus_u8 maps it
+    // to Default, so reject it here before verification agrees with a
+    // signature Bitcoin Core will refuse.
+    if value.len() == 65 && sighash_byte == 0 {
+        return Err(format!("{what} appends SIGHASH_DEFAULT (0x00); use the 64-byte form"));
+    }
     let signature =
         secp256k1::schnorr::Signature::from_slice(raw).map_err(|_| format!("{what} is not a valid Schnorr signature"))?;
     let sighash_type = TapSighashType::from_consensus_u8(sighash_byte)
@@ -748,6 +755,19 @@ fn check_final_scriptsig(
     let scope = format!("input {index}");
     let script = Script::from_bytes(value);
     let claim_script = claim.script_pubkey.as_script();
+    // BIP-141: a native witness program is spent with an empty scriptSig.
+    // P2SH-wrapped witness inputs are handled below; their scriptSig must
+    // push exactly the redeem script.
+    if claim_script.is_witness_program() {
+        if !value.is_empty() {
+            problems.push(Problem::error(
+                scope,
+                "final_scriptsig_bad",
+                "final scriptSig of a native SegWit input must be empty",
+            ));
+        }
+        return;
+    }
     if claim_script.is_p2sh() {
         let Spend::LegacyP2sh(redeem) = spend else {
             // Wrapped segwit: scriptSig must push exactly the redeem script,
@@ -836,11 +856,22 @@ fn check_final_witness(
     spend: &Spend,
     claim: &TxOut,
     prevouts: &Option<Vec<TxOut>>,
+    final_script_sig: Option<&[u8]>,
     budget: &mut Budget,
     problems: &mut Vec<Problem>,
     starts_memo: &mut AnalysisMemo<scriptcode::Shape>,
 ) {
     let scope = format!("input {index}");
+    // BIP-141: a P2SH-wrapped witness spend carries the redeem script as the
+    // exact single push in scriptSig; a final witness without it extracts an
+    // empty scriptSig and is consensus-invalid.
+    if matches!(spend, Spend::WrappedP2wpkh(_) | Spend::WrappedP2wsh(..)) && final_script_sig.is_none() {
+        problems.push(Problem::error(
+            scope.clone(),
+            "final_witness_bad",
+            "wrapped-segwit input has a final witness but no final scriptSig",
+        ));
+    }
     let items: Vec<&[u8]> = witness.iter().collect();
     match spend {
         Spend::P2wpkh | Spend::WrappedP2wpkh(_) => {
@@ -1121,11 +1152,12 @@ pub(crate) fn analyze(tx: &Transaction, inputs: &[Vec<RawPair>]) -> Vec<Problem>
         check_partial_sigs(&mut cache, index, map, &spend, &claim, sighash_field, &mut budget, &mut problems, &mut starts_memo);
         check_tap_sigs(&mut cache, index, map, &spend, &all_claims, &mut budget, &mut problems, &mut tap_memo);
         let final_witness = input_field(map, 0x08).and_then(|value| Witness::consensus_decode(&mut &value[..]).ok());
-        if let Some(value) = input_field(map, 0x07) {
+        let final_script_sig = input_field(map, 0x07);
+        if let Some(value) = final_script_sig {
             check_final_scriptsig(&mut cache, index, value, &spend, &claim, final_witness.is_some(), &mut budget, &mut problems, &mut starts_memo);
         }
         if let Some(witness) = &final_witness {
-            check_final_witness(&mut cache, index, witness, &spend, &claim, &all_claims, &mut budget, &mut problems, &mut starts_memo);
+            check_final_witness(&mut cache, index, witness, &spend, &claim, &all_claims, final_script_sig, &mut budget, &mut problems, &mut starts_memo);
         }
     }
     problems

@@ -13,6 +13,11 @@ export function initConcealOnLeave({ conceal, idleMs, win = window, doc = docume
     timer = win.setTimeout(conceal, idleMs);
   };
   win.addEventListener("blur", conceal);
+  // Printing renders the live DOM in the preview: whatever is revealed on
+  // screen would land on paper (or in a PDF) unless it is concealed first
+  // (audit L5). beforeprint fires synchronously before the preview renders,
+  // including for the page's own window.print() calls.
+  win.addEventListener("beforeprint", conceal);
   doc.addEventListener("visibilitychange", () => {
     if (doc.visibilityState === "hidden") conceal();
   });

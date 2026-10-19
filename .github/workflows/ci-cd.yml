@@ -54,9 +54,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      # Keyless Sigstore attestation of the exact wallet HTML (issue #58).
-      id-token: write
-      attestations: write
     outputs:
       sha256: ${{ steps.digest.outputs.sha256 }}
     steps:
@@ -65,6 +62,7 @@ jobs:
         # input (scripts/build-commit.mjs), which a shallow clone cannot see
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -78,6 +76,11 @@ jobs:
           path: src/js
       - name: Build static site
         run: npm run build
+      # A release page must name its source commit. "unknown" means a build
+      # input was dirty in CI, which must never happen on a push build.
+      - name: Check the footer stamped a source commit
+        if: github.event_name == 'push'
+        run: grep -q 'data-commit="[0-9a-f]\{40\}"' entropylab.html
       # SHA256SUMS.txt names only the HTML, so `sha256sum -c` works for anyone
       # holding just the downloaded file. The WASM modules get their own
       # manifest, checked from a checkout of the release commit.
@@ -92,11 +95,6 @@ jobs:
             > WASM-SHA256SUMS.txt
       - name: Generate the IPFS CID name
         run: node scripts/cid.mjs entropylab.html > CID.txt
-      - name: Attest the wallet artifact
-        if: github.ref == 'refs/heads/rock' && github.event_name == 'push'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: entropylab.html
       - name: Upload the checksum manifest
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -135,6 +133,32 @@ jobs:
           path: _site
           retention-days: 7
 
+  # Keyless Sigstore attestation of the exact tested wallet HTML. This is a
+  # separate push-only job: a pull request must never run PR-controlled code
+  # with id-token/attestations write permissions (audit H1).
+  attest:
+    name: Attest · wallet artifact
+    needs: [build]
+    if: github.ref == 'refs/heads/rock' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download the tested candidate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: entropylab-candidate
+          path: candidate
+      - name: Verify the candidate digest
+        run: echo "${{ needs.build.outputs.sha256 }}  candidate/entropylab.html" | sha256sum -c -
+      - name: Attest the wallet artifact
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: candidate/entropylab.html
+
   # The WASM artifacts (src/js/entropylab-wasm-b64.js, src/js/psbt-wasm-b64.js,
   # src/js/vanity-wasm-b64.js) are built from the pinned Rust crates
   # (entropylab-wasm/, psbt-wasm/, vanity-wasm/, each
@@ -154,6 +178,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -235,6 +261,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -268,6 +296,7 @@ jobs:
         # input (scripts/build-commit.mjs), which a shallow clone cannot see
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -317,6 +346,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -330,6 +361,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -353,6 +386,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -369,6 +404,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -392,6 +429,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -404,6 +443,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -419,6 +460,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -439,6 +482,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -459,6 +504,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -477,6 +524,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -505,6 +554,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -647,6 +698,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -687,6 +740,7 @@ jobs:
         # input (scripts/build-commit.mjs), which a shallow clone cannot see
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -760,7 +814,8 @@ jobs:
   # translation automation (issue #286). Any PR whose diff touches
   # src/locales/ must come from the configured GitHub App, on the
   # i18n/translate-<lang> branch namespace, changing exactly one catalog and
-  # its provenance sidecar — and both must validate. PRs that touch no locale
+  # at most its provenance sidecar (a value-only correction leaves the sidecar
+  # as is) — and both must validate. PRs that touch no locale
   # files pass trivially. Make this a required check alongside test-ci so
   # auto-merged translation PRs cannot skip it (see
   # docs/Translation_Automation_Setup.md).
@@ -774,6 +829,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -821,6 +877,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Normalize GHCR image name
         id: ghcr-image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"

@@ -174,6 +174,115 @@ test("changes that invalidate a vanity run still cancel it", () => {
   assert.equal(cancelled, 2, "script and method changes must each cancel the stale run");
 });
 
+test("a language switch says the Vanity status and error again in the new language", () => {
+  // A filled-in string is not a catalog key, so the static sweep cannot carry
+  // it across a switch: the station keeps its status and error lines as notes
+  // and renders them, and the rest of its text, again.
+  let locale = "en";
+  const elements = { "vanity-status": { textContent: "" }, "vanity-error": { textContent: "" } }, rendered = [];
+  const api = new Function(
+    "document", "hodlTText", "hodlVanitySyncScriptNote", "hodlVanitySyncSource", "hodlRenderVanityOut",
+    `let hodlVanityStatusNote = null, hodlVanityErrorNote = null;
+     ${appSlice("hodlNote")}
+     ${appSlice("hodlFormatNote")}
+     ${appSlice("hodlVanitySetStatus")}
+     ${appSlice("hodlSetVanityError")}
+     ${appSlice("hodlRefreshVanityLocale")}
+     return { hodlNote, hodlVanitySetStatus, hodlSetVanityError, hodlRefreshVanityLocale };`,
+  )(
+    { getElementById: (id) => elements[id] ?? null },
+    (key, vars) => `<${locale}>` + key.replace(/\{(\w+)\}/g, (whole, name) => (vars?.[name] == null ? whole : String(vars[name]))),
+    () => rendered.push("prefix help"),
+    () => rendered.push("source panel"),
+    () => rendered.push("matches"),
+  );
+  const note = api.hodlNote, status = () => elements["vanity-status"].textContent, error = () => elements["vanity-error"].textContent;
+
+  api.hodlVanitySetStatus(note("{outcome}: {done} candidates, {found} matches. Next counter: {next}.", { outcome: note("Range complete"), done: "300", found: 8, next: "300" }));
+  api.hodlSetVanityError(note("Key {key} is no longer in Key Station, so there is nothing to update.", { key: "5436d724" }));
+  assert.equal(status(), "<en><en>Range complete: 300 candidates, 8 matches. Next counter: 300.");
+  assert.equal(error(), "<en>Key 5436d724 is no longer in Key Station, so there is nothing to update.");
+
+  locale = "de";
+  api.hodlRefreshVanityLocale();
+  assert.deepEqual(rendered, ["prefix help", "source panel", "matches"], "the station's other text renders again too");
+  assert.equal(status(), "<de><de>Range complete: 300 candidates, 8 matches. Next counter: 300.", "the status, and the outcome inside it, follow the switch");
+  assert.equal(error(), "<de>Key 5436d724 is no longer in Key Station, so there is nothing to update.", "the error follows the switch");
+
+  // A worker's own message has no catalog key and stays as it was; a cleared
+  // error stays cleared.
+  api.hodlSetVanityError({ raw: "worker failed" });
+  api.hodlRefreshVanityLocale();
+  assert.equal(error(), "worker failed");
+  api.hodlSetVanityError(null);
+  api.hodlRefreshVanityLocale();
+  assert.equal(error(), "", "a cleared error must not come back on a language switch");
+
+  // hodlApplyLocale runs the refresh, and redraws the station key chips, whose
+  // labels are filled in too.
+  assert.match(appSlice("hodlApplyLocale"), /hodlRefreshPsbtLocale\(\);\s*hodlRefreshVanityLocale\(\);\s*hodlRefreshStationKeyPickers\(\);/);
+  // The match table's hidden action header is escaped once, from the text
+  // catalog: French "État de l'enfant" must not reach a screen reader as "&#39;".
+  assert.match(appSlice("hodlRenderVanityOut"), /let actionHeader = run\.sourceKind === "bip85" \? hodlTText\("Child status"\) : hodlTText\("Update Key"\);/);
+});
+
+test("a language switch paints filled-in Key Station text again", () => {
+  // "5436d724, selected. Activate or press F2 to rename.", "Seed phrase:
+  // Direct word entry" and "Purpose index · Unhardened · …" are no catalog
+  // keys, so the static sweep cannot carry them across a switch: the station
+  // tabs, the key summary and the hardening notes render again. The notes go
+  // before the estimate and the multisig account, which overwrite some of them.
+  const apply = appSlice("hodlApplyLocale");
+  assert.match(apply, /hodlRenderKeyTabs\(\);\s*hodlRenderMsigTabs\(\);\s*hodlRenderStationTabs\(hodlBip85Tabs\);\s*hodlRenderStationTabs\(hodlSpTabs\);\s*hodlPaintKeySummary\(\);/);
+  assert.match(apply, /hodlUpdateHardeningHelp\(\);\s*hodlUpdateHardeningHelp\("msig-"\);\s*hodlUpdateAddressEstimate\(\);[\s\S]*hodlUpdateMsigAccount\(\);/);
+});
+
+test("the multisig account note, placeholder and warning follow the page language", () => {
+  // hodlApplyLocale runs this after the hardening notes, so it has the last
+  // word on #msig-account-help; whatever it writes must be translated, and
+  // the mismatch warning is a note it formats (assigned as is, it read
+  // "[object Object]").
+  let locale = "en", summary, kind = "p2wsh", purpose = 48;
+  const element = () => ({ value: "", placeholder: "", textContent: "", hidden: true, dataset: {} });
+  const elements = { "msig-account": element(), "msig-account-help": element(), "msig-account-warning": element() };
+  const update = new Function(
+    "document", "hodlTText", "hodlScriptKind", "hodlReadHardening", "hodlReadMsigPurpose", "hodlStandardMsigPurpose", "hodlSyncDerivationPrime", "hodlReadMsigXpubs", "hodlSummarizeMultisigAccounts",
+    `${appSlice("hodlNote")}
+     ${appSlice("hodlFormatNote")}
+     ${appSlice("hodlMultisigAccountWarning")}
+     ${appSlice("hodlUpdateMsigAccount")}
+     return hodlUpdateMsigAccount;`,
+  )(
+    { getElementById: (id) => elements[id] ?? null },
+    (key, vars) => `<${locale}>` + key.replace(/\{(\w+)\}/g, (whole, name) => (vars?.[name] == null ? whole : String(vars[name]))),
+    () => kind, () => ({ account: true }), () => purpose, () => purpose, () => {}, () => [], () => summary,
+  );
+  const help = () => elements["msig-account-help"].textContent, warning = elements["msig-account-warning"], field = elements["msig-account"];
+
+  summary = { mixed: true, consistent: false, accounts: [0, 1], account: null };
+  update();
+  assert.equal(help(), "<en>Account index · <en>Hardened · Co-signer key origins use different account numbers.");
+  assert.equal(field.placeholder, "<en>Derived from keys");
+  assert.equal(warning.textContent, "<en>Co-signer account numbers do not match (0, 1). The Account field is shown as Mixed.");
+  assert.equal(warning.hidden, false);
+  locale = "de";
+  update();
+  assert.equal(help(), "<de>Account index · <de>Hardened · Co-signer key origins use different account numbers.", "the note follows a switch");
+  assert.equal(warning.textContent, "<de>Co-signer account numbers do not match (0, 1). The Account field is shown as Mixed.", "the warning follows a switch");
+
+  summary = { mixed: false, consistent: true, accounts: [3], account: 3 };
+  update();
+  assert.equal(help(), "<de>Account index · <de>Hardened · Derived from the co-signer account paths.");
+  assert.equal(warning.textContent, "");
+  assert.equal(warning.hidden, true);
+
+  kind = "p2sh";
+  purpose = 45;
+  update();
+  assert.equal(field.placeholder, "<de>Not applicable");
+  assert.equal(help(), "<de>BIP45 purpose keys do not contain an account number.");
+});
+
 test("Silent Payment custom characters constrain only the first free character", () => {
   const filter = new Function(`${appSlice("hodlFilterVanityPrefix")}; return hodlFilterVanityPrefix;`)();
   const silentPayment = { prefix: "sp1qq", bech32: true, firstFree: "gf2tvdw0" };
@@ -443,4 +552,17 @@ test("releasing or cancelling keyboard delete before the delay prevents a late d
     t.mock.timers.tick(1000);
     assert.equal(input.value, "abandon", `${stop} cancels the pending hold timer`);
   }
+});
+
+test("a language switch paints the co-signer labels, the BIP-85 child and the Silent Payments results again", () => {
+  // "Co-signer 2", "Move co-signer 2 up to position 1", the BIP-85 child's
+  // labels and every Silent Payments line fill values into their text, so
+  // the static sweep cannot carry them across a switch. A repaint redraws
+  // what each one kept: it never derives a key or scans again.
+  const apply = appSlice("hodlApplyLocale");
+  assert.match(apply, /hodlReindexMsigKeys\(\);\s*hodlRenderBip85Out\(\);\s*hodlRefreshSpLocale\(\);/);
+  const sp = appSlice("hodlRefreshSpLocale");
+  assert.match(sp, /hodlPaintSpSession\(\)/);
+  assert.match(sp, /if \(hodlSpSendLast\) hodlPaintSpSend\(\);\s*else if \(hodlSpVerifyMatches\) hodlPaintSpVerify\(\);/);
+  assert.doesNotMatch(sp, /hodlRenderSpSend|hodlRenderSpVerify|hodlSpDeriveVinKeys|hodlSpDeriveSessionKeys/, "a switch repaints; it never derives or scans");
 });

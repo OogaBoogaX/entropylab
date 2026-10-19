@@ -94,3 +94,25 @@ export const hodlFairnessVerdictLabels = Object.freeze({
   unsure: "Not sure; roll some more",
   biased: "Looks biased",
 });
+
+// The Key Station summary line's variant, by mode and sub-method (app.js's
+// hodlKeySummaryMethodParts indexes these; the mode itself is hodlKeyModeLabels).
+export const hodlKeySummarySubmethodLabels = Object.freeze({
+  dice: Object.freeze({
+    coldcard: "Base 10 [1-6] / Hashed rolls",
+    coleman: "Base 6 [0-5] / Hashed rolls",
+    bitbox: "BitBox diceware / Direct word selection",
+    dplus: "D++ / Direct word selection",
+  }),
+  cards: Object.freeze({ direct: "Direct word selection", hashed: "Hashed card transcript" }),
+  hex: Object.freeze({
+    bin: "Binary (Base 2)",
+    base4: "Quaternary (Base 4)",
+    base8: "Octal (Base 8)",
+    hex: "Hexadecimal (Base 16)",
+    base32: "Base32 (Bech32)",
+    base64: "Base64 (RFC 4648 alphabet)",
+  }),
+  seed: Object.freeze({ numbers: "BIP39 word numbers", words: "Direct word entry" }),
+  key: Object.freeze({ wif: "WIF", "hex-key": "Private key hex", minikey: "Mini key", brain: "Brain wallet" }),
+});
