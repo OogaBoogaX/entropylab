@@ -1611,5 +1611,6 @@
   "No matching silent payment outputs for this scan key and label set.": "Aucune sortie de paiement silencieux correspondante pour cet ensemble de clé de scan et d'étiquette.",
   "{count} matching output.": "{count} sortie correspondante.",
   "{count} matching outputs.": "{count} sorties correspondantes.",
-  "Manual session key entered. It will be validated when you use this Station.": "Clé de session manuelle saisie. Elle sera validée lorsque vous utiliserez cette Station."
+  "Manual session key entered. It will be validated when you use this Station.": "Clé de session manuelle saisie. Elle sera validée lorsque vous utiliserez cette Station.",
+  "A BIP{purpose} origin belongs to {mapped} multisig; the selected script type is {kind}.": "Une origine BIP{purpose} appartient à un multisig {mapped} ; le type de script sélectionné est {kind}."
 }
