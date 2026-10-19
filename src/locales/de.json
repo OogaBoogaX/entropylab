@@ -1612,5 +1612,6 @@
   "No matching silent payment outputs for this scan key and label set.": "Keine passenden Silent-Payment-Ausgaben für diesen Scan-Schlüssel und diese Label-Kombination.",
   "{count} matching output.": "{count} passende Ausgabe.",
   "{count} matching outputs.": "{count} passende Ausgaben.",
-  "Manual session key entered. It will be validated when you use this Station.": "Manueller Sitzungsschlüssel eingegeben. Er wird validiert, wenn Sie diese Station verwenden."
+  "Manual session key entered. It will be validated when you use this Station.": "Manueller Sitzungsschlüssel eingegeben. Er wird validiert, wenn Sie diese Station verwenden.",
+  "Spend path": "Ausgabepfad"
 }
