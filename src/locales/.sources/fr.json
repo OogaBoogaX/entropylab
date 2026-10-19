@@ -1612,5 +1612,6 @@
   "{count} matching output.": "24e7a1f9df9932a9d70192fae2508ad3432df97cc181eadfd57000a94fcf0e9e",
   "{count} matching outputs.": "93b17798fb80e6452f84ebe3e283c1e3d4c139af280cc860858b4e7d67bbdcec",
   "Manual session key entered. It will be validated when you use this Station.": "49bb3b660f287220bfb0ab47a1acbc3a6fc34bb34a86b2c94118ecaf2b48c683",
-  "A BIP{purpose} origin belongs to {mapped} multisig; the selected script type is {kind}.": "2d03d4f0b9065c7ed516061215a9db983be9b69ede94ef0feb5e8e35a3882a96"
+  "A BIP{purpose} origin belongs to {mapped} multisig; the selected script type is {kind}.": "2d03d4f0b9065c7ed516061215a9db983be9b69ede94ef0feb5e8e35a3882a96",
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "4c8d2df7496ff99bc78f59b5d4eb680645f95f3f015b4a3dafc1f846afab8fa7"
 }
