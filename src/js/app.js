@@ -3555,14 +3555,14 @@ function hodlRenderDiceFairness(value, method, targetWords = hodlTargetWordCount
   panel.innerHTML = open ? (markup ? `${markup}<p class="dice-fairness-caveat">${hodlT("Pearson’s χ² goodness-of-fit. A lucky streak can look biased, and a biased die can look fair until more rolls arrive. This check does not block derivation.")}</p>` : `<p class="dice-fairness-note">${hodlT("Enter rolls to run Pearson’s χ² test.")}</p>`) : "";
   panel.setAttribute("aria-label", hodlTText("Die Distribution / Fairness Analysis"));
 }
+// Only the two D20 methods carry this note. The four methods that shipped
+// before D20 keep the screens people already use unchanged: new copy there
+// is a copy decision of its own, not part of adding a die.
 function hodlDiceMethodRationale(method, config) {
   let d20Rolls = hodlD20MinimumRolls(config.bits);
-  if (method === "coleman") return hodlT("Why this one: the same hashing with every 6 written as 0, which is what Keystone expects. Choose it to reproduce a seed that wallet made.");
-  if (method === "bitbox") return hodlT("Why this one: each word is read straight from the BIP39 list, so nothing is hashed and every step can be followed on paper. It matches the card BitBox02 ships.");
-  if (method === "dplus") return hodlT("Why this one: one D8 and two hexadecimal D16 give a word's index directly, with no hashing, following the published Roll Your Own Bitcoin Seed Phrase workflow.");
   if (method === "d20") return hodlT("Why this one: a D20 carries 4.32 bits where a D6 carries 2.58, so {need} rolls do the work of {hashRolls}. Nothing is hashed — the rolls are read as a base-20 fraction, so the whole conversion can be checked with pen and paper. It assumes a fair die: every roll holds a fixed place in the result, so an uneven die’s bias passes through and extra rolls cannot remove it.", { need: d20Rolls, hashRolls: config.hashRolls });
   if (method === "d20hash") return hodlT("Why this one: the same {need} rolls, hashed. Hashing cannot add entropy the dice did not give, but it does even out an uneven die, which the base-20 conversion cannot — pick this one if the fairness check looks off. Every roll past {need} still counts, and the digest can be checked with sha256sum.", { need: d20Rolls });
-  return hodlT("Why this one: hashing spreads a die's imperfections across the whole seed, and it is what COLDCARD and SeedSigner do, so the same rolls can be entered again on those devices.");
+  return "";
 }
 function hodlDiceControlValue(button) {
   // A D20 face is two characters, so its pad button carries the separator that
@@ -3986,9 +3986,17 @@ function hodlD20Transcript(rolls) {
 }
 function hodlD20FractionBytes(rolls, bits) {
   // The transcript read as the base-20 fraction 0.d1d2d3..., first roll most
-  // significant, expanded to `bits` binary places. Every roll reaches the
-  // result; taking the low bits instead would discard the earliest rolls,
-  // because 20 = 2^2 x 5 makes 20^k vanish modulo 2^bits once k >= bits/2.
+  // significant, expanded to `bits` binary places. Every roll enters the
+  // fraction the result is taken from; taking the low bits instead would
+  // discard the earliest rolls outright, because 20 = 2^2 x 5 makes 20^k
+  // vanish modulo 2^bits once k >= bits/2.
+  //
+  // Entering it is not the same as moving it. The last rolls fund the
+  // truncation margin rather than changing the output: at the minimum count
+  // a single roll moves these bits with probability about 1/R, which at 256
+  // bits is 2^-20.6, so changing only the final roll left the output alone in
+  // 2000 of 2000 random transcripts. That is the margin working, not a roll
+  // going to waste — see the roll-count rule and its margin table.
   let value = 0n, scale = 1n;
   for (let face of rolls) {
     value = value * 20n + BigInt(face - 1);
@@ -6432,7 +6440,7 @@ function hodlRenderKeyForm() {
         <span><strong>${hodlT("Base 20 [1-20] / Hashed rolls")}</strong><span class="desc">${hodlT("SHA-256 of the faces joined by a hyphen, using the first {bits} bits for the selected {words}-word seed. {need} rolls are required, and every roll beyond them is included.", { bits: config.bits, words: config.words, need: hodlD20MinimumRolls(config.bits) })}</span></span>
       </label>
       </div>
-      <p class="edge-note is-info" id="dice-method-rationale">${hodlDiceMethodRationale(hodlDiceMethod, config)}</p>
+      ${(() => { let note = hodlDiceMethodRationale(hodlDiceMethod, config); return note ? `<p class="edge-note is-info" id="dice-method-rationale">${note}</p>` : ""; })()}
       <p class="label" id="dice-label">${diceLabel}</p>
       ${hodlSeedMetaRowMarkup("dice-meta", true)}
       <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" translate="no" aria-hidden="true"></pre><textarea id="dice" placeholder="${dicePlaceholder}" aria-describedby="dice-meta"></textarea></div>
