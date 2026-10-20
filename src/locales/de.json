@@ -1213,7 +1213,6 @@
   "First character {chars}, then your vanity characters": "Erstes Zeichen {chars}, dann Ihre Vanity-Zeichen",
   "BIP39 seed words": "BIP39 Seed-Wörter",
   "Master xprv": "Master xprv",
-  "No passphrase — the key uses its seed words alone": "Keine Passphrase — der Schlüssel verwendet nur seine Seed-Wörter",
   "Key {key} was imported as a root xprv: it has no seed words, so its passphrase cannot be extended — only the derivation grind is available.": "Schlüssel {key} wurde als Stamm-xprv importiert: er hat keine Seed-Wörter, daher kann seine Passphrase nicht erweitert werden — nur die Derivations-Durchmusterung ist verfügbar.",
   "Copied verbatim from key {key}'s Optional BIP39 passphrase on the Keys tab. Passphrase grind: candidates are that passphrase followed by the counter characters. Derivation grind: this exact passphrase, with the account index changing.": "Wörtlich kopiert von der optionalen BIP39-Passphrase des Schlüssels {key} auf der Registerkarte „Schlüssel“. Passphrase-Durchmusterung: Kandidaten sind diese Passphrase gefolgt von den Zählerzeichen. Derivations-Durchmusterung: diese exakte Passphrase, wobei sich der Kontenindex ändert.",
   "Key {key} has no passphrase. Passphrase grind: candidates are the counter characters alone. Derivation grind: no passphrase, with the account index changing.": "Schlüssel {key} hat keine Passphrase. Passphrase-Durchmusterung: Kandidaten sind nur die Zählerzeichen. Derivations-Durchmusterung: keine Passphrase, wobei sich der Kontenindex ändert.",
@@ -1614,5 +1613,6 @@
   "{count} matching outputs.": "{count} passende Ausgaben.",
   "Manual session key entered. It will be validated when you use this Station.": "Manueller Sitzungsschlüssel eingegeben. Er wird validiert, wenn Sie diese Station verwenden.",
   "Spend path": "Ausgabepfad",
-  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "Diese Datei ist nicht passwortgeschützt – jeder, der sie hat, kann ihre Einträge lesen oder ändern. Drücken Sie erneut auf „Journal öffnen“, um sie zu akzeptieren."
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "Diese Datei ist nicht passwortgeschützt – jeder, der sie hat, kann ihre Einträge lesen oder ändern. Drücken Sie erneut auf „Journal öffnen“, um sie zu akzeptieren.",
+  "Seed words are the BIP39 English list: remove digits and non-ASCII characters.": "Seed-Wörter sind die englische BIP39-Liste: Entfernen Sie Ziffern und Nicht-ASCII-Zeichen."
 }
