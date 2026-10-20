@@ -81,7 +81,7 @@ test("minimum rolls follow the five-per-face Pearson rule of thumb", () => {
   assert.equal(hodlDiceMinimumRolls(16), 80);
 });
 
-test("uniform d6 rolls look fair once the minimum is reached", () => {
+test("balanced counts score zero even when the roll sequence is predictable", () => {
   const rolls = Array.from({ length: 30 }, (_, index) => String((index % 6) + 1));
   const report = hodlDiceFairnessAssess(rolls, ["1", "2", "3", "4", "5", "6"], "D6");
   assert.equal(report.chi, 0);
@@ -89,6 +89,11 @@ test("uniform d6 rolls look fair once the minimum is reached", () => {
   assert.equal(report.enough, true);
   assert.equal(report.verdict.id, "fair");
   assert.deepEqual(report.counts.map((face) => face.count), [5, 5, 5, 5, 5, 5]);
+  // Unchanged contract: Pearson's frequency statistic ignores ordering.
+  // A repeated cycle and sorted runs are equally predictable examples; this
+  // statistic alone cannot establish independent or unpredictable rolls.
+  const sorted = hodlDiceFairnessAssess([...rolls].sort(), ["1", "2", "3", "4", "5", "6"], "D6");
+  assert.deepEqual(sorted, report);
 });
 
 test("a constant face is reported as biased", () => {

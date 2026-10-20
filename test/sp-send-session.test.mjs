@@ -388,3 +388,36 @@ test("a language switch paints the last send and scan again from what they kept"
   assert.match(elements["sp-out"].innerHTML, /⟦label m = 0 \(change\)⟧/);
   assert.equal(derived, 0, "a repaint derives no key and scans nothing");
 });
+
+// Both paste parsers run JSON.parse (vins) or a whole-string split (outputs)
+// before any derivation, and a scan then derives per item. A pasted wall of
+// text or a huge array of tiny items locks the tab, so the parsers are
+// bounded before the expensive step.
+test("SP paste parsers refuse oversized input before the expensive step", async () => {
+  const slice = await loadAppFunctions([
+    "hodlSpParseVins", "hodlSpParseOutputs",
+    "hodlSpMaxVinText", "hodlSpMaxVins", "hodlSpMaxOutputText", "hodlSpMaxOutputs",
+  ]);
+
+  assert.deepEqual(slice.hodlSpParseVins('[{"txid":"00"}]'), [{ txid: "00" }], "a normal vin paste still parses");
+  assert.throws(
+    () => slice.hodlSpParseVins(`[${" ".repeat(slice.hodlSpMaxVinText)}]`),
+    /too large/,
+    "the text cap comes before JSON.parse",
+  );
+  const vins = `[${new Array(slice.hodlSpMaxVins + 1).fill("{}").join(",")}]`;
+  assert.throws(() => slice.hodlSpParseVins(vins), /at most/i, "the vin count is capped");
+  assert.equal(slice.hodlSpParseVins(`[${new Array(slice.hodlSpMaxVins).fill("{}").join(",")}]`).length, slice.hodlSpMaxVins, "the cap itself is accepted");
+
+  assert.deepEqual(slice.hodlSpParseOutputs("aa bb"), ["aa", "bb"]);
+  assert.throws(
+    () => slice.hodlSpParseOutputs("ab".repeat(slice.hodlSpMaxOutputText / 2 + 1)),
+    /too large/,
+    "the output text cap comes before the split",
+  );
+  assert.throws(
+    () => slice.hodlSpParseOutputs(new Array(slice.hodlSpMaxOutputs + 1).fill("aa").join(" ")),
+    /at most/i,
+    "the output count is capped",
+  );
+});

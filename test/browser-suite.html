@@ -3966,11 +3966,11 @@
     assert(panel.hidden, "Uniform d6 rolls opened the fairness panel without the expand button");
     toggle.click();
     assert(!panel.hidden && toggle.getAttribute("aria-expanded") === "true" && glyph.textContent === "▾", "Die Distribution / Fairness Analysis button did not expand the fairness panel");
-    assert(panel.textContent.includes("Looks pretty fair"), "Uniform d6 was not reported as fair");
+    assert(panel.dataset.tone === "ok", "Balanced counts did not reach the no-warning state");
     assert(panel.textContent.includes("D6"), "D6 fairness test was missing");
     input(dice, "1".repeat(30));
     assert(!panel.hidden, "Expanded fairness panel collapsed after more rolls");
-    assert(panel.textContent.includes("Looks biased"), "Constant d6 face was not reported as biased");
+    assert(panel.dataset.tone === "danger", "Constant d6 face did not reach the frequency-warning state");
     toggle.click();
     assert(panel.hidden && toggle.getAttribute("aria-expanded") === "false" && glyph.textContent === "▸", "Die Distribution / Fairness Analysis button did not collapse the fairness panel");
     input(dice, "");

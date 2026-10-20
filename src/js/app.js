@@ -85,6 +85,7 @@ import {
   appendLog as hodlJournalAppend,
   createDocument as hodlJournalCreateDocument,
   createJournal,
+  JOURNAL_MAX_FILE_LENGTH as hodlJournalMaxFileLength,
   defaultJournalPageStyle as hodlJournalDefaultPageStyle,
   formatLog as hodlJournalFormatLog,
   formatNotebook as hodlJournalFormatNotebook,
@@ -170,6 +171,7 @@ function hodlRefreshWorkspaceErrors() {
   hodlSetWorkspaceError("msig", hodlMsigErrorSpec);
 }
 function hodlDiceEntropyBits(e) {
+  // Capacity assuming independent fair rolls, not measured unpredictability.
   return e <= 0 ? 0 : e * Math.log2(6);
 }
 function hodlSplitDiceString(e) {
@@ -3487,6 +3489,8 @@ function hodlDiceFairnessFaceLabel(label) {
   return String(label ?? "");
 }
 function hodlDiceFairnessAssess(rolls, labels, title) {
+  // Face counts discard ordering: a predictable cycle can score chi = 0.
+  // The CDF is a reference percentile, never the probability the die is fair.
   let faces = Array.isArray(labels) && labels.length ? labels.map((label) => String(label)) : [], n = (rolls || []).length, sides = faces.length, minimum = hodlDiceMinimumRolls(sides);
   let counts = faces.map((label) => ({ label, count: 0 })), indexByLabel = new Map(faces.map((label, index) => [label, index]));
   for (let roll of rolls || []) {
@@ -3540,8 +3544,8 @@ function hodlDiceFairnessNote(report) {
   if (!report.n) return "";
   let title = report.title === "Coin" ? hodlTText("Coin") : report.title;
   if (!report.enough) return hodlTText("{n} of {minimum} minimum {title} rolls for Pearson’s χ² test · {remaining} more needed.", { n: report.n, minimum: report.minimum, title, remaining: report.remaining });
-  let robust = report.minimum * 2, quality = report.n >= robust ? hodlTText("Enough rolls to reasonably assess fairness.") : hodlTText("Minimum reached. {n} more would make the estimate more robust.", { n: robust - report.n });
-  return hodlTText("A fair {title} would score χ² below {chi} in {percent}% of tests. {quality}", { title, chi: hodlFormatFairnessNumber(report.chi), percent: hodlFormatFairnessNumber(report.cdf * 100), quality });
+  let robust = report.minimum * 2, quality = report.n >= robust ? hodlTText("Sample exceeds the minimum count for this frequency test.") : hodlTText("Minimum count reached. Another {n} rolls would double that minimum.", { n: robust - report.n });
+  return hodlTText("χ² {chi} is at approximately the {percent}% reference percentile, assuming independent fair {title} rolls. {quality}", { title, chi: hodlFormatFairnessNumber(report.chi), percent: hodlFormatFairnessNumber(report.cdf * 100), quality });
 }
 function hodlDiceFairnessMarkup(reports) {
   return (reports || []).filter((report) => report.n > 0).map((report) => {
@@ -3590,7 +3594,7 @@ function hodlRenderDiceFairness(value, method, targetWords = hodlTargetWordCount
   if (row?.classList.contains("dice-fairness-row")) row.hidden = !markup;
   panel.hidden = !open || !markup;
   panel.dataset.tone = open ? hodlDiceFairnessTone(reports) : "muted";
-  panel.innerHTML = open ? (markup ? `${markup}<p class="dice-fairness-caveat">${hodlT("Pearson’s χ² goodness-of-fit. A lucky streak can look biased, and a biased die can look fair until more rolls arrive. This check does not block derivation.")}</p>` : `<p class="dice-fairness-note">${hodlT("Enter rolls to run Pearson’s χ² test.")}</p>`) : "";
+  panel.innerHTML = open ? (markup ? `${markup}<p class="dice-fairness-caveat">${hodlT("This checks face counts only. It cannot establish independence, unpredictability, or entropy. Repeating 123456 can give balanced counts. The percentile is not the probability that the die is fair. This check does not block derivation.")}</p>` : `<p class="dice-fairness-note">${hodlT("Enter rolls to run Pearson’s χ² test.")}</p>`) : "";
   panel.setAttribute("aria-label", hodlTText("Die Distribution / Fairness Analysis"));
 }
 function hodlDiceControlValue(button) {
@@ -3994,6 +3998,8 @@ function hodlCardNeeded(targetWords = hodlTargetWordCount) {
   return { first: 52, extra: 52 };
 }
 function hodlCardWithoutReplacementBits(count) {
+  // Capacity of a uniformly shuffled deck; the transcript cannot prove that
+  // the real shuffle was uniform or that a second shuffle was independent.
   let bits = 0, n = Math.min(Math.max(0, Number(count) || 0), 52);
   for (let i = 0; i < n; i++) bits += Math.log2(52 - i);
   return bits;
@@ -11846,12 +11852,21 @@ function hodlSpDeriveSessionKeys() {
   scanNode.wipePrivateData();
   spendNode.wipePrivateData();
 }
+// A paste is parsed as one string and then derived per item. Both bounds are
+// well past a real transaction or the largest practical scan while keeping a
+// pasted wall of text, or an array of tiny items, from locking the tab.
+const hodlSpMaxVinText = 4 * 1024 * 1024;
+const hodlSpMaxVins = 100000;
+const hodlSpMaxOutputText = 8 * 1024 * 1024;
+const hodlSpMaxOutputs = 100000;
 function hodlSpParseVins(text) {
   let raw = String(text || "").trim();
   if (!raw) throw new Error("Paste BIP-352 vin JSON.");
+  if (raw.length > hodlSpMaxVinText) throw new Error("The pasted vin JSON is too large.");
   let parsed = JSON.parse(raw);
   if (parsed && Array.isArray(parsed.vin)) parsed = parsed.vin;
   if (!Array.isArray(parsed) || !parsed.length) throw new Error("Vin JSON must be a non-empty array.");
+  if (parsed.length > hodlSpMaxVins) throw new Error(`Vin JSON holds at most ${hodlSpMaxVins} inputs.`);
   return parsed;
 }
 function hodlSpParseRecipients(text) {
@@ -11860,12 +11875,17 @@ function hodlSpParseRecipients(text) {
 function hodlSpParseOutputs(text) {
   let raw = String(text || "").trim();
   if (!raw) throw new Error("Paste at least one 32-byte x-only taproot output key.");
+  if (raw.length > hodlSpMaxOutputText) throw new Error("The pasted output list is too large.");
+  let outputs;
   if (raw.startsWith("[")) {
     let parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) throw new Error("Output JSON must be an array of hex strings.");
-    return parsed.map(String);
+    outputs = parsed.map(String);
+  } else {
+    outputs = raw.split(/\s+/).map((item) => item.replace(/^0x/i, "")).filter(Boolean);
   }
-  return raw.split(/\s+/).map((item) => item.replace(/^0x/i, "")).filter(Boolean);
+  if (outputs.length > hodlSpMaxOutputs) throw new Error(`At most ${hodlSpMaxOutputs} outputs are scanned at once.`);
+  return outputs;
 }
 function hodlSpParseLabels(text) {
   let raw = String(text || "").trim();
@@ -16601,6 +16621,14 @@ function hodlJournalChooseFile(file) {
   hodlJournalOpenReadyFor = "";
   let ready = document.getElementById("journal-open-ready");
   if (ready) ready.hidden = true;
+  // The reader caps the decoded text at the same length in UTF-16 units. A
+  // file is bytes, and no string exceeds three bytes per unit (+3 for a BOM),
+  // so a larger file is refused before file.text() pulls it into memory.
+  if (file && Number.isFinite(file.size) && file.size > hodlJournalMaxFileLength * 3 + 3) {
+    hodlJournalFileRead = null;
+    hodlJournalError("That journal file is too large to open.");
+    return;
+  }
   let read = (hodlJournalFileRead = file ? file.text().then((text) => ({ text }), (error) => ({ error })) : null);
   read?.then((result) => {
     if (hodlJournalFileRead === read && !result.error) hodlJournalFileText = result.text;
