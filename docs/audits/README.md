@@ -83,8 +83,8 @@ fixed on this branch.
 | Item | Status | Evidence |
 |---|---|---|
 | Journal duplicate ids / stale `nextId` | Accepted open | `journal.js:739-741` |
-| `file.text()` before the 4 MiB cap | Accepted open | `app.js:16604` |
-| Uncapped Silent Payments paste fields | Accepted open | `app.js:11849-11869` |
+| `file.text()` before the 4 MiB cap | Fixed | `File.size` is refused over `3 × limit + 3` bytes before the read; `test/journal-open-acknowledge.test.mjs` |
+| Uncapped Silent Payments paste fields | Fixed | vin and output text plus item counts are bounded before parse/split; `test/sp-send-session.test.mjs` |
 | bip352 redeem script not hash-checked | Accepted open | `bip352.js:207-212` |
 | bip352 zero label tweak | Accepted open | `bip352.js:83-88,286-298` |
 | Lone-surrogate passphrase | Accepted open | `bip39.js:102-112` |

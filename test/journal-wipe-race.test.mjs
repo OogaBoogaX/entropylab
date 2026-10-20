@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  JOURNAL_MAX_FILE_LENGTH,
   JOURNAL_MIN_ITERATIONS,
   addEntry,
   createDocument,
@@ -90,7 +91,7 @@ const loadApp = ({ onOpen = (file, password) => openDocument(file, password), on
   const documentStub = { getElementById: (id) => fields[id] ?? null };
   const api = new Function(
     "wipeJournal", "hodlJournal", "hodlJournalWipeDocument", "hodlJournalWipeBytes",
-    "hodlJournalOpenDocument", "hodlJournalCreateDocument", "document",
+    "hodlJournalOpenDocument", "hodlJournalCreateDocument", "hodlJournalMaxFileLength", "document",
     "hodlKeyManagerReset", "hodlJournalClearFields", "hodlJournalHideEditor", "hodlJournalSetGate",
     "hodlJournalSyncEncryptDownloads", "hodlJournalShowWork", "hodlSyncJournalTool",
     "hodlRenderJournalPageTabs", "hodlJournalApplyPageStyle", "hodlJournalSetStatus",
@@ -105,7 +106,7 @@ const loadApp = ({ onOpen = (file, password) => openDocument(file, password), on
     };`,
   )(
     wipeJournal, createJournal(), wipeDocument, wipeBytes,
-    onOpen, onCreate, documentStub,
+    onOpen, onCreate, JOURNAL_MAX_FILE_LENGTH, documentStub,
     noop, noop, noop, noop,
     noop, noop, noop,
     noop, noop, noop,

@@ -20,6 +20,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  JOURNAL_MAX_FILE_LENGTH,
   JOURNAL_MIN_ITERATIONS,
   addEntry,
   createDocument,
@@ -86,7 +87,7 @@ const loadApp = ({ password = "", onOpen = (file, password) => openDocument(file
   };
   const documentStub = { getElementById: (id) => fields[id] ?? null };
   const api = new Function(
-    "hodlJournalOpenDocument", "document",
+    "hodlJournalOpenDocument", "hodlJournalMaxFileLength", "document",
     "hodlJournalWipeDocument", "hodlJournalWipeBytes",
     "hodlKeyManagerReset", "hodlJournalHideEditor",
     "hodlJournalShowWork", "hodlShowJournalTool", "hodlJournalLog",
@@ -101,7 +102,7 @@ const loadApp = ({ password = "", onOpen = (file, password) => openDocument(file
       openReadyVisible: () => { const el = document.getElementById("journal-open-ready"); return el ? !el.hidden : false; },
     };`,
   )(
-    onOpen, documentStub,
+    onOpen, JOURNAL_MAX_FILE_LENGTH, documentStub,
     wipeDocument, wipeBytes,
     noop,
     noop, noop, noop,
@@ -191,4 +192,24 @@ test("a journal wipe forgets a pending passwordless acknowledgement (audit L6)",
   await env.unlock();
   assert.deepEqual(env.state(), { keys: null, doc: null }, "a wiped session installs nothing without a fresh acknowledgement");
   assert.ok(env.openReadyVisible(), "the acknowledgement must be earned again after a wipe");
+});
+
+// The reader caps the decoded text at JOURNAL_MAX_FILE_LENGTH UTF-16 units.
+// Reading first and refusing after means an arbitrarily large file is pulled
+// into memory; the byte size is checked before file.text() instead. Three
+// bytes per unit is the reachable bound, so a file that passes can still be
+// refused by the text cap and one that fails could never pass it.
+test("an oversized file is refused from its size before text() runs", async () => {
+  const env = loadApp();
+  let calls = 0;
+  const oversized = { size: JOURNAL_MAX_FILE_LENGTH * 3 + 4, text: async () => { calls += 1; return passwordlessFile; } };
+  await env.choose(oversized);
+  assert.match(env.error(), /too large/);
+  assert.equal(calls, 0, "the read must not start");
+  const boundary = { size: JOURNAL_MAX_FILE_LENGTH * 3 + 3, text: async () => { calls += 1; return passwordlessFile; } };
+  await env.choose(boundary);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(calls, 1, "the exact byte bound is still read");
+  await env.unlock();
+  assert.ok(env.openReadyVisible(), "and the file that replaced the refusal opens");
 });

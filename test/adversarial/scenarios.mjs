@@ -245,9 +245,8 @@ export const SCENARIOS = [
       // #dice-meta reports "120000 rolls / 310195.5 bits estimated" for a field
       // of identical 1s: count x log2(6), a ceiling that assumes a fair die,
       // not a measurement (no check can measure the entropy of given rolls).
-      // The app's check on the rolls themselves is its Pearson χ² panel, which
-      // calls this "Looks biased"; the panel starts collapsed, so it is opened
-      // here for the log.
+      // The Pearson χ² panel flags the frequency imbalance, not the source's
+      // unpredictability; it starts collapsed, so it is opened here for the log.
       `(async () => { const t = $('#dice-fairness-toggle'); if (!t) return "no-fairness-toggle"; t.click(); await sleep(900); return "fairness-expanded=" + t.getAttribute("aria-expanded"); })()`,
       `(() => { const v = $('#dice-fairness [data-tone]'); if (!v) return "no-fairness-verdict"; return "fairness tone=" + v.getAttribute("data-tone") + " verdict=" + (v.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 90); })()`,
     ],
