@@ -1214,7 +1214,6 @@
   "First character {chars}, then your vanity characters": "78b5cd969a0888a25e83fca4d7f12fea9d0d8181731e0feb918b5b48457c75e9",
   "BIP39 seed words": "a4d822dd4df0ea31e1a7a33982b7f64e0fc2b2dacdaae6452802677c69dc71df",
   "Master xprv": "79f94c2db152601507a79b8853f989ac5bfd32c8a61e4e4ae8270c8dface1af5",
-  "No passphrase — the key uses its seed words alone": "4ff907bd4ec6e7f2f4ce69106e182475086ccf2a32050b943c18dc12c484c60a",
   "Key {key} was imported as a root xprv: it has no seed words, so its passphrase cannot be extended — only the derivation grind is available.": "b362d28a844d4fe7458884e5a6a4fed7574f7350ca5b0a0a181a19f4542dc608",
   "Copied verbatim from key {key}'s Optional BIP39 passphrase on the Keys tab. Passphrase grind: candidates are that passphrase followed by the counter characters. Derivation grind: this exact passphrase, with the account index changing.": "d281f6e2793e457da24e1307b09c69d68c1ec9b65abab4058fe60aa154519d31",
   "Key {key} has no passphrase. Passphrase grind: candidates are the counter characters alone. Derivation grind: no passphrase, with the account index changing.": "097c2f49d26e8a6d231634e0e3060771b6fccbe6ef179d0b240896e784d00062",
@@ -1613,5 +1612,6 @@
   "{count} matching outputs.": "93b17798fb80e6452f84ebe3e283c1e3d4c139af280cc860858b4e7d67bbdcec",
   "Manual session key entered. It will be validated when you use this Station.": "49bb3b660f287220bfb0ab47a1acbc3a6fc34bb34a86b2c94118ecaf2b48c683",
   "A BIP{purpose} origin belongs to {mapped} multisig; the selected script type is {kind}.": "2d03d4f0b9065c7ed516061215a9db983be9b69ede94ef0feb5e8e35a3882a96",
-  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "4c8d2df7496ff99bc78f59b5d4eb680645f95f3f015b4a3dafc1f846afab8fa7"
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "4c8d2df7496ff99bc78f59b5d4eb680645f95f3f015b4a3dafc1f846afab8fa7",
+  "Seed words are the BIP39 English list: remove digits and non-ASCII characters.": "62c82e4860a5c43ba6ffaff85f57c6eb9a2d98aafa6c5160339f0a1fc21b87bf"
 }

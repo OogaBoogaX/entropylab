@@ -1214,7 +1214,6 @@
   "First character {chars}, then your vanity characters": "Premier caractère {chars}, puis vos caractères de vanité",
   "BIP39 seed words": "Mots de phrase secrète BIP39",
   "Master xprv": "xprv maître",
-  "No passphrase — the key uses its seed words alone": "Aucune phrase de passe — la clé utilise uniquement ses mots de phrase secrète",
   "Key {key} was imported as a root xprv: it has no seed words, so its passphrase cannot be extended — only the derivation grind is available.": "La clé {key} a été importée en tant que xprv racine : elle n'a pas de mots de phrase secrète, sa phrase de passe ne peut donc pas être étendue — seul l'essai par dérivation est disponible.",
   "Copied verbatim from key {key}'s Optional BIP39 passphrase on the Keys tab. Passphrase grind: candidates are that passphrase followed by the counter characters. Derivation grind: this exact passphrase, with the account index changing.": "Copié tel quel de la phrase de passe facultative BIP39 de la clé {key} dans l'onglet Clés. Essai de phrases de passe : les candidats sont cette phrase de passe suivie des caractères du compteur. Essai par dérivation : cette phrase de passe exacte, avec l'index du compte qui change.",
   "Key {key} has no passphrase. Passphrase grind: candidates are the counter characters alone. Derivation grind: no passphrase, with the account index changing.": "La clé {key} n'a pas de phrase de passe. Essai de phrases de passe : les candidats sont uniquement les caractères du compteur. Essai par dérivation : aucune phrase de passe, avec l'index du compte qui change.",
@@ -1613,5 +1612,6 @@
   "{count} matching outputs.": "{count} sorties correspondantes.",
   "Manual session key entered. It will be validated when you use this Station.": "Clé de session manuelle saisie. Elle sera validée lorsque vous utiliserez cette Station.",
   "A BIP{purpose} origin belongs to {mapped} multisig; the selected script type is {kind}.": "Une origine BIP{purpose} appartient à un multisig {mapped} ; le type de script sélectionné est {kind}.",
-  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "Ce fichier n'a pas de protection par mot de passe — toute personne possédant ce fichier peut lire ou modifier ses entrées. Appuyez à nouveau sur Ouvrir le journal pour l'accepter."
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "Ce fichier n'a pas de protection par mot de passe — toute personne possédant ce fichier peut lire ou modifier ses entrées. Appuyez à nouveau sur Ouvrir le journal pour l'accepter.",
+  "Seed words are the BIP39 English list: remove digits and non-ASCII characters.": "Les mots de la phrase secrète sont la liste anglaise BIP39 : supprimez les chiffres et les caractères non-ASCII."
 }
