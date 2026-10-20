@@ -170,7 +170,7 @@ test("restoring drops unknown fields and repairs a broken nextId", async () => {
   const file = await sealDocument({ nextId: -5, entries: [entry] }, keys);
   const opened = await openDocument(pack(file), password);
   assert.equal("evil" in opened.doc.entries[0], false);
-  assert.equal(opened.doc.nextId, 1); // non-positive nextId falls back to 1
+  assert.equal(opened.doc.nextId, 2); // non-positive nextId falls back to 1, then clears the entry's repaired id 1
 });
 
 test("an export file is not a journal backup and vice versa", async () => {

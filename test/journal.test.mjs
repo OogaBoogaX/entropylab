@@ -32,6 +32,7 @@ import {
   parseDocument,
   parseFile,
   removeEntry,
+  replaceEntry,
   searchEntries,
   sealDocument,
   sealExport,
@@ -546,4 +547,78 @@ test("a save refuses an envelope the reader would reject (AR-02)", async () => {
   const text = JSON.stringify(file, null, 2) + "\n";
   assert.ok(text.length <= JOURNAL_MAX_FILE_LENGTH, "an accepted save must fit the reader's cap");
   assert.ok(parseFile(text));
+});
+
+// Journal ids key the entry list (`find((entry) => entry.id === id)` selects
+// the first match) and `addEntry` trusts `nextId`. A hand-edited file that
+// repeats an id makes one entry unreachable, and a stale `nextId` makes the
+// next add collide with an existing entry.
+test("a journal file rejects duplicate entry ids and repairs a stale nextId", () => {
+  const entry = (id) => ({ id, method: "dice", label: `entry ${id}`, input: "", created: fixedNow.toISOString() });
+  const duplicate = { version: JOURNAL_VERSION, nextId: 3, entries: [entry(1), entry(1)] };
+  assert.throws(() => parseDocument(JSON.stringify(duplicate)), /duplicate/, "two entries cannot share an id");
+
+  const stale = { version: JOURNAL_VERSION, nextId: 2, entries: [entry(5), entry(6)] };
+  const repaired = parseDocument(JSON.stringify(stale));
+  assert.equal(repaired.nextId, 7, "the counter must clear the highest existing id");
+  assert.equal(addEntry(repaired, { method: "dice", label: "next" }).id, 7, "and the next add must not collide");
+
+  const flat = parseDocument(JSON.stringify({ version: JOURNAL_VERSION, entries: [entry(1), entry(2)] }));
+  assert.equal(flat.nextId, 3, "a missing counter is still derived from the entries");
+});
+
+test("addEntry does not reuse an id a document already carries", () => {
+  const doc = parseDocument(JSON.stringify({ version: JOURNAL_VERSION, nextId: 1, entries: [{ id: 9, method: "dice", label: "nine" }] }));
+  doc.nextId = 1;
+  assert.equal(addEntry(doc, { method: "dice", label: "next" }).id, 10);
+});
+
+// Node's Number.isInteger accepts 2**53, but adding one to it does not
+// advance, so an imported counter or entry id at that boundary collides on
+// the next add and a save then fails to reopen.
+test("an unsafe imported counter or entry id cannot produce a duplicate", () => {
+  const unsafe = 2 ** 53;
+  const doc = parseDocument(JSON.stringify({ version: JOURNAL_VERSION, nextId: unsafe, entries: [] }));
+  assert.equal(doc.nextId, 1, "a counter above the safe range is repaired");
+  assert.equal(addEntry(doc, { method: "hex", label: "first", input: "00" }).id, 1);
+  assert.equal(addEntry(doc, { method: "hex", label: "second", input: "00" }).id, 2);
+
+  const carried = parseDocument(JSON.stringify({
+    version: JOURNAL_VERSION,
+    nextId: 1,
+    entries: [{ id: unsafe, method: "hex", label: "imported", input: "00" }],
+  }));
+  assert.deepEqual(carried.entries.map((entry) => entry.id), [1], "an unsafe entry id takes the lowest free one");
+  assert.equal(addEntry(carried, { method: "hex", label: "next", input: "00" }).id, 2);
+});
+
+test("an entry with an unsafe imported id still edits in place and drops its old secret", () => {
+  const doc = parseDocument(JSON.stringify({
+    version: JOURNAL_VERSION,
+    entries: [
+      { id: 2 ** 53, method: "hex", label: "imported", input: "aa".repeat(32), notes: "old" },
+      { id: 2 ** 53, method: "hex", label: "also imported", input: "bb".repeat(32) },
+    ],
+  }));
+  assert.deepEqual(doc.entries.map((entry) => entry.id), [1, 2], "both unsafe ids get unique positive ids");
+  const target = doc.entries[0].id;
+  assert.ok(target, "the editor's add-or-replace fork sees a truthy id");
+  replaceEntry(doc, target, { method: "dice", label: "edited", input: "1 2 3 4", notes: "" });
+  assert.equal(doc.entries.length, 2, "an edit must replace, not append");
+  assert.equal(doc.entries[0].label, "edited");
+  assert.equal(doc.entries[0].input, "1 2 3 4");
+  assert.equal(doc.entries[0].notes, "", "the old secret and note are gone");
+});
+
+test("allocation refuses at the safe-integer boundary before mutating the document", () => {
+  const doc = parseDocument(JSON.stringify({
+    version: JOURNAL_VERSION,
+    nextId: Number.MAX_SAFE_INTEGER,
+    entries: [{ id: Number.MAX_SAFE_INTEGER, method: "hex", label: "last", input: "00" }],
+  }));
+  const before = doc.entries.length;
+  const nextId = doc.nextId;
+  assert.throws(() => addEntry(doc, { method: "hex", label: "past the end", input: "00" }), /safe integer/);
+  assert.equal(doc.entries.length, before, "a refused add leaves the list untouched");
+  assert.equal(doc.nextId, nextId, "and the counter untouched");
 });
