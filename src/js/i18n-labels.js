@@ -87,12 +87,13 @@ export const hodlScriptBeginnerTexts = Object.freeze({
   bip86: "Addresses that start with bc1p. Newest type. Use this if your wallet speaks Taproot.",
 });
 
-// Pearson chi-squared fairness verdicts (hodlDiceFairnessVerdict ids).
+// Pearson frequency-test labels, not certifications of randomness or entropy.
+// The internal hodlDiceFairnessVerdict ids remain stable.
 export const hodlFairnessVerdictLabels = Object.freeze({
   "need-more": "Need more rolls",
-  fair: "Looks pretty fair",
-  unsure: "Not sure; roll some more",
-  biased: "Looks biased",
+  fair: "No frequency warning",
+  unsure: "Borderline frequency result",
+  biased: "Frequency imbalance warning",
 });
 
 // The Key Station summary line's variant, by mode and sub-method (app.js's
