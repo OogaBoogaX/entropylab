@@ -255,3 +255,18 @@ test("the scheduled and release workflows' checkouts do not persist their tokens
   assert.match(release, /GH_TOKEN: \$\{\{ github\.token \}\}/, "release-assets.yml: gh must authenticate through GH_TOKEN env, not .git/config");
   assert.doesNotMatch(release, /git push/, "release-assets.yml: no step may push with the checkout's credential");
 });
+
+// The Android wrapper job runs ./gradlew and its jar after checkout, so the
+// checkout must not leave GITHUB_TOKEN in .git/config, and the committed
+// gradle-wrapper.jar (the program that enforces distributionSha256Sum) must be
+// validated against Gradle's published checksums before it runs.
+test("the Android wrapper workflow drops its token and validates the Gradle wrapper first", () => {
+  const workflow = read(".github/workflows/android-wrapper.yml");
+  const checkouts = workflow.split(/\n(?=      - uses: actions\/checkout@)/).slice(1).map((block) => block.split(/\n(?=      - )/)[0]);
+  assert.ok(checkouts.length > 0, "android-wrapper.yml has a checkout step");
+  for (const block of checkouts) assert.match(block, /persist-credentials: false/, "android-wrapper.yml: a checkout persists the job's token");
+  const validate = workflow.search(/uses: gradle\/actions\/wrapper-validation@[0-9a-f]{40}/);
+  const gradlew = workflow.indexOf("./gradlew");
+  assert.ok(validate > 0, "the Gradle wrapper-validation action is pinned to a commit SHA");
+  assert.ok(gradlew > validate, "wrapper validation runs before ./gradlew");
+});

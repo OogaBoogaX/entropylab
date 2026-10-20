@@ -105,6 +105,8 @@ public final class MainActivity extends Activity {
     @Override
     protected void onStop() {
         super.onStop();
+        // By design: leaving the foreground ends the session (like the web app's
+        // conceal-on-leave) so no secret outlives the visit. See android/README.md.
         if (!isChangingConfigurations()) shutDown();
     }
 
