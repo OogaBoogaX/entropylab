@@ -1213,7 +1213,6 @@
   "First character {chars}, then your vanity characters": "Primeiro caractere {chars}, depois seus caracteres de vaidade",
   "BIP39 seed words": "Palavras da frase-semente BIP39",
   "Master xprv": "xprv mestre",
-  "No passphrase — the key uses its seed words alone": "Sem frase-senha — a chave usa apenas suas palavras-semente",
   "Key {key} was imported as a root xprv: it has no seed words, so its passphrase cannot be extended — only the derivation grind is available.": "A chave {key} foi importada como um xprv raiz: ela não tem palavras-semente, então sua frase-senha não pode ser estendida — apenas o teste por derivação está disponível.",
   "Copied verbatim from key {key}'s Optional BIP39 passphrase on the Keys tab. Passphrase grind: candidates are that passphrase followed by the counter characters. Derivation grind: this exact passphrase, with the account index changing.": "Copiado literalmente da frase-senha opcional BIP39 da chave {key} na aba Chaves. Teste de frases-senha: os candidatos são essa frase-senha seguida pelos caracteres contadores. Teste por derivação: esta frase-senha exata, com o índice da conta mudando.",
   "Key {key} has no passphrase. Passphrase grind: candidates are the counter characters alone. Derivation grind: no passphrase, with the account index changing.": "A chave {key} não tem frase-senha. Teste de frases-senha: os candidatos são apenas os caracteres contadores. Teste por derivação: sem frase-senha, com o índice da conta mudando.",
@@ -1614,5 +1613,6 @@
   "{count} matching output.": "{count} saída correspondente.",
   "{count} matching outputs.": "{count} saídas correspondentes.",
   "Manual session key entered. It will be validated when you use this Station.": "Chave de sessão manual inserida. Ela será validada quando você usar esta Estação.",
-  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "Este arquivo não tem proteção por senha — qualquer pessoa com ele pode ler ou alterar suas entradas. Pressione Abrir diário novamente para aceitá-lo."
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "Este arquivo não tem proteção por senha — qualquer pessoa com ele pode ler ou alterar suas entradas. Pressione Abrir diário novamente para aceitá-lo.",
+  "Seed words are the BIP39 English list: remove digits and non-ASCII characters.": "As palavras-semente são a lista em inglês do BIP39: remova dígitos e caracteres não-ASCII."
 }
