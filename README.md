@@ -28,6 +28,11 @@ import from restoring cleared secrets. Locking the journal also invalidates
 pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
 
+The crypto WASM module overwrites Rust heap allocations before releasing them,
+including dependency-owned descriptor keys and text. Resizing preserves the
+live bytes and erases the old allocation. This does not erase live objects,
+JavaScript strings, browser copies, or operating-system memory.
+
 The code fixes merged in [PR #843](https://github.com/OogaBoogaX/entropylab/pull/843)
 provide the following behavior. Rejected HD derivation paths wipe any intermediate
 private child already created, while preserving the caller's root. The sequential

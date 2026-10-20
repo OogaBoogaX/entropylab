@@ -113,7 +113,14 @@ material. Its security posture rests on the following model:
   WASM bindings zero every linear-memory buffer before freeing it
   (`el_free`/`psbt_free` use volatile writes) and erase their own secret
   temporaries — private keys, seeds, chain codes, mnemonics, passphrases,
-  signing nonces, and HMAC/PBKDF2 blocks. The JavaScript layer zeroes the
+  signing nonces, and HMAC/PBKDF2 blocks. The crypto module's Rust allocator
+  also overwrites the full allocation before freeing it, including unused
+  capacity and dependency-owned descriptor strings and secret-key map nodes.
+  Reallocation copies the live prefix into a new block, then erases and frees
+  the old block; allocation failure preserves the original block. This adds
+  wiping work and temporarily requires both blocks during a resize. It applies
+  to the crypto module, not the separate PSBT or vanity allocators.
+  The JavaScript layer zeroes the
   `Uint8Array`s it is done with (`.fill(0)`, `HDKey.wipePrivateData()`),
   including temporary BIP32 serialized key/chain-code views after master
   derivation, child derivation, and extended-key import (also on failure).
@@ -131,10 +138,9 @@ material. Its security posture rests on the following model:
   unloads (when `pagehide` fires, which browsers do not guarantee). The
   limits are structural: JavaScript strings, BigInts and DOM values
   (revealed secrets, typed input) cannot be overwritten, only dereferenced
-  — the "(best effort)" the UI already states — and heap copies
-  made inside dependency types that expose no erase (HMAC engines,
-  `bip39::Mnemonic`) remain until their memory is reused; the PSBT module
-  adds pair-level residues of that class, inside rust-bitcoin's parsed
+  — the "(best effort)" the UI already states. Live dependency objects and
+  by-value stack copies are outside the allocator's release boundary. The
+  separate PSBT module retains pair-level heap residues inside rust-bitcoin's parsed
   structures and serde_json's value trees (its exports do wipe the
   whole-document copies — the assembled inspection JSON and the rebuilt PSBT
   bytes — before returning, and the suite scans for that; the small per-pair
@@ -394,10 +400,11 @@ cannot overwrite them:
   so is a file once it is decrypted.
 - JavaScript numbers. The Silent Payments calculations turn a key into a
   `BigInt`, and briefly into hex text.
-- Copies made inside the libraries the WebAssembly modules use, where the
-  library offers no way to erase them (HMAC engines, `bip39::Mnemonic`, and
-  the per-pair copies rust-bitcoin and serde_json make while the PSBT module
-  parses or rebuilds a file). End session overwrites both modules' whole
+- Live copies inside dependency objects, and the per-pair heap copies
+  rust-bitcoin and serde_json make while the PSBT module parses or rebuilds
+  a file. The crypto module erases freed Rust heap allocations even when a
+  dependency exposes no erase API; it cannot erase an object still in use.
+  End session overwrites both modules' whole
   memory with the patterns 0x55, 0xAA and 0xFF and then zeroes it, which
   removes these too.
 - A Vanity grind stopped mid-run. Its workers are terminated, not wiped:
