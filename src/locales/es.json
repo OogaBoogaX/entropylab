@@ -1214,7 +1214,6 @@
   "First character {chars}, then your vanity characters": "Primer carácter {chars}, luego tus caracteres de vanidad",
   "BIP39 seed words": "Palabras semilla BIP39",
   "Master xprv": "xprv maestro",
-  "No passphrase — the key uses its seed words alone": "Sin frase de contraseña — la clave usa solo sus palabras semilla",
   "The passphrase stays as it is; each candidate is the next BIP32 account index at the key's path. A match is an account index holding the vanity address — Update key sets it on the key.": "La frase de contraseña permanece como está; cada candidato es el siguiente índice de cuenta BIP32 en la ruta de la clave. Una coincidencia es un índice de cuenta que contiene la dirección de vanidad — Actualizar clave la establece en la clave.",
   "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for this key.": "Cada candidato es la frase de contraseña inicial seguida de los caracteres contadores, extendida en una semilla (2048 rondas PBKDF2) y derivada en la ruta de la clave. Una coincidencia es una nueva frase de contraseña para esta clave.",
   "under a second": "en menos de un segundo",
@@ -1613,5 +1612,6 @@
   "{count} matching output.": "{count} salida coincidente.",
   "{count} matching outputs.": "{count} salidas coincidentes.",
   "Manual session key entered. It will be validated when you use this Station.": "Se introdujo una clave de sesión manual. Se validará cuando utilices esta Estación.",
-  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "Este archivo no tiene protección de contraseña — cualquiera con él puede leer o alterar sus entradas. Presiona Abrir diario de nuevo para aceptarlo."
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "Este archivo no tiene protección de contraseña — cualquiera con él puede leer o alterar sus entradas. Presiona Abrir diario de nuevo para aceptarlo.",
+  "Seed words are the BIP39 English list: remove digits and non-ASCII characters.": "Las palabras semilla son la lista en inglés de BIP39: elimina dígitos y caracteres no ASCII."
 }

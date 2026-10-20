@@ -1214,7 +1214,6 @@
   "First character {chars}, then your vanity characters": "78b5cd969a0888a25e83fca4d7f12fea9d0d8181731e0feb918b5b48457c75e9",
   "BIP39 seed words": "a4d822dd4df0ea31e1a7a33982b7f64e0fc2b2dacdaae6452802677c69dc71df",
   "Master xprv": "79f94c2db152601507a79b8853f989ac5bfd32c8a61e4e4ae8270c8dface1af5",
-  "No passphrase — the key uses its seed words alone": "4ff907bd4ec6e7f2f4ce69106e182475086ccf2a32050b943c18dc12c484c60a",
   "The passphrase stays as it is; each candidate is the next BIP32 account index at the key's path. A match is an account index holding the vanity address — Update key sets it on the key.": "db9298a1992d28539f0d445571c304e81d30c93bd61c7b94e9e16882ffd22015",
   "Each candidate is the starting passphrase followed by the counter characters, stretched into a seed (2,048 PBKDF2 rounds) and derived at the key's path. A match is a new passphrase for this key.": "ca731df8bf8e113391b60dcf85cf3c9e039c2f9d485ea79e6b6084e010c530c7",
   "under a second": "8c31e913a77267d81795d8fb179a50459f556ffb9e2c4315412e0e12e25e479d",
@@ -1613,5 +1612,6 @@
   "{count} matching output.": "24e7a1f9df9932a9d70192fae2508ad3432df97cc181eadfd57000a94fcf0e9e",
   "{count} matching outputs.": "93b17798fb80e6452f84ebe3e283c1e3d4c139af280cc860858b4e7d67bbdcec",
   "Manual session key entered. It will be validated when you use this Station.": "49bb3b660f287220bfb0ab47a1acbc3a6fc34bb34a86b2c94118ecaf2b48c683",
-  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "4c8d2df7496ff99bc78f59b5d4eb680645f95f3f015b4a3dafc1f846afab8fa7"
+  "This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.": "4c8d2df7496ff99bc78f59b5d4eb680645f95f3f015b4a3dafc1f846afab8fa7",
+  "Seed words are the BIP39 English list: remove digits and non-ASCII characters.": "62c82e4860a5c43ba6ffaff85f57c6eb9a2d98aafa6c5160339f0a1fc21b87bf"
 }
