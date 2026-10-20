@@ -169,11 +169,27 @@ test("guide entry and app lifecycle wiring belong to the source shell and boot",
   const doc = new MiniDocument();
   doc.body.innerHTML = readFileSync(new URL("src/shell.html", root), "utf8");
   assert.ok(doc.getElementById("guide-open")?.hasAttribute("data-guide-open"));
+  const basics = doc.getElementById("guide-basics");
+  assert.equal(basics?.dataset.guideOpen, "basics", "the page needs a direct beginner entry");
+  const entries = [...basics.parentElement.children];
+  assert.ok(entries.indexOf(basics) < entries.indexOf(doc.getElementById("guide-open")), "the beginner entry precedes the general contents control");
   for (const [id] of featureGuideEntries) assert.ok(doc.getElementById(id), `missing context target ${id}`);
   const app = readFileSync(new URL("src/js/app.js", root), "utf8");
   assert.match(app, /hodlFeatureGuide\s*=\s*initFeatureGuide\(/);
   assert.match(app, /hodlFeatureGuide\?\.refresh\(\)/);
 });
+
+test("the first basics step exposes a fixed verification link without automatic I/O or tool navigation", () => withPage(({ guide, doc, opener, opened }) => {
+  guide.open("basics", opener);
+  const link = doc.getElementById("guide-download-verification");
+  assert.ok(link, "the named verification instructions must be actionable");
+  assert.equal(link.getAttribute("href"), "https://github.com/OogaBoogaX/entropylab#verifying-the-download");
+  assert.equal(link.getAttribute("target"), "_blank");
+  assert.ok(link.getAttribute("rel").split(/\s+/).includes("noopener"));
+  assert.ok(link.getAttribute("rel").split(/\s+/).includes("noreferrer"));
+  assert.ok(link.textContent);
+  assert.deepEqual(opened, []);
+}, text => `<img src=x>${text}`));
 test("optional routes advance only explicitly and reject unknown routes", () => withPage(({ guide, click, doc, opened, opener }) => {
   guide.open(null, opener);
   click('#guide-route-recovery');

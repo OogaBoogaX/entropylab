@@ -21,10 +21,13 @@ following model:
 
 - The tool is self-contained and designed for offline, air-gapped use. It does
   not intentionally transmit sensitive data to any server.
-- The optional feature guide renders only bundled, translated plain text. It
+- The optional feature guide renders bundled, translated lesson text. It
   accepts known lesson IDs and keeps only lesson progress in page memory;
   it reads no wallet inputs, saves nothing in browser storage, and makes no
-  network calls. Pagehide (including End Session) clears progress and closes
+  network calls. Its download-verification link has a fixed GitHub README
+  destination, opens a separate tab only on explicit selection, and sends no
+  referrer or wallet data. That external documentation requires a connection;
+  it is not required to read the bundled lesson offline. Pagehide (including End Session) clears progress and closes
   it; a back/forward-cache restore starts fresh. Only an explicit Open this
   tool action invokes normal released-tool navigation. A completed lesson
   is not a security verdict or an endorsement of the user's environment.
@@ -53,6 +56,11 @@ following model:
   to a dedicated computer that is disconnected from every network. Download
   checksums establish byte integrity; GitHub/Sigstore attestations establish
   build provenance, not device safety.
+- The secure-context sanity check remains mandatory even for a downloaded
+  file. Mobile file viewers may expose a different browser context from an
+  HTTPS tab; success over HTTPS does not establish offline or downloaded-file
+  support on that phone. The failure screen offers a practice-only HTTPS
+  route, not a bypass or permission to enter wallet secrets online.
 - EntropyLab's own secp256k1 curve operations (public-key derivation, ECDSA
   signing and verification in PSBT inspection, curve point math) and its
   cryptographic hashes (SHA-256/SHA-512/RIPEMD-160/HMAC/PBKDF2) run on

@@ -220,6 +220,21 @@
     const activeTool = document.querySelector('#workspace-tabs [aria-selected="true"]').dataset.workspace;
     const overlay = () => document.getElementById("feature-guide-overlay");
     try {
+      const basics = document.getElementById("guide-basics");
+      assert(basics, "the page has no direct beginner entry");
+      basics.click();
+      equal(document.getElementById("guide-step").dataset.guideStep, "basics-safety");
+      const verification = document.getElementById("guide-download-verification");
+      assert(verification, "download verification has no actionable link");
+      equal(verification.href, "https://github.com/OogaBoogaX/entropylab#verifying-the-download");
+      equal(verification.target, "_blank");
+      assert(verification.relList.contains("noopener") && verification.relList.contains("noreferrer"), "external documentation must not get opener/referrer access");
+      const basicsClose = document.getElementById("guide-close");
+      basicsClose.focus();
+      basicsClose.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+      equal(document.activeElement, verification);
+      basicsClose.click();
+      equal(document.activeElement, basics);
       entry.focus(); entry.click();
       const dialog = document.getElementById("feature-guide-dialog");
       equal(dialog.getAttribute("role"), "dialog");

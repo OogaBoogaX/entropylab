@@ -48,7 +48,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
     if (modal) return;
     modal = createModal({
       id: "feature-guide-overlay", className: "feature-guide-overlay", card: "",
-      focusables: () => [...modal.overlay.querySelectorAll("button, summary")].filter((node) => !node.disabled && !node.closest("[hidden]") && (node.tagName === "SUMMARY" || !node.closest("details") || node.closest("details").open)),
+      focusables: () => [...modal.overlay.querySelectorAll("button, summary, a[href]")].filter((node) => !node.disabled && !node.closest("[hidden]") && (node.tagName === "SUMMARY" || !node.closest("details") || node.closest("details").open)),
       onDismiss: close,
     });
     // Every word is rendered through a text sink, including catalog values.
@@ -136,6 +136,16 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
         body.dataset.guideStep = step.id;
         focus = element("h3", step.title);
         body.append(focus, element("p", step.body));
+        if (step.id === "basics-safety") {
+          // A deliberate external navigation, never a runtime request or translated URL.
+          const link = element("a", hodlTText("Verifying the download (online README)"), "", "guide-download-verification");
+          link.setAttribute("href", "https://github.com/OogaBoogaX/entropylab#verifying-the-download");
+          link.setAttribute("target", "_blank");
+          link.setAttribute("rel", "noopener noreferrer");
+          const instructions = element("p");
+          instructions.append(link);
+          body.append(instructions, element("p", hodlTText("Opens GitHub in a new tab only when you choose the link. Read the instructions while connected, before moving the verified file to an offline computer. The lesson itself remains available offline."), "field-note"));
+        }
         if (step.example) body.append(element("p", step.example, "edge-note is-info"));
         const check = element("div", "", "guide-note");
         check.append(element("h4", hodlTText("What to check"), "label"), element("p", step.check));
@@ -250,7 +260,8 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
     open, isOpen: () => modal?.isOpen() ?? false,
     refresh() {
       for (const entry of document.querySelectorAll("[data-guide-open]")) {
-        if (entry.dataset.guideOpen) entry.textContent = hodlTText("Explain this tool");
+        if (entry.dataset.guideOpen === "basics") entry.textContent = hodlTText("Basics");
+        else if (entry.dataset.guideOpen) entry.textContent = hodlTText("Explain this tool");
       }
       if (route) route = featureGuideRoutes(hodlTText).find(item => item.id === route.id);
       if (active && modal?.isOpen()) {

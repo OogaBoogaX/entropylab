@@ -1378,15 +1378,18 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
    flex column the text and button margins add instead of collapsing, so the
    text keeps only the difference: a card that fits keeps its --space-intro
    gap and lays out as before. */
-.end-session-card {
+.disclaimer-card:not([hidden]), .end-session-card {
   display: flex; flex-direction: column;
   max-height: calc(100vh - 2 * var(--inset-modal)); max-height: calc(100dvh - 2 * var(--inset-modal));
 }
-.end-session-card > * { flex-shrink: 0; }
-.end-session-card > .end-session-text {
+:is(.disclaimer-card, .end-session-card) > * { flex-shrink: 0; }
+.disclaimer-card > .disclaimer-text, .end-session-card > .end-session-text {
   flex-shrink: 1; min-height: 0; overflow-y: auto;
+}
+.end-session-card > .end-session-text {
   margin-bottom: calc(var(--space-intro) - var(--space-component));
 }
+.disclaimer-proof-label { margin: 0 0 var(--space-component); }
 /* The second step's answer: a one-digit field left of the button, which stays
    disabled until the reader types 3. The field takes the button's height. */
 .disclaimer-proof-row { display: flex; justify-content: center; align-items: center; gap: var(--space-control); }
