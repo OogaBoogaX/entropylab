@@ -13,7 +13,9 @@ const SCRIPT_TYPES = [
 ];
 
 function coinType(network) {
-  return network === "testnet" ? 1 : 0;
+  // BIP-44 coin type: mainnet is 0, every test chain (testnet, signet,
+  // regtest) is 1. Keep this in step with hodlCoinTypeFromNetwork.
+  return network === "mainnet" || network == null ? 0 : 1;
 }
 
 // Accepts raw bytes or a hex string; always returns canonical lowercase hex.

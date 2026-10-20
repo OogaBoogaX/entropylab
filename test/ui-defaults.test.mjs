@@ -145,8 +145,9 @@ test("the network picker sets the network every tool defaults to", () => {
   assert.match(appSource, /document\.dispatchEvent\(new CustomEvent\("hodl:network-default"\)\)/);
   // The inspectors read the header network at each run; a repaint after a
   // language switch reuses that run's network instead of re-reading it.
-  assert.match(appSource, /let network = options\?\.network \?\? hodlNetworkDefault,/);
-  assert.equal(appSource.match(/let parsed = kind === "psbt" \? hodlParsePsbt\(bytes\) : parseRawTx\(bytes\), network = hodlNetworkDefault/g)?.length, 2);
+  // The picker's chain (regtest included) is what the addresses render for.
+  assert.match(appSource, /let network = options\?\.network \?\? hodlInspectorNetwork\(\)/);
+  assert.equal(appSource.match(/let parsed = kind === "psbt" \? hodlParsePsbt\(bytes\) : parseRawTx\(bytes\), network = hodlInspectorNetwork\(\)/g)?.length, 2);
   // The choice is never stored: every load opens on mainnet again.
   assert.doesNotMatch(appSource, /localStorage\.setItem\([^)]*network/i);
   // The coin takes the Bitcoin Core network colours — yellow mainnet, green
@@ -683,7 +684,7 @@ test("seed phrase mode has a lowercase Jade-style on-screen keyboard", () => {
   assert.match(app, /hodlSetSeedKeyboardLayout\(keyboard,modeButton,"lower"\)/);
   assert.match(app, /hodlApplySeedKeyboardKey\(activeInput,button\.dataset\.seedKey\|\|""\)/);
   assert.match(appWhitespace, /hodlBindKeypadPointer\(keyboard\.querySelectorAll\("button"\),\(\)=>activeInput\)/);
-  assert.match(app, /function hodlFilterSeed\(e\)\{[^}]*hodlLooksExtendedKey\(value\)\?value:value\.toLowerCase\(\)/);
+  assert.match(app, /function hodlFilterSeed\(e\)\{[^}]*hodlLooksExtendedKey\(value\)\?value:[^}]*toLowerCase\(\):value/);
   // The chrome is the card's shared switch, asserted once; a component states
   // only how it sits in its own container.
   assert.match(appSource, /class="switch-toggle passphrase-bip39-toggle"/);
@@ -1691,8 +1692,11 @@ test("one PSBT workspace contains PSBT Inspector, PSBT Editor and Nonce Inspecto
     assert.match(markup, /<div class="row psbt-actions psbted-actions tool-actions">/);
   }
   assert.match(appSource, /import \{ initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFromUpload, psbtQrPlan as hodlPsbtQrPlan \} from "\.\/psbt-editor\.js"/);
-  // The editor reads the header picker's network through the passed getter.
-  assert.match(appSource, /initPsbtEditor\(\{ networkDefault: \(\) => hodlNetworkDefault, copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup \}\)/);
+  // The editor reads the header picker's network through the passed getter,
+  // which must report regtest as regtest: hodlNetworkDefault maps every
+  // non-mainnet choice to testnet, so the editor would render tb1 and refuse
+  // a valid bcrt1 output there.
+  assert.match(appSource, /initPsbtEditor\(\{ networkDefault: \(\) => hodlInspectorNetwork\(\), copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup \}\)/);
 });
 
 test("Journal gates its five tools behind the local notebook", () => {
@@ -2351,9 +2355,11 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
   assert.match(appSource, /hodlFillStationKeyPicker\("vanity-session-keys", hodlVanitySource, hodlPickVanitySessionKey, hodlVanitySourceKeys\)/);
   assert.match(appSource, /function hodlVanitySourceKeys\(\) \{\s*return hodlSessionHdRootKeys\(\);/);
   // The selected key's passphrase is read from its state, never retyped: the
-  // source panel shows it verbatim and the plan reads it again at start.
-  // A key keeps its passphrase as bytes (the passphrase vault), decoded here.
-  assert.match(vanityController, /function hodlVanitySyncSource\(\) \{[\s\S]*?pass = hodlPassphraseText\(state\.fields\?\.pass\)[\s\S]*?field\.textContent = pass/);
+  // plan reads it at start. A key keeps its passphrase as bytes (the
+  // passphrase vault), decoded here. The source panel describes it; it never
+  // renders the value into the DOM.
+  assert.match(vanityController, /function hodlVanitySyncSource\(\) \{[\s\S]*?pass = hodlPassphraseText\(state\.fields\?\.pass\)/);
+  assert.doesNotMatch(vanityController, /textContent = pass\b/);
   assert.match(vanityController, /function hodlVanityPlan\(state, method, scriptId\) \{[\s\S]*?validateVanityPassphrase\(hodlPassphraseText\(fields\.pass\)\)/);
   // Matching is mainnet only, on the key's own account path.
   assert.match(vanityController, /Vanity matching is Bitcoin mainnet/);

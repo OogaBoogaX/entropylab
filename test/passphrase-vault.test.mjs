@@ -304,8 +304,18 @@ test("setBytes refuses malformed UTF-8 instead of poisoning the store (audit L9)
   rejects(() => Uint8Array.of(0xc3, 0x28), "a broken continuation byte");
   rejects(() => Uint8Array.of(0xf5, 0x80, 0x80, 0x80), "a lead byte beyond 0xf4");
   rejects(() => Uint8Array.of(0x80), "a stray continuation byte");
+  // A lead byte that is not a legal start: 0x80-0xBF is a continuation,
+  // 0xC0/0xC1 is always overlong, and 0xF5-0xFF starts past U+10FFFF (or a
+  // 5/6-byte form). `9f bf` used to decode as U+07FF.
+  rejects(() => Uint8Array.of(0x9f, 0xbf), "a continuation byte in the lead position");
+  rejects(() => Uint8Array.of(0xbf, 0xbf), "a downward-range lead byte");
+  rejects(() => Uint8Array.of(0xc1, 0xbf), "0xC1 can only spell an overlong form");
+  rejects(() => Uint8Array.of(0xf9, 0xbf, 0xbf, 0xbf), "a lead byte beyond 0xf4");
+  rejects(() => Uint8Array.of(0xfc, 0x80, 0x80, 0x80), "a 6-byte-form lead byte");
   // Canonical multi-byte input still round-trips through bytes() and text().
   const vault = new PassphraseVault();
+  vault.setBytes(Uint8Array.of(0xc3, 0xa9));
+  assert.equal(vault.text(), "\u00e9", "a canonical 2-byte form must still be accepted");
   vault.setBytes(utf8("Grüße 🔑"));
   assert.equal(vault.text(), "Grüße 🔑");
   assert.equal(hex(vault.bytes()), hex(utf8("Grüße 🔑")));

@@ -18,13 +18,24 @@ export const base58checkEncode = (payload) => {
   if (!(payload instanceof Uint8Array)) throw new Error("Base58Check payload must be a Uint8Array.");
   const out = withInput(payload, (p) => withOutput(ENCODE_CAP, (o) => wasm().el_b58check_encode(p, payload.length, o, ENCODE_CAP)));
   if (!out) throw new Error("Base58Check payload is too large.");
-  return textDecoder.decode(out);
+  // `out` encodes a WIF or an extended key. The string is the result; the
+  // bytes are a second copy of the same key material and are the only part
+  // that can be erased, so erase them (RT-JSBOUNDARY-1).
+  try {
+    return textDecoder.decode(out);
+  } finally {
+    out.fill(0);
+  }
 };
 
 export const base58checkDecode = (text) => {
   if (typeof text !== "string") throw new Error("Base58Check input must be a string.");
   const bytes = textEncoder.encode(text);
-  const out = withInput(bytes, (p) => withOutput(DECODE_CAP, (o) => wasm().el_b58check_decode(p, bytes.length, o, DECODE_CAP)));
-  if (!out) throw new Error("Invalid Base58Check string.");
-  return out;
+  try {
+    const out = withInput(bytes, (p) => withOutput(DECODE_CAP, (o) => wasm().el_b58check_decode(p, bytes.length, o, DECODE_CAP)));
+    if (!out) throw new Error("Invalid Base58Check string.");
+    return out;
+  } finally {
+    bytes.fill(0);
+  }
 };

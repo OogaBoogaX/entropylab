@@ -56,9 +56,11 @@ export function hodlTapKeySigs(entries, hodlFind) {
 }
 
 export function hodlTapScriptSigs(entries, hodlFind) {
-  return hodlFind(entries, 20).map((entry) => {
+  // Keydata is the 32-byte x-only key plus the 32-byte leaf hash; anything
+  // shorter is a lookalike the consensus layer never verifies.
+  return hodlFind(entries, 20).filter((entry) => entry.keydata.length === 64).map((entry) => {
     const parsed = hodlParseSchnorr(entry.val);
-    const pubkey = entry.keydata.length >= 32 ? entry.keydata.slice(0, 32) : new Uint8Array();
+    const pubkey = entry.keydata.slice(0, 32);
     return parsed
       ? Object.assign({ pubkey, source: "tap-script" }, parsed)
       : { pubkey, r: null, s: null, sighash: null, raw: entry.val, source: "tap-script" };

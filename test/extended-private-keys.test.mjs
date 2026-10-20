@@ -181,11 +181,17 @@ test("the wallet.dat export view carries the spending descriptors the result no 
       assert.equal(account.receiveDescriptorPriv, spendingDescriptor(wallet.accounts[index], 0, network));
       assert.equal(account.changeDescriptorPriv, spendingDescriptor(wallet.accounts[index], 1, network));
       assert.equal(account.receiveDescriptor, wallet.accounts[index].receiveDescriptor);
+      // Every exported branch carries its own private descriptor, so a window
+      // starting at 1 or 2 still reaches wallet-export's key records (AR-03).
+      for (const entry of account.addressBranches ?? []) {
+        assert.equal(entry.privateDescriptor, spendingDescriptor(wallet.accounts[index], entry.branch, network), `${network} ${account.def.id}: branch ${entry.branch} private descriptor`);
+      }
     }
     assert.ok(!stringsIn(wallet).some((text) => text.includes(expected(network).account.x)), "building the view left text on the result");
   }
   const watch = await importedWallet(reversion(scureRoot.derive("m/84'/0'/0'").publicExtendedKey, VERSIONS.mainnet.z[1]));
   assert.equal(hodlWalletExportView(watch).accounts[0].receiveDescriptorPriv ?? null, null);
+  for (const entry of hodlWalletExportView(watch).accounts[0].addressBranches ?? []) assert.equal(entry.privateDescriptor ?? null, null);
 });
 
 // The page's download and its button hand the wallet.dat builder (stood in

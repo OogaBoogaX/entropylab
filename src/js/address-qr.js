@@ -149,6 +149,10 @@ export const initAddressQr = (renderQr, icons = {}, { frames = null } = {}) => {
   addEventListener("pageshow", (event) => {
     if (event.persisted) teardown();
   });
+  // Conceal-on-leave and stage wipes dispatch this: an open overlay can hold
+  // an entire PSBT (proprietary xprv included) and is a body-level sibling of
+  // every view the wipe reaches.
+  document.addEventListener("hodl:conceal", teardown);
   const open = (target) => {
     const value = target.dataset.addressQr ?? "";
     if (!value) return;

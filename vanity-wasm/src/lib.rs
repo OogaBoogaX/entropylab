@@ -50,7 +50,7 @@
 use ripemd::Ripemd160;
 use secp256k1_sys as ffi;
 use sha2::{Digest, Sha256, Sha512};
-use std::alloc::{alloc, Layout};
+use std::alloc::{alloc, GlobalAlloc, Layout, System};
 use std::ptr::NonNull;
 use std::sync::OnceLock;
 
@@ -165,6 +165,39 @@ fn wipe_bytes(bytes: &mut [u8]) {
         unsafe { std::ptr::write_volatile(byte, 0u8) };
     }
     std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Erase every allocation on free: BIP32 nodes, HMAC pads and odometer
+/// strings are dropped in places this crate does not wipe explicitly.
+struct WipingAllocator;
+
+#[global_allocator]
+static ALLOCATOR: WipingAllocator = WipingAllocator;
+
+unsafe impl GlobalAlloc for WipingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        System.alloc(layout)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        wipe(ptr, layout.size());
+        System.dealloc(ptr, layout);
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // System.realloc may free the old block before we can erase it.
+        // Allocate/copy/erase instead; on failure the old allocation remains
+        // intact, as GlobalAlloc requires. No Rust allocation occurs in wipe.
+        let Ok(new_layout) = Layout::from_size_align(new_size, layout.align()) else {
+            return std::ptr::null_mut();
+        };
+        let next = System.alloc(new_layout);
+        if !next.is_null() {
+            std::ptr::copy_nonoverlapping(ptr, next, layout.size().min(new_size));
+            self.dealloc(ptr, layout);
+        }
+        next
+    }
 }
 
 fn sha256(data: &[u8]) -> [u8; 32] {

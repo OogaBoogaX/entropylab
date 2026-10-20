@@ -112,7 +112,7 @@ export function policySheetText(wallet) {
     `Policy: ${sheet.m}-of-${sheet.n} ${sheet.policyOp}`,
     `Descriptor checksum: #${sheet.checksum}`,
     "",
-    "Co-signers (script order):",
+    sheet.sorted ? "Co-signers (pubkey order, as sortedmulti places them):" : "Co-signers (script order):",
   ];
   for (const key of sheet.keys) {
     const origin = key.fingerprint ? `${key.fingerprint}${key.path ? "/" + key.path : ""}` : "(no origin)";

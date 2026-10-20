@@ -62,6 +62,7 @@ const varLine = (name) => {
 const source = [
   varLine("hodlJournalKeys"),
   varLine("hodlJournalGeneration"),
+  varLine("hodlJournalUnlockBusy"),
   varLine("hodlJournalFileRead"),
   varLine("hodlJournalTool"),
   varLine("hodlJournalEncryptDownloads"),

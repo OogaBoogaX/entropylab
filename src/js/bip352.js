@@ -138,9 +138,9 @@ const readCompactSize = (bytes, offset) => {
   }
   if (first === 0xfe) {
     if (offset + 5 > bytes.length) throw new Error("Witness ended inside a compact size.");
-    const value = bytes[offset + 1] | (bytes[offset + 2] << 8) | (bytes[offset + 3] << 16) | (bytes[offset + 4] << 24);
+    const value = (bytes[offset + 1] | (bytes[offset + 2] << 8) | (bytes[offset + 3] << 16) | (bytes[offset + 4] << 24)) >>> 0;
     if (value < 0x10000) throw new Error("Non-minimal compact size.");
-    return [value >>> 0, offset + 5];
+    return [value, offset + 5];
   }
   throw new Error("Witness compact size is too large.");
 };
@@ -159,6 +159,7 @@ export function parseWitnessHex(hex) {
     stack.push(bytes.slice(offset, offset + length));
     offset += length;
   }
+  if (offset !== bytes.length) throw new Error("Witness has trailing bytes.");
   return stack;
 }
 
@@ -344,8 +345,17 @@ export function deriveSilentPaymentKeys(masterSeed, { coinType = 0, account = 0 
 }
 
 const encodeKeyExpression = (hrp, payload) => {
-  const words = [0, ...toWords(payload)];
-  return bech32mEncode(hrp, words);
+  // Prepend the version in place. A spread would abandon the array toWords
+  // returned, which carries the scan (and, for spspend, spend) private-key
+  // bits (RT-JSBOUNDARY-1).
+  const words = toWords(payload);
+  words.unshift(0);
+  try {
+    return bech32mEncode(hrp, words);
+  } finally {
+    // The words carry the scan (and, for spspend, spend) private key bits.
+    words.fill(0);
+  }
 };
 
 export function encodeSpscan(scanPriv, spendPub, network = "mainnet") {

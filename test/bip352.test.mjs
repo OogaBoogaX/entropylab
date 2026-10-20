@@ -24,6 +24,7 @@ import {
   spendPrivForOutput,
   taggedHash,
   inputHash,
+  parseWitnessHex,
   serUint32,
   scalarFromBytes,
   Point,
@@ -36,6 +37,13 @@ const vectors = JSON.parse(readFileSync(join(root, "test/fixtures/bip352-send-an
 
 test("K_max matches the published reference (2323)", () => {
   assert.equal(BIP352_K_MAX, 2323);
+});
+
+test("a witness stack with trailing bytes is refused, not truncated", () => {
+  assert.deepEqual(parseWitnessHex("0100"), [new Uint8Array()]);
+  assert.throws(() => parseWitnessHex("010000"), /trailing bytes/);
+  // A 0xfe count is read unsigned: 0x80000000 was a negative number before.
+  assert.throws(() => parseWitnessHex("fe00000080"), /Witness ended early/);
 });
 
 test("tagged hash is BIP-340 style with the BIP-352 tags", () => {

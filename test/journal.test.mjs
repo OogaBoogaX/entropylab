@@ -522,3 +522,28 @@ test("journal files and entries are size-bounded at every layer (audit L9)", () 
   const sealed = JSON.stringify(encodeFile({ iv: new Uint8Array(IV_BYTES), ciphertext: new Uint8Array(16), iterations: JOURNAL_ITERATIONS }));
   assert.deepEqual(parseFile(sealed), { iv: new Uint8Array(IV_BYTES), ciphertext: new Uint8Array(16), iterations: JOURNAL_ITERATIONS });
 });
+
+// AR-02: the plaintext cap alone let a save succeed while the serialized
+// envelope (UTF-8 ciphertext, hex-coded, pretty-printed) exceeded the reader's
+// file cap, so the file could not be reopened.
+test("a save refuses an envelope the reader would reject (AR-02)", async () => {
+  const rejected = async (notes) => {
+    const created = await createDocument(password, password);
+    addEntry(created.doc, { method: "dice", input: "1", phrase: "p", label: "big", notes }, fixedNow);
+    await assert.rejects(() => sealDocument(created.doc, created.keys), /too large to save/);
+  };
+  // 750k CJK characters are 2.25 MB of UTF-8 that hex-encode past the cap.
+  await rejected("界".repeat(750_000));
+  // Astral characters expand the same way in a shorter string; at the entry
+  // cap (1 Mi code units = 524,288 astral characters = 2 MiB of UTF-8) the
+  // hex envelope alone reaches the reader's cap.
+  await rejected("😀".repeat(524_288));
+
+  // ASCII of the same character count still saves and reopens.
+  const created = await createDocument(password, password);
+  addEntry(created.doc, { method: "dice", input: "1", phrase: "p", label: "big", notes: "x".repeat(750_000) }, fixedNow);
+  const file = await sealDocument(created.doc, created.keys);
+  const text = JSON.stringify(file, null, 2) + "\n";
+  assert.ok(text.length <= JOURNAL_MAX_FILE_LENGTH, "an accepted save must fit the reader's cap");
+  assert.ok(parseFile(text));
+});

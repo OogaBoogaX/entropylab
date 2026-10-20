@@ -120,8 +120,15 @@ test("OP_RETURN outputs get the data-carrier tag instead of an address", () => {
 });
 
 test("signing progress counts successfully decoded partial and taproot signatures (issue #328)", () => {
-  // A pair name alone no longer counts: the typed decode must have succeeded.
-  const pairs = (names) => names.map((name) => ({ key: "02", value: "", name, decoded: { signature: "ab" } }));
+  // A pair name alone no longer counts: the typed decode must have succeeded,
+  // and the key must have the shape that field requires (AR-09).
+  const keyFor = (name) => ({
+    PSBT_IN_PARTIAL_SIG: "02" + "02" + "11".repeat(32),
+    PSBT_IN_TAP_KEY_SIG: "13",
+    PSBT_IN_FINAL_SCRIPTWITNESS: "08",
+    PSBT_IN_FINAL_SCRIPTSIG: "07",
+  })[name] ?? "02";
+  const pairs = (names) => names.map((name) => ({ key: keyFor(name), value: "", name, decoded: { signature: "ab" } }));
   const doc = syntheticDoc({
     inputs: [[], pairs(["PSBT_IN_PARTIAL_SIG", "PSBT_IN_PARTIAL_SIG"]), pairs(["PSBT_IN_TAP_KEY_SIG"]), pairs(["PSBT_IN_FINAL_SCRIPTWITNESS"])],
   });
@@ -135,14 +142,18 @@ test("signing progress counts successfully decoded partial and taproot signature
 
 test("malformed signing fields read as malformed, never as signed or finalized (issue #328)", () => {
   // Names survive failed decodes; the status must not. A field that fails its
-  // typed decode is presence without validity.
-  const bad = (name) => ({ key: "02", value: "", name, decoded: null, decodeError: "truncated" });
+  // typed decode is presence without validity. The keys here are well formed,
+  // so only the decode failure can be responsible.
+  const keyFor = (name) => (name === "PSBT_IN_PARTIAL_SIG" ? "02" + "02" + "11".repeat(32)
+    : name === "PSBT_IN_TAP_SCRIPT_SIG" ? "14" + "22".repeat(32) + "33".repeat(32)
+    : name === "PSBT_IN_FINAL_SCRIPTSIG" ? "07" : "02");
+  const bad = (name) => ({ key: keyFor(name), value: "", name, decoded: null, decodeError: "truncated" });
   const doc = syntheticDoc({
     inputs: [
       [bad("PSBT_IN_PARTIAL_SIG")],
       [bad("PSBT_IN_FINAL_SCRIPTSIG")],
       // A good signature alongside a malformed one still counts the good one.
-      [{ key: "02", value: "", name: "PSBT_IN_PARTIAL_SIG", decoded: { signature: "ab" } }, bad("PSBT_IN_TAP_SCRIPT_SIG")],
+      [{ key: keyFor("PSBT_IN_PARTIAL_SIG"), value: "", name: "PSBT_IN_PARTIAL_SIG", decoded: { signature: "ab" } }, bad("PSBT_IN_TAP_SCRIPT_SIG")],
     ],
   });
   doc.tx.inputs = [0, 1, 2].map((vout) => ({ txid: "11".repeat(32), vout, scriptSig: "", sequence: 0 }));
@@ -151,6 +162,27 @@ test("malformed signing fields read as malformed, never as signed or finalized (
   assert.ok(!html.includes("2 signatures"), "malformed signatures were counted");
   assert.equal(html.match(/malformed signing field/g).length, 2, "malformed fields not flagged");
   assert.ok(html.includes("1 signature"), "the one decodable signature should still count");
+});
+
+test("a keyed signing field with the wrong key shape is malformed, not progress (AR-09)", () => {
+  // BIP-174 puts the signer's public key in a partial signature's keydata; a
+  // keyless `02 01` record decodes to a signature but cannot identify a
+  // signer, and a tap-script signature needs x-only key plus leaf hash.
+  const decoded = { signature: "ab" };
+  const pair = (name, key) => ({ key, value: "", name, decoded });
+  const statusOf = (...pairs) => {
+    const doc = syntheticDoc({ inputs: [pairs] });
+    doc.tx.inputs = [{ txid: "11".repeat(32), vout: 0, scriptSig: "", sequence: 0 }];
+    const html = psbtVizHtml(doc, "mainnet");
+    if (html.includes("malformed signing field")) return "malformed";
+    if (html.includes("1 signature")) return "signed";
+    return "unsigned";
+  };
+  assert.equal(statusOf(pair("PSBT_IN_PARTIAL_SIG", "02")), "malformed", "a keyless partial signature is malformed");
+  assert.equal(statusOf(pair("PSBT_IN_PARTIAL_SIG", "02" + "02" + "11".repeat(32))), "signed", "a compressed-key partial signature counts");
+  assert.equal(statusOf(pair("PSBT_IN_PARTIAL_SIG", "02" + "04" + "11".repeat(64))), "signed", "an uncompressed-key partial signature counts");
+  assert.equal(statusOf(pair("PSBT_IN_TAP_SCRIPT_SIG", "14" + "22".repeat(32))), "malformed", "a tap-script signature without a leaf hash is malformed");
+  assert.equal(statusOf(pair("PSBT_IN_TAP_SCRIPT_SIG", "14" + "22".repeat(32) + "33".repeat(32))), "signed", "a full tap-script key counts");
 });
 
 test("a taproot signature with an undefined sighash suffix does not read as signed (issue #333, diagram-side)", () => {
