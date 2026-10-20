@@ -509,7 +509,7 @@ export function normalizeEntry(entry, now = new Date()) {
   const walletId = entry?.walletId == null || entry.walletId === "" ? null : Number(entry.walletId);
   if (walletId != null && (!Number.isInteger(walletId) || walletId < 0)) throw new Error("Session wallet id must be a whole number.");
   const normalized = {
-    id: Number.isInteger(entry?.id) && entry.id > 0 ? entry.id : 0,
+    id: Number.isSafeInteger(entry?.id) && entry.id > 0 ? entry.id : 0,
     method,
     input: bounded(entry?.input, "input"),
     phrase: bounded(entry?.phrase, "phrase"),
@@ -531,7 +531,14 @@ export function normalizeEntry(entry, now = new Date()) {
 export function addEntry(doc, fields, now = new Date()) {
   if (!doc || !Array.isArray(doc.entries)) throw new Error("Journal document is missing.");
   if (doc.entries.length >= JOURNAL_MAX_ENTRIES) throw new Error(`A journal holds at most ${JOURNAL_MAX_ENTRIES} entries.`);
-  const entry = normalizeEntry({ ...fields, id: doc.nextId || 1 }, now);
+  // The counter is repaired on open, but a document built elsewhere could
+  // still carry one below an existing id.
+  const highest = doc.entries.reduce((max, entry) => Math.max(max, Number(entry?.id) || 0), 0);
+  // Above 2**53 a counter stops advancing; refuse before the document changes
+  // so a failed add leaves a saveable state behind.
+  const id = Math.max(Number.isSafeInteger(doc.nextId) && doc.nextId > 0 ? doc.nextId : 1, highest + 1);
+  if (!Number.isSafeInteger(id)) throw new Error("Journal entry ids are past the safe integer range.");
+  const entry = normalizeEntry({ ...fields, id }, now);
   doc.entries = [...doc.entries, entry];
   doc.nextId = entry.id + 1;
   return entry;
@@ -736,9 +743,28 @@ export function parseDocument(plain) {
   if (parsed.entries.length > JOURNAL_MAX_ENTRIES) {
     throw new Error(`A journal holds at most ${JOURNAL_MAX_ENTRIES} entries.`);
   }
-  const nextId = Number.isInteger(parsed.nextId) && parsed.nextId > 0 ? parsed.nextId : 1;
+  const nextId = Number.isSafeInteger(parsed.nextId) && parsed.nextId > 0 ? parsed.nextId : 1;
   const entries = parsed.entries.map((entry) => normalizeEntry(entry));
-  return { version: JOURNAL_VERSION, nextId, entries };
+  // The id keys the list: the view, edit and delete paths take the first
+  // match, so a repeat would make one entry unreachable, and id 0 is falsy at
+  // the editor's add-or-replace fork. An id that is missing or outside the
+  // safe range is given the lowest free positive one, which keeps the entry
+  // editable in place. `nextId` is only a counter, so a stale one is repaired.
+  const ids = new Set();
+  for (const entry of entries) {
+    if (!entry.id) continue;
+    if (ids.has(entry.id)) throw new Error("That journal file has duplicate entry ids.");
+    ids.add(entry.id);
+  }
+  let spare = 0;
+  for (const entry of entries) {
+    if (entry.id) continue;
+    do spare++; while (ids.has(spare));
+    entry.id = spare;
+    ids.add(spare);
+  }
+  const highest = Math.max(0, ...ids);
+  return { version: JOURNAL_VERSION, nextId: Math.max(nextId, highest + 1), entries };
 }
 
 // The IV is a synthetic nonce — HMAC-SHA-256 of the plaintext under its own

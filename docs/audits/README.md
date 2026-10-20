@@ -82,7 +82,7 @@ fixed on this branch.
 
 | Item | Status | Evidence |
 |---|---|---|
-| Journal duplicate ids / stale `nextId` | Accepted open | `journal.js:739-741` |
+| Journal duplicate ids / stale `nextId` | Fixed | duplicate ids are refused at parse, an unsafe or missing id takes the lowest free one, a stale `nextId` is repaired to highest + 1, and `addEntry` never reuses an id; `test/journal.test.mjs` |
 | `file.text()` before the 4 MiB cap | Fixed | `File.size` is refused over `3 × limit + 3` bytes before the read; `test/journal-open-acknowledge.test.mjs` |
 | Uncapped Silent Payments paste fields | Fixed | vin and output text plus item counts are bounded before parse/split; `test/sp-send-session.test.mjs` |
 | bip352 redeem script not hash-checked | Accepted open | `bip352.js:207-212` |
@@ -91,7 +91,7 @@ fixed on this branch.
 | PBKDF2 iteration wrap | Not a product vulnerability | sole caller uses 2048 |
 | BIP45 export buttons on unsupported shapes | Accepted open | `app.js:2191-2222` |
 | HD wallet.dat path lacking msig xprv refusal | Not a product vulnerability | descriptors kept separate |
-| `release-assets.yml` persists checkout credentials | Accepted open | `release-assets.yml:21-30` |
+| `release-assets.yml` persists checkout credentials | Fixed | the checkout sets `persist-credentials: false`; `gh release download` authenticates through `GH_TOKEN` env; `test/toolchain-pin.test.mjs` |
 | Armed-open plaintext kept after acknowledgement | Fixed | `app.js:16634-16646` |
 
 Plus the prior known-open set carried in the handoff (ledger above, BitBox
