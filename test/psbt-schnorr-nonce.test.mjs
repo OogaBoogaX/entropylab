@@ -108,8 +108,8 @@ test("tap script sig records slice the x-only pubkey out of the keydata", () => 
   assert.deepEqual(withLeaf[0].r, rA);
   assert.equal(withLeaf[0].source, "tap-script");
   const shortKeydata = hodlTapScriptSigs([{ type: 20, keydata: new Uint8Array(31), val: raw }], (e, t) => e.filter((x) => x.type === t));
-  assert.deepEqual(shortKeydata[0].pubkey, new Uint8Array(), "short keydata yields no pubkey");
-  const unparseable = hodlTapScriptSigs([{ type: 20, keydata: key, val: new Uint8Array(10) }], (e, t) => e.filter((x) => x.type === t));
+  assert.equal(shortKeydata.length, 0, "short keydata is a lookalike, not a script-path signature");
+  const unparseable = hodlTapScriptSigs([{ type: 20, keydata: Uint8Array.from([...key, ...leafHash]), val: new Uint8Array(10) }], (e, t) => e.filter((x) => x.type === t));
   assert.equal(unparseable[0].r, null, "an unparseable value still records the pubkey");
   assert.deepEqual(unparseable[0].pubkey, key);
 });

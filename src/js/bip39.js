@@ -53,7 +53,13 @@ const entropyToMnemonic = (entropy, wordlist = bip39English) => {
   if (wordlist !== bip39English) throw new Error("Only the BIP39 English wordlist is supported.");
   const out = withInput(entropy, (p) => withOutput(PHRASE_CAP, (o) => wasm().el_bip39_entropy_to_mnemonic(p, entropy.length, o, PHRASE_CAP)));
   if (!out) throw new Error("BIP39 mnemonic encoding failed.");
-  return textDecoder.decode(out);
+  // `out` is the seed phrase itself. The string is the result; the bytes are
+  // a second copy of the secret and are erased here (RT-JSBOUNDARY-1).
+  try {
+    return textDecoder.decode(out);
+  } finally {
+    out.fill(0);
+  }
 };
 
 const mnemonicToEntropy = (mnemonic, wordlist = bip39English) => {
@@ -106,7 +112,13 @@ const saltFor = (passphrase) => {
 
 // PBKDF2-HMAC-SHA512(NFKD(mnemonic), NFKD("mnemonic" + passphrase), 2048, 64).
 const mnemonicToSeedSync = (mnemonic, passphrase = "") => {
-  const phrase = textEncoder.encode(nfkd(mnemonic));
+  // The reference refuses a phrase that is not 12/15/18/21/24 words or not
+  // well-formed Unicode; hashing whatever string arrives would turn a typo
+  // into a valid-looking wallet.
+  if (typeof mnemonic !== "string" || (typeof mnemonic.isWellFormed === "function" && !mnemonic.isWellFormed())) throw new Error("Invalid mnemonic");
+  const text = nfkd(mnemonic);
+  if (!isCanonicalPhrase(text)) throw new Error("Invalid mnemonic");
+  const phrase = textEncoder.encode(text);
   const salt = saltFor(passphrase);
   try {
     return pbkdf2Sha512(phrase, salt, 2048, 64);

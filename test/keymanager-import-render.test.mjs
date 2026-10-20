@@ -69,8 +69,10 @@ function importHarness() {
     hodlCaptureKey: () => { context.hodlKeys[context.hodlActiveKey].result = context.hodlWalletResult; },
     hodlShowWorkspace: () => { context.hodlWalletResult = context.hodlKeys[context.hodlActiveKey].result; },
     hodlRestoreKey: () => { context.hodlWalletResult = context.hodlKeys[context.hodlActiveKey].result; },
-    // Zeroing dropped wallets is covered in secret-clear.test.mjs.
+    // Zeroing dropped wallets and releasing their cloned sessions are covered
+    // in secret-clear.test.mjs.
     hodlCommittedResults: new Set(), hodlDisposeDroppedWallets() {},
+    hodlReleaseKeyConsumers() {}, hodlZeroKeyPassphrase() {},
   };
   for (const name of ["hodlNewKeyState", "hodlNewLabState", "hodlKeyManagerImportedState",
     "hodlKeyManagerStates", "hodlKeyManagerUseInStation", "hodlKeyManagerUseAllInStation",

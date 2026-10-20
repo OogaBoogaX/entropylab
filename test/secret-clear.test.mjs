@@ -43,7 +43,14 @@ function functionSource(name) {
 // model it, and the encoders a VM context lacks.
 const passphraseHelpers = ["hodlPassphraseVaultActive", "hodlPassphraseFieldBytes", "hodlStoredPassphraseBytes", "hodlPassphraseText", "hodlStorePassphrase", "hodlShowStoredPassphrase", "hodlClearPassphraseField", "hodlClearStationPassphrase"];
 function createContext(sandbox) {
-  const context = vm.createContext({ hodlPassphraseVaultField: null, hodlPassphraseShown: false, hodlStationPassphraseFields: null, TextEncoder, TextDecoder, ...sandbox });
+  const context = vm.createContext({
+    hodlPassphraseVaultField: null, hodlPassphraseShown: false, hodlStationPassphraseFields: null,
+    // Session state hodlReleaseKeyConsumers reads; a key drop releases any
+    // consumer bound to it (PSBT, BIP-85, Silent Payments, vanity).
+    hodlPsbtSource: "", hodlBip85Source: "", hodlSpSource: "", hodlSpVerifyMatches: null,
+    hodlSpSendLast: null, hodlSpNote: "", hodlVanitySource: "", hodlVanityApplying: false,
+    TextEncoder, TextDecoder, ...sandbox,
+  });
   for (const name of passphraseHelpers) vm.runInContext(functionSource(name), context);
   return context;
 }
@@ -92,14 +99,18 @@ function raceHarness() {
   for (const name of ["hodlThrowIfFailed", "hodlSetSelectedScriptType", "hodlCaptureKey",
     "hodlSnapshotKeySummary", "hodlCommitDerivedKey", "hodlJournalCaptureDerivedKey",
     "hodlFocusWalletResult", "hodlJournalLog", "hodlSetWorkspaceError", "hodlJournalSetStatus",
-    "hodlKeyManagerStatus", "hodlPsbtWipeMem", "hodlBip85WipeMem", "hodlSpWipeMem",
+    "hodlKeyManagerStatus", "hodlPsbtWipeMem", "hodlBip85WipeMem", "hodlBip85WipeParent",
+    "hodlDropBip85ChildrenOf", "hodlSpWipeMem",
     "hodlLnWipeMem", "hodlRenderBip85Tabs", "hodlSyncBip85View", "hodlVanityCancel",
     "hodlVanitySyncSource", "hodlVanitySyncControls", "hodlSetVanityError", "hodlVanitySetStatus", "hodlNote", "hodlRefreshStationKeyPickers", "hodlRefreshMsigSessionPickers", "hodlSyncPsbtControls",
+    "hodlPaintPsbtSession", "hodlSyncBip85Parent", "hodlSpDropAddressesFrom", "hodlSpWipeKeys",
+    "hodlPaintSpSession", "hodlVanityClearResults",
     "hodlRestoreMsig"])
     context[name] = (...args) => { effects.push([name, ...args]); };
   vm.runInContext('class HodlDerivationCancelledError extends Error {}', context);
   for (const name of ["hodlNote", "hodlInvalidateDerivation", "hodlAssertDerivationActive", "hodlCalculateKey",
     "hodlWipeActiveKey", "hodlJournalImportFile", "hodlKeyManagerImportFile", "hodlInitSecretFieldAutoClear",
+    "hodlZeroKeyPassphrase", "hodlReleaseKeyConsumers",
     "hodlAccountAddressBranches", ...rowWipeHelpers.filter((name) => app.includes(`function ${name}(`))])
     vm.runInContext(functionSource(name), context);
   context.hodlInitSecretFieldAutoClear();
@@ -190,17 +201,20 @@ test("pagehide and persisted pageshow erase transcript-render panels and progres
   }
 });
 
-test("pagehide and persisted pageshow drop the dice previousValue leftover", () => {
+test("pagehide and persisted pageshow drop the dice input leftovers", () => {
   // #423 leftover: the wipe blanked dice.value and left dataset.previousValue
   // holding the rolls. That is the raw entropy the visible field just lost.
+  // An aborted beforeinput leaves the same value in the expando.
   const { context, events } = raceHarness();
   const dice = context.document.getElementById("dice");
   for (const type of ["pagehide", "pageshow"]) {
     dice.value = "1 2 3 4 5 6";
     dice.dataset.previousValue = "1 2 3 4 5 6";
+    dice.hodlDiceBeforeInput = { value: "1 2 3 4 5 6", start: 11, end: 11, inputType: "insertText" };
     events[type]({ persisted: true });
     assert.equal(dice.value, "");
     assert.equal(dice.dataset.previousValue, undefined);
+    assert.equal(dice.hodlDiceBeforeInput, undefined);
   }
 });
 
@@ -383,8 +397,6 @@ test("Vanity grinder salt, matches, and running workers are cleared", () => {
   assert.match(lifecycle, /hodlVanityReveal\s*=\s*false/);
   assert.match(lifecycle, /hodlVanitySource\s*=\s*""/);
   assert.match(lifecycle, /hodlVanityRun\s*=\s*null/);
-  assert.match(lifecycle, /getElementById\("vanity-pass"\)/);
-  assert.match(lifecycle, /vanityPass\.textContent\s*=\s*""/);
   assert.match(lifecycle, /getElementById\("vanity-out"\)/);
   assert.match(lifecycle, /vanityOut\.innerHTML\s*=\s*""/);
   // The masked column is sized from the passphrase lengths; that width goes
@@ -414,12 +426,12 @@ test("pagehide drops the vanity grinder, not only the visible matches", () => {
   assert.equal(context.hodlVanityGrinder, null, "pagehide left the vanity grinder (and its retained run secrets) reachable");
 });
 
-test("dropping the vanity key pick clears the passphrase the source block showed", () => {
-  // #vanity-pass shows the picked key's BIP39 passphrase verbatim. Hiding the
+test("dropping the vanity key pick clears the note the source block showed", () => {
+  // #vanity-pass-note describes the picked key's BIP39 passphrase. Hiding the
   // block when the pick is dropped (chip toggle, wipe, station change) must
-  // not leave the passphrase parked in the hidden panel.
+  // not leave that description parked in the hidden panel.
   const elements = new Map();
-  for (const id of ["vanity-source-block", "vanity-session-note", "vanity-source-name", "vanity-source-kind", "vanity-pass", "vanity-pass-note", "vanity-source-path", "vanity-source-lifehash"])
+  for (const id of ["vanity-source-block", "vanity-session-note", "vanity-source-name", "vanity-source-kind", "vanity-pass-note", "vanity-source-path", "vanity-source-lifehash"])
     elements.set(id, { textContent: "hunter2", hidden: false, disabled: false, dataset: {} });
   const context = createContext({
     document: {
@@ -438,7 +450,6 @@ test("dropping the vanity key pick clears the passphrase the source block showed
   });
   vm.runInContext(`${functionSource("hodlVanitySyncSource")}\nhodlVanitySyncSource();`, context);
   assert.equal(elements.get("vanity-source-block").hidden, true, "an unpicked source block must hide");
-  assert.equal(elements.get("vanity-pass").textContent, "", "unpicking left the shown passphrase behind");
   assert.equal(elements.get("vanity-pass-note").textContent, "", "unpicking left the passphrase note behind");
 });
 
@@ -561,6 +572,117 @@ test("conceal-on-leave masks the session-state snapshot and unticks its box", as
   }
 });
 
+test("conceal-on-leave empties result panes that have no reveal switch", async () => {
+  // A pasted PSBT can carry an xprv in a proprietary field, the nonce report
+  // repeats signatures, and the brain-wallet hash is the key material itself.
+  // These panes have no switch to untick, so the sweep must empty them.
+  const slice = await loadJournalConcealSlice();
+  const page = new MiniDocument();
+  globalThis.document = page;
+  const panes = ["psbt-out", "nonce-out", "psbted-out", "psbted-compare-out", "brain-lab-hex"];
+  page.body.innerHTML = panes.map((id) => `<pre id="${id}">xprv9s21ZrQH143K…secret</pre>`).join("");
+  try {
+    slice.hodlConcealPrivateValues();
+    for (const id of panes) assert.equal(page.getElementById(id).textContent, "", `conceal left #${id} on screen`);
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("dropping a key releases every session cloned from it", () => {
+  // The PSBT, BIP-85, Silent Payments and vanity stations clone a station
+  // key's root or seed into their own state. Deleting, ignoring or wiping the
+  // key must take those clones with it, and only for the key in question.
+  const calls = [];
+  const fields = new Map([
+    ["bip85-key", { value: "xprv9…" }],
+    ["sp-key", { value: "sp1…" }],
+    ["sp-pass", { value: "passphrase" }],
+    ["sp-out", { replaceChildren() { calls.push("sp-out"); } }],
+  ]);
+  const context = createContext({
+    document: { getElementById: (id) => fields.get(id) ?? null },
+    hodlKeys: [{ id: 1, result: { masterFingerprint: "deadbeef" } }],
+    hodlPsbtSource: "key:1", hodlBip85Source: "key:1", hodlSpSource: "key:1", hodlVanitySource: "key:1",
+    hodlSpVerifyMatches: { match: 1 }, hodlSpSendLast: { send: 1 }, hodlSpNote: "sp",
+    hodlPsbtWipeMem() { calls.push("psbt-wipe"); },
+    hodlPaintPsbtSession() { calls.push("psbt-paint"); },
+    hodlSyncPsbtControls() { calls.push("psbt-controls"); },
+    hodlBip85WipeMem() { calls.push("bip85-wipe"); },
+    hodlBip85WipeParent() { calls.push("bip85-wipe-parent"); },
+    hodlDropBip85ChildrenOf(source) { if (source) calls.push("bip85-drop:" + source); },
+    hodlSyncBip85Parent() { calls.push("bip85-parent"); },
+    hodlSpDropAddressesFrom(source) { calls.push("sp-drop:" + source); },
+    hodlSpWipeKeys() { calls.push("sp-keys"); },
+    hodlPaintSpSession(note) { calls.push("sp-paint:" + note); },
+    hodlVanityCancel() { calls.push("vanity-cancel"); },
+    hodlVanityClearResults() { calls.push("vanity-clear"); },
+    hodlVanitySyncSource() { calls.push("vanity-source"); },
+  });
+  vm.runInContext(functionSource("hodlReleaseKeyConsumers"), context);
+  context.hodlReleaseKeyConsumers(2);
+  // The BIP-85 lookup runs for every release but finds no child of this key;
+  // only the SP cascade does anything destructive.
+  assert.deepEqual(calls, ["bip85-drop:key:2", "sp-drop:key:2"], "a different key released another key's sessions");
+  calls.length = 0;
+  context.hodlReleaseKeyConsumers(1);
+  assert.deepEqual(calls, ["psbt-wipe", "psbt-paint", "psbt-controls", "bip85-wipe-parent", "bip85-parent",
+    "bip85-drop:key:1", "sp-drop:key:1", "sp-keys", "sp-out", "sp-paint:sp", "vanity-cancel",
+    "vanity-clear", "vanity-source"]);
+  assert.equal(fields.get("bip85-key").value, "", "the BIP-85 parent field kept the dropped key's xprv");
+  assert.equal(fields.get("sp-key").value, "", "the Silent Payments field kept the dropped key");
+  assert.equal(fields.get("sp-pass").value, "", "the Silent Payments passphrase field survived");
+  assert.equal(context.hodlSpVerifyMatches, null, "the SP verify matches survived the key");
+  assert.equal(context.hodlSpSendLast, null, "the SP send result survived the key");
+  assert.equal(context.hodlVanitySource, "", "the vanity picker still points at the dropped key");
+  // A vanity Update key re-derives this same key while its apply runs: only
+  // that successful update may keep the session and the match table it is
+  // about to annotate, and it says so explicitly. Any other release during
+  // the apply (a delete, wipe, ignore or detach) still tears the run down.
+  calls.length = 0;
+  context.hodlVanitySource = "key:1";
+  context.hodlVanityApplying = true;
+  context.hodlReleaseKeyConsumers(1, { keepVanity: true });
+  assert(!calls.includes("vanity-cancel"), "the vanity update lost its own match table");
+  assert.equal(context.hodlVanitySource, "key:1", "the vanity update lost its source");
+  calls.length = 0;
+  context.hodlReleaseKeyConsumers(1);
+  assert(calls.includes("vanity-cancel"), "a delete during the apply kept the match table and run");
+  assert.equal(context.hodlVanitySource, "", "a delete during the apply kept pointing at the dead key");
+});
+
+test("dropping a key drops only that parent's BIP-85 children, transitively", () => {
+  // A station-wide wipe would take another live key's children with it; the
+  // cascade follows the parent's source, and lab/bench tabs stay. Two
+  // different roots can share a 32-bit fingerprint, so the fingerprint alone
+  // cannot identify a parent (AR-05).
+  const calls = [];
+  const lab = { isLab: true, id: 0, result: null };
+  const parent = { isLab: false, id: 4, parentSource: "key:1", parentFingerprint: "aaaa1111", result: null };
+  const child = { isLab: false, id: 5, parentSource: "key:bip85:4", parentFingerprint: "aaaa1111", result: null };
+  const grandchild = { isLab: false, id: 6, parentSource: "key:bip85:5", parentFingerprint: "bbbb2222", result: null };
+  const unrelated = { isLab: false, id: 7, parentSource: "key:2", parentFingerprint: "aaaa1111", result: null };
+  const context = createContext({
+    hodlBip85Children: [lab, parent, child, grandchild, unrelated],
+    hodlActiveBip85: 4,
+    hodlBip85Result: null,
+    hodlSpDropAddressesFrom(source) { calls.push("sp:" + source); },
+    hodlBip85DropChild(state) { calls.push("drop:" + state.id); },
+    hodlNewBip85BenchState: () => lab,
+    hodlBip85ActiveState: () => context.hodlBip85Children[context.hodlActiveBip85] || null,
+    hodlRenderBip85Tabs() { calls.push("tabs"); },
+    hodlSyncBip85View() { calls.push("view"); },
+  });
+  for (const name of ["hodlReleaseBip85ChildSource", "hodlDropBip85ChildrenOf"]) vm.runInContext(functionSource(name), context);
+  context.hodlDropBip85ChildrenOf("key:1");
+  // Depth first: the descendant cascade runs before the parent's own drop,
+  // and each level that removed something re-renders the tabs.
+  assert.deepEqual(calls, ["sp:key:bip85:4", "sp:key:bip85:5", "sp:key:bip85:6", "drop:6", "tabs", "view",
+    "drop:5", "tabs", "view", "drop:4", "tabs", "view"]);
+  assert.deepEqual(context.hodlBip85Children.map((state) => state.id), [0, 7], "an unrelated child sharing a fingerprint was dropped");
+  assert.equal(context.hodlActiveBip85, 1, "the active tab was not clamped to the remaining children");
+});
+
 test("the session-state private box re-renders the snapshot on change", async () => {
   const slice = await loadJournalConcealSlice();
   const page = journalSessionStateHarness(slice);
@@ -653,8 +775,10 @@ test("the key Wipe button drops the cached partial mnemonics", () => {
       hodlWipeUnsharedWalletRows() {},
       hodlRefreshStationKeyPickers() {},
       hodlRefreshMsigSessionPickers() {},
+      hodlSpDropAddressesFrom() {},
+      hodlBip85WipeParent() {}, hodlDropBip85ChildrenOf() {},
     });
-    vm.runInContext(`${functionSource("hodlWipeActiveKey")}\nhodlWipeActiveKey();`, context);
+    vm.runInContext(`${functionSource("hodlZeroKeyPassphrase")}\n${functionSource("hodlReleaseKeyConsumers")}\n${functionSource("hodlWipeActiveKey")}\nhodlWipeActiveKey();`, context);
     assert.equal(cache.size, 0, `Wipe (active key ${activeKey}) left partial mnemonics in the last-word cache`);
   }
 });
@@ -758,8 +882,11 @@ test("Wipe zeroes a wallet's row key bytes unless another key tab still shows th
       hodlNewKeyState: () => ({ result: null }), hodlNewLabState: () => ({ result: null }),
       hodlRestoreKey() { context.hodlWalletResult = context.hodlKeys[context.hodlActiveKey]?.result ?? null; }, hodlJournalLog() {},
       hodlRefreshStationKeyPickers() {}, hodlRefreshMsigSessionPickers() {},
+      hodlSpDropAddressesFrom() {},
+      hodlBip85WipeParent() {}, hodlDropBip85ChildrenOf() {},
     });
     for (const name of ["hodlAccountAddressBranches", ...rowWipeHelpers.filter((name) => app.includes(`function ${name}(`))]) vm.runInContext(functionSource(name), context);
+    for (const name of ["hodlZeroKeyPassphrase", "hodlReleaseKeyConsumers"]) vm.runInContext(functionSource(name), context);
     vm.runInContext(`${functionSource("hodlWipeActiveKey")}\nhodlWipeActiveKey();`, context);
     if (shared) assert.ok(rows.every((row) => row.privateKey.some((byte) => byte !== 0)), "Wipe zeroed keys another tab still shows");
     else assert.ok(zeroed(rows), "Wipe left the wallet's row key bytes in memory");
@@ -799,6 +926,7 @@ test("a Key Manager reset leaves the row key bytes of a wallet a station still s
     hodlKeyManagerIgnored: [], hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "",
     document: { getElementById: () => null }, hodlKeyManagerStatus() {}, hodlKeyManagerRender() {},
     hodlRefreshStationKeyPickers() {}, hodlRefreshMsigSessionPickers() {},
+    hodlSpDropAddressesFrom() {}, hodlBip85WipeParent() {}, hodlDropBip85ChildrenOf() {},
   });
   // The wipe tests bytes with instanceof, so they must come from the context's
   // own realm, as they do in the page.
@@ -807,7 +935,7 @@ test("a Key Manager reset leaves the row key bytes of a wallet a station still s
     hodlKeyManagerPending: [{ id: 1, result: shared.result }, { id: 2, result: alone.result }],
     hodlKeys: [{ isLab: true, result: shared.result }], hodlWalletResult: shared.result,
   });
-  for (const name of ["hodlKeyManagerWipeValue", "hodlKeyManagerReset", "hodlAccountAddressBranches", ...rowWipeHelpers.filter((name) => app.includes(`function ${name}(`))]) vm.runInContext(functionSource(name), context);
+  for (const name of ["hodlKeyManagerWipeValue", "hodlKeyManagerReset", "hodlReleaseKeyConsumers", "hodlAccountAddressBranches", ...rowWipeHelpers.filter((name) => app.includes(`function ${name}(`))]) vm.runInContext(functionSource(name), context);
   vm.runInContext("hodlKeyManagerReset();", context);
   assert.ok(shared.rows.every((row) => row.privateKey.some((byte) => byte !== 0)), "the reset zeroed keys the Key Station still shows");
   assert.ok(zeroed(alone.rows), "the reset left a pending-only wallet's row key bytes in memory");

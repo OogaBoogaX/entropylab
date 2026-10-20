@@ -128,6 +128,27 @@ test("bech32m word-level encode/decode matches @scure/base including >90 chars",
   assert.equal(bech32mDecode(tampered), null);
 });
 
+test("bech32m encode refuses word values that are not 5-bit integers", () => {
+  for (const [words, message] of [
+    ["ab", /must be an array of integers/],
+    [null, /must be an array of integers/],
+    [[0, 32], /word values must be integers 0\.\.31/],
+    [[0, -1], /word values must be integers 0\.\.31/],
+    [[0, 1.5], /word values must be integers 0\.\.31/],
+    [new Uint8Array([0, 255]), /word values must be integers 0\.\.31/],
+  ]) assert.throws(() => bech32mEncode("sp", words), message);
+  assert.equal(typeof bech32mEncode("sp", Uint8Array.from([0, 1, 2])), "string", "typed arrays of valid words still encode");
+});
+
+test("mnemonicToSeedSync refuses non-canonical phrase input", async () => {
+  const { mnemonicToSeedSync } = await import("../src/js/bip39.js");
+  const good = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+  assert.ok(mnemonicToSeedSync(good, "") instanceof Uint8Array);
+  for (const bad of [null, 12, "", "abandon abandon", good.replaceAll(" ", "  "), good + "\n"]) {
+    assert.throws(() => mnemonicToSeedSync(bad, ""), /Invalid mnemonic/);
+  }
+});
+
 test("bech32m handles HRPs up to the BIP-173 limit of 83 characters (audit A1H-5)", () => {
   // The decode buffer was sized for the app's own short HRPs (16 bytes) and
   // rejected standard-conforming strings with longer ones. @scure/base is the

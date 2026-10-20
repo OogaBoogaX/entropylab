@@ -7,8 +7,12 @@
 // Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { indexSingleKey, matchOwnership, normalizeAddress, pathLabel } from "../src/js/ownership.js";
+import { HDKey } from "@scure/bip32";
+import { mnemonicToSeedSync } from "@scure/bip39";
+import { p2wpkh, TEST_NETWORK } from "@scure/btc-signer";
+import { indexSingleKey, indexHdKey, matchOwnership, normalizeAddress, pathLabel } from "../src/js/ownership.js";
 import { secp256k1 } from "../src/js/secp256k1.js";
+import { HDKey as WasmHDKey } from "../src/js/hdkey.js";
 
 // Fixed public material: the private key 1. Nothing here is secret.
 const KEY1 = new Uint8Array(32);
@@ -90,4 +94,25 @@ test("pathLabel renders hardened suffixes and rejects non-arrays", () => {
   assert.equal(pathLabel([]), "");
   assert.equal(pathLabel("m/44'/0'/0'"), "");
   assert.equal(pathLabel(null), "");
+});
+
+test("indexHdKey indexes every test chain under BIP44 coin type 1", () => {
+  // Expected addresses come from @scure/btc-signer, not from the code under
+  // test: signet and testnet share the tb1 HRP, regtest uses bcrt1.
+  const seed = mnemonicToSeedSync("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "");
+  const account = HDKey.fromMasterSeed(seed).derive("m/84'/1'/0'");
+  const pubkey = account.deriveChild(0).deriveChild(0).publicKey;
+  const expected = {
+    signet: p2wpkh(pubkey, TEST_NETWORK).address,
+    regtest: p2wpkh(pubkey, { ...TEST_NETWORK, bech32: "bcrt" }).address,
+  };
+  assert.notEqual(expected.signet, expected.regtest);
+  for (const network of ["signet", "regtest"]) {
+    const other = network === "signet" ? expected.regtest : expected.signet;
+    const map = indexHdKey(WasmHDKey.fromMasterSeed(seed), network, { gap: 1, accounts: 1 });
+    const hit = matchOwnership(map, expected[network]);
+    assert.equal(hit.state, "ours", `${network} receive 0 must be indexed as ours`);
+    assert.equal(hit.path, "m/84h/1h/0h/0/0", `${network} must derive under coin type 1`);
+    assert.equal(matchOwnership(map, other).state, "external", `${network} must not index the other test chain's address`);
+  }
 });

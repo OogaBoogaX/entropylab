@@ -32,6 +32,21 @@ test("more than 512 script pushes are marked malformed instead of analyzed", () 
   assert.ok(Date.now() - started < 2000, "the capped scan returned promptly");
 });
 
+test("more than 32 candidate keys in a witnessScript are also capped", async () => {
+  // scriptCode's pushes used to bypass addCandidate, so a witnessScript with
+  // 511 pubkey-shaped pushes became 511 EC-verification candidates and the
+  // budget bound the stack but not this path.
+  entries.length = 0;
+  const parts = [];
+  for (let i = 0; i < 100; i++) parts.push(...pubkey(i));
+  const scriptCode = Uint8Array.from(parts);
+  const { hodlFinalSigs: withScript } = await loadAppFunctions(["hodlFinalSigs"], {
+    stubs: { ...stubs, hodlInputScriptCode: () => scriptCode },
+  });
+  const result = withScript(entries, null, { inputs: [], outputs: [] }, 0, { remaining: 64 });
+  assert.equal(result.malformed, true, "the scriptCode candidate cap must block a clean verdict");
+});
+
 test("more than 32 distinct candidate keys are marked malformed", () => {
   entries.length = 0;
   const parts = [];

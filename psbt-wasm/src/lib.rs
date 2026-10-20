@@ -36,6 +36,7 @@ use bitcoin::{
     Witness,
 };
 use serde_json::{json, Map, Value};
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::str::FromStr;
@@ -68,7 +69,13 @@ fn set_error(message: String) -> i32 {
 }
 
 fn clear_error() {
-    LAST_ERROR.with(|slot| slot.borrow_mut().clear());
+    LAST_ERROR.with(|slot| {
+        let mut message = slot.borrow_mut();
+        // Error text can echo attacker-controlled field data (key/value hex);
+        // clear() alone keeps the bytes in the String's allocation.
+        unsafe { message.as_mut_vec().fill(0) };
+        message.clear();
+    });
 }
 
 /// Allocates `len` zero-filled bytes of linear memory for JS to fill. Pair
@@ -111,6 +118,41 @@ unsafe fn wipe(ptr: *mut u8, len: usize) {
 fn wipe_vec(bytes: &mut Vec<u8>) {
     // Soundness: writes stay within the Vec's owned `len` bytes.
     unsafe { wipe(bytes.as_mut_ptr(), bytes.len()) };
+}
+
+/// Erase every allocation on free, not only the buffers this crate wipes
+/// explicitly. rust-bitcoin's parse frames and serde_json's strings can hold
+/// pasted key material (a proprietary xprv, say) long after the value that
+/// owned them is dropped.
+struct WipingAllocator;
+
+#[global_allocator]
+static ALLOCATOR: WipingAllocator = WipingAllocator;
+
+unsafe impl GlobalAlloc for WipingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        System.alloc(layout)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        wipe(ptr, layout.size());
+        System.dealloc(ptr, layout);
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // System.realloc may free the old block before we can erase it.
+        // Allocate/copy/erase instead; on failure the old allocation remains
+        // intact, as GlobalAlloc requires. No Rust allocation occurs in wipe.
+        let Ok(new_layout) = Layout::from_size_align(new_size, layout.align()) else {
+            return std::ptr::null_mut();
+        };
+        let next = System.alloc(new_layout);
+        if !next.is_null() {
+            std::ptr::copy_nonoverlapping(ptr, next, layout.size().min(new_size));
+            self.dealloc(ptr, layout);
+        }
+        next
+    }
 }
 
 /// Copies the last error message into `out` (two-call convention: null `out`
@@ -354,6 +396,21 @@ fn reject_bip370_singleton_keydata(
     }
     for map in outputs {
         reject_singleton_keydata("output", map, &BIP370_SINGLETON_OUTPUT)?;
+    }
+    Ok(())
+}
+
+/// Refuses every keyless typed field that carries key data, not just BIP-370's.
+/// `is_singleton` names the fields whose key is the type byte alone; a longer
+/// key is a lookalike (`decode_pair` reports it as "this field must not carry
+/// key data"). The v2 builder passes unknown pairs through verbatim, so
+/// without this check a hand-edited document could emit a file whose typed
+/// fields mean one thing here and another to a reader that ignores keydata.
+fn reject_lookalike_keydata(kind: &str, pairs: &[RawPair]) -> Result<(), String> {
+    for pair in pairs {
+        if pair.key.len() > 1 && is_singleton(kind, pair.key[0]) {
+            return Err(format!("{} must not carry key data", pair_type_name(kind, pair.key[0])));
+        }
     }
     Ok(())
 }
@@ -802,6 +859,22 @@ pub(crate) fn pair_type_name(kind: &str, type_byte: u8) -> &'static str {
     }
 }
 
+/// True when `type_byte` names a PSBT field that must not carry key data.
+/// A pair with keydata on one of these is a lookalike, not the field: a
+/// decoder that ignored the extra bytes would present attacker-chosen data
+/// as, say, the witness UTXO.
+fn is_singleton(kind: &str, type_byte: u8) -> bool {
+    match kind {
+        "global" => matches!(type_byte, 0x00 | 0x02 | 0x03 | 0x04 | 0x05 | 0x06 | 0xfb),
+        "input" => matches!(
+            type_byte,
+            0x00 | 0x01 | 0x03 | 0x04 | 0x05 | 0x07 | 0x08 | 0x0e | 0x0f | 0x10 | 0x11 | 0x12 | 0x13 | 0x17 | 0x18
+        ),
+        "output" => matches!(type_byte, 0x00 | 0x01 | 0x03 | 0x04 | 0x05 | 0x06),
+        _ => false,
+    }
+}
+
 /// Decodes one key-value pair into a display JSON object. `kind` is "global",
 /// "input" or "output"; `input_index` is the pair's input-map index when
 /// `kind` is "input". Unknown types decode to null and stay raw.
@@ -810,7 +883,10 @@ fn decode_pair(kind: &str, pair: &RawPair, tx: &Transaction, input_index: Option
     let keydata = &pair.key[1..];
     let name = pair_type_name(kind, type_byte).to_string();
 
-    let decoded: Result<Value, String> = (|| {
+    let decoded: Result<Value, String> = if !keydata.is_empty() && is_singleton(kind, type_byte) {
+        Err("this field must not carry key data".into())
+    } else {
+        (|| {
         Ok(match (kind, type_byte) {
             ("global", 0x00) => json!({
                 "note": "Decoded in the transaction section; edit it there.",
@@ -1022,7 +1098,8 @@ fn decode_pair(kind: &str, pair: &RawPair, tx: &Transaction, input_index: Option
             ("output", 0x06) => tap_tree_json(&pair.value)?,
             _ => return Ok(Value::Null),
         })
-    })();
+        })()
+    };
 
     let mut view = Map::new();
     view.insert("name".into(), Value::String(name));
@@ -1618,9 +1695,16 @@ fn build_v2(doc: &Value, tx: &Transaction, global_pairs: Vec<RawPair>, insane: b
         ));
     }
     // A non-exact singleton key is passed through below (only the one-byte
-    // key is regenerated). Refuse it here so the editor cannot emit a file
-    // whose reader would have to ignore that key.
-    reject_bip370_singleton_keydata(&global_pairs, &inputs, &outputs)?;
+    // key is regenerated). Refuse every lookalike here — BIP-370's fields and
+    // the rest — so the editor cannot emit a file whose reader would have to
+    // ignore that key. (v0 gets the same rule from rust-bitcoin's parser.)
+    reject_lookalike_keydata("global", &global_pairs)?;
+    for map in &inputs {
+        reject_lookalike_keydata("input", map)?;
+    }
+    for map in &outputs {
+        reject_lookalike_keydata("output", map)?;
+    }
 
     // Same export gate as the v0 path: BIP-370 changes the container, not
     // the consensus rules the transaction and its signing claims are held to.
@@ -1954,6 +2038,21 @@ mod tests {
         );
         assert_eq!(pair_type_name("output", 0x1a), "PSBT_OUT_UNKNOWN");
         assert_eq!(pair_type_name("global", 0x1a), "PSBT_GLOBAL_UNKNOWN");
+    }
+
+    /// The v2 builder passes unknown pairs through verbatim. A keyless field
+    /// with key data is a lookalike: `decode_pair` rejects it, and the build
+    /// must too, not emit a file another reader could interpret differently.
+    #[test]
+    fn the_v2_builder_refuses_every_singleton_lookalike() {
+        for (kind, type_byte) in [("global", 0x02), ("input", 0x00), ("output", 0x06)] {
+            let pair = RawPair { key: vec![type_byte, 0xaa], value: vec![0x01] };
+            let err = reject_lookalike_keydata(kind, &[pair]).expect_err(kind);
+            assert!(err.contains("must not carry key data"), "{kind}: {err}");
+        }
+        // Keyed fields that legitimately carry key data are not singleton.
+        let pair = RawPair { key: vec![0x02, 0x02], value: vec![0x01] };
+        assert!(reject_lookalike_keydata("input", &[pair]).is_ok());
     }
 
 }

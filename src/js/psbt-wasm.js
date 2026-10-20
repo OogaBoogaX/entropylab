@@ -117,7 +117,16 @@ const call = (input, name) => {
 // input; the error message comes from the Rust side.
 export const psbtInspectDoc = (bytes) => {
   if (!(bytes instanceof Uint8Array) || !bytes.length) throw new Error("PSBT must be a non-empty byte array.");
-  return JSON.parse(decoder.decode(call(bytes, "psbt_inspect")));
+  // The JSON carries every field of the document, including any proprietary
+  // key material. The parsed object owns its strings; the byte copy is a
+  // second copy of the same secret and is erased once decoded
+  // (RT-JSBOUNDARY-1).
+  const json = call(bytes, "psbt_inspect");
+  try {
+    return JSON.parse(decoder.decode(json));
+  } finally {
+    json.fill(0);
+  }
 };
 
 // Rebuilds PSBT bytes from a (possibly edited) editor document. Throws when
@@ -128,5 +137,12 @@ export const psbtInspectDoc = (bytes) => {
 // still enforced, so the output is always a parseable PSBT.
 export const psbtBuildBytes = (doc, { insane = false } = {}) => {
   if (!doc || typeof doc !== "object") throw new Error("editor document must be an object.");
-  return call(encoder.encode(JSON.stringify(insane ? { ...doc, insane: true } : doc)), "psbt_build");
+  // The JSON can carry an xprv/key material in key-value pairs; wipe the
+  // UTF-8 copy once the call returns.
+  const bytes = encoder.encode(JSON.stringify(insane ? { ...doc, insane: true } : doc));
+  try {
+    return call(bytes, "psbt_build");
+  } finally {
+    bytes.fill(0);
+  }
 };

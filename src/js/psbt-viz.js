@@ -121,10 +121,16 @@ const scriptKind = (scriptHex, asm) => {
 // claim's script wins the label when both are present and consistent. Pairs
 // that fail their typed decode claim nothing.
 const claimedPrevout = (pairs) => {
-  const witness = pairs.find((pair) => pair.name === "PSBT_IN_WITNESS_UTXO" && pair.decoded);
-  const nonWitness = pairs.find((pair) => pair.name === "PSBT_IN_NON_WITNESS_UTXO" && pair.decoded?.prevout);
-  const witnessClaim = witness && { value: witness.decoded.value, scriptPubKey: witness.decoded.scriptPubKey };
-  const nonWitnessClaim = nonWitness && { value: nonWitness.decoded.prevout.value, scriptPubKey: nonWitness.decoded.prevout.scriptPubKey };
+  const witnessClaims = pairs.filter((pair) => pair.name === "PSBT_IN_WITNESS_UTXO" && pair.decoded)
+    .map((pair) => ({ value: pair.decoded.value, scriptPubKey: pair.decoded.scriptPubKey }));
+  const nonWitnessClaims = pairs.filter((pair) => pair.name === "PSBT_IN_NON_WITNESS_UTXO" && pair.decoded?.prevout)
+    .map((pair) => ({ value: pair.decoded.prevout.value, scriptPubKey: pair.decoded.prevout.scriptPubKey }));
+  // Two pairs of the same type are ambiguous: the verifier takes the last,
+  // this diagram used to take the first, so the box and the fee could tell
+  // different stories about one input. Say conflicting instead.
+  if (witnessClaims.length > 1) return { conflict: [witnessClaims[0].value, witnessClaims[1].value] };
+  if (nonWitnessClaims.length > 1) return { conflict: [nonWitnessClaims[0].value, nonWitnessClaims[1].value] };
+  const witnessClaim = witnessClaims[0], nonWitnessClaim = nonWitnessClaims[0];
   if (witnessClaim && nonWitnessClaim) {
     const agree = witnessClaim.value === nonWitnessClaim.value && witnessClaim.scriptPubKey === nonWitnessClaim.scriptPubKey;
     return agree ? nonWitnessClaim : { conflict: [witnessClaim.value, nonWitnessClaim.value] };
@@ -141,9 +147,27 @@ const FINAL_PAIR_NAMES = ["PSBT_IN_FINAL_SCRIPTSIG", "PSBT_IN_FINAL_SCRIPTWITNES
 // reads as malformed, never as progress (issue #328).
 const signingStatus = (pairs) => {
   const decodedOk = (pair) => pair.decoded && !pair.decodeError;
+  const keyHex = (pair) => (typeof pair.key === "string" ? pair.key.toLowerCase() : "");
+  // A pair's key shape is part of its meaning (issue #328 follow-up, AR-09).
+  // `pair.key` is the full serialized key: one type byte then keydata. Final
+  // fields carry no keydata; a tap-key signature is keyless by definition; a
+  // partial signature carries the signer's public key as keydata (BIP-174);
+  // a tap-script signature its x-only key plus leaf hash. A `07aa`-style
+  // lookalike, or a keyless partial signature, is a malformed field, not
+  // signing progress.
+  const shapeOk = (pair) => {
+    const key = keyHex(pair);
+    if (pair.name === "PSBT_IN_PARTIAL_SIG") {
+      const prefix = key.slice(2, 4);
+      return (key.length === 68 && (prefix === "02" || prefix === "03"))
+        || (key.length === 132 && prefix === "04");
+    }
+    if (pair.name === "PSBT_IN_TAP_SCRIPT_SIG") return key.length === 130;
+    return key.length === 2;
+  };
   const finals = pairs.filter((pair) => FINAL_PAIR_NAMES.includes(pair.name));
-  if (finals.some(decodedOk)) return { text: "finalized", tone: "psbted-note-ok" };
-  const sigs = pairs.filter((pair) => SIGNING_PAIR_NAMES.includes(pair.name) && decodedOk(pair)).length;
+  if (finals.some((pair) => shapeOk(pair) && decodedOk(pair))) return { text: "finalized", tone: "psbted-note-ok" };
+  const sigs = pairs.filter((pair) => SIGNING_PAIR_NAMES.includes(pair.name) && shapeOk(pair) && decodedOk(pair)).length;
   if (sigs) return { text: `${sigs} signature${sigs === 1 ? "" : "s"}`, tone: "" };
   const malformed = finals.length + pairs.filter((pair) => SIGNING_PAIR_NAMES.includes(pair.name)).length;
   if (malformed) return { text: "malformed signing field", tone: "psbted-note-bad" };
