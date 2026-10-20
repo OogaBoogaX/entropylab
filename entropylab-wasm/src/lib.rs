@@ -33,13 +33,15 @@
 //! sizes (see `scrub_scrypt`; V's first block otherwise retains one PBKDF2
 //! iteration of the passphrase, a passphrase-guessing accelerator), and the
 //! vendored AEZ module wipes its expanded key schedule on drop and its
-//! Blake2b key-expansion hasher after use. What cannot be wiped without new
-//! dependencies: state hidden inside dependency types that expose no erase
-//! (the `HmacEngine` key pads, `bip39::Mnemonic`'s stored phrase, and the
-//! by-value moves inside `bitcoin::bip32`). Those copies are short lived
-//! stack/heap cells, but they are the known residual. The scrypt working
-//! buffer also grows WASM linear memory permanently (linear memory never
-//! shrinks); that is a size cost, not a secrecy cost.
+//! Blake2b key-expansion hasher after use. The global allocator erases Rust
+//! heap allocations before release, including dependency-owned descriptor
+//! strings and KeyMap nodes, and old buffers on reallocation. Live allocations
+//! and by-value stack copies inside dependencies remain outside that boundary
+//! (e.g. `HmacEngine` key pads and `bitcoin::bip32` temporaries); the JS loader's
+//! per-task stack scrub and End Session's module retirement address those
+//! separately. None of this erases JS, browser, or OS copies. The
+//! scrypt working buffer also grows WASM linear memory permanently (linear
+//! memory never shrinks); that is a size cost, not a secrecy cost.
 //!
 //! Curve operations go through the safe `secp256k1` crate (rust-bitcoin's
 //! wrapper over the vendored bitcoin-core C library); hashes go through
@@ -50,10 +52,45 @@
 use bitcoin_hashes::{hash160, ripemd160, sha256, sha512, Hash, HashEngine, Hmac, HmacEngine};
 use secp256k1::ecdsa::Signature;
 use secp256k1::{Message, PublicKey, Scalar, Secp256k1, SecretKey};
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::OnceLock;
 
 mod aez;
 mod descriptor;
+
+/// Dependency types may own secrets without exposing an erase operation.
+/// Erase their backing storage before handing it back to the allocator.
+/// Explicit in-place wipes still shorten the lifetime of live secrets.
+struct WipingAllocator;
+
+#[global_allocator]
+static ALLOCATOR: WipingAllocator = WipingAllocator;
+
+unsafe impl GlobalAlloc for WipingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        System.alloc(layout)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        wipe(ptr, layout.size());
+        System.dealloc(ptr, layout);
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // System.realloc may free the old block before we can erase it.
+        // Allocate/copy/erase instead; on failure the old allocation remains
+        // intact, as GlobalAlloc requires. No Rust allocation occurs in wipe.
+        let Ok(new_layout) = Layout::from_size_align(new_size, layout.align()) else {
+            return std::ptr::null_mut();
+        };
+        let next = System.alloc(new_layout);
+        if !next.is_null() {
+            std::ptr::copy_nonoverlapping(ptr, next, layout.size().min(new_size));
+            self.dealloc(ptr, layout);
+        }
+        next
+    }
+}
 
 static CONTEXT: OnceLock<Secp256k1<secp256k1::All>> = OnceLock::new();
 
@@ -1159,7 +1196,11 @@ pub unsafe extern "C" fn el_bech32m_encode(
     for &w in raw {
         match Fe32::try_from(w) {
             Ok(fe) => fes.push(fe),
-            Err(_) => return -1,
+            Err(_) => {
+                // A valid prefix may already contain private key words.
+                wipe(fes.as_mut_ptr() as *mut u8, std::mem::size_of_val(fes.as_slice()));
+                return -1;
+            }
         }
     }
     let mut encoded = bech32::primitives::encode::Encoder::<_, Bech32m>::new(fes.iter().copied(), &hrp)
@@ -1170,13 +1211,13 @@ pub unsafe extern "C" fn el_bech32m_encode(
     // the same 5-bit words; wipe its backing storage too (audit L11).
     if encoded.len() > cap {
         wipe_string(&mut encoded);
-        wipe(fes.as_mut_ptr() as *mut u8, fes.len());
+        wipe(fes.as_mut_ptr() as *mut u8, std::mem::size_of_val(fes.as_slice()));
         return -1;
     }
     std::ptr::copy_nonoverlapping(encoded.as_ptr(), out, encoded.len());
     let len = encoded.len() as i32;
     wipe_string(&mut encoded);
-    wipe(fes.as_mut_ptr() as *mut u8, fes.len());
+    wipe(fes.as_mut_ptr() as *mut u8, std::mem::size_of_val(fes.as_slice()));
     len
 }
 
@@ -1345,6 +1386,54 @@ pub unsafe extern "C" fn el_sighash_segwit_v0(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn failed_wiping_realloc_preserves_the_original_allocation() {
+        unsafe {
+            let layout = Layout::from_size_align(64, 8).unwrap();
+            let ptr = ALLOCATOR.alloc(layout);
+            assert!(!ptr.is_null());
+            ptr.write_bytes(0x5a, layout.size());
+            // A valid Layout, but larger than the host's address space.
+            let next = ALLOCATOR.realloc(ptr, layout, isize::MAX as usize - 7);
+            assert!(next.is_null());
+            for i in 0..layout.size() {
+                assert_eq!(ptr.add(i).read(), 0x5a);
+            }
+            ALLOCATOR.dealloc(ptr, layout);
+        }
+    }
+
+    #[test]
+    fn wiping_realloc_preserves_alignment_and_live_bytes() {
+        // Exercise growth and shrink without ever reading a released pointer.
+        // The WASM memory scans cover residue after release separately.
+        for align in [1, 8, 64, 4096] {
+            unsafe {
+                let mut layout = Layout::from_size_align(65, align).unwrap();
+                let mut ptr = ALLOCATOR.alloc(layout);
+                assert!(!ptr.is_null());
+                for i in 0..layout.size() {
+                    ptr.add(i).write((i * 7 + 3) as u8);
+                }
+                for size in [257, 17, 8192, 1] {
+                    let next = ALLOCATOR.realloc(ptr, layout, size);
+                    assert!(!next.is_null());
+                    assert_eq!((next as usize) % align, 0);
+                    for i in 0..layout.size().min(size) {
+                        assert_eq!(next.add(i).read(), (i * 7 + 3) as u8);
+                    }
+                    for i in 0..size {
+                        next.add(i).write((i * 7 + 3) as u8);
+                    }
+                    ptr = next;
+                    layout = Layout::from_size_align(size, align).unwrap();
+                }
+                ALLOCATOR.dealloc(ptr, layout);
+            }
+        }
+    }
 
     // The allocator pair must round-trip exact sizes, including zero length:
     // el_free reconstructs a Box<[u8]> whose layout comes from `len` alone,

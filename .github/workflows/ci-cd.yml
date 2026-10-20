@@ -208,7 +208,9 @@ jobs:
             bash -c 'set -euo pipefail
               git config --global --add safe.directory /workspace
               npm run build:wasm
-              cd psbt-wasm
+              cd entropylab-wasm
+              cargo test --locked --lib
+              cd ../psbt-wasm
               cargo test --locked --lib'
       - name: Test the freshly built bindings
         run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/psbt-sanitize.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs test/aezeed-wasm.test.mjs test/self-test-wasm.test.mjs

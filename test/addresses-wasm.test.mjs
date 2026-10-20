@@ -13,13 +13,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { NETWORK, TEST_NETWORK, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer";
+import { NETWORK, TEST_NETWORK, WIF, p2ms, p2pkh, p2sh, p2tr, p2tr_ms, p2wpkh, p2wsh } from "@scure/btc-signer";
 import { bech32m } from "@scure/base";
 import { base58checkEncode, base58checkDecode } from "../src/js/base58.js";
 import { bech32mDecode, bech32mEncode, fromWords, toWords } from "../src/js/bech32.js";
 import { addressFor, addressFromScript, descriptorDerive, multisigScript, multisigTrScript, p2pkhScript, p2shP2wpkhScript, p2shScript, p2trKeyScript, p2trLeafScript, p2wpkhScript, p2wshScript } from "../src/js/addresses.js";
 import { hex, base64 } from "../src/js/coders.js";
 import { hash160 } from "../src/js/hashes.js";
+import { heap, withInput } from "../src/js/entropylab-wasm.js";
 
 const hexToBytes = (h) => hex.decode(h);
 const bytesToHex = (b) => hex.encode(b);
@@ -285,3 +286,99 @@ test("descriptorDerive wipes its UTF-8 descriptor copy", () => {
     TextEncoder.prototype.encode = original;
   }
 });
+
+const settled = () => new Promise((resolve) => setImmediate(resolve));
+const wasmMemoryContains = (bytes) => Buffer.from(heap().buffer).indexOf(Buffer.from(bytes)) !== -1;
+const checkMemoryScanner = (bytes) => withInput(bytes, () => {
+  assert.ok(wasmMemoryContains(bytes), "positive control: the scanner must see the test bytes");
+});
+
+test("descriptorDerive wipes the xprv keys rust-miniscript parsed", async () => {
+  const { HDKey } = await import("@scure/bip32");
+  const root = HDKey.fromMasterSeed(new Uint8Array(32).fill(7));
+  const xprv = root.privateExtendedKey;
+  checkMemoryScanner(root.privateKey);
+  assert.match(descriptorDerive(`wpkh(${xprv}/0/*)`, 0, "mainnet").address, /^bc1q/);
+  await settled();
+  assert.equal(wasmMemoryContains(root.privateKey), false, "the parsed xprv private key survived in WASM linear memory");
+});
+
+test("descriptorDerive wipes its descriptor copy when sortedmulti_a is refused", async () => {
+  const { HDKey } = await import("@scure/bip32");
+  const xprv = HDKey.fromMasterSeed(new Uint8Array(32).fill(11)).privateExtendedKey;
+  // Large enough that the copy gets its own heap block; the marker sits in
+  // its interior, past allocator bookkeeping.
+  const marker = "ZLAT9MARKER" + "q".repeat(52);
+  const descriptor = `tr(${xprv}${marker.repeat(100)},sortedmulti_a(2,${bytesToHex(G_COMPRESSED)},zzzz))`;
+  assert.throws(() => descriptorDerive(descriptor, 0, "mainnet"), /Invalid output descriptor/);
+  await settled();
+  const copied = new TextEncoder().encode(marker);
+  assert.equal(wasmMemoryContains(copied), false, "the descriptor copy carrying the xprv survived in WASM linear memory");
+});
+
+// Contract: accepted private descriptors keep their independently computed
+// scripts; rejected descriptors still fail, and neither path leaves the
+// parsed keys or rewritten private text in module memory after stack scrub.
+for (const count of [2, 12]) {
+  test(`descriptorDerive wipes every parsed key in a ${count}-key descriptor`, async () => {
+    const { HDKey } = await import("@scure/bip32");
+    const roots = Array.from({ length: count }, (_, i) => HDKey.fromMasterSeed(new Uint8Array(32).fill(80 + i)));
+    for (const key of roots) checkMemoryScanner(key.privateKey);
+    const descriptor = `wsh(multi(2,${roots.map((key) => key.privateExtendedKey).join(",")}))`;
+    const expected = p2wsh(p2ms(2, roots.map((key) => key.publicKey)), NETWORK);
+    assert.equal(descriptorDerive(descriptor, 0, "mainnet").scriptHex, bytesToHex(expected.script));
+    await settled();
+    for (const key of roots) {
+      assert.equal(wasmMemoryContains(key.privateKey), false, "a parsed multisig private key survived in WASM linear memory");
+    }
+  });
+}
+
+test("descriptorDerive wipes parsed keys when a later key is invalid", async () => {
+  const { HDKey } = await import("@scure/bip32");
+  const root = HDKey.fromMasterSeed(new Uint8Array(32).fill(101));
+  checkMemoryScanner(root.privateKey);
+  assert.throws(() => descriptorDerive(`wsh(multi(2,${root.privateExtendedKey},invalid))`, 0, "mainnet"), /Invalid output descriptor/);
+  await settled();
+  assert.equal(wasmMemoryContains(root.privateKey), false, "a private key parsed before refusal survived in WASM linear memory");
+});
+
+for (const encoding of ["xprv", "WIF"]) {
+  test(`descriptorDerive wipes private text after a sortedmulti_a ${encoding} rewrite`, async () => {
+    const { HDKey } = await import("@scure/bip32");
+    const roots = Array.from({ length: 3 }, (_, i) => HDKey.fromMasterSeed(new Uint8Array(32).fill(120 + i)));
+    const secrets = roots.map((key) => encoding === "xprv" ? key.privateExtendedKey : WIF().encode(key.privateKey));
+    const markers = secrets.map((secret) => new TextEncoder().encode(secret.slice(16, 48)));
+    for (const marker of markers) checkMemoryScanner(marker);
+    const pubkeys = roots.slice(0, 2).map((key) => key.publicKey.slice(1)).sort((a, b) => Buffer.compare(a, b));
+    const leaf = p2tr_ms(1, pubkeys);
+    const sibling = { script: Uint8Array.from([32, ...roots[2].publicKey.slice(1), 0xac]) };
+    const expected = p2tr(NUMS, [leaf, sibling], NETWORK);
+    // The untouched sibling shifts when the first leaf shrinks or grows.
+    const descriptor = `tr(${bytesToHex(NUMS)},{sortedmulti_a(1,${secrets.slice(0, 2).join(",")}),pk(${secrets[2]})})`;
+    assert.equal(descriptorDerive(descriptor, 0, "mainnet").address, expected.address);
+    await settled();
+    for (const marker of markers) {
+      assert.equal(wasmMemoryContains(marker), false, "rewritten private text survived in WASM linear memory");
+    }
+  });
+}
+
+for (const [i, kind] of ["WIF", "hardened xprv", "multipath refusal", "secret conversion refusal"].entries()) {
+  test(`descriptorDerive erases parsed secrets on ${kind}`, async () => {
+    const { HDKey } = await import("@scure/bip32");
+    const root = HDKey.fromMasterSeed(new Uint8Array(32).fill(151 + i));
+    checkMemoryScanner(root.privateKey);
+    if (kind === "WIF") {
+      assert.equal(descriptorDerive(`wpkh(${WIF().encode(root.privateKey)})`, 0, "mainnet").address, p2wpkh(root.publicKey, NETWORK).address);
+    } else if (kind === "hardened xprv") {
+      const child = root.derive("m/0'/0");
+      assert.equal(descriptorDerive(`wpkh(${root.privateExtendedKey}/0'/*)`, 0, "mainnet").address, p2wpkh(child.publicKey, NETWORK).address);
+    } else {
+      const path = kind === "multipath refusal" ? "<0;1>/*" : "<0h;1h>/*";
+      assert.throws(() => descriptorDerive(`wpkh(${root.privateExtendedKey}/${path})`, 0, "mainnet"), /Invalid output descriptor/);
+    }
+    await settled();
+    assert.equal(wasmMemoryContains(root.privateKey), false, "the parsed private key survived in WASM linear memory");
+  });
+}
