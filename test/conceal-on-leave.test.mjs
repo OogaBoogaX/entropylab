@@ -29,6 +29,12 @@ function page() {
     clearTimeout: (id) => { timers.delete(id); },
   };
   const doc = { visibilityState: "visible", addEventListener: add("doc") };
+  const media = new Map();
+  win.matchMedia = (query) => {
+    const entry = { query, listeners: new Map(), addEventListener(type, listener) { entry.listeners.set(type, listener); } };
+    media.set(query, entry);
+    return entry;
+  };
   const advance = (ms) => {
     now += ms;
     for (const [id, timer] of [...timers]) {
@@ -39,7 +45,7 @@ function page() {
     }
   };
   const fire = (target, type) => listeners[target].get(type).listener({ type });
-  return { win, doc, listeners, advance, fire, pending: () => timers.size };
+  return { win, doc, listeners, media, advance, fire, pending: () => timers.size };
 }
 
 const start = () => {
@@ -69,6 +75,16 @@ test("beginning a print job conceals before the preview renders (audit L5)", () 
   const p = start();
   p.fire("win", "beforeprint");
   assert.equal(p.calls(), 1);
+});
+
+test("engaging print mode conceals even without a beforeprint event", () => {
+  const p = start();
+  const print = p.media.get("print");
+  assert.ok(print, "the print media query was not observed");
+  print.listeners.get("change")({ matches: false });
+  assert.equal(p.calls(), 0, "leaving print mode concealed");
+  print.listeners.get("change")({ matches: true });
+  assert.equal(p.calls(), 1, "print mode engaged without concealing");
 });
 
 test("an idle page conceals once the idle period has passed", () => {

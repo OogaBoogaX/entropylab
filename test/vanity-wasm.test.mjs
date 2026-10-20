@@ -1020,3 +1020,54 @@ test("Vanity Update Key leaves the PSBT session inspect-only when the key has no
   assert.ok(match.savedTo, "the match was not saved");
   assert.equal(wiped, 1, "the stale session must be wiped to inspect-only");
 });
+
+// The chunk loop yields with setTimeout, outside onmessage's try/catch. If a
+// later chunk throws (WASM trap, allocation failure), the worker used to die
+// silently with the mnemonic/node still in its persistent buffers. The
+// deferred chunk must wipe those buffers and report the error instead.
+test("a deferred grind chunk that throws wipes the key buffers and reports", async () => {
+  const posted = [];
+  const buffer = new ArrayBuffer(1 << 16);
+  const allocations = [];
+  let next = 16;
+  let calls = 0;
+  const exports = {
+    memory: { buffer },
+    vanity_alloc(size) {
+      const at = next;
+      allocations.push({ at, size });
+      next += size + 8;
+      return at;
+    },
+    vanity_grind(_mode, _keyPtr, _keyLen, _saltPtr, _saltLen, _pathPtr, _pathLen, _slot, _prefixPtr, _prefixLen, _passLen, _cursor, chunk, outPtr) {
+      calls += 1;
+      if (calls === 2) throw new Error("grind failed");
+      const header = new DataView(buffer, outPtr, 12);
+      header.setBigUint64(0, BigInt(chunk), true); // a full chunk: keep looping
+      header.setUint32(8, 0, true); // no records
+      return 0;
+    },
+  };
+  const context = vm.createContext({
+    TextEncoder, TextDecoder, setTimeout, clearTimeout,
+    self: {},
+    postMessage: (message) => posted.push(message),
+    WebAssembly: { instantiate: () => Promise.resolve({ instance: { exports } }) },
+  });
+  vm.runInContext(VANITY_WORKER_SOURCE, context);
+  context.self.onmessage({ data: { type: "init", wasm: new ArrayBuffer(0) } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const message = vm.runInContext(
+    `({ type: "grind", mode: 0, key: new Uint8Array([1, 2, 3]), salt: new Uint8Array([4, 5]), path: [0], count: 64, start: 0, prefix: "bc1q", passLen: 1, script: 0 })`,
+    context,
+  );
+  context.self.onmessage({ data: message });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const error = posted.find((entry) => entry.type === "error");
+  assert.equal(error?.message, "grind failed", "the deferred failure was not reported");
+  assert.equal(calls, 2, "the second chunk did not run");
+  const [, salt, key] = allocations;
+  const bytes = new Uint8Array(buffer);
+  assert.ok(bytes.slice(salt.at, salt.at + salt.size).every((byte) => byte === 0), "the starting passphrase was left in the worker heap");
+  assert.ok(bytes.slice(key.at, key.at + key.size).every((byte) => byte === 0), "the mnemonic/node bytes were left in the worker heap");
+});

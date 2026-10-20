@@ -21,6 +21,9 @@ const bytesToHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "
 
 // Script templates, labelled like the flow diagram's tags.
 const SCRIPT_KINDS = { pkh: "P2PKH", sh: "P2SH", wpkh: "P2WPKH", wsh: "P2WSH", tr: "P2TR" };
+// Regtest shares testnet's Base58 prefixes and WIF byte; only the Bech32 HRP
+// differs. scure ships no regtest parameters, so derive them.
+const BTC_REGTEST = { ...BTC_TESTNET, bech32: "bcrt" };
 
 // Opcode table over scure's OP enum, normalized to Bitcoin Core's asm
 // spellings (with or without the OP_ prefix): OP enum mixes "OP_0",
@@ -83,7 +86,8 @@ const looksLikeAddress = (text) =>
   /^(?:bc1|tb1|bcrt1)/i.test(text) || /^[123mn][1-9A-HJ-NP-Za-km-z]{20,60}$/.test(text);
 
 const scriptFromAddress = (text, network) => {
-  const decoded = BtcAddress(network === "testnet" ? BTC_TESTNET : BTC_MAINNET).decode(text);
+  const params = network === "regtest" ? BTC_REGTEST : network === "testnet" ? BTC_TESTNET : BTC_MAINNET;
+  const decoded = BtcAddress(params).decode(text);
   const script = OutScript.encode(decoded);
   return { scriptHex: bytesToHex(script), kind: "address", note: `${SCRIPT_KINDS[decoded.type] || decoded.type} address` };
 };
@@ -108,7 +112,7 @@ export const buildOutputScript = (input, { network = "mainnet", mode = "auto" } 
     try {
       return scriptFromAddress(text, network);
     } catch {
-      throw new Error(`That looks like an address but does not decode on ${network === "testnet" ? "testnet" : "mainnet"} — check the network selector and the spelling, or use the OP_RETURN-text mode if it is meant as text.`);
+      throw new Error(`That looks like an address but does not decode on ${["testnet", "regtest"].includes(network) ? network : "mainnet"} — check the network selector and the spelling, or use the OP_RETURN-text mode if it is meant as text.`);
     }
   }
   const first = text.split(/\s+/, 1)[0];

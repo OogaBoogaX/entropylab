@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { validateMnemonic as scureValidate } from "@scure/bip39";
 import { wordlist as scureEnglish } from "@scure/bip39/wordlists/english.js";
+import { loadAppFunctions } from "./app-slice-harness.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -277,4 +278,21 @@ test("the passphrase keyboard blocks any keystroke that breaks word-list validit
   assert.equal(hodlPassphraseBip39CanEnterSpace(inputOf("aba")), false, "no space while a word is incomplete");
   assert.equal(hodlPassphraseBip39CanEnterSpace(inputOf("")), false);
   assert.equal(hodlPassphraseBip39CanEnterSpace(inputOf("abandon zzz")), false, "no space after an invalid word");
+});
+
+test("digits and non-ASCII characters are refused, not normalized into a valid phrase", async () => {
+  // hodlNormalizeMnemonicText treats anything outside a-z/space as a
+  // separator, so "abandon1abandon" passed validation as two valid words
+  // while the analyzer painted it red. Both halves must agree.
+  const { hodlValidateTargetMnemonic, hodlValidateMnemonic } = await loadAppFunctions(["hodlValidateTargetMnemonic", "hodlValidateMnemonic"]);
+  const valid = [...BASE_11, "about"].join(" ");
+  assert.equal(hodlValidateTargetMnemonic(valid, 12).ok, true, "a valid phrase must still pass");
+  assert.equal(hodlValidateMnemonic(valid).ok, true, "a valid phrase must still pass everywhere");
+  for (const value of [
+    [...BASE_11, "about"].join("1"),
+    [...BASE_11, "about"].join(" \u00e9 "),
+  ]) {
+    assert.equal(hodlValidateTargetMnemonic(value, 12).ok, false, `${JSON.stringify(value)} was normalized into a phrase`);
+    assert.equal(hodlValidateMnemonic(value).ok, false, `${JSON.stringify(value)} was normalized into a phrase elsewhere`);
+  }
 });

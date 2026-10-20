@@ -2037,13 +2037,15 @@
       const restoredItem = await until(() => [...document.querySelectorAll("#journal-list .journal-item")].find((el) => el.querySelector(".journal-item-label")?.textContent === entryLabel), "stored entry listed after load");
       restoredItem.click();
       await until(() => !document.getElementById("journal-view").hidden, "stored entry view");
-      assert(document.getElementById("journal-view").textContent.includes(entryInput), "The stored input survived the load");
-      assert(document.getElementById("journal-view").textContent.includes(entryNotes), "The stored notes survived the load");
+      assert(!document.getElementById("journal-view").textContent.includes(entryInput), "The stored input stays masked until revealed");
+      assert(!document.getElementById("journal-view").textContent.includes(entryNotes), "The stored notes stay masked until revealed");
       assert(!document.getElementById("journal-view").textContent.includes(entryPhrase), "The stored seed stays masked until revealed");
       const reveal = document.getElementById("journal-reveal");
       reveal.checked = true;
       reveal.dispatchEvent(new Event("change", { bubbles: true }));
       await until(() => document.getElementById("journal-view").textContent.includes(entryPhrase), "stored seed revealed after load");
+      assert(document.getElementById("journal-view").textContent.includes(entryInput), "The stored input survived the load");
+      assert(document.getElementById("journal-view").textContent.includes(entryNotes), "The stored notes survived the load");
       for (const [id, expected] of [["journal-copy-input", entryInput], ["journal-copy-phrase", entryPhrase]]) {
         const copy = document.getElementById(id);
         await privateReadout(copy?.closest("[data-private-field]")?.querySelector("[data-private-value]"), expected, copy);
@@ -2117,7 +2119,11 @@
     assert(document.getElementById("journal-status-note").textContent.includes("download the journal file to preserve them"), "automatic capture should explain that the journal still needs downloading");
     capturedEntry.click();
     await until(() => !document.getElementById("journal-view").hidden, "automatically captured entry view");
-    assert(document.getElementById("journal-view").textContent.includes("passphrase was in effect"), "automatic capture should retain the passphrase-in-use note");
+    assert(!document.getElementById("journal-view").textContent.includes("passphrase was in effect"), "the passphrase-in-use note stays masked until revealed");
+    const vanityReveal = document.getElementById("journal-reveal");
+    vanityReveal.checked = true;
+    vanityReveal.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => document.getElementById("journal-view").textContent.includes("passphrase was in effect"), "automatic capture should retain the passphrase-in-use note");
     assert(!document.getElementById("journal-view").textContent.includes("correct horse battery staple"), "automatic capture must not store the BIP39 passphrase");
     document.querySelector('#workspace [data-workspace="vanity"]').click();
     await until(() => document.querySelector("#vanity-session-keys .session-key-option"), "the Key Station chip to appear");

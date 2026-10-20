@@ -216,24 +216,48 @@ var hodlWalletExport = (() => {
     const type = MSIG_OUTPUT_TYPES[wallet.script];
     if (type === undefined) return [];
     const units = [];
-    for (const branch of [0, 1]) {
-      const descriptor = branch === 0 ? wallet.receiveDescriptor : wallet.changeDescriptor;
+    // Export the branches this wallet derived, not a fixed {0,1}: a custom
+    // window can start at 1, and filing branch 1 as change leaves Core with
+    // no external chain at all.
+    const byBranch = new Map();
+    const addBranch = (entry) => {
+      if (!entry || !Number.isSafeInteger(entry.branch) || byBranch.has(entry.branch)) return;
+      byBranch.set(entry.branch, entry);
+    };
+    if (Array.isArray(wallet.addressBranches)) for (const entry of wallet.addressBranches) addBranch(entry);
+    const windowStart = wallet.branchStart ?? 0;
+    if (windowStart <= 0) addBranch({ branch: 0, publicDescriptor: wallet.receiveDescriptor, rows: wallet.receive });
+    if (windowStart <= 1) addBranch({ branch: 1, publicDescriptor: wallet.changeDescriptor, rows: wallet.change });
+    for (const entry of [...byBranch.values()].sort((a, b) => a.branch - b.branch)) {
+      const branch = entry.branch;
+      const descriptor = entry.publicDescriptor ?? (branch === 0 ? wallet.receiveDescriptor : branch === 1 ? wallet.changeDescriptor : null);
       if (!descriptor) continue;
-      const branchRows = wallet.addressBranches?.find((entry) => entry.branch === branch)?.rows;
-      const rows = Array.isArray(branchRows) ? branchRows : branch === 0 ? wallet.receive : wallet.change;
-      const range = branchRangeFromRows(rows);
+      const rows = Array.isArray(entry.rows) ? entry.rows : branch === 0 ? wallet.receive : branch === 1 ? wallet.change : [];
       units.push({
         type,
-        internal: branch === 1,
+        internal: windowStart === 0 && branch === 1,
         descriptor,
         privateDescriptor: null,
         multiKey: true,
-        ...range,
+        ...branchRangeFromRows(rows),
         // Fresh Core wallet: first getnewaddress is receive index 0, matching
         // the MS Station copy. Displayed EntropyLab rows are not spent here.
         nextIndex: 0,
         rangeStart: 0,
       });
+    }
+    return markActiveUnits(units);
+  };
+
+  // Core stores one active descriptor per (internal, type). A window with two
+  // external branches can keep both descriptors, but only the first may be
+  // active; buildWalletRecords must not refuse the export over it.
+  const markActiveUnits = (units) => {
+    const seen = new Set();
+    for (const unit of units) {
+      const key = `${unit.internal}:${unit.type}`;
+      if (seen.has(key)) unit.active = false;
+      else { seen.add(key); unit.active = true; }
     }
     return units;
   };
@@ -245,24 +269,46 @@ var hodlWalletExport = (() => {
     for (const account of wallet.accounts) {
       const type = OUTPUT_TYPES[account.def?.id];
       if (type === undefined) continue;
-      for (const branch of [0, 1]) {
-        // A wallet may have derived only one branch (branch range 1, or a
-        // custom branch start): export whichever branches exist rather than
-        // hiding the whole export (issue #366). Core tolerates a missing
-        // activeinternalspk record; the descriptor record carries the branch.
-        const descriptor = branch === 0 ? account?.receiveDescriptor : account?.changeDescriptor;
+      // Export the branches the account actually derived. A custom window can
+      // start at 1, so [0, 1] would drop the last branch and file branch 1 as
+      // change — Core then watches neither receive chain (audit follow-up).
+      // Core's `internal` is the change chain: branch 1 of the default 0/1
+      // window only.
+      //
+      // addressBranches may carry rows only (the legacy receive/change
+      // descriptors still describe the branch), so take the union by branch
+      // number rather than letting a rows-only list hide a legacy descriptor.
+      const byBranch = new Map();
+      const addBranch = (entry) => {
+        if (!entry || !Number.isSafeInteger(entry.branch) || byBranch.has(entry.branch)) return;
+        byBranch.set(entry.branch, entry);
+      };
+      if (Array.isArray(account.addressBranches)) for (const entry of account.addressBranches) addBranch(entry);
+      // A legacy descriptor below the window start belongs to a branch this
+      // account did not derive (the window can begin at 1 or higher).
+      const windowStart = account.branchStart ?? 0;
+      if (windowStart <= 0) addBranch({ branch: 0, publicDescriptor: account.receiveDescriptor, rows: account.receive });
+      if (windowStart <= 1) addBranch({ branch: 1, publicDescriptor: account.changeDescriptor, rows: account.change });
+      const branches = [...byBranch.values()].sort((a, b) => a.branch - b.branch), accountUnits = [];
+      for (const entry of branches) {
+        const branch = entry.branch;
+        const descriptor = entry.publicDescriptor ?? (branch === 0 ? account.receiveDescriptor : branch === 1 ? account.changeDescriptor : null);
         if (!descriptor) continue;
-        const privateDescriptor = branch === 0 ? account.receiveDescriptorPriv : account.changeDescriptorPriv;
-        const branchRows = account.addressBranches?.find((entry) => entry.branch === branch)?.rows;
-        const rows = Array.isArray(branchRows) ? branchRows : branch === 0 ? account.receive : account.change;
-        units.push({
+        const privateDescriptor = entry.privateDescriptor
+          ?? (branch === 0 ? account.receiveDescriptorPriv : branch === 1 ? account.changeDescriptorPriv : null);
+        const rows = Array.isArray(entry.rows) ? entry.rows : branch === 0 ? account.receive : branch === 1 ? account.change : [];
+        accountUnits.push({
           type,
-          internal: branch === 1,
+          internal: (account.branchStart ?? 0) === 0 && branch === 1,
           descriptor,
           privateDescriptor: includePrivate ? privateDescriptor : null,
           ...branchRangeFromRows(rows),
         });
       }
+      // Only the first branch of each (internal, type) can be active; the
+      // rest are stored descriptors. Per account, so two accounts sharing a
+      // type still reach buildWalletRecords' duplicate check.
+      units.push(...markActiveUnits(accountUnits));
     }
     return units;
   };
@@ -374,13 +420,18 @@ var hodlWalletExport = (() => {
         keyHash.fill(0);
       }
 
-      const activeKey = `${unit.internal}:${unit.type}`;
-      if (seenActive.has(activeKey)) throw new Error("wallet.dat export: duplicate script type across accounts");
-      seenActive.add(activeKey);
-      push(
-        concat(streamString(unit.internal ? "activeinternalspk" : "activeexternalspk"), u8(unit.type)),
-        id,
-      );
+      // A branch beyond the first external/internal one is a stored
+      // descriptor, not an active chain: Core has one active record per
+      // (internal, type), and a second would refuse the file.
+      if (unit.active !== false) {
+        const activeKey = `${unit.internal}:${unit.type}`;
+        if (seenActive.has(activeKey)) throw new Error("wallet.dat export: duplicate script type across accounts");
+        seenActive.add(activeKey);
+        push(
+          concat(streamString(unit.internal ? "activeinternalspk" : "activeexternalspk"), u8(unit.type)),
+          id,
+        );
+      }
     }
     return records;
   };

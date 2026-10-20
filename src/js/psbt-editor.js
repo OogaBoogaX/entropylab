@@ -1349,6 +1349,9 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     compareText.value = "";
     clearCompareReport();
     render();
+    // The overlays live outside this panel; a wipe must release what they
+    // still show (a PSBT's proprietary fields can carry an xprv).
+    document.dispatchEvent(new Event("hodl:conceal"));
   };
   $("psbted-compare-go").addEventListener("click", () => {
     psbtWasmReady

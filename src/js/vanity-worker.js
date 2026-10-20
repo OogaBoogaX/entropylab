@@ -165,7 +165,17 @@ function grind(msg) {
       postMessage({ type: "done", done: done, stopped: false });
       return;
     }
-    setTimeout(step, 0); // yield so a queued "stop" message lands
+    // yield so a queued "stop" message lands. The deferred chunk is outside
+    // onmessage's try/catch, so it needs its own: an exception must still
+    // wipe the key material and report, not die silently in the worker.
+    setTimeout(function () {
+      try {
+        step();
+      } catch (error) {
+        wipeSecrets();
+        postMessage({ type: "error", message: (error && error.message) || String(error) });
+      }
+    }, 0);
   };
   step();
 }
@@ -193,6 +203,9 @@ self.onmessage = function (event) {
     try {
       grind(msg);
     } catch (error) {
+      // A trap in the first synchronous chunk must wipe the same buffers the
+      // deferred chunk does, not rely on the parent's terminate.
+      wipeSecrets();
       postMessage({ type: "error", message: (error && error.message) || String(error) });
     }
   } else if (msg.type === "stop") {

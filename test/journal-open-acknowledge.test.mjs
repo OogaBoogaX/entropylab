@@ -65,6 +65,7 @@ const source = [
   varLine("hodlJournalDoc"),
   varLine("hodlJournalFileText"),
   varLine("hodlJournalOpenReadyFor"),
+  varLine("hodlJournalUnlockBusy"),
   varLine("hodlJournalGeneration"),
   varLine("hodlJournalFileRead"),
   varLine("hodlJournalTool"),
@@ -132,6 +133,30 @@ test("a passwordless file is not installed until the open is acknowledged (audit
   await env.unlock();
   assert.ok(env.state().keys, "the acknowledged open installs the journal");
   assert.ok(!env.openReadyVisible(), "the acknowledgement clears once accepted");
+});
+
+test("a double-press cannot open a passwordless file without its acknowledgement (audit L6)", async () => {
+  // Two presses before the first decrypt returns both run the open path; the
+  // second must not see the first's armed token and install the file. It must
+  // also not start a second, redundant decrypt.
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let opens = 0;
+  const env = loadApp({
+    onOpen: async (file, password) => {
+      opens++;
+      await gate;
+      return openDocument(file, password);
+    },
+  });
+  env.setFileText(passwordlessFile);
+  const first = env.unlock();
+  const second = env.unlock();
+  release();
+  await Promise.all([first, second]);
+  assert.equal(opens, 1, "the second press started a second decrypt");
+  assert.deepEqual(env.state(), { keys: null, doc: null }, "a concurrent open installed the passwordless file without acknowledgement");
+  assert.ok(env.openReadyVisible(), "the acknowledgement row was not armed");
 });
 
 test("a password-protected file opens on the first press, as before (audit L6)", async () => {

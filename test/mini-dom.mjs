@@ -336,6 +336,12 @@ export class MiniDocument {
   addEventListener(type, listener) { addListener(this, type, listener); }
   removeEventListener(type, listener) { removeListener(this, type, listener); }
   listenerCount(type) { return countListeners(this, type); }
+  dispatchEvent(event) {
+    const handler = this["on" + event.type];
+    if (typeof handler === "function") handler.call(this, event);
+    for (const listener of [...(listeners.get(this)?.get(event.type) ?? [])]) listener.call(this, event);
+    return true;
+  }
   getElementById(id) { return this.body.querySelector(`#${id}`); }
   querySelector(selector) { return this.body.querySelector(selector); }
   querySelectorAll(selector) { return this.body.querySelectorAll(selector); }

@@ -55,7 +55,7 @@ const DECLARED = new Set([
   "inspectPsbtInscriptions", "describeEnvelope", "parseOpReturn", "describeOpReturn",
   "hodlPublicValueHtml",
   // Harness seams from the prelude below (no browser chrome; controllable session).
-  "document", "hodlNetworkDefault", "hodlPsbtPriv", "hodlPsbtHd", "hodlPsbtRecordNonceInspection",
+  "document", "hodlNetworkDefault", "hodlNetworkChoice", "hodlPsbtPriv", "hodlPsbtHd", "hodlPsbtRecordNonceInspection",
 ]);
 // Top-level variables of app.js the render closure reads or writes through
 // the reset/refresh functions it reaches (session state, nonce-history
@@ -119,6 +119,7 @@ import { parseOpReturn, describeOpReturn } from "../src/js/opreturn.js";
 import { publicValueHtml as hodlPublicValueHtml } from "../src/js/public-data.js";
 const document = { getElementById: () => null };
 const hodlNetworkDefault = "mainnet";
+const hodlNetworkChoice = "mainnet";
 var hodlPsbtPriv = null, hodlPsbtHd = null;
 const hodlPsbtRecordNonceInspection = () => {};
 const hodlPrivateCopyButtonHtml = () => "";

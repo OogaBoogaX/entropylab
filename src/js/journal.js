@@ -148,6 +148,15 @@ export function serializeNotebook(journal) {
       content: journalNotebookRuns(page.notesText),
     })),
   };
+  for (const page of document.pages) {
+    // parseNotebook refuses a page over the read cap; a save that produced
+    // one would hand back a file the app cannot open.
+    try {
+      journalTextFromRuns(page.content);
+    } catch {
+      throw new Error("A notebook page is too large to save.");
+    }
+  }
   return JSON.stringify(document, null, 2) + "\n";
 }
 
@@ -745,7 +754,15 @@ async function sealPlainText(plainText, keys) {
     try {
       const iv = tag.slice(0, IV_BYTES);
       const ciphertext = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv }, keys.encKey, plain));
-      return encodeFile({ iv, ciphertext, iterations: keys.iterations });
+      const file = encodeFile({ iv, ciphertext, iterations: keys.iterations });
+      // parseFile caps the text it is handed, and every download writes
+      // JSON.stringify(file, null, 2) + "\n": a plaintext under the cap can
+      // still grow past the file cap through UTF-8 expansion and hex coding.
+      // Refuse here so a save never produces a file the reader rejects.
+      if (JSON.stringify(file, null, 2).length + 1 > JOURNAL_MAX_FILE_LENGTH) {
+        throw new Error("The journal is too large to save as one file.");
+      }
+      return file;
     } finally {
       wipeBytes(tag);
     }
@@ -755,11 +772,15 @@ async function sealPlainText(plainText, keys) {
 }
 
 export async function sealDocument(doc, keys) {
-  return sealPlainText(JSON.stringify({
+  const plain = JSON.stringify({
     version: JOURNAL_VERSION,
     nextId: doc.nextId,
     entries: doc.entries,
-  }), keys);
+  });
+  // parseDocument refuses a plaintext over the read cap, so a save must not
+  // create a file that the app then reports as too large to open.
+  if (plain.length > JOURNAL_MAX_TEXT_LENGTH) throw new Error("The journal is too large to save as one file.");
+  return sealPlainText(plain, keys);
 }
 
 export async function sealExport(kind, content, keys) {

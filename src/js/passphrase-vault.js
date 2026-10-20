@@ -84,7 +84,12 @@ export class PassphraseVault {
       const data = bytes ?? new Uint8Array();
       for (let i = 0; i < data.length;) {
         const b = data[i];
-        const size = b < 0x80 ? 1 : b >= 0xf0 ? 4 : b >= 0xe0 ? 3 : 2;
+        // The lead byte itself must be a legal start: C0/C1 would spell an
+        // overlong two-byte form, 80-BF is a stray continuation, and F5-FF
+        // starts a code point above U+10FFFF (or a 5/6-byte form). Checking
+        // only the payload and range let `9f bf` decode as U+07FF.
+        const size = b < 0x80 ? 1 : b >= 0xc2 && b <= 0xdf ? 2 : b >= 0xe0 && b <= 0xef ? 3 : b >= 0xf0 && b <= 0xf4 ? 4 : 0;
+        if (!size) throw new Error("The stored passphrase is not valid UTF-8.");
         if (i + size > data.length) throw new Error("The stored passphrase is not valid UTF-8 (truncated sequence).");
         let point, min;
         if (size === 1) {
