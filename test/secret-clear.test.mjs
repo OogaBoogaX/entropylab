@@ -906,6 +906,24 @@ test("pagehide and persisted pageshow zero every derived wallet's row key bytes"
   }
 });
 
+test("pagehide wipes the remaining wallets and the journal when one wallet's wipe throws", () => {
+  // A result can be mid-update when the page hides (a cancelled derivation, a
+  // half-built session), and wiping it throws. One failing wipe must not skip
+  // the wallets after it, the journal wipe, or the field sweep.
+  const { context, events, fields } = raceHarness();
+  const broken = walletWithRows(), station = walletWithRows(), pending = walletWithRows();
+  broken.result.rootNode = { wipePrivateData() { throw new Error("mid-update"); } };
+  context.hodlWalletResult = broken.result;
+  context.hodlKeys = [{ id: 1, number: 1, fields: {}, result: station.result }];
+  context.hodlKeyManagerPending = [{ result: pending.result }];
+  events.pagehide({});
+  assert.ok(zeroed(station.rows), "one wallet's failing wipe skipped the next wallet's row keys");
+  assert.ok(zeroed(pending.rows), "one wallet's failing wipe skipped the pending wallet's row keys");
+  assert.equal(context.hodlJournalGeneration, 1, "one wallet's failing wipe skipped the journal wipe");
+  assert.equal(fields.get("pass").value, "", "one wallet's failing wipe skipped the field sweep");
+  assert.equal(context.hodlWalletResult, null, "one wallet's failing wipe skipped the wallet reset");
+});
+
 test("an ignored key's saved copy carries no key bytes", async () => {
   const { rows, result } = walletWithRows();
   result.masterFingerprint = "73c5da0a";

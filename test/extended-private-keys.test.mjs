@@ -201,6 +201,7 @@ test("the wallet.dat download carries the spending descriptors only while privat
   const calls = [];
   const walletExport = {
     hasDescriptors: () => true,
+    walletDatSupported: () => true,
     hasPrivateDescriptors: (wallet) => wallet.accounts.some((account) => account.receiveDescriptorPriv || account.changeDescriptorPriv),
     buildWalletDat: (wallet, withSecrets) => { calls.push({ wallet, withSecrets }); return new Uint8Array(1); },
     walletDatFilename: () => "wallet.dat",
