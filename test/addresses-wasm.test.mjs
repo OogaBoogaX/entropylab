@@ -20,6 +20,7 @@ import { bech32mDecode, bech32mEncode, fromWords, toWords } from "../src/js/bech
 import { addressFor, addressFromScript, descriptorDerive, multisigScript, multisigTrScript, p2pkhScript, p2shP2wpkhScript, p2shScript, p2trKeyScript, p2trLeafScript, p2wpkhScript, p2wshScript } from "../src/js/addresses.js";
 import { hex, base64 } from "../src/js/coders.js";
 import { hash160 } from "../src/js/hashes.js";
+import { heap } from "../src/js/entropylab-wasm.js";
 
 const hexToBytes = (h) => hex.decode(h);
 const bytesToHex = (b) => hex.encode(b);
@@ -284,4 +285,29 @@ test("descriptorDerive wipes its UTF-8 descriptor copy", () => {
   } finally {
     TextEncoder.prototype.encode = original;
   }
+});
+
+const settled = () => new Promise((resolve) => setImmediate(resolve));
+const wasmMemoryContains = (bytes) => Buffer.from(heap().buffer).indexOf(Buffer.from(bytes)) !== -1;
+
+test("descriptorDerive wipes the xprv keys rust-miniscript parsed", async () => {
+  const { HDKey } = await import("@scure/bip32");
+  const root = HDKey.fromMasterSeed(new Uint8Array(32).fill(7));
+  const xprv = root.privateExtendedKey;
+  assert.match(descriptorDerive(`wpkh(${xprv}/0/*)`, 0, "mainnet").address, /^bc1q/);
+  await settled();
+  assert.equal(wasmMemoryContains(root.privateKey), false, "the parsed xprv private key survived in WASM linear memory");
+});
+
+test("descriptorDerive wipes its descriptor copy when sortedmulti_a is refused", async () => {
+  const { HDKey } = await import("@scure/bip32");
+  const xprv = HDKey.fromMasterSeed(new Uint8Array(32).fill(11)).privateExtendedKey;
+  // Large enough that the copy gets its own heap block; the marker sits in
+  // its interior, past allocator bookkeeping.
+  const marker = "ZLAT9MARKER" + "q".repeat(52);
+  const descriptor = `tr(${xprv}${marker.repeat(100)},sortedmulti_a(2,${bytesToHex(G_COMPRESSED)},zzzz))`;
+  assert.throws(() => descriptorDerive(descriptor, 0, "mainnet"), /Invalid output descriptor/);
+  await settled();
+  const copied = new TextEncoder().encode(marker);
+  assert.equal(wasmMemoryContains(copied), false, "the descriptor copy carrying the xprv survived in WASM linear memory");
 });

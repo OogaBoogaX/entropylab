@@ -35,11 +35,13 @@
 //! vendored AEZ module wipes its expanded key schedule on drop and its
 //! Blake2b key-expansion hasher after use. What cannot be wiped without new
 //! dependencies: state hidden inside dependency types that expose no erase
-//! (the `HmacEngine` key pads, `bip39::Mnemonic`'s stored phrase, and the
-//! by-value moves inside `bitcoin::bip32`). Those copies are short lived
-//! stack/heap cells, but they are the known residual. The scrypt working
-//! buffer also grows WASM linear memory permanently (linear memory never
-//! shrinks); that is a size cost, not a secrecy cost.
+//! (the `HmacEngine` key pads, `bip39::Mnemonic`'s stored phrase, the
+//! by-value moves inside `bitcoin::bip32`, and rust-miniscript's partially
+//! filled `KeyMap` when descriptor parsing itself fails before the caller can
+//! drain it — a successful parse is erased in `descriptor.rs`). Those copies
+//! are short lived stack/heap cells, but they are the known residual. The
+//! scrypt working buffer also grows WASM linear memory permanently (linear
+//! memory never shrinks); that is a size cost, not a secrecy cost.
 //!
 //! Curve operations go through the safe `secp256k1` crate (rust-bitcoin's
 //! wrapper over the vendored bitcoin-core C library); hashes go through
