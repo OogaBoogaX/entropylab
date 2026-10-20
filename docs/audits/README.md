@@ -65,7 +65,7 @@ validation-time `Array.from` copy removed for AR-07".
 | RT-JSBOUNDARY-1 Abandoned JS copies of secrets | Fixed | `679eaa15`; six paths wiped in `finally`; `test/js-boundary-copies.test.mjs` retains the temporaries, including the two exception paths the reviewer probed (red pre-fix: 52-byte WIF kept) |
 | RT-WASMRESIDUE-1 Only one crate wipes its heap | Fixed | `2fae67ee`; `psbt-wasm/src/lib.rs:71-77,127-155`, `vanity-wasm/src/lib.rs:172-199` |
 | RT-VANITYPASS-1 Dead `#vanity-pass` feature and a test that fabricated it | Fixed | `2fae67ee`, `app.js:16966-16995` |
-| Speculative: `clearSecretFields` not exception-isolated | Incomplete — accepted Info | Named wipes are guarded (`app.js:18088-18098`); the wallet-result loop at `18096` is not. No product trigger established |
+| Speculative: `clearSecretFields` not exception-isolated | Fixed | each wallet-result wipe in the pagehide sweep is isolated, so one throwing result cannot skip the other wallets, the journal wipe or the field sweep; `test/secret-clear.test.mjs` |
 | Speculative: deferred vanity chunk throw bypasses the wipe | Fixed | `vanity-worker.js:168-177` |
 
 Also from the reviewer on the same review (not in either report):
@@ -89,7 +89,7 @@ fixed on this branch.
 | bip352 zero label tweak | Accepted open | `bip352.js:83-88,286-298` |
 | Lone-surrogate passphrase | Accepted open | `bip39.js:102-112` |
 | PBKDF2 iteration wrap | Not a product vulnerability | sole caller uses 2048 |
-| BIP45 export buttons on unsupported shapes | Accepted open | `app.js:2191-2222` |
+| BIP45 export buttons on unsupported shapes | Fixed | wallet.dat and BIP 388 controls gate on `walletDatSupported`/`bip388Supported`, Core JSON stays; `test/wallet-export.test.mjs` |
 | HD wallet.dat path lacking msig xprv refusal | Not a product vulnerability | descriptors kept separate |
 | `release-assets.yml` persists checkout credentials | Fixed | the checkout sets `persist-credentials: false`; `gh release download` authenticates through `GH_TOKEN` env; `test/toolchain-pin.test.mjs` |
 | Armed-open plaintext kept after acknowledgement | Fixed | `app.js:16634-16646` |
