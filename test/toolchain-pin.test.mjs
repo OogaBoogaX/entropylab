@@ -237,12 +237,21 @@ test("attestation permissions stay on the push-only job", () => {
 // checkouts persisted the job's GITHUB_TOKEN into .git/config — one more
 // live credential a compromised step could read. Nothing in either workflow
 // pushes with that credential (translate's publish job mints its own App
-// token), so it must not survive the checkout.
-test("the scheduled workflows' checkouts do not persist their tokens", () => {
-  for (const path of [".github/workflows/jev-adversarial.yml", ".github/workflows/translate.yml"]) {
+// token), so it must not survive the checkout. release-assets.yml runs pip
+// install and node scripts after its checkout, and its only authenticated
+// step (gh release download) takes the token through GH_TOKEN env, so the
+// persisted credential buys a compromised wheel or script nothing but a
+// live contents:read token — it must not survive that checkout either.
+test("the scheduled and release workflows' checkouts do not persist their tokens", () => {
+  for (const path of [".github/workflows/jev-adversarial.yml", ".github/workflows/translate.yml", ".github/workflows/release-assets.yml"]) {
     const blocks = read(path).split(/\n(?=      - uses: actions\/checkout@)/).slice(1)
       .map((block) => block.split(/\n(?=      - )/)[0]);
     assert.ok(blocks.length > 0, `${path} has checkout steps`);
     for (const block of blocks) assert.match(block, /persist-credentials: false/, `${path}: a checkout persists the job's token`);
   }
+  // Dropping the persisted credential only stays safe while release-assets
+  // authenticates its one gh call through env and pushes nothing itself.
+  const release = read(".github/workflows/release-assets.yml");
+  assert.match(release, /GH_TOKEN: \$\{\{ github\.token \}\}/, "release-assets.yml: gh must authenticate through GH_TOKEN env, not .git/config");
+  assert.doesNotMatch(release, /git push/, "release-assets.yml: no step may push with the checkout's credential");
 });
