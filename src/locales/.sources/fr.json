@@ -1613,5 +1613,8 @@
   "This checks face counts only. It cannot establish independence, unpredictability, or entropy. Repeating 123456 can give balanced counts. The percentile is not the probability that the die is fair. This check does not block derivation.": "b05144291ff071bf3ba1dc5d4d37b1a9a5063b02b893278d386dafda859e1315",
   "No frequency warning": "e427d01b09a884a536b488646c3b098dda034ce42365069f0f16e647859d4751",
   "Borderline frequency result": "43c21d6e88a259297a5b71ecab88b5464bbb2528015348dd8305470a93ffa3b5",
-  "Frequency imbalance warning": "e6c70b10281dfb977868cf3483d678f4a5c8d47ecb503452c88f5f2e37e4a147"
+  "Frequency imbalance warning": "e6c70b10281dfb977868cf3483d678f4a5c8d47ecb503452c88f5f2e37e4a147",
+  "Guide": "8dd65d0952ed144ccf6e76ebf8aa45644afb2b9236762c414d07e813d42f588e",
+  "Basics": "8fdd2ee8475e29bcb7acc41b731a943957e4dc3d07012c23f8b7b028de620267",
+  "Explain this tool": "9a7cb670a14e52d45c12671406b500f51e67af8c5b22a0036592265cb8c4470d"
 }

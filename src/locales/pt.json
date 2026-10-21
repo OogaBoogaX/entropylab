@@ -1614,5 +1614,8 @@
   "This checks face counts only. It cannot establish independence, unpredictability, or entropy. Repeating 123456 can give balanced counts. The percentile is not the probability that the die is fair. This check does not block derivation.": "Isso verifica apenas as contagens de faces. Não pode estabelecer independência, imprevisibilidade ou entropia. Repetir 123456 pode dar contagens equilibradas. O percentil não é a probabilidade de o dado ser justo. Esta verificação não bloqueia a derivação.",
   "No frequency warning": "Sem aviso de frequência",
   "Borderline frequency result": "Resultado de frequência limítrofe",
-  "Frequency imbalance warning": "Aviso de desequilíbrio de frequência"
+  "Frequency imbalance warning": "Aviso de desequilíbrio de frequência",
+  "Guide": "Guia",
+  "Basics": "Noções básicas",
+  "Explain this tool": "Explicar esta ferramenta"
 }

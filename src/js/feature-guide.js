@@ -262,6 +262,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       for (const entry of document.querySelectorAll("[data-guide-open]")) {
         if (entry.dataset.guideOpen === "basics") entry.textContent = hodlTText("Basics");
         else if (entry.dataset.guideOpen) entry.textContent = hodlTText("Explain this tool");
+        else entry.textContent = hodlTText("Guide");
       }
       if (route) route = featureGuideRoutes(hodlTText).find(item => item.id === route.id);
       if (active && modal?.isOpen()) {
