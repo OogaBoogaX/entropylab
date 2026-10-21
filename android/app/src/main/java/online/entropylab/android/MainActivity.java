@@ -61,17 +61,26 @@ public final class MainActivity extends Activity {
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setDomStorageEnabled(false);
+        // API 24-25 default to saving form data on disk; no-op from API 26.
+        settings.setSaveFormData(false);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         page.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
-                return uri == null || !"file".equals(uri.getScheme()) || !"/android_asset/entropylab.html".equals(uri.getPath());
+                return !isBundledPage(uri);
             }
         });
         findViewById(R.id.launch).setVisibility(android.view.View.GONE);
         page.setVisibility(android.view.View.VISIBLE);
         page.loadUrl("file:///android_asset/entropylab.html");
+    }
+
+    /** Only file:///android_asset/entropylab.html, with no host (file://evil/... is rejected). */
+    static boolean isBundledPage(Uri uri) {
+        if (uri == null || !"file".equals(uri.getScheme())) return false;
+        String host = uri.getHost();
+        return (host == null || host.isEmpty()) && "/android_asset/entropylab.html".equals(uri.getPath());
     }
 
     @Override
