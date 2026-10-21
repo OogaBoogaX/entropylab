@@ -22,6 +22,10 @@ shares those exact modules with downstream tests and artifact publication.
 For local testing after Rust changes, run `npm run build:wasm` before
 `npm run build && npm test`; the checked-in modules may predate the changes.
 
+How the code is tested (the CI suite, Bitcoin Core interop checks,
+differential fuzzing, mutation testing, and the October 2026 review record)
+is summarised in [docs/TESTING.md](docs/TESTING.md).
+
 Clearing a Key or Multisig station cancels its pending derivation. Leaving
 the page clears rendered seed-word copies and prevents a late derivation or
 import from restoring cleared secrets. Locking the journal also invalidates
@@ -821,13 +825,13 @@ with `npm ci`; every local and CI operation is exposed as an npm script:
 
 ```bash
 npm test                    # run all tests, including the headless-Firefox suite
-npm run test:ci             # the CI subset: network-check, ui-defaults, source invariants
+npm run test:ci             # every test file except the two browser suites (what CI's "complete dependency-free suite" runs)
 npm run test:validate       # validate source and security invariants
-npm run test:browser        # test crypto, sanitization, networking, exports in headless Firefox
+npm run test:browser        # test crypto, sanitization, networking, exports in a headless browser (Firefox in CI; Chrome/Chromium too when installed)
 npm run build               # compile src/ into the generated root files
 npm run build:wasm          # rebuild the committed crypto WASM artifact (needs Rust)
 npm run verify              # verify the site artifact (entropylab.html, assets)
-npm run ci                  # run the CI test subset, build, and verify in order
+npm run ci                  # run test:ci, build, and verify in order
 ```
 
 GitHub Actions builds the site first, then runs the same test steps for pull
@@ -838,9 +842,10 @@ back to the repository so the file stays downloadable; pull requests never
 carry the generated output, so they stop conflicting on it. The staging step
 copies the verified `entropylab.html` to a deployment-only `index.html`,
 allowing both the site root and `/entropylab.html` to serve the same
-application without committing a second application artifact. CI runs the
-test suites that need no browser; the headless-Firefox suite runs locally
-where a Firefox binary is available. Local checks and CI/CD use the same
+application without committing a second application artifact. CI runs every
+test file on every pull request: `npm run test:ci` and the two headless-Firefox
+browser suites (`npm run test:browser`); locally the browser suites also run in
+Chrome/Chromium when one is installed. Local checks and CI/CD use the same
 commands; the workflow contains no separate build implementation.
 
 The browser suite runs the assembled application in headless Firefox against a
