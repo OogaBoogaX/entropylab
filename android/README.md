@@ -33,6 +33,16 @@ The build and the app both fail closed on the pin:
 - No calculator or view-hierarchy state is saved in an Android saved-state Bundle. Activity destruction detaches and destroys its WebView; this does not prove secure erasure inside the platform.
 - DOM storage, WebView form-data saving (on by default on API 24–25) and the HTTP cache are off. Nothing is written to a keystore.
 
+## Not available in the wrapper
+
+The wrapper is deliberately a no-permission, in-memory calculator, so these release-HTML features do not work inside it, by design:
+
+- **File import.** `<input type="file">` pickers do nothing: the WebView has no file chooser, so you cannot upload a PSBT or import a file.
+- **Downloads.** Blob downloads are not saved: the WebView has no download handler, so the wallet.dat, journal, PSBT and recovery-sheet exports do not produce a file.
+- **Print.** Printing (including recovery sheets) is not wired to Android's print framework.
+
+For those flows, use the offline HTML (`entropylab.html` from the GitHub release, verified as above) in a desktop or mobile browser. A file chooser and download bridge may come in a follow-up; until then the wrapper requests no permissions and writes nothing to storage.
+
 ## Build
 
 JDK 17 or newer, and an Android SDK with platform 36. Point `ANDROID_HOME` at the SDK. From this directory:

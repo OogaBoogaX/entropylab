@@ -271,6 +271,22 @@ test("the Android wrapper excludes the calculator WebView from autofill", () => 
   assert.match(webview, /android:importantForAutofill="noExcludeDescendants"/, "the WebView must exclude itself and its descendants from autofill");
 });
 
+// The wrapper has no file chooser, download listener or print bridge, so file
+// import, blob downloads and print silently do nothing inside it. The README
+// must say so and point to the offline HTML, and the claim must stay true:
+// wiring any of those up has to update this note too.
+test("the Android README documents that file import, downloads and print are unavailable", () => {
+  const readme = read("android/README.md");
+  const section = readme.match(/^## Not available in the wrapper\n[\s\S]*?(?=^## )/m)?.[0];
+  assert.ok(section, "android/README.md has a 'Not available in the wrapper' section");
+  assert.match(section, /\*\*File import\.\*\*[^\n]*<input type="file">/);
+  assert.match(section, /\*\*Downloads\.\*\*[^\n]*wallet\.dat[^\n]*PSBT[^\n]*recovery-sheet/);
+  assert.match(section, /\*\*Print\.\*\*/);
+  assert.match(section, /use the offline HTML/);
+  const activity = read("android/app/src/main/java/online/entropylab/android/MainActivity.java");
+  assert.doesNotMatch(activity, /onShowFileChooser|setDownloadListener|PrintManager|createPrintDocumentAdapter/, "the wrapper now handles files, downloads or print; update android/README.md");
+});
+
 test("the Android wrapper workflow drops its token and validates the Gradle wrapper first", () => {
   const workflow = read(".github/workflows/android-wrapper.yml");
   const checkouts = workflow.split(/\n(?=      - uses: actions\/checkout@)/).slice(1).map((block) => block.split(/\n(?=      - )/)[0]);
