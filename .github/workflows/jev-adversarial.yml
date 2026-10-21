@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  NODE_VERSION: "22.23.2"
+  NODE_VERSION: "22.23.4"
   # portlandhodl/jev-cli, pinned like every action here: the binary is handed
   # TYPESAFE_API_KEY, so it is built from a reviewed commit and its committed
   # Cargo.lock (--locked), never from whatever HEAD and crates.io resolve to.

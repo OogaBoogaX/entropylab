@@ -30,7 +30,7 @@
 # Bump the digest, the snapshot, and the clang versions together.
 FROM --platform=linux/amd64 ubuntu:24.04@sha256:496754492fb28b4d3049432f2ca787449331e23fb14f0dd3fffea86bf5a93eb4
 
-ARG NODE_VERSION=v22.23.2
+ARG NODE_VERSION=v22.23.4
 ARG FIREFOX_VERSION=140.14.0esr
 ARG RUSTUP_VERSION=1.29.1
 ARG UBUNTU_SNAPSHOT=20260916T000000Z
@@ -39,7 +39,7 @@ ARG CLANG18_VERSION=1:18.1.3-1ubuntu1
 # Integrity pins for the downloads below. The base image is pinned by digest
 # and apt checks its own signatures; these tools are not in the archive, so
 # their bytes are pinned here (audit H2).
-ARG NODE_SHA256=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307
+ARG NODE_SHA256=1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce
 ARG FIREFOX_SHA512=53c667ded54f0044855072c7b66333d6566beb91178009bbfe10a7220d7abd88b580cb2884269e98a13586075906b76c047a73544203b93325957237ff59399b
 ARG RUSTUP_INIT_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
 
