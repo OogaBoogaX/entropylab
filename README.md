@@ -774,10 +774,10 @@ The toolchain is npm and Node.js (>=20.19). Install the exact dependency tree
 with `npm ci`; every local and CI operation is exposed as an npm script:
 
 ```bash
-npm test                    # run all tests, including the headless-Firefox suite
+npm test                    # run all tests, including the headless browser suites
 npm run test:ci             # the CI subset: network-check, ui-defaults, source invariants
 npm run test:validate       # validate source and security invariants
-npm run test:browser        # test crypto, sanitization, networking, exports in headless Firefox
+npm run test:browser        # test crypto, sanitization, networking, exports in installed headless browsers
 npm run build               # compile src/ into the generated root files
 npm run build:wasm          # rebuild the committed crypto WASM artifact (needs Rust)
 npm run verify              # verify the site artifact (entropylab.html, assets)
@@ -792,13 +792,16 @@ back to the repository so the file stays downloadable; pull requests never
 carry the generated output, so they stop conflicting on it. The staging step
 copies the verified `entropylab.html` to a deployment-only `index.html`,
 allowing both the site root and `/entropylab.html` to serve the same
-application without committing a second application artifact. CI runs the
-test suites that need no browser; the headless-Firefox suite runs locally
-where a Firefox binary is available. Local checks and CI/CD use the same
-commands; the workflow contains no separate build implementation.
+application without committing a second application artifact. CI runs both
+the unit tests and the browser suites via `npm run test:ci` and
+`npm run test:browser`. Local checks and CI/CD use the same commands; the
+workflow contains no separate build implementation.
 
-The browser suite runs the assembled application in headless Firefox against a
-local Node.js HTTP server. It feeds hostile markup and event-handler strings
+The browser suite runs the assembled application in every installed supported
+engine: Firefox, Chrome/Chromium, and Microsoft Edge. Missing engines are
+skipped; at least one must be installed. Set `FIREFOX_BINARY`,
+`CHROME_BINARY` (or `CHROMIUM_BINARY`), or `EDGE_BINARY` to select a binary.
+The harness uses a local Node.js HTTP server. It feeds hostile markup and event-handler strings
 through user-facing fields, verifies the application makes no network
 requests at runtime, exercises the hosted warning and
 assets, derives a known wallet through the UI, and inspects both watch-only
