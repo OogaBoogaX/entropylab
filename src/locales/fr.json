@@ -1613,8 +1613,5 @@
   "This checks face counts only. It cannot establish independence, unpredictability, or entropy. Repeating 123456 can give balanced counts. The percentile is not the probability that the die is fair. This check does not block derivation.": "Ceci vérifie uniquement les comptes de faces. Il ne peut pas établir l'indépendance, l'imprévisibilité ou l'entropie. Répéter 123456 peut donner des comptes équilibrés. Le percentile n'est pas la probabilité que le dé soit équitable. Cette vérification ne bloque pas la dérivation.",
   "No frequency warning": "Aucun avertissement de fréquence",
   "Borderline frequency result": "Résultat de fréquence limite",
-  "Frequency imbalance warning": "Avertissement de déséquilibre de fréquence",
-  "Guide": "Guide",
-  "Basics": "Les bases",
-  "Explain this tool": "Expliquer cet outil"
+  "Frequency imbalance warning": "Avertissement de déséquilibre de fréquence"
 }

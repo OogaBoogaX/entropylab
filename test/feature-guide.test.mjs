@@ -2,7 +2,7 @@
 // secrets, storing data, doing I/O, or navigating except on an explicit tool action.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { MiniDocument } from "./mini-dom.mjs";
 import { createFeatureGuideSession, initFeatureGuide } from "../src/js/feature-guide.js";
@@ -172,9 +172,13 @@ test("catalog covers released workspaces with complete steps, unique IDs, and ex
 });
 // hodlApplyLocale() calls refresh() on every language change, so every guide
 // entry (Basics, the general Guide button and each Explain this tool button)
-// must relabel through the active translator, and every shipped catalog must
-// carry those labels or they stay English in every language.
-test("refresh relabels the Guide, Basics and Explain this tool entries, and every catalog translates them", () => {
+// must relabel through the active translator. The labels are content-keyed
+// English sources; the post-merge translation workflow fills the catalogs, so
+// the test checks extraction and routing, not catalog contents.
+test("refresh relabels the Guide, Basics and Explain this tool entries through the translator", async () => {
+  const labels = ["Guide", "Basics", "Explain this tool"];
+  const sources = await collectSources(fileURLToPath(new URL("..", import.meta.url)));
+  for (const label of labels) assert.ok(sources.has(label), `${JSON.stringify(label)} is an extracted English source`);
   let locale = (text) => text;
   withPage(({ doc, guide, opener }) => {
     const basics = doc.createElement("button");
@@ -182,21 +186,14 @@ test("refresh relabels the Guide, Basics and Explain this tool entries, and ever
     doc.body.append(basics);
     const explain = doc.querySelector('#calc-tool-intro [data-guide-open]');
     assert.ok(explain, "the tool intro gets an Explain this tool entry");
-    locale = (text) => `[de] ${text}`;
+    const seen = [];
+    locale = (text) => { seen.push(text); return `[de] ${text}`; };
     guide.refresh();
+    for (const label of labels) assert.ok(seen.includes(label), `refresh() looks up ${JSON.stringify(label)}`);
     assert.equal(opener.textContent, "[de] Guide");
     assert.equal(basics.textContent, "[de] Basics");
     assert.equal(explain.textContent, "[de] Explain this tool");
   }, (text) => locale(text));
-  const dir = new URL("../src/locales/", import.meta.url);
-  const catalogs = readdirSync(dir).filter((name) => name.endsWith(".json"));
-  assert.ok(catalogs.length > 0);
-  for (const name of catalogs) {
-    const catalog = JSON.parse(readFileSync(new URL(name, dir), "utf8"));
-    for (const label of ["Guide", "Basics", "Explain this tool"]) {
-      assert.ok(typeof catalog[label] === "string" && catalog[label].trim(), `${name} translates ${JSON.stringify(label)}`);
-    }
-  }
 });
 test("guide entry and app lifecycle wiring belong to the source shell and boot", () => {
   const root = new URL("..", import.meta.url);
