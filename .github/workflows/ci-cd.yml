@@ -39,7 +39,7 @@ concurrency:
 # must equal ARG NODE_VERSION in the Dockerfile (test/toolchain-pin.test.mjs
 # enforces the pair).
 env:
-  NODE_VERSION: "22.23.2"
+  NODE_VERSION: "22.23.4"
 
 jobs:
   # ── Build: compile src/ once — every gate and every publication path ─────
