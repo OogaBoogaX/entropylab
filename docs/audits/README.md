@@ -85,9 +85,9 @@ fixed on this branch.
 | Journal duplicate ids / stale `nextId` | Fixed | duplicate ids are refused at parse, an unsafe or missing id takes the lowest free one, a stale `nextId` is repaired to highest + 1, and `addEntry` never reuses an id; `test/journal.test.mjs` |
 | `file.text()` before the 4 MiB cap | Fixed | `File.size` is refused over `3 × limit + 3` bytes before the read; `test/journal-open-acknowledge.test.mjs` |
 | Uncapped Silent Payments paste fields | Fixed | vin and output text plus item counts are bounded before parse/split; `test/sp-send-session.test.mjs` |
-| bip352 redeem script not hash-checked | Accepted open | `bip352.js:207-212` |
+| bip352 redeem script not hash-checked | Fixed | a P2SH input with a witness must push exactly one redeem script whose hash160 its prevout commits to, and a P2WPKH (native or wrapped) witness key must hash to the key hash it spends, else the input is refused (not skipped, which would drop it from the sender's key sum); `test/bip352.test.mjs` |
 | bip352 zero label tweak | Accepted open | `bip352.js:83-88,286-298` |
-| Lone-surrogate passphrase | Accepted open | `bip39.js:102-112` |
+| Lone-surrogate passphrase | Fixed | a string passphrase must be well-formed Unicode and a byte passphrase valid UTF-8, else "Invalid passphrase" before PBKDF2; `test/hdkey-bip39-wasm.test.mjs` |
 | PBKDF2 iteration wrap | Not a product vulnerability | sole caller uses 2048 |
 | BIP45 export buttons on unsupported shapes | Fixed | wallet.dat and BIP 388 controls gate on `walletDatSupported`/`bip388Supported`, Core JSON stays; `test/wallet-export.test.mjs` |
 | HD wallet.dat path lacking msig xprv refusal | Not a product vulnerability | descriptors kept separate |

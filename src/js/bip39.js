@@ -20,6 +20,7 @@ const textEncoder = new TextEncoder();
 // bytes in saltFor must equal the salt from the same passphrase as text.
 // entropyToMnemonic's decode is unaffected: its words are plain ASCII.
 const textDecoder = new TextDecoder("utf-8", { ignoreBOM: true });
+const strictTextDecoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 const PHRASE_CAP = 1024; // a 24-word phrase is at most ~250 bytes
 const ENTROPY_CAP = 64; // BIP39 entropy is 16..32 bytes
@@ -27,6 +28,14 @@ const ENTROPY_CAP = 64; // BIP39 entropy is 16..32 bytes
 const nfkd = (value) => {
   if (typeof value !== "string") throw new TypeError("invalid mnemonic type: " + typeof value);
   return value.normalize("NFKD");
+};
+
+const isWellFormed = (value) => {
+  for (const char of value) {
+    const point = char.codePointAt(0);
+    if (point >= 0xd800 && point <= 0xdfff) return false;
+  }
+  return true;
 };
 
 // @scure/bip39 split the NFKD phrase on a single ASCII space and required
@@ -98,6 +107,13 @@ const validateMnemonic = (mnemonic, wordlist = bip39English) => {
 // once for its normalization.
 const MNEMONIC_SALT = textEncoder.encode("mnemonic");
 const saltFor = (passphrase) => {
+  // undefined means the caller omitted the argument: BIP39 says that is the
+  // empty passphrase. null is never passed by the app (all call sites pass
+  // strings or bytes), so a null can only be a caller bug (e.g. a missing
+  // config value). Silently deriving the no-passphrase wallet would remove
+  // the user's passphrase protection without a word. Throw instead.
+  if (passphrase === undefined) passphrase = "";
+  if (passphrase === null) throw new TypeError("Invalid passphrase");
   if (passphrase instanceof Uint8Array) {
     if (passphrase.every((byte) => byte < 0x80)) {
       const salt = new Uint8Array(MNEMONIC_SALT.length + passphrase.length);
@@ -105,8 +121,19 @@ const saltFor = (passphrase) => {
       salt.set(passphrase, MNEMONIC_SALT.length);
       return salt;
     }
-    return textEncoder.encode(nfkd("mnemonic" + textDecoder.decode(passphrase)));
+    let text;
+    try {
+      text = strictTextDecoder.decode(passphrase);
+    } catch {
+      throw new Error("Invalid passphrase");
+    }
+    return textEncoder.encode(nfkd("mnemonic" + text));
   }
+  // Check the same string "mnemonic" + passphrase hashes: "" + passphrase
+  // coerces exactly as that concatenation does (a String object becomes its
+  // value, a Symbol still throws), where String() would differ.
+  passphrase = "" + passphrase;
+  if (!isWellFormed(passphrase)) throw new Error("Invalid passphrase");
   return textEncoder.encode(nfkd("mnemonic" + passphrase));
 };
 
@@ -118,13 +145,15 @@ const mnemonicToSeedSync = (mnemonic, passphrase = "") => {
   if (typeof mnemonic !== "string" || (typeof mnemonic.isWellFormed === "function" && !mnemonic.isWellFormed())) throw new Error("Invalid mnemonic");
   const text = nfkd(mnemonic);
   if (!isCanonicalPhrase(text)) throw new Error("Invalid mnemonic");
-  const phrase = textEncoder.encode(text);
   const salt = saltFor(passphrase);
+  let phrase = new Uint8Array(0);
   try {
+    phrase = textEncoder.encode(text);
     return pbkdf2Sha512(phrase, salt, 2048, 64);
   } finally {
     // The encoded phrase and the passphrase-bearing salt are secret; the
-    // 64-byte seed is the caller's to keep or wipe.
+    // 64-byte seed is the caller's to keep or wipe. The salt is wiped even if
+    // encoding the phrase throws.
     phrase.fill(0);
     salt.fill(0);
   }
