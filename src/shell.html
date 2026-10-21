@@ -51,7 +51,7 @@
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="bip85-card" aria-label="BIP-85 Child"><span class="workspace-tab-full">BIP-85 Child</span><span class="workspace-tab-short">BIP-85</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="sp-card" aria-label="Silent Payments"><span class="workspace-tab-full">Silent Payments</span><span class="workspace-tab-short">SP</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="vanity-card" aria-label="Vanity Address"><span class="workspace-tab-full">Vanity Address</span><span class="workspace-tab-short">Vanity</span></button>
-        <!-- Lightning and Journal are held back; see hodlWorkspaceTabs in app.js. -->
+        <!-- Only Lightning is held back; see hodlWorkspaceTabs in app.js. -->
       </div>
     </nav>
       <div class="workspace-panel" id="workspace-panel">
@@ -829,6 +829,7 @@ words, pick one of the checksum words.</span></span>
             <span class="journal-create-ready" id="journal-open-ready" hidden><span class="journal-create-ready-arrow" aria-hidden="true">←</span> <span class="journal-open-ready-text">This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.</span></span>
           </div>
         </div>
+        <p class="sr-only" id="journal-gate-status" role="status" aria-live="polite"></p>
       </div>
       <div id="journal-work-panel" hidden>
         <div class="journal-status" id="journal-status">
@@ -968,9 +969,7 @@ words, pick one of the checksum words.</span></span>
       <p data-i18n-rich>Die Distribution / Fairness Analysis (Pearson’s χ²): <a href="https://rpg.stackexchange.com/questions/70802/how-can-i-test-whether-a-die-is-fair" target="_blank" rel="noopener noreferrer">How can I test whether a die is fair?</a> — live check while entering rolls, following the <a href="https://dicefairness.johnellmore.com/" target="_blank" rel="noopener noreferrer">Dice Fairness Tester</a> thresholds.</p>
       <p data-i18n-rich>Jade anti-exfil (sign-to-contract): <a href="https://blog.blockstream.com/anti-exfil-stopping-key-exfiltration/" target="_blank" rel="noopener noreferrer">Anti-Exfil: Stopping Key Exfiltration</a> — secp256k1-zkp <code>ecdsa_s2c</code> / <code>anti_exfil_host_verify</code>.</p>
       <p data-i18n-rich>BIP-85 deterministic entropy: <a href="https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki" target="_blank" rel="noopener noreferrer">bip-0085.mediawiki</a> — HMAC-SHA512 of a fully hardened child; English BIP-39 / WIF / XPRV / HEX / password applications match COLDCARD.</p>
-      <!-- Held back with the Journal tab (#511); restore alongside it.
       <p data-i18n-rich>Entropy Journal: AES-256-GCM from an optional typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. An empty password preserves the file format but provides no access protection. No relays, no accounts, no localStorage for secrets.</p>
-      -->
       <p data-i18n-rich>BIP-352 Silent Payments: <a href="https://github.com/bitcoin/bips/blob/master/bip-0352.mediawiki" target="_blank" rel="noopener noreferrer">bips/bip-0352</a> — reusable <code>sp1q…</code> addresses and unique taproot outputs. Descriptors: <a href="https://github.com/bitcoin/bips/blob/master/bip-0392.mediawiki" target="_blank" rel="noopener noreferrer">BIP-392</a>. Publish URI: <a href="https://github.com/bitcoin/bips/blob/master/bip-0321.mediawiki" target="_blank" rel="noopener noreferrer">BIP-321</a>. DNS name: <a href="https://github.com/bitcoin/bips/blob/master/bip-0353.mediawiki" target="_blank" rel="noopener noreferrer">BIP-353</a> — this page prints the TXT, it does not resolve names.</p>
       <p data-i18n-rich>Inscription envelopes: <a href="https://docs.ordinals.com/inscriptions.html" target="_blank" rel="noopener noreferrer">docs.ordinals.com/inscriptions</a> — <code>OP_FALSE OP_IF "ord"</code> parser only. This tool does not create inscriptions or number sats.</p>
     </details>

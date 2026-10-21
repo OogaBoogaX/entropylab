@@ -102,9 +102,13 @@ function journalLifecycleHarness() {
   });
   add("journal-log-out", { textContent: SECRET_STATE });
   add("journal-status-note", { textContent: "" });
+  add("journal-gate-status", { textContent: "" });
   add("journal-create", { focused: false, focus() { this.focused = true; } });
   add("journal-add", { focused: false, focus() { this.focused = true; } });
   add("journal-open-ready", { hidden: true });
+  // The wipe asks the work panel whether the active element sits inside it,
+  // so the stub tracks its descendants.
+  add("journal-work-panel", { hidden: false, descendants: new Set(), contains(element) { return this.descendants.has(element); } });
   const documentStub = {
     activeElement: null,
     getElementById: (id) => elements.get(id) ?? null,
@@ -164,6 +168,7 @@ function assertNoJournalPlaintext({ api, elements, journal, doc, entry, calls })
   // Rendered copies: the entry list, the entry view, the error line.
   assert.equal(elements.get("journal-list").innerHTML, "", "the entry list kept its rows");
   assert.equal(elements.get("journal-view").innerHTML, "", "a revealed entry stayed on screen");
+  assert.equal(elements.get("journal-error").textContent, "", "the error line kept its message");
   // The session snapshot, on screen and in memory.
   assert.equal(elements.get("journal-state-text").textContent, "", "the session snapshot stayed on screen");
   assert.equal(elements.get("journal-state-private").checked, false, "the private box stayed ticked");
@@ -193,6 +198,9 @@ test("journal Lock leaves no journal plaintext behind (plan W3)", () => {
   // Lock announces through the live region and parks focus on the locked
   // panel's primary action, not <body> (plan W5).
   assert.ok(harness.elements.get("journal-status-note").textContent.startsWith("Journal locked"), "Lock did not announce through #journal-status-note");
+  // The status note is hidden with the work panel, so the audible copy goes
+  // to the gate panel's live region, which stays visible (plan W5).
+  assert.ok(harness.elements.get("journal-gate-status").textContent.startsWith("Journal locked"), "Lock did not announce through the gate's live region");
   assert.equal(harness.elements.get("journal-create").focused, true, "Lock left focus to fall back to <body>");
 });
 
@@ -209,6 +217,8 @@ test("the global Clear leaves no journal plaintext behind (plan W3)", () => {
   // Clear announces through the same live region as Lock (plan W5), but must
   // not move focus: it also runs on pagehide, where focusing is meaningless.
   assert.ok(harness.elements.get("journal-status-note").textContent.startsWith("Journal cleared"), "Clear did not announce through #journal-status-note");
+  assert.ok(harness.elements.get("journal-gate-status").textContent.startsWith("Journal cleared"), "Clear did not announce through the gate's live region");
+  // Focus that was not inside the work panel is left alone.
   assert.equal(harness.elements.get("journal-create").focused, false, "Clear moved focus");
 });
 
@@ -368,4 +378,52 @@ test("closing the editor or locking moves focus to a control, not <body> (plan W
   const again = journalLifecycleHarness();
   again.api.hideEditor();
   assert.equal(again.elements.get("journal-add").focused, false, "closing the editor stole focus it did not own");
+});
+
+test("the global Clear rescues focus stranded inside the hidden work panel (plan W5)", () => {
+  // Executable: focus starts inside the editor. hideEditor hands it to
+  // #journal-add, which the Clear then hides with the work panel, so the wipe
+  // must park it on the gate's primary action — never leave it on a hidden
+  // control, and never let it fall to <body>.
+  const harness = journalLifecycleHarness();
+  harness.api.openNotebook({ passwordProtected: true }, harness.doc);
+  const child = {};
+  harness.elements.get("journal-editor").contains = (element) => element === child;
+  harness.elements.get("journal-work-panel").descendants.add(child);
+  harness.documentStub.activeElement = child;
+  harness.api.wipeMem();
+  assert.equal(harness.elements.get("journal-create").focused, true, "Clear left focus on a control hidden with the work panel");
+});
+
+test("the Lock/Clear announcement also lands in a live region outside the hidden work panel (plan W5)", () => {
+  // #journal-status-note is inside #journal-work-panel, which Lock and Clear
+  // hide, so a write to it is outside the accessibility tree and announces
+  // nothing. The audible copy goes to #journal-gate-status, a polite live
+  // region inside #journal-locked-panel — the panel both actions leave
+  // visible (hodlJournalShowWork unhides it while locked).
+  const tag = /<p\b[^>]*\bid="journal-gate-status"[^>]*>/.exec(shell)?.[0] || "";
+  assert.ok(/\brole="status"/.test(tag) || /\baria-live=/.test(tag), "#journal-gate-status must be a live region");
+  const lockedPanel = shell.slice(shell.indexOf('id="journal-locked-panel"'), shell.indexOf('id="journal-work-panel"'));
+  assert.ok(lockedPanel.includes('id="journal-gate-status"'), "the announcement region must live in the panel that stays visible");
+  const workPanel = shell.slice(shell.indexOf('id="journal-work-panel"'), shell.indexOf('id="journal-error"'));
+  assert.ok(!workPanel.includes('id="journal-gate-status"'), "the announcement region must not sit inside the hidden work panel");
+  assert.match(loadSlice("hodlJournalShowWork"), /locked\.hidden = unlocked/, "the locked panel is the one shown while locked");
+  assert.match(loadSlice("hodlJournalLock"), /getElementById\("journal-gate-status"\)/);
+  assert.match(loadSlice("hodlJournalWipeMem"), /getElementById\("journal-gate-status"\)/);
+});
+
+test("the Sources section discloses the released journal's encryption design (plan W4)", () => {
+  // The disclosure was held back with the Journal tab (#511) and ships
+  // alongside it. Pinned by stable substrings, with comments stripped so a
+  // commented-out paragraph cannot count.
+  const sources = shell.slice(shell.indexOf('id="sources"'), shell.indexOf('id="important"')).replace(/<!--[\s\S]*?-->/g, "");
+  assert.ok(sources.includes("Entropy Journal"), "the Sources section must name the Entropy Journal");
+  assert.ok(sources.includes("no access protection"), "the Sources section must say a passwordless file has no access protection");
+});
+
+test("the static tab strip no longer marks the released Journal tab as held back", () => {
+  // The strip is re-rendered from hodlWorkspaceTabs at boot; its placeholder
+  // comment must not contradict the released tab.
+  const strip = shell.slice(shell.indexOf('id="workspace-tabs"'), shell.indexOf('id="workspace-panel"'));
+  assert.ok(!strip.includes("Journal are held back"), "the tab-strip comment still holds the Journal back");
 });

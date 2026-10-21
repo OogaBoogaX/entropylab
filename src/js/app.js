@@ -16883,7 +16883,11 @@ function hodlJournalRenderList() {
     box.innerHTML = `<p class="journal-empty">${hodlT(hodlJournalDoc.entries.length ? "No labels match that search." : "No entries yet.")}</p>`;
     return;
   }
-  box.innerHTML = entries.map((entry) => `<button type="button" class="journal-item" data-journal-id="${entry.id}">
+  // entry.id is a non-negative safe integer by the time it renders here —
+  // journal.js normalizeEntry coerces it to a positive safe integer or 0, and
+  // parseDocument hands out spare ids for 0 — so this escape is defense in
+  // depth against a future path that lets file text through, not a live hole.
+  box.innerHTML = entries.map((entry) => `<button type="button" class="journal-item" data-journal-id="${hodlEscapeHtml(String(entry.id))}">
       <img class="journal-item-lifehash" alt="" width="32" height="32" hidden>
       <span class="journal-item-label">${hodlEscapeHtml(entry.label)}</span>
       <span class="journal-item-meta">${hodlEscapeHtml(hodlJournalEntryMethodLabel(entry))} \xB7 ${hodlEscapeHtml(String(entry.created).slice(0, 10))}</span>
@@ -17209,6 +17213,11 @@ function hodlJournalLock() {
   if (log) log.textContent = hodlTText("No events yet.");
   hodlJournalLog("journal-lock");
   document.getElementById("journal-status-note").textContent = hodlTText("Journal locked. Password, entries, notepad, and session log were cleared (best effort).");
+  // The status note sits inside the work panel the lock just hid, so it is
+  // out of the accessibility tree and announces nothing; the gate panel's
+  // live region stays visible and carries the announcement.
+  let gateStatus = document.getElementById("journal-gate-status");
+  if (gateStatus) gateStatus.textContent = hodlTText("Journal locked. Password, entries, notepad, and session log were cleared (best effort).");
   // The Lock button leaves the page with the work panel; without a target its
   // focus would fall to <body>. The locked panel's primary action is Create.
   document.getElementById("journal-create")?.focus();
@@ -17273,6 +17282,17 @@ function hodlJournalWipeMem() {
   // also runs on pagehide, where the assignment is harmless.
   let statusNote = document.getElementById("journal-status-note");
   if (statusNote) statusNote.textContent = hodlTText("Journal cleared. Password, entries, notepad, and session log were cleared (best effort).");
+  // The status note sits inside the work panel the clear just hid, so it is
+  // out of the accessibility tree and announces nothing; the gate panel's
+  // live region stays visible and carries the announcement.
+  let gateStatus = document.getElementById("journal-gate-status");
+  if (gateStatus) gateStatus.textContent = hodlTText("Journal cleared. Password, entries, notepad, and session log were cleared (best effort).");
+  // hodlJournalHideEditor hands focus inside the closing editor or view to
+  // #journal-add, which hodlJournalShowWork has just hidden with the work
+  // panel; that stranded focus moves to the gate's primary action. Focus
+  // anywhere else is left alone — this also runs on pagehide.
+  let active = document.activeElement, workPanel = document.getElementById("journal-work-panel");
+  if (active && workPanel?.contains?.(active)) document.getElementById("journal-create")?.focus();
 }
 // The switcher keeps every tool on screen as a folder-tab strip that scrolls
 // when it must, in the shape the Keys section uses for its own tabs.

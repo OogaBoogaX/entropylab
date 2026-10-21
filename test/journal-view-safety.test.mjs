@@ -35,8 +35,11 @@ function functionSource(name) {
 
 // The fields a crafted file controls. hodlJournalEntryMethodLabel(entry)
 // reads the method and its variant, and the view builds its wallet line from
-// the local `wallet`, so those count as field references too.
-const FIELD_REFERENCE = /\bentry\.(?:label|created|walletName|fingerprint|method|input|phrase|notes)\b|\bwallet\b|\bhodlJournalEntryMethodLabel\(\s*entry\s*\)/;
+// the local `wallet`, so those count as field references too. entry.id joins
+// the list as defense in depth: journal.js normalizeEntry coerces it to a
+// positive safe integer or 0 today, but the sink must stay escaped if that
+// ever changes.
+const FIELD_REFERENCE = /\bentry\.(?:id|label|created|walletName|fingerprint|method|input|phrase|notes)\b|\bwallet\b|\bhodlJournalEntryMethodLabel\(\s*entry\s*\)/;
 // The only sinks a field may be rendered through.
 const ESCAPING_HELPER = /\bhodl(?:EscapeHtml|MetadataFieldHtml|PublicFieldHtml|PrivateFieldHtml|PrivateFieldMarkup|JournalPrivateValue)\s*\(/;
 
@@ -58,6 +61,16 @@ for (const view of ["hodlJournalRenderList", "hodlJournalOpenView"]) {
 // test/secret-clear.test.mjs uses.
 const { hodlEscapeHtml, hodlMetadataFieldHtml, hodlPublicFieldHtml, hodlPrivateFieldHtml, hodlPrivateValue } =
   await loadAppFunctions(["hodlEscapeHtml", "hodlMetadataFieldHtml", "hodlPublicFieldHtml", "hodlPrivateFieldHtml", "hodlPrivateValue"]);
+
+// The journal's own masked-value helper closes over the module's reveal flag,
+// so it is sliced by hand and given its real collaborators: the flag, the
+// escaper and the translation helper. The entry view renders the phrase
+// through this helper, so this — not only the generic hodlPrivateValue — is
+// what must be exercised.
+const journalPrivateValue = (revealed) => new Function(
+  "hodlJournalReveal", "hodlEscapeHtml", "hodlT",
+  `${functionSource("hodlJournalPrivateValue")}; return hodlJournalPrivateValue;`,
+)(revealed, hodlEscapeHtml, (text) => text);
 
 const payload = "<img src=x onerror=1>";
 const escapedPayload = "&lt;img src=x onerror=1&gt;";
@@ -93,6 +106,15 @@ test("a concealed private field renders none of its value", () => {
     assert.ok(!html.includes("onerror"), "a masked value leaked into the placeholder");
     assert.doesNotMatch(html, /<img\b/);
   }
+});
+
+test("the journal's own private-value helper escapes a revealed value and hides a concealed one", () => {
+  const revealed = journalPrivateValue(true)(evil);
+  assert.ok(revealed.includes(escapedPayload + silent), "a revealed journal value is escaped, not stripped");
+  assert.doesNotMatch(revealed, /<img\b/);
+  const concealed = journalPrivateValue(false)(evil);
+  assert.ok(!concealed.includes("onerror"), "a masked journal value leaked into the placeholder");
+  assert.doesNotMatch(concealed, /<img\b/);
 });
 
 test("the field helpers escape their labels as well as their values", () => {
