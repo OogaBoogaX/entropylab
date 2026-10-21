@@ -479,6 +479,8 @@ test("journal Lock empties the snapshot, the notepad and the session log", () =>
     hodlSyncJournalTool() {}, hodlJournalLog() {}, hodlRenderJournalPageTabs() {},
     hodlJournalApplyPageStyle() {}, hodlJournalResetPendingNote(field, label) { field.dataset.pendingNote = label; },
     hodlJournalTool: "book",
+    // Lock's log and status lines go through the translation helper.
+    hodlTText: (text) => text,
   });
   vm.runInContext(`${functionSource("hodlJournalLock")}\nhodlJournalLock();`, context);
   assert.equal(elements.get("journal-state-text").textContent, "", "Lock left the session snapshot filled");
@@ -1291,6 +1293,8 @@ async function stationHarness(options = {}) {
     // on a real journal object); the DOM sides are absent elements here.
     hodlJournal: createJournal(), wipeJournal,
     hodlRenderJournalPageTabs() {}, hodlJournalApplyPageStyle() {}, hodlJournalResetPendingNote() {},
+    // Journal Lock's log and status lines go through the translation helper.
+    hodlTText: (text) => text,
   });
   context.document.getElementById = ((byId, note = { textContent: "" }) => (id) => id === "journal-status-note" ? note : byId(id))(context.document.getElementById);
   for (const name of ["hodlCommitDerivedKey", "hodlCloneDerivedKey", "hodlKeyWalletIdentity", "hodlInvalidateLiveKeyResult",

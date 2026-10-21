@@ -15546,10 +15546,9 @@ async function hodlLoadTestKeys() {
 }
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "Transactions", "Txns"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity"], ...(__ENTROPYLAB_TEST_HOOKS__ ? [["journal", "Journal", "Journal"]] : [])];
-// Lightning and Journal are held back from release navigation while their
-// implementations remain in source. Test builds keep Journal reachable so its
-// behavior and backup compatibility stay covered until the UI is ready.
+var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "Transactions", "Txns"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity"], ["journal", "Journal", "Journal"]];
+// Lightning is still held back from release navigation while its
+// implementation remains in source. The Journal tab is released.
 var hodlPsbtTool = "inspector";
 function hodlSyncPsbtTool() {
   let visible = hodlWorkspace === "psbt",
@@ -15707,8 +15706,10 @@ function hodlCreateJournalPageTab(index) {
   button.setAttribute("role", "tab");
   button.setAttribute("aria-controls", "journal-page-panel");
   button.setAttribute("aria-selected", String(active));
-  button.setAttribute("aria-label", page.name + (active ? ", selected. Activate or press F2 to rename." : ". Activate to select."));
-  button.title = active ? "Click again or press F2 to rename" : "Click to select";
+  button.setAttribute("aria-label", active
+    ? hodlTText("{name}, selected. Activate or press F2 to rename.", { name: page.name })
+    : hodlTText("{name}. Activate to select.", { name: page.name }));
+  button.title = hodlTText(active ? "Click again or press F2 to rename" : "Click to select");
   button.tabIndex = active ? 0 : -1;
   fullLabel.className = "key-tab-label journal-page-tab-full";
   fullLabel.textContent = page.name;
@@ -15733,7 +15734,7 @@ function hodlBeginJournalPageRename(index) {
   input.className = "key-tab-name-input";
   input.value = previous;
   input.maxLength = 120;
-  input.setAttribute("aria-label", "Rename " + previous);
+  input.setAttribute("aria-label", hodlTText("Rename {name}", { name: previous }));
   input.setAttribute("aria-controls", "journal-page-panel");
   // One-shot, and a no-op once the page is gone: see hodlBeginKeyRename.
   let done = false;
@@ -16005,14 +16006,14 @@ function hodlRefreshJournalKeyPicker() {
   let keys = (hodlKeys || []).filter((state) => !state.isLab && /^[0-9a-f]{8}$/i.test(state.result?.masterFingerprint || ""));
   let bip85Keys = (hodlBip85Children || []).filter((state) => !state.isLab && /^[0-9a-f]{8}$/i.test(state.fingerprint || ""));
   placeholder.value = "";
-  placeholder.textContent = "Insert key";
+  placeholder.textContent = hodlTText("Insert key");
   placeholder.selected = true;
   placeholder.dataset.customSelectPlaceholder = "true";
   select.replaceChildren(placeholder);
   if (!keys.length && !bip85Keys.length) {
     let empty = document.createElement("option");
     empty.value = "";
-    empty.textContent = "No derived keys yet";
+    empty.textContent = hodlTText("No derived keys yet");
     empty.disabled = true;
     select.appendChild(empty);
   } else keys.forEach((state) => {
@@ -16101,7 +16102,7 @@ async function hodlJournalImportFile(file) {
   let generation = hodlJournalGeneration;
   if (file.size > 2 * 1024 * 1024) {
     hodlJournalLog("notebook-import-error", "too-large", "journal");
-    hodlJournalSetStatus("That notebook is larger than the 2 MiB import limit.", true);
+    hodlJournalSetStatus(hodlTText("That notebook is larger than the 2 MiB import limit."), true);
     return;
   }
   try {
@@ -16128,11 +16129,13 @@ async function hodlJournalImportFile(file) {
     hodlRenderJournalPageTabs();
     hodlJournalRestorePage(field);
     hodlJournalLog("notebook-import", `${imported.pages.length} page${imported.pages.length === 1 ? "" : "s"}`);
-    hodlJournalSetStatus(`Imported ${imported.pages.length} page${imported.pages.length === 1 ? "" : "s"} from ${file.name}.`);
+    hodlJournalSetStatus(imported.pages.length === 1
+      ? hodlTText("Imported {n} page from {name}.", { n: imported.pages.length, name: file.name })
+      : hodlTText("Imported {n} pages from {name}.", { n: imported.pages.length, name: file.name }));
   } catch (error) {
     if (generation !== hodlJournalGeneration) return;
     hodlJournalLog("notebook-import-error", "invalid-file", "journal");
-    hodlJournalSetStatus(error?.message || "The notebook could not be imported.", true);
+    hodlJournalSetStatus(error?.message || hodlTText("The notebook could not be imported."), true);
   }
 }
 async function hodlKeyManagerDownload() {
@@ -16149,7 +16152,7 @@ async function hodlKeyManagerDownload() {
     hodlJournalDownload("entropylab-keys.elkeys", JSON.stringify(file, null, 2) + "\n", "application/json;charset=utf-8");
     hodlKeyManagerRender();
   } catch (error) {
-    hodlKeyManagerStatus(error?.message || "The key file could not be downloaded.", true);
+    hodlKeyManagerStatus(error?.message || hodlTText("The key file could not be downloaded."), true);
     hodlJournalLog("key-manager-download-error", "", "journal");
   }
 }
@@ -16157,7 +16160,7 @@ async function hodlKeyManagerImportFile(file) {
   if (!file) return;
   let generation = hodlJournalGeneration;
   if (file.size > 2 * 1024 * 1024) {
-    hodlKeyManagerStatus("That key file is larger than the 2 MiB import limit.", true);
+    hodlKeyManagerStatus(hodlTText("That key file is larger than the 2 MiB import limit."), true);
     hodlJournalLog("key-manager-import-error", "too-large", "journal");
     return;
   }
@@ -16186,7 +16189,7 @@ async function hodlKeyManagerImportFile(file) {
     hodlJournalLog("key-manager-import", `${added} unverified inputs`, "journal");
   } catch (error) {
     if (generation !== hodlJournalGeneration) return;
-    hodlKeyManagerStatus(error?.message || "The key file could not be imported.", true);
+    hodlKeyManagerStatus(error?.message || hodlTText("The key file could not be imported."), true);
     hodlJournalLog("key-manager-import-error", "invalid-file", "journal");
   }
 }
@@ -16649,7 +16652,7 @@ function hodlJournalRefreshSessionState() {
   let field = document.getElementById("journal-state-text");
   if (field) field.textContent = text;
   let copyHost = document.getElementById("journal-state-copy");
-  if (copyHost && !copyHost.firstElementChild) copyHost.innerHTML = hodlPrivateCopyButton({ label: "Copy session snapshot" });
+  if (copyHost && !copyHost.firstElementChild) copyHost.innerHTML = hodlPrivateCopyButton({ label: hodlTText("Copy session snapshot") });
 }
 function hodlScheduleJournalStateRefresh() {
   if (hodlJournalStateRefreshQueued) return;
@@ -16789,11 +16792,11 @@ function hodlJournalUnlocked() {
   return Boolean(hodlJournalKeys && hodlJournalDoc);
 }
 function hodlJournalNoteText() {
-  if (!hodlJournalDoc) return "Create a journal or open a journal file.";
+  if (!hodlJournalDoc) return hodlTText("Create a journal or open a journal file.");
   let n = hodlJournalDoc.entries.length;
-  let unsaved = hodlJournalDirty ? " Unsaved changes \u2014 download the journal file to preserve them." : "";
-  if (!n) return "No entries yet. Download the journal file after you add one." + unsaved;
-  return `${n} ${n === 1 ? "entry" : "entries"} in this page only.${unsaved}`;
+  let unsaved = hodlJournalDirty ? " " + hodlTText("Unsaved changes \u2014 download the journal file to preserve them.") : "";
+  if (!n) return hodlTText("No entries yet. Download the journal file after you add one.") + unsaved;
+  return (n === 1 ? hodlTText("{n} entry in this page only.", { n }) : hodlTText("{n} entries in this page only.", { n })) + unsaved;
 }
 function hodlJournalFillLifehash(image, digest) {
   if (!image) return;
@@ -16832,7 +16835,7 @@ function hodlJournalFillWallets(selected) {
   select.innerHTML = "";
   let none = document.createElement("option");
   none.value = "";
-  none.textContent = "None";
+  none.textContent = hodlTText("None");
   select.append(none);
   hodlKeys.filter((state) => !state.isLab).forEach((state) => {
     let option = document.createElement("option");
@@ -16877,7 +16880,7 @@ function hodlJournalRenderList() {
   }
   let entries = hodlJournalSearch(hodlJournalDoc, document.getElementById("journal-search")?.value || "");
   if (!entries.length) {
-    box.innerHTML = `<p class="journal-empty">${hodlJournalDoc.entries.length ? "No labels match that search." : "No entries yet."}</p>`;
+    box.innerHTML = `<p class="journal-empty">${hodlT(hodlJournalDoc.entries.length ? "No labels match that search." : "No entries yet.")}</p>`;
     return;
   }
   box.innerHTML = entries.map((entry) => `<button type="button" class="journal-item" data-journal-id="${entry.id}">
@@ -16894,6 +16897,9 @@ function hodlJournalRenderList() {
 function hodlJournalHideEditor() {
   hodlJournalEditingId = null;
   let editor = document.getElementById("journal-editor"), view = document.getElementById("journal-view"), list = document.getElementById("journal-list");
+  // Closing drops the editor and the view from the page; focus inside either
+  // would fall back to <body>, so hand it to the list's primary action.
+  let refocus = document.activeElement && (editor?.contains(document.activeElement) || view?.contains(document.activeElement));
   if (editor) editor.hidden = true;
   if (view) {
     view.hidden = true;
@@ -16908,6 +16914,7 @@ function hodlJournalHideEditor() {
   if (method) method.value = "dice";
   hodlJournalEntryVariants = {};
   hodlJournalFillWallets("");
+  if (refocus) document.getElementById("journal-add")?.focus();
 }
 function hodlJournalShowEditor(entry) {
   if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
@@ -16931,7 +16938,7 @@ function hodlJournalPrivateValue(value) {
   let mask = "************", text = String(value ?? "\u2014");
   if (hodlJournalReveal) return `<span class="secret private-field-value" data-private-value data-i18n-skip translate="no">${hodlEscapeHtml(text)}</span>`;
   let bullets = "\u2022".repeat(mask.length);
-  return `<span class="secret private-field-value secret-placeholder"><span class="secret-placeholder-mask" aria-hidden="true">${bullets}</span><span class="secret-placeholder-message" aria-hidden="true">${mask}</span><span class="secret-placeholder-label">Private value hidden</span></span>`;
+  return `<span class="secret private-field-value secret-placeholder"><span class="secret-placeholder-mask" aria-hidden="true">${bullets}</span><span class="secret-placeholder-message" aria-hidden="true">${mask}</span><span class="secret-placeholder-label">${hodlT("Private value hidden")}</span></span>`;
 }
 function hodlJournalOpenView(id) {
   let entry = hodlJournalDoc?.entries.find((item) => item.id === id);
@@ -16954,11 +16961,11 @@ function hodlJournalOpenView(id) {
       <div class="wallet-data-actions no-print">
         <label class="reveal-private-toggle">
           <input type="checkbox" id="journal-reveal" data-private-reveal ${hodlJournalReveal ? "checked" : ""} aria-describedby="journal-private-description">
-          <span>Show seed <span class="reveal-private-toggle-note">(air-gap only)</span></span>
+          <span>${hodlT("Show seed")} <span class="reveal-private-toggle-note">${hodlT("(air-gap only)")}</span></span>
         </label>
-        <button class="btn secondary" id="journal-edit" type="button">Edit</button>
-        <button class="btn secondary" id="journal-delete" type="button">Delete</button>
-        <button class="btn secondary" id="journal-back" type="button">Back</button>
+        <button class="btn secondary" id="journal-edit" type="button">${hodlT("Edit")}</button>
+        <button class="btn secondary" id="journal-delete" type="button">${hodlT("Delete")}</button>
+        <button class="btn secondary" id="journal-back" type="button">${hodlT("Back")}</button>
       </div>
       <div class="wallet-data-fields">
         ${hodlMetadataFieldHtml("Method", hodlJournalEntryMethodLabel(entry), void 0, "muted")}
@@ -16983,7 +16990,7 @@ function hodlJournalOpenView(id) {
   document.getElementById("journal-delete").onclick = () => {
     if (!hodlJournalDeleteArmed) {
       hodlJournalDeleteArmed = true;
-      document.getElementById("journal-delete").textContent = "Confirm delete";
+      document.getElementById("journal-delete").textContent = hodlTText("Confirm delete");
       return;
     }
     hodlJournalRemoveEntry(hodlJournalDoc, id);
@@ -17002,7 +17009,7 @@ function hodlJournalSyncDerivedKeys(states) {
     if (result.added || result.updated) hodlJournalDirty = true;
     return result;
   } catch (exception) {
-    hodlJournalError(`The key was derived, but its journal entry could not be updated: ${exception.message || String(exception)}`);
+    hodlJournalError(hodlTText("The key was derived, but its journal entry could not be updated: {message}", { message: exception.message || String(exception) }));
     return { added: 0, updated: 0, matched: 0 };
   }
 }
@@ -17052,7 +17059,7 @@ function hodlJournalChooseFile(file) {
   // so a larger file is refused before file.text() pulls it into memory.
   if (file && Number.isFinite(file.size) && file.size > hodlJournalMaxFileLength * 3 + 3) {
     hodlJournalFileRead = null;
-    hodlJournalError("That journal file is too large to open.");
+    hodlJournalError(hodlTText("That journal file is too large to open."));
     return;
   }
   let read = (hodlJournalFileRead = file ? file.text().then((text) => ({ text }), (error) => ({ error })) : null);
@@ -17094,6 +17101,9 @@ async function hodlJournalUnlock() {
       hodlJournalOpenReadyFor = text;
       let ready = document.getElementById("journal-open-ready");
       if (ready) ready.hidden = false;
+      // The ready row says why this press installs nothing; echo it to the
+      // alert region so the state is announced, not only shown.
+      hodlJournalError(ready?.querySelector?.(".journal-open-ready-text")?.textContent || "");
       // The decrypted document was only needed to learn that no password
       // protects it; installing waits for the second press, so this copy is
       // wiped now instead of being left for GC.
@@ -17196,9 +17206,12 @@ function hodlJournalLock() {
   hodlRenderJournalPageTabs();
   hodlJournalApplyPageStyle();
   let log = document.getElementById("journal-log-out");
-  if (log) log.textContent = "No events yet.";
+  if (log) log.textContent = hodlTText("No events yet.");
   hodlJournalLog("journal-lock");
-  document.getElementById("journal-status-note").textContent = "Journal locked. Password, entries, notepad, and session log were cleared (best effort).";
+  document.getElementById("journal-status-note").textContent = hodlTText("Journal locked. Password, entries, notepad, and session log were cleared (best effort).");
+  // The Lock button leaves the page with the work panel; without a target its
+  // focus would fall to <body>. The locked panel's primary action is Create.
+  document.getElementById("journal-create")?.focus();
 }
 function hodlInitJournalNotebook() {
   if (!document.getElementById("journal-create")) return;
@@ -17255,7 +17268,11 @@ function hodlJournalWipeMem() {
   hodlJournalApplyPageStyle();
   hodlJournalSetStatus("");
   let log = document.getElementById("journal-log-out");
-  if (log) log.textContent = "No events yet.";
+  if (log) log.textContent = hodlTText("No events yet.");
+  // The global Clear announces through the same live region Lock uses. This
+  // also runs on pagehide, where the assignment is harmless.
+  let statusNote = document.getElementById("journal-status-note");
+  if (statusNote) statusNote.textContent = hodlTText("Journal cleared. Password, entries, notepad, and session log were cleared (best effort).");
 }
 // The switcher keeps every tool on screen as a folder-tab strip that scrolls
 // when it must, in the shape the Keys section uses for its own tabs.

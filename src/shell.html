@@ -781,7 +781,7 @@ words, pick one of the checksum words.</span></span>
       </div>
     <div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>
         <h2>Entropy Journal</h2>
-        <p class="muted tool-intro-note">A local notebook of entropy you already produced. Password is optional. No password means anyone with the file can open it. Not a password manager. Does not generate entropy.</p>
+        <p class="muted tool-intro-note">A local notebook of entropy you already produced. Password is optional. No password means anyone with the file can open it. Not a password manager. Does not generate entropy. Keys you derive while the journal is unlocked are added to it, including their seed words. The journal file is encrypted with your password.</p>
         <div class="row journal-global-actions tool-actions">
           <button class="btn secondary green journal-download-action" id="journal-global-download" type="button" disabled><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span>Download journal</span></button>
           <button class="btn red clear-current-action" id="journal-global-clear" type="button" disabled>Clear journal</button>
@@ -798,7 +798,7 @@ words, pick one of the checksum words.</span></span>
         </div>
       </div>
     </div>
-      <section class="card no-print tool-card" id="journal-card" aria-label="Journal" hidden>
+      <section class="card no-print tool-card" id="journal-card" aria-label="Journal" role="tabpanel" hidden>
       <div id="journal-locked-panel">
         <div class="row segmented-control" id="journal-gate-modes" role="group" aria-label="Journal start">
           <button type="button" class="tab active" data-journal-gate="create" aria-pressed="true">Create</button>
@@ -835,7 +835,7 @@ words, pick one of the checksum words.</span></span>
           <img class="journal-status-lifehash" id="journal-lifehash" width="48" height="48" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" hidden>
           <div>
             <p class="journal-status-title" id="journal-status-title">Journal open</p>
-            <p class="muted" id="journal-status-note">No entries yet. Download the journal file after you add one.</p>
+            <p class="muted" id="journal-status-note" role="status" aria-live="polite">No entries yet. Download the journal file after you add one.</p>
           </div>
         </div>
         <div class="row bip85-actions journal-toolbar tool-actions">

@@ -91,7 +91,7 @@ const loadApp = ({ password = "", onOpen = (file, password) => openDocument(file
     "hodlJournalWipeDocument", "hodlJournalWipeBytes",
     "hodlKeyManagerReset", "hodlJournalHideEditor",
     "hodlJournalShowWork", "hodlShowJournalTool", "hodlJournalLog",
-    "hodlJournalBackfillDerivedKeys", "hodlJournalDiscardOpened",
+    "hodlJournalBackfillDerivedKeys", "hodlJournalDiscardOpened", "hodlTText",
     `${source}; return {
       choose: hodlJournalChooseFile,
       unlock: hodlJournalUnlock,
@@ -106,7 +106,8 @@ const loadApp = ({ password = "", onOpen = (file, password) => openDocument(file
     wipeDocument, wipeBytes,
     noop,
     noop, noop, noop,
-    noop, noop,
+    noop, noop, noop,
+    (text) => text,
   );
   return { ...api, error: () => fields["journal-error"].textContent };
 };
