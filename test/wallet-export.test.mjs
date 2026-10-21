@@ -1356,8 +1356,18 @@ test("bitcoind loads a generated msig Taproot watch-only wallet.dat", { skip: !B
 //   enshrined — so they were deleted and these mutants stay alive until
 //   the source fails closed.
 // - buildWalletRecords HD xprv routing: needs a valid fixture or a fail-closed
-//   HD-specific error; the current source stores the xprv verbatim, so a
-//   no-leak assertion would fail. Left alive until the source fails closed.
+//   HD-specific error; a watch-only export now refuses an HD xprv outright
+//   (the private-key guard pinned above), so only a spending fixture can
+//   kill the routing mutant. Left alive.
+// - extendedKeyBody's 78-byte payload check: the shape guard decodes and
+//   length-checks every descriptor key before any record is written, so a
+//   base58Decode returning the wrong length is refused earlier with the
+//   guard's own error and the check can no longer be reached.
+// - buildWalletRecords' empty multisig pubs check ("no extended key found in
+//   watch-only descriptor"): the shape guard requires every co-signer to be
+//   an extended key and the private-key guard refuses an all-xprv key list,
+//   so extractExtendedPubs can no longer come back empty for a descriptor
+//   that reached the record builder.
 // - branchRangeFromRows' row filter (null rows, indexes at or above
 //   0x80000000): the old test pinned that malformed rows are silently
 //   ignored and the range falls back to 0..1000 — fail-open — so it was
@@ -1620,22 +1630,6 @@ test("buildWalletRecords refuses a null wallet", () => {
   assert.throws(() => buildWalletRecords(null, false, deps, 0), /unknown network/);
 });
 
-// The 78-byte check lives in extendedKeyBody, which the writer reaches only
-// through a branch-level wildcard ("xpub/*" — a supported tail per the
-// module's own docs and the hardened-branch regression test); "xpub/0/*"
-// routes to deps.deriveBranchBody and never decodes the key inside the
-// module. The descriptor below is valid, so its only defect is the decoded
-// key length, and the specific error pins the check that the downstream
-// 74-byte branchBody check would otherwise mask.
-test("buildWalletRecords refuses an extended key payload that is not 78 bytes", () => {
-  const { buildWalletRecords } = loadModule();
-  const badDeps = { ...deps, base58Decode: (text) => deps.base58Decode(text).slice(0, 77) };
-  const body = `wpkh(${XPUB_TAIL_4H}/*)`;
-  const wallet = mutantHdWallet(`${body}#${descriptorChecksum(body)}`);
-  assert.throws(() => buildWalletRecords(wallet, false, badDeps, 0), /unexpected extended key payload/);
-});
-
-
 // The co-signer xpub passes every public-key check, so the PRIVATE_KEY
 // detection is the only thing refusing these exports: with that regex
 // removed, the records are built and the private key is embedded in a
@@ -1668,18 +1662,6 @@ test("multisig refuses SLIP-132 uppercase private keys", () => {
   assert.throws(() => buildWalletRecords(wallet, false, deps, 0), /refused an extended private key/);
 });
 
-
-test("multisig refuses a descriptor with no extended public keys", () => {
-  const { buildWalletRecords } = loadModule();
-  const body = "wsh(sortedmulti(1,notakey/0/*))";
-  const wallet = {
-    kind: "msig",
-    network: "mainnet",
-    script: "p2wsh",
-    receiveDescriptor: `${body}#${descriptorChecksum(body)}`,
-  };
-  assert.throws(() => buildWalletRecords(wallet, false, deps, 0), /no extended key found/);
-});
 
 test("multisig refuses a non-xpub/tpub extended public key", () => {
   const { buildWalletRecords } = loadModule();
@@ -1751,4 +1733,580 @@ test("filename rejects fingerprints with extra characters", () => {
   assert.equal(walletDatFilename({ masterFingerprint: "73C5DA0Axx" }, false), "watch-only-wallet.dat");
 });
 
+// --- Defense-in-depth: descriptor shapes the writer cannot place ----------
+//
+// The exporter only receives wallets the app derived itself, but it must not
+// trust that: a bare extended key, a nested script wrapper, or a multisig
+// co-signer that does not parse used to become a wallet.dat Bitcoin Core
+// refuses to load — or watches a different policy than the one shown. The
+// writer refuses every such shape before any record is written, and the
+// error names wrappers only, never key material.
+test("unplaceable descriptor shapes fail closed before any record is written", () => {
+  const { buildWalletRecords } = loadModule();
+  const xpub = msigNode(0).publicExtendedKey;
+  const xprv = msigNode(0).privateExtendedKey;
+  const withChecksum = (body) => `${body}#${descriptorChecksum(body)}`;
+  const hdWallet = (receiveDescriptor, receiveDescriptorPriv = null) => ({
+    kind: "hd",
+    network: "mainnet",
+    accounts: [{
+      def: { id: "bip84" },
+      receiveDescriptor,
+      changeDescriptor: null,
+      receiveDescriptorPriv,
+      changeDescriptorPriv: null,
+    }],
+  });
+  const msigWallet = (receiveDescriptor) => ({
+    kind: "msig",
+    network: "mainnet",
+    script: "p2wsh",
+    m: 1,
+    n: 2,
+    receiveDescriptor,
+  });
+  const cases = [
+    ["bare extended key with no script wrapper", hdWallet(withChecksum(`${xpub}/0/*`)), false],
+    ["nested script wrapper", hdWallet(withChecksum(`wpkh(tr(${xpub}/0/*))`)), false],
+    ["multisig co-signer that does not parse", msigWallet(withChecksum(`wsh(sortedmulti(1,xprv1,${xpub}/0/*))`)), false],
+    ["invalid descriptor checksum", hdWallet(`wpkh(${xpub}/0/*)#deadbeef`), false],
+    ["nested script wrapper on the private descriptor", hdWallet(withChecksum(`wpkh(${xpub}/0/*)`), withChecksum(`wpkh(tr(${xprv}/0/*))`)), true],
+  ];
+  for (const [shape, wallet, includePrivate] of cases) {
+    let error = null;
+    try {
+      buildWalletRecords(wallet, includePrivate, deps, 0);
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error instanceof Error, `${shape}: must throw instead of building a wallet.dat`);
+    assert.match(error.message, /unsupported descriptor shape|invalid descriptor checksum|not a valid extended key/, `${shape}: the error names the refused shape`);
+    assert.ok(!error.message.includes(xpub) && !error.message.includes(xprv), `${shape}: the error must not contain key material`);
+    assert.doesNotMatch(error.message, /[1-9A-HJ-NP-Za-km-z]{50,}/, `${shape}: the error must not carry base58 key text`);
+  }
+});
 
+test("the shape guard leaves valid single-sig and multisig exports byte-identical", () => {
+  const { buildWalletRecords } = loadModule();
+  // Single-sig: still exactly the rows Bitcoin Core v28.3.0 wrote for the
+  // same descriptors — watch-only and private variants alike.
+  for (const [wallet, includePrivate, expected] of [
+    [WATCH_ONLY_WALLET, false, REF_WATCH_ONLY_RECORDS],
+    [PRIVATE_WALLET, true, REF_PRIVATE_RECORDS],
+  ]) {
+    const mine = moduleRecords(wallet, includePrivate, REF_CREATION_TIME);
+    const reference = asMap(expected);
+    assert.equal(mine.size, reference.size);
+    for (const [key, value] of reference) {
+      assert.ok(mine.has(key), `missing record ${key.slice(0, 60)}`);
+      assert.equal(mine.get(key), value, `record value mismatch at ${key.slice(0, 60)}`);
+    }
+  }
+  // Multisig: the pinned expectations are unchanged — two stored descriptors
+  // that keep every co-signer key, six cache parents matching the independent
+  // CKD of each co-signer's branch key, and no private-key records.
+  const records = buildWalletRecords(MSIG_WALLET, false, msigDeps, 0);
+  const names = records.map(([key]) => new TextDecoder().decode(key.slice(1, 1 + key[0])));
+  assert.equal(names.filter((name) => name === "walletdescriptor").length, 2);
+  assert.equal(names.filter((name) => name === "walletdescriptorcache").length, 6);
+  assert.equal(names.filter((name) => name === "walletdescriptorkey").length, 0);
+  const storedValues = records
+    .filter(([key]) => key[0] === 16 && new TextDecoder().decode(key.slice(1, 17)) === "walletdescriptor")
+    .map(([, value]) => Buffer.from(value).toString("latin1"));
+  assert.equal(storedValues.length, 2);
+  for (const value of storedValues) {
+    for (const account of [0, 1, 2]) {
+      assert.ok(value.includes(msigNode(account).publicExtendedKey), "the stored descriptor keeps every co-signer key");
+    }
+  }
+  const cachePrefix = "15" + "77616c6c657464657363726970746f726361636865";
+  const caches = records.map(([key, value]) => [bytesToHex(key), bytesToHex(value)]).filter(([key]) => key.startsWith(cachePrefix));
+  const expectedCaches = [];
+  for (const branch of [0, 1]) {
+    for (const account of [0, 1, 2]) {
+      expectedCaches.push("4a" + bytesToHex(deriveBranchBody(msigNode(account).publicExtendedKey, branch)));
+    }
+  }
+  assert.deepEqual(caches.map(([, value]) => value).sort(), [...expectedCaches].sort());
+});
+
+// PR1034-1: a watch-only export must never carry private key material. The
+// shape guard's key pattern accepted prv keys, and the only PRIVATE_KEY
+// refusal sat inside the multisig branch, so a single-sig watch-only
+// walletdescriptor record stored an xprv verbatim — and its cache record the
+// xprv's raw body, secret included — in a file flagged disable-private-keys.
+test("a watch-only export refuses extended private keys, single-sig or multisig", () => {
+  const { buildWalletRecords } = loadModule();
+  const xprv = msigNode(0).privateExtendedKey;
+  const xpub = msigNode(0).publicExtendedKey;
+  const withChecksum = (body) => `${body}#${descriptorChecksum(body)}`;
+  const hdWallet = (receiveDescriptor) => ({
+    kind: "hd",
+    network: "mainnet",
+    accounts: [{ def: { id: "bip84" }, receiveDescriptor, changeDescriptor: null }],
+  });
+  const msigWallet = (receiveDescriptor) => ({
+    kind: "msig",
+    network: "mainnet",
+    script: "p2wsh",
+    m: 1,
+    n: 1,
+    receiveDescriptor,
+  });
+  assert.throws(() => buildWalletRecords(hdWallet(withChecksum(`wpkh(${xprv}/*)`)), false, deps, 0), /private key/);
+  assert.throws(() => buildWalletRecords(msigWallet(withChecksum(`wsh(sortedmulti(1,${xprv}/*))`)), false, msigDeps, 0), /private key/);
+  // No record of any watch-only export carries private key bytes or a
+  // private extended key string: every record key and value is scanned.
+  const records = buildWalletRecords(hdWallet(withChecksum(`wpkh(${xpub}/0/*)`)), false, deps, 0);
+  const blob = records.map(([key, value]) => Buffer.from(key).toString("latin1") + Buffer.from(value).toString("latin1")).join("");
+  assert.ok(!blob.includes(xprv), "no record may carry the extended private key string");
+  assert.ok(!blob.includes(Buffer.from(b58checkDecode(xprv).slice(46, 78)).toString("latin1")), "no record may carry private key bytes");
+  assert.doesNotMatch(blob, /[xyztuvYZUV]prv/);
+});
+
+// PR1034-2: the guard accepts h, H and ' hardened markers, but toCompatForm
+// only rewrote origins whose steps were all digits-or-h — any ' or H step
+// left the whole origin untouched, so h steps kept their spelling and the
+// stored DescriptorID disagreed with the one Core recomputes at load
+// (DBErrors::CORRUPT). Core's compat form renders every hardened step with ',
+// whichever marker the input used.
+test("descriptor ids equal Core's compat-form hash for h, H and ' origins", () => {
+  const xpub = msigNode(0).publicExtendedKey;
+  const walletFor = (origin) => {
+    const body = `wpkh(${origin}${xpub}/0/*)`;
+    return {
+      kind: "hd",
+      network: "mainnet",
+      accounts: [{ def: { id: "bip84" }, receiveDescriptor: `${body}#${descriptorChecksum(body)}`, changeDescriptor: null }],
+    };
+  };
+  for (const [origin, compatOrigin] of [
+    ["[00000000/84h/0h/0h]", "[00000000/84'/0'/0']"],
+    ["[00000000/84H/0H/0H]", "[00000000/84'/0'/0']"],
+    ["[00000000/84'/0'/0']", "[00000000/84'/0'/0']"],
+    ["[00000000/84h/0'/0H]", "[00000000/84'/0'/0']"],
+  ]) {
+    const records = moduleRecords(walletFor(origin), false, REF_CREATION_TIME);
+    const ids = descriptorIds(records);
+    assert.equal(ids.length, 1, `one descriptor record for origin ${origin}`);
+    // Core's normalisation rule, applied independently of the module: every
+    // hardened step renders as ', key material untouched.
+    const compat = `wpkh(${compatOrigin}${xpub}/0/*)`;
+    const expectedId = bytesToHex(sha256(new TextEncoder().encode(`${compat}#${descriptorChecksum(compat)}`)));
+    assert.equal(ids[0], expectedId, `DescriptorID for origin ${origin} must be Core's compat-form hash`);
+  }
+});
+
+// PR1034-3: the multisig shapes matched \d+ for the threshold and never
+// counted the key list, so 0-of-N or k>N descriptors — and key counts beyond
+// the script type's limit — became a wallet.dat Bitcoin Core's ParseMulti
+// refuses to load.
+test("multisig thresholds and key counts outside Core's limits fail closed", () => {
+  const { buildWalletRecords } = loadModule();
+  const key = (account) => `${msigNode(account).publicExtendedKey}/0/*`;
+  const withChecksum = (body) => `${body}#${descriptorChecksum(body)}`;
+  const msigWallet = (script, body) => ({ kind: "msig", network: "mainnet", script, m: 1, n: 1, receiveDescriptor: withChecksum(body) });
+  // Bitcoin Core refuses k < 1 and k > n.
+  assert.throws(() => buildWalletRecords(msigWallet("p2wsh", `wsh(multi(0,${key(0)}))`), false, deps, 0), /threshold/);
+  assert.throws(() => buildWalletRecords(msigWallet("p2wsh", `wsh(multi(2,${key(0)}))`), false, deps, 0), /threshold/);
+  assert.throws(() => buildWalletRecords(msigWallet("p2wsh", `wsh(multi(3,${key(0)},${key(1)}))`), false, deps, 0), /threshold/);
+  // A leading zero would be stored verbatim and hashed into a DescriptorID
+  // Core recomputes from its own spelling (Kimi K3 on #1034).
+  assert.throws(() => buildWalletRecords(msigWallet("p2wsh", `wsh(multi(01,${key(0)},${key(1)}))`), false, deps, 0), /threshold/);
+  // Key counts beyond the script type's limit: at most 20 for wsh, 15 for sh.
+  const wshBody = (count) => `wsh(multi(1,${Array.from({ length: count }, (_, i) => key(i)).join(",")}))`;
+  const shBody = (count) => `sh(multi(1,${Array.from({ length: count }, (_, i) => key(i)).join(",")}))`;
+  assert.throws(() => buildWalletRecords(msigWallet("p2wsh", wshBody(21)), false, deps, 0), /threshold/);
+  assert.throws(() => buildWalletRecords(msigWallet("p2sh", shBody(16)), false, deps, 0), /threshold/);
+  // The limits themselves are inclusive: 20 keys in wsh, 15 in sh still export.
+  assert.ok(buildWalletRecords(msigWallet("p2wsh", wshBody(20)), false, deps, 0).length > 0);
+  assert.ok(buildWalletRecords(msigWallet("p2sh", shBody(15)), false, deps, 0).length > 0);
+});
+
+// PR1034-4: Core's compat form re-renders the key origin from parsed bytes,
+// so the fingerprint prints with HexStr — lowercase — exactly as the h/H/'
+// markers re-render as '. toCompatForm rewrote only the markers, so an
+// uppercase-hex fingerprint hashed a DescriptorID Core recomputes from the
+// lowercase spelling, and loadwallet failed with "descriptor ID calculated
+// by the wallet differs from the one in DB" (DBErrors::CORRUPT).
+test("descriptor ids equal Core's compat-form hash for uppercase-hex fingerprints", () => {
+  const xpub = msigNode(0).publicExtendedKey;
+  const walletFor = (origin) => {
+    const body = `wpkh(${origin}${xpub}/0/*)`;
+    return {
+      kind: "hd",
+      network: "mainnet",
+      accounts: [{ def: { id: "bip84" }, receiveDescriptor: `${body}#${descriptorChecksum(body)}`, changeDescriptor: null }],
+    };
+  };
+  for (const [origin, compatOrigin] of [
+    ["[ABCDEF01/84h/0h/0h]", "[abcdef01/84'/0'/0']"],
+    ["[AbCdEf01/84h/0h/0h]", "[abcdef01/84'/0'/0']"],
+    ["[abcdef01/84h/0h/0h]", "[abcdef01/84'/0'/0']"],
+  ]) {
+    const records = moduleRecords(walletFor(origin), false, REF_CREATION_TIME);
+    const ids = descriptorIds(records);
+    assert.equal(ids.length, 1, `one descriptor record for origin ${origin}`);
+    // Core's normalisation rule, applied independently of the module: the
+    // fingerprint re-renders lowercase, every hardened step as ', key
+    // material untouched — so every spelling of the fingerprint hashes the
+    // same DescriptorID.
+    const compat = `wpkh(${compatOrigin}${xpub}/0/*)`;
+    const expectedId = bytesToHex(sha256(new TextEncoder().encode(`${compat}#${descriptorChecksum(compat)}`)));
+    assert.equal(ids[0], expectedId, `DescriptorID for origin ${origin} must be Core's compat-form hash`);
+  }
+});
+
+// PR1034-4: the same HexStr re-rendering lowercases a hex Taproot internal
+// key: tr(<64 hex>,sortedmulti_a(...)) written with uppercase hex hashed a
+// DescriptorID Core recomputes from the lowercase spelling.
+test("descriptor ids equal Core's compat-form hash for an uppercase-hex Taproot internal key", () => {
+  const { buildWalletRecords } = loadModule();
+  const withChecksum = (body) => `${body}#${descriptorChecksum(body)}`;
+  const bodyFor = (nums) => `tr(${nums},sortedmulti_a(2,${msigTrKey(0)}/0/*,${msigTrKey(1)}/0/*,${msigTrKey(2)}/0/*))`;
+  const walletFor = (nums) => ({
+    kind: "msig",
+    network: "mainnet",
+    script: "p2tr",
+    m: 2,
+    n: 3,
+    receiveDescriptor: withChecksum(bodyFor(nums)),
+  });
+  const idOf = (nums) => {
+    const records = buildWalletRecords(walletFor(nums), false, deps, 0);
+    const ids = records
+      .filter(([key]) => key[0] === 16 && new TextDecoder().decode(key.slice(1, 17)) === "walletdescriptor")
+      .map(([key]) => bytesToHex(key.slice(17)));
+    assert.equal(ids.length, 1, "one descriptor record");
+    return ids[0];
+  };
+  // Core's normalisation rule, applied independently of the module: the
+  // x-only internal key re-renders lowercase, every hardened step as '.
+  const compatKey = (account) => `[${msigFingerprint}/86'/0'/${account}']${msigTrNode(account).publicExtendedKey}`;
+  const compat = `tr(${NUMS},sortedmulti_a(2,${compatKey(0)}/0/*,${compatKey(1)}/0/*,${compatKey(2)}/0/*))`;
+  const expectedId = bytesToHex(sha256(new TextEncoder().encode(`${compat}#${descriptorChecksum(compat)}`)));
+  assert.equal(idOf(NUMS.toUpperCase()), expectedId, "an uppercase-hex internal key must hash Core's compat form");
+  assert.equal(idOf(NUMS), expectedId, "the lowercase spelling hashes the same DescriptorID");
+});
+
+// PR1034-4: Core's parser accepts a path step with leading zeros
+// (ParseUInt32("084") = 84) but its compat form prints the parsed uint32
+// without them, so the stored DescriptorID would disagree with the one Core
+// recomputes at load. The app never writes such a step; the guard refuses it
+// — a step is 0 or [1-9][0-9]* — naming no key material.
+test("path steps with leading zeros fail closed", () => {
+  const { buildWalletRecords } = loadModule();
+  const xpub = msigNode(0).publicExtendedKey;
+  const withChecksum = (body) => `${body}#${descriptorChecksum(body)}`;
+  const hdWallet = (receiveDescriptor) => ({
+    kind: "hd",
+    network: "mainnet",
+    accounts: [{ def: { id: "bip84" }, receiveDescriptor, changeDescriptor: null }],
+  });
+  const msigWallet = (receiveDescriptor) => ({
+    kind: "msig",
+    network: "mainnet",
+    script: "p2wsh",
+    m: 1,
+    n: 1,
+    receiveDescriptor,
+  });
+  for (const [shape, wallet] of [
+    ["origin step", hdWallet(withChecksum(`wpkh([00000000/084h/0h/0h]${xpub}/0/*)`))],
+    ["key path step", hdWallet(withChecksum(`wpkh([00000000/84h/0h/0h]${xpub}/00/*)`))],
+    ["multisig co-signer path step", msigWallet(withChecksum(`wsh(sortedmulti(1,${msigKey(0)}/00/*))`))],
+  ]) {
+    let error = null;
+    try {
+      buildWalletRecords(wallet, false, deps, 0);
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error instanceof Error, `${shape}: must throw instead of building a wallet.dat`);
+    assert.match(error.message, /leading zero/, `${shape}: the error names the refused step shape`);
+    assert.ok(!error.message.includes(xpub), `${shape}: the error must not contain key material`);
+  }
+  // Canonical steps — including a bare 0 — still export.
+  assert.ok(buildWalletRecords(hdWallet(withChecksum(`wpkh([00000000/84h/0h/0h]${xpub}/0/*)`)), false, deps, 0).length > 0);
+});
+
+// Round 4, item 1 (wrapper/type mismatch): walletDescriptorUnits and
+// msigDescriptorUnits set unit.type — the activeexternalspk/activeinternalspk
+// output type — from the account def or wallet.script. The guard must refuse
+// a descriptor whose wrapper produces a different script type: a p2wsh
+// multisig exporting sh(multi(...)) would be filed under type 2 for a P2SH
+// script, a wallet.dat that watches a different policy than the app showed.
+test("a descriptor whose wrapper disagrees with the wallet's declared output type fails closed", () => {
+  const { buildWalletRecords } = loadModule();
+  const xpub = msigNode(0).publicExtendedKey;
+  const withChecksum = (body) => `${body}#${descriptorChecksum(body)}`;
+  const hdWallet = (id, receiveDescriptor) => ({
+    kind: "hd",
+    network: "mainnet",
+    accounts: [{ def: { id }, receiveDescriptor, changeDescriptor: null }],
+  });
+  const msigWallet = (script, receiveDescriptor) => ({ kind: "msig", network: "mainnet", script, m: 1, n: 1, receiveDescriptor });
+  for (const [shape, wallet] of [
+    ["p2wsh multisig exporting sh(multi(...))", msigWallet("p2wsh", withChecksum(`sh(multi(1,${xpub}/0/*))`))],
+    ["p2sh multisig exporting wsh(...)", msigWallet("p2sh", withChecksum(`wsh(sortedmulti(1,${xpub}/0/*))`))],
+    ["p2sh-p2wsh multisig exporting sh(multi(...))", msigWallet("p2sh-p2wsh", withChecksum(`sh(multi(1,${xpub}/0/*))`))],
+    ["p2tr multisig exporting wsh(...)", msigWallet("p2tr", withChecksum(`wsh(sortedmulti(1,${xpub}/0/*))`))],
+    ["bip84 account exporting pkh(...)", hdWallet("bip84", withChecksum(`pkh(${xpub}/0/*)`))],
+    ["bip44 account exporting wpkh(...)", hdWallet("bip44", withChecksum(`wpkh(${xpub}/0/*)`))],
+    ["bip49 account exporting wpkh(...)", hdWallet("bip49", withChecksum(`wpkh(${xpub}/0/*)`))],
+    ["bip86 account exporting sh(wpkh(...))", hdWallet("bip86", withChecksum(`sh(wpkh(${xpub}/0/*))`))],
+  ]) {
+    let error = null;
+    try {
+      buildWalletRecords(wallet, false, deps, 0);
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error instanceof Error, `${shape}: must throw instead of building a wallet.dat`);
+    assert.match(error.message, /script type/, `${shape}: the error names the mismatch`);
+    assert.ok(!error.message.includes(xpub), `${shape}: the error must not contain key material`);
+  }
+  // The mapping is inclusive on the accepted side: every wrapper the app
+  // pairs with a script type still exports.
+  for (const [script, body] of [
+    ["p2sh", `sh(multi(1,${xpub}/0/*))`],
+    ["p2sh-p2wsh", `sh(wsh(sortedmulti(1,${xpub}/0/*)))`],
+    ["p2wsh", `wsh(sortedmulti(1,${xpub}/0/*))`],
+    ["p2tr", `tr(${NUMS},sortedmulti_a(1,${xpub}/0/*))`],
+  ]) {
+    assert.ok(
+      buildWalletRecords(msigWallet(script, withChecksum(body)), false, deps, 0).length > 0,
+      `${script}: the matching wrapper still exports`,
+    );
+  }
+});
+
+// Round 4, item 2 (checksum): Core's LoadDescriptorWalletRecords parses every
+// stored descriptor with require_checksum = true, so a descriptor handed over
+// without one must be stored WITH the module's checksum appended — not
+// refused, and not stored verbatim (loadwallet would fail with "Missing
+// checksum"). The stored string and the DescriptorID must both be exactly
+// what Core computes.
+test("a checksum-less descriptor is stored with the checksum Core requires", () => {
+  const xpub = msigNode(0).publicExtendedKey;
+  const body = `wpkh(${xpub}/0/*)`; // no origin: the compat form is the body itself
+  const wallet = {
+    kind: "hd",
+    network: "mainnet",
+    accounts: [{ def: { id: "bip84" }, receiveDescriptor: body, changeDescriptor: null }],
+  };
+  const records = moduleRecords(wallet, false, 0);
+  const ids = descriptorIds(records);
+  assert.equal(ids.length, 1, "one descriptor record");
+  // Core's DescriptorID, computed independently of the module: SHA-256 over
+  // the compat form plus its checksum.
+  const expectedId = bytesToHex(sha256(new TextEncoder().encode(`${body}#${descriptorChecksum(body)}`)));
+  assert.equal(ids[0], expectedId, "the record key is Core's DescriptorID");
+  // The record value is streamString(stored) followed by the creation time
+  // and range fields; the descriptor is the CompactSize-length-prefixed
+  // string at the front (short enough here for a one-byte length).
+  const value = Buffer.from(records.get(DESCRIPTOR_PREFIX + ids[0]), "hex");
+  assert.ok(value[0] < 253, "the descriptor takes a one-byte CompactSize length");
+  const stored = new TextDecoder().decode(value.subarray(1, 1 + value[0]));
+  assert.equal(stored, `${body}#${descriptorChecksum(body)}`, "the stored descriptor carries the checksum Core requires");
+});
+
+// Round 4, item 3 (Taproot internal key): the supported shape is
+// tr(NUMS,(sorted)multi_a(...)) with BIP 341's NUMS point H — the only
+// internal key the app writes. The module cannot check the curve validity of
+// an arbitrary x-only key, so anything but H must fail closed: Core's
+// ParsePubkey calls XOnlyPubKey::IsFullyValid and refuses the wallet.
+test("a Taproot multisig internal key that is not the BIP 341 NUMS point fails closed", () => {
+  const { buildWalletRecords } = loadModule();
+  const withChecksum = (body) => `${body}#${descriptorChecksum(body)}`;
+  const bodyFor = (nums) => `tr(${nums},sortedmulti_a(2,${msigTrKey(0)}/0/*,${msigTrKey(1)}/0/*,${msigTrKey(2)}/0/*))`;
+  const walletFor = (nums) => ({
+    kind: "msig",
+    network: "mainnet",
+    script: "p2tr",
+    m: 2,
+    n: 3,
+    receiveDescriptor: withChecksum(bodyFor(nums)),
+  });
+  for (const [shape, nums] of [
+    ["thirty-two zero bytes", "0".repeat(64)],
+    ["a different x-only key", "0101010101010101010101010101010101010101010101010101010101010101"],
+    ["NUMS with the first byte changed", `51${NUMS.slice(2)}`],
+  ]) {
+    let error = null;
+    try {
+      buildWalletRecords(walletFor(nums), false, deps, 0);
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error instanceof Error, `${shape}: must throw instead of building a wallet.dat`);
+    assert.match(error.message, /NUMS/, `${shape}: the error names the refused internal key`);
+    assert.ok(!error.message.includes(nums), `${shape}: the error must not contain the refused key`);
+  }
+  // H itself — either hex case — still exports (the uppercase spelling's
+  // DescriptorID is pinned by the compat-form test above).
+  assert.ok(buildWalletRecords(walletFor(NUMS), false, deps, 0).length > 0);
+  assert.ok(buildWalletRecords(walletFor(NUMS.toUpperCase()), false, deps, 0).length > 0);
+});
+
+// Round 4, item 4 (path step magnitude): Core's ParseKeyPath refuses a key
+// path element whose number is 2^31 or more, hardened or not ("Path value
+// too large"), in a key origin or a key path alike. The guard's step
+// patterns accepted any \d+ with no upper bound, so such a descriptor still
+// became a wallet.dat Core refuses to load.
+test("path steps of 2^31 or more fail closed", () => {
+  const { buildWalletRecords } = loadModule();
+  const xpub = msigNode(0).publicExtendedKey;
+  const withChecksum = (body) => `${body}#${descriptorChecksum(body)}`;
+  const hdWallet = (receiveDescriptor) => ({
+    kind: "hd",
+    network: "mainnet",
+    accounts: [{ def: { id: "bip84" }, receiveDescriptor, changeDescriptor: null }],
+  });
+  const msigWallet = (receiveDescriptor) => ({
+    kind: "msig",
+    network: "mainnet",
+    script: "p2wsh",
+    m: 1,
+    n: 1,
+    receiveDescriptor,
+  });
+  for (const [shape, wallet] of [
+    ["origin step, hardened", hdWallet(withChecksum(`wpkh([00000000/4294967296h]${xpub}/0/*)`))],
+    ["origin step, unhardened", hdWallet(withChecksum(`wpkh([00000000/2147483648]${xpub}/0/*)`))],
+    ["key path step", hdWallet(withChecksum(`wpkh([00000000/84h/0h/0h]${xpub}/2147483648/*)`))],
+    ["multisig co-signer origin step", msigWallet(withChecksum(`wsh(sortedmulti(1,[00000000/4294967296h]${xpub}/0/*))`))],
+  ]) {
+    let error = null;
+    try {
+      buildWalletRecords(wallet, false, deps, 0);
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error instanceof Error, `${shape}: must throw instead of building a wallet.dat`);
+    assert.match(error.message, /2\^31/, `${shape}: the error names the refused step magnitude`);
+    assert.ok(!error.message.includes(xpub), `${shape}: the error must not contain key material`);
+  }
+  // The boundary is Core's own: a step just below 2^31 still exports.
+  assert.ok(buildWalletRecords(hdWallet(withChecksum(`wpkh([00000000/2147483647h]${xpub}/0/*)`)), false, deps, 0).length > 0);
+});
+
+// Round 5, item 1 (single-sig SLIP-132): the shape guard's key pattern
+// accepts ypub/zpub/upub/vpub, but only multisig units were canonicalized
+// (`if (unit.multiKey && ...)`), so a single-sig descriptor carrying a zpub
+// was stored verbatim — Bitcoin Core's descriptor parser accepts only
+// xpub/tpub, and loadwallet refused the file. Every unit's watch-only
+// descriptor is now stored in canonical form, and the DescriptorID is
+// computed from that stored form.
+test("a single-sig zpub is rewritten to xpub before it is stored", () => {
+  const { buildWalletRecords } = loadModule();
+  const raw = b58checkDecode(msigNode(0).publicExtendedKey).slice();
+  raw[0] = 0x04; raw[1] = 0xb2; raw[2] = 0x47; raw[3] = 0x46;
+  const zpub = b58checkEncode(raw);
+  assert.match(zpub, /^zpub/);
+  const xpub = msigNode(0).publicExtendedKey;
+  const slipBody = `wpkh([${msigFingerprint}/84h/0h/0h]${zpub}/0/*)`;
+  const wallet = {
+    kind: "hd",
+    network: "mainnet",
+    accounts: [{ def: { id: "bip84" }, receiveDescriptor: `${slipBody}#${descriptorChecksum(slipBody)}`, changeDescriptor: null }],
+  };
+  // Without the Base58Check codec in deps the SLIP-132 key cannot be
+  // rewritten, so the export is refused instead of storing a zpub verbatim.
+  assert.throws(() => buildWalletRecords(wallet, false, deps, 0), /Base58Check codec/);
+  const records = buildWalletRecords(wallet, false, msigDeps, 0);
+  const descriptorRecord = records.find(([key]) => key[0] === 16 && new TextDecoder().decode(key.slice(1, 17)) === "walletdescriptor");
+  assert.ok(descriptorRecord, "one descriptor record");
+  // Core's DescriptorID, computed independently of the module from the
+  // canonical xpub form: SHA-256 over the compat form plus its checksum.
+  const canonicalBody = `wpkh([${msigFingerprint}/84h/0h/0h]${xpub}/0/*)`;
+  const compat = `wpkh([${msigFingerprint}/84'/0'/0']${xpub}/0/*)`;
+  const expectedId = bytesToHex(sha256(new TextEncoder().encode(`${compat}#${descriptorChecksum(compat)}`)));
+  assert.equal(bytesToHex(descriptorRecord[0].slice(17)), expectedId, "the record key is Core's DescriptorID of the canonical form");
+  const value = Buffer.from(descriptorRecord[1]);
+  assert.ok(value[0] < 253, "the descriptor takes a one-byte CompactSize length");
+  assert.equal(
+    new TextDecoder().decode(value.subarray(1, 1 + value[0])),
+    `${canonicalBody}#${descriptorChecksum(canonicalBody)}`,
+    "the stored descriptor is the canonical xpub form",
+  );
+  // An xpub descriptor is untouched by the canonicalizer: with or without
+  // it in deps, the records are byte-identical.
+  const xpubWallet = {
+    kind: "hd",
+    network: "mainnet",
+    accounts: [{ def: { id: "bip84" }, receiveDescriptor: `${canonicalBody}#${descriptorChecksum(canonicalBody)}`, changeDescriptor: null }],
+  };
+  assert.deepEqual(
+    buildWalletRecords(xpubWallet, false, deps, 0).map(([key, row]) => [bytesToHex(key), bytesToHex(row)]),
+    buildWalletRecords(xpubWallet, false, msigDeps, 0).map(([key, row]) => [bytesToHex(key), bytesToHex(row)]),
+    "an xpub descriptor exports byte-identically without the canonicalizer",
+  );
+});
+
+// Round 5, item 2 (wallet kind vs descriptor family): the guard tied the
+// wrapper to the output type but not to the wallet kind, so an HD account
+// carrying wsh(sortedmulti(...)) of the same output type (wsh is bech32,
+// like wpkh) passed — and the writer cached only the first co-signer's key —
+// while a multisig wallet carrying wpkh(...) passed in reverse, exporting a
+// single-signature wallet.dat under an "msig-MofN" filename.
+test("the descriptor family must match the wallet kind", () => {
+  const { buildWalletRecords } = loadModule();
+  const xpubA = msigNode(0).publicExtendedKey;
+  const xpubB = msigNode(1).publicExtendedKey;
+  const withChecksum = (body) => `${body}#${descriptorChecksum(body)}`;
+  const hdWithMultisig = {
+    kind: "hd",
+    network: "mainnet",
+    accounts: [{
+      def: { id: "bip84" },
+      receiveDescriptor: withChecksum(`wsh(sortedmulti(2,${xpubA}/0/*,${xpubB}/0/*))`),
+      changeDescriptor: null,
+    }],
+  };
+  assert.throws(() => buildWalletRecords(hdWithMultisig, false, deps, 0), /wallet kind|descriptor family/);
+  const msigWithSingleSig = {
+    kind: "msig",
+    network: "mainnet",
+    script: "p2wsh",
+    m: 2,
+    n: 3,
+    receiveDescriptor: withChecksum(`wpkh(${xpubA}/0/*)`),
+  };
+  assert.throws(() => buildWalletRecords(msigWithSingleSig, false, deps, 0), /wallet kind|descriptor family/);
+});
+
+// Round 5, item 3 (support checks): walletDatSupported only ran
+// tailsSupported, so the app offered the wallet.dat control for wallets the
+// shape guard refuses — the control failed only on click. The gating path
+// injects no crypto, so the guard runs on the descriptor text alone there.
+test("walletDatSupported returns false for a wallet the shape guard refuses", () => {
+  const { walletDatSupported, buildWalletRecords } = loadModule();
+  const xpub = msigNode(0).publicExtendedKey;
+  const withChecksum = (body) => `${body}#${descriptorChecksum(body)}`;
+  // Round 4's script-type mismatch: the tail parses, so tailsSupported alone
+  // says yes, but the guard refuses the export.
+  const scriptTypeMismatch = {
+    kind: "msig",
+    network: "mainnet",
+    script: "p2wsh",
+    m: 1,
+    n: 1,
+    receiveDescriptor: withChecksum(`sh(multi(1,${xpub}/0/*))`),
+  };
+  assert.throws(() => buildWalletRecords(scriptTypeMismatch, false, deps, 0), /script type/);
+  assert.equal(walletDatSupported(scriptTypeMismatch), false, "the control must not render for a guard-refused wallet");
+  // The wallet-kind mismatch (round 5, item 2) is gated the same way.
+  const kindMismatch = {
+    kind: "msig",
+    network: "mainnet",
+    script: "p2wsh",
+    m: 2,
+    n: 3,
+    receiveDescriptor: withChecksum(`wpkh(${xpub}/0/*)`),
+  };
+  assert.equal(walletDatSupported(kindMismatch), false);
+  // Wallets the guard accepts still render the control.
+  assert.equal(walletDatSupported(MSIG_WALLET), true);
+  assert.equal(walletDatSupported(WATCH_ONLY_WALLET), true);
+});
