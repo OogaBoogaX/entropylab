@@ -59,6 +59,12 @@ test("unknown lesson IDs return to contents and hidden tools have no navigation 
     assert.equal(session.view().tool, null);
     if (id !== "hidden") assert.equal(session.view().mode, "contents");
   }
+  session.choose("keys");
+  session.next();
+  session.choose("stale-lesson");
+  assert.deepEqual([session.view().mode, session.view().lessonId, session.view().index], ["contents", null, 0]);
+  session.resume();
+  assert.equal(session.view().mode, "contents");
 });
 
 function withPage(run, translate = (text) => text) {

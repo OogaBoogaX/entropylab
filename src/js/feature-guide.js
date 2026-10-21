@@ -11,7 +11,7 @@ export function createFeatureGuideSession(lessons, availableTools) {
   return {
     view,
     choose(id) {
-      if (!catalog.has(id)) { mode = "contents"; return; }
+      if (!catalog.has(id)) { lessonId = null; index = 0; mode = "contents"; return; }
       lessonId = id; index = 0; mode = "lesson";
     },
     contents() { mode = "contents"; },
