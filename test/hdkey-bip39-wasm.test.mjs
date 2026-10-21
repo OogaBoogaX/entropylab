@@ -196,6 +196,36 @@ test("BIP39 seed matches the published vector (TREZOR passphrase)", () => {
   );
 });
 
+// BIP39 hashes NFKD("mnemonic" + passphrase) as UTF-8. A lone surrogate has
+// no UTF-8 encoding; TextEncoder substitutes U+FFFD, so accepting it would
+// derive the seed of a different passphrase. The byte path must likewise
+// refuse malformed UTF-8 instead of decoding it with replacement characters.
+test("BIP39 refuses a passphrase that is not well-formed Unicode or valid UTF-8", () => {
+  const phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+  for (const passphrase of ["\uD800", "a\uDC00b", "\uD800\uD800", new String("\uD800")]) {
+    assert.throws(() => mnemonicToSeedSync(phrase, passphrase), /Invalid passphrase/, JSON.stringify(passphrase));
+  }
+  // A well-formed surrogate pair is a valid passphrase and derives what
+  // @scure/bip39 derives for it.
+  assert.deepEqual(mnemonicToSeedSync(phrase, "🔑"), scureBip39.mnemonicToSeedSync(phrase, "🔑"));
+  // null is a caller bug: must throw, not silently derive the empty-passphrase wallet.
+  assert.throws(() => mnemonicToSeedSync(phrase, null), /Invalid passphrase/);
+  // Valid non-ASCII UTF-8 bytes derive what the same text derives in @scure.
+  assert.deepEqual(mnemonicToSeedSync(phrase, new TextEncoder().encode("päss phrase")), scureBip39.mnemonicToSeedSync(phrase, "päss phrase"));
+  // The coercion matches "mnemonic" + passphrase: a Symbol still throws.
+  assert.throws(() => mnemonicToSeedSync(phrase, Symbol("x")), TypeError);
+  // Malformed UTF-8 bytes: an encoded surrogate, a truncated sequence, and a
+  // stray continuation byte. The vault refuses these at intake; the direct
+  // byte path must too.
+  for (const bytes of [
+    Uint8Array.of(0xed, 0xa0, 0x80),
+    Uint8Array.of(0xc3),
+    Uint8Array.of(0x80),
+  ]) {
+    assert.throws(() => mnemonicToSeedSync(phrase, bytes), /Invalid passphrase/, bytes.toString());
+  }
+});
+
 test("BIP39 differential vs @scure/bip39 (mnemonic, entropy, seed, validate)", () => {
   for (let i = 0; i < 16; i++) {
     const entropy = new Uint8Array(16 + (i % 5) * 4).map((_, j) => (i * 77 + j * 31 + 11) & 0xff);

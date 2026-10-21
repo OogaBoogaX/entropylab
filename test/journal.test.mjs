@@ -16,6 +16,8 @@ import {
   addEntry,
   NOTEBOOK_FORMAT,
   NOTEBOOK_VERSION,
+  NOTEBOOK_MAX_PAGES,
+  NOTEBOOK_MAX_TEXT_LENGTH,
   appendLog,
   assertPassword,
   createDocument,
@@ -50,6 +52,19 @@ import {
   serializeNotebook,
   snapshotSession,
   wipeJournal,
+  normalizeJournalPageStyle,
+  keySnapshotMatchesEntry,
+  syncKeySnapshots,
+  wipeBytes,
+  wipeEntry,
+  entryMethodLabel,
+  deriveJournalKeys,
+  JOURNAL_KDF,
+  JOURNAL_CIPHER,
+  JOURNAL_SALT_PREFIX,
+  JOURNAL_MIN_ITERATIONS,
+  JOURNAL_MAX_ITERATIONS,
+  METHOD_LABELS,
 } from "../src/js/journal.js";
 import {
   NONCE_HISTORY_FORMAT,
@@ -621,4 +636,368 @@ test("allocation refuses at the safe-integer boundary before mutating the docume
   assert.throws(() => addEntry(doc, { method: "hex", label: "past the end", input: "00" }), /safe integer/);
   assert.equal(doc.entries.length, before, "a refused add leaves the list untouched");
   assert.equal(doc.nextId, nextId, "and the counter untouched");
+});
+
+// no observable effect: Regex at src/js/journal.js:48 /[\r\n]+/g -> /[\r\n]/g (collapsed by later /\s+/g)
+// no observable effect: CallExpression at src/js/journal.js:467 wipeBytes(salt) in finally
+// no observable effect: CallExpression at src/js/journal.js:470 wipeBytes(ikm) in finally
+// no observable effect: CallExpression at src/js/journal.js:471 wipeBytes(saltInput) in finally
+// no observable effect: CallExpression at src/js/journal.js:489 wipeBytes(master) in finally
+// no observable effect: CallExpression at src/js/journal.js:793 wipeBytes(tag) in finally
+// no observable effect: CallExpression at src/js/journal.js:796 wipeBytes(plain) in finally
+// no observable effect: CallExpression at src/js/journal.js:852 wipeBytes(plainBytes) in finally
+// no observable effect: CallExpression at src/js/journal.js:853 wipeBytes(parsed.iv) in finally
+// no observable effect: CallExpression at src/js/journal.js:854 wipeBytes(parsed.ciphertext) in finally
+// no observable effect: CallExpression at src/js/journal.js:871 wipeBytes(plainBytes) in finally
+// no observable effect: CallExpression at src/js/journal.js:872 wipeBytes(parsed.iv) in finally
+// no observable effect: CallExpression at src/js/journal.js:873 wipeBytes(parsed.ciphertext) in finally
+// no observable effect: BlockStatement at src/js/journal.js:466 } finally {} -> {} (wipe only)
+// no observable effect: BlockStatement at src/js/journal.js:469 } finally {} -> {} (wipe only)
+// no observable effect: BlockStatement at src/js/journal.js:488 } finally {} -> {} (wipe only)
+// no observable effect: BlockStatement at src/js/journal.js:792 } finally {} -> {} (wipe only)
+// no observable effect: BlockStatement at src/js/journal.js:795 } finally {} -> {} (wipe only)
+// no observable effect: BlockStatement at src/js/journal.js:851 } finally {} -> {} (wipe only)
+// no observable effect: BlockStatement at src/js/journal.js:870 } finally {} -> {} (wipe only)
+
+test("mutant kill: exported constants and labels", () => {
+  assert.equal(NOTEBOOK_FORMAT, "entropylab-notebook");
+  assert.equal(NOTEBOOK_VERSION, 1);
+  assert.equal(JOURNAL_VERSION, 2);
+  assert.equal(JOURNAL_EXPORT_VERSION, 1);
+  assert.equal(JOURNAL_KDF, "PBKDF2-SHA-256");
+  assert.equal(JOURNAL_CIPHER, "AES-256-GCM");
+  assert.equal(JOURNAL_SALT_PREFIX, "entropylab-journal-salt-v1:");
+  assert.equal(JOURNAL_ITERATIONS, 600_000);
+  assert.equal(JOURNAL_MIN_ITERATIONS, 100_000);
+  assert.equal(JOURNAL_MAX_ITERATIONS, 10_000_000);
+  assert.equal(JOURNAL_MAX_ENTRIES, 1000);
+  assert.equal(JOURNAL_MAX_FILE_LENGTH, 4 * 1024 * 1024);
+  assert.equal(JOURNAL_MAX_TEXT_LENGTH, 1024 * 1024);
+  assert.equal(NOTEBOOK_MAX_PAGES, 100);
+  assert.equal(NOTEBOOK_MAX_TEXT_LENGTH, 1024 * 1024);
+  assert.equal(IV_BYTES, 12);
+  assert.deepEqual(METHODS, ["dice", "coin", "hex", "brain", "seed", "cards"]);
+  assert.equal(METHOD_LABELS.dice, "Dice rolls");
+  assert.equal(METHOD_LABELS.coin, "Coin flips");
+  assert.equal(METHOD_LABELS.hex, "Number bases");
+  assert.equal(METHOD_LABELS.brain, "Brain-wallet text");
+  assert.equal(METHOD_LABELS.seed, "Manual seed");
+  assert.equal(METHOD_LABELS.cards, "Playing cards");
+  assert.equal(entryMethodLabel({ method: "dice", diceMethod: "coldcard" }), "Dice rolls · COLDCARD / SeedSigner");
+  assert.equal(entryMethodLabel({ method: "hex", entropyFormat: "hex" }), "Number bases · Hexadecimal (Base 16)");
+  assert.equal(entryMethodLabel({ method: "coin" }), "Coin flips");
+});
+
+test("mutant kill: formatStamp branches", () => {
+  assert.equal(formatStamp(new Date(2026, 0, 2, 3, 4, 5)), "2026-01-02 03:04:05");
+  assert.equal(formatStamp(new Date(2026, 8, 2, 9, 5, 7)), "2026-09-02 09:05:07");
+  assert.equal(formatStamp(new Date("invalid")), "");
+  assert.equal(formatStamp(new Date(NaN)), "");
+  assert.equal(formatStamp("not a date"), "");
+  assert.equal(formatStamp(null), "");
+  assert.equal(formatStamp({}), "");
+  assert.equal(formatStamp(new Date(2026, 0, 1)), "2026-01-01 00:00:00");
+  // undefined triggers default param -> current wall-clock, not empty
+  assert.match(formatStamp(), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  assert.match(formatStamp(undefined), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  // invalid Date must return empty, not current time (kills || -> &&)
+  assert.equal(formatStamp(new Date("invalid")), "");
+});
+
+test("mutant kill: page style normalization", () => {
+  assert.deepEqual(defaultJournalPageStyle(), { font: "mono", size: "medium", spacing: "comfortable" });
+  assert.notEqual(defaultJournalPageStyle(), defaultJournalPageStyle());
+  assert.deepEqual(normalizeJournalPageStyle({ font: "sans", size: "small", spacing: "compact" }), { font: "sans", size: "small", spacing: "compact" });
+  assert.deepEqual(normalizeJournalPageStyle({ font: "serif", size: "large", spacing: "spacious" }), { font: "serif", size: "large", spacing: "spacious" });
+  assert.deepEqual(normalizeJournalPageStyle({ font: "invalid", size: "invalid", spacing: "invalid" }), { font: "mono", size: "medium", spacing: "comfortable" });
+  assert.deepEqual(normalizeJournalPageStyle({}), { font: "mono", size: "medium", spacing: "comfortable" });
+  assert.deepEqual(normalizeJournalPageStyle(null), { font: "mono", size: "medium", spacing: "comfortable" });
+  assert.deepEqual(normalizeJournalPageStyle(undefined), { font: "mono", size: "medium", spacing: "comfortable" });
+});
+
+test("mutant kill: journalKeyReferenceToken", () => {
+  assert.equal(journalKeyReferenceToken("Test", "a1b2c3d4"), "◆◆ Test [a1b2c3d4]\u2063");
+  assert.equal(journalKeyReferenceToken("A1B2C3D4", "a1b2c3d4"), "◆◆ [a1b2c3d4]\u2063");
+  assert.equal(journalKeyReferenceToken("  Test  Name  ", "a1b2c3d4"), "◆◆ Test Name [a1b2c3d4]\u2063");
+  assert.equal(journalKeyReferenceToken("Test\nName", "a1b2c3d4"), "◆◆ Test Name [a1b2c3d4]\u2063");
+  assert.equal(journalKeyReferenceToken("Test◆Name", "a1b2c3d4"), "◆◆ Test◇Name [a1b2c3d4]\u2063");
+  assert.equal(journalKeyReferenceToken("Test\u2063Name", "a1b2c3d4"), "◆◆ TestName [a1b2c3d4]\u2063");
+  assert.equal(journalKeyReferenceToken("", "a1b2c3d4"), "◆◆ Key [a1b2c3d4]\u2063");
+  assert.equal(journalKeyReferenceToken("Test", "A1B2C3D4"), "◆◆ Test [a1b2c3d4]\u2063");
+  assert.equal(journalKeyReferenceToken("Test", " a1b2c3d4 "), "◆◆ Test [a1b2c3d4]\u2063");
+  const longName = "a".repeat(200);
+  const token = journalKeyReferenceToken(longName, "a1b2c3d4");
+  assert.ok(token.includes("a".repeat(120)));
+  assert.equal(token.includes("a".repeat(121)), false);
+  assert.throws(() => journalKeyReferenceToken("Test", "not-hex"), /8-character hexadecimal/);
+  assert.throws(() => journalKeyReferenceToken("Test", "a1b2c3d"), /8-character hexadecimal/);
+  assert.throws(() => journalKeyReferenceToken("Test", "a1b2c3d45"), /8-character hexadecimal/);
+  assert.throws(() => journalKeyReferenceToken("Test", ""), /8-character hexadecimal/);
+  assert.throws(() => journalKeyReferenceToken("Test", "zzzzzzzz"), /8-character hexadecimal/);
+});
+
+test("mutant kill: journalBip85ReferenceToken", () => {
+  assert.equal(journalBip85ReferenceToken("bip39", "deadbeef"), "◈◈ BIP-85 · BIP-39 [deadbeef]\u2063");
+  assert.equal(journalBip85ReferenceToken("wif", "DEADBEEF"), "◈◈ BIP-85 · WIF [deadbeef]\u2063");
+  assert.equal(journalBip85ReferenceToken("xprv", "deadbeef"), "◈◈ BIP-85 · XPRV [deadbeef]\u2063");
+  assert.equal(journalBip85ReferenceToken("hex", "deadbeef"), "◈◈ BIP-85 · HEX [deadbeef]\u2063");
+  assert.equal(journalBip85ReferenceToken("pwd-base64", "deadbeef"), "◈◈ BIP-85 · Base64 password [deadbeef]\u2063");
+  assert.equal(journalBip85ReferenceToken("pwd-base85", "deadbeef"), "◈◈ BIP-85 · Base85 password [deadbeef]\u2063");
+  assert.throws(() => journalBip85ReferenceToken("unknown", "deadbeef"), /supported application/);
+  assert.throws(() => journalBip85ReferenceToken("", "deadbeef"), /supported application/);
+  assert.throws(() => journalBip85ReferenceToken("bip39", "not-hex"), /8-character hexadecimal/);
+  assert.throws(() => journalBip85ReferenceToken("bip39", "deadbee"), /8-character hexadecimal/);
+  assert.equal(journalBip85ReferenceToken("bip39", " a1b2c3d4 "), "◈◈ BIP-85 · BIP-39 [a1b2c3d4]\u2063");
+});
+
+test("mutant kill: notebook runs and ranges", () => {
+  const token = journalKeyReferenceToken("Key 1", "a1b2c3d4");
+  const bipToken = journalBip85ReferenceToken("wif", "deadbeef");
+  const source = `before ${token} middle ${bipToken} after`;
+  const runs = journalNotebookRuns(source);
+  assert.equal(runs.length, 5);
+  assert.equal(runs[0].type, "text");
+  assert.equal(runs[1].type, "key");
+  assert.equal(runs[1].fingerprint, "a1b2c3d4");
+  assert.equal(runs[3].type, "key");
+  assert.equal(runs[3].application, "wif");
+  assert.equal(journalTextFromRuns(runs), source);
+  assert.deepEqual(journalKeyReferenceRanges(source), [{ start: 7, end: 7 + token.length }, { start: 7 + token.length + 8, end: 7 + token.length + 8 + bipToken.length }]);
+  assert.deepEqual(journalKeyReferenceRanges("no refs"), []);
+  assert.deepEqual(journalNotebookRuns(""), [{ type: "text", text: "" }]);
+  assert.deepEqual(journalNotebookRuns(null), [{ type: "text", text: "" }]);
+  const invalidBip = "◈◈ BIP-85 · Unknown [deadbeef]\u2063";
+  assert.deepEqual(journalNotebookRuns(`a ${invalidBip} b`), [{ type: "text", text: `a ${invalidBip} b` }]);
+  assert.deepEqual(journalKeyReferenceRanges(`a ${invalidBip} b`), []);
+  assert.throws(() => journalTextFromRuns(null), /content list/);
+  assert.throws(() => journalTextFromRuns([{ type: "text", text: 123 }]), /unsupported content item/);
+  assert.throws(() => journalTextFromRuns([{ type: "key", name: "Test", fingerprint: "a1b2c3d4", source: "bip85", application: "unknown" }]), /supported application/);
+  assert.throws(() => journalTextFromRuns([{ type: "key", name: "Test", fingerprint: "bad" }]), /8-character hexadecimal/);
+  assert.throws(() => journalTextFromRuns([{ type: "invalid" }]), /unsupported content item/);
+  const bigText = "a".repeat(NOTEBOOK_MAX_TEXT_LENGTH + 1);
+  assert.throws(() => journalTextFromRuns([{ type: "text", text: bigText }]), /too large to import/);
+});
+
+test("mutant kill: journal basics and formatting", () => {
+  const j = createJournal();
+  assert.equal(j.notesText, "");
+  assert.equal(j.pages.length, 1);
+  assert.equal(j.pages[0].id, 1);
+  assert.equal(j.pages[0].number, 1);
+  assert.equal(j.pages[0].name, "Page 1");
+  assert.equal(j.pages[0].notesText, "");
+  assert.deepEqual(j.pages[0].style, { font: "mono", size: "medium", spacing: "comfortable" });
+  assert.equal(j.activePage, 0);
+  assert.equal(j.nextPageId, 2);
+  assert.equal(j.nextPageNumber, 2);
+  assert.deepEqual(j.log, []);
+  assert.equal(j.stateText, "");
+  const token = journalKeyReferenceToken("My Key", "a1b2c3d4");
+  assert.equal(formatNotebook(`before ${token} after`), "before [Key: My Key · a1b2c3d4] after");
+  assert.equal(formatNotebook(`before ${journalKeyReferenceToken("a1b2c3d4", "a1b2c3d4")} after`), "before [Key: a1b2c3d4] after");
+  assert.equal(formatNotebook(`before ${journalBip85ReferenceToken("bip39", "deadbeef")} after`), "before [BIP-85 BIP-39: deadbeef] after");
+  assert.equal(formatNotebook("2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note"), "2026-09-02 10:00:00  first note");
+  assert.equal(formatNotebook(""), "No notes.");
+  assert.equal(formatNotebook(null), "No notes.");
+  assert.equal(formatNotebookPages([{ number: 1, name: "Page 1", notesText: "" }]), "No notes.");
+  assert.equal(formatNotebookPages([{ number: 1, name: "Field notes", notesText: "2026-09-02 10:00:00  first note" }, { number: 2, name: "Page 2", notesText: "2026-09-02 10:01:00  " }]), "Field notes\n2026-09-02 10:00:00  first note\n\nPage 2\nNo notes.");
+  assert.equal(formatNotebookPages([]), "No notes.");
+  assert.equal(formatNotebookPages(null), "No notes.");
+});
+
+test("mutant kill: notebook serialize/parse boundaries", () => {
+  const journal = createJournal();
+  journal.pages[0].name = "Field notes";
+  journal.pages[0].style = { font: "serif", size: "large", spacing: "spacious" };
+  journal.pages[0].notesText = `2026-09-02 10:00:00  ${journalKeyReferenceToken("Key 1", "deadbeef")}`;
+  journal.pages.push({ id: 2, number: 2, name: "Page 2", notesText: "second", style: { font: "sans", size: "small", spacing: "compact" } });
+  journal.activePage = 1;
+  const encoded = serializeNotebook(journal);
+  const doc = JSON.parse(encoded);
+  assert.equal(doc.format, NOTEBOOK_FORMAT);
+  assert.equal(doc.version, NOTEBOOK_VERSION);
+  assert.equal(doc.activePage, 1);
+  assert.equal(doc.pages.length, 2);
+  assert.equal(doc.pages[0].name, "Field notes");
+  assert.deepEqual(doc.pages[0].style, { font: "serif", size: "large", spacing: "spacious" });
+  assert.deepEqual(doc.pages[0].content[1], { type: "key", name: "Key 1", fingerprint: "deadbeef" });
+  assert.ok(encoded.endsWith("\n"));
+  const j2 = createJournal();
+  j2.pages[0].number = 0;
+  assert.equal(JSON.parse(serializeNotebook(j2)).pages[0].number, 1);
+  j2.pages[0].number = -5;
+  assert.equal(JSON.parse(serializeNotebook(j2)).pages[0].number, 1);
+  j2.pages[0].number = 1.5;
+  assert.equal(JSON.parse(serializeNotebook(j2)).pages[0].number, 1);
+  j2.pages[0].number = NaN;
+  assert.equal(JSON.parse(serializeNotebook(j2)).pages[0].number, 1);
+  j2.pages[0].name = "a".repeat(200);
+  assert.equal(JSON.parse(serializeNotebook(j2)).pages[0].name.length, 120);
+  j2.activePage = 5;
+  assert.equal(JSON.parse(serializeNotebook(j2)).activePage, 0);
+  j2.activePage = -1;
+  assert.equal(JSON.parse(serializeNotebook(j2)).activePage, 0);
+  j2.activePage = null;
+  assert.equal(JSON.parse(serializeNotebook(j2)).activePage, 0);
+  assert.equal(JSON.parse(serializeNotebook({})).pages.length, 1);
+  assert.equal(JSON.parse(serializeNotebook({ pages: [] })).pages.length, 1);
+  const bigJournal = createJournal();
+  bigJournal.pages[0].notesText = "a".repeat(NOTEBOOK_MAX_TEXT_LENGTH + 1);
+  assert.throws(() => serializeNotebook(bigJournal), /too large to save/);
+  assert.throws(() => parseNotebook("not json"), /not valid notebook JSON/);
+  assert.throws(() => parseNotebook('{"format":"something-else","version":1,"pages":[]}'), /not a supported/);
+  assert.throws(() => parseNotebook(JSON.stringify({ format: NOTEBOOK_FORMAT, version: 999, pages: [{ number: 1, name: "Page 1", content: [{ type: "text", text: "hi" }] }] })), /not a supported/);
+  assert.throws(() => parseNotebook(JSON.stringify({ format: NOTEBOOK_FORMAT, version: NOTEBOOK_VERSION, pages: [] })), /between 1 and/);
+});
+
+test("mutant kill: notebook import and page content", () => {
+  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), false);
+  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  kept"), true);
+  assert.equal(notebookPageHasContent("hello"), true);
+  assert.equal(notebookPageHasContent(""), false);
+  const imported = journalFromPlainText("uploaded notes");
+  const journal = createJournal();
+  journal.pages[0].notesText = "2026-09-04 13:17:24  existing notes";
+  journal.notesText = journal.pages[0].notesText;
+  let merged = mergeNotebookImport(journal, imported);
+  assert.equal(merged.pages.length, 2);
+  assert.equal(merged.pages[0].notesText, journal.pages[0].notesText);
+  assert.equal(merged.pages[1].notesText, "uploaded notes");
+  assert.equal(merged.activePage, 1);
+  const empty = createJournal();
+  empty.pages[0].notesText = "2026-09-04 13:17:24  ";
+  merged = mergeNotebookImport(empty, imported);
+  assert.equal(merged.pages.length, 1);
+  assert.equal(merged.pages[0].id, 1);
+  assert.equal(merged.pages[0].notesText, "uploaded notes");
+  assert.equal(merged.activePage, 0);
+  assert.throws(() => journalFromPlainText("a".repeat(NOTEBOOK_MAX_TEXT_LENGTH + 1)), /too large to import/);
+});
+
+test("mutant kill: key snapshot matching and sync", () => {
+  const entry = { method: "dice", diceMethod: "coldcard", input: "1 2 3", phrase: "abandon", label: "lab", notes: "", walletName: "w", fingerprint: "AABBCCDD" };
+  const snapSame = { method: "dice", diceMethod: "coldcard", input: "1 2 3", phrase: "abandon", label: "lab", notes: "", walletName: "w", fingerprint: "aabbccdd" };
+  const snapDiff = { method: "dice", diceMethod: "coldcard", input: "9 9 9", phrase: "abandon", label: "lab", notes: "", walletName: "w", fingerprint: "aabbccdd" };
+  assert.equal(keySnapshotMatchesEntry(entry, snapSame), true);
+  assert.equal(keySnapshotMatchesEntry(entry, snapDiff), false);
+  assert.equal(keySnapshotMatchesEntry(null, snapSame), false);
+  assert.equal(keySnapshotMatchesEntry(entry, null), false);
+  // fingerprint case-insensitive
+  assert.equal(keySnapshotMatchesEntry({ ...entry, fingerprint: "aabbccdd" }, { ...snapSame, fingerprint: "AABBCCDD" }), true);
+  const doc = emptyDocument();
+  const snap = { method: "dice", input: "1 2 3", phrase: "p", label: "s1", notes: "", walletId: 1, walletName: "w1", fingerprint: "aabbccdd" };
+  const assoc = new Map();
+  const res1 = syncKeySnapshots(doc, [snap], assoc, fixedNow);
+  assert.equal(res1.added, 1);
+  assert.equal(doc.entries.length, 1);
+  const res2 = syncKeySnapshots(doc, [snap], assoc, fixedNow);
+  assert.equal(res2.matched, 1);
+  const snap2 = { ...snap, input: "9 9 9" };
+  const res3 = syncKeySnapshots(doc, [snap2], assoc, fixedNow);
+  assert.equal(res3.updated, 1);
+  assert.equal(doc.entries[0].input, "9 9 9");
+  assert.throws(() => syncKeySnapshots(null, [], assoc), /Journal document is missing/);
+  assert.throws(() => syncKeySnapshots(doc, [], {}), /Journal key associations are missing/);
+});
+
+test("mutant kill: encodeFile and parseFile boundaries", () => {
+  const file = encodeFile({ iv: fill(12, 9), ciphertext: fill(32, 4) });
+  const parsed = parseFile(JSON.stringify(file));
+  assert.equal(parsed.iv.length, 12);
+  assert.equal(parsed.ciphertext.length, 32);
+  assert.equal(parsed.iterations, JOURNAL_ITERATIONS);
+  assert.throws(() => parseFile("{}"), /not an EntropyLab journal/);
+  assert.throws(() => parseFile("{"), /not valid JSON/);
+  assert.throws(() => parseFile(JSON.stringify({ ...file, iterations: 7 })), /key-derivation cost/);
+  assert.throws(() => parseFile(JSON.stringify({ ...file, iterations: 1e12 })), /key-derivation cost/);
+  assert.throws(() => encodeFile({ iv: fill(16), ciphertext: fill(32) }), /IV must be 12 bytes/);
+  assert.throws(() => encodeFile({ iv: fill(12), ciphertext: new Uint8Array(0) }), /ciphertext is missing/);
+  assert.throws(() => encodeFile({ iv: fill(12), ciphertext: fill(32), iterations: 1 }), /iteration count is out of range/);
+  assert.throws(() => parseFile("[".repeat(JOURNAL_MAX_FILE_LENGTH + 1)), /large/);
+});
+
+test("mutant kill: parseDocument and entry validation", () => {
+  assert.throws(() => parseDocument("not json"), /corrupt/);
+  assert.throws(() => parseDocument(JSON.stringify({ version: 999, entries: [] })), /corrupt/);
+  assert.throws(() => parseDocument("x".repeat(JOURNAL_MAX_TEXT_LENGTH + 1)), /too large to open/);
+  const many = { version: JOURNAL_VERSION, nextId: 1, entries: [] };
+  for (let i = 0; i < JOURNAL_MAX_ENTRIES + 1; i++) many.entries.push({ method: "dice", label: `e${i}`, input: "" });
+  assert.throws(() => parseDocument(JSON.stringify(many)), /at most/);
+  assert.throws(() => addEntry(emptyDocument(), { method: "dice", label: "", input: "" }), /label/);
+  assert.throws(() => addEntry(emptyDocument(), { method: "bad", label: "x" }), /method/);
+  const doc = emptyDocument();
+  addEntry(doc, { method: "dice", label: "a", input: "1" });
+  assert.throws(() => replaceEntry(doc, 999, { label: "b" }), /not in this file/);
+  assert.throws(() => removeEntry(doc, 999), /not in this file/);
+  assert.equal(searchEntries(doc, "").length, 1);
+  assert.equal(searchEntries(doc, "A").length, 1);
+  assert.equal(searchEntries(doc, "nope").length, 0);
+  assert.throws(() => assertPassword(42), /must be text/);
+  assert.throws(() => assertPassword("a", { confirm: "b" }), /do not match/);
+  const b = new Uint8Array([1, 2, 3]);
+  wipeBytes(b);
+  assert.deepEqual(b, new Uint8Array([0, 0, 0]));
+  const e = { input: "secret", phrase: "words", label: "l", notes: "n", walletName: "w", fingerprint: "fp" };
+  wipeEntry(e);
+  assert.equal(e.input, "");
+  assert.equal(e.phrase, "");
+});
+
+test("mutant kill: snapshotFromKeyState variants", () => {
+  const dice = snapshotFromKeyState({ id: 4, isLab: false, mode: "dice", diceMethod: "coldcard", name: "deadbeef", fields: { dice: "4 1 4 2" }, result: { mnemonic: "legal winner thank year", masterFingerprint: "deadbeef" } });
+  assert.equal(dice.method, "dice");
+  assert.equal(dice.input, "4 1 4 2");
+  const dplus = snapshotFromKeyState({ id: 1, isLab: false, mode: "dice", diceMethod: "dplus", fields: { dplusDice: "1 2 3" }, result: { mnemonic: "abandon" } });
+  assert.equal(dplus.input, "1 2 3");
+  const bitbox = snapshotFromKeyState({ id: 1, isLab: false, mode: "dice", diceMethod: "bitbox", fields: { bitboxDice: "5 6" }, result: { mnemonic: "abandon" } });
+  assert.equal(bitbox.input, "5 6");
+  const cardsHashed = snapshotFromKeyState({ id: 1, isLab: false, mode: "cards", cardMethod: "hashed", fields: { cards: "AH KH" }, result: { mnemonic: "abandon" } });
+  assert.equal(cardsHashed.method, "cards");
+  assert.equal(cardsHashed.input, "AH KH");
+  const cardsDirect = snapshotFromKeyState({ id: 1, isLab: false, mode: "cards", cardMethod: "direct", fields: { directCards: "AS KS" }, result: { mnemonic: "abandon" } });
+  assert.equal(cardsDirect.input, "AS KS");
+  const hex = snapshotFromKeyState({ id: 1, isLab: false, mode: "hex", entropyFormat: "hex", fields: { hex: "abcd" }, result: { mnemonic: "abandon" } });
+  assert.equal(hex.method, "hex");
+  assert.equal(hex.input, "abcd");
+  const seedWords = snapshotFromKeyState({ id: 1, isLab: false, mode: "seed", seedMethod: "words", fields: { seed: "abandon abandon" }, result: { mnemonic: "abandon" } });
+  assert.equal(seedWords.input, "abandon abandon");
+  const seedNumbers = snapshotFromKeyState({ id: 1, isLab: false, mode: "seed", seedMethod: "numbers", fields: { seedNumbers: "1 2 3" }, result: { mnemonic: "abandon" } });
+  assert.equal(seedNumbers.input, "1 2 3");
+  const brain = snapshotFromKeyState({ id: 5, isLab: false, mode: "key", name: "brain", fields: { keyKind: "brain", privateKeys: { brain: "correct horse" } }, result: { mnemonic: "one two three" } });
+  assert.equal(brain.method, "brain");
+  assert.equal(brain.input, "correct horse");
+  assert.equal(snapshotFromKeyState({ isLab: true, mode: "dice", fields: { dice: "123" } }), null);
+  assert.equal(snapshotFromKeyState({ isLab: false, mode: "dice", fields: { dice: "" }, result: { mnemonic: "" } }), null);
+});
+
+test("mutant kill: appendLog and formatLog and wipeJournal", () => {
+  const j = createJournal();
+  appendLog(j, { tool: "calc", action: "derive", detail: "n=1" }, new Date(2026, 0, 1, 0, 0, 0));
+  assert.equal(j.log.length, 1);
+  assert.equal(j.log[0].tool, "calc");
+  assert.equal(formatLog(j.log).includes("calc\tderive"), true);
+  assert.equal(formatLog([]), "No events yet.");
+  for (let i = 0; i < JOURNAL_LOG_LIMIT + 5; i++) appendLog(j, { tool: "t", action: "a", detail: `n=${i}` }, new Date(2026, 0, 1));
+  assert.equal(j.log.length, JOURNAL_LOG_LIMIT);
+  j.stateText = "xprv...";
+  j.notesText = "secret";
+  wipeJournal(j);
+  assert.equal(j.log.length, 0);
+  assert.equal(j.stateText, "");
+  assert.equal(j.notesText, "");
+  assert.equal(j.pages.length, 1);
+});
+
+test("mutant kill: deriveJournalKeys validation", async () => {
+  await assert.rejects(() => deriveJournalKeys(42), /must be text/);
+  await assert.rejects(() => deriveJournalKeys("pw", 1), /unsupported key-derivation cost/);
+  await assert.rejects(() => deriveJournalKeys("pw", 1e12), /unsupported key-derivation cost/);
+  // valid fast path with minimum iterations
+  const keys = await deriveJournalKeys("test-password", JOURNAL_MIN_ITERATIONS);
+  assert.ok(keys.encKey);
+  assert.ok(keys.ivKey);
+  assert.equal(keys.iterations, JOURNAL_MIN_ITERATIONS);
+  assert.equal(keys.passwordProtected, true);
+  const emptyKeys = await deriveJournalKeys("", JOURNAL_MIN_ITERATIONS);
+  assert.equal(emptyKeys.passwordProtected, false);
 });
