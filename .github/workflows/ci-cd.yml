@@ -39,7 +39,7 @@ concurrency:
 # must equal ARG NODE_VERSION in the Dockerfile (test/toolchain-pin.test.mjs
 # enforces the pair).
 env:
-  NODE_VERSION: "22.23.2"
+  NODE_VERSION: "22.23.4"
 
 jobs:
   # ── Build: compile src/ once — every gate and every publication path ─────
@@ -514,7 +514,7 @@ jobs:
           tar -xzf "bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz" -C "$RUNNER_TEMP/bitcoin-bin" --strip-components=2 "bitcoin-${BITCOIN_CORE_VERSION}/bin/bitcoind" "bitcoin-${BITCOIN_CORE_VERSION}/bin/bitcoin-cli"
           echo "$RUNNER_TEMP/bitcoin-bin" >> "$GITHUB_PATH"
       - name: Run the Bitcoin Core interop tests
-        run: REQUIRE_BITCOIND=1 node --test test/wallet-export.test.mjs test/msig-wallet-output.test.mjs
+        run: REQUIRE_BITCOIND=1 node --test --test-concurrency=1 test/wallet-export.test.mjs test/msig-wallet-output.test.mjs
 
   # ── Fuzz: differential check of the shipped LifeHash against the ──────────
   # official `lifehash` package. The fuzzer has its own locked dependency tree

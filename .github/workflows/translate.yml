@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: "22.23.2"
+  NODE_VERSION: "22.23.4"
 
 jobs:
   # ── Job A: generate + validate. Holds the LLM secret; cannot write to the

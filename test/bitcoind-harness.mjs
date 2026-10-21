@@ -11,14 +11,24 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// The probe retries: in CI one test file's probe failed within 120 ms while
+// the other file, in the same step and on the same PATH, ran its bitcoind
+// tests (PR #818's interop run), so a single failed --version is not proof
+// the binaries are missing. A failure that persists reports why.
 export const BITCOIND = (() => {
-  const daemon = spawnSync("bitcoind", ["--version"], { stdio: "pipe" });
-  const cli = spawnSync("bitcoin-cli", ["--version"], { stdio: "pipe" });
-  const found = daemon.status === 0 && cli.status === 0;
-  if (!found && process.env.REQUIRE_BITCOIND === "1") {
-    throw new Error("REQUIRE_BITCOIND=1 but bitcoind and bitcoin-cli are not both on PATH — the Bitcoin Core interop job must install the pinned release before running these tests");
+  const probe = (bin) => spawnSync(bin, ["--version"], { stdio: "pipe", timeout: 30000 });
+  const why = (bin, r) => `${bin}: status ${r.status}, signal ${r.signal}, error ${r.error?.code || r.error?.message || "none"}, stderr ${String(r.stderr || "").trim().slice(0, 200) || "empty"}`;
+  let daemon, cli;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500 * attempt);
+    daemon = probe("bitcoind");
+    cli = probe("bitcoin-cli");
+    if (daemon.status === 0 && cli.status === 0) return true;
   }
-  return found;
+  if (process.env.REQUIRE_BITCOIND === "1") {
+    throw new Error(`REQUIRE_BITCOIND=1 but bitcoind and bitcoin-cli are not both on PATH — the Bitcoin Core interop job must install the pinned release before running these tests (${why("bitcoind", daemon)}; ${why("bitcoin-cli", cli)})`);
+  }
+  return false;
 })();
 
 export const CHAIN_FIXTURES = {
