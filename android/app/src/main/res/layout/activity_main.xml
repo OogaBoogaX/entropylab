@@ -49,5 +49,6 @@
         android:id="@+id/page"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:importantForAutofill="noExcludeDescendants"
         android:visibility="gone" />
 </FrameLayout>

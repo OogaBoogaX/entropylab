@@ -260,6 +260,17 @@ test("the scheduled and release workflows' checkouts do not persist their tokens
 // checkout must not leave GITHUB_TOKEN in .git/config, and the committed
 // gradle-wrapper.jar (the program that enforces distributionSha256Sum) must be
 // validated against Gradle's published checksums before it runs.
+// The calculator page holds seeds and passphrases. Without this, Android's
+// autofill framework (API 26+) may be offered the WebView's fields, so the
+// WebView and everything inside it must be excluded from autofill.
+test("the Android wrapper excludes the calculator WebView from autofill", () => {
+  const layout = read("android/app/src/main/res/layout/activity_main.xml");
+  const webview = layout.match(/<WebView[\s\S]*?\/>/)?.[0];
+  assert.ok(webview, "activity_main.xml declares the WebView");
+  assert.match(webview, /android:id="@\+id\/page"/);
+  assert.match(webview, /android:importantForAutofill="noExcludeDescendants"/, "the WebView must exclude itself and its descendants from autofill");
+});
+
 test("the Android wrapper workflow drops its token and validates the Gradle wrapper first", () => {
   const workflow = read(".github/workflows/android-wrapper.yml");
   const checkouts = workflow.split(/\n(?=      - uses: actions\/checkout@)/).slice(1).map((block) => block.split(/\n(?=      - )/)[0]);
