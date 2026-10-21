@@ -1,7 +1,10 @@
 // Bitcoin Core fixtures for tests that check the app against a real node.
 // Every test using these skips where bitcoind and bitcoin-cli are not
-// installed; CI runners and the dev image skip them (verified locally with
-// Bitcoin Core v31.1.0).
+// installed — except under REQUIRE_BITCOIND=1, which the "Bitcoin Core
+// interop" CI job sets after installing its pinned Bitcoin Core v31.1
+// release: there a missing binary throws at import, because a job that
+// silently skips its whole point must fail. Everywhere else (local runs
+// without a node, the dev image) the tests still skip.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
@@ -11,7 +14,11 @@ import { join } from "node:path";
 export const BITCOIND = (() => {
   const daemon = spawnSync("bitcoind", ["--version"], { stdio: "pipe" });
   const cli = spawnSync("bitcoin-cli", ["--version"], { stdio: "pipe" });
-  return daemon.status === 0 && cli.status === 0;
+  const found = daemon.status === 0 && cli.status === 0;
+  if (!found && process.env.REQUIRE_BITCOIND === "1") {
+    throw new Error("REQUIRE_BITCOIND=1 but bitcoind and bitcoin-cli are not both on PATH — the Bitcoin Core interop job must install the pinned release before running these tests");
+  }
+  return found;
 })();
 
 export const CHAIN_FIXTURES = {
