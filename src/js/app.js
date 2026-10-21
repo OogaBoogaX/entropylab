@@ -21,6 +21,8 @@ import {
   scanSilentPaymentOutputs,
   spendPrivForOutput,
   taprootOutputPrivateKey,
+  vinHasSpendData,
+  normalizeVinWitness,
   vinPrevoutScript,
   bytesToHex as hodlSpBytesToHex,
 } from "./bip352.js";
@@ -2081,8 +2083,18 @@ function hodlWalletDatDeps() {
       return body;
     },
     // Hardened-branch private key records are derived from the account xprv.
-    deriveExtendedPrivateChild: (extendedKeyText, index) =>
-      hodlHDKey.fromExtendedKey(hodlReversionExtendedKey(extendedKeyText, hodlExtendedKeyVersions.mainnet.x.prv)).deriveChild(index).privateExtendedKey,
+    deriveExtendedPrivateChild: (extendedKeyText, index) => {
+      let parent, child;
+      try {
+        parent = hodlHDKey.fromExtendedKey(hodlReversionExtendedKey(extendedKeyText, hodlExtendedKeyVersions.mainnet.x.prv));
+        child = parent.deriveChild(index);
+        return child.privateExtendedKey;
+      } finally {
+        // Both nodes are built here from text, so both are ours to wipe.
+        child?.wipePrivateData();
+        parent?.wipePrivateData();
+      }
+    },
     publicKeyForPrivate: (secret) => hodlSecp256k1.getPublicKey(secret, true),
     canonicalizeDescriptor: (descriptor) => canonicalizeWatchDescriptor(descriptor, {
       decode: (key) => hodlBase58Check.decode(key),
@@ -12047,7 +12059,11 @@ function hodlSpDeriveVinKeys(vins) {
   const derived = [];
   let complete = false;
   try {
-    const resolved = vins.map((vin, i) => {
+    const resolved = vins.map((rawVin, i) => {
+      // A pasted witness array may carry hex-string items (JSON); read them
+      // as bytes before anything reads the witness, exactly as the library
+      // path does in normalizeVin, so both flows see the same input.
+      const vin = normalizeVinWitness(rawVin);
       // The published BIP-352 vectors carry raw per-input scalars; the UI flow
       // derives from the session instead. (The library function keeps vector
       // support for the test suite.)
@@ -12056,8 +12072,16 @@ function hodlSpDeriveVinKeys(vins) {
       }
       // Only inputs of the eligible script types take part; anything else is
       // skipped by the sender and needs no key.
-      const extracted = extractInputPubKey(vin);
-      if (!extracted) return vin;
+      if (vinHasSpendData(vin)) {
+        const extracted = extractInputPubKey(vin);
+        if (!extracted) return vin;
+      } else {
+        // A sender has no signatures yet: an input with no spend data (empty
+        // scriptSig and witness) is eligible on its prevout script type
+        // alone, and the lie check below verifies the derived key against it.
+        const prevoutScript = vinPrevoutScript(vin);
+        if (!isP2pkh(prevoutScript) && !isP2wpkh(prevoutScript) && !isP2sh(prevoutScript) && !isP2tr(prevoutScript)) return vin;
+      }
       if (vin.fingerprint !== undefined && String(vin.fingerprint).toLowerCase().replace(/^0x/, "") !== fingerprint) {
         throw new Error(`Input ${i}: origin fingerprint ${vin.fingerprint} is not this session's ${fingerprint}.`);
       }

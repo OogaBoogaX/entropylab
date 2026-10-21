@@ -64,7 +64,7 @@ const tagsOf = (text) =>
 const anchorFormsOf = (text) => {
   const forms = new Set();
   for (const token of hodlCatalogTokens(text)) {
-    if (token.text !== undefined || token.name !== "a") continue;
+    if (token.text !== undefined || token.name !== "a" || token.closing) continue;
     const form = hodlCatalogTagForm(token);
     if (form) forms.add(form);
   }
