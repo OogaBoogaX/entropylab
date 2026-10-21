@@ -1173,6 +1173,57 @@ test("Core fixture cleanup stops at the PID-file boundary", () => {
   assert.equal(waitForChainNodeExit("fixture.pid", () => true, () => {}, 2), false);
 });
 
+// --- REQUIRE_BITCOIND: the interop CI job must fail, not skip --------------
+
+// The "Bitcoin Core interop" CI job sets REQUIRE_BITCOIND=1 so a runner that
+// lost its bitcoind fails instead of skipping every interop test. The gate
+// lives at the harness's import, so these tests exercise it in child
+// processes whose PATH decides what the probe finds. (Dynamic imports: this
+// child-process plumbing is used nowhere else in this file.)
+const importHarness = async (pathEnv, requireBitcoind) => {
+  const { spawnSync } = await import("node:child_process");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath, pathToFileURL } = await import("node:url");
+  const harnessUrl = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "bitcoind-harness.mjs")).href;
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) if (key.toUpperCase() === "PATH" || key === "REQUIRE_BITCOIND") delete env[key];
+  env.PATH = pathEnv;
+  if (requireBitcoind) env.REQUIRE_BITCOIND = "1";
+  return spawnSync(process.execPath, ["--input-type=module", "-e", `import ${JSON.stringify(harnessUrl)};`], { env, encoding: "utf8" });
+};
+
+const tempBinDir = async (label) => {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  return mkdtempSync(join(tmpdir(), label));
+};
+
+const removeDir = async (dir) => {
+  const { rmSync } = await import("node:fs");
+  rmSync(dir, { recursive: true, force: true });
+};
+
+test("REQUIRE_BITCOIND=1 throws at import when bitcoind and bitcoin-cli are missing", async (t) => {
+  const dir = await tempBinDir("entropylab-no-bitcoind-");
+  t.after(() => removeDir(dir));
+  const run = await importHarness(dir, true);
+  assert.ifError(run.error);
+  assert.notEqual(run.status, 0, "a runner without the binaries must fail, not skip");
+  assert.match(run.stderr, /REQUIRE_BITCOIND=1/);
+  assert.match(run.stderr, /bitcoind/);
+});
+
+test("without REQUIRE_BITCOIND a missing bitcoind still means skip, not failure", async (t) => {
+  const dir = await tempBinDir("entropylab-no-bitcoind-");
+  t.after(() => removeDir(dir));
+  const run = await importHarness(dir, false);
+  assert.ifError(run.error);
+  assert.equal(run.status, 0, run.stderr);
+});
+
+// The positive case (both binaries on PATH) is the CI interop job itself.
+
 
 for (const network of Object.keys(CHAIN_FIXTURES)) {
   test(`bitcoind on ${network} loads the generated wallet.dat`, { skip: !BITCOIND, timeout: 120000 }, async () => {

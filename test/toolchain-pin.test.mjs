@@ -255,3 +255,35 @@ test("the scheduled and release workflows' checkouts do not persist their tokens
   assert.match(release, /GH_TOKEN: \$\{\{ github\.token \}\}/, "release-assets.yml: gh must authenticate through GH_TOKEN env, not .git/config");
   assert.doesNotMatch(release, /git push/, "release-assets.yml: no step may push with the checkout's credential");
 });
+
+// The Bitcoin Core interop job downloads a real node to test the exported
+// wallets and descriptors against. That binary is a supply-chain input like
+// the dev image's downloads above: pinned by digest, verified with
+// sha256sum -c, and never extracted — let alone run — before the hash check.
+// And because a runner whose bitcoind vanished would silently skip every
+// interop test, the job must set REQUIRE_BITCOIND=1 so the harness fails
+// instead, and it must gate a merge like the other behavioral test jobs.
+test("the Bitcoin Core interop job verifies the pinned bitcoind download before using it", () => {
+  const workflow = read(".github/workflows/ci-cd.yml");
+  const job = workflowJob(workflow, "test-bitcoind");
+  assert.ok(job, "the test-bitcoind CI job exists");
+  assert.match(job, /^    name: Bitcoin Core interop$/m);
+  assert.match(job, /^      BITCOIN_CORE_VERSION: "31\.1"$/m);
+  assert.match(job, /^      BITCOIN_CORE_SHA256: "b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"$/m);
+  assert.match(job, /curl -fsSL -o "bitcoin-\$\{BITCOIN_CORE_VERSION\}-x86_64-linux-gnu\.tar\.gz" "https:\/\/bitcoincore\.org\/bin\/bitcoin-core-\$\{BITCOIN_CORE_VERSION\}\/bitcoin-\$\{BITCOIN_CORE_VERSION\}-x86_64-linux-gnu\.tar\.gz"/);
+  assert.match(job, /echo "\$\{BITCOIN_CORE_SHA256\}  bitcoin-\$\{BITCOIN_CORE_VERSION\}-x86_64-linux-gnu\.tar\.gz" \| sha256sum -c -/);
+  // Anchor on the step itself: the env comment above the steps also names
+  // bitcoincore.org, so indexOf("bitcoincore.org") would find the comment.
+  const download = job.indexOf("curl -fsSL -o \"bitcoin-");
+  const verify = job.indexOf("sha256sum -c");
+  const extract = job.indexOf("tar -xzf");
+  const run = job.indexOf("REQUIRE_BITCOIND=1 node --test");
+  assert.ok(download !== -1 && verify > download, "the download is verified");
+  assert.ok(extract > verify, "the archive is extracted only after the hash check");
+  assert.ok(run > extract, "the binaries run only after the verified extraction");
+  assert.match(job, /REQUIRE_BITCOIND=1 node --test test\/wallet-export\.test\.mjs test\/msig-wallet-output\.test\.mjs/);
+  // The job gates a merge exactly like the other behavioral test gates.
+  const needsOf = (name) => workflowJob(workflow, name).match(/^    needs: \[([^\]]+)\]$/m)?.[1] ?? "";
+  assert.ok(needsOf("artifact").split(", ").includes("test-bitcoind"), "the artifact job must need the interop job");
+  assert.ok(needsOf("deploy").split(", ").includes("test-bitcoind"), "the deploy job must need the interop job");
+});
