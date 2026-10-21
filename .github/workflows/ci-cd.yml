@@ -473,6 +473,49 @@ jobs:
       - name: Run number-base tests
         run: npm run test:number-bases
 
+  # ── Bitcoin Core interop: the wallet.dat and descriptor suites against ───
+  # a real node (issue #822). The binary is a supply-chain input like the dev
+  # image's downloads: pinned by digest, verified with sha256sum -c before it
+  # is extracted, and only bin/bitcoind and bin/bitcoin-cli leave the
+  # archive. REQUIRE_BITCOIND=1 makes the harness fail at import when the
+  # binaries are missing — a job that silently skips its whole point must
+  # fail, not go green.
+
+  test-bitcoind:
+    name: Bitcoin Core interop
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # bitcoin-31.1-x86_64-linux-gnu.tar.gz from bitcoincore.org. The digest
+      # is the file's line in the release's SHA256SUMS, which carries 11
+      # builder signatures (fanquake, achow101, hebasto, Sjors, and others)
+      # from the bitcoin-core/guix.sigs builder keys.
+      BITCOIN_CORE_VERSION: "31.1"
+      BITCOIN_CORE_SHA256: "b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Download the pinned Bitcoin Core release
+        run: curl -fsSL -o "bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz" "https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_CORE_VERSION}/bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz"
+      - name: Verify the pinned digest before extracting
+        run: echo "${BITCOIN_CORE_SHA256}  bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz" | sha256sum -c -
+      - name: Extract bitcoind and bitcoin-cli only
+        run: |
+          mkdir -p "$RUNNER_TEMP/bitcoin-bin"
+          tar -xzf "bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz" -C "$RUNNER_TEMP/bitcoin-bin" --strip-components=2 "bitcoin-${BITCOIN_CORE_VERSION}/bin/bitcoind" "bitcoin-${BITCOIN_CORE_VERSION}/bin/bitcoin-cli"
+          echo "$RUNNER_TEMP/bitcoin-bin" >> "$GITHUB_PATH"
+      - name: Run the Bitcoin Core interop tests
+        run: REQUIRE_BITCOIND=1 node --test test/wallet-export.test.mjs test/msig-wallet-output.test.mjs
+
   # ── Fuzz: differential check of the shipped LifeHash against the ──────────
   # official `lifehash` package. The fuzzer has its own locked dependency tree
   # under fuzzing/ (the app's package.json stays untouched) and is
@@ -546,7 +589,7 @@ jobs:
   artifact:
     name: Artifact · commit tested site after merge
     if: github.ref == 'refs/heads/rock' && github.event_name == 'push'
-    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce]
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce, test-bitcoind]
     runs-on: ubuntu-latest
     environment: release
     timeout-minutes: 10
@@ -851,7 +894,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     if: github.ref == 'refs/heads/rock' && github.event_name != 'pull_request'
-    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce]
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce, test-bitcoind]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
