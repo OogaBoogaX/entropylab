@@ -50,6 +50,7 @@ import {
   sqliteReadBack,
 } from "./wallet-export-harness.mjs";
 import { canonicalizeWatchDescriptor } from "../src/js/core-importdescriptors.js";
+import { fuzzEnv, mulberry32, replayLine, withReplay } from "./fuzz-kit.mjs";
 
 // --- deterministic randomness ------------------------------------------------
 
@@ -57,16 +58,14 @@ import { canonicalizeWatchDescriptor } from "../src/js/core-importdescriptors.js
 // be machine-generated. Never reseed from the clock — a red run must be
 // reproducible byte-for-byte.
 const FUZZ_SEED = 0x5eed0001;
-const mulberry32 = (seed) => {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
-const rand = mulberry32(FUZZ_SEED);
+const DEFAULT_CORPUS_SIZE = 72;
+const WALLET_EXPORT_ENV = fuzzEnv("WALLET_EXPORT_FUZZ", { defaultSeed: FUZZ_SEED, defaultIterations: DEFAULT_CORPUS_SIZE });
+const ITERATIONS = WALLET_EXPORT_ENV.iterations;
+// Three tests below read corpus[2]; a smaller corpus is a setup error, not a
+// fuzz failure, so it is refused here with a clear message.
+if (ITERATIONS < 3) throw new Error(`WALLET_EXPORT_FUZZ_ITERATIONS must be at least 3 (the corpus tests use its first three wallets), got ${ITERATIONS}`);
+const CORPUS_TEST_NAME = "every fuzzed wallet's records independently verify (Core's load check included)";
+let rand = mulberry32(WALLET_EXPORT_ENV.seed);
 const rint = (n) => Math.floor(rand() * n);
 const pick = (items) => items[rint(items.length)];
 const chance = (p) => rand() < p;
@@ -486,47 +485,48 @@ const randomOrigin = (type, coin, account) => {
   return [`[${fingerprint}/${purpose}h/${coin}h/${account}h]`, style];
 };
 
-const corpus = [];
-const CORPUS_SIZE = 72;
 const CREATION_TIMES = [0, 1, 1700000000, 0xffffffff];
+const forcedAccounts = (xpubs) => ({
+  def: { id: "bip84" },
+  receiveDescriptor: `wpkh([00000000/84h/0h/0h]${xpubs[0]}/0/*)#${descriptorChecksum(`wpkh([00000000/84h/0h/0h]${xpubs[0]}/0/*)`)}`,
+  changeDescriptor: `wpkh([00000000/84h/0h/0h]${xpubs[1]}/0/*)#${descriptorChecksum(`wpkh([00000000/84h/0h/0h]${xpubs[1]}/0/*)`)}`,
+});
+// Random address rows for a branch, with edge indexes (BIP32 maximum,
+// clamp boundary) and occasional invalid entries the exporter must skip.
+const randomRows = () => {
+  const count = rint(4);
+  if (count === 0) return chance(0.5) ? [] : null;
+  const rows = [];
+  for (let j = 0; j < count; j++) {
+    const style = pick(["small", "small", "large", "max", "invalid"]);
+    if (style === "invalid") {
+      rows.push({ index: pick([-1, 0x80000000, 1.5, "7", null, undefined]) });
+      note("rows:invalid-filtered");
+    } else if (style === "max") {
+      rows.push({ index: 0x7fffffff });
+      note("rows:clamp");
+    } else if (style === "large") {
+      const index = 0x7fffff00 - rint(2000);
+      rows.push({ index });
+      if (index + RANGE_GAP > MAX_ADDRESS_INDEX) note("rows:clamp");
+    } else {
+      rows.push({ index: rint(10000) });
+    }
+  }
+  return rows;
+};
+const corpus = [];
 {
   // Iteration 0 and 1 force the <digit>h corruption class into the corpus.
-  const forcedAccounts = (xpubs) => ({
-    def: { id: "bip84" },
-    receiveDescriptor: `wpkh([00000000/84h/0h/0h]${xpubs[0]}/0/*)#${descriptorChecksum(`wpkh([00000000/84h/0h/0h]${xpubs[0]}/0/*)`)}`,
-    changeDescriptor: `wpkh([00000000/84h/0h/0h]${xpubs[1]}/0/*)#${descriptorChecksum(`wpkh([00000000/84h/0h/0h]${xpubs[1]}/0/*)`)}`,
-  });
-  corpus.push(
-    { wallet: { kind: "hd", network: "mainnet", accounts: [forcedAccounts([XPUB_TAIL_4H, XPUB_TAIL_2H])] }, includePrivate: false, creationTime: 0, label: "iteration 0 (known digit-h vectors)" },
-    { wallet: { kind: "hd", network: "mainnet", accounts: [forcedAccounts([SCANNED_TAIL_KEY, XPUB_TAIL_4H])] }, includePrivate: false, creationTime: 0, label: "iteration 1 (scanned digit-h key)" },
-  );
-  note("digit-h-tail");
-  note("digit-h-tail");
-  // Random address rows for a branch, with edge indexes (BIP32 maximum,
-  // clamp boundary) and occasional invalid entries the exporter must skip.
-  const randomRows = () => {
-    const count = rint(4);
-    if (count === 0) return chance(0.5) ? [] : null;
-    const rows = [];
-    for (let j = 0; j < count; j++) {
-      const style = pick(["small", "small", "large", "max", "invalid"]);
-      if (style === "invalid") {
-        rows.push({ index: pick([-1, 0x80000000, 1.5, "7", null, undefined]) });
-        note("rows:invalid-filtered");
-      } else if (style === "max") {
-        rows.push({ index: 0x7fffffff });
-        note("rows:clamp");
-      } else if (style === "large") {
-        const index = 0x7fffff00 - rint(2000);
-        rows.push({ index });
-        if (index + RANGE_GAP > MAX_ADDRESS_INDEX) note("rows:clamp");
-      } else {
-        rows.push({ index: rint(10000) });
-      }
-    }
-    return rows;
-  };
-  for (let i = 2; i < CORPUS_SIZE; i++) {
+  if (ITERATIONS > 0) {
+    note("digit-h-tail");
+    corpus.push({ wallet: { kind: "hd", network: "mainnet", accounts: [forcedAccounts([XPUB_TAIL_4H, XPUB_TAIL_2H])] }, includePrivate: false, creationTime: 0, label: "iteration 0 (known digit-h vectors)" });
+  }
+  if (ITERATIONS > 1) {
+    note("digit-h-tail");
+    corpus.push({ wallet: { kind: "hd", network: "mainnet", accounts: [forcedAccounts([SCANNED_TAIL_KEY, XPUB_TAIL_4H])] }, includePrivate: false, creationTime: 0, label: "iteration 1 (scanned digit-h key)" });
+  }
+  for (let i = 2; i < ITERATIONS; i++) {
     const label = `iteration ${i}`;
     const network = pick(["mainnet", "testnet", "signet", "regtest"]);
     note(`network:${network}`);
@@ -646,9 +646,13 @@ test("the reference compat form re-renders like Core, independently of the modul
   assert.equal(referenceCompatForm("wpkh([AbCdEf01/0h]xPubZz/0/*)"), "wpkh([abcdef01/0']xPubZz/0/*)");
 });
 
-test("every fuzzed wallet's records independently verify (Core's load check included)", () => {
-  for (const { wallet, includePrivate, creationTime, label } of corpus) {
-    verifyWalletRecords(label, wallet, includePrivate, creationTime);
+test(CORPUS_TEST_NAME, () => {
+  try {
+    for (const { wallet, includePrivate, creationTime, label } of corpus) {
+      verifyWalletRecords(label, wallet, includePrivate, creationTime);
+    }
+  } catch (error) {
+    throw withReplay(error, replayLine("WALLET_EXPORT_FUZZ", WALLET_EXPORT_ENV.seed, ITERATIONS, CORPUS_TEST_NAME, "test/wallet-export-fuzz.test.mjs"));
   }
 });
 
@@ -739,7 +743,7 @@ test("malformed wallet inputs fail loudly instead of writing a bad file", () => 
   );
 });
 
-test("buildWalletDat defaults the birthday to the export time", { skip: !PYTHON_SQLITE }, () => {
+test("buildWalletDat defaults the birthday to the export time", { skip: !PYTHON_SQLITE || corpus.length === 0 }, () => {
   const module_ = loadModule();
   const before = Math.floor(Date.now() / 1000) - 1;
   const bytes = module_.buildWalletDat(corpus[2].wallet, false, fuzzDeps);
