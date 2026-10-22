@@ -2,6 +2,7 @@
 // encrypted entropy notebook further below. In-memory only. No network, no
 // browser storage, no CSPRNG.
 import { hex as hexCoder } from "./coders.js";
+import { parseKeyVault, serializeKeyVault } from "./keymanager.js";
 
 export const JOURNAL_LOG_LIMIT = 400;
 export const NOTEBOOK_FORMAT = "entropylab-notebook";
@@ -341,6 +342,10 @@ export function snapshotSession(session) {
 }
 
 export function wipeJournal(journal) {
+  if (journal.backup) {
+    wipeBackup(journal.backup);
+    journal.backup = null;
+  }
   journal.notesText = "";
   journal.pages = [{ id: 1, number: 1, name: "Page 1", notesText: "", style: defaultJournalPageStyle() }];
   journal.activePage = 0;
@@ -358,6 +363,10 @@ export function wipeJournal(journal) {
 // under a second derived key (a synthetic IV), so the same password and the
 // same entries always produce the same file.
 export const JOURNAL_VERSION = 2;
+// Only the decrypted document changes: retaining the v2 envelope preserves
+// the encryption protocol, while old readers reject the complete payload
+// instead of silently restoring just its entries.
+export const JOURNAL_BACKUP_VERSION = 3;
 export const JOURNAL_EXPORT_VERSION = 1;
 export const JOURNAL_KDF = "PBKDF2-SHA-256";
 export const JOURNAL_CIPHER = "AES-256-GCM";
@@ -432,9 +441,34 @@ export function wipeEntry(entry) {
 
 export function wipeDocument(doc) {
   if (!doc) return;
+  if (doc.backup) {
+    wipeBackup(doc.backup);
+    doc.backup = null;
+  }
   for (const entry of doc.entries || []) wipeEntry(entry);
   doc.entries = [];
   doc.nextId = 1;
+}
+
+// Imported source fields can contain nested JSON. Clear their leaves in place
+// before dropping ownership, including references retained by a staged import.
+export function wipeBackup(backup) {
+  const pending = [backup], seen = new Set();
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== "object" || seen.has(value)) continue;
+    seen.add(value);
+    if (ArrayBuffer.isView(value)) {
+      wipeBytes(value);
+      continue;
+    }
+    for (const key of Object.keys(value)) {
+      if (typeof value[key] === "string") value[key] = "";
+      else if (typeof value[key] === "number") value[key] = 0;
+      else if (typeof value[key] === "boolean") value[key] = false;
+      else if (value[key] && typeof value[key] === "object") pending.push(value[key]);
+    }
+  }
 }
 
 export function assertPassword(password, { confirm } = {}) {
@@ -737,7 +771,7 @@ export function parseDocument(plain) {
   } catch {
     throw new Error("The journal file is corrupt.");
   }
-  if (!parsed || parsed.version !== JOURNAL_VERSION || !Array.isArray(parsed.entries)) {
+  if (!parsed || ![JOURNAL_VERSION, JOURNAL_BACKUP_VERSION].includes(parsed.version) || !Array.isArray(parsed.entries)) {
     throw new Error("The journal file is corrupt.");
   }
   if (parsed.entries.length > JOURNAL_MAX_ENTRIES) {
@@ -764,7 +798,57 @@ export function parseDocument(plain) {
     ids.add(spare);
   }
   const highest = Math.max(0, ...ids);
-  return { version: JOURNAL_VERSION, nextId: Math.max(nextId, highest + 1), entries };
+  const doc = { version: parsed.version, nextId: Math.max(nextId, highest + 1), entries };
+  if (parsed.version === JOURNAL_BACKUP_VERSION) {
+    try {
+      doc.backup = parseBackup(parsed.backup);
+    } catch (error) {
+      wipeDocument(doc);
+      throw error;
+    } finally {
+      wipeBackup(parsed.backup);
+    }
+  }
+  return doc;
+}
+
+function parseBackup(value) {
+  const record = (item) => item && typeof item === "object" && !Array.isArray(item);
+  if (!record(value) || typeof value.notebook !== "string" || typeof value.keyManager !== "string") {
+    throw new Error("The complete journal backup is corrupt.");
+  }
+  const backup = {};
+  try {
+    backup.notebook = parseNotebook(value.notebook);
+    backup.keyManager = parseKeyVault(value.keyManager);
+    // Complete restore converts passphrase text to runtime bytes only after
+    // parsing succeeds. Do not allow JSON objects to reach that conversion.
+    for (const key of [...backup.keyManager.keys, ...backup.keyManager.ignoredKeys]) {
+      if (Object.hasOwn(key.fields, "pass") && typeof key.fields.pass !== "string") throw new Error("A journal backup key's passphrase must be text.");
+    }
+    const validIndex = (index) => Number.isSafeInteger(index) && index >= 0 && index < backup.keyManager.keys.length;
+    if (!Array.isArray(value.includedKeys) || !value.includedKeys.every(validIndex) || new Set(value.includedKeys).size !== value.includedKeys.length) {
+      throw new Error("The journal backup has an invalid key selection.");
+    }
+    if (value.activeKey !== null && !validIndex(value.activeKey)) throw new Error("The journal backup has an invalid active key.");
+    backup.includedKeys = value.includedKeys.slice();
+    backup.activeKey = value.activeKey;
+    if (!record(value.snapshot) || typeof value.snapshot.text !== "string" || value.snapshot.text.length > JOURNAL_MAX_TEXT_LENGTH || typeof value.snapshot.includePrivate !== "boolean") {
+      throw new Error("The journal backup has an invalid session snapshot.");
+    }
+    backup.snapshot = { text: value.snapshot.text, includePrivate: value.snapshot.includePrivate };
+    if (!Array.isArray(value.log) || value.log.length > JOURNAL_LOG_LIMIT) throw new Error("The journal backup has an invalid session log.");
+    backup.log = value.log.map((event) => {
+      if (!record(event) || ["at", "tool", "action", "detail"].some((field) => typeof event[field] !== "string" || event[field].length > 300)) {
+        throw new Error("The journal backup has an invalid session log event.");
+      }
+      return { at: event.at, tool: event.tool, action: event.action, detail: event.detail };
+    });
+    return backup;
+  } catch (error) {
+    wipeBackup(backup);
+    throw error;
+  }
 }
 
 // The IV is a synthetic nonce — HMAC-SHA-256 of the plaintext under its own
@@ -807,6 +891,38 @@ export async function sealDocument(doc, keys) {
   // create a file that the app then reports as too large to open.
   if (plain.length > JOURNAL_MAX_TEXT_LENGTH) throw new Error("The journal is too large to save as one file.");
   return sealPlainText(plain, keys);
+}
+
+export async function sealBackup(doc, keys, backup) {
+  // Validate and normalize a private copy before sealing. In particular, the
+  // Key Manager parser strips cached outputs and verification claims on save
+  // as well as on open; only source inputs/settings belong in a backup.
+  const normalized = parseDocument(JSON.stringify({
+    version: JOURNAL_BACKUP_VERSION,
+    nextId: doc.nextId,
+    entries: doc.entries,
+    backup,
+  }));
+  try {
+    const saved = normalized.backup;
+    const plain = JSON.stringify({
+      version: JOURNAL_BACKUP_VERSION,
+      nextId: normalized.nextId,
+      entries: normalized.entries,
+      backup: {
+        notebook: serializeNotebook(saved.notebook),
+        keyManager: serializeKeyVault(saved.keyManager.keys, saved.keyManager.ignoredKeys),
+        includedKeys: saved.includedKeys,
+        activeKey: saved.activeKey,
+        snapshot: saved.snapshot,
+        log: saved.log,
+      },
+    });
+    if (plain.length > JOURNAL_MAX_TEXT_LENGTH) throw new Error("The journal is too large to save as one file.");
+    return await sealPlainText(plain, keys);
+  } finally {
+    wipeDocument(normalized);
+  }
 }
 
 export async function sealExport(kind, content, keys) {

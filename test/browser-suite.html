@@ -6950,6 +6950,160 @@
     }
   });
 
+  await test("one Journal download restores entries, pages, managed inputs, snapshot and log together", async () => {
+    const password = "complete Journal browser fixture";
+    const keyName = "Complete backup source input";
+    const entryLabel = "Complete backup entry";
+    const entryInput = "0123456789abcdef";
+    const entryNotes = "Complete backup entry notes";
+    const firstNote = "First complete backup page";
+    const secondNote = "Second complete backup page";
+    const pageName = "Recovery plans";
+    const journalTab = (tool) => document.querySelector(`#journal-tool-tabs [data-journal-tool="${tool}"]`);
+    const stationTabs = () => [...document.querySelectorAll("#key-tabs [data-key-number]")];
+    const fixtureTab = () => stationTabs().find((tab) => tab.textContent === keyName);
+    const clearJournal = async () => {
+      document.querySelector('#workspace [data-workspace="journal"]').click();
+      if (!document.getElementById("journal-global-clear").disabled) {
+        document.getElementById("journal-global-clear").click();
+        await until(() => document.getElementById("journal-global-download").disabled, "complete Journal cleared");
+      }
+    };
+    try {
+      await clearJournal();
+      input(document.getElementById("journal-create-password"), password);
+      input(document.getElementById("journal-create-confirm"), password);
+      document.getElementById("journal-create").click();
+      await until(() => !document.getElementById("journal-global-download").disabled, "complete Journal created");
+
+      // A published BIP39 mnemonic and a fixed test-only passphrase supply a
+      // real managed input. No cached wallet is supplied by a backup fixture.
+      document.querySelector('#workspace [data-workspace="calc"]').click();
+      document.getElementById("key-tab-lab").click();
+      chooseSeedWords(12);
+      await chooseMode("Seed phrase");
+      input(document.getElementById("seed"), "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about");
+      input(document.getElementById("pass"), "complete backup fixture passphrase");
+      const countBeforeDerive = stationTabs().length;
+      await until(() => !document.getElementById("go").disabled, "complete backup fixture ready to derive");
+      document.getElementById("go").click();
+      await until(() => stationTabs().length === countBeforeDerive + 1, "complete backup fixture derived");
+      document.querySelector('#key-tabs [aria-selected="true"]').dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true }));
+      const keyRename = await until(() => document.querySelector("#key-tabs input"), "fixture key rename");
+      input(keyRename, keyName);
+      keyRename.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      assert(fixtureTab(), "the managed fixture key was not named");
+
+      document.querySelector('#workspace [data-workspace="journal"]').click();
+      journalTab("book").click();
+      document.getElementById("journal-add").click();
+      document.getElementById("journal-method").value = "hex";
+      input(document.getElementById("journal-input"), entryInput);
+      input(document.getElementById("journal-label"), entryLabel);
+      input(document.getElementById("journal-entry-notes"), entryNotes);
+      document.getElementById("journal-commit").click();
+      await until(() => document.getElementById("journal-editor").hidden, "complete backup entry committed");
+
+      journalTab("notes").click();
+      const notes = document.getElementById("journal-notes-text");
+      input(notes, firstNote);
+      const savedFirstPage = notes.value;
+      document.getElementById("add-journal-page").click();
+      input(notes, secondNote);
+      const savedSecondPage = notes.value;
+      document.querySelector('#journal-page-tabs [data-journal-page="1"]').dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true }));
+      const pageRename = await until(() => document.querySelector("#journal-page-tabs input"), "backup page rename");
+      input(pageRename, pageName);
+      pageRename.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      for (const [id, value] of [["journal-font", "serif"], ["journal-size", "large"], ["journal-spacing", "spacious"]]) {
+        document.getElementById(id).value = value;
+        document.getElementById(id).dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      journalTab("log").click();
+      const savedLog = document.getElementById("journal-log-out").textContent;
+      assert(savedLog.includes("\tpage-add"), "the fixture did not record its notebook action");
+      journalTab("state").click();
+      const privateSnapshot = document.getElementById("journal-state-private");
+      privateSnapshot.checked = true;
+      privateSnapshot.dispatchEvent(new Event("change", { bubbles: true }));
+      await until(() => document.getElementById("journal-state-text").textContent.includes(keyName), "fixture in the snapshot");
+
+      // Exercise the top-level action while a different Journal section is
+      // selected. The same encrypted file must carry every section.
+      state.downloadName = "";
+      state.lastBlob = null;
+      document.getElementById("journal-global-download").click();
+      const backup = await (await until(() => state.downloadName === "entropylab-journal.json" && state.lastBlob, "complete Journal download")).text();
+      for (const secret of [entryInput, entryNotes, firstNote, secondNote, keyName]) assert(!backup.includes(secret), "the protected complete Journal exposed plaintext");
+      equal(JSON.parse(backup).entropylabJournal, 2);
+
+      // Remove the fixture from live Key Station after clearing the Journal.
+      // Reopening may restore its inputs and historical text, never its wallet.
+      await clearJournal();
+      document.querySelector('#workspace [data-workspace="calc"]').click();
+      if (fixtureTab().getAttribute("aria-selected") !== "true") fixtureTab().click();
+      document.getElementById("delete-key").click();
+      await until(() => !fixtureTab(), "live fixture key removed");
+      const liveTabsBeforeOpen = stationTabs().map((tab) => `${tab.id}:${tab.textContent}`).join("|");
+      document.querySelector('#workspace [data-workspace="journal"]').click();
+      document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
+      const file = document.getElementById("journal-file");
+      Object.defineProperty(file, "files", { configurable: true, value: [new File([backup], "complete-journal.json", { type: "application/json" })] });
+      file.dispatchEvent(new Event("change", { bubbles: true }));
+      input(document.getElementById("journal-open-password"), password);
+      document.getElementById("journal-unlock").click();
+      await until(() => !document.getElementById("journal-global-download").disabled || document.getElementById("journal-error").textContent, "complete Journal opened");
+      assert(!document.getElementById("journal-global-download").disabled, document.getElementById("journal-error").textContent);
+      equal(stationTabs().map((tab) => `${tab.id}:${tab.textContent}`).join("|"), liveTabsBeforeOpen);
+
+      const entry = [...document.querySelectorAll("#journal-list [data-journal-id]")].find((item) => item.textContent.includes(entryLabel));
+      assert(entry, "the complete backup lost its entry");
+      entry.click();
+      const reveal = document.getElementById("journal-reveal");
+      reveal.checked = true;
+      reveal.dispatchEvent(new Event("change", { bubbles: true }));
+      assert(document.getElementById("journal-view").textContent.includes(entryInput), "the complete backup lost entry input");
+      assert(document.getElementById("journal-view").textContent.includes(entryNotes), "the complete backup lost entry notes");
+
+      journalTab("notes").click();
+      equal(document.querySelectorAll("#journal-page-tabs [data-journal-page]").length, 2);
+      const restoredPage = document.querySelector('#journal-page-tabs [data-journal-page="1"]');
+      equal(restoredPage.getAttribute("aria-selected"), "true");
+      assert(restoredPage.textContent.includes(pageName), "the complete backup lost the page name");
+      equal(notes.value, savedSecondPage);
+      for (const [id, value] of [["journal-font", "serif"], ["journal-size", "large"], ["journal-spacing", "spacious"]]) equal(document.getElementById(id).value, value);
+      document.querySelector('#journal-page-tabs [data-journal-page="0"]').click();
+      equal(notes.value, savedFirstPage);
+      journalTab("log").click();
+      assert(document.getElementById("journal-log-out").textContent.includes(savedLog), "the complete backup lost the saved session log");
+      journalTab("state").click();
+      equal(privateSnapshot.checked, false);
+      assert(!document.getElementById("journal-state-text").textContent.includes(keyName), "the historical snapshot was revealed on open");
+      privateSnapshot.click();
+      assert(document.getElementById("journal-state-text").textContent.includes(keyName), "the complete backup lost the historical snapshot");
+      privateSnapshot.click();
+
+      journalTab("keymanager").click();
+      const managed = [...document.querySelectorAll("#journal-keymanager-tabs [id]")].find((tab) => tab.textContent === keyName);
+      assert(managed, "the complete backup lost its managed source input");
+      managed.click();
+      assert(/unverified/i.test(document.getElementById("journal-keymanager-panel").textContent), "the restored source input must remain unverified");
+      assert(document.getElementById("journal-keymanager-add-all").disabled, "restored source inputs must not install cached wallets");
+      equal(stationTabs().map((tab) => `${tab.id}:${tab.textContent}`).join("|"), liveTabsBeforeOpen);
+    } finally {
+      await clearJournal();
+      document.querySelector('#workspace [data-workspace="calc"]').click();
+      const remainingFixture = fixtureTab();
+      if (remainingFixture) {
+        if (remainingFixture.getAttribute("aria-selected") !== "true") remainingFixture.click();
+        document.getElementById("delete-key").click();
+      }
+      document.getElementById("key-tab-lab").click();
+      input(document.getElementById("pass"), "");
+      chooseSeedWords(24);
+    }
+  });
+
   await test("browser translation adds a latched warning to the security log", async () => {
     // Earlier tests deliberately dispatch pagehide; resume the public log
     // through the same persisted-pageshow boundary a restored page uses.

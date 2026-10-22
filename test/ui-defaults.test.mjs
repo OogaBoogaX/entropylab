@@ -1712,7 +1712,7 @@ test("one PSBT workspace contains PSBT Inspector, PSBT Editor and Nonce Inspecto
 test("Journal gates its five tools behind the local notebook", () => {
   assert.match(appSource, /\["journal", "Journal", "Journal"\]/);
   assert.match(appSource, /import \{[\s\S]*wipeJournal,[\s\S]*\} from "\.\/journal\.js"/);
-  assert.match(appSource, /import \{[\s\S]*sealDocument as hodlJournalSealDocument,[\s\S]*\} from "\.\/journal\.js"/);
+  assert.match(appSource, /import \{[\s\S]*sealBackup as hodlJournalSealBackup,[\s\S]*\} from "\.\/journal\.js"/);
   assert.match(appSource, /openExport as hodlJournalOpenExport/);
   assert.match(appSource, /sealExport as hodlJournalSealExport/);
   assert.match(appSource, /function hodlShowJournalTool\(id, focus = false\)/);

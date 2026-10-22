@@ -248,31 +248,45 @@ an explicit error before those pairs are allocated.
   wallet birthday are shown alongside the node key; the decoded entropy and
   salt and the BIP32 root xprv (what `chantools showrootkey` prints) sit
   behind a reveal toggle. Decoding only: the tab never creates seeds.
-- A session **Journal** (temporarily hidden from release navigation while its
-  backup and restore flow is polished) holds an **Entropy
-  Journal** notebook, a notepad stamped with this computer's date and time,
+- A session **Journal** holds an **Entropy Journal** notebook, a notepad
+  stamped with this computer's date and time,
   a Key Manager, a live summary of everything derived in this sitting, and a debug log
   of tool switches and derives (fingerprints, not seeds). Its introduction
   remains above the Journal controls. Notepad, Key manager, Session state, and Session log
   stay visible but disabled until the user creates a journal, with or without
   a password, or successfully opens an existing journal; the create/open gate
-  then disappears and the Journal starts on Notepad. The create form reports
+  then disappears and the Journal starts on Entries. The create form reports
   whether password protection is enabled and checks confirmation matches live
   without exposing what was typed. A blank password is accepted and provides
   no access protection: anyone holding the resulting file can open it by
   leaving the password blank. Journal-wide **Download journal** and **Clear journal** actions stay
-  below the introduction once a journal is unlocked; clearing wipes the
+  below the introduction once a journal is unlocked. **Download journal**
+  (also **Save file** in Entries) saves one complete backup: entries, every
+  notepad page and its formatting, all managed and ignored key inputs with
+  their inclusion selection, the session snapshot, and the session log.
+  Finish or cancel an entry edit before downloading. Changes to notes and
+  managed keys also mark the Journal as unsaved; edits made while a download
+  is encrypting remain unsaved. Clearing wipes the
   entries, notepad, session snapshot, and log from page memory and
   returns to the create/open gate. The notebook keeps
   entropy the user already produced — dice, coins, hex, brain-wallet text, or
   a seed — under AES-256-GCM; the key is PBKDF2-SHA-256 (600,000 rounds) of the
   optional password the user chooses, with the salt derived from that password
   and the IV HMAC-SHA-256 of the plaintext, so the file is a pure function of
-  password and entries and no CSPRNG is ever called. One JSON file the user
+  password and backup content and no CSPRNG is ever called. One JSON file the user
   downloads and loads back. Nothing is stored in the browser; download a file
   to keep it. Closing the page discards the sitting. The notebook is a
   calculator companion, not a password manager: it only stores material the
   user generated themselves.
+  Opening that file restores the Journal sections together. Saved snapshots
+  are historical text, concealed until explicitly revealed; they do not
+  recreate live wallets, multisig sessions, or PSBTs. Managed keys restore as
+  unverified inputs requiring fresh derivation. Existing derived Key Station
+  keys are recorded on create/open, and later derives are recorded while the
+  Journal remains open. Old entry-only files remain readable; complete backups
+  require the updated reader (payload version 3). Separate section downloads
+  remain available. The Journal file always uses its password setting,
+  independently of the plain-text export checkboxes.
   The **Key manager** tab packages selected Key Station source inputs and
   settings, including ignored entries, into an `.elkeys` file. It reuses the unlocked
   Journal's password setting, so it adds no password prompt, random salt,

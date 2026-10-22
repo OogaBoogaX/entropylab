@@ -63,6 +63,7 @@ const varLine = (name) => {
 // real journal.js; the Key Manager reset and the tab renderers are spies (the
 // reset's own byte wiping is pinned in test/secret-clear.test.mjs).
 const LIFECYCLE_SLICES = [
+  "hodlJournalUnlocked", "hodlJournalMarkDirty", "hodlJournalNoteText",
   "hodlJournalActivePage", "hodlJournalStoreNotesText", "hodlJournalRenderVisual",
   "hodlJournalSyncPendingPrompt", "hodlJournalSyncCopyButton", "hodlJournalRenderPendingPrompt",
   "hodlJournalRefreshPendingNote", "hodlJournalResetPendingNote", "hodlJournalPendingLineIndex",

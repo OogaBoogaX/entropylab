@@ -105,12 +105,15 @@ material. Its security posture rests on the following model:
   and on page hide because station wipes cannot reach them. Locking the
   Journal empties the session's unsecured text: the snapshot (which can
   hold the whole session's recovery texts), the notepad, and the session
-  log; the notebook's own entries come back from the journal file on
-  unlock. The
+  log, including historical snapshots restored from a backup. Opening a
+  complete journal file restores its saved sections; entry-only legacy files
+  restore only entries. The
   Vanity source block drops the passphrase it displayed the moment the key
   pick is dropped. Journal teardown (including Lock) invalidates pending
   notebook and Key Manager imports at both file-read and decryption
-  boundaries. Obsolete completions cannot restore cleared state; this is
+  boundaries, and invalidates a pending complete-backup download. Changing
+  the chosen journal file while it decrypts also discards that obsolete open.
+  Obsolete completions cannot restore cleared state; this is
   not guaranteed erasure of immutable strings or browser-managed memory.
 - Secret byte buffers are overwritten after use, on a best-effort basis. The
   WASM bindings zero every linear-memory buffer before freeing it
@@ -240,6 +243,18 @@ material. Its security posture rests on the following model:
   The log records tool
   names, timestamps, and fingerprints — not seed phrases, xprvs, or typed
   secrets.
+- A complete Journal download seals entries, notepad pages, managed/ignored
+  source inputs, a historical snapshot, and the log in one authenticated
+  payload. It uses document version 3 inside the unchanged version 2 encrypted
+  envelope; entry-only version 2 documents remain readable. Every component
+  is parsed and bounded before installation. The combined plaintext remains
+  limited to 1,048,576 UTF-16 code units and the downloaded JSON to 4 MiB; a larger backup is refused
+  rather than silently truncated. Imported snapshots are untrusted historical
+  text and remain concealed until revealed; they cannot install live wallets
+  or session state. The no-password acknowledgement applies to the entire
+  backup. Restored key inputs still require fresh derivation, including when
+  the backup was password protected. The whole backup always uses the
+  Journal's password setting, regardless of separate-export checkboxes.
 - Key Manager lives behind the same unlocked Journal gate. Its `.elkeys`
   exports reuse the Journal's deterministic export encryption and optional password;
   the Key Manager does not generate a salt, nonce, password, or key material.
@@ -258,13 +273,13 @@ material. Its security posture rests on the following model:
   AES-256-GCM key is PBKDF2-SHA-256 (600,000 rounds) of the optional password
   the user types, with the salt derived from the password itself; the IV is
   HMAC-SHA-256 of the plaintext under a second derived key. The file is
-  therefore a deterministic function of the password and the entries — the
+  therefore a deterministic function of the password and backup content — the
   journal never calls a CSPRNG. The trade-off is brute-force cost: anyone
   holding a password-protected file can test passwords at 600,000 SHA-256
   rounds per guess, so a password should have real length. An empty password
   is allowed to preserve a frictionless local workflow and the same file
   format, but it provides no access protection: anyone with the file can open
-  every entry by leaving the password blank. The plaintext never goes to
+  every saved section by leaving the password blank. The plaintext never goes to
   localStorage, IndexedDB, or the network.
 - Low-entropy dice and card transcripts are accepted intentionally so the
   calculator can be used for deterministic tests, demonstrations, and
@@ -356,8 +371,8 @@ the panels that echo what you typed (dealt cards, the worked calculations,
 the fairness tally, the progress lines) and the two dialogs (the value
 editor and the QR view) — the dialogs also drop their contents the moment
 you close them. Locking the Journal empties the session snapshot, the
-notepad, and the session log; what an unlock restores is the notebook the
-journal file holds, nothing looser. The WebAssembly modules overwrite every
+notepad, and the session log, including imported historical snapshots; an
+unlock restores only the data held in the saved journal file. The WebAssembly modules overwrite every
 buffer passed in or out and their working stacks after they run, and the
 PSBT module also wipes the whole-file copies its exports assemble. Vanity
 shuts its workers and their module down when a run ends. The

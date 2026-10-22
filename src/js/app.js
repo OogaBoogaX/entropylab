@@ -97,7 +97,7 @@ import {
   removeEntry as hodlJournalRemoveEntry,
   replaceEntry as hodlJournalReplaceEntry,
   searchEntries as hodlJournalSearch,
-  sealDocument as hodlJournalSealDocument,
+  sealBackup as hodlJournalSealBackup,
   sealExport as hodlJournalSealExport,
   syncKeySnapshots as hodlJournalSyncKeySnapshots,
   snapshotFromKeyState as hodlJournalKeySnapshot,
@@ -15672,10 +15672,13 @@ function hodlJournalApplyPageStyle() {
 function hodlJournalSetPageStyle(property, value) {
   let page = hodlJournalActivePage();
   if (!page) return;
+  let previous = page.style[property];
   page.style = hodlNormalizeJournalPageStyle({ ...page.style, [property]: value });
+  if (previous !== page.style[property]) hodlJournalMarkDirty();
   hodlJournalApplyPageStyle();
 }
-function hodlJournalStoreNotesText(field) {
+function hodlJournalStoreNotesText(field, markDirty = true) {
+  if (markDirty && hodlJournal.notesText !== field.value) hodlJournalMarkDirty();
   hodlJournal.notesText = field.value;
   let page = hodlJournalActivePage();
   if (page) page.notesText = field.value;
@@ -15859,6 +15862,7 @@ function hodlDeleteActiveJournalPage() {
 }
 function hodlJournalLog(action, detail = "", tool = hodlWorkspace) {
   hodlJournalAppend(hodlJournal, { tool, action, detail });
+  hodlJournalMarkDirty();
   hodlScheduleJournalStateRefresh();
   if (hodlWorkspace === "journal" && hodlJournalTool === "log") hodlRenderJournalLog();
 }
@@ -16216,7 +16220,7 @@ function hodlInitJournalToolTabs() {
   if (notesText) {
     hodlRenderJournalPageTabs();
     hodlJournalRestorePage(notesText);
-    setInterval(() => hodlJournalRefreshPendingNote(notesText), 1e3);
+    setInterval(() => hodlJournalRefreshPendingNote(notesText, false), 1e3);
     notesText.addEventListener("input", (event) => hodlJournalUpdateNotesText(notesText, event));
     notesText.addEventListener("keydown", (event) => hodlJournalNotesKeydown(event, notesText));
     notesText.addEventListener("select", () => hodlJournalProtectStampSelection(notesText));
@@ -16404,7 +16408,7 @@ function hodlJournalFinishPendingNote(field) {
   let prompt = document.getElementById("journal-notes-prompt");
   if (prompt) prompt.hidden = true;
 }
-function hodlJournalRefreshPendingNote(field) {
+function hodlJournalRefreshPendingNote(field, markDirty = true) {
   let index = hodlJournalPendingLineIndex(field);
   if (index < 0) return;
   let lines = field.value.split("\n"), stamp = `${hodlJournalStamp()}  `;
@@ -16412,7 +16416,7 @@ function hodlJournalRefreshPendingNote(field) {
   field.value = lines.join("\n");
   let caret = hodlJournalLineStartAt(field.value, index) + stamp.length;
   field.setSelectionRange(caret, caret);
-  hodlJournalStoreNotesText(field);
+  hodlJournalStoreNotesText(field, markDirty);
   hodlJournalRenderPendingPrompt(field);
 }
 function hodlJournalResetPendingNote(field, label, lineIndex = field.value.split("\n").length - 1) {
@@ -16648,11 +16652,19 @@ function hodlJournalRefreshSessionState() {
     sp,
     psbt,
   });
+  let currentText = text;
+  // A restored snapshot describes the saved sitting, never the live wallets.
+  // Its private text follows the same explicit reveal control as live text.
+  let saved = hodlJournal.backup?.snapshot;
+  if (saved) text = hodlTText("Saved session snapshot (historical)") + "\n" +
+    (!includePrivate ? hodlTText("Private value hidden") : saved.text) +
+    "\n\n" + hodlTText("Current session snapshot") + "\n" + text;
   hodlJournal.stateText = text;
   let field = document.getElementById("journal-state-text");
   if (field) field.textContent = text;
   let copyHost = document.getElementById("journal-state-copy");
   if (copyHost && !copyHost.firstElementChild) copyHost.innerHTML = hodlPrivateCopyButton({ label: hodlTText("Copy session snapshot") });
+  return currentText;
 }
 function hodlScheduleJournalStateRefresh() {
   if (hodlJournalStateRefreshQueued) return;
@@ -16664,7 +16676,7 @@ function hodlScheduleJournalStateRefresh() {
 }
 // The encrypted entropy notebook gates the Journal tools and keeps its
 // document and Web Crypto keys apart from the session notepad.
-var hodlJournalKeys = null, hodlJournalDoc = null, hodlJournalFileText = "", hodlJournalDirty = false, hodlJournalGate = "create", hodlJournalReveal = false, hodlJournalEditingId = null, hodlJournalDeleteArmed = false, hodlJournalEntryVariants = {}, hodlJournalKeyEntries = new Map();
+var hodlJournalKeys = null, hodlJournalDoc = null, hodlJournalFileText = "", hodlJournalDirty = false, hodlJournalBackupRevision = 0, hodlJournalGate = "create", hodlJournalReveal = false, hodlJournalEditingId = null, hodlJournalDeleteArmed = false, hodlJournalEntryVariants = {}, hodlJournalKeyEntries = new Map();
 function hodlJournalReadEntryVariants(entry) {
   if (!entry) return {};
   return Object.fromEntries(["diceMethod", "entropyFormat", "cardMethod", "seedMethod"].filter((field) => entry[field]).map((field) => [field, entry[field]]));
@@ -16790,6 +16802,13 @@ function hodlJournalSetGate(mode) {
 }
 function hodlJournalUnlocked() {
   return Boolean(hodlJournalKeys && hodlJournalDoc);
+}
+function hodlJournalMarkDirty() {
+  if (!hodlJournalUnlocked()) return;
+  hodlJournalDirty = true;
+  hodlJournalBackupRevision++;
+  let note = document.getElementById("journal-status-note");
+  if (note) note.textContent = hodlJournalNoteText();
 }
 function hodlJournalNoteText() {
   if (!hodlJournalDoc) return hodlTText("Create a journal or open a journal file.");
@@ -17096,8 +17115,9 @@ async function hodlJournalUnlock() {
     // against the module variable lets another file choice during the await
     // empty it, and the armed branch is then skipped for a passwordless file
     // that was never acknowledged.
+    let chosenRead = hodlJournalFileRead;
     let opened = await hodlJournalOpenDocument(text, document.getElementById("journal-open-password")?.value || "");
-    if (generation !== hodlJournalGeneration) return hodlJournalDiscardOpened(opened);
+    if (generation !== hodlJournalGeneration || chosenRead !== hodlJournalFileRead) return hodlJournalDiscardOpened(opened);
     if (!opened.keys.passwordProtected && hodlJournalOpenReadyFor !== text) {
       // Passwordless envelope: the entries it holds are authenticated by
       // nothing, so the first open of this file only arms the no-protection
@@ -17122,6 +17142,10 @@ async function hodlJournalUnlock() {
     hodlJournalKeys = opened.keys;
     hodlJournalDoc = opened.doc;
     hodlJournalDirty = false;
+    if (opened.doc.backup) {
+      hodlJournalRestoreBackup(opened.doc.backup);
+      delete opened.doc.backup;
+    } else wipeJournal(hodlJournal);
     hodlJournalBackfillDerivedKeys();
     document.getElementById("journal-open-password").value = "";
     document.getElementById("journal-file").value = "";
@@ -17137,21 +17161,77 @@ async function hodlJournalUnlock() {
     hodlJournalUnlockBusy = false;
   }
 }
+function hodlJournalCollectBackup() {
+  let field = document.getElementById("journal-notes-text");
+  if (field) hodlJournalStoreNotesText(field);
+  let currentText = hodlJournalRefreshSessionState();
+  let states = hodlKeyManagerStates(), activeKey = states.findIndex((state) => keyVaultIdentity(state) === hodlKeyManagerActiveId);
+  let snapshot = { text: currentText, includePrivate: Boolean(document.getElementById("journal-state-private")?.checked) };
+  let saved = hodlJournal.backup?.snapshot;
+  if (saved) snapshot = {
+    text: hodlTText("Saved session snapshot (historical)") + "\n" + saved.text + "\n\n" + hodlTText("Current session snapshot") + "\n" + snapshot.text,
+    includePrivate: saved.includePrivate || snapshot.includePrivate,
+  };
+  return {
+    notebook: hodlSerializeNotebook(hodlJournal),
+    keyManager: serializeKeyVault(states.map(hodlKeyManagerEntry), hodlKeyManagerIgnored.map(hodlKeyManagerEntry)),
+    includedKeys: states.flatMap((state, index) => hodlKeyManagerIds.has(keyVaultIdentity(state)) ? [index] : []),
+    activeKey: activeKey < 0 ? null : activeKey,
+    snapshot,
+    log: hodlJournal.log.map((event) => ({ ...event })),
+  };
+}
+function hodlJournalRestoreBackup(backup) {
+  // Parsing validated every component before this point. Imported keys still
+  // enter Pending with fresh IDs, never the live Key Station or its outputs.
+  let restoreInput = (entry) => hodlKeyManagerImportedState(JSON.parse(JSON.stringify(entry)));
+  let pending = backup.keyManager.keys.map(restoreInput);
+  let ignored = backup.keyManager.ignoredKeys.map(restoreInput);
+  wipeJournal(hodlJournal);
+  for (let name of ["pages", "activePage", "nextPageId", "nextPageNumber", "notesText"]) hodlJournal[name] = backup.notebook[name];
+  hodlJournal.log = backup.log;
+  hodlJournal.backup = { snapshot: backup.snapshot };
+  hodlKeyManagerPending = pending;
+  hodlKeyManagerIgnored = ignored;
+  hodlKeyManagerIds = new Set(backup.includedKeys.map((index) => keyVaultIdentity(pending[index])));
+  hodlKeyManagerActiveId = backup.activeKey === null ? "" : keyVaultIdentity(pending[backup.activeKey]);
+  let privateBox = document.getElementById("journal-state-private");
+  if (privateBox) privateBox.checked = false;
+  // Transfer ownership of these sections before clearing the remaining
+  // parsed key inputs. Keeping them attached to the entry document would
+  // wipe active notes when that document is replaced.
+  backup.notebook = null;
+  backup.log = [];
+  backup.snapshot = null;
+  hodlJournalWipeDocument({ entries: [], backup });
+  hodlRenderJournalPageTabs();
+  hodlJournalRestorePage(document.getElementById("journal-notes-text"));
+  hodlJournalApplyPageStyle();
+  hodlRenderJournalLog();
+}
 async function hodlJournalSaveFile() {
   hodlJournalError("");
+  let generation = hodlJournalGeneration, backup;
   try {
     if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
-    let file = await hodlJournalSealDocument(hodlJournalDoc, hodlJournalKeys);
+    if (document.getElementById("journal-editor")?.hidden === false) throw new Error(hodlTText("Save or cancel the entry you are editing before downloading the journal."));
+    backup = hodlJournalCollectBackup();
+    let revision = hodlJournalBackupRevision;
+    let file = await hodlJournalSealBackup(hodlJournalDoc, hodlJournalKeys, backup);
+    if (generation !== hodlJournalGeneration) return;
     let blob = new Blob([JSON.stringify(file, null, 2) + "\n"], { type: "application/json" }), url = URL.createObjectURL(blob), link = document.createElement("a");
     link.href = url;
     link.download = "entropylab-journal.json";
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1e3);
-    hodlJournalDirty = false;
+    hodlJournalDirty = revision !== hodlJournalBackupRevision;
     hodlJournalShowWork();
-    hodlJournalLog("journal-save", `${hodlJournalDoc.entries.length} entries`);
   } catch (exception) {
+    if (generation !== hodlJournalGeneration) return;
+    hodlShowJournalTool("book");
     hodlJournalError(exception.message || String(exception));
+  } finally {
+    hodlJournalWipeDocument({ entries: [], backup });
   }
 }
 function hodlJournalCommit() {

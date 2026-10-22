@@ -781,7 +781,7 @@ words, pick one of the checksum words.</span></span>
       </div>
     <div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>
         <h2>Entropy Journal</h2>
-        <p class="muted tool-intro-note">A local notebook of entropy you already produced. Password is optional. No password means anyone with the file can open it. Not a password manager. Does not generate entropy. Keys you derive while the journal is unlocked are added to it, including their seed words. The journal file is encrypted with your password.</p>
+        <p class="muted tool-intro-note">A local notebook of entropy you already produced. Password is optional. No password means anyone with the file can open it. Not a password manager. Does not generate entropy. Existing derived keys and keys you derive while the journal is unlocked are added to it, including their seed words. Download journal saves entries, notepad pages, managed and ignored key inputs, the session snapshot, and the log together. The journal file is encrypted with your password.</p>
         <div class="row journal-global-actions tool-actions">
           <button class="btn secondary green journal-download-action" id="journal-global-download" type="button" disabled><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span>Download journal</span></button>
           <button class="btn red clear-current-action" id="journal-global-clear" type="button" disabled>Clear journal</button>
@@ -826,7 +826,7 @@ words, pick one of the checksum words.</span></span>
           </label>
           <div class="row bip85-actions tool-actions">
             <button class="btn primary" id="journal-unlock" type="button">Open journal</button>
-            <span class="journal-create-ready" id="journal-open-ready" hidden><span class="journal-create-ready-arrow" aria-hidden="true">←</span> <span class="journal-open-ready-text">This file has no password protection — anyone with it can read or alter its entries. Press Open journal again to accept it.</span></span>
+            <span class="journal-create-ready" id="journal-open-ready" hidden><span class="journal-create-ready-arrow" aria-hidden="true">←</span> <span class="journal-open-ready-text">This file has no password protection — anyone with it can read or alter its contents. Press Open journal again to accept it.</span></span>
           </div>
         </div>
         <p class="sr-only" id="journal-gate-status" role="status" aria-live="polite"></p>

@@ -24,12 +24,14 @@ import {
   JOURNAL_MIN_ITERATIONS,
   addEntry,
   createDocument,
+  createJournal,
   deriveJournalKeys,
   emptyDocument,
   openDocument,
   sealDocument,
   wipeBytes,
   wipeDocument,
+  wipeJournal,
 } from "../src/js/journal.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -91,7 +93,7 @@ const loadApp = ({ password = "", onOpen = (file, password) => openDocument(file
     "hodlJournalWipeDocument", "hodlJournalWipeBytes",
     "hodlKeyManagerReset", "hodlJournalHideEditor",
     "hodlJournalShowWork", "hodlShowJournalTool", "hodlJournalLog",
-    "hodlJournalBackfillDerivedKeys", "hodlJournalDiscardOpened", "hodlTText",
+    "hodlJournalBackfillDerivedKeys", "hodlJournalDiscardOpened", "hodlTText", "wipeJournal", "hodlJournal",
     `${source}; return {
       choose: hodlJournalChooseFile,
       unlock: hodlJournalUnlock,
@@ -107,7 +109,7 @@ const loadApp = ({ password = "", onOpen = (file, password) => openDocument(file
     noop,
     noop, noop, noop,
     noop, noop, noop,
-    (text) => text,
+    (text) => text, wipeJournal, createJournal(),
   );
   return { ...api, error: () => fields["journal-error"].textContent };
 };
