@@ -280,7 +280,7 @@ test("the Android README documents that file import, downloads and print are una
   assert.match(section, /\*\*Print\.\*\*/);
   assert.match(section, /use the offline HTML/);
   const activity = read("android/app/src/main/java/online/entropylab/android/MainActivity.java");
-  assert.doesNotMatch(activity, /onShowFileChooser|setDownloadListener|PrintManager|createPrintDocumentAdapter/, "the wrapper now handles files, downloads or print; update android/README.md");
+  assert.doesNotMatch(activity, /onShowFileChooser|setDownloadListener|addJavascriptInterface|PrintManager|createPrintDocumentAdapter/, "the wrapper now handles files, downloads or print; update android/README.md");
 });
 
 // The Android wrapper job runs ./gradlew and its jar after checkout, so the

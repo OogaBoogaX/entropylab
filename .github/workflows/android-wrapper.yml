@@ -40,3 +40,14 @@ jobs:
       - name: Verify packaged bytes, permissions and merged manifest
         working-directory: android
         run: python3 verify-apk.py app/build/outputs/apk/debug/app-debug.apk "$ANDROID_HOME/build-tools/35.0.0/aapt"
+      # Fail closed at build time: one changed byte must stop Gradle packaging.
+      - name: Check the Gradle pin refuses a changed asset
+        working-directory: android
+        run: |
+          cp app/src/main/assets/entropylab.html "$RUNNER_TEMP/entropylab.html"
+          printf '\n' >> app/src/main/assets/entropylab.html
+          if ./gradlew :app:verifyEntropylabHtml --no-daemon > "$RUNNER_TEMP/pin.log" 2>&1; then
+            echo "Gradle accepted an entropylab.html that does not match the pin"; exit 1
+          fi
+          grep -q 'Refusing to package entropylab.html' "$RUNNER_TEMP/pin.log"
+          cp "$RUNNER_TEMP/entropylab.html" app/src/main/assets/entropylab.html

@@ -4,7 +4,7 @@ This directory is a thin Android wrapper around the **release** file `entropylab
 
 ## Pinned release bytes
 
-The HTML the APK embeds is **vendored** at `app/src/main/assets/entropylab.html`. These are the published **v1.0.0rc1** release bytes, SHA-256 `7f8685814e2bab0c80f75dd6d2cff1b3354bee51faecd65942a73e12968808a0`, taken from the GitHub release and verified against that release's `SHA256SUMS.txt`/`SHA256SUMS.asc` before committing. The same digest is the pin in `ENTROPYLAB_HTML.sha256`; `ENTROPYLAB_HTML.version` pins its displayed release identity independently of the root package version.
+The HTML the APK embeds is **vendored** at `app/src/main/assets/entropylab.html`. These are the published **v1.0.0rc1** release bytes, SHA-256 `7f8685814e2bab0c80f75dd6d2cff1b3354bee51faecd65942a73e12968808a0`, taken from the GitHub release and checked against that release's `SHA256SUMS.txt` before committing. The `SHA256SUMS.asc` signature was not verified locally (no `gpg` on that host); check it before the next pin update. The same digest is the pin in `ENTROPYLAB_HTML.sha256`; `ENTROPYLAB_HTML.version` pins its displayed release identity independently of the root package version.
 
 The wrapper deliberately does **not** package the `entropylab.html` at the repository root: that file is a CI artifact rebuilt and recommitted on every merge to `rock`, so a pin against it goes stale on merge. The vendored asset changes only when this module is deliberately updated to a new release.
 
