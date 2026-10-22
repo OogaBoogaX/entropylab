@@ -129,10 +129,7 @@ export function formatNotebook(text) {
     return !name || name.trim().toLowerCase() === cleanFingerprint
       ? `[Key: ${cleanFingerprint}]`
       : `[Key: ${name} · ${cleanFingerprint}]`;
-  }).split("\n")
-    .filter((line) => !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  (?:Add new note)?$/.test(line))
-    .join("\n")
-    .trimEnd();
+  }).trimEnd();
   return cleaned || "No notes.";
 }
 
@@ -211,10 +208,7 @@ export function journalFromPlainText(text) {
 }
 
 export function notebookPageHasContent(text) {
-  return String(text ?? "").split("\n").some((line) => {
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}  (?:Add new note)?\s*$/.test(line)) return false;
-    return line.trim().length > 0;
-  });
+  return String(text ?? "").trim().length > 0;
 }
 
 export function mergeNotebookImport(journal, imported) {

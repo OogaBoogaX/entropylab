@@ -24,7 +24,7 @@ function stationHarness(keys, pending, ignored = []) {
   const calls = [];
   const context = {
     hodlKeys: keys, hodlKeyManagerPending: pending, hodlKeyManagerIgnored: ignored,
-    hodlActiveKey: 0, keyVaultIdentity,
+    hodlActiveKey: 0, hodlActiveDerivation: null, keyVaultIdentity,
     hodlJournalLog: (...args) => calls.push(args),
     hodlInvalidateDerivation: () => calls.push(["invalidate"]),
     hodlRenderKeyTabs: () => calls.push(["tabs"]),
@@ -32,51 +32,57 @@ function stationHarness(keys, pending, ignored = []) {
     hodlShowWorkspace: (id) => calls.push(["workspace", id]),
   };
   runInNewContext(slice("hodlKeyManagerStates", "hodlKeyManagerEntry") +
-    slice("hodlKeyLogLabel", "hodlKeyManagerToggle") +
-    slice("hodlKeyManagerUseAllInStation", "hodlKeyManagerIgnore"), context);
+    slice("hodlKeyLogLabel", "hodlKeyManagerImportedState") +
+    slice("hodlKeyManagerUseInStation", "hodlKeyManagerIgnore"), context);
   return { context, calls };
 }
 
-test("Add all transfers pending keys once, preserving existing and ignored keys", () => {
+test("using a key transfers only that pending input, preserving existing and archived keys", () => {
   const existing = key(), first = key({ result: { masterFingerprint: "11111111" } }),
     second = key({ result: { masterFingerprint: "22222222" } }), ignored = key({ name: "Ignored" });
   const lab = { isLab: true, fields: { seed: "unfinished input" } };
   const keys = [lab, existing], pending = [first, second], ignoredKeys = [ignored];
   const before = JSON.stringify([first, second, lab, ignored]);
   const { context, calls } = stationHarness(keys, pending, ignoredKeys);
-  context.hodlKeyManagerUseAllInStation();
-  assert.deepEqual(keys, [lab, existing, first, second]);
-  assert.equal(pending.length, 0);
+  context.hodlKeyManagerUseInStation(first);
+  assert.deepEqual(keys, [lab, existing, first]);
+  assert.deepEqual(pending, [second]);
   assert.equal(context.hodlActiveKey, 2);
   assert.equal(JSON.stringify([first, second, lab, ignored]), before);
   assert.deepEqual(ignoredKeys, [ignored]);
   assert.deepEqual(calls, [
     ["invalidate"],
-    ["key-manager-use", "11111111", "journal"], ["key-manager-use", "22222222", "journal"],
-    ["tabs"], ["manager"], ["workspace", "calc"],
+    ["tabs"], ["key-manager-use", "11111111", "journal"], ["workspace", "calc"],
   ]);
-  context.hodlKeyManagerUseAllInStation();
+  calls.length = 0;
+  context.hodlKeyManagerUseInStation(second);
+  assert.deepEqual(keys, [lab, existing, first, second]);
+  assert.equal(pending.length, 0);
+  assert.equal(context.hodlActiveKey, 3);
+  assert.deepEqual(calls, [["invalidate"], ["tabs"], ["key-manager-use", "22222222", "journal"], ["workspace", "calc"]]);
+  context.hodlKeyManagerUseInStation(second);
   assert.equal(keys.length, 4);
-  assert.equal(calls.length, 6, "repeated activation does nothing");
+  assert.equal(context.hodlActiveKey, 3, "repeated activation focuses the same key");
+  assert.equal(JSON.stringify([first, second, lab, ignored]), before);
 });
 
-test("Add all ignores duplicate identities and does nothing without pending keys", () => {
+test("using a duplicate identity focuses the existing key after invalidating derivation", () => {
   const existing = key(), duplicate = key({ name: "Duplicate" });
   const { context, calls } = stationHarness([existing], [duplicate]);
-  context.hodlKeyManagerUseAllInStation();
+  context.hodlKeyManagerUseInStation(duplicate);
   assert.equal(context.hodlKeys.length, 1);
+  assert.equal(context.hodlKeys[0], existing);
   assert.equal(context.hodlActiveKey, 0);
-  assert.deepEqual(calls, []);
-  const empty = stationHarness([], []);
-  empty.context.hodlKeyManagerUseAllInStation();
-  assert.deepEqual(empty.calls, []);
+  assert.deepEqual(context.hodlKeyManagerPending, [duplicate]);
+  assert.deepEqual(calls, [["invalidate"], ["tabs"], ["key-manager-use", "deadbeef", "journal"], ["workspace", "calc"]]);
 });
 
-test("Add all is disabled initially and refreshed from available managed keys", () => {
-  assert.match(read("src/shell.html"), /id="journal-keymanager-add-all" type="button" disabled>Add all to Key Station/);
-  const source = read("src/js/app.js");
-  assert.match(source, /addAll\.disabled = !states\.some\(\(state\) => !state\.needsDerivation && !hodlKeys\.includes\(state\)\)/);
-  assert.match(source, /addAll\.onclick = hodlKeyManagerUseAllInStation/);
+test("using a key outside the pending collection cannot install it", () => {
+  const { context, calls } = stationHarness([], []);
+  context.hodlKeyManagerUseInStation(key());
+  assert.deepEqual(context.hodlKeys, []);
+  assert.deepEqual(context.hodlKeyManagerPending, []);
+  assert.ok(!calls.some(([kind]) => kind === "workspace" || kind === "key-manager-use"));
 });
 
 function key(overrides = {}) {

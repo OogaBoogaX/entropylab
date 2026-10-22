@@ -91,7 +91,7 @@ function sectionHarness() {
     hodlJournalRenderVisual() {}, hodlRenderJournalPageTabs() {},
     hodlJournalRestorePage() {}, hodlJournalApplyPageStyle() {},
     hodlKeyManagerRender() {}, hodlRenderJournalLog() {},
-    hodlJournalRefreshSessionState() { journal.stateText = SNAPSHOT; return SNAPSHOT; },
+    hodlJournalSessionSnapshot() { return SNAPSHOT; },
     hodlKeyManagerStatus() {}, hodlJournalSetStatus() {},
     hodlJournalNoteText: () => "",
     hodlTText: (text) => text,
@@ -185,13 +185,35 @@ test("collecting a reopened Journal preserves its historical snapshot even when 
   const { context: c, journal, fields } = sectionHarness();
   journal.backup = { snapshot: { text: "Historical private snapshot that must survive a second backup.", includePrivate: true } };
   fields.get("journal-state-private").checked = false;
-  c.hodlJournalRefreshSessionState = () => { journal.stateText = "Different live session without saved recovery information."; return journal.stateText; };
+  c.hodlJournalSessionSnapshot = () => { journal.stateText = "Different live session without saved recovery information."; return journal.stateText; };
   loadFunctions(c, ["hodlJournalCollectBackup"]);
   const backup = c.hodlJournalCollectBackup();
   assert.ok(backup.snapshot.text.includes("Historical private snapshot that must survive a second backup."));
   assert.ok(backup.snapshot.text.includes("Different live session without saved recovery information."));
   assert.equal(backup.snapshot.includePrivate, true, "the historical snapshot remains private even while concealed");
   assert.equal(journal.backup.snapshot.text, "Historical private snapshot that must survive a second backup.");
+});
+
+test("complete backup preserves private recovery data without revealing it on screen", () => {
+  for (const reveal of [false, true]) {
+    const { context: c, journal, fields } = sectionHarness();
+    fields.get("journal-state-private").checked = reveal;
+    fields.get("journal-state-text").textContent = "Displayed snapshot unchanged";
+    journal.stateText = "Displayed snapshot unchanged";
+    c.hodlBip85Children = [{ name: "Recovery child", fingerprint: "12345678", result: { app: "bip39", secret: WORDS } }];
+    Object.assign(c, {
+      hodlMsigs: [], hodlSpKeys: null, hodlPsbtNonceInspected: false,
+      hodlPsbtNonceVerdict: "", hodlPsbtNonceVerdictKind: "", hodlPsbtNonceHistory: [], hodlPsbtNonceHistoryVerdict: "",
+      hodlJournalStamp: () => "2026-10-22 11:00:00", hodlJournalSnapshot: snapshotSession,
+    });
+    loadFunctions(c, ["hodlJournalSessionSnapshot", "hodlJournalRefreshSessionState", "hodlJournalCollectBackup"]);
+    const backup = c.hodlJournalCollectBackup();
+    assert.ok(backup.snapshot.text.includes(WORDS), "complete backup omitted recovery data because the display was concealed");
+    assert.equal(backup.snapshot.includePrivate, true);
+    assert.equal(fields.get("journal-state-private").checked, reveal);
+    assert.equal(fields.get("journal-state-text").textContent, "Displayed snapshot unchanged");
+    assert.equal(journal.stateText, "Displayed snapshot unchanged");
+  }
 });
 
 test("saved snapshot text is untrusted and appears only while private recovery material is revealed", () => {
@@ -208,7 +230,7 @@ test("saved snapshot text is untrusted and appears only while private recovery m
     Object.defineProperty(fields.get("journal-state-text"), "innerHTML", {
       set() { assert.fail("imported snapshot text must never become an HTML sink"); },
     });
-    loadFunctions(c, ["hodlJournalRefreshSessionState"]);
+    loadFunctions(c, ["hodlJournalSessionSnapshot", "hodlJournalRefreshSessionState"]);
     const privacy = fields.get("journal-state-private"), readout = fields.get("journal-state-text");
     privacy.checked = false;
     c.hodlJournalRefreshSessionState();
@@ -266,50 +288,21 @@ test("notes, page settings and log events mark the complete Journal dirty while 
   assert.equal(c.hodlJournalBackupRevision, revision);
 });
 
-test("an untouched pending-note clock stays clean after save while typing a note marks it dirty", () => {
-  const { context: c, journal, fields } = sectionHarness();
-  const field = fields.get("journal-notes-text");
-  Object.assign(field, {
-    value: "2026-10-22 10:00:00  ",
-    dataset: { pendingNote: "Add new note", pendingNoteMode: "line", pendingNoteLine: "0" },
-    selectionStart: 21, selectionEnd: 21,
-    setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
-  });
-  journal.notesText = field.value;
-  journal.pages[0].notesText = field.value;
+test("browsing Journal sections leaves saved content clean while mutations require backup", () => {
+  const { context: c, journal } = sectionHarness();
   Object.assign(c, {
-    hodlJournalDirty: false, hodlJournalBackupRevision: 13,
-    hodlJournalStamp: () => "2026-10-22 10:00:01",
     hodlJournalAppend: appendLog, hodlScheduleJournalStateRefresh() {},
     hodlWorkspace: "journal", hodlJournalTool: "notes",
   });
-  runInNewContext(app.match(/^var hodlJournalNoteStampPattern = .*;$/m)[0], c);
-  loadFunctions(c, [
-    "hodlJournalLineStartAt", "hodlJournalLineIndexAt", "hodlJournalPendingLineIndex",
-    "hodlJournalPendingLineStart", "hodlJournalRefreshPendingNote", "hodlJournalRenderPendingPrompt",
-    "hodlJournalNoteCount", "hodlJournalFinishPendingNote", "hodlJournalResetPendingNote",
-    "hodlJournalUpdateNotesText", "hodlJournalLog",
-  ]);
-  // Register and invoke the actual callback installed at startup, so the
-  // timer's suppression argument is exercised rather than restated here.
-  let tick;
-  c.notesText = field;
-  c.setInterval = (callback) => { tick = callback; };
-  const timer = loadSlice("hodlInitJournalToolTabs").split("\n").find((line) => line.includes("setInterval(") && line.includes("hodlJournalRefreshPendingNote"));
-  assert.ok(timer, "the Journal initializer must install its pending-note timer");
-  runInNewContext(timer, c);
-  tick();
-  assert.equal(field.value, "2026-10-22 10:00:01  ", "the pending clock still refreshes");
-  assert.equal(journal.pages[0].notesText, field.value);
-  assert.equal(c.hodlJournalDirty, false, "automatic timestamp refresh must not make a completed backup look unsaved");
-  assert.equal(c.hodlJournalBackupRevision, 13, "an untouched timestamp must not invalidate an in-flight save");
-
-  field.value += "Checked dice sequence.";
-  field.setSelectionRange(field.value.length, field.value.length);
-  c.hodlJournalUpdateNotesText(field, { inputType: "insertText" });
-  assert.equal(journal.pages[0].notesText, "2026-10-22 10:00:01  Checked dice sequence.");
-  assert.equal(c.hodlJournalDirty, true, "a real user edit still needs a fresh backup");
-  assert.ok(c.hodlJournalBackupRevision > 13);
+  loadFunctions(c, ["hodlJournalLog"]);
+  for (const action of ["workspace", "tool-tab", "station-select", "page-select", "theme", "copy", "download", "journal-unlock"]) {
+    c.hodlJournalLog(action, "", "journal");
+    assert.equal(c.hodlJournalDirty, false, `${action} must not pretend content changed`);
+    assert.equal(c.hodlJournalBackupRevision, 0);
+  }
+  c.hodlJournalLog("key-manager-rename", "key-1", "journal");
+  assert.equal(c.hodlJournalDirty, true);
+  assert.equal(journal.log.at(-1).action, "key-manager-rename");
 });
 
 function deferred() {
@@ -386,14 +379,6 @@ test("Save file encrypts the complete collected Journal and marks an unchanged c
   assertCollectedPlaintextCleared(captured);
 });
 
-test("Save file refuses an open entry draft rather than downloading an incomplete backup", async () => {
-  const { context: c, downloads, seals, fields } = saveHarness({ editorOpen: true });
-  assert.equal(await c.hodlJournalSaveFile(), false);
-  assert.equal(seals.length, 0, "an unfinished entry must be saved or canceled before encryption starts");
-  assert.equal(downloads.length, 0);
-  assert.equal(c.hodlJournalDirty, true);
-  assert.ok(fields.get("journal-error").textContent.trim(), "explain why the draft prevented a backup");
-});
 
 test("canceling the clear confirmation suppresses its pending backup without clearing the Journal", async () => {
   const gate = deferred();
@@ -455,18 +440,16 @@ test("a failed encryption preserves unsaved state and reports an error without d
   assertCollectedPlaintextCleared(captured);
 });
 
-test("save errors from another Journal station reveal the panel containing the error", async () => {
-  for (const editorOpen of [true, false]) {
-    const gate = deferred();
-    const { context: c, downloads, fields } = saveHarness({ editorOpen, gate });
-    c.hodlJournalTool = "notes";
-    const saving = c.hodlJournalSaveFile();
-    if (!editorOpen) gate.reject(new Error("backup exceeds file size limit"));
-    await saving;
-    assert.ok(fields.get("journal-error").textContent.trim());
-    assert.equal(c.hodlJournalTool, "book", "draft and encryption errors must not stay in a hidden panel");
-    assert.equal(downloads.length, 0);
-  }
+test("backup errors use global feedback without changing the active Journal section", async () => {
+  const gate = deferred();
+  const { context: c, downloads, fields } = saveHarness({ gate });
+  c.hodlJournalTool = "notes";
+  const saving = c.hodlJournalSaveFile();
+  gate.reject(new Error("backup exceeds file size limit"));
+  await saving;
+  assert.ok(fields.get("journal-error").textContent.trim());
+  assert.equal(c.hodlJournalTool, "notes");
+  assert.equal(downloads.length, 0);
 });
 
 function unlockHarness({ password = "backup password", onOpen = openDocument } = {}) {

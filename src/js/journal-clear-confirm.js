@@ -24,7 +24,7 @@ export const initJournalClearConfirm = ({ onDownload, onDiscard }) => {
   const find = (id) => modal.overlay.querySelector(`#journal-clear-${id}`);
   const download = find("download"), discard = find("discard"), cancel = find("cancel"), status = find("status");
   find("title").textContent = t("Clear journal?");
-  find("message").textContent = t("Discard removes all Journal entries, notepad pages, managed key inputs, snapshots, and logs from this page. Anything you have not backed up will be lost.");
+  find("message").textContent = t("Discard removes Journal notes, saved records, detached and archived key inputs, snapshots, and activity. Anything you have not backed up will be lost. Keys still open in Key Station remain there; use End Session to clear the whole page.");
   download.textContent = t("Download backup first");
   discard.textContent = t("Discard");
   cancel.textContent = t("Cancel");
@@ -68,7 +68,7 @@ export const initJournalClearConfirm = ({ onDownload, onDiscard }) => {
     setBusy(false);
     status.textContent = saved
       ? t("Backup download started. Check that the file was saved before choosing Discard. Your Journal is still open.")
-      : t("The backup was not downloaded. Your Journal is still open. Choose Cancel to resolve the error or finish editing your entry.");
+      : t("The backup was not downloaded. Your Journal is still open. Choose Cancel to resolve the error and try again.");
   });
   return { show, hide };
 };

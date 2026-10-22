@@ -74,8 +74,8 @@ const CLEARING_PATHS = [
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
   },
   {
-    ids: ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-search", "journal-file"],
-    why: "Journal: passwords, raw entropy input, seed phrases, entry text",
+    ids: ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-search", "journal-file"],
+    why: "Journal: passwords and saved-record searches",
     probe: (id) => assert.ok(journalFields.includes(`"${id}"`), `#${id} missing from the journal field clear`),
   },
   {
@@ -165,9 +165,6 @@ const PUBLIC_FIELDS = {
   "branch-start": "address window setting",
   "branch-start-harden": "hardening toggle",
   "derivation-path": "public derivation path text",
-  "journal-log-encrypt": "download-encryption checkbox",
-  "journal-notes-encrypt": "download-encryption checkbox",
-  "journal-state-encrypt": "download-encryption checkbox",
   "msig-account": "derivation setting",
   "msig-account-harden": "derivation setting",
   "msig-address-range": "derivation setting",
@@ -204,7 +201,7 @@ const PUBLIC_FIELDS = {
 };
 
 test("the registry covers every known secret-bearing field", () => {
-  for (const id of ["dice", "pass", "seed", "key", "bip85-key", "sp-key", "psbt-key", "nonce-key", "ln-seed", "journal-input", "journal-phrase", "journal-state-text", "psbted-text", "msig-descriptor", "exp-text"]) {
+  for (const id of ["dice", "pass", "seed", "key", "bip85-key", "sp-key", "psbt-key", "nonce-key", "ln-seed", "journal-search", "journal-state-text", "psbted-text", "msig-descriptor", "exp-text"]) {
     assert.ok(SECRET_FIELDS.includes(id), `#${id} is secret but missing from the registry`);
   }
 });

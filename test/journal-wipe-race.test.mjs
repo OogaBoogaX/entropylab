@@ -66,7 +66,6 @@ const source = [
   varLine("hodlJournalUnlockBusy"),
   varLine("hodlJournalFileRead"),
   varLine("hodlJournalTool"),
-  varLine("hodlJournalEncryptDownloads"),
   loadSlice("hodlJournalError"),
   loadSlice("hodlJournalWipeNotebook"),
   loadSlice("hodlJournalDiscardOpened"),
@@ -93,9 +92,9 @@ const loadApp = ({ onOpen = (file, password) => openDocument(file, password), on
     "wipeJournal", "hodlJournal", "hodlJournalWipeDocument", "hodlJournalWipeBytes",
     "hodlJournalOpenDocument", "hodlJournalCreateDocument", "hodlJournalMaxFileLength", "document",
     "hodlKeyManagerReset", "hodlJournalClearFields", "hodlJournalHideEditor", "hodlJournalSetGate",
-    "hodlJournalSyncEncryptDownloads", "hodlJournalShowWork", "hodlSyncJournalTool",
+    "hodlJournalShowWork", "hodlSyncJournalTool",
     "hodlRenderJournalPageTabs", "hodlJournalApplyPageStyle", "hodlJournalSetStatus",
-    "hodlShowJournalTool", "hodlJournalLog", "hodlJournalBackfillDerivedKeys",
+    "hodlShowJournalTool", "hodlJournalLog",
     `${source}; return {
       choose: hodlJournalChooseFile,
       unlock: hodlJournalUnlock,
@@ -108,9 +107,9 @@ const loadApp = ({ onOpen = (file, password) => openDocument(file, password), on
     wipeJournal, createJournal(), wipeDocument, wipeBytes,
     onOpen, onCreate, JOURNAL_MAX_FILE_LENGTH, documentStub,
     noop, noop, noop, noop,
+    noop, noop,
     noop, noop, noop,
-    noop, noop, noop,
-    noop, noop, noop,
+    noop, noop,
   );
   return { ...api, error: () => fields["journal-error"].textContent };
 };

@@ -12,6 +12,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
+import { MiniDocument } from "./mini-dom.mjs";
+import { entryMethodLabel, parseDocument, removeEntry } from "../src/js/journal.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -59,8 +61,8 @@ for (const view of ["hodlJournalRenderList", "hodlJournalOpenView"]) {
 
 // The helpers, executed in Node through the same app-slice harness
 // test/secret-clear.test.mjs uses.
-const { hodlEscapeHtml, hodlMetadataFieldHtml, hodlPublicFieldHtml, hodlPrivateFieldHtml, hodlPrivateValue } =
-  await loadAppFunctions(["hodlEscapeHtml", "hodlMetadataFieldHtml", "hodlPublicFieldHtml", "hodlPrivateFieldHtml", "hodlPrivateValue"]);
+const { hodlEscapeHtml, hodlMetadataFieldHtml, hodlPublicFieldHtml, hodlPrivateFieldHtml, hodlPrivateFieldMarkup, hodlPrivateValue } =
+  await loadAppFunctions(["hodlEscapeHtml", "hodlMetadataFieldHtml", "hodlPublicFieldHtml", "hodlPrivateFieldHtml", "hodlPrivateFieldMarkup", "hodlPrivateValue"]);
 
 // The journal's own masked-value helper closes over the module's reveal flag,
 // so it is sliced by hand and given its real collaborators: the flag, the
@@ -122,10 +124,73 @@ test("the field helpers escape their labels as well as their values", () => {
   assert.doesNotMatch(hodlPrivateFieldHtml(evil, "value", void 0, "muted", true), /<img\b/);
 });
 
-test("the journal shell wires the entries card as a tab panel and the status note as a live region", () => {
+const savedRecord = {
+  id: 7, method: "dice", diceMethod: "coldcard", input: "654321 secret rolls",
+  phrase: "legacy secret phrase", label: "Saved record", notes: "private legacy note",
+  created: "2026-01-02T03:04:05.000Z", walletId: 12, walletName: "Old wallet", fingerprint: "deadbeef",
+};
+function savedRecordHarness(version) {
+  const raw = { version, nextId: 8, entries: [{ ...savedRecord }] };
+  if (version === 3) raw.backup = {
+    notebook: '{"format":"entropylab-notebook","version":1,"activePage":0,"pages":[{"number":1,"name":"Page 1","content":[{"type":"text","text":"saved notes"}]}]}',
+    keyManager: '{"format":"entropylab-key-manager","version":2,"keys":[],"ignoredKeys":[]}',
+    includedKeys: [], activeKey: null, snapshot: { text: "saved report", includePrivate: false }, log: [],
+  };
+  const doc = parseDocument(JSON.stringify(raw)), page = new MiniDocument();
+  // The legacy editor exists only so the pre-removal implementation can
+  // reach the read-only contract assertion rather than fail during setup.
+  page.body.innerHTML = '<button id="journal-keymanager-tab"></button><div id="journal-editor"></div><div id="journal-list"></div><div id="journal-view"></div>';
+  const view = page.getElementById("journal-view"), tab = page.getElementById("journal-keymanager-tab");
+  view.contains = (element) => element === view || view.querySelectorAll("*").includes(element);
+  tab.focus = () => { page.activeElement = tab; };
+  const api = new Function("document", "hodlJournalDoc", "helpers", `
+    const { hodlEscapeHtml, hodlMetadataFieldHtml, hodlPublicFieldHtml, hodlPrivateFieldHtml,
+      hodlPrivateFieldMarkup, hodlJournalEntryMethodLabel, hodlJournalRemoveEntry } = helpers;
+    const hodlT = text => text, hodlTText = text => text, requestAnimationFrame = fn => fn();
+    const hodlJournalLog = () => {}, hodlJournalShowWork = () => {}, hodlJournalRenderList = () => {}, hodlJournalFillWallets = () => {};
+    let hodlJournalEditingId = null, hodlJournalReveal = false, hodlJournalDeleteArmed = false,
+      hodlJournalDirty = false, hodlJournalEntryVariants = {};
+    ${["hodlJournalPrivateValue", "hodlJournalHideEditor", "hodlJournalOpenView"].map(functionSource).join("\n")}
+    return { open: hodlJournalOpenView, close: hodlJournalHideEditor };
+  `)(page, doc, { hodlEscapeHtml, hodlMetadataFieldHtml, hodlPublicFieldHtml, hodlPrivateFieldHtml,
+    hodlPrivateFieldMarkup, hodlJournalEntryMethodLabel: entryMethodLabel, hodlJournalRemoveEntry: removeEntry });
+  return { api, page, doc, view, tab };
+}
+
+for (const version of [2, 3]) test(`v${version} saved records stay read-only, masked, and explicitly deletable`, () => {
+  const { api, page, doc, view, tab } = savedRecordHarness(version);
+  assert.deepEqual(doc.entries, [savedRecord], "opening changed the stored record");
+  api.open(7);
+  for (const text of [savedRecord.input, savedRecord.phrase, savedRecord.notes])
+    assert.ok(!view.innerHTML.includes(text), "opening a record revealed private text");
+  assert.equal(page.getElementById("journal-edit"), null, "saved records still offer an editor");
+  assert.equal(page.getElementById("journal-copy-phrase"), null, "concealed records offer private copying");
+  const reveal = page.getElementById("journal-reveal");
+  reveal.checked = true;
+  reveal.dispatchEvent({ type: "change", target: reveal });
+  for (const text of [savedRecord.input, savedRecord.phrase, savedRecord.notes]) assert.ok(view.textContent.includes(text));
+  const copy = page.getElementById("journal-copy-phrase");
+  assert.ok(copy?.hasAttribute("data-private-copy"), "revealed records must use the shared private-copy path");
+  assert.equal(copy.closest("[data-private-field]").querySelector("[data-private-value]").textContent, savedRecord.phrase);
+  assert.deepEqual(doc.entries, [savedRecord], "viewing or revealing changed the stored record");
+  const retained = doc.entries[0], deletion = page.getElementById("journal-delete");
+  page.activeElement = deletion;
+  deletion.click();
+  assert.equal(doc.entries.length, 1, "the first delete press discarded the record");
+  deletion.click();
+  assert.equal(doc.entries.length, 0);
+  for (const field of ["input", "phrase", "notes"]) assert.equal(retained[field], "", `deleted ${field} survived in memory`);
+  assert.equal(view.innerHTML, "", "deleted record text stayed rendered");
+  assert.equal(page.activeElement, tab, "closing the deleted record lost keyboard focus");
+});
+
+test("the journal shell keeps saved records inside Keys and the status note as a live region", () => {
   const shell = readFileSync(join(root, "src/shell.html"), "utf8");
-  const card = /<section\b[^>]*\bid="journal-card"[^>]*>/.exec(shell)?.[0] || "";
-  assert.ok(/\brole="tabpanel"/.test(card), "#journal-card is its tool tab's panel, like its sibling cards");
+  const page = new MiniDocument();
+  page.body.innerHTML = shell;
+  const card = page.getElementById("journal-keymanager-card"), records = page.getElementById("journal-saved-records");
+  assert.equal(card?.getAttribute("role"), "tabpanel");
+  assert.equal(records?.closest("#journal-keymanager-card"), card, "saved records must stay reachable in Keys");
   const note = /<p\b[^>]*\bid="journal-status-note"[^>]*>/.exec(shell)?.[0] || "";
   assert.ok(/\brole="status"/.test(note), "#journal-status-note announces status changes politely");
 });

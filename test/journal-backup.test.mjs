@@ -567,11 +567,11 @@ test("key reference ranges identify the complete atomic token", () => {
   assert.deepEqual(journalKeyReferenceRanges("◆◆ [deadbeef]"), []);
 });
 
-test("the plain-text download strips only untouched hint lines", () => {
+test("the plain-text download preserves saved timestamps and former hint text", () => {
   assert.equal(formatNotebook("2026-09-02 10:00:00  real words"), "2026-09-02 10:00:00  real words");
-  assert.equal(formatNotebook("2026-09-02 10:00:00 Add new note"), "2026-09-02 10:00:00 Add new note"); // single space: not a hint
+  assert.equal(formatNotebook("2026-09-02 10:00:00 Add new note"), "2026-09-02 10:00:00 Add new note");
   assert.equal(formatNotebook("2026-09-02 10:00:00  Add new notes"), "2026-09-02 10:00:00  Add new notes");
-  assert.equal(formatNotebook("2026-09-02 10:00:00  \n"), "No notes.");
+  assert.equal(formatNotebook("2026-09-02 10:00:00  \n"), "2026-09-02 10:00:00");
   assert.deepEqual(formatNotebookPages([]), "No notes.");
   assert.equal(formatNotebookPages(undefined), "No notes.");
 });
@@ -767,10 +767,9 @@ test("an .elkeys backup is opaque until opened with the journal password", async
 
 test("the app routes every journal backup through the sealed primitives", () => {
   const app = read("src/js/app.js");
-  // Automatic Key Station capture persists the snapshot's method variant;
-  // manual entries still keep their selected variant through the editor.
-  assert.match(app, /hodlJournalSyncKeySnapshots\(hodlJournalDoc, snapshots, hodlJournalKeyEntries\)/);
-  assert.match(app, /method: document\.getElementById\("journal-method"\)\?\.value \|\| "dice",\s+\.\.\.hodlJournalEntryVariants,/);
+  // Older records retain their method details without creating new duplicate
+  // records from Key Station activity or through a second input editor.
+  assert.doesNotMatch(app, /hodlJournalSyncKeySnapshots|hodlJournalCaptureDerivedKey|hodlJournalCommit/);
   assert.equal((app.match(/hodlJournalEntryMethodLabel\(entry\)/g) || []).length, 2);
   // Downloads encrypt with the unlocked journal keys by default and mark the
   // file as encrypted.

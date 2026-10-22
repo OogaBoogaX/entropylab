@@ -236,10 +236,11 @@ material. Its security posture rests on the following model:
 - The session Journal (notepad, session snapshot, session log) lives only in
   this page's memory. It is never written to `localStorage`, IndexedDB, or the
   network. Closing or hiding the page discards it with the other secret
-  fields. Downloads from all three tabs reuse the unlocked Entropy Journal
-  keys and use Journal file encryption by default; the synchronized checkbox
-  can explicitly switch them back to plain JSON or text. If the Journal was
-  created without a password, its encoded downloads have no access protection.
+  fields. Notes, Keys, and Session share the Journal's password setting.
+  Complete backups and recovery section exports reuse its encryption keys;
+  there is no per-section switch to plaintext. The diagnostic activity log
+  has an explicitly labeled plain-text export. If the Journal was created
+  without a password, its encoded downloads have no access protection.
   The log records tool
   names, timestamps, and fingerprints — not seed phrases, xprvs, or typed
   secrets.
@@ -251,8 +252,11 @@ material. Its security posture rests on the following model:
   key inputs, snapshots, and log on a best-effort basis. Pagehide cleanup
   remains unconditional and does not open this confirmation.
 - A complete Journal download seals entries, notepad pages, managed/ignored
-  source inputs, a historical snapshot, and the log in one authenticated
-  payload. It uses document version 3 inside the unchanged version 2 encrypted
+  source inputs, saved historical snapshots, the current private recovery
+  snapshot, and the log in one authenticated payload. The on-screen reveal
+  checkbox controls display, copying, and the separate snapshot export; it
+  does not omit recovery material from a complete backup. It uses document
+  version 3 inside the unchanged version 2 encrypted
   envelope; entry-only version 2 documents remain readable. Every component
   is parsed and bounded before installation. The combined plaintext remains
   limited to 1,048,576 UTF-16 code units and the downloaded JSON to 4 MiB; a larger backup is refused
@@ -261,11 +265,15 @@ material. Its security posture rests on the following model:
   or session state. The no-password acknowledgement applies to the entire
   backup. Restored key inputs still require fresh derivation, including when
   the backup was password protected. The whole backup always uses the
-  Journal's password setting, regardless of separate-export checkboxes.
-- Key Manager lives behind the same unlocked Journal gate. Its `.elkeys`
+  Journal's password setting. Historical entry-only records remain readable
+  and are preserved in complete backups; the interface no longer creates
+  manual entries or duplicates derived keys into new entry records.
+- Keys lives behind the same unlocked Journal gate. Its `.elkeys`
   exports reuse the Journal's deterministic export encryption and optional password;
   the Key Manager does not generate a salt, nonce, password, or key material.
-  Version 2 vaults store source inputs/settings, not cached wallet results.
+  Key exports include all available and archived source inputs; there is no
+  inclusion selection that silently changes export scope. Version 2 vaults
+  store source inputs/settings, not cached wallet results.
   Both version 1 and 2 imports discard cached results, claimed identities,
   and any claimed verification state. Imports (including ignored entries)
   are labeled unverified and must be loaded into the lab and freshly derived
@@ -273,8 +281,9 @@ material. Its security posture rests on the following model:
   Re-derivation proves consistency with the supplied inputs, not that the
   sender lacks a copy of the key or that the inputs have adequate entropy.
   Imported private material remains in page memory and is not loaded into Key
-  Station until the user explicitly chooses it. Clearing the
-  Journal drops pending and ignored Key Manager entries on a best-effort basis.
+  Station until the user explicitly chooses it. Archiving is limited to
+  detached inputs and does not unload live Key Station keys. Clearing the
+  Journal drops pending and archived inputs on a best-effort basis.
 - The Entropy Journal notebook holds entropy the user
   already produced, not a password manager and not a key generator. The
   AES-256-GCM key is PBKDF2-SHA-256 (600,000 rounds) of the optional password

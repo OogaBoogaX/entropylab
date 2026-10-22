@@ -57,7 +57,7 @@ const varLine = (name) => {
   return line[0];
 };
 
-// The real Clear and editor-close paths, with the pending-note chain
+// The real Clear and saved-record close paths, with the note renderer
 // that re-renders the notepad's mirror, over a stub DOM whose elements start
 // full of marker text. The journal store and document wipes come from the
 // real journal.js; the Key Manager reset and the tab renderers are spies (the
@@ -65,9 +65,7 @@ const varLine = (name) => {
 const LIFECYCLE_SLICES = [
   "hodlJournalUnlocked", "hodlJournalMarkDirty", "hodlJournalNoteText",
   "hodlJournalActivePage", "hodlJournalStoreNotesText", "hodlJournalRenderVisual",
-  "hodlJournalSyncPendingPrompt", "hodlJournalSyncCopyButton", "hodlJournalRenderPendingPrompt",
-  "hodlJournalRefreshPendingNote", "hodlJournalResetPendingNote", "hodlJournalPendingLineIndex",
-  "hodlJournalPendingLineStart", "hodlJournalLineStartAt", "hodlJournalWipeNotebook",
+  "hodlJournalSyncNotesRender", "hodlJournalSyncCopyButton", "hodlJournalWipeNotebook",
   "hodlJournalClearFields", "hodlJournalHideEditor", "hodlJournalLog", "hodlJournalWipeMem",
 ];
 
@@ -85,14 +83,12 @@ function journalLifecycleHarness({ onShowWork = () => {} } = {}) {
     setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
     focus() { this.focused = true; },
   });
-  for (const id of ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-search"])
+  for (const id of ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-search"])
     add(id, field(SECRET_PHRASE));
   add("journal-file", { value: "entropylab-journal.json" });
   add("journal-list", { innerHTML: `<button>${SECRET_PHRASE}</button>`, hidden: false });
   add("journal-view", { innerHTML: `<span>${SECRET_PHRASE}</span>`, hidden: false, contains: () => false });
-  add("journal-editor", { hidden: false, contains: () => false });
   add("journal-error", { textContent: "old error" });
-  add("journal-method", { value: "seed" });
   add("journal-state-text", { textContent: SECRET_STATE });
   add("journal-state-private", { checked: true });
   add("journal-notes-text", field(SECRET_NOTES));
@@ -105,7 +101,7 @@ function journalLifecycleHarness({ onShowWork = () => {} } = {}) {
   add("journal-status-note", { textContent: "" });
   add("journal-gate-status", { textContent: "" });
   add("journal-create", { focused: false, focus() { this.focused = true; } });
-  add("journal-add", { focused: false, focus() { this.focused = true; } });
+  add("journal-keymanager-tab", { focused: false, focus() { this.focused = true; } });
   add("journal-open-ready", { hidden: true });
   // The wipe asks the work panel and global toolbar whether the active
   // element sits inside them, so the stubs track their descendants.
@@ -126,15 +122,15 @@ function journalLifecycleHarness({ onShowWork = () => {} } = {}) {
   const entry = doc.entries[0];
   const source = [
     varLine("hodlJournalKeys"), varLine("hodlJournalGeneration"), varLine("hodlJournalFileRead"),
-    varLine("hodlJournalOpenReadyFor"), varLine("hodlJournalTool"), varLine("hodlJournalEncryptDownloads"),
+    varLine("hodlJournalOpenReadyFor"), varLine("hodlJournalTool"),
     ...LIFECYCLE_SLICES.map(loadSlice),
   ].join("\n");
   const api = new Function(
     "document", "hodlJournal", "wipeJournal", "hodlJournalWipeDocument", "hodlJournalAppend",
     "hodlJournalStamp", "hodlJournalNotebookRuns", "hodlTText", "hodlWorkspace", "hodlKeyManagerReset",
     "hodlJournalSetGate", "hodlJournalShowWork", "hodlSyncJournalTool", "hodlRenderJournalPageTabs",
-    "hodlJournalApplyPageStyle", "hodlJournalSetStatus", "hodlJournalSyncEncryptDownloads",
-    "hodlScheduleJournalStateRefresh", "hodlRenderJournalLog", "hodlJournalFillWallets", "hodlFillKeyTabLifehash",
+    "hodlJournalApplyPageStyle", "hodlJournalSetStatus",
+    "hodlScheduleJournalStateRefresh", "hodlRenderJournalLog", "hodlFillKeyTabLifehash",
     `${source}; return {
       wipeMem: hodlJournalWipeMem,
       hideEditor: hodlJournalHideEditor,
@@ -145,8 +141,8 @@ function journalLifecycleHarness({ onShowWork = () => {} } = {}) {
     documentStub, journal, wipeJournal, wipeDocument, appendLog,
     formatStamp, journalNotebookRuns, (text) => text, "calc", () => calls.push("key-manager-reset"),
     () => {}, () => onShowWork(documentStub, elements), () => {}, () => {},
-    () => {}, () => {}, () => calls.push("sync-encrypt-downloads"),
-    () => {}, () => {}, () => {}, () => {},
+    () => {}, () => {},
+    () => {}, () => {}, () => {},
   );
   return { api, elements, journal, doc, entry, calls, documentStub };
 }
@@ -162,8 +158,8 @@ function assertNoJournalPlaintext({ api, elements, journal, doc, entry, calls })
   assert.deepEqual(api.notebook(), { keys: null, doc: null, reveal: false, fileText: "", openReadyFor: "" });
   assert.equal(doc.entries.length, 0, "the document kept its entries");
   for (const field of ["input", "phrase", "label", "notes"]) assert.equal(entry[field], "", `the wiped document kept an entry's ${field}`);
-  // The password fields and the entry editor's fields.
-  for (const id of ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-search"])
+  // Password fields and the saved-record search.
+  for (const id of ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-search"])
     assert.equal(elements.get(id).value, "", `#${id} kept its text`);
   assert.equal(elements.get("journal-file").value, "", "the file picker kept its choice");
   // Rendered copies: the entry list, the entry view, the error line.
@@ -178,9 +174,7 @@ function assertNoJournalPlaintext({ api, elements, journal, doc, entry, calls })
   for (const secret of [SECRET_PHRASE, SECRET_NOTES, SECRET_STATE])
     assert.ok(!elements.get("journal-log-out").textContent.includes(secret), "the session log kept secret text on screen");
   // The notepad: the field, its rendered mirror, and the in-memory pages.
-  // After the wipe the field holds only a fresh pending-note stamp, never the
-  // old text, so these assert the marker is gone rather than exact content.
-  assert.ok(!elements.get("journal-notes-text").value.includes(SECRET_NOTES), "the notepad kept its text");
+  assert.equal(elements.get("journal-notes-text").value, "", "the notepad kept its text");
   assert.ok(!elements.get("journal-notes-render").children.map((node) => node.text).join("").includes(SECRET_NOTES), "the notepad's rendered mirror kept its text");
   assert.equal(journal.pages.length, 1, "extra notepad pages survived");
   assert.ok(!journal.pages[0].notesText.includes(SECRET_NOTES) && !journal.notesText.includes(SECRET_NOTES), "the notepad's in-memory text survived");
@@ -197,7 +191,6 @@ test("the global Clear leaves no journal plaintext behind (plan W3)", () => {
   harness.api.wipeMem();
   assertNoJournalPlaintext(harness);
   assert.deepEqual(harness.journal.log, [], "log events survived in memory");
-  assert.ok(harness.calls.includes("sync-encrypt-downloads"), "the download-encryption default was not restored");
   // The status note hides with the toolbar; the gate's live region stays
   // visible and carries Clear's audible announcement (plan W5).
   assert.ok(harness.elements.get("journal-status-note").textContent.trim(), "Clear did not announce through #journal-status-note");
@@ -275,43 +268,17 @@ test("unticking the session-state private box drops the private snapshot text (p
   assert.match(refresh, /field\.textContent = text/, "the snapshot must render as text, never markup");
 });
 
-test("auto-capture is a no-op while the journal is locked (plan W3)", () => {
-  // Executable: the real hodlJournalSyncDerivedKeys/hodlJournalCaptureDerivedKey
-  // with every collaborator a recording stub. If the locked guard is removed,
-  // the capture reaches the stubs and the calls array fills — so the test
-  // fails even though the returned counts would still be zero.
-  const calls = [];
-  const source = [loadSlice("hodlJournalSyncDerivedKeys"), loadSlice("hodlJournalCaptureDerivedKey")].join("\n");
-  const api = new Function(
-    "hodlJournalUnlocked", "hodlJournalKeySnapshot", "hodlResultMnemonic", "hodlJournalSyncKeySnapshots",
-    "hodlJournalError", "hodlJournalLog", "hodlJournalShowWork", "hodlTText",
-    `${source}; return { sync: hodlJournalSyncDerivedKeys, capture: hodlJournalCaptureDerivedKey };`,
-  )(
-    () => false,
-    () => { calls.push("snapshot"); },
-    () => { calls.push("mnemonic"); },
-    () => { calls.push("sync-snapshots"); },
-    () => { calls.push("error"); },
-    () => { calls.push("log"); },
-    () => { calls.push("show-work"); },
-    (text) => text,
-  );
-  const state = { isLab: false, name: "Key 1", result: { masterFingerprint: "deadbeef" } };
-  assert.deepEqual(api.sync([state]), { added: 0, updated: 0, matched: 0 });
-  api.capture(state);
-  assert.deepEqual(calls, [], "a locked journal read, recorded or reported a derived key");
-  // The guard is the function's first statement, before any document access.
-  assert.match(loadSlice("hodlJournalSyncDerivedKeys"), /\{\s*if \(!hodlJournalUnlocked\(\)\) return \{ added: 0, updated: 0, matched: 0 \};/);
+test("Key Station activity has no duplicate saved-record capture path", () => {
+  assert.doesNotMatch(app, /hodlJournalSyncDerivedKeys|hodlJournalCaptureDerivedKey|hodlJournalBackfillDerivedKeys/);
 });
 
-test("the journal intro discloses auto-capture and passwordless readability (plan W4)", () => {
+test("the journal intro discloses passwordless readability (plan W4)", () => {
   // Owner-approved disclosure copy, pinned by its stable substrings only
   // (AGENTS.md: safety-critical wording may be pinned by a short stable
   // substring; the rest of the sentence stays free to reword).
   const intro = shell.slice(shell.indexOf('id="journal-tool-intro"'), shell.indexOf('id="journal-manager"'));
-  assert.ok(intro.includes("while the journal is unlocked"), "the intro must say derived keys are captured while the journal is unlocked");
-  assert.ok(intro.includes("anyone with the file can open it"), "the intro must say a passwordless journal is readable by anyone with the file");
-  assert.ok(intro.includes("encrypted with your password"), "the intro must say the journal file is encrypted with the password");
+  assert.ok(intro.includes("anyone with the file"), "the intro must disclose who can read a passwordless journal");
+  assert.match(intro, /password protects/i, "the intro must explain password protection");
 });
 
 test("every journal open failure routes to #journal-error, an alert region (plan W5)", () => {
@@ -344,32 +311,32 @@ test("Clear announces through the #journal-status-note live region (plan W5)", (
   assert.match(loadSlice("hodlJournalWipeMem"), /getElementById\("journal-status-note"\)[\s\S]*?hodlTText\(/);
 });
 
-test("closing the editor moves focus to a control, not <body> (plan W5)", () => {
+test("closing a saved record returns focus to Keys (plan W5)", () => {
   const hide = loadSlice("hodlJournalHideEditor");
   assert.match(hide, /document\.activeElement/);
-  assert.match(hide, /getElementById\("journal-add"\)\?\.focus\(\)/);
-  // Executable: focus inside the closing view moves to Add entry; focus
+  assert.match(hide, /getElementById\("journal-keymanager-tab"\)\?\.focus\(\)/);
+  // Executable: focus inside the closing view moves to Keys; focus
   // anywhere else is left alone.
   const harness = journalLifecycleHarness();
   const child = {};
   harness.elements.get("journal-view").contains = (element) => element === child;
   harness.documentStub.activeElement = child;
   harness.api.hideEditor();
-  assert.equal(harness.elements.get("journal-add").focused, true, "closing the view left focus to fall back to <body>");
+  assert.equal(harness.elements.get("journal-keymanager-tab").focused, true, "closing the view left focus to fall back to <body>");
   const again = journalLifecycleHarness();
   again.api.hideEditor();
-  assert.equal(again.elements.get("journal-add").focused, false, "closing the editor stole focus it did not own");
+  assert.equal(again.elements.get("journal-keymanager-tab").focused, false, "closing the saved record stole focus it did not own");
 });
 
 test("the global Clear rescues focus stranded inside the hidden work panel (plan W5)", () => {
-  // Executable: focus starts inside the editor. hideEditor hands it to
-  // #journal-add, which the Clear then hides with the work panel, so the wipe
+  // Executable: focus starts inside a saved record. hideEditor hands it to
+  // Keys, which Clear then hides, so the wipe
   // must park it on the gate's primary action — never leave it on a hidden
   // control, and never let it fall to <body>.
   const harness = journalLifecycleHarness();
   harness.api.openNotebook({ passwordProtected: true }, harness.doc);
   const child = {};
-  harness.elements.get("journal-editor").contains = (element) => element === child;
+  harness.elements.get("journal-view").contains = (element) => element === child;
   harness.elements.get("journal-work-panel").descendants.add(child);
   harness.documentStub.activeElement = child;
   harness.api.wipeMem();

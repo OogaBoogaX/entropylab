@@ -17,6 +17,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { renderSVG } from "uqr";
 import { VAULT_MASK } from "../src/js/passphrase-vault.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
+import { parseKeyVault, serializeKeyVault } from "../src/js/keymanager.js";
 
 // BIP39 test vectors (trezor/python-mnemonic vectors.json), passphrase "TREZOR".
 const VECTORS = [
@@ -283,14 +284,19 @@ test("station passphrase fields hold only bullets and still derive the published
   assert.notEqual(first, second, "a same-length passphrase edit did not change the run stamp");
 });
 
-test("the journal still records a derived key's words", async () => {
-  const vector = VECTORS[0], wallet = await fromWords(vector), doc = { entries: [] };
-  const journal = await load(["hodlJournalSyncDerivedKeys"], { hodlJournalUnlocked: () => true, hodlJournalError() {} }, ["hodlJournalDoc"]);
-  journal.__set.hodlJournalDoc(doc);
-  const synced = journal.hodlJournalSyncDerivedKeys([{ id: 3, isLab: false, mode: "dice", diceMethod: "coldcard", name: "Key 3", fields: { dice: "1 2 3" }, result: wallet }]);
-  assert.equal(synced.added, 1);
-  assert.equal(doc.entries.length, 1);
-  assert.equal(doc.entries[0].phrase, vector.words);
+test("a Journal key export keeps the supplied words and passphrase without trusting cached outputs", async () => {
+  const vector = VECTORS[0], wallet = await fromWords(vector);
+  const pass = new TextEncoder().encode(vector.pass);
+  const { hodlKeyManagerEntry } = await load(["hodlKeyManagerEntry"]);
+  const text = serializeKeyVault([hodlKeyManagerEntry({ id: 3, mode: "seed", name: "Key 3", fields: { seed: vector.words, pass }, result: wallet })]);
+  const imported = parseKeyVault(text).keys[0];
+  assert.equal(imported.fields.seed, vector.words);
+  assert.equal(imported.fields.pass, "TREZOR");
+  assert.equal(imported.result, null);
+  assert.equal(imported.needsDerivation, true);
+  assert.ok(!text.includes(vector.seed), "the backup copied a cached derived seed");
+  assert.equal(new TextDecoder().decode(pass), "TREZOR", "export wiped the live input passphrase");
+  assert.equal(hex.encode(wallet.entropy), vector.entropy, "export wiped the live wallet");
 });
 
 // Hidden, every word masks at the same width (#599), so nothing but the word

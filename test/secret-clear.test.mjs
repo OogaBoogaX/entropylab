@@ -46,7 +46,7 @@ const passphraseHelpers = ["hodlPassphraseVaultActive", "hodlPassphraseFieldByte
 function createContext(sandbox) {
   const context = vm.createContext({
     hodlPassphraseVaultField: null, hodlPassphraseShown: false, hodlStationPassphraseFields: null,
-    hodlJournalClearConfirm: null,
+    hodlJournalClearConfirm: null, hodlJournalPageDeleteConfirm: null,
     // Session state hodlReleaseKeyConsumers reads; a key drop releases any
     // consumer bound to it (PSBT, BIP-85, Silent Payments, vanity).
     hodlPsbtSource: "", hodlBip85Source: "", hodlSpSource: "", hodlSpVerifyMatches: null,
@@ -99,7 +99,7 @@ function raceHarness() {
   fields.set("pass", { value: "private passphrase", dataset: {} });
   fields.set("dice", { value: "1 2 3 4 5 6", dataset: { previousValue: "1 2 3 4 5 6" } });
   for (const name of ["hodlThrowIfFailed", "hodlSetSelectedScriptType", "hodlCaptureKey",
-    "hodlSnapshotKeySummary", "hodlCommitDerivedKey", "hodlJournalCaptureDerivedKey",
+    "hodlSnapshotKeySummary", "hodlCommitDerivedKey",
     "hodlFocusWalletResult", "hodlJournalLog", "hodlSetWorkspaceError", "hodlJournalSetStatus",
     "hodlKeyManagerStatus", "hodlPsbtWipeMem", "hodlBip85WipeMem", "hodlBip85WipeParent",
     "hodlDropBip85ChildrenOf", "hodlSpWipeMem",
@@ -337,9 +337,7 @@ test("Entropy Journal password, entries, and encrypted session are explicitly cl
   assert.match(lifecycle, /hodlJournalWipeMem\(\)/);
   assert.match(app, /function hodlJournalWipeMem\(\) \{[\s\S]*?hodlJournalWipeNotebook\(\)[\s\S]*?hodlJournalClearFields\(\)/);
   assert.match(app, /journal-create-password/);
-  assert.match(app, /journal-input/);
-  assert.match(app, /journal-phrase/);
-  assert.match(app, /journal-entry-notes/);
+  assert.match(app, /journal-search/);
 });
 
 test("Silent Payments session key and passphrase fields are explicitly cleared", () => {
@@ -478,9 +476,9 @@ test("journal Clear empties the snapshot, the notepad and the session log", () =
     hodlKeyManagerReset() {}, hodlJournalWipeNotebook() {}, hodlJournalClearFields() {},
     hodlJournalHideEditor() {}, hodlJournalSetGate() {}, hodlJournalShowWork() {},
     hodlSyncJournalTool() {}, hodlJournalLog() {}, hodlRenderJournalPageTabs() {},
-    hodlJournalSyncEncryptDownloads() {}, hodlJournalSetStatus() {},
-    hodlJournalApplyPageStyle() {}, hodlJournalResetPendingNote(field, label) { field.dataset.pendingNote = label; },
-    hodlJournalTool: "book",
+    hodlJournalSetStatus() {},
+    hodlJournalApplyPageStyle() {}, hodlJournalRenderVisual() {},
+    hodlJournalTool: "notes",
     // Clear's log and status lines go through the translation helper.
     hodlTText: (text) => text,
   });
@@ -513,7 +511,6 @@ async function loadJournalConcealSlice() {
   // to keep a wide but unused closure out of the slice.
   const stubs = {
     hodlRecoverySheetText: () => "",
-    hodlJournalFillWallets: () => {},
     hodlJournalShowWork: () => {},
     hodlRenderJournalNotes: () => {},
     hodlKeyManagerRender: () => {},
@@ -545,7 +542,7 @@ function journalSessionStateHarness(slice) {
   const page = new MiniDocument();
   globalThis.document = page;
   page.body.innerHTML = '<div id="journal-tool-tabs"></div><div id="journal-page-tabs"></div><div id="journal-keymanager-tabs"></div>'
-    + '<section id="journal-card"></section><section id="journal-notes-card"></section>'
+    + '<section id="journal-card"></section><section id="journal-notes-card"></section><section id="journal-session-card"></section>'
     + '<section id="journal-keymanager-card"></section><section id="journal-log-card"></section>'
     + `<section id="journal-state-card"><label>${boxTag[0]}</label><pre id="journal-state-text"></pre></section>`;
   slice.hodlInitJournalToolTabs();
@@ -1267,7 +1264,7 @@ test("a stopped import of an account key wipes the imported node", async () => {
 // #546 B2 step 2a: a wallet the Key Station stops holding cannot come back,
 // so its row keys are zeroed when it goes rather than left for the collector.
 // A station drops a wallet when an edit clears it, a re-derive replaces it,
-// a failed re-derive loses it, its tab is deleted or ignored, or a revoked
+// a failed re-derive loses it, its detached input is archived, or a revoked
 // brain-wallet acknowledgement retracts it. These run the real derivation
 // (as above) and commit it through the real hodlCommitDerivedKey; the two
 // bookkeeping stand-ins do only what the real ones do with results:
@@ -1291,11 +1288,10 @@ async function stationHarness(options = {}) {
     Uint8Array,
     hodlJournalWipeNotebook() {}, hodlJournalClearFields() {}, hodlJournalHideEditor() {}, hodlJournalSetGate() {},
     hodlJournalShowWork() {}, hodlSyncJournalTool() {}, hodlJournalTool: "notes",
-    hodlJournalSyncEncryptDownloads() {},
     // Journal Clear wipes the session notepad/log (with the real wipeJournal
     // on a real journal object); the DOM sides are absent elements here.
     hodlJournal: createJournal(), wipeJournal,
-    hodlRenderJournalPageTabs() {}, hodlJournalApplyPageStyle() {}, hodlJournalResetPendingNote() {},
+    hodlRenderJournalPageTabs() {}, hodlJournalApplyPageStyle() {}, hodlJournalRenderVisual() {},
     // Journal Clear's log and status lines go through the translation helper.
     hodlTText: (text) => text,
   });
@@ -1402,23 +1398,48 @@ test("deleting a key tab zeroes its wallet; with the journal open it moves to th
 // active tab and clears the shown wallet (hodlShowWorkspace), so anything
 // that runs there must not capture again: that would file the cleared value
 // over the selected tab's wallet, and the next sweep would zero it.
-test("ignoring a key from the Journal zeroes its wallet and leaves the selected wallet intact", async () => {
-  for (const [ignored, from] of [["a", "station"], ["b", "station"], ["a", "pending"]]) {
+test("archiving refuses a key still in Key Station without releasing or wiping it", async () => {
+  const { context, derive, leaveKeys, held, active } = await stationHarness();
+  const keys = await derive("still-live"), state = active(), wallet = state.result;
+  const passphrase = new TextEncoder().encode("TREZOR"), released = [];
+  vm.runInContext(functionSource("hodlTypedText"), context);
+  state.fields.pass = passphrase;
+  context.hodlKeyManagerIds.add(keyVaultIdentity(state));
+  context.hodlKeyManagerActiveId = keyVaultIdentity(state);
+  context.hodlReleaseKeyConsumers = (id) => released.push(id);
+  const states = [...context.hodlKeys], selected = context.hodlActiveKey;
+  leaveKeys("journal");
+  context.hodlKeyManagerIgnore(state);
+  assert.deepEqual([...context.hodlKeys], states, "archiving removed a live station key");
+  assert.equal(context.hodlActiveKey, selected, "archiving moved the active station tab");
+  assert.equal(state.result, wallet);
+  assert.ok(held(wallet), "archiving forgot the station's wallet");
+  assert.deepEqual(keys, vectorRowKeys, "archiving wiped the station's row keys");
+  assert.equal(new TextDecoder().decode(passphrase), "TREZOR", "archiving wiped the station's passphrase");
+  assert.deepEqual(released, [], "archiving released consumers of the station's key");
+  assert.equal(context.hodlKeyManagerIgnored.length, 0, "archiving copied a live key into the archive");
+  assert.ok(context.hodlKeyManagerIds.has(keyVaultIdentity(state)));
+  assert.equal(context.hodlKeyManagerActiveId, keyVaultIdentity(state));
+});
+
+test("archiving a detached key zeroes its wallet and leaves the selected wallet intact", async () => {
+  for (const ignored of ["a", "b"]) {
     const { context, derive, selectLab, leaveKeys, returnToKeys, held } = await stationHarness();
     const keys = { a: await derive("wallet-a") };
     selectLab();
     keys.b = await derive("wallet-b");
     const tab = (wallet) => context.hodlKeys.find((state) => state.result?.masterIdentity === `wallet-${wallet}`);
     const states = { a: tab("a"), b: tab("b") }, kept = ignored === "a" ? "b" : "a", keptResult = states[kept].result, ignoredResult = states[ignored].result;
-    if (from === "pending") {
-      // Deleting a tab with the journal open moves it to the Key Manager.
-      context.hodlActiveKey = context.hodlKeys.indexOf(states.a);
-      context.hodlRestoreKey();
-      context.hodlJournalUnlocked = () => true;
-      context.hodlDeleteActiveKey();
-      assert.deepEqual(context.hodlKeyManagerPending, [states.a]);
-    }
-    const label = `ignoring ${ignored} from ${from} with b selected`;
+    // Deleting a tab with the journal open moves it to the Key Manager;
+    // archiving accepts only this detached state, never a live station tab.
+    context.hodlActiveKey = context.hodlKeys.indexOf(states[ignored]);
+    context.hodlRestoreKey();
+    context.hodlJournalUnlocked = () => true;
+    context.hodlDeleteActiveKey();
+    assert.deepEqual(context.hodlKeyManagerPending, [states[ignored]]);
+    context.hodlActiveKey = context.hodlKeys.indexOf(states[kept]);
+    context.hodlRestoreKey();
+    const label = `archiving ${ignored} with ${kept} selected`;
     leaveKeys("journal");
     context.hodlKeyManagerIgnore(states[ignored]);
     assert.equal(context.hodlKeyManagerIgnored.length, 1);

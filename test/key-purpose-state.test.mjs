@@ -61,7 +61,7 @@ test("purpose changes commit atomically to the existing key without changing ano
   assert.ok(ui.context.hodlCommittedResults.has(replacement));
   assert.equal(ui.context.hodlWalletDatBirthday, "now", "purpose matching changed another export's birthday preference");
   assert.deepEqual(clone(ui.other), otherBefore);
-  assert.deepEqual(ui.counters(), { restored: 1, disposed: 1, captured: 1 });
+  assert.deepEqual(ui.counters(), { restored: 1, disposed: 1, captured: 0 }, "purpose matching must not create a duplicate Journal record");
 });
 
 test("unchecking uses the remembered original even though the live path is standard", async () => {

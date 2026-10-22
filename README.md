@@ -248,96 +248,80 @@ an explicit error before those pairs are allocated.
   wallet birthday are shown alongside the node key; the decoded entropy and
   salt and the BIP32 root xprv (what `chantools showrootkey` prints) sit
   behind a reveal toggle. Decoding only: the tab never creates seeds.
-- A session **Journal** holds an **Entropy Journal** notebook, a notepad
-  stamped with this computer's date and time,
-  a Key Manager, a live summary of everything derived in this sitting, and a debug log
-  of tool switches and derives (fingerprints, not seeds). Its introduction
-  remains above the Journal controls. **Create journal** and **Open backup**
-  are the starting choices. Section tabs and global controls stay hidden
-  until the user creates a journal, with or without a password, or successfully
-  opens an existing journal; the create/open gate
-  then disappears and the Journal starts on Entries. The create form reports
+- A session **Journal** has three working areas: **Notes**, **Keys**, and
+  **Session**. Notes opens first; Keys holds recoverable key inputs, and
+  Session groups the current snapshot and activity log in separate disclosures.
+  **Create journal** and **Open backup** are the starting choices. Section
+  tabs and global controls stay hidden until the user creates a journal, with
+  or without a password, or opens an existing backup. The create form reports
   whether password protection is enabled and checks confirmation matches live
   without exposing what was typed. A blank password is accepted and provides
   no access protection: anyone holding the resulting file can open it by
-  leaving the password blank. Journal-wide **Download journal** and
-  **Clear journal** actions stay below the introduction once a journal is
-  unlocked, alongside the protection and save status in every section.
-  **Download journal** saves one complete backup: entries, every
-  notepad page and its formatting, all managed and ignored key inputs with
-  their inclusion selection, the session snapshot, and the session log.
-  Finish or cancel an entry edit before downloading. Changes to notes and
-  managed keys also mark the Journal as unsaved; edits made while a download
-  is encrypting remain unsaved. **Clear journal** opens a confirmation with
-  choices to download a backup, discard the Journal, or cancel. Downloading
-  keeps the Journal open: the page cannot verify that the file was saved, so
-  discarding still requires an explicit choice. Cancel keeps the Journal
-  intact. Discard wipes the password, entries, notepad, managed and ignored
-  key inputs, session snapshot, and log from page memory on a best-effort basis
-  and returns to the create/open gate. Leaving the page still clears the
-  Journal without this confirmation. The notebook keeps
-  entropy the user already produced — dice, coins, hex, brain-wallet text, or
-  a seed — under AES-256-GCM; the key is PBKDF2-SHA-256 (600,000 rounds) of the
+  leaving the password blank. Journal-wide backup and **Clear journal**
+  actions remain available alongside protection and save status in every area.
+  The complete backup contains every notes page and its formatting, all
+  managed and archived key inputs, saved historical records, the session
+  snapshot, and the activity log. The complete backup includes the current
+  private recovery snapshot even when the on-screen snapshot is concealed.
+  Changes to notes and key inputs mark the
+  Journal as unsaved; edits made while a backup is encrypting remain unsaved.
+  **Clear journal** opens a confirmation with choices to download a backup,
+  discard the Journal, or cancel. Downloading keeps the Journal open: the page
+  cannot verify that the file was saved, so discarding still requires an
+  explicit choice. Cancel keeps the Journal intact. Discard wipes the
+  password and Journal contents from page memory on a best-effort basis and
+  returns to the create/open gate. Keys still open in Key Station remain
+  there; End Session clears the whole page. Leaving the page still clears
+  the Journal without this confirmation.
+  The backup uses AES-256-GCM; the key is PBKDF2-SHA-256 (600,000 rounds) of the
   optional password the user chooses, with the salt derived from that password
-  and the IV HMAC-SHA-256 of the plaintext, so the file is a pure function of
-  password and backup content and no CSPRNG is ever called. One JSON file the user
-  downloads and loads back. Nothing is stored in the browser; download a file
-  to keep it. Closing the page discards the sitting. The notebook is a
-  calculator companion, not a password manager: it only stores material the
-  user generated themselves.
-  Opening that file restores the Journal sections together. Saved snapshots
-  are historical text, concealed until explicitly revealed; they do not
-  recreate live wallets, multisig sessions, or PSBTs. Managed keys restore as
-  unverified inputs requiring fresh derivation. Existing derived Key Station
-  keys are recorded on create/open, and later derives are recorded while the
-  Journal remains open. Old entry-only files remain readable; complete backups
-  require the updated reader (payload version 3). Separate section downloads
-  remain available. The Journal file always uses its password setting,
-  independently of the plain-text export checkboxes.
-  The **Key manager** tab packages selected Key Station source inputs and
-  settings, including ignored entries, into an `.elkeys` file. It reuses the unlocked
-  Journal's password setting, so it adds no password prompt, random salt,
-  or random nonce. Imports are **unverified inputs**, not ready-to-use wallets.
-  Choose **Load inputs to derive**, review the inputs/settings, then derive each
-  key in Key Station. Cached addresses, private outputs, and fingerprints from
-  legacy files are discarded; only fresh derivation can match an existing key.
-  **Add all to Key Station** applies only to already-derived keys, leaving
-  unverified and ignored entries untouched. New files use input-only format
-  version 2 (requires this updated reader); version 1 files remain importable.
-  Cached-output-only files cannot replace missing source inputs.
-  Deleting a Key Station tab while a Journal is open
-  likewise removes it from the station without discarding it from Key Manager.
-  The Journal also includes a paged notepad. Pages use
+  and the IV HMAC-SHA-256 of the plaintext. The file is a pure function of
+  password and backup content; no CSPRNG is called. Nothing is stored in the
+  browser; download a file to keep it. Closing the page discards the sitting.
+  Opening a complete backup restores its Journal sections together. Saved
+  snapshots are historical text, concealed until explicitly revealed; they do
+  not recreate live wallets, multisig sessions, or PSBTs. Old entry-only files
+  remain readable, and their records appear in Keys only when present.
+  Journal no longer creates manual entries or duplicate records on each
+  derivation. Complete backups retain historical records and require the
+  updated reader (payload version 3).
+  Separate section import/export controls live in secondary disclosures.
+  Recovery exports use the Journal's password setting; a password protects
+  them, while files created without one have no access protection. The
+  diagnostic activity log can be exported as plain text.
+  The **Keys** area exports all available source inputs and archived inputs
+  into an `.elkeys` file. It uses the open Journal's password setting without
+  another password prompt, random salt, or random nonce. Imports are
+  **unverified inputs**, not ready-to-use wallets. Choose **Load inputs to
+  derive**, review the inputs/settings, then derive each key in Key Station.
+  Cached addresses, private outputs, and fingerprints from legacy files are
+  discarded; only fresh derivation can match an existing key. New key files
+  use input-only format version 2; version 1 files remain importable.
+  Cached-output-only files cannot replace missing source inputs. Archiving is
+  available for detached inputs and does not unload a live Key Station key.
+  Deleting a Key Station tab while a Journal is open removes it from the
+  station while retaining its inputs in the Journal.
+  Notes is a plain text editor with named pages. Pages use
   the Key Station's numbered naming convention, can be added or removed with
   the +/− controls, and can be renamed by activating the selected page again
   or pressing F2. Default names such as `Page 1` shorten to `P1` in narrow
-  windows. A responsive control row below the editor sets each page's
+  windows. Appearance controls set each page's
   typeface, text size, and line spacing. Its key picker lists the currently
   derived Key Station keys with their LifeHashes; choosing one inserts a
   public inline reference with a line-height LifeHash and master fingerprint.
-  Notepad, Session state, and Session log downloads use the unlocked Journal's
-  file encryption by default. If the Journal has a password, that password
-  protects the downloads; without one, the encoded downloads have no access
-  protection. Their matching checkboxes stay synchronized, so one change applies
-  to Notepad, Session state, and Session log; unchecking exports the original
-  plain JSON or text. Notepad can upload either its plain notebook JSON or its
-  Journal-format export while that journal is unlocked.
-  Each page opens
-  with a live local timestamp and freezes it when note text is entered. Delete
-  the note back to its timestamp to return to the live new-note prompt. Press
-  Enter after a note to open the next live timestamp and prompt. Press Enter on
-  that empty prompt to leave an unstamped blank line and move a fresh live
-  prompt to the line below. Delete at the empty prompt moves it back through
-  those blank lines; once it reaches a completed note, the empty timestamp and
-  prompt disappear and the caret returns to that note's end. Clicking any blank
-  line moves an untouched live note there, or inserts a new live note there if
-  the last note is already written; dragging across blank lines only selects
-  them. Deleting a selected bottom section opens a live prompt on the blank line
-  left at the caret. Clicking a written note cancels an untouched pending note
-  and keeps the caret where clicked. Moving the pointer over the editor briefly
+  Notes can import plain notebook JSON or a Journal-format export while the
+  matching Journal is open.
+  New pages start empty. **New note** or **Ctrl/⌘+Enter** appends this
+  computer's current local date and time in a new block at the end of the
+  page, preserving existing text and separating notes with a blank line.
+  Enter continues the current note. Typing, clicking, and deleting never
+  insert timestamps; timestamps already present in older backups remain
+  editable text. Key
+  references still select and delete as complete units. Moving the pointer over the editor briefly
   reveals its clipboard button at the right edge; the same control is reachable
-  from the keyboard and copies the active page as readable text. **Download notebook** writes versioned
-  UTF-8 JSON containing page names, styles, and structured text/key runs; it
+  from the keyboard and copies the active page as readable text. The separate
+  notes export encrypts versioned UTF-8 JSON containing page names, styles,
+  and structured text/key runs; it
   stores only the key's display name and public fingerprint, then regenerates
   the LifeHash locally when that file is uploaded in a later session. Older
   `.txt` notes can also be uploaded as a single page. The Journal also holds

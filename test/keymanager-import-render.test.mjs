@@ -66,6 +66,7 @@ function importHarness() {
     hodlJournalLog: (...args) => calls.push(args),
     hodlKeyManagerStatus: text => calls.push(["status", text]),
     hodlRenderKeyTabs() {}, hodlKeyManagerRender() {},
+    hodlElement: () => ({ children: [] }),
     hodlCaptureKey: () => { context.hodlKeys[context.hodlActiveKey].result = context.hodlWalletResult; },
     hodlShowWorkspace: () => { context.hodlWalletResult = context.hodlKeys[context.hodlActiveKey].result; },
     hodlRestoreKey: () => { context.hodlWalletResult = context.hodlKeys[context.hodlActiveKey].result; },
@@ -75,9 +76,9 @@ function importHarness() {
     hodlReleaseKeyConsumers() {}, hodlZeroKeyPassphrase() {},
   };
   for (const name of ["hodlNewKeyState", "hodlNewLabState", "hodlKeyManagerImportedState",
-    "hodlKeyManagerStates", "hodlKeyManagerUseInStation", "hodlKeyManagerUseAllInStation",
+    "hodlKeyManagerStates", "hodlKeyManagerUseInStation", "hodlKeyManagerDetachFromStation",
     "hodlCloneDerivedKey", "hodlFillLabFromKey", "hodlKeyWalletIdentity", "hodlCommitDerivedKey", "hodlKeyManagerImportFile",
-    "hodlKeyManagerToggle", "hodlKeyManagerIgnore", "hodlKeyManagerEntry", "hodlKeyLogLabel",
+    "hodlKeyManagerIgnore", "hodlKeyManagerEntry", "hodlKeyLogLabel",
     "hodlKeyManagerRestoreIgnored", "hodlStoredPassphraseBytes", "hodlPassphraseText"])
     runInNewContext(loadSlice(name), context);
   context.hodlKeys.push(context.hodlNewLabState());
@@ -113,13 +114,12 @@ test("forged fingerprint/ID cannot alias an existing key; ignored imports stay u
   const pending = c.hodlKeyManagerPending[0];
   assert.notEqual(pending.id, trusted.id);
   assert.equal(pending.result, null);
-  c.hodlKeyManagerUseAllInStation();
-  assert.equal(c.hodlKeys.length, 2, "bulk add cannot install an unverified wallet");
   c.hodlKeyManagerRestoreIgnored(c.hodlKeyManagerIgnored[0]);
   assert.equal(c.hodlKeyManagerPending.length, 3);
   assert.equal(c.hodlKeyManagerPending[2].needsDerivation, true);
   assert.equal(c.hodlKeyManagerPending[2].result, null);
   c.hodlKeyManagerUseInStation(pending);
+  assert.equal(c.hodlKeys.length, 2, "loading inputs cannot install an unverified wallet");
   const lab = c.hodlKeys[c.hodlActiveKey];
   assert.equal(lab.isLab, true);
   assert.equal(lab.result, null);
@@ -142,7 +142,7 @@ function enableDerivation(c) {
       return { words: value.split(" ") };
     },
     hodlThrowIfFailed() {}, hodlSetWorkspaceError() {}, hodlSetSelectedScriptType() {},
-    hodlSnapshotKeySummary() {}, hodlJournalCaptureDerivedKey() {}, hodlFocusWalletResult() {},
+    hodlSnapshotKeySummary() {}, hodlFocusWalletResult() {},
     // The shared-fingerprint confirmation is a modal; the browser suite
     // drives it. Here the user proceeds, so the commit logic runs.
     hodlConfirmKeyFingerprint: () => Promise.resolve(true),
@@ -232,13 +232,12 @@ test("key-manager journal events never log the wallet identity (#534 review)", a
   const state = c.hodlKeys.find((item) => !item.isLab && item.result);
   assert.ok(state?.result?.masterIdentity, "the fixture derives a master identity");
   calls.length = 0;
-  c.hodlKeyManagerToggle(state); // exclude
-  c.hodlKeyManagerToggle(state); // include
   c.hodlKeyManagerUseInStation(state);
+  c.hodlKeyManagerDetachFromStation(state);
   c.hodlKeyManagerIgnore(state);
   c.hodlKeyManagerRestoreIgnored(c.hodlKeyManagerIgnored[0]);
   const events = calls.filter((call) => call[0]?.startsWith?.("key-manager-"));
-  assert.ok(events.length >= 5, `expected include/exclude/use/ignore/restore events, got ${JSON.stringify(events)}`);
+  assert.deepEqual(events.map(([kind]) => kind), ["key-manager-use", "key-manager-ignore", "key-manager-restore"]);
   for (const call of events) {
     const detail = String(call[1]);
     assert.ok(!detail.includes(state.result.masterIdentity) && !detail.includes(state.result.rootXpub),

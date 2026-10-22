@@ -98,10 +98,10 @@ test("formatStamp is local wall-clock, not UTC ISO", () => {
   assert.doesNotMatch(stamp, /T|Z/);
 });
 
-test("the notebook download preserves blank lines and removes untouched inline hints", () => {
+test("the notebook download preserves blank lines and editable timestamp text", () => {
   let text = "2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note";
-  assert.equal(formatNotebook(text), "2026-09-02 10:00:00  first note");
-  assert.equal(formatNotebook("2026-09-02 10:00:00  first note\n2026-09-02 10:01:00  "), "2026-09-02 10:00:00  first note");
+  assert.equal(formatNotebook(text), "2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note");
+  assert.equal(formatNotebook("2026-09-02 10:00:00  first note\n2026-09-02 10:01:00  "), "2026-09-02 10:00:00  first note\n2026-09-02 10:01:00");
   assert.equal(formatNotebook(""), "No notes.");
 });
 
@@ -109,7 +109,7 @@ test("a multi-page notebook download includes every named page", () => {
   assert.equal(formatNotebookPages([
     { number: 1, name: "Field notes", notesText: "2026-09-02 10:00:00  first note" },
     { number: 2, name: "Page 2", notesText: "2026-09-02 10:01:00  " },
-  ]), "Field notes\n2026-09-02 10:00:00  first note\n\nPage 2\nNo notes.");
+  ]), "Field notes\n2026-09-02 10:00:00  first note\n\nPage 2\n2026-09-02 10:01:00");
   assert.equal(formatNotebookPages([{ number: 1, name: "Page 1", notesText: "" }]), "No notes.");
 });
 
@@ -195,8 +195,8 @@ test("notebook imports validate their schema and legacy text becomes one page", 
 });
 
 test("notebook uploads preserve a filled page and reuse an empty current page", () => {
-  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), false);
-  assert.equal(notebookPageHasContent("\n  \n2026-09-04 13:17:24  Add new note"), false);
+  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), true);
+  assert.equal(notebookPageHasContent("\n  \n2026-09-04 13:17:24  Add new note"), true);
   assert.equal(notebookPageHasContent("2026-09-04 13:17:24  kept"), true);
   let imported = journalFromPlainText("uploaded notes");
   let journal = createJournal();
@@ -209,7 +209,7 @@ test("notebook uploads preserve a filled page and reuse an empty current page", 
   assert.equal(merged.pages[1].name, "Page 2");
   assert.equal(merged.activePage, 1);
   let empty = createJournal();
-  empty.pages[0].notesText = "2026-09-04 13:17:24  ";
+  empty.pages[0].notesText = " \n\t";
   merged = mergeNotebookImport(empty, imported);
   assert.equal(merged.pages.length, 1);
   assert.equal(merged.pages[0].id, 1);
@@ -796,11 +796,11 @@ test("mutant kill: journal basics and formatting", () => {
   assert.equal(formatNotebook(`before ${token} after`), "before [Key: My Key · a1b2c3d4] after");
   assert.equal(formatNotebook(`before ${journalKeyReferenceToken("a1b2c3d4", "a1b2c3d4")} after`), "before [Key: a1b2c3d4] after");
   assert.equal(formatNotebook(`before ${journalBip85ReferenceToken("bip39", "deadbeef")} after`), "before [BIP-85 BIP-39: deadbeef] after");
-  assert.equal(formatNotebook("2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note"), "2026-09-02 10:00:00  first note");
+  assert.equal(formatNotebook("2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note"), "2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note");
   assert.equal(formatNotebook(""), "No notes.");
   assert.equal(formatNotebook(null), "No notes.");
   assert.equal(formatNotebookPages([{ number: 1, name: "Page 1", notesText: "" }]), "No notes.");
-  assert.equal(formatNotebookPages([{ number: 1, name: "Field notes", notesText: "2026-09-02 10:00:00  first note" }, { number: 2, name: "Page 2", notesText: "2026-09-02 10:01:00  " }]), "Field notes\n2026-09-02 10:00:00  first note\n\nPage 2\nNo notes.");
+  assert.equal(formatNotebookPages([{ number: 1, name: "Field notes", notesText: "2026-09-02 10:00:00  first note" }, { number: 2, name: "Page 2", notesText: "2026-09-02 10:01:00  " }]), "Field notes\n2026-09-02 10:00:00  first note\n\nPage 2\n2026-09-02 10:01:00");
   assert.equal(formatNotebookPages([]), "No notes.");
   assert.equal(formatNotebookPages(null), "No notes.");
 });
@@ -851,7 +851,7 @@ test("mutant kill: notebook serialize/parse boundaries", () => {
 });
 
 test("mutant kill: notebook import and page content", () => {
-  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), false);
+  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), true);
   assert.equal(notebookPageHasContent("2026-09-04 13:17:24  kept"), true);
   assert.equal(notebookPageHasContent("hello"), true);
   assert.equal(notebookPageHasContent(""), false);
@@ -865,7 +865,7 @@ test("mutant kill: notebook import and page content", () => {
   assert.equal(merged.pages[1].notesText, "uploaded notes");
   assert.equal(merged.activePage, 1);
   const empty = createJournal();
-  empty.pages[0].notesText = "2026-09-04 13:17:24  ";
+  empty.pages[0].notesText = " \n\t";
   merged = mergeNotebookImport(empty, imported);
   assert.equal(merged.pages.length, 1);
   assert.equal(merged.pages[0].id, 1);

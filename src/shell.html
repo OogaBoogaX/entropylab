@@ -781,31 +781,30 @@ words, pick one of the checksum words.</span></span>
       </div>
     <div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>
         <h2>Entropy Journal</h2>
-        <p class="muted tool-intro-note">Keep entries, notes, and key inputs together. Download a backup to keep your work. Existing derived keys and keys derived while the journal is unlocked are recorded, including seed words. Files are encrypted with your password; without one, anyone with the file can open it.</p>
+        <p class="muted tool-intro-note">Keep notes, reusable key inputs, and session history together. Download a complete backup, including private key inputs and recovery material, to keep your work before closing this page. A password protects your files; without one, anyone with the file can open them.</p>
         <div class="row journal-global-actions tool-actions" id="journal-global-actions" hidden>
-          <button class="btn secondary green journal-download-action" id="journal-global-download" type="button" disabled><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span>Download journal</span></button>
+          <button class="btn secondary green journal-download-action" id="journal-global-download" type="button" disabled><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span>Download backup</span></button>
           <div class="journal-status" id="journal-status">
             <img class="journal-status-lifehash" id="journal-lifehash" width="48" height="48" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" hidden>
             <div>
               <p class="journal-status-title" id="journal-status-title">Journal open</p>
-              <p class="muted" id="journal-status-note" role="status" aria-live="polite">No entries yet.</p>
+              <p class="muted" id="journal-status-note" role="status" aria-live="polite"></p>
             </div>
           </div>
           <button class="btn red clear-current-action" id="journal-global-clear" type="button" disabled>Clear journal</button>
         </div>
+        <p class="err" id="journal-error" role="alert"></p>
       </div>
     <div class="key-manager no-print" id="journal-manager" hidden>
       <div class="key-tab-strip">
-        <div class="key-tabs" id="journal-tool-tabs" role="tablist" aria-label="Journal stations">
-          <button class="tab key-tab is-lab" id="journal-book-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-card" data-journal-tool="book" disabled>Entries</button>
-          <button class="tab key-tab is-lab" id="journal-notes-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-notes-card" data-journal-tool="notes" disabled>Notepad</button>
-          <button class="tab key-tab is-lab" id="journal-keymanager-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-keymanager-card" data-journal-tool="keymanager" disabled>Key manager</button>
-          <button class="tab key-tab is-lab" id="journal-state-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-state-card" data-journal-tool="state" disabled>Session state</button>
-          <button class="tab key-tab is-lab" id="journal-log-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-log-card" data-journal-tool="log" disabled>Session log</button>
+        <div class="key-tabs" id="journal-tool-tabs" role="tablist" aria-label="Journal sections">
+          <button class="tab key-tab is-lab" id="journal-notes-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-notes-card" data-journal-tool="notes" disabled>Notes</button>
+          <button class="tab key-tab is-lab" id="journal-keymanager-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-keymanager-card" data-journal-tool="keymanager" disabled>Keys</button>
+          <button class="tab key-tab is-lab" id="journal-session-tab" type="button" role="tab" aria-selected="false" aria-controls="journal-session-card" data-journal-tool="session" disabled>Session</button>
         </div>
       </div>
     </div>
-      <section class="card no-print tool-card" id="journal-card" aria-label="Journal" role="tabpanel" hidden>
+      <section class="card no-print tool-card" id="journal-card" aria-label="Create or open Journal" hidden>
       <div id="journal-locked-panel">
         <div class="row segmented-control is-wide is-half" id="journal-gate-modes" role="group" aria-label="Journal start">
           <button type="button" class="tab active" data-journal-gate="create" aria-pressed="true" aria-controls="journal-create-panel">Create journal</button>
@@ -838,124 +837,112 @@ words, pick one of the checksum words.</span></span>
         </div>
         <p class="sr-only" id="journal-gate-status" role="status" aria-live="polite"></p>
       </div>
-      <div id="journal-work-panel" hidden>
-        <div class="row bip85-actions journal-toolbar tool-actions">
-          <label class="field journal-search-field">Search labels
-            <input id="journal-search" type="search" placeholder="Filter by label" autocomplete="off">
-          </label>
-          <button class="btn primary" id="journal-add" type="button">Add entry</button>
-        </div>
-        <div id="journal-list" class="journal-list" aria-live="polite"></div>
-        <div id="journal-editor" class="journal-editor" hidden>
-          <label class="field">Method
-            <select id="journal-method">
-              <option value="dice" selected>Dice rolls</option>
-              <option value="coin">Coin flips</option>
-              <option value="hex">Hex</option>
-              <option value="brain">Brain-wallet text</option>
-              <option value="seed">Manual seed</option>
-              <option value="cards">Playing cards</option>
-            </select>
-          </label>
-          <label class="field">Raw rolls or input
-            <textarea id="journal-input" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-            <span class="field-note">Stored exactly as entered.</span>
-          </label>
-          <label class="field">BIP39 seed or passphrase
-            <textarea id="journal-phrase" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-          </label>
-          <label class="field">Label
-            <input id="journal-label" type="text" maxlength="120" autocomplete="off">
-          </label>
-          <label class="field">Notes (optional)
-            <textarea id="journal-entry-notes" spellcheck="true"></textarea>
-          </label>
-          <label class="field">Session wallet (optional)
-            <select id="journal-wallet"><option value="">None</option></select>
-          </label>
-          <div class="row bip85-actions tool-actions">
-            <button class="btn primary" id="journal-commit" type="button">Save entry</button>
-            <button class="btn secondary" id="journal-cancel" type="button">Cancel</button>
-          </div>
-        </div>
-        <div id="journal-view" hidden></div>
-      </div>
-      <p class="err" id="journal-error" role="alert"></p>
       <p class="muted">The journal lives in this page until you download its file. Password-protected files require the exact password; files created without one can be opened by anyone. Memory clearing is best-effort; close the page before reconnecting the computer.</p>
     </section>
-      <section class="card no-print tool-card" id="journal-notes-card" role="tabpanel" hidden>
+      <section class="card no-print tool-card" id="journal-notes-card" role="tabpanel" aria-labelledby="journal-notes-tab" hidden>
       <div class="tool-intro edge-note is-info" id="journal-notes-tool-intro">
-        <h2>Notepad</h2>
-        <p class="muted tool-intro-note">Notes for this sitting. Closing the page throws them away unless you download them.</p>
+        <h2>Notes</h2>
+        <p class="muted tool-intro-note">Write freely, organize pages, and insert public key references. Notes are included in the complete Journal backup.</p>
+        <p class="field-note" id="journal-new-note-help">New note or Ctrl/⌘Enter appends a timestamped note at the end of the page. Enter continues the current note. Clicking and deleting never create notes.</p>
       </div>
-      <div class="journal-format-bar" role="group" aria-label="Notepad appearance and inserts">
+      <div class="journal-format-bar" role="group" aria-label="Insert into notes">
         <label class="journal-format-control journal-key-control"><span>Key</span><select id="journal-key-insert" aria-label="Insert a Key Station key"><option value="" selected data-custom-select-placeholder="true">Insert key</option><option value="" disabled>No derived keys yet</option></select></label>
-        <label class="journal-format-control"><span>Typeface</span><select id="journal-font"><option value="mono" selected>Mono</option><option value="sans">Sans</option><option value="serif">Serif</option></select></label>
-        <label class="journal-format-control"><span>Text size</span><select id="journal-size"><option value="small">Small</option><option value="medium" selected>Medium</option><option value="large">Large</option></select></label>
-        <label class="journal-format-control"><span>Spacing</span><select id="journal-spacing"><option value="compact">Compact</option><option value="comfortable" selected>Comfortable</option><option value="spacious">Spacious</option></select></label>
+        <button class="btn secondary" id="journal-insert-timestamp" type="button" aria-keyshortcuts="Control+Enter Meta+Enter" aria-describedby="journal-new-note-help">New note</button>
       </div>
       <div class="key-tab-strip journal-page-tab-strip"><div class="key-tabs" id="journal-page-tabs" role="tablist" aria-label="Notepad pages"></div><div class="add-item-control"><button class="add-key" id="add-journal-page" type="button" aria-label="Add notepad page" aria-describedby="add-journal-page-tooltip">+</button><span class="add-item-tooltip" id="add-journal-page-tooltip" role="tooltip">Add notepad page</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-journal-page" type="button" aria-label="Delete current notepad page" aria-describedby="delete-journal-page-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-journal-page-tooltip" role="tooltip">Delete this notepad page</span></div></div>
       <div class="journal-notes-wrap" id="journal-page-panel" role="tabpanel" data-font="mono" data-size="medium" data-spacing="comfortable">
         <div class="journal-notes-render" id="journal-notes-render" aria-hidden="true"></div>
-        <textarea class="journal-notes-text" id="journal-notes-text" aria-label="Session notes" aria-placeholder="Add new note" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-        <div class="journal-notes-prompt" id="journal-notes-prompt" aria-hidden="true"><span id="journal-notes-prompt-before"></span><span class="journal-notes-prompt-text" id="journal-notes-prompt-text">Add new note</span></div>
+        <textarea class="journal-notes-text" id="journal-notes-text" aria-label="Session notes" placeholder="Write your notes here" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         <button class="copy-button journal-notes-copy" id="journal-notes-copy" type="button" aria-label="Copy notepad page" title="Copy notepad page" data-copy-label="Copy notepad page" data-copied-label="Notepad page copied" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button>
       </div>
+      <details class="key-group" id="journal-notes-appearance">
+        <summary>Page appearance</summary>
+        <div class="journal-format-bar" role="group" aria-label="Page appearance">
+        <label class="journal-format-control"><span>Typeface</span><select id="journal-font"><option value="mono" selected>Mono</option><option value="sans">Sans</option><option value="serif">Serif</option></select></label>
+        <label class="journal-format-control"><span>Text size</span><select id="journal-size"><option value="small">Small</option><option value="medium" selected>Medium</option><option value="large">Large</option></select></label>
+        <label class="journal-format-control"><span>Spacing</span><select id="journal-spacing"><option value="compact">Compact</option><option value="comfortable" selected>Comfortable</option><option value="spacious">Spacious</option></select></label>
+        </div>
+      </details>
+      <details class="key-group" id="journal-notes-files">
+        <summary>Import or export notes</summary>
+        <p class="muted" data-journal-protection>Uses this Journal's password setting</p>
+        <p class="muted">Export all note pages using this Journal's password setting. Import adds pages without replacing your notes.</p>
       <div class="row psbt-actions journal-file-actions tool-actions">
-        <div class="journal-download-options"><button class="btn secondary green journal-download-action journal-file-button" id="journal-notes-download" type="button" aria-label="Download notepad" title="Download notepad"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Download notepad</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-notes-encrypt" type="checkbox" checked><span>Use Journal file encryption</span></label></div>
-        <button class="btn secondary blue journal-upload-action journal-file-button" id="journal-notes-upload" type="button" aria-label="Upload notebook" title="Upload notebook"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 17V5M7 10l5-5 5 5M5 21h14"/></svg><span class="control-label">Upload</span></button>
+        <div class="journal-download-options"><button class="btn secondary green journal-download-action journal-file-button" id="journal-notes-download" type="button" aria-label="Export all note pages" title="Export all note pages"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Export all note pages</span></button></div>
+        <button class="btn secondary blue journal-upload-action journal-file-button" id="journal-notes-upload" type="button" aria-label="Import note pages" title="Import note pages"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 17V5M7 10l5-5 5 5M5 21h14"/></svg><span class="control-label">Import note pages</span></button>
         <input id="journal-notes-file" type="file" accept=".json,.txt,application/json,text/plain" hidden>
       </div>
+      </details>
       <p class="muted journal-notes-status" id="journal-notes-status" role="status" aria-live="polite"></p>
     </section>
-      <section class="card no-print tool-card" id="journal-keymanager-card" role="tabpanel" hidden>
+      <section class="card no-print tool-card" id="journal-keymanager-card" role="tabpanel" aria-labelledby="journal-keymanager-tab" hidden>
       <div class="tool-intro edge-note is-info" id="journal-keymanager-tool-intro">
-        <h2>Key manager</h2>
-        <p class="muted tool-intro-note" data-i18n-rich>Save key inputs in one <code>.elkeys</code> file. Imports are unchecked until you load and derive again. Uses the Journal password. Nothing leaves the machine.</p>
+        <h2>Keys</h2>
+        <p class="muted tool-intro-note" data-i18n-rich>Key Station derives keys. Journal keeps their reusable inputs, including detached and imported inputs. All are included in your complete backup. Imported inputs must be derived again before use.</p>
       </div>
-      <div class="row tool-actions"><button class="btn secondary" id="journal-keymanager-add-all" type="button" disabled>Add all to Key Station</button></div>
+      <div class="row tool-actions"><button class="btn secondary" id="journal-keymanager-create" type="button">Go to Key Station</button></div>
       <div class="key-tab-strip journal-keymanager-tab-strip"><div class="key-tabs" id="journal-keymanager-tabs" role="tablist" aria-label="Managed keys"></div></div>
-      <div class="journal-keymanager-panel" id="journal-keymanager-panel"></div>
+      <div class="journal-keymanager-panel" id="journal-keymanager-panel" role="tabpanel"></div>
       <section class="journal-keymanager-ignored" id="journal-keymanager-ignored" hidden>
-        <h3>Ignored keys</h3>
+        <h3>Archived inputs</h3>
+        <p class="muted">Kept in your backup. Restore an input set when you need to derive it again.</p>
         <div class="journal-keymanager-ignored-list" id="journal-keymanager-ignored-list"></div>
       </section>
+      <details class="key-group" id="journal-keymanager-files">
+        <summary>Import or export key inputs</summary>
+        <p class="muted">The key-input file includes every listed and archived input set. It does not include notes or session history.</p>
       <div class="row psbt-actions journal-file-actions journal-keymanager-file-actions tool-actions">
-        <div class="journal-download-options"><button class="btn secondary green journal-download-action journal-file-button" id="journal-keymanager-download" type="button" aria-label="Download managed keys" title="Download managed keys"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Download keys</span></button><span class="journal-keymanager-encryption-note">Uses this Journal's password setting</span></div>
-        <button class="btn secondary blue journal-upload-action journal-file-button" id="journal-keymanager-upload" type="button" aria-label="Upload managed keys" title="Upload managed keys"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 17V5M7 10l5-5 5 5M5 21h14"/></svg><span class="control-label">Upload</span></button>
+        <div class="journal-download-options"><button class="btn secondary green journal-download-action journal-file-button" id="journal-keymanager-download" type="button" aria-label="Export all key inputs" title="Export all key inputs"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Export all key inputs</span></button><span class="journal-keymanager-encryption-note" data-journal-protection>Uses this Journal's password setting</span></div>
+        <button class="btn secondary blue journal-upload-action journal-file-button" id="journal-keymanager-upload" type="button" aria-label="Import key inputs" title="Import key inputs"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 17V5M7 10l5-5 5 5M5 21h14"/></svg><span class="control-label">Import key inputs</span></button>
         <input id="journal-keymanager-file" type="file" accept=".elkeys,.json,application/json" hidden>
       </div>
+      </details>
+      <details class="key-group" id="journal-saved-records" hidden>
+        <summary>Saved records from older backups</summary>
+        <p class="muted">These original records are preserved for reference. They are not reusable key inputs. To derive a key, review its inputs in Key Station.</p>
+        <div id="journal-work-panel" hidden>
+          <label class="field journal-search-field">Search saved records
+            <input id="journal-search" type="search" placeholder="Filter by label" autocomplete="off">
+          </label>
+          <div id="journal-list" class="journal-list" aria-live="polite"></div>
+          <div id="journal-view" hidden></div>
+        </div>
+      </details>
       <p class="muted journal-keymanager-status" id="journal-keymanager-status" role="status" aria-live="polite"></p>
     </section>
-      <section class="card no-print tool-card" id="journal-state-card" role="tabpanel" hidden>
+      <section class="card no-print tool-card" id="journal-session-card" role="tabpanel" aria-labelledby="journal-session-tab" hidden>
+      <div class="tool-intro edge-note is-info"><h2>Session</h2><p class="muted tool-intro-note">Review this session's snapshot and activity. A snapshot is a report, not a way to reopen every tool.</p></div>
+      <details class="key-group" id="journal-state-card"><summary>Session snapshot</summary>
       <div class="tool-intro edge-note is-info" id="journal-state-tool-intro">
-        <h2>Session state</h2>
         <p class="muted tool-intro-note">What’s on this page right now. Private material stays hidden unless you tick the box.</p>
       </div>
       <p class="muted">This snapshot follows the current stations automatically.</p>
       <label class="choice"><input type="checkbox" id="journal-state-private" data-private-reveal>
-        <span><strong>Include private recovery material</strong>
-        <span class="desc">Same rule as the recovery sheet. Off by default. The file is then a secret — treat the download like a seed backup.</span></span>
+        <span><strong>Reveal private snapshot</strong>
+        <span class="desc">Shows private recovery material and saved snapshots from older sessions. Copy and snapshot export include what is shown; treat them like a seed backup.</span></span>
       </label>
       <div class="field" data-private-field>
         <p class="label copy-field-label">Session snapshot<span id="journal-state-copy"></span></p>
         <pre class="journal-log" id="journal-state-text" data-private-value data-i18n-skip translate="no"></pre>
       </div>
+      <details class="key-group" id="journal-state-files"><summary>Export displayed snapshot</summary>
+        <p class="muted" data-journal-protection>Uses this Journal's password setting</p>
       <div class="row psbt-actions tool-actions">
-        <div class="journal-download-options"><button class="btn secondary green journal-download-action journal-file-button" id="journal-state-download" type="button" aria-label="Download session state" title="Download session state"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Download session state</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-state-encrypt" type="checkbox" checked><span>Use Journal file encryption</span></label></div>
+        <div class="journal-download-options"><button class="btn secondary green journal-download-action journal-file-button" id="journal-state-download" type="button" aria-label="Export displayed snapshot" title="Export displayed snapshot"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Export displayed snapshot</span></button></div>
       </div>
-    </section>
-      <section class="card no-print tool-card" id="journal-log-card" role="tabpanel" hidden>
+      </details>
+    </details>
+      <details class="key-group" id="journal-log-card"><summary>Activity</summary>
       <div class="tool-intro edge-note is-info" id="journal-log-tool-intro">
-        <h2>Session log</h2>
-        <p class="muted tool-intro-note">Last 400 actions, with a time and a fingerprint. No seeds, no keys, no secrets.</p>
+        <p class="muted tool-intro-note">The last 400 recorded actions. Actions recorded by this app omit secret inputs. Imported activity is unverified text and may contain sensitive information.</p>
       </div>
-      <p class="muted">Download this with a bug report. It names tools and fingerprints, not seeds.</p>
+      <p class="muted">Review the report before sharing it. Its separate export is plain text.</p>
       <div class="journal-log-wrap"><pre class="journal-log" id="journal-log-out" aria-live="polite">No events yet.</pre><button class="copy-button journal-log-copy" id="journal-log-copy" type="button" aria-label="Copy session log" title="Copy session log" data-copy-label="Copy session log" data-copied-label="Session log copied"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button></div>
       <div class="row psbt-actions journal-log-actions tool-actions">
-        <div class="journal-download-options"><button class="btn secondary green journal-download-action journal-file-button" id="journal-log-download" type="button" aria-label="Download session log" title="Download session log"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Download session log</span></button><label class="journal-encrypt-option"><input class="journal-encrypt-download" id="journal-log-encrypt" type="checkbox" checked><span>Use Journal file encryption</span></label></div>
+        <div class="journal-download-options"><button class="btn secondary green journal-download-action journal-file-button" id="journal-log-download" type="button" aria-label="Export activity as plain text" title="Export activity as plain text"><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span class="control-label">Export activity as plain text</span></button></div>
         <button class="btn red clear-current-action" id="journal-log-clear" type="button">Clear log</button>
       </div>
+    </details>
     </section>
     </div>
     <details class="card muted sources" id="sources" open>
