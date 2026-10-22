@@ -16179,12 +16179,17 @@ function hodlInitJournalToolTabs() {
   if (notesText) {
     hodlRenderJournalPageTabs();
     hodlJournalRestorePage(notesText);
+    notesText.addEventListener("beforeinput", () => hodlJournalFreezeNoteClock());
+    notesText.addEventListener("compositionstart", () => hodlJournalFreezeNoteClock());
     notesText.addEventListener("input", (event) => hodlJournalUpdateNotesText(notesText, event));
     notesText.addEventListener("keydown", (event) => hodlJournalNotesKeydown(event, notesText));
     notesText.addEventListener("scroll", () => hodlJournalSyncNotesRender(notesText));
     notesText.addEventListener("click", () => hodlJournalNotesClick(notesText));
     notesText.addEventListener("mousemove", () => hodlJournalRevealCopyButton(notesCopy));
     if (typeof ResizeObserver === "function") new ResizeObserver(() => hodlJournalSyncNotesRender(notesText)).observe(notesText);
+    setInterval(() => {
+      if (hodlJournalUnlocked()) hodlJournalTickNoteClock(notesText);
+    }, 1000);
   }
   document.getElementById("journal-insert-timestamp")?.addEventListener("click", () => hodlJournalInsertTimestamp(notesText));
   if (notesCopy) {
@@ -16322,15 +16327,45 @@ function hodlJournalNotesClick(field) {
   let key = hodlJournalKeyReferenceRanges(field.value).find((range) => start >= range.start && start <= range.end);
   if (key) field.setSelectionRange(key.start, key.end);
 }
+function hodlJournalFreezeNoteClock() {
+  let page = hodlJournalActivePage();
+  if (page) delete page.pendingStamp;
+}
+function hodlJournalTickNoteClock(field) {
+  let page = hodlJournalActivePage(), pending = page?.pendingStamp;
+  if (!field || !pending) return;
+  // Only New note can arm a clock. Never rediscover one from edited or
+  // imported text, and never overwrite a change awaiting its input event.
+  if (field.value !== page.notesText || field.value.slice(pending.start) !== pending.stamp + "  ") {
+    hodlJournalFreezeNoteClock();
+    return;
+  }
+  let stamp = hodlJournalStamp();
+  if (stamp === pending.stamp || stamp.length !== pending.stamp.length) return;
+  let start = field.selectionStart, end = field.selectionEnd, direction = field.selectionDirection;
+  let top = field.scrollTop, left = field.scrollLeft;
+  field.setRangeText(stamp, pending.start, pending.start + pending.stamp.length, "preserve");
+  field.setSelectionRange(start, end, direction);
+  field.scrollTop = top;
+  field.scrollLeft = left;
+  pending.stamp = stamp;
+  hodlJournalStoreNotesText(field, false);
+}
 function hodlJournalUpdateNotesText(field) {
+  // Freeze on every edit, including edits earlier on the page. Continuing
+  // timer writes after typing would interfere with native undo and IME.
+  hodlJournalFreezeNoteClock();
   hodlJournalStoreNotesText(field);
 }
 function hodlJournalInsertTimestamp(field) {
   if (!field) return;
   let separator = !field.value || field.value.endsWith("\n\n") ? "" : field.value.endsWith("\n") ? "\n" : "\n\n";
-  let stamp = separator + hodlJournalStamp() + "  ";
-  field.setRangeText(stamp, field.value.length, field.value.length, "end");
-  field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: stamp }));
+  let stamp = hodlJournalStamp(), start = field.value.length + separator.length;
+  let text = separator + stamp + "  ";
+  field.setRangeText(text, field.value.length, field.value.length, "end");
+  field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+  let page = hodlJournalActivePage();
+  if (page) page.pendingStamp = { start, stamp };
   field.focus({ preventScroll: true });
   field.scrollTop = field.scrollHeight;
 }

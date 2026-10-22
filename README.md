@@ -314,6 +314,10 @@ an explicit error before those pairs are allocated.
   New pages start empty. **New note** or **Ctrl/⌘+Enter** appends this
   computer's current local date and time in a new block at the end of the
   page, preserving existing text and separating notes with a blank line.
+  The new timestamp ticks each second until the first edit on that page,
+  including typing, paste, deletion, undo, or starting input composition.
+  Clicking, selecting, and scrolling leave it ticking without moving the
+  caret or changing backup status. Imported timestamps stay fixed.
   Enter continues the current note. Typing, clicking, and deleting never
   insert timestamps; timestamps already present in older backups remain
   editable text. Key
