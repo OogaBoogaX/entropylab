@@ -1330,7 +1330,11 @@ test("one input with 300,000 warnings renders capped instead of throwing (GLM 5.
   const envelopes = Array.from({ length: 300000 }, (_, envelopeIndex) => ({ envelopeIndex, source: "witness", bodyBytes: 1, unrecognizedEven: false }));
   doc.stubInscriptions = { inputs: [{ envelopes }], envelopes };
   const html = render(doc, new Uint8Array(), "2024-01-01T00:00:00Z", "inspect", { network: "mainnet" });
-  assert.equal((html.match(/<strong>Inscription envelope<\/strong>/g) || []).length, vizModule.PSBT_RENDER_LIMIT, "the collected warnings render capped");
+  // The input's section and as many of its warnings as the 2,000-unit budget
+  // holds render inline (2,000 - 1 output block - 1 section); the rest are
+  // counted, not rendered.
+  assert.equal((html.match(/<strong>Inscription envelope<\/strong>/g) || []).length, 1998, "warnings render up to the budget");
+  assert.ok(html.includes("<strong>Input 0</strong>"), "the input's own section renders");
   assert.match(html, /…and \d+ more warnings \(not rendered\)\./, "the rest are counted");
   // The Nonce Inspector builds the same input sections with an unbounded
   // budget (it discards them), so its inline branch took the same spread
@@ -1459,4 +1463,19 @@ test("only a caller that can grow the window gets a Show-more button", () => {
   assert.equal(fixed.match(/<strong>Input \d+<\/strong>/g)?.length ?? 0, 500, "without a window, the shared 500 cap");
   assert.ok(fixed.includes("…and 700 more inputs (not rendered)."));
   assert.deepEqual(moreButtons(fixed), [], "no step, no button");
+});
+
+test("an input with more warnings than the budget holds keeps its section, in a small PSBT (GLM 5.3 review of #1031)", () => {
+  // 3 inputs; input 1 carries 2,500 envelopes. Asking for its section and all
+  // its warnings at once hid input 1 entirely (and so its address and amount)
+  // although the PSBT is far under the cap.
+  const { render } = hodlRenderPsbtForTest();
+  const doc = inspectorDoc(3, 1);
+  const envelopes = Array.from({ length: 2500 }, (_, envelopeIndex) => ({ envelopeIndex, source: "witness", bodyBytes: 1, unrecognizedEven: false }));
+  doc.stubInscriptions = { inputs: [{ envelopes: [] }, { envelopes }, { envelopes: [] }], envelopes };
+  const html = render(doc, new Uint8Array(), "2024-01-01T00:00:00Z", "inspect", { network: "mainnet" });
+  for (const n of [0, 1, 2]) assert.ok(html.includes(`<strong>Input ${n}</strong>`), `input ${n}'s section renders`);
+  assert.ok(!html.includes("more inputs (not rendered)"), "no input is elided");
+  assert.ok(html.indexOf("<strong>Input 1</strong>") < html.indexOf("<strong>Inscription envelope</strong>"), "input 1's warnings follow its section");
+  assert.match(html, /…and \d+ more warnings \(not rendered\)\./, "the warnings past the budget are counted");
 });

@@ -13004,10 +13004,20 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // collected list rendered capped after the loop, and the unrendered
     // section is counted in the inputs elision line below.
     const own = warnings.splice(warningsBefore);
-    if (index < limits.inputs && budget.left >= 1 + own.length) {
-      budget.take(1 + own.length);
+    // The section needs one unit; as many of its own warnings as the budget
+    // then holds render inline under it, and the rest join the collected
+    // list. (Asking for the section and every warning at once hid the whole
+    // section of an input whose warnings outnumbered the budget left, even in
+    // a small PSBT: GLM 5.3's review of #1031.) Loops, not spreads: the nonce
+    // view's budget is unbounded and `own` can hold hundreds of thousands.
+    if (index < limits.inputs && budget.take(1) === 1) {
       html.push(sectionHtml);
-      for (const warning of own) html.push(warning); // no spread here either: the nonce view's budget is unbounded
+      // One unit stays reserved for every later section in the window, so
+      // one input's warnings can never starve the inputs after it.
+      const reserve = Math.max(0, Math.min(limits.inputs, psbt.inputs.length) - index - 1);
+      const inline = budget.take(Math.max(0, Math.min(own.length, budget.left - reserve)));
+      for (let i = 0; i < inline; i++) html.push(own[i]);
+      for (let i = inline; i < own.length; i++) warnings.push(own[i]);
       shownInputs++;
     } else {
       for (const warning of own) warnings.push(warning); // no spread: `own` can hold hundreds of thousands
