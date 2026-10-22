@@ -161,12 +161,52 @@ export class PassphraseVault {
 // the mask; otherwise the handlers stand aside and the field is ordinary.
 // Every change to the vault is announced as an `input` event on the field,
 // so the page's own listeners run as they did for typing.
+// The four composition input types of Input Events Level 2. Safari fires
+// deleteByComposition and insertFromComposition with isComposing false, so a
+// check on isComposing or on "insertCompositionText" alone misses them.
+const COMPOSITION_INPUT_TYPES = new Set(["insertCompositionText", "deleteCompositionText", "insertFromComposition", "deleteByComposition"]);
+const isCompositionInputType = (type) => COMPOSITION_INPUT_TYPES.has(type ?? "");
+
 export const bindVaultField = (field, vault, { active = () => true } = {}) => {
   let pending = null, composing = null, echoing = false;
+  // Whether the browser has a composition open (compositionstart to
+  // compositionend), which an abandonment does not end. A composition-type
+  // edit outside any browser composition (WebKit dictation and autocorrect
+  // send these) is an ordinary edit: its caret goes in its own slot, which
+  // only a composition-type input reads, and only while the field confirms
+  // it. Every path that drops `pending` drops this slot too.
+  let browserComposing = false, compositionPending = null;
   const caret = () => [field.selectionStart ?? field.value.length, field.selectionEnd ?? field.value.length];
-  const render = (at) => {
+  const render = (at, end = at) => {
     field.value = vault.mask();
-    field.setSelectionRange?.(at, at);
+    field.setSelectionRange?.(at, end);
+  };
+  // While a composition is open the field holds raw composing text, so its
+  // caret is not a vault index: drop the composition and put the mask back
+  // with the selection the composition began on.
+  const abandonComposition = () => {
+    const open = composing;
+    composing = null;
+    pending = null;
+    compositionPending = null;
+    if (open && active()) render(open.start, open.end);
+  };
+  // A change made to the vault from outside the field ends any open
+  // composition without touching the field: mask() and unmask() read or set
+  // field.value themselves, so a render here would overwrite the text they
+  // move (it turned a plain-mode passphrase into bullets).
+  const endComposition = () => {
+    composing = null;
+    pending = null;
+    compositionPending = null;
+  };
+  // A saved caret still describes the field only while everything outside
+  // the edited span is the mask the field held before the edit.
+  const confirmsCaret = (saved, value) => {
+    if (!saved) return false;
+    const { start, end } = saved, mask = vault.mask(), added = value.length - (vault.length - (end - start));
+    if (added < 0) return value === VAULT_MASK.repeat(value.length);
+    return value.slice(0, start) === mask.slice(0, start) && value.slice(start + added) === mask.slice(end);
   };
   const echo = (inputType) => {
     echoing = true;
@@ -184,14 +224,35 @@ export const bindVaultField = (field, vault, { active = () => true } = {}) => {
 
   field.addEventListener("beforeinput", (event) => {
     if (!active()) return;
+    // A cancelable edit in the middle of a composition (the field holds raw
+    // composing text, so its caret is not a vault index): drop the
+    // composition first, then apply the edit to the restored selection.
+    if (composing && !event.isComposing && !isCompositionInputType(event.inputType) && event.cancelable) abandonComposition();
+    const type = event.inputType || "";
+    // Composition text is only taken at compositionend, so no input event
+    // reads a caret saved here. Saving one anyway left it stale whenever no
+    // input followed (a composition input another listener prevented, or a
+    // no-op one), and the next beforeinput-less edit (an autofill) was spliced
+    // at it.
+    compositionPending = null;
+    if (event.isComposing || isCompositionInputType(type)) {
+      pending = null;
+      if (!event.isComposing && !browserComposing && !composing) {
+        const [start, end] = caret();
+        compositionPending = { start, end };
+      }
+      return;
+    }
     const [start, end] = caret();
     pending = { start, end };
-    const type = event.inputType || "";
-    if (event.isComposing || type === "insertCompositionText" || !event.cancelable) return;
+    if (!event.cancelable) return;
     event.preventDefault();
     let from = start, to = end, text = "";
     if (type.startsWith("insert")) {
-      if (type === "insertLineBreak" || type === "insertParagraph") return;
+      if (type === "insertLineBreak" || type === "insertParagraph") {
+        pending = null; // prevented, so no input event will consume it
+        return;
+      }
       text = event.data ?? event.dataTransfer?.getData("text/plain") ?? "";
     } else if (type === "deleteContentBackward") {
       if (start === end) from = Math.max(0, start - 1);
@@ -204,6 +265,7 @@ export const bindVaultField = (field, vault, { active = () => true } = {}) => {
     } else if (type.startsWith("delete") && type.endsWith("Forward")) {
       if (start === end) to = vault.length;
     } else if (!type.startsWith("delete")) {
+      pending = null; // prevented, so no input event will consume it
       return; // undo, redo, formatting: nothing in a field of bullets to do
     }
     pending = null;
@@ -211,23 +273,96 @@ export const bindVaultField = (field, vault, { active = () => true } = {}) => {
   });
 
   field.addEventListener("compositionstart", () => {
+    browserComposing = true;
+    compositionPending = null;
     if (!active()) return;
     const [start, end] = caret();
-    composing = { start, end, before: vault.length };
+    composing = { start, end, before: vault.length, value: field.value };
   });
-  field.addEventListener("compositionend", () => {
-    if (!active() || !composing) return;
-    const { start, end, before } = composing;
+  field.addEventListener("compositionend", (event) => {
+    browserComposing = false;
+    compositionPending = null;
+    if (!active()) return;
+    // A composition already abandoned (an outside edit ended it) commits
+    // nothing; the field only has to show the mask again.
+    if (!composing) {
+      pending = null;
+      if (field.value !== vault.mask()) render(Math.min(field.selectionStart ?? vault.length, vault.length));
+      return;
+    }
+    const { start, end, before, value: prior } = composing;
     composing = null;
     pending = null;
     const value = field.value, added = value.length - (before - (end - start));
-    apply(start, end, value.slice(start, start + Math.max(0, added)), "insertCompositionText");
+    const text = value.slice(start, start + Math.max(0, added));
+    // A field unchanged since compositionstart committed nothing. (A bullet
+    // that replaces a selected character one for one leaves the field
+    // identical too; that cannot be told from a cancel, so it is not taken:
+    // a mask character never enters the vault on a guess.)
+    if (value === prior) {
+      render(start);
+      return;
+    }
+    // On a cancel the event's data is empty or the IME's own composing text,
+    // never the restored bullets, so a changed field whose text equals the
+    // data is a commit, even a commit of bullets over a selection.
+    if (typeof event.data === "string" && event.data.length > 0 && event.data === text) {
+      apply(start, end, text, "insertCompositionText");
+      return;
+    }
+    // A cancelled composition (Esc, a blur) restores what the field held at
+    // compositionstart — the mask — so the text read back is the mask's own
+    // bullets where the vault holds the passphrase. Nothing was committed:
+    // take nothing, and never copy masked characters into the vault. A bullet
+    // committed at a collapsed caret covers no vault text, so it is the
+    // user's own character and is kept.
+    const maskOverSelection = end > start && text.length > 0 && text === VAULT_MASK.repeat(text.length);
+    if (maskOverSelection) {
+      render(start);
+      return;
+    }
+    // Android and other IMEs whose event.data differs from the field's text
+    // (e.g. after autocorrect): what the field holds is the commit.
+    apply(start, end, text, "insertCompositionText");
   });
 
   // An edit the browser made itself, or a value set by script. Runs on the
   // field before the page's listeners on its ancestors, so they see the mask.
-  field.addEventListener("input", () => {
-    if (!active() || echoing || composing) return;
+  field.addEventListener("input", (event) => {
+    if (!active() || echoing) {
+      compositionPending = null;
+      return;
+    }
+    const compositionInput = Boolean(event?.isComposing) || isCompositionInputType(event?.inputType);
+    if (compositionInput && !composing) {
+      // Composition text is only ever taken at compositionend. After an
+      // outside edit abandoned a composition the browser's own session runs
+      // on, and what the IME composes in it is never stored; the field is
+      // kept masked instead.
+      if (event?.isComposing || browserComposing) {
+        pending = null;
+        compositionPending = null;
+        render(Math.min(field.selectionStart ?? vault.length, vault.length));
+        return;
+      }
+      // Outside any composition it is an ordinary browser edit (WebKit
+      // dictation, autocorrect). Its caret is the one its own beforeinput
+      // saved, and only if the field confirms it; otherwise no caret is used,
+      // and the guarded paths below decide.
+      pending = confirmsCaret(compositionPending, field.value) ? compositionPending : null;
+      compositionPending = null;
+    } else {
+      compositionPending = null;
+    }
+    if (composing) {
+      if (compositionInput) return;
+      // Any other edit in the middle of a composition (an autofill, a
+      // password manager) cannot be placed: the field mixes mask bullets and
+      // raw composing text. Abandon both and show the vault as it is, a
+      // visible reset rather than a silent splice at stale indices.
+      abandonComposition();
+      return;
+    }
     const value = field.value;
     if (value === vault.mask()) {
       pending = null;
@@ -245,6 +380,12 @@ export const bindVaultField = (field, vault, { active = () => true } = {}) => {
         vault.replace(at, at + lost, "");
         render(at);
       }
+    } else if (vault.length && value.includes(VAULT_MASK)) {
+      // No caret was saved, and the field held the mask: a bullet in it now
+      // may be the mask's own, edited in a way no event described. A mask
+      // character never enters the vault on a guess, so show the vault as it
+      // is instead.
+      render(Math.min(field.selectionStart ?? vault.length, vault.length));
     } else {
       // Set by script: the whole value is the passphrase.
       vault.setText(value);
@@ -253,18 +394,26 @@ export const bindVaultField = (field, vault, { active = () => true } = {}) => {
     pending = null;
   });
 
+  // Any change to the vault made from outside the field ends an open
+  // composition: a compositionend that arrives later would apply its stale
+  // indices to the new contents (mask bullets into the vault).
+
+
   return {
     // The on-screen keyboard: insert at the caret, or delete before it.
     insert: (text) => {
+      abandonComposition();
       const [start, end] = caret();
       apply(start, end, text, "insertText");
     },
     deleteBackward: () => {
+      abandonComposition();
       const [start, end] = caret();
       apply(start === end ? Math.max(0, start - 1) : start, end, "", "deleteContentBackward");
     },
     // Script-side: the field shows `bytes` (a stored passphrase), or nothing.
     setBytes: (bytes) => {
+      endComposition();
       vault.setBytes(bytes);
       if (active()) render(vault.length);
       else {
@@ -273,16 +422,20 @@ export const bindVaultField = (field, vault, { active = () => true } = {}) => {
       }
     },
     clear: () => {
+      endComposition();
       vault.clear();
       field.value = "";
     },
     // Leaving the vault (a mode that edits the field's text itself) and
-    // coming back to it.
+    // coming back to it. Either switch ends any composition: a late
+    // compositionend from before it must be ignored.
     unmask: () => {
+      endComposition();
       field.value = vault.text();
       vault.clear();
     },
     mask: () => {
+      endComposition();
       vault.setText(field.value);
       render(vault.length);
     },
