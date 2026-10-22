@@ -39,7 +39,7 @@ stubs = {
 'online/entropylab/android/R.java': 'package online.entropylab.android; public class R { public static class layout {public static final int activity_main=1;} public static class id {public static final int version=1,digest=2,blocked=3,open=4,launch=5,page=7;} }',
 'online/entropylab/android/BuildConfig.java': 'package online.entropylab.android; public class BuildConfig {public static final String HTML_SHA256="'+(root/'ENTROPYLAB_HTML.sha256').read_text().split()[0]+'",ENTROPYLAB_VERSION="test";}',
 'online/entropylab/android/LifecycleCheck.java': '''package online.entropylab.android;
-import android.os.Bundle; import android.webkit.WebView; import android.widget.Button; import android.content.res.Configuration;
+import android.os.Bundle; import android.webkit.WebView; import android.widget.Button; import android.widget.TextView; import android.content.res.Configuration;
 public class LifecycleCheck {
  static void check(boolean value,String message){if(!value)throw new AssertionError(message);}
  static MainActivity create(Bundle saved){MainActivity a=new MainActivity();a.onCreate(saved);return a;}
@@ -48,6 +48,7 @@ public class LifecycleCheck {
  static MainActivity rotate(MainActivity a,boolean handled){if(handled){a.onConfigurationChanged(new Configuration());return a;} a.changing=true;a.onStop();a.performDestroy();return create(new Bundle());}
  public static void main(String[] args){
  boolean handled=Boolean.parseBoolean(args[0]);
+ if(args.length>1&&args[1].equals("refused")){MainActivity t=create(null);Button o=t.findViewById(R.id.open);TextView b=t.findViewById(R.id.blocked);check(!o.enabled&&b.text!=null&&!b.text.isEmpty(),"pin mismatch left Open enabled or showed no refusal");o.enabled=true;o.click();check(page(t).loads==0&&page(t).visibility==android.view.View.GONE&&t.findViewById(R.id.launch).visibility==0,"pin mismatch still loaded the calculator");System.out.println("LifecycleCheck OK: HTML that does not match the pin keeps Open disabled and never loads");return;}
  MainActivity launch=create(null);WebView unopened=page(launch);launch=rotate(launch,handled);check(page(launch)==unopened&&unopened.loads==0&&launch.findViewById(R.id.launch).visibility==0,"launch-screen rotation opened or recreated the calculator");
  MainActivity a=create(null);open(a);WebView original=page(a);original.input="PUBLIC ROTATION TEST ONLY";
  check(Boolean.FALSE.equals(android.webkit.WebSettings.saveFormData),"WebView form-data saving was not disabled");
@@ -76,4 +77,10 @@ with tempfile.TemporaryDirectory(prefix='entropylab-lifecycle-') as tmp:
     main = root / 'app/src/main/java/online/entropylab/android'
     files += [str(main/'MainActivity.java'), str(main/'HtmlPin.java')]
     subprocess.run(['javac', '--release', '17', '-d', str(tmp/'classes'), *files], check=True, timeout=180)
-    subprocess.run(['java', '-Dasset='+str(root/'app/src/main/assets/entropylab.html'), '-cp', str(tmp/'classes'), 'online.entropylab.android.LifecycleCheck', str(rotation_handled).lower()], check=True, timeout=30)
+    asset = root/'app/src/main/assets/entropylab.html'
+    subprocess.run(['java', '-Dasset='+str(asset), '-cp', str(tmp/'classes'), 'online.entropylab.android.LifecycleCheck', str(rotation_handled).lower()], check=True, timeout=30)
+    # Fail closed: a packaged page one byte off the pin, or one that cannot be read, never opens.
+    tampered = tmp/'tampered.html'
+    tampered.write_bytes(asset.read_bytes() + b'\n')
+    for bad in (tampered, tmp/'missing.html'):
+        subprocess.run(['java', '-Dasset='+str(bad), '-cp', str(tmp/'classes'), 'online.entropylab.android.LifecycleCheck', str(rotation_handled).lower(), 'refused'], check=True, timeout=30)
