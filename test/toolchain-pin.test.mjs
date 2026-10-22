@@ -256,10 +256,6 @@ test("the scheduled and release workflows' checkouts do not persist their tokens
   assert.doesNotMatch(release, /git push/, "release-assets.yml: no step may push with the checkout's credential");
 });
 
-// The Android wrapper job runs ./gradlew and its jar after checkout, so the
-// checkout must not leave GITHUB_TOKEN in .git/config, and the committed
-// gradle-wrapper.jar (the program that enforces distributionSha256Sum) must be
-// validated against Gradle's published checksums before it runs.
 // The calculator page holds seeds and passphrases. Without this, Android's
 // autofill framework (API 26+) may be offered the WebView's fields, so the
 // WebView and everything inside it must be excluded from autofill.
@@ -287,6 +283,10 @@ test("the Android README documents that file import, downloads and print are una
   assert.doesNotMatch(activity, /onShowFileChooser|setDownloadListener|PrintManager|createPrintDocumentAdapter/, "the wrapper now handles files, downloads or print; update android/README.md");
 });
 
+// The Android wrapper job runs ./gradlew and its jar after checkout, so the
+// checkout must not leave GITHUB_TOKEN in .git/config, and the committed
+// gradle-wrapper.jar (the program that enforces distributionSha256Sum) must be
+// validated against Gradle's published checksums before it runs.
 test("the Android wrapper workflow drops its token and validates the Gradle wrapper first", () => {
   const workflow = read(".github/workflows/android-wrapper.yml");
   const checkouts = workflow.split(/\n(?=      - uses: actions\/checkout@)/).slice(1).map((block) => block.split(/\n(?=      - )/)[0]);
