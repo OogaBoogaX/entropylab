@@ -252,9 +252,10 @@ an explicit error before those pairs are allocated.
   stamped with this computer's date and time,
   a Key Manager, a live summary of everything derived in this sitting, and a debug log
   of tool switches and derives (fingerprints, not seeds). Its introduction
-  remains above the Journal controls. Notepad, Key manager, Session state, and Session log
-  stay visible but disabled until the user creates a journal, with or without
-  a password, or successfully opens an existing journal; the create/open gate
+  remains above the Journal controls. **Create journal** and **Open backup**
+  are the starting choices. Section tabs and Download/Clear actions stay hidden
+  until the user creates a journal, with or without a password, or successfully
+  opens an existing journal; the create/open gate
   then disappears and the Journal starts on Entries. The create form reports
   whether password protection is enabled and checks confirmation matches live
   without exposing what was typed. A blank password is accepted and provides

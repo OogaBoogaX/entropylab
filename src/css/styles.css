@@ -1718,7 +1718,7 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 #calc-card:not([hidden]), #msig-card:not([hidden]), #bip85-card:not([hidden]), #sp-card:not([hidden]), #psbt-card:not([hidden]), #psbted-card:not([hidden]), #nonce-card:not([hidden]), #vanity-card:not([hidden]), #ln-card:not([hidden]),
 #journal-card:not([hidden]), #journal-notes-card:not([hidden]), #journal-keymanager-card:not([hidden]), #journal-state-card:not([hidden]), #journal-log-card:not([hidden]) { margin-top: 0; border-radius: 0 0 var(--radius-panel) var(--radius-panel); position: relative; z-index: 1; }
 #journal-card[hidden], #journal-notes-card[hidden], #journal-keymanager-card[hidden], #journal-state-card[hidden], #journal-log-card[hidden] { display: none !important; }
-#journal-locked-panel[hidden], #journal-work-panel[hidden], #journal-create-panel[hidden], #journal-open-panel[hidden], #journal-editor[hidden], #journal-view[hidden] { display: none; }
+#journal-locked-panel[hidden], #journal-work-panel[hidden], #journal-create-panel[hidden], #journal-open-panel[hidden], #journal-editor[hidden], #journal-view[hidden], #journal-global-actions[hidden] { display: none; }
 .journal-global-actions { align-items: center; }
 .journal-global-actions .journal-download-action { display: inline-flex; align-items: center; gap: var(--space-snug); }
 .journal-status { display: flex; align-items: center; gap: var(--space-component); margin-bottom: var(--space-component); }

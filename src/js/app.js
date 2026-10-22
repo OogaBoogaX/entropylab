@@ -15969,7 +15969,7 @@ function hodlSyncJournalTool() {
       tabs = document.getElementById("journal-tool-tabs"),
       unlocked = hodlJournalUnlocked();
   if (intro) intro.hidden = !visible;
-  if (manager) manager.hidden = !visible;
+  if (manager) manager.hidden = !visible || !unlocked;
   if (tabs) {
     tabs.querySelectorAll("[data-journal-tool]").forEach((button) => {
       let active = unlocked && button.dataset.journalTool === hodlJournalTool;
@@ -16869,6 +16869,8 @@ function hodlJournalShowWork() {
   let unlocked = hodlJournalUnlocked();
   if (locked) locked.hidden = unlocked;
   if (work) work.hidden = !unlocked;
+  let actions = document.getElementById("journal-global-actions");
+  if (actions) actions.hidden = !unlocked;
   for (let id of ["journal-global-download", "journal-global-clear"]) {
     let button = document.getElementById(id);
     if (!button) continue;

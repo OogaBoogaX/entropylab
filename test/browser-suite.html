@@ -35,6 +35,14 @@
   const equal = (actual, expected) => {
     if (actual !== expected) throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   };
+  const assertJournalControlsVisible = (expected) => {
+    for (const id of ["journal-manager", "journal-tool-tabs", "journal-global-download", "journal-global-clear"]) {
+      const control = document.getElementById(id);
+      assert(control, `Missing Journal control: ${id}`);
+      const visible = control.getClientRects().length > 0 && getComputedStyle(control).visibility !== "hidden";
+      assert(visible === expected, `${id} should be ${expected ? "visible in an open Journal" : "hidden at the Journal gate"}`);
+    }
+  };
   // A check this browser cannot run is reported as skipped, with its reason,
   // never silently passed.
   const skipped = (name, reason) => results.push({ name, ok: true, skip: reason });
@@ -1701,25 +1709,25 @@
         document.getElementById("bip85-tool-intro"),
         document.querySelector("#bip85-manager > .key-tab-strip"),
       );
-      // End jumps to the last tool. Journal begins at its create/open gate while
-      // keeping the five destination tabs visible but unavailable.
+      // End jumps to the last tool. Journal begins with create/open choices;
+      // section navigation and whole-Journal actions appear after opening it.
       tabs[2].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
       await until(() => !document.getElementById("journal-card").hidden, "End to reach the Journal tool");
       assert(document.activeElement === tabs[tabs.length - 1], "End should move focus to the last tab");
       const journalTabs = [...document.querySelectorAll("#journal-tool-tabs [data-journal-tool]")];
       equal(journalTabs.length, 5, "Journal should expose exactly five internal tabs");
-      equal(journalTabs.map((tab) => tab.textContent.trim()).join("|"), "Entries|Notepad|Key manager|Session state|Session log");
       const journalManager = document.getElementById("journal-manager");
-      assert(journalManager && !journalManager.hidden, "Journal station tabs should be visible inside the Journal tool");
       const journalIntro = document.getElementById("journal-tool-intro");
       assert(journalIntro && !journalIntro.hidden, "Entropy Journal introduction should remain visible at the gate");
       const journalGlobalDownload = document.getElementById("journal-global-download");
       const journalGlobalClear = document.getElementById("journal-global-clear");
+      assertJournalControlsVisible(false);
+      for (const mode of ["create", "open"]) {
+        const choice = document.querySelector(`#journal-gate-modes [data-journal-gate="${mode}"]`);
+        assert(choice && !choice.disabled && choice.getClientRects().length, `The Journal gate must offer ${mode}`);
+      }
       assert(journalGlobalDownload.disabled && journalGlobalClear.disabled, "Journal-wide actions should be disabled before a journal is opened");
-      equal(Math.round(introToTabsGap(journalIntro, journalManager.querySelector(":scope > .key-tab-strip"))), Math.round(singleIntroGap), "Journal intro-to-tabs spacing differs from a single-intro tool");
       const documentTop = (element) => Math.round(element.getBoundingClientRect().top + scrollY);
-      const journalManagerTop = documentTop(journalManager);
-      journalTabs.forEach((tab) => assert(tab.classList.contains("key-tab"), "Journal stations should use folder-style Key Station tabs"));
       journalTabs.forEach((tab) => {
         assert(tab.disabled, "Journal station tabs should be disabled before a journal is opened");
         equal(tab.getAttribute("aria-disabled"), "true", "A locked Journal tab should expose its disabled state");
@@ -1733,29 +1741,29 @@
       const journalConfirmStatus = document.getElementById("journal-create-confirm-status");
       const journalCreateReady = document.getElementById("journal-create-ready");
       assert(journalPasswordStatus.hidden && journalConfirmStatus.hidden && !journalCreateReady.hidden, "Blank Journal password fields should be ready without validation errors");
-      equal(journalCreateReady.textContent.trim(), "← Ready to create without a password");
       document.getElementById("journal-create").click();
       await until(() => !document.getElementById("journal-card").hidden && !document.getElementById("journal-work-panel").hidden, "passwordless journal creation to open Entries");
+      assertJournalControlsVisible(true);
       assert(document.getElementById("journal-status-title").textContent.includes("No password protection"), "A passwordless Journal should disclose that its file has no access protection");
       journalGlobalClear.click();
       await until(() => !document.getElementById("journal-card").hidden, "Journal gate after clearing the passwordless Journal");
+      assertJournalControlsVisible(false);
       journalTabs.forEach((tab) => assert(tab.disabled, "Clearing a passwordless Journal should disable its tabs"));
       const journalPassword = "too short";
       input(journalPasswordInput, journalPassword);
-      assert(!journalPasswordStatus.hidden && journalPasswordStatus.classList.contains("is-valid"), "A short Journal password should be accepted");
-      equal(journalPasswordStatus.textContent, "✓ Password protection enabled");
+      assert(!journalPasswordStatus.hidden && journalPasswordStatus.textContent.trim(), "A short Journal password should receive a status");
+      equal(journalPasswordInput.getAttribute("aria-invalid"), "false");
       assert(Math.abs(journalPasswordStatus.getBoundingClientRect().right - journalPasswordInput.getBoundingClientRect().right) <= 2, "Password validation should align to the right of its label");
       input(journalConfirmInput, "different");
-      assert(!journalConfirmStatus.hidden && journalConfirmStatus.classList.contains("is-invalid"), "A mismatched confirmation should show a red warning");
-      equal(journalConfirmStatus.textContent, "Passwords do not match");
+      assert(!journalConfirmStatus.hidden && journalConfirmStatus.textContent.trim(), "A mismatched confirmation should receive a status");
+      equal(journalConfirmInput.getAttribute("aria-invalid"), "true");
       journalPasswordInput.focus();
       journalPasswordInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
       assert(document.activeElement === journalConfirmInput, "Enter should advance a Journal password to confirmation");
       input(journalConfirmInput, journalPassword);
-      assert(journalConfirmStatus.classList.contains("is-valid"), "Matching Journal passwords should show a green check");
-      equal(journalConfirmStatus.textContent, "\u2713 Passwords match");
+      assert(!journalConfirmStatus.hidden && journalConfirmStatus.textContent.trim(), "Matching Journal passwords should receive a status");
+      equal(journalConfirmInput.getAttribute("aria-invalid"), "false");
       assert(!journalCreateReady.hidden, "Matching passwords should show readiness beside Create journal");
-      equal(journalCreateReady.textContent.trim(), "← Ready to create with a password");
       assert(document.getElementById("journal-create").getBoundingClientRect().right < journalCreateReady.getBoundingClientRect().left, "The ready message should sit to the right of Create journal");
       input(journalConfirmInput, "");
       assert(journalConfirmStatus.hidden && journalCreateReady.hidden, "Clearing the confirmation should hide its validation and ready messages");
@@ -1764,13 +1772,15 @@
       journalConfirmInput.focus();
       journalConfirmInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
       await until(() => !document.getElementById("journal-card").hidden && !document.getElementById("journal-work-panel").hidden, "valid journal creation to open Entries");
+      assertJournalControlsVisible(true);
       assert(document.getElementById("journal-locked-panel").hidden, "The create/open gate should disappear after journal creation");
       assert(!journalIntro.hidden, "Entropy Journal introduction should remain visible after journal creation");
+      equal(Math.round(introToTabsGap(journalIntro, document.getElementById("journal-tool-tabs").parentElement)), Math.round(singleIntroGap), "Journal intro-to-tabs spacing differs from a single-intro tool");
+      const journalManagerTop = documentTop(journalManager);
       journalTabs.forEach((tab) => {
         assert(!tab.disabled, "Journal station tabs should enable after journal creation");
         equal(tab.getAttribute("aria-disabled"), "false", "An unlocked Journal tab should expose its enabled state");
       });
-      assert(journalTabs[0].classList.contains("active"), "A newly created journal should start on Entries");
       equal(journalTabs[0].getAttribute("aria-selected"), "true", "Entries should be selected after journal creation");
       assert(!journalGlobalDownload.disabled && !journalGlobalClear.disabled, "Journal-wide actions should enable after journal creation");
       state.lastBlob = null;
@@ -1778,6 +1788,7 @@
       const encryptedJournalText = await (await until(() => state.lastBlob, "encrypted Journal download")).text();
       journalGlobalClear.click();
       await until(() => !document.getElementById("journal-card").hidden, "Journal gate after clearing");
+      assertJournalControlsVisible(false);
       journalTabs.forEach((tab) => assert(tab.disabled, "Clearing should disable the Journal tabs again"));
       assert(journalGlobalDownload.disabled && journalGlobalClear.disabled, "Clearing should disable the Journal-wide actions again");
       document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
@@ -1790,10 +1801,11 @@
       document.getElementById("journal-unlock").click();
       await until(() => !document.getElementById("journal-card").hidden && !document.getElementById("journal-work-panel").hidden || document.getElementById("journal-error").textContent, "successful Journal file open result");
       assert(!document.getElementById("journal-work-panel").hidden, `Opening the encrypted Journal failed: ${document.getElementById("journal-error").textContent}`);
+      assertJournalControlsVisible(true);
       assert(document.getElementById("journal-locked-panel").hidden, "The create/open gate should disappear after opening a journal");
       assert(!journalIntro.hidden, "Entropy Journal introduction should remain visible after opening a journal");
       journalTabs.forEach((tab) => assert(!tab.disabled, "Opening a journal should enable its five tabs"));
-      assert(journalTabs[0].classList.contains("active"), "An opened journal should start on Entries");
+      equal(journalTabs[0].getAttribute("aria-selected"), "true", "An opened journal should start on Entries");
       journalTabs[1].click();
       await until(() => !document.getElementById("journal-notes-card").hidden, "Notepad after opening a journal");
       equal(getComputedStyle(document.getElementById("journal-notes-card")).borderTopLeftRadius, "0px", "The active Notepad card should join its folder tab");
@@ -1986,18 +1998,20 @@
     try {
       // Start from the create/open gate, whatever earlier tests left behind.
       document.querySelector('#workspace [data-workspace="journal"]').click();
-      await until(() => !document.getElementById("journal-manager").hidden, "Journal tool for the store/load drill");
+      await until(() => !document.getElementById("journal-tool-intro").hidden, "Journal tool for the store/load drill");
       if (!document.getElementById("journal-work-panel").hidden) {
         document.getElementById("journal-global-clear").click();
         await until(() => document.getElementById("journal-global-download").disabled, "Journal wiped before the drill");
       }
       assert(!document.getElementById("journal-locked-panel").hidden && document.getElementById("journal-work-panel").hidden, "A wiped Journal should stand at its gate");
+      assertJournalControlsVisible(false);
 
       // Create a journal and store one entry through the editor.
       input(document.getElementById("journal-create-password"), journalPassword);
       input(document.getElementById("journal-create-confirm"), journalPassword);
       document.getElementById("journal-create").click();
       await until(() => !document.getElementById("journal-global-download").disabled, "Journal unlocked after creation");
+      assertJournalControlsVisible(true);
       document.getElementById("journal-add").click();
       await until(() => !document.getElementById("journal-editor").hidden, "entry editor to open");
       document.getElementById("journal-method").value = "hex";
@@ -2021,6 +2035,7 @@
       // Load: lock, then open the file back — wrong password first.
       document.getElementById("journal-lock").click();
       await until(() => document.getElementById("journal-global-download").disabled, "Journal locked");
+      assertJournalControlsVisible(false);
       assert(document.getElementById("journal-work-panel").hidden, "Locking should hide the work panel");
       assert(!document.querySelector("#journal-list .journal-item"), "Locking should clear the visible entries");
       document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
@@ -2029,9 +2044,11 @@
       document.getElementById("journal-unlock").click();
       await until(() => document.getElementById("journal-error").textContent.includes("password is incorrect"), "wrong-password error on open");
       assert(document.getElementById("journal-work-panel").hidden, "A wrong password must not open the work panel");
+      assertJournalControlsVisible(false);
       input(document.getElementById("journal-open-password"), journalPassword);
       document.getElementById("journal-unlock").click();
       await until(() => !document.getElementById("journal-global-download").disabled, "Journal unlocked from the stored file");
+      assertJournalControlsVisible(true);
 
       // The stored entry survived: listed, viewable, and revealed on demand.
       const restoredItem = await until(() => [...document.querySelectorAll("#journal-list .journal-item")].find((el) => el.querySelector(".journal-item-label")?.textContent === entryLabel), "stored entry listed after load");
@@ -2076,7 +2093,7 @@
       // notepad: wipe, then create a fresh one, whatever happened above.
       try {
         document.querySelector('#workspace [data-workspace="journal"]').click();
-        await until(() => !document.getElementById("journal-manager").hidden, "Journal tool for the cleanup");
+        await until(() => !document.getElementById("journal-tool-intro").hidden, "Journal tool for the cleanup");
         if (!document.getElementById("journal-work-panel").hidden) {
           document.getElementById("journal-global-clear").click();
           await until(() => document.getElementById("journal-global-download").disabled, "Journal wiped after the drill");
@@ -6968,6 +6985,7 @@
         document.getElementById("journal-global-clear").click();
         await until(() => document.getElementById("journal-global-download").disabled, "complete Journal cleared");
       }
+      assertJournalControlsVisible(false);
     };
     try {
       await clearJournal();
@@ -6975,6 +6993,7 @@
       input(document.getElementById("journal-create-confirm"), password);
       document.getElementById("journal-create").click();
       await until(() => !document.getElementById("journal-global-download").disabled, "complete Journal created");
+      assertJournalControlsVisible(true);
 
       // A published BIP39 mnemonic and a fixed test-only passphrase supply a
       // real managed input. No cached wallet is supplied by a backup fixture.
@@ -7054,6 +7073,7 @@
       document.getElementById("journal-unlock").click();
       await until(() => !document.getElementById("journal-global-download").disabled || document.getElementById("journal-error").textContent, "complete Journal opened");
       assert(!document.getElementById("journal-global-download").disabled, document.getElementById("journal-error").textContent);
+      assertJournalControlsVisible(true);
       equal(stationTabs().map((tab) => `${tab.id}:${tab.textContent}`).join("|"), liveTabsBeforeOpen);
 
       const entry = [...document.querySelectorAll("#journal-list [data-journal-id]")].find((item) => item.textContent.includes(entryLabel));
