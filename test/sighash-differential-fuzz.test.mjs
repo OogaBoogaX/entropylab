@@ -49,21 +49,16 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { ripemd160 } from "@noble/hashes/legacy.js";
 import { psbtInspectDoc } from "../src/js/psbt-wasm.js";
 import { wasmExports, withInput, withOutput } from "../src/js/entropylab-wasm.js";
+import { fuzzEnv, mulberry32, replayLine, withReplay } from "./fuzz-kit.mjs";
 
 // --- deterministic randomness ------------------------------------------------
 
 const FUZZ_SEED = 0x5eed0341;
-const CASES = 64;
-const mulberry32 = (seed) => {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
-const rand = mulberry32(FUZZ_SEED);
+const DEFAULT_CASES = 64;
+const SIGHASH_ENV = fuzzEnv("SIGHASH_FUZZ", { defaultSeed: FUZZ_SEED, defaultIterations: DEFAULT_CASES });
+const ITERATIONS = SIGHASH_ENV.iterations;
+const TEST_NAME = "rust-bitcoin (WASM) and @scure/btc-signer sign the same legacy, BIP143, and BIP341 digests";
+let rand = mulberry32(SIGHASH_ENV.seed);
 const rint = (n) => Math.floor(rand() * n);
 const pick = (items) => items[rint(items.length)];
 const randomBytes = (n) => Uint8Array.from({ length: n }, () => rint(256));
@@ -79,6 +74,7 @@ const randomSequence = () => pick([0xffffffff, 0xfffffffe, 0xfffffffd, 0, rint(2
 // --- scripts -----------------------------------------------------------------
 
 const hex = (bytes) => Buffer.from(bytes).toString("hex");
+const fromHex = (text) => Uint8Array.from(Buffer.from(text, "hex"));
 const cat = (...parts) => Uint8Array.from(parts.flatMap((part) => [...part]));
 const hash160 = (bytes) => ripemd160(sha256(bytes));
 const p2pkh = (pub) => cat([0x76, 0xa9, 0x14], hash160(pub), [0x88, 0xac]);
@@ -218,35 +214,39 @@ const signatureProblems = (psbt, idx) => {
 const elSighashSegwitV0All = (raw, idx, scriptCode, amount) =>
   withInput(raw, (p) => withInput(scriptCode, (sc) => withOutput(32, (o) => wasmExports().el_sighash_segwit_v0(p, raw.length, idx, sc, scriptCode.length, amount, o))));
 
-test(`rust-bitcoin (WASM) and @scure/btc-signer sign the same legacy, BIP143, and BIP341 digests (seed 0x${FUZZ_SEED.toString(16)}, ${CASES} cases)`, () => {
+test(TEST_NAME, () => {
   let ran = 0;
   const seen = new Set();
-  for (let i = 0; i < CASES; i++) {
-    const c = buildCase(i);
-    seen.add(c.family);
-    // A SIGHASH_SINGLE signature whose input has no corresponding output is
-    // consensus-valid (legacy: the constant-one digest; BIP-143: a zero
-    // hashOutputs) and must still verify — but it commits to no output, so
-    // the inspector names it with a dedicated warning (audit C3-8). Expect
-    // exactly that warning on those cases, and it nowhere else.
-    const singleNoOutput = signatureProblems(c.signed, c.idx).filter((problem) => problem.code === "sighash_single_no_output");
-    if (c.family !== "bip341" && (c.type & 0x1f) === 0x03 && c.idx >= c.outputs) {
-      assert.equal(singleNoOutput.length, 1, `${c.label}: SIGHASH_SINGLE with no corresponding output was not named`);
-    } else {
-      assert.equal(singleNoOutput.length, 0, `${c.label}: the SIGHASH_SINGLE warning fired on a digestible signature`);
+  try {
+    for (let i = 0; i < ITERATIONS; i++) {
+      const c = buildCase(i);
+      seen.add(c.family);
+      // A SIGHASH_SINGLE signature whose input has no corresponding output is
+      // consensus-valid (legacy: the constant-one digest; BIP-143: a zero
+      // hashOutputs) and must still verify — but it commits to no output, so
+      // the inspector names it with a dedicated warning (audit C3-8). Expect
+      // exactly that warning on those cases, and it nowhere else.
+      const singleNoOutput = signatureProblems(c.signed, c.idx).filter((problem) => problem.code === "sighash_single_no_output");
+      if (c.family !== "bip341" && (c.type & 0x1f) === 0x03 && c.idx >= c.outputs) {
+        assert.equal(singleNoOutput.length, 1, `${c.label}: SIGHASH_SINGLE with no corresponding output was not named`);
+      } else {
+        assert.equal(singleNoOutput.length, 0, `${c.label}: the SIGHASH_SINGLE warning fired on a digestible signature`);
+      }
+      const verdict = signatureProblems(c.signed, c.idx).filter((problem) => problem.code !== "sighash_single_no_output");
+      assert.deepEqual(verdict, [],
+        `${c.label}: the app does not verify a signature over scure's digest ${hex(c.digest)}\n  ${verdict.map((problem) => `${problem.code}: ${problem.message}`).join("\n  ")}`);
+      const relabelled = signatureProblems(c.relabelled, c.idx).filter((problem) => /_sig_invalid$/.test(problem.code));
+      assert.ok(relabelled.length > 0, `${c.label}: relabelled as 0x${c.otherType.toString(16).padStart(2, "0")}, the signature still verifies, so the app did not check this input`);
+      if (c.family === "bip143") {
+        const wasm = elSighashSegwitV0All(c.tx.unsignedTx, c.idx, c.spend.scriptCode, c.spend.amount);
+        const scure = c.tx.preimageWitnessV0(c.idx, c.spend.scriptCode, 0x01, c.spend.amount);
+        assert.equal(hex(wasm), hex(scure), `${c.label}: el_sighash_segwit_v0 (SIGHASH_ALL) differs\n  entropylab-wasm:   ${hex(wasm)}\n  @scure/btc-signer: ${hex(scure)}`);
+      }
+      ran += 1;
     }
-    const verdict = signatureProblems(c.signed, c.idx).filter((problem) => problem.code !== "sighash_single_no_output");
-    assert.deepEqual(verdict, [],
-      `${c.label}: the app does not verify a signature over scure's digest ${hex(c.digest)}\n  ${verdict.map((problem) => `${problem.code}: ${problem.message}`).join("\n  ")}`);
-    const relabelled = signatureProblems(c.relabelled, c.idx).filter((problem) => /_sig_invalid$/.test(problem.code));
-    assert.ok(relabelled.length > 0, `${c.label}: relabelled as 0x${c.otherType.toString(16).padStart(2, "0")}, the signature still verifies, so the app did not check this input`);
-    if (c.family === "bip143") {
-      const wasm = elSighashSegwitV0All(c.tx.unsignedTx, c.idx, c.spend.scriptCode, c.spend.amount);
-      const scure = c.tx.preimageWitnessV0(c.idx, c.spend.scriptCode, 0x01, c.spend.amount);
-      assert.equal(hex(wasm), hex(scure), `${c.label}: el_sighash_segwit_v0 (SIGHASH_ALL) differs\n  entropylab-wasm:   ${hex(wasm)}\n  @scure/btc-signer: ${hex(scure)}`);
-    }
-    ran += 1;
+    assert.deepEqual([...seen].sort(), ["bip143", "bip341", "legacy"], "every sighash algorithm was exercised");
+    assert.equal(ran, ITERATIONS, "every case ran to the end");
+  } catch (error) {
+    throw withReplay(error, replayLine("SIGHASH_FUZZ", SIGHASH_ENV.seed, ITERATIONS, TEST_NAME, "test/sighash-differential-fuzz.test.mjs"));
   }
-  assert.deepEqual([...seen].sort(), ["bip143", "bip341", "legacy"], "every sighash algorithm was exercised");
-  assert.equal(ran, CASES, "every case ran to the end");
 });
