@@ -29,8 +29,10 @@ const BECH32_INV = [
   0, 1, 20, 24, 10, 8, 12, 29, 5, 11, 4, 9, 6, 28, 26, 31,
   22, 18, 17, 23, 2, 25, 16, 19, 3, 21, 14, 30, 13, 7, 27, 15,
 ];
-// Support 128-, 256-, and 512-bit seeds only. Complete and checksum-free
-// lengths are disjoint, so a failed checksum cannot become a longer payload.
+// Support 128-, 256-, and 512-bit seeds only. Their complete and checksum-free
+// lengths are disjoint, so a failed checksum on a supported complete string
+// cannot become a longer payload. 61 characters is still a 32-byte
+// header+payload, so a mistyped 24-byte string completes (see the guard below).
 const COMPLETE_CHECKSUM = new Map([[48, 13], [74, 13], [127, 15]]);
 const INCOMPLETE_CHECKSUM = new Map([[35, 13], [61, 13], [112, 15]]);
 const SEED_LENGTHS = new Set([16, 32, 64]);
