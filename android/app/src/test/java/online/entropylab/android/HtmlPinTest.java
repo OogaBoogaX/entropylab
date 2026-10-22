@@ -27,10 +27,24 @@ public final class HtmlPinTest {
             actual = HtmlPin.sha256(input);
         }
         HtmlPin.check(actual, pinText);
+        // Fail closed: any other digest, or a pin file that names no entropylab.html, is refused.
+        String other = (actual.charAt(0) == '0' ? "1" : "0") + actual.substring(1);
+        expectRefused(() -> HtmlPin.check(other, pinText), IllegalStateException.class, "a different digest");
+        expectRefused(() -> HtmlPin.hashToken(pin + "  other.html"), IllegalArgumentException.class, "a pin naming another file");
         String version = Files.readString(root.resolve("ENTROPYLAB_HTML.version")).trim();
         if (!"1.0.0rc1".equals(version)) {
             throw new IllegalStateException("embedded release identity does not match the attested release");
         }
         System.out.println("HtmlPinTest OK " + actual);
+    }
+
+    private static void expectRefused(Runnable check, Class<? extends RuntimeException> type, String what) {
+        try {
+            check.run();
+        } catch (RuntimeException refused) {
+            if (type.isInstance(refused)) return;
+            throw refused;
+        }
+        throw new IllegalStateException("HtmlPin accepted " + what);
     }
 }
