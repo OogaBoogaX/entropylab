@@ -57,7 +57,7 @@ const varLine = (name) => {
   return line[0];
 };
 
-// The real Lock, Clear and editor-close paths, with the pending-note chain
+// The real Clear and editor-close paths, with the pending-note chain
 // that re-renders the notepad's mirror, over a stub DOM whose elements start
 // full of marker text. The journal store and document wipes come from the
 // real journal.js; the Key Manager reset and the tab renderers are spies (the
@@ -68,10 +68,10 @@ const LIFECYCLE_SLICES = [
   "hodlJournalSyncPendingPrompt", "hodlJournalSyncCopyButton", "hodlJournalRenderPendingPrompt",
   "hodlJournalRefreshPendingNote", "hodlJournalResetPendingNote", "hodlJournalPendingLineIndex",
   "hodlJournalPendingLineStart", "hodlJournalLineStartAt", "hodlJournalWipeNotebook",
-  "hodlJournalClearFields", "hodlJournalHideEditor", "hodlJournalLog", "hodlJournalLock", "hodlJournalWipeMem",
+  "hodlJournalClearFields", "hodlJournalHideEditor", "hodlJournalLog", "hodlJournalWipeMem",
 ];
 
-function journalLifecycleHarness() {
+function journalLifecycleHarness({ onShowWork = () => {} } = {}) {
   const calls = [];
   const elements = new Map();
   const add = (id, element) => {
@@ -107,9 +107,10 @@ function journalLifecycleHarness() {
   add("journal-create", { focused: false, focus() { this.focused = true; } });
   add("journal-add", { focused: false, focus() { this.focused = true; } });
   add("journal-open-ready", { hidden: true });
-  // The wipe asks the work panel whether the active element sits inside it,
-  // so the stub tracks its descendants.
-  add("journal-work-panel", { hidden: false, descendants: new Set(), contains(element) { return this.descendants.has(element); } });
+  // The wipe asks the work panel and global toolbar whether the active
+  // element sits inside them, so the stubs track their descendants.
+  for (const id of ["journal-work-panel", "journal-global-actions"])
+    add(id, { hidden: false, descendants: new Set(), contains(element) { return this.descendants.has(element); } });
   const documentStub = {
     activeElement: null,
     getElementById: (id) => elements.get(id) ?? null,
@@ -135,7 +136,6 @@ function journalLifecycleHarness() {
     "hodlJournalApplyPageStyle", "hodlJournalSetStatus", "hodlJournalSyncEncryptDownloads",
     "hodlScheduleJournalStateRefresh", "hodlRenderJournalLog", "hodlJournalFillWallets", "hodlFillKeyTabLifehash",
     `${source}; return {
-      lock: hodlJournalLock,
       wipeMem: hodlJournalWipeMem,
       hideEditor: hodlJournalHideEditor,
       openNotebook: (keys, doc) => { hodlJournalKeys = keys; hodlJournalDoc = doc; },
@@ -144,14 +144,14 @@ function journalLifecycleHarness() {
   )(
     documentStub, journal, wipeJournal, wipeDocument, appendLog,
     formatStamp, journalNotebookRuns, (text) => text, "calc", () => calls.push("key-manager-reset"),
-    () => {}, () => {}, () => {}, () => {},
+    () => {}, () => onShowWork(documentStub, elements), () => {}, () => {},
     () => {}, () => {}, () => calls.push("sync-encrypt-downloads"),
     () => {}, () => {}, () => {}, () => {},
   );
   return { api, elements, journal, doc, entry, calls, documentStub };
 }
 
-// The assertions Lock and the global Clear share: every store the plan names —
+// Clear drops every store the plan names —
 // entries, phrases, notes, notepad text, session-state text, session-log
 // text, key-manager rows, and the password fields. Each one fails if the wipe
 // it checks is removed from the function under test.
@@ -174,6 +174,9 @@ function assertNoJournalPlaintext({ api, elements, journal, doc, entry, calls })
   assert.equal(elements.get("journal-state-text").textContent, "", "the session snapshot stayed on screen");
   assert.equal(elements.get("journal-state-private").checked, false, "the private box stayed ticked");
   assert.equal(journal.stateText, "", "the snapshot's in-memory text survived");
+  // The log may show a new empty-state message, but none of its old secrets.
+  for (const secret of [SECRET_PHRASE, SECRET_NOTES, SECRET_STATE])
+    assert.ok(!elements.get("journal-log-out").textContent.includes(secret), "the session log kept secret text on screen");
   // The notepad: the field, its rendered mirror, and the in-memory pages.
   // After the wipe the field holds only a fresh pending-note stamp, never the
   // old text, so these assert the marker is gone rather than exact content.
@@ -185,51 +188,31 @@ function assertNoJournalPlaintext({ api, elements, journal, doc, entry, calls })
   assert.deepEqual(calls.filter((call) => call === "key-manager-reset"), ["key-manager-reset"], "the Key Manager was not reset");
 }
 
-test("journal Lock leaves no journal plaintext behind (plan W3)", () => {
-  // Executable: the real hodlJournalLock over the stub DOM. Proves every
-  // store above is emptied by Lock itself; cannot prove what the browser
-  // retains outside the page (the wipe is best-effort by design).
-  const harness = journalLifecycleHarness();
-  harness.api.openNotebook({ passwordProtected: true }, harness.doc);
-  harness.api.lock();
-  assertNoJournalPlaintext(harness);
-  // The session log, on screen and in memory: only Lock's own event remains.
-  assert.equal(harness.elements.get("journal-log-out").textContent, "No events yet.", "the session log stayed on screen");
-  assert.deepEqual(harness.journal.log.map((event) => event.action), ["journal-lock"], "earlier log events survived in memory");
-  // Lock announces through the live region and parks focus on the locked
-  // panel's primary action, not <body> (plan W5).
-  assert.ok(harness.elements.get("journal-status-note").textContent.startsWith("Journal locked"), "Lock did not announce through #journal-status-note");
-  // The status note is hidden with the work panel, so the audible copy goes
-  // to the gate panel's live region, which stays visible (plan W5).
-  assert.ok(harness.elements.get("journal-gate-status").textContent.startsWith("Journal locked"), "Lock did not announce through the gate's live region");
-  assert.equal(harness.elements.get("journal-create").focused, true, "Lock left focus to fall back to <body>");
-});
-
 test("the global Clear leaves no journal plaintext behind (plan W3)", () => {
   // Executable: the real hodlJournalWipeMem, which is also what End Session
   // and pagehide reach through clearSecretFields (wired in the next test).
   const harness = journalLifecycleHarness();
   harness.api.openNotebook({ passwordProtected: true }, harness.doc);
+  harness.documentStub.activeElement = {};
   harness.api.wipeMem();
   assertNoJournalPlaintext(harness);
-  assert.equal(harness.elements.get("journal-log-out").textContent, "No events yet.", "the session log stayed on screen");
   assert.deepEqual(harness.journal.log, [], "log events survived in memory");
   assert.ok(harness.calls.includes("sync-encrypt-downloads"), "the download-encryption default was not restored");
-  // Clear announces through the same live region as Lock (plan W5), but must
-  // not move focus: it also runs on pagehide, where focusing is meaningless.
-  assert.ok(harness.elements.get("journal-status-note").textContent.startsWith("Journal cleared"), "Clear did not announce through #journal-status-note");
-  assert.ok(harness.elements.get("journal-gate-status").textContent.startsWith("Journal cleared"), "Clear did not announce through the gate's live region");
-  // Focus that was not inside the work panel is left alone.
+  // The status note hides with the toolbar; the gate's live region stays
+  // visible and carries Clear's audible announcement (plan W5).
+  assert.ok(harness.elements.get("journal-status-note").textContent.trim(), "Clear did not announce through #journal-status-note");
+  assert.ok(harness.elements.get("journal-gate-status").textContent.trim(), "Clear did not announce through the gate's live region");
+  // Focus outside the work panel and global toolbar is left alone.
   assert.equal(harness.elements.get("journal-create").focused, false, "Clear moved focus");
 });
 
-test("the Clear button, End Session and pagehide all reach the journal wipe (plan W3)", () => {
+test("Clear asks for confirmation while End Session and pagehide wipe directly (plan W3)", () => {
   // Source-level: proves the wiring exists in the shipped source, not that a
   // browser fires the events (the browser suite's job) — what the wipe does
   // once reached is proven executable above. End Session dispatches a
-  // pagehide (pinned in test/end-session.test.mjs), so all three land in
-  // clearSecretFields.
-  assert.match(app, /getElementById\("journal-global-clear"\)\?\.addEventListener\("click", hodlJournalWipeMem\)/);
+  // pagehide (pinned in test/end-session.test.mjs), so both lifecycle paths
+  // reach clearSecretFields without waiting for confirmation.
+  assert.match(app, /getElementById\("journal-global-clear"\)\?\.addEventListener\("click", hodlJournalConfirmClear\)/);
   const start = app.indexOf("function hodlInitSecretFieldAutoClear()");
   const lifecycle = app.slice(start, app.indexOf("\nfunction hodlBoot()", start));
   // In try/catch: one failing wipe must not skip the wipes after it.
@@ -352,24 +335,21 @@ test("every journal open failure routes to #journal-error, an alert region (plan
   assert.match(unlock.slice(armStart, armEnd), /hodlJournalError\(/, "the passwordless first press must announce through #journal-error");
 });
 
-test("Lock and Clear announce through the #journal-status-note live region (plan W5)", () => {
+test("Clear announces through the #journal-status-note live region (plan W5)", () => {
   // Source-level: the region is polite (also pinned in
-  // test/journal-view-safety.test.mjs) and both teardowns write to it. The
-  // executable half of this contract is in the two lifecycle tests above.
+  // test/journal-view-safety.test.mjs) and Clear writes to it. The executable
+  // half of this contract is in the lifecycle test above.
   const tag = /<p\b[^>]*\bid="journal-status-note"[^>]*>/.exec(shell)?.[0] || "";
   assert.ok(/\brole="status"/.test(tag), "#journal-status-note must be a live region");
-  assert.match(loadSlice("hodlJournalLock"), /getElementById\("journal-status-note"\)\.textContent = hodlTText\("Journal locked/);
-  assert.match(loadSlice("hodlJournalWipeMem"), /getElementById\("journal-status-note"\)[\s\S]*?hodlTText\("Journal cleared/);
+  assert.match(loadSlice("hodlJournalWipeMem"), /getElementById\("journal-status-note"\)[\s\S]*?hodlTText\(/);
 });
 
-test("closing the editor or locking moves focus to a control, not <body> (plan W5)", () => {
-  assert.match(loadSlice("hodlJournalLock"), /getElementById\("journal-create"\)\?\.focus\(\)/);
+test("closing the editor moves focus to a control, not <body> (plan W5)", () => {
   const hide = loadSlice("hodlJournalHideEditor");
   assert.match(hide, /document\.activeElement/);
   assert.match(hide, /getElementById\("journal-add"\)\?\.focus\(\)/);
   // Executable: focus inside the closing view moves to Add entry; focus
-  // anywhere else is left alone. (Lock's own focus target is asserted in the
-  // Lock lifecycle test above.)
+  // anywhere else is left alone.
   const harness = journalLifecycleHarness();
   const child = {};
   harness.elements.get("journal-view").contains = (element) => element === child;
@@ -396,11 +376,29 @@ test("the global Clear rescues focus stranded inside the hidden work panel (plan
   assert.equal(harness.elements.get("journal-create").focused, true, "Clear left focus on a control hidden with the work panel");
 });
 
-test("the Lock/Clear announcement also lands in a live region outside the hidden work panel (plan W5)", () => {
-  // #journal-status-note is inside #journal-work-panel, which Lock and Clear
-  // hide, so a write to it is outside the accessibility tree and announces
+test("the global Clear remembers toolbar focus before hiding its controls", () => {
+  for (const fallback of [null, { tagName: "BODY" }]) {
+    const harness = journalLifecycleHarness({
+      onShowWork(documentStub, elements) {
+        elements.get("journal-global-actions").hidden = true;
+        documentStub.activeElement = fallback;
+      },
+    });
+    harness.api.openNotebook({ passwordProtected: true }, harness.doc);
+    const clear = {};
+    harness.elements.get("journal-global-actions").descendants.add(clear);
+    harness.documentStub.activeElement = clear;
+    harness.api.wipeMem();
+    assert.equal(harness.elements.get("journal-global-actions").hidden, true);
+    assert.equal(harness.elements.get("journal-create").focused, true, "Clear lost toolbar focus when hiding its controls");
+  }
+});
+
+test("the Clear announcement also lands in a live region outside the hidden global toolbar (plan W5)", () => {
+  // #journal-status-note is inside #journal-global-actions, which Clear
+  // hides, so a write to it is outside the accessibility tree and announces
   // nothing. The audible copy goes to #journal-gate-status, a polite live
-  // region inside #journal-locked-panel — the panel both actions leave
+  // region inside #journal-locked-panel — the panel Clear leaves
   // visible (hodlJournalShowWork unhides it while locked).
   const tag = /<p\b[^>]*\bid="journal-gate-status"[^>]*>/.exec(shell)?.[0] || "";
   assert.ok(/\brole="status"/.test(tag) || /\baria-live=/.test(tag), "#journal-gate-status must be a live region");
@@ -409,7 +407,6 @@ test("the Lock/Clear announcement also lands in a live region outside the hidden
   const workPanel = shell.slice(shell.indexOf('id="journal-work-panel"'), shell.indexOf('id="journal-error"'));
   assert.ok(!workPanel.includes('id="journal-gate-status"'), "the announcement region must not sit inside the hidden work panel");
   assert.match(loadSlice("hodlJournalShowWork"), /locked\.hidden = unlocked/, "the locked panel is the one shown while locked");
-  assert.match(loadSlice("hodlJournalLock"), /getElementById\("journal-gate-status"\)/);
   assert.match(loadSlice("hodlJournalWipeMem"), /getElementById\("journal-gate-status"\)/);
 });
 

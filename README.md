@@ -28,7 +28,7 @@ is summarised in [docs/TESTING.md](docs/TESTING.md).
 
 Clearing a Key or Multisig station cancels its pending derivation. Leaving
 the page clears rendered seed-word copies and prevents a late derivation or
-import from restoring cleared secrets. Locking the journal also invalidates
+import from restoring cleared secrets. Clearing the journal also invalidates
 pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
 
@@ -253,23 +253,29 @@ an explicit error before those pairs are allocated.
   a Key Manager, a live summary of everything derived in this sitting, and a debug log
   of tool switches and derives (fingerprints, not seeds). Its introduction
   remains above the Journal controls. **Create journal** and **Open backup**
-  are the starting choices. Section tabs and Download/Clear actions stay hidden
+  are the starting choices. Section tabs and global controls stay hidden
   until the user creates a journal, with or without a password, or successfully
   opens an existing journal; the create/open gate
   then disappears and the Journal starts on Entries. The create form reports
   whether password protection is enabled and checks confirmation matches live
   without exposing what was typed. A blank password is accepted and provides
   no access protection: anyone holding the resulting file can open it by
-  leaving the password blank. Journal-wide **Download journal** and **Clear journal** actions stay
-  below the introduction once a journal is unlocked. **Download journal**
-  (also **Save file** in Entries) saves one complete backup: entries, every
+  leaving the password blank. Journal-wide **Download journal** and
+  **Clear journal** actions stay below the introduction once a journal is
+  unlocked, alongside the protection and save status in every section.
+  **Download journal** saves one complete backup: entries, every
   notepad page and its formatting, all managed and ignored key inputs with
   their inclusion selection, the session snapshot, and the session log.
   Finish or cancel an entry edit before downloading. Changes to notes and
   managed keys also mark the Journal as unsaved; edits made while a download
-  is encrypting remain unsaved. Clearing wipes the
-  entries, notepad, session snapshot, and log from page memory and
-  returns to the create/open gate. The notebook keeps
+  is encrypting remain unsaved. **Clear journal** opens a confirmation with
+  choices to download a backup, discard the Journal, or cancel. Downloading
+  keeps the Journal open: the page cannot verify that the file was saved, so
+  discarding still requires an explicit choice. Cancel keeps the Journal
+  intact. Discard wipes the password, entries, notepad, managed and ignored
+  key inputs, session snapshot, and log from page memory on a best-effort basis
+  and returns to the create/open gate. Leaving the page still clears the
+  Journal without this confirmation. The notebook keeps
   entropy the user already produced — dice, coins, hex, brain-wallet text, or
   a seed — under AES-256-GCM; the key is PBKDF2-SHA-256 (600,000 rounds) of the
   optional password the user chooses, with the salt derived from that password

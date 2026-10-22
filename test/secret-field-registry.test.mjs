@@ -35,7 +35,6 @@ const fnBody = (name) => {
 const lifecycle = fnBody("hodlInitSecretFieldAutoClear");
 const journalFields = fnBody("hodlJournalClearFields");
 const journalWipe = fnBody("hodlJournalWipeMem");
-const journalLock = fnBody("hodlJournalLock");
 const msigRestore = fnBody("hodlRestoreMsig");
 
 // One slice of source around a marker, for "the change handler that reads
@@ -84,17 +83,16 @@ const CLEARING_PATHS = [
     why: "Session snapshot: with the private box ticked it holds the whole session's recovery texts",
     probe: (id) => {
       assert.ok(journalWipe.includes(`"${id}"`), `#${id} must be dropped by the journal Clear`);
-      if (id === "journal-state-text") assert.match(journalLock, /stateText\.textContent = ""/, "Lock must empty the snapshot");
-      else assert.match(journalLock, /privateBox\.checked = false/, "Lock must untick the private box");
+      if (id === "journal-state-text") assert.match(journalWipe, /field\.textContent = ""/, "Clear must empty the snapshot");
+      else assert.match(journalWipe, /privateBox\.checked = false/, "Clear must untick the private box");
     },
   },
   {
     ids: ["journal-notes-text", "journal-log-out"],
-    why: "Session notepad and session log — free text; Lock drops them with the password (#522)",
+    why: "Session notepad and session log — free text; Clear drops them with the password (#522)",
     probe: (id) => {
       assert.ok(journalWipe.includes(`"${id}"`), `#${id} missing from the journal full wipe`);
-      assert.match(journalLock, /wipeJournal\(hodlJournal\)/, "Lock must wipe the journal's in-memory session text");
-      assert.match(journalLock, new RegExp(`getElementById\\("${id}"\\)`), `#${id} missing from the journal Lock`);
+      assert.match(journalWipe, /wipeJournal\(hodlJournal\)/, "Clear must wipe the journal's in-memory session text");
     },
   },
   {

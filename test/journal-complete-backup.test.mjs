@@ -376,7 +376,7 @@ function assertCollectedPlaintextCleared(backup) {
 
 test("Save file encrypts the complete collected Journal and marks an unchanged capture saved", async () => {
   const { context: c, captured, capturedBefore, downloads, seals } = saveHarness();
-  await c.hodlJournalSaveFile();
+  assert.equal(await c.hodlJournalSaveFile(), true);
   assert.equal(seals.length, 1);
   assert.equal(seals[0].kind, "complete", "the old entries-only download omits the other Journal sections");
   assert.deepEqual(seals[0].backupSnapshot, capturedBefore);
@@ -388,19 +388,36 @@ test("Save file encrypts the complete collected Journal and marks an unchanged c
 
 test("Save file refuses an open entry draft rather than downloading an incomplete backup", async () => {
   const { context: c, downloads, seals, fields } = saveHarness({ editorOpen: true });
-  await c.hodlJournalSaveFile();
+  assert.equal(await c.hodlJournalSaveFile(), false);
   assert.equal(seals.length, 0, "an unfinished entry must be saved or canceled before encryption starts");
   assert.equal(downloads.length, 0);
   assert.equal(c.hodlJournalDirty, true);
   assert.ok(fields.get("journal-error").textContent.trim(), "explain why the draft prevented a backup");
 });
 
-test("a save that finishes after Journal lock cannot download or announce success", async () => {
+test("canceling the clear confirmation suppresses its pending backup without clearing the Journal", async () => {
+  const gate = deferred();
+  const { context: c, captured, downloads, fields } = saveHarness({ gate });
+  let current = true;
+  const doc = c.hodlJournalDoc, keys = c.hodlJournalKeys;
+  const saving = c.hodlJournalSaveFile({ isCurrent: () => current });
+  current = false;
+  gate.resolve({ ciphertext: "canceled backup" });
+  await saving;
+  assert.equal(downloads.length, 0, "Cancel must stop a pending confirmation download");
+  assert.equal(c.hodlJournalDoc, doc);
+  assert.equal(c.hodlJournalKeys, keys);
+  assert.equal(c.hodlJournalDirty, true);
+  assert.equal(fields.get("journal-error").textContent, "");
+  assertCollectedPlaintextCleared(captured);
+});
+
+test("a save that finishes after Journal clear cannot download or announce success", async () => {
   const gate = deferred();
   const { context: c, captured, downloads, seals, events, fields } = saveHarness({ gate });
   const saving = c.hodlJournalSaveFile();
   assert.equal(seals.length, 1);
-  // Lock advances this generation and drops the notebook. Its complete wipe
+  // Clear advances this generation and drops the notebook. Its complete wipe
   // is exercised separately by journal-lifecycle.test.mjs.
   c.hodlJournalGeneration++;
   c.hodlJournalKeys = null;

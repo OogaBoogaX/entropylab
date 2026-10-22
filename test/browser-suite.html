@@ -36,12 +36,29 @@
     if (actual !== expected) throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   };
   const assertJournalControlsVisible = (expected) => {
-    for (const id of ["journal-manager", "journal-tool-tabs", "journal-global-download", "journal-global-clear"]) {
+    for (const id of ["journal-manager", "journal-tool-tabs", "journal-global-actions", "journal-global-download", "journal-global-clear", "journal-status", "journal-status-title", "journal-status-note"]) {
       const control = document.getElementById(id);
       assert(control, `Missing Journal control: ${id}`);
       const visible = control.getClientRects().length > 0 && getComputedStyle(control).visibility !== "hidden";
       assert(visible === expected, `${id} should be ${expected ? "visible in an open Journal" : "hidden at the Journal gate"}`);
     }
+  };
+  const openJournalClear = async () => {
+    const clear = document.getElementById("journal-global-clear");
+    clear.focus();
+    clear.click();
+    const modal = await until(() => {
+      const candidate = document.getElementById("journal-clear-modal");
+      return candidate && !candidate.hidden && candidate;
+    }, "Journal clear confirmation");
+    equal(document.activeElement, document.getElementById("journal-clear-cancel"));
+    return modal;
+  };
+  const discardJournal = async () => {
+    let modal = document.getElementById("journal-clear-modal");
+    if (!modal || modal.hidden) modal = await openJournalClear();
+    document.getElementById("journal-clear-discard").click();
+    await until(() => document.getElementById("journal-global-download").disabled && modal.hidden, "Journal explicitly discarded");
   };
   // A check this browser cannot run is reported as skipped, with its reason,
   // never silently passed.
@@ -1745,7 +1762,7 @@
       await until(() => !document.getElementById("journal-card").hidden && !document.getElementById("journal-work-panel").hidden, "passwordless journal creation to open Entries");
       assertJournalControlsVisible(true);
       assert(document.getElementById("journal-status-title").textContent.includes("No password protection"), "A passwordless Journal should disclose that its file has no access protection");
-      journalGlobalClear.click();
+      await discardJournal();
       await until(() => !document.getElementById("journal-card").hidden, "Journal gate after clearing the passwordless Journal");
       assertJournalControlsVisible(false);
       journalTabs.forEach((tab) => assert(tab.disabled, "Clearing a passwordless Journal should disable its tabs"));
@@ -1786,9 +1803,13 @@
       state.lastBlob = null;
       journalGlobalDownload.click();
       const encryptedJournalText = await (await until(() => state.lastBlob, "encrypted Journal download")).text();
-      journalGlobalClear.click();
+      journalGlobalClear.focus();
+      equal(document.activeElement, journalGlobalClear);
+      await discardJournal();
       await until(() => !document.getElementById("journal-card").hidden, "Journal gate after clearing");
       assertJournalControlsVisible(false);
+      equal(document.activeElement, document.getElementById("journal-create"));
+      assert(document.activeElement.getClientRects().length, "Clear must leave focus on the visible gate action");
       journalTabs.forEach((tab) => assert(tab.disabled, "Clearing should disable the Journal tabs again"));
       assert(journalGlobalDownload.disabled && journalGlobalClear.disabled, "Clearing should disable the Journal-wide actions again");
       document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
@@ -2000,7 +2021,7 @@
       document.querySelector('#workspace [data-workspace="journal"]').click();
       await until(() => !document.getElementById("journal-tool-intro").hidden, "Journal tool for the store/load drill");
       if (!document.getElementById("journal-work-panel").hidden) {
-        document.getElementById("journal-global-clear").click();
+        await discardJournal();
         await until(() => document.getElementById("journal-global-download").disabled, "Journal wiped before the drill");
       }
       assert(!document.getElementById("journal-locked-panel").hidden && document.getElementById("journal-work-panel").hidden, "A wiped Journal should stand at its gate");
@@ -2012,6 +2033,12 @@
       document.getElementById("journal-create").click();
       await until(() => !document.getElementById("journal-global-download").disabled, "Journal unlocked after creation");
       assertJournalControlsVisible(true);
+      const globalActions = document.getElementById("journal-global-actions");
+      for (const id of ["journal-status", "journal-global-download", "journal-global-clear"]) {
+        assert(globalActions.contains(document.getElementById(id)), `${id} must belong to the whole-Journal toolbar`);
+      }
+      assert(!document.getElementById("journal-save"), "Entries must not offer a duplicate whole-Journal download");
+      equal(document.getElementById("journal-status-note").getAttribute("aria-live"), "polite");
       document.getElementById("journal-add").click();
       await until(() => !document.getElementById("journal-editor").hidden, "entry editor to open");
       document.getElementById("journal-method").value = "hex";
@@ -2020,24 +2047,69 @@
       input(document.getElementById("journal-label"), entryLabel);
       input(document.getElementById("journal-entry-notes"), entryNotes);
       document.getElementById("journal-commit").click();
-      await until(() => [...document.querySelectorAll("#journal-list .journal-item-label")].some((el) => el.textContent === entryLabel), "committed entry in the list");
+      await until(() => [...document.querySelectorAll("#journal-list [data-journal-id]")].some((el) => el.textContent.includes(entryLabel)), "committed entry in the list");
       assert(document.getElementById("journal-editor").hidden, "Committing should close the editor");
-      assert([...document.querySelectorAll("#journal-list .journal-item-meta")].some((el) => el.textContent.startsWith("Number bases · ")), "The entry should list its method and date");
 
-      // Store: the Save file button downloads the sealed journal.
-      const journalText = await captureDownload("entropylab-journal.json", "journal file download", () => document.getElementById("journal-save").click());
+      equal(document.querySelectorAll("#journal-list [data-journal-id]").length, 1);
+      document.getElementById("journal-notes-tab").click();
+      input(document.getElementById("journal-notes-text"), "Clear confirmation preserves this note");
+      const noteBeforeClear = document.getElementById("journal-notes-text").value;
+
+      // Every section shares the open state and a reachable Clear action.
+      // Leave the last section selected so clearing also exercises a section
+      // whose panel does not contain the Entries controls.
+      const clear = document.getElementById("journal-global-clear");
+      for (const tab of document.querySelectorAll("#journal-tool-tabs [data-journal-tool]")) {
+        tab.click();
+        const panel = document.getElementById(tab.getAttribute("aria-controls"));
+        await until(() => !panel.hidden, "Journal section selected");
+        equal(tab.getAttribute("aria-selected"), "true");
+        assertJournalControlsVisible(true);
+        assert(document.getElementById("journal-status-title").textContent.trim(), "The open Journal must expose its status");
+        assert(document.getElementById("journal-status-note").textContent.trim(), "The open Journal must expose its save state");
+        clear.focus();
+        equal(document.activeElement, clear);
+      }
+
+      const assertContentIntact = () => {
+        assert(!document.getElementById("journal-global-download").disabled, "The confirmation must leave the Journal open");
+        equal(document.getElementById("journal-notes-text").value, noteBeforeClear);
+        assert([...document.querySelectorAll("#journal-list [data-journal-id]")].some((item) => item.textContent.includes(entryLabel)), "The confirmation lost the stored entry");
+      };
+      for (const dismiss of [
+        () => document.getElementById("journal-clear-cancel").click(),
+        () => document.getElementById("journal-clear-cancel").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })),
+        (modal) => modal.click(),
+      ]) {
+        const modal = await openJournalClear();
+        assertContentIntact();
+        dismiss(modal);
+        await until(() => modal.hidden, "Journal clear confirmation dismissed");
+        equal(document.activeElement, clear);
+        assertContentIntact();
+      }
+
+      // Download from the confirmation, then explicitly discard. The browser
+      // cannot tell whether its file was saved, so downloading alone leaves
+      // both the confirmation and the Journal intact.
+      const modal = await openJournalClear();
+      const journalText = await captureDownload("entropylab-journal.json", "Journal backup before clearing", () => document.getElementById("journal-clear-download").click());
+      await until(() => !document.getElementById("journal-clear-download").disabled && document.getElementById("journal-clear-status").textContent.trim(), "clear confirmation after download");
+      assert(!modal.hidden, "Downloading must leave the clear confirmation open");
+      assertContentIntact();
       const envelope = JSON.parse(journalText);
       equal(envelope.kdf, "PBKDF2-SHA-256", "The stored file should name its key derivation");
       equal(envelope.cipher, "AES-256-GCM", "The stored file should name its cipher");
-      assert(!journalText.includes(entryLabel) && !journalText.includes(entryInput) && !journalText.includes(entryPhrase), "The stored file must not carry plaintext");
-      assert(document.getElementById("journal-status-note").textContent.includes("1 entry"), "The status should count the stored entry");
-
-      // Load: lock, then open the file back — wrong password first.
-      document.getElementById("journal-lock").click();
-      await until(() => document.getElementById("journal-global-download").disabled, "Journal locked");
+      assert(!journalText.includes(entryLabel) && !journalText.includes(entryInput) && !journalText.includes(entryPhrase) && !journalText.includes(noteBeforeClear), "The stored file must not carry plaintext");
+      await discardJournal();
       assertJournalControlsVisible(false);
-      assert(document.getElementById("journal-work-panel").hidden, "Locking should hide the work panel");
-      assert(!document.querySelector("#journal-list .journal-item"), "Locking should clear the visible entries");
+      equal(document.activeElement, document.getElementById("journal-create"));
+      assert(document.activeElement.getClientRects().length, "Discard must leave focus on the visible gate action");
+      assert(document.getElementById("journal-work-panel").hidden, "Discarding should hide the work panel");
+      assert(!document.querySelector("#journal-list [data-journal-id]"), "Discarding should clear the visible entries");
+      assert(!document.getElementById("journal-notes-text").value.includes(noteBeforeClear), "Discarding should clear the note");
+
+      // Open the confirmation's downloaded backup — wrong password first.
       document.querySelector('#journal-gate-modes [data-journal-gate="open"]').click();
       setFiles(document.getElementById("journal-file"), new File([journalText], "entropylab-journal.json", { type: "application/json" }));
       input(document.getElementById("journal-open-password"), "a long enough but wrong password");
@@ -2051,7 +2123,7 @@
       assertJournalControlsVisible(true);
 
       // The stored entry survived: listed, viewable, and revealed on demand.
-      const restoredItem = await until(() => [...document.querySelectorAll("#journal-list .journal-item")].find((el) => el.querySelector(".journal-item-label")?.textContent === entryLabel), "stored entry listed after load");
+      const restoredItem = await until(() => [...document.querySelectorAll("#journal-list [data-journal-id]")].find((el) => el.textContent.includes(entryLabel)), "stored entry listed after load");
       restoredItem.click();
       await until(() => !document.getElementById("journal-view").hidden, "stored entry view");
       assert(!document.getElementById("journal-view").textContent.includes(entryInput), "The stored input stays masked until revealed");
@@ -2072,6 +2144,7 @@
       document.querySelector('#journal-tool-tabs [data-journal-tool="notes"]').click();
       await until(() => !document.getElementById("journal-notes-card").hidden, "Notepad for the store/load drill");
       const notesField = document.getElementById("journal-notes-text");
+      equal(notesField.value, noteBeforeClear);
       input(notesField, noteLine);
       await until(() => notesField.value.includes(noteLine), "the typed note");
       const notesFile = await captureDownload("entropylab-notebook.encrypted.json", "encrypted notepad download", () => document.getElementById("journal-notes-download").click());
@@ -2095,7 +2168,7 @@
         document.querySelector('#workspace [data-workspace="journal"]').click();
         await until(() => !document.getElementById("journal-tool-intro").hidden, "Journal tool for the cleanup");
         if (!document.getElementById("journal-work-panel").hidden) {
-          document.getElementById("journal-global-clear").click();
+          await discardJournal();
           await until(() => document.getElementById("journal-global-download").disabled, "Journal wiped after the drill");
         }
         input(document.getElementById("journal-create-password"), journalPassword);
@@ -2133,7 +2206,7 @@
     document.querySelector('#journal-tool-tabs [data-journal-tool="book"]').click();
     const capturedEntry = await until(() => document.querySelector("#journal-list .journal-item"), "automatically captured Key Station entry");
     equal(document.querySelectorAll("#journal-list .journal-item").length, 1, "a Key Station derivation should add one journal entry");
-    assert(document.getElementById("journal-status-note").textContent.includes("download the journal file to preserve them"), "automatic capture should explain that the journal still needs downloading");
+    assert(document.getElementById("journal-status-note").textContent.trim(), "automatic capture should expose the Journal's save state");
     capturedEntry.click();
     await until(() => !document.getElementById("journal-view").hidden, "automatically captured entry view");
     assert(!document.getElementById("journal-view").textContent.includes("passphrase was in effect"), "the passphrase-in-use note stays masked until revealed");
@@ -2714,7 +2787,6 @@
     }
     const journalGlobalDownload = document.getElementById("journal-global-download");
     for (const property of ["backgroundColor", "color", "borderTopColor"]) equal(getComputedStyle(journalGlobalDownload)[property], headerDownloadStyle[property], `Download journal should use the header download button's ${property}`);
-    assert(document.getElementById("journal-global-clear").classList.contains("clear-current-action"), "Clear journal should use the shared red clear-button treatment");
     const encryptChoices = [...document.querySelectorAll(".journal-encrypt-download")];
     equal(encryptChoices.length, 3, "each Journal tab should expose the encryption choice");
     assert(encryptChoices.every((checkbox) => checkbox.checked), "Journal tab downloads should be encrypted by default");
@@ -6557,7 +6629,7 @@
     const fixture = {"entropylabJournal":2,"kdf":"PBKDF2-SHA-256","iterations":600000,"cipher":"AES-256-GCM","iv":"437ff043fb7b9cc1da70f61e","ciphertext":"699a11e60bdf32ec7d8af7f14284783befc6bc68d8007a0d1680f6034c1f7258be9476042c7898267d6e0f46f31f66ea3bd2afbeb507490eab0c7b45fdbaf4e3ea39b6193f2d663aa8982d8e8ce7f40379cc49567423bd9e1cee0cb9849b03a36666d77e489a19096670ff3687b3394ec9d7746bc71ab26806284f27fce809ff038aaf31f4d421c1175bbe9255f7a0f6069ecd731fc1c198b771208b2d3e7eb0c98b2d0f587b82c7084392740d80d7ca0f021b812007d5c5cc50540dc489ed4672b0ecdbf495d006d9e2f97d28e3ec0dde39b711f20559d1b9115e80e7f23c712e20538f8d80ec1f27929bf19e59881eccbdb0b54a7aa98e3a9961b4b5693801ee2439e5b9787f08d06219bf6910a0d7a7b95e10221cf6f4617ff13144646978550ce152cadf139a7cf985d278c0da272249924d2b86029242cbbbed4cab105833ee560fe09b177b1e5d91a1a5f3ab610547b765d0667e9cf86d84d8a5eede7970d6bec993500e40a6cc95d3e5e6c294b5502f98a733d7d73947146971d9e6374416ed61f82b30f70074cf9f57a72b6f31276fd617e69020d39252a5601a953f173e4d7881302ead614480881845f94cb7c2aafe891f1a391266795bf70a99f5e0d28e61a9723bb206086eaba9464a973b3a7d93b640329387a1ca9749509dd1a3ed745fe937ed72546c4516d8ec5a532d6566a1c9173ca9bb062dde7323290dfe95a5e1900521b19163b47522d12d291f3d8bb4f8c89f26d34ae1141bfd68b5cdb0a8981ad45e40faad1a608dd11e78a280252a495f44e26ff66bf28f63d9faae29ac5b25ec02570f46f2b82bcb447bfde786446c7672de73736d0117a9a185f697a79a574b770dbbf42ecd84d1a618fa6edbfe038bc3624268fba6081670c1645d9aa46cb631711af89c5d7ebd2a35a77d9d1780c694077e5d1b5dfa0129968706aca41dc3872c0dfde0089c65bb0032055edac06277aa43467e1de01998e62cd981fb1f193c63c90192b2d24fdf7da62b87d41868ba33a6798a7583eb59f5c521b05ffbbd9dd64176368eb0c01d141034aebafb6e438857adc32e21adbc27fd409319cc79350676235312a2065e1f3c885ad987a5e10dd116a6dfba3add4353564e0160cfe81f2fc0c5d1e6cad4944c8920df2deaa2cb7be35f932dd409e7035f16b6cdad80432b07c1cc9913c0754366bf2915b43766e0b6c56ea73b4160928fdc2ebd5fac2d08ee47b1473b29d9060f375a","entropylabJournalExport":1};
     document.querySelector('#workspace [data-workspace="journal"]').click();
     if (!document.getElementById("journal-work-panel").hidden) {
-      document.getElementById("journal-global-clear").click();
+      await discardJournal();
       await until(() => document.getElementById("journal-global-download").disabled, "journal reset for import");
     }
     input(document.getElementById("journal-create-password"), "elkeys fixture password");
@@ -6982,7 +7054,7 @@
     const clearJournal = async () => {
       document.querySelector('#workspace [data-workspace="journal"]').click();
       if (!document.getElementById("journal-global-clear").disabled) {
-        document.getElementById("journal-global-clear").click();
+        await discardJournal();
         await until(() => document.getElementById("journal-global-download").disabled, "complete Journal cleared");
       }
       assertJournalControlsVisible(false);

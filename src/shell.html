@@ -784,6 +784,13 @@ words, pick one of the checksum words.</span></span>
         <p class="muted tool-intro-note">Keep entries, notes, and key inputs together. Download a backup to keep your work. Existing derived keys and keys derived while the journal is unlocked are recorded, including seed words. Files are encrypted with your password; without one, anyone with the file can open it.</p>
         <div class="row journal-global-actions tool-actions" id="journal-global-actions" hidden>
           <button class="btn secondary green journal-download-action" id="journal-global-download" type="button" disabled><svg class="download-mark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg><span>Download journal</span></button>
+          <div class="journal-status" id="journal-status">
+            <img class="journal-status-lifehash" id="journal-lifehash" width="48" height="48" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" hidden>
+            <div>
+              <p class="journal-status-title" id="journal-status-title">Journal open</p>
+              <p class="muted" id="journal-status-note" role="status" aria-live="polite">No entries yet.</p>
+            </div>
+          </div>
           <button class="btn red clear-current-action" id="journal-global-clear" type="button" disabled>Clear journal</button>
         </div>
       </div>
@@ -832,20 +839,11 @@ words, pick one of the checksum words.</span></span>
         <p class="sr-only" id="journal-gate-status" role="status" aria-live="polite"></p>
       </div>
       <div id="journal-work-panel" hidden>
-        <div class="journal-status" id="journal-status">
-          <img class="journal-status-lifehash" id="journal-lifehash" width="48" height="48" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" hidden>
-          <div>
-            <p class="journal-status-title" id="journal-status-title">Journal open</p>
-            <p class="muted" id="journal-status-note" role="status" aria-live="polite">No entries yet. Download the journal file after you add one.</p>
-          </div>
-        </div>
         <div class="row bip85-actions journal-toolbar tool-actions">
           <label class="field journal-search-field">Search labels
             <input id="journal-search" type="search" placeholder="Filter by label" autocomplete="off">
           </label>
           <button class="btn primary" id="journal-add" type="button">Add entry</button>
-          <button class="btn secondary" id="journal-save" type="button">Save file</button>
-          <button class="btn secondary" id="journal-lock" type="button">Lock</button>
         </div>
         <div id="journal-list" class="journal-list" aria-live="polite"></div>
         <div id="journal-editor" class="journal-editor" hidden>

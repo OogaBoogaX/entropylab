@@ -102,14 +102,14 @@ material. Its security posture rests on the following model:
   parsed report and its rendered views), resets every Multisig tab, and the
   two body-level overlays — the expand editor (whose value can be an entire
   previous transaction) and the QR dialog — release their contents on close
-  and on page hide because station wipes cannot reach them. Locking the
+  and on page hide because station wipes cannot reach them. Clearing the
   Journal empties the session's unsecured text: the snapshot (which can
   hold the whole session's recovery texts), the notepad, and the session
   log, including historical snapshots restored from a backup. Opening a
   complete journal file restores its saved sections; entry-only legacy files
   restore only entries. The
   Vanity source block drops the passphrase it displayed the moment the key
-  pick is dropped. Journal teardown (including Lock) invalidates pending
+  pick is dropped. Journal teardown invalidates pending
   notebook and Key Manager imports at both file-read and decryption
   boundaries, and invalidates a pending complete-backup download. Changing
   the chosen journal file while it decrypts also discards that obsolete open.
@@ -243,6 +243,13 @@ material. Its security posture rests on the following model:
   The log records tool
   names, timestamps, and fingerprints — not seed phrases, xprvs, or typed
   secrets.
+- The Journal's **Clear journal** control requires an explicit discard
+  choice. Its confirmation also offers a backup download and Cancel; both
+  preserve the open Journal. Starting a download does not prove the browser
+  saved the file, so it never automatically clears the Journal. Confirmed
+  discard wipes the Journal's password, entries, notes, managed and ignored
+  key inputs, snapshots, and log on a best-effort basis. Pagehide cleanup
+  remains unconditional and does not open this confirmation.
 - A complete Journal download seals entries, notepad pages, managed/ignored
   source inputs, a historical snapshot, and the log in one authenticated
   payload. It uses document version 3 inside the unchanged version 2 encrypted
@@ -266,7 +273,7 @@ material. Its security posture rests on the following model:
   Re-derivation proves consistency with the supplied inputs, not that the
   sender lacks a copy of the key or that the inputs have adequate entropy.
   Imported private material remains in page memory and is not loaded into Key
-  Station until the user explicitly chooses it. Locking or clearing the
+  Station until the user explicitly chooses it. Clearing the
   Journal drops pending and ignored Key Manager entries on a best-effort basis.
 - The Entropy Journal notebook holds entropy the user
   already produced, not a password manager and not a key generator. The
@@ -370,9 +377,9 @@ completely (its reports included), resets every Multisig form, and empties
 the panels that echo what you typed (dealt cards, the worked calculations,
 the fairness tally, the progress lines) and the two dialogs (the value
 editor and the QR view) — the dialogs also drop their contents the moment
-you close them. Locking the Journal empties the session snapshot, the
-notepad, and the session log, including imported historical snapshots; an
-unlock restores only the data held in the saved journal file. The WebAssembly modules overwrite every
+you close them. Clearing the Journal empties the session snapshot, the
+notepad, and the session log, including imported historical snapshots;
+reopening restores only the data held in the saved journal file. The WebAssembly modules overwrite every
 buffer passed in or out and their working stacks after they run, and the
 PSBT module also wipes the whole-file copies its exports assemble. Vanity
 shuts its workers and their module down when a run ends. The

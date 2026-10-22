@@ -1721,7 +1721,8 @@ input.bad, textarea.bad { border-color: var(--danger) !important; }
 #journal-locked-panel[hidden], #journal-work-panel[hidden], #journal-create-panel[hidden], #journal-open-panel[hidden], #journal-editor[hidden], #journal-view[hidden], #journal-global-actions[hidden] { display: none; }
 .journal-global-actions { align-items: center; }
 .journal-global-actions .journal-download-action { display: inline-flex; align-items: center; gap: var(--space-snug); }
-.journal-status { display: flex; align-items: center; gap: var(--space-component); margin-bottom: var(--space-component); }
+.journal-status { display: flex; flex: 1 1 auto; align-items: center; gap: var(--space-component); min-width: 0; }
+.journal-status p { margin: 0; }
 .journal-status-lifehash { width: 48px; height: 48px; border-radius: var(--radius-control); image-rendering: pixelated; flex: 0 0 auto; }
 .journal-status-title { margin: 0; font-weight: 700; }
 .journal-toolbar { align-items: flex-end; flex-wrap: wrap; }

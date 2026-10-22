@@ -1743,7 +1743,24 @@ test("Journal gates its five tools behind the local notebook", () => {
   for (const id of ["journal-tool-intro", "journal-global-actions", "journal-manager", "journal-work-panel", "journal-open-panel"]) {
     assert.ok(element(id).hidden, `${id} starts hidden`);
   }
-  for (const id of ["journal-global-download", "journal-global-clear"]) assert.ok(element(id).disabled);
+  const globalActions = element("journal-global-actions");
+  for (const id of ["journal-global-download", "journal-global-clear"]) {
+    assert.equal(globalActions.querySelector(`#${id}`), element(id));
+    assert.ok(element(id).disabled);
+  }
+  const status = element("journal-status");
+  assert.equal(globalActions.querySelector("#journal-status"), status);
+  for (const id of ["journal-status-title", "journal-status-note", "journal-lifehash"]) {
+    assert.equal(status.querySelector(`#${id}`), element(id));
+  }
+  assert.equal(element("journal-status-note").getAttribute("role"), "status");
+  assert.equal(element("journal-status-note").getAttribute("aria-live"), "polite");
+  for (const id of ["journal-status", "journal-global-download", "journal-global-clear"]) {
+    assert.equal(element("journal-card").querySelector(`#${id}`), null);
+  }
+  assert.equal(document.getElementById("journal-save"), null);
+  assert.equal(document.getElementById("journal-lock"), null);
+  precedes("journal-global-actions", "journal-tool-tabs");
   precedes("journal-tool-intro", "journal-manager");
   const tabs = element("journal-tool-tabs");
   assert.equal(tabs.getAttribute("role"), "tablist");
@@ -1769,7 +1786,7 @@ test("Journal gates its five tools behind the local notebook", () => {
     assert.equal(button.getAttribute("aria-pressed"), String(mode === "create"));
   }
   assert.equal(element("journal-create-panel").hidden, false);
-  for (const id of ["journal-create", "journal-unlock", "journal-save", "journal-input", "journal-open-password", "journal-entry-notes"]) element(id);
+  for (const id of ["journal-create", "journal-unlock", "journal-input", "journal-open-password", "journal-entry-notes"]) element(id);
   for (const [fieldId, descriptions] of [
     ["journal-create-password", ["journal-create-password-note", "journal-create-password-status"]],
     ["journal-create-confirm", ["journal-create-confirm-status"]],
@@ -1841,7 +1858,7 @@ test("Journal gates its five tools behind the local notebook", () => {
   assert.match(appSource, /journal-keymanager-card"\)\.hidden = !visible \|\| !unlocked \|\| hodlJournalTool !== "keymanager"/);
   assert.match(appSource, /outer\?\.entropylabJournalExport[\s\S]*hodlJournalOpenExport\(outer, hodlJournalKeys\)/);
   assert.match(appSource, /document\.getElementById\("journal-global-download"\)\?\.addEventListener\("click", hodlJournalSaveFile\)/);
-  assert.match(appSource, /document\.getElementById\("journal-global-clear"\)\?\.addEventListener\("click", hodlJournalWipeMem\)/);
+  assert.match(appSource, /document\.getElementById\("journal-global-clear"\)\?\.addEventListener\("click", hodlJournalConfirmClear\)/);
   assert.match(appSource, /function hodlInitJournalActionAudit\(\)[\s\S]*document\.addEventListener\("click",[\s\S]*document\.addEventListener\("change",/);
   assert.match(appSource, /control\.id === "journal-key-insert" \|\| control\.type === "file"/);
   assert.match(appSource, /function hodlJournalRefreshSessionState\(\)/);
@@ -1866,7 +1883,6 @@ test("Journal gates its five tools behind the local notebook", () => {
   assert.match(appSource, /function hodlJournalSyncDerivedKeys\(states\) \{\s*if \(!hodlJournalUnlocked\(\)\) return \{ added: 0, updated: 0, matched: 0 \}/);
   assert.match(appSource, /hodlJournalKeyEntries\.clear\(\)/);
   assert.match(appSource, /hodlCommitDerivedKey\(action\);\s*hodlJournalCaptureDerivedKey\(hodlKeys\[hodlActiveKey\]\)/);
-  assert.match(appSource, /function hodlJournalLock\(\) \{[\s\S]*hodlJournalTool = "book";[\s\S]*hodlSyncJournalTool\(\)/);
   assert.match(appSource, /function hodlJournalWipeMem\(\) \{[\s\S]*hodlJournalTool = "book";[\s\S]*hodlSyncJournalTool\(\)/);
   // The notebook never seals or opens without an explicit click.
   const init = appSource.slice(appSource.indexOf("function hodlInitJournalNotebook()"), appSource.indexOf("function hodlJournalWipeMem()"));

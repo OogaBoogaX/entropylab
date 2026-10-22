@@ -73,6 +73,7 @@ import { initQrReferences } from "./qr-references.js";
 import { addressQrButtonHtml as hodlAddressQrButton, initAddressQr as hodlInitAddressQr } from "./address-qr.js";
 import { initLowEntropyConfirm } from "./low-entropy-confirm.js";
 import { initFingerprintCollisionConfirm } from "./fingerprint-collision-confirm.js";
+import { initJournalClearConfirm } from "./journal-clear-confirm.js";
 import { NONCE_HISTORY_MAX_TEXT, compareNonceHistory, mergeNonceHistory, nonceHistoryRecord, parseNonceHistory, serializeNonceHistory } from "./nonce-history.js";
 import { renderSVG as hodlUqrRenderSvg } from "uqr";
 import { BIP39_LANGUAGE_ENGLISH, BIP85_APPS, bip85Path, bip85SecretLength, deriveApplication, parseChildIndex, wipeBip85Result, wipeBytes as hodlWipeBytes } from "./bip85.js";
@@ -16676,12 +16677,12 @@ function hodlScheduleJournalStateRefresh() {
 }
 // The encrypted entropy notebook gates the Journal tools and keeps its
 // document and Web Crypto keys apart from the session notepad.
-var hodlJournalKeys = null, hodlJournalDoc = null, hodlJournalFileText = "", hodlJournalDirty = false, hodlJournalBackupRevision = 0, hodlJournalGate = "create", hodlJournalReveal = false, hodlJournalEditingId = null, hodlJournalDeleteArmed = false, hodlJournalEntryVariants = {}, hodlJournalKeyEntries = new Map();
+var hodlJournalKeys = null, hodlJournalDoc = null, hodlJournalFileText = "", hodlJournalDirty = false, hodlJournalBackupRevision = 0, hodlJournalGate = "create", hodlJournalReveal = false, hodlJournalEditingId = null, hodlJournalDeleteArmed = false, hodlJournalEntryVariants = {}, hodlJournalKeyEntries = new Map(), hodlJournalClearConfirm = null;
 function hodlJournalReadEntryVariants(entry) {
   if (!entry) return {};
   return Object.fromEntries(["diceMethod", "entropyFormat", "cardMethod", "seedMethod"].filter((field) => entry[field]).map((field) => [field, entry[field]]));
 }
-// Bumped by every notebook teardown (clear, lock, lifecycle disposal). An
+// Bumped by every notebook teardown (clear, lifecycle disposal). An
 // async unlock/create that completes against an older generation must discard
 // its decrypted material, not install it over a wiped session (issue #389).
 var hodlJournalGeneration = 0;
@@ -16814,7 +16815,7 @@ function hodlJournalNoteText() {
   if (!hodlJournalDoc) return hodlTText("Create a journal or open a journal file.");
   let n = hodlJournalDoc.entries.length;
   let unsaved = hodlJournalDirty ? " " + hodlTText("Unsaved changes \u2014 download the journal file to preserve them.") : "";
-  if (!n) return hodlTText("No entries yet. Download the journal file after you add one.") + unsaved;
+  if (!n) return hodlTText("No entries yet.") + unsaved;
   return (n === 1 ? hodlTText("{n} entry in this page only.", { n }) : hodlTText("{n} entries in this page only.", { n })) + unsaved;
 }
 function hodlJournalFillLifehash(image, digest) {
@@ -17211,16 +17212,18 @@ function hodlJournalRestoreBackup(backup) {
   hodlJournalApplyPageStyle();
   hodlRenderJournalLog();
 }
-async function hodlJournalSaveFile() {
+async function hodlJournalSaveFile(options) {
   hodlJournalError("");
   let generation = hodlJournalGeneration, backup;
+  let isCurrent = () => generation === hodlJournalGeneration && options?.isCurrent?.() !== false;
   try {
+    if (!isCurrent()) return false;
     if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
     if (document.getElementById("journal-editor")?.hidden === false) throw new Error(hodlTText("Save or cancel the entry you are editing before downloading the journal."));
     backup = hodlJournalCollectBackup();
     let revision = hodlJournalBackupRevision;
     let file = await hodlJournalSealBackup(hodlJournalDoc, hodlJournalKeys, backup);
-    if (generation !== hodlJournalGeneration) return;
+    if (!isCurrent()) return false;
     let blob = new Blob([JSON.stringify(file, null, 2) + "\n"], { type: "application/json" }), url = URL.createObjectURL(blob), link = document.createElement("a");
     link.href = url;
     link.download = "entropylab-journal.json";
@@ -17228,10 +17231,12 @@ async function hodlJournalSaveFile() {
     setTimeout(() => URL.revokeObjectURL(url), 1e3);
     hodlJournalDirty = revision !== hodlJournalBackupRevision;
     hodlJournalShowWork();
+    return true;
   } catch (exception) {
-    if (generation !== hodlJournalGeneration) return;
+    if (!isCurrent()) return false;
     hodlShowJournalTool("book");
     hodlJournalError(exception.message || String(exception));
+    return false;
   } finally {
     hodlJournalWipeDocument({ entries: [], backup });
   }
@@ -17264,45 +17269,13 @@ function hodlJournalCommit() {
     hodlJournalError(exception.message || String(exception));
   }
 }
-function hodlJournalLock() {
-  hodlKeyManagerReset();
-  hodlJournalWipeNotebook();
-  hodlJournalClearFields();
-  hodlJournalHideEditor();
-  hodlJournalSetGate("create");
-  hodlJournalTool = "book";
-  hodlJournalShowWork();
-  hodlSyncJournalTool();
-  // While the private box is ticked, the snapshot readout holds the whole
-  // session's recovery texts; a locked journal must not keep that copy —
-  // nor the notepad or the session log, free text the session pasted
-  // keystrokes into. The journal file itself can restore the notebook, but
-  // the unlocked session's loose text stays only while it stays unlocked
-  // (#522).
-  let stateText = document.getElementById("journal-state-text");
-  if (stateText) stateText.textContent = "";
-  let privateBox = document.getElementById("journal-state-private");
-  if (privateBox) privateBox.checked = false;
-  wipeJournal(hodlJournal);
-  let notes = document.getElementById("journal-notes-text");
-  if (notes) {
-    notes.value = "";
-    hodlJournalResetPendingNote(notes, "Add new note");
-  }
-  hodlRenderJournalPageTabs();
-  hodlJournalApplyPageStyle();
-  let log = document.getElementById("journal-log-out");
-  if (log) log.textContent = hodlTText("No events yet.");
-  hodlJournalLog("journal-lock");
-  document.getElementById("journal-status-note").textContent = hodlTText("Journal locked. Password, entries, notepad, and session log were cleared (best effort).");
-  // The status note sits inside the work panel the lock just hid, so it is
-  // out of the accessibility tree and announces nothing; the gate panel's
-  // live region stays visible and carries the announcement.
-  let gateStatus = document.getElementById("journal-gate-status");
-  if (gateStatus) gateStatus.textContent = hodlTText("Journal locked. Password, entries, notepad, and session log were cleared (best effort).");
-  // The Lock button leaves the page with the work panel; without a target its
-  // focus would fall to <body>. The locked panel's primary action is Create.
-  document.getElementById("journal-create")?.focus();
+function hodlJournalConfirmClear() {
+  if (!hodlJournalUnlocked()) return;
+  if (!hodlJournalClearConfirm) hodlJournalClearConfirm = initJournalClearConfirm({
+    onDownload: (isCurrent) => hodlJournalSaveFile({ isCurrent }),
+    onDiscard: hodlJournalWipeMem,
+  });
+  hodlJournalClearConfirm.show(document.getElementById("journal-global-clear"));
 }
 function hodlInitJournalNotebook() {
   if (!document.getElementById("journal-create")) return;
@@ -17320,10 +17293,8 @@ function hodlInitJournalNotebook() {
     hodlJournalError("");
     try { hodlJournalShowEditor(null); } catch (exception) { hodlJournalError(exception.message || String(exception)); }
   });
-  document.getElementById("journal-save")?.addEventListener("click", hodlJournalSaveFile);
-  document.getElementById("journal-lock")?.addEventListener("click", hodlJournalLock);
   document.getElementById("journal-global-download")?.addEventListener("click", hodlJournalSaveFile);
-  document.getElementById("journal-global-clear")?.addEventListener("click", hodlJournalWipeMem);
+  document.getElementById("journal-global-clear")?.addEventListener("click", hodlJournalConfirmClear);
   document.getElementById("journal-commit")?.addEventListener("click", hodlJournalCommit);
   document.getElementById("journal-method")?.addEventListener("change", () => { hodlJournalEntryVariants = {}; });
   document.getElementById("journal-cancel")?.addEventListener("click", () => {
@@ -17335,6 +17306,10 @@ function hodlInitJournalNotebook() {
   hodlJournalShowWork();
 }
 function hodlJournalWipeMem() {
+  // Remember focus before hiding or disabling the control can blur it.
+  let active = document.activeElement;
+  let refocus = active && ["journal-work-panel", "journal-global-actions"].some((id) => document.getElementById(id)?.contains?.(active));
+  hodlJournalClearConfirm?.hide({ restoreFocus: false });
   wipeJournal(hodlJournal);
   hodlKeyManagerReset();
   hodlJournalWipeNotebook();
@@ -17360,21 +17335,18 @@ function hodlJournalWipeMem() {
   hodlJournalSetStatus("");
   let log = document.getElementById("journal-log-out");
   if (log) log.textContent = hodlTText("No events yet.");
-  // The global Clear announces through the same live region Lock uses. This
+  // The global Clear announces through the status live region. This
   // also runs on pagehide, where the assignment is harmless.
   let statusNote = document.getElementById("journal-status-note");
   if (statusNote) statusNote.textContent = hodlTText("Journal cleared. Password, entries, notepad, and session log were cleared (best effort).");
-  // The status note sits inside the work panel the clear just hid, so it is
+  // The status note sits inside the global toolbar the clear just hid, so it is
   // out of the accessibility tree and announces nothing; the gate panel's
   // live region stays visible and carries the announcement.
   let gateStatus = document.getElementById("journal-gate-status");
   if (gateStatus) gateStatus.textContent = hodlTText("Journal cleared. Password, entries, notepad, and session log were cleared (best effort).");
-  // hodlJournalHideEditor hands focus inside the closing editor or view to
-  // #journal-add, which hodlJournalShowWork has just hidden with the work
-  // panel; that stranded focus moves to the gate's primary action. Focus
-  // anywhere else is left alone — this also runs on pagehide.
-  let active = document.activeElement, workPanel = document.getElementById("journal-work-panel");
-  if (active && workPanel?.contains?.(active)) document.getElementById("journal-create")?.focus();
+  // Return focus from closing controls to the gate's primary action. Focus
+  // elsewhere stays alone — this also runs on pagehide.
+  if (refocus) document.getElementById("journal-create")?.focus();
 }
 // The switcher keeps every tool on screen as a folder-tab strip that scrolls
 // when it must, in the shape the Keys section uses for its own tabs.
