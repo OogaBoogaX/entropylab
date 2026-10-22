@@ -51,9 +51,9 @@ const DECLARED = new Set([
   "hodlSha256", "hodlHash160", "hodlSecp256k1", "hodlHex", "p2shScript", "p2wshScript", "addressFromScript",
   "parseRawTx", "serializeTx", "hodlWasm", "hodlWasmIn", "hodlWasmOut", "psbtInspectDoc",
   "hodlT", "hodlTText", "hodlTAttr", "matchOwnership", "indexHdKey", "indexSingleKey", "pathLabel",
-  "hodlTapKeySigs", "hodlTapScriptSigs", "hodlTapSighashProblems",
+  "hodlCompareSchnorrNonces", "hodlParseSchnorr", "hodlTapKeySigs", "hodlTapScriptPathSigs", "hodlTapScriptSigs", "hodlTapSighashProblems", "hodlTapWitnessShape",
   "inspectPsbtInscriptions", "describeEnvelope", "parseOpReturn", "describeOpReturn",
-  "hodlPublicValueHtml",
+  "hodlPublicValueHtml", "PSBT_RENDER_LIMIT",
   // Harness seams from the prelude below (no browser chrome; controllable session).
   "document", "hodlNetworkDefault", "hodlNetworkChoice", "hodlPsbtPriv", "hodlPsbtHd", "hodlPsbtRecordNonceInspection",
 ]);
@@ -113,10 +113,12 @@ import { wasmExports as hodlWasm, withInput as hodlWasmIn, withOutput as hodlWas
 import { psbtInspectDoc } from "../src/js/psbt-wasm.js";
 import { tHtml as hodlT, t as hodlTText, tAttr as hodlTAttr } from "../src/js/i18n.js";
 import { matchOwnership, indexHdKey, indexSingleKey, pathLabel } from "../src/js/ownership.js";
-import { hodlTapKeySigs, hodlTapScriptSigs, hodlTapSighashProblems } from "../src/js/psbt-schnorr.js";
+import { hodlCompareSchnorrNonces, hodlParseSchnorr, hodlTapKeySigs, hodlTapScriptPathSigs, hodlTapScriptSigs, hodlTapSighashProblems, hodlTapWitnessShape } from "../src/js/psbt-schnorr.js";
+import { isP2tr } from "../src/js/bip352.js";
 import { inspectPsbtInscriptions, describeEnvelope } from "../src/js/inscription.js";
 import { parseOpReturn, describeOpReturn } from "../src/js/opreturn.js";
 import { publicValueHtml as hodlPublicValueHtml } from "../src/js/public-data.js";
+import { PSBT_RENDER_LIMIT, cappedHtml, renderBudget } from "../src/js/psbt-viz.js";
 const document = { getElementById: () => null };
 const hodlNetworkDefault = "mainnet";
 const hodlNetworkChoice = "mainnet";
@@ -255,6 +257,35 @@ test("codeseparated P2WSH: an honest post-separator signature is reported incomp
 test("control: a P2WSH script without separators keeps the existing verdicts", () => {
   harness.hodlTestSetPriv(SECRET);
   assertControlUnchanged(render(buildPsbt(CONTROL_SCRIPT, CONTROL_SCRIPT)));
+});
+
+// DeepSeek's red-team of #1051, F1: ECDSA r values and BIP340 R values are
+// never compared with each other, so one Taproot signature beside the
+// control's two checked ECDSA signatures had nothing to be compared with.
+// Summing the families turned that into a green "Completed".
+function withTaprootInputs(rBytes) {
+  const psbt = harness.hodlParsePsbt(buildPsbt(CONTROL_SCRIPT, CONTROL_SCRIPT));
+  const base = psbt.inputs[0][0];
+  const outputKey = new Uint8Array(32).fill(0x5a);
+  const p2trUtxo = Uint8Array.of(...le64(AMOUNT), 34, 0x51, 0x20, ...outputKey);
+  rBytes.forEach((r, k) => {
+    psbt.tx.inputs.push({ ...psbt.tx.inputs[0], vout: INPUTS + k });
+    psbt.inputs.push([
+      { ...base, type: 0x01, keydata: new Uint8Array(), val: p2trUtxo },
+      { ...base, type: 0x13, keydata: new Uint8Array(), val: Uint8Array.of(...new Uint8Array(32).fill(r), ...new Uint8Array(32).fill(0x01 + k)) },
+    ]);
+  });
+  return harness.hodlRenderPsbt(psbt, new Uint8Array(), new Date().toISOString(), "all");
+}
+
+test("one Taproot signature beside two checked ECDSA signatures is not a completed nonce check (#1051 red-team F1)", () => {
+  harness.hodlTestSetPriv(SECRET);
+  const one = withTaprootInputs([0x31]);
+  assert.match(one, /Matches RFC 6979/, "the ECDSA side is still fully checked");
+  assert.match(one, /Nonce analysis<\/span> — <span class='psbt-warn'>Incomplete<\/span>/);
+  const two = withTaprootInputs([0x31, 0x32]);
+  assert.match(two, /Nonce analysis<\/span> — <span class='psbt-ok'>Completed<\/span>/, "two of each, all distinct");
+  assert.match(two, /All ECDSA and Taproot signatures in this PSBT had comparable nonce values/);
 });
 
 test("control: a separator byte inside pushed data is not an opcode", () => {

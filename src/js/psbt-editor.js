@@ -20,7 +20,7 @@ import { copyText, showCopiedIcon } from "./clipboard.js";
 import { privateCopyButtonHtml } from "./private-data.js";
 import { publicValueHtml } from "./public-data.js";
 import { expandableHtml, EXPAND_LIMIT, initExpandable } from "./expandable.js";
-import { psbtOutputNotesHtml, psbtVizHtml } from "./psbt-viz.js";
+import { psbtOutputNotesHtml, psbtVizHtml, PSBT_RENDER_LIMIT, renderBudget } from "./psbt-viz.js";
 import { parseOpReturn } from "./opreturn.js";
 import { buildOutputScript } from "./script-builder.js";
 import { hodlUrEncodePsbt } from "./psbt-ur.js";
@@ -492,19 +492,61 @@ export const psbtDiffHtml = (diff, before, after, network, { copyIcon = () => ""
     summary.push(`<p class="psbted-note-warn">Fee (from PSBT-claimed input amounts): ${escapeHtml(formatSats(feeBefore))} → ${escapeHtml(formatSats(feeAfter))}.</p>`);
 
   const sections = [];
+  // Rendered rows and sections are capped at PSBT_RENDER_LIMIT each, and the
+  // whole view shares one render budget: a crafted pair of PSBTs differs in
+  // more elements than the DOM survives, and nested lists multiply — 500
+  // capped sections of 200 changes are still 100,000 rows (red-team F7).
+  // The verdict and the summary lines above still cover every change; each
+  // list the cap stops notes how many changes were elided, and once the
+  // budget is spent one line notes every section and change not rendered
+  // from that point on.
+  const moreChanges = (count) => `<p class="muted">…and ${count} more changes (not rendered).</p>`;
+  const budget = renderBudget();
+  let budgetElided = 0; // changes not rendered because the budget ran out
+  // Pushes one section (1 budget unit) and up to PSBT_RENDER_LIMIT of its
+  // rows while the budget allows; returns false when the budget refused the
+  // section, leaving its rows to the caller's budget line. Rows the per-list
+  // cap elides get the section's own line; rows the budget cuts join the
+  // view's single budget line.
+  const pushSection = (title, rows) => {
+    if (budgetElided || budget.take(1) !== 1) return false;
+    const shown = budget.take(Math.min(rows.length, PSBT_RENDER_LIMIT));
+    if (budget.spent) budgetElided += rows.length - shown;
+    sections.push(`<section class="psbted-map"><h3>${title}</h3>${diffTable(rows.slice(0, shown))}${rows.length > shown && !budget.spent ? moreChanges(rows.length - shown) : ""}</section>`);
+    return true;
+  };
   const txRows = txDiffRows(diff.changes, before, after, network, copyIcon);
-  if (txRows.length) sections.push(`<section class="psbted-map"><h3>Transaction</h3>${diffTable(txRows)}</section>`);
+  if (txRows.length && !pushSection("Transaction", txRows)) budgetElided += txRows.length;
   const mapSections = (scope, title) => {
     const indexes = [...new Set(diff.changes.filter((change) => change.scope === scope).map((change) => change.index))].sort((a, b) => a - b);
-    for (const index of indexes) {
+    const capped = new Set(indexes.slice(0, PSBT_RENDER_LIMIT));
+    const accounted = new Set(); // indexes whose changes rendered or joined the budget line
+    for (const index of capped) {
+      if (budgetElided) break; // the budget is spent: the rest joins the line below
       const rows = mapDiffRows(diff.changes, scope, index, before, after, network, copyIcon);
-      if (rows.length) sections.push(`<section class="psbted-map"><h3>${title} ${index} key-value map</h3>${diffTable(rows)}</section>`);
+      if (!rows.length) continue;
+      if (pushSection(`${title} ${index} key-value map`, rows)) accounted.add(index);
+      else {
+        budgetElided += rows.length;
+        accounted.add(index);
+        break;
+      }
+    }
+    if (budgetElided) {
+      // The budget stopped the rendering: every change whose map never
+      // rendered joins the single budget line. The unrendered maps
+      // themselves are sections, not changes, so a line that says "changes"
+      // must not count them (red-team F7 round 6 follow-up).
+      budgetElided += diff.changes.filter((change) => change.scope === scope && !accounted.has(change.index)).length;
+    } else if (indexes.length > capped.size) {
+      sections.push(moreChanges(diff.changes.filter((change) => change.scope === scope && !capped.has(change.index)).length));
     }
   };
   mapSections("input-map", "Input");
   mapSections("output-map", "Output");
   const globalRows = mapDiffRows(diff.changes, "global", null, before, after, network, copyIcon);
-  if (globalRows.length) sections.push(`<section class="psbted-map"><h3>Global key-value map</h3>${diffTable(globalRows)}</section>`);
+  if (globalRows.length && !pushSection("Global key-value map", globalRows)) budgetElided += globalRows.length;
+  if (budgetElided) sections.push(moreChanges(budgetElided));
 
   return `<p class="muted">before = the PSBT in the editor · after = the pasted PSBT. Only differences are listed.</p>${summary.join("")}${sections.join("")}`;
 };
@@ -640,6 +682,40 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
   const network = networkDefault;
 
   let doc = null; // inspect document being edited; null when nothing is loaded
+  // Pairs added through the Add Pair form, keyed "kind:mapIndex". In an
+  // over-cap map the add lands past the rendered rows; pairRows renders this
+  // many of the map's last pairs after the capped rows, so the add is never
+  // invisible (red-team F7 round 4). Cleared when another document loads.
+  const addedPairs = new Map();
+  // The keys are map positions, so deleting an input or output shifts every
+  // later map of that kind down one index and the counts would point at the
+  // wrong maps: the added pair is elided again and the map now at the old
+  // index renders an extra overflow row (red-team F7 round 5). Re-key on the
+  // delete — option (a): the editor has no reorder operation (adds append,
+  // only deletes shift indices), so re-keying on delete covers every shift,
+  // and tracking pair identity instead would add bookkeeping for no extra
+  // case. The deleted map's count goes with it; clearing everything would
+  // make the other maps' added pairs invisible.
+  const shiftAddedPairs = (kind, removed) => {
+    // Build the new map from a snapshot: re-keying in place, in insertion
+    // order, can overwrite a lower key before it moves ("input:2" landing
+    // on "input:1" erases that map's own count), losing an added pair
+    // (red-team F7 round 6).
+    const shifted = new Map();
+    for (const [key, count] of addedPairs) {
+      const [keyKind, keyIndex] = key.split(":");
+      if (keyKind !== kind) {
+        shifted.set(key, count);
+        continue;
+      }
+      const index = Number(keyIndex);
+      if (index > removed) shifted.set(`${kind}:${index - 1}`, count);
+      else if (index < removed) shifted.set(key, count);
+      // index === removed: the deleted map's count is dropped with it.
+    }
+    addedPairs.clear();
+    for (const [key, count] of shifted) addedPairs.set(key, count);
+  };
   let resultBytes = null; // last successfully built PSBT
   let stale = false; // true while the current fields do not build; resultBytes is then the last valid build
   let pristineTx = null; // signingAnchor of the document the current signing pairs commit to; null while unknown
@@ -687,9 +763,24 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
   const TXIN_COLUMNS = { txid: "Previous txid", vout: "vout", seq: "sequence" };
   const TXOUT_COLUMNS = { value: "Value (sats)", script: "scriptPubKey" };
 
-  const pairRows = (kind, map, mapIndex) => {
-    const rows = map
-      .map((pair, pairIndex) => {
+  const pairRows = (kind, map, mapIndex, budget = null, overflow = 0) => {
+    // Rows are capped at PSBT_RENDER_LIMIT per table and spend from the
+    // view's render budget when one is passed: a crafted PSBT passes the
+    // load gates with more pairs in one map than the DOM survives, and
+    // nested lists multiply (red-team F7). The document keeps every pair;
+    // the elided count is noted under the table — by this table's own line
+    // when the per-list cap elided it, or by the view's single budget line
+    // when the budget ran out. Pairs added through the form while the map
+    // was over the cap are the map's last pairs: `overflow` of them render
+    // after the capped rows, so an add is never invisible.
+    const cap = Math.min(map.length, PSBT_RENDER_LIMIT);
+    const shown = budget ? budget.take(cap) : cap;
+    const overflowStart = Math.max(shown, map.length - overflow);
+    const shownOverflow = budget ? budget.take(map.length - overflowStart) : map.length - overflowStart;
+    const rendered = [...Array(shown).keys(), ...Array.from({ length: shownOverflow }, (_, offset) => map.length - shownOverflow + offset)];
+    const rows = rendered
+      .map((pairIndex) => {
+        const pair = map[pairIndex];
         const locked = kind === "global" && pair.key === "00";
         const note = describePair(pair, network());
         const tone = note.tone ? ` class="psbted-note-${note.tone}"` : "";
@@ -709,14 +800,18 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
         </tr>`;
       })
       .join("");
+    const elided = map.length - shown - shownOverflow;
     const options = PAIR_TYPES[kind]
       .map(([type, name, hint]) => `<option value="${type}" title="keydata: ${escapeHtml(hint)}">${name}</option>`)
       .join("");
+    // A table the budget cut stays silent: the view's single budget line
+    // counts its elided pairs (the caller reads them off the budget).
+    const morePairs = elided > 0 && (!budget || !budget.spent) ? `<p class="muted">…and ${elided} more pairs (not rendered).</p>` : "";
     return `<table class="psbted-pairs psbted-kv psbted-stack" role="table">
       <thead role="rowgroup"><tr role="row"><th role="columnheader" class="psbted-col-field">${KV_COLUMNS.field}</th><th role="columnheader">${KV_COLUMNS.key}</th><th role="columnheader">${KV_COLUMNS.value}</th><th role="columnheader">${KV_COLUMNS.decoded}</th><th role="columnheader" class="psbted-col-del"></th></tr></thead>
-      <tbody role="rowgroup">${rows || `<tr role="row"><td role="cell" colspan="5" class="muted">No pairs in this map.</td></tr>`}</tbody>
+      <tbody role="rowgroup">${map.length ? rows : `<tr role="row"><td role="cell" colspan="5" class="muted">No pairs in this map.</td></tr>`}</tbody>
     </table>
-    <div class="psbted-add">
+    ${morePairs}<div class="psbted-add">
       <select data-add-type="${kind}:${mapIndex}" aria-label="New pair type">${options}<option value="" title="keydata field takes the full key: one type byte, then keydata">Custom type…</option></select>
       <input data-add-key="${kind}:${mapIndex}" placeholder="keydata (hex)" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="New pair keydata (hex)">
       <input data-add-val="${kind}:${mapIndex}" placeholder="value (hex)" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="New pair value (hex)">
@@ -760,19 +855,51 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     // The last remaining input carries no delete control: a zero-input
     // unsigned transaction cannot round-trip through BIP-174 serialization,
     // so rust-bitcoin would reject the rebuild.
-    const inputRows = tx.inputs
+    // Rendering is capped at PSBT_RENDER_LIMIT entries per list (a crafted
+    // PSBT passes the load gates with more elements than the DOM survives),
+    // and the whole view shares one render budget, so nested lists cannot
+    // multiply past it (red-team F7 round 4). The document, totals, fee and
+    // every analysis still cover all elements; each list the cap stops notes
+    // its elided count after the last row, and once the budget is spent one
+    // muted line notes everything not rendered from that point on.
+    const budget = renderBudget();
+    let budgetElided = 0; // sections and rows not rendered because the budget ran out
+    // The summary's per-output notes spend from the same view budget, in
+    // document order (they render above the tables): a crafted PSBT with a
+    // note on every output cannot push the view past the budget (red-team
+    // F7 round 6).
+    const outputNotes = psbtOutputNotesHtml(doc, budget);
+    // An input or output added while its list was over the cap is the list's
+    // last element: like an added pair, it renders after the capped rows
+    // (with its map section below), so an add is never invisible (red-team
+    // F7 round 6). Stale counts after deletes are harmless — the overflow
+    // never starts before the capped rows.
+    const txIndices = (elements, kind) => {
+      const shown = budget.take(Math.min(elements.length, PSBT_RENDER_LIMIT));
+      const overflow = Math.min(addedPairs.get(`tx:${kind}`) || 0, elements.length);
+      const overflowStart = Math.max(shown, elements.length - overflow);
+      const shownOverflow = budget.take(elements.length - overflowStart);
+      return [...Array(shown).keys(), ...Array.from({ length: shownOverflow }, (_, offset) => elements.length - shownOverflow + offset)];
+    };
+    const inputIndices = txIndices(tx.inputs, "input");
+    const inputRows = inputIndices
       .map(
-        (input, index) => `<tr role="row">
+        (index) => {
+          const input = tx.inputs[index];
+          return `<tr role="row">
           <td role="cell">${cellLabel("Input")}${index}</td>
           <td role="cell">${cellLabel(TXIN_COLUMNS.txid)}<input class="psbted-txid" data-txin="${index}" value="${escapeHtml(input.txid)}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Input ${index} previous txid (hex)"></td>
           <td role="cell">${cellLabel(TXIN_COLUMNS.vout)}<input class="psbted-num" data-txin-vout="${index}" value="${escapeHtml(String(input.vout))}" inputmode="numeric" aria-label="Input ${index} prevout index"></td>
           <td role="cell">${cellLabel(TXIN_COLUMNS.seq)}<input class="psbted-num" data-txin-seq="${index}" value="${escapeHtml(String(input.sequence))}" inputmode="numeric" aria-label="Input ${index} sequence"></td>
           <td role="cell" class="psbted-del-cell">${tx.inputs.length > 1 ? `<button type="button" class="btn red psbted-del" data-txin-del="${index}" aria-label="Delete input ${index}">×</button>` : ""}</td>
-        </tr>`
+        </tr>`;
+        }
       )
       .join("");
-    const outputRows = tx.outputs
-      .map((output, index) => {
+    const outputIndices = txIndices(tx.outputs, "output");
+    const outputRows = outputIndices
+      .map((index) => {
+        const output = tx.outputs[index];
         const addr = addressFor(output.scriptPubKey, network());
         const opret = addr ? null : opReturnSummary(output.scriptPubKey, output.value);
         return `<tr role="row">
@@ -785,6 +912,10 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
         </tr>`;
       })
       .join("");
+    // Hidden inputs and outputs are still in the transaction (TC's review of
+    // #1031): the note says so, as a warning, one or many.
+    const moreInputsNote = tx.inputs.length > inputIndices.length ? `<p class="psbted-note-warn">${tx.inputs.length - inputIndices.length === 1 ? "1 more input not shown, still included in this transaction." : `${tx.inputs.length - inputIndices.length} more inputs not shown, still included in this transaction.`}</p>` : "";
+    const moreOutputsNote = tx.outputs.length > outputIndices.length ? `<p class="psbted-note-warn">${tx.outputs.length - outputIndices.length === 1 ? "1 more output not shown, still included in this transaction." : `${tx.outputs.length - outputIndices.length} more outputs not shown, still included in this transaction.`}</p>` : "";
 
     // One map section per PSBT part; a diagram box jumps to its own section.
     const mapSection = (kind, index) => {
@@ -793,7 +924,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
         kind === "input"
           ? `Spends <span class="psbt-address">${escapeHtml(tx.inputs[index].txid)}:${escapeHtml(String(tx.inputs[index].vout))}</span>`
           : `Pays <span class="psbt-amount">${escapeHtml(String(tx.outputs[index].value))} sats</span>${addressFor(tx.outputs[index].scriptPubKey, network()) ? ` to ${publicValueHtml(addressFor(tx.outputs[index].scriptPubKey, network()), { copyIcon, className: "psbted-out-address" })}` : ""}`;
-      return `<section class="psbted-map" data-psbted-section="${kind}:${index}" tabindex="-1"><h3 class="psbted-section-label">${kind === "input" ? "Input" : "Output"} ${index} key-value map</h3><p class="muted label-description">${sub}</p>${pairRows(kind, map, index)}</section>`;
+      return `<section class="psbted-map" data-psbted-section="${kind}:${index}" tabindex="-1"><h3 class="psbted-section-label">${kind === "input" ? "Input" : "Output"} ${index} key-value map</h3><p class="muted label-description">${sub}</p>${pairRows(kind, map, index, budget, addedPairs.get(`${kind}:${index}`) || 0)}</section>`;
     };
     // The unsigned-transaction section, rendered either inline (the default)
     // or inside the detail panel when the diagram's transaction box is open.
@@ -804,26 +935,87 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
         </div>
         <p class="label psbted-section-label">Inputs</p>
         <table class="psbted-pairs psbted-txins psbted-stack" role="table"><thead role="rowgroup"><tr role="row"><th role="columnheader" class="psbted-idx">#</th><th role="columnheader">${TXIN_COLUMNS.txid}</th><th role="columnheader" class="psbted-col-vout">${TXIN_COLUMNS.vout}</th><th role="columnheader" class="psbted-col-seq">${TXIN_COLUMNS.seq}</th><th role="columnheader" class="psbted-col-del"></th></tr></thead><tbody role="rowgroup">${inputRows}</tbody></table>
+        ${moreInputsNote}
         <div class="psbted-add-el"><button type="button" class="btn secondary" data-tx-add="input">Add Input</button></div>
         <p class="label psbted-section-label">Outputs</p>
         <table class="psbted-pairs psbted-txouts psbted-stack" role="table"><thead role="rowgroup"><tr role="row"><th role="columnheader" class="psbted-idx">#</th><th role="columnheader" class="psbted-col-val">${TXOUT_COLUMNS.value}</th><th role="columnheader">${TXOUT_COLUMNS.script}</th><th role="columnheader" class="psbted-col-del"></th></tr></thead><tbody role="rowgroup">${outputRows}</tbody></table>
+        ${moreOutputsNote}
         <div class="psbted-add-el"><button type="button" class="btn secondary" data-tx-add="output">Add Output</button></div>
       </section>`;
-    const inputSections = doc.inputs.map((_, index) => mapSection("input", index)).join("");
-    const outputSections = doc.outputs.map((_, index) => mapSection("output", index)).join("");
+    // The global map's section and then one section per map, in document
+    // order, while the per-list section cap and the view budget allow. A
+    // list the cap stops gets its own muted line naming the maps ("input
+    // maps" / "output maps", so it cannot read as a duplicate of the
+    // transaction table's inputs/outputs line); once the budget is spent no
+    // further section renders, and every later map's section and pairs are
+    // counted into the view's single budget line.
+    let globalSection = "";
+    if (budget.take(1) === 1) {
+      const leftBefore = budget.left;
+      globalSection = `<section class="psbted-map"><h3 class="psbted-section-label">Global key-value map</h3>${pairRows("global", doc.globals, 0, budget, addedPairs.get("global:0") || 0)}</section>`;
+      if (budget.spent) budgetElided += doc.globals.length - (leftBefore - budget.left);
+    } else {
+      budgetElided += 1 + doc.globals.length;
+    }
+    const mapSections = (kind, maps, noun) => {
+      const parts = [];
+      const capped = Math.min(maps.length, PSBT_RENDER_LIMIT);
+      // The maps whose section rendered. Before the overflow sections this
+      // is [0, shown); once they render it is two ranges, so the budget
+      // line below counts by membership, not from `shown` (red-team F7
+      // round 7).
+      const rendered = new Set();
+      let shown = 0;
+      while (shown < capped && budget.take(1) === 1) {
+        const leftBefore = budget.left;
+        parts.push(mapSection(kind, shown));
+        rendered.add(shown);
+        shown++;
+        // If the budget ran out inside this map's pair table, the pairs it
+        // did not render join the budget line (pairRows stays silent then).
+        if (budget.spent) budgetElided += maps[shown - 1].length - (leftBefore - budget.left);
+      }
+      // An element added while the list was over the cap has its map at the
+      // end: its section renders after the capped ones, like its table row
+      // above, so the user can edit it (red-team F7 round 6).
+      const overflow = Math.min(addedPairs.get(`tx:${kind}`) || 0, maps.length);
+      const overflowStart = Math.max(shown, maps.length - overflow);
+      for (let index = overflowStart; index < maps.length; index++) {
+        if (budget.take(1) !== 1) break;
+        const leftBefore = budget.left;
+        parts.push(mapSection(kind, index));
+        rendered.add(index);
+        shown++;
+        if (budget.spent) budgetElided += maps[index].length - (leftBefore - budget.left);
+      }
+      if (shown < maps.length) {
+        if (budget.spent) {
+          for (let index = 0; index < maps.length; index++) {
+            if (!rendered.has(index)) budgetElided += 1 + maps[index].length;
+          }
+        } else {
+          parts.push(`<p class="muted">…and ${maps.length - shown} more ${noun} (not rendered).</p>`);
+        }
+      }
+      return parts.join("");
+    };
+    const inputSections = mapSections("input", doc.inputs, "input maps");
+    const outputSections = mapSections("output", doc.outputs, "output maps");
+    const budgetLine = budgetElided ? `<p class="muted">…and ${budgetElided} more items (not rendered).</p>` : "";
 
     out.innerHTML = `
       <p class="edge-note ${stale ? "is-private" : "is-muted"}" id="psbted-status" aria-live="polite">${stale ? "The fields do not build right now — see the error above; the result below is the last valid build." : "Every edit rebuilds the PSBT immediately; the fields show rust-bitcoin's decode of the current build."}</p>
       <p class="edge-note is-public">Fees and input amounts shown here are unverified PSBT claims; the editor does not check them against previous transactions or the blockchain. Nothing is signed or broadcast.</p>
-      <p class="psbt-kv"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · ${tx.inputs.length} input(s) · ${tx.outputs.length} output(s)<br><span class="psbt-amount">fee ${fee}</span><br>${verdict}<br>${sanity}${psbtOutputNotesHtml(doc)}</p>
+      <p class="psbt-kv"><strong>PSBT v${escapeHtml(String(doc.psbtVersion))}</strong> · ${tx.inputs.length} input(s) · ${tx.outputs.length} output(s)<br><span class="psbt-amount">fee ${fee}</span><br>${verdict}<br>${sanity}${outputNotes}</p>
 
       ${psbtVizHtml(doc, network(), { copyIcon })}
 
       ${txSection()}
 
-      <section class="psbted-map"><h3 class="psbted-section-label">Global key-value map</h3>${pairRows("global", doc.globals, 0)}</section>
+      ${globalSection}
       ${inputSections}
       ${outputSections}
+      ${budgetLine}
 
       ${psbtProblemsHtml(doc, insane)}
       ${psbtSanitizeHtml(doc)}
@@ -967,12 +1159,12 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     };
     const boxFor = (kind, index) => viz.querySelector(`[data-viz="${kind}:${index}"]`)?.closest(".psbted-viz-box");
     const txIn = edge(txRect, "left");
-    doc.tx.inputs.forEach((_, index) => {
+    doc.tx.inputs.slice(0, PSBT_RENDER_LIMIT).forEach((_, index) => {
       const rect = boxFor("input", index)?.getBoundingClientRect();
       if (rect) link(edge(rect, "right"), txIn, "psbted-viz-line-in");
     });
     const txOut = edge(txRect, "right");
-    doc.tx.outputs.forEach((_, index) => {
+    doc.tx.outputs.slice(0, PSBT_RENDER_LIMIT).forEach((_, index) => {
       const rect = boxFor("output", index)?.getBoundingClientRect();
       if (rect) link(txOut, edge(rect, "left"), "psbted-viz-line-out");
     });
@@ -1075,6 +1267,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
   const loadFromText = () => {
     setError("");
     clearCompareReport(); // a different editor PSBT invalidates an old report
+    addedPairs.clear(); // a different document invalidates the add counts
     try {
       doc = psbtInspectDoc(psbtBytesFromText(text.value));
     } catch (exception) {
@@ -1177,8 +1370,10 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     out.querySelectorAll("[data-tx-add]").forEach((button) =>
       button.addEventListener("click", () => {
         setError("");
+        const kind = button.dataset.txAdd;
+        const before = doc;
         mutate((draft) => {
-          if (button.dataset.txAdd === "input") {
+          if (kind === "input") {
             draft.tx.inputs.push({ txid: "0".repeat(64), vout: 0, scriptSig: "", sequence: 4294967295 });
             draft.inputs.push([]);
           } else {
@@ -1186,24 +1381,51 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
             draft.outputs.push([]);
           }
         });
+        // In an over-cap list the add landed past the rendered rows: count
+        // it like an added pair so its table row and map section render
+        // after the capped ones (red-team F7 round 6). mutate already
+        // re-rendered from the stale counts, so render again — the same
+        // re-render the Add Pair handler does.
+        if (doc !== before) {
+          addedPairs.set(`tx:${kind}`, (addedPairs.get(`tx:${kind}`) || 0) + 1);
+          render();
+          renderResult();
+        }
       })
     );
     out.querySelectorAll("[data-txin-del]").forEach((button) =>
       button.addEventListener("click", () => {
         const index = Number(button.dataset.txinDel);
+        const before = doc;
         mutate((draft) => {
           draft.tx.inputs.splice(index, 1);
           draft.inputs.splice(index, 1);
         });
+        // An accepted delete shifted every later input map down one index:
+        // re-key the added-pair counts so each stays on its map, and
+        // re-render — mutate's render used the stale keys. A rejected delete
+        // restored the document, so the keys still match.
+        if (doc !== before) {
+          shiftAddedPairs("input", index);
+          render();
+          renderResult();
+        }
       })
     );
     out.querySelectorAll("[data-txout-del]").forEach((button) =>
       button.addEventListener("click", () => {
         const index = Number(button.dataset.txoutDel);
+        const before = doc;
         mutate((draft) => {
           draft.tx.outputs.splice(index, 1);
           draft.outputs.splice(index, 1);
         });
+        // Same re-key for the output maps.
+        if (doc !== before) {
+          shiftAddedPairs("output", index);
+          render();
+          renderResult();
+        }
       })
     );
 
@@ -1289,10 +1511,20 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
           setError("Value must be hex (an even number of 0-9/a-f digits).");
           return;
         }
+        const before = doc;
         mutate((draft) => {
           const target = kind === "global" ? draft.globals : kind === "input" ? draft.inputs[map] : draft.outputs[map];
           target.push({ key, value });
         });
+        // mutate keeps the change only when rust-bitcoin accepted it (the
+        // working document is replaced on success, restored on failure). In
+        // an over-cap map the add landed past the rendered rows: count it so
+        // pairRows renders it after the capped rows, and re-render to show it.
+        if (doc !== before) {
+          addedPairs.set(`${kind}:${map}`, (addedPairs.get(`${kind}:${map}`) || 0) + 1);
+          render();
+          renderResult();
+        }
       })
     );
 
@@ -1341,6 +1573,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
   };
   $("psbted-wipe").onclick = () => {
     doc = null;
+    addedPairs.clear();
     resultBytes = null;
     stale = false;
     pristineTx = null;
