@@ -159,3 +159,52 @@ test("every line the inspectors write goes through the translator", async () => 
     }
   }
 });
+
+// "Show more" in the Inspector (the owner, 2026-10-22).
+test("a raw transaction in the Inspector shows 2,000 inputs, then a Show-more button naming the rest", () => {
+  const tx = {
+    version: 2, locktime: 0, segwit: false,
+    inputs: Array.from({ length: 2100 }, (_, vout) => ({ txid: new Uint8Array(32).fill(0x11), vout, scriptSig: new Uint8Array(), sequence: 0xffffffff })),
+    outputs: [{ amount: 1000n, script: Uint8Array.of(0x51) }],
+  };
+  const limits = { inputs: 2000, outputs: 2000, step: 2000, format: (n) => n.toLocaleString("en-US") };
+  const html = app.hodlRenderRawTx(tx, undefined, undefined, "inspect", { network: "mainnet", limits });
+  assert.equal((html.match(/<strong>Input \d+<\/strong>/g) || []).length, 2000);
+  assert.ok(html.includes("…and 100 more inputs (not rendered)."));
+  assert.match(html, /<button[^>]*data-psbt-more='inputs'[^>]*>Show 100 more inputs<\/button>/);
+  const all = app.hodlRenderRawTx(tx, undefined, undefined, "inspect", { network: "mainnet", limits: { ...limits, inputs: 4000 } });
+  assert.equal((all.match(/<strong>Input \d+<\/strong>/g) || []).length, 2100);
+  assert.doesNotMatch(all, /data-psbt-more/);
+});
+
+test("a Show-more click grows that list by one step, paints the last run again and moves focus to the next button", async () => {
+  const renders = [];
+  let focused = null, html = "";
+  const next = { focus: () => { focused = "next"; } };
+  const output = {
+    set innerHTML(value) { html = value; },
+    get innerHTML() { return html; },
+    querySelector: (selector) => (selector === "[data-psbt-more='inputs']" && html.includes("more") ? next : null),
+    hasAttribute: () => false,
+    setAttribute: () => {},
+    focus: () => { focused = "output"; },
+  };
+  const last = { kind: "psbt", parsed: { psbt: true }, sourceTag: new Uint8Array(1), checkedAt: "t1", network: "testnet", limits: { inputs: 2000, outputs: 2000, step: 2000 } };
+  const ui = await loadAppFunctions(["hodlPsbtShowMore"], { stubs: {
+    document: { getElementById: (id) => (id === "psbt-out" ? output : null) },
+    hodlPsbtLast: last,
+    hodlRenderPsbt: (...args) => { renders.push(args); return renders.length === 1 ? "…and 1 more" : "done"; },
+    hodlRenderRawTx: () => { throw new Error("not a transaction"); },
+  } });
+  const click = (kind) => ui.hodlPsbtShowMore({ target: { closest: () => ({ dataset: { psbtMore: kind } }) } });
+  click("inputs");
+  assert.deepEqual(renders[0].slice(2, 4), ["t1", "inspect"]);
+  assert.deepEqual({ ...renders[0][4].limits }, { inputs: 4000, outputs: 2000, step: 2000 }, "inputs grew by one step; outputs did not");
+  assert.equal(renders[0][4].network, "testnet");
+  assert.equal(focused, "next", "focus moves to the list's next button");
+  click("inputs");
+  assert.equal(renders[1][4].limits.inputs, 6000);
+  assert.equal(focused, "output", "with the list complete, focus moves to the output");
+  ui.hodlPsbtShowMore({ target: { closest: () => null } });
+  assert.equal(renders.length, 2, "a click elsewhere in the output paints nothing");
+});

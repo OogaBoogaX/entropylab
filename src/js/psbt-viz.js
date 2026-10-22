@@ -34,6 +34,14 @@ const escapeHtml = (text) =>
 // rendering stops at the cap, with the elided count noted under the list.
 export const PSBT_RENDER_LIMIT = 500;
 
+// The PSBT Inspector shows more per list than the other views. Measured
+// 2026-10-22, rendering an input there costs about 0.2 ms on a desktop and
+// 1.3 ms with the CPU throttled 4x (a phone), against about 2.7 and 22 ms in
+// the Editor. 2,000 keeps every standard transaction (about 1,400 P2WPKH
+// inputs fit in 100 kvB) on one screen, and each "Show 2,000 more" button
+// grows the window by the same step.
+export const PSBT_INSPECTOR_LIMIT = 2000;
+
 // One total render budget per view (red-team F7, round 4): the per-list cap
 // bounds one list, but nested lists multiply — 500 capped map sections of
 // 200 pairs still render 100,000 rows. The budget bounds the whole view:
