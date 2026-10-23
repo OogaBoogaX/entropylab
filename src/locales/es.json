@@ -1664,5 +1664,6 @@
   "RFC 6979: checked for 1 of 1 ECDSA signature.": "RFC 6979: verificado para 1 de 1 firma ECDSA.",
   "RFC 6979: checked for all {total} ECDSA signatures.": "RFC 6979: verificado para todas las {total} firmas ECDSA.",
   "RFC 6979: checked for {checked} of {total} ECDSA signatures.": "RFC 6979: verificado para {checked} de {total} firmas ECDSA.",
-  "{n} did not match.": "{n} no coincidió."
+  "{n} did not match.": "{n} no coincidió.",
+  "RFC 6979: not checked (no matching key in this session).": "RFC 6979: no verificado (no hay clave coincidente en esta sesión)."
 }
