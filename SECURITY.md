@@ -14,6 +14,9 @@ always use the latest version, available from the
 
 ## Security Considerations
 
+Who EntropyLab defends against, what it checks against each of them, and
+what it leaves to you: [docs/Threat_Model.md](docs/Threat_Model.md).
+
 EntropyLab handles Bitcoin private keys, seed phrases, and other secret wallet
 material. Its security posture rests on the following model:
 
@@ -187,7 +190,9 @@ material. Its security posture rests on the following model:
   displayed account/address range and supported script types, RFC 6979 replay
   needs a matching session key plus a supported SegWit v0 digest, a signature
   on a script containing OP_CODESEPARATOR is reported as unverifiable rather
-  than verified or replayed, and Taproot/Schnorr nonces are not analyzed.
+  than verified or replayed, and Taproot/Schnorr signatures are checked only
+  for sighash policy and repeated BIP340 nonces (they cannot be replayed
+  like RFC 6979, and their validity is not verified).
   The report marks these cases
   incomplete; a completed individual check is not a security conclusion for
   the transaction.

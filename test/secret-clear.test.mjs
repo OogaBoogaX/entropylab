@@ -16,6 +16,7 @@ import { MiniDocument } from "./mini-dom.mjs";
 import { HDKey } from "../src/js/hdkey.js";
 import { hex as appHex } from "../src/js/coders.js";
 import { keyVaultIdentity } from "../src/js/keymanager.js";
+import { hodlInitLn } from "../src/js/lightning.js";
 
 // The helpers that zero address-row key bytes (#546 B2). The lifecycle
 // harness loads whichever of them app.js defines, so a source without them
@@ -584,6 +585,105 @@ test("conceal-on-leave empties result panes that have no reveal switch", async (
   try {
     slice.hodlConcealPrivateValues();
     for (const id of panes) assert.equal(page.getElementById(id).textContent, "", `conceal left #${id} on screen`);
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+// ── Lightning tool: the lifecycle sweep and conceal-on-leave cover it ───────
+
+// The published aezeed characterization mnemonic (test/lightning.test.mjs):
+// it deciphers to entropy 000102030405060708090a0b0c0d0e0f — BIP32 test
+// vector 1's seed — so the root xprv a reveal shows is the BIP's published
+// chain-m key.
+const LN_AEZEED_WORDS =
+  "ability result leisure oven shiver wedding toe broccoli exclude " +
+  "mosquito kind van action waste merit bundle robust source able " +
+  "advice core humor kitchen siren";
+const LN_ENTROPY_HEX = "000102030405060708090a0b0c0d0e0f";
+const LN_ROOT_XPRV = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+
+// The Lightning tool wired over a mini DOM: the fixture carries the ids
+// hodlInitLn touches, and the derive runs through the real button handler.
+function lnToolPage() {
+  const page = new MiniDocument();
+  globalThis.document = page;
+  page.body.innerHTML = '<select id="ln-format"></select>'
+    + '<div id="ln-network-field"><select id="ln-network"></select></div>'
+    + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
+    + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
+    + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
+    + '<span id="ln-seed-help"></span>';
+  hodlInitLn({ journalLog() {}, copyIcon: () => "" });
+  return page;
+}
+// hodlInitLn assigns the Derive button's onclick; call it (the mini DOM
+// keeps it as a property), falling back to a dispatched click event.
+const lnToolDerive = (page) => {
+  const go = page.getElementById("ln-go");
+  if (typeof go.onclick === "function") go.onclick();
+  else go.dispatchEvent(new Event("click", { bubbles: true }));
+};
+
+test("pagehide and persisted pageshow empty the Lightning fields and wipe the tool's retained derivation", () => {
+  // The same clearSecretFields sweep backs End Session (app.js
+  // hodlInitSecretFieldAutoClear): the fields, the rendered output, the
+  // error line and the module's retained derivation all go.
+  for (const type of ["pagehide", "pageshow"]) {
+    const { events, fields, effects } = raceHarness();
+    fields.set("ln-seed", { value: LN_AEZEED_WORDS, dataset: {} });
+    fields.set("ln-pass", { value: "aezeed passphrase", dataset: {} });
+    fields.set("ln-out", { innerHTML: "<div>derived node key</div>", dataset: {} });
+    fields.set("ln-error", { textContent: "keyed error", dataset: {} });
+    events[type]({ persisted: true });
+    assert.equal(fields.get("ln-seed").value, "", `${type} left #ln-seed filled`);
+    assert.equal(fields.get("ln-pass").value, "", `${type} left #ln-pass filled`);
+    assert.equal(fields.get("ln-out").innerHTML, "", `${type} left #ln-out rendered`);
+    assert.equal(fields.get("ln-error").textContent, "", `${type} left #ln-error filled`);
+    assert.ok(effects.some(([name]) => name === "hodlLnWipeMem"), `${type} did not wipe the Lightning tool's retained derivation`);
+  }
+});
+
+test("one throwing wipe in the lifecycle sweep does not skip the Lightning wipe", () => {
+  // The Silent Payments wipe sits just before the Lightning wipe in the
+  // sweep; its failure must not keep the Lightning secrets in place.
+  const { context, events, fields, effects } = raceHarness();
+  fields.set("ln-seed", { value: LN_AEZEED_WORDS, dataset: {} });
+  fields.set("ln-pass", { value: "aezeed passphrase", dataset: {} });
+  fields.set("ln-out", { innerHTML: "<div>derived node key</div>", dataset: {} });
+  context.hodlSpWipeMem = () => { throw new Error("mid-update"); };
+  events.pagehide({});
+  assert.ok(effects.some(([name]) => name === "hodlLnWipeMem"), "the SP wipe's failure skipped the Lightning wipe");
+  assert.equal(fields.get("ln-seed").value, "", "the SP wipe's failure left #ln-seed filled");
+  assert.equal(fields.get("ln-out").innerHTML, "", "the SP wipe's failure left #ln-out rendered");
+  assert.equal(context.hodlJournalGeneration, 1, "the SP wipe's failure skipped the wipes after Lightning");
+});
+
+test("conceal-on-leave masks the Lightning tool's revealed secrets", async () => {
+  const slice = await loadJournalConcealSlice();
+  const page = lnToolPage();
+  try {
+    page.getElementById("ln-seed").value = LN_AEZEED_WORDS;
+    lnToolDerive(page);
+    const out = page.getElementById("ln-out");
+    const revealSwitch = page.getElementById("ln-reveal");
+    assert.ok(revealSwitch, "setup: the derive rendered no reveal switch");
+    // Reveal through the switch's own change handler, exactly as a click does.
+    revealSwitch.checked = true;
+    revealSwitch.dispatchEvent(new Event("change", { bubbles: true }));
+    assert.ok(out.innerHTML.includes(LN_ENTROPY_HEX), "setup: the reveal did not show the decoded entropy");
+    assert.ok(out.innerHTML.includes(LN_ROOT_XPRV), "setup: the reveal did not show the root xprv");
+    // The switch the sweep must untick is the one on screen now (the reveal
+    // re-render recreated it).
+    const liveSwitch = page.getElementById("ln-reveal");
+    slice.hodlConcealPrivateValues();
+    assert.equal(liveSwitch.checked, false, "conceal left the reveal switch on");
+    // The untick replays through the change handler, which re-renders masked
+    // and recreates the switch; the fresh switch must not be on either (a
+    // real browser reports false here, the mini DOM leaves it unset).
+    assert.ok(!page.getElementById("ln-reveal").checked, "the re-rendered reveal switch is on");
+    assert.ok(!out.innerHTML.includes(LN_ENTROPY_HEX), "conceal left the decoded entropy on screen");
+    assert.ok(!out.innerHTML.includes(LN_ROOT_XPRV), "conceal left the root xprv on screen");
   } finally {
     delete globalThis.document;
   }

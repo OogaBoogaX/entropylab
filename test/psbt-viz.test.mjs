@@ -629,6 +629,7 @@ const hodlRenderPsbtForTest = (overrides = {}) => {
     hodlHex: { encode: (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("") },
     hodlCompressedPubkey: (pubkey) => pubkey,
     hodlPsbtMasterFingerprint: () => null,
+    hodlPsbtDerivationFingerprints: () => null,
     hodlPsbtHd: null,
     hodlParseAntiExfil: () => null,
     hodlPsbtRecordNonceInspection: () => {},

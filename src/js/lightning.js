@@ -23,7 +23,7 @@ import { mnemonicToSeedSync, validateMnemonic } from "./bip39.js";
 import { aezeedDecode, BITCOIN_GENESIS_TIMESTAMP } from "./aezeed.js";
 import { wordlist as bip39English } from "./bip39-english.js";
 import { hex } from "./coders.js";
-import { t } from "./i18n.js";
+import { t, tHtml as hodlT } from "./i18n.js";
 import { privateCopyButtonHtml } from "./private-data.js";
 import { publicFieldHtml, publicValueHtml } from "./public-data.js";
 
@@ -55,10 +55,38 @@ export const deriveLndNode = (entropy16, coinType) => {
   }
 };
 
+// A BIP39 passphrase is UTF-8 text: a lone surrogate would silently encode
+// as U+FFFD and derive a wallet that is not the one the user typed (the
+// calculator's BIP39 path refuses the same, #1015). JS strings are UTF-16,
+// so the check is a scan for unpaired surrogates.
+const isWellFormedUtf16 = (text) => {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+};
+
 // LDK (ldk-node): BIP39 seed -> master xprv -> its raw private key re-seeds
 // a second master -> node secret at m/0'. The root xprv returned is the
 // first-stage master (the on-chain wallet root ldk-node uses).
 export const deriveLdkNode = (mnemonic, passphrase = "") => {
+  if (!isWellFormedUtf16(passphrase)) {
+    // The wrong side was the message: the guard fired, but its fallback text
+    // ("not well-formed Unicode") dropped the actionable word the key and
+    // the refusal tests carry — "surrogate", an invisible pasted character
+    // the user must retype rather than paste.
+    throw Object.assign(new Error("The passphrase contains an unpaired surrogate."), {
+      key: "The passphrase contains an unpaired surrogate, which cannot be encoded as UTF-8. Retype the passphrase instead of pasting it.",
+      code: "passphrase-utf8",
+    });
+  }
   const seed64 = mnemonicToSeedSync(mnemonic, passphrase);
   let master1 = null, master2 = null, node = null, key32 = null;
   try {
@@ -85,7 +113,10 @@ let hodlLnReveal = false;
 let hodlLnJournalLog = () => {};
 let hodlLnCopyIcon = () => "";
 
-const hodlLnNote = "No node key derived. Enter a seed phrase and derive.";
+// A 24-word seed phrase is a few hundred characters; past this bound the
+// text is a mispaste (a whole file, not a phrase), refused before any
+// normalizing or deriving.
+const LN_SEED_MAX_LENGTH = 4096;
 
 export function hodlLnWipeMem() {
   if (hodlLnLast) {
@@ -135,22 +166,50 @@ function hodlLnRender() {
   const secrets = hodlLnReveal;
   const aezeed = r.format === "aezeed";
   const implementation = aezeed ? "LND" : "LDK (ldk-node)";
+  // Every translated string is computed ahead of the template with the
+  // helper for its sink (AGENTS.md): hodlT for HTML element content, t for
+  // the labels hodlLnPrivateField escapes itself.
+  const nodeKeyLabel = hodlT("{implementation} node identity public key", { implementation });
+  const pathLabel = hodlT("Identity key path");
+  const networkName = aezeed ? (r.coinType === 1 ? t("testnet") : t("mainnet")) : "";
+  const pathNote = aezeed
+    ? ` · ${hodlT("coin type {coinType} ({network})", { coinType: r.coinType, network: networkName })}`
+    : ` · ${hodlT("the LDK node identity does not depend on the network")}`;
+  const detailNote = aezeed
+    ? `<p class="muted">${hodlT("Internal (key-derivation) version {v} · wallet birthday day {days} ({date} UTC, day 0 = Bitcoin genesis). Rescans from the birthday recover on-chain funds; channel funds need the node's channel backup.", { v: r.internalVersion, days: r.birthdayDays, date: hodlLnBirthdayIso(r.birthdayTimestamp) })}</p>`
+    : `<p class="muted">${hodlT("Derived the ldk-node way: BIP39 seed → master key → its private key re-seeds a second BIP32 tree → node secret at")} <code>m/0'</code>.</p>`;
+  const revealLabel = aezeed ? hodlT("Reveal the root private key and decoded entropy") : hodlT("Reveal the root private key");
+  const entropyLabel = t("Decoded entropy (the BIP32 master seed)");
+  const saltLabel = t("Salt");
+  const rootXprvLabel = t("BIP32 root private key (xprv)");
+  const privateNote = hodlT("The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.");
+  const hiddenNote = hodlT("Private material stays hidden until you reveal it.");
   output.innerHTML = `
     <div class="ln-result">
-      ${publicFieldHtml(`${escapeHtml(implementation)} node identity public key`, r.nodePubKey, { id: "ln-node-pubkey", copyIcon: hodlLnCopyIcon })}
-      <p class="muted">Identity key path ${publicValueHtml(r.path, { clipboard: false })}${aezeed ? ` · coin type ${r.coinType} (${r.coinType === 1 ? "testnet" : "mainnet"})` : " · the LDK node identity does not depend on the network"}</p>
-      ${aezeed ? `<p class="muted">Internal (key-derivation) version ${r.internalVersion} · wallet birthday day ${r.birthdayDays} (${escapeHtml(hodlLnBirthdayIso(r.birthdayTimestamp))} UTC, day 0 = Bitcoin genesis). Rescans from the birthday recover on-chain funds; channel funds need the node's channel backup.</p>` : `<p class="muted">Derived the ldk-node way: BIP39 seed → master key → its private key re-seeds a second BIP32 tree → node secret at <code>m/0'</code>.</p>`}
-      <label class="choice"><input type="checkbox" id="ln-reveal" data-private-reveal ${secrets ? "checked" : ""}> <span>Reveal the root private key${aezeed ? " and decoded entropy" : ""}</span></label>
+      ${publicFieldHtml(nodeKeyLabel, r.nodePubKey, { id: "ln-node-pubkey", copyIcon: hodlLnCopyIcon })}
+      <p class="muted">${pathLabel} ${publicValueHtml(r.path, { clipboard: false })}${pathNote}</p>
+      ${detailNote}
+      <label class="choice"><input type="checkbox" id="ln-reveal" data-private-reveal ${secrets ? "checked" : ""}> <span>${revealLabel}</span></label>
       ${secrets ? `
-        ${aezeed ? `${hodlLnPrivateField("ln-entropy", "Decoded entropy (the BIP32 master seed)", hex.encode(r.entropy))}
-        ${hodlLnPrivateField("ln-salt", "Salt", hex.encode(r.salt))}` : ""}
-        ${hodlLnPrivateField("ln-root-xprv", "BIP32 root private key (xprv)", r.rootXprv)}
-        <p class="muted">The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.</p>` : `<p class="muted">Private material stays hidden until you reveal it.</p>`}
+        ${aezeed ? `${hodlLnPrivateField("ln-entropy", entropyLabel, hex.encode(r.entropy))}
+        ${hodlLnPrivateField("ln-salt", saltLabel, hex.encode(r.salt))}` : ""}
+        ${hodlLnPrivateField("ln-root-xprv", rootXprvLabel, r.rootXprv)}
+        <p class="muted">${privateNote}</p>` : `<p class="muted">${hiddenNote}</p>`}
     </div>`;
-  document.getElementById("ln-reveal")?.addEventListener("change", (event) => {
-    hodlLnReveal = event.target.checked;
-    hodlLnRender();
-  });
+  // The switch reads its own state, not event.target: the conceal-on-leave
+  // sweep unticks every switch by replaying a change through this handler.
+  // Set the checked property on every render instead of trusting the markup
+  // attribute to seed it: the sweep reads the property (and skips a switch
+  // whose property is unset), so a re-created switch must always carry a
+  // boolean state.
+  const revealToggle = document.getElementById("ln-reveal");
+  if (revealToggle) {
+    revealToggle.checked = hodlLnReveal;
+    revealToggle.addEventListener("change", () => {
+      hodlLnReveal = revealToggle.checked;
+      hodlLnRender();
+    });
+  }
 }
 
 function hodlRunLn() {
@@ -160,7 +219,15 @@ function hodlRunLn() {
   hodlLnWipeMem();
   const format = hodlLnFormat();
   try {
-    const words = hodlLnNormalize(document.getElementById("ln-seed").value);
+    const text = String(document.getElementById("ln-seed").value || "");
+    if (text.length > LN_SEED_MAX_LENGTH) {
+      throw Object.assign(new Error("Seed text too long."), {
+        key: "That seed text is too long ({n} characters). No seed phrase is longer than {max} characters.",
+        vars: { n: text.length, max: LN_SEED_MAX_LENGTH },
+        code: "seed-too-long",
+      });
+    }
+    const words = hodlLnNormalize(text);
     const passphrase = document.getElementById("ln-pass").value;
     if (format === "aezeed") {
       const decoded = aezeedDecode(words, passphrase);
@@ -186,7 +253,7 @@ function hodlRunLn() {
       hodlLnLast = { format, ...derived };
     }
     hodlLnRender();
-    session.textContent = "Node key derived. Decoded key material stays in page memory until you clear it.";
+    session.textContent = t("Node key derived. Decoded key material stays in page memory until you clear it.");
     hodlLnJournalLog("derive", `${format} ${hodlLnLast.nodePubKey.slice(0, 8)}`, "ln");
   } catch (exception) {
     hodlLnWipeMem();
@@ -207,8 +274,8 @@ function hodlLnSyncFormat() {
   const note = document.getElementById("ln-seed-help");
   if (note) {
     note.textContent = aezeed
-      ? "The 24-word cipher seed LND printed at wallet creation."
-      : "A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.";
+      ? t("The 24-word cipher seed LND printed at wallet creation.")
+      : t("A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.");
   }
 }
 
@@ -229,7 +296,7 @@ export function hodlInitLn({ journalLog, copyIcon = () => "" } = {}) {
     }
     document.getElementById("ln-out").innerHTML = "";
     document.getElementById("ln-error").textContent = "";
-    document.getElementById("ln-session").textContent = "Accessible fields were cleared (best effort).";
+    document.getElementById("ln-session").textContent = t("Accessible fields were cleared (best effort).");
   };
   for (const id of ["ln-format", "ln-network"]) {
     document.getElementById(id)?.addEventListener("change", () => {
@@ -241,6 +308,6 @@ export function hodlInitLn({ journalLog, copyIcon = () => "" } = {}) {
       hodlLnSyncFormat();
     });
   }
-  document.getElementById("ln-session").textContent = hodlLnNote;
+  document.getElementById("ln-session").textContent = t("No node key derived. Enter a seed phrase and derive.");
   hodlLnSyncFormat();
 }

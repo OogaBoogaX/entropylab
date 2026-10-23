@@ -65,6 +65,37 @@ test("edits land where they are made, and a long passphrase grows the store", ()
   assert.equal(vault.bytes().length, 0);
 });
 
+// Deep sweep of cb18b09: text() spread the whole store as call arguments, so
+// a very long passphrase (a large paste, past the engine's argument limit)
+// threw a RangeError — before unmask() and plain-mode setBytes could clear
+// the vault, and before any tool that takes text could derive from it.
+// Chunked fromCodePoint builds the same string for any length.
+test("a 300,000-code-point passphrase round-trips through text() and the field API", () => {
+  const long = "ab😀".repeat(100000); // 300,000 code points, ASCII and astral
+  assert.equal([...long].length, 300000);
+  const vault = new PassphraseVault();
+  vault.setText(long);
+  assert.equal(vault.length, 300000);
+  assert.equal(vault.text(), long);
+  const back = new PassphraseVault();
+  back.setBytes(utf8(long));
+  assert.equal(back.text(), long);
+  assert.equal(hex(back.bytes()), hex(utf8(long)));
+  // The field API: unmask() builds the text and clears the vault.
+  const { field, vault: boundVault, api } = bound();
+  boundVault.setText(long);
+  api.unmask();
+  assert.equal(field.value, long);
+  assert.equal(boundVault.length, 0, "unmask() clears the vault even for a very long passphrase");
+  // The same seam on the inactive (plain-mode) setBytes path.
+  let active = true;
+  const plain = bound(() => active);
+  active = false;
+  plain.api.setBytes(utf8(long));
+  assert.equal(plain.field.value, long);
+  assert.equal(plain.vault.length, 0, "plain-mode setBytes clears the vault even for a very long passphrase");
+});
+
 // A field that behaves as a browser's: listeners run in order, a cancelable
 // beforeinput that nobody cancels is applied, and composition and
 // uncancelable edits change the value before `input`.
@@ -144,6 +175,48 @@ test("a paste replaces the selection, and undo has nothing to undo", () => {
   assert.equal(field.edit("historyUndo"), false, "undo must be cancelled: the browser's history holds nothing worth restoring");
   assert.equal(vault.text(), "aXYf");
   masked(field, vault);
+});
+
+// Red-team F16 (rt-chain2, 2026-10-22): a paste kept its line breaks, so a
+// passphrase copied with its trailing newline derived a different seed than
+// a native password field (and every other tool) derives from it. The
+// expected values are the browsers' own rule for a single-line field:
+// trailing line breaks dropped, every other one (CRLF as one) a space.
+for (const [paste, expected] of [
+  ["pass\n", "pass"],
+  ["pass\r\n", "pass"],
+  ["pass\r\n\r\n", "pass"],
+  ["a\r\nb\nc\rd", "a b c d"],
+  ["a\n\nb\n\n", "a  b"],
+  ["\nab", " ab"],
+  ["\n", ""],
+]) {
+  test(`a pasted ${JSON.stringify(paste)} is stored as a single-line field stores it: ${JSON.stringify(expected)}`, () => {
+    const { field, vault } = bound();
+    field.type("xy");
+    field.select(1);
+    field.edit("insertFromPaste", { paste });
+    assert.equal(vault.text(), `x${expected}y`);
+    assert.equal(field.selectionStart, 1 + [...expected].length);
+    masked(field, vault);
+  });
+}
+
+test("a passphrase pasted with a newline survives unmask and mask unchanged", () => {
+  // A field whose value setter strips line breaks, as an <input>'s does.
+  let active = true;
+  const { field, vault, api } = bound(() => active);
+  let value = "";
+  Object.defineProperty(field, "value", { get: () => value, set: (text) => { value = String(text).replace(/[\r\n]/g, ""); } });
+  field.edit("insertFromPaste", { paste: "correct horse\n" });
+  assert.equal(vault.text(), "correct horse");
+  const before = hex(vault.bytes());
+  active = false;
+  api.unmask();
+  assert.equal(field.value, "correct horse");
+  active = true;
+  api.mask();
+  assert.equal(hex(vault.bytes()), before, "showing and hiding the passphrase changed it");
 });
 
 test("an IME composition is taken into the vault when it ends", () => {
@@ -757,6 +830,28 @@ test("a stored passphrase is shown as bullets, and clearing empties both", () =>
   api.clear();
   assert.equal(vault.length, 0);
   assert.equal(field.value, "");
+});
+
+// Deep sweep of cb18b09 (Muse Spark, GLM 5.3, DeepSeek V4.1; confirmed by
+// Claude): vault.setBytes clears the vault FIRST and then throws on invalid
+// UTF-8, and the field API's setBytes let the throw skip its render — the
+// field kept showing the previous passphrase's mask (or text) over an empty
+// vault, so the screen said a passphrase was set while derivation used the
+// empty one. A refusal must empty the field with the vault.
+test("a refused setBytes empties the field with the vault", () => {
+  const { field, vault, api } = bound();
+  api.setBytes(utf8("stored 🔑"));
+  masked(field, vault);
+  assert.throws(() => api.setBytes(Uint8Array.of(0xff)), /not valid UTF-8/);
+  assert.equal(vault.length, 0);
+  assert.equal(field.value, "", "the field must not keep the previous mask over an empty vault");
+  // Inactive (plain) mode: the field held the passphrase as text.
+  const plain = bound(() => false);
+  plain.api.setBytes(utf8("stored words"));
+  assert.equal(plain.field.value, "stored words");
+  assert.throws(() => plain.api.setBytes(Uint8Array.of(0xff)), /not valid UTF-8/);
+  assert.equal(plain.vault.length, 0);
+  assert.equal(plain.field.value, "", "the field must not keep the previous text over an empty vault");
 });
 
 // BIP39: PBKDF2-HMAC-SHA512(NFKD(mnemonic), NFKD("mnemonic" + passphrase)).

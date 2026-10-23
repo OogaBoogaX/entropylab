@@ -51,8 +51,14 @@ const isWellFormed = (value) => {
 // crate would accept a phrase the count admits. Equivalent acceptance means
 // the two tokenizations agree, which holds exactly when every separator is a
 // single ASCII space and no token carries whitespace of its own.
+//
+// JavaScript's \s is not Unicode's White_Space set: it leaves out U+0085
+// (NEL), which rust-bip39 splits on. With \S alone, "word\u0085word" was one
+// token here and two words in the crate, so twelve tokens validated as a
+// fifteen-word phrase whose seed no other wallet derives (deep sweep of
+// cb18b09).
 const WORD_COUNTS = [12, 15, 18, 21, 24];
-const SINGLE_ASCII_SPACES = /^\S+( \S+)*$/;
+const SINGLE_ASCII_SPACES = /^[^\s\u0085]+( [^\s\u0085]+)*$/;
 const isCanonicalPhrase = (phrase) => SINGLE_ASCII_SPACES.test(phrase) && WORD_COUNTS.includes(phrase.split(" ").length);
 
 const entropyToMnemonic = (entropy, wordlist = bip39English) => {
@@ -142,7 +148,9 @@ const mnemonicToSeedSync = (mnemonic, passphrase = "") => {
   // The reference refuses a phrase that is not 12/15/18/21/24 words or not
   // well-formed Unicode; hashing whatever string arrives would turn a typo
   // into a valid-looking wallet.
-  if (typeof mnemonic !== "string" || (typeof mnemonic.isWellFormed === "function" && !mnemonic.isWellFormed())) throw new Error("Invalid mnemonic");
+  // The module's own isWellFormed, as for the passphrase: the native method is
+  // missing on older engines, where a feature test would skip the refusal.
+  if (typeof mnemonic !== "string" || !isWellFormed(mnemonic)) throw new Error("Invalid mnemonic");
   const text = nfkd(mnemonic);
   if (!isCanonicalPhrase(text)) throw new Error("Invalid mnemonic");
   const salt = saltFor(passphrase);

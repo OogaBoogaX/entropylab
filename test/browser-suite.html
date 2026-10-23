@@ -1703,7 +1703,7 @@
     // The visible label may be abbreviated; the accessible name never is.
     // Which tools exist and how they name themselves is the contract; where
     // they sit in the strip is a design decision that changes freely.
-    const names = ["BIP-85 Child", "Journal", "Keys", "Multi Signature", "PSBT", "Silent Payments", "Vanity Address"];
+    const names = ["BIP-85 Child", "Journal", "Keys", "Multi Signature", "Silent Payments", "Transactions", "Vanity Address"];
     equal(tabs.map((tab) => tab.getAttribute("aria-label")).sort().join("|"), names.join("|"), "every tool tab names itself in full");
     assert(!document.querySelector('#workspace [data-workspace="sp"] .silent-payments-icon'), "Silent Payments icon should not be in the workspace tab");
     const start = document.querySelector('#workspace [data-workspace="calc"]');
