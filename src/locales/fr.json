@@ -1660,5 +1660,10 @@
   "Txns": "Txns",
   "The selected account is unavailable. Select a script type and export again.": "Le compte sélectionné n'est pas disponible. Sélectionnez un type de script et exportez à nouveau.",
   "Imports the displayed public branches. Bitcoin Core uses branch {branch} for new receiving addresses, starting at address index 0. Verify that address on another trusted wallet or signer before funding.": "Importe les branches publiques affichées. Bitcoin Core utilise la branche {branch} pour les nouvelles adresses de réception, à partir de l'index d'adresse 0. Vérifiez cette adresse sur un autre portefeuille ou signataire de confiance avant de financer.",
-  "Exports the selected script type's displayed branches, using the wallet birthday under Downloads below.": "Exportez les branches affichées du type de script sélectionné, en utilisant l'anniversaire du portefeuille sous Téléchargements ci-dessous."
+  "Exports the selected script type's displayed branches, using the wallet birthday under Downloads below.": "Exportez les branches affichées du type de script sélectionné, en utilisant l'anniversaire du portefeuille sous Téléchargements ci-dessous.",
+  "RFC 6979: not checked (no matching key in this session).": "RFC 6979 : non vérifié (aucune clé correspondante dans cette session).",
+  "RFC 6979: checked for 1 of 1 ECDSA signature.": "RFC 6979 : vérifié pour 1 signature ECDSA sur 1.",
+  "RFC 6979: checked for all {total} ECDSA signatures.": "RFC 6979 : vérifié pour toutes les {total} signatures ECDSA.",
+  "RFC 6979: checked for {checked} of {total} ECDSA signatures.": "RFC 6979 : vérifié pour {checked} signatures ECDSA sur {total}.",
+  "{n} did not match.": "{n} ne correspond pas."
 }
