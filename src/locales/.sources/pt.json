@@ -1660,5 +1660,10 @@
   "Txns": "bf9b463d1af4e8391d34cdef54bd60c31152ee8cdcd04a6905bd46520e22b4a7",
   "The selected account is unavailable. Select a script type and export again.": "9e71f2fdab8059bf1a4bc9c93b21da8196c01738f6a497572298ef7bc8a58d1f",
   "Imports the displayed public branches. Bitcoin Core uses branch {branch} for new receiving addresses, starting at address index 0. Verify that address on another trusted wallet or signer before funding.": "5bb5a95d8c8d997f8e9f241410de49a65e62def75c103608c0ee003eb096e267",
-  "Exports the selected script type's displayed branches, using the wallet birthday under Downloads below.": "d838af6225277976c9bf1be96d2e43f07c2f8bb6e28ef21196a7d5bfc08c9440"
+  "Exports the selected script type's displayed branches, using the wallet birthday under Downloads below.": "d838af6225277976c9bf1be96d2e43f07c2f8bb6e28ef21196a7d5bfc08c9440",
+  "RFC 6979: not checked (no matching key in this session).": "fec9a7a518b74fe5551bb7dc035245954f61bd65625e50d9f2453011797929ce",
+  "RFC 6979: checked for 1 of 1 ECDSA signature.": "58475b1b637dcbe70b0dc07f23df2b97fc08fb9064f702ecf157508f35547853",
+  "RFC 6979: checked for all {total} ECDSA signatures.": "98bed6c075d346a4ea18b7f7798a5bea704f01ebb368b9f7dc63ece427977cd5",
+  "RFC 6979: checked for {checked} of {total} ECDSA signatures.": "41599de27b4380140bde3fd8ffed4fd93d8019c91300a5731b253e78073be926",
+  "{n} did not match.": "52f12318eefbf4b523e23c8a7120f200a8d72f81cc62291587e5c946c4cf9073"
 }
