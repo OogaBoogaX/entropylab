@@ -21,7 +21,6 @@
   "Keep your private keys offline.": "Mantenha suas chaves privadas offline.",
   "Keys": "Chaves",
   "Multi Signature": "Multiassinatura",
-  "PSBT": "PSBT",
   "BIP-85": "BIP-85",
   "Silent Payments": "Silent Payments",
   "Vanity": "Vanity",
@@ -1656,5 +1655,7 @@
   "The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.": "O xprv raiz pode gastar a carteira on-chain do nó. Revele-o apenas enquanto este arquivo for executado offline em um computador air-gapped.",
   "Private material stays hidden until you reveal it.": "Material privado permanece oculto até você revelá-lo.",
   "Node key derived. Decoded key material stays in page memory until you clear it.": "Chave do nó derivada. Material de chave decodificado permanece na memória da página até você limpá-lo.",
-  "A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.": "Uma frase-semente BIP39 de 12 a 24 palavras, como usada pelo ldk-node."
+  "A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.": "Uma frase-semente BIP39 de 12 a 24 palavras, como usada pelo ldk-node.",
+  "Transactions": "Transações",
+  "Txns": "Txns"
 }
