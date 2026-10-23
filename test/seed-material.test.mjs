@@ -140,6 +140,12 @@ test("the recovery sheet carries the seed material only when private material is
     const secrets = [vector.words, vector.entropy, vector.seed, ...(words === 12 || words === 24 ? [seedQrDigits(vector.words)] : [])];
     for (const secret of secrets) assert.ok(sheet.includes(secret), `${label}: the private sheet lacks ${secret.slice(0, 12)}…`);
     assert.ok(!secrets.some((secret) => watch.includes(secret)), `${label}: the watch-only sheet carries seed material`);
+    const spans = [], publicSpans = [];
+    assert.equal(hodlRecoverySheetText(wallet, true, spans), sheet, "live annotations preserve recovery-sheet bytes");
+    const values = spans.filter(span => span.kind === "value").map(span => sheet.slice(span.start, span.end));
+    for (const secret of secrets) assert.ok(values.includes(secret), `${label}: private material lacks an exact field annotation`);
+    assert.equal(hodlRecoverySheetText(wallet, false, publicSpans), watch);
+    assert.deepEqual(publicSpans, []);
   }
 });
 

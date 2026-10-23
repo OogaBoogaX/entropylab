@@ -8,8 +8,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
-import { JOURNAL_MAX_FILE_LENGTH, JOURNAL_MIN_ITERATIONS, appendLog, createJournal, deriveJournalKeys, normalizeJournalPageStyle, openDocument, parseNotebook, sealBackup, serializeNotebook, snapshotSession, wipeDocument, wipeJournal } from "../src/js/journal.js";
-import { keyVaultIdentity, parseKeyVault, serializeKeyVault } from "../src/js/keymanager.js";
+import { JOURNAL_MAX_FILE_LENGTH, JOURNAL_MIN_ITERATIONS, appendLog, createJournal, deriveJournalKeys, normalizeJournalPageStyle, openDocument, parseNotebook, sealBackup, serializeNotebook, snapshotPrivateSpans, snapshotSession, wipeDocument, wipeJournal } from "../src/js/journal.js";
+import { KEY_VAULT_MAX_KEYS, keyVaultIdentity, parseKeyVault, serializeKeyVault } from "../src/js/keymanager.js";
+import { renderAnnotatedPrivateText } from "../src/js/private-data.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -70,9 +71,14 @@ function sectionHarness() {
   const fields = new Map([
     ["journal-notes-text", { value: "Newest unsaved notepad text." }],
     ["journal-state-private", { checked: true }],
+    ["journal-saved-state-private", { checked: false }],
+    ["journal-saved-state-text", { textContent: "" }],
     ["journal-state-text", { textContent: SNAPSHOT }],
     ["journal-editor", { hidden: true }],
   ]);
+  for (const id of ["journal-state-text", "journal-saved-state-text"]) {
+    fields.get(id).toggleAttribute = () => {};
+  }
   const context = {
     document: { getElementById: (id) => fields.get(id) ?? null, querySelector: () => null },
     hodlJournal: journal,
@@ -82,7 +88,7 @@ function sectionHarness() {
     hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "",
     hodlNextKeyId: 100, hodlNextKeyNumber: 100,
     TextEncoder, TextDecoder, ArrayBuffer, Uint8Array,
-    keyVaultIdentity, serializeKeyVault, parseKeyVault,
+    keyVaultIdentity, serializeKeyVault, parseKeyVault, hodlKeyVaultMaxKeys: KEY_VAULT_MAX_KEYS,
     hodlSerializeNotebook: serializeNotebook, hodlParseNotebook: parseNotebook,
     wipeJournal, hodlJournalWipeDocument: wipeDocument,
     hodlTypedText: (value) => new TextDecoder().decode(value),
@@ -92,6 +98,8 @@ function sectionHarness() {
     hodlJournalRestorePage() {}, hodlJournalApplyPageStyle() {},
     hodlKeyManagerRender() {}, hodlRenderJournalLog() {},
     hodlJournalSessionSnapshot() { return SNAPSHOT; },
+    hodlRenderAnnotatedPrivateText: renderAnnotatedPrivateText,
+    hodlJournalSnapshotPrivateSpans: snapshotPrivateSpans,
     hodlKeyManagerStatus() {}, hodlJournalSetStatus() {},
     hodlJournalNoteText: () => "",
     hodlTText: (text) => text,
@@ -118,7 +126,7 @@ test("complete collection includes current notes and all managed keys, including
   c.hodlKeys.push(included);
   c.hodlKeyManagerPending.push(excluded);
   c.hodlKeyManagerIgnored.push(vaultEntry("Ignored key", "ignored passphrase"));
-  c.hodlKeyManagerIds.add("trusted-wallet-A");
+  c.hodlKeyManagerIds.add(keyVaultIdentity(included));
   c.hodlKeyManagerActiveId = "2";
   loadFunctions(c, ["hodlJournalCollectBackup"]);
   const backup = c.hodlJournalCollectBackup();
@@ -139,10 +147,48 @@ test("complete collection includes current notes and all managed keys, including
   assert.equal(backup.activeKey, 1);
   assert.deepEqual(plain(backup.snapshot), { text: SNAPSHOT, includePrivate: true });
   assert.deepEqual(plain(backup.log), EVENTS);
-  assert.deepEqual([...c.hodlKeyManagerIds], ["trusted-wallet-A"], "collecting must not auto-include excluded keys");
+  assert.deepEqual([...c.hodlKeyManagerIds], [keyVaultIdentity(included)], "collecting must not auto-include excluded keys");
   assert.equal(new TextDecoder().decode(included.fields.pass), "TREZOR", "collection must not wipe the live passphrase");
   journal.log[0].detail = "later event change";
   assert.equal(backup.log[0].detail, "page-2", "the captured log must not change during encryption");
+});
+
+test("complete backup retains distinct setups of one wallet with their selection across cold restore", async () => {
+  const { context: c } = sectionHarness();
+  const mainnet = { ...vaultEntry("Mainnet setup"), id: 11, result: { masterIdentity: "same-wallet", network: "mainnet" } };
+  const testnet = { ...vaultEntry("Testnet setup"), id: 12, result: { masterIdentity: "same-wallet", network: "testnet" } };
+  testnet.fields.network = "testnet";
+  testnet.fields.derivationPath = "m/84'/1'/0'/0/0";
+  c.hodlKeys.push(mainnet, testnet);
+  c.hodlKeyManagerPending.push(mainnet);
+  c.hodlKeyManagerActiveId = keyVaultIdentity(testnet);
+  c.hodlKeyManagerIds.add(keyVaultIdentity(testnet));
+  loadFunctions(c, ["hodlJournalCollectBackup"]);
+  const backup = c.hodlJournalCollectBackup();
+  const vault = parseKeyVault(backup.keyManager);
+  assert.equal(vault.keys.length, 2, "collection omitted an alternate wallet setup or repeated the same entry");
+  assert.deepEqual(vault.keys.map((key) => [key.name, key.fields.network, key.fields.derivationPath]), [
+    ["Mainnet setup", "mainnet", "m/84'/0'/0'/0/0"],
+    ["Testnet setup", "testnet", "m/84'/1'/0'/0/0"],
+  ]);
+  assert.equal(backup.activeKey, 1);
+  assert.deepEqual(plain(backup.includedKeys), [1]);
+  const keys = await deriveJournalKeys("backup test", JOURNAL_MIN_ITERATIONS);
+  const sealed = await sealBackup({ version: 2, nextId: 1, entries: [] }, keys, backup);
+  const opened = await openDocument(JSON.stringify(sealed), "backup test");
+  const { context: restored } = sectionHarness();
+  loadFunctions(restored, ["hodlJournalRestoreBackup"]);
+  restored.hodlJournalRestoreBackup(opened.doc.backup);
+  const states = restored.hodlKeyManagerStates();
+  assert.equal(states.length, 2);
+  assert.deepEqual(plain(states.map((key) => [key.name, key.fields.network, key.fields.derivationPath])), [
+    ["Mainnet setup", "mainnet", "m/84'/0'/0'/0/0"],
+    ["Testnet setup", "testnet", "m/84'/1'/0'/0/0"],
+  ]);
+  assert.notEqual(keyVaultIdentity(states[0]), keyVaultIdentity(states[1]));
+  assert.ok(states.every((key) => key.result === null && key.needsDerivation));
+  assert.equal(restored.hodlKeyManagerActiveId, keyVaultIdentity(states[1]));
+  assert.deepEqual([...restored.hodlKeyManagerIds], [keyVaultIdentity(states[1])]);
 });
 
 test("complete restore reinstalls pages, history, selection and unverified inputs without injecting live wallets", () => {
@@ -160,7 +206,8 @@ test("complete restore reinstalls pages, history, selection and unverified input
   ]);
   assert.deepEqual(plain(journal.log), EVENTS);
   assert.equal(journal.backup.snapshot.text, SNAPSHOT, "the saved snapshot must survive separately from live refreshes");
-  assert.equal(fields.get("journal-state-private").checked, false, "restore must not reveal saved private material automatically");
+  assert.equal(fields.get("journal-state-private").checked, false);
+  assert.equal(fields.get("journal-saved-state-private").checked, false, "restore must not reveal saved private material automatically");
   assert.equal(c.hodlKeys.length, 1);
   assert.equal(c.hodlKeys[0], liveKey, "restore must not replace an existing trusted wallet");
   assert.deepEqual(plain(c.hodlKeyManagerPending.map((key) => key.name)), ["Included key", "Excluded key"]);
@@ -216,35 +263,185 @@ test("complete backup preserves private recovery data without revealing it on sc
   }
 });
 
-test("saved snapshot text is untrusted and appears only while private recovery material is revealed", () => {
+// Security contract: each reveal exposes only its own report; imported flags
+// cannot bypass concealment, and unchecking removes the rendered secret.
+test("current and saved snapshot reveals are independent and saved text stays literal", () => {
   for (const includePrivate of [true, false]) {
     const { context: c, journal, fields } = sectionHarness();
     const savedText = "Saved private snapshot <img src=x onerror=alert(1)> seed marker";
+    const currentSecret = "current private recovery marker";
     journal.backup = { snapshot: { text: savedText, includePrivate } };
-    Object.assign(c, {
-      hodlMsigs: [], hodlBip85Children: [], hodlSpKeys: null,
-      hodlPsbtNonceInspected: false, hodlPsbtNonceVerdict: "", hodlPsbtNonceVerdictKind: "",
-      hodlPsbtNonceHistory: [], hodlPsbtNonceHistoryVerdict: "",
-      hodlJournalStamp: () => "2026-10-22 11:00:00", hodlJournalSnapshot: snapshotSession,
-    });
-    Object.defineProperty(fields.get("journal-state-text"), "innerHTML", {
-      set() { assert.fail("imported snapshot text must never become an HTML sink"); },
-    });
-    loadFunctions(c, ["hodlJournalSessionSnapshot", "hodlJournalRefreshSessionState"]);
-    const privacy = fields.get("journal-state-private"), readout = fields.get("journal-state-text");
-    privacy.checked = false;
-    c.hodlJournalRefreshSessionState();
-    assert.ok(!journal.stateText.includes(savedText), `the imported includePrivate=${includePrivate} claim must not bypass concealment`);
-    assert.ok(!readout.textContent.includes(savedText));
-    privacy.checked = true;
-    c.hodlJournalRefreshSessionState();
-    assert.ok(journal.stateText.includes(savedText), "the saved snapshot is available after an explicit reveal");
-    assert.ok(readout.textContent.includes(savedText), "historical text must be rendered literally");
-    privacy.checked = false;
-    c.hodlJournalRefreshSessionState();
-    assert.ok(!journal.stateText.includes(savedText));
-    assert.ok(!readout.textContent.includes(savedText), "concealing drops the rendered private copy");
-    assert.equal(journal.backup.snapshot.text, savedText, "concealing must not destroy the backed-up data");
+    c.hodlJournalSessionSnapshot = (revealed) => revealed ? currentSecret : "Public current report";
+    for (const id of ["journal-state-text", "journal-saved-state-text"]) {
+      Object.defineProperty(fields.get(id), "innerHTML", {
+        set() { assert.fail("snapshot text must never become an HTML sink"); },
+      });
+    }
+    loadFunctions(c, ["hodlJournalRefreshSessionState"]);
+    const currentBox = fields.get("journal-state-private"), savedBox = fields.get("journal-saved-state-private");
+    const currentOut = fields.get("journal-state-text"), savedOut = fields.get("journal-saved-state-text");
+    for (const [current, saved] of [[false, false], [true, false], [false, true], [true, true], [false, false]]) {
+      currentBox.checked = current;
+      savedBox.checked = saved;
+      c.hodlJournalRefreshSessionState();
+      assert.equal(currentOut.textContent.includes(currentSecret), current);
+      assert.ok(!currentOut.textContent.includes(savedText), "current reveal exposed historical material");
+      assert.equal(savedOut.textContent.includes(savedText), saved, `saved reveal must ignore imported includePrivate=${includePrivate}`);
+      assert.ok(!savedOut.textContent.includes(currentSecret));
+      assert.equal(journal.stateText, currentOut.textContent, "current export must match only the current report");
+      assert.equal(journal.backup.snapshot.text, savedText, "concealing must preserve backed-up data");
+    }
+  }
+});
+
+// Saved history is retained unless its own current Journal confirmation is
+// accepted. Removal must never alter live wallets, notes or a replacement
+// Journal, and removed history must disappear from display and future backups.
+function savedSnapshotHarness() {
+  const h = sectionHarness(), { context: c, journal, fields } = h;
+  const saved = { text: "Historical recovery marker", includePrivate: true };
+  journal.backup = { snapshot: saved };
+  journal.pages[0].notesText = fields.get("journal-notes-text").value;
+  journal.notesText = journal.pages[0].notesText;
+  fields.set("journal-state-history", { hidden: true });
+  fields.set("journal-state-delete-history", {});
+  fields.get("journal-saved-state-private").checked = true;
+  fields.set("journal-state-summary", { focus() { c.document.activeElement = this; } });
+  fields.get("journal-state-private").focus = () => {}; // Unfocusable inside a closed disclosure.
+  let decision;
+  Object.assign(c, {
+    hodlJournalGeneration: 9, hodlJournalPageDeleteConfirm: null,
+    initJournalPageDeleteConfirm: () => ({ show(options) { decision = options; } }),
+    hodlJournalLog(action, detail, tool) {
+      appendLog(journal, { action, detail, tool });
+      c.hodlJournalMarkDirty();
+    },
+  });
+  loadFunctions(c, ["hodlJournalRefreshSessionState", "hodlJournalRemoveSavedSnapshot", "hodlJournalCollectBackup"]);
+  return { ...h, saved, decision: () => decision };
+}
+
+test("Session binds saved-history removal to its confirmation controller", () => {
+  const control = {}, c = {
+    document: { querySelectorAll: () => [], getElementById: id => id === "journal-state-delete-history" ? control : null },
+    hodlJournal: {}, hodlJournalAppend() {}, hodlInitTabDrag() {},
+    hodlInitJournalActionAudit() {}, hodlRefreshJournalKeyPicker() {}, hodlSyncJournalTool() {},
+    hodlJournalRemoveSavedSnapshot() { c.requested = true; },
+  };
+  loadFunctions(c, ["hodlInitJournalToolTabs"]);
+  c.hodlInitJournalToolTabs();
+  assert.equal(typeof control.onclick, "function");
+  control.onclick();
+  assert.equal(c.requested, true);
+});
+
+test("snapshot export controls use only their own report and cannot export concealed history", async () => {
+  const { context: c, journal, fields } = sectionHarness(), downloads = [];
+  const currentDownload = {}, savedDownload = {};
+  fields.delete("journal-notes-text");
+  fields.set("journal-state-download", currentDownload);
+  fields.set("journal-saved-state-download", savedDownload);
+  for (const id of ["journal-state-private", "journal-saved-state-private"]) fields.get(id).addEventListener = () => {};
+  c.document.querySelectorAll = () => [];
+  journal.backup = { snapshot: { text: "Saved recovery only", includePrivate: false } };
+  Object.assign(c, {
+    hodlJournalAppend() {}, hodlInitTabDrag() {}, hodlInitJournalActionAudit() {},
+    hodlRefreshJournalKeyPicker() {}, hodlSyncJournalTool() {},
+    hodlJournalRemoveSavedSnapshot() {},
+    hodlJournalDownloadContent(...args) { downloads.push(args); },
+  });
+  loadFunctions(c, ["hodlJournalRefreshSessionState", "hodlInitJournalToolTabs"]);
+  c.hodlInitJournalToolTabs();
+  await savedDownload.onclick();
+  assert.equal(downloads.length, 0);
+  fields.get("journal-saved-state-private").checked = true;
+  await savedDownload.onclick();
+  assert.deepEqual(downloads[0], ["session-state", "entropylab-saved-session.txt", "Saved recovery only"]);
+  await currentDownload.onclick();
+  assert.deepEqual(downloads[1], ["session-state", "entropylab-session.txt", SNAPSHOT]);
+  fields.get("journal-saved-state-private").checked = false;
+  await savedDownload.onclick();
+  assert.equal(downloads.length, 2, "unchecked saved report still exported");
+  fields.get("journal-saved-state-private").checked = true;
+  journal.backup.snapshot = null;
+  await savedDownload.onclick();
+  assert.equal(downloads.length, 2, "removed saved report still exported");
+});
+
+test("saved-history action appears only while a historical snapshot exists", () => {
+  const { context: c, journal, fields, saved } = savedSnapshotHarness();
+  c.hodlJournalRefreshSessionState();
+  assert.equal(fields.get("journal-state-history").hidden, false);
+  fields.get("journal-state-private").checked = false;
+  c.hodlJournalRefreshSessionState();
+  assert.equal(fields.get("journal-state-history").hidden, false, "concealed history must still be removable");
+  assert.ok(!fields.get("journal-state-text").textContent.includes(saved.text));
+  journal.backup.snapshot = null;
+  c.hodlJournalRefreshSessionState();
+  assert.equal(fields.get("journal-state-history").hidden, true);
+});
+
+test("saved-history removal waits for confirmation and preserves history by default", () => {
+  const { context: c, journal, saved, decision } = savedSnapshotHarness();
+  c.hodlJournalRemoveSavedSnapshot();
+  assert.ok(decision());
+  assert.equal(journal.backup.snapshot, saved);
+  assert.equal(c.hodlJournalDirty, false);
+  assert.equal(c.hodlJournalBackupRevision, 0);
+  assert.ok(c.hodlJournalCollectBackup().snapshot.text.includes(saved.text), "an unconfirmed removal lost history from the backup");
+});
+
+test("confirmed history removal clears its text and future backups while preserving current content", () => {
+  const { context: c, journal, saved, fields, decision } = savedSnapshotHarness();
+  const live = { ...vaultEntry("Current key"), id: 30, result: { masterIdentity: "current-wallet" } };
+  c.hodlKeys.push(live);
+  const notes = serializeNotebook(journal), key = JSON.stringify(live);
+  c.hodlJournalRefreshSessionState();
+  assert.ok(fields.get("journal-saved-state-text").textContent.includes(saved.text));
+  c.hodlJournalRemoveSavedSnapshot();
+  decision().onConfirm();
+  assert.equal(journal.backup.snapshot, null);
+  assert.equal(saved.text, "", "a retained snapshot reference still holds removed history");
+  assert.equal(journal.stateText, SNAPSHOT);
+  assert.equal(fields.get("journal-state-text").textContent, SNAPSHOT);
+  assert.equal(fields.get("journal-saved-state-text").textContent, "");
+  assert.equal(fields.get("journal-state-history").hidden, true);
+  assert.equal(c.document.activeElement, fields.get("journal-state-summary"), "focus must return to the visible summary even when current report is collapsed");
+  assert.equal(c.hodlJournalDirty, true);
+  assert.equal(c.hodlJournalBackupRevision, 1);
+  assert.equal(serializeNotebook(journal), notes);
+  assert.equal(c.hodlKeys[0], live);
+  assert.equal(JSON.stringify(live), key);
+  assert.equal(c.hodlJournalCollectBackup().snapshot.text, SNAPSHOT);
+  decision().onConfirm();
+  assert.equal(c.hodlJournalBackupRevision, 1, "an old callback removed history twice");
+});
+
+test("saved-history confirmation cannot act after Clear, reopen, or replacement", () => {
+  for (const change of ["clear", "generation", "journal", "snapshot"]) {
+    const { context: c, journal, saved, decision } = savedSnapshotHarness();
+    c.hodlJournalRemoveSavedSnapshot();
+    const replacement = { text: "Replacement history marker", includePrivate: true };
+    if (change === "clear") { c.hodlJournalKeys = null; c.hodlJournalDoc = null; }
+    if (change === "generation") c.hodlJournalGeneration++;
+    if (change === "journal") c.hodlJournal = { ...journal, backup: { snapshot: replacement } };
+    if (change === "snapshot") journal.backup.snapshot = replacement;
+    decision().onConfirm();
+    assert.equal(saved.text, "Historical recovery marker", `${change}: an obsolete confirmation changed the captured history`);
+    assert.equal(replacement.text, "Replacement history marker");
+    assert.equal(c.hodlJournalDirty, false);
+    assert.equal(c.hodlJournalBackupRevision, 0);
+  }
+});
+
+test("saved-history removal has no decision when the Journal is closed or has no history", () => {
+  for (const closed of [false, true]) {
+    const { context: c, journal, decision } = savedSnapshotHarness();
+    if (closed) { c.hodlJournalKeys = null; c.hodlJournalDoc = null; }
+    else journal.backup = null;
+    c.hodlJournalRemoveSavedSnapshot();
+    assert.equal(decision(), undefined);
+    assert.equal(c.hodlJournalDirty, false);
   }
 });
 
@@ -379,6 +576,34 @@ test("Save file encrypts the complete collected Journal and marks an unchanged c
   assertCollectedPlaintextCleared(captured);
 });
 
+test("a complete download refuses an open saved-record edit without losing the draft", async () => {
+  const { context: c, downloads, seals, fields } = saveHarness({ editorOpen: true });
+  fields.set("journal-input", { value: "unfinished recovery correction" });
+  assert.equal(await c.hodlJournalSaveFile(), false);
+  assert.deepEqual(seals, []);
+  assert.deepEqual(downloads, []);
+  assert.equal(fields.get("journal-editor").hidden, false);
+  assert.equal(fields.get("journal-input").value, "unfinished recovery correction");
+  assert.ok(fields.get("journal-error").textContent.trim());
+  assert.equal(c.hodlJournalDirty, true);
+});
+
+test("opening a record editor during encryption suppresses that pending download", async () => {
+  const gate = deferred();
+  const { context: c, captured, downloads, fields } = saveHarness({ gate });
+  const saving = c.hodlJournalSaveFile();
+  fields.get("journal-editor").hidden = false;
+  fields.set("journal-input", { value: "new unfinished recovery correction" });
+  gate.resolve({ ciphertext: "older capture" });
+  assert.equal(await saving, false);
+  assert.deepEqual(downloads, []);
+  assert.equal(fields.get("journal-editor").hidden, false);
+  assert.equal(fields.get("journal-input").value, "new unfinished recovery correction");
+  assert.ok(fields.get("journal-error").textContent.trim());
+  assert.equal(c.hodlJournalDirty, true);
+  assertCollectedPlaintextCleared(captured);
+});
+
 
 test("canceling the clear confirmation suppresses its pending backup without clearing the Journal", async () => {
   const gate = deferred();
@@ -408,12 +633,31 @@ test("a save that finishes after Journal clear cannot download or announce succe
   c.hodlJournalKeys = null;
   c.hodlJournalDoc = null;
   c.hodlJournalDirty = false;
+  events.length = 0; // Clear has erased events recorded before it.
   gate.resolve({ ciphertext: "obsolete encrypted content" });
   await saving;
   assert.equal(downloads.length, 0, "a locked session must not finish its pending download");
   assert.equal(events.length, 0, "the obsolete operation must not redraw or log save success");
   assert.equal(fields.get("journal-error").textContent, "", "a canceled save must not replace the lock announcement with an error");
   assertCollectedPlaintextCleared(captured);
+});
+
+test("complete backup Debug events distinguish browser handoff from failure without retaining errors", async () => {
+  const success = saveHarness();
+  assert.equal(await success.context.hodlJournalSaveFile(), true);
+  assert.deepEqual(success.events.filter(Array.isArray), [
+    ["export-request", "journal-backup", "journal"], ["download-started", "journal-backup", "journal"],
+  ]);
+  const gate = deferred(), failed = saveHarness({ gate });
+  const saving = failed.context.hodlJournalSaveFile();
+  gate.reject(new Error(WORDS));
+  assert.equal(await saving, false);
+  assert.deepEqual(failed.events.filter(Array.isArray), [
+    ["export-request", "journal-backup", "journal"], ["export-error", "journal-backup", "journal"],
+  ]);
+  assert.equal(JSON.stringify(failed.events).includes(WORDS), false);
+  assert.equal(failed.downloads.length, 0);
+  assertCollectedPlaintextCleared(failed.captured);
 });
 
 test("changes made during encryption keep the current Journal dirty after the older capture downloads", async () => {
@@ -463,6 +707,7 @@ function unlockHarness({ password = "backup password", onOpen = openDocument } =
   });
   Object.assign(c, {
     hodlJournalKeys: null, hodlJournalDoc: null, hodlJournalGeneration: 0,
+    hodlJournalReportViewer: null, hodlJournalReportRequest: 0,
     hodlJournalUnlockBusy: false, hodlJournalFileRead: null,
     hodlJournalFileText: "", hodlJournalOpenReadyFor: "",
     hodlJournalKeyEntries: new Map(), hodlJournalTool: "book", hodlWorkspace: "journal",
@@ -479,8 +724,8 @@ function unlockHarness({ password = "backup password", onOpen = openDocument } =
     hodlJournalHideEditor() {}, hodlJournalShowWork() {}, hodlShowJournalTool() {},
   });
   loadFunctions(c, [
-    "hodlJournalError", "hodlJournalWipeNotebook", "hodlJournalDiscardOpened",
-    "hodlJournalChooseFile", "hodlJournalUnlock", "hodlJournalRestoreBackup", "hodlJournalLog",
+    "hodlJournalError", "hodlJournalSetGateBusy", "hodlJournalClearReport", "hodlJournalWipeNotebook", "hodlJournalDiscardOpened",
+    "hodlJournalChooseFile", "hodlJournalUnlock", "hodlJournalRestoreBackup", "hodlJournalLog", "hodlKeyManagerCapacityError",
   ]);
   return env;
 }

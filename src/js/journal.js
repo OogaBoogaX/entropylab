@@ -4,7 +4,8 @@
 import { hex as hexCoder } from "./coders.js";
 import { parseKeyVault, serializeKeyVault } from "./keymanager.js";
 
-export const JOURNAL_LOG_LIMIT = 400;
+export const JOURNAL_LOG_LIMIT = 10_000;
+export const JOURNAL_LOG_MAX_BYTES = 512 * 1024;
 export const NOTEBOOK_FORMAT = "entropylab-notebook";
 export const NOTEBOOK_VERSION = 1;
 export const NOTEBOOK_MAX_PAGES = 100;
@@ -14,7 +15,7 @@ const JOURNAL_FONTS = new Set(["mono", "sans", "serif"]);
 const JOURNAL_SIZES = new Set(["small", "medium", "large"]);
 const JOURNAL_SPACINGS = new Set(["compact", "comfortable", "spacious"]);
 const KEY_REFERENCE_END = "\u2063";
-const KEY_REFERENCE_PATTERN = /(◆◆|◈◈) (?:([^\n◆\u2063]*?) )?\[([0-9a-fA-F]{8})\](?:\u2063| ◆)/g;
+const KEY_REFERENCE_PATTERN = /(◆◆|◈◈|▣▣(?: ▣▣){0,14}) (?:([^\n◆\u2063]*?) )?\[([0-9a-fA-F]{8}|[1-9]\d?-of-[1-9]\d?: (?:[0-9a-fA-F]{8}|\?{8})(?:,(?:[0-9a-fA-F]{8}|\?{8})){0,14})\](?:\u2063| ◆)/g;
 const BIP85_REFERENCE_LABELS = Object.freeze({
   bip39: "BIP-39",
   wif: "WIF",
@@ -61,12 +62,37 @@ export function journalBip85ReferenceToken(application, fingerprint) {
   return `◈◈ BIP-85 · ${label} [${cleanFingerprint}]${KEY_REFERENCE_END}`;
 }
 
+function multisigReference(name, m, fingerprints) {
+  if (!Array.isArray(fingerprints) || fingerprints.length < 1 || fingerprints.length > 15 || !Number.isSafeInteger(m) || m < 1 || m > fingerprints.length) throw new Error("A multisig reference needs a valid threshold and between 1 and 15 co-signers.");
+  if (fingerprints.some((value) => typeof value !== "string" || !/^(?:[0-9a-f]{8})?$/i.test(value))) throw new Error("A co-signer reference needs an 8-character hexadecimal fingerprint or an unknown origin.");
+  let cleanName = String(name || "Multisig").replace(/[\r\n]+/g, " ").replace(/◆/g, "◇").replace(/▣/g, "□").replaceAll(KEY_REFERENCE_END, "").replace(/\s+/g, " ").trim().slice(0, 120) || "Multisig";
+  return { type: "multisig", name: cleanName, m, fingerprints: fingerprints.map((value) => value.toLowerCase()) };
+}
+
+export function journalMultisigReferenceToken(name, m, fingerprints) {
+  let reference = multisigReference(name, m, fingerprints);
+  return `${reference.fingerprints.map(() => "▣▣").join(" ")} ${reference.name} [${m}-of-${reference.fingerprints.length}: ${reference.fingerprints.map((value) => value || "????????").join(",")}]${KEY_REFERENCE_END}`;
+}
+
 function bip85ReferenceApplication(name) {
   let label = String(name || "").match(/^BIP-85 · (.+)$/)?.[1];
   return Object.keys(BIP85_REFERENCE_LABELS).find((app) => BIP85_REFERENCE_LABELS[app] === label) || "";
 }
 
 function referenceFromMatch(match) {
+  if (match[1].startsWith("▣▣")) {
+    let policy = match[3].match(/^(\d+)-of-(\d+): (.+)$/);
+    if (!policy) return null;
+    let fingerprints = policy[3].split(",").map((value) => value === "????????" ? "" : value);
+    if (fingerprints.length !== Number(policy[2]) || match[1].split(" ").length !== fingerprints.length) return null;
+    try {
+      let reference = multisigReference(match[2], Number(policy[1]), fingerprints);
+      // The visual mirror must preserve the editor's exact text positions.
+      // Noncanonical pasted text stays ordinary text instead of shrinking.
+      return reference.name === match[2] ? reference : null;
+    } catch { return null; }
+  }
+  if (!/^[0-9a-f]{8}$/i.test(match[3])) return null;
   let fingerprint = match[3].toLowerCase();
   if (match[1] === "◆◆") return { type: "key", name: match[2] || fingerprint, fingerprint };
   let application = bip85ReferenceApplication(match[2]);
@@ -99,6 +125,7 @@ export function journalTextFromRuns(runs) {
   let text = "";
   for (let run of runs) {
     if (run?.type === "text" && typeof run.text === "string") text += run.text;
+    else if (run?.type === "multisig") text += journalMultisigReferenceToken(run.name, run.m, run.fingerprints);
     else if (run?.type === "key" && run.source === "bip85") text += journalBip85ReferenceToken(run.application, run.fingerprint);
     else if (run?.type === "key") text += journalKeyReferenceToken(run.name, run.fingerprint);
     else throw new Error("The notebook contains an unsupported content item.");
@@ -115,12 +142,16 @@ export function createJournal() {
     nextPageId: 2,
     nextPageNumber: 2,
     log: [],
+    logDiscarded: 0,
     stateText: "",
   };
 }
 
 export function formatNotebook(text) {
   let cleaned = String(text ?? "").replace(KEY_REFERENCE_PATTERN, (match, marker, name, fingerprint) => {
+    let reference = referenceFromMatch([match, marker, name, fingerprint]);
+    if (!reference) return match;
+    if (reference.type === "multisig") return `[Multisig: ${reference.name} · ${fingerprint.toLowerCase()}]`;
     let cleanFingerprint = fingerprint.toLowerCase();
     if (marker === "◈◈") {
       let application = bip85ReferenceApplication(name);
@@ -133,8 +164,19 @@ export function formatNotebook(text) {
   return cleaned || "No notes.";
 }
 
+export function journalPageNotesText(page) {
+  let text = String(page?.notesText ?? ""), pending = page?.pendingStamp;
+  if (!pending || typeof pending.preview !== "string" || pending.preview.length !== 19 ||
+      typeof pending.stamp !== "string" || pending.stamp.length !== pending.preview.length ||
+      !Number.isSafeInteger(pending.start) || pending.start < 0 || pending.start > text.length ||
+      pending.start > 0 && text[pending.start - 1] !== "\n" ||
+      text.slice(pending.start) !== pending.stamp + "  ") return text;
+  return text.slice(0, pending.start) + pending.preview + "  ";
+}
+
 export function serializeNotebook(journal) {
   let pages = journal?.pages?.length ? journal.pages : createJournal().pages;
+  if (pages.length > NOTEBOOK_MAX_PAGES) throw new Error(`A notebook must contain between 1 and ${NOTEBOOK_MAX_PAGES} pages.`);
   let document = {
     format: NOTEBOOK_FORMAT,
     version: NOTEBOOK_VERSION,
@@ -143,7 +185,11 @@ export function serializeNotebook(journal) {
       number: Number.isSafeInteger(page.number) && page.number > 0 ? page.number : index + 1,
       name: String(page.name || `Page ${index + 1}`).slice(0, 120),
       style: normalizeJournalPageStyle(page.style),
-      content: journalNotebookRuns(page.notesText),
+      // Version 1 readers preserve a multisig token as ordinary text; newer
+      // readers recognize it without making old notebook backups unreadable.
+      content: journalNotebookRuns(journalPageNotesText(page)).map((run) => run.type === "multisig"
+        ? { type: "text", text: journalMultisigReferenceToken(run.name, run.m, run.fingerprints) }
+        : run),
     })),
   };
   for (const page of document.pages) {
@@ -194,6 +240,7 @@ export function parseNotebook(text) {
     nextPageId: pages.length + 1,
     nextPageNumber: pages.reduce((latest, page) => Math.max(latest, page.number), 0) + 1,
     log: [],
+    logDiscarded: 0,
     stateText: "",
   };
 }
@@ -216,7 +263,11 @@ export function mergeNotebookImport(journal, imported) {
   let importedPages = imported?.pages;
   if (!importedPages?.length) throw new Error(`A notebook must contain between 1 and ${NOTEBOOK_MAX_PAGES} pages.`);
   let currentActive = Math.max(0, Math.min(Number(journal?.activePage) || 0, currentPages.length - 1));
-  let replaceCurrent = !notebookPageHasContent(currentPages[currentActive]?.notesText);
+  let currentPage = currentPages[currentActive], pending = currentPage?.pendingStamp;
+  // Only runtime clock metadata identifies an untouched starter. Notebook
+  // parsers never restore it, so a historical timestamp remains user content.
+  let untouched = pending?.start === 0 && currentPage.notesText === pending.stamp + "  ";
+  let replaceCurrent = untouched || !notebookPageHasContent(currentPage?.notesText);
   let insertion = replaceCurrent ? currentActive : currentActive + 1;
   if (currentPages.length - Number(replaceCurrent) + importedPages.length > NOTEBOOK_MAX_PAGES) {
     throw new Error(`A notebook must contain between 1 and ${NOTEBOOK_MAX_PAGES} pages.`);
@@ -256,30 +307,59 @@ export function mergeNotebookImport(journal, imported) {
 
 export function formatNotebookPages(pages) {
   if (!pages?.length) return "No notes.";
-  if (pages.length === 1) return formatNotebook(pages[0].notesText);
-  return pages.map((page) => `${page.name || `Page ${page.number}`}\n${formatNotebook(page.notesText)}`).join("\n\n");
+  if (pages.length === 1) return formatNotebook(journalPageNotesText(pages[0]));
+  return pages.map((page) => `${page.name || `Page ${page.number}`}\n${formatNotebook(journalPageNotesText(page))}`).join("\n\n");
+}
+
+// Measure one bounded event at a time, including JSON escaping and UTF-8.
+// No file-supplied or cached byte count participates in retention decisions.
+function logEventBytes(event) {
+  const bytes = encoder.encode(JSON.stringify({ at: event.at, tool: event.tool, action: event.action, detail: event.detail }));
+  try { return bytes.length; } finally { wipeBytes(bytes); }
+}
+
+export function logUsage(journal) {
+  const events = journal.log || [];
+  let bytes = 2; // The array brackets, plus commas between events below.
+  for (let event of events) bytes += logEventBytes(event);
+  bytes += Math.max(0, events.length - 1);
+  const discarded = Number.isSafeInteger(journal.logDiscarded) && journal.logDiscarded >= 0 ? journal.logDiscarded : 0;
+  return { count: events.length, bytes, discarded };
 }
 
 export function appendLog(journal, { at, tool, action, detail } = {}, now = new Date()) {
-  journal.log.push({
-    at: at || formatStamp(now),
-    tool: String(tool || ""),
-    action: String(action || ""),
+  const event = {
+    at: String(at || formatStamp(now)).slice(0, 300),
+    tool: String(tool || "").slice(0, 300),
+    action: String(action || "").slice(0, 300),
     detail: String(detail || "").slice(0, 300),
-  });
-  while (journal.log.length > JOURNAL_LOG_LIMIT) journal.log.shift();
-  return journal.log[journal.log.length - 1];
+  };
+  journal.log.push(event);
+  let discarded = Number.isSafeInteger(journal.logDiscarded) && journal.logDiscarded >= 0 ? journal.logDiscarded : 0;
+  const removeOldest = () => {
+    const removed = journal.log.shift(), bytes = logEventBytes(removed);
+    for (let field of ["at", "tool", "action", "detail"]) removed[field] = "";
+    discarded = Math.min(Number.MAX_SAFE_INTEGER, discarded + 1);
+    return bytes;
+  };
+  while (journal.log.length > JOURNAL_LOG_LIMIT) removeOldest();
+  let bytes = logUsage(journal).bytes;
+  while (bytes > JOURNAL_LOG_MAX_BYTES && journal.log.length) bytes -= removeOldest() + (journal.log.length ? 1 : 0);
+  journal.logDiscarded = discarded;
+  return event;
 }
 
-export function formatLog(events) {
-  if (!events.length) return "No events yet.";
-  return events.map((event) => {
+export function formatLog(events, discarded = 0) {
+  const prefix = Number.isSafeInteger(discarded) && discarded > 0 ? `Earlier debug events discarded: ${discarded}.\n` : "";
+  if (!events.length) return prefix + "No events yet.";
+  return prefix + events.map((event) => {
     let detail = event.detail ? `  ${event.detail}` : "";
     return `${event.at}\t${event.tool}\t${event.action}${detail}`;
   }).join("\n");
 }
 
-export function snapshotSession(session) {
+export function snapshotSession(session, privateSpans = null) {
+  let marks = [];
   let lines = [
     "ENTROPYLAB SESSION STATE",
     `Updated: ${session.capturedAt || ""}`,
@@ -295,7 +375,10 @@ export function snapshotSession(session) {
       continue;
     }
     lines.push(`- ${key.name || "Key"}${key.fingerprint ? ` · fingerprint ${key.fingerprint}` : ""}`);
-    if (key.sheet) lines.push(key.sheet, "");
+    if (key.sheet) {
+      if (privateSpans && session.includePrivate) for (let span of key.sheetSpans || []) marks.push({ ...span, line: lines.length });
+      lines.push(key.sheet, "");
+    }
   }
   lines.push("", "MULTISIG");
   if (!session.msigs?.length) lines.push("(none)");
@@ -310,7 +393,10 @@ export function snapshotSession(session) {
   lines.push("", "BIP-85");
   if (!session.bip85?.length) lines.push("(none)");
   else for (let child of session.bip85) {
-    lines.push(`- ${child.name || "BIP-85"}${child.fingerprint ? ` · ${child.fingerprint}` : ""}${child.app ? ` · ${child.app}` : ""}${child.secret && session.includePrivate ? `\n  ${child.secret}` : ""}`);
+    let heading = `- ${child.name || "BIP-85"}${child.fingerprint ? ` · ${child.fingerprint}` : ""}${child.app ? ` · ${child.app}` : ""}`;
+    let secret = session.includePrivate ? child.secret : "";
+    if (privateSpans && secret) marks.push({ line: lines.length, start: heading.length + 3, end: heading.length + 3 + secret.length, kind: "value" });
+    lines.push(heading + (secret ? `\n  ${secret}` : ""));
   }
   lines.push("", "SILENT PAYMENTS");
   lines.push(session.sp?.derived ? `- fingerprint ${session.sp.fingerprint || "unknown"}${session.sp.address ? `\n  ${session.sp.address}` : ""}` : "- not derived");
@@ -332,7 +418,100 @@ export function snapshotSession(session) {
   else if (session.psbt?.loaded && session.psbt?.historyVerdict === "clean") lines.push("- cross-session comparison: no matching key and r pair in earlier records");
   else if (session.psbt?.loaded && session.psbt?.historyVerdict === "incomplete") lines.push("- cross-session comparison: incomplete or no earlier records");
   lines.push("", "This snapshot lives in this page until you download it. Closing the tab discards it.");
+  if (privateSpans) {
+    let offset = 0, next = 0;
+    for (let [line, text] of lines.entries()) {
+      while (marks[next]?.line === line) {
+        let mark = marks[next++];
+        privateSpans.push({ start: offset + mark.start, end: offset + mark.end, kind: mark.kind });
+      }
+      offset += text.length + 1;
+    }
+  }
   return lines.join("\n");
+}
+
+// Older backups contain report text only. Recognize the existing display
+// grammar for coloring, not to validate keys, grant reveal/copy access or
+// restore application state. Unknown content stays literal and unclassified.
+export function snapshotPrivateSpans(text) {
+  if (typeof text !== "string" || text.length > JOURNAL_MAX_TEXT_LENGTH) return [];
+  const spans = [], sections = new Set(["KEYS", "MULTISIG", "BIP-85", "SILENT PAYMENTS", "PSBT"]);
+  const blockLabels = new Set(["YOUR SEED PHRASE", "SEEDQR DIGITS", "BIP39 ENTROPY HEX", "MASTER SEED HEX (BIP39 PBKDF2, 512 bits)"]);
+  let session = false, included = false, section = "", recovery = false, privateRecovery = false;
+  let nextValue = false, wifRows = false, childValue = false, offset = 0;
+  const mark = (kind, start, end) => { if (end > start) spans.push({ kind, start, end }); };
+  while (offset < text.length) {
+    let start = offset, newline = text.indexOf("\n", start), end = newline < 0 ? text.length : newline;
+    offset = newline < 0 ? text.length : newline + 1;
+    if (text[end - 1] === "\r") end--;
+    let line = text.slice(start, end);
+    if (line === "ENTROPYLAB SESSION STATE") {
+      session = true; included = false; section = ""; recovery = false; privateRecovery = false;
+      nextValue = false; wifRows = false; childValue = false;
+      continue;
+    }
+    if (line === "ENTROPYLAB — RECOVERY SHEET") {
+      recovery = true; privateRecovery = false; section = "";
+      nextValue = false; wifRows = false; childValue = false;
+      continue;
+    }
+    if (session && !section && line.startsWith("Private material: ")) {
+      included = line === "Private material: INCLUDED";
+      continue;
+    }
+    if (sections.has(line)) {
+      section = session ? line : ""; recovery = false; privateRecovery = false;
+      nextValue = false; wifRows = false; childValue = false;
+      continue;
+    }
+    if (line === "WATCH-ONLY WALLET DATA" || line === "PUBLIC KEYS AND ADDRESSES" || line === "PRIVATE RECOVERY MATERIAL OMITTED" || line === "NO PRIVATE RECOVERY MATERIAL") {
+      recovery = false; privateRecovery = false; nextValue = false; wifRows = false; childValue = false;
+      continue;
+    }
+    if (recovery && line === "PRIVATE RECOVERY MATERIAL") {
+      privateRecovery = true; nextValue = false; wifRows = false;
+      mark("label", start, end);
+      continue;
+    }
+    if (session && included && section === "BIP-85") {
+      if (childValue && line.startsWith("  ") && line.slice(2).trim()) mark("value", start + 2, end);
+      childValue = line.startsWith("- ") && line.length > 2;
+      continue;
+    }
+    if (!privateRecovery) continue;
+    if (blockLabels.has(line) || /^MASTER [XYZTUV]PRV$/.test(line) || /^IMPORTED (?:[XYZTUV]PRV|EXTENDED PRIVATE KEY)$/.test(line)) {
+      mark("label", start, end);
+      nextValue = true; wifRows = false;
+      continue;
+    }
+    if (line.startsWith("-- ") && line.includes(" (") && line.endsWith(") PRIVATE ACCOUNT MATERIAL --")) {
+      mark("label", start, end);
+      nextValue = false; wifRows = false;
+      continue;
+    }
+    if (/^(?:RECEIVE|CHANGE|CUSTOM BRANCH [0-9]+)-ADDRESS PRIVATE KEYS \(WIF\)$/.test(line)) {
+      mark("label", start, end);
+      nextValue = false; wifRows = true;
+      continue;
+    }
+    const inline = /^(WIF compressed:|WIF uncompressed:|Hex private key:|Mini key:|(?:Account|SLIP-132) [xyztuvYZUV]prv:|Spending (?:receive|change|custom branch [0-9]+) descriptor:)( +)/.exec(line);
+    if (inline) {
+      mark("label", start, start + inline[1].length);
+      if (line.slice(inline[0].length).trim()) mark("value", start + inline[0].length, end);
+      nextValue = false; wifRows = false;
+      continue;
+    }
+    if (nextValue) {
+      if (line.trim()) mark("value", start, end);
+      nextValue = false;
+    } else if (wifRows) {
+      const row = /^  [0-9]+  m(?:\/[0-9]+'?)*  /.exec(line);
+      if (row && line.slice(row[0].length).trim()) mark("value", start + row[0].length, end);
+      else wifRows = false;
+    }
+  }
+  return spans;
 }
 
 export function wipeJournal(journal) {
@@ -346,6 +525,7 @@ export function wipeJournal(journal) {
   journal.nextPageId = 2;
   journal.nextPageNumber = 2;
   journal.log.length = 0;
+  journal.logDiscarded = 0;
   journal.stateText = "";
   return journal;
 }
@@ -373,6 +553,10 @@ export const JOURNAL_MAX_ITERATIONS = 10_000_000; // a crafted file must not han
 export const JOURNAL_MAX_ENTRIES = 1000;
 export const JOURNAL_MAX_FILE_LENGTH = 4 * 1024 * 1024;
 export const JOURNAL_MAX_TEXT_LENGTH = 1024 * 1024;
+// Complete documents need room beyond a valid maximum-size legacy journal.
+// This logical text cap does not replace the encrypted file's byte cap:
+// UTF-8 expansion and the hex envelope can exhaust that cap sooner.
+export const JOURNAL_BACKUP_MAX_TEXT_LENGTH = 2 * 1024 * 1024;
 export const JOURNAL_SALT_PREFIX = "entropylab-journal-salt-v1:";
 export const IV_BYTES = 12;
 export const METHODS = Object.freeze(["dice", "coin", "hex", "brain", "seed", "cards"]);
@@ -758,13 +942,15 @@ export function parseFile(text) {
 }
 
 export function parseDocument(plain) {
-  if (plain.length > JOURNAL_MAX_TEXT_LENGTH) throw new Error("The journal file is too large to open.");
+  if (plain.length > JOURNAL_BACKUP_MAX_TEXT_LENGTH) throw new Error("The journal file is too large to open.");
   let parsed;
   try {
     parsed = JSON.parse(plain);
   } catch {
+    if (plain.length > JOURNAL_MAX_TEXT_LENGTH) throw new Error("The journal file is too large to open.");
     throw new Error("The journal file is corrupt.");
   }
+  if (parsed?.version !== JOURNAL_BACKUP_VERSION && plain.length > JOURNAL_MAX_TEXT_LENGTH) throw new Error("The journal file is too large to open.");
   if (!parsed || ![JOURNAL_VERSION, JOURNAL_BACKUP_VERSION].includes(parsed.version) || !Array.isArray(parsed.entries)) {
     throw new Error("The journal file is corrupt.");
   }
@@ -831,13 +1017,21 @@ function parseBackup(value) {
       throw new Error("The journal backup has an invalid session snapshot.");
     }
     backup.snapshot = { text: value.snapshot.text, includePrivate: value.snapshot.includePrivate };
-    if (!Array.isArray(value.log) || value.log.length > JOURNAL_LOG_LIMIT) throw new Error("The journal backup has an invalid session log.");
-    backup.log = value.log.map((event) => {
+    if (!Array.isArray(value.log) || value.log.length > JOURNAL_LOG_LIMIT) throw new Error("The journal backup has an invalid debug log.");
+    const discarded = Object.hasOwn(value, "logDiscarded") ? value.logDiscarded : 0;
+    if (!Number.isSafeInteger(discarded) || discarded < 0) throw new Error("The journal backup has an invalid discarded debug event count.");
+    backup.logDiscarded = discarded;
+    backup.log = [];
+    let logBytes = 2;
+    for (let event of value.log) {
       if (!record(event) || ["at", "tool", "action", "detail"].some((field) => typeof event[field] !== "string" || event[field].length > 300)) {
-        throw new Error("The journal backup has an invalid session log event.");
+        throw new Error("The journal backup has an invalid debug log event.");
       }
-      return { at: event.at, tool: event.tool, action: event.action, detail: event.detail };
-    });
+      const saved = { at: event.at, tool: event.tool, action: event.action, detail: event.detail };
+      backup.log.push(saved);
+      logBytes += logEventBytes(saved) + (backup.log.length > 1 ? 1 : 0);
+      if (logBytes > JOURNAL_LOG_MAX_BYTES) throw new Error(`The journal backup debug log exceeds the ${JOURNAL_LOG_MAX_BYTES / 1024} KiB limit. Open it in the version that saved it to export or clear the log first.`);
+    }
     return backup;
   } catch (error) {
     wipeBackup(backup);
@@ -910,9 +1104,10 @@ export async function sealBackup(doc, keys, backup) {
         activeKey: saved.activeKey,
         snapshot: saved.snapshot,
         log: saved.log,
+        logDiscarded: saved.logDiscarded,
       },
     });
-    if (plain.length > JOURNAL_MAX_TEXT_LENGTH) throw new Error("The journal is too large to save as one file.");
+    if (plain.length > JOURNAL_BACKUP_MAX_TEXT_LENGTH) throw new Error("The journal is too large to save as one file.");
     return await sealPlainText(plain, keys);
   } finally {
     wipeDocument(normalized);

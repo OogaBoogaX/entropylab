@@ -53,7 +53,7 @@ const DECLARED = new Set([
   "hodlT", "hodlTText", "hodlTAttr", "matchOwnership", "indexHdKey", "indexSingleKey", "pathLabel",
   "hodlCompareSchnorrNonces", "hodlParseSchnorr", "hodlTapKeySigs", "hodlTapScriptPathSigs", "hodlTapScriptSigs", "hodlTapSighashProblems", "hodlTapWitnessShape",
   "inspectPsbtInscriptions", "describeEnvelope", "parseOpReturn", "describeOpReturn",
-  "hodlPublicValueHtml", "PSBT_RENDER_LIMIT",
+  "hodlPublicValueHtml", "PSBT_RENDER_LIMIT", "hodlRenderAnnotatedPrivateText", "hodlJournalSnapshotPrivateSpans",
   // Harness seams from the prelude below (no browser chrome; controllable session).
   "document", "hodlNetworkDefault", "hodlNetworkChoice", "hodlPsbtPriv", "hodlPsbtHd", "hodlPsbtRecordNonceInspection",
 ]);
@@ -119,6 +119,8 @@ import { inspectPsbtInscriptions, describeEnvelope } from "../src/js/inscription
 import { parseOpReturn, describeOpReturn } from "../src/js/opreturn.js";
 import { publicValueHtml as hodlPublicValueHtml } from "../src/js/public-data.js";
 import { PSBT_RENDER_LIMIT, cappedHtml, renderBudget } from "../src/js/psbt-viz.js";
+import { renderAnnotatedPrivateText as hodlRenderAnnotatedPrivateText } from "../src/js/private-data.js";
+import { snapshotPrivateSpans as hodlJournalSnapshotPrivateSpans } from "../src/js/journal.js";
 const document = { getElementById: () => null };
 const hodlNetworkDefault = "mainnet";
 const hodlNetworkChoice = "mainnet";

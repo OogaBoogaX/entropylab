@@ -2,7 +2,7 @@ import { t } from "./i18n.js";
 import { createModal } from "./modal.js";
 
 // Downloading starts a browser operation; it cannot prove that the file was
-// saved. Only a separate, explicit Discard clears the Journal.
+// saved. Only a separate, explicit confirmation clears the selected scope.
 export const initJournalClearConfirm = ({ onDownload, onDiscard }) => {
   const modal = createModal({
     id: "journal-clear-modal",
@@ -23,12 +23,8 @@ export const initJournalClearConfirm = ({ onDownload, onDiscard }) => {
   });
   const find = (id) => modal.overlay.querySelector(`#journal-clear-${id}`);
   const download = find("download"), discard = find("discard"), cancel = find("cancel"), status = find("status");
-  find("title").textContent = t("Clear journal?");
-  find("message").textContent = t("Discard removes Journal notes, saved records, detached and archived key inputs, snapshots, and activity. Anything you have not backed up will be lost. Keys still open in Key Station remain there; use End Session to clear the whole page.");
-  download.textContent = t("Download backup first");
-  discard.textContent = t("Discard");
   cancel.textContent = t("Cancel");
-  let request = 0, busy = false;
+  let request = 0, busy = false, pending = null;
   const setBusy = (value) => {
     busy = value;
     download.disabled = value;
@@ -36,13 +32,25 @@ export const initJournalClearConfirm = ({ onDownload, onDiscard }) => {
   };
   const hide = (options) => {
     request++;
+    pending = null;
     setBusy(false);
     status.textContent = "";
     modal.hide(options);
   };
-  const show = (opener) => {
+  const show = (opener, options = {}) => {
     if (modal.isOpen()) return;
     request++;
+    pending = {
+      onDownload, onDiscard, isCurrent: () => true,
+      preparingMessage: t("Preparing your backup…"),
+      successMessage: t("Backup download started. Check that the file was saved before choosing Discard. Your Journal is still open."),
+      errorMessage: t("The backup was not downloaded. Your Journal is still open. Choose Cancel to resolve the error and try again."),
+      ...options,
+    };
+    find("title").textContent = options.title ?? t("Clear journal?");
+    find("message").textContent = options.message ?? t("Discard removes Journal notes, saved records, detached and archived key inputs, snapshots, and activity. Anything you have not backed up will be lost. Keys still open in Key Station remain there; use End Session to clear the whole page.");
+    download.textContent = options.downloadLabel ?? t("Download backup first");
+    discard.textContent = options.discardLabel ?? t("Discard");
     status.textContent = "";
     setBusy(false);
     modal.show(cancel, opener);
@@ -50,25 +58,29 @@ export const initJournalClearConfirm = ({ onDownload, onDiscard }) => {
   cancel.addEventListener("click", () => hide());
   discard.addEventListener("click", () => {
     if (!modal.isOpen() || busy) return;
+    const action = pending?.isCurrent() ? pending.onDiscard : null;
     hide();
-    onDiscard();
+    action?.();
   });
   download.addEventListener("click", async () => {
     if (!modal.isOpen() || busy) return;
+    if (!pending?.isCurrent()) { hide(); return; }
+    const scope = pending;
     const current = ++request;
-    const isCurrent = () => current === request && modal.isOpen();
+    const isCurrent = () => current === request && modal.isOpen() && scope.isCurrent();
     setBusy(true);
     cancel.focus();
-    status.textContent = t("Preparing your backup…");
+    status.textContent = scope.preparingMessage;
     let saved = false;
     try {
-      saved = await onDownload(isCurrent);
+      saved = await scope.onDownload(isCurrent);
     } catch {}
-    if (!isCurrent()) return;
+    if (!isCurrent()) {
+      if (current === request && modal.isOpen()) hide();
+      return;
+    }
     setBusy(false);
-    status.textContent = saved
-      ? t("Backup download started. Check that the file was saved before choosing Discard. Your Journal is still open.")
-      : t("The backup was not downloaded. Your Journal is still open. Choose Cancel to resolve the error and try again.");
+    status.textContent = saved ? scope.successMessage : scope.errorMessage;
   });
   return { show, hide };
 };

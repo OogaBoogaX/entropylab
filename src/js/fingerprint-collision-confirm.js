@@ -26,8 +26,9 @@ export const fingerprintCollisionCardHtml = () => `
     </div>
   </div>`;
 
-// Builds the one shared overlay. `open(fingerprint, onProceed, onCancel)`
-// shows the warning for that fingerprint; exactly one of the callbacks runs.
+// `open(fingerprint, onProceed?, onCancel?)` returns a boolean decision
+// promise and retains the optional callbacks. Replacement, dismissal, and
+// close cancel exactly once; only Proceed accepts the current request.
 export const initFingerprintCollisionConfirm = () => {
   if (document.getElementById("fingerprint-collision-overlay")) return null;
   const modal = createModal({
@@ -48,19 +49,33 @@ export const initFingerprintCollisionConfirm = () => {
   cancelButton.textContent = t("Cancel");
   let pending = null;
 
-  const settle = (proceed) => {
-    const callbacks = pending;
-    pending = null;
-    modal.hide();
-    (proceed ? callbacks?.onProceed : callbacks?.onCancel)?.();
+  const complete = (request, accepted) => {
+    request.resolve(accepted);
+    (accepted ? request.onProceed : request.onCancel)?.();
   };
+  const settle = (accepted, options) => {
+    const request = pending;
+    if (!request) return;
+    pending = null;
+    modal.hide(options);
+    complete(request, accepted);
+  };
+  const close = (options) => settle(false, options);
   const open = (fingerprint, onProceed, onCancel) => {
-    if (pending) settle(false);
+    let resolve;
+    const decision = new Promise((done) => { resolve = done; });
+    const request = { onProceed, onCancel, resolve }, previous = pending;
+    pending = request;
+    if (previous) {
+      modal.hide();
+      complete(previous, false);
+    }
+    if (pending !== request) return decision;
     message.textContent = t("Another wallet open in this session also has fingerprint {fingerprint}. A fingerprint is only 4 bytes, so different wallets can share one: these are separate wallets.", { fingerprint });
-    pending = { onProceed, onCancel };
     modal.show(proceedButton);
+    return decision;
   };
   proceedButton.addEventListener("click", () => settle(true));
   cancelButton.addEventListener("click", () => settle(false));
-  return { open, isOpen: modal.isOpen };
+  return { open, close, isOpen: modal.isOpen };
 };

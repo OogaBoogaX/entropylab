@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { KEY_VAULT_MAX_KEYS, keyVaultIdentity } from "../src/js/keymanager.js";
 
 const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
 const originalFields = { seed: "published BIP39 vector 1", pass: "", derivationPath: "m/84'/0'/0'/{0-1}/{0-9}" };
@@ -22,11 +23,12 @@ function harness() {
     hodlReleaseKeyConsumers() {},
     hodlSelectKey: index => { context.hodlActiveKey = index; },
     hodlSelectLab: () => { context.hodlActiveKey = 0; },
-    hodlKeyManagerPending: [], hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "",
+    hodlKeyManagerPending: [], hodlKeyManagerIgnored: [], hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "",
+    hodlKeyVaultMaxKeys: KEY_VAULT_MAX_KEYS, keyVaultIdentity,
     hodlTText: (value, vars) => value.replace("{name}", String(vars?.name ?? "")),
     hodlT: (value, vars) => value.replace("{n}", String(vars?.n ?? "")).replace("{suffix}", String(vars?.suffix ?? "")),
   });
-  for (const name of ["hodlNormalizeKeyName", "hodlKeyNameTaken", "hodlDefaultKeyName", "hodlCloneDerivedKey", "hodlKeyWalletIdentity", "hodlCommitDerivedKey", "hodlFillLabFromKey", "hodlEditKeyInputs", "hodlStoredPassphraseBytes"]) {
+  for (const name of ["hodlNormalizeKeyName", "hodlKeyNameTaken", "hodlDefaultKeyName", "hodlCloneDerivedKey", "hodlKeyWalletIdentity", "hodlKeyManagerStates", "hodlKeyManagerCapacityError", "hodlCommitDerivedKey", "hodlFillLabFromKey", "hodlEditKeyInputs", "hodlStoredPassphraseBytes"]) {
     const source = app.match(new RegExp(`^function ${name}\\([^]*?^}`, "m"));
     assert.ok(source, name);
     vm.runInContext(source[0], context);

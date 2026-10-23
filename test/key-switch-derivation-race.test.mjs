@@ -49,6 +49,7 @@ const app = await (async () => {
       {
         stubs: {
           HodlDerivationCancelledError,
+          hodlJournalKeyDerivation: null,
           // Load-time DOM touches (the shared var statement builds elements).
           hodlElement: () => inert,
           // Workspace plumbing.
@@ -143,7 +144,7 @@ const app = await (async () => {
           hodlAssertPrivateKeyKind: unused("hodlAssertPrivateKeyKind"),
           hodlSingleKeyWallet: unused("hodlSingleKeyWallet"),
         },
-        settable: ["hodlKeys", "hodlActiveKey", "hodlMsigs", "hodlActiveMsig", "hodlKeyMode"],
+        settable: ["hodlKeys", "hodlActiveKey", "hodlMsigs", "hodlActiveMsig", "hodlKeyMode", "hodlWorkspace"],
       },
     );
   } finally {
@@ -217,6 +218,20 @@ test("an undisturbed derivation still commits to its own key", async () => {
   assert.equal(keys[0].result, wallet, "the result committed to the key it started from");
   assert.equal(keys[1].result, null, "the other key was never touched");
   assert.deepEqual(keyCommits, ["key"], "the commit ran once, on the originating key");
+});
+
+test("key completion Debug events keep their owner when another workspace is selected", async () => {
+  for (const tool of ["calc", "journal"]) {
+    keyStation(1); journal.length = 0;
+    app.__set.hodlWorkspace(tool);
+    const wallet = { kind: "wallet", network: "mainnet", masterFingerprint: "aaaa0002" };
+    const { enteredPromise, release } = gatedDerivation(wallet);
+    const pending = app.hodlCalculateKey({ setTotal() {}, step() {} }, "derive", { logTool: tool });
+    await enteredPromise;
+    app.__set.hodlWorkspace("psbt");
+    release(); assert.equal(await pending, true);
+    assert.deepEqual(journal.filter(([action]) => action === "derive"), [["derive", "aaaa0002", tool]]);
+  }
 });
 
 test("switching multisig tabs mid-build cancels the commit instead of corrupting the switched-to wallet", async () => {

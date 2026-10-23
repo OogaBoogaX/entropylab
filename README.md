@@ -250,7 +250,17 @@ an explicit error before those pairs are allocated.
   behind a reveal toggle. Decoding only: the tab never creates seeds.
 - A session **Journal** has three working areas: **Notes**, **Keys**, and
   **Session**. Notes opens first; Keys holds recoverable key inputs, and
-  Session groups the current snapshot and activity log in separate disclosures.
+  Session shows the current report first, saved historical snapshots in their
+  own disclosure, and the **Debug log** separately. Current and saved reports
+  have independent reveal, copy, and export controls; revealed labels use the
+  same red cue as private data elsewhere. In live and saved snapshots, private field
+  labels are red and their values blue, using the same styles as derived keys;
+  public fields keep their ordinary styling. Saved snapshots, including older
+  backups and files opened through **Open report**, highlight recognized report
+  fields without changing their text. Unrecognized text stays plain; coloring
+  does not verify saved contents. Copy and export preserve the original text.
+  Multisig reports include public
+  descriptors, paths, and displayed addresses.
   **Create journal** and **Open backup** are the starting choices. Section
   tabs and global controls stay hidden until the user creates a journal, with
   or without a password, or opens an existing backup. The create form reports
@@ -261,7 +271,7 @@ an explicit error before those pairs are allocated.
   actions remain available alongside protection and save status in every area.
   The complete backup contains every notes page and its formatting, all
   managed and archived key inputs, saved historical records, the session
-  snapshot, and the activity log. The complete backup includes the current
+  snapshot, and the debug log. The complete backup includes the current
   private recovery snapshot even when the on-screen snapshot is concealed.
   Changes to notes and key inputs mark the
   Journal as unsaved; edits made while a backup is encrypting remain unsaved.
@@ -280,61 +290,161 @@ an explicit error before those pairs are allocated.
   browser; download a file to keep it. Closing the page discards the sitting.
   Opening a complete backup restores its Journal sections together. Saved
   snapshots are historical text, concealed until explicitly revealed; they do
-  not recreate live wallets, multisig sessions, or PSBTs. Old entry-only files
-  remain readable, and their records appear in Keys only when present.
+  not recreate live wallets, multisig sessions, or PSBTs.
+  **Open report** reads exported snapshot and Debug log files using the open
+  Journal's password setting. Its read-only viewer starts concealed and never
+  installs data into tools or the Journal. Closing the viewer, automatic
+  concealment, or clearing the Journal releases its report text. Session offers
+  **Remove saved snapshot** when history is present. Confirmation removes
+  that history from this Journal and future backups while preserving current
+  session data, notes, key inputs, and existing downloaded files; Cancel keeps
+  it. Old entry-only files remain readable, and their records appear in Keys
+  only when present.
+  Existing saved records can be edited. Save or cancel an open record edit
+  before downloading a complete backup. Changing its recovery inputs removes
+  the old wallet association; changing its label or notes preserves it.
   Journal no longer creates manual entries or duplicate records on each
   derivation. Complete backups retain historical records and require the
   updated reader (payload version 3).
-  Separate section import/export controls live in secondary disclosures.
+  Section-only exports remain secondary controls. **Clear debug log** asks for
+  confirmation; Cancel keeps the log. Confirming removes its events and leaves
+  one event marking the clear. Pending log exports cannot download the old log
+  after it is cleared. The log follows new events only while the reader is
+  already at the bottom.
   Recovery exports use the Journal's password setting; a password protects
   them, while files created without one have no access protection. The
-  diagnostic activity log can be exported as plain text.
+  debug log export follows the same password setting.
   The **Keys** area exports all available source inputs and archived inputs
-  into an `.elkeys` file. It uses the open Journal's password setting without
-  another password prompt, random salt, or random nonce. Imports are
-  **unverified inputs**, not ready-to-use wallets. Choose **Load inputs to
-  derive**, review the inputs/settings, then derive each key in Key Station.
-  Cached addresses, private outputs, and fingerprints from legacy files are
-  discarded; only fresh derivation can match an existing key. New key files
-  use input-only format version 2; version 1 files remain importable.
-  Cached-output-only files cannot replace missing source inputs. Archiving is
-  available for detached inputs and does not unload a live Key Station key.
+  into an `.elkeys` file. Its summaries use the app's shared text styles;
+  public fingerprints, paths, and keys copy on click with inline feedback.
+  Archived metadata wraps to keep the complete path readable.
+  The file uses the open Journal's password setting without
+  another password prompt, random salt, or random nonce. **Import key inputs**
+  is available beside the Key Station action and previews the input names and
+  archived count before changing the Journal. Encrypted key-input imports
+  must use the current Journal's password; importing with a separate source
+  password is not yet supported.
+  **Import and derive** adds the new inputs and derives them in order, using
+  each input's saved network; archived inputs stay archived. Canceling the
+  preview leaves the Journal unchanged. An archive-only file imports its
+  archived inputs without starting derivation. **Derive all pending** retries
+  outstanding inputs, and **Review inputs** loads one into Key Station for
+  editing, asking before replacing an unfinished draft. The saved network
+  appears beside Derive Key and follows an explicit Network-menu change.
+  Archiving the source or clearing Journal does not change that reviewed
+  draft's network or bypass its duplicate checks.
+  If Journal has been cleared and derivation reuses an existing key, the
+  reviewed inputs remain in the Key Station draft.
+  Imports remain **unverified inputs** until fresh derivation succeeds.
+  Cached addresses, private outputs, fingerprints, and claimed identities
+  from legacy files are discarded. New key files use input-only format
+  version 2; version 1 files remain importable. Cached outputs cannot replace
+  missing source inputs. A present passphrase must be text; malformed values
+  reject the whole file before preview or installation.
+  A freshly derived full-root identity (or compressed public key for an
+  imported single key) and matching setup reuse the existing
+  station key unchanged and archive the imported source inputs. The setup
+  comparison includes network, scripts, paths, ranges, and available recovery
+  material. If reviewed inputs were corrected before reusing an existing key,
+  the original inputs and a separately labeled reviewed copy are retained in
+  the archive. If the same wallet has a different setup, choose **Keep existing**
+  to leave the imported inputs pending, **Add separate setup**, or **Stop
+  deriving** to stop the batch. Account-level imports without a comparable
+  root identity get separate station tabs.
+  Failed and unprocessed inputs remain pending; stopping a batch keeps keys
+  already added. Low-entropy and fingerprint-collision warnings still require
+  their usual decisions. The batch preserves and restores the unfinished Key
+  Station draft and previous station selection. Newly derived imported keys
+  keep their names, with a numbered suffix if another key uses the same name;
+  reusing an existing setup keeps that station key's name.
+  Archiving is available for detached inputs and does not unload a live Key
+  Station key. **Restore and derive** returns archived inputs to the active
+  list and runs the same derivation and duplicate checks as import. Failed
+  or stopped inputs stay available for review and retry. Archive rows show
+  the saved method, network, and path to distinguish input sets before use.
   Deleting a Key Station tab while a Journal is open removes it from the
   station while retaining its inputs in the Journal.
-  Notes is a plain text editor with named pages. Pages use
+  **Open all saved keys** returns multiple verified, detached keys to Key
+  Station together, without deriving them again or changing pending inputs.
+  Notes is a plain text editor with up to 100 named pages. Pages use
   the Key Station's numbered naming convention, can be added or removed with
   the +/− controls, and can be renamed by activating the selected page again
   or pressing F2. Default names such as `Page 1` shorten to `P1` in narrow
-  windows. Appearance controls set each page's
-  typeface, text size, and line spacing. Its key picker lists the currently
-  derived Key Station keys with their LifeHashes; choosing one inserts a
-  public inline reference with a line-height LifeHash and master fingerprint.
+  windows. Notes defaults to the same monospace input text as the rest of
+  the app. Appearance controls can customize each page's
+  typeface, text size, and line spacing. The editor can be resized vertically.
+  Its key picker lists derived Key Station keys, multisig wallets, and BIP-85
+  children with their LifeHashes. Choosing one inserts a public inline
+  reference; multisig references retain the wallet name, threshold, and ordered
+  co-signer fingerprints, with unknown origins explicitly marked.
   Notes can import plain notebook JSON or a Journal-format export while the
   matching Journal is open.
-  New pages start empty. **New note** or **Ctrl/⌘+Enter** appends this
-  computer's current local date and time in a new block at the end of the
+  Switching pages retains each page's caret, selection, and scroll position
+  for this sitting. Invalid or duplicate page names show a correction message.
+  Names and note text remain exactly as entered when the interface language
+  changes. Section imports accept encrypted exports up to 4 MiB; canceling
+  an import or rejecting a file does not mark saved content as changed.
+  New pages start with this computer's current local date and time.
+  A placeholder beside each live timestamp disappears when editing begins;
+  it is never included in copied notes or backups.
+  **Ctrl/⌘+Enter** appends another timestamped block at the end of the
   page, preserving existing text and separating notes with a blank line.
   The new timestamp ticks each second until the first edit on that page,
   including typing, paste, deletion, undo, or starting input composition.
   Clicking, selecting, and scrolling leave it ticking without moving the
-  caret or changing backup status. Imported timestamps stay fixed.
+  caret or changing backup status. Deleting a note's entire body while leaving
+  its final timestamp restarts that clock; Undo can recover the deleted text.
+  Imported timestamp-only notes stay fixed until explicitly edited. Importing
+  onto an untouched starter page replaces that starter instead of adding a
+  redundant page.
   Enter continues the current note. Typing, clicking, and deleting never
-  insert timestamps; timestamps already present in older backups remain
-  editable text. Key
+  insert timestamps. Each line-start timestamp and its two following spaces
+  are protected from partial edits, including timestamps in older backups.
+  Select its complete note, through the text before the next timestamp, to
+  delete it; selecting all clears the page. Body text and timestamp selections
+  remain freely copyable. Backspace immediately after an empty timestamp
+  removes the complete timestamp and its two spaces together; a fully cleared
+  page stays empty. Key
   references still select and delete as complete units. Moving the pointer over the editor briefly
   reveals its clipboard button at the right edge; the same control is reachable
-  from the keyboard and copies the active page as readable text. The separate
+  from the keyboard and copies the active page as readable text.
+  Notes and Debug log copy controls read their current text only when clicked;
+  they do not retain another copy of it on the button. The separate
   notes export encrypts versioned UTF-8 JSON containing page names, styles,
-  and structured text/key runs; it
-  stores only the key's display name and public fingerprint, then regenerates
-  the LifeHash locally when that file is uploaded in a later session. Older
+  and structured text/key runs. References contain public descriptive metadata,
+  never key material or instructions to restore a wallet. Multisig references
+  use text runs so older notebook readers preserve their contents.
+  LifeHashes are regenerated locally when that file is uploaded in a later session. Older
   `.txt` notes can also be uploaded as a single page. The Journal also holds
-  a read-only summary that updates as the sitting changes and a debug log of
-  meaningful dashboard actions: tool and station changes, calculations and
-  failures, safe setting changes, copies, imports, downloads, clears, and PSBT
-  structural edits. The log records public fingerprints where useful, but never
-  secret-field values, filenames, note bodies, PSBT bytes, or individual entry
-  keystrokes. It can be copied from its output field or downloaded. Nothing is stored in the
+  a read-only summary that updates as the sitting changes and a detailed debug
+  log: navigation, appearance, tool and station changes, calculations and
+  failures, safe setting changes, privacy toggles, copies, imports, downloads,
+  clears, and PSBT structural edits. It retains up to **512 KiB of UTF-8 JSON
+  event data or 10,000 events**, whichever comes first. At the limit it removes
+  the oldest events and shows how many were removed. The reader shows 400
+  events at a time, with Earlier, Newer, and Latest events controls; reading
+  earlier history does not change what gets copied or exported. Opening a
+  complete backup continues its saved history and its discarded-event count.
+  Backups from the original 400-event Journal remain readable within the
+  512 KiB log limit; an unusually large older log is rejected explicitly,
+  without trimming it. Backups with more events require this updated reader.
+  The existing overall backup and
+  file-size limits still apply. New events record public
+  fingerprints where useful, but omit secret-field values, raw derivation-path
+  input, filenames, note bodies, PSBT bytes, and individual entry keystrokes.
+  Imported event text is unverified and may contain sensitive information.
+  **Copy debug log** copies all retained events as plain text. **Export debug
+  log** downloads an encrypted report using the Journal's password setting.
+  Both capture the log when clicked, before adding their own outcome events,
+  and include a notice if older events have been removed.
+  Requests and completed operations are distinguished; a download starting does
+  not confirm that the file was saved. The exported report keeps the existing
+  format and remains readable through **Open report**. **Clear debug log**
+  offers **Export first**, **Clear**, and **Cancel**. Export first keeps the
+  log and dialog open so you can check the downloaded file before explicitly
+  clearing. Clear removes only the log and its discarded count, then records
+  one clear event. Cancelling an export still being prepared prevents its
+  download handoff. Nothing is stored in the
   browser; download a file to keep it. Closing the page discards the sitting.
 - Runs a quick barrage of startup sanity checks on the host browser (secure
   context, CSPRNG, BigInt, UTF-8 encoding, NFKD, and WebAssembly). If any

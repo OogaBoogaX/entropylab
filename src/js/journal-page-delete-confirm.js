@@ -19,18 +19,18 @@ export const initJournalPageDeleteConfirm = () => {
   });
   const find = (id) => modal.overlay.querySelector(`#journal-page-delete-${id}`);
   const confirm = find("confirm"), cancel = find("cancel");
-  find("title").textContent = t("Delete this note page?");
-  find("message").textContent = t("This removes the page and its contents from this Journal. Downloaded backups are unchanged.");
-  confirm.textContent = t("Delete page");
   cancel.textContent = t("Cancel");
   let pending = null;
   const hide = (options) => {
     pending = null;
     modal.hide(options);
   };
-  const show = ({ opener, onConfirm }) => {
+  const show = ({ opener, onConfirm, title, message, confirmLabel }) => {
     if (modal.isOpen()) return;
     pending = onConfirm;
+    find("title").textContent = title ?? t("Delete this note page?");
+    find("message").textContent = message ?? t("This removes the page and its contents from this Journal. Downloaded backups are unchanged.");
+    confirm.textContent = confirmLabel ?? t("Delete page");
     modal.show(cancel, opener);
   };
   cancel.addEventListener("click", () => hide());

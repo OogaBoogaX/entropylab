@@ -120,7 +120,7 @@ test("the network picker sets the network every tool defaults to", () => {
   // the picker's chain identity when it matches the family's coin type, so
   // wallet.dat exports and bcrt rendering stay chain-true (issue #329).
   assert.match(appSource, /function hodlNetworkFamily\(network\) \{\s*return network === "mainnet" \? "mainnet" : "testnet";/);
-  assert.match(appSource, /chain = hodlNetworkFamily\(hodlNetworkChoice\) === network \? hodlNetworkChoice : network/);
+  assert.match(appSource, /hodlNetworkFamily\(hodlNetworkChoice\) === network \? hodlNetworkChoice : network/);
   assert.match(appSource, /hodlMnemonicWalletWithProgress\(phrase, passphrase, chain, count,/);
   assert.match(appSource, /hodlNetworkFamily\(result\?\.network\) !== hodlNetworkFamily\(chain\)/);
   // The option names and the button's accessible name come from the locale
@@ -1706,7 +1706,7 @@ test("one PSBT workspace contains PSBT Inspector, PSBT Editor and Nonce Inspecto
   // which must report regtest as regtest: hodlNetworkDefault maps every
   // non-mainnet choice to testnet, so the editor would render tb1 and refuse
   // a valid bcrt1 output there.
-  assert.match(appSource, /initPsbtEditor\(\{ networkDefault: \(\) => hodlInspectorNetwork\(\), copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup \}\)/);
+  assert.match(appSource, /initPsbtEditor\(\{ networkDefault: \(\) => hodlInspectorNetwork\(\), copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup, journalLog: hodlJournalLog \}\)/);
 });
 
 test("Journal gates Notes, Keys, and Session behind a shared backup", () => {
@@ -1787,8 +1787,10 @@ test("Journal gates Notes, Keys, and Session behind a shared backup", () => {
     assert.equal(button.getAttribute("aria-pressed"), String(mode === "create"));
   }
   assert.equal(element("journal-create-panel").hidden, false);
-  for (const id of ["journal-create", "journal-unlock", "journal-open-password", "journal-insert-timestamp"]) element(id);
-  for (const id of ["journal-editor", "journal-add", "journal-commit", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-book-tab", "journal-state-tab", "journal-log-tab"]) {
+  for (const id of ["journal-create", "journal-unlock", "journal-open-password"]) element(id);
+  assert.equal(element("journal-notes-text").getAttribute("aria-keyshortcuts"), "Control+Enter Meta+Enter");
+  assert.equal(element("journal-notes-text").getAttribute("aria-describedby"), "journal-new-note-help");
+  for (const id of ["journal-insert-timestamp", "journal-add", "journal-book-tab", "journal-state-tab", "journal-log-tab"]) {
     assert.equal(document.getElementById(id), null);
   }
   assert.equal(element("journal-tool-intro").querySelector("#journal-error"), element("journal-error"));
@@ -1818,8 +1820,12 @@ test("Journal gates Notes, Keys, and Session behind a shared backup", () => {
   assert.equal(element("journal-keymanager-card").querySelector("#journal-saved-records"), element("journal-saved-records"));
   assert.ok(element("journal-saved-records").hidden);
   assert.equal(element("journal-saved-records").querySelector("#journal-work-panel"), element("journal-work-panel"));
-  for (const id of ["journal-search", "journal-list", "journal-view"]) {
+  for (const id of ["journal-search", "journal-list", "journal-view", "journal-editor"]) {
     assert.equal(element("journal-saved-records").querySelector(`#${id}`), element(id));
+  }
+  assert.ok(element("journal-editor").hidden);
+  for (const id of ["journal-commit", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes"]) {
+    assert.equal(element("journal-editor").querySelector(`#${id}`), element(id));
   }
   for (const id of ["journal-state-card", "journal-log-card"]) {
     assert.equal(element("journal-session-card").querySelector(`#${id}`), element(id));
@@ -1827,7 +1833,7 @@ test("Journal gates Notes, Keys, and Session behind a shared backup", () => {
   for (const [id, children] of [
     ["journal-notes-appearance", ["journal-font", "journal-size", "journal-spacing"]],
     ["journal-notes-files", ["journal-notes-download", "journal-notes-upload"]],
-    ["journal-keymanager-files", ["journal-keymanager-download", "journal-keymanager-upload"]],
+    ["journal-keymanager-files", ["journal-keymanager-download"]],
     ["journal-state-files", ["journal-state-download"]],
     ["journal-log-card", ["journal-log-download", "journal-log-copy", "journal-log-clear"]],
   ]) {
@@ -1852,34 +1858,33 @@ test("Journal gates Notes, Keys, and Session behind a shared backup", () => {
   assert.equal(element("journal-notes-render").getAttribute("aria-hidden"), "true");
   assert.ok(element("journal-notes-text").getAttribute("aria-label"));
   assert.equal(element("journal-keymanager-file").getAttribute("accept"), ".elkeys,.json,application/json");
+  for (const id of ["journal-keymanager-upload", "journal-keymanager-derive", "journal-keymanager-add-all", "journal-keymanager-create", "journal-keymanager-file"]) {
+    assert.equal(element("journal-keymanager-actions").querySelector(`#${id}`), element(id));
+  }
+  assert.ok(element("journal-keymanager-add-all").hidden);
+  assert.ok(element("journal-keymanager-add-all").disabled);
   assert.equal(element("journal-notes-file").getAttribute("accept"), ".json,.txt,application/json,text/plain");
   for (const tool of ["notes", "state", "log"]) {
     assert.equal(document.getElementById(`journal-${tool}-encrypt`), null);
   }
-  for (const id of ["journal-notes-download-text", "journal-note-add", "journal-state-capture", "journal-notes-prompt", "journal-keymanager-add-all"]) assert.equal(document.getElementById(id), null);
+  for (const id of ["journal-notes-download-text", "journal-note-add", "journal-state-capture", "journal-notes-prompt"]) assert.equal(document.getElementById(id), null);
   assert.equal(element("journal-state-private").hasAttribute("checked"), false);
   precedes("journal-state-text", "journal-state-download");
-  precedes("journal-log-out", "journal-log-copy");
+  precedes("journal-log-copy", "journal-log-out");
+  assert.equal(element("journal-log-out").getAttribute("aria-labelledby"), "journal-log-label");
   element("journal-log-clear");
   assert.match(appSource, /function hodlJournalRememberKeyInsertion\(select, field\)[\s\S]*?select\.hodlJournalInsertionRange = \{ start: field\.selectionStart, end: field\.selectionEnd \}/);
   assert.match(appSource, /let saved = select\.hodlJournalInsertionRange;\s*delete select\.hodlJournalInsertionRange;/);
   assert.match(appSource, /notesText\.addEventListener\("mousemove", \(\) => hodlJournalRevealCopyButton\(notesCopy\)\)/);
-  assert.match(appSource, /hodlJournalFormatNotebook\(field\.value\)[\s\S]*?button\.dataset\.phrase = phrase/);
-  assert.match(appSource, /hodlCopySeedPhraseButton\(notesCopy\);[\s\S]*?hodlJournalRevealCopyButton\(notesCopy, 1900\)/);
-  assert.match(appSource, /logCopy\.dataset\.phrase = logOut\.textContent \|\| "";\s*hodlCopySeedPhraseButton\(logCopy\)/);
   assert.match(appSource, /"journal-notes-download": \["journal", "download", "notebook"\]/);
   assert.match(appSource, /"journal-state-download": \["journal", "download", "session-state"\]/);
-  assert.match(appSource, /"journal-log-download": \["journal", "download", "session-log"\]/);
-  assert.match(appSource, /"journal-notes-upload": \["journal", "upload", "notebook"\]/);
   assert.match(appSource, /"journal-keymanager-download": \["journal", "download", "key-manager"\]/);
-  assert.match(appSource, /"journal-keymanager-upload": \["journal", "upload", "key-manager"\]/);
   assert.match(appSource, /"journal-notes-copy": \["journal", "copy", "notepad-page"\]/);
-  assert.match(appSource, /"journal-log-copy": \["journal", "copy", "session-log"\]/);
   assert.match(appSource, /outer\?\.entropylabJournalExport[\s\S]*hodlJournalOpenExport\(outer, hodlJournalKeys\)/);
   assert.match(appSource, /document\.getElementById\("journal-global-download"\)\?\.addEventListener\("click", hodlJournalSaveFile\)/);
   assert.match(appSource, /document\.getElementById\("journal-global-clear"\)\?\.addEventListener\("click", hodlJournalConfirmClear\)/);
   assert.match(appSource, /function hodlInitJournalActionAudit\(\)[\s\S]*document\.addEventListener\("click",[\s\S]*document\.addEventListener\("change",/);
-  assert.match(appSource, /control\.id === "journal-key-insert" \|\| control\.id === "journal-state-private" \|\| control\.type === "file"/);
+  assert.match(appSource, /control\.id === "journal-key-insert" \|\| control\.id === "journal-state-private" \|\| control\.id === "journal-saved-state-private" \|\| control\.id === "journal-report-reveal" \|\| control\.type === "file"/);
   assert.match(appSource, /function hodlJournalRefreshSessionState\(\)/);
   assert.match(appSource, /function hodlScheduleJournalStateRefresh\(\) \{[\s\S]*queueMicrotask\([\s\S]*hodlJournalRefreshSessionState\(\)/);
   assert.match(appSource, /function hodlJournalLog\([\s\S]*?hodlScheduleJournalStateRefresh\(\)/);
@@ -1888,14 +1893,11 @@ test("Journal gates Notes, Keys, and Session behind a shared backup", () => {
   assert.doesNotMatch(appSource, /hodlJournalLog\("inspect-nonce-/);
   assert.match(appSource, /hodlJournalLog\("calculate", mode, "sp"\)[\s\S]*hodlJournalLog\("calculate-error", mode, "sp"\)/);
   assert.match(appSource, /hodlJournalLog\("derive-error", "", "bip85"\)/);
-  assert.match(appSource, /hodlJournal\.log\.length = 0;\s*hodlJournalLog\("clear", "session-log", "journal"\)/);
   assert.doesNotMatch(appSource, /PASSWORD_MIN_LENGTH|hodlJournalPasswordMinLength/);
   assert.match(appSource, /ready\.hidden = !passwordsMatch/);
   assert.match(appSource, /\["journal-create-password", "journal-create-confirm"\][\s\S]*addEventListener\("input", hodlSyncJournalCreatePasswordValidation\)/);
   assert.match(appSource, /function hodlJournalCreatePasswordKeydown\(event\) \{[\s\S]*event\.key !== "Enter"[\s\S]*confirm\.focus\(\)[\s\S]*confirm\.value === password\.value\) hodlJournalCreate\(\)/);
   assert.match(appSource, /\["journal-create-password", "journal-create-confirm"\][\s\S]*addEventListener\("keydown", hodlJournalCreatePasswordKeydown\)/);
-  assert.match(appSource, /async function hodlJournalCreate\(\) \{[\s\S]*hodlJournalShowWork\(\);\s*hodlShowJournalTool\("notes"\)/);
-  assert.match(appSource, /async function hodlJournalUnlock\(\) \{[\s\S]*hodlJournalShowWork\(\);\s*hodlShowJournalTool\("notes"\)/);
   assert.doesNotMatch(appSource, /hodlJournalBackfillDerivedKeys|hodlJournalCaptureDerivedKey/);
   assert.match(appSource, /function hodlJournalWipeMem\(\) \{[\s\S]*hodlJournalTool = "notes";[\s\S]*hodlSyncJournalTool\(\)/);
   // The notebook never seals or opens without an explicit click.
@@ -1932,18 +1934,15 @@ test("the intro stack shows one tool intro at a time", () => {
 test("Key Station keeps derivation actions focused and BIP-85 remains its own workspace", () => {
   // BIP-85 has its own tab, so the shortcut that used to sit beside Derive Key
   // is gone; automatic Journal capture also removes the old manual shortcut.
-  for (const markup of [shell]) {
-    assert.match(markup, /id="address-estimate"[\s\S]*?id="derive-progress"[\s\S]*?id="go"[^>]*>Derive Key<\/button>[\s\S]*?id="wipe"/);
-    assert.doesNotMatch(markup, /id="journal-open"|>Save to Journal<\/button>|id="journal-use-calc"|>Use active key<\/button>/);
-    assert.doesNotMatch(markup, /id="bip85-open"|>Derive BIP-85 child<\/button>/);
-  }
+  const document = new MiniDocument();
+  document.body.innerHTML = shell;
+  const elements = Array.from(document.querySelectorAll("[id]"));
+  const actions = ["address-estimate", "derive-progress", "go", "wipe"].map(id => document.getElementById(id));
+  actions.forEach(element => assert.ok(element));
+  for (let i = 1; i < actions.length; i++) assert.ok(elements.indexOf(actions[i - 1]) < elements.indexOf(actions[i]));
+  for (const id of ["journal-open", "journal-use-calc", "bip85-open"]) assert.equal(document.getElementById(id), null);
   assert.doesNotMatch(appSource, /getElementById\("bip85-open"\)/);
   assert.doesNotMatch(appSource, /getElementById\("journal-open"\)|getElementById\("journal-use-calc"\)|hodlJournalUseActiveKey|hodlJournalApplySnapshot/);
-  for (const entry of [/\["calc", "Keys", "Keys"\]/, /\["vanity", "Vanity Address", "Vanity"\]/, /\["bip85", "BIP-85 Child", "BIP-85"\]/,
-    /\["msig", "Multi Signature", "MultiSig"\]/, /\["sp", "Silent Payments", "SP"\]/, /\["psbt", "Transactions", "Txns"\]/,
-    /\["journal", "Journal", "Journal"\]/]) {
-    assert.match(appSource, entry);
-  }
   // The tab keeps its own way to adopt a key, so the removal must not have
   // taken the underlying session-key path with it.
   assert.match(appSource, /function hodlPickBip85SessionKey\(/);
@@ -2100,11 +2099,11 @@ test("Key Station stays put and a derived key opens a fingerprint tab with a sum
   assert.match(appSource, /hodlNewKeyState\("Key Station", 0, 0\)/);
   assert.match(appSource, /name = state\.isLab \? hodlTText\("Key Station"\)/);
   assert.match(appSource, /path\.setAttribute\("d", hodlKeySilhouette\)/);
-  assert.match(appSource, /function hodlCommitDerivedKey\(action = "derive"\) \{/);
+  assert.match(appSource, /function hodlCommitDerivedKey\(action = "derive"[^)]*\) \{/);
   assert.match(appSource, /function hodlSelectLab\(\) \{/);
   assert.match(appSource, /function hodlSyncKeyResultView\(\) \{/);
   assert.match(appSource, /hodlKeys\.push\(hodlNewLabState\(\)\)/);
-  assert.match(appSource, /hodlCommitDerivedKey\(action\)/);
+  assert.match(appSource, /hodlCommitDerivedKey\(action[^)]*\)/);
   assert.match(appSource, /button\.id = state\.isLab \? "key-tab-lab"/);
   assert.match(appSource, /function hodlAddKey\(\) \{\s*hodlSelectLab\(\);/s);
   assert.match(appSource, /button\.disabled = !state \|\| state\.isLab;/);

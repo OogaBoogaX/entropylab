@@ -674,7 +674,7 @@ export const psbtProblemsHtml = (doc, insane = false) => {
 // header network picker's choice, read through the `networkDefault` getter
 // (mainnet/testnet), and re-decoded live when the picker changes it (the
 // "hodl:network-default" document event).
-export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = () => "", copyIcon = () => "" } = {}) => {
+export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = () => "", copyIcon = () => "", journalLog = () => {} } = {}) => {
   const load = document.getElementById("psbted-load");
   if (!load) return;
   const $ = (id) => document.getElementById(id);
@@ -1208,10 +1208,12 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
   const liveRebuild = () => {
     try {
       rebuild({ restoreFocus: true });
+      return true;
     } catch (exception) {
       stale = resultBytes !== null;
       setError(exception.message || String(exception));
       markResultStale();
+      return false;
     }
   };
 
@@ -1265,6 +1267,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
   };
 
   const loadFromText = () => {
+    journalLog("load-request", "editor-text", "psbt");
     setError("");
     clearCompareReport(); // a different editor PSBT invalidates an old report
     addedPairs.clear(); // a different document invalidates the add counts
@@ -1277,6 +1280,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
       pristineTx = null;
       render();
       setError(exception.message || String(exception));
+      journalLog("load-error", "editor-text", "psbt");
       return;
     }
     resultBytes = null;
@@ -1286,9 +1290,11 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     // without an extra click.
     try {
       rebuild();
+      journalLog("load", "editor-text", "psbt");
     } catch (exception) {
       render();
       showBuildError(exception);
+      journalLog("load-error", "editor-text", "psbt");
     }
   };
 
@@ -1434,14 +1440,16 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     // the live rebuild validates it on the spot. Builder errors (bad
     // address, unknown ASM token) show inline.
     const applyBuiltScript = (index) => {
+      journalLog("editor-set-request", "output-script", "psbt");
       const text = out.querySelector(`[data-build-script="${index}"]`)?.value ?? "";
       const mode = out.querySelector(`[data-build-mode="${index}"]`)?.value ?? "auto";
       try {
         const built = buildOutputScript(text, { network: network(), mode });
         doc.tx.outputs[Number(index)].scriptPubKey = built.scriptHex;
-        liveRebuild();
+        journalLog(liveRebuild() ? "editor-set" : "editor-set-error", "output-script", "psbt");
       } catch (exception) {
         setError(exception.message || String(exception));
+        journalLog("editor-set-error", "output-script", "psbt");
       }
     };
     out.querySelectorAll("[data-build-apply]").forEach((button) => button.addEventListener("click", () => applyBuiltScript(button.dataset.buildApply)));

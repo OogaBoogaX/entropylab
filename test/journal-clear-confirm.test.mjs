@@ -127,3 +127,96 @@ test("cancel or teardown invalidates an in-flight backup and its late status", a
     }, (current) => { isCurrent = current; return gate.promise; });
   }
 });
+
+test("the same clear dialog exports a captured scope without clearing it, then resets its defaults", async () => {
+  const gate = deferred();
+  await withDialog(async ({ dialog, opener, el, counts }) => {
+    const defaults = ["title", "message", "download", "discard"].map((name) => el(name).textContent);
+    dialog.hide();
+    let exported = 0, cleared = 0;
+    const content = { title: "<report> title", message: "<report> explanation", downloadLabel: "<report> export", discardLabel: "<report> clear", preparingMessage: "<report> pending", successMessage: "<report> handed off", errorMessage: "<report> retained" };
+    dialog.show(opener, { ...content, onDownload: () => { exported++; return gate.promise; }, onDiscard: () => cleared++ });
+    for (const [name, key] of [["title", "title"], ["message", "message"], ["download", "downloadLabel"], ["discard", "discardLabel"]]) {
+      assert.equal(el(name).textContent, content[key]);
+      assert.equal(el(name).children.length, 0);
+    }
+    el("download").click();
+    el("download").click();
+    el("discard").click();
+    assert.equal(exported, 1);
+    assert.equal(cleared, 0);
+    assert.deepEqual(counts(), { downloads: 0, discarded: 0 });
+    assert.equal(el("status").textContent, content.preparingMessage);
+    gate.resolve(true);
+    await settle();
+    assert.equal(el("modal").hidden, false);
+    assert.equal(cleared, 0);
+    assert.equal(el("status").textContent, content.successMessage);
+    assert.equal(el("status").children.length, 0);
+    el("discard").click();
+    assert.equal(cleared, 1);
+    dialog.show(opener);
+    assert.deepEqual(["title", "message", "download", "discard"].map((name) => el(name).textContent), defaults);
+    el("discard").click();
+    assert.equal(cleared, 1);
+    assert.deepEqual(counts(), { downloads: 0, discarded: 1 });
+  });
+});
+
+test("a failed scope export keeps its dialog and permits retry or explicit clear", async () => {
+  await withDialog(async ({ dialog, opener, el, counts }) => {
+    dialog.hide();
+    let exported = 0, cleared = 0;
+    dialog.show(opener, {
+      errorMessage: "<report> error",
+      onDownload: async () => { exported++; if (exported === 1) throw new Error("private failure"); return false; },
+      onDiscard: () => cleared++,
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      el("download").click();
+      await settle();
+      assert.equal(el("modal").hidden, false);
+      assert.equal(el("status").textContent, "<report> error");
+      assert.equal(el("status").children.length, 0);
+      assert.equal(el("download").disabled, false);
+      assert.equal(el("discard").disabled, false);
+      assert.equal(cleared, 0);
+    }
+    assert.equal(exported, 2);
+    assert.deepEqual(counts(), { downloads: 0, discarded: 0 });
+    el("discard").click();
+    assert.equal(cleared, 1);
+  });
+});
+
+test("scope replacement and dismissal invalidate export and cannot replay clear", async () => {
+  for (const dismiss of ["scope", "cancel", "escape", "backdrop", "teardown"]) {
+    const gate = deferred();
+    await withDialog(async ({ dialog, opener, el, counts }) => {
+      dialog.hide();
+      let valid = true, current, cleared = 0;
+      dialog.show(opener, {
+        isCurrent: () => valid,
+        onDownload: (isCurrent) => { current = isCurrent; return gate.promise; },
+        onDiscard: () => cleared++,
+      });
+      el("download").click();
+      assert.equal(current(), true);
+      if (dismiss === "scope") valid = false;
+      else if (dismiss === "cancel") el("cancel").click();
+      else if (dismiss === "escape") el("modal").dispatchEvent({ type: "keydown", key: "Escape" });
+      else if (dismiss === "backdrop") el("modal").dispatchEvent({ type: "click", target: el("modal") });
+      else dialog.hide({ restoreFocus: false });
+      assert.equal(current(), false);
+      gate.resolve(true);
+      await settle();
+      el("discard").click();
+      assert.equal(cleared, 0);
+      assert.deepEqual(counts(), { downloads: 0, discarded: 0 });
+      dialog.hide();
+      dialog.show(opener);
+      assert.equal(el("status").textContent, "");
+      assert.equal(current(), false);
+    });
+  }
+});
