@@ -1639,5 +1639,22 @@
   "This PSBT also contains {count} Taproot / Schnorr signature(s). Their sighash policies are checked above. No repeated BIP340 nonces were found among them.": "Diese PSBT enthält auch {count} Taproot / Schnorr-Signatur(en). Ihre Sighash-Richtlinien werden oben überprüft. Es wurden keine wiederholten BIP340-Nonces unter ihnen gefunden.",
   "Some Taproot signatures in this transaction could not be checked for a repeated nonce. A key-path signature's key is in the previous output, which a raw transaction does not include, and only single-key and multi_a script-path spends are read. This is not a clean result.": "Einige Taproot-Signaturen in dieser Transaktion konnten nicht auf eine wiederholte Nonce überprüft werden. Der Schlüssel einer Key-Path-Signatur befindet sich in der vorherigen Ausgabe, die eine rohe Transaktion nicht enthält, und nur Single-Key- und Multi_a-Script-Path-Spends werden gelesen. Dies ist kein sauberes Ergebnis.",
   "This transaction also contains 1 Taproot / Schnorr signature in a script-path spend. Only one Taproot signature is present, so nonce reuse cannot be judged from this transaction alone.": "Diese Transaktion enthält auch 1 Taproot / Schnorr-Signatur in einem Script-Path-Spend. Da nur eine Taproot-Signatur vorhanden ist, kann die Wiederverwendung von Nonces allein aus dieser Transaktion nicht beurteilt werden.",
-  "This transaction also contains {count} Taproot / Schnorr signature(s) in script-path spends. No repeated BIP340 nonces were found among them.": "Diese Transaktion enthält auch {count} Taproot / Schnorr-Signatur(en) in Script-Path-Spends. Es wurden keine wiederholten BIP340-Nonces unter ihnen gefunden."
+  "This transaction also contains {count} Taproot / Schnorr signature(s) in script-path spends. No repeated BIP340 nonces were found among them.": "Diese Transaktion enthält auch {count} Taproot / Schnorr-Signatur(en) in Script-Path-Spends. Es wurden keine wiederholten BIP340-Nonces unter ihnen gefunden.",
+  "{implementation} node identity public key": "Öffentlicher Schlüssel der {implementation}-Knotenidentität",
+  "Identity key path": "Pfad des Identitätsschlüssels",
+  "testnet": "Testnet",
+  "mainnet": "Mainnet",
+  "coin type {coinType} ({network})": "Coin-Typ {coinType} ({network})",
+  "the LDK node identity does not depend on the network": "Die LDK-Knotenidentität ist unabhängig vom Netzwerk",
+  "Internal (key-derivation) version {v} · wallet birthday day {days} ({date} UTC, day 0 = Bitcoin genesis). Rescans from the birthday recover on-chain funds; channel funds need the node's channel backup.": "Intern (Schlüsselableitung) Version {v} · Wallet-Geburtstag Tag {days} ({date} UTC, Tag 0 = Bitcoin Genesis). Rescans vom Geburtstag stellen On-Chain-Fonds wieder her; Kanalfonds benötigen das Kanal-Backup des Knotens.",
+  "Derived the ldk-node way: BIP39 seed → master key → its private key re-seeds a second BIP32 tree → node secret at": "Abgeleitet auf dem ldk-node Weg: BIP39 Seed → Master-Schlüssel → dessen privater Schlüssel versorgt einen zweiten BIP32-Baum neu → Knoten-Geheimnis bei",
+  "Reveal the root private key and decoded entropy": "Root-Privatschlüssel und dekodierte Entropie anzeigen",
+  "Reveal the root private key": "Root-Privatschlüssel anzeigen",
+  "Decoded entropy (the BIP32 master seed)": "Dekodierte Entropie (der BIP32-Master-Seed)",
+  "Salt": "Salz",
+  "BIP32 root private key (xprv)": "BIP32 Root-Privatschlüssel (xprv)",
+  "The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.": "Der Root-xprv kann das On-Chain-Wallet des Knotens ausgeben. Zeigen Sie ihn nur an, während diese Datei offline auf einem air-gapped Computer ausgeführt wird.",
+  "Private material stays hidden until you reveal it.": "Private Daten bleiben verborgen, bis Sie sie anzeigen.",
+  "Node key derived. Decoded key material stays in page memory until you clear it.": "Knotenschlüssel abgeleitet. Dekodiertes Schlüsselmaterial verbleibt im Seitenspeicher, bis Sie es löschen.",
+  "A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.": "Eine BIP-39 Seed-Phrase mit 12 bis 24 Wörtern, wie sie von ldk-node verwendet wird."
 }
