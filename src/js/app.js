@@ -10693,16 +10693,30 @@ function hodlPsbtNonceContext(sourceTag, input) {
   view.setUint32(sourceTag.length, Number(input) >>> 0, true);
   return context;
 }
-function hodlPsbtMasterFingerprint(entries, pubkey, sessionKeyMatched = false) {
-  if (sessionKeyMatched && hodlPsbtHd) return hodlFingerprintHex(hodlPsbtHd.fingerprint);
+// The master fingerprints an input's BIP32 records give each pubkey, read
+// once per input map. Rescanning every record for every signature row made a
+// map with thousands of each cost signatures × records point parses on the
+// main thread, with no session key needed (xflow sweep of cb18b09: DeepSeek
+// V4.1, GLM 5.3). null when any record does not parse, as the rescan was.
+function hodlPsbtDerivationFingerprints(entries) {
   try {
-    let compressed = hodlCompressedPubkey(pubkey), fingerprints = [];
+    let byPubkey = new Map();
     for (let derivation of hodlBip32(entries)) {
-      if (!hodlEq(hodlCompressedPubkey(derivation.pubkey), compressed)) continue;
-      let fingerprint = hodlHex.encode(derivation.fingerprint);
-      if (!fingerprints.includes(fingerprint)) fingerprints.push(fingerprint);
+      let key = hodlHex.encode(hodlCompressedPubkey(derivation.pubkey)), fingerprint = hodlHex.encode(derivation.fingerprint), list = byPubkey.get(key);
+      if (!list) byPubkey.set(key, (list = []));
+      if (!list.includes(fingerprint)) list.push(fingerprint);
     }
-    return fingerprints.length === 1 ? fingerprints[0] : null;
+    return byPubkey;
+  } catch {
+    return null;
+  }
+}
+function hodlPsbtMasterFingerprint(entries, pubkey, sessionKeyMatched = false, byPubkey) {
+  if (sessionKeyMatched && hodlPsbtHd) return hodlFingerprintHex(hodlPsbtHd.fingerprint);
+  if (byPubkey === undefined) byPubkey = hodlPsbtDerivationFingerprints(entries);
+  try {
+    let fingerprints = byPubkey?.get(hodlHex.encode(hodlCompressedPubkey(pubkey)));
+    return fingerprints?.length === 1 ? fingerprints[0] : null;
   } catch {
     return null;
   }
@@ -10803,11 +10817,21 @@ function hodlPrivForPub(pubkey) {
   }
   return null;
 }
-function hodlPrivFromPath(entries, pubkey) {
+function hodlPrivFromPath(entries, pubkey, budget = null) {
   if (!hodlPsbtHd) return null;
   let rootFingerprint = hodlFingerprintHex(hodlPsbtHd.fingerprint);
   for (let derivation of hodlBip32(entries, pubkey)) {
     if (hodlHex.encode(derivation.fingerprint) !== rootFingerprint) continue;
+    // Each step is a private CKD on the main thread, and anyone who has seen
+    // the wallet's key origins can name the session root's fingerprint. A path
+    // past BIP32's 255 levels names no key; the rest share the render's budget,
+    // as output paths do (audit M3), or a file with thousands of signature rows
+    // could spend 255 CKDs on each (xflow sweep of cb18b09: GLM 5.3, Kimi K3).
+    // A skipped path costs nothing and leaves the budget to later rows: zeroing
+    // it would let one free record turn off every later check (Muse Spark and
+    // DeepSeek V4.1 on b31504d). Every walked step is still counted.
+    if (derivation.path.length > 255 || (budget && derivation.path.length > budget.remaining)) continue;
+    if (budget) budget.remaining -= derivation.path.length;
     let node = hodlPsbtHd;
     try {
       for (let index of derivation.path) {
@@ -12792,7 +12816,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // One PSBT output-derivation budget per render. An attacker-named path
     // costs one CKD per step; the inspector must not derive an unbounded
     // private subtree from an untrusted file (audit M3).
-    derivationBudget = { remaining: 4096 };
+    derivationBudget = { remaining: 4096 },
+    // The same for the session-key lookup on the input side. Only the rows a
+    // digest was rebuilt for (signatureChecks) can use the key, so 4096 steps
+    // covers 256 rows of ordinary paths.
+    inputDerivationBudget = { remaining: 4096 };
   // One render budget per view (red-team F7, round 4): the per-list caps
   // bound each list on its own, but the lists together must not exceed what
   // the DOM survives either. Every rendered output block, input section,
@@ -13030,6 +13058,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     let oddTapFields = hodlFind(entries, 19).filter((entry) => entry.keydata.length).length + hodlFind(entries, 20).filter((entry) => entry.keydata.length !== 64).length;
     for (let odd = 0; odd < oddTapFields; odd++) schnorrRecords.push({ input: index, source: "tap-malformed", pubkey: new Uint8Array(), r: null, s: null });
     if (tapSignatures.length || (finalized && !signatures.length)) policyIncomplete++;
+    let derivationFingerprints = signatures.length ? hodlPsbtDerivationFingerprints(entries) : null;
     signatures.forEach(signature => {
       let parts = hodlSigParts(signature.der),
         looseR = parts ? parts.r : hodlDerRLoose(signature.der),
@@ -13084,13 +13113,13 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
             className = "psbt-bad";
           }
         } else {
-          privateKey = hodlPrivForPub(signature.pubkey) || hodlPrivFromPath(entries, signature.pubkey);
+          privateKey = hodlPrivForPub(signature.pubkey) || hodlPrivFromPath(entries, signature.pubkey, inputDerivationBudget);
           rValues.push({
             input: index,
             r: looseR,
             hex: hodlHex.encode(looseR),
             pubkey: hodlCompressedPubkey(signature.pubkey),
-            masterFingerprint: hodlPsbtMasterFingerprint(entries, signature.pubkey, Boolean(privateKey && hodlPsbtHd)),
+            masterFingerprint: hodlPsbtMasterFingerprint(entries, signature.pubkey, Boolean(privateKey && hodlPsbtHd), derivationFingerprints),
             sighash,
             valid: parts ? signatureValid : null
           });
@@ -15518,7 +15547,7 @@ async function hodlLoadTestKeys() {
 }
 // Each tool carries a full name and a short one. Narrow screens show the
 // short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "PSBT", "PSBT"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity"], ...(__ENTROPYLAB_TEST_HOOKS__ ? [["journal", "Journal", "Journal"]] : [])];
+var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "Transactions", "Txns"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity"], ...(__ENTROPYLAB_TEST_HOOKS__ ? [["journal", "Journal", "Journal"]] : [])];
 // Lightning and Journal are held back from release navigation while their
 // implementations remain in source. Test builds keep Journal reachable so its
 // behavior and backup compatibility stay covered until the UI is ready.

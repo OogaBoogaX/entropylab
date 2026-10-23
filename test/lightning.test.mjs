@@ -10,8 +10,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import { mnemonicToSeedSync as scureMnemonicToSeed } from "@scure/bip39";
-import { deriveLndNode, deriveLdkNode, isKnownInternalVersion } from "../src/js/lightning.js";
+import { deriveLndNode, deriveLdkNode, isKnownInternalVersion, hodlInitLn } from "../src/js/lightning.js";
 import { aezeedDecode } from "../src/js/aezeed.js";
+import { MiniDocument } from "./mini-dom.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -116,7 +117,7 @@ test("the Lightning card ships in the shell with its controls", () => {
 });
 
 test("the workspace switcher retains the held-back Lightning implementation", () => {
-  for (const entry of [/\["psbt", "PSBT", "PSBT"\]/, /\["journal", "Journal", "Journal"\]/]) {
+  for (const entry of [/\["psbt", "Transactions", "Txns"\]/, /\["journal", "Journal", "Journal"\]/]) {
     assert.match(appSource, entry);
   }
   assert.match(appSource, /getElementById\("ln-card"\)\.hidden = id !== "ln"/);
@@ -134,4 +135,129 @@ test("a format or network change wipes the derived result", () => {
   assert.match(listener[1], /hodlLnWipeMem\(\)/, "the change wipes the derived result");
   assert.match(listener[1], /hodlLnRender\(\)/, "the change re-renders the empty state");
   assert.match(listener[1], /hodlLnSyncFormat\(\)/, "the change still syncs the network field");
+});
+
+// ── Tool behaviour through the real wiring (mini DOM) ───────────────────────
+
+// The published aezeed characterization mnemonic (see the end-to-end test
+// above): it deciphers to entropy 000102030405060708090a0b0c0d0e0f.
+const AEZEED_VECTOR_WORDS =
+  "ability result leisure oven shiver wedding toe broccoli exclude " +
+  "mosquito kind van action waste merit bundle robust source able " +
+  "advice core humor kitchen siren";
+const BIP39_VECTOR_WORDS = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+// The tool wired over a mini DOM: the fixture carries the ids hodlInitLn
+// touches, and the derive runs through the real Derive button handler.
+function lnPage() {
+  const page = new MiniDocument();
+  globalThis.document = page;
+  // The selects carry the shell's options (shell.html #ln-card): a <select>
+  // only holds a set value that matches one of its options, so without them
+  // the fixture cannot switch the tool off aezeed and the BIP-39/LDK path
+  // never runs.
+  page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed · LND cipher seed</option><option value="bip39">BIP-39 · LDK (ldk-node)</option></select>'
+    + '<div id="ln-network-field"><select id="ln-network"><option value="mainnet" selected>Mainnet</option><option value="testnet">Testnet</option></select></div>'
+    + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
+    + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
+    + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
+    + '<span id="ln-seed-help"></span>';
+  hodlInitLn({ journalLog() {}, copyIcon: () => "" });
+  return page;
+}
+
+// hodlInitLn assigns the Derive button's onclick; call it (the mini DOM
+// keeps it as a property), falling back to a dispatched click event.
+const lnDerive = (page) => {
+  const go = page.getElementById("ln-go");
+  if (typeof go.onclick === "function") go.onclick();
+  else go.dispatchEvent(new Event("click", { bubbles: true }));
+};
+
+test("the tool derives the published aezeed vector through its real wiring", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    const expected = ScureHDKey.fromMasterSeed(hexToBytes("000102030405060708090a0b0c0d0e0f")).derive("m/1017'/0'/6'/0/0");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(bytesToHex(expected.publicKey)), "the derived node pubkey is not on screen");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the tool derives the LDK node key through its real wiring", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "bip39";
+    page.getElementById("ln-seed").value = BIP39_VECTOR_WORDS;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(ldkExpected(BIP39_VECTOR_WORDS, "").nodePubKey), "the derived node pubkey is not on screen");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("an oversized seed paste is refused before any normalizing or deriving", () => {
+  // The 24-word vector plus 6 kB of punctuation noise: the normalizer would
+  // strip the noise and derive, so the length refusal must come first.
+  const page = lnPage();
+  try {
+    page.getElementById("ln-seed").value = `${AEZEED_VECTOR_WORDS} ${"1!".repeat(3000)}`;
+    lnDerive(page);
+    // The refusal is the keyed "seed-too-long" error; its wording is
+    // translatable copy, so assert the outcome, not the text: an error is
+    // shown and nothing was derived (the normalizer would have stripped the
+    // noise and derived had the length check come after it).
+    assert.ok(page.getElementById("ln-error").textContent.length > 0, "the oversized paste was not refused");
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "an oversized paste derived a node key");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the LDK tool path refuses a lone-surrogate passphrase and derives nothing", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "bip39";
+    page.getElementById("ln-seed").value = BIP39_VECTOR_WORDS;
+    page.getElementById("ln-pass").value = "word\uD800";
+    lnDerive(page);
+    // The refusal is the keyed "passphrase-utf8" error; assert the outcome,
+    // not the translatable wording.
+    assert.ok(page.getElementById("ln-error").textContent.length > 0, "the passphrase was not refused");
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "a refused passphrase derived a node key");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("deriveLdkNode refuses a passphrase that is not well-formed Unicode", () => {
+  // A BIP39 passphrase is UTF-8 text; a lone surrogate would silently encode
+  // as U+FFFD and derive a wallet the user never typed (the station's BIP39
+  // path refuses the same, #1015). Both halves of the rule: a high surrogate
+  // not followed by a low one, and a low surrogate without a high one.
+  for (const bad of ["\uD800", "\uDC00", "word\uD800", "word\uDC00word", "\uD800\uD800", "word\uD800A"]) {
+    // The wrong side here was the test, not the derivation: the guard throws
+    // the keyed refusal, but assert.throws does not hand the caught error
+    // back, so the .code/.key assertions read undefined. Capture it
+    // explicitly and assert on the error object itself.
+    let error = null;
+    try {
+      deriveLdkNode(BIP39_VECTOR_WORDS, bad);
+    } catch (thrown) {
+      error = thrown;
+    }
+    assert.ok(error, `passphrase ${JSON.stringify(bad)} derived`);
+    // The error's code is the stable marker; the key is translatable copy,
+    // asserted only for presence (AGENTS.md).
+    assert.equal(error.code, "passphrase-utf8");
+    assert.ok(typeof error.key === "string" && error.key.length > 0, "the refusal carries a translation key");
+  }
+  // Control: a real astral character (a high+low pair) is honest UTF-8 and
+  // derives exactly what the independent @scure implementation derives.
+  const paired = "pass\uD83D\uDE00";
+  assert.equal(deriveLdkNode(BIP39_VECTOR_WORDS, paired).nodePubKey, ldkExpected(BIP39_VECTOR_WORDS, paired).nodePubKey);
 });

@@ -123,13 +123,16 @@
   },
   "Boundary whitespace trimming leaves an empty passphrase · enter non-whitespace text or turn trimming off": {
     "noteByLanguage": {
-      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: La suppression des espaces blancs en bordure laisse une phrase de passe vide · entrez du texte non blanc ou désactivez la suppression"
+      "fr": "\"Passphrase\" is the optional BIP39 passphrase. French calls it \"phrase de passe\"; \"phrase secrète\" is this catalog's word for the seed phrase. Return exactly: La suppression des espaces blancs en bordure laisse une phrase de passe vide · entrez du texte non blanc ou désactivez la suppression",
+      "de": "Return exactly: Rand-Leerzeichen-Entfernung ergibt eine leere Passphrase · geben Sie Text mit mindestens einem Nicht-Leerzeichen ein oder schalten Sie die Entfernung aus"
     },
     "retranslate": {
-      "fr": "La suppression des espaces blancs en bordure laisse une phrase secrète vide · entrez du texte non blanc ou désactivez la suppression"
+      "fr": "La suppression des espaces blancs en bordure laisse une phrase secrète vide · entrez du texte non blanc ou désactivez la suppression",
+      "de": "Rand-Leerzeichen-Entfernung ergibt eine leere Passphrase · geben Sie Text ohne Leerzeichen ein oder schalten Sie die Entfernung aus"
     },
     "exact": {
-      "fr": "La suppression des espaces blancs en bordure laisse une phrase de passe vide · entrez du texte non blanc ou désactivez la suppression"
+      "fr": "La suppression des espaces blancs en bordure laisse une phrase de passe vide · entrez du texte non blanc ou désactivez la suppression",
+      "de": "Rand-Leerzeichen-Entfernung ergibt eine leere Passphrase · geben Sie Text mit mindestens einem Nicht-Leerzeichen ein oder schalten Sie die Entfernung aus"
     }
   },
   "Pick a key to grind. {station} settings come along as set there; BIP-85 children use an empty passphrase and the default account path. A key with seed words supports both methods, a root-xprv key the derivation grind only.": {
@@ -589,15 +592,18 @@
     "note": "\"Grind\" here is the vanity-address search: trying candidates until an address matches the prefix. It is not milling or crushing.",
     "noteByLanguage": {
       "fr": "French calls the vanity search \"recherche\" (as in \"Progression de la recherche vanity\") and the derivation method \"essai par dérivation\"; \"broyer\", \"broyage\" and \"triturer\" mean crushing. Return exactly: Avant la recherche",
-      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: Antes de buscar"
+      "pt": "Portuguese calls the vanity search \"busca\" and the derivation method \"teste por derivação\"; \"moer\" and \"moagem\" mean milling. Return exactly: Antes de buscar",
+      "de": "Return exactly: Bevor Sie durchmustern"
     },
     "retranslate": {
       "fr": "Avant de triturer",
-      "pt": "Antes de moer"
+      "pt": "Antes de moer",
+      "de": "Bevor Sie generieren"
     },
     "exact": {
       "fr": "Avant la recherche",
-      "pt": "Antes de buscar"
+      "pt": "Antes de buscar",
+      "de": "Bevor Sie durchmustern"
     }
   },
   "Key {key} was imported as a root xprv: it has no seed words, so its passphrase cannot be extended — only the derivation grind is available.": {
@@ -1342,7 +1348,7 @@
   "RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding; a signature on a script containing OP_CODESEPARATOR is reported as unverifiable instead of compared. Jade anti-exfil is secp256k1-zkp sign-to-contract and needs the USB host nonce plus signer opening; QR / sign_psbt Jade does not run it yet. BitBox anti-klepto is a different construction. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER; the same r value claimed under two different public keys is flagged as a mislabeled field rather than skipped. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0–2, 50 receive + 50 change, all four script types. It does not talk to the chain.": {
     "note": "\"Low-r grinding\" is Bitcoin Core's term of art: it signs again until the signature's r value is low, which saves one byte. It is not milling or crushing. Its words stay English (\"low-r\", \"grind\"), and the note for each language gives the exact form this catalog uses, articles and word order included; that form is the English term kept, not a translation of it.",
     "noteByLanguage": {
-      "fr": "French writes the term \"grind low-r\" (\"le grind low-r\", \"au grind low-r\"); \"meulage\" means grinding with a wheel and \"broyage\" crushing.",
+      "fr": "French writes the term \"grind low-r\" (\"le grind low-r\", \"au grind low-r\"); \"meulage\" means grinding with a wheel and \"broyage\" crushing. Return exactly: La comparaison RFC 6979 couvre actuellement les signatures SegWit v0 P2WPKH et P2WSH utilisant SIGHASH_ALL, y compris le grind low-r de style Bitcoin Core ; une signature sur un script contenant OP_CODESEPARATOR est signalée comme non vérifiable au lieu d'être comparée. L'anti-exfil Jade est secp256k1-zkp sign-to-contract et nécessite le nonce hôte USB plus l'ouverture du signataire ; QR / sign_psbt Jade ne l'exécute pas encore. BitBox anti-klepto est une construction différente. La détection de réutilisation de nonce compare les valeurs r pour le même point secp256k1, y compris les signatures portées par des champs scriptSig/witness finalisés, les encodages compressés et non compressés, et le DER non strict récupérable ; la même valeur r revendiquée sous deux clés publiques différentes est signalée comme un champ mal étiqueté plutôt qu'ignorée. Un verdict propre n'est pas émis lorsqu'une signature ne peut pas être inspectée. La détection d'inscription lit les enveloppes OP_FALSE OP_IF \"ord\" dans les scripts tap-leaf et les witnesses finalisés ; elle ne numérote pas les sats. La propriété des sorties est dérivée de la clé de session : comptes 0–2, 50 de réception + 50 de monnaie, les quatre types de script. Elle ne communique pas avec la chaîne.",
       "es": "This English sentence says \"low-r grinding\"; Spanish writes the term \"el low-r grind\", as its other low-r strings do (\"comprobar RFC 6979 y el low-r grind\"). \"molienda\" means milling.",
       "pt": "Portuguese writes the term \"o grind low-r\", as its other low-r strings do; \"moagem\" means milling. Portuguese names the receive branch with the noun \"recebimento\", as in \"Deriva os ramos de Recebimento e Troco\"; \"receber\" is the verb. Return exactly: A comparação RFC 6979 atualmente cobre assinaturas SegWit v0 P2WPKH e P2WSH usando SIGHASH_ALL, incluindo o grind low-r estilo Bitcoin Core; uma assinatura em um script contendo OP_CODESEPARATOR é relatada como não verificável em vez de comparada. O anti-exfil do Jade é secp256k1-zkp sign-to-contract e precisa do nonce do host USB mais a abertura do signatário; QR / sign_psbt Jade ainda não o executa. O anti-klepto do BitBox é uma construção diferente. A detecção de reutilização de nonce compara valores r para o mesmo ponto secp256k1, incluindo assinaturas carregadas por campos scriptSig/witness finalizados, codificações compactadas e não compactadas, e DER não estrito recuperável; o mesmo valor r reivindicado sob duas chaves públicas diferentes é sinalizado como um campo rotulado incorretamente em vez de ser ignorado. Um veredito limpo não é emitido quando uma assinatura não pode ser inspecionada. A detecção de inscrição lê envelopes OP_FALSE OP_IF \"ord\" em scripts tap-leaf e witnesses finalizados; ela não numera sats. A propriedade da saída é derivada da chave de sessão: contas 0–2, 50 de recebimento + 50 de troco, todos os quatro tipos de script. Ela não se comunica com a cadeia.",
       "de": "German writes the term \"Low-r-Grinding\", as in \"mit Low-r-Grinding im Stil von Bitcoin Core\". The session key is \"Sitzungsschlüssel\" and an output \"Ausgabe\", as elsewhere in this catalog. Bitcoin's change is \"Wechsel\" in this catalog, as in \"0 ist Empfang · 1 ist Wechsel\" and \"Wechseladressen\"; \"Wechselgeld\" is not used for it. Return exactly: Der RFC 6979-Vergleich deckt derzeit SegWit v0 P2WPKH- und P2WSH-Signaturen mit SIGHASH_ALL ab, einschließlich Low-r-Grinding im Stil von Bitcoin Core; eine Signatur auf einem Skript, das OP_CODESEPARATOR enthält, wird als nicht verifizierbar gemeldet anstatt verglichen. Jade Anti-Exfil ist secp256k1-zkp sign-to-contract und benötigt die USB-Host-Nonce plus die Eröffnung des Signierers; QR / sign_psbt Jade führt dies noch nicht aus. BitBox Anti-Klepto ist eine andere Konstruktion. Die Nonce-Wiederverwendungs-Erkennung vergleicht r-Werte für denselben secp256k1-Punkt, einschließlich Signaturen, die von finalisierten scriptSig/witness-Feldern getragen werden, komprimierte und unkomprimierte Kodierungen sowie wiederherstellbare non-strict DER; derselbe r-Wert, der unter zwei verschiedenen öffentlichen Schlüsseln beansprucht wird, wird als falsch beschriftetes Feld gekennzeichnet, anstatt übersprungen zu werden. Ein eindeutiges Urteil wird nicht abgegeben, wenn eine Signatur nicht inspiziert werden kann. Die Inschriften-Erkennung liest OP_FALSE OP_IF „ord“-Umschläge in Tap-Leaf-Skripten und finalisierten Witnesses; sie nummeriert keine Sats. Der Ausgabe-Besitz wird vom Sitzungsschlüssel abgeleitet: Konten 0–2, 50 Empfang + 50 Wechsel, alle vier Skripttypen. Sie kommuniziert nicht mit der Kette."
@@ -1353,6 +1359,7 @@
     },
     "exact": {
       "de": "Der RFC 6979-Vergleich deckt derzeit SegWit v0 P2WPKH- und P2WSH-Signaturen mit SIGHASH_ALL ab, einschließlich Low-r-Grinding im Stil von Bitcoin Core; eine Signatur auf einem Skript, das OP_CODESEPARATOR enthält, wird als nicht verifizierbar gemeldet anstatt verglichen. Jade Anti-Exfil ist secp256k1-zkp sign-to-contract und benötigt die USB-Host-Nonce plus die Eröffnung des Signierers; QR / sign_psbt Jade führt dies noch nicht aus. BitBox Anti-Klepto ist eine andere Konstruktion. Die Nonce-Wiederverwendungs-Erkennung vergleicht r-Werte für denselben secp256k1-Punkt, einschließlich Signaturen, die von finalisierten scriptSig/witness-Feldern getragen werden, komprimierte und unkomprimierte Kodierungen sowie wiederherstellbare non-strict DER; derselbe r-Wert, der unter zwei verschiedenen öffentlichen Schlüsseln beansprucht wird, wird als falsch beschriftetes Feld gekennzeichnet, anstatt übersprungen zu werden. Ein eindeutiges Urteil wird nicht abgegeben, wenn eine Signatur nicht inspiziert werden kann. Die Inschriften-Erkennung liest OP_FALSE OP_IF „ord“-Umschläge in Tap-Leaf-Skripten und finalisierten Witnesses; sie nummeriert keine Sats. Der Ausgabe-Besitz wird vom Sitzungsschlüssel abgeleitet: Konten 0–2, 50 Empfang + 50 Wechsel, alle vier Skripttypen. Sie kommuniziert nicht mit der Kette.",
+      "fr": "La comparaison RFC 6979 couvre actuellement les signatures SegWit v0 P2WPKH et P2WSH utilisant SIGHASH_ALL, y compris le grind low-r de style Bitcoin Core ; une signature sur un script contenant OP_CODESEPARATOR est signalée comme non vérifiable au lieu d'être comparée. L'anti-exfil Jade est secp256k1-zkp sign-to-contract et nécessite le nonce hôte USB plus l'ouverture du signataire ; QR / sign_psbt Jade ne l'exécute pas encore. BitBox anti-klepto est une construction différente. La détection de réutilisation de nonce compare les valeurs r pour le même point secp256k1, y compris les signatures portées par des champs scriptSig/witness finalisés, les encodages compressés et non compressés, et le DER non strict récupérable ; la même valeur r revendiquée sous deux clés publiques différentes est signalée comme un champ mal étiqueté plutôt qu'ignorée. Un verdict propre n'est pas émis lorsqu'une signature ne peut pas être inspectée. La détection d'inscription lit les enveloppes OP_FALSE OP_IF \"ord\" dans les scripts tap-leaf et les witnesses finalisés ; elle ne numérote pas les sats. La propriété des sorties est dérivée de la clé de session : comptes 0–2, 50 de réception + 50 de monnaie, les quatre types de script. Elle ne communique pas avec la chaîne.",
       "pt": "A comparação RFC 6979 atualmente cobre assinaturas SegWit v0 P2WPKH e P2WSH usando SIGHASH_ALL, incluindo o grind low-r estilo Bitcoin Core; uma assinatura em um script contendo OP_CODESEPARATOR é relatada como não verificável em vez de comparada. O anti-exfil do Jade é secp256k1-zkp sign-to-contract e precisa do nonce do host USB mais a abertura do signatário; QR / sign_psbt Jade ainda não o executa. O anti-klepto do BitBox é uma construção diferente. A detecção de reutilização de nonce compara valores r para o mesmo ponto secp256k1, incluindo assinaturas carregadas por campos scriptSig/witness finalizados, codificações compactadas e não compactadas, e DER não estrito recuperável; o mesmo valor r reivindicado sob duas chaves públicas diferentes é sinalizado como um campo rotulado incorretamente em vez de ser ignorado. Um veredito limpo não é emitido quando uma assinatura não pode ser inspecionada. A detecção de inscrição lê envelopes OP_FALSE OP_IF \"ord\" em scripts tap-leaf e witnesses finalizados; ela não numera sats. A propriedade da saída é derivada da chave de sessão: contas 0–2, 50 de recebimento + 50 de troco, todos os quatro tipos de script. Ela não se comunica com a cadeia."
     }
   },
@@ -1691,13 +1698,16 @@
   },
   "{count} pair(s) share an r value but name different keys — a mislabeled signature field can hide real nonce reuse this way. Verify every signature against its input's key independently before signing or broadcasting.": {
     "noteByLanguage": {
-      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: {count} par(es) comparten un valor r pero nombran claves diferentes — un campo de firma mal etiquetado puede ocultar la reutilización real del nonce de esta manera. Verifica cada firma contra la clave de su entrada de forma independiente antes de firmar o transmitir."
+      "es": "This catalog addresses the user as \"tú\" (\"Pega una dirección\", \"Carga una clave de sesión\"), not \"usted\". Return exactly: {count} par(es) comparten un valor r pero nombran claves diferentes — un campo de firma mal etiquetado puede ocultar la reutilización real del nonce de esta manera. Verifica cada firma contra la clave de su entrada de forma independiente antes de firmar o transmitir.",
+      "de": "Return exactly: {count} Paar(e) teilen sich einen r-Wert, benennen aber unterschiedliche Schlüssel — ein falsch beschriftetes Signaturfeld kann auf diese Weise echte Nonce-Wiederverwendung verbergen. Verifizieren Sie jede Signatur unabhängig anhand des Schlüssels ihres Inputs, bevor Sie signieren oder übertragen."
     },
     "retranslate": {
-      "es": "{count} par(es) comparten un valor r pero nombran claves diferentes — un campo de firma mal etiquetado puede ocultar la reutilización real del nonce de esta manera. Verifique cada firma contra la clave de su entrada de forma independiente antes de firmar o transmitir."
+      "es": "{count} par(es) comparten un valor r pero nombran claves diferentes — un campo de firma mal etiquetado puede ocultar la reutilización real del nonce de esta manera. Verifique cada firma contra la clave de su entrada de forma independiente antes de firmar o transmitir.",
+      "de": "{count} Paar(e) teilen sich einen r-Wert, benennen aber unterschiedliche Schlüssel — ein falsch beschriftetes Signaturfeld kann auf diese Weise echte Nonce-Wiederverwendung verbergen. Verifizieren Sie jede Signatur unabhängig vom Schlüssel ihres Inputs, bevor Sie signieren oder übertragen."
     },
     "exact": {
-      "es": "{count} par(es) comparten un valor r pero nombran claves diferentes — un campo de firma mal etiquetado puede ocultar la reutilización real del nonce de esta manera. Verifica cada firma contra la clave de su entrada de forma independiente antes de firmar o transmitir."
+      "es": "{count} par(es) comparten un valor r pero nombran claves diferentes — un campo de firma mal etiquetado puede ocultar la reutilización real del nonce de esta manera. Verifica cada firma contra la clave de su entrada de forma independiente antes de firmar o transmitir.",
+      "de": "{count} Paar(e) teilen sich einen r-Wert, benennen aber unterschiedliche Schlüssel — ein falsch beschriftetes Signaturfeld kann auf diese Weise echte Nonce-Wiederverwendung verbergen. Verifizieren Sie jede Signatur unabhängig anhand des Schlüssels ihres Inputs, bevor Sie signieren oder übertragen."
     }
   },
   "Message digests cannot be rebuilt from a raw transaction without prevouts, so treat this as a warning and do not broadcast until the signatures are checked independently.": {
@@ -1764,5 +1774,385 @@
   },
   "claims {path} but this session key does not produce this output. Do not sign.": {
     "note": "\"claims {path}\": the PSBT states that this output is the session wallet's address at derivation path {path}; the session key derives a different output there, so the claim is false."
+  },
+  "All {n} extra card is included": {
+    "retranslate": {
+      "de": "Alle {n} zusätzlichen Karten sind enthalten"
+    },
+    "exact": {
+      "de": "Alle {n} zusätzliche Karte ist enthalten"
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Alle {n} zusätzliche Karte ist enthalten"
+    }
+  },
+  "No valid checksum word starts with “{prefix}”": {
+    "retranslate": {
+      "de": "Kein gültiges Prüfwort beginnt mit „{prefix}“"
+    },
+    "exact": {
+      "de": "Kein gültiges Prüfsummenwort beginnt mit „{prefix}“"
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Kein gültiges Prüfsummenwort beginnt mit „{prefix}“"
+    }
+  },
+  "{n} valid checksum word starts with “{prefix}”": {
+    "retranslate": {
+      "de": "{n} gültiges Prüfwort beginnt mit „{prefix}“"
+    },
+    "exact": {
+      "de": "{n} gültiges Prüfsummenwort beginnt mit „{prefix}“"
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: {n} gültiges Prüfsummenwort beginnt mit „{prefix}“"
+    }
+  },
+  "{n} valid checksum words start with “{prefix}”": {
+    "retranslate": {
+      "de": "{n} gültige Prüfwörter beginnen mit „{prefix}“"
+    },
+    "exact": {
+      "de": "{n} gültige Prüfsummenwörter beginnen mit „{prefix}“"
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: {n} gültige Prüfsummenwörter beginnen mit „{prefix}“"
+    }
+  },
+  "Use a key from Key Station": {
+    "retranslate": {
+      "de": "Verwenden Sie einen Schlüssel aus der Schlüsselverwaltung"
+    },
+    "exact": {
+      "de": "Verwenden Sie einen Schlüssel aus der Schlüsselstation"
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Verwenden Sie einen Schlüssel aus der Schlüsselstation"
+    }
+  },
+  "Disable the consensus layer: edits are no longer checked against Bitcoin's rules (transaction sanity, UTXO claims, signatures, witness data) and a violating result builds and exports anyway. The problem list still reports what it finds.": {
+    "retranslate": {
+      "de": "Die Konsensschicht deaktivieren: Bearbeitungen werden nicht mehr gegen die Bitcoin-Regeln geprüft (Transaktionsintegrität, UTXO-Ansprüche, Signaturen, Zeugendaten) und ein verletzendes Ergebnis wird trotzdem erstellt und exportiert. Die Problemliste meldet weiterhin, was sie findet."
+    },
+    "exact": {
+      "de": "Die Konsensschicht deaktivieren: Bearbeitungen werden nicht mehr gegen die Bitcoin-Regeln geprüft (Transaktionsintegrität, UTXO-Angaben, Signaturen, Zeugendaten) und ein verletzendes Ergebnis wird trotzdem erstellt und exportiert. Die Problemliste meldet weiterhin, was sie findet."
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Die Konsensschicht deaktivieren: Bearbeitungen werden nicht mehr gegen die Bitcoin-Regeln geprüft (Transaktionsintegrität, UTXO-Angaben, Signaturen, Zeugendaten) und ein verletzendes Ergebnis wird trotzdem erstellt und exportiert. Die Problemliste meldet weiterhin, was sie findet."
+    }
+  },
+  "Compare this inspection with earlier ECDSA signatures without keeping a PSBT or signature. The versioned file records when each r value was checked, its master fingerprint when available, the raw r value, hashed signing-key and message/source identifiers, and a verification flag. A master fingerprint groups a wallet; the hashed signing-key identifier keeps different child keys distinct. This is correlation-sensitive metadata, so keep it offline.": {
+    "retranslate": {
+      "de": "Vergleichen Sie diese Prüfung mit früheren ECDSA-Signaturen, ohne eine PSBT oder Signatur zu speichern. Die versionierte Datei zeichnet auf, wann jeder r-Wert geprüft wurde, seinen Master-Fingerabdruck, falls verfügbar, den rohen r-Wert, den gehashten Signierschlüssel und Nachrichten-/Quell-Identifikatoren sowie ein Verifizierungsflag. Ein Master-Fingerabdruck gruppiert eine Wallet; der gehashte Signierschlüssel-Identifikator unterscheidet verschiedene Kindschlüssel. Dies sind korrelationssensitive Metadaten, also halten Sie sie offline."
+    },
+    "exact": {
+      "de": "Vergleichen Sie diese Prüfung mit früheren ECDSA-Signaturen, ohne eine PSBT oder Signatur zu speichern. Die versionierte Datei zeichnet auf, wann jeder r-Wert geprüft wurde, seinen Master-Fingerabdruck, falls verfügbar, den rohen r-Wert, den gehashten Signierschlüssel-Identifikator und Nachrichten-/Quell-Identifikatoren sowie ein Verifizierungsflag. Ein Master-Fingerabdruck gruppiert eine Wallet; der gehashte Signierschlüssel-Identifikator unterscheidet verschiedene Kindschlüssel. Dies sind korrelationssensitive Metadaten, also halten Sie sie offline."
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Vergleichen Sie diese Prüfung mit früheren ECDSA-Signaturen, ohne eine PSBT oder Signatur zu speichern. Die versionierte Datei zeichnet auf, wann jeder r-Wert geprüft wurde, seinen Master-Fingerabdruck, falls verfügbar, den rohen r-Wert, den gehashten Signierschlüssel-Identifikator und Nachrichten-/Quell-Identifikatoren sowie ein Verifizierungsflag. Ein Master-Fingerabdruck gruppiert eine Wallet; der gehashte Signierschlüssel-Identifikator unterscheidet verschiedene Kindschlüssel. Dies sind korrelationssensitive Metadaten, also halten Sie sie offline."
+    }
+  },
+  "A BIP-85 child is fixed by its parent and index. Copy the match instead of changing the child.": {
+    "retranslate": {
+      "de": "Ein BIP-85-Kind wird durch seine Eltern und seinen Index festgelegt. Kopieren Sie den Treffer, anstatt das Kind zu ändern."
+    },
+    "exact": {
+      "de": "Ein BIP-85-Kind wird durch seinen Elternteil und seinen Index festgelegt. Kopieren Sie den Treffer, anstatt das Kind zu ändern."
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Ein BIP-85-Kind wird durch seinen Elternteil und seinen Index festgelegt. Kopieren Sie den Treffer, anstatt das Kind zu ändern."
+    }
+  },
+  "Paste an address shown by another wallet. A match means that wallet computed the same selected branch and derivation, even if the index is beyond the table above.": {
+    "retranslate": {
+      "de": "Fügen Sie eine Adresse ein, die von einer anderen Wallet angezeigt wird. Eine Übereinstimmung bedeutet, dass die Wallet denselben ausgewählten Zweig und dieselbe Ableitung berechnet hat, auch wenn der Index über der obigen Tabelle liegt."
+    },
+    "exact": {
+      "de": "Fügen Sie eine Adresse ein, die von einer anderen Wallet angezeigt wird. Eine Übereinstimmung bedeutet, dass die Wallet denselben ausgewählten Zweig und dieselbe Ableitung berechnet hat, auch wenn der Index über den Bereich der obigen Tabelle hinausgeht."
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Fügen Sie eine Adresse ein, die von einer anderen Wallet angezeigt wird. Eine Übereinstimmung bedeutet, dass die Wallet denselben ausgewählten Zweig und dieselbe Ableitung berechnet hat, auch wenn der Index über den Bereich der obigen Tabelle hinausgeht."
+    }
+  },
+  "Use complete lowercase English BIP39 words separated by single spaces": {
+    "retranslate": {
+      "de": "Verwenden Sie vollständige BIP39-Wörter in Kleinbuchstaben, getrennt durch einzelne Leerzeichen"
+    },
+    "exact": {
+      "de": "Verwenden Sie vollständige englische BIP39-Wörter in Kleinbuchstaben, getrennt durch einzelne Leerzeichen"
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Verwenden Sie vollständige englische BIP39-Wörter in Kleinbuchstaben, getrennt durch einzelne Leerzeichen"
+    }
+  },
+  "Enter {n} more rank-only draw.": {
+    "retranslate": {
+      "de": "Geben Sie {n} weitere reine Rang-Ziehungen ein."
+    },
+    "exact": {
+      "de": "Geben Sie {n} weitere reine Rang-Ziehung ein."
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Geben Sie {n} weitere reine Rang-Ziehung ein."
+    }
+  },
+  "label m = {m} (change)": {
+    "retranslate": {
+      "de": "Label m = {m} (Änderung)",
+      "fr": "étiquette m = {m} (changement)",
+      "pt": "rótulo m = {m} (troca)"
+    },
+    "exact": {
+      "de": "Label m = {m} (Wechsel)",
+      "fr": "étiquette m = {m} (monnaie)",
+      "pt": "rótulo m = {m} (troco)"
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Label m = {m} (Wechsel)",
+      "fr": "Return exactly: étiquette m = {m} (monnaie)",
+      "pt": "Return exactly: rótulo m = {m} (troco)"
+    }
+  },
+  "Name the record <code>you@yourdomain</code> above and this prints its lookup, e.g. <code>you.user._bitcoin-payment.yourdomain</code>. This page does not resolve DNS.": {
+    "retranslate": {
+      "de": "Benennen Sie den obigen Eintrag <code>Sie@IhreDomain</code>, und dies gibt dessen Lookup aus, z. B. <code>Sie.Benutzer._bitcoin-payment.IhreDomain</code>. Diese Seite löst keine DNS-Einträge auf."
+    },
+    "exact": {
+      "de": "Benennen Sie den obigen Eintrag <code>you@yourdomain</code>, und dies gibt dessen Lookup aus, z. B. <code>you.user._bitcoin-payment.yourdomain</code>. Diese Seite löst keine DNS-Einträge auf."
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Benennen Sie den obigen Eintrag <code>you@yourdomain</code>, und dies gibt dessen Lookup aus, z. B. <code>you.user._bitcoin-payment.yourdomain</code>. Diese Seite löst keine DNS-Einträge auf."
+    }
+  },
+  "Spend path": {
+    "retranslate": {
+      "de": "Ausgabepfad"
+    },
+    "exact": {
+      "de": "Spend-Pfad"
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Spend-Pfad"
+    }
+  },
+  "SHA-256 of the UTF-8 text with boundary whitespace trimmed is 32 bytes of BIP39 entropy (256 bits → 24 words).": {
+    "retranslate": {
+      "es": "SHA-256 del texto UTF-8 con espacios en blanco recortados es entropía BIP39 de 32 bytes (256 bits → 24 palabras)."
+    },
+    "exact": {
+      "es": "SHA-256 del texto UTF-8 con espacios en blanco de los extremos recortados es entropía BIP39 de 32 bytes (256 bits → 24 palabras)."
+    },
+    "noteByLanguage": {
+      "es": "Return exactly: SHA-256 del texto UTF-8 con espacios en blanco de los extremos recortados es entropía BIP39 de 32 bytes (256 bits → 24 palabras)."
+    }
+  },
+  "Child seeds from a parent key": {
+    "retranslate": {
+      "es": "Semillas secundarias de una clave principal"
+    },
+    "exact": {
+      "es": "Semillas hijas de una clave padre"
+    },
+    "noteByLanguage": {
+      "es": "Return exactly: Semillas hijas de una clave padre"
+    }
+  },
+  "Move co-signer {n} up to position {position}": {
+    "retranslate": {
+      "es": "Mover cofirmante {n} a la posición {position}"
+    },
+    "exact": {
+      "es": "Mover cofirmante {n} hacia arriba a la posición {position}"
+    },
+    "noteByLanguage": {
+      "es": "Return exactly: Mover cofirmante {n} hacia arriba a la posición {position}"
+    }
+  },
+  "Move co-signer {n} down to position {position}": {
+    "retranslate": {
+      "es": "Mover cofirmante {n} a la posición {position}"
+    },
+    "exact": {
+      "es": "Mover cofirmante {n} hacia abajo a la posición {position}"
+    },
+    "noteByLanguage": {
+      "es": "Return exactly: Mover cofirmante {n} hacia abajo a la posición {position}"
+    }
+  },
+  "They are shown only for a seed or extended private-key source.": {
+    "retranslate": {
+      "fr": "Elles ne sont affichées que pour une source de clé privée de départ ou étendue."
+    },
+    "exact": {
+      "fr": "Elles ne sont affichées que pour une source de graine ou de clé privée étendue."
+    },
+    "noteByLanguage": {
+      "fr": "Return exactly: Elles ne sont affichées que pour une source de graine ou de clé privée étendue."
+    }
+  },
+  "Provide a PSBT or signed transaction and click Inspect Nonces to view the details here.": {
+    "retranslate": {
+      "fr": "Fournissez une PSBT ou une transaction signée et cliquez sur Inspect Nonces pour voir les détails ici."
+    },
+    "exact": {
+      "fr": "Fournissez une PSBT ou une transaction signée et cliquez sur Inspecter les nonces pour voir les détails ici."
+    },
+    "noteByLanguage": {
+      "fr": "Return exactly: Fournissez une PSBT ou une transaction signée et cliquez sur Inspecter les nonces pour voir les détails ici."
+    }
+  },
+  "Deriving the updated key failed.": {
+    "retranslate": {
+      "fr": "L'extraction de la clé mise à jour a échoué."
+    },
+    "exact": {
+      "fr": "La dérivation de la clé mise à jour a échoué."
+    },
+    "noteByLanguage": {
+      "fr": "Return exactly: La dérivation de la clé mise à jour a échoué."
+    }
+  },
+  "Download notepad": {
+    "retranslate": {
+      "pt": "Baixar bloco"
+    },
+    "exact": {
+      "pt": "Baixar bloco de notas"
+    },
+    "noteByLanguage": {
+      "pt": "Return exactly: Baixar bloco de notas"
+    }
+  },
+  "Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress must match receive index 0 here.": {
+    "retranslate": {
+      "pt": "Nó online: createwallet disable_private_keys=true blank=true, depois importe os descritores. O primeiro getnewaddress deve corresponder ao índice de recebimento 0 aqui."
+    },
+    "exact": {
+      "pt": "Nó online: createwallet disable_private_keys=true blank=true, depois importdescriptors. O primeiro getnewaddress deve corresponder ao índice de recebimento 0 aqui."
+    },
+    "noteByLanguage": {
+      "pt": "Return exactly: Nó online: createwallet disable_private_keys=true blank=true, depois importdescriptors. O primeiro getnewaddress deve corresponder ao índice de recebimento 0 aqui."
+    }
+  },
+  "{n} invalid rank highlighted": {
+    "retranslate": {
+      "pt": "{n} ranking inválido destacado"
+    },
+    "exact": {
+      "pt": "{n} valor inválido destacado"
+    },
+    "noteByLanguage": {
+      "pt": "Return exactly: {n} valor inválido destacado"
+    }
+  },
+  "{n} invalid ranks highlighted": {
+    "retranslate": {
+      "pt": "{n} rankings inválidos destacados"
+    },
+    "exact": {
+      "pt": "{n} valores inválidos destacados"
+    },
+    "noteByLanguage": {
+      "pt": "Return exactly: {n} valores inválidos destacados"
+    }
+  },
+  "{have} of {need} rank draws entered": {
+    "retranslate": {
+      "pt": "{have} de {need} sorteios de ranking inseridos"
+    },
+    "exact": {
+      "pt": "{have} de {need} sorteios de valor inseridos"
+    },
+    "noteByLanguage": {
+      "pt": "Return exactly: {have} de {need} sorteios de valor inseridos"
+    }
+  },
+  "Keeps non-hashed methods synchronized. Hashed inputs update them one way and are never overwritten.": {
+    "retranslate": {
+      "pt": "Mantém métodos não-hash sincronizados. Entradas hash os atualizam de uma maneira e nunca são sobrescritas."
+    },
+    "exact": {
+      "pt": "Mantém métodos não-hash sincronizados. Entradas hash os atualizam em uma única direção e nunca são sobrescritas."
+    },
+    "noteByLanguage": {
+      "pt": "Return exactly: Mantém métodos não-hash sincronizados. Entradas hash os atualizam em uma única direção e nunca são sobrescritas."
+    }
+  },
+  "A derivation is already running on the Keys tab — wait for it to finish.": {
+    "retranslate": {
+      "de": "Eine Ableitung läuft bereits auf der Registerkarte „Keys“ — warten Sie, bis sie abgeschlossen ist."
+    },
+    "exact": {
+      "de": "Eine Ableitung läuft bereits auf der Registerkarte „Schlüssel“ — warten Sie, bis sie abgeschlossen ist."
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Eine Ableitung läuft bereits auf der Registerkarte „Schlüssel“ — warten Sie, bis sie abgeschlossen ist."
+    }
+  },
+  "Only accepts watch-only public keys; a descriptor carrying private keys will be refused.": {
+    "retranslate": {
+      "de": "Akzeptiert nur schreibgeschützte öffentliche Schlüssel; ein Deskriptor, der private Schlüssel enthält, wird abgelehnt."
+    },
+    "exact": {
+      "de": "Akzeptiert nur öffentliche Watch-only-Schlüssel; ein Deskriptor, der private Schlüssel enthält, wird abgelehnt."
+    },
+    "noteByLanguage": {
+      "de": "Return exactly: Akzeptiert nur öffentliche Watch-only-Schlüssel; ein Deskriptor, der private Schlüssel enthält, wird abgelehnt."
+    }
+  },
+  "aezeed detects a wrong passphrase; BIP-39 cannot and simply derives a different wallet.": {
+    "retranslate": {
+      "es": "aezeed detecta una contraseña incorrecta; BIP-39 no puede y simplemente deriva una billetera diferente."
+    },
+    "exact": {
+      "es": "aezeed detecta una frase de contraseña incorrecta; BIP-39 no puede y simplemente deriva una billetera diferente."
+    },
+    "noteByLanguage": {
+      "es": "Return exactly: aezeed detecta una frase de contraseña incorrecta; BIP-39 no puede y simplemente deriva una billetera diferente."
+    }
+  },
+  "Session key: BIP39 seed + passphrase. Kept in page memory only.": {
+    "retranslate": {
+      "es": "Clave de sesión: frase semilla BIP39 + contraseña. Se mantiene solo en la memoria de la página."
+    },
+    "exact": {
+      "es": "Clave de sesión: frase semilla BIP39 + frase de contraseña. Se mantiene solo en la memoria de la página."
+    },
+    "noteByLanguage": {
+      "es": "Return exactly: Clave de sesión: frase semilla BIP39 + frase de contraseña. Se mantiene solo en la memoria de la página."
+    }
+  },
+  " (1–3 Heads, 4–6 Tails)": {
+    "retranslate": {
+      "fr": " (1–3 Têtes, 4–6 Queues)"
+    },
+    "exact": {
+      "fr": " (1–3 Face, 4–6 Pile)"
+    },
+    "noteByLanguage": {
+      "fr": "Return exactly:  (1–3 Face, 4–6 Pile)"
+    }
+  },
+  "Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress is this wallet's receive index 0, which is not in the address window shown above — display from index 0 or verify it on a signer before funding.": {
+    "retranslate": {
+      "pt": "Nó online: createwallet disable_private_keys=true blank=true, depois importe descritores. O primeiro getnewaddress é o índice de recebimento 0 desta carteira, que não está na janela de endereços mostrada acima — exiba a partir do índice 0 ou verifique-o em um signatário antes de financiar."
+    },
+    "exact": {
+      "pt": "Nó online: createwallet disable_private_keys=true blank=true, depois importdescriptors. O primeiro getnewaddress é o índice de recebimento 0 desta carteira, que não está na janela de endereços mostrada acima — exiba a partir do índice 0 ou verifique-o em um signatário antes de financiar."
+    },
+    "noteByLanguage": {
+      "pt": "Return exactly: Nó online: createwallet disable_private_keys=true blank=true, depois importdescriptors. O primeiro getnewaddress é o índice de recebimento 0 desta carteira, que não está na janela de endereços mostrada acima — exiba a partir do índice 0 ou verifique-o em um signatário antes de financiar."
+    }
+  },
+  "claims {path} · your key appears in this output's script; its other keys are not verified": {
+    "retranslate": {
+      "pt": "afirma {path} · sua chave aparece no script desta saída; suas outras chaves não são verificadas"
+    },
+    "exact": {
+      "pt": "afirma {path} · sua chave aparece no script desta saída; as outras chaves deste script não são verificadas"
+    },
+    "noteByLanguage": {
+      "pt": "Return exactly: afirma {path} · sua chave aparece no script desta saída; as outras chaves deste script não são verificadas"
+    }
   }
 }

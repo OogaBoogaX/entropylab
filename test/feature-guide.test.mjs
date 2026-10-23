@@ -210,6 +210,18 @@ test("guide entry and app lifecycle wiring belong to the source shell and boot",
   assert.match(app, /hodlFeatureGuide\?\.refresh\(\)/);
 });
 
+test("the compiled candidate carries the guide entries and lesson controller", () => {
+  const html = readFileSync(new URL("../entropylab.html", import.meta.url), "utf8");
+  const bundle = html.match(/<script id="btc-calc-script">([\s\S]*?)<\/script>/)?.[1];
+  const doc = new MiniDocument();
+  doc.body.innerHTML = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+  assert.equal(doc.getElementById("guide-basics")?.dataset.guideOpen, "basics", "candidate is missing the beginner entry; use this PR's CI artifact, not rock's committed HTML");
+  assert.ok(doc.getElementById("guide-open")?.hasAttribute("data-guide-open"));
+  for (const id of ["feature-guide-dialog", "guide-contents", "guide-download-verification"]) {
+    assert.ok(bundle?.includes(JSON.stringify(id)), `candidate is missing the guide controller handle ${id}`);
+  }
+});
+
 test("the first basics step exposes a fixed verification link without automatic I/O or tool navigation", () => withPage(({ guide, doc, opener, opened }) => {
   guide.open("basics", opener);
   const link = doc.getElementById("guide-download-verification");

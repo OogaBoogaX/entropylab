@@ -439,6 +439,21 @@ through the [computer hardening checklist](docs/Computer_Hardening_Checklist.md)
 
 To build the HTML file yourself, see [Building from source](#building-from-source).
 
+### Testing an unmerged pull request
+
+The `entropylab.html` committed on a feature branch is inherited from `rock`;
+it does not contain that pull request's unmerged changes. The public website
+also follows `rock`. For a PR retest, open its **Checks**, follow the
+**EntropyLab CI/CD** run for the current head commit, and wait for it to pass.
+Download **entropylab-candidate** and **entropylab-sha256sums** from that run's
+Artifacts section (GitHub sign-in required). Extract both, check the HTML
+against that run's `SHA256SUMS.txt`, and record the run URL, PR head, footer
+source commit and HTML digest with the results. The footer identifies the
+last commit that changed a build input, so it can predate a docs-only head.
+PR candidates are for practice testing without wallet secrets; release
+attestation and publication happen separately after merge. Alternatively,
+build the PR's checked-out sources locally. Do not commit generated HTML.
+
 ### Feature guide
 
 Choose **Basics**, immediately after the newcomer introduction above the tool

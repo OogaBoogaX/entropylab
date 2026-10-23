@@ -169,8 +169,32 @@ export const auditSchema = {
   additionalProperties: false,
 };
 
-// One chat-completions call. Retries once on network errors and 429/5xx.
-export async function chat({ url, key, model, name, schema, messages }) {
+// One chat-completions call. Retries transient failures — network errors,
+// HTTP 429/5xx, empty or unparseable content — up to 5 attempts in total,
+// waiting 2 s, 4 s, 8 s, 16 s between attempts; a 429 or 503 that carries a
+// Retry-After header (seconds) is honoured instead, capped at 60 s. A
+// non-retryable 4xx fails at once, as before. The thrown error carries its
+// class, so a caller can tell a one-input failure from a down service:
+// `status` (the response status) for an HTTP failure, `kind: "content"`
+// for a cut-off or unparseable body, `kind: "network"` for a fetch
+// failure. `sleep` is injectable so tests never really wait; call sites
+// without it use a real timer.
+const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const BACKOFF_MS = [2000, 4000, 8000, 16000];
+const MAX_RETRY_AFTER_MS = 60000;
+
+// A Retry-After header in seconds, capped; anything else (absent, empty, an
+// HTTP-date, garbage) falls back to the exponential backoff. A missing header
+// reads as null, and Number(null) is 0, so it must be checked before parsing.
+const retryAfterMs = (response) => {
+  const header = response.headers?.get("retry-after");
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+  return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS);
+};
+
+export async function chat({ url, key, model, name, schema, messages, sleep = realSleep }) {
   const body = JSON.stringify({
     model,
     messages,
@@ -178,7 +202,9 @@ export async function chat({ url, key, model, name, schema, messages }) {
     response_format: { type: "json_schema", json_schema: { name, schema, strict: true } },
   });
   let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  let waitMs;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (attempt > 0) await sleep(waitMs);
     let response;
     try {
       response = await fetch(url, {
@@ -187,16 +213,30 @@ export async function chat({ url, key, model, name, schema, messages }) {
         body,
       });
     } catch (error) {
+      error.kind = "network";
       lastError = error;
+      waitMs = BACKOFF_MS[attempt];
       continue;
     }
     if (response.ok) {
-      const data = await response.json();
+      // A body cut off in transit ("Unexpected end of JSON input", run
+      // 39891870190's Spanish failure) is the same transient class: retry it.
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        error.kind = "content";
+        lastError = error;
+        waitMs = BACKOFF_MS[attempt];
+        continue;
+      }
       let content = data?.choices?.[0]?.message?.content;
       if (typeof content !== "string") {
         // An empty choice (provider cut the stream to nothing) is the same
         // transient class as a truncated one — retry it, don't fail the run.
         lastError = new Error("LLM response carried no message content");
+        lastError.kind = "content";
+        waitMs = BACKOFF_MS[attempt];
         continue;
       }
       // Providers sometimes wrap the JSON in markdown fences, and a slow or
@@ -207,12 +247,25 @@ export async function chat({ url, key, model, name, schema, messages }) {
       try {
         return JSON.parse(content);
       } catch (error) {
+        error.kind = "content";
         lastError = error;
+        waitMs = BACKOFF_MS[attempt];
         continue;
       }
     }
-    lastError = new Error(`LLM request failed: HTTP ${response.status} ${(await response.text()).slice(0, 200)}`);
+    // The error body can be cut off in transit too (GLM 5.3 and Kimi K3 on
+    // #1067): read it best-effort, so a retryable status is still retried.
+    let detail = "";
+    try {
+      detail = (await response.text()).slice(0, 200);
+    } catch {
+      detail = "(error body cut off)";
+    }
+    lastError = new Error(`LLM request failed: HTTP ${response.status} ${detail}`);
+    lastError.status = response.status;
     if (response.status !== 429 && response.status < 500) break;
+    waitMs = BACKOFF_MS[attempt];
+    if (response.status === 429 || response.status === 503) waitMs = retryAfterMs(response) ?? waitMs;
   }
   throw lastError;
 }
@@ -269,6 +322,13 @@ const chunks = (items, size) => {
   return out;
 };
 
+// A failing batch is split key by key only for a failure that can be
+// specific to one input: a content failure (a cut-off or unparseable body)
+// or an HTTP 400. Anything else — an auth/credit 4xx, a 429 or 5xx that
+// exhausted chat()'s retries, a network outage — rethrows, so the language
+// fails loudly instead of dropping every key and going green.
+const splittable = (error) => error?.kind === "content" || error?.status === 400;
+
 // The workload for one language: which committed entries survive, which are
 // dead, which a context pin sends back for translation (stale), and which
 // sources still need a translation. A stale entry is not kept, so it is
@@ -309,14 +369,47 @@ export async function translateLanguage({ root, lang, outDir, client, limit, log
     );
     for (const batch of chunks(missing, BATCH_SIZE)) {
       const notes = Object.fromEntries(batch.map((key) => [key, contextNote(context, key, lang)]).filter(([, note]) => note));
-      const result = await client.chat({
-        name: "translate",
-        schema: translationSchema(batch),
-        messages: translateMessages(languageName, glossary, batch, notes),
-      });
-      const proposals = new Map((result?.translations ?? []).map((pair) => [pair.key, pair.translation]));
+      const translate = (keys) =>
+        client.chat({
+          name: "translate",
+          schema: translationSchema(keys),
+          messages: translateMessages(languageName, glossary, keys, Object.fromEntries(keys.map((key) => [key, notes[key]]).filter(([, note]) => note))),
+        });
+      // A batch call that throws after chat()'s own retries must not fail
+      // the language (run 39891870190: one cut-off Spanish batch blocked the
+      // publish of all four). Retry the keys one at a time; a key whose
+      // single call still throws stays missing — the safe English fallback —
+      // exactly like an audit-flagged key. Only a failure that can be
+      // specific to one input splits: an auth/credit failure or a sustained
+      // outage rethrows, failing the language as it did before this fix.
+      const proposals = new Map();
+      const noResponse = new Set();
+      const collect = (result) => {
+        for (const pair of result?.translations ?? []) proposals.set(pair.key, pair.translation);
+      };
+      try {
+        collect(await translate(batch));
+      } catch (error) {
+        if (!splittable(error)) throw error;
+        let lastError = error;
+        for (const key of batch) {
+          try {
+            collect(await translate([key]));
+          } catch (error) {
+            if (!splittable(error)) throw error;
+            lastError = error;
+            noResponse.add(key);
+            dropped.push({ key, problem: `the model returned no usable response: ${error.message}` });
+          }
+        }
+        // Every key failing alone is not one bad input but a provider-wide
+        // problem (a mistyped model, an endpoint without json_schema): fail
+        // loudly rather than drop the whole batch and go green (GLM 5.3).
+        if (noResponse.size === batch.length) throw lastError;
+      }
       const accepted = {};
       for (const key of batch) {
+        if (noResponse.has(key)) continue;
         const value = proposals.get(key);
         if (typeof value !== "string" || !value.trim()) {
           dropped.push({ key, problem: "the model returned no translation" });
@@ -339,13 +432,41 @@ export async function translateLanguage({ root, lang, outDir, client, limit, log
       for (const key of reviewed) translated[key] = accepted[key];
       const acceptedKeys = Object.keys(accepted).filter((key) => !reviewed.includes(key));
       if (acceptedKeys.length) {
-        const audit = await client.chat({
-          name: "audit",
-          schema: auditSchema,
-          messages: auditMessages(languageName, acceptedKeys.map((key) => (notes[key] ? { key, translation: accepted[key], note: notes[key] } : { key, translation: accepted[key] }))),
-        });
-        const verdicts = new Map((audit?.verdicts ?? []).map((verdict) => [verdict.key, verdict]));
+        const audit = (keys) =>
+          client.chat({
+            name: "audit",
+            schema: auditSchema,
+            messages: auditMessages(languageName, keys.map((key) => (notes[key] ? { key, translation: accepted[key], note: notes[key] } : { key, translation: accepted[key] }))),
+          });
+        // The same split as the translate call: an audit call that throws
+        // after chat()'s retries is retried key by key, and a key whose
+        // audit still throws is dropped — never accepted unaudited. The same
+        // narrowing applies: only a one-input failure splits, anything else
+        // rethrows and fails the language.
+        const verdicts = new Map();
+        const unaudited = new Set();
+        const record = (result) => {
+          for (const verdict of result?.verdicts ?? []) verdicts.set(verdict.key, verdict);
+        };
+        try {
+          record(await audit(acceptedKeys));
+        } catch (error) {
+          if (!splittable(error)) throw error;
+          let lastError = error;
+          for (const key of acceptedKeys) {
+            try {
+              record(await audit([key]));
+            } catch (error) {
+              if (!splittable(error)) throw error;
+              lastError = error;
+              unaudited.add(key);
+              dropped.push({ key, problem: `semantic audit: the model returned no usable response: ${error.message}` });
+            }
+          }
+          if (unaudited.size === acceptedKeys.length) throw lastError;
+        }
         for (const key of acceptedKeys) {
+          if (unaudited.has(key)) continue;
           const verdict = verdicts.get(key);
           if (verdict && verdict.ok === false) {
             dropped.push({ key, problem: `semantic audit: ${verdict.problem}` });

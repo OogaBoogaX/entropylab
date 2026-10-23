@@ -148,8 +148,16 @@ export class PassphraseVault {
   }
 
   // The passphrase as text: only to show it, or for a tool that takes text.
+  // Built in chunks: spreading the whole store as call arguments throws a
+  // RangeError past the engine's argument limit (a large paste, 100k+ code
+  // points), which left unmask() and plain-mode setBytes failing before
+  // vault.clear() ran.
   text() {
-    return String.fromCodePoint(...this.#points.subarray(0, this.#length));
+    let out = "";
+    for (let i = 0; i < this.#length; i += 4096) {
+      out += String.fromCodePoint(...this.#points.subarray(i, Math.min(i + 4096, this.#length)));
+    }
+    return out;
   }
 
   mask() {
@@ -166,6 +174,14 @@ export class PassphraseVault {
 // check on isComposing or on "insertCompositionText" alone misses them.
 const COMPOSITION_INPUT_TYPES = new Set(["insertCompositionText", "deleteCompositionText", "insertFromComposition", "deleteByComposition"]);
 const isCompositionInputType = (type) => COMPOSITION_INPUT_TYPES.has(type ?? "");
+// What a single-line field makes of inserted text (Chromium's and WebKit's
+// TextFieldInputType, Firefox's default editor.singleLine.pasteNewlines):
+// line breaks at the end are dropped, and every other one, CRLF counted as
+// one, becomes a space. The vault holds what a native password field would,
+// so a passphrase pasted with its trailing newline derives the seed other
+// tools derive from it, and unmask() (whose value setter strips line breaks)
+// shows exactly what the vault holds.
+const singleLineText = (text) => text.replace(/[\r\n]+$/, "").replace(/\r\n|[\r\n]/g, " ");
 
 export const bindVaultField = (field, vault, { active = () => true } = {}) => {
   let pending = null, composing = null, echoing = false;
@@ -253,7 +269,7 @@ export const bindVaultField = (field, vault, { active = () => true } = {}) => {
         pending = null; // prevented, so no input event will consume it
         return;
       }
-      text = event.data ?? event.dataTransfer?.getData("text/plain") ?? "";
+      text = singleLineText(event.data ?? event.dataTransfer?.getData("text/plain") ?? "");
     } else if (type === "deleteContentBackward") {
       if (start === end) from = Math.max(0, start - 1);
     } else if (type === "deleteContentForward") {
@@ -414,7 +430,15 @@ export const bindVaultField = (field, vault, { active = () => true } = {}) => {
     // Script-side: the field shows `bytes` (a stored passphrase), or nothing.
     setBytes: (bytes) => {
       endComposition();
-      vault.setBytes(bytes);
+      try {
+        vault.setBytes(bytes);
+      } catch (error) {
+        // The refusal left the vault empty: the field must not keep showing
+        // the previous passphrase's mask (or text) over it.
+        if (active()) render(0);
+        else field.value = "";
+        throw error;
+      }
       if (active()) render(vault.length);
       else {
         field.value = vault.text();

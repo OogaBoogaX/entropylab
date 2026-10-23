@@ -295,6 +295,7 @@ test("BIP39 separator matrix: acceptance matches @scure/bip39 for every word cou
     "line separator (U+2028)": "\u2028",
     "paragraph separator (U+2029)": "\u2029",
     "zero-width no-break space (U+FEFF)": "\uFEFF",
+    "next line (U+0085, outside JavaScript's \\s)": "\u0085",
     "no-break space (U+00A0, NFKD folds)": "\u00A0",
     "ideographic space (U+3000, NFKD folds)": "\u3000",
   };
@@ -329,7 +330,7 @@ test("BIP39 separator matrix: acceptance matches @scure/bip39 for every word cou
 // guard rejects every one of them before the crate sees the text.
 test("BIP39: no non-canonical separator yields a derivable seed-bearing phrase", () => {
   const words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ");
-  const sneak = ["\t ", " \t", " \n", "\v ", "\f ", "\u2028 ", " \u2029"];
+  const sneak = ["\t ", " \t", " \n", "\v ", "\f ", "\u2028 ", " \u2029", "\u0085 ", " \u0085"];
   for (const sep of sneak) {
     for (let gap = 1; gap < words.length; gap++) {
       const phrase = words.slice(0, gap).join(" ") + sep + words.slice(gap).join(" ");
@@ -343,6 +344,21 @@ test("BIP39: no non-canonical separator yields a derivable seed-bearing phrase",
     assert.equal(validateMnemonic(phrase), scureBip39.validateMnemonic(phrase, scureEnglish), `${count} words`);
     assert.throws(() => mnemonicToEntropy(phrase), undefined, `${count} words`);
   }
+});
+
+// Deep sweep of cb18b09 (GLM 5.3, Kimi K3, DeepSeek V4.1): JavaScript's \S
+// matches U+0085 (NEL) while rust-bip39 splits on it, so twelve tokens with
+// three hidden NELs validated as the fifteen-word phrase, gave its entropy,
+// and hashed to a different seed.
+test("BIP39: a NEL inside a token is not a separator the guard lets through", () => {
+  const words = entropyToMnemonic(new Uint8Array(20).fill(0)).split(" ");
+  const hidden = [words.slice(0, 2), words.slice(2, 4), words.slice(4, 6)].map((pair) => pair.join("\u0085"));
+  const phrase = [...hidden, ...words.slice(6)].join(" ");
+  assert.equal(phrase.split(" ").length, 12);
+  assert.equal(scureBip39.validateMnemonic(phrase, scureEnglish), false, "scure baseline");
+  assert.equal(validateMnemonic(phrase), false);
+  assert.throws(() => mnemonicToEntropy(phrase), /Invalid mnemonic/);
+  assert.throws(() => mnemonicToSeedSync(phrase), /Invalid mnemonic/);
 });
 
 test("wordlist agreement: JS data file == rust-bip39 English list, word for word", () => {

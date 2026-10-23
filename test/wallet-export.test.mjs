@@ -642,6 +642,31 @@ test("msig cache parents match independent CKD of each co-signer", () => {
   assert.deepEqual(got, [...expected].sort());
 });
 
+test("a repeated co-signer key reads its own tail in each slot", () => {
+  // Deep sweep of cb18b09 (GLM 5.3, Kimi K3, Muse Spark, Nemotron 3 Ultra,
+  // DeepSeek V4.1): the tail of a repeated key was read from its first copy,
+  // so "xpubA/0/*,xpubA/5/0/*" passed as two "/0/*" slots and the second
+  // slot cached xpubA/0 as its parent instead of xpubA/5/0.
+  const { walletDatSupported, buildWalletRecords } = loadModule();
+  const body = (slots) => `wsh(sortedmulti(2,${slots.map(([account, tail]) => msigKey(account) + tail).join(",")}))`;
+  const desc = (slots) => `${body(slots)}#${descriptorChecksum(body(slots))}`;
+  const wallet = (receive, change) => ({ ...MSIG_WALLET, receiveDescriptor: desc(receive), changeDescriptor: desc(change) });
+  // The two-step copy is refused in either order, as it is on its own.
+  assert.equal(walletDatSupported(wallet([[0, "/0/*"], [0, "/5/0/*"], [2, "/0/*"]], [[0, "/1/*"], [0, "/5/1/*"], [2, "/1/*"]])), false);
+  assert.equal(walletDatSupported(wallet([[0, "/5/0/*"], [0, "/0/*"], [2, "/0/*"]], [[0, "/5/1/*"], [0, "/1/*"], [2, "/1/*"]])), false);
+  // Two one-step copies on different branches: each slot caches its own parent.
+  const repeated = wallet([[0, "/0/*"], [0, "/2/*"], [2, "/0/*"]], [[0, "/1/*"], [0, "/3/*"], [2, "/1/*"]]);
+  assert.equal(walletDatSupported(repeated), true);
+  const cachePrefix = "15" + "77616c6c657464657363726970746f726361636865";
+  const got = buildWalletRecords(repeated, false, msigDeps, 0)
+    .map(([key, value]) => [bytesToHex(key), bytesToHex(value)])
+    .filter(([key]) => key.startsWith(cachePrefix))
+    .map(([key, value]) => `${cacheKeyIndex(key)}:${value}`);
+  const parent = (account, branch) => "4a" + bytesToHex(deriveBranchBody(msigNode(account).publicExtendedKey, branch));
+  const expected = [[0, 0, 0], [1, 0, 2], [2, 2, 0], [0, 0, 1], [1, 0, 3], [2, 2, 1]].map(([slot, account, branch]) => `${slot}:${parent(account, branch)}`);
+  assert.deepEqual(got.sort(), expected.sort());
+});
+
 const cacheKeyIndex = (keyHex) => {
   const bytes = hexToBytes(keyHex);
   const offset = bytes.length - 4;
@@ -1719,6 +1744,47 @@ test("private export zeroes the key buffers passed to injected dependencies", ()
   for (const raw of capturedRaw) assert.ok(raw.every((byte) => byte === 0), "raw xprv payload is wiped");
   for (const secret of capturedSecret) assert.ok(secret.every((byte) => byte === 0), "secret is wiped");
   for (const hash of capturedKeyHash) assert.ok(hash.every((byte) => byte === 0), "key hash is wiped");
+});
+
+test("private export wipes key buffers when the key record build throws", () => {
+  const { buildWalletRecords } = loadModule();
+  const capturedRaw = [], capturedSecret = [], capturedHashInput = [], capturedInnerHash = [];
+  let sawSecret = false;
+  const throwingDeps = {
+    ...deps,
+    base58Decode: (text) => {
+      const raw = deps.base58Decode(text);
+      if (text.startsWith("xprv") || text.startsWith("tprv")) capturedRaw.push(raw);
+      return raw;
+    },
+    publicKeyForPrivate: (secret) => {
+      sawSecret = true;
+      capturedSecret.push(secret);
+      return deps.publicKeyForPrivate(secret);
+    },
+    sha256: (bytes) => {
+      if (sawSecret && bytes.length === 247) {
+        capturedHashInput.push(bytes);
+        return deps.sha256(bytes);
+      }
+      if (sawSecret && bytes.length === 32) {
+        capturedInnerHash.push(bytes);
+        throw new Error("forced sha256 failure");
+      }
+      return deps.sha256(bytes);
+    },
+  };
+  const wallet = structuredClone(PRIVATE_WALLET);
+  wallet.accounts = [wallet.accounts[0]];
+  assert.throws(() => buildWalletRecords(wallet, true, throwingDeps, 0), /forced sha256 failure/);
+  assert.ok(capturedRaw.length > 0, "captured raw xprv payloads");
+  assert.ok(capturedSecret.length > 0, "captured secrets");
+  assert.ok(capturedHashInput.length > 0, "captured key-hash input");
+  assert.ok(capturedInnerHash.length > 0, "captured inner key hash");
+  for (const raw of capturedRaw) assert.ok(raw.every((byte) => byte === 0), "raw xprv payload is wiped");
+  for (const secret of capturedSecret) assert.ok(secret.every((byte) => byte === 0), "secret is wiped");
+  for (const input of capturedHashInput) assert.ok(input.every((byte) => byte === 0), "key-hash input is wiped");
+  for (const hash of capturedInnerHash) assert.ok(hash.every((byte) => byte === 0), "inner key hash is wiped");
 });
 
 test("msig filename falls back when m or n is not a safe integer", () => {
