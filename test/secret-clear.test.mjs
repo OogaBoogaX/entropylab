@@ -1493,6 +1493,7 @@ async function stationHarness(options = {}) {
   const lab = () => ({ id: 0, number: 0, isLab: true, fields: {}, result: null });
   Object.assign(context, {
     hodlKeys: [lab()], hodlActiveKey: 0, hodlNextKeyNumber: 1, hodlWorkspace: "calc",
+    hodlPrivateKeyKinds: ["wif", "hex-key", "minikey", "brain"],
     hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "", hodlKeyManagerIgnored: [], keyVaultIdentity, hodlKeyVaultMaxKeys: KEY_VAULT_MAX_KEYS,
     hodlCaptureKey() { const state = context.hodlKeys[context.hodlActiveKey]; if (state) state.result = context.hodlWalletResult; },
     hodlRestoreKey() { context.hodlWalletResult = context.hodlKeys[context.hodlActiveKey]?.result ?? null; },
@@ -1515,7 +1516,7 @@ async function stationHarness(options = {}) {
   context.document.getElementById = ((byId, note = { textContent: "" }) => (id) => id === "journal-status-note" ? note : byId(id))(context.document.getElementById);
   for (const name of ["hodlCommitDerivedKey", "hodlCloneDerivedKey", "hodlKeyWalletIdentity", "hodlKeyManagerStates", "hodlKeyManagerCapacityError", "hodlInvalidateLiveKeyResult",
     "hodlInvalidateActiveKeyOutput", "hodlRetractBrainWalletResults", "hodlDeleteActiveKey", "hodlKeyManagerIgnore",
-    "hodlKeyManagerEntry", "hodlKeyManagerDetachFromStation", "hodlKeyManagerReset", "hodlKeyManagerWipeValue", "hodlJournalWipeMem"])
+    "hodlKeyManagerEntry", "hodlKeyManagerDetachFromStation", "hodlKeyManagerHasInputs", "hodlPrivateKeyValues", "hodlNormalizePrivateKeyKind", "hodlDetectPrivateKeyKind", "hodlKeyManagerArchiveEntry", "hodlKeyManagerReset", "hodlKeyManagerWipeValue", "hodlJournalWipeMem"])
     vm.runInContext(functionSource(name), context);
   // Derives BIP32 test vector 1 on the active tab and commits it, returning
   // the key buffers the committed rows hold.
@@ -2105,5 +2106,35 @@ test("a seed wallet declined at the fingerprint confirmation, or hidden while it
     await run.promise;
     assert.equal(context.hodlWalletResult, null);
     assert.deepEqual(usableSeedMaterial(pending), [], `${ending}: the uncommitted wallet's seed material is still usable`);
+  }
+});
+
+
+// External review claimed Journal keep/reuse dropped fresh seed buffers.
+// Exercise the actual builder's registration and the outer controller's
+// finally, not a replacement builder returning unregistered synthetic bytes.
+test("Journal keep-existing and exact-reuse zero fresh seed material through the real controller", async () => {
+  for (const kind of ["skip", "reuse"]) {
+    const { context, derive, selectLab, active } = await stationHarness({ seedWords: true });
+    await derive("same-wallet");
+    const existing = active(), previous = existing.result;
+    selectLab();
+    const calculate = context.hodlCalculateKey;
+    let fresh, control;
+    context.hodlCalculateKey = progress => calculate(progress, "derive", {
+      decideCommit: async result => {
+        fresh = result; control = context.hodlActiveDerivation;
+        assert.deepEqual(usableSeedMaterial(fresh), bothSeeds);
+        for (const bytes of [fresh.entropy, fresh.seed, fresh.passphrase])
+          assert.ok(control.rowKeys.includes(bytes), "the real builder must register the exact result buffer");
+        return kind === "reuse" ? { kind, state: existing, previousResult: previous } : { kind };
+      },
+    });
+    await derive("same-wallet");
+    assert.ok(fresh && fresh !== previous);
+    assert.deepEqual(usableSeedMaterial(fresh), [], `${kind}: the uncommitted seed material remained usable`);
+    assert.deepEqual(usableSeedMaterial(previous), bothSeeds, `${kind}: the retained wallet was wiped`);
+    assert.equal(context.hodlActiveDerivation, null);
+    assert.equal(context.hodlKeys.filter(state => !state.isLab).length, 1);
   }
 });

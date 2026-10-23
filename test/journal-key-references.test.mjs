@@ -39,6 +39,28 @@ test("existing key names containing the multisig marker remain valid references"
   assert.equal(journal.journalTextFromRuns(journal.journalNotebookRuns(legacy)), legacy);
 });
 
+test("noncanonical key and BIP85 reference-like text survives import and save exactly", () => {
+  const sources = [
+    "◆◆  Lab   key [AABBCCDD]\u2063", "◆◆ Lab key [AABBCCDD]\u2063",
+    "◆◆ aabbccdd [aabbccdd]\u2063", "◆◆ Lab key [aabbccdd] ◆",
+    `◆◆ ${"a".repeat(121)} [aabbccdd]\u2063`,
+    "◈◈ BIP-85 · BIP-39 [DEADBEEF]\u2063", "◈◈ BIP-85 · WIF [deadbeef] ◆",
+    "▣▣ Lab wallet [1-of-1: AAAAAAAA]\u2063",
+  ];
+  for (const text of sources) {
+    const notebook = journal.createJournal();
+    notebook.pages[0].notesText = text;
+    assert.equal(journal.parseNotebook(journal.serializeNotebook(notebook)).notesText, text);
+    assert.equal(journal.journalFromPlainText(text).notesText, text);
+    assert.deepEqual(journal.journalNotebookRuns(text), [{ type: "text", text }]);
+    assert.deepEqual(journal.journalKeyReferenceRanges(text), []);
+  }
+  for (const text of [journal.journalKeyReferenceToken("Lab key", "aabbccdd"), journal.journalBip85ReferenceToken("bip39", "deadbeef")]) {
+    assert.equal(journal.journalNotebookRuns(text)[0].type, "key");
+    assert.equal(journal.journalTextFromRuns(journal.journalNotebookRuns(text)), text);
+  }
+});
+
 test("the station's one and fifteen co-signer boundaries round-trip", () => {
   for (const count of [1, 15]) {
     const known = Array.from({ length: count }, (_, index) => index % 2 ? "" : "aaaaaaaa");

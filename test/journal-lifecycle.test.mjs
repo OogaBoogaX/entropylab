@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
-import { addEntry, appendLog, createJournal, emptyDocument, formatStamp, journalNotebookRuns, journalPageNotesText, wipeDocument, wipeJournal } from "../src/js/journal.js";
+import { addEntry, appendLog, createJournal, emptyDocument, formatStamp, journalNotebookRuns, journalPageNotesText, mergeLogHistory, wipeDocument, wipeJournal } from "../src/js/journal.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -417,7 +417,7 @@ test("the static tab strip no longer marks the released Journal tab as held back
 // request may neither overwrite the current notebook nor unlock its controls
 // or report an obsolete failure after a wipe and a newer request.
 function gateHarness() {
-  const fields = new Map(), requests = [], stamps = [];
+  const fields = new Map(), requests = [], stamps = [], resets = [];
   for (const id of ["journal-create", "journal-unlock", "journal-create-password", "journal-create-confirm", "journal-open-password", "journal-file", "journal-error", "journal-gate-status", "journal-locked-panel", "journal-notes-tab", "journal-open-ready"]) {
     fields.set(id, { value: "fixture password", disabled: false, textContent: "", listeners: {},
       addEventListener(type, fn) { this.listeners[type] = fn; }, focus() { context.document.activeElement = this; } });
@@ -432,20 +432,130 @@ function gateHarness() {
     hodlJournalDirty: false, hodlJournalReveal: false, hodlJournalEditingId: null, hodlJournalDeleteArmed: false,
     hodlJournalCreateDocument: () => begin("create"), hodlJournalOpenDocument: () => begin("open"),
     hodlJournalStamp: () => { stamps.push(FIRST_NOTE_STAMP); return FIRST_NOTE_STAMP; },
-    hodlJournalWipeDocument: wipeDocument, wipeJournal,
-    hodlKeyManagerReset() {}, hodlJournalHideEditor() {}, hodlJournalShowWork() {}, hodlJournalLog() {},
+    hodlJournalWipeDocument: wipeDocument, wipeJournal, hodlJournalMergeLogHistory: mergeLogHistory,
+    hodlActiveDerivation: null, hodlJournalKeyDerivation: null, hodlWorkspace: "calc",
+    hodlKeys: [], hodlKeyManagerPending: [], hodlKeyManagerIgnored: [], hodlKeyVaultMaxKeys: 100,
+    keyVaultIdentity: state => String(state.id), hodlCaptureKey() {},
+    hodlKeyManagerReset() { resets.push("reset"); }, hodlJournalRestoreBackup() {}, hodlJournalHideEditor() {}, hodlJournalShowWork() {}, hodlJournalLog() {},
     hodlShowJournalTool(id, focus) { if (id === "notes" && focus) fields.get("journal-notes-tab").focus(); },
     hodlSyncJournalCreatePasswordValidation() {}, hodlJournalSetGate() {}, hodlJournalChooseFile() {},
     hodlJournalSaveFile() {}, hodlJournalConfirmClear() {}, hodlJournalRenderList() {},
     hodlTText: (text) => text,
   });
-  for (const name of ["hodlJournalActivePage", "hodlJournalStartPage", "hodlJournalError", "hodlJournalSetGateBusy", "hodlJournalClearReport", "hodlJournalWipeNotebook", "hodlJournalDiscardOpened", "hodlJournalCreate", "hodlJournalUnlock", "hodlJournalCreatePasswordKeydown", "hodlInitJournalNotebook"]) {
+  for (const name of ["hodlKeyManagerHasInputs", "hodlKeyManagerStates", "hodlKeyManagerCapacityError", "hodlJournalCheckInventory", "hodlJournalActivePage", "hodlJournalStartPage", "hodlJournalError", "hodlJournalSetGateBusy", "hodlJournalClearReport", "hodlJournalWipeNotebook", "hodlJournalDiscardOpened", "hodlJournalCreate", "hodlJournalUnlock", "hodlJournalCreatePasswordKeydown", "hodlInitJournalNotebook"]) {
     const match = app.match(new RegExp(`^(?:async )?function ${name}\\([^]*?^}`, "m"));
     if (match) vm.runInContext(match[0], context);
   }
-  return { context, fields, requests, stamps };
+  return { context, fields, requests, stamps, resets };
 }
 const gateResult = () => ({ keys: { passwordProtected: true }, doc: emptyDocument() });
+
+// Security contract: Create/Open accept only a quiescent resulting inventory
+// within the existing 100-input bound, preserve the previous session on
+// refusal, and wipe newly decrypted documents rejected after asynchronous work.
+const gateStation = count => Array.from({ length: count }, (_, index) => ({ id: index + 1, fields: { seed: SECRET_PHRASE } }));
+const gateRun = (ui, mode) => ui.context[mode === "create" ? "hodlJournalCreate" : "hodlJournalUnlock"]();
+for (const mode of ["create", "open"]) {
+  for (const busy of ["hodlActiveDerivation", "hodlJournalKeyDerivation"]) test(`${mode} refuses an active derivation before starting crypto: ${busy}`, async () => {
+    const ui = gateHarness(), previous = gateResult();
+    ui.context.hodlJournalDoc = previous.doc; ui.context.hodlJournalKeys = previous.keys;
+    ui.context[busy] = {};
+    const pending = gateRun(ui, mode);
+    const started = ui.requests.length;
+    ui.requests.forEach(request => request.resolve(gateResult()));
+    await pending;
+    assert.equal(started, 0, "a gate operation started crypto while key derivation was active");
+    assert.equal(ui.context.hodlJournalDoc, previous.doc);
+    assert.deepEqual(ui.resets, []);
+    assert.ok(ui.fields.get("journal-error").textContent);
+  });
+  test(`${mode} from Journal preserves the verified station result without recapturing hidden calculator state`, async () => {
+    const ui = gateHarness(), state = gateStation(1)[0];
+    const result = { masterIdentity: "verified fixture identity", network: "mainnet" };
+    state.result = result;
+    ui.context.hodlKeys = [state];
+    ui.context.hodlWorkspace = "journal";
+    // Leaving Key Station clears the shared renderer result. CaptureKey
+    // reads that renderer; it is valid only while the calculator is active.
+    ui.context.hodlCaptureKey = () => { state.result = null; };
+    const pending = gateRun(ui, mode), opened = gateResult();
+    ui.requests[0].resolve(opened);
+    await pending;
+    assert.equal(ui.context.hodlJournalDoc, opened.doc);
+    assert.equal(state.result, result, "a hidden calculator capture withdrew the retained verified result");
+    assert.equal(state.fields.seed, SECRET_PHRASE);
+  });
+  test(`${mode} captures an unfinished Lab draft before the capacity preflight`, async () => {
+    const ui = gateHarness(), lab = { id: 0, isLab: true, fields: {} };
+    ui.context.hodlKeys = [lab, ...gateStation(100)];
+    ui.context.hodlCaptureKey = () => { lab.fields.seed = SECRET_PHRASE; };
+    const pending = gateRun(ui, mode), started = ui.requests.length;
+    ui.requests.forEach(request => request.resolve(gateResult()));
+    await pending;
+    assert.equal(started, 0, "the uncaptured draft was omitted from the resulting inventory");
+    assert.equal(lab.fields.seed, SECRET_PHRASE);
+    assert.deepEqual(ui.resets, []);
+    assert.ok(ui.fields.get("journal-error").textContent);
+  });
+  for (const change of ["inventory", "derivation"]) test(`${mode} rechecks ${change} after crypto and wipes only the rejected document`, async () => {
+    const ui = gateHarness(), previous = gateResult(), opened = gateResult();
+    const retained = addEntry(previous.doc, { method: "seed", input: SECRET_PHRASE, label: "Existing record" });
+    const rejected = addEntry(opened.doc, { method: "seed", input: SECRET_PHRASE, label: "Rejected record" });
+    ui.context.hodlJournalDoc = previous.doc; ui.context.hodlJournalKeys = previous.keys;
+    const pending = gateRun(ui, mode);
+    assert.equal(ui.requests.length, 1);
+    if (change === "inventory") ui.context.hodlKeys = gateStation(101);
+    else ui.context.hodlActiveDerivation = {};
+    ui.requests[0].resolve(opened);
+    await pending;
+    assert.equal(ui.context.hodlJournalDoc, previous.doc, "the previous Journal was replaced on refusal");
+    assert.equal(retained.input, SECRET_PHRASE);
+    assert.equal(rejected.input, "", "rejected decrypted input was left in memory");
+    assert.equal(opened.doc.entries.length, 0);
+    assert.deepEqual(ui.resets, []);
+    assert.ok(ui.fields.get("journal-error").textContent);
+  });
+  test(`${mode} accepts the boundary including a meaningful Lab draft and replaces old pending inputs`, async () => {
+    const ui = gateHarness();
+    ui.context.hodlKeys = [{ id: 0, isLab: true, fields: { seed: SECRET_PHRASE } }, ...gateStation(99)];
+    ui.context.hodlKeyManagerPending = gateStation(100).map(state => ({ ...state, id: state.id + 100 }));
+    ui.context.hodlKeyManagerIgnored = gateStation(100);
+    const pending = gateRun(ui, mode), opened = gateResult();
+    ui.requests[0].resolve(opened);
+    await pending;
+    assert.equal(ui.context.hodlJournalDoc, opened.doc);
+    assert.deepEqual(ui.resets, ["reset"]);
+  });
+}
+
+test("opening a complete backup counts the retained Lab draft alongside its restored inputs", async () => {
+  const ui = gateHarness(), opened = gateResult();
+  ui.context.hodlKeys = [{ id: 0, isLab: true, fields: { seed: SECRET_PHRASE } }];
+  const incoming = { fields: { seed: SECRET_PHRASE } };
+  opened.doc.backup = { keyManager: { keys: [incoming, ...gateStation(99)], ignoredKeys: [] } };
+  const pending = gateRun(ui, "open");
+  ui.requests[0].resolve(opened);
+  await pending;
+  assert.equal(ui.context.hodlJournalDoc, null);
+  assert.equal(incoming.fields.seed, "");
+  assert.deepEqual(ui.resets, []);
+  assert.ok(ui.fields.get("journal-error").textContent);
+});
+
+test("legacy Journal open preserves current Debug history through notebook wiping", async () => {
+  const ui = gateHarness(), original = appendLog(ui.context.hodlJournal, { at: FIRST_NOTE_STAMP, tool: "calc", action: "derive" });
+  ui.context.hodlJournal.logDiscarded = 7;
+  const pending = gateRun(ui, "open"), opened = gateResult();
+  ui.requests[0].resolve(opened);
+  await pending;
+  assert.equal(ui.context.hodlJournalDoc, opened.doc);
+  assert.equal(ui.context.hodlJournal.log.length, 1);
+  assert.equal(ui.context.hodlJournal.log[0].action, "derive");
+  assert.equal(ui.context.hodlJournal.logDiscarded, 7);
+  assert.notEqual(ui.context.hodlJournal.log[0], original, "history must survive wiping its original objects");
+  original.action = "changed after open";
+  assert.equal(ui.context.hodlJournal.log[0].action, "derive");
+});
 
 test("successful Journal creation starts exactly one live timestamp on its first Notes page", async () => {
   const ui = gateHarness(), pending = ui.context.hodlJournalCreate();

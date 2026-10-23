@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { MiniDocument } from "./mini-dom.mjs";
-import { formatLog, logUsage } from "../src/js/journal.js";
+import { formatLog, formatLogField, logUsage } from "../src/js/journal.js";
 
 // A populated page must survive until its own deletion is confirmed; a
 // confirmation from a cleared or replaced Journal must never delete a page.
@@ -197,6 +197,7 @@ function activityHarness({ document, dialog, download = async () => true } = {})
   let pending;
   const context = {
     hodlJournal: journal,
+    hodlJournalKeys: { passwordProtected: true },
     hodlJournalGeneration: 1,
     unlocked: true,
     hodlJournalUnlocked: () => context.unlocked,
@@ -242,6 +243,17 @@ test("Activity Clear waits for confirmation, then records only the clear metadat
   assert.equal(h.journal.logDiscarded, 0, "Clear must also reset history truncation metadata");
   h.pending().onDiscard();
   assert.equal(h.events.length, 1, "a retained callback must not clear the replacement log again");
+});
+
+test("Debug log Clear discloses when its export has no password protection", () => {
+  const h = activityHarness();
+  h.context.hodlJournalKeys = { passwordProtected: false };
+  h.button.onclick();
+  assert.match(h.pending().message, /no password protection/i);
+  assert.match(h.pending().message, /anyone with the file/i);
+  assert.doesNotMatch(h.pending().preparingMessage, /encrypted|protected/i);
+  assert.equal(h.log.length, 1);
+  assert.equal(h.events.length, 0);
 });
 
 test("Debug log Export first uses the captured log and requires a separate Clear", async () => {
@@ -421,7 +433,7 @@ function logRenderHarness({ top = 300, height = 100, unchanged = false } = {}) {
     },
     set innerHTML(_value) { assert.fail("Activity content must only be rendered as text"); },
   };
-  const context = { document: { getElementById: (id) => id === "journal-log-out" ? output : null }, hodlJournal: { log }, hodlJournalFormatLog: formatLog, hodlJournalLogUsage: logUsage };
+  const context = { document: { getElementById: (id) => id === "journal-log-out" ? output : null }, hodlJournal: { log }, hodlJournalFormatLog: formatLog, hodlJournalFormatLogField: formatLogField, hodlJournalLogUsage: logUsage };
   runInNewContext(appFunction("hodlRenderJournalLog"), context);
   return { context, output, log, writes: () => writes };
 }

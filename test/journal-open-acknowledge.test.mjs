@@ -28,6 +28,7 @@ import {
   deriveJournalKeys,
   emptyDocument,
   openDocument,
+  mergeLogHistory,
   sealDocument,
   wipeBytes,
   wipeDocument,
@@ -97,6 +98,7 @@ const loadApp = ({ password = "", onOpen = (file, password) => openDocument(file
     "hodlKeyManagerReset", "hodlJournalHideEditor",
     "hodlJournalShowWork", "hodlShowJournalTool", "hodlJournalLog",
     "hodlJournalBackfillDerivedKeys", "hodlJournalDiscardOpened", "hodlTText", "wipeJournal", "hodlJournal",
+    "hodlJournalCheckInventory", "hodlJournalMergeLogHistory",
     `${source}; return {
       choose: hodlJournalChooseFile,
       unlock: hodlJournalUnlock,
@@ -113,6 +115,7 @@ const loadApp = ({ password = "", onOpen = (file, password) => openDocument(file
     noop, noop, noop,
     noop, noop, noop,
     (text) => text, wipeJournal, createJournal(),
+    noop, mergeLogHistory,
   );
   return { ...api, error: () => fields["journal-error"].textContent };
 };

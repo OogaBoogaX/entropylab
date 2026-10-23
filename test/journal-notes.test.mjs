@@ -191,7 +191,7 @@ function notesHarness(value = "") {
   Object.defineProperty(field, "value", {
     get: () => value,
     set(next) {
-      value = String(next);
+      value = String(next).replace(/\r\n?/g, "\n");
       this.setSelectionRange(value.length, value.length);
       this.scrollTop = this.scrollLeft = 0;
     },
@@ -213,7 +213,7 @@ function notesHarness(value = "") {
     hodlJournalPageNotesText: journalModule.journalPageNotesText,
     InputEvent: class { constructor(type, options) { this.type = type; Object.assign(this, options); } },
   };
-  for (const name of ["hodlJournalActivePage", "hodlJournalStartPage", "hodlAddJournalPage", "hodlJournalStoreNotesText", "hodlJournalRestorePage", "hodlSelectJournalPage", "hodlJournalUpdateNotesText", "hodlJournalNotesClick", "hodlJournalNotesKeydown", "hodlJournalDeleteKeyReference", "hodlJournalKeyReferenceKeydown", "hodlJournalInsertTimestamp", "hodlJournalTickNoteClock", "hodlJournalCommitNoteClock", "hodlJournalFreezeNoteClock", "hodlJournalStampRanges", "hodlJournalSelectEmptyStamp", "hodlJournalLogNoteChange", "hodlJournalNoteEditAllowed", "hodlJournalNotesBeforeInput", "hodlJournalNotesCompositionStart", "hodlJournalRejectNoteEdit", "hodlJournalRememberNotesEdit"]) {
+  for (const name of ["hodlJournalActivePage", "hodlJournalStartPage", "hodlAddJournalPage", "hodlJournalStoreNotesText", "hodlJournalRestorePage", "hodlSelectJournalPage", "hodlJournalUpdateNotesText", "hodlJournalNotesClick", "hodlJournalNotesKeydown", "hodlJournalDeleteKeyReference", "hodlJournalKeyReferenceKeydown", "hodlJournalInsertTimestamp", "hodlJournalTickNoteClock", "hodlJournalCommitNoteClock", "hodlJournalFreezeNoteClock", "hodlJournalStampRanges", "hodlJournalSelectEmptyStamp", "hodlJournalLogNoteChange", "hodlJournalNoteEditAllowed", "hodlJournalNotesBeforeInput", "hodlJournalNotesCompositionStart", "hodlJournalRejectNoteEdit", "hodlJournalRememberNotesEdit", "hodlJournalBeginNoteDrag", "hodlJournalFinishNoteDrag"]) {
     runInNewContext(sourceFunction(name), context);
   }
   return { field, journal, context, listeners, messages, events, dirty: () => dirty, setStamp(value) { stamp = value; } };
@@ -926,6 +926,149 @@ test("partial timestamp prefixes are protected while whole notes and normal body
   for (const args of rejected) assert.equal(context.hodlJournalNoteEditAllowed(text, ...args), false, `forbidden edit ${JSON.stringify(args)}`);
   assert.equal(context.hodlJournalNoteEditAllowed(stampA, 0, stampA.length, ""), true, "an empty note's entire prefix can be deleted");
   assert.equal(context.hodlJournalNoteEditAllowed("Unstructured notes", 0, 6, "Ordinary"), true);
+});
+
+test("imported CRLF and CR notes use the textarea newline representation before editing", () => {
+  for (const separator of ["\r\n", "\r"]) {
+    const source = stampA + "first" + separator + stampB + "second", expected = stampA + "first\n" + stampB + "second";
+    const payload = JSON.stringify({ format: "entropylab-notebook", version: 1, pages: [{ content: [{ type: "text", text: source }] }] });
+    for (const imported of [journalFromPlainText(source), parseNotebook(payload)]) {
+      assert.equal(imported.notesText, expected);
+      assert.equal(imported.pages[0].notesText, expected);
+      const h = notesHarness(imported.notesText);
+      h.context.hodlJournalRestorePage(h.field);
+      const position = expected.indexOf("second") + 2;
+      const { event, allowed } = noteBeforeInput(h, "insertText", position, position, "!");
+      assert.equal(allowed, true);
+      h.field.setRangeText("!", position, position);
+      h.context.hodlJournalUpdateNotesText(h.field, event);
+      assert.equal(h.field.value, expected.slice(0, position) + "!" + expected.slice(position));
+      assert.equal(h.journal.pages[0].notesText, h.field.value);
+    }
+  }
+});
+
+test("Unicode line and paragraph separators remain editable body text rather than inconsistent timestamp boundaries", () => {
+  const { context } = notesHarness();
+  for (const separator of ["\u2028", "\u2029"]) {
+    const text = stampA + "first" + separator + stampB + "second";
+    assert.equal(context.hodlJournalStampRanges(text).length, 1);
+    assert.equal(context.hodlJournalNoteEditAllowed(text, text.length, text.length, "!"), true);
+    assert.equal(context.hodlJournalNoteEditAllowed(text, 3, 4, "9"), false, "the genuine LF/start-of-page prefix stays protected");
+    assert.equal(parseNotebook(serializeNotebook(journalFromPlainText(text))).notesText, text);
+  }
+});
+
+test("a drag deletion followed by a refused timestamp drop preserves the complete original note", () => {
+  const first = stampA + "Alpha\n\n", second = stampB + "Beta", text = first + second;
+  for (const [start, end] of [[stampA.length, stampA.length + 5], [0, first.length]]) {
+    const h = notesHarness(text), moved = text.slice(start, end);
+    const deletion = noteBeforeInput(h, "deleteByDrag", start, end, null);
+    assert.equal(deletion.allowed, true);
+    h.field.setRangeText("", start, end);
+    h.context.hodlJournalUpdateNotesText(h.field, deletion.event);
+    const drop = noteBeforeInput(h, "insertFromDrop", 5, 5, moved);
+    assert.equal(drop.event.defaultPrevented, true);
+    assert.equal(h.field.value, text, "a refused drop must undo the source deletion");
+    assert.equal(h.journal.pages[0].notesText, text);
+    assert.equal(h.dirty(), 0, "an incomplete move must not become a saved content change");
+    assert.deepEqual(h.events, []);
+  }
+});
+
+test("accepted body drag moves commit both halves together and preserve timestamp prefixes", () => {
+  const text = stampA + "Alpha\n\n" + stampB + "Beta", start = stampA.length, end = start + 5;
+  const h = notesHarness(text), deletion = noteBeforeInput(h, "deleteByDrag", start, end, null);
+  h.field.setRangeText("", start, end);
+  h.context.hodlJournalUpdateNotesText(h.field, deletion.event);
+  assert.equal(h.journal.pages[0].notesText, text, "the source remains owned until the move is complete");
+  const destination = h.field.value.length, drop = noteBeforeInput(h, "insertFromDrop", destination, destination, "Alpha");
+  assert.equal(drop.allowed, true);
+  h.field.setRangeText("Alpha", destination, destination);
+  h.context.hodlJournalUpdateNotesText(h.field, drop.event);
+  assert.equal(h.field.value, stampA + "\n\n" + stampB + "BetaAlpha");
+  assert.equal(h.journal.pages[0].notesText, h.field.value);
+  assert.equal(h.dirty(), 1);
+});
+
+test("insertion-first drag moves and copy drops preserve their original source until completion", () => {
+  const text = stampA + "Alpha\n\n" + stampB + "Beta", start = stampA.length, end = start + 5;
+  for (const move of [true, false]) {
+    const h = notesHarness(text);
+    h.field.setSelectionRange(start, end);
+    h.context.hodlJournalBeginNoteDrag(h.field);
+    const destination = text.length, insertion = noteBeforeInput(h, "insertFromDrop", destination, destination, "Alpha");
+    h.field.setRangeText("Alpha", destination, destination);
+    h.context.hodlJournalUpdateNotesText(h.field, insertion.event);
+    assert.equal(h.journal.pages[0].notesText, text);
+    if (move) {
+      const deletion = noteBeforeInput(h, "deleteByDrag", start, end, null);
+      h.field.setRangeText("", start, end);
+      h.context.hodlJournalUpdateNotesText(h.field, deletion.event);
+    } else h.context.hodlJournalFinishNoteDrag(h.field, true);
+    assert.equal(h.field.value, (move ? stampA + "\n\n" + stampB + "Beta" : text) + "Alpha");
+    assert.equal(h.journal.pages[0].notesText, h.field.value);
+    assert.equal(h.field.hodlJournalDrag, undefined);
+    assert.equal(h.dirty(), 1);
+  }
+});
+
+test("cancelled drags, backup collection, and page switching never retain half a move", () => {
+  const text = stampA + "Alpha\n\n" + stampB + "Beta", start = stampA.length, end = start + 5;
+  for (const finish of [
+    h => h.context.hodlJournalFinishNoteDrag(h.field),
+    h => h.context.hodlJournalStoreNotesText(h.field),
+    h => h.context.hodlSelectJournalPage(1),
+  ]) {
+    const h = notesHarness(text);
+    h.journal.pages.push({ id: 2, number: 2, notesText: "Other page", style: {} });
+    const deletion = noteBeforeInput(h, "deleteByDrag", start, end, null);
+    h.field.setRangeText("", start, end);
+    h.context.hodlJournalUpdateNotesText(h.field, deletion.event);
+    finish(h);
+    assert.equal(h.journal.pages[0].notesText, text);
+    assert.equal(h.field.value, h.journal.activePage === 1 ? "Other page" : text);
+    assert.equal(h.field.hodlJournalDrag, undefined);
+    assert.equal(h.dirty(), 0);
+  }
+});
+
+test("a completed move to an external destination commits its validated source deletion once", () => {
+  const text = stampA + "Alpha\n\n" + stampB + "Beta", start = stampA.length, end = start + 5;
+  const h = notesHarness(text), deletion = noteBeforeInput(h, "deleteByDrag", start, end, null);
+  h.field.setRangeText("", start, end);
+  h.context.hodlJournalUpdateNotesText(h.field, deletion.event);
+  assert.equal(h.journal.pages[0].notesText, text);
+  h.context.hodlJournalFinishNoteDrag(h.field, true);
+  assert.equal(h.journal.pages[0].notesText, stampA + "\n\n" + stampB + "Beta");
+  assert.equal(h.field.value, h.journal.pages[0].notesText);
+  assert.equal(h.field.hodlJournalDrag, undefined);
+  assert.equal(h.dirty(), 1);
+});
+
+test("a stale drag cannot restore its source into a replacement Journal page", () => {
+  const text = stampA + "Alpha", h = notesHarness(text);
+  h.field.setSelectionRange(stampA.length, text.length);
+  h.context.hodlJournalBeginNoteDrag(h.field);
+  const replacement = createJournal();
+  replacement.notesText = replacement.pages[0].notesText = "Replacement content";
+  h.context.hodlJournal = replacement;
+  h.field.value = replacement.notesText;
+  h.context.hodlJournalFinishNoteDrag(h.field, true);
+  assert.equal(h.field.value, "Replacement content");
+  assert.equal(replacement.pages[0].notesText, "Replacement content");
+  assert.equal(h.field.hodlJournalDrag, undefined);
+});
+
+test("a browser drag deletion without beforeinput still rolls back a refused destination", () => {
+  const text = stampA + "Alpha\n\n" + stampB + "Beta", h = notesHarness(text);
+  h.field.setRangeText("", stampA.length, stampA.length + 5);
+  h.context.hodlJournalUpdateNotesText(h.field, { inputType: "deleteByDrag" });
+  const drop = noteBeforeInput(h, "insertFromDrop", 5, 5, "Alpha");
+  assert.equal(drop.event.defaultPrevented, true);
+  assert.equal(h.field.value, text);
+  assert.equal(h.journal.pages[0].notesText, text);
+  assert.equal(h.dirty(), 0);
 });
 
 test("beforeinput blocks partial-prefix typing, paste, drop, cut and deletion without changing the live clock", () => {

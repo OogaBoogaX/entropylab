@@ -89,15 +89,18 @@ function referenceFromMatch(match) {
       let reference = multisigReference(match[2], Number(policy[1]), fingerprints);
       // The visual mirror must preserve the editor's exact text positions.
       // Noncanonical pasted text stays ordinary text instead of shrinking.
-      return reference.name === match[2] ? reference : null;
+      return journalMultisigReferenceToken(reference.name, reference.m, reference.fingerprints) === match[0] ? reference : null;
     } catch { return null; }
   }
   if (!/^[0-9a-f]{8}$/i.test(match[3])) return null;
   let fingerprint = match[3].toLowerCase();
-  if (match[1] === "◆◆") return { type: "key", name: match[2] || fingerprint, fingerprint };
+  if (match[1] === "◆◆") {
+    let name = match[2] || fingerprint;
+    return journalKeyReferenceToken(name, fingerprint) === match[0] ? { type: "key", name, fingerprint } : null;
+  }
   let application = bip85ReferenceApplication(match[2]);
   if (!application) return null;
-  return { type: "key", name: match[2], fingerprint, source: "bip85", application };
+  return journalBip85ReferenceToken(application, fingerprint) === match[0] ? { type: "key", name: match[2], fingerprint, source: "bip85", application } : null;
 }
 
 export function journalNotebookRuns(text) {
@@ -131,7 +134,9 @@ export function journalTextFromRuns(runs) {
     else throw new Error("The notebook contains an unsupported content item.");
     if (text.length > NOTEBOOK_MAX_TEXT_LENGTH) throw new Error("A notebook page is too large to import.");
   }
-  return text;
+  // Textareas expose CRLF and lone CR as LF. Keep the imported model in
+  // that same representation before selections and protected edits use it.
+  return text.replace(/\r\n?/g, "\n");
 }
 
 export function createJournal() {
@@ -335,6 +340,11 @@ export function appendLog(journal, { at, tool, action, detail } = {}, now = new 
     detail: String(detail || "").slice(0, 300),
   };
   journal.log.push(event);
+  retainLogHistory(journal);
+  return event;
+}
+
+function retainLogHistory(journal) {
   let discarded = Number.isSafeInteger(journal.logDiscarded) && journal.logDiscarded >= 0 ? journal.logDiscarded : 0;
   const removeOldest = () => {
     const removed = journal.log.shift(), bytes = logEventBytes(removed);
@@ -346,15 +356,39 @@ export function appendLog(journal, { at, tool, action, detail } = {}, now = new 
   let bytes = logUsage(journal).bytes;
   while (bytes > JOURNAL_LOG_MAX_BYTES && journal.log.length) bytes -= removeOldest() + (journal.log.length ? 1 : 0);
   journal.logDiscarded = discarded;
-  return event;
+}
+
+// Parsed backup history precedes this session's events. Do not order by
+// untrusted timestamps or deduplicate identical events: repeated clicks in
+// the same second are real records. Copies survive wiping either source.
+export function mergeLogHistory(journal, importedLog, importedDiscarded = 0) {
+  const discarded = logUsage(journal).discarded;
+  const priorDiscarded = Number.isSafeInteger(importedDiscarded) && importedDiscarded >= 0 ? importedDiscarded : 0;
+  journal.log = [...importedLog, ...journal.log].map(({ at, tool, action, detail }) => ({ at, tool, action, detail }));
+  journal.logDiscarded = Math.min(Number.MAX_SAFE_INTEGER, discarded + priorDiscarded);
+  retainLogHistory(journal);
+  return journal.log;
+}
+
+// A field may come from an untrusted backup. Keep its literal stored value,
+// but make record separators and invisible formatting visible in reports.
+export function formatLogField(value) {
+  return String(value ?? "").replace(/[\\\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (character) => {
+    if (character === "\\") return "\\\\";
+    if (character === "\n") return "\\n";
+    if (character === "\r") return "\\r";
+    if (character === "\t") return "\\t";
+    const code = character.codePointAt(0), hex = code.toString(16);
+    return code <= 0xffff ? `\\u${hex.padStart(4, "0")}` : `\\u{${hex}}`;
+  });
 }
 
 export function formatLog(events, discarded = 0) {
   const prefix = Number.isSafeInteger(discarded) && discarded > 0 ? `Earlier debug events discarded: ${discarded}.\n` : "";
   if (!events.length) return prefix + "No events yet.";
   return prefix + events.map((event) => {
-    let detail = event.detail ? `  ${event.detail}` : "";
-    return `${event.at}\t${event.tool}\t${event.action}${detail}`;
+    let detail = event.detail ? `  ${formatLogField(event.detail)}` : "";
+    return `${formatLogField(event.at)}\t${formatLogField(event.tool)}\t${formatLogField(event.action)}${detail}`;
   }).join("\n");
 }
 
@@ -404,11 +438,11 @@ export function snapshotSession(session, privateSpans = null) {
   lines.push(session.psbt?.loaded ? "- payload present in the inspector" : "- inspector empty");
   if (session.psbt?.loaded && session.psbt?.nonce) {
     let kind = session.psbt?.nonceKind === "transaction" ? "raw transaction" : "PSBT";
-    if (session.psbt.nonce === "reuse") lines.push(`- nonce verdict: reused ECDSA nonce in this ${kind} (same key, different digest)`);
-    else if (session.psbt.nonce === "possible") lines.push(`- nonce verdict: possible reuse in this ${kind} (digest incomplete)`);
-    else if (session.psbt.nonce === "cross-key") lines.push(`- nonce verdict: same ECDSA r claimed under different keys in this ${kind}`);
+    if (session.psbt.nonce === "reuse") lines.push(`- nonce verdict: reused nonce detected in this ${kind}; see the Nonce Inspector for the affected signatures`);
+    else if (session.psbt.nonce === "possible") lines.push(`- nonce verdict: possible reuse in this ${kind}; verification incomplete`);
+    else if (session.psbt.nonce === "cross-key") lines.push(`- nonce verdict: same nonce value claimed under different keys in this ${kind}`);
     else if (session.psbt.nonce === "incomplete") lines.push(`- nonce verdict: incomplete coverage in this ${kind}`);
-    else if (session.psbt.nonce === "clean") lines.push(`- nonce verdict: no repeated ECDSA r for the same key in this ${kind} (ECDSA signatures only; Taproot/Schnorr nonces are not analyzed)`);
+    else if (session.psbt.nonce === "clean") lines.push(`- nonce verdict: no repeated nonce found among the signatures compared in this ${kind}; see the Nonce Inspector for coverage`);
   }
   let historyCount = Number.isSafeInteger(session.psbt?.historyCount) && session.psbt.historyCount > 0 ? session.psbt.historyCount : 0;
   lines.push(`- nonce history: ${historyCount} record${historyCount === 1 ? "" : "s"} in memory`);
@@ -429,6 +463,40 @@ export function snapshotSession(session, privateSpans = null) {
     }
   }
   return lines.join("\n");
+}
+
+function normalizeSnapshot(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.text !== "string" || typeof value.includePrivate !== "boolean") {
+    throw new Error("The journal backup has an invalid session snapshot.");
+  }
+  if (value.text.length > JOURNAL_MAX_TEXT_LENGTH) throw new Error("The session snapshot is too large. Export the saved snapshot before you remove saved history, or reduce the current session before saving again.");
+  const snapshot = { text: value.text, includePrivate: value.includePrivate };
+  if (Object.hasOwn(value, "latestStart")) {
+    if (!Number.isSafeInteger(value.latestStart) || value.latestStart < 0 || value.latestStart > value.text.length) throw new Error("The journal backup has an invalid session snapshot offset.");
+    snapshot.latestStart = value.latestStart;
+  }
+  return snapshot;
+}
+
+// Keep every historical recovery report. Only a new derived state appends a
+// report; reopening and saving an empty or unchanged session adds no copy.
+// latestStart bounds an equality comparison, never a deletion of saved text.
+export function combineSnapshots(saved, current, hasDerived = true) {
+  const snapshot = normalizeSnapshot(current);
+  if (!saved) return snapshot;
+  const previous = normalizeSnapshot(saved);
+  if (!hasDerived) return previous;
+  const comparable = (text) => text.replace(/^(ENTROPYLAB SESSION STATE\n)Updated: [^\n]*\n/, "$1");
+  if (comparable(previous.text.slice(previous.latestStart || 0)) === comparable(snapshot.text)) {
+    previous.includePrivate ||= snapshot.includePrivate;
+    return previous;
+  }
+  if (!previous.text) return snapshot;
+  return normalizeSnapshot({
+    text: previous.text + "\n\n" + snapshot.text,
+    includePrivate: previous.includePrivate || snapshot.includePrivate,
+    latestStart: previous.text.length + 2,
+  });
 }
 
 // Older backups contain report text only. Recognize the existing display
@@ -1013,10 +1081,7 @@ function parseBackup(value) {
     if (value.activeKey !== null && !validIndex(value.activeKey)) throw new Error("The journal backup has an invalid active key.");
     backup.includedKeys = value.includedKeys.slice();
     backup.activeKey = value.activeKey;
-    if (!record(value.snapshot) || typeof value.snapshot.text !== "string" || value.snapshot.text.length > JOURNAL_MAX_TEXT_LENGTH || typeof value.snapshot.includePrivate !== "boolean") {
-      throw new Error("The journal backup has an invalid session snapshot.");
-    }
-    backup.snapshot = { text: value.snapshot.text, includePrivate: value.snapshot.includePrivate };
+    backup.snapshot = normalizeSnapshot(value.snapshot);
     if (!Array.isArray(value.log) || value.log.length > JOURNAL_LOG_LIMIT) throw new Error("The journal backup has an invalid debug log.");
     const discarded = Object.hasOwn(value, "logDiscarded") ? value.logDiscarded : 0;
     if (!Number.isSafeInteger(discarded) || discarded < 0) throw new Error("The journal backup has an invalid discarded debug event count.");

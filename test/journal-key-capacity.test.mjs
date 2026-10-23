@@ -1,29 +1,29 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { KEY_VAULT_MAX_KEYS, parseKeyVault, serializeKeyVault } from "../src/js/keymanager.js";
-import { wipeDocument } from "../src/js/journal.js";
+import { mergeLogHistory, wipeDocument } from "../src/js/journal.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
 
 // Security contract: accepted inventory changes remain exportable under the
 // format's existing limits; a rejected change preserves all recovery inputs.
 async function harness() {
-  const statuses = [], decisions = { preview: async () => "derive" };
+  const statuses = [], decisions = { preview: async () => "derive", journalOpen: true };
   const variables = ["hodlKeys", "hodlKeyManagerPending", "hodlKeyManagerIgnored", "hodlKeyManagerIds", "hodlKeyManagerActiveId", "hodlActiveKey", "hodlNextKeyId"];
   const api = await loadAppFunctions([
     "hodlNewKeyState", "hodlNewLabState", "hodlKeyManagerStates", "hodlKeyManagerEntry",
-    "hodlKeyManagerImportFile", "hodlKeyManagerIgnore", "hodlKeyManagerRestoreIgnored", "hodlCommitDerivedKey", ...variables,
+    "hodlKeyManagerImportFile", "hodlKeyManagerIgnore", "hodlKeyManagerRestoreIgnored", "hodlKeyManagerDetachFromStation", "hodlCommitDerivedKey", ...variables,
   ], {
     settable: variables,
     stubs: {
       hodlTText: (text, values = {}) => text.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? "")),
       hodlDefaultCoinType: () => 0, hodlNetworkDefault: "mainnet", hodlDefaultKeyName: number => `Key ${number}`,
-      hodlJournalUnlocked: () => true, hodlJournalGeneration: 0, hodlJournalKeys: {}, hodlJournalMaxFileLength: 4 * 1024 * 1024,
+      hodlJournalUnlocked: () => decisions.journalOpen, hodlJournalGeneration: 0, hodlJournalKeys: {}, hodlJournalMaxFileLength: 4 * 1024 * 1024,
       hodlActiveDerivation: null, hodlJournalKeyDerivation: null, document: { getElementById: () => null },
       hodlJournalOpenExport: async content => ({ kind: "key-manager", content }),
       hodlKeyManagerDecision: options => decisions.preview(options), hodlKeyManagerDeriveInputs: async () => {},
       hodlKeyManagerStatus: (message, error) => statuses.push({ message, error }), hodlJournalLog() {},
       hodlKeyManagerRender() {}, hodlRenderKeyTabs() {}, hodlRestoreKey() {}, hodlDisposeDroppedWallets() {},
-      hodlReleaseKeyConsumers() {}, hodlWipeUnsharedWalletRows() {},
+      hodlReleaseKeyConsumers() {}, hodlWipeUnsharedWalletRows() {}, hodlCaptureKey() {}, hodlElement: () => ({ children: [] }),
       hodlPassphraseText: value => ArrayBuffer.isView(value) ? new TextDecoder().decode(value) : String(value ?? ""),
       hodlVanityApplying: false,
     },
@@ -225,6 +225,8 @@ async function unlockHarness(stationCount, restoredCount, { legacy = false } = {
       document: { getElementById: id => fields.get(id) ?? null },
       hodlKeys: [{ id: 0, isLab: true, result: { masterIdentity: "parked draft" } }, ...station],
       hodlKeyManagerPending: pending, hodlKeyManagerIgnored: [],
+      hodlActiveDerivation: null, hodlJournalKeyDerivation: null, hodlCaptureKey() {},
+      hodlJournalMergeLogHistory: mergeLogHistory,
       hodlJournalOpenDocument: async () => opened,
       hodlJournalDiscardOpened: value => wipeDocument(value.doc),
       hodlJournalSetGateBusy: value => api.__set.hodlJournalUnlockBusy(value),
@@ -232,7 +234,7 @@ async function unlockHarness(stationCount, restoredCount, { legacy = false } = {
       hodlKeyManagerReset: () => events.push("reset"), hodlJournalWipeNotebook: () => events.push("wipe"),
       hodlJournalRestoreBackup: value => events.push(value),
       hodlJournalHideEditor() {}, hodlJournalShowWork() {}, hodlShowJournalTool() {}, hodlJournalLog() {},
-      wipeJournal() {}, hodlJournal: {},
+      wipeJournal() {}, hodlJournal: { log: [], logDiscarded: 0 },
     },
   });
   api.__set.hodlJournalDoc(previous);
@@ -269,4 +271,64 @@ test("a legacy journal without backed-up key inputs still opens at station capac
   assert.deepEqual(h.events, ["reset", "wipe"]);
   assert.equal(h.api.hodlJournalDoc, h.opened.doc);
   assert.equal(h.entry.phrase, "incoming recovery phrase");
+});
+
+
+test("without Journal, a new station key is not limited by the backup format", async () => {
+  const h = await harness(), { api } = h;
+  h.decisions.journalOpen = false;
+  h.add(KEY_VAULT_MAX_KEYS, api.hodlKeys, true);
+  const lab = api.hodlKeys[0];
+  lab.fields.seed = "unfinished recovery input";
+  lab.result = { masterIdentity: "new-wallet", network: "mainnet" };
+  assert.doesNotThrow(() => api.hodlCommitDerivedKey());
+  assert.equal(api.hodlKeys.filter(state => !state.isLab).length, KEY_VAULT_MAX_KEYS + 1);
+  assert.equal(api.hodlKeys[api.hodlActiveKey].fields.seed, "unfinished recovery input");
+});
+
+test("meaningful resultless station inputs remain in the Journal inventory", async () => {
+  const h = await harness(), { api } = h;
+  const input = h.input("Result withdrawn"); delete input.needsDerivation;
+  const empty = api.hodlNewKeyState("Empty tab"); empty.fields.addressRange = "20";
+  api.hodlKeys.push(input, empty);
+  assert.deepEqual(api.hodlKeyManagerStates(), [input]);
+  assert.equal(h.backup().keys[0].fields.seed, input.fields.seed);
+  h.add(KEY_VAULT_MAX_KEYS - 1, api.hodlKeys, true);
+  const lab = api.hodlKeys[0]; lab.result = { masterIdentity: "one-too-many", network: "mainnet" };
+  const before = h.inventory();
+  assert.throws(() => api.hodlCommitDerivedKey());
+  assert.equal(h.inventory(), before);
+});
+
+test("detaching a resultless input at capacity keeps it unverified and exportable", async () => {
+  const h = await harness(), { api } = h;
+  h.add(KEY_VAULT_MAX_KEYS - 1, api.hodlKeys, true);
+  const input = h.input("Result withdrawn"); delete input.needsDerivation;
+  api.hodlKeys.push(input); api.__set.hodlActiveKey(api.hodlKeys.indexOf(input));
+  api.hodlKeyManagerDetachFromStation(input);
+  assert.equal(api.hodlKeyManagerPending[0], input);
+  assert.equal(input.needsDerivation, true);
+  assert.equal(h.backup().keys.length, KEY_VAULT_MAX_KEYS);
+});
+
+test("detaching cannot move or drop recovery inputs from an over-capacity inventory", async () => {
+  const h = await harness(), { api } = h;
+  h.add(KEY_VAULT_MAX_KEYS, api.hodlKeys, true);
+  const input = h.input("Result withdrawn"); delete input.needsDerivation;
+  api.hodlKeys.push(input); api.__set.hodlActiveKey(api.hodlKeys.indexOf(input));
+  const before = h.inventory();
+  api.hodlKeyManagerDetachFromStation(input);
+  assert.equal(h.inventory(), before);
+  assert.equal(h.statuses.at(-1).error, true);
+});
+
+
+test("removing an empty station tab does not create an empty pending input", async () => {
+  const h = await harness(), { api } = h;
+  const empty = api.hodlNewKeyState("Empty tab");
+  api.hodlKeys.push(empty); api.__set.hodlActiveKey(api.hodlKeys.indexOf(empty));
+  api.hodlKeyManagerDetachFromStation(empty);
+  assert.equal(api.hodlKeys.includes(empty), false);
+  assert.equal(api.hodlKeyManagerPending.length, 0);
+  assert.equal(h.backup().keys.length, 0);
 });

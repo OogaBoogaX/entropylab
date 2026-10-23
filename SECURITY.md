@@ -247,6 +247,12 @@ material. Its security posture rests on the following model:
   log. Seed phrases, xprvs, and other secret input fields are excluded.
   Historical events imported from a backup are unverified literal text and
   may contain secrets; this exclusion applies to newly recorded events.
+  Displayed/copied/exported fields escape controls, backslashes, and invisible
+  Unicode formatting or separators; stored backup fields remain literal.
+  Opening a backup combines its events with this session's events without
+  trusting timestamps or deduplicating records, then applies the retention
+  bounds and combines discarded counts. Entry-only files preserve this
+  session's existing log as well.
   The debug history is bounded by 10,000 events and 512 KiB of serialized
   UTF-8 JSON event data, with each event field limited to 300 characters.
   Runtime eviction removes the oldest events and increments a visible
@@ -269,11 +275,17 @@ material. Its security posture rests on the following model:
   Key Station and its unfinished draft remain available. Pagehide cleanup
   remains unconditional and does not open this confirmation.
 - A complete Journal download seals entries, notepad pages, managed/ignored
-  source inputs, saved historical snapshots, the current private recovery
-  snapshot, and the log in one authenticated payload. The on-screen reveal
+  source inputs (including an unfinished Key Station form), saved historical
+  snapshots, the current private recovery snapshot, and the log in one
+  authenticated payload. The on-screen reveal
   controls independently govern current and historical display, copying,
   and separate snapshot exports; they do not omit recovery material from a
-  complete backup. Revealing one report never reveals the other. Live snapshots
+  complete backup. Unfinished inputs are captured verbatim and restore as
+  unverified pending inputs with fresh IDs; they cannot overwrite an existing
+  draft or install cached outputs. Empty forms are excluded. Journal creation,
+  opening, and collection refuse an overflowing input inventory or an active
+  key derivation before changing state. Standalone derivation has no Journal
+  inventory limit. Revealing one report never reveals the other. Live snapshots
   mark private labels and values at their formatting sites; only those explicit
   ranges receive private field styling. Saved and opened snapshots recognize
   the app's report headings and field layout for display styling only. This
@@ -293,7 +305,14 @@ material. Its security posture rests on the following model:
   A larger backup is refused
   rather than silently truncated. Imported snapshots are untrusted historical
   text and remain concealed until revealed; they cannot install live wallets
-  or session state. Historical snapshot text is retained by default. An
+  or session state. Backup-only snapshots omit recomputable HD address/WIF
+  rows and multisig address rows while retaining root/seed/account recovery
+  material, descriptors, and BIP-85 child secrets. Formatter failure refuses
+  the backup. Existing historical text is never truncated. An optional validated
+  offset identifies the most recent appended report for comparison only;
+  a changed capture time alone or an empty restored session adds no duplicate.
+  New derived reports preserve all earlier recovery text within the same limit.
+  Historical snapshot text is retained by default. An
   explicit, confirmed removal drops it from this Journal's display and future
   backups without changing the current session, notes, or key inputs. A
   confirmation captured before Journal Clear or replacement cannot remove

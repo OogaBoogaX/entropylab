@@ -23,6 +23,7 @@ import {
   deriveJournalKeys,
   emptyDocument,
   openDocument,
+  mergeLogHistory,
   sealDocument,
   wipeBytes,
   wipeDocument,
@@ -103,6 +104,7 @@ const loadApp = ({ onOpen = (file, password) => openDocument(file, password), on
     "hodlJournalShowWork", "hodlSyncJournalTool",
     "hodlRenderJournalPageTabs", "hodlJournalApplyPageStyle", "hodlJournalSetStatus",
     "hodlShowJournalTool", "hodlJournalLog", "hodlTText", "hodlKeyManagerCancelDerivation", "hodlJournalStamp",
+    "hodlJournalCheckInventory", "hodlJournalMergeLogHistory",
     `${source}; return {
       choose: hodlJournalChooseFile,
       unlock: hodlJournalUnlock,
@@ -119,6 +121,7 @@ const loadApp = ({ onOpen = (file, password) => openDocument(file, password), on
     noop, noop, noop,
     noop, noop,
     (text) => text, noop, () => { stamps.push(FIRST_NOTE_STAMP); return FIRST_NOTE_STAMP; },
+    noop, mergeLogHistory,
   );
   return { ...api, journal, stamps, error: () => fields["journal-error"].textContent };
 };

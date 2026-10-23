@@ -560,8 +560,7 @@ test("key reference tokens survive careless names and reject bad fingerprints", 
 test("only well-formed tokens parse; lookalikes stay plain text", () => {
   assert.deepEqual(journalNotebookRuns("◆◆ [1234567] ◆"), [{ type: "text", text: "◆◆ [1234567] ◆" }]);
   assert.deepEqual(journalNotebookRuns("◆◆ [123456789] ◆"), [{ type: "text", text: "◆◆ [123456789] ◆" }]);
-  // A token's trailing ◆ doubles as the next token's opener.
-  const adjacent = journalNotebookRuns("◆◆ [aaaaaaaa] ◆◆◆ Key B [bbbbbbbb] ◆");
+  const adjacent = journalNotebookRuns(journalKeyReferenceToken("aaaaaaaa", "aaaaaaaa") + journalKeyReferenceToken("Key B", "bbbbbbbb"));
   assert.deepEqual(adjacent, [
     { type: "key", name: "aaaaaaaa", fingerprint: "aaaaaaaa" },
     { type: "key", name: "Key B", fingerprint: "bbbbbbbb" },
@@ -569,7 +568,10 @@ test("only well-formed tokens parse; lookalikes stay plain text", () => {
   // Repeated calls see the same input (no hidden regex cursor state).
   const source = "x ◆◆ [aaaaaaaa] ◆ y";
   assert.deepEqual(journalNotebookRuns(source), journalNotebookRuns(source));
-  assert.equal(journalFromPlainText(source).notesText, "x ◆◆ [aaaaaaaa]\u2063 y", "plain-text imports should upgrade the visible legacy boundary");
+  assert.equal(journalFromPlainText(source).notesText, source, "plain-text imports must preserve visible legacy boundaries");
+  const legacyAdjacent = "◆◆ [aaaaaaaa] ◆◆◆ Key B [bbbbbbbb] ◆";
+  assert.deepEqual(journalNotebookRuns(legacyAdjacent), [{ type: "text", text: legacyAdjacent }]);
+  assert.equal(parseNotebook(serializeNotebook(journalFromPlainText(legacyAdjacent))).notesText, legacyAdjacent);
 });
 
 test("key reference ranges identify the complete atomic token", () => {
@@ -1231,4 +1233,67 @@ test("complete backup: Unicode log bytes are checked even below the old event-co
   assert.ok(Buffer.byteLength(JSON.stringify(fixture.backup.log), "utf8") > 512 * 1024);
   assert.ok(JSON.stringify(fixture).length < 2 * 1024 * 1024);
   assert.throws(() => parseDocument(JSON.stringify(fixture)), /log|large/i);
+});
+
+// Snapshot metadata selects an equality-comparison suffix only; it must never
+// authorize truncating imported history or silently removing recovery text.
+test("complete backup: snapshot latest offsets are optional validated integers preserved through encryption", async () => {
+  for (const latestStart of [0, 2, 4]) {
+    const fixture = completeBackupFixture();
+    fixture.backup.snapshot = { text: "abcd", includePrivate: true, latestStart };
+    assert.deepEqual(parseDocument(JSON.stringify(fixture)).backup.snapshot, fixture.backup.snapshot);
+    const sealed = await journalModule.sealBackup(fixture, keys, fixture.backup);
+    const opened = await openDocument(pack(sealed), password);
+    assert.deepEqual(opened.doc.backup.snapshot, fixture.backup.snapshot);
+  }
+  const legacy = completeBackupFixture();
+  assert.deepEqual(parseDocument(JSON.stringify(legacy)).backup.snapshot, legacy.backup.snapshot);
+});
+
+test("complete backup: malformed snapshot offsets are rejected instead of ignored", () => {
+  for (const latestStart of [-1, 5, 0.5, "0", null, true, {}, [], Number.MAX_SAFE_INTEGER + 1]) {
+    const fixture = completeBackupFixture();
+    fixture.backup.snapshot = { text: "abcd", includePrivate: true, latestStart };
+    assert.throws(() => parseDocument(JSON.stringify(fixture)), /snapshot/i);
+  }
+});
+
+const snapshotReport = (body, stamp = "2026-10-23 12:00:00") => ({ text: `ENTROPYLAB SESSION STATE\nUpdated: ${stamp}\n${body}`, includePrivate: true });
+test("snapshot combination retains historical secrets once across empty and identical restore-save cycles", () => {
+  const original = { text: "Literal legacy private material <tag>\nUpdated: keep this line", includePrivate: true };
+  const first = journalModule.combineSnapshots(original, snapshotReport("BIP-85\nchild-secret-one"));
+  const expected = original.text + "\n\n" + snapshotReport("BIP-85\nchild-secret-one").text;
+  assert.equal(first.text, expected);
+  assert.equal(first.latestStart, original.text.length + 2);
+  let saved = first;
+  for (let cycle = 0; cycle < 20; cycle++) {
+    const fixture = completeBackupFixture();
+    fixture.backup.snapshot = saved;
+    saved = parseDocument(JSON.stringify(fixture)).backup.snapshot;
+    saved = journalModule.combineSnapshots(saved, snapshotReport("KEYS\n(none)", "later"), false);
+    saved = journalModule.combineSnapshots(saved, snapshotReport("BIP-85\nchild-secret-one", `later ${cycle}`));
+    assert.equal(saved.text, expected, "an empty restore or changed capture time must not add another report");
+    assert.equal(saved.latestStart, first.latestStart);
+  }
+  assert.equal(original.text, "Literal legacy private material <tag>\nUpdated: keep this line");
+});
+
+test("snapshot combination preserves new private material from every changed derived session", () => {
+  const first = snapshotReport("KEYS\noriginal-root"), second = snapshotReport("BIP-85\nchild-secret-two");
+  const saved = journalModule.combineSnapshots(first, second);
+  const third = snapshotReport("KEYS\nnew-root");
+  const combined = journalModule.combineSnapshots(saved, third);
+  assert.equal(combined.text, first.text + "\n\n" + second.text + "\n\n" + third.text);
+  assert.equal(combined.latestStart, saved.text.length + 2);
+  assert.deepEqual(journalModule.combineSnapshots(combined, snapshotReport("KEYS\n(none)"), false), combined);
+  assert.deepEqual(journalModule.combineSnapshots(null, first), first);
+});
+
+test("snapshot combination ignores only capture time and never truncates history to fit", () => {
+  const before = snapshotReport("BIP-85\nUpdated: secret-one"), after = snapshotReport("BIP-85\nUpdated: secret-two");
+  assert.equal(journalModule.combineSnapshots(before, after).text, before.text + "\n\n" + after.text);
+  const full = { text: "p".repeat(JOURNAL_MAX_TEXT_LENGTH), includePrivate: true };
+  assert.deepEqual(journalModule.combineSnapshots(full, snapshotReport("empty"), false), full);
+  assert.throws(() => journalModule.combineSnapshots(full, snapshotReport("new recovery")), /snapshot.*large.*export.*remove/i);
+  assert.equal(full.text.length, JOURNAL_MAX_TEXT_LENGTH);
 });

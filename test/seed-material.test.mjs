@@ -18,6 +18,7 @@ import { renderSVG } from "uqr";
 import { VAULT_MASK } from "../src/js/passphrase-vault.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
 import { parseKeyVault, serializeKeyVault } from "../src/js/keymanager.js";
+import { JOURNAL_MAX_TEXT_LENGTH } from "../src/js/journal.js";
 
 // BIP39 test vectors (trezor/python-mnemonic vectors.json), passphrase "TREZOR".
 const VECTORS = [
@@ -146,6 +147,41 @@ test("the recovery sheet carries the seed material only when private material is
     for (const secret of secrets) assert.ok(values.includes(secret), `${label}: private material lacks an exact field annotation`);
     assert.equal(hodlRecoverySheetText(wallet, false, publicSpans), watch);
     assert.deepEqual(publicSpans, []);
+  }
+});
+
+test("compact backup recovery sheets keep root recovery material while omitting reproducible address and WIF rows", async () => {
+  const vector = VECTORS[0], wallet = await fromWords(vector);
+  const { hodlRecoverySheetText } = await load(["hodlRecoverySheetText"]);
+  const full = hodlRecoverySheetText(wallet, true), compact = hodlRecoverySheetText(wallet, true, null, true);
+  const root = rootOf(vector.words, vector.pass);
+  for (const secret of [vector.words, vector.entropy, vector.seed, root.privateExtendedKey, seedQrDigits(vector.words)]) {
+    assert.ok(compact.includes(secret), "compact backups must retain the independently verified recovery material");
+  }
+  for (const account of wallet.accounts) for (const branch of account.addressBranches) {
+    assert.ok(compact.includes(branch.publicDescriptor));
+    for (const row of branch.rows) {
+      const path = row.path, privateKey = root.derive(path).privateKey;
+      const wif = b58.encode(new Uint8Array([0x80, ...privateKey, 0x01]));
+      assert.ok(full.includes(row.address) && full.includes(wif), "ordinary recovery exports must retain address and WIF rows");
+      assert.ok(!compact.includes(row.address) && !compact.includes(wif), "compact backups must omit reproducible rows");
+      privateKey.fill(0);
+    }
+  }
+  assert.equal(hodlRecoverySheetText(wallet, true), full, "compact formatting must not mutate normal exports");
+});
+
+test("a 1000-address-range wallet fits the snapshot limit with compact backup recovery material", async () => {
+  const vector = VECTORS[0];
+  const wallet = await builders.hodlMnemonicWalletWithProgress(vector.words, vector.pass, "mainnet", 1000, undefined, 0, 0, tracker, 84, 0);
+  const api = await load(["hodlRecoverySheetText", "hodlWipeWalletKeys"]);
+  try {
+    const full = api.hodlRecoverySheetText(wallet, true), compact = api.hodlRecoverySheetText(wallet, true, null, true);
+    assert.ok(full.length > JOURNAL_MAX_TEXT_LENGTH, "the fixture must reproduce the previous oversized snapshot");
+    assert.ok(compact.length < JOURNAL_MAX_TEXT_LENGTH, "a legal address range must not prevent backing up other Journal data");
+    assert.ok(compact.includes(vector.words) && compact.includes(vector.seed));
+  } finally {
+    api.hodlWipeWalletKeys(wallet);
   }
 });
 

@@ -46,10 +46,10 @@ function fixture(branches = [0, 1], firstIndex = 0) {
   };
 }
 
-const msigs = [];
+const msigs = [], children = [];
 const app = await loadAppFunctions(["hodlJournalSessionSnapshot"], { stubs: {
   document: { querySelector: () => null, getElementById: () => null },
-  hodlKeys: [], hodlMsigs: msigs, hodlBip85Children: [], hodlSpKeys: null,
+  hodlKeys: [], hodlMsigs: msigs, hodlBip85Children: children, hodlSpKeys: null,
   hodlPsbtNonceInspected: false, hodlPsbtNonceVerdict: "", hodlPsbtNonceVerdictKind: "",
   hodlPsbtNonceHistory: [], hodlPsbtNonceHistoryVerdict: "",
 } });
@@ -87,4 +87,34 @@ test("an underived multisig never exports its unverified source inputs", () => {
   const text = app.hodlJournalSessionSnapshot(true);
   assert.ok(text.includes("Unverified multisig"));
   for (const marker of PRIVATE_MARKERS) assert.ok(!text.includes(marker));
+});
+
+test("compact backup snapshots retain multisig descriptors and BIP-85 secrets without address tables", () => {
+  const wallet = fixture([2, 3], 7);
+  msigs.splice(0, msigs.length, { name: "Custom multisig", result: wallet });
+  children.splice(0, children.length, { name: "BIP-85 child", fingerprint: "12345678", result: { app: "hex", secret: "BIP-85 secret fixture must survive" } });
+  const compact = app.hodlJournalSessionSnapshot(true, null, true);
+  assert.ok(compact.includes(children[0].result.secret));
+  assert.ok(compact.includes(wallet.walletDescriptor));
+  for (const branch of wallet.addressBranches) {
+    assert.ok(compact.includes(branch.publicDescriptor));
+    for (const row of branch.rows) assert.ok(!compact.includes(row.address), "compact backup snapshot repeated derived addresses");
+  }
+  for (const marker of PRIVATE_MARKERS) assert.ok(!compact.includes(marker));
+  assertPublicContent(app.hodlJournalSessionSnapshot(true), wallet);
+  children.length = 0;
+});
+
+test("compact backup snapshot refuses a failed recovery formatter instead of omitting the key", async () => {
+  const failure = new Error("Recovery formatter failed");
+  const api = await loadAppFunctions(["hodlJournalSessionSnapshot"], { stubs: {
+    document: { querySelector: () => null, getElementById: () => null },
+    hodlKeys: [{ name: "Derived key", result: { masterFingerprint: "12345678" } }],
+    hodlMsigs: [], hodlBip85Children: [], hodlSpKeys: null,
+    hodlPsbtNonceInspected: false, hodlPsbtNonceVerdict: "", hodlPsbtNonceVerdictKind: "",
+    hodlPsbtNonceHistory: [], hodlPsbtNonceHistoryVerdict: "",
+    hodlRecoverySheetText() { throw failure; },
+  } });
+  assert.throws(() => api.hodlJournalSessionSnapshot(true, null, true), error => error === failure);
+  assert.doesNotThrow(() => api.hodlJournalSessionSnapshot(false));
 });

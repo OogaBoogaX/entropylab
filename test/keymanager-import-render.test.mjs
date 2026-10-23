@@ -144,6 +144,7 @@ test("fresh single-key imports reuse exact setups and ask before different netwo
 function importHarness() {
   const calls = [], context = {
     keyVaultIdentity, parseKeyVault, hodlKeyVaultMaxKeys: KEY_VAULT_MAX_KEYS,
+    hodlPrivateKeyKinds: ["wif", "hex-key", "minikey", "brain"],
     hodlNextKeyId: 1, hodlNextKeyNumber: 1, hodlActiveKey: 0,
     hodlWorkspace: "journal",
     hodlKeyManagerFileRequest: 0,
@@ -178,7 +179,7 @@ function importHarness() {
   for (const name of ["hodlNewKeyState", "hodlNewLabState", "hodlKeyManagerImportedState",
     "hodlKeyManagerStates", "hodlKeyManagerUseInStation", "hodlKeyManagerDetachFromStation", "hodlKeyManagerSyncReviewedContext",
     "hodlCloneDerivedKey", "hodlFillLabFromKey", "hodlKeyWalletIdentity", "hodlCommitDerivedKey", "hodlKeyManagerImportFile", "hodlNormalizeKeyName", "hodlKeyNameTaken",
-    "hodlKeyManagerIgnore", "hodlKeyManagerEntry", "hodlKeyLogLabel",
+    "hodlKeyManagerIgnore", "hodlKeyManagerEntry", "hodlKeyManagerHasInputs", "hodlPrivateKeyValues", "hodlNormalizePrivateKeyKind", "hodlDetectPrivateKeyKind", "hodlKeyManagerArchiveEntry", "hodlKeyLogLabel",
     "hodlKeyManagerRestoreIgnored", "hodlStoredPassphraseBytes", "hodlPassphraseText",
     "hodlKeyManagerDecideCommit", "hodlKeyManagerResultPaths", "hodlKeyManagerDiscardInputs", "hodlKeyManagerCapacityError"])
     runInNewContext(loadSlice(name), context);

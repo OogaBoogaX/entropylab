@@ -3039,6 +3039,80 @@
     });
   });
 
+  await test("Journal drag event ordering cannot leave a deleted source after a refused drop", async () => {
+    await withJournalNoteFixture(async (field, replacePage) => {
+      const prefix = "2020-01-02 03:04:05  ", first = prefix + "Alpha\n\n", second = "2020-01-03 04:05:06  Beta", text = first + second;
+      // Exercise the actual browser listeners and textarea; the in-page
+      // harness supplies the two native editing event orders explicitly.
+      const edit = (inputType, start, end, data = "") => {
+        field.setSelectionRange(start, end);
+        const before = new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType, data });
+        field.dispatchEvent(before);
+        if (!before.defaultPrevented) {
+          field.setRangeText(data, start, end, "end");
+          field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType, data }));
+        }
+        return before;
+      };
+      for (const [start, end] of [[prefix.length, prefix.length + 5], [0, first.length]]) {
+        replacePage(text);
+        field.setSelectionRange(start, end);
+        field.dispatchEvent(new Event("dragstart", { bubbles: true }));
+        const moved = text.slice(start, end);
+        assert(!edit("deleteByDrag", start, end).defaultPrevented);
+        assert(edit("insertFromDrop", 5, 5, moved).defaultPrevented);
+        equal(field.value, text, "Refusing the destination must restore the drag source");
+        field.dispatchEvent(new Event("dragend", { bubbles: true }));
+        equal(field.value, text);
+      }
+      for (const deletionFirst of [true, false]) {
+        replacePage(text);
+        field.setSelectionRange(prefix.length, prefix.length + 5);
+        field.dispatchEvent(new Event("dragstart", { bubbles: true }));
+        if (deletionFirst) edit("deleteByDrag", prefix.length, prefix.length + 5);
+        edit("insertFromDrop", field.value.length, field.value.length, "Alpha");
+        if (!deletionFirst) edit("deleteByDrag", prefix.length, prefix.length + 5);
+        field.dispatchEvent(new Event("dragend", { bubbles: true }));
+        equal(field.value, prefix + "\n\n" + second + "Alpha");
+        document.getElementById("journal-session-tab").click();
+        document.getElementById("journal-notes-tab").click();
+        equal(field.value, prefix + "\n\n" + second + "Alpha", "The accepted move must persist as one Notes change");
+      }
+      replacePage(text);
+      edit("deleteByDrag", prefix.length, prefix.length + 5);
+      field.dispatchEvent(new Event("dragend", { bubbles: true }));
+      equal(field.value, text, "A cancelled drag must restore its source");
+    });
+  });
+
+  await test("Journal imports normalize textarea newlines while Unicode separators and noncanonical references stay literal", async () => {
+    await withJournalNoteFixture(async (field, replacePage) => {
+      const first = "2020-01-02 03:04:05  first", second = "2020-01-03 04:05:06  second";
+      for (const separator of ["\r\n", "\r"]) {
+        replacePage("");
+        const file = document.getElementById("journal-notes-file");
+        Object.defineProperty(file, "files", { configurable: true, value: [new File([first + separator + second], "newlines.txt", { type: "text/plain" })] });
+        file.dispatchEvent(new Event("change", { bubbles: true }));
+        const expected = first + "\n" + second;
+        await until(() => field.value === expected, "normalized imported note lines");
+        const position = expected.indexOf("second") + 2;
+        field.focus(); field.setSelectionRange(position, position);
+        assert(document.execCommand("insertText", false, "!"));
+        equal(field.value, expected.slice(0, position) + "!" + expected.slice(position));
+      }
+      for (const separator of ["\u2028", "\u2029"]) {
+        const text = first + separator + second;
+        replacePage(text);
+        field.focus(); field.setSelectionRange(text.length, text.length);
+        assert(document.execCommand("insertText", false, "!"));
+        equal(field.value, text + "!");
+      }
+      const literal = "◆◆  Lab   key [AABBCCDD]\u2063\n◈◈ BIP-85 · WIF [DEADBEEF]\u2063";
+      replacePage(literal);
+      equal(document.getElementById("journal-notes-render").textContent, literal, "Noncanonical references must not change text positions in the mirror");
+    });
+  });
+
   await test("Journal native editing preserves undo and redo for note text, whole notes, and Select All clear", async () => {
     assert(typeof document.execCommand === "function", "The browser must expose native textarea editing commands for this check");
     await withJournalNoteFixture(async (field, replacePage) => {

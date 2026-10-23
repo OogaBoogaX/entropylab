@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
-import { JOURNAL_MAX_FILE_LENGTH, JOURNAL_MIN_ITERATIONS, appendLog, createJournal, deriveJournalKeys, normalizeJournalPageStyle, openDocument, parseNotebook, sealBackup, serializeNotebook, snapshotPrivateSpans, snapshotSession, wipeDocument, wipeJournal } from "../src/js/journal.js";
+import { JOURNAL_MAX_FILE_LENGTH, JOURNAL_MIN_ITERATIONS, appendLog, mergeLogHistory, combineSnapshots, createJournal, deriveJournalKeys, normalizeJournalPageStyle, openDocument, parseNotebook, sealBackup, serializeNotebook, snapshotPrivateSpans, snapshotSession, wipeDocument, wipeJournal } from "../src/js/journal.js";
 import { KEY_VAULT_MAX_KEYS, keyVaultIdentity, parseKeyVault, serializeKeyVault } from "../src/js/keymanager.js";
 import { renderAnnotatedPrivateText } from "../src/js/private-data.js";
 
@@ -84,6 +84,9 @@ function sectionHarness() {
     hodlJournal: journal,
     hodlJournalBackupRevision: 0, hodlJournalDirty: false,
     hodlJournalKeys: {}, hodlJournalDoc: { entries: [] },
+    hodlWorkspace: "calc", hodlActiveDerivation: null, hodlJournalKeyDerivation: null,
+    hodlMsigs: [], hodlBip85Children: [], hodlSpKeys: null, hodlCaptureKey() {},
+    hodlJournalFinishNoteDrag() {}, hodlJournalMergeLogHistory: mergeLogHistory, hodlJournalCombineSnapshots: combineSnapshots,
     hodlKeys: [], hodlKeyManagerPending: [], hodlKeyManagerIgnored: [],
     hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "",
     hodlNextKeyId: 100, hodlNextKeyNumber: 100,
@@ -92,7 +95,7 @@ function sectionHarness() {
     hodlSerializeNotebook: serializeNotebook, hodlParseNotebook: parseNotebook,
     wipeJournal, hodlJournalWipeDocument: wipeDocument,
     hodlTypedText: (value) => new TextDecoder().decode(value),
-    hodlDefaultCoinType: () => 0, hodlNetworkDefault: "mainnet",
+    hodlDefaultCoinType: () => 0, hodlNetworkDefault: "mainnet", hodlNetworkChoice: "mainnet",
     hodlDefaultKeyName: (number) => `Key ${number}`, hodlKeyColor: (id) => String(id),
     hodlJournalRenderVisual() {}, hodlRenderJournalPageTabs() {},
     hodlJournalRestorePage() {}, hodlJournalApplyPageStyle() {},
@@ -106,9 +109,9 @@ function sectionHarness() {
   };
   loadFunctions(context, [
     "hodlJournalActivePage", "hodlJournalStoreNotesText", "hodlKeyManagerStates",
-    "hodlKeyManagerEntry", "hodlPassphraseText", "hodlStoredPassphraseBytes",
+    "hodlKeyManagerEntry", "hodlKeyManagerArchiveEntry", "hodlKeyManagerHasInputs", "hodlKeyManagerCapacityError", "hodlPassphraseText", "hodlStoredPassphraseBytes",
     "hodlNewKeyState", "hodlKeyManagerImportedState",
-    "hodlJournalUnlocked", "hodlJournalMarkDirty",
+    "hodlJournalUnlocked", "hodlJournalMarkDirty", "hodlNetworkFamily",
   ]);
   return { context, journal, fields };
 }
@@ -231,6 +234,7 @@ test("complete restore reinstalls pages, history, selection and unverified input
 test("collecting a reopened Journal preserves its historical snapshot even when current private visibility is off", () => {
   const { context: c, journal, fields } = sectionHarness();
   journal.backup = { snapshot: { text: "Historical private snapshot that must survive a second backup.", includePrivate: true } };
+  c.hodlKeys.push({ ...vaultEntry("Current derived key"), id: 7, result: {} });
   fields.get("journal-state-private").checked = false;
   c.hodlJournalSessionSnapshot = () => { journal.stateText = "Different live session without saved recovery information."; return journal.stateText; };
   loadFunctions(c, ["hodlJournalCollectBackup"]);
@@ -725,7 +729,7 @@ function unlockHarness({ password = "backup password", onOpen = openDocument } =
   });
   loadFunctions(c, [
     "hodlJournalError", "hodlJournalSetGateBusy", "hodlJournalClearReport", "hodlJournalWipeNotebook", "hodlJournalDiscardOpened",
-    "hodlJournalChooseFile", "hodlJournalUnlock", "hodlJournalRestoreBackup", "hodlJournalLog", "hodlKeyManagerCapacityError",
+    "hodlJournalCheckInventory", "hodlJournalChooseFile", "hodlJournalUnlock", "hodlJournalRestoreBackup", "hodlJournalLog", "hodlKeyManagerCapacityError",
   ]);
   return env;
 }
@@ -823,4 +827,169 @@ test("a complete decrypt that outlives its Journal generation wipes the staged b
   assert.equal(journal.pages[0].notesText, "");
   assert.equal(staged.doc.entries.length, 0);
   assert.equal(staged.doc.backup, null);
+});
+
+// Security contract: backups retain unfinished source inputs verbatim but
+// restore them only as unverified inputs, never cached results or trusted IDs.
+test("complete backup captures unfinished lab inputs and cold-restores them unverified", async () => {
+  const { context: c } = sectionHarness();
+  const draft = { ...vaultEntry("Lab"), id: 44, isLab: true, fields: { seed: "abandon abandon", pass: new TextEncoder().encode(" exact pass "), network: "signet", derivationPath: "m/84'/1'/3'/0/8", addressRange: "1000", privateKeys: { wif: "unfinished-wif" } }, result: { forgedCached: "never restore" } };
+  c.hodlKeys.push(draft);
+  let captures = 0;
+  c.hodlCaptureKey = () => { captures++; draft.fields.dice = "1624"; };
+  loadFunctions(c, ["hodlJournalCollectBackup"]);
+  const collected = c.hodlJournalCollectBackup();
+  const inputs = parseKeyVault(collected.keyManager).keys;
+  assert.equal(inputs.length, 1, "unfinished lab inputs were omitted");
+  assert.equal(captures, 1, "the visible form must be captured before backup");
+  assert.equal(inputs[0].fields.seed, "abandon abandon");
+  assert.equal(inputs[0].fields.pass, " exact pass ");
+  assert.equal(inputs[0].fields.dice, "1624");
+  assert.equal(inputs[0].fields.network, "signet");
+  assert.equal(inputs[0].fields.derivationPath, "m/84'/1'/3'/0/8");
+  assert.equal(inputs[0].fields.privateKeys.wif, "unfinished-wif");
+  assert.equal(inputs[0].result, null);
+  assert.equal(new TextDecoder().decode(draft.fields.pass), " exact pass ");
+  const keys = await deriveJournalKeys("draft backup", JOURNAL_MIN_ITERATIONS);
+  const sealed = await sealBackup({ version: 2, nextId: 1, entries: [] }, keys, collected);
+  const opened = await openDocument(JSON.stringify(sealed), "draft backup");
+  const { context: restored } = sectionHarness();
+  const activeLab = { id: 4, isLab: true, fields: { seed: "keep my current work" } };
+  restored.hodlKeys.push(activeLab);
+  loadFunctions(restored, ["hodlJournalRestoreBackup"]);
+  restored.hodlJournalRestoreBackup(opened.doc.backup);
+  assert.equal(restored.hodlKeys[0], activeLab);
+  assert.equal(activeLab.fields.seed, "keep my current work");
+  const pending = restored.hodlKeyManagerPending[0];
+  assert.notEqual(pending.id, draft.id);
+  assert.equal(pending.result, null);
+  assert.equal(pending.needsDerivation, true);
+  assert.equal(pending.fields.seed, "abandon abandon");
+  assert.equal(new TextDecoder().decode(pending.fields.pass), " exact pass ");
+});
+
+test("empty lab settings consume no backup slot but an unfinished draft counts at the limit", () => {
+  const { context: c } = sectionHarness();
+  const lab = { id: 999, isLab: true, fields: { network: "signet", derivationPath: "m/84'/1'/0'/0/0", pass: new Uint8Array() } };
+  c.hodlKeys.push(lab);
+  c.hodlKeyManagerPending = Array.from({ length: KEY_VAULT_MAX_KEYS }, (_, i) => ({ ...vaultEntry(`Inputs ${i}`), id: i + 1 }));
+  loadFunctions(c, ["hodlJournalCollectBackup"]);
+  assert.equal(parseKeyVault(c.hodlJournalCollectBackup().keyManager).keys.length, KEY_VAULT_MAX_KEYS);
+  lab.fields.seed = "unfinished";
+  assert.throws(() => c.hodlJournalCollectBackup(), error => error.name === "Error" && error.message.length > 0, "a full inventory must refuse rather than omit its draft");
+  assert.equal(lab.fields.seed, "unfinished");
+  assert.equal(c.hodlKeyManagerPending.length, KEY_VAULT_MAX_KEYS);
+});
+
+test("complete collection refuses an in-flight derivation", () => {
+  for (const busy of ["hodlActiveDerivation", "hodlJournalKeyDerivation"]) {
+    const { context: c } = sectionHarness();
+    c[busy] = {};
+    loadFunctions(c, ["hodlJournalCollectBackup"]);
+    assert.throws(() => c.hodlJournalCollectBackup(), error => error.name === "Error" && error.message.length > 0);
+  }
+});
+
+test("restoring a complete backup preserves earlier events from this browser session", () => {
+  const { context: c, journal } = sectionHarness();
+  const current = { at: "2026-10-23 12:00:00", tool: "calc", action: "derive", detail: "current session" };
+  journal.log = [current];
+  journal.logDiscarded = 2;
+  const backup = normalizedBackup();
+  backup.logDiscarded = 3;
+  loadFunctions(c, ["hodlJournalRestoreBackup"]);
+  c.hodlJournalRestoreBackup(backup);
+  assert.deepEqual(plain(journal.log), [...EVENTS, { at: "2026-10-23 12:00:00", tool: "calc", action: "derive", detail: "current session" }]);
+  assert.equal(journal.logDiscarded, 5);
+  assert.notEqual(journal.log.at(-1), current, "wiping replaced state must not wipe transferred history");
+});
+
+test("key source input changes invalidate a pending backup without logging their values", () => {
+  const { context: c, journal } = sectionHarness();
+  const listeners = {};
+  c.hodlJournalActionAuditReady = false;
+  c.hodlJournalSuppressSettingAudit = 0;
+  c.document.addEventListener = (name, fn) => { listeners[name] = fn; };
+  loadFunctions(c, ["hodlInitJournalActionAudit"]);
+  c.hodlInitJournalActionAudit();
+  const secret = { value: "private unfinished input", closest: selector => selector === "#calc-card" ? {} : null };
+  listeners.input?.({ target: secret });
+  assert.equal(c.hodlJournalDirty, true);
+  assert.equal(c.hodlJournalBackupRevision, 1);
+  assert.equal(journal.log.length, 0);
+  c.hodlJournalSuppressSettingAudit = 1;
+  listeners.input({ target: secret });
+  assert.equal(c.hodlJournalBackupRevision, 1, "restoring a form is not a user edit");
+});
+
+test("cold restore and resave preserves the historical snapshot without nesting empty reports", () => {
+  const { context: c, journal } = sectionHarness();
+  const original = { text: "Private historical recovery that only exists in this saved report", includePrivate: true };
+  journal.backup = { snapshot: plain(original) };
+  loadFunctions(c, ["hodlJournalCollectBackup", "hodlJournalRestoreBackup"]);
+  for (let i = 0; i < 4; i++) {
+    const collected = c.hodlJournalCollectBackup();
+    assert.deepEqual(plain(collected.snapshot), original);
+    const restored = normalizedBackup();
+    restored.snapshot = collected.snapshot;
+    c.hodlJournalRestoreBackup(restored);
+  }
+});
+
+test("collecting from Journal does not recapture a hidden Key Station form or discard its verified result", () => {
+  const { context: c } = sectionHarness();
+  c.hodlWorkspace = "journal";
+  const key = { ...vaultEntry("Verified key"), id: 1, result: { masterFingerprint: "73c5da0a" } };
+  c.hodlKeys.push(key);
+  const result = key.result;
+  c.hodlCaptureKey = () => { key.result = null; };
+  loadFunctions(c, ["hodlJournalCollectBackup"]);
+  c.hodlJournalCollectBackup();
+  assert.equal(key.result, result, "hidden form globals must not overwrite the captured station state");
+});
+
+test("restoring a Key Station field does not invalidate the Journal backup", () => {
+  const { context: c } = sectionHarness();
+  const listeners = {};
+  c.hodlJournalActionAuditReady = false;
+  c.hodlJournalSuppressSettingAudit = false;
+  c.document.addEventListener = (name, fn) => { listeners[name] = fn; };
+  loadFunctions(c, ["hodlInitJournalActionAudit"]);
+  c.hodlInitJournalActionAudit();
+  const field = { hodlRestoring: true, closest: () => ({}) };
+  listeners.input({ target: field });
+  assert.equal(c.hodlJournalDirty, false);
+  assert.equal(c.hodlJournalBackupRevision, 0);
+});
+
+// Saving a draft must preserve the same explicit chain that its next fresh
+// derivation will use, including an invalid family conflict for later review.
+test("unfinished backup inputs preserve reviewed and global chain choices without changing source fields", () => {
+  for (const [choice, family, reviewed, expected] of [
+    ["mainnet", "testnet", "signet", "signet"],
+    ["signet", "testnet", "regtest", "regtest"],
+    ["regtest", "testnet", null, "regtest"],
+    ["signet", "testnet", null, "signet"],
+    ["signet", "mainnet", null, "mainnet"],
+    ["mainnet", "mainnet", "regtest", "regtest"],
+  ]) {
+    const { context: c } = sectionHarness();
+    c.hodlWorkspace = "journal";
+    c.hodlNetworkChoice = choice;
+    const draft = { ...vaultEntry("Lab"), id: 0, isLab: true };
+    draft.fields.network = family;
+    if (reviewed) Object.assign(draft, { importedKeyId: 51, importedNetworkChoice: reviewed });
+    c.hodlKeys.push(draft);
+    loadFunctions(c, ["hodlJournalCollectBackup", "hodlJournalRestoreBackup"]);
+    const collected = c.hodlJournalCollectBackup();
+    const exported = parseKeyVault(collected.keyManager);
+    assert.equal(exported.keys[0].fields.network, expected, `${choice}/${family}/${reviewed}`);
+    assert.equal(draft.fields.network, family, "export must not mutate the live draft");
+    const restored = normalizedBackup();
+    restored.keyManager = exported; restored.includedKeys = []; restored.activeKey = null;
+    c.hodlJournalRestoreBackup(restored);
+    assert.equal(c.hodlKeyManagerPending[0].fields.network, expected);
+    assert.equal(c.hodlKeyManagerPending[0].needsDerivation, true);
+    assert.equal(c.hodlKeyManagerPending[0].result, null);
+  }
 });

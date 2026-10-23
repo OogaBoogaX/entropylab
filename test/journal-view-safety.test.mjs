@@ -407,3 +407,12 @@ test("the journal shell keeps saved records inside Keys and the status note as a
   const note = /<p\b[^>]*\bid="journal-status-note"[^>]*>/.exec(shell)?.[0] || "";
   assert.ok(/\brole="status"/.test(note), "#journal-status-note announces status changes politely");
 });
+
+test("the Journal opening screen remains a named workspace tab panel", () => {
+  const page = new MiniDocument();
+  page.body.innerHTML = readFileSync(join(root, "src/shell.html"), "utf8");
+  const panel = page.getElementById("journal-card");
+  assert.equal(panel.getAttribute("role"), "tabpanel");
+  assert.ok(panel.getAttribute("aria-label") || panel.getAttribute("aria-labelledby"));
+  assert.ok(panel.querySelector("#journal-gate-modes"));
+});

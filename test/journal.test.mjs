@@ -269,10 +269,25 @@ test("a public snapshot names fingerprints and omits secrets unless asked", () =
     psbt: { loaded: true, nonce: "reuse", nonceKind: "psbt", historyCount: 2, historyVerdict: "reuse" },
   });
   assert.match(reuseText, /payload present in the inspector/);
-  assert.match(reuseText, /nonce verdict: reused ECDSA nonce in this PSBT/);
+  assert.match(reuseText, /nonce verdict: .*reused nonce/);
   assert.match(reuseText, /nonce history: 2 records/);
   assert.match(reuseText, /cross-session comparison: reused ECDSA nonce detected/);
   assert.doesNotMatch(reuseText, /\br=/);
+});
+
+test("snapshot nonce summaries follow the loaded verdict without assuming a signature family", () => {
+  for (const nonceKind of ["psbt", "transaction"]) {
+    const report = (loaded, nonce) => snapshotSession({ psbt: { loaded, nonceKind, nonce } });
+    const empty = report(false, ""), unknown = report(true, ""), results = [];
+    for (const nonce of ["reuse", "possible", "cross-key", "incomplete", "clean"]) {
+      const text = report(true, nonce);
+      assert.notEqual(text, unknown, "a recognized verdict must be recorded");
+      assert.equal(report(false, nonce), empty, "a closed inspector must not report a stale verdict");
+      assert.doesNotMatch(text, /ECDSA|Schnorr|same key, different digest/, "the combined verdict does not identify a signature family or key relationship");
+      results.push(text);
+    }
+    assert.equal(new Set(results).size, results.length, "distinct verdicts must not collapse into one result");
+  }
 });
 
 test("wipe drops notes, log, and snapshot text", () => {
@@ -1193,4 +1208,60 @@ test("debug reports disclose discarded history without rewriting retained events
   assert.ok(/discarded|removed|dropped/i.test(text));
   assert.equal(formatLog(events, 0), original);
   assert.deepEqual(events, [{ at: "literal date", tool: "tool", action: "action", detail: "<literal> details" }]);
+});
+
+// Imported fields remain literal in the backup, but a readable log must not
+// let one field introduce another event/column or hide/reorder its characters.
+test("debug report fields escape record separators and invisible controls without changing stored data", () => {
+  const events = [{ at: "t\r\nforged", tool: "key\tstation", action: "a\u2028b\u2029c", detail: "<tag> \\n \u0000\b\u001b\u0085\u200b\u202e\u2066\ufeff\u{e0001}" }];
+  const original = structuredClone(events);
+  const expected = "t\\r\\nforged\tkey\\tstation\ta\\u2028b\\u2029c  <tag> \\\\n \\u0000\\u0008\\u001b\\u0085\\u200b\\u202e\\u2066\\ufeff\\u{e0001}";
+  assert.equal(formatLog(events), expected);
+  assert.equal(formatLog(events).split("\n").length, 1);
+  assert.equal(formatLog(events).split("\t").length, 3);
+  assert.deepEqual(events, original, "formatting must not rewrite imported event fields");
+  assert.equal(formatLog([{ at: "2026-10-23 12:34:56", tool: "journal", action: "note", detail: "日本語 café <literal>" }]),
+    "2026-10-23 12:34:56\tjournal\tnote  日本語 café <literal>");
+});
+
+test("debug history merge preserves imported and current events without trusting timestamps or deduplicating repeats", () => {
+  const same = { at: "same second", tool: "app", action: "click", detail: "" };
+  const live = [{ at: "1900", tool: "app", action: "boot", detail: "current" }, { ...same }];
+  const imported = [{ at: "2999\nforged", tool: "app", action: "boot", detail: "imported" }, { ...same }];
+  const before = structuredClone([imported, live]);
+  const journal = { log: live, logDiscarded: 3 };
+  journalDisplay.mergeLogHistory(journal, imported, 7);
+  assert.deepEqual(journal.log, [...before[0], ...before[1]]);
+  assert.equal(journal.logDiscarded, 10);
+  assert.notEqual(journal.log, live);
+  for (const [index, original] of [...imported, ...live].entries()) {
+    assert.notEqual(journal.log[index], original, "merged history must survive both prior document wipes");
+    for (const name of ["at", "tool", "action", "detail"]) original[name] = "";
+  }
+  assert.deepEqual(journal.log, [...before[0], ...before[1]]);
+});
+
+test("debug history merge enforces the count limit and accounts for both prior loss and new evictions", () => {
+  const imported = Array.from({ length: 10000 }, () => ({ at: "t", tool: "", action: "", detail: "" }));
+  const live = [{ at: "t", tool: "", action: "", detail: "newest" }];
+  const journal = { log: live, logDiscarded: 3 };
+  journalDisplay.mergeLogHistory(journal, imported, 7);
+  assert.equal(journal.log.length, 10000);
+  assert.equal(journal.log.at(-1).detail, "newest");
+  assert.equal(journal.logDiscarded, 11);
+  assert.equal(imported[0].at, "t", "retention must not mutate the separately owned source document");
+  assert.equal(live[0].detail, "newest");
+});
+
+test("debug history merge enforces UTF-8 bytes and safely saturates discarded metadata", () => {
+  const event = { at: "界".repeat(300), tool: "界".repeat(300), action: "界".repeat(300), detail: "界".repeat(300) };
+  const imported = Array.from({ length: 100 }, () => ({ ...event }));
+  const journal = { log: Array.from({ length: 100 }, () => ({ ...event })), logDiscarded: Number.MAX_SAFE_INTEGER };
+  journalDisplay.mergeLogHistory(journal, imported, Number.MAX_SAFE_INTEGER);
+  const one = Buffer.byteLength(JSON.stringify(event), "utf8");
+  const retained = Math.floor((LOG_BYTES - 1) / (one + 1));
+  assert.equal(journal.log.length, retained);
+  assert.ok(storedLogBytes(journal.log) <= LOG_BYTES);
+  assert.equal(journal.logDiscarded, Number.MAX_SAFE_INTEGER);
+  assert.deepEqual(imported[0], event);
 });

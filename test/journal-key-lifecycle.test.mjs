@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { KEY_VAULT_MAX_KEYS, keyVaultIdentity } from "../src/js/keymanager.js";
 import { MiniDocument } from "./mini-dom.mjs";
+import { HDKey } from "../src/js/hdkey.js";
 
 // Security contract: reviewed inputs retain their chosen chain and fresh
 // setup decision after their source moves; stale/busy actions cannot move
@@ -33,6 +34,7 @@ function harness() {
   }
   const c = {
     document, keyVaultIdentity, TextEncoder, TextDecoder, Uint8Array, ArrayBuffer,
+    hodlPrivateKeyKinds: ["wif", "hex-key", "minikey", "brain"],
     hodlTypedText: value => new TextDecoder().decode(value),
     HodlDerivationCancelledError: class extends Error {},
     hodlKeyVaultMaxKeys: KEY_VAULT_MAX_KEYS, hodlNextKeyId: 1, hodlNextKeyNumber: 1,
@@ -63,7 +65,7 @@ function harness() {
     hodlSetSelectedScriptType() {}, hodlSnapshotKeySummary() {}, hodlFocusWalletResult() {},
     hodlKeyManagerDecideCommit: async (_transaction, input, result) => { decisions.push({ input, result }); return { kind: "skip" }; },
   };
-  for (const name of ["hodlNewKeyState", "hodlNewLabState", "hodlStoredPassphraseBytes", "hodlPassphraseText", "hodlZeroKeyPassphrase", "hodlKeyManagerEntry", "hodlKeyManagerStates", "hodlKeyManagerCapacityError", "hodlKeyManagerImportedState", "hodlKeyManagerIgnore", "hodlKeyManagerRestoreIgnored", "hodlKeyManagerRenderIgnored", "hodlKeyManagerUseInStation", "hodlKeyManagerReviewInputs", "hodlKeyManagerDiscardInputs", "hodlCloneDerivedKey", "hodlFillLabFromKey", "hodlKeyLogLabel", "hodlKeyWalletIdentity", "hodlKeyNameTaken", "hodlNormalizeKeyName", "hodlCommitDerivedKey", "hodlCalculateKey"])
+  for (const name of ["hodlNewKeyState", "hodlNewLabState", "hodlStoredPassphraseBytes", "hodlPassphraseText", "hodlZeroKeyPassphrase", "hodlKeyManagerEntry", "hodlKeyManagerHasInputs", "hodlPrivateKeyValues", "hodlNormalizePrivateKeyKind", "hodlDetectPrivateKeyKind", "hodlKeyManagerArchiveEntry", "hodlKeyManagerStates", "hodlKeyManagerCapacityError", "hodlKeyManagerImportedState", "hodlKeyManagerIgnore", "hodlKeyManagerRestoreIgnored", "hodlKeyManagerRenderIgnored", "hodlKeyManagerUseInStation", "hodlKeyManagerReviewInputs", "hodlKeyManagerDiscardInputs", "hodlCloneDerivedKey", "hodlFillLabFromKey", "hodlKeyLogLabel", "hodlKeyWalletIdentity", "hodlKeyNameTaken", "hodlNormalizeKeyName", "hodlCommitDerivedKey", "hodlCalculateKey"])
     runInNewContext(source(name), c);
   c.hodlKeyManagerRender = () => {
     const tabs = document.getElementById("journal-keymanager-tabs"); tabs.replaceChildren();
@@ -334,4 +336,79 @@ test("reviewed pending inputs keep their chain and an in-flight Clear cancels or
   finish({ network: "regtest", masterIdentity: "fresh-result" });
   await assert.rejects(deriving, h.c.HodlDerivationCancelledError);
   assert.equal(h.decisions.length, 1, "stale completion must not open another setup decision");
+});
+
+// External review: a local archive must contain inputs, never JSON-shaped
+// HDKey instances that cannot be wiped or used as fresh derivation evidence.
+test("restoring locally archived HD inputs reaches fresh derivation without serialized nodes", async () => {
+  const h = harness(), state = h.input();
+  const root = HDKey.fromMasterSeed(Uint8Array.from(Buffer.from("000102030405060708090a0b0c0d0e0f", "hex")));
+  state.needsDerivation = false;
+  state.result = { kind: "hd", network: "regtest", rootNode: root, accounts: [] };
+  h.c.hodlKeyManagerPending.push(state);
+  for (const name of ["hodlResultSecretBytes", "hodlWipeWalletKeys", "hodlLiveWalletResults", "hodlWipeUnsharedWalletRows"])
+    runInNewContext(source(name), h.c);
+  h.c.hodlKeyManagerIgnore(state);
+  const archived = h.c.hodlKeyManagerIgnored[0];
+  assert.equal(archived.result, null, "an archive must not keep serialized runtime nodes or output claims");
+  assert.equal(archived.needsDerivation, true);
+  await assert.doesNotReject(h.c.hodlKeyManagerRestoreIgnored(archived));
+  assert.equal(h.derived.length, 1);
+  assert.equal(h.derived[0][0].result, null);
+  assert.equal(h.derived[0][0].needsDerivation, true);
+  assert.equal(h.derived[0][0].fields.seed, WORDS);
+  assert.equal(h.derived[0][0].fields.network, "regtest");
+  assert.deepEqual([...h.derived[0][0].fields.pass], [19, 23]);
+  root.wipePrivateData();
+});
+
+test("pending rename updates the reviewed draft and its eventual key name", () => {
+  const h = harness(), state = h.input("Before rename"), lab = h.review(state);
+  for (const name of ["hodlKeyManagerNameTaken", "hodlKeyManagerRename", "hodlKeyManagerSyncReviewedContext"])
+    runInNewContext(source(name), h.c);
+  const input = h.document.createElement("input"); input.value = "After rename";
+  h.c.hodlKeyManagerRename(state, input);
+  assert.equal(lab.importedName, state.name);
+  h.c.hodlKeyManagerSyncReviewedContext();
+  assert.ok(h.document.getElementById("key-import-context").textContent.includes(state.name));
+  lab.result = { network: "regtest", masterIdentity: "fresh-root" };
+  h.c.hodlCommitDerivedKey("derive", { kind: "append" });
+  assert.equal(h.c.hodlKeys[h.c.hodlActiveKey].name, "After rename");
+});
+
+
+test("unchanged legacy private-key field migration does not create a reviewed archive duplicate", () => {
+  const h = harness(), state = h.input("Legacy WIF");
+  const wif = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ";
+  state.mode = "key"; state.fields.seed = ""; state.fields.key = wif; state.fields.network = "mainnet";
+  state.fields.keyKind = "wif-or-hex";
+  const lab = h.review(state), existing = h.input("Existing wallet");
+  existing.needsDerivation = false; existing.result = { masterIdentity: "same-root", network: "mainnet" };
+  h.c.hodlKeys.push(existing);
+  h.c.hodlPrivateKeyKinds = ["wif", "hex-key", "minikey", "brain"];
+  for (const name of ["hodlDetectPrivateKeyKind", "hodlNormalizePrivateKeyKind", "hodlPrivateKeyValues"])
+    runInNewContext(source(name), h.c);
+  // The real RestoreFormFields migration; no user edits occurred.
+  const privateKeys = h.c.hodlPrivateKeyValues(lab.fields);
+  lab.fields.keyKind = h.c.hodlNormalizePrivateKeyKind(lab.fields.keyKind, privateKeys[lab.fields.keyKind] || "");
+  lab.result = { ...existing.result };
+  h.c.hodlCommitDerivedKey("derive", { kind: "reuse", state: existing, previousResult: existing.result });
+  assert.equal(h.c.hodlKeyManagerIgnored.length, 1, "moving the same input between legacy and current fields is not a recovery-input edit");
+  assert.equal(h.c.hodlKeyManagerIgnored[0].fields.key, wif, "the original portable source remains preserved");
+});
+
+
+test("a resultless station input exposes verification guidance and opens its original tab", () => {
+  const h = harness(), state = h.input("Withdrawn result"); delete state.needsDerivation;
+  h.c.hodlKeys.push(state);
+  h.c.hodlKeySummaryMethod = () => "Seed words";
+  runInNewContext(source("hodlKeyManagerDetails"), h.c);
+  const details = h.c.hodlKeyManagerDetails(state).map(([, , , key]) => key);
+  assert.ok(details.includes("verification"));
+  assert.ok(!details.includes("fingerprint") && !details.includes("public-key"));
+  h.c.hodlKeyManagerUseInStation(state);
+  assert.equal(h.c.hodlKeys[h.c.hodlActiveKey], state);
+  assert.equal(h.c.hodlWorkspace, "calc");
+  assert.equal(h.c.hodlKeyManagerPending.length, 0);
+  assert.equal(state.result, null);
 });

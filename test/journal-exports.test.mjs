@@ -8,7 +8,7 @@ import vm from "node:vm";
 import { copyText } from "../src/js/clipboard.js";
 import { MiniDocument } from "./mini-dom.mjs";
 import { KEY_VAULT_MAX_KEYS, keyVaultIdentity, parseKeyVault, serializeKeyVault } from "../src/js/keymanager.js";
-import { JOURNAL_LOG_LIMIT, JOURNAL_LOG_MAX_BYTES, JOURNAL_MAX_FILE_LENGTH, JOURNAL_MIN_ITERATIONS, appendLog, createJournal, deriveJournalKeys, formatLog, logUsage, journalFromPlainText, mergeNotebookImport, openExport, parseNotebook, sealExport, serializeNotebook } from "../src/js/journal.js";
+import { JOURNAL_LOG_LIMIT, JOURNAL_LOG_MAX_BYTES, JOURNAL_MAX_FILE_LENGTH, JOURNAL_MIN_ITERATIONS, appendLog, createJournal, deriveJournalKeys, formatLog, formatLogField, logUsage, journalFromPlainText, mergeNotebookImport, openExport, parseNotebook, sealExport, serializeNotebook } from "../src/js/journal.js";
 
 const source = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
 const extract = (name) => {
@@ -119,6 +119,7 @@ function debugLogHarness() {
     hodlJournalSaveFile() {}, hodlJournalWipeMem() {},
     hodlJournalActionAuditReady: false, hodlJournalSuppressSettingAudit: false,
     hodlJournalFormatLog: formatLog,
+    hodlJournalFormatLogField: formatLogField,
     hodlJournalLogUsage: logUsage,
     hodlJournalLogMaxBytes: JOURNAL_LOG_MAX_BYTES, hodlJournalLogLimit: JOURNAL_LOG_LIMIT,
     hodlJournalAppend(value, event) { appended.push(event); return appendLog(value, event); },
@@ -146,6 +147,16 @@ function debugLogHarness() {
   };
   return { ...ui, journal, output, elements, copies, feedback, appended, resolveCopy, click, clearDecision: () => clearDecision };
 }
+
+test("Debug log ranges cannot render imported timestamp control characters", () => {
+  const ui = debugLogHarness();
+  ui.context.hodlTText = (text, params = {}) => text.replace(/\{(\w+)\}/g, (_match, key) => String(params[key]));
+  ui.journal.log[0].at = "date\nforged\tcolumn\u202e";
+  ui.context.hodlRenderJournalLog();
+  const range = ui.elements.get("journal-log-range").textContent;
+  assert.ok(range.includes("date\\nforged\\tcolumn\\u202e"));
+  assert.doesNotMatch(range, /[\n\t\u202e]/);
+});
 
 test("Debug log pages keep older events readable while Copy and Export capture all retained history", async () => {
   const ui = debugLogHarness();

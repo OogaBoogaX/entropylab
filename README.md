@@ -270,9 +270,14 @@ an explicit error before those pairs are allocated.
   leaving the password blank. Journal-wide backup and **Clear journal**
   actions remain available alongside protection and save status in every area.
   The complete backup contains every notes page and its formatting, all
-  managed and archived key inputs, saved historical records, the session
-  snapshot, and the debug log. The complete backup includes the current
+  managed and archived key inputs, unfinished Key Station inputs, saved
+  historical records, the session snapshot, and the debug log. The complete backup includes the current
   private recovery snapshot even when the on-screen snapshot is concealed.
+  Unfinished Key Station inputs restore as a separate, unverified input set in
+  Keys; they never replace the current working form or derive automatically.
+  An empty working form consumes no backup slot. The 100-active-input limit
+  includes an unfinished form; backup refuses overflow rather than omitting it.
+  These limits apply to Journal storage, not standalone Key Station derivation.
   Changes to notes and key inputs mark the
   Journal as unsaved; edits made while a backup is encrypting remain unsaved.
   **Clear journal** opens a confirmation with choices to download a backup,
@@ -290,7 +295,13 @@ an explicit error before those pairs are allocated.
   browser; download a file to keep it. Closing the page discards the sitting.
   Opening a complete backup restores its Journal sections together. Saved
   snapshots are historical text, concealed until explicitly revealed; they do
-  not recreate live wallets, multisig sessions, or PSBTs.
+  not recreate live wallets, multisig sessions, or PSBTs. Backup snapshots keep
+  recovery material and descriptors but omit recomputable address and WIF rows;
+  the live Session report and its separate export still include those rows.
+  Reopening and saving without newly derived results does not append another
+  snapshot. Changed derived results append a report while preserving earlier
+  recovery material. The snapshot size limit remains explicit; export saved
+  history before removing it if that limit is reached.
   **Open report** reads exported snapshot and Debug log files using the open
   Journal's password setting. Its read-only viewer starts concealed and never
   installs data into tools or the Journal. Closing the viewer, automatic
@@ -402,7 +413,10 @@ an explicit error before those pairs are allocated.
   are protected from partial edits, including timestamps in older backups.
   Select its complete note, through the text before the next timestamp, to
   delete it; selecting all clears the page. Body text and timestamp selections
-  remain freely copyable. Backspace immediately after an empty timestamp
+  remain freely copyable. A refused drag into a protected timestamp restores
+  the source text. Imported CRLF/CR newlines normalize to the editor's LF
+  newlines, and lookalike references retain their literal spelling. Backspace
+  immediately after an empty timestamp
   removes the complete timestamp and its two spaces together; a fully cleared
   page stays empty. Key
   references still select and delete as complete units. Moving the pointer over the editor briefly
@@ -424,7 +438,10 @@ an explicit error before those pairs are allocated.
   the oldest events and shows how many were removed. The reader shows 400
   events at a time, with Earlier, Newer, and Latest events controls; reading
   earlier history does not change what gets copied or exported. Opening a
-  complete backup continues its saved history and its discarded-event count.
+  complete backup places its saved history before events already recorded in
+  this browser session and combines their discarded-event counts. The same
+  retention limits apply to the combined log; opening a legacy entry-only file
+  also preserves this session's existing events.
   Backups from the original 400-event Journal remain readable within the
   512 KiB log limit; an unusually large older log is rejected explicitly,
   without trimming it. Backups with more events require this updated reader.
@@ -433,6 +450,9 @@ an explicit error before those pairs are allocated.
   fingerprints where useful, but omit secret-field values, raw derivation-path
   input, filenames, note bodies, PSBT bytes, and individual entry keystrokes.
   Imported event text is unverified and may contain sensitive information.
+  Display, Copy, and Export escape control characters and invisible separators
+  so an imported field cannot impersonate another event; backups retain the
+  original field data.
   **Copy debug log** copies all retained events as plain text. **Export debug
   log** downloads an encrypted report using the Journal's password setting.
   Both capture the log when clicked, before adding their own outcome events,
