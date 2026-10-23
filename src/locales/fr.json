@@ -1665,5 +1665,6 @@
   "RFC 6979: checked for 1 of 1 ECDSA signature.": "RFC 6979 : vérifié pour 1 signature ECDSA sur 1.",
   "RFC 6979: checked for all {total} ECDSA signatures.": "RFC 6979 : vérifié pour toutes les {total} signatures ECDSA.",
   "RFC 6979: checked for {checked} of {total} ECDSA signatures.": "RFC 6979 : vérifié pour {checked} signatures ECDSA sur {total}.",
-  "{n} did not match.": "{n} ne correspond pas."
+  "{n} did not match.": "{n} ne correspond pas.",
+  "This passphrase contains a hidden line break, so it can't be edited as BIP39 words without changing your wallet.": "Cette phrase secrète contient un saut de ligne caché, elle ne peut donc pas être modifiée en tant que mots BIP39 sans changer votre portefeuille."
 }
