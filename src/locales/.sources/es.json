@@ -1665,5 +1665,6 @@
   "RFC 6979: checked for all {total} ECDSA signatures.": "98bed6c075d346a4ea18b7f7798a5bea704f01ebb368b9f7dc63ece427977cd5",
   "RFC 6979: checked for {checked} of {total} ECDSA signatures.": "41599de27b4380140bde3fd8ffed4fd93d8019c91300a5731b253e78073be926",
   "{n} did not match.": "52f12318eefbf4b523e23c8a7120f200a8d72f81cc62291587e5c946c4cf9073",
-  "RFC 6979: not checked (no matching key in this session).": "fec9a7a518b74fe5551bb7dc035245954f61bd65625e50d9f2453011797929ce"
+  "RFC 6979: not checked (no matching key in this session).": "fec9a7a518b74fe5551bb7dc035245954f61bd65625e50d9f2453011797929ce",
+  "This passphrase contains a hidden line break, so it can't be edited as BIP39 words without changing your wallet.": "df15642764812c2946a543b57f45996edeb6a7750fa1adbd3650070bafe5c25b"
 }
