@@ -1639,5 +1639,22 @@
   "This PSBT also contains {count} Taproot / Schnorr signature(s). Their sighash policies are checked above. No repeated BIP340 nonces were found among them.": "Este PSBT também contém {count} assinatura(s) Taproot / Schnorr. Suas políticas sighash são verificadas acima. Nenhuma reutilização de nonce BIP340 foi encontrada entre elas.",
   "Some Taproot signatures in this transaction could not be checked for a repeated nonce. A key-path signature's key is in the previous output, which a raw transaction does not include, and only single-key and multi_a script-path spends are read. This is not a clean result.": "Algumas assinaturas Taproot nesta transação não puderam ser verificadas quanto à reutilização de nonce. A chave de uma assinatura key-path está na saída anterior, que uma transação bruta não inclui, e apenas gastos script-path single-key e multi_a são lidos. Este não é um resultado limpo.",
   "This transaction also contains 1 Taproot / Schnorr signature in a script-path spend. Only one Taproot signature is present, so nonce reuse cannot be judged from this transaction alone.": "Esta transação também contém 1 assinatura Taproot / Schnorr em um gasto script-path. Apenas uma assinatura Taproot está presente, então a reutilização de nonce não pode ser julgada apenas a partir desta transação.",
-  "This transaction also contains {count} Taproot / Schnorr signature(s) in script-path spends. No repeated BIP340 nonces were found among them.": "Esta transação também contém {count} assinatura(s) Taproot / Schnorr em gastos script-path. Nenhuma reutilização de nonce BIP340 foi encontrada entre elas."
+  "This transaction also contains {count} Taproot / Schnorr signature(s) in script-path spends. No repeated BIP340 nonces were found among them.": "Esta transação também contém {count} assinatura(s) Taproot / Schnorr em gastos script-path. Nenhuma reutilização de nonce BIP340 foi encontrada entre elas.",
+  "{implementation} node identity public key": "Chave pública de identidade do nó {implementation}",
+  "Identity key path": "Caminho da chave de identidade",
+  "testnet": "testnet",
+  "mainnet": "mainnet",
+  "coin type {coinType} ({network})": "tipo de moeda {coinType} ({network})",
+  "the LDK node identity does not depend on the network": "a identidade do nó LDK não depende da rede",
+  "Internal (key-derivation) version {v} · wallet birthday day {days} ({date} UTC, day 0 = Bitcoin genesis). Rescans from the birthday recover on-chain funds; channel funds need the node's channel backup.": "Versão interna (derivação de chave) {v} · dia de aniversário da carteira {days} ({date} UTC, dia 0 = gênese do Bitcoin). Reescaneamentos a partir do aniversário recuperam fundos on-chain; fundos de canal precisam do backup de canal do nó.",
+  "Derived the ldk-node way: BIP39 seed → master key → its private key re-seeds a second BIP32 tree → node secret at": "Derivado da maneira ldk-node: semente BIP39 → chave mestra → sua chave privada re-semeia uma segunda árvore BIP32 → segredo do nó em",
+  "Reveal the root private key and decoded entropy": "Revelar a chave privada raiz e a entropia decodificada",
+  "Reveal the root private key": "Revelar a chave privada raiz",
+  "Decoded entropy (the BIP32 master seed)": "Entropia decodificada (a semente mestra BIP32)",
+  "Salt": "Sal",
+  "BIP32 root private key (xprv)": "Chave privada raiz BIP32 (xprv)",
+  "The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.": "O xprv raiz pode gastar a carteira on-chain do nó. Revele-o apenas enquanto este arquivo for executado offline em um computador air-gapped.",
+  "Private material stays hidden until you reveal it.": "Material privado permanece oculto até você revelá-lo.",
+  "Node key derived. Decoded key material stays in page memory until you clear it.": "Chave do nó derivada. Material de chave decodificado permanece na memória da página até você limpá-lo.",
+  "A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.": "Uma frase-semente BIP39 de 12 a 24 palavras, como usada pelo ldk-node."
 }
