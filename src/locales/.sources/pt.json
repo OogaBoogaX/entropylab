@@ -1657,5 +1657,8 @@
   "Node key derived. Decoded key material stays in page memory until you clear it.": "0b0f6756bb51acd9d3b8511382b3fb3d3eea1a7d46cfcc47aae28feacfe38ea2",
   "A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.": "b15a4db175c7b9237c886388a3fb6cf690dbadf1d678727ac27210ce5f00f68e",
   "Transactions": "3e5136fd4b11c0dd3c1443977567433fb03e46134450d9a368d80c7ebf207a5f",
-  "Txns": "bf9b463d1af4e8391d34cdef54bd60c31152ee8cdcd04a6905bd46520e22b4a7"
+  "Txns": "bf9b463d1af4e8391d34cdef54bd60c31152ee8cdcd04a6905bd46520e22b4a7",
+  "The selected account is unavailable. Select a script type and export again.": "9e71f2fdab8059bf1a4bc9c93b21da8196c01738f6a497572298ef7bc8a58d1f",
+  "Imports the displayed public branches. Bitcoin Core uses branch {branch} for new receiving addresses, starting at address index 0. Verify that address on another trusted wallet or signer before funding.": "5bb5a95d8c8d997f8e9f241410de49a65e62def75c103608c0ee003eb096e267",
+  "Exports the selected script type's displayed branches, using the wallet birthday under Downloads below.": "d838af6225277976c9bf1be96d2e43f07c2f8bb6e28ef21196a7d5bfc08c9440"
 }

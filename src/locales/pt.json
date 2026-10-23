@@ -1657,5 +1657,8 @@
   "Node key derived. Decoded key material stays in page memory until you clear it.": "Chave do nó derivada. Material de chave decodificado permanece na memória da página até você limpá-lo.",
   "A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.": "Uma frase-semente BIP39 de 12 a 24 palavras, como usada pelo ldk-node.",
   "Transactions": "Transações",
-  "Txns": "Txns"
+  "Txns": "Txns",
+  "The selected account is unavailable. Select a script type and export again.": "A conta selecionada não está disponível. Selecione um tipo de script e exporte novamente.",
+  "Imports the displayed public branches. Bitcoin Core uses branch {branch} for new receiving addresses, starting at address index 0. Verify that address on another trusted wallet or signer before funding.": "Importa os ramos públicos exibidos. O Bitcoin Core usa o ramo {branch} para novos endereços de recebimento, começando no índice 0. Verifique esse endereço em outra carteira ou signatário confiável antes de financiar.",
+  "Exports the selected script type's displayed branches, using the wallet birthday under Downloads below.": "Exporta os ramos exibidos do tipo de script selecionado, usando o aniversário da carteira em Downloads abaixo."
 }
