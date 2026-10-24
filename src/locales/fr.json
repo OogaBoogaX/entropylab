@@ -1914,5 +1914,7 @@
   "Clear debug log": "Effacer le journal de débogage",
   "Entropy Journal: AES-256-GCM from an optional typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. An empty password preserves the file format but provides no access protection. No relays, no accounts, no localStorage for secrets.": "Journal d'entropie : AES-256-GCM à partir d'un mot de passe tapé optionnel (Web Crypto) — PBKDF2-SHA-256, 600 000 tours, avec le sel dérivé du mot de passe lui-même ; l'IV est HMAC-SHA-256 du texte brut, de sorte que le même mot de passe et les mêmes entrées reproduisent toujours le même fichier. Un mot de passe vide préserve le format du fichier mais n'offre aucune protection d'accès. Pas de relais, pas de comptes, pas de localStorage pour les secrets.",
   "Imported {n} page from {name}.": "Importé {n} page de {name}.",
-  "Imported {n} pages from {name}.": "Importé {n} pages de {name}."
+  "Imported {n} pages from {name}.": "Importé {n} pages de {name}.",
+  "Core Wallet": "Core Wallet",
+  "Core": "Core"
 }
