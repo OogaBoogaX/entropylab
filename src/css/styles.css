@@ -1319,6 +1319,29 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
   border: 1px solid var(--border); border-radius: var(--radius-container); background: var(--surface);
   box-shadow: 0 16px 36px var(--scrim);
 }
+/* Guide uses the shared modal, notes, buttons and spacing rhythm. */
+.guide-entry { margin-bottom: var(--space-section); font-size: var(--text-body); }
+.guide-explain { margin-top: var(--space-component); }
+.feature-guide-card {
+  --modal-width: 640px;
+  max-height: calc(100dvh - var(--space-lede)); box-sizing: border-box;
+  display: flex; flex-direction: column;
+  font-size: var(--text-base); overflow-wrap: anywhere;
+}
+.feature-guide-card > .row { justify-content: space-between; flex: 0 0 auto; }
+.feature-guide-card .modal-title { margin: 0; }
+.guide-content { margin-top: var(--space-section); min-height: 0; overflow-y: auto; }
+.guide-content p { margin: 0; line-height: 1.6; }
+.feature-guide-card .guide-content > * + *, .feature-guide-card .guide-step > * + * { margin-top: var(--space-component); }
+.guide-content h3 { margin-bottom: 0; font-size: var(--text-heading-small); }
+.guide-content .label { margin: 0 0 var(--space-control); }
+.guide-lessons { display: grid; gap: var(--space-control); }
+.guide-lessons > .btn { display: grid; gap: var(--space-control); height: auto; text-align: start; white-space: normal; padding: var(--inset-box); }
+.guide-lessons > .btn > .muted { font-size: var(--text-body); font-weight: normal; }
+.guide-chain { display: flex; flex-wrap: wrap; gap: var(--space-control); padding-left: var(--indent-list); }
+.guide-chain li { padding: var(--inset-chip); margin-right: var(--space-component); }
+.guide-chain [aria-current] { color: var(--accent); font-weight: bold; border-bottom: 1px solid var(--accent); }
+#guide-check > * + *, #guide-story > * + *, #guide-browse > * + * { margin-top: var(--space-component); }
 .modal-title { margin: 0 0 var(--space-section); font-weight: 600; font-size: var(--text-heading-small); overflow-wrap: anywhere; }
 @media (max-width: 520px) { .modal-card { padding: var(--inset-card); } }
 /* The gate alone fades in, and wears the danger frame its warning calls for. */
@@ -1357,18 +1380,21 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
    flex column the text and button margins add instead of collapsing, so the
    text keeps only the difference: a card that fits keeps its --space-intro
    gap and lays out as before. */
-.end-session-card {
+.disclaimer-card:not([hidden]), .end-session-card {
   display: flex; flex-direction: column;
 }
 .end-session-card, .modal-card.is-scrollable {
   max-height: calc(100vh - 2 * var(--inset-modal)); max-height: calc(100dvh - 2 * var(--inset-modal));
 }
 .modal-card.is-scrollable { overflow-y: auto; }
-.end-session-card > * { flex-shrink: 0; }
-.end-session-card > .end-session-text {
+:is(.disclaimer-card, .end-session-card) > * { flex-shrink: 0; }
+.disclaimer-card > .disclaimer-text, .end-session-card > .end-session-text {
   flex-shrink: 1; min-height: 0; overflow-y: auto;
+}
+.end-session-card > .end-session-text {
   margin-bottom: calc(var(--space-intro) - var(--space-component));
 }
+.disclaimer-proof-label { margin: 0 0 var(--space-component); }
 /* The second step's answer: a one-digit field left of the button, which stays
    disabled until the reader types 3. The field takes the button's height. */
 .disclaimer-proof-row { display: flex; justify-content: center; align-items: center; gap: var(--space-control); }
