@@ -42,10 +42,12 @@ const hodlCompressedPubkey = new Function(
   },
 );
 const hodlDerRLoose = new Function(`${loadSlice("hodlDerRLoose")}; return hodlDerRLoose;`)();
+const { hex: hodlHex } = await import("../src/js/coders.js");
 const hodlCompareNonces = new Function(
   "hodlEq",
+  "hodlHex",
   `${loadSlice("hodlCompareNonces")}; return hodlCompareNonces;`,
-)(hodlEq);
+)(hodlEq, hodlHex);
 
 const GX = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 const GY = "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8";
@@ -135,6 +137,29 @@ test("same r without reconstructed digests is possible reuse, not a clean miss",
   assert.equal(scan.possible.length, 1);
 });
 
+test("same r on one input with an unreconstructed digest is possible reuse (audit C3-2)", () => {
+  // Two signatures by one key on one input under different sighash types
+  // (say ALL and SINGLE) commit to different digests: the same r leaks the
+  // private key. Digest reconstruction covers SIGHASH_ALL only, so this pair
+  // cannot be proven — but it must land in "possible", not drop silently to a
+  // green verdict.
+  const r = rOf("bb".repeat(32));
+  const scan = hodlCompareNonces([
+    { input: 0, r, pubkey: hodlCompressedPubkey(G_COMPRESSED), sighash: rOf("01".repeat(32)), valid: true },
+    { input: 0, r, pubkey: hodlCompressedPubkey(G_COMPRESSED), sighash: null, valid: null },
+  ]);
+  assert.equal(scan.reused.length, 0);
+  assert.equal(scan.possible.length, 1);
+  // A same-input pair whose digests are both known and equal is one
+  // signature copied, not reuse: it stays quiet.
+  const duplicate = hodlCompareNonces([
+    { input: 0, r, pubkey: hodlCompressedPubkey(G_COMPRESSED), sighash: rOf("01".repeat(32)), valid: true },
+    { input: 0, r, pubkey: hodlCompressedPubkey(G_COMPRESSED), sighash: rOf("01".repeat(32)), valid: true },
+  ]);
+  assert.equal(duplicate.reused.length, 0);
+  assert.equal(duplicate.possible.length, 0);
+});
+
 test("existing same-encoding strict detection still reports reused r", () => {
   const r = rOf("22".repeat(32));
   const scan = hodlCompareNonces([
@@ -144,12 +169,76 @@ test("existing same-encoding strict detection still reports reused r", () => {
   assert.equal(scan.reused.length, 1);
 });
 
+test("grouped nonce comparison returns the same buckets as the all-pairs scan (audit C3-3)", () => {
+  // The performance rewrite groups by r before comparing; the buckets must be
+  // pair-for-pair identical to the all-pairs scan it replaces (the previous
+  // implementation, kept here as the reference).
+  const reference = (records) => {
+    const reused = [], possible = [], crossKey = [];
+    for (let first = 0; first < records.length; first++)
+      for (let second = first + 1; second < records.length; second++) {
+        const a = records[first], b = records[second];
+        if (!hodlEq(a.r, b.r)) continue;
+        if (!hodlEq(a.pubkey, b.pubkey)) {
+          crossKey.push([a, b]);
+          continue;
+        }
+        if (a.valid && b.valid && a.sighash && b.sighash && !hodlEq(a.sighash, b.sighash)) reused.push([a, b]);
+        else if (a.input !== b.input || !a.sighash || !b.sighash) possible.push([a, b]);
+      }
+    return { reused, possible, crossKey };
+  };
+  const pairSet = (records, pairs) =>
+    new Set(pairs.map(([a, b]) => `${records.indexOf(a)}:${records.indexOf(b)}`));
+  let state = 42;
+  const next = () => (state = (state * 1103515245 + 12345) & 0x7fffffff);
+  for (let round = 0; round < 300; round++) {
+    const records = [];
+    for (let i = 0, count = next() % 40; i < count; i++) {
+      records.push({
+        input: next() % 6,
+        r: rOf(String(next() % 4).repeat(2)),
+        pubkey: [G_COMPRESSED, G_UNCOMPRESSED, OTHER][next() % 3],
+        sighash: next() % 3 ? rOf(String(next() % 3).repeat(2)) : null,
+        valid: [true, false, null][next() % 3],
+      });
+    }
+    const expected = reference(records);
+    const actual = hodlCompareNonces(records);
+    for (const bucket of ["reused", "possible", "crossKey"]) {
+      assert.deepEqual(pairSet(records, actual[bucket]), pairSet(records, expected[bucket]), `${bucket} diverged in round ${round}`);
+    }
+  }
+});
+
+test("nonce comparison refuses collision floods before constructing unbounded pair lists", () => {
+  // Contract: preserve exact comparisons within the budget and reject larger
+  // collision sets, rather than allocating n*(n-1)/2 pairs or returning clean.
+  const records = (count, r = rOf("11".repeat(32))) => Array.from({ length: count }, (_, input) => ({
+    input, r, pubkey: G_COMPRESSED, sighash: null, valid: null,
+  }));
+  const accepted = hodlCompareNonces(records(256));
+  assert.equal(accepted.possible.length, 256 * 255 / 2);
+  // 32640 + 120 + 6 + 1 + 1 reaches the exact whole-file boundary.
+  const atLimit = [256, 16, 4, 2, 2].flatMap((count, i) => records(count, rOf((i + 1).toString(16))));
+  assert.equal(hodlCompareNonces(atLimit).possible.length, 32768);
+  assert.throws(() => hodlCompareNonces([...atLimit, ...records(2, rOf("06"))]), /nonce comparison limit/i);
+  assert.throws(() => hodlCompareNonces(records(257)), /nonce comparison limit/i);
+  // The limit covers the whole file, not each individually small group.
+  assert.throws(() => hodlCompareNonces([
+    ...records(200), ...records(200, rOf("22".repeat(32))),
+  ]), /nonce comparison limit/i);
+  // Many unique nonces require no pair comparisons and remain supported.
+  const distinct = records(10000).map((record, i) => ({ ...record, r: rOf((i + 1).toString(16)) }));
+  assert.deepEqual(hodlCompareNonces(distinct), { reused: [], possible: [], crossKey: [] });
+});
+
 test("render suppresses a clean verdict when a signature cannot be inspected", () => {
   const render = loadSlice("hodlRenderPsbt");
   assert.match(render, /uninspected\s*\+=\s*1/);
   assert.match(
     render,
-    /else if\s*\(uninspected\)\s*html\.push\("<p class='psbt-warn'><strong>Incomplete nonce coverage\.<\/strong>/,
+    /else if\s*\(uninspected\)\s*nonceHtml\.push\("<p class='psbt-warn'><strong>"\s*\+\s*hodlT\("Incomplete nonce coverage\."\)/,
   );
   assert.match(render, /hodlCompressedPubkey\(signature\.pubkey\)/);
   assert.match(render, /hodlDerRLoose\(signature\.der\)/);

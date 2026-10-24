@@ -50,14 +50,18 @@ export function hodlCatalogHasMarkup(value) {
   return /<[A-Za-z/!?]/.test(String(value ?? ""));
 }
 
-const hodlControlSource = "[" + [[0, 8], [11, 12], [14, 31], [127, 159], [0x061c, 0x061c], [0x200b, 0x200f], [0x202a, 0x202e], [0x2060, 0x2064], [0x2066, 0x2069], [0xfeff, 0xfeff]]
+const hodlControlSource = "[" + [[0, 8], [11, 12], [14, 31], [127, 159], [0x00ad, 0x00ad], [0x061c, 0x061c], [0x115f, 0x1160], [0x180e, 0x180e], [0x200b, 0x200f], [0x2028, 0x2029], [0x202a, 0x202e], [0x2060, 0x2064], [0x2065, 0x2065], [0x2066, 0x2069], [0x206a, 0x206f], [0x2800, 0x2800], [0x3164, 0x3164], [0xfe00, 0xfe0f], [0xfeff, 0xfeff], [0xffa0, 0xffa0], [0xe0001, 0xe0001], [0xe0020, 0xe007f]]
   .map(([from, to]) => String.fromCodePoint(from) + "-" + String.fromCodePoint(to)).join("") + "]";
 
 export function hodlCatalogHasControlCharacters(value) {
-  return new RegExp(hodlControlSource).test(String(value ?? ""));
+  return new RegExp(hodlControlSource, "u").test(String(value ?? ""));
 }
 
-const hodlNeutralizeControls = (value) => String(value ?? "").replace(new RegExp(hodlControlSource, "g"), "\uFFFD");
+// The u flag makes the class match code points, not UTF-16 units: without it
+// the astral ranges (language tags, U+E0001) would land as surrogate halves.
+// Exported for the other untrusted-text surfaces (the PSBT inspectors), which
+// neutralize through the same table.
+export const hodlNeutralizeControls = (value) => String(value ?? "").replace(new RegExp(hodlControlSource, "gu"), "\uFFFD");
 
 // Preserve only the entities this function emits itself, making sanitization
 // idempotent. Every other ampersand is escaped, including numeric and named
@@ -204,14 +208,21 @@ export function hodlEscapeAttribute(value) {
   })[character]);
 }
 
+// A JSON-parsed catalog can carry an own "__proto__" key. Assigning it would
+// invoke the Object.prototype setter — a string value is silently dropped,
+// an object value would retarget the clean catalog's prototype and let
+// unsanitized entries in through later lookups. No translation is ever keyed
+// "__proto__" (keys are English source text), so the key is skipped.
+const hodlCatalogKeySafe = (key) => key !== "__proto__";
+
 export function hodlSanitizeCatalog(catalog) {
   let clean = {};
-  for (let [key, value] of Object.entries(catalog ?? {})) clean[key] = typeof value === "string" ? hodlSanitizeCatalogHtml(value) : value;
+  for (let [key, value] of Object.entries(catalog ?? {})) if (hodlCatalogKeySafe(key) && typeof value === "string") clean[key] = hodlSanitizeCatalogHtml(value);
   return clean;
 }
 
 export function hodlSanitizeTextCatalog(catalog) {
   let clean = {};
-  for (let [key, value] of Object.entries(catalog ?? {})) clean[key] = typeof value === "string" ? hodlSanitizeCatalogText(value) : value;
+  for (let [key, value] of Object.entries(catalog ?? {})) if (hodlCatalogKeySafe(key) && typeof value === "string") clean[key] = hodlSanitizeCatalogText(value);
   return clean;
 }

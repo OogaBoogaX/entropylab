@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { hodlLocaleCodes, hodlSelectableLocales, hodlNormalizeLocale, t, tHtml, hodlSetLocale, hodlGetLocale } from "../src/js/i18n.js";
 import * as labelTables from "../src/js/i18n-labels.js";
+import { collectSources } from "../scripts/i18n-sources.mjs";
+import { MiniDocument, MiniNodeFilter } from "./mini-dom.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const readCatalog = (code) => JSON.parse(execFileSync("cat", [join(root, "src/locales", `${code}.json`)], { encoding: "utf8" }));
+const readCatalog = (code) => JSON.parse(readFileSync(join(root, "src/locales", `${code}.json`), "utf8"));
 
 test("the English source text is the key: no en.json catalog ships", () => {
   assert.deepEqual(
@@ -25,6 +28,155 @@ test("catalog content is valid and drift is report-only", () => {
   // PR must be able to change English copy without touching every locale,
   // and the translation workflow fills and prunes afterwards.
   execFileSync(process.execPath, [join(root, "scripts/i18n-sync.mjs")], { stdio: "pipe" });
+});
+
+// The field helpers take the English label as their first argument and
+// translate it inside, so a literal label at any of their call sites must be
+// a translation source, or i18n:sync prunes its translations as dead.
+test("labels passed to the field helpers are translation sources", async () => {
+  const sources = await collectSources(root), known = new Set(sources instanceof Map ? sources.keys() : sources);
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const labels = [...app.matchAll(/\bhodl(?:Public|Private|PrivateKey)FieldHtml\("((?:[^"\\]|\\.)*)"/g)].map((match) => JSON.parse(`"${match[1]}"`));
+  assert.ok(labels.length > 10, "fixture: the field helpers have literal labels");
+  assert.deepEqual(labels.filter((label) => !known.has(label)), []);
+});
+
+// hodlFormatNote paints a { key, vars } note through hodlTText(key), but the
+// collector reads only the translating calls' first argument. A note written
+// as an object literal therefore never reached the catalogs: 34 of them (the
+// seed-phrase checks, dice and card input, the PSBT session line) read in
+// English in every language. Notes are built with hodlNote(), whose first
+// argument is collected; a literal may carry only text something else
+// already collects.
+test("a note object's English is a source the collector reads", async () => {
+  const sources = await collectSources(root), known = new Set(sources instanceof Map ? sources.keys() : sources);
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const texts = [...app.matchAll(/\{ key: "((?:[^"\\]|\\.)*)"(?=[ ,}])/g)]
+    .map((match) => JSON.parse(`"${match[1]}"`))
+    .filter((text) => /[A-Za-z]{2,} [A-Za-z]{2,}/.test(text));
+  assert.deepEqual(texts.filter((text) => !known.has(text)), []);
+  assert.ok(known.has("Type or paste your seed phrase."), "the seed-phrase prompt is a source");
+  assert.ok(known.has("Session key: BIP39 seed + passphrase. Kept in page memory only."), "the session line is a source");
+});
+
+// The MS Station co-signer refusals were built with new Error("…") and with
+// template literals, so the collector — which reads the first argument of a
+// translating call only — never saw them: every refusal in
+// hodlValidatedMsigInputs, hodlOriginScriptError and hodlMultisigAccountKeyError
+// read in English in every language. They are hodlError()/hodlNote() calls now,
+// which the collector reads (including both ternary branches). This slices the
+// three functions out of the app source and pins the whole set.
+function hodlFunctionSource(app, name) {
+  const start = app.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `app.js has no top-level ${name}`);
+  // The body opens at ") {": a default parameter may itself hold braces.
+  let depth = 0;
+  for (let index = app.indexOf(") {", start) + 2; index < app.length; index++) {
+    if (app[index] === "{") depth++;
+    else if (app[index] === "}" && --depth === 0) return app.slice(start, index + 1);
+  }
+  throw new Error(`unterminated ${name}`);
+}
+// The collector's own first-argument walk (scripts/i18n-sources.mjs), so the
+// literals checked here are exactly the ones it collects.
+function firstArgumentLiterals(source, start) {
+  const found = [];
+  let index = start, depth = 1;
+  while (index < source.length && depth > 0) {
+    const character = source[index];
+    if (character === '"') {
+      let end = index + 1;
+      while (end < source.length && source[end] !== '"') end += source[end] === "\\" ? 2 : 1;
+      found.push(JSON.parse(source.slice(index, end + 1)));
+      index = end + 1;
+      continue;
+    }
+    if ("([{".includes(character)) depth++;
+    else if (")]}".includes(character)) depth--;
+    else if (character === "," && depth === 1) break; // second argument: never a source
+    index++;
+  }
+  return found;
+}
+const englishSentence = (text) => /[A-Za-z]{2,} [A-Za-z]{2,}/.test(text);
+
+test("the multisig co-signer refusals are sources the collector reads", async () => {
+  const sources = await collectSources(root), known = new Set(sources instanceof Map ? sources.keys() : sources);
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const texts = [];
+  for (const name of ["hodlValidatedMsigInputs", "hodlOriginScriptError", "hodlMultisigAccountKeyError"]) {
+    const source = hodlFunctionSource(app, name);
+    for (const call of source.matchAll(/\bhodl(?:Error|Note)\(/g)) {
+      texts.push(...firstArgumentLiterals(source, call.index + call[0].length));
+    }
+    // Nothing user-facing may be left out of the collector's reach: no refusal
+    // built with new Error("…"), and no English sentence in a template literal.
+    const plainThrows = [...source.matchAll(/new Error\("((?:[^"\\]|\\.)*)"/g)]
+      .map((match) => JSON.parse(`"${match[1]}"`)).filter(englishSentence);
+    const templateLiterals = [...source.matchAll(/`((?:[^`\\]|\\.)*)`/g)].map((match) => match[1]);
+    assert.deepEqual(plainThrows, [], `${name} still builds an English refusal with new Error("…")`);
+    assert.deepEqual(templateLiterals.filter(englishSentence), [], `${name} still builds an English sentence in a template literal`);
+  }
+  assert.ok(texts.length >= 20, `fixture: the three functions have translating calls, found ${texts.length} literals`);
+  assert.deepEqual(texts.filter((text) => !known.has(text)), []);
+  assert.ok(known.has("Pick how many signatures out of how many keys."), "the threshold refusal is a source");
+  assert.ok(known.has("The account index must be hardened."), "the hardening refusal's branch is a source");
+  assert.ok(known.has("A Taproot origin must contain purpose, coin type, and account."), "a composed branch is a source");
+});
+
+test("module translator imports and aliases are translation sources", async (context) => {
+  const fixture = mkdtempSync(join(tmpdir(), "entropylab-i18n-sources-"));
+  context.after(() => rmSync(fixture, { recursive: true, force: true }));
+  mkdirSync(join(fixture, "src/js"), { recursive: true });
+  const files = {
+    "package.json": '{"type":"module"}',
+    "src/index.html": "",
+    "src/shell.html": "",
+    "src/js/i18n-labels.js": "export {};",
+    "src/js/module.js": `
+      import { t, tHtml, tAttr, hodlGetLocale } from "./i18n.js";
+      t("Plain {n}", { n: "Not a source" });
+      tHtml("<strong>Rich</strong>");
+      tAttr("Attribute");
+      hodlGetLocale("Not a translator");
+      object.t("Not a direct call");
+      not_t("Not a translator suffix");
+    `,
+    "src/js/aliases.js": `
+      import {
+        t as text, tHtml as html, tAttr as $attr,
+      } from './i18n.js';
+      text("Aliased text");
+      html("Aliased HTML");
+      $attr("Aliased attribute");
+    `,
+    "src/js/unrelated.js": `
+      import { t, tHtml, tAttr } from "./other.js";
+      t("Unrelated text");
+      tHtml("Unrelated HTML");
+      tAttr("Unrelated attribute");
+    `,
+    "src/js/local.js": 'const t = (value) => value; t("Local function");',
+    "src/js/network-check.js": 't("Pre-boot network");',
+    "src/js/wallet-export.js": 't("Pre-boot wallet");',
+  };
+  for (const [name, source] of Object.entries(files)) writeFileSync(join(fixture, name), source);
+  assert.deepEqual([...await collectSources(fixture)].sort(), [
+    "Plain {n}", "<strong>Rich</strong>", "Attribute",
+    "Aliased text", "Aliased HTML", "Aliased attribute",
+    "Pre-boot network", "Pre-boot wallet",
+  ].sort());
+});
+
+test("warning and address QR translator literals are translation sources", async () => {
+  const sources = await collectSources(root);
+  for (const name of ["low-entropy-confirm.js", "fingerprint-collision-confirm.js", "address-qr.js"]) {
+    const module = readFileSync(join(root, "src/js", name), "utf8");
+    const labels = [...module.matchAll(/\bt(?:Html|Attr)?\("((?:[^"\\]|\\.)*)"/g)]
+      .map((match) => JSON.parse(`"${match[1]}"`));
+    assert.ok(labels.length > 0, `${name} must supply translator literals`);
+    assert.deepEqual(labels.filter((label) => !sources.has(label)), [], `${name} has uncollected translation sources`);
+  }
 });
 
 test("every locale stays selectable, translated or not", () => {
@@ -89,5 +241,126 @@ test("the enum-family label tables are non-empty strings keyed by their enum val
       else if (value && typeof value === "object") Object.values(value).forEach(walk);
     };
     walk(table);
+  }
+});
+
+// The content sweep (hodlApplyStaticI18n and its lookup helpers) is
+// module-private, and i18n.js builds its sanitized catalogs from the
+// committed JSON at import time, so the real module can never see a hostile
+// value. To still run the app's own sweep against one, the test loads the
+// sweep section of i18n.js verbatim — from the sweep comment block through
+// hodlApplyStaticI18n — rebounding only the two catalog tables and the
+// active locale (the same run-the-real-code approach as
+// test/app-slice-harness.mjs; nothing is re-implemented).
+async function loadSweep(catalogs) {
+  const source = readFileSync(join(root, "src/js/i18n.js"), "utf8");
+  const start = source.indexOf("// The content sweep translates the DOM in place");
+  const end = source.indexOf("export function hodlReadStoredLocale");
+  assert.ok(start >= 0 && end > start, "the i18n.js sweep section markers moved");
+  const module = [
+    'let hodlLocale = "zz";',
+    `const hodlLocaleTextCatalogs = { zz: ${JSON.stringify(catalogs.text ?? {})} };`,
+    `const hodlLocaleHtmlCatalogs = { zz: ${JSON.stringify(catalogs.html ?? {})} };`,
+    source.slice(start, end),
+  ].join("\n");
+  const directory = mkdtempSync(join(tmpdir(), "entropylab-i18n-sweep-"));
+  writeFileSync(join(directory, "sweep.mjs"), module);
+  try {
+    return await import(pathToFileURL(join(directory, "sweep.mjs")).href);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+// A page for the sweep: the mini-dom supplies the tree walk, get/setAttribute
+// and innerHTML parsing the sweep drives.
+function sweepPage(markup) {
+  const document = new MiniDocument();
+  globalThis.document = document;
+  globalThis.NodeFilter = MiniNodeFilter;
+  document.body.innerHTML = markup;
+  return document;
+}
+function leavePage() {
+  delete globalThis.document;
+  delete globalThis.NodeFilter;
+}
+
+test("a non-string catalog value is not a translation: the sweep leaves the DOM untouched (audit B6)", async () => {
+  const sweep = await loadSweep({
+    text: {
+      // The finding's payload shape: an array coerces to its markup at a sink.
+      "Text key": ['<img src=x onerror="globalThis.__entropyLabPwned = true">'],
+      "Attr key": { injected: "value" },
+      // An empty string was never a translation: it falls back to the source.
+      "Blank key": "",
+      "Clean text": "Translated text",
+      "Clean attr": "Translated attr",
+    },
+    html: {
+      "Rich key": ['<img src=x onerror="globalThis.__entropyLabPwned = true">'],
+      "<em>Clean rich</em>": "<strong>Translated rich</strong>",
+    },
+  });
+  const document = sweepPage([
+    "<p>Text key</p>",
+    "<p>Blank key</p>",
+    "<p>Clean text</p>",
+    '<button aria-label="Attr key" title="Clean attr">Do</button>',
+    "<div data-i18n-rich>Rich key</div>",
+    "<div data-i18n-rich><em>Clean rich</em></div>",
+  ].join(""));
+  try {
+    sweep.hodlApplyStaticI18n(document);
+    const [textParagraph, blankParagraph, cleanParagraph] = document.querySelectorAll("p");
+    const button = document.querySelector("button");
+    const [rich, cleanRich] = document.querySelectorAll("[data-i18n-rich]");
+    assert.equal(textParagraph.textContent, "Text key");
+    assert.equal(blankParagraph.textContent, "Blank key");
+    assert.equal(button.getAttribute("aria-label"), "Attr key");
+    assert.equal(rich.innerHTML, "Rich key");
+    assert.equal(document.querySelectorAll("img").length, 0, "no catalog markup reached the live DOM");
+    // Clean string hits still translate, in place.
+    assert.equal(cleanParagraph.textContent, "Translated text");
+    assert.equal(button.getAttribute("title"), "Translated attr");
+    assert.equal(cleanRich.innerHTML, "<strong>Translated rich</strong>");
+  } finally {
+    leavePage();
+  }
+});
+
+test("the sweep never takes a translation from a catalog's prototype chain (audit B6)", async () => {
+  const sweep = await loadSweep({ text: {}, html: {} });
+  const document = sweepPage('<p title="Proto attr">Proto key</p>');
+  Object.prototype["Proto key"] = "polluted text";
+  Object.prototype["Proto attr"] = "polluted attr";
+  try {
+    sweep.hodlApplyStaticI18n(document);
+    const paragraph = document.querySelector("p");
+    assert.equal(paragraph.textContent, "Proto key");
+    assert.equal(paragraph.getAttribute("title"), "Proto attr");
+  } finally {
+    leavePage();
+    delete Object.prototype["Proto key"];
+    delete Object.prototype["Proto attr"];
+  }
+});
+
+test("t() and tHtml() never take a translation from a catalog's prototype chain (#867)", () => {
+  // The page sweeps refuse inherited catalog hits (audit B6, above). The
+  // lookups behind t() and tHtml() must refuse them too, or a polluted
+  // Object.prototype supplies markup that tHtml() hands to an HTML sink.
+  const source = "zz-source-not-in-any-catalog";
+  const [ownSource, ownText] = Object.entries(readCatalog("de")).find(([key, value]) => typeof value === "string" && value && value !== key && !/[<>&{}]/.test(key + value));
+  hodlSetLocale("de", false);
+  Object.prototype[source] = "<img src=x onerror=alert(1)>polluted";
+  try {
+    assert.equal(t(source), source, "t() falls back to the English source");
+    assert.equal(tHtml(source), source, "tHtml() falls back to the English source");
+    assert.equal(t(ownSource), ownText, "an own catalog entry still translates in t()");
+    assert.equal(tHtml(ownSource), ownText, "an own catalog entry still translates in tHtml()");
+  } finally {
+    delete Object.prototype[source];
+    hodlSetLocale("en", false);
   }
 });

@@ -4,6 +4,15 @@
 // a later false claim naming the session wallet: the output was labeled
 // "other-wallet" and the "PSBT lies ... Do not sign" warning never appeared.
 // The verdict must depend on the set of derivation records, not their order.
+// Also guards audit finding B8 (security.md): a verified record on a
+// script-hash output is an unverifiable claim ("unknown") — never a red
+// banner for honest multisig change — and key membership in the attached
+// witness/redeem script is reported with it only as information: appearing
+// in a script is not controlling the output (#851 review: a 1-of-N
+// multisig, a quorum the attacker reaches without the user, or a
+// "<user> OP_DROP <attacker> OP_CHECKSIG" are all attacker-spendable while
+// containing the session key). A record is a "lie" only when the key
+// mismatches or the output provably pays one other key.
 // Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -13,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { HDKey } from "../src/js/hdkey.js";
 import { mnemonicToSeedSync } from "../src/js/bip39.js";
 import { indexHdKey } from "../src/js/ownership.js";
-import { multisigScript, p2wpkhScript, p2wshScript } from "../src/js/addresses.js";
+import { multisigScript, p2shScript, p2wpkhScript, p2wshScript } from "../src/js/addresses.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -31,8 +40,10 @@ function slice(name) {
 
 const source = [
   `import { hex as hodlHex } from "../src/js/coders.js";`,
+  `import { hash160 as hodlHash160 } from "../src/js/hashes.js";`,
   `import { matchOwnership, pathLabel } from "../src/js/ownership.js";`,
-  `import { addressFor, addressFromScript } from "../src/js/addresses.js";`,
+  `import { addressFor, addressFromScript, p2shScript, p2wshScript } from "../src/js/addresses.js";`,
+  `import { tHtml as hodlT } from "../src/js/i18n.js";`,
   "let hodlPsbtHd = null;",
   "export function hodlSetSession(key) { hodlPsbtHd = key; }",
   slice("hodlFingerprintHex"),
@@ -41,6 +52,9 @@ const source = [
   slice("hodlAddr"),
   slice("hodlAddressOrThrow"),
   slice("hodlAddressesEqual"),
+  slice("hodlBytesContain"),
+  slice("hodlScriptMembership"),
+  slice("hodlForeignSingleKeyScript"),
   slice("hodlDeclaredOutput"),
   slice("hodlOwnershipWarning"),
   "export { hodlDeclaredOutput, hodlOwnershipWarning };",
@@ -112,6 +126,21 @@ const falseScriptRecord = { type: 2, keydata: receiveNode.publicKey, val: concat
 // An honest record from the session wallet for the genuine change output.
 const validChangeRecord = derivation(changeNode, hd.fingerprint, changePath);
 
+// Multisig-change fixtures (audit B8): the session wallet's cosigner key and
+// a 2-of-2 change witness script it participates in alongside the cosigner.
+// Mainstream coordinators (Sparrow, Coldcard) attach exactly this
+// construction script plus a per-cosigner derivation record to change
+// outputs.
+const msigPath = [48 | H, 0 | H, 0 | H, 2 | H, 0, 0];
+const msigNode = hd.derive("m/48'/0'/0'/2'/0/0");
+const msigWitness = multisigScript(2, [msigNode.publicKey, cosignerNode.publicKey]);
+const msigRecord = derivation(msigNode, hd.fingerprint, msigPath);
+const cosignerRecord = derivation(cosignerNode, cosigner.fingerprint, msigPath);
+// PSBT_OUT_WITNESS_SCRIPT (0x01) / PSBT_OUT_REDEEM_SCRIPT (0x00) fields use
+// empty keydata.
+const witnessField = { type: 1, keydata: new Uint8Array(), val: msigWitness };
+const redeemField = { type: 0, keydata: new Uint8Array(), val: msigWitness };
+
 hodlSetSession(hd);
 
 test("a false claim hiding behind a foreign record is still a lie (the #194 attack)", () => {
@@ -144,16 +173,96 @@ test("multisig cosigner records give the same verdict in every permutation", () 
   const multisig = p2wshScript(multisigScript(2, [foreignNode.publicKey, cosignerNode.publicKey]));
   const records = [
     derivation(foreignNode, foreign.fingerprint, receivePath),
-    derivation(cosignerNode, cosigner.fingerprint, [48 | H, 0 | H, 0 | H, 2 | H, 0, 0]),
+    cosignerRecord,
   ];
   for (const order of permutations(records)) {
     assert.equal(hodlDeclaredOutput(order, multisig, "mainnet").state, "other-wallet");
   }
-  // A cosigner session key alone never produces the multisig script, so its
-  // claim cannot verify; crucially the verdict is the same in every order.
+  // A verified record naming the session key on a script-hash output whose
+  // construction script is not attached is unverifiable, not a lie: the key
+  // may participate via the unseen witness script (audit B8). The verdict is
+  // the same in every order.
   const withSessionKey = [...records, derivation(changeNode, hd.fingerprint, changePath)];
   const verdicts = new Set(permutations(withSessionKey).map((order) => hodlDeclaredOutput(order, multisig, "mainnet").state));
-  assert.deepEqual([...verdicts], ["lie"]);
+  assert.deepEqual([...verdicts], ["unknown"]);
+});
+
+test("a multisig change output the session key participates in is unverifiable, with the membership noted", () => {
+  // Honest 2-of-2 change: no red banner (B8), but no green either — the app
+  // cannot prove the wallet's policy from one key, so the membership fact
+  // rides the muted "cannot be verified" line (#851 review).
+  const wshChange = p2wshScript(msigWitness);
+  for (const records of permutations([msigRecord, cosignerRecord])) {
+    const declared = hodlDeclaredOutput([...records, witnessField], wshChange, "mainnet");
+    assert.equal(declared.state, "unknown");
+    assert.equal(declared.member, true);
+    assert.equal(declared.path, "m/48h/0h/0h/2h/0/0");
+  }
+});
+
+test("a P2SH-wrapped multisig change output is unverifiable the same way", () => {
+  const declared = hodlDeclaredOutput([msigRecord, redeemField], p2shScript(msigWitness), "mainnet");
+  assert.equal(declared.state, "unknown");
+  assert.equal(declared.member, true);
+  assert.equal(declared.path, "m/48h/0h/0h/2h/0/0");
+});
+
+// #851 review: scripts the session key appears in but cannot spend from.
+// Each is attacker-spendable while containing the key (or its bytes): a
+// 1-of-2 multisig the attacker signs alone, a 2-of-3 the two attacker keys
+// reach quorum on, and <user> OP_DROP <attacker> OP_CHECKSIG, where the
+// dropped key never signs. Membership verdicts for these were green
+// "(verified)" on the unreviewed head; rock said "lie" via !encoded. They
+// must be unknown, never ours.
+const attackerRoot = HDKey.fromMasterSeed(new Uint8Array(32).fill(0x66));
+const attackerKey1 = attackerRoot.derive("m/0/1").publicKey;
+const attackerKey2 = attackerRoot.derive("m/0/2").publicKey;
+const attackScripts = {
+  "a 1-of-2 multisig the attacker signs alone": multisigScript(1, [msigNode.publicKey, attackerKey1]),
+  "a 2-of-3 multisig the two attacker keys reach quorum on": multisigScript(2, [msigNode.publicKey, attackerKey1, attackerKey2]),
+  "<user> OP_DROP <attacker> OP_CHECKSIG": concat(Uint8Array.of(0x21), msigNode.publicKey, Uint8Array.of(0x75, 0x21), attackerKey1, Uint8Array.of(0xac)),
+};
+test("a script the session key appears in but does not control is never ours (#851 review)", () => {
+  for (const [label, attackWitness] of Object.entries(attackScripts)) {
+    const declared = hodlDeclaredOutput(
+      [msigRecord, { type: 1, keydata: new Uint8Array(), val: attackWitness }],
+      p2wshScript(attackWitness), "mainnet");
+    assert.equal(declared.state, "unknown", label);
+    assert.notEqual(declared.state, "ours", label);
+  }
+});
+
+test("an attached script that does not prove membership changes nothing", () => {
+  // Linked script, key absent: no membership, and still not a lie (a
+  // script-hash output is not a provably different single-key construction).
+  const foreignWitness = multisigScript(2, [foreignNode.publicKey, cosignerNode.publicKey]);
+  const linkedForeign = hodlDeclaredOutput(
+    [msigRecord, { type: 1, keydata: new Uint8Array(), val: foreignWitness }],
+    p2wshScript(foreignWitness), "mainnet");
+  assert.equal(linkedForeign.state, "unknown");
+  assert.ok(!linkedForeign.member, "no key membership — the informational note must stay off");
+  // Unlinked script containing the key: the attached script must hash to the
+  // output script, otherwise any stray script carrying our key could claim
+  // the output.
+  const stray = multisigScript(2, [msigNode.publicKey, foreignNode.publicKey]);
+  const unlinked = hodlDeclaredOutput(
+    [msigRecord, { type: 1, keydata: new Uint8Array(), val: stray }],
+    p2wshScript(msigWitness), "mainnet");
+  assert.equal(unlinked.state, "unknown");
+  assert.ok(!unlinked.member, "a stray script against another output proves nothing");
+});
+
+test("a claim on a foreign wrapped single-key output is a lie once its redeem script proves it", () => {
+  // P2SH alone is ambiguous (it may wrap a multisig), so a bare claim is
+  // only unverifiable; the redeem script turns it into a proven
+  // single-key construction paying someone else. The native P2WPKH form is
+  // pinned by "a claim whose pubkey matches but whose output script does
+  // not" above.
+  const wrapped = p2shScript(p2wpkhScript(foreignNode.publicKey));
+  const record = { type: 2, keydata: receiveNode.publicKey, val: concat(u32be(hd.fingerprint), ...receivePath.map(u32le)) };
+  assert.equal(hodlDeclaredOutput([record], wrapped, "mainnet").state, "unknown");
+  const foreignRedeem = { type: 0, keydata: new Uint8Array(), val: p2wpkhScript(foreignNode.publicKey) };
+  assert.equal(hodlDeclaredOutput([record, foreignRedeem], wrapped, "mainnet").state, "lie");
 });
 
 test("genuine change does not mask a false claim on another output", () => {
@@ -190,5 +299,46 @@ test("no session key declares nothing", () => {
     assert.equal(hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet"), null);
   } finally {
     hodlSetSession(hd);
+  }
+});
+
+// Audit M3: the output-derivation walk is attacker-controlled. The render
+// budget must stop before deriving an oversized path, and every private node
+// the walk creates must be wiped even when the claim is later verified.
+test("an output derivation path over budget is left unverified, not derived", () => {
+  const calls = [];
+  const original = HDKey.prototype.deriveChild;
+  HDKey.prototype.deriveChild = function (index) {
+    calls.push(index);
+    return original.call(this, index);
+  };
+  try {
+    hodlSetSession(hd);
+    const result = hodlDeclaredOutput([validChangeRecord], changeScript, "mainnet", { remaining: 2 });
+    assert.equal(result.state, "unknown");
+    assert.equal(result.budget, true);
+    assert.equal(calls.length, 0, "no CKD step may run for an over-budget path");
+  } finally {
+    HDKey.prototype.deriveChild = original;
+  }
+});
+
+test("every private node created by an output derivation is wiped", () => {
+  const created = [];
+  const original = HDKey.prototype.deriveChild;
+  HDKey.prototype.deriveChild = function (index) {
+    const node = original.call(this, index);
+    created.push(node);
+    return node;
+  };
+  try {
+    hodlSetSession(hd);
+    const result = hodlDeclaredOutput([validChangeRecord], changeScript, "mainnet", { remaining: 100 });
+    assert.equal(result.state, "ours");
+    assert.ok(created.length >= changePath.length, "the path's nodes were created");
+    for (const node of created) assert.equal(node.hasPrivateKey, false, "a derived private node survived the walk");
+    assert.equal(hd.hasPrivateKey, true, "the session root is not a disposable node");
+  } finally {
+    HDKey.prototype.deriveChild = original;
   }
 });

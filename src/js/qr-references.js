@@ -22,6 +22,9 @@
 // referenceQrSvg are pure and unit-tested under Node.
 
 import { renderSVG as uqrRenderSvg } from "uqr";
+import { createModal } from "./modal.js";
+import { copyText, showCopiedIcon } from "./clipboard.js";
+import { tHtml as hodlT, t as hodlTText, tAttr as hodlTAttr } from "./i18n.js";
 
 const NETWORK_TAG_ID = "network-status";
 
@@ -48,58 +51,48 @@ const pageIsOffline = () => {
   return !!tag && tag.dataset.state === "offline";
 };
 
-let overlayEl = null;
-let lastFocused = null;
+let modal = null, overlayEl = null, icons = { copy: () => "", copied: () => "" };
 
-const closeOverlay = () => {
-  if (!overlayEl) return;
-  overlayEl.hidden = true;
-  lastFocused?.focus?.({ preventScroll: true });
-  lastFocused = null;
-};
+const closeOverlay = () => modal?.hide();
 
-const openOverlay = (url, label) => {
+const openOverlay = (url, label, opener) => {
   if (!overlayEl) return;
   const qrSvg = referenceQrSvg(url);
   const card = overlayEl.querySelector(".qr-ref-card");
+  // Built on every opening, long after the boot i18n sweep, so its words go
+  // through the translators (under the names the catalog extractor reads).
   card.innerHTML = `
-    <p class="qr-ref-title">${escapeHtml(label)}</p>
-    <div class="qr-ref-qr" aria-label="QR code for ${escapeHtml(url)}">${qrSvg}</div>
+    <p class="modal-title qr-ref-title">${escapeHtml(label)}</p>
+    <div class="qr-ref-qr" aria-label="${hodlTAttr("QR code for {url}", { url })}">${qrSvg}</div>
     <p class="qr-ref-url mono">${escapeHtml(url)}</p>
-    <p class="qr-ref-hint muted">Scan with a phone camera to open this reference on an online device.</p>
-    <div class="row qr-ref-actions">
-      <button class="btn secondary" id="qr-ref-copy" type="button">Copy URL</button>
-      <button class="btn primary" id="qr-ref-close" type="button">Close</button>
+    <p class="qr-ref-hint muted">${hodlT("Scan with a phone camera to open this reference on an online device.")}</p>
+    <div class="row modal-actions">
+      <button type="button" class="copy-button boxed-copy-button" id="qr-ref-copy" aria-label="${hodlTAttr("Copy URL")}" title="${hodlTAttr("Copy URL")}">${icons.copy()}</button>
+      <button class="btn red" id="qr-ref-close" type="button">${hodlT("Close")}</button>
     </div>`;
   const copyBtn = card.querySelector("#qr-ref-copy");
   copyBtn.addEventListener("click", () => {
-    navigator.clipboard?.writeText(url).then(() => {
-      copyBtn.textContent = "Copied";
-      setTimeout(() => { copyBtn.textContent = "Copy URL"; }, 1500);
-    }).catch(() => {});
+    copyText(url, { host: overlayEl }).then((copied) => {
+      if (copied && modal.isOpen()) showCopiedIcon(copyBtn, { copyIcon: icons.copy(), copiedIcon: icons.copied(), label: hodlTText("Copy URL") });
+    });
   });
   card.querySelector("#qr-ref-close").addEventListener("click", closeOverlay);
-  overlayEl.hidden = false;
-  card.querySelector("#qr-ref-close").focus();
+  modal.show(card.querySelector("#qr-ref-close"), opener);
 };
 
-export const initQrReferences = () => {
+export const initQrReferences = (glyphs = {}) => {
   if (document.getElementById("qr-ref-overlay")) return;
-  overlayEl = document.createElement("div");
-  overlayEl.className = "qr-ref-overlay no-print";
-  overlayEl.id = "qr-ref-overlay";
-  overlayEl.hidden = true;
+  icons = { ...icons, ...glyphs };
+  modal = createModal({
+    id: "qr-ref-overlay",
+    className: "qr-ref-overlay",
+    card: `<div class="modal-card qr-ref-card"></div>`,
+    focusables: () => [...overlayEl.querySelectorAll("button")],
+    onDismiss: closeOverlay,
+  });
+  overlayEl = modal.overlay;
   overlayEl.setAttribute("role", "dialog");
   overlayEl.setAttribute("aria-modal", "true");
-  overlayEl.innerHTML = `<div class="qr-ref-card"></div>`;
-  document.body.append(overlayEl);
-
-  overlayEl.addEventListener("click", (event) => {
-    if (event.target === overlayEl) closeOverlay();
-  });
-  overlayEl.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeOverlay();
-  });
 
   // Event delegation: handles links present at boot and links created later
   // (e.g. by dynamic re-renders) without any per-link registration.
@@ -110,7 +103,6 @@ export const initQrReferences = () => {
     event.preventDefault();
     const url = anchor.getAttribute("href");
     const label = anchor.textContent?.trim() || url;
-    lastFocused = anchor;
-    openOverlay(url, label);
+    openOverlay(url, label, anchor);
   });
 };

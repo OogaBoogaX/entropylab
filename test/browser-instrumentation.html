@@ -1,7 +1,18 @@
 <script>
-window.__entropyLabTest = { network: [], downloadName: "", lastBlob: null };
+window.__entropyLabTest = { network: [], downloadName: "", lastBlob: null, uncaught: [] };
 (() => {
   const state = window.__entropyLabTest;
+  // Every error that escapes the page's own handlers: a throwing event
+  // handler, a timer, a promise nobody awaited. A suite that passes while the
+  // page throws behind it has not passed, so each suite's last test requires
+  // this to be empty. Test bodies' own failures are caught by test() and never
+  // land here. Installed before the application script, so boot is covered.
+  window.addEventListener("error", (event) => {
+    state.uncaught.push(String(event.error?.stack ?? event.message).split("\n").slice(0, 2).join(" "));
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    state.uncaught.push("unhandled rejection: " + String(event.reason?.stack ?? event.reason).split("\n")[0]);
+  });
   const absolute = (value) => {
     try { return new URL(value instanceof Request ? value.url : String(value), location.href).href; }
     catch { return String(value); }

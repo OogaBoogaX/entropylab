@@ -1,0 +1,28 @@
+# The OpenTimestamps client and its full dependency closure, every one pinned
+# by version and wheel hash (audit SC-2). The timestamp, OTS upgrade and
+# release-asset jobs install it with --require-hashes --no-deps
+# --only-binary :all:, so pip takes exactly these wheels or fails, and runs
+# no package build code. Hashes are PyPI's published sha256 digests,
+# cross-checked against the downloaded wheels. The pycryptodomex wheel is the
+# manylinux x86_64 build the ubuntu-latest runners take; it is cp37-abi3, so
+# a newer runner Python still takes it, but a different architecture (arm64)
+# selects another wheel and the install fails closed. Re-pin then by adding
+# that wheel's published hash to the pycryptodomex entry.
+opentimestamps-client==0.7.2 \
+    --hash=sha256:84e604d7f76534da4bab61ab62b211a6559aa988da51438408ae7947b0e8b7ba
+opentimestamps==0.4.5 \
+    --hash=sha256:a4912b3bd1b612a3ef5fac925b9137889e6c5cb91cc9e76c8202a2bf8abe26b5
+python-bitcoinlib==0.12.2 \
+    --hash=sha256:2f29a9f475f21c12169b3a6cc8820f34f11362d7ff1200a5703dce3e4e903a44
+appdirs==1.4.4 \
+    --hash=sha256:a841dacd6b99318a741b166adb07e19ee71a274450e68237b4650ca1055ab128
+GitPython==3.2.0 \
+    --hash=sha256:bd70c5ec05cd2b797423e7eb312147d2458d3cca92085888fba2213f85905537
+gitdb==4.0.12 \
+    --hash=sha256:67073e15955400952c6565cc3e707c554a4eea2e428946f7a4c162fab9bd9bcf
+smmap==5.0.3 \
+    --hash=sha256:c106e05d5a61449cf6ba9a1e650227ecfb141590d2a98412103ff35d89fc7b2f
+pycryptodomex==3.23.0 \
+    --hash=sha256:f489c4765093fb60e2edafdf223397bc716491b2b69fe74367b70d6999257a5c
+PySocks==1.7.1 \
+    --hash=sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5

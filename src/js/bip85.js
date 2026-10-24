@@ -10,6 +10,7 @@ import { hmacSha512 } from "./hashes.js";
 import { hex as hexCoder, base64 as base64Coder } from "./coders.js";
 import { base58checkEncode } from "./base58.js";
 import { HDKey } from "./hdkey.js";
+import { secp256k1 } from "./secp256k1.js";
 import { entropyToMnemonic } from "./bip39.js";
 import { wordlist as bip39English } from "./bip39-english.js";
 
@@ -51,7 +52,11 @@ export function wipeBytes(bytes) {
 // Parses a plain (unhardened) BIP32 child index; the caller applies the
 // hardening. Passing an already-hardened value (>= 2^31) is rejected.
 export function parseChildIndex(value, label = "index") {
-  let n = typeof value === "number" ? value : Number(String(value ?? "").trim());
+  // Number() alone would accept "1e3", "0x10", and "5.0": the digits a user
+  // sees must be the index they get, so strings are plain decimal only.
+  let text = typeof value === "number" ? null : String(value ?? "").trim();
+  if (text !== null && !/^[0-9]+$/.test(text)) throw new Error(`${label} must be an integer from ${INDEX_MIN} to ${INDEX_MAX}.`);
+  let n = typeof value === "number" ? value : Number(text);
   if (!Number.isInteger(n) || n < INDEX_MIN || n > INDEX_MAX) throw new Error(`${label} must be an integer from ${INDEX_MIN} to ${INDEX_MAX}.`);
   return n;
 }
@@ -65,11 +70,9 @@ export function bip85Path(app, ...rest) {
   return hardenedPath([BIP85_PURPOSE, app, ...rest]);
 }
 
+// libsecp256k1 checks the range, so the key never becomes a BigInt (#546).
 export function isValidSecp256k1Secret(bytes) {
-  if (!(bytes instanceof Uint8Array) || bytes.length !== 32) return false;
-  let n = 0n;
-  for (let i = 0; i < 32; i++) n = (n << 8n) | BigInt(bytes[i]);
-  return n > 0n && n < SECP256K1_ORDER;
+  return secp256k1.utils.isValidSecretKey(bytes);
 }
 
 export function assertValidSecp256k1Secret(bytes) {
@@ -79,14 +82,21 @@ export function assertValidSecp256k1Secret(bytes) {
 
 export function deriveBip85Entropy(root, path) {
   if (!root || typeof root.derive !== "function") throw new Error("BIP-85 needs a BIP32 root private key.");
-  if (!root.privateKey) throw new Error("BIP-85 needs a BIP32 root private key. Watch-only keys cannot derive children.");
+  if (/^[mM]'?$/.test(String(path).trim())) throw new Error("BIP-85 needs a hardened child path, not the root.");
+  // No private-key preflight: a truthiness read of the getter would copy the
+  // key out and drop it unzeroed. The fully-hardened path refuses a watch-only
+  // node in derive() ("Could not derive hardened child key") before any
+  // private material exists, and the final child's getter copy is the one
+  // wiped in finally — the only private key this function ever reads.
   let child = root.derive(path), key = child.privateKey;
   try {
     if (!key) throw new Error("BIP-85 needs a BIP32 root private key. Watch-only keys cannot derive children.");
     return hmacSha512(HMAC_KEY_BYTES, key);
   } finally {
     wipeBytes(key); // the getter copy
-    child.wipePrivateData(); // the node itself (derive already wiped the intermediates)
+    // A path of "m" returns the caller-owned root; deriving a real child is
+    // the only case where the returned node is ours to wipe.
+    if (child !== root) child.wipePrivateData();
   }
 }
 
@@ -144,17 +154,53 @@ export function encodeRfc1924Base85(bytes) {
   return out;
 }
 
+// A child keeps only bytes: its entropy, and an XPRV child its chain code. Its
+// text, the secret and the entropy hex, is built each time it is read and is
+// empty once the child is wiped. Strings cannot be erased; bytes can (#546 B3).
+class Bip85Child {
+  constructor(fields) {
+    this.app = fields.app;
+    this.path = fields.path;
+    this.entropy = fields.entropy;
+    if (fields.chainCode) this.chainCode = fields.chainCode;
+    this.testnet = Boolean(fields.testnet);
+    if (fields.passwordLength) this.passwordLength = fields.passwordLength;
+    this.secretLabel = fields.secretLabel;
+    this.notes = fields.notes || [];
+    this.warnings = fields.warnings || [];
+    this.wiped = false;
+  }
+  get secret() {
+    if (this.wiped) return "";
+    if (this.app === "bip39") return entropyToMnemonic(this.entropy, bip39English);
+    if (this.app === "wif") return encodeWifCompressed(this.entropy, this.testnet);
+    if (this.app === "xprv") return encodeXprv(this.chainCode, this.entropy, this.testnet);
+    if (this.app === "hex") return hexCoder.encode(this.entropy);
+    if (this.app === "pwd-base64") return base64Coder.encode(this.entropy).replace(/\s+/g, "").slice(0, this.passwordLength);
+    if (this.app === "pwd-base85") return encodeRfc1924Base85(this.entropy).slice(0, this.passwordLength);
+    return "";
+  }
+  get entropyHex() {
+    return this.wiped ? "" : hexCoder.encode(this.entropy);
+  }
+}
+
 function result(fields) {
-  return {
-    app: fields.app,
-    path: fields.path,
-    entropy: fields.entropy,
-    entropyHex: hexCoder.encode(fields.entropy),
-    secret: fields.secret,
-    secretLabel: fields.secretLabel,
-    notes: fields.notes || [],
-    warnings: fields.warnings || []
-  };
+  return new Bip85Child(fields);
+}
+
+// The secret's length in characters, found without building it (the hidden
+// view masks at this length). Each is fixed by the application and its
+// settings: a compressed WIF is always 52 characters and an extended key 111,
+// hex is two per byte, and a password is the length asked for. A phrase has
+// none to show, since its length would narrow its words: the view masks it
+// word by word instead.
+export function bip85SecretLength(derived) {
+  if (!derived || derived.wiped || derived.app === "bip39") return 0;
+  if (derived.app === "wif") return 52;
+  if (derived.app === "xprv") return 111;
+  if (derived.app === "hex") return derived.entropy.length * 2;
+  return derived.passwordLength || 0;
 }
 
 export function deriveBip39(root, { words = 24, index = 0, language = BIP39_LANGUAGE_ENGLISH } = {}) {
@@ -170,8 +216,7 @@ export function deriveBip39(root, { words = 24, index = 0, language = BIP39_LANG
       app: "bip39",
       path,
       entropy,
-      secret: entropyToMnemonic(entropy, bip39English),
-      secretLabel: `BIP-39 mnemonic · ${wordCount} English words`,
+      secretLabel: `BIP-39 seed phrase · ${wordCount} English words`,
       notes: [`English wordlist (0'). Path ${path}.`]
     });
   } finally {
@@ -183,12 +228,13 @@ export function deriveWif(root, { index = 0, testnet = false } = {}) {
   let path = bip85Path(BIP85_APPS.WIF, parseChildIndex(index));
   let digest = deriveBip85Entropy(root, path);
   try {
-    let entropy = truncateEntropy(digest, 32);
+    // A key outside the curve is a hard fail at derive time (BIP-85).
+    let entropy = assertValidSecp256k1Secret(truncateEntropy(digest, 32));
     return result({
       app: "wif",
       path,
       entropy,
-      secret: encodeWifCompressed(entropy, testnet),
+      testnet,
       secretLabel: testnet ? "Compressed WIF · testnet" : "Compressed WIF · mainnet",
       notes: ["Most-significant 256 bits as a compressed WIF hdseed (Bitcoin Core)."]
     });
@@ -203,12 +249,14 @@ export function deriveXprv(root, { index = 0, testnet = false } = {}) {
   let chainCode = digest.slice(0, 32), privateKey = digest.slice(32);
   try {
     // The published BIP "DERIVED ENTROPY" for XPRV is the private-key half.
-    let entropy = privateKey.slice();
+    // A key outside the curve is a hard fail at derive time (BIP-85).
+    let entropy = assertValidSecp256k1Secret(privateKey.slice());
     return result({
       app: "xprv",
       path,
       entropy,
-      secret: encodeXprv(chainCode, privateKey, testnet),
+      chainCode: chainCode.slice(),
+      testnet,
       secretLabel: testnet ? "BIP-32 TPRV" : "BIP-32 XPRV",
       notes: ["HMAC split is reversed from BIP32: first 32 bytes = chain code, last 32 = private key. Depth, fingerprint, and child number are zero."],
       warnings: testnet ? ["Input root is a testnet key, so this child is a tprv."] : []
@@ -231,7 +279,6 @@ export function deriveHex(root, { numBytes = 32, index = 0 } = {}) {
       app: "hex",
       path,
       entropy,
-      secret: hexCoder.encode(entropy),
       secretLabel: `Hex entropy · ${size} bytes`,
       notes: [`Leftmost ${size} bytes of the HMAC (trailing bytes discarded).`]
     });
@@ -249,12 +296,11 @@ export function derivePwdBase64(root, { length = 21, index = 0 } = {}) {
     // The password encodes all 64 HMAC bytes, so the result keeps its own
     // copy and the digest is wiped like in the other four apps.
     let entropy = digest.slice();
-    let encoded = base64Coder.encode(entropy).replace(/\s+/g, "");
     return result({
       app: "pwd-base64",
       path,
       entropy,
-      secret: encoded.slice(0, size),
+      passwordLength: size,
       secretLabel: `Password · Base64 · ${size} characters`,
       notes: ["RFC 4648 Base64 of all 64 HMAC bytes, then sliced to the requested length. Length ≤ 86 so the password never includes padding."]
     });
@@ -274,7 +320,7 @@ export function derivePwdBase85(root, { length = 12, index = 0 } = {}) {
       app: "pwd-base85",
       path,
       entropy,
-      secret: encodeRfc1924Base85(entropy).slice(0, size),
+      passwordLength: size,
       secretLabel: `Password · RFC1924 Base85 · ${size} characters`,
       notes: ["RFC 1924 Base85 of all 64 HMAC bytes (4-byte groups), then sliced to the requested length."]
     });
@@ -297,6 +343,6 @@ export function deriveApplication(root, spec = {}) {
 export function wipeBip85Result(derived) {
   if (!derived) return;
   wipeBytes(derived.entropy);
-  derived.entropyHex = "";
-  derived.secret = "";
+  wipeBytes(derived.chainCode);
+  derived.wiped = true;
 }

@@ -7,6 +7,7 @@ node_modules/
 /entropylab.html
 /service-worker.js
 /SHA256SUMS.txt
+/WASM-SHA256SUMS.txt
 /CID.txt
 /versions.json
 
@@ -14,3 +15,7 @@ node_modules/
 entropylab-wasm/target/
 psbt-wasm/target/
 vanity-wasm/target/
+test/adversarial/jev-adversarial.log
+
+# Residue-audit captures and reports (local only; may contain memory dumps)
+out/residue/

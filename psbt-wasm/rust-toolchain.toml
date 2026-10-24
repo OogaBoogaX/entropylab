@@ -1,7 +1,6 @@
 # Pinned so `npm run build:wasm` builds with the same Rust locally and in CI.
-# CI rebuilds the artifact from source and runs its test suite (the artifact
-# is committed back after merges; byte identity across machines is not
-# asserted because the C side compiles with the runner's clang).
+# Release WASM is compiled inside the pinned dev image (one clang). A host
+# clang build is not those bytes. CI checks two image builds match.
 [toolchain]
 channel = "1.95.0"
 targets = ["wasm32-unknown-unknown"]

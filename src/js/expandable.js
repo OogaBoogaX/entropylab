@@ -1,3 +1,5 @@
+import { createModal } from "./modal.js";
+import { copyText, resetCopiedIcon, showCopiedIcon } from "./clipboard.js";
 // Expandable cells: one standard truncation for long text in dense UI tables,
 // with a click-to-expand overlay window for viewing (and, when the cell is
 // editable, editing) the full value.
@@ -7,7 +9,7 @@
 // stretches the editor tables into thousand-pixel columns. The rule here is
 // the same everywhere: at most EXPAND_LIMIT characters are shown inline
 // (head … tail, with the total length stated); activating the cell opens one
-// shared overlay with the full text in a real editor window.
+// shared overlay with the full text in a readout or editable field.
 //
 // The module keeps no state besides the one overlay: cells carry their full
 // text in a data-exp attribute, so re-rendering a table never leaves stale
@@ -49,68 +51,104 @@ export const expandSizeLabel = (text) => {
 export const expandableHtml = (text, { label = "Full value", editAttrs = "" } = {}) => {
   const value = String(text ?? "");
   const { truncated, preview } = truncateText(value);
-  if (!truncated) return escapeHtml(value);
+  if (!truncated) return `<span data-private-value data-i18n-skip translate="no">${escapeHtml(value)}</span>`;
   const edit = editAttrs ? ` data-exp-edit="" ${editAttrs}` : "";
   return `<button type="button" class="exp-cell" data-exp="${escapeHtml(value)}" data-exp-label="${escapeHtml(label)}"${edit} ` +
     `aria-label="${escapeHtml(label)}: truncated; activate to open the full ${value.length}-character value in an editor window">` +
-    `${escapeHtml(preview)} <span class="exp-len">${escapeHtml(expandSizeLabel(value))}</span></button>`;
+    `<span data-private-value data-i18n-skip translate="no">${escapeHtml(preview)}</span> <span class="exp-len">${escapeHtml(expandSizeLabel(value))}</span></button>`;
 };
 
-export const initExpandable = () => {
+export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon = () => "" } = {}) => {
   if (document.getElementById("exp-overlay")) return;
-  const overlay = document.createElement("div");
-  overlay.className = "exp-overlay no-print";
-  overlay.id = "exp-overlay";
-  overlay.hidden = true;
-  overlay.innerHTML = `
-    <div class="exp-card" role="dialog" aria-modal="true" aria-labelledby="exp-title">
-      <p class="exp-title" id="exp-title"></p>
+  const modal = createModal({
+    id: "exp-overlay",
+    className: "exp-overlay",
+    focusables: () => [...overlay.querySelectorAll("textarea, button")].filter((control) => !control.hidden),
+    onDismiss: () => close(),
+    card: `
+    <div class="modal-card exp-card" role="dialog" aria-modal="true" aria-labelledby="exp-title">
+      <p class="modal-title exp-title copy-field-label"><span id="exp-title"></span><button type="button" class="copy-button boxed-copy-button" id="exp-copy" aria-label="Copy" title="Copy"></button></p>
       <p class="exp-meta muted" id="exp-meta"></p>
-      <textarea id="exp-text" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-      <div class="row exp-actions">
-        <button class="btn secondary" id="exp-copy" type="button">Copy</button>
-        <button class="btn primary" id="exp-apply" type="button">Apply</button>
-        <button class="btn secondary" id="exp-close" type="button">Close</button>
+      <pre id="exp-readout" data-private-value data-i18n-skip translate="no" hidden></pre>
+      <textarea id="exp-text" spellcheck="false" autocomplete="off" autocapitalize="off" hidden></textarea>
+      <div class="row modal-actions">
+        <span class="modal-actions-end">
+          <button class="btn primary" id="exp-apply" type="button">Apply</button>
+          <button class="btn red" id="exp-close" type="button">Close</button>
+        </span>
       </div>
-    </div>`;
-  document.body.append(overlay);
-  const text = overlay.querySelector("#exp-text"), apply = overlay.querySelector("#exp-apply");
+    </div>`,
+  });
+  const overlay = modal.overlay;
+  const text = overlay.querySelector("#exp-text"), readout = overlay.querySelector("#exp-readout"), apply = overlay.querySelector("#exp-apply"), copyButton = overlay.querySelector("#exp-copy");
+  copyButton.innerHTML = copyIcon();
   let cell = null;
 
+  // A cell value can hold an entire previous transaction, or a pasted PSBT
+  // carrying an xprv in a proprietary field; once the dialog is out of scope
+  // (closed, or the page going away) it keeps none of it.
+  const release = () => {
+    text.value = "";
+    readout.textContent = "";
+    overlay.querySelector("#exp-title").textContent = "";
+    overlay.querySelector("#exp-meta").textContent = "";
+  };
   const close = () => {
-    overlay.hidden = true;
-    cell?.focus({ preventScroll: true });
+    modal.hide();
+    release();
     cell = null;
   };
+  // The overlay is a body-level sibling of every wiped view, so station and
+  // editor wipes cannot reach it; it tears itself down with the page.
+  const teardown = () => {
+    modal.hide({ restoreFocus: false });
+    release();
+    cell = null;
+  };
+  addEventListener("pagehide", teardown);
+  addEventListener("pageshow", (event) => {
+    if (event.persisted) teardown();
+  });
+  // Conceal-on-leave reaches this overlay too: it is a body-level sibling of
+  // every wiped view, so the page's own sweep cannot. A pair value can carry
+  // an xprv from a proprietary field, and the print preview renders the live
+  // dialog unless it is torn down first.
+  addEventListener("blur", teardown);
+  addEventListener("beforeprint", teardown);
+  document.addEventListener("hodl:conceal", teardown);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") teardown();
+  });
   const open = (target) => {
     cell = target;
     const value = target.dataset.exp ?? "";
     overlay.querySelector("#exp-title").textContent = target.dataset.expLabel || "Full value";
     overlay.querySelector("#exp-meta").textContent = expandSizeLabel(value);
-    text.value = value;
     const editable = "expEdit" in target.dataset;
-    text.readOnly = !editable;
+    text.value = editable ? value : "";
+    text.hidden = !editable;
+    readout.textContent = editable ? "" : value;
+    readout.hidden = editable;
     apply.hidden = !editable;
-    overlay.hidden = false;
-    text.focus();
+    // A check left over from the last opening goes back to the copy icon
+    // and its label.
+    resetCopiedIcon(copyButton, { copyIcon: copyIcon() });
+    modal.show(editable ? text : copyButton, target);
   };
 
   document.addEventListener("click", (event) => {
-    const target = event.target.closest?.(".exp-cell");
+    const target = event.target.closest?.("[data-exp]");
     if (target) open(target);
   });
-  overlay.addEventListener("click", (event) => {
-    if (event.target === overlay) close();
-  });
-  overlay.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") close();
-  });
   overlay.querySelector("#exp-close").addEventListener("click", close);
-  overlay.querySelector("#exp-copy").addEventListener("click", () => {
-    navigator.clipboard?.writeText(text.value).catch(() => {});
+  copyButton.addEventListener("click", () => {
+    if (!cell) return;
+    copyText(text.hidden ? readout.textContent : text.value, { host: overlay }).then((copied) => {
+      if (copied && modal.isOpen()) showCopiedIcon(copyButton, { copyIcon: copyIcon(), copiedIcon: copiedIcon() });
+    });
   });
   apply.addEventListener("click", () => {
-    if (!cell) return;
+    if (!cell || text.hidden) return;
     const target = cell, value = text.value;
     target.dataset.exp = value;
     // Refresh the preview and label in place; if the edit brought the text
@@ -119,7 +157,11 @@ export const initExpandable = () => {
     const { preview } = truncateText(value);
     const label = target.dataset.expLabel || "Full value";
     target.setAttribute("aria-label", `${label}: truncated; activate to open the full ${value.length}-character value in an editor window`);
-    target.replaceChildren(document.createTextNode(`${preview} `), Object.assign(document.createElement("span"), { className: "exp-len", textContent: expandSizeLabel(value) }));
+    const shown = document.createElement("span");
+    shown.dataset.privateValue = "";
+    shown.dataset.i18nSkip = "";
+    shown.textContent = preview;
+    target.replaceChildren(shown, document.createTextNode(" "), Object.assign(document.createElement("span"), { className: "exp-len", textContent: expandSizeLabel(value) }));
     target.dispatchEvent(new CustomEvent("expandable:apply", { bubbles: true, detail: { text: value } }));
     close();
   });

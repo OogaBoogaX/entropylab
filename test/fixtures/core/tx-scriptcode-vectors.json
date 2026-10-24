@@ -1,0 +1,811 @@
+{
+  "about": "Bitcoin Core tx_valid/tx_invalid vectors that pin the ECDSA scriptCode rules; written by extract.mjs, do not edit by hand.",
+  "source": {
+    "repository": "https://github.com/bitcoin/bitcoin",
+    "tag": "v31.1",
+    "commit": "9be056a8a72b624dae9623b2f7bded92c2a21c91",
+    "sha256": {
+      "tx_valid.json": "f8a9e275c581aa24650695bd2b1c718d30f948452934accee83cb32331a9a7a0",
+      "tx_invalid.json": "0c02ce44ff3a880458f9569a25589315a07f924fcaadac828613d4615776ca52"
+    }
+  },
+  "cases": [
+    {
+      "source": "tx_valid.json (bc7fd132fcf81791…, occurrence 0)",
+      "comment": "OP_CODESEPARATOR tests Test that SignatureHash() removes OP_CODESEPARATOR with FindAndDelete()",
+      "tx": "01000000012432b60dc72cebc1a27ce0969c0989c895bdd9e62e8234839117f8fc32d17fbc000000004a493046022100a576b52051962c25e642c0fd3d77ee6c92487048e5d90818bcf5b51abaccd7900221008204f8fb121be4ec3b24483b1f92d89b1b0548513a134e345c5442e86e8617a501ffffffff010000000000000000016a00000000",
+      "prevouts": [
+        {
+          "txid": "bc7fd132fcf817918334822ee6d9bd95c889099c96e07ca2c1eb2cc70db63224",
+          "vout": 0,
+          "scriptPubKey": "ab21038479a0fa998cd35259a2ef0a7a5c68662c1474f88ccb6d08a7677bbec7f22041ac",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "a separator ahead of the only CHECKSIG: the scriptCode is the rest of the script",
+          "partialSigs": [
+            {
+              "pubkey": "038479a0fa998cd35259a2ef0a7a5c68662c1474f88ccb6d08a7677bbec7f22041",
+              "signature": "3046022100a576b52051962c25e642c0fd3d77ee6c92487048e5d90818bcf5b51abaccd7900221008204f8fb121be4ec3b24483b1f92d89b1b0548513a134e345c5442e86e8617a501"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (83e194f90b6ef21f…, occurrence 0)",
+      "comment": "OP_CODESEPARATOR tests Test that SignatureHash() removes OP_CODESEPARATOR with FindAndDelete()",
+      "tx": "01000000014710b0e7cf9f8930de259bdc4b84aa5dfb9437b665a3e3a21ff26e0bf994e183000000004a493046022100a166121a61b4eeb19d8f922b978ff6ab58ead8a5a5552bf9be73dc9c156873ea02210092ad9bc43ee647da4f6652c320800debcf08ec20a094a0aaf085f63ecb37a17201ffffffff010000000000000000016a00000000",
+      "prevouts": [
+        {
+          "txid": "83e194f90b6ef21fa2e3a365b63794fb5daa844bdc9b25de30899fcfe7b01047",
+          "vout": 0,
+          "scriptPubKey": "abab21038479a0fa998cd35259a2ef0a7a5c68662c1474f88ccb6d08a7677bbec7f22041ac",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "two separators ahead of the CHECKSIG",
+          "partialSigs": [
+            {
+              "pubkey": "038479a0fa998cd35259a2ef0a7a5c68662c1474f88ccb6d08a7677bbec7f22041",
+              "signature": "3046022100a166121a61b4eeb19d8f922b978ff6ab58ead8a5a5552bf9be73dc9c156873ea02210092ad9bc43ee647da4f6652c320800debcf08ec20a094a0aaf085f63ecb37a17201"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (326882a7f22b5191…, occurrence 0)",
+      "comment": "Hashed data starts at the CODESEPARATOR",
+      "tx": "01000000015ebaa001d8e4ec7a88703a3bcf69d98c874bca6299cca0f191512bf2a7826832000000004948304502203bf754d1c6732fbf87c5dcd81258aefd30f2060d7bd8ac4a5696f7927091dad1022100f5bcb726c4cf5ed0ed34cc13dadeedf628ae1045b7cb34421bc60b89f4cecae701ffffffff010000000000000000016a00000000",
+      "prevouts": [
+        {
+          "txid": "326882a7f22b5191f1a0cc9962ca4b878cd969cf3b3a70887aece4d801a0ba5e",
+          "vout": 0,
+          "scriptPubKey": "21038479a0fa998cd35259a2ef0a7a5c68662c1474f88ccb6d08a7677bbec7f22041abac",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "the separator sits between the key push and CHECKSIG: only CHECKSIG itself is hashed",
+          "partialSigs": [
+            {
+              "pubkey": "038479a0fa998cd35259a2ef0a7a5c68662c1474f88ccb6d08a7677bbec7f22041",
+              "signature": "304502203bf754d1c6732fbf87c5dcd81258aefd30f2060d7bd8ac4a5696f7927091dad1022100f5bcb726c4cf5ed0ed34cc13dadeedf628ae1045b7cb34421bc60b89f4cecae701"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (a955032f4d6b0c9b…, occurrence 0)",
+      "comment": "But only if execution has reached it",
+      "tx": "010000000144490eda355be7480f2ec828dcc1b9903793a8008fad8cfe9b0c6b4d2f0355a900000000924830450221009c0a27f886a1d8cb87f6f595fbc3163d28f7a81ec3c4b252ee7f3ac77fd13ffa02203caa8dfa09713c8c4d7ef575c75ed97812072405d932bd11e6a1593a98b679370148304502201e3861ef39a526406bad1e20ecad06be7375ad40ddb582c9be42d26c3a0d7b240221009d0a3985e96522e59635d19cc4448547477396ce0ef17a58e7d74c3ef464292301ffffffff010000000000000000016a00000000",
+      "prevouts": [
+        {
+          "txid": "a955032f4d6b0c9bfe8cad8f00a8933790b9c1dc28c82e0f48e75b35da0e4944",
+          "vout": 0,
+          "scriptPubKey": "21038479a0fa998cd35259a2ef0a7a5c68662c1474f88ccb6d08a7677bbec7f22041adab21038479a0fa998cd35259a2ef0a7a5c68662c1474f88ccb6d08a7677bbec7f22041adab51",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "first CHECKSIGVERIFY: no separator has executed, the whole script is hashed",
+          "partialSigs": [
+            {
+              "pubkey": "038479a0fa998cd35259a2ef0a7a5c68662c1474f88ccb6d08a7677bbec7f22041",
+              "signature": "304502201e3861ef39a526406bad1e20ecad06be7375ad40ddb582c9be42d26c3a0d7b240221009d0a3985e96522e59635d19cc4448547477396ce0ef17a58e7d74c3ef464292301"
+            }
+          ]
+        },
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "second CHECKSIGVERIFY: hashed from the separator that executed before it",
+          "partialSigs": [
+            {
+              "pubkey": "038479a0fa998cd35259a2ef0a7a5c68662c1474f88ccb6d08a7677bbec7f22041",
+              "signature": "30450221009c0a27f886a1d8cb87f6f595fbc3163d28f7a81ec3c4b252ee7f3ac77fd13ffa02203caa8dfa09713c8c4d7ef575c75ed97812072405d932bd11e6a1593a98b6793701"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (a955032f4d6b0c9b…, occurrence 1)",
+      "comment": "CODESEPARATOR in an unexecuted IF block does not change what is hashed",
+      "tx": "010000000144490eda355be7480f2ec828dcc1b9903793a8008fad8cfe9b0c6b4d2f0355a9000000004a48304502207a6974a77c591fa13dff60cabbb85a0de9e025c09c65a4b2285e47ce8e22f761022100f0efaac9ff8ac36b10721e0aae1fb975c90500b50c56e8a0cc52b0403f0425dd0100ffffffff010000000000000000016a00000000",
+      "prevouts": [
+        {
+          "txid": "a955032f4d6b0c9bfe8cad8f00a8933790b9c1dc28c82e0f48e75b35da0e4944",
+          "vout": 0,
+          "scriptPubKey": "63ab68210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71adab51",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "IF not taken: the separator inside it never runs",
+          "partialSigs": [
+            {
+              "pubkey": "0378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71",
+              "signature": "304502207a6974a77c591fa13dff60cabbb85a0de9e025c09c65a4b2285e47ce8e22f761022100f0efaac9ff8ac36b10721e0aae1fb975c90500b50c56e8a0cc52b0403f0425dd01"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (a955032f4d6b0c9b…, occurrence 2)",
+      "comment": "As above, with the IF block executed",
+      "tx": "010000000144490eda355be7480f2ec828dcc1b9903793a8008fad8cfe9b0c6b4d2f0355a9000000004a483045022100fa4a74ba9fd59c59f46c3960cf90cbe0d2b743c471d24a3d5d6db6002af5eebb02204d70ec490fd0f7055a7c45f86514336e3a7f03503dacecabb247fc23f15c83510151ffffffff010000000000000000016a00000000",
+      "prevouts": [
+        {
+          "txid": "a955032f4d6b0c9bfe8cad8f00a8933790b9c1dc28c82e0f48e75b35da0e4944",
+          "vout": 0,
+          "scriptPubKey": "63ab68210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71adab51",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "IF taken: hashed from the separator inside it",
+          "partialSigs": [
+            {
+              "pubkey": "0378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71",
+              "signature": "3045022100fa4a74ba9fd59c59f46c3960cf90cbe0d2b743c471d24a3d5d6db6002af5eebb02204d70ec490fd0f7055a7c45f86514336e3a7f03503dacecabb247fc23f15c835101"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (cf016927962ec028…, occurrence 0)",
+      "comment": "The following is c6c232a36395fa338da458b86ff1327395a9afc28c5d2daa4273e410089fd433 on testnet3 It contains an OP_CHECKSIG with the shortest valid DER encoded signature (8 bytes w/o sighash flag), i.e. 3006020101020101 (r=1, s=1)",
+      "tx": "0100000001d6ca712f68c4d3003b9558f772463d5b468ed44360184c9628c02e96276901cf000000002f21026d2204a9535443657a88a0724fbd49a0e78d305f50a82f2cc9dd9bea10a6c5cd0c093006020101020101017cacffffffff010000000000000000016a00000000",
+      "prevouts": [
+        {
+          "txid": "cf016927962ec028964c186043d48e465b3d4672f758953b00d3c4682f71cad6",
+          "vout": 0,
+          "scriptPubKey": "a91458a994e9d5ed9baa03ecfd1137592a90ad3cdfc587",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "the redeem script pushes its own signature (r=1, s=1); FindAndDelete removes it before hashing",
+          "redeemScript": "093006020101020101017cac",
+          "partialSigs": [
+            {
+              "pubkey": "026d2204a9535443657a88a0724fbd49a0e78d305f50a82f2cc9dd9bea10a6c5cd",
+              "signature": "300602010102010101"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (406b2b06bcd34d3c…, occurrence 0)",
+      "comment": "The following is c99c49da4c38af669dea436d3e73780dfdb6c1ecf9958baa52960e8baee30e73 It is of interest because it contains a 0-sequence as well as a signature of SIGHASH type 0 (which is not a real type)",
+      "tx": "01000000010276b76b07f4935c70acf54fbf1f438a4c397a9fb7e633873c4dd3bc062b6b40000000008c493046022100d23459d03ed7e9511a47d13292d3430a04627de6235b6e51a40f9cd386f2abe3022100e7d25b080f0bb8d8d5f878bba7d54ad2fda650ea8d158a33ee3cbd11768191fd004104b0e2c879e4daf7b9ab68350228c159766676a14f5815084ba166432aab46198d4cca98fa3e9981d0a90b2effc514b76279476550ba3663fdcaff94c38420e9d5000000000100093d00000000001976a9149a7b0f3b80c6baaeedce0a0842553800f832ba1f88ac00000000",
+      "prevouts": [
+        {
+          "txid": "406b2b06bcd34d3c8733e6b79f7a394c8a431fbf4ff5ac705c93f4076bb77602",
+          "vout": 0,
+          "scriptPubKey": "76a914dc44b1164188067c3a32d4780f5996fa14a4f2d988ac",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "hash type 0 is committed to as 0, and the signature is high-S (LOW_S is policy)",
+          "partialSigs": [
+            {
+              "pubkey": "04b0e2c879e4daf7b9ab68350228c159766676a14f5815084ba166432aab46198d4cca98fa3e9981d0a90b2effc514b76279476550ba3663fdcaff94c38420e9d5",
+              "signature": "3046022100d23459d03ed7e9511a47d13292d3430a04627de6235b6e51a40f9cd386f2abe3022100e7d25b080f0bb8d8d5f878bba7d54ad2fda650ea8d158a33ee3cbd11768191fd00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (f18783ace138abac…, occurrence 0)",
+      "comment": "FindAndDelete tests This is a test of FindAndDelete. The first tx is a spend of normal P2SH and the second tx is a spend of bare P2WSH. The redeemScript/witnessScript is CHECKSIGVERIFY <0x30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01>. The signature is <0x30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01> <pubkey>, where the pubkey is obtained through key recovery with sig and correct sighash. This is to show that FindAndDelete is applied only to non-segwit scripts Non-segwit: correct sighash (with FindAndDelete) = 1ba1fe3bc90c5d1265460e684ce6774e324f0fabdf67619eda729e64e8b6bc08",
+      "tx": "010000000169c12106097dc2e0526493ef67f21269fe888ef05c7a3a5dacab38e1ac8387f1581b0000b64830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0121037a3fb04bcdb09eba90f69961ba1692a3528e45e67c85b200df820212d7594d334aad4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01ffffffff0101000000000000000000000000",
+      "prevouts": [
+        {
+          "txid": "f18783ace138abac5d3a7a5cf08e88fe6912f267ef936452e0c27d090621c169",
+          "vout": 7000,
+          "scriptPubKey": "a9140c746489e2d83cdbb5b90b432773342ba809c13487",
+          "amount": 200000
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "P2SH redeem script CHECKSIGVERIFY <sig>: FindAndDelete removes the signature",
+          "redeemScript": "ad4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01",
+          "partialSigs": [
+            {
+              "pubkey": "037a3fb04bcdb09eba90f69961ba1692a3528e45e67c85b200df820212d7594d33",
+              "signature": "30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (f18783ace138abac…, occurrence 1)",
+      "comment": "BIP143: correct sighash (without FindAndDelete) = 71c9cd9b2869b9c70b01b1f0360c148f42dee72297db312638df136f43311f23",
+      "tx": "0100000000010169c12106097dc2e0526493ef67f21269fe888ef05c7a3a5dacab38e1ac8387f14c1d000000ffffffff01010000000000000000034830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e012102a9781d66b61fb5a7ef00ac5ad5bc6ffc78be7b44a566e3c87870e1079368df4c4aad4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0100000000",
+      "prevouts": [
+        {
+          "txid": "f18783ace138abac5d3a7a5cf08e88fe6912f267ef936452e0c27d090621c169",
+          "vout": 7500,
+          "scriptPubKey": "00209e1be07558ea5cc8e02ed1d80c0911048afad949affa36d5c3951e3159dbea19",
+          "amount": 200000
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "the same script as P2WSH: BIP143 does not FindAndDelete",
+          "witnessScript": "ad4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01",
+          "partialSigs": [
+            {
+              "pubkey": "02a9781d66b61fb5a7ef00ac5ad5bc6ffc78be7b44a566e3c87870e1079368df4c",
+              "signature": "30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (9628667ad48219a1…, occurrence 0)",
+      "comment": "This is multisig version of the FindAndDelete tests Script is 2 CHECKMULTISIGVERIFY <sig1> <sig2> DROP 52af4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c0395960175 Signature is 0 <sig1> <sig2> 2 <key1> <key2> Non-segwit: correct sighash (with FindAndDelete) = 1d50f00ba4db2917b903b0ec5002e017343bb38876398c9510570f5dce099295",
+      "tx": "01000000019275cb8d4a485ce95741c013f7c0d28722160008021bb469a11982d47a662896581b0000fd6f01004830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c03959601522102cd74a2809ffeeed0092bc124fd79836706e41f048db3f6ae9df8708cefb83a1c2102e615999372426e46fd107b76eaf007156a507584aa2cc21de9eee3bdbd26d36c4c9552af4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c0395960175ffffffff0101000000000000000000000000",
+      "prevouts": [
+        {
+          "txid": "9628667ad48219a169b41b020800162287d2c0f713c04157e95c484a8dcb7592",
+          "vout": 7000,
+          "scriptPubKey": "a9145748407f5ca5cdca53ba30b79040260770c9ee1b87",
+          "amount": 200000
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "CHECKMULTISIG removes every signature it is given from the scriptCode",
+          "redeemScript": "52af4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c0395960175",
+          "partialSigs": [
+            {
+              "pubkey": "02cd74a2809ffeeed0092bc124fd79836706e41f048db3f6ae9df8708cefb83a1c",
+              "signature": "30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01"
+            },
+            {
+              "pubkey": "02e615999372426e46fd107b76eaf007156a507584aa2cc21de9eee3bdbd26d36c",
+              "signature": "304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c03959601"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (9628667ad48219a1…, occurrence 1)",
+      "comment": "BIP143: correct sighash (without FindAndDelete) = c1628a1e7c67f14ca0c27c06e4fdeec2e6d1a73c7a91d7c046ff83e835aebb72",
+      "tx": "010000000001019275cb8d4a485ce95741c013f7c0d28722160008021bb469a11982d47a6628964c1d000000ffffffff0101000000000000000007004830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c0395960101022102966f109c54e85d3aee8321301136cedeb9fc710fdef58a9de8a73942f8e567c021034ffc99dd9a79dd3cb31e2ab3e0b09e0e67db41ac068c625cd1f491576016c84e9552af4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c039596017500000000",
+      "prevouts": [
+        {
+          "txid": "9628667ad48219a169b41b020800162287d2c0f713c04157e95c484a8dcb7592",
+          "vout": 7500,
+          "scriptPubKey": "00209b66c15b4e0b4eb49fa877982cafded24859fe5b0e2dbfbe4f0df1de7743fd52",
+          "amount": 200000
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "the same multisig as P2WSH: nothing is removed",
+          "witnessScript": "52af4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c0395960175",
+          "partialSigs": [
+            {
+              "pubkey": "02966f109c54e85d3aee8321301136cedeb9fc710fdef58a9de8a73942f8e567c0",
+              "signature": "30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01"
+            },
+            {
+              "pubkey": "034ffc99dd9a79dd3cb31e2ab3e0b09e0e67db41ac068c625cd1f491576016c84e",
+              "signature": "304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c03959601"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (b5b598de91787439…, occurrence 0)",
+      "comment": "Finally CHECKMULTISIG removes all signatures prior to hashing the script containing those signatures. In conjunction with the SIGHASH_SINGLE bug this lets us test whether or not FindAndDelete() is actually present in scriptPubKey/redeemScript evaluation by including a signature of the digest 0x01 We can compute in advance for our pubkey, embed it in the scriptPubKey, and then also using a normal SIGHASH_ALL signature. If FindAndDelete() wasn't run, the 'bugged' signature would still be in the hashed script, and the normal signature would fail. Here's an example on mainnet within a P2SH redeemScript. Remarkably it's a standard transaction in <0.9",
+      "tx": "0100000002f9cbafc519425637ba4227f8d0a0b7160b4e65168193d5af39747891de98b5b5000000006b4830450221008dd619c563e527c47d9bd53534a770b102e40faa87f61433580e04e271ef2f960220029886434e18122b53d5decd25f1f4acb2480659fea20aabd856987ba3c3907e0121022b78b756e2258af13779c1a1f37ea6800259716ca4b7f0b87610e0bf3ab52a01ffffffff42e7988254800876b69f24676b3e0205b77be476512ca4d970707dd5c60598ab00000000fd260100483045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a53034930460221008431bdfa72bc67f9d41fe72e94c88fb8f359ffa30b33c72c121c5a877d922e1002210089ef5fc22dd8bfc6bf9ffdb01a9862d27687d424d1fefbab9e9c7176844a187a014c9052483045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a5303210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c7153aeffffffff01a08601000000000017a914d8dacdadb7462ae15cd906f1878706d0da8660e68700000000",
+      "prevouts": [
+        {
+          "txid": "b5b598de91787439afd5938116654e0b16b7a0d0f82742ba37564219c5afcbf9",
+          "vout": 0,
+          "scriptPubKey": "76a914f6f365c40f0739b61de827a44751e5e99032ed8f88ac",
+          "amount": 0
+        },
+        {
+          "txid": "ab9805c6d57d7070d9a42c5176e47bb705023e6b67249fb6760880548298e742",
+          "vout": 0,
+          "scriptPubKey": "a914d8dacdadb7462ae15cd906f1878706d0da8660e687",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "plain P2PKH",
+          "partialSigs": [
+            {
+              "pubkey": "022b78b756e2258af13779c1a1f37ea6800259716ca4b7f0b87610e0bf3ab52a01",
+              "signature": "30450221008dd619c563e527c47d9bd53534a770b102e40faa87f61433580e04e271ef2f960220029886434e18122b53d5decd25f1f4acb2480659fea20aabd856987ba3c3907e01"
+            }
+          ]
+        },
+        {
+          "input": 1,
+          "expect": "valid",
+          "why": "the redeem script embeds the other signature; CHECKMULTISIG removes it, then this one verifies",
+          "redeemScript": "52483045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a5303210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c7153ae",
+          "partialSigs": [
+            {
+              "pubkey": "0378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71",
+              "signature": "30460221008431bdfa72bc67f9d41fe72e94c88fb8f359ffa30b33c72c121c5a877d922e1002210089ef5fc22dd8bfc6bf9ffdb01a9862d27687d424d1fefbab9e9c7176844a187a01"
+            }
+          ]
+        },
+        {
+          "input": 1,
+          "expect": "valid",
+          "why": "SIGHASH_SINGLE past the last output signs the digest 1",
+          "redeemScript": "52483045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a5303210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c7153ae",
+          "partialSigs": [
+            {
+              "pubkey": "0378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71",
+              "signature": "3045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a5303"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (ceafe58e0f6e7d67…, occurrence 0)",
+      "comment": "Same idea, but with bare CHECKMULTISIG",
+      "tx": "0100000002dbb33bdf185b17f758af243c5d3c6e164cc873f6bb9f40c0677d6e0f8ee5afce000000006b4830450221009627444320dc5ef8d7f68f35010b4c050a6ed0d96b67a84db99fda9c9de58b1e02203e4b4aaa019e012e65d69b487fdf8719df72f488fa91506a80c49a33929f1fd50121022b78b756e2258af13779c1a1f37ea6800259716ca4b7f0b87610e0bf3ab52a01ffffffffdbb33bdf185b17f758af243c5d3c6e164cc873f6bb9f40c0677d6e0f8ee5afce010000009300483045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a5303483045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a5303ffffffff01a0860100000000001976a9149bc0bbdd3024da4d0c38ed1aecf5c68dd1d3fa1288ac00000000",
+      "prevouts": [
+        {
+          "txid": "ceafe58e0f6e7d67c0409fbbf673c84c166e3c5d3c24af58f7175b18df3bb3db",
+          "vout": 0,
+          "scriptPubKey": "76a914f6f365c40f0739b61de827a44751e5e99032ed8f88ac",
+          "amount": 0
+        },
+        {
+          "txid": "ceafe58e0f6e7d67c0409fbbf673c84c166e3c5d3c24af58f7175b18df3bb3db",
+          "vout": 1,
+          "scriptPubKey": "52483045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a5303210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71210378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c7153ae",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "plain P2PKH",
+          "partialSigs": [
+            {
+              "pubkey": "022b78b756e2258af13779c1a1f37ea6800259716ca4b7f0b87610e0bf3ab52a01",
+              "signature": "30450221009627444320dc5ef8d7f68f35010b4c050a6ed0d96b67a84db99fda9c9de58b1e02203e4b4aaa019e012e65d69b487fdf8719df72f488fa91506a80c49a33929f1fd501"
+            }
+          ]
+        },
+        {
+          "input": 1,
+          "expect": "valid",
+          "why": "bare multisig, SIGHASH_SINGLE bug signature also embedded in the script",
+          "partialSigs": [
+            {
+              "pubkey": "0378d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71",
+              "signature": "3045022015bd0139bcccf990a6af6ec5c1c52ed8222e03a0d51c334df139968525d2fcd20221009f9efe325476eb64c3958e4713e9eefe49bf1d820ed58d2112721b134e2a1a5303"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (6eb316926b1c5d56…, occurrence 0)",
+      "comment": "BIP143 examples: details and private keys are available in BIP143 BIP143 example: P2WSH with OP_CODESEPARATOR and out-of-range SIGHASH_SINGLE.",
+      "tx": "01000000000102fe3dc9208094f3ffd12645477b3dc56f60ec4fa8e6f5d67c565d1c6b9216b36e000000004847304402200af4e47c9b9629dbecc21f73af989bdaa911f7e6f6c2e9394588a3aa68f81e9902204f3fcf6ade7e5abb1295b6774c8e0abd94ae62217367096bc02ee5e435b67da201ffffffff0815cf020f013ed6cf91d29f4202e8a58726b1ac6c79da47c23d1bee0a6925f80000000000ffffffff0100f2052a010000001976a914a30741f8145e5acadf23f751864167f32e0963f788ac000347304402200de66acf4527789bfda55fc5459e214fa6083f936b430a762c629656216805ac0220396f550692cd347171cbc1ef1f51e15282e837bb2b30860dc77c8f78bc8501e503473044022027dc95ad6b740fe5129e7e62a75dd00f291a2aeb1200b84b09d9e3789406b6c002201a9ecd315dd6a0e632ab20bbb98948bc0c6fb204f2c286963bb48517a7058e27034721026dccc749adc2a9d0d89497ac511f760f45c47dc5ed9cf352a58ac706453880aeadab210255a9626aebf5e29c0e6538428ba0d1dcf6ca98ffdf086aa8ced5e0d0215ea465ac00000000",
+      "prevouts": [
+        {
+          "txid": "6eb316926b1c5d567cd6f5e6a84fec606fc53d7b474526d1fff3948020c93dfe",
+          "vout": 0,
+          "scriptPubKey": "21036d5c20fa14fb2f635474c1dc4ef5909d4568e5569b79fc94d3448486e14685f8ac",
+          "amount": 156250000
+        },
+        {
+          "txid": "f825690aee1b3dc247da796cacb12687a5e802429fd291cfd63e010f02cf1508",
+          "vout": 0,
+          "scriptPubKey": "00205d1b56b63d714eebe542309525f484b7e9d6f686b3781b6f61ef925d66d6f6a0",
+          "amount": 4900000000
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "P2PK",
+          "partialSigs": [
+            {
+              "pubkey": "036d5c20fa14fb2f635474c1dc4ef5909d4568e5569b79fc94d3448486e14685f8",
+              "signature": "304402200af4e47c9b9629dbecc21f73af989bdaa911f7e6f6c2e9394588a3aa68f81e9902204f3fcf6ade7e5abb1295b6774c8e0abd94ae62217367096bc02ee5e435b67da201"
+            }
+          ]
+        },
+        {
+          "input": 1,
+          "expect": "valid",
+          "why": "BIP143 first CHECKSIGVERIFY: the whole witness script, separator included",
+          "witnessScript": "21026dccc749adc2a9d0d89497ac511f760f45c47dc5ed9cf352a58ac706453880aeadab210255a9626aebf5e29c0e6538428ba0d1dcf6ca98ffdf086aa8ced5e0d0215ea465ac",
+          "partialSigs": [
+            {
+              "pubkey": "026dccc749adc2a9d0d89497ac511f760f45c47dc5ed9cf352a58ac706453880ae",
+              "signature": "3044022027dc95ad6b740fe5129e7e62a75dd00f291a2aeb1200b84b09d9e3789406b6c002201a9ecd315dd6a0e632ab20bbb98948bc0c6fb204f2c286963bb48517a7058e2703"
+            }
+          ]
+        },
+        {
+          "input": 1,
+          "expect": "valid",
+          "why": "BIP143 CHECKSIG after the separator: hashed from the separator",
+          "witnessScript": "21026dccc749adc2a9d0d89497ac511f760f45c47dc5ed9cf352a58ac706453880aeadab210255a9626aebf5e29c0e6538428ba0d1dcf6ca98ffdf086aa8ced5e0d0215ea465ac",
+          "partialSigs": [
+            {
+              "pubkey": "0255a9626aebf5e29c0e6538428ba0d1dcf6ca98ffdf086aa8ced5e0d0215ea465",
+              "signature": "304402200de66acf4527789bfda55fc5459e214fa6083f936b430a762c629656216805ac0220396f550692cd347171cbc1ef1f51e15282e837bb2b30860dc77c8f78bc8501e503"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (01c0cf7fba650638…, occurrence 0)",
+      "comment": "BIP143 example: P2WSH with unexecuted OP_CODESEPARATOR and SINGLE|ANYONECANPAY",
+      "tx": "01000000000102e9b542c5176808107ff1df906f46bb1f2583b16112b95ee5380665ba7fcfc0010000000000ffffffff80e68831516392fcd100d186b3c2c7b95c80b53c77e77c35ba03a66b429a2a1b0000000000ffffffff0280969800000000001976a914de4b231626ef508c9a74a8517e6783c0546d6b2888ac80969800000000001976a9146648a8cd4531e1ec47f35916de8e259237294d1e88ac02483045022100f6a10b8604e6dc910194b79ccfc93e1bc0ec7c03453caaa8987f7d6c3413566002206216229ede9b4d6ec2d325be245c5b508ff0339bf1794078e20bfe0babc7ffe683270063ab68210392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98ac024730440220032521802a76ad7bf74d0e2c218b72cf0cbc867066e2e53db905ba37f130397e02207709e2188ed7f08f4c952d9d13986da504502b8c3be59617e043552f506c46ff83275163ab68210392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98ac00000000",
+      "prevouts": [
+        {
+          "txid": "01c0cf7fba650638e55eb91261b183251fbb466f90dff17f10086817c542b5e9",
+          "vout": 0,
+          "scriptPubKey": "0020ba468eea561b26301e4cf69fa34bde4ad60c81e70f059f045ca9a79931004a4d",
+          "amount": 16777215
+        },
+        {
+          "txid": "1b2a9a426ba603ba357ce7773cb5805cb9c7c2b386d100d1fc9263513188e680",
+          "vout": 0,
+          "scriptPubKey": "0020d9bbfbe56af7c4b7f960a70d7ea107156913d9e5a26b0a71429df5e097ca6537",
+          "amount": 16777215
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "0 IF CODESEPARATOR ENDIF: not taken, the whole witness script is hashed",
+          "witnessScript": "0063ab68210392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98ac",
+          "partialSigs": [
+            {
+              "pubkey": "0392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98",
+              "signature": "3045022100f6a10b8604e6dc910194b79ccfc93e1bc0ec7c03453caaa8987f7d6c3413566002206216229ede9b4d6ec2d325be245c5b508ff0339bf1794078e20bfe0babc7ffe683"
+            }
+          ]
+        },
+        {
+          "input": 1,
+          "expect": "valid",
+          "why": "1 IF CODESEPARATOR ENDIF: taken, hashed from the separator",
+          "witnessScript": "5163ab68210392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98ac",
+          "partialSigs": [
+            {
+              "pubkey": "0392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98",
+              "signature": "30440220032521802a76ad7bf74d0e2c218b72cf0cbc867066e2e53db905ba37f130397e02207709e2188ed7f08f4c952d9d13986da504502b8c3be59617e043552f506c46ff83"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (1b2a9a426ba603ba…, occurrence 0)",
+      "comment": "BIP143 example: Same as the previous example with input-output pairs swapped",
+      "tx": "0100000000010280e68831516392fcd100d186b3c2c7b95c80b53c77e77c35ba03a66b429a2a1b0000000000ffffffffe9b542c5176808107ff1df906f46bb1f2583b16112b95ee5380665ba7fcfc0010000000000ffffffff0280969800000000001976a9146648a8cd4531e1ec47f35916de8e259237294d1e88ac80969800000000001976a914de4b231626ef508c9a74a8517e6783c0546d6b2888ac024730440220032521802a76ad7bf74d0e2c218b72cf0cbc867066e2e53db905ba37f130397e02207709e2188ed7f08f4c952d9d13986da504502b8c3be59617e043552f506c46ff83275163ab68210392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98ac02483045022100f6a10b8604e6dc910194b79ccfc93e1bc0ec7c03453caaa8987f7d6c3413566002206216229ede9b4d6ec2d325be245c5b508ff0339bf1794078e20bfe0babc7ffe683270063ab68210392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98ac00000000",
+      "prevouts": [
+        {
+          "txid": "1b2a9a426ba603ba357ce7773cb5805cb9c7c2b386d100d1fc9263513188e680",
+          "vout": 0,
+          "scriptPubKey": "0020d9bbfbe56af7c4b7f960a70d7ea107156913d9e5a26b0a71429df5e097ca6537",
+          "amount": 16777215
+        },
+        {
+          "txid": "01c0cf7fba650638e55eb91261b183251fbb466f90dff17f10086817c542b5e9",
+          "vout": 0,
+          "scriptPubKey": "0020ba468eea561b26301e4cf69fa34bde4ad60c81e70f059f045ca9a79931004a4d",
+          "amount": 16777215
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "separator taken, other input order",
+          "witnessScript": "5163ab68210392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98ac",
+          "partialSigs": [
+            {
+              "pubkey": "0392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98",
+              "signature": "30440220032521802a76ad7bf74d0e2c218b72cf0cbc867066e2e53db905ba37f130397e02207709e2188ed7f08f4c952d9d13986da504502b8c3be59617e043552f506c46ff83"
+            }
+          ]
+        },
+        {
+          "input": 1,
+          "expect": "valid",
+          "why": "separator not taken, other input order",
+          "witnessScript": "0063ab68210392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98ac",
+          "partialSigs": [
+            {
+              "pubkey": "0392972e2eb617b2388771abe27235fd5ac44af8e61693261550447a4c3e39da98",
+              "signature": "3045022100f6a10b8604e6dc910194b79ccfc93e1bc0ec7c03453caaa8987f7d6c3413566002206216229ede9b4d6ec2d325be245c5b508ff0339bf1794078e20bfe0babc7ffe683"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_valid.json (6eb98797a21c6c10…, occurrence 0)",
+      "comment": "BIP143 example: P2SH-P2WSH 6-of-6 multisig signed with 6 different SIGHASH types",
+      "tx": "0100000000010136641869ca081e70f394c6948e8af409e18b619df2ed74aa106c1ca29787b96e0100000023220020a16b5755f7f6f96dbd65f5f0d6ab9418b89af4b1f14a1bb8a09062c35f0dcb54ffffffff0200e9a435000000001976a914389ffce9cd9ae88dcc0631e88a821ffdbe9bfe2688acc0832f05000000001976a9147480a33f950689af511e6e84c138dbbd3c3ee41588ac080047304402206ac44d672dac41f9b00e28f4df20c52eeb087207e8d758d76d92c6fab3b73e2b0220367750dbbe19290069cba53d096f44530e4f98acaa594810388cf7409a1870ce01473044022068c7946a43232757cbdf9176f009a928e1cd9a1a8c212f15c1e11ac9f2925d9002205b75f937ff2f9f3c1246e547e54f62e027f64eefa2695578cc6432cdabce271502473044022059ebf56d98010a932cf8ecfec54c48e6139ed6adb0728c09cbe1e4fa0915302e022007cd986c8fa870ff5d2b3a89139c9fe7e499259875357e20fcbb15571c76795403483045022100fbefd94bd0a488d50b79102b5dad4ab6ced30c4069f1eaa69a4b5a763414067e02203156c6a5c9cf88f91265f5a942e96213afae16d83321c8b31bb342142a14d16381483045022100a5263ea0553ba89221984bd7f0b13613db16e7a70c549a86de0cc0444141a407022005c360ef0ae5a5d4f9f2f87a56c1546cc8268cab08c73501d6b3be2e1e1a8a08824730440220525406a1482936d5a21888260dc165497a90a15669636d8edca6b9fe490d309c022032af0c646a34a44d1f4576bf6a4a74b67940f8faa84c7df9abe12a01a11e2b4783cf56210307b8ae49ac90a048e9b53357a2354b3334e9c8bee813ecb98e99a7e07e8c3ba32103b28f0c28bfab54554ae8c658ac5c3e0ce6e79ad336331f78c428dd43eea8449b21034b8113d703413d57761b8b9781957b8c0ac1dfe69f492580ca4195f50376ba4a21033400f6afecb833092a9a21cfdf1ed1376e58c5d1f47de74683123987e967a8f42103a6d48b1131e94ba04d9737d61acdaa1322008af9602b3b14862c07a1789aac162102d8b661b0b3302ee2f162b09e07a55ad5dfbe673a9f01d9f0c19617681024306b56ae00000000",
+      "prevouts": [
+        {
+          "txid": "6eb98797a21c6c10aa74edf29d618be109f48a8e94c694f3701e08ca69186436",
+          "vout": 1,
+          "scriptPubKey": "a9149993a429037b5d912407a71c252019287b8d27a587",
+          "amount": 987654321
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "valid",
+          "why": "6-of-6: signature n meets key n",
+          "redeemScript": "0020a16b5755f7f6f96dbd65f5f0d6ab9418b89af4b1f14a1bb8a09062c35f0dcb54",
+          "witnessScript": "56210307b8ae49ac90a048e9b53357a2354b3334e9c8bee813ecb98e99a7e07e8c3ba32103b28f0c28bfab54554ae8c658ac5c3e0ce6e79ad336331f78c428dd43eea8449b21034b8113d703413d57761b8b9781957b8c0ac1dfe69f492580ca4195f50376ba4a21033400f6afecb833092a9a21cfdf1ed1376e58c5d1f47de74683123987e967a8f42103a6d48b1131e94ba04d9737d61acdaa1322008af9602b3b14862c07a1789aac162102d8b661b0b3302ee2f162b09e07a55ad5dfbe673a9f01d9f0c19617681024306b56ae",
+          "partialSigs": [
+            {
+              "pubkey": "0307b8ae49ac90a048e9b53357a2354b3334e9c8bee813ecb98e99a7e07e8c3ba3",
+              "signature": "304402206ac44d672dac41f9b00e28f4df20c52eeb087207e8d758d76d92c6fab3b73e2b0220367750dbbe19290069cba53d096f44530e4f98acaa594810388cf7409a1870ce01"
+            },
+            {
+              "pubkey": "03b28f0c28bfab54554ae8c658ac5c3e0ce6e79ad336331f78c428dd43eea8449b",
+              "signature": "3044022068c7946a43232757cbdf9176f009a928e1cd9a1a8c212f15c1e11ac9f2925d9002205b75f937ff2f9f3c1246e547e54f62e027f64eefa2695578cc6432cdabce271502"
+            },
+            {
+              "pubkey": "034b8113d703413d57761b8b9781957b8c0ac1dfe69f492580ca4195f50376ba4a",
+              "signature": "3044022059ebf56d98010a932cf8ecfec54c48e6139ed6adb0728c09cbe1e4fa0915302e022007cd986c8fa870ff5d2b3a89139c9fe7e499259875357e20fcbb15571c76795403"
+            },
+            {
+              "pubkey": "033400f6afecb833092a9a21cfdf1ed1376e58c5d1f47de74683123987e967a8f4",
+              "signature": "3045022100fbefd94bd0a488d50b79102b5dad4ab6ced30c4069f1eaa69a4b5a763414067e02203156c6a5c9cf88f91265f5a942e96213afae16d83321c8b31bb342142a14d16381"
+            },
+            {
+              "pubkey": "03a6d48b1131e94ba04d9737d61acdaa1322008af9602b3b14862c07a1789aac16",
+              "signature": "3045022100a5263ea0553ba89221984bd7f0b13613db16e7a70c549a86de0cc0444141a407022005c360ef0ae5a5d4f9f2f87a56c1546cc8268cab08c73501d6b3be2e1e1a8a0882"
+            },
+            {
+              "pubkey": "02d8b661b0b3302ee2f162b09e07a55ad5dfbe673a9f01d9f0c19617681024306b",
+              "signature": "30440220525406a1482936d5a21888260dc165497a90a15669636d8edca6b9fe490d309c022032af0c646a34a44d1f4576bf6a4a74b67940f8faa84c7df9abe12a01a11e2b4783"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_invalid.json (0000000000000000…, occurrence 0)",
+      "comment": "This is the nearly-standard transaction with CHECKSIGVERIFY 1 instead of CHECKSIG from tx_valid.json but with the signature duplicated in the scriptPubKey with a non-standard pushdata prefix See FindAndDelete, which will only remove if it uses the same pushdata prefix as is standard",
+      "tx": "01000000010001000000000000000000000000000000000000000000000000000000000000000000006a473044022067288ea50aa799543a536ff9306f8e1cba05b9c6b10951175b924f96732555ed022026d7b5265f38d21541519e4a1e55044d5b9e17e15cdbaf29ae3792e99e883e7a012103ba8c8b86dea131c22ab967e6dd99bdae8eff7a1f75a2c35f1f944109e3fe5e22ffffffff010000000000000000015100000000",
+      "prevouts": [
+        {
+          "txid": "0000000000000000000000000000000000000000000000000000000000000100",
+          "vout": 0,
+          "scriptPubKey": "76a9145b6462475454710f3c22f5fdf0b40704c92f25c388ad514c473044022067288ea50aa799543a536ff9306f8e1cba05b9c6b10951175b924f96732555ed022026d7b5265f38d21541519e4a1e55044d5b9e17e15cdbaf29ae3792e99e883e7a01",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "invalid",
+          "why": "the embedded copy uses a non-standard push, so FindAndDelete leaves it in the scriptCode",
+          "partialSigs": [
+            {
+              "pubkey": "03ba8c8b86dea131c22ab967e6dd99bdae8eff7a1f75a2c35f1f944109e3fe5e22",
+              "signature": "3044022067288ea50aa799543a536ff9306f8e1cba05b9c6b10951175b924f96732555ed022026d7b5265f38d21541519e4a1e55044d5b9e17e15cdbaf29ae3792e99e883e7a01"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_invalid.json (0000000000000000…, occurrence 2)",
+      "comment": "This is the nearly-standard transaction with CHECKSIGVERIFY 1 instead of CHECKSIG from tx_valid.json but with the signature duplicated in the scriptPubKey with a different hashtype suffix See FindAndDelete, which will only remove if the signature, including the hash type, matches",
+      "tx": "01000000010001000000000000000000000000000000000000000000000000000000000000000000006a473044022067288ea50aa799543a536ff9306f8e1cba05b9c6b10951175b924f96732555ed022026d7b5265f38d21541519e4a1e55044d5b9e17e15cdbaf29ae3792e99e883e7a012103ba8c8b86dea131c22ab967e6dd99bdae8eff7a1f75a2c35f1f944109e3fe5e22ffffffff010000000000000000015100000000",
+      "prevouts": [
+        {
+          "txid": "0000000000000000000000000000000000000000000000000000000000000100",
+          "vout": 0,
+          "scriptPubKey": "76a9145b6462475454710f3c22f5fdf0b40704c92f25c388ad51473044022067288ea50aa799543a536ff9306f8e1cba05b9c6b10951175b924f96732555ed022026d7b5265f38d21541519e4a1e55044d5b9e17e15cdbaf29ae3792e99e883e7a81",
+          "amount": 0
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "invalid",
+          "why": "the embedded copy has another hash type byte, so FindAndDelete leaves it",
+          "partialSigs": [
+            {
+              "pubkey": "03ba8c8b86dea131c22ab967e6dd99bdae8eff7a1f75a2c35f1f944109e3fe5e22",
+              "signature": "3044022067288ea50aa799543a536ff9306f8e1cba05b9c6b10951175b924f96732555ed022026d7b5265f38d21541519e4a1e55044d5b9e17e15cdbaf29ae3792e99e883e7a01"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_invalid.json (f18783ace138abac…, occurrence 0)",
+      "comment": "FindAndDelete tests This is a test of FindAndDelete. The first tx is a spend of normal scriptPubKey and the second tx is a spend of bare P2WSH. The redeemScript/witnessScript is CHECKSIGVERIFY <0x30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01>. The signature is <0x30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01> <pubkey>, where the pubkey is obtained through key recovery with sig and the wrong sighash. This is to show that FindAndDelete is applied only to non-segwit scripts To show that the tests are 'correctly wrong', they should pass by modifying OP_CHECKSIG under interpreter.cpp by replacing (sigversion == SigVersion::BASE) with (sigversion != SigVersion::BASE) Non-segwit: wrong sighash (without FindAndDelete) = 1ba1fe3bc90c5d1265460e684ce6774e324f0fabdf67619eda729e64e8b6bc08",
+      "tx": "010000000169c12106097dc2e0526493ef67f21269fe888ef05c7a3a5dacab38e1ac8387f1581b0000b64830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e012103b12a1ec8428fc74166926318c15e17408fea82dbb157575e16a8c365f546248f4aad4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01ffffffff0101000000000000000000000000",
+      "prevouts": [
+        {
+          "txid": "f18783ace138abac5d3a7a5cf08e88fe6912f267ef936452e0c27d090621c169",
+          "vout": 7000,
+          "scriptPubKey": "a9140c746489e2d83cdbb5b90b432773342ba809c13487",
+          "amount": 200000
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "invalid",
+          "why": "the key was recovered from the digest without FindAndDelete",
+          "redeemScript": "ad4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01",
+          "partialSigs": [
+            {
+              "pubkey": "03b12a1ec8428fc74166926318c15e17408fea82dbb157575e16a8c365f546248f",
+              "signature": "30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_invalid.json (f18783ace138abac…, occurrence 1)",
+      "comment": "BIP143: wrong sighash (with FindAndDelete) = 71c9cd9b2869b9c70b01b1f0360c148f42dee72297db312638df136f43311f23",
+      "tx": "0100000000010169c12106097dc2e0526493ef67f21269fe888ef05c7a3a5dacab38e1ac8387f14c1d000000ffffffff01010000000000000000034830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e012102a9d7ed6e161f0e255c10bbfcca0128a9e2035c2c8da58899c54d22d3a31afdef4aad4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0100000000",
+      "prevouts": [
+        {
+          "txid": "f18783ace138abac5d3a7a5cf08e88fe6912f267ef936452e0c27d090621c169",
+          "vout": 7500,
+          "scriptPubKey": "00209e1be07558ea5cc8e02ed1d80c0911048afad949affa36d5c3951e3159dbea19",
+          "amount": 200000
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "invalid",
+          "why": "P2WSH key recovered from a FindAndDelete digest; BIP143 never removes",
+          "witnessScript": "ad4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01",
+          "partialSigs": [
+            {
+              "pubkey": "02a9d7ed6e161f0e255c10bbfcca0128a9e2035c2c8da58899c54d22d3a31afdef",
+              "signature": "30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_invalid.json (9628667ad48219a1…, occurrence 0)",
+      "comment": "This is multisig version of the FindAndDelete tests Script is 2 CHECKMULTISIGVERIFY <sig1> <sig2> DROP 52af4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c0395960175 Signature is 0 <sig1> <sig2> 2 <key1> <key2> Should pass by replacing (sigversion == SigVersion::BASE) with (sigversion != SigVersion::BASE) under OP_CHECKMULTISIG Non-segwit: wrong sighash (without FindAndDelete) = 4bc6a53e8e16ef508c19e38bba08831daba85228b0211f323d4cb0999cf2a5e8",
+      "tx": "01000000019275cb8d4a485ce95741c013f7c0d28722160008021bb469a11982d47a662896581b0000fd6f01004830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c039596015221023fd5dd42b44769c5653cbc5947ff30ab8871f240ad0c0e7432aefe84b5b4ff3421039d52178dbde360b83f19cf348deb04fa8360e1bf5634577be8e50fafc2b0e4ef4c9552af4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c0395960175ffffffff0101000000000000000000000000",
+      "prevouts": [
+        {
+          "txid": "9628667ad48219a169b41b020800162287d2c0f713c04157e95c484a8dcb7592",
+          "vout": 7000,
+          "scriptPubKey": "a9145748407f5ca5cdca53ba30b79040260770c9ee1b87",
+          "amount": 200000
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "invalid",
+          "why": "multisig keys recovered without FindAndDelete",
+          "redeemScript": "52af4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c0395960175",
+          "partialSigs": [
+            {
+              "pubkey": "023fd5dd42b44769c5653cbc5947ff30ab8871f240ad0c0e7432aefe84b5b4ff34",
+              "signature": "30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01"
+            },
+            {
+              "pubkey": "039d52178dbde360b83f19cf348deb04fa8360e1bf5634577be8e50fafc2b0e4ef",
+              "signature": "304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c03959601"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source": "tx_invalid.json (9628667ad48219a1…, occurrence 1)",
+      "comment": "BIP143: wrong sighash (with FindAndDelete) = 17c50ec2181ecdfdc85ca081174b248199ba81fff730794d4f69b8ec031f2dce",
+      "tx": "010000000001019275cb8d4a485ce95741c013f7c0d28722160008021bb469a11982d47a6628964c1d000000ffffffff0101000000000000000007004830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c03959601010221023cb6055f4b57a1580c5a753e19610cafaedf7e0ff377731c77837fd666eae1712102c1b1db303ac232ffa8e5e7cc2cf5f96c6e40d3e6914061204c0541cb2043a0969552af4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c039596017500000000",
+      "prevouts": [
+        {
+          "txid": "9628667ad48219a169b41b020800162287d2c0f713c04157e95c484a8dcb7592",
+          "vout": 7500,
+          "scriptPubKey": "00209b66c15b4e0b4eb49fa877982cafded24859fe5b0e2dbfbe4f0df1de7743fd52",
+          "amount": 200000
+        }
+      ],
+      "checks": [
+        {
+          "input": 0,
+          "expect": "invalid",
+          "why": "P2WSH multisig keys recovered from a FindAndDelete digest",
+          "witnessScript": "52af4830450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e0148304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c0395960175",
+          "partialSigs": [
+            {
+              "pubkey": "023cb6055f4b57a1580c5a753e19610cafaedf7e0ff377731c77837fd666eae171",
+              "signature": "30450220487fb382c4974de3f7d834c1b617fe15860828c7f96454490edd6d891556dcc9022100baf95feb48f845d5bfc9882eb6aeefa1bc3790e39f59eaa46ff7f15ae626c53e01"
+            },
+            {
+              "pubkey": "02c1b1db303ac232ffa8e5e7cc2cf5f96c6e40d3e6914061204c0541cb2043a096",
+              "signature": "304502205286f726690b2e9b0207f0345711e63fa7012045b9eb0f19c2458ce1db90cf43022100e89f17f86abc5b149eba4115d4f128bcf45d77fb3ecdd34f594091340c03959601"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

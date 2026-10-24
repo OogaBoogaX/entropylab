@@ -122,8 +122,8 @@ test("a custom coin type warns that mainnet version bytes are used (issue #357)"
   // serialization; the derived wallet must carry a blocking warning so the
   // format is never mistaken for the intended coin's.
   const api2 = new Function(
-    "hodlHDKey", "hodlBase58Check", "hodlExtendedKeyVersions", "hodlNote",
-    `${["hodlNetworkFamily", "hodlCoinTypeFromNetwork", "hodlNetworkFromCoinType", "hodlReadExtendedKeyVersion", "hodlReversionExtendedKey", "hodlSerializeExtendedKey", "hodlRootWalletResult"].map(loadSlice).join("\n")}
+    "hodlHDKey", "hodlBase58Check", "hodlExtendedKeyVersions", "hodlNote", "hodlHex",
+    `${["hodlNetworkFamily", "hodlCoinTypeFromNetwork", "hodlNetworkFromCoinType", "hodlReadExtendedKeyVersion", "hodlReversionExtendedKey", "hodlSerializeExtendedKey", "hodlNodeHasPrivateKey", "hodlRootWalletResult"].map(loadSlice).join("\n")}
      var hodlError = (k) => new Error(k);
      return { hodlRootWalletResult, hodlNetworkFromCoinType };`,
   )(
@@ -131,8 +131,9 @@ test("a custom coin type warns that mainnet version bytes are used (issue #357)"
     { decode: () => new Uint8Array(78), encode: () => "xkey-stub" },
     { mainnet: { x: { prv: 0, pub: 0, prvName: "xprv", pubName: "xpub" } }, testnet: { x: { prv: 0, pub: 0, prvName: "tprv", pubName: "tpub" } } },
     (key, vars) => ({ key, vars }),
+    { encode: (bytes) => Buffer.from(bytes).toString("hex") },
   );
-  const rootStub = { privateKey: null, publicExtendedKey: "xpub-stub" };
+  const rootStub = { privateKey: null, publicExtendedKey: "xpub-stub", chainCode: new Uint8Array(32), publicKey: new Uint8Array(33) };
   const source = { mnemonic: null, passphraseUsed: false, passphrase: "", entropyHex: null, seedHex: null, notes: [], warnings: [] };
   const custom = api2.hodlRootWalletResult(rootStub, "mainnet", source, 0, "00000000", [], 145);
   assert.ok(custom.warnings.some((note) => note.key.includes("not Bitcoin mainnet (0) or testnet (1)")), "custom coin type produced no mainnet-serialization warning");

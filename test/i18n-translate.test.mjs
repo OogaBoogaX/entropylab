@@ -3,13 +3,15 @@
 // sidecar bookkeeping are all deterministic and must hold on every run.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, existsSync, cpSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { chat, languageWorkload, translateLanguage, translationSchema } from "../scripts/i18n-translate.mjs";
-import { hashSource, sidecarProblems, catalogProblems } from "../scripts/i18n-validate.mjs";
+import { CONTEXT_PATH, chat, contextProblems, languageWorkload, loadContext, translateLanguage, translationSchema } from "../scripts/i18n-translate.mjs";
+import { collectSources } from "../scripts/i18n-sources.mjs";
+import { contentProblems, gateProblems } from "../scripts/i18n-gate.mjs";
+import { hashSource, sidecarProblems, catalogProblems, valueProblems } from "../scripts/i18n-validate.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const quiet = () => {};
@@ -26,8 +28,8 @@ const stubClient = ({ failKeys = [], auditFail = [] } = {}) => {
     async chat(request) {
       calls.push(request);
       if (request.name === "translate") {
-        const keys = request.schema.required;
-        return Object.fromEntries(keys.filter((k) => !failKeys.includes(k)).map((k) => [k, `${k} [translated]`]));
+        const keys = request.messages[1] ? JSON.parse(request.messages[1].content).strings : [];
+        return { translations: keys.filter((k) => !failKeys.includes(k)).map((k) => ({ key: k, translation: `${k} [translated]` })) };
       }
       if (request.name === "audit") {
         const pairs = JSON.parse(request.messages[1].content).pairs;
@@ -38,8 +40,35 @@ const stubClient = ({ failKeys = [], auditFail = [] } = {}) => {
   };
 };
 
+// The committed catalog can be nearly complete. These tests need a known
+// number of missing keys, so they punch holes in a copy instead of assuming
+// the live Spanish file still has a backlog.
+const gappedRoot = async (gaps) => {
+  const dir = tmp();
+  mkdirSync(join(dir, "src/locales/.sources"), { recursive: true });
+  // Copy the extraction inputs so Windows does not need symlink privileges.
+  cpSync(join(root, "src/js"), join(dir, "src/js"), { recursive: true });
+  cpSync(join(root, "src/shell.html"), join(dir, "src/shell.html"));
+  cpSync(join(root, "src/index.html"), join(dir, "src/index.html"));
+  writeFileSync(join(dir, "package.json"), '{"type":"module"}');
+  const { sources, catalog } = await languageWorkload(root, "es");
+  const removable = Object.keys(catalog).filter((key) => sources.has(key));
+  assert.ok(removable.length >= gaps, "need translated keys to punch out");
+  const next = { ...catalog };
+  const punched = removable.slice(0, gaps);
+  for (const key of punched) delete next[key];
+  writeFileSync(join(dir, "src/locales/es.json"), JSON.stringify(next, null, 2) + "\n");
+  const sidecarPath = join(root, "src/locales/.sources/es.json");
+  if (existsSync(sidecarPath)) {
+    const sidecar = JSON.parse(readFileSync(sidecarPath, "utf8"));
+    for (const key of punched) delete sidecar[key];
+    writeFileSync(join(dir, "src/locales/.sources/es.json"), JSON.stringify(sidecar, null, 2) + "\n");
+  }
+  return dir;
+};
+
 test("the workload derives from the same extraction as the sync check", async () => {
-  const { sources, catalog, keep, dead, missing } = await languageWorkload(root, "es");
+  const { sources, catalog, keep, stale, dead, missing } = await languageWorkload(root, "es");
   // The committed es catalog is partial by design; the invariants that must
   // hold regardless of how many keys are missing or awaiting post-merge
   // dead-key pruning after an English UI change:
@@ -49,36 +78,44 @@ test("the workload derives from the same extraction as the sync check", async ()
   // copy changes while saying nothing about the extraction being sound.
   assert.ok(Object.keys(keep).length > Object.keys(catalog).length * 0.8, "most committed entries survive");
   assert.ok(Object.keys(keep).every((key) => sources.has(key)), "kept entries come from the shared source extraction");
-  assert.equal(Object.keys(keep).length + dead, Object.keys(catalog).length, "every committed entry is retained or queued for dead-key pruning");
+  assert.equal(Object.keys(keep).length + stale.length + dead, Object.keys(catalog).length, "every committed entry is retained, pinned for retranslation (scripts/i18n-context.json), or queued for dead-key pruning");
+  for (const key of stale) assert.ok(missing.includes(key), "a pinned entry is translated again");
   for (const key of missing) assert.equal(typeof key, "string");
 });
 
 test("translation requests are schema-constrained to exactly the requested keys", async () => {
   const outDir = tmp();
+  const tree = await gappedRoot(5);
   try {
     const client = stubClient();
-    await translateLanguage({ root, lang: "es", outDir, client, limit: 5, log: quiet });
+    await translateLanguage({ root: tree, lang: "es", outDir, client, limit: 5, log: quiet });
     const translateCall = client.calls.find((c) => c.name === "translate");
     assert.equal(translateCall.schema.additionalProperties, false);
-    assert.equal(translateCall.schema.required.length, 5);
-    for (const key of translateCall.schema.required) {
-      assert.deepEqual(translateCall.schema.properties[key], { type: "string" });
-    }
+    assert.deepEqual(translateCall.schema.required, ["translations"]);
+    const item = translateCall.schema.properties.translations.items;
+    assert.deepEqual(item.required, ["key", "translation"]);
+    assert.equal(item.additionalProperties, false);
+    // Key coverage is enforced on arrival, not by property names: providers
+    // escape string fields correctly, and quoted keys no longer break JSON.
+    const requested = JSON.parse(translateCall.messages[1].content).strings;
+    assert.equal(requested.length, 5);
     const auditCall = client.calls.find((c) => c.name === "audit");
     assert.equal(auditCall.schema.additionalProperties, false);
   } finally {
     rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
   }
 });
 
 test("translated catalogs and sidecars are written consistently; audit-flagged keys stay missing", async () => {
   const outDir = tmp();
+  const tree = await gappedRoot(5);
   try {
-    const { missing } = await languageWorkload(root, "es", 4);
+    const { missing } = await languageWorkload(tree, "es", 4);
     assert.ok(missing.length >= 4, "fixture needs at least 4 missing keys");
     const flagged = missing[1];
     const client = stubClient({ auditFail: [flagged] });
-    const report = await translateLanguage({ root, lang: "es", outDir, client, limit: 4, log: quiet });
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client, limit: 4, log: quiet });
 
     assert.equal(report.requested, 4);
     assert.equal(report.translated, 3);
@@ -98,11 +135,13 @@ test("translated catalogs and sidecars are written consistently; audit-flagged k
     for (const key of Object.keys(catalog)) assert.equal(sidecar[key], hashSource(key));
   } finally {
     rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
   }
 });
 
 test("validator-rejected values are dropped on arrival, never audited or written", async () => {
   const outDir = tmp();
+  const tree = await gappedRoot(3);
   try {
     // Corrupt every translation with an invented placeholder: valueProblems
     // rejects them before the audit call.
@@ -111,10 +150,11 @@ test("validator-rejected values are dropped on arrival, never audited or written
       calls,
       async chat(request) {
         calls.push(request);
-        return Object.fromEntries(request.schema.required.map((k) => [k, `${k} {bogus}`]));
+        const keys = JSON.parse(request.messages[1].content).strings;
+        return { translations: keys.map((k) => ({ key: k, translation: `${k} {bogus}` })) };
       },
     };
-    const report = await translateLanguage({ root, lang: "es", outDir, client, limit: 3, log: quiet });
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client, limit: 3, log: quiet });
     assert.equal(report.translated, 0);
     assert.equal(report.dropped.length, 3);
     assert.ok(report.dropped.every((d) => d.problem.includes("placeholders")));
@@ -124,34 +164,504 @@ test("validator-rejected values are dropped on arrival, never audited or written
     assert.equal(existsSync(join(outDir, "es.json")), report.changed);
   } finally {
     rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
   }
 });
 
 test("a missing model response key is dropped, not invented", async () => {
   const outDir = tmp();
+  const tree = await gappedRoot(2);
   try {
     const client = {
       async chat(request) {
-        if (request.name === "translate") return {}; // model returned nothing usable
+        if (request.name === "translate") return { translations: [] }; // model returned nothing usable
         return { verdicts: [] };
       },
     };
-    const report = await translateLanguage({ root, lang: "es", outDir, client, limit: 2, log: quiet });
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client, limit: 2, log: quiet });
     assert.equal(report.translated, 0);
     assert.equal(report.dropped.length, 2);
   } finally {
     rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
   }
 });
 
-test("chat(): wire format carries the strict JSON schema and bearer auth, and retries 5xx once", async () => {
+// --- a failing batch splits into per-key retries (run 39891870190) ----------
+//
+// One cut-off Spanish batch ("Unexpected end of JSON input" on every attempt)
+// threw out of translateLanguage, and the workflow skipped the publish job
+// for every language — including the 33 strings German, French and Portuguese
+// had translated fine. A failure that can be specific to one input — a
+// content failure (a cut-off or unparseable body) or an HTTP 400 — degrades
+// to per-key drops; an auth/credit failure or a sustained outage still fails
+// the language outright, as do validation and file errors.
+
+// The failures chat() throws after its own retries, classified the way it
+// classifies them: a content failure, and an HTTP failure carrying its
+// status.
+const contentError = () => Object.assign(new Error("Unexpected end of JSON input"), { kind: "content" });
+const httpError = (status, detail) => Object.assign(new Error(`LLM request failed: HTTP ${status} ${detail}`), { status });
+
+test("a translate batch that throws is retried key by key; only a key that keeps failing is dropped", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(3);
+  try {
+    const { missing } = await languageWorkload(tree, "es", 3);
+    assert.ok(missing.length >= 3, "fixture needs at least 3 missing keys");
+    const [first, second, third] = missing;
+    const calls = [];
+    const client = {
+      calls,
+      async chat(request) {
+        calls.push(request);
+        if (request.name === "translate") {
+          const keys = JSON.parse(request.messages[1].content).strings;
+          if (keys.length > 1 || keys[0] === second) throw contentError();
+          return { translations: keys.map((key) => ({ key, translation: `${key} [translated]` })) };
+        }
+        const pairs = JSON.parse(request.messages[1].content).pairs;
+        return { verdicts: pairs.map(({ key }) => ({ key, ok: true, problem: "" })) };
+      },
+    };
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client, limit: 3, log: quiet });
+
+    // The batch call was tried once, then each key on its own.
+    const translateCalls = calls.filter((c) => c.name === "translate");
+    assert.deepEqual(translateCalls.map((c) => JSON.parse(c.messages[1].content).strings), [[first, second, third], [first], [second], [third]]);
+
+    assert.equal(report.translated, 2);
+    assert.deepEqual(report.dropped, [{ key: second, problem: "the model returned no usable response: Unexpected end of JSON input" }]);
+    assert.equal(report.stillMissing, 1);
+
+    // The language still writes its catalog: the publish job is not blocked.
+    assert.ok(existsSync(join(outDir, "es.json")), "the language result is written");
+    const catalog = JSON.parse(readFileSync(join(outDir, "es.json"), "utf8"));
+    assert.equal(catalog[first], `${first} [translated]`);
+    assert.equal(catalog[third], `${third} [translated]`);
+    assert.ok(!(second in catalog), "the failed key stays missing — the safe English fallback");
+    assert.deepEqual(catalogProblems(catalog), []);
+    const sidecar = JSON.parse(readFileSync(join(outDir, ".sources", "es.json"), "utf8"));
+    assert.deepEqual(sidecarProblems(catalog, sidecar), { invalid: [], drift: [] });
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("an audit call that throws for the batch is retried key by key", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(2);
+  try {
+    const { missing } = await languageWorkload(tree, "es", 2);
+    assert.ok(missing.length >= 2, "fixture needs at least 2 missing keys");
+    const [first, second] = missing;
+    const calls = [];
+    const client = {
+      calls,
+      async chat(request) {
+        calls.push(request);
+        if (request.name === "translate") {
+          const keys = JSON.parse(request.messages[1].content).strings;
+          return { translations: keys.map((key) => ({ key, translation: `${key} [translated]` })) };
+        }
+        const pairs = JSON.parse(request.messages[1].content).pairs;
+        if (pairs.length > 1) throw contentError();
+        return { verdicts: pairs.map(({ key }) => ({ key, ok: true, problem: "" })) };
+      },
+    };
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client, limit: 2, log: quiet });
+
+    const auditCalls = calls.filter((c) => c.name === "audit");
+    assert.deepEqual(auditCalls.map((c) => JSON.parse(c.messages[1].content).pairs.map((p) => p.key)), [[first, second], [first], [second]]);
+    assert.equal(report.translated, 2);
+    assert.deepEqual(report.dropped, []);
+    const catalog = JSON.parse(readFileSync(join(outDir, "es.json"), "utf8"));
+    assert.equal(catalog[first], `${first} [translated]`);
+    assert.equal(catalog[second], `${second} [translated]`);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("a key whose audit call keeps throwing is dropped, never accepted unaudited", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(2);
+  try {
+    const { missing } = await languageWorkload(tree, "es", 2);
+    assert.ok(missing.length >= 2, "fixture needs at least 2 missing keys");
+    const [first, second] = missing;
+    const client = {
+      async chat(request) {
+        if (request.name === "translate") {
+          const keys = JSON.parse(request.messages[1].content).strings;
+          return { translations: keys.map((key) => ({ key, translation: `${key} [translated]` })) };
+        }
+        const pairs = JSON.parse(request.messages[1].content).pairs;
+        if (pairs.length > 1 || pairs[0].key === second) throw contentError();
+        return { verdicts: pairs.map(({ key }) => ({ key, ok: true, problem: "" })) };
+      },
+    };
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client, limit: 2, log: quiet });
+    assert.equal(report.translated, 1);
+    assert.deepEqual(report.dropped, [{ key: second, problem: "semantic audit: the model returned no usable response: Unexpected end of JSON input" }]);
+    const catalog = JSON.parse(readFileSync(join(outDir, "es.json"), "utf8"));
+    assert.equal(catalog[first], `${first} [translated]`);
+    assert.ok(!(second in catalog), "an unaudited key is never written");
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("a batch that fails with HTTP 401 fails the language, with no per-key retries", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(3);
+  try {
+    const calls = [];
+    const client = {
+      calls,
+      async chat(request) {
+        calls.push(request);
+        throw httpError(401, "unauthorized");
+      },
+    };
+    // An expired or revoked TRANSLATE_API_KEY must fail the run loudly, not
+    // drop every key and go green while translating nothing.
+    await assert.rejects(translateLanguage({ root: tree, lang: "es", outDir, client, limit: 3, log: quiet }), /HTTP 401/);
+    assert.equal(calls.length, 1, "an auth failure is never split into per-key retries");
+    assert.equal(existsSync(join(outDir, "es.json")), false, "nothing is written");
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("a batch that fails with an exhausted 429 fails the language, with no per-key retries", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(3);
+  try {
+    const calls = [];
+    const client = {
+      calls,
+      async chat(request) {
+        calls.push(request);
+        throw httpError(429, "temporarily rate-limited upstream. Please retry shortly");
+      },
+    };
+    // A sustained outage must not be split either: 1 + batch.length calls
+    // would multiply chat()'s backoff and can push the job past its timeout.
+    await assert.rejects(translateLanguage({ root: tree, lang: "es", outDir, client, limit: 3, log: quiet }), /HTTP 429/);
+    assert.equal(calls.length, 1, "a sustained outage is never split into per-key retries");
+    assert.equal(existsSync(join(outDir, "es.json")), false, "nothing is written");
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("a provider-wide HTTP 400 that fails every key alone fails the language", async () => {
+  // GLM 5.3 on round 2: a mistyped model or an endpoint without json_schema
+  // answers 400 to every call. Splitting it dropped every key and went green.
+  const outDir = tmp();
+  const tree = await gappedRoot(3);
+  try {
+    const calls = [];
+    const client = {
+      calls,
+      async chat(request) {
+        calls.push(request);
+        throw httpError(400, "response_format json_schema is not supported");
+      },
+    };
+    await assert.rejects(translateLanguage({ root: tree, lang: "es", outDir, client, limit: 3, log: quiet }), /HTTP 400/);
+    assert.equal(calls.length, 4, "the batch, then each of its 3 keys");
+    assert.equal(existsSync(join(outDir, "es.json")), false, "nothing is written");
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("a per-key auth failure during a split fails the language", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(3);
+  try {
+    const { missing } = await languageWorkload(tree, "es", 3);
+    assert.ok(missing.length >= 3, "fixture needs at least 3 missing keys");
+    const [first, second, third] = missing;
+    const calls = [];
+    const client = {
+      calls,
+      async chat(request) {
+        calls.push(request);
+        const keys = JSON.parse(request.messages[1].content).strings;
+        if (keys.length > 1) throw contentError();
+        if (keys[0] === second) throw httpError(401, "unauthorized");
+        return { translations: keys.map((key) => ({ key, translation: `${key} [translated]` })) };
+      },
+    };
+    await assert.rejects(translateLanguage({ root: tree, lang: "es", outDir, client, limit: 3, log: quiet }), /HTTP 401/);
+    // The batch split on its content failure, then the per-key 401 stopped
+    // the run instead of being dropped like a content failure.
+    const translateCalls = calls.filter((c) => c.name === "translate");
+    assert.deepEqual(translateCalls.map((c) => JSON.parse(c.messages[1].content).strings), [[first, second, third], [first], [second]]);
+    assert.equal(existsSync(join(outDir, "es.json")), false, "nothing is written");
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+// --- committed per-string context (issue #862) ------------------------------
+
+const writeContext = (tree, context) => {
+  mkdirSync(join(tree, "scripts"), { recursive: true });
+  writeFileSync(join(tree, CONTEXT_PATH), JSON.stringify(context, null, 2) + "\n");
+};
+// The first live es entry short enough to sit in the glossary, so the tests
+// can see a pinned value leave it. Taken before any context file exists.
+const glossaryEntry = async (tree) => {
+  const { keep, sources } = await languageWorkload(tree, "es");
+  const [key, value] = Object.entries(keep).find(([k, v]) => k.length <= 80 && v.length <= 80);
+  return { key, value, live: Object.keys(JSON.parse(readFileSync(join(tree, "src/locales/es.json"), "utf8"))).filter((k) => sources.has(k)) };
+};
+
+test("the committed context file names current English strings, known languages and well-formed fields", async () => {
+  const context = loadContext(root);
+  assert.deepEqual(contextProblems(context, await collectSources(root)), []);
+  for (const [key, entry] of Object.entries(context)) {
+    for (const [lang, terms] of Object.entries(entry.mustContain ?? {})) {
+      // A required term must survive the validator, so it can never carry
+      // markup or a placeholder.
+      for (const term of terms) assert.ok(!/[<>{}]/.test(term), `${key} ${lang}: ${term}`);
+    }
+    for (const [lang, exact] of Object.entries(entry.exact ?? {})) {
+      // An exact correction must be committable as it stands, and must
+      // differ from the value it replaces.
+      assert.deepEqual(valueProblems(key, exact), [], `${key} ${lang}`);
+      assert.notEqual(exact, entry.retranslate?.[lang], `${key} ${lang}: the correction changes something`);
+    }
+  }
+});
+
+test("a malformed context file fails the run and writes nothing", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(1);
+  try {
+    assert.deepEqual(contextProblems([], null), ["the context file must be a JSON object"]);
+    const bad = {
+      "no such string": { note: "x" },
+      "Output public key": { note: "", retranslate: { xx: "y" }, mustContain: { es: [] }, exact: { de: 7 }, notes: "typo" },
+    };
+    const problems = contextProblems(bad, await collectSources(root));
+    for (const expected of ["is not a current English source string", "note must be non-empty text", "unknown language \"xx\"", "mustContain.es has the wrong shape", "exact.de has the wrong shape", "unknown field \"notes\""]) {
+      assert.ok(problems.some((problem) => problem.includes(expected)), expected);
+    }
+    writeContext(tree, { "Output public key": { retranslate: ["de"] } });
+    await assert.rejects(translateLanguage({ root: tree, lang: "es", outDir, client: stubClient(), log: quiet }), /i18n-context\.json is malformed/);
+    assert.equal(existsSync(join(outDir, "es.json")), false);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("without a context file, the translate request is unchanged", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(1);
+  try {
+    const client = stubClient();
+    await translateLanguage({ root: tree, lang: "es", outDir, client, limit: 1, log: quiet });
+    const translateCall = client.calls.find((c) => c.name === "translate");
+    assert.deepEqual(Object.keys(JSON.parse(translateCall.messages[1].content)), ["glossary", "strings"]);
+    assert.doesNotMatch(translateCall.messages[0].content, /notes/);
+    const auditCall = client.calls.find((c) => c.name === "audit");
+    assert.ok(JSON.parse(auditCall.messages[1].content).pairs.every((pair) => !("note" in pair)));
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("a pinned value is retranslated in place with its note, then goes quiet", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(0);
+  try {
+    const { key, value, live } = await glossaryEntry(tree);
+    writeContext(tree, { [key]: { note: "Context for every language.", noteByLanguage: { es: "Spanish only.", de: "German only." }, retranslate: { es: value, de: "not this" } } });
+    const client = stubClient();
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client, log: quiet });
+    assert.equal(report.stale, 1);
+
+    const translateCall = client.calls.find((c) => c.name === "translate" && JSON.parse(c.messages[1].content).strings.includes(key));
+    const request = JSON.parse(translateCall.messages[1].content);
+    assert.deepEqual(request.notes, { [key]: "Context for every language. Spanish only." });
+    assert.ok(!(key in request.glossary), "the pinned value is not offered back as terminology");
+    assert.match(translateCall.messages[0].content, /"notes"/);
+    const auditCall = client.calls.find((c) => c.name === "audit" && JSON.parse(c.messages[1].content).pairs.some((pair) => pair.key === key));
+    const pair = JSON.parse(auditCall.messages[1].content).pairs.find((p) => p.key === key);
+    assert.equal(pair.note, "Context for every language. Spanish only.");
+    assert.match(auditCall.messages[0].content, /"note"/);
+
+    // The replacement takes the old value's place among the live entries;
+    // nothing else moves.
+    const catalog = JSON.parse(readFileSync(join(outDir, "es.json"), "utf8"));
+    assert.equal(catalog[key], `${key} [translated]`);
+    assert.deepEqual(Object.keys(catalog).slice(0, live.length), live);
+    assert.deepEqual(catalogProblems(catalog), []);
+    const sidecar = JSON.parse(readFileSync(join(outDir, ".sources", "es.json"), "utf8"));
+    assert.deepEqual(sidecarProblems(catalog, sidecar), { invalid: [], drift: [] });
+
+    // Once the replacement is committed the pin no longer matches: the next
+    // run leaves the string alone.
+    cpSync(join(outDir, "es.json"), join(tree, "src/locales/es.json"));
+    cpSync(join(outDir, ".sources", "es.json"), join(tree, "src/locales/.sources/es.json"));
+    const next = await languageWorkload(tree, "es");
+    assert.deepEqual(next.stale, []);
+    assert.ok(!next.missing.includes(key));
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("a value-only correction becomes a catalog-only diff that the translation gate accepts", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(0);
+  try {
+    // A UI change can add English strings that rock's catalogs do not hold
+    // yet; the next run would translate those too and move the sidecar. It can
+    // also retire a string, which the post-merge run prunes. Give this tree's
+    // es catalog every source and no dead entry, so the correction is all it
+    // does.
+    const { missing, sources } = await languageWorkload(tree, "es");
+    const catalog = JSON.parse(readFileSync(join(tree, "src/locales/es.json"), "utf8"));
+    const sidecar = JSON.parse(readFileSync(join(tree, "src/locales/.sources/es.json"), "utf8"));
+    let normalized = false;
+    for (const source of missing) {
+      catalog[source] = source;
+      sidecar[source] = hashSource(source);
+      normalized = true;
+    }
+    for (const key of Object.keys(catalog)) {
+      if (sources.has(key)) continue;
+      delete catalog[key];
+      delete sidecar[key];
+      normalized = true;
+    }
+    if (normalized) {
+      writeFileSync(join(tree, "src/locales/es.json"), JSON.stringify(catalog, null, 2) + "\n");
+      writeFileSync(join(tree, "src/locales/.sources/es.json"), JSON.stringify(sidecar, null, 2) + "\n");
+    }
+    const { key, value } = await glossaryEntry(tree);
+    writeContext(tree, { [key]: { retranslate: { es: value } } });
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client: stubClient(), log: quiet });
+    assert.equal(report.translated, 1);
+    // The files a pull request of this proposal would change, as git sees
+    // them: a byte difference against the committed tree.
+    const changedFiles = [
+      ["es.json", "src/locales/es.json"],
+      [".sources/es.json", "src/locales/.sources/es.json"],
+    ]
+      .filter(([proposal, committed]) => !readFileSync(join(outDir, proposal)).equals(readFileSync(join(tree, committed))))
+      .map(([, committed]) => committed);
+    assert.deepEqual(changedFiles, ["src/locales/es.json"], "the key-hash sidecar does not move");
+    const slug = "entropylab-translate";
+    assert.deepEqual(gateProblems({ author: `${slug}[bot]`, appSlug: slug, baseRef: "rock", headRef: "i18n/translate-es", changedFiles }), []);
+    cpSync(join(outDir, "es.json"), join(tree, "src/locales/es.json"));
+    assert.deepEqual(contentProblems(tree, "es"), [], "the unchanged sidecar still validates the corrected catalog");
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+// The es catalog a run would publish: its proposal if it wrote one, else the
+// committed catalog unchanged.
+const resultCatalog = (outDir, tree) => JSON.parse(readFileSync(existsSync(join(outDir, "es.json")) ? join(outDir, "es.json") : join(tree, "src/locales/es.json"), "utf8"));
+
+test("a retranslation without a required term or its exact wording is dropped, and the committed value stays", async () => {
+  for (const [label, field, problem] of [
+    ["mustContain", { mustContain: { es: ["Término exacto"] } }, 'context: must contain "Término exacto"'],
+    ["exact", { exact: { es: "Una frase exacta" } }, "context: must be exactly the committed correction"],
+  ]) {
+    const outDir = tmp();
+    const tree = await gappedRoot(0);
+    try {
+      const { key, value } = await glossaryEntry(tree);
+      writeContext(tree, { [key]: { retranslate: { es: value }, ...field } });
+      const client = stubClient();
+      const report = await translateLanguage({ root: tree, lang: "es", outDir, client, log: quiet });
+      assert.ok(report.dropped.some((d) => d.key === key && d.problem === problem), label);
+      const audited = client.calls.filter((c) => c.name === "audit").flatMap((c) => JSON.parse(c.messages[1].content).pairs.map((p) => p.key));
+      assert.ok(!audited.includes(key), `${label}: a rejected value never reaches the audit`);
+      // A failed correction changes nothing a reader sees; the pin still
+      // matches, so the next run tries again.
+      assert.equal(resultCatalog(outDir, tree)[key], value, label);
+      if (existsSync(join(outDir, "es.json"))) cpSync(join(outDir, "es.json"), join(tree, "src/locales/es.json"));
+      assert.deepEqual((await languageWorkload(tree, "es")).stale, [key], label);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+      rmSync(tree, { recursive: true, force: true });
+    }
+  }
+});
+
+test("a retranslation that matches its exact wording is written", async () => {
+  const outDir = tmp();
+  const tree = await gappedRoot(0);
+  try {
+    const { key, value } = await glossaryEntry(tree);
+    writeContext(tree, { [key]: { retranslate: { es: value }, exact: { es: `${key} [translated]` } } });
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client: stubClient(), log: quiet });
+    assert.equal(report.dropped.length, 0);
+    assert.equal(resultCatalog(outDir, tree)[key], `${key} [translated]`);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("an arrival equal to its exact correction lands even when the audit rejects it", async () => {
+  // The audit has rejected reviewed corrections as different from the
+  // identical text they had to equal (#918 es, #958 pt). An exact value is
+  // the committed, reviewed text, so it skips the audit; every other arrival
+  // in the same batch is still audited.
+  const outDir = tmp();
+  const tree = await gappedRoot(1);
+  try {
+    const { key, value } = await glossaryEntry(tree);
+    writeContext(tree, { [key]: { retranslate: { es: value }, exact: { es: `${key} [translated]` } } });
+    const { missing } = await languageWorkload(tree, "es");
+    const unpinned = missing.find((k) => k !== key);
+    assert.ok(unpinned, "the gapped tree has an unpinned missing key");
+    const client = stubClient({ auditFail: [key, unpinned] });
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client, log: quiet });
+    const catalog = resultCatalog(outDir, tree);
+    assert.equal(catalog[key], `${key} [translated]`, "the reviewed correction is written");
+    assert.equal(catalog[unpinned], undefined, "an audit-rejected unpinned key stays missing");
+    assert.ok(report.dropped.some((d) => d.key === unpinned && /semantic audit/.test(d.problem)), "the unpinned key is dropped by the audit");
+    assert.ok(!report.dropped.some((d) => d.key === key), "the exact value is not dropped");
+    const audited = client.calls.filter((c) => c.name === "audit").flatMap((c) => JSON.parse(c.messages[1].content).pairs.map((p) => p.key));
+    assert.ok(!audited.includes(key), "the exact value is not sent to the audit");
+    assert.ok(audited.includes(unpinned), "the unpinned value still is");
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("chat(): wire format carries the strict JSON schema and bearer auth, and retries transient 5xx with backoff", async () => {
   const seen = [];
+  const delays = [];
   const server = createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       seen.push({ auth: req.headers.authorization, body: JSON.parse(body) });
-      if (seen.length === 1) {
+      if (seen.length < 5) {
         res.writeHead(500).end("boom");
         return;
       }
@@ -163,29 +673,284 @@ test("chat(): wire format carries the strict JSON schema and bearer auth, and re
   try {
     const url = `http://127.0.0.1:${server.address().port}/v1/chat/completions`;
     const schema = translationSchema(["Save", "Cancel"]);
-    const out = await chat({ url, key: "sk-test", model: "m/test", name: "translate", schema, messages: [{ role: "user", content: "x" }] });
+    const out = await chat({ url, key: "sk-test", model: "m/test", name: "translate", schema, messages: [{ role: "user", content: "x" }], sleep: async (ms) => { delays.push(ms); } });
     assert.deepEqual(out, { ok: true });
-    assert.equal(seen.length, 2, "one retry after the 500");
-    const sent = seen[1];
+    assert.equal(seen.length, 5, "four retries after the 500s, then success");
+    assert.deepEqual(delays, [2000, 4000, 8000, 16000], "exponential backoff between attempts");
+    const sent = seen[4];
     assert.equal(sent.auth, "Bearer sk-test");
     assert.equal(sent.body.model, "m/test");
     assert.equal(sent.body.temperature, 0);
     assert.equal(sent.body.response_format.type, "json_schema");
     assert.equal(sent.body.response_format.json_schema.strict, true);
     assert.equal(sent.body.response_format.json_schema.schema.additionalProperties, false);
-    assert.deepEqual(sent.body.response_format.json_schema.schema.required, ["Save", "Cancel"]);
+    assert.deepEqual(sent.body.response_format.json_schema.schema.required, ["translations"]);
+    assert.deepEqual(sent.body.response_format.json_schema.schema.properties.translations.items.required, ["key", "translation"]);
   } finally {
     server.close();
   }
 });
 
 test("chat(): a non-retryable 4xx fails immediately", async () => {
+  const delays = [];
   const server = createServer((req, res) => res.writeHead(401).end("unauthorized"));
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const url = `http://127.0.0.1:${server.address().port}/`;
-    await assert.rejects(() => chat({ url, key: "k", model: "m", name: "t", schema: translationSchema(["a"]), messages: [] }), /HTTP 401/);
+    await assert.rejects(() => chat({ url, key: "k", model: "m", name: "t", schema: translationSchema(["a"]), messages: [], sleep: async (ms) => { delays.push(ms); } }), /HTTP 401/);
+    assert.deepEqual(delays, [], "a non-retryable 4xx never waits");
   } finally {
     server.close();
+  }
+});
+
+// A brief upstream rate limit (HTTP 429) must not fail a language: the call
+// backs off and retries, so one blip cannot block the publish job for every
+// language. The waits go through an injected sleep so the tests never really
+// wait; the delays they record are the contract.
+test("chat(): a 429 then success returns the result after one backoff wait", async () => {
+  const seen = [];
+  const delays = [];
+  const server = createServer((req, res) => {
+    seen.push(1);
+    if (seen.length === 1) {
+      res.writeHead(429).end("temporarily rate-limited upstream. Please retry shortly");
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: "{\"ok\": true}" } }] }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    const out = await chat({ url, key: "k", model: "m", name: "t", schema: {}, messages: [], sleep: async (ms) => { delays.push(ms); } });
+    assert.deepEqual(out, { ok: true });
+    assert.equal(seen.length, 2, "one retry after the 429");
+    assert.deepEqual(delays, [2000], "the retry waits out the first backoff step");
+  } finally {
+    server.close();
+  }
+});
+
+test("chat(): four 429s then success still returns the result", async () => {
+  const seen = [];
+  const delays = [];
+  const server = createServer((req, res) => {
+    seen.push(1);
+    if (seen.length < 5) {
+      res.writeHead(429).end("temporarily rate-limited upstream. Please retry shortly");
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: "{\"ok\": true}" } }] }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    const out = await chat({ url, key: "k", model: "m", name: "t", schema: {}, messages: [], sleep: async (ms) => { delays.push(ms); } });
+    assert.deepEqual(out, { ok: true });
+    assert.equal(seen.length, 5, "the fifth attempt succeeds");
+    assert.deepEqual(delays, [2000, 4000, 8000, 16000], "backoff doubles up to the fourth wait");
+  } finally {
+    server.close();
+  }
+});
+
+test("chat(): five 429s fail with the last error", async () => {
+  const seen = [];
+  const delays = [];
+  const server = createServer((req, res) => {
+    seen.push(1);
+    res.writeHead(429).end("temporarily rate-limited upstream. Please retry shortly");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    await assert.rejects(() => chat({ url, key: "k", model: "m", name: "t", schema: {}, messages: [], sleep: async (ms) => { delays.push(ms); } }), /HTTP 429/);
+    assert.equal(seen.length, 5, "no sixth attempt");
+    assert.deepEqual(delays, [2000, 4000, 8000, 16000]);
+  } finally {
+    server.close();
+  }
+});
+
+test("chat(): a Retry-After header on a 429 replaces the backoff wait", async () => {
+  const seen = [];
+  const delays = [];
+  const server = createServer((req, res) => {
+    seen.push(1);
+    if (seen.length === 1) {
+      res.writeHead(429, { "retry-after": "3" }).end("temporarily rate-limited upstream. Please retry shortly");
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: "{\"ok\": true}" } }] }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    const out = await chat({ url, key: "k", model: "m", name: "t", schema: {}, messages: [], sleep: async (ms) => { delays.push(ms); } });
+    assert.deepEqual(out, { ok: true });
+    assert.deepEqual(delays, [3000], "the server's Retry-After is honoured over the 2 s step");
+  } finally {
+    server.close();
+  }
+});
+
+test("chat(): a 400 fails after one attempt with no wait", async () => {
+  const seen = [];
+  const delays = [];
+  const server = createServer((req, res) => {
+    seen.push(1);
+    res.writeHead(400).end("bad request");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    await assert.rejects(() => chat({ url, key: "k", model: "m", name: "t", schema: {}, messages: [], sleep: async (ms) => { delays.push(ms); } }), /HTTP 400/);
+    assert.equal(seen.length, 1, "a bad request is never retried");
+    assert.deepEqual(delays, []);
+  } finally {
+    server.close();
+  }
+});
+
+// The real chat(): fence-wrapped JSON parses, and a truncated response is
+// retried rather than failing the whole language on a transient.
+const stubFetch = (bodies) => {
+  const calls = [];
+  return [calls, async (url, init) => {
+    calls.push(init.body);
+    const body = bodies[Math.min(calls.length - 1, bodies.length - 1)];
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: body } }] }) };
+  }];
+};
+
+test("chat strips markdown fences and retries a truncated response", async () => {
+  const realFetch = globalThis.fetch;
+  try {
+    const [calls, fenced] = stubFetch(["```json\n{\"a\": 1}\n```"]);
+    globalThis.fetch = fenced;
+    const fencedDelays = [];
+    assert.deepEqual(await chat({ url: "https://x", key: "k", model: "m", name: "n", schema: {}, messages: [], sleep: async (ms) => { fencedDelays.push(ms); } }), { a: 1 });
+    assert.deepEqual(fencedDelays, []);
+
+    const [retryCalls, truncThenGood] = stubFetch(["{\"a\": ", "{\"a\": 2}"]);
+    globalThis.fetch = truncThenGood;
+    const truncDelays = [];
+    assert.deepEqual(await chat({ url: "https://x", key: "k", model: "m", name: "n", schema: {}, messages: [], sleep: async (ms) => { truncDelays.push(ms); } }), { a: 2 });
+    assert.equal(retryCalls.length, 2, "a truncated response was not retried");
+    assert.deepEqual(truncDelays, [2000], "the retry waits out the first backoff step");
+
+    const [garbageCalls, garbage] = stubFetch(["not json at all"]);
+    globalThis.fetch = garbage;
+    const garbageDelays = [];
+    await assert.rejects(() => chat({ url: "https://x", key: "k", model: "m", name: "n", schema: {}, messages: [], sleep: async (ms) => { garbageDelays.push(ms); } }));
+    assert.equal(garbageCalls.length, 5, "persistent garbage is attempted at most five times");
+    assert.deepEqual(garbageDelays, [2000, 4000, 8000, 16000]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("chat(): an OK response whose body is cut off retries instead of failing the language", async () => {
+  // Translate run 39891870190: Spanish failed with "Unexpected end of JSON
+  // input", thrown by response.json() before any retry could run.
+  const realFetch = globalThis.fetch;
+  try {
+    const calls = [];
+    globalThis.fetch = async () => {
+      calls.push(1);
+      return { ok: true, status: 200, json: async () => {
+        if (calls.length === 1) throw new SyntaxError("Unexpected end of JSON input");
+        return { choices: [{ message: { content: "{\"ok\": true}" } }] };
+      } };
+    };
+    const delays = [];
+    assert.deepEqual(await chat({ url: "https://x", key: "k", model: "m", name: "n", schema: {}, messages: [], sleep: async (ms) => { delays.push(ms); } }), { ok: true });
+    assert.equal(calls.length, 2, "a cut-off body was not retried");
+    assert.deepEqual(delays, [2000]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("chat(): a 503 whose error body is cut off is still retried", async () => {
+  // GLM 5.3 and Kimi K3 on #1067: response.text() in the error branch ran
+  // outside any guard, so a dropped connection escaped the retry loop.
+  const realFetch = globalThis.fetch;
+  try {
+    const calls = [];
+    globalThis.fetch = async () => {
+      calls.push(1);
+      if (calls.length === 1) {
+        return { ok: false, status: 503, headers: { get: () => null }, text: async () => { throw new TypeError("terminated"); } };
+      }
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "{\"ok\": true}" } }] }) };
+    };
+    const delays = [];
+    assert.deepEqual(await chat({ url: "https://x", key: "k", model: "m", name: "n", schema: {}, messages: [], sleep: async (ms) => { delays.push(ms); } }), { ok: true });
+    assert.equal(calls.length, 2, "a 503 with a cut-off body was not retried");
+    assert.deepEqual(delays, [2000]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("chat(): an empty response retries like a truncated one", async () => {
+  const realFetch = globalThis.fetch;
+  try {
+    const calls = [];
+    globalThis.fetch = async () => {
+      calls.push(1);
+      // First call: no message content at all (provider cut the stream).
+      // Second: a good payload.
+      return { ok: true, status: 200, json: async () => (calls.length === 1
+        ? { choices: [{ message: {} }] }
+        : { choices: [{ message: { content: "{\"ok\": true}" } }] }) };
+    };
+    const delays = [];
+    assert.deepEqual(await chat({ url: "https://x", key: "k", model: "m", name: "n", schema: {}, messages: [], sleep: async (ms) => { delays.push(ms); } }), { ok: true });
+    assert.equal(calls.length, 2, "an empty response was not retried");
+    assert.deepEqual(delays, [2000], "the retry waits out the first backoff step");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("chat(): thrown errors carry their class — status for an HTTP failure, kind for content and network failures", async () => {
+  const realFetch = globalThis.fetch;
+  const thrownBy = async (fetchImpl) => {
+    globalThis.fetch = fetchImpl;
+    try {
+      await chat({ url: "https://x", key: "k", model: "m", name: "n", schema: {}, messages: [], sleep: async () => {} });
+    } catch (error) {
+      return error;
+    }
+    assert.fail("the call must throw");
+  };
+  try {
+    // An HTTP failure carries the response status, retryable or not.
+    const auth = await thrownBy(async () => ({ ok: false, status: 401, headers: { get: () => null }, text: async () => "unauthorized" }));
+    assert.equal(auth.status, 401);
+    assert.match(auth.message, /HTTP 401/);
+    const limited = await thrownBy(async () => ({ ok: false, status: 429, headers: { get: () => null }, text: async () => "slow down" }));
+    assert.equal(limited.status, 429);
+    // Every body/content failure — a cut-off body, no message content,
+    // unparseable JSON — is kind "content", with the message unchanged.
+    const cutOff = await thrownBy(async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError("Unexpected end of JSON input"); } }));
+    assert.equal(cutOff.kind, "content");
+    assert.equal(cutOff.message, "Unexpected end of JSON input");
+    const empty = await thrownBy(async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: {} }] }) }));
+    assert.equal(empty.kind, "content");
+    assert.equal(empty.message, "LLM response carried no message content");
+    const garbage = await thrownBy(async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "not json" } }] }) }));
+    assert.equal(garbage.kind, "content");
+    // A network failure is kind "network", with the original message.
+    const network = await thrownBy(async () => { throw new TypeError("fetch failed"); });
+    assert.equal(network.kind, "network");
+    assert.equal(network.message, "fetch failed");
+  } finally {
+    globalThis.fetch = realFetch;
   }
 });

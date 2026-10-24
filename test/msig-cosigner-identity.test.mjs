@@ -122,8 +122,9 @@ test("both duplicate checks and the final script guard use derivation identity",
   // Field-level and final validation compare hodlCanonicalMultisigKey output.
   assert.match(app, /function hodlDuplicateMultisigKey\(ta, parsed\) \{\s*let canonical = hodlCanonicalMultisigKey\(parsed\)/);
   assert.match(app, /canonical = hodlCanonicalMultisigKey\(parsed\);\s*if \(xpubs\.includes\(canonical\)\) throw hodlError\("Co-signer \{n\} duplicates an earlier co-signer\./);
-  // Final defense: a generated script never contains a repeated public key.
-  assert.match(app, /new Set\(publicKeys\.map\(hodlHex\.encode\)\)\.size !== publicKeys\.length/);
+  // Final defense: a generated script never contains a repeated public key —
+  // for Taproot a repeated x-only key, which multi_a treats as one signer.
+  assert.match(app, /new Set\(publicKeys\.map\(\(key\) => hodlHex\.encode\(kind === "p2tr" \? hodlXOnlyPubkey\(key\) : key\)\)\)\.size !== publicKeys\.length/);
   // Identity follows the node derived through any appended co-signer path.
   assert.match(app, /let node = hodlMsigDerivedNode\(parsed\), canonical = hodlCanonicalMultisigKey\(parsed\)/);
   // Identity ignores the reserialized extended key (which carries metadata).

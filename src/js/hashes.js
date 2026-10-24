@@ -51,9 +51,15 @@ export const hash160 = (bytes) => {
 export const hmacSha512 = (key, ...messages) => {
   assertBytes(key, "HMAC key");
   const message = concatBytes(...messages);
-  return withInput(key, (k) =>
-    withInput(message, (m) => withOutput(64, (out) => wasm().el_hmac_sha512(k, key.length, m, message.length, out)))
-  );
+  try {
+    return withInput(key, (k) =>
+      withInput(message, (m) => withOutput(64, (out) => wasm().el_hmac_sha512(k, key.length, m, message.length, out)))
+    );
+  } finally {
+    // BIP85 passes the child private key as the message; the WASM copy is
+    // zeroed by el_free, but this JS copy is not.
+    message.fill(0);
+  }
 };
 
 // RFC 2898 over HMAC-SHA-512 (BIP39 seeds, Electrum seeds). `iterations` is

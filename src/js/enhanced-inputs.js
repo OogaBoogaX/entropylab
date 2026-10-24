@@ -2,7 +2,17 @@
 // controls this file touches — text/number inputs are handled elsewhere).
 (() => {
   const enhanced = new WeakSet();
+  // Held weakly: a custom select the page drops is not kept here, nor what the
+  // handlers of its select hold, such as a seed word picker and the key state
+  // behind it (#546 B3).
   const roots = new Set();
+  const eachRoot = (visit) => {
+    for (const ref of roots) {
+      const root = ref.deref();
+      if (root) visit(root);
+      else roots.delete(ref);
+    }
+  };
 
   const close = (root) => {
     root.classList.remove("open");
@@ -11,7 +21,7 @@
   };
 
   const closeAll = (except) => {
-    roots.forEach((root) => {
+    eachRoot((root) => {
       if (root !== except) close(root);
     });
   };
@@ -45,7 +55,7 @@
     list.hidden = true;
     root.append(button, list);
     select.after(root);
-    roots.add(root);
+    roots.add(new WeakRef(root));
 
     // A select may hand the list an icon for each value: the option keeps its
     // plain text for the native control and assistive tech, and the custom
@@ -59,12 +69,20 @@
       span.textContent = text;
       return span;
     };
+    // An option marked data-i18n-skip shows data, a seed word: the row and the
+    // button that repeat its text carry the mark too, so the translation sweep
+    // leaves every copy of it alone.
+    const markLike = (element, option) => {
+      if (option?.dataset.i18nSkip !== undefined) element.dataset.i18nSkip = "";
+      else delete element.dataset.i18nSkip;
+    };
 
     const sync = () => {
       const selected = select.options[select.selectedIndex] || select.options[0];
       const selectedIcon = iconFor(selected);
       if (selectedIcon) label.replaceChildren(selectedIcon, textSpan(selected?.textContent || "Select"));
       else label.textContent = selected?.textContent || "Select";
+      markLike(label, selected);
       const visibleOptions = [...select.options].filter((option) => option.dataset.customSelectPlaceholder !== "true");
       list.replaceChildren(...visibleOptions.map((option) => {
         const item = document.createElement("button");
@@ -76,6 +94,7 @@
         const optionIcon = iconFor(option);
         if (optionIcon) item.replaceChildren(optionIcon, textSpan(option.textContent));
         else item.textContent = option.textContent;
+        markLike(item, option);
         item.onclick = (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -139,7 +158,7 @@
   }).observe(document.body, { childList: true, subtree: true });
 
   document.addEventListener("click", (event) => {
-    roots.forEach((root) => {
+    eachRoot((root) => {
       if (!root.contains(event.target)) close(root);
     });
   });

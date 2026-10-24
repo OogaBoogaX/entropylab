@@ -42,12 +42,17 @@ Create it, then:
 
 ## 2. Configure the repository
 
-Settings → Secrets and variables → Actions:
+Secrets go in the `release` Environment, never at repository level: both
+translation jobs declare `environment: release`, and that environment's
+deployment-branch policy admits only `rock`, so a job on a collaborator's
+branch cannot read them (audit SC-1). Settings → Environments → `release`
+→ Environment secrets. Variables stay at repository level: Settings →
+Secrets and variables → Actions → Variables.
 
 | Kind | Name | Value |
 | --- | --- | --- |
-| Secret | `TRANSLATION_APP_PRIVATE_KEY` | full `.pem` contents, including the BEGIN/END lines |
-| Secret | `TRANSLATE_API_KEY` | API key for the chat-completions endpoint (e.g. an OpenRouter key) |
+| Environment secret | `TRANSLATION_APP_PRIVATE_KEY` | full `.pem` contents, including the BEGIN/END lines |
+| Environment secret | `TRANSLATE_API_KEY` | API key for the chat-completions endpoint (e.g. an OpenRouter key) |
 | Variable | `TRANSLATION_APP_ID` | the App ID from step 1 |
 | Variable | `TRANSLATION_APP_SLUG` | the App's slug, without `[bot]` |
 | Variable | `TRANSLATE_MODEL` | model id, e.g. `anthropic/claude-sonnet-4` on OpenRouter |
@@ -96,16 +101,61 @@ If a translation PR stalls: check that auto-merge is allowed (step 3), that
 the gate and suite checks are required *and* passing, and read the job log —
 the publish step fails loudly with the reason.
 
+## 5. Correct a committed translation
+
+The automation fills only missing strings, so a wrong translation stays
+wrong, and a hand edit to `src/locales/` fails the gate. Fix it through
+`scripts/i18n-context.json` (issue #862) in an ordinary reviewed PR, keyed by
+the English string:
+
+```json
+{
+  "Output public key": {
+    "note": "A label, not an instruction: \"Output\" is a transaction output.",
+    "retranslate": { "de": "Öffentlichen Schlüssel ausgeben" },
+    "exact": { "de": "Öffentlicher Output-Schlüssel" }
+  }
+}
+```
+
+- `retranslate` pins the exact committed value to replace. While the
+  catalog still holds it, the next run translates the string again and puts
+  the result in the same place. After the bot's PR merges, the pin no longer
+  matches and the entry has no further effect, so leave it or delete it.
+- `note` (all languages) and `noteByLanguage` reach both the translate and
+  audit calls whenever the string is translated.
+- `exact` is the reviewed wording itself. Use it when only part of a
+  committed sentence is wrong: copy the committed sentence and change just
+  that part, so its words, punctuation, quotation marks and length stay as
+  readers know them. Any other translation is rejected.
+- `mustContain` lists text a translation must include, such as a browser's
+  own name for a setting, when the rest of the wording is left to the model.
+- A translation that fails `exact` or `mustContain` is dropped. A missing
+  string then stays English, and a pinned string keeps its committed value,
+  so a failed correction changes nothing on screen and the next run tries
+  again.
+- Translations only ever change words. The validator rejects any
+  translation whose tags differ from its English string's, so none can add
+  bold, code or a line break, or drop a link. Translations render inside
+  the same elements as the English, so fonts, sizes and colours come from
+  the page's CSS.
+
+Merging the context file starts a run (it matches `scripts/i18n-*`). A test
+fails if an entry names a string that is no longer in the source, so an
+English change that retires a string must update the file too.
+
 ## Security boundaries (what not to weaken)
 
 - Job A has `contents: read` and the LLM secret; it cannot write the repo.
 - Job B has the App token and never receives `TRANSLATE_API_KEY`.
-- The model receives only committed English strings and committed catalog
-  examples — never issue/PR text or web content — and returns
-  schema-constrained JSON.
-- The gate checks App identity, branch namespace, the exact two-file scope
-  (`src/locales/<lang>.json` + `src/locales/.sources/<lang>.json`), and
-  catalog/sidecar validity — the label alone is never trusted.
+- The model receives only committed English strings, committed catalog
+  examples and the committed `scripts/i18n-context.json` — never issue/PR
+  text or web content — and returns schema-constrained JSON.
+- The gate checks App identity, branch namespace, the one-language scope
+  (`src/locales/<lang>.json`, plus `src/locales/.sources/<lang>.json` when
+  keys change; a value-only correction leaves the sidecar as is), and
+  catalog/sidecar validity of both files on disk — the label alone is never
+  trusted.
 - Auto-merge binds the exact head SHA; a branch that moves after publication
   aborts the merge.
 - The runtime sanitizer (`src/js/i18n-sanitize.js`) remains the final

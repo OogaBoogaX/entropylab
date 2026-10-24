@@ -24,6 +24,13 @@ test("a text payload is quoted in the row's decode line", () => {
   assert.match(summary.text, /^OP_RETURN · 14 bytes · “Hello, Bitcoin”$/);
 });
 
+// e2 80 ae is U+202E (right-to-left override): raw, it would reorder the row.
+test("the quoted payload neutralizes bidi and invisible characters (audit S36-2)", () => {
+  const summary = opReturnSummary(OP_RETURN + push("616263e280ae646566"), 0);
+  assert.ok(!summary.text.includes("\u202E"), "the row carries a live bidi override");
+  assert.ok(summary.text.includes("abc\uFFFDdef"), "the override is named by the replacement character");
+});
+
 test("a binary payload shows as hex", () => {
   const summary = opReturnSummary(OP_RETURN + push("deadbeefcafe"), 0);
   assert.match(summary.text, /6 bytes/);

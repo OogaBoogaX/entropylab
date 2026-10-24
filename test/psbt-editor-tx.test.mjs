@@ -101,7 +101,7 @@ test("the last input cannot be deleted: a zero-input unsigned tx does not round-
   assert.throws(() => psbtBuildBytes(psbtEditorBuildDoc(doc)));
   // …which is why the delete control is withheld when one input remains.
   const editor = read("src/js/psbt-editor.js");
-  assert.match(editor, /tx\.inputs\.length > 1 \? `<button type="button" class="psbted-del" data-txin-del=/);
+  assert.match(editor, /tx\.inputs\.length > 1 \? `<button [^>]*data-txin-del=/);
 });
 
 test("the editor renders the structural controls for inputs and outputs", () => {
@@ -159,7 +159,7 @@ test("dropSigningPairs removes exactly the transaction-committing fields (issues
   assert.ok(psbtBuildBytes(psbtEditorBuildDoc(doc)).length > 0);
 });
 
-test("dropSigningPairs removes MuSig2 session material but keeps participant pubkeys (BIP-327, issue #325)", () => {
+test("dropSigningPairs removes MuSig2 session material but keeps participant pubkeys (BIP-373, issue #325)", () => {
   const doc = fixtureDoc();
   doc.inputs[0].push(
     { key: "1a" + "02".repeat(33), value: "02" + "03".repeat(33) }, // participant pubkeys: message-independent, stay

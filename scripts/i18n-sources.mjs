@@ -6,8 +6,8 @@
 // Source strings come from exactly three places:
 //   1. t("…") / hodlT(…) / hodlTText(…) / hodlTAttr(…) / hodlError(…) /
 //      hodlNote(…) literals in src/js — the English text is the catalog key
-//      (bare t( only in the standalone pre-boot scripts, where it aliases
-//      globalThis.hodlT/hodlTText);
+//      (including local names imported from i18n.js and bare t( in the
+//      standalone pre-boot scripts, where it aliases globalThis.hodlT/hodlTText);
 //   2. every string exported from src/js/i18n-labels.js (the enum-indexed
 //      label families);
 //   3. text nodes, aria-label/placeholder/title attributes, and
@@ -48,15 +48,19 @@ const callSites = (root) => {
   const files = readdirSync(join(root, "src/js")).filter((name) => name.endsWith(".js"));
   for (const name of files) {
     const src = readFileSync(join(root, "src/js", name), "utf8");
-    // Bare t() is an i18n alias only in the two standalone pre-boot scripts;
-    // everywhere else it is an ordinary local variable. app.js imports the
-    // three sink-specific translators under the hodlT/hodlTText/hodlTAttr
-    // names; the longest names come first so the alternation cannot match a
-    // prefix. The field helpers take the English label as their first
-    // argument and translate it internally, so their literals are sources too.
-    const translating = ["hodlPublicFieldHtml", "hodlPrivateFieldHtml", "hodlTText", "hodlTAttr", "hodlT", "hodlError", "hodlNote"];
+    // The field helpers translate their first argument internally. Module
+    // imports tell us which other local names are translators; an unrelated
+    // t() in another file must not contribute catalog entries.
+    const translating = ["hodlPublicFieldHtml", "hodlPrivateKeyFieldHtml", "hodlPrivateFieldHtml", "hodlTText", "hodlTAttr", "hodlT", "hodlError", "hodlNote"];
     const fns = name === "wallet-export.js" || name === "network-check.js" ? [...translating, "t"] : translating;
-    const pattern = new RegExp(`(?:^|[^\\w$.])(?:${fns.join("|")})\\(`, "gm");
+    for (const match of src.matchAll(/\bimport\s*\{([^}]+)\}\s*from\s*["']\.\/i18n\.js["']/g)) {
+      for (const specifier of match[1].split(",")) {
+        const binding = specifier.trim().match(/^(t|tHtml|tAttr)(?:\s+as\s+([\w$]+))?$/);
+        if (binding) fns.push(binding[2] || binding[1]);
+      }
+    }
+    const names = [...new Set(fns)].map((fn) => fn.replace(/\$/g, "\\$"));
+    const pattern = new RegExp(`(?:^|[^\\w$.])(?:${names.join("|")})\\(`, "gm");
     for (const match of src.matchAll(pattern)) {
       for (const text of firstArgLiterals(src, match.index + match[0].length)) {
         if (normalize(text)) found.add(text);

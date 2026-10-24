@@ -50,7 +50,10 @@ test("job B holds the App token but never the LLM secret, and revalidates", () =
   const job = jobBlock(translate, "publish");
   assert.ok(job, "publish job exists");
   assert.match(job, /needs: \[translate\]/);
-  assert.ok(job.includes("create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1"), "pinned App-token action");
+  // Exact on purpose: this action receives the App's private key and mints the
+  // write-capable token, so a bump has to change this line as well, and its
+  // reviewer signs off on the new commit. The test above only checks the form.
+  assert.ok(job.includes("create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510"), "pinned App-token action (v3.3.0)");
   assert.ok(job.includes("secrets.TRANSLATION_APP_PRIVATE_KEY"));
   assert.ok(!job.includes("TRANSLATE_API_KEY"), "the LLM secret never crosses into the write-capable job");
   assert.ok(job.includes("i18n-publish.mjs"), "runs the publisher");
@@ -85,3 +88,20 @@ test("the operator runbook documents the App, secrets, label, and branch protect
   }
 });
 
+
+test("the validate steps filter to language catalogs, so the run's report.json is not validated as a catalog", () => {
+  // Run 36285617009 translated and validated all four languages, then failed
+  // only because the glob caught out/i18n/report.json, which is not a
+  // catalog. Both validate steps must use the language-file pattern.
+  assert.ok(!translate.includes("files=(out/i18n/*.json)"), "a bare *.json glob would catch report.json");
+  const pattern = (translate.match(/\^\[a-z\]\{2\}\(-\[a-z0-9\]\+\)\?\\.json\$/g) || []).length;
+  assert.ok(pattern >= 2, "both validate steps need the language-file pattern");
+});
+
+test("the proposals upload includes hidden files (the .sources sidecars)", () => {
+  // Run 36303976931: all four languages translated and validated, then the
+  // publish job failed every one on a missing sidecar — upload-artifact
+  // drops the hidden .sources/ directory without include-hidden-files.
+  const upload = translate.match(/name: Upload proposals[\s\S]*?include-hidden-files: true/);
+  assert.ok(upload, "the proposals upload must carry the hidden .sources/ sidecars");
+});

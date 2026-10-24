@@ -18,6 +18,36 @@ function skipQuoted(source, start, quote) {
   return source.length;
 }
 
+// A "/" opens a regex literal where an expression can start: after an
+// operator, an opening bracket, a comma or semicolon, a keyword such as
+// return, or first on a line. Inside one, a quote or backtick is a plain
+// character; reading it as a string start throws every later quote out of
+// step (app.js's derivation-path regex /^(\d+)([hH']?)$/ did, and the scan
+// silently missed much of the file). Returns the index after the literal, or
+// -1 when the "/" is division.
+function regexEnd(source, index) {
+  let before = index - 1;
+  while (before >= 0 && (source[before] === " " || source[before] === "\t")) before--;
+  const previous = before < 0 ? "\n" : source[before];
+  const word = /[A-Za-z_$]+$/.exec(source.slice(Math.max(0, before - 10), before + 1))?.[0] ?? "";
+  const opens = "(,=:[!&|?{};+-*%<>~^\n".includes(previous) || ["return", "typeof", "case", "in", "of", "delete", "void", "throw"].includes(word);
+  if (!opens || source[index + 1] === "/" || source[index + 1] === "*") return -1;
+  let inClass = false;
+  for (let i = index + 1; i < source.length; i++) {
+    const c = source[i];
+    if (c === "\\") i++;
+    else if (c === "\n") return -1;
+    else if (c === "[") inClass = true;
+    else if (c === "]") inClass = false;
+    else if (c === "/" && !inClass) {
+      i++;
+      while (/[a-z]/i.test(source[i] ?? "")) i++;
+      return i;
+    }
+  }
+  return -1;
+}
+
 function updateHtmlState(state, character) {
   if (state.attributeQuote) {
     if (character === state.attributeQuote) state.attributeQuote = "";
@@ -59,6 +89,8 @@ function templateInterpolations(source) {
         index = skipLineComment(index);
       } else if (source.startsWith("/*", index)) {
         index = skipBlockComment(index);
+      } else if (character === "/" && regexEnd(source, index) > 0) {
+        index = regexEnd(source, index);
       } else if (character === "{") {
         depth++;
         index++;
@@ -106,6 +138,7 @@ function templateInterpolations(source) {
     else if (character === "`") index = scanTemplate(index);
     else if (source.startsWith("//", index)) index = skipLineComment(index);
     else if (source.startsWith("/*", index)) index = skipBlockComment(index);
+    else if (character === "/" && regexEnd(source, index) > 0) index = regexEnd(source, index);
     else index++;
   }
   return interpolations.sort((left, right) => left.start - right.start);
@@ -244,6 +277,17 @@ test("the guard allows safe attribute helpers, element content, and DOM APIs", (
   assert.equal(count('`<p class="x">\n${hodlT("k")}\n</p>`'), 0);
   assert.equal(count('const markup = `<div aria-label="safe">`; const plain = "${hodlT(\'k\')}";'), 0);
   assert.equal(count('element.setAttribute("aria-label", hodlT("k"));'), 0);
+});
+
+test("a regex literal with a quote or backtick in it does not blind the guard", () => {
+  const count = (source) => attributeContextCalls(source).length;
+  // app.js's derivation-path regex once threw every later quote out of step,
+  // and the scan silently missed much of the file.
+  assert.equal(count('const r = /^(\\d+)([hH\']?)$/; `<div title="${hodlT("k")}">`'), 1);
+  assert.equal(count('const isTick = (y) => /`/.test(y); `<div title="${hodlT("k")}">`'), 1);
+  assert.equal(count('function q(y) { return y.match(/"/g); } `<div title="${hodlT("k")}">`'), 1);
+  // Division is not a regex, and a scan that took it for one would be lost too.
+  assert.equal(count('const half = a / 2, third = b / 3; `<div title="${hodlT("k")}">`'), 1);
 });
 
 test("the guard covers natural imports, aliases, wrappers, and unquoted attributes", () => {

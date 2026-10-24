@@ -325,7 +325,9 @@ const parseReport = (file) => {
   const lines = readFileSync(file, "utf8").trim().split("\n");
   const results = lines.map((line) => {
     const [status, name, error] = line.split("\t");
-    return { ok: status === "ok", name: name ?? "", error: error ?? "" };
+    // "skip" is a check the browser cannot run; its third field is the reason.
+    const skip = status === "skip";
+    return { ok: status === "ok" || skip, skip: skip ? error ?? "" : "", name: name ?? "", error: skip ? "" : error ?? "" };
   });
   return {
     checks: results.length,
@@ -343,8 +345,10 @@ const tail = (file, maxLines = 120) => {
 // concurrently and fail on any failed check in either report.
 const runEngine = (engine, staging, port) => async () => {
   const { downloadDir, onlineProfile, offlineProfile } = stageEngine(engine, staging.workDir);
-  const onlineUrl = `http://127.0.0.1:${port}/browser-tests.html?online-preview=1&test-keys=8`;
-  const offlineUrl = `${pathToFileURL(staging.testHtmlPath).href}?offline-test=1`;
+  // `engine` tells the suite which browser this is, independently of the
+  // page's own detection (End session's Edge warning).
+  const onlineUrl = `http://127.0.0.1:${port}/browser-tests.html?online-preview=1&test-keys=8&engine=${engine.id}`;
+  const offlineUrl = `${pathToFileURL(staging.testHtmlPath).href}?offline-test=1&engine=${engine.id}`;
   const onlineLog = join(staging.workDir, `${engine.id}-online.log`);
   const offlineLog = join(staging.workDir, `${engine.id}-offline.log`);
   const browsers = [
@@ -356,10 +360,11 @@ const runEngine = (engine, staging, port) => async () => {
     const offlineReport = join(downloadDir, "offline-results.txt");
     // Watchdog, not a performance budget: this only detects a hung browser.
     // CI runners render in software and the online and offline instances share
-    // a CPU, so Firefox there needs close to a minute for the full suite.
+    // a CPU. Firefox there needs close to a minute alone, and longer when the
+    // job is also launching Chromium. 150s timed out on #802 with no report.
     const [onlineDone, offlineDone] = await Promise.all([
-      waitForFile(onlineReport, 150000),
-      waitForFile(offlineReport, 150000),
+      waitForFile(onlineReport, 240000),
+      waitForFile(offlineReport, 240000),
     ]);
     assert.ok(
       onlineDone && offlineDone,
@@ -378,7 +383,7 @@ const runEngine = (engine, staging, port) => async () => {
     for (const result of all) {
       counter += 1;
       if (result.ok) {
-        console.log(`ok ${counter} - ${engine.id}: ${result.name}`);
+        console.log(`ok ${counter} - ${engine.id}: ${result.name}${result.skip ? ` # SKIP ${result.skip}` : ""}`);
       } else {
         console.error(`not ok ${counter} - ${engine.id}: ${result.name}`);
         console.error(`  ${result.error}`);
@@ -391,7 +396,8 @@ const runEngine = (engine, staging, port) => async () => {
       0,
       `${failures.length} ${engine.label} integration test(s) failed: ${failures.map((f) => `${f.name}: ${f.error}`).join("; ")}`,
     );
-    console.log(`All ${counter} cryptographic and browser integration checks passed in ${engine.label}.`);
+    const skips = all.filter((result) => result.skip).length;
+    console.log(`All ${counter} cryptographic and browser integration checks passed in ${engine.label}${skips ? `, ${skips} skipped (see # SKIP above)` : ""}.`);
   } finally {
     for (const browser of browsers) {
       browser.kill("SIGKILL");

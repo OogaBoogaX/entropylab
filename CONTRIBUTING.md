@@ -32,10 +32,10 @@ tool manufactures randomness, "I verified the output" stops being true.
 **In policy:** deterministic transformations of user input (same input → same
 output), user-typed randomness, and fixed published test vectors.
 
-**The one exception (already in the code):** the Heads/Tails control uses
-`crypto.getRandomValues()` only to pick which *equivalent* die face to display
-(1–3 = Heads, 4–6 = Tails). The number is discarded on render and carries zero
-entropy. New exceptions: argue them in an issue first, never in a pull request.
+There is no exception in the code: Heads/Tails and coin-flip entry record a
+fixed equivalent die face deterministically, so no browser randomness is used
+anywhere (the former die-face display exception was removed in 3b1ea62). New
+exceptions: argue them in an issue first, never in a pull request.
 
 ## 2. Keep it simple
 
@@ -70,6 +70,17 @@ browser test that asserts this must stay green.
   `rust-toolchain.toml`), runs its test suite against the fresh build, and
   commits the artifact back to `rock` after each merge (same flow as
   `entropylab.html`).
+- Reproducibility is enforced, not assumed: `npm run reproduce` builds the
+  working tree twice from different staging paths and requires identical
+  digests, and the `reproduce` CI job requires the same commit to build to
+  identical bytes on the runner and inside the pinned dev image — including
+  the WASM modules, built twice inside the image, and those builds must match
+  the modules the `build-wasm` job compiled in that same image. The artifact
+  commit and the Pages deploy wait for that job. The image pins one clang
+  version. A host `npm run build:wasm` is not the release
+  bytes. Rebuilds on other machines that matched the published hashes are
+  recorded in [docs/Reproductions.md](docs/Reproductions.md); add a row when
+  you reproduce a release.
 
 ```sh
 git clone https://github.com/OogaBoogaX/entropylab.git && cd entropylab
@@ -80,7 +91,8 @@ npm test
 ```
 
 Useful commands (same as CI): `npm run build`, `npm run verify`,
-`npm run test:validate`, `npm run test:browser` (runs every installed
+`npm run reproduce`, `npm run test:validate`, `npm run test:browser` (runs
+every installed
 engine: Firefox, Chrome/Chromium, Microsoft Edge — an installed browser
 is required; set `FIREFOX_BINARY` / `CHROME_BINARY` / `EDGE_BINARY` to
 point the harness at a specific one), `npm run ci`. `npm run build:wasm`
@@ -134,12 +146,30 @@ for UI testing only and must never receive funds. The loader and its
 - **Docs:** user-facing or security-model changes require `README.md` /
   `SECURITY.md` updates in the same pull request.
 - **Tests:** new or changed behaviour needs a test; published vectors (BIP39,
-  BIP32, Bitcoin Core) are preferred. Changes to security-sensitive validation,
-  cryptography, scripts, or transaction/PSBT parsing must cover both accepted
-  and rejected inputs. For bug fixes, add a regression case that fails before
-  the fix when practicable, and explain any identified negative case that is
-  intentionally out of scope. Never weaken, skip, or delete an existing test
-  to make CI pass — if it is wrong, say why.
+  BIP32, Bitcoin Core) are preferred. Security-sensitive changes — derivation,
+  parsing, validation, verification, cryptography, consensus-sensitive
+  behaviour, scripts, transaction/PSBT handling, network-silence, and "we do
+  not invent entropy" — must cover accepted and rejected inputs where both
+  apply. Write or extend that test first and run it on current sources before
+  changing production code: a bug-fix or tighter-validation case must fail for
+  the claimed reason; a new capability may first fail as a missing export/API
+  but must already carry an independently determined expected result or
+  rejection. Coverage-only changes may start green; behaviour-preserving
+  refactors must keep relevant tests green before and after. For these cases,
+  record the unchanged contract and passing commands instead of manufacturing
+  a failure. Expected values must not come from the code under test.
+  Established independent reference libraries and differential tests are
+  allowed; identify the reference and contract, retain applicable published
+  vectors and rejection cases, and follow dependency-review requirements.
+  Do not invent a second implementation alongside the change as the sole
+  oracle. For bug fixes, tighter validation, and new capabilities, list the
+  failing-then-passing command in the pull request. See `AGENTS.md` for the
+  full rule. Never weaken, skip, or delete an existing test to make CI pass —
+  if it is wrong, say why.
+- **External findings:** a finding from an audit, a red team, or an outside
+  report is not closed until its pull request adds a regression test that
+  fails on the old bytes and passes on the fix. Name that test in the pull
+  request.
 - **Translations:** user-facing text is written in English and translated
   content-keyed — the English string at the call site is the catalog key
   (`t("Save watch-only sheet")`), and a content sweep translates static markup

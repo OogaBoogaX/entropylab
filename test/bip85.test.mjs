@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HDKey } from "@scure/bip32";
-import { validateMnemonic } from "@scure/bip39";
+import { entropyToMnemonic, validateMnemonic } from "@scure/bip39";
 import { wordlist as bip39English } from "@scure/bip39/wordlists/english.js";
 import { hex as hexCoder } from "@scure/base";
 import {
@@ -176,10 +176,24 @@ test("range checks reject values the BIP does not define", () => {
   assert.throws(() => deriveApplication(root, { app: "rsa" }), /Unknown BIP-85 application/);
 });
 
+test("parseChildIndex accepts plain decimal notation only (audit A1H-3)", () => {
+  // Number() reads "1e3" as 1000 and "0x10" as 16: anyone typing those
+  // derives a different child than the digits on screen suggest.
+  assert.equal(parseChildIndex("1000"), 1000);
+  assert.equal(parseChildIndex(" 42 "), 42);
+  assert.equal(parseChildIndex("007"), 7);
+  assert.equal(parseChildIndex(INDEX_MAX), INDEX_MAX);
+  for (const bad of ["1e3", "1E3", "0x10", "0b101", "1_000", "5.0", "+5", "-1", "", "   ", "abc", "12 34"]) {
+    assert.throws(() => parseChildIndex(bad), /0 to 2147483647/, JSON.stringify(bad));
+  }
+});
+
 test("watch-only roots cannot derive children", () => {
   let watch = HDKey.fromExtendedKey(root.publicExtendedKey);
   assert.equal(watch.privateKey, null);
-  assert.throws(() => deriveBip39(watch, { words: 12 }), /private key|Watch-only/);
+  // Refused inside derive(): the fully-hardened path rejects a watch-only
+  // node before any private key exists, with no copying preflight (#546).
+  assert.throws(() => deriveBip39(watch, { words: 12 }), /private key|Watch-only|hardened child key/);
 });
 
 test("wiping a result discards secret bytes", () => {
@@ -224,8 +238,8 @@ test("the mnemonic load path follows the session network like the xprv path", ()
     throw new Error(name);
   };
   const hodlUseKeyForBip85 = new Function(
-    "hodlBip85WipeParent", "hodlMnemonicToSeed", "hodlHDKey", "hodlWipeBytes", "hodlNetworkFamily", "hodlParseExtendedKey",
-    `${slice("hodlNetworkFamily")}; ${slice("hodlUseKeyForBip85")}; return hodlUseKeyForBip85;`,
+    "hodlBip85WipeParent", "hodlMnemonicToSeed", "hodlHDKey", "hodlWipeBytes", "hodlNetworkFamily", "hodlParseExtendedKey", "hodlResultRootNode", "hodlEntropyToMnemonic", "hodlBip39Wordlist",
+    `${slice("hodlNetworkFamily")}; ${slice("hodlResultHasSeed")}; ${slice("hodlResultMnemonic")}; ${slice("hodlSeedSessionRoot")}; ${slice("hodlUseKeyForBip85")}; return hodlUseKeyForBip85;`,
   )(
     () => {},
     () => new Uint8Array(64), // a stand-in seed; only the flag is under test
@@ -233,8 +247,12 @@ test("the mnemonic load path follows the session network like the xprv path", ()
     (bytes) => bytes.fill(0),
     undefined, // hodlNetworkFamily is sliced in
     undefined, // hodlParseExtendedKey is not reached by the mnemonic branch
+    undefined, // hodlResultRootNode is not reached: these results carry seed entropy, not a root node
+    entropyToMnemonic,
+    bip39English,
   );
-  const state = (network) => ({ id: "k1", name: "test", fields: { pass: "" }, result: { kind: "hd", mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", network } });
+  // A seed key as a station session carries it: its BIP39 entropy as bytes (#546 B3).
+  const state = (network) => ({ id: "k1", name: "test", fields: { pass: "" }, result: { kind: "hd", entropy: new Uint8Array(16), network } });
   hodlUseKeyForBip85(state("testnet"));
   assert.equal(globalThis.hodlBip85Testnet, true, "a testnet mnemonic session must yield testnet-version children");
   hodlUseKeyForBip85(state("mainnet"));
@@ -244,4 +262,11 @@ test("the mnemonic load path follows the session network like the xprv path", ()
   assert.doesNotMatch(useKey, /hodlBip85Testnet = false/);
   assert.ok((useKey.match(/hodlNetworkFamily\(result\.network\) === "testnet"/g) || []).length >= 2, "mnemonic and xprv paths both read the session network");
   delete globalThis.hodlBip85Testnet;
+});
+
+test("a root path is refused without wiping the caller's root", () => {
+  const root = HDKey.fromExtendedKey(MASTER);
+  assert.throws(() => deriveBip85Entropy(root, "m"), /root/);
+  assert.throws(() => deriveBip85Entropy(root, "m'"), /root/);
+  assert.ok(root.privateKey, "the caller-owned root still has its private key");
 });

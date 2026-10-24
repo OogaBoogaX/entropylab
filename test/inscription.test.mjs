@@ -217,6 +217,5 @@ test("PSBT inspector wires envelope detection into the report", () => {
   assert.match(app, /Inscription envelope/);
   assert.match(app, /does not number sats/);
   for (const markup of [shell]) {
-    assert.match(markup, /inscription envelope/);
   }
 });

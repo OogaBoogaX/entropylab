@@ -95,12 +95,11 @@ class FakeMutationObserver {
   }
 }
 
-function makeHarness({ optionIcon } = {}) {
-  const options = [
-    { value: "mainnet", textContent: "Bitcoin mainnet", disabled: false, dataset: {} },
-    { value: "testnet", textContent: "Testnet (practice)", disabled: false, dataset: {} },
-  ];
-  const select = new FakeSelect(options, "mainnet");
+function makeHarness({ optionIcon, options = [
+  { value: "mainnet", textContent: "Bitcoin mainnet", disabled: false, dataset: {} },
+  { value: "testnet", textContent: "Testnet (practice)", disabled: false, dataset: {} },
+], value = "mainnet" } = {}) {
+  const select = new FakeSelect(options, value);
   const body = new FakeElement("body");
   const listeners = new Map();
   const document = {
@@ -289,4 +288,29 @@ test("a select without the hook keeps its plain option text", () => {
   assert.equal(label.children.length, 0, "no wrapper is introduced without a mark");
   assert.equal(list.children[0].textContent, "Bitcoin mainnet");
   assert.equal(list.children[0].children.length, 0);
+});
+
+// #610: an option marked data-i18n-skip shows a seed word, which the page's
+// translation sweep must leave alone. Its row carries the mark, and the button
+// carries it exactly while it shows that option.
+test("the rows and the button keep an option's data-i18n-skip, and only that option's", () => {
+  const { select, root } = makeHarness({
+    options: [
+      { value: "choose", textContent: "Choose a confirmed final word", disabled: false, dataset: {} },
+      { value: "account", textContent: "account", disabled: false, dataset: { i18nSkip: "" } },
+    ],
+    value: "choose",
+  });
+  const label = root.children[0].children[0];
+  const list = root.children[1];
+  assert.deepEqual(list.children.map((row) => row.dataset.i18nSkip), [undefined, ""]);
+  assert.equal(label.dataset.i18nSkip, undefined, "the button shows copy");
+  select.value = "account";
+  select.dispatchEvent(new FakeEvent("change"));
+  assert.equal(label.textContent, "account");
+  assert.equal(label.dataset.i18nSkip, "", "the button shows the seed word");
+  select.value = "choose";
+  select.dispatchEvent(new FakeEvent("change"));
+  assert.equal(label.dataset.i18nSkip, undefined, "the button shows copy again");
+  assert.deepEqual(list.children.map((row) => row.dataset.i18nSkip), [undefined, ""]);
 });

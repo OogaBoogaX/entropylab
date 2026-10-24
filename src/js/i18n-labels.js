@@ -14,6 +14,18 @@ export const hodlKeyModeLabels = Object.freeze({
   key: "Private key",
 });
 
+// MS Station co-signer derivation specs (app.js's hodlMsigSpecs indexes these).
+export const hodlMsigSpecLabels = Object.freeze({
+  bip48: "BIP48 multisig",
+  bip87: "BIP87 multisig",
+  bip45: "BIP45 multisig",
+  bip44: "BIP44 account key",
+  bip49: "BIP49 account key",
+  bip84: "BIP84 account key",
+  bip86: "BIP86 account key",
+  custom: "Custom",
+});
+
 // Header network picker (Bitcoin Core's four networks).
 export const hodlNetworkNames = Object.freeze({
   mainnet: "Bitcoin",
@@ -75,10 +87,33 @@ export const hodlScriptBeginnerTexts = Object.freeze({
   bip86: "Addresses that start with bc1p. Newest type. Use this if your wallet speaks Taproot.",
 });
 
-// Pearson chi-squared fairness verdicts (hodlDiceFairnessVerdict ids).
+// Pearson frequency-test labels, not certifications of randomness or entropy.
+// The internal hodlDiceFairnessVerdict ids remain stable.
 export const hodlFairnessVerdictLabels = Object.freeze({
   "need-more": "Need more rolls",
-  fair: "Looks pretty fair",
-  unsure: "Not sure; roll some more",
-  biased: "Looks biased",
+  fair: "No frequency warning",
+  unsure: "Borderline frequency result",
+  biased: "Frequency imbalance warning",
+});
+
+// The Key Station summary line's variant, by mode and sub-method (app.js's
+// hodlKeySummaryMethodParts indexes these; the mode itself is hodlKeyModeLabels).
+export const hodlKeySummarySubmethodLabels = Object.freeze({
+  dice: Object.freeze({
+    coldcard: "Base 10 [1-6] / Hashed rolls",
+    coleman: "Base 6 [0-5] / Hashed rolls",
+    bitbox: "BitBox diceware / Direct word selection",
+    dplus: "D++ / Direct word selection",
+  }),
+  cards: Object.freeze({ direct: "Direct word selection", hashed: "Hashed card transcript" }),
+  hex: Object.freeze({
+    bin: "Binary (Base 2)",
+    base4: "Quaternary (Base 4)",
+    base8: "Octal (Base 8)",
+    hex: "Hexadecimal (Base 16)",
+    base32: "Base32 (Bech32)",
+    base64: "Base64 (RFC 4648 alphabet)",
+  }),
+  seed: Object.freeze({ numbers: "BIP39 word numbers", words: "Direct word entry" }),
+  key: Object.freeze({ wif: "WIF", "hex-key": "Private key hex", minikey: "Mini key", brain: "Brain wallet" }),
 });

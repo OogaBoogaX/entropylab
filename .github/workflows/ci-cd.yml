@@ -34,9 +34,12 @@ concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: false
 
-# One version for every job so setup stays in a single place.
+# One version for every job so setup stays in a single place. Pinned exactly
+# (not "22") so the CI toolchain is a fixed input to the reproducible build;
+# must equal ARG NODE_VERSION in the Dockerfile (test/toolchain-pin.test.mjs
+# enforces the pair).
 env:
-  NODE_VERSION: "22"
+  NODE_VERSION: "22.23.4"
 
 jobs:
   # ── Build: compile src/ once — every gate and every publication path ─────
@@ -51,48 +54,61 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      # Keyless Sigstore attestation of the exact wallet HTML (issue #58).
-      id-token: write
-      attestations: write
     outputs:
       sha256: ${{ steps.digest.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        # full history: the footer stamps the last commit that changed a build
+        # input (scripts/build-commit.mjs), which a shallow clone cannot see
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Download the freshly tested WASM modules
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: entropylab-wasm
           path: src/js
       - name: Build static site
         run: npm run build
+      # A release page must name its source commit. "unknown" means a build
+      # input was dirty in CI, which must never happen on a push build.
+      - name: Check the footer stamped a source commit
+        if: github.event_name == 'push'
+        run: grep -q 'data-commit="[0-9a-f]\{40\}"' entropylab.html
+      # SHA256SUMS.txt names only the HTML, so `sha256sum -c` works for anyone
+      # holding just the downloaded file. The WASM modules get their own
+      # manifest, checked from a checkout of the release commit.
       - name: Generate the SHA-256 checksum manifest
         run: sha256sum entropylab.html > SHA256SUMS.txt
+      - name: Generate the WASM module checksum manifest
+        run: |
+          sha256sum \
+            src/js/entropylab-wasm-b64.js \
+            src/js/psbt-wasm-b64.js \
+            src/js/vanity-wasm-b64.js \
+            > WASM-SHA256SUMS.txt
       - name: Generate the IPFS CID name
         run: node scripts/cid.mjs entropylab.html > CID.txt
-      - name: Attest the wallet artifact
-        if: github.ref == 'refs/heads/rock' && github.event_name == 'push'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: entropylab.html
       - name: Upload the checksum manifest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: entropylab-sha256sums
           path: |
             SHA256SUMS.txt
+            WASM-SHA256SUMS.txt
             CID.txt
           retention-days: 7
       - name: Record the candidate digest
         id: digest
         run: echo "sha256=$(sha256sum entropylab.html | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Upload the tested candidate for downstream jobs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: entropylab-candidate
           path: |
@@ -117,6 +133,32 @@ jobs:
           path: _site
           retention-days: 7
 
+  # Keyless Sigstore attestation of the exact tested wallet HTML. This is a
+  # separate push-only job: a pull request must never run PR-controlled code
+  # with id-token/attestations write permissions (audit H1).
+  attest:
+    name: Attest · wallet artifact
+    needs: [build]
+    if: github.ref == 'refs/heads/rock' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download the tested candidate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: entropylab-candidate
+          path: candidate
+      - name: Verify the candidate digest
+        run: echo "${{ needs.build.outputs.sha256 }}  candidate/entropylab.html" | sha256sum -c -
+      - name: Attest the wallet artifact
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: candidate/entropylab.html
+
   # The WASM artifacts (src/js/entropylab-wasm-b64.js, src/js/psbt-wasm-b64.js,
   # src/js/vanity-wasm-b64.js) are built from the pinned Rust crates
   # (entropylab-wasm/, psbt-wasm/, vanity-wasm/, each
@@ -126,25 +168,54 @@ jobs:
   # are shared with the site build, then bundled with the candidate for every
   # downstream consumer (including tests that import source modules or build
   # a hooks-enabled page). The post-merge job commits these same tested bytes,
-  # not a second compilation. Cross-machine build identity is not asserted.
+  # not a second compilation. The compile runs in the pinned dev image so the
+  # clang is the image's clang, not the runner's. The reproduce job builds
+  # them again in that image, and the artifact commit and the Pages deploy
+  # wait for it to match. Cross-machine identity is not claimed.
   build-wasm:
     name: Build · WASM from Rust sources
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Rebuild the WASM artifacts from the Rust sources
-        run: npm run build:wasm
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the pinned dev image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: entropylab-dev:local
+          platforms: linux/amd64
+          cache-from: type=gha,scope=dev-image
+          cache-to: type=gha,mode=max,scope=dev-image
+      # Root, because the mounted workspace is runner-owned and the image's
+      # dev user could not write target/ into it (the image's own cargo home
+      # is dev-owned since #529). The script trusts the mount itself
+      # (`safe.directory=*`); do not delete target/ from the runner — those
+      # directories are root-owned and the host rm cannot.
+      - name: Rebuild the WASM artifacts inside the pinned image
+        run: |
+          docker run --rm --platform linux/amd64 --user root \
+            -v "$GITHUB_WORKSPACE:/workspace" -w /workspace entropylab-dev:local \
+            bash -c 'set -euo pipefail
+              git config --global --add safe.directory /workspace
+              npm run build:wasm
+              cd entropylab-wasm
+              cargo test --locked --lib
+              cd ../psbt-wasm
+              cargo test --locked --lib'
       - name: Test the freshly built bindings
-        run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/psbt-sanitize.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs test/aezeed-wasm.test.mjs
+        run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/psbt-sanitize.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs test/aezeed-wasm.test.mjs test/self-test-wasm.test.mjs
       - name: Upload the freshly tested WASM modules
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: entropylab-wasm
           path: |
@@ -192,7 +263,9 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -200,7 +273,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       # Test the exact object the build job produced — never a rebuild.
       - name: Download the tested candidate
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: entropylab-candidate
       - name: Verify the candidate digest
@@ -221,7 +294,12 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        # full history: the footer stamps the last commit that changed a build
+        # input (scripts/build-commit.mjs), which a shallow clone cannot see
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -235,7 +313,7 @@ jobs:
         run: choco install firefox
       # Test the exact object the build job produced — never a rebuild.
       - name: Download the tested candidate
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: entropylab-candidate
       - name: Verify the candidate digest
@@ -270,7 +348,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Run network-check tests
@@ -283,7 +363,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -292,7 +374,7 @@ jobs:
       # browser-check.test.mjs reads the compiled entropylab.html — test the
       # exact object the build job produced, never a rebuild.
       - name: Download the tested candidate
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: entropylab-candidate
       - name: Verify the candidate digest
@@ -306,7 +388,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -322,7 +406,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -331,7 +417,7 @@ jobs:
       # validate.test.mjs reads the compiled entropylab.html — test the exact
       # object the build job produced, never a rebuild.
       - name: Download the tested candidate
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: entropylab-candidate
       - name: Verify the candidate digest
@@ -345,7 +431,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Run descriptor tests
@@ -357,7 +445,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -372,7 +462,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -380,6 +472,49 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run number-base tests
         run: npm run test:number-bases
+
+  # ── Bitcoin Core interop: the wallet.dat and descriptor suites against ───
+  # a real node (issue #822). The binary is a supply-chain input like the dev
+  # image's downloads: pinned by digest, verified with sha256sum -c before it
+  # is extracted, and only bin/bitcoind and bin/bitcoin-cli leave the
+  # archive. REQUIRE_BITCOIND=1 makes the harness fail at import when the
+  # binaries are missing — a job that silently skips its whole point must
+  # fail, not go green.
+
+  test-bitcoind:
+    name: Bitcoin Core interop
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # bitcoin-31.1-x86_64-linux-gnu.tar.gz from bitcoincore.org. The digest
+      # is the file's line in the release's SHA256SUMS, which carries 11
+      # builder signatures (fanquake, achow101, hebasto, Sjors, and others)
+      # from the bitcoin-core/guix.sigs builder keys.
+      BITCOIN_CORE_VERSION: "31.1"
+      BITCOIN_CORE_SHA256: "b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Download the pinned Bitcoin Core release
+        run: curl -fsSL -o "bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz" "https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_CORE_VERSION}/bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz"
+      - name: Verify the pinned digest before extracting
+        run: echo "${BITCOIN_CORE_SHA256}  bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz" | sha256sum -c -
+      - name: Extract bitcoind and bitcoin-cli only
+        run: |
+          mkdir -p "$RUNNER_TEMP/bitcoin-bin"
+          tar -xzf "bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz" -C "$RUNNER_TEMP/bitcoin-bin" --strip-components=2 "bitcoin-${BITCOIN_CORE_VERSION}/bin/bitcoind" "bitcoin-${BITCOIN_CORE_VERSION}/bin/bitcoin-cli"
+          echo "$RUNNER_TEMP/bitcoin-bin" >> "$GITHUB_PATH"
+      - name: Run the Bitcoin Core interop tests
+        run: REQUIRE_BITCOIND=1 node --test --test-concurrency=1 test/wallet-export.test.mjs test/msig-wallet-output.test.mjs test/core-importdescriptors.test.mjs
 
   # ── Fuzz: differential check of the shipped LifeHash against the ──────────
   # official `lifehash` package. The fuzzer has its own locked dependency tree
@@ -392,13 +527,37 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install locked fuzzing dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund --prefix fuzzing
       - name: Run the LifeHash differential fuzzer
         run: npm --prefix fuzzing run fuzz:lifehash
+
+  # ── Fuzz: the shipped LifeHash against the Blockchain Commons C++ ─────────
+  # reference itself, compiled from a pinned commit (fetched and verified by
+  # the fuzzer). No substitutions: pixels must match the reference exactly,
+  # float32 rounding artifacts included. Same locked fuzzing/ tree and
+  # determinism as the job above; the runner's c++ builds the reference.
+
+  fuzz-lifehash-cpp:
+    name: Fuzz · LifeHash vs C++ reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install locked fuzzing dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix fuzzing
+      - name: Run the LifeHash C++ reference fuzzer
+        run: npm --prefix fuzzing run fuzz:lifehash-cpp
 
   # ── Fuzz: multisig wallet outputs (addresses, descriptors, checksums) ────
   # vs an independent scure BIP32/script stack, plus co-signer suffix
@@ -410,7 +569,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install locked fuzzing dependencies
@@ -419,48 +580,273 @@ jobs:
         run: npm --prefix fuzzing run fuzz:msig
 
   # ── Artifact: commit the tested site after merges to rock ────────────────
-  # Gated on every behavioral job (unit, browser, structural, WASM), then
-  # commits the exact tested candidate — it never rebuilds the wallet HTML.
-  # The candidate also carries the exact WASM modules tested by build-wasm
-  # and embedded in the HTML; publication does not compile them again.
+  # Gated on every behavioral job (unit, browser, structural, WASM) and on the
+  # in-image WASM reproduction, then commits the exact tested candidate — it
+  # never rebuilds the wallet HTML. The candidate also carries the exact WASM
+  # modules tested by build-wasm and embedded in the HTML; publication does
+  # not compile them again.
 
   artifact:
     name: Artifact · commit tested site after merge
     if: github.ref == 'refs/heads/rock' && github.event_name == 'push'
-    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-msig]
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce, test-bitcoind]
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 10
+    outputs:
+      superseded: ${{ steps.commit.outputs.superseded }}
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Download the tested candidate
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: entropylab-candidate
       - name: Verify the candidate digest
         run: echo "${{ needs.build.outputs.sha256 }}  entropylab.html" | sha256sum -c -
       - name: Generate the SHA-256 checksum manifest
         run: sha256sum entropylab.html > SHA256SUMS.txt
+      - name: Generate the WASM module checksum manifest
+        run: |
+          sha256sum \
+            src/js/entropylab-wasm-b64.js \
+            src/js/psbt-wasm-b64.js \
+            src/js/vanity-wasm-b64.js \
+            > WASM-SHA256SUMS.txt
       - name: Generate the IPFS CID name
         run: node scripts/cid.mjs entropylab.html > CID.txt
       - name: Commit the generated artifact
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f entropylab.html src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js SHA256SUMS.txt CID.txt
+          git add -f entropylab.html src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js SHA256SUMS.txt WASM-SHA256SUMS.txt CID.txt
           if git diff --cached --quiet; then
             echo "Build output is unchanged; nothing to commit."
             exit 0
           fi
           git commit -m "Rebuild site artifact [skip ci]"
-          git push
+          # A merge can land on rock while this run tests. It starts its own
+          # run, which builds and publishes the newer sources, so this build
+          # is superseded: rock never carries a site older than the sources
+          # beneath it. The bot's [skip ci] commits (proof upgrades) change no
+          # sources and start no run, so the build rebases over those.
+          git fetch --quiet origin rock
+          newer=$(git log --format=%s "$GITHUB_SHA..FETCH_HEAD" | grep -vcF '[skip ci]' || true)
+          if [ "$newer" != 0 ]; then
+            echo "::notice title=Artifact superseded::rock moved past ${GITHUB_SHA::7} while it was tested; the run for the newer commit publishes the site."
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git rebase --quiet FETCH_HEAD
+          # Push with the maintainer token: rock is protected, and required
+          # status checks reject direct pushes from GITHUB_TOKEN (an admin
+          # token bypasses while enforce_admins is off). The checkout keeps
+          # GITHUB_TOKEN in an includeIf'd credentials file that overrides
+          # URL credentials, so the token goes on the command line, which
+          # outranks every config file.
+          git -c http.https://github.com/.extraheader=             -c http.https://github.com/.extraheader="AUTHORIZATION: basic $(echo -n x-access-token:${{ secrets.RELEASE_PUSH_TOKEN }} | base64)"             push
+
+  # ── Timestamp: OpenTimestamps the tested HTML after it is committed ──────
+  # Calendars are online; this job must not block tests, the HTML commit, or
+  # Pages. It stamps the exact candidate digest (issue #93), never a rebuild.
+  # A pending .ots is not a Bitcoin timestamp — ots-upgrade.yml completes it.
+  #
+  # The third-party OTS client runs only in `timestamp`, which holds no
+  # environment, no secret and a read-only token. It writes the proof and
+  # uploads it; `timestamp-push` commits and pushes it on a fresh runner that
+  # never installs or runs the client. A step boundary is not isolation: a
+  # client that writes .git/hooks/pre-push or leaves a background process
+  # would meet the push token in the same workspace.
+
+  timestamp:
+    name: Timestamp · OpenTimestamps the tested HTML
+    # A superseded build was not committed; stamping it onto rock would give
+    # rock a proof for HTML it does not carry.
+    if: github.ref == 'refs/heads/rock' && github.event_name == 'push' && needs.artifact.outputs.superseded != 'true'
+    needs: [build, artifact]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      stamped: ${{ steps.stamp.outputs.stamped }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Artifact may have just pushed a new HTML commit. Stamp on top of
+          # current rock, never replay github.sha over that commit.
+          ref: rock
+          # The OTS client is third-party code; keep GITHUB_TOKEN out of
+          # .git/config, where it could read it.
+          persist-credentials: false
+      - name: Download the tested candidate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: entropylab-candidate
+      - name: Verify the candidate digest
+        run: echo "${{ needs.build.outputs.sha256 }}  entropylab.html" | sha256sum -c -
+      - name: Install OpenTimestamps client
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ots"
+          "$RUNNER_TEMP/ots/bin/pip" install --disable-pip-version-check --require-hashes --no-deps --only-binary :all: -r "$GITHUB_WORKSPACE/.github/ots-requirements.txt"
+      - name: Stamp the tested HTML
+        id: stamp
+        run: |
+          set -euo pipefail
+          OTS="$RUNNER_TEMP/ots/bin/ots"
+          ACTUAL=$(sha256sum entropylab.html | cut -d' ' -f1)
+          if [ -f entropylab.html.ots ]; then
+            EXISTING=$("$OTS" info entropylab.html.ots 2>/dev/null | sed -n 's/^File sha256 hash: //p' | head -1 || true)
+            if [ "$EXISTING" = "$ACTUAL" ]; then
+              echo "Proof already covers $ACTUAL; not re-stamping. Upgrade workflow completes pending attestations."
+              exit 0
+            fi
+            # The committed proof covers a superseded digest. `ots stamp`
+            # creates its output with an exclusive open and fails if the path
+            # exists, so the stale proof has to go first or every release
+            # after the first one dies here.
+            rm -f entropylab.html.ots
+          fi
+          # ots stamp entropylab.html — pending calendar receipt, not a Bitcoin timestamp.
+          "$OTS" stamp entropylab.html
+          if [ -z "$(git status --porcelain -- entropylab.html.ots)" ]; then
+            echo "No OpenTimestamps proof to commit."
+            exit 0
+          fi
+          echo "stamped=true" >> "$GITHUB_OUTPUT"
+      - name: Upload the stamped proof
+        if: steps.stamp.outputs.stamped == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: entropylab-ots
+          path: entropylab.html.ots
+          if-no-files-found: error
+          retention-days: 7
+
+  # The commit and push of the proof. This job holds the release environment
+  # and the admin push token, so it never installs or runs the OTS client: it
+  # validates the uploaded proof with coreutils and pushes it from a fresh
+  # runner.
+  timestamp-push:
+    name: Timestamp · commit the OpenTimestamps proof
+    needs: [build, timestamp]
+    if: github.ref == 'refs/heads/rock' && github.event_name == 'push' && needs.timestamp.outputs.stamped == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: rock
+          persist-credentials: false
+      - name: Download the stamped proof
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: entropylab-ots
+          path: ${{ runner.temp }}
+      - name: Validate the proof before committing it
+        env:
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          PROOF="$RUNNER_TEMP/entropylab.html.ots"
+          # The proof is untrusted input from the stamp job. Refuse anything
+          # that is not a small OpenTimestamps file whose header names the
+          # SHA-256 of the HTML this run tested.
+          SIZE=$(stat -c %s "$PROOF")
+          if [ "$SIZE" -gt 65536 ]; then
+            echo "::error::proof is $SIZE bytes, over the 65536-byte limit"
+            exit 1
+          fi
+          # 31-byte magic, major version 0x01, OpSHA256 tag 0x08.
+          MAGIC=004f70656e54696d657374616d7073000050726f6f6600bf89e2e884e892940108
+          HEADER=$(head -c 33 "$PROOF" | od -An -v -tx1 | tr -d ' \n')
+          if [ "$HEADER" != "$MAGIC" ]; then
+            echo "::error::proof does not start with the OpenTimestamps magic, version 1 and a SHA-256 file hash"
+            exit 1
+          fi
+          DIGEST=$(head -c 65 "$PROOF" | tail -c 32 | od -An -v -tx1 | tr -d ' \n')
+          if [ "$DIGEST" != "$EXPECTED" ]; then
+            echo "::error::proof covers $DIGEST, but this run tested $EXPECTED"
+            exit 1
+          fi
+          # This runner checked rock out after the stamp job finished, so rock
+          # may carry newer HTML by now; a proof is committed only next to the
+          # HTML it covers.
+          ON_ROCK=$(sha256sum entropylab.html | cut -d' ' -f1)
+          if [ "$ON_ROCK" != "$EXPECTED" ]; then
+            echo "::error::rock's entropylab.html is $ON_ROCK, not the $EXPECTED this run stamped"
+            exit 1
+          fi
+          # The rest of the proof must be well formed too, walked the way the
+          # upgrade push walks it (standard-library Python from rock's own
+          # checkout, no third-party code).
+          if ! python3 scripts/ots-attestations.py "$PROOF" > /dev/null; then
+            echo "::error::the stamped proof is not a well-formed OpenTimestamps proof"
+            exit 1
+          fi
+      - name: Commit the proof
+        id: proof
+        env:
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          # A well-formed proof on rock that already covers this HTML stays.
+          # Another run (a re-run, or one whose push waited for approval) may
+          # have pushed it and ots-upgrade completed it since, and a fresh
+          # pending proof must not replace a completed one. A malformed one is
+          # replaced by this validated proof.
+          if [ -f entropylab.html.ots ] && [ "$(head -c 65 entropylab.html.ots | tail -c 32 | od -An -v -tx1 | tr -d ' \n')" = "$EXPECTED" ] && python3 scripts/ots-attestations.py entropylab.html.ots > /dev/null 2>&1; then
+            echo "Rock already has a proof for $EXPECTED; not replacing it."
+            exit 0
+          fi
+          cp "$RUNNER_TEMP/entropylab.html.ots" entropylab.html.ots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add entropylab.html.ots
+          if git diff --cached --quiet; then
+            echo "Proof is already on rock; nothing to commit."
+            exit 0
+          fi
+          git commit -m "OpenTimestamps pending proof for entropylab.html [skip ci]"
+          git fetch --quiet origin rock
+          AHEAD=$(git rev-list --count origin/rock..HEAD)
+          if [ "$AHEAD" != 1 ]; then
+            echo "::error::expected exactly one commit ahead of origin/rock, found $AHEAD"
+            exit 1
+          fi
+          CHANGED=$(git diff --name-only origin/rock..HEAD)
+          if [ "$CHANGED" != "entropylab.html.ots" ]; then
+            echo "::error::the proof commit changes more than entropylab.html.ots: $CHANGED"
+            exit 1
+          fi
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+      - name: Push the proof
+        # Only after a checked commit: "already on rock" exits 0 above.
+        if: steps.proof.outputs.committed == 'true'
+        env:
+          PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Push with the maintainer token: rock is protected, and required
+          # status checks reject direct pushes from GITHUB_TOKEN (an admin
+          # token bypasses while enforce_admins is off). The token goes on
+          # the command line, which outranks every config file. Hooks are
+          # disabled: this runner never ran the OTS client, but a hook could
+          # still arrive with the checkout.
+          git -c http.https://github.com/.extraheader=             -c http.https://github.com/.extraheader="AUTHORIZATION: basic $(echo -n x-access-token:$PUSH_TOKEN | base64)"             -c core.hooksPath=/dev/null push origin HEAD:rock
 
   # ── Verify: independent check of the generated site artifact ──
 
@@ -471,7 +857,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -479,7 +867,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       # Verify the exact object the build job produced — never a rebuild.
       - name: Download the tested candidate
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: entropylab-candidate
       - name: Verify the candidate digest
@@ -487,11 +875,106 @@ jobs:
       - name: Verify site artifact
         run: npm run verify
 
+  # ── Reproduce: prove the build is byte-for-byte reproducible ─────────────
+  # The build script claims the artifact is reproducible from the sources at
+  # a commit; this job makes that an enforced property rather than an
+  # aspiration. The same commit is built on the runner and inside the pinned
+  # dev image and the digests must match, and the WASM modules are built
+  # twice inside the image from different staging paths and must match too.
+  # The WASM half must match the modules build-wasm compiled in the same
+  # image (those are the bytes the candidate publishes). A fresh image build
+  # differing from the modules already committed on the branch stays a
+  # warning: the artifact job writes the image bytes on the next rock merge,
+  # and that commit skips CI. The artifact commit and the Pages deploy `need`
+  # this job, so a mismatch stops publication.
+
+  reproduce:
+    name: Reproduce · byte-identical builds across environments
+    needs: [build-wasm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        # full history: the footer stamps the last commit that changed a build
+        # input (scripts/build-commit.mjs), which a shallow clone cannot see
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build on the runner
+        run: |
+          npm run build
+          sha256sum entropylab.html service-worker.js | tee runner.sums
+      - name: Double-build check on the runner
+        run: npm run reproduce
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the pinned dev image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: entropylab-dev:local
+          platforms: linux/amd64
+          cache-from: type=gha,scope=dev-image
+          cache-to: type=gha,mode=max,scope=dev-image
+      # The container runs as root so it can write the runner-owned checkout;
+      # safe.directory lets git stamp the commit inside the mounted repo.
+      - name: Build inside the image and require identical digests
+        run: |
+          docker run --rm --platform linux/amd64 --user root -v "$GITHUB_WORKSPACE:/workspace" -w /workspace entropylab-dev:local \
+            bash -c 'set -euo pipefail
+              git config --global --add safe.directory /workspace
+              npm ci --ignore-scripts --no-audit --no-fund
+              npm run build
+              sha256sum entropylab.html service-worker.js | tee image.sums'
+          diff runner.sums image.sums
+      # upload-artifact roots a multi-file upload at the paths' common parent
+      # (src/js), so the artifact holds bare file names; download them into
+      # published-wasm/src/js so they sit where the hash step reads them.
+      - name: Download the modules build-wasm compiled in this image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: entropylab-wasm
+          path: published-wasm/src/js
+      # scripts/build-wasm.mjs needs no node_modules (node + cargo only), so
+      # the second staging path is a bare clone. Hash-only diffs, because the
+      # published copy lives at a different path than the fresh build.
+      - name: Build the WASM modules twice in the image and require identity
+        run: |
+          docker run --rm --platform linux/amd64 --user root -v "$GITHUB_WORKSPACE:/workspace" -w /workspace entropylab-dev:local \
+            bash -c 'set -euo pipefail
+              git config --global --add safe.directory "*"
+              npm run build:wasm
+              sha256sum src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js | tee /tmp/wasm-first.sums
+              git clone -q /workspace /tmp/second
+              cd /tmp/second
+              node scripts/build-wasm.mjs
+              sha256sum src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js | tee /tmp/wasm-second.sums
+              diff /tmp/wasm-first.sums /tmp/wasm-second.sums
+              cut -d" " -f1 /tmp/wasm-first.sums > /tmp/wasm-first.hashes
+              sha256sum \
+                /workspace/published-wasm/src/js/entropylab-wasm-b64.js \
+                /workspace/published-wasm/src/js/psbt-wasm-b64.js \
+                /workspace/published-wasm/src/js/vanity-wasm-b64.js \
+                | cut -d" " -f1 > /tmp/wasm-published.hashes
+              diff /tmp/wasm-first.hashes /tmp/wasm-published.hashes
+              cd /workspace
+              if ! git diff --exit-code -- src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js > /tmp/wasm-drift.diff; then
+                echo "::warning file=scripts/build-wasm.mjs::Fresh in-image WASM build differs from the modules committed on this branch. The artifact job commits the image bytes on the next rock merge; that commit skips CI."
+                head -20 /tmp/wasm-drift.diff
+              fi'
+
   # ── Translation gate: locale files may only change through the post-merge
   # translation automation (issue #286). Any PR whose diff touches
   # src/locales/ must come from the configured GitHub App, on the
   # i18n/translate-<lang> branch namespace, changing exactly one catalog and
-  # its provenance sidecar — and both must validate. PRs that touch no locale
+  # at most its provenance sidecar (a value-only correction leaves the sidecar
+  # as is) — and both must validate. PRs that touch no locale
   # files pass trivially. Make this a required check alongside test-ci so
   # auto-merged translation PRs cannot skip it (see
   # docs/Translation_Automation_Setup.md).
@@ -505,7 +988,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Run the translation-only gate
@@ -519,12 +1003,12 @@ jobs:
           FILES=$(git diff --name-only "origin/$PR_BASE"...HEAD | tr '\n' ' ')
           node scripts/i18n-gate.mjs --author "$PR_AUTHOR" --app-slug "$APP_SLUG" --base "$PR_BASE" --head "$PR_HEAD" --files $FILES
 
-  # ── Deploy: gated on a good build and a clean verify ──
+  # ── Deploy: gated on a good build, a clean verify, and the reproduction ──
 
   deploy:
     name: Deploy to GitHub Pages
     if: github.ref == 'refs/heads/rock' && github.event_name != 'pull_request'
-    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-msig]
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce, test-bitcoind]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -538,7 +1022,7 @@ jobs:
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - name: Deploy tested artifact
         id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
   # ── Docker: build and push the dev container image ────────────────────────
 
@@ -552,17 +1036,19 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Normalize GHCR image name
         id: ghcr-image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         if: (github.ref == 'refs/heads/rock' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && inputs.release-docker)
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           push: ${{ (github.ref == 'refs/heads/rock' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && inputs.release-docker) }}

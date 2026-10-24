@@ -4,8 +4,11 @@
 // entropylab-wasm.js).
 //
 // Drop-in replacement for the slice of @noble/curves/secp256k1.js the app
-// uses: getPublicKey, sign, verify, Signature (strict DER <-> compact), and
-// Point (parse/serialize/add/multiply). Nothing here generates randomness:
+// uses: getPublicKey, sign, verify, recover (ECDSA public-key recovery, for
+// the BOLT11 invoice decoder), schnorr.verify (BIP-340, for the PSBT Signer
+// Audit's Taproot key-path and script-path signatures), Signature (strict
+// DER <-> compact), and Point (parse/serialize/add/multiply). Nothing here
+// generates randomness:
 // sign() is RFC 6979 and rejects extraEntropy: true on purpose.
 //
 // Loading: browsers compile the WASM asynchronously and app boot waits on
@@ -218,4 +221,59 @@ const verify = (signature, msghash, publicKey, options = {}) => {
   }
 };
 
-export const secp256k1 = { getPublicKey, sign, verify, Signature, Point };
+// Whether 32 bytes are a secret key, 1 to n - 1. libsecp256k1 decides, so
+// the key never becomes a BigInt or text here: it is copied into linear
+// memory for the call and zeroed when freed (#546).
+const isValidSecretKey = (secretKey) => {
+  requireReady();
+  if (!(secretKey instanceof Uint8Array) || secretKey.length !== 32) return false;
+  return withInput(secretKey, (s) => wasm().secp_seckey_valid(s)) === 1;
+};
+
+// Recovers the compressed public key from a compact 64-byte signature and a
+// recovery id (0-3) over a pre-hashed 32-byte message. Returns null instead
+// of throwing on malformed input, mirroring verify(). Used by the BOLT11
+// invoice decoder to recover the payee node id from the invoice signature.
+const recover = (msghash, signature, recid) => {
+  requireReady();
+  try {
+    assertBytes32(msghash, "Message hash");
+    if (!(signature instanceof Uint8Array) || signature.length !== 64) return null;
+    if (!Number.isInteger(recid) || recid < 0 || recid > 3) return null;
+    const recovered = withInput(msghash, (m) =>
+      withInput(signature, (s) => withOutput(33, (out) => wasm().secp_ecdsa_recover(m, s, recid, out)))
+    );
+    return recovered ?? null;
+  } catch {
+    return null;
+  }
+};
+
+// Verifies a BIP-340 Schnorr signature (64 bytes) over a 32-byte message
+// against a 32-byte x-only public key. Returns false, never throws, on
+// malformed input, mirroring verify(). Used by the PSBT Signer Audit to
+// check Taproot key-path and script-path signatures.
+const schnorrVerify = (signature, message, xonly) => {
+  requireReady();
+  try {
+    if (!(signature instanceof Uint8Array) || signature.length !== 64) return false;
+    if (!(message instanceof Uint8Array) || message.length !== 32) return false;
+    if (!(xonly instanceof Uint8Array) || xonly.length !== 32) return false;
+    return withInput(signature, (s) =>
+      withInput(message, (m) => withInput(xonly, (x) => wasm().secp_schnorr_verify(s, m, 32, x)))
+    ) === 1;
+  } catch {
+    return false; // noble's schnorr.verify never throws on malformed input.
+  }
+};
+
+export const secp256k1 = {
+  getPublicKey,
+  sign,
+  verify,
+  recover,
+  schnorr: { verify: schnorrVerify },
+  Signature,
+  Point,
+  utils: { isValidSecretKey },
+};

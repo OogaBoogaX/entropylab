@@ -18,6 +18,8 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
 const SP = "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqjuexzk6murw56suy3e0rd2cgqvycxttddwsvgxe2usfpxumr70xc9pkqwv";
 const URI = `bitcoin:?sp=${SP}`;
+// BIP-321's published fallback example (intentionally not a payable address).
+const FALLBACK = "175tWpb8K1S7NmH4Zx6rewF9WQrcZv245W";
 
 test("a silent payment address prints as bitcoin:?sp=…", () => {
   assert.equal(encodeBitcoinUri(SP), URI);
@@ -85,6 +87,35 @@ test("recipient lines accept a raw code, a URI, and a trailing count", () => {
     { address: SP, count: 2, amount: null, amountSats: null },
   ]);
   assert.equal(mixed.lightning, false);
+});
+
+test("hybrid URIs retain their unused fallback without changing the selected SP instruction (#399 F4)", () => {
+  const hybrid = `bitcoin:${FALLBACK}?sp=${SP}&sp=${SP}&lno=lno1ignored&amount=0.01`;
+  for (const uri of [hybrid, hybrid.replace("bitcoin:", "BITCOIN://").replaceAll("sp=", "SP=")]) {
+    assert.equal(parseBitcoinUri(uri).address, FALLBACK);
+    const [recipient] = parseRecipientLine(uri);
+    assert.deepEqual(recipient, {
+      address: SP, count: 1, lightning: true, amount: "0.01", amountSats: "1000000", alternatives: 0,
+      fallbackAddress: FALLBACK,
+    });
+  }
+  const parsed = parseRecipientLines(`${URI}\n${hybrid} 2\n${SP}`);
+  assert.deepEqual(parsed.recipients.map((row) => row.fallbackAddress), [undefined, FALLBACK, undefined]);
+  assert.deepEqual(parsed.recipients.map((row) => row.address), [SP, SP, SP]);
+  assert.deepEqual(parsed.recipients.map((row) => row.count), [1, 2, 1]);
+  assert.equal(parsed.recipients[1].amountSats, "1000000");
+  assert.equal(parsed.lightning, true);
+});
+
+test("a fallback does not bypass SP recipient validation (#399 F4)", () => {
+  for (const query of [
+    `sp=${SP}&req-unknown=1`,
+    `sp=${SP}&amount=-1`,
+    `sp=${SP}&amount=1&amount=2`,
+    "sp=sp1q",
+  ]) {
+    assert.throws(() => parseRecipientLines(`${URI}\nbitcoin:${FALLBACK}?${query}`), Error);
+  }
 });
 
 test("mixed-case silent payment addresses are rejected before normalization (issue #335)", () => {
@@ -164,8 +195,8 @@ test("the Silent Payments tab prints the URI and accepts it on send", () => {
   assert.match(app, /from "\.\/bip321\.js"/);
   assert.match(app, /encodeBitcoinUri/);
   assert.match(app, /parseRecipientLines/);
-  assert.match(app, /id="sp-bip321-uri"/);
-  assert.match(app, /id="sp-bip353-txt"/);
+  assert.match(app, /"sp-bip321-uri"/);
+  assert.match(app, /"sp-bip353-txt"/);
   assert.match(app, /does not resolve DNS/);
   assert.match(shell, /id="sp-payname"/);
   assert.match(shell, /bitcoin:\?sp=/);

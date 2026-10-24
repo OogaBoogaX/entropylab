@@ -119,6 +119,20 @@ const MINIKEY_22 = "SzavMBLoXU6kDrqtUVmffv";
 const MINIKEY_22_PRIV = "e9873d79c6d87dc0fb6a5778633389f4453213303da61f20bd67fc233aa33262";
 const MINIKEY_TAMPERED = "S6c56bnXQiBjk9mqSYE7ykVQ7NzrRz";
 
+// The format spec ("Mini private key format", Bitcoin wiki) allows 22, 26,
+// and 30 characters. No 26-char vector is published, so construct one by the
+// spec's own rules with node:crypto — never the code under test: the private
+// key is SHA256(candidate) and the checksum is SHA256(candidate + "?")[0] = 0.
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const MINIKEY_26 = (() => {
+  for (let i = 0; ; i++) {
+    const digest = createHash("sha256").update(`minikey-26-probe-${i}`).digest();
+    const probe = `S${[...digest.subarray(0, 25)].map((byte) => BASE58_ALPHABET[byte % 58]).join("")}`;
+    if (createHash("sha256").update(`${probe}?`).digest()[0] === 0) return probe;
+  }
+})();
+const MINIKEY_26_PRIV = createHash("sha256").update(MINIKEY_26).digest("hex");
+
 const hexOf = (bytes) => Buffer.from(bytes).toString("hex");
 
 test("hodlIsMiniKey rejects the non-Base58 alphabet even with a passing checksum (audit #365)", () => {
@@ -224,9 +238,21 @@ test("minikey decoding matches the published wiki vectors", () => {
   assert.equal(hexOf(hodlDecodeMiniPrivateKey(MINIKEY_22)), MINIKEY_22_PRIV);
   assert.equal(hexOf(hodlDecodeMiniPrivateKey(`  ${MINIKEY_30}  `)), MINIKEY_30_PRIV, "surrounding whitespace is trimmed");
   assert.throws(() => hodlDecodeMiniPrivateKey(MINIKEY_TAMPERED), /Not a valid Casascius mini private key\./);
-  for (const bad of [`T${MINIKEY_30.slice(1)}`, "S0".padEnd(22, "1"), MINIKEY_30.slice(0, 21), MINIKEY_30.slice(0, 23)]) {
-    assert.throws(() => hodlDecodeMiniPrivateKey(bad), /Mini keys must start with S and contain 22 or 30 Bitcoin Base58 characters\./, bad);
+  for (const bad of [`T${MINIKEY_30.slice(1)}`, "S0".padEnd(22, "1"), MINIKEY_30.slice(0, 21), MINIKEY_30.slice(0, 23), MINIKEY_30.slice(0, 25), MINIKEY_30.slice(0, 27)]) {
+    assert.throws(() => hodlDecodeMiniPrivateKey(bad), /Mini keys must start with S and contain 22, 26, or 30 Bitcoin Base58 characters\./, bad);
   }
+});
+
+test("26-character Casascius minikeys are accepted end to end (audit A1H)", () => {
+  assert.equal(MINIKEY_26.length, 26);
+  assert.equal(hodlIsMiniKey(MINIKEY_26), true);
+  assert.equal(hodlDetectPrivateKeyKind(MINIKEY_26), "minikey");
+  assert.equal(hodlMiniPrivateKeyPrefix(MINIKEY_26), true);
+  assert.equal(hexOf(hodlDecodeMiniPrivateKey(MINIKEY_26)), MINIKEY_26_PRIV);
+  assert.equal(hodlAssertPrivateKeyKind(MINIKEY_26, "mainnet", "minikey"), MINIKEY_26);
+  const analysis = hodlPrivateKeyInputAnalysis(MINIKEY_26, "minikey", "mainnet", false);
+  assert.equal(analysis.ready, true);
+  assert.match(lines(analysis), /26 of 26 Mini-key characters entered/);
 });
 
 test("assertPrivateKeyKind normalizes hex and rejects out-of-range keys", () => {
@@ -373,8 +399,11 @@ test("minikey analysis tracks the 22-or-30 length rule and the checksum", () => 
   assert.equal(analysis.ready, true);
   assert.match(lines(analysis), /30 of 30 Mini-key characters entered/);
   analysis = hodlPrivateKeyInputAnalysis(`S${"1".repeat(22)}`, "minikey", "mainnet", false);
-  assert.equal(analysis.required, 30, "past 22 characters only the 30 form remains");
-  assert.equal(analysis.remaining, 7);
+  assert.equal(analysis.required, 26, "past 22 characters the 26 form is next");
+  assert.equal(analysis.remaining, 3);
+  analysis = hodlPrivateKeyInputAnalysis(`S${"1".repeat(26)}`, "minikey", "mainnet", false);
+  assert.equal(analysis.required, 30, "past 26 characters only the 30 form remains");
+  assert.equal(analysis.remaining, 3);
   analysis = hodlPrivateKeyInputAnalysis(`${MINIKEY_30}x`, "minikey", "mainnet", false);
   assert.deepEqual(analysis.invalidRanges, [[30, 31]], "the 31st character is excess");
   analysis = hodlPrivateKeyInputAnalysis(`T${MINIKEY_30.slice(1)}`, "minikey", "mainnet", false);

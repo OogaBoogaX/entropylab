@@ -5,12 +5,14 @@ import { psbtVizHtml } from "../src/js/psbt-viz.js";
 
 const witnessUtxo = (value) => ({
   name: "PSBT_IN_WITNESS_UTXO",
+  key: "01",
   value: "",
   decoded: { value: String(value), scriptPubKey: "0014" + "11".repeat(20) },
 });
 
 const finalWitness = () => ({
   name: "PSBT_IN_FINAL_SCRIPTWITNESS",
+  key: "08",
   value: "",
   decoded: { items: ["00".repeat(71), "02" + "22".repeat(32)] },
 });
@@ -109,6 +111,7 @@ test("malformed final signing fields fail closed regardless of field order", () 
   const fixture = doc();
   fixture.inputs[0] = [witnessUtxo(100000000), finalWitness(), {
     name: "PSBT_IN_FINAL_SCRIPTWITNESS",
+    key: "08",
     value: "",
     decodeError: "malformed witness",
   }];
@@ -157,10 +160,12 @@ test("legacy final scriptSig is included in exact transaction size", () => {
   const fixture = doc();
   fixture.inputs[0] = [witnessUtxo(100000000), {
     name: "PSBT_IN_FINAL_SCRIPTSIG",
+    key: "07",
     value: "76a914" + "55".repeat(20) + "88ac",
   }];
   fixture.inputs[1] = [witnessUtxo(100000000), {
     name: "PSBT_IN_FINAL_SCRIPTSIG",
+    key: "07",
     value: "76a914" + "66".repeat(20) + "88ac",
   }];
   const facts = psbtCostFactsFromDoc(fixture);
@@ -193,6 +198,7 @@ test("large witness stacks do not exceed the JavaScript argument limit", () => {
   fixture.tx.inputs = fixture.tx.inputs.slice(0, 1);
   fixture.inputs = [[witnessUtxo(100000000), {
     name: "PSBT_IN_FINAL_SCRIPTWITNESS",
+    key: "08",
     value: "",
     decoded: { items: Array.from({ length: 150_000 }, () => "") },
   }]];
@@ -209,8 +215,8 @@ test("fee invalid from inspector -> null fee/rate but size remains (MAX_MONEY)",
   const doc = {
     tx: { version: 2, locktime: 0, inputs: [{ txid: "00".repeat(32), vout: 0, sequence: 4294967295 }], outputs: [{ value: "900", scriptPubKey: "0014"+"00".repeat(20) }] },
     inputs: [[
-      { name: "PSBT_IN_WITNESS_UTXO", decoded: { value: "2100000000000001" } },
-      { name: "PSBT_IN_FINAL_SCRIPTWITNESS", value: "02"+"00".repeat(32)+"00".repeat(32), decoded: { items: ["00".repeat(32), "00".repeat(32)] } }
+      { name: "PSBT_IN_WITNESS_UTXO", key: "01", decoded: { value: "2100000000000001" } },
+      { name: "PSBT_IN_FINAL_SCRIPTWITNESS", key: "08", value: "02"+"00".repeat(32)+"00".repeat(32), decoded: { items: ["00".repeat(32), "00".repeat(32)] } }
     ]],
     fee: { known: true, sats: null, error: "amounts exceed MAX_MONEY" },
     rustBitcoinError: null,

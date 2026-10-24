@@ -9,15 +9,17 @@
 //   TRANSLATE_MODEL     model id (required)
 //
 // Safety properties (issue #286):
-//   - reads only committed English sources and committed catalogs (the
-//     glossary examples) — never issue text, PR text, web content, or any
-//     other arbitrary input;
+//   - reads only committed English sources, committed catalogs (the
+//     glossary examples) and the committed context file
+//     (scripts/i18n-context.json) — never issue text, PR text, web content,
+//     or any other arbitrary input;
 //   - the model is given no tools, and every request is schema-constrained to
 //     exactly the requested keys with additionalProperties: false;
 //   - a separate audit call reviews each translation for meaning changes
 //     (dropped negations, receive/change swaps, missing clauses); flagged
 //     keys fall back to "missing" — the safe English path — and are never
-//     written;
+//     written. The one exception is a value equal to its `exact` correction:
+//     that text was reviewed in the context file, so it skips the audit;
 //   - every translated value passes the catalog validator the moment it
 //     arrives, and the final catalog + sidecar must validate or the run fails
 //     and writes nothing for that language;
@@ -33,18 +35,116 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export const LANGUAGE_NAMES = { es: "Spanish", fr: "French", pt: "Portuguese", de: "German" };
 
+// Committed per-string context (issue #862). A translation is generated once
+// and never revisited, and the model sees each string bare, so a wrong one
+// ("Output public key" read as a verb) had no way back. Each entry is keyed
+// by the English source string:
+//   note            context for every language, shown to the translate and
+//                   audit calls;
+//   noteByLanguage  { lang: context for that language only };
+//   retranslate     { lang: the committed value to replace }: while the
+//                   catalog still holds exactly that value it is translated
+//                   again, in place. Once replaced, the pin no longer matches
+//                   and the entry goes quiet, so a run never churns it. A
+//                   retranslation that fails any check below leaves the
+//                   committed value as it is, and the next run tries again;
+//   mustContain     { lang: [substrings] } every translation of the key must
+//                   carry, such as a browser's own name for a setting;
+//   exact           { lang: value } the translation must be exactly this
+//                   string, for a reviewed correction whose wording is
+//                   settled (a one-word fix that keeps the rest of the
+//                   committed sentence as it is).
+// A translation that fails mustContain or exact is dropped on arrival: a
+// missing string stays English, and a pinned one keeps its committed value.
+// The file is committed repo content, reviewed like code: it is not a way
+// for anything outside the tree to reach the model.
+export const CONTEXT_PATH = "scripts/i18n-context.json";
+const CONTEXT_FIELDS = new Set(["note", "noteByLanguage", "retranslate", "mustContain", "exact"]);
+
+export function contextProblems(context, sources) {
+  const problems = [];
+  if (!context || typeof context !== "object" || Array.isArray(context)) return ["the context file must be a JSON object"];
+  const isText = (value) => typeof value === "string" && value.trim() !== "";
+  const byLanguage = (key, field, value, check) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return problems.push(`${JSON.stringify(key)}: ${field} must map languages to values`);
+    for (const [lang, item] of Object.entries(value)) {
+      if (!(lang in LANGUAGE_NAMES)) problems.push(`${JSON.stringify(key)}: ${field} names unknown language ${JSON.stringify(lang)}`);
+      else if (!check(item)) problems.push(`${JSON.stringify(key)}: ${field}.${lang} has the wrong shape`);
+    }
+  };
+  for (const [key, entry] of Object.entries(context)) {
+    if (sources && !sources.has(key)) problems.push(`${JSON.stringify(key)} is not a current English source string`);
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      problems.push(`${JSON.stringify(key)}: the entry must be an object`);
+      continue;
+    }
+    for (const field of Object.keys(entry)) if (!CONTEXT_FIELDS.has(field)) problems.push(`${JSON.stringify(key)}: unknown field ${JSON.stringify(field)}`);
+    if ("note" in entry && !isText(entry.note)) problems.push(`${JSON.stringify(key)}: note must be non-empty text`);
+    if ("noteByLanguage" in entry) byLanguage(key, "noteByLanguage", entry.noteByLanguage, isText);
+    if ("retranslate" in entry) byLanguage(key, "retranslate", entry.retranslate, isText);
+    if ("mustContain" in entry) byLanguage(key, "mustContain", entry.mustContain, (list) => Array.isArray(list) && list.length > 0 && list.every(isText));
+    if ("exact" in entry) byLanguage(key, "exact", entry.exact, isText);
+  }
+  return problems;
+}
+
+// The committed context, or {} when the file does not exist. A malformed
+// file fails the run (nothing is written); an entry whose English string is
+// gone is ignored here, and the test suite fails on it before merge.
+export function loadContext(root) {
+  const path = join(root, CONTEXT_PATH);
+  if (!existsSync(path)) return {};
+  const context = JSON.parse(readFileSync(path, "utf8"));
+  const problems = contextProblems(context);
+  if (problems.length) throw new Error(`${CONTEXT_PATH} is malformed:\n${problems.join("\n")}`);
+  return context;
+}
+
+// Own entries only: an English string such as "constructor" must not find an
+// inherited property.
+const contextEntry = (context, key) => (Object.hasOwn(context, key) ? context[key] : undefined);
+const forLanguage = (map, lang) => (map && Object.hasOwn(map, lang) ? map[lang] : undefined);
+
+const contextNote = (context, key, lang) => {
+  const entry = contextEntry(context, key);
+  return [entry?.note, forLanguage(entry?.noteByLanguage, lang)].filter(Boolean).join(" ");
+};
+
+const contextValueProblems = (context, key, lang, value) => {
+  const entry = contextEntry(context, key);
+  const problems = (forLanguage(entry?.mustContain, lang) ?? [])
+    .filter((term) => !value.includes(term))
+    .map((term) => `context: must contain ${JSON.stringify(term)}`);
+  const exact = forLanguage(entry?.exact, lang);
+  if (exact !== undefined && value !== exact) problems.push("context: must be exactly the committed correction");
+  return problems;
+};
+
 const DEFAULT_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 // Batches stay small: schema-constrained responses are most reliable with a
 // compact key set, and a failed call wastes less work.
 const BATCH_SIZE = 20;
 
-// Exactly the requested keys, nothing else — a model that invents or drops
-// keys fails the provider's own schema check.
+// An array of {key, translation} pairs, not an object keyed by the English
+// strings: providers escape string FIELDS correctly, but gemini's
+// json_schema mode emits property NAMES containing quotes unescaped, which
+// produced invalid JSON whenever a UI string carried a quote. Key coverage
+// is enforced below, on arrival.
 export const translationSchema = (keys) => ({
   type: "object",
-  properties: Object.fromEntries(keys.map((key) => [key, { type: "string" }])),
-  required: [...keys],
+  properties: {
+    translations: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { key: { type: "string" }, translation: { type: "string" } },
+        required: ["key", "translation"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["translations"],
   additionalProperties: false,
 });
 
@@ -69,8 +169,32 @@ export const auditSchema = {
   additionalProperties: false,
 };
 
-// One chat-completions call. Retries once on network errors and 429/5xx.
-export async function chat({ url, key, model, name, schema, messages }) {
+// One chat-completions call. Retries transient failures — network errors,
+// HTTP 429/5xx, empty or unparseable content — up to 5 attempts in total,
+// waiting 2 s, 4 s, 8 s, 16 s between attempts; a 429 or 503 that carries a
+// Retry-After header (seconds) is honoured instead, capped at 60 s. A
+// non-retryable 4xx fails at once, as before. The thrown error carries its
+// class, so a caller can tell a one-input failure from a down service:
+// `status` (the response status) for an HTTP failure, `kind: "content"`
+// for a cut-off or unparseable body, `kind: "network"` for a fetch
+// failure. `sleep` is injectable so tests never really wait; call sites
+// without it use a real timer.
+const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const BACKOFF_MS = [2000, 4000, 8000, 16000];
+const MAX_RETRY_AFTER_MS = 60000;
+
+// A Retry-After header in seconds, capped; anything else (absent, empty, an
+// HTTP-date, garbage) falls back to the exponential backoff. A missing header
+// reads as null, and Number(null) is 0, so it must be checked before parsing.
+const retryAfterMs = (response) => {
+  const header = response.headers?.get("retry-after");
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+  return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS);
+};
+
+export async function chat({ url, key, model, name, schema, messages, sleep = realSleep }) {
   const body = JSON.stringify({
     model,
     messages,
@@ -78,7 +202,9 @@ export async function chat({ url, key, model, name, schema, messages }) {
     response_format: { type: "json_schema", json_schema: { name, schema, strict: true } },
   });
   let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  let waitMs;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (attempt > 0) await sleep(waitMs);
     let response;
     try {
       response = await fetch(url, {
@@ -87,39 +213,91 @@ export async function chat({ url, key, model, name, schema, messages }) {
         body,
       });
     } catch (error) {
+      error.kind = "network";
       lastError = error;
+      waitMs = BACKOFF_MS[attempt];
       continue;
     }
     if (response.ok) {
-      const data = await response.json();
-      const content = data?.choices?.[0]?.message?.content;
-      if (typeof content !== "string") throw new Error("LLM response carried no message content");
-      return JSON.parse(content);
+      // A body cut off in transit ("Unexpected end of JSON input", run
+      // 39891870190's Spanish failure) is the same transient class: retry it.
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        error.kind = "content";
+        lastError = error;
+        waitMs = BACKOFF_MS[attempt];
+        continue;
+      }
+      let content = data?.choices?.[0]?.message?.content;
+      if (typeof content !== "string") {
+        // An empty choice (provider cut the stream to nothing) is the same
+        // transient class as a truncated one — retry it, don't fail the run.
+        lastError = new Error("LLM response carried no message content");
+        lastError.kind = "content";
+        waitMs = BACKOFF_MS[attempt];
+        continue;
+      }
+      // Providers sometimes wrap the JSON in markdown fences, and a slow or
+      // rate-limited stream can truncate it mid-response: strip fences, and
+      // retry a parse failure rather than failing the whole language on a
+      // transient.
+      content = content.trim().replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+      try {
+        return JSON.parse(content);
+      } catch (error) {
+        error.kind = "content";
+        lastError = error;
+        waitMs = BACKOFF_MS[attempt];
+        continue;
+      }
     }
-    lastError = new Error(`LLM request failed: HTTP ${response.status} ${(await response.text()).slice(0, 200)}`);
+    // The error body can be cut off in transit too (GLM 5.3 and Kimi K3 on
+    // #1067): read it best-effort, so a retryable status is still retried.
+    let detail = "";
+    try {
+      detail = (await response.text()).slice(0, 200);
+    } catch {
+      detail = "(error body cut off)";
+    }
+    lastError = new Error(`LLM request failed: HTTP ${response.status} ${detail}`);
+    lastError.status = response.status;
     if (response.status !== 429 && response.status < 500) break;
+    waitMs = BACKOFF_MS[attempt];
+    if (response.status === 429 || response.status === 503) waitMs = retryAfterMs(response) ?? waitMs;
   }
   throw lastError;
 }
 
-const translateMessages = (languageName, glossary, keys) => [
-  {
-    role: "system",
-    content: [
-      `You translate Bitcoin wallet user-interface strings from English to ${languageName}.`,
-      "- Preserve every {placeholder} byte-for-byte; never translate placeholder names.",
-      "- Preserve every HTML tag and attribute byte-for-byte; translate only the text between tags.",
-      "- Never translate URLs, or Bitcoin terms of art such as PSBT, BIP39, xpub, seed phrase, or the word EntropyLab.",
-      "- Match the terminology of the supplied existing translations.",
-      "- Return JSON only: an object mapping each English string to its translation.",
-    ].join(" "),
-  },
-  {
-    role: "user",
-    content: JSON.stringify({ glossary, strings: keys }),
-  },
-];
+// `notes` maps some of the requested strings to their committed context
+// (scripts/i18n-context.json). A batch without notes sends exactly what it
+// always did.
+const translateMessages = (languageName, glossary, keys, notes = {}) => {
+  const noted = Object.keys(notes).length > 0;
+  return [
+    {
+      role: "system",
+      content: [
+        `You translate Bitcoin wallet user-interface strings from English to ${languageName}.`,
+        "- Preserve every {placeholder} byte-for-byte; never translate placeholder names.",
+        "- Preserve every HTML tag and attribute byte-for-byte; translate only the text between tags.",
+        "- Never translate URLs, or Bitcoin terms of art such as PSBT, BIP39, xpub, seed phrase, or the word EntropyLab.",
+        "- Match the terminology of the supplied existing translations.",
+        ...(noted ? ["- Some strings have a note in \"notes\", keyed by the string: it explains the string's context or gives the exact localized names to use. Follow it; never translate the note itself or copy it into a translation."] : []),
+        "- Return JSON only: an object with a \"translations\" array of {\"key\", \"translation\"} pairs, one per requested string.",
+      ].join(" "),
+    },
+    {
+      role: "user",
+      content: JSON.stringify(noted ? { glossary, strings: keys, notes } : { glossary, strings: keys }),
+    },
+  ];
+};
 
+// A pair may carry its committed note, so a translation that follows it (a
+// browser's own localized name for a setting, say) is not failed as a
+// meaning change.
 const auditMessages = (languageName, pairs) => [
   {
     role: "system",
@@ -129,6 +307,7 @@ const auditMessages = (languageName, pairs) => [
       "Fail a pair for: a dropped or added negation; swapped receive/change, send/receive, or similar antonyms;",
       "a missing or added clause; changed numbers, units, placeholders, or URLs; markup that changes the meaning.",
       "Do not fail a pair for style, register, or word-order preferences — only meaning errors fail.",
+      ...(pairs.some((pair) => pair.note) ? ["A pair with a \"note\" carries the string's committed context: judge the translation against the English as that note explains it, and fail a pair that ignores the note."] : []),
     ].join(" "),
   },
   {
@@ -143,28 +322,40 @@ const chunks = (items, size) => {
   return out;
 };
 
+// A failing batch is split key by key only for a failure that can be
+// specific to one input: a content failure (a cut-off or unparseable body)
+// or an HTTP 400. Anything else — an auth/credit 4xx, a 429 or 5xx that
+// exhausted chat()'s retries, a network outage — rethrows, so the language
+// fails loudly instead of dropping every key and going green.
+const splittable = (error) => error?.kind === "content" || error?.status === 400;
+
 // The workload for one language: which committed entries survive, which are
-// dead, and which sources still need a translation.
+// dead, which a context pin sends back for translation (stale), and which
+// sources still need a translation. A stale entry is not kept, so it is
+// missing again and stays out of the glossary.
 export async function languageWorkload(root, lang, limit) {
   const sources = await collectSources(root);
+  const context = loadContext(root);
   const catalogPath = join(root, "src/locales", `${lang}.json`);
   const catalog = existsSync(catalogPath) ? JSON.parse(readFileSync(catalogPath, "utf8")) : {};
   const keep = {};
+  const stale = [];
   let dead = 0;
   for (const [key, value] of Object.entries(catalog)) {
-    if (sources.has(key)) keep[key] = value;
-    else dead++;
+    if (!sources.has(key)) dead++;
+    else if (forLanguage(contextEntry(context, key)?.retranslate, lang) === value) stale.push(key);
+    else keep[key] = value;
   }
   let missing = [...sources].filter((source) => !keep[source]);
   if (limit) missing = missing.slice(0, limit);
-  return { sources, catalog, keep, dead, missing };
+  return { sources, context, catalog, keep, stale, dead, missing };
 }
 
 // Translate one language into outDir. Returns a per-language report; throws
 // (writing nothing) if the final catalog or sidecar fails validation.
 export async function translateLanguage({ root, lang, outDir, client, limit, log = console.log }) {
   const languageName = LANGUAGE_NAMES[lang] ?? lang;
-  const { catalog, keep, dead, missing } = await languageWorkload(root, lang, limit);
+  const { context, catalog, keep, stale, dead, missing } = await languageWorkload(root, lang, limit);
 
   const translated = {};
   const dropped = [];
@@ -177,36 +368,105 @@ export async function translateLanguage({ root, lang, outDir, client, limit, log
         .slice(0, 40),
     );
     for (const batch of chunks(missing, BATCH_SIZE)) {
-      const proposals = await client.chat({
-        name: "translate",
-        schema: translationSchema(batch),
-        messages: translateMessages(languageName, glossary, batch),
-      });
+      const notes = Object.fromEntries(batch.map((key) => [key, contextNote(context, key, lang)]).filter(([, note]) => note));
+      const translate = (keys) =>
+        client.chat({
+          name: "translate",
+          schema: translationSchema(keys),
+          messages: translateMessages(languageName, glossary, keys, Object.fromEntries(keys.map((key) => [key, notes[key]]).filter(([, note]) => note))),
+        });
+      // A batch call that throws after chat()'s own retries must not fail
+      // the language (run 39891870190: one cut-off Spanish batch blocked the
+      // publish of all four). Retry the keys one at a time; a key whose
+      // single call still throws stays missing — the safe English fallback —
+      // exactly like an audit-flagged key. Only a failure that can be
+      // specific to one input splits: an auth/credit failure or a sustained
+      // outage rethrows, failing the language as it did before this fix.
+      const proposals = new Map();
+      const noResponse = new Set();
+      const collect = (result) => {
+        for (const pair of result?.translations ?? []) proposals.set(pair.key, pair.translation);
+      };
+      try {
+        collect(await translate(batch));
+      } catch (error) {
+        if (!splittable(error)) throw error;
+        let lastError = error;
+        for (const key of batch) {
+          try {
+            collect(await translate([key]));
+          } catch (error) {
+            if (!splittable(error)) throw error;
+            lastError = error;
+            noResponse.add(key);
+            dropped.push({ key, problem: `the model returned no usable response: ${error.message}` });
+          }
+        }
+        // Every key failing alone is not one bad input but a provider-wide
+        // problem (a mistyped model, an endpoint without json_schema): fail
+        // loudly rather than drop the whole batch and go green (GLM 5.3).
+        if (noResponse.size === batch.length) throw lastError;
+      }
       const accepted = {};
       for (const key of batch) {
-        const value = proposals?.[key];
+        if (noResponse.has(key)) continue;
+        const value = proposals.get(key);
         if (typeof value !== "string" || !value.trim()) {
           dropped.push({ key, problem: "the model returned no translation" });
           continue;
         }
         // Validate on arrival: a single bad placeholder or disallowed tag
         // must not poison the batch — the key just stays missing.
-        const problems = valueProblems(key, value);
+        const problems = [...valueProblems(key, value), ...contextValueProblems(context, key, lang, value)];
         if (problems.length) {
           dropped.push({ key, problem: problems.join("; ") });
           continue;
         }
         accepted[key] = value;
       }
-      const acceptedKeys = Object.keys(accepted);
+      // A value with an `exact` correction has already been required to equal
+      // it, so it is the committed text a pull request reviewed. The audit has
+      // nothing to add, and it has rejected such values as different from the
+      // identical required text, so a reviewed correction never landed.
+      const reviewed = Object.keys(accepted).filter((key) => forLanguage(contextEntry(context, key)?.exact, lang) !== undefined);
+      for (const key of reviewed) translated[key] = accepted[key];
+      const acceptedKeys = Object.keys(accepted).filter((key) => !reviewed.includes(key));
       if (acceptedKeys.length) {
-        const audit = await client.chat({
-          name: "audit",
-          schema: auditSchema,
-          messages: auditMessages(languageName, acceptedKeys.map((key) => ({ key, translation: accepted[key] }))),
-        });
-        const verdicts = new Map((audit?.verdicts ?? []).map((verdict) => [verdict.key, verdict]));
+        const audit = (keys) =>
+          client.chat({
+            name: "audit",
+            schema: auditSchema,
+            messages: auditMessages(languageName, keys.map((key) => (notes[key] ? { key, translation: accepted[key], note: notes[key] } : { key, translation: accepted[key] }))),
+          });
+        // The same split as the translate call: an audit call that throws
+        // after chat()'s retries is retried key by key, and a key whose
+        // audit still throws is dropped — never accepted unaudited. The same
+        // narrowing applies: only a one-input failure splits, anything else
+        // rethrows and fails the language.
+        const verdicts = new Map();
+        const unaudited = new Set();
+        const record = (result) => {
+          for (const verdict of result?.verdicts ?? []) verdicts.set(verdict.key, verdict);
+        };
+        try {
+          record(await audit(acceptedKeys));
+        } catch (error) {
+          if (!splittable(error)) throw error;
+          let lastError = error;
+          for (const key of acceptedKeys) {
+            try {
+              record(await audit([key]));
+            } catch (error) {
+              if (!splittable(error)) throw error;
+              lastError = error;
+              unaudited.add(key);
+              dropped.push({ key, problem: `semantic audit: the model returned no usable response: ${error.message}` });
+            }
+          }
+          if (unaudited.size === acceptedKeys.length) throw lastError;
+        }
         for (const key of acceptedKeys) {
+          if (unaudited.has(key)) continue;
           const verdict = verdicts.get(key);
           if (verdict && verdict.ok === false) {
             dropped.push({ key, problem: `semantic audit: ${verdict.problem}` });
@@ -221,9 +481,15 @@ export async function translateLanguage({ root, lang, outDir, client, limit, log
 
   // Preserve the committed key order and append new translations in source
   // order, so the first automated PR is a minimal diff and later ones stay
-  // stable.
-  const catalogNext = { ...keep };
-  for (const key of missing) if (translated[key]) catalogNext[key] = translated[key];
+  // stable. A stale entry's replacement takes its old place; one whose
+  // retranslation was dropped keeps its committed value, so a failed
+  // correction changes nothing a reader sees and the next run tries again.
+  const catalogNext = {};
+  for (const key of Object.keys(catalog)) {
+    if (Object.hasOwn(keep, key)) catalogNext[key] = keep[key];
+    else if (stale.includes(key)) catalogNext[key] = translated[key] ?? catalog[key];
+  }
+  for (const key of missing) if (translated[key] && !Object.hasOwn(catalogNext, key)) catalogNext[key] = translated[key];
   const sidecarNext = Object.fromEntries(Object.keys(catalogNext).map((key) => [key, hashSource(key)]));
 
   // Final gate: the same validator CI runs. Any failure stops the batch —
@@ -245,6 +511,7 @@ export async function translateLanguage({ root, lang, outDir, client, limit, log
     lang,
     kept: Object.keys(keep).length,
     dead,
+    stale: stale.length,
     requested: missing.length,
     translated: Object.keys(translated).length,
     dropped,
@@ -288,7 +555,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const report = await translateLanguage({ root, lang, outDir, client, limit });
       reports.push(report);
       console.log(
-        `${lang}: kept ${report.kept}, pruned ${report.dead} dead, translated ${report.translated}/${report.requested} missing` +
+        `${lang}: kept ${report.kept}, pruned ${report.dead} dead` +
+          (report.stale ? `, ${report.stale} pinned for retranslation` : "") +
+          `, translated ${report.translated}/${report.requested} missing` +
           (report.dropped.length ? `, dropped ${report.dropped.length} (left as English fallback)` : "") +
           (report.changed ? "" : " — no changes"),
       );

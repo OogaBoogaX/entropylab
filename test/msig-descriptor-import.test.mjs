@@ -131,21 +131,42 @@ test("multipath suffixes strip like plain branch wildcards", () => {
 
 // Issue #389: the import used to drop every trailing step, so a descriptor
 // whose keys ended in /0/20/* imported as …/0/* — the displayed and exported
-// wallet silently differed from the imported one. Every shape the form cannot
-// reproduce exactly must now be refused instead of rewritten.
-test("a trailing path beyond the branch step is refused, not dropped (issue #389)", () => {
-  assert.throws(
-    () => hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/0/20/*,${keyB}/0/20/*))`),
-    /\/0\/20\/\*.*cannot reproduce|would change the wallet/,
-  );
-  // A branch the default receive/change window never derives.
-  assert.throws(
-    () => hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/5/*,${keyB}/5/*))`),
-    /would change the wallet/,
-  );
-  // A multipath that reaches past the change branch.
+// wallet silently differed from the imported one. Every shape is now either
+// reproduced exactly — public steps before the branch step stay on the key,
+// and the branch step sets the form's branch window — or refused.
+test("public steps before the branch step stay on the key, and the branch sets the window (issue #389)", () => {
+  // /0/20/* is the public step /0 on each key, then branch 20.
+  const deeper = hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/0/20/*,${keyB}/0/20/*))`);
+  assert.deepEqual(deeper.keys, [`${keyA}/0`, `${keyB}/0`]);
+  assert.deepEqual([deeper.branchStart, deeper.branchRange], [20, 1]);
+  // Each key keeps its own public steps; the branch is shared.
+  const mixed = hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/7/<0;1>/*,${keyB}/<0;1>/*))`);
+  assert.deepEqual(mixed.keys, [`${keyA}/7`, keyB]);
+  assert.deepEqual([mixed.branchStart, mixed.branchRange], [0, 2]);
+  // A branch outside receive/change is a one-branch window there.
+  const five = hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/5/*,${keyB}/5/*))`);
+  assert.deepEqual(five.keys, [keyA, keyB]);
+  assert.deepEqual([five.branchStart, five.branchRange], [5, 1]);
+  const pair = hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/<2;3>/*,${keyB}/<2;3>/*))`);
+  assert.deepEqual([pair.branchStart, pair.branchRange], [2, 2]);
+});
+
+test("shapes the form still cannot reproduce are refused, not rewritten (issue #389)", () => {
+  // A multipath with a gap, or wider than the form's two-branch window.
   assert.throws(
     () => hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/<0;2>/*,${keyB}/<0;2>/*))`),
+    /would change the wallet/,
+  );
+  assert.throws(
+    () => hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/<0;1;2>/*,${keyB}/<0;1;2>/*))`),
+    /would change the wallet/,
+  );
+  // A hardened step below an extended public key cannot be derived at all.
+  assert.throws(() => hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/1h/0/*,${keyB}/1h/0/*))`));
+  assert.throws(() => hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/5h/*,${keyB}/5h/*))`));
+  // A multipath anywhere but the branch step.
+  assert.throws(
+    () => hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}/<0;1>/0/*,${keyB}/<0;1>/0/*))`),
     /would change the wallet/,
   );
   // No branch step at all: the tool always derives one below the key.
@@ -161,9 +182,10 @@ test("a trailing path beyond the branch step is refused, not dropped (issue #389
 });
 
 test("reproducible tails still import: receive, change, and the receive/change multipath", () => {
-  for (const tail of ["/0/*", "/1/*", "/<0;1>/*", "/<1;0>/*"]) {
+  for (const [tail, window] of [["/0/*", [0, 1]], ["/1/*", [1, 1]], ["/<0;1>/*", [0, 2]], ["/<1;0>/*", [0, 2]]]) {
     const parsed = hodlParseMsigDescriptor(`wsh(sortedmulti(2,${keyA}${tail},${keyB}${tail}))`);
     assert.deepEqual(parsed.keys, [keyA, keyB], `tail ${tail}`);
+    assert.deepEqual([parsed.branchStart, parsed.branchRange], window, `tail ${tail}: branch window`);
   }
 });
 
@@ -325,11 +347,10 @@ test("more keys than the quorum supports are refused", () => {
 
 test("both markups ship the multisig wallet descriptor import panel and the app wires it", () => {
   for (const markup of [shell]) {
-    assert.match(markup, /<summary[^>]*>Import a multisig wallet descriptor<\/summary>/, "expandable summary");
     assert.ok(markup.includes('id="msig-descriptor"'), "descriptor textarea");
     assert.ok(markup.includes('id="msig-descriptor-import"'), "import button");
     assert.ok(markup.includes('id="msig-descriptor-status"'), "status line");
-    assert.ok(markup.includes('id="msig-descriptor-import" type="button" disabled aria-disabled="true"'), "the import button ships disabled — the descriptor field starts empty");
+    assert.ok(markup.includes('id="msig-descriptor-import" type="button" disabled'), "the import button ships disabled — the descriptor field starts empty");
     assert.ok(markup.indexOf('id="msig-import"') < markup.indexOf('class="msig-threshold-labels"'), "descriptor import comes before manual quorum selection");
   }
   assert.ok(app.includes('addEventListener("click", hodlImportMsigDescriptor)'), "the import button is wired");

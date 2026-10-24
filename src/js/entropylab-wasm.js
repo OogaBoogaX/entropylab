@@ -6,13 +6,20 @@
 // the helpers here so the module is decoded and instantiated exactly once.
 // The boundary helpers copy inputs into linear memory for the duration of
 // one call and copy outputs back out; el_free zeroes each buffer before
-// deallocating it, so nothing secret is left behind in linear memory.
+// deallocating it. Buffers are not the only copies, though: Rust frames
+// (including dependency code with no erase API) spill arguments and
+// temporaries into the shadow stack, which also lives in linear memory and is
+// not erased when a frame pops. So every export is wrapped to schedule a
+// zeroing of the whole stack region once per task (wasm-stack-scrub.js).
 //
 // Loading: browsers refuse to compile a module this size synchronously on
 // the main thread, so in the browser instantiation is async and app boot
 // waits on wasmReady. Node (the test suite) has no such limit, so there the
 // module is initialized synchronously at import time.
 import { ENTROPYLAB_WASM_B64 } from "./entropylab-wasm-b64.js";
+import { makeStackScrub, stackRegion, overwriteWithPatterns } from "./wasm-stack-scrub.js";
+
+export { stackRegion };
 
 const wasmBytes = (() => {
   const binary = atob(ENTROPYLAB_WASM_B64);
@@ -21,21 +28,45 @@ const wasmBytes = (() => {
   return bytes;
 })();
 
-let wasm = null; // WebAssembly exports; set by init below.
+// The shadow-stack region is verified against the binary at load and the
+// exports are wrapped to zero that region once per task; see
+// wasm-stack-scrub.js for the mechanism and its failure modes.
+const stack = makeStackScrub(wasmBytes);
+export const wasmStackTop = () => stack.stackTop;
+// Exported for the tests that fill the region to watch the scrub. Callers
+// that need the stack clean synchronously call scrubStack().
+export const scrubStack = () => stack.scrubStack();
+
+let wasm = null; // Wrapped WebAssembly exports; set by init below.
+
+const bind = (instance) => {
+  stack.bind(instance);
+  wasm = stack.guard(instance.exports);
+};
 
 const isNode = typeof process !== "undefined" && !!(process.versions && process.versions.node);
 if (isNode) {
   // Node has no synchronous-compilation size limit; tests stay synchronous.
-  wasm = new WebAssembly.Instance(new WebAssembly.Module(wasmBytes), {}).exports;
+  bind(new WebAssembly.Instance(new WebAssembly.Module(wasmBytes), {}));
 }
 export const wasmReady = isNode
   ? Promise.resolve()
-  : WebAssembly.instantiate(wasmBytes, {}).then(({ instance }) => {
-      wasm = instance.exports;
-    });
+  : WebAssembly.instantiate(wasmBytes, {}).then(({ instance }) => bind(instance));
 
+let retired = false;
 export const requireReady = () => {
+  if (retired) throw new Error("This session has ended; reload the page to start a new one.");
   if (!wasm) throw new Error("EntropyLab WebAssembly is not initialized yet; await wasmReady.");
+};
+// End session: overwrites the whole linear memory (heap, shadow stack, the
+// module's own data) with patterns, ending at zero, and drops the instance.
+// What the buffers, the stack scrub and the dependencies' unerasable heap
+// copies held is gone at once; the module cannot run again on the zeroed
+// memory, so every later call is refused.
+export const retireWasm = ({ onPass } = {}) => {
+  if (wasm) overwriteWithPatterns(new Uint8Array(wasm.memory.buffer), onPass);
+  wasm = null;
+  retired = true;
 };
 export const wasmExports = () => {
   requireReady();

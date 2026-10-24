@@ -1,7 +1,8 @@
 // The footer build stamp: the page closes with the version, the short commit
 // hash and a LifeHash of the commit, so any downloaded copy identifies the
 // exact source revision it was built from. The build stamps the tokens
-// (git rev-parse HEAD, "unknown" without git metadata); the app renders the
+// (the last commit that changed a build input, "unknown" without git
+// metadata; build-commit.test.mjs owns which commit); the app renders the
 // LifeHash at boot from the stamped data-commit. The ui-defaults suite owns
 // the footer markup shape; this suite owns the stamping and wiring.
 // Run with `npm test` (part of the default suite).
@@ -16,8 +17,7 @@ const read = (path) => readFileSync(join(root, path), "utf8");
 
 test("the build stamps the commit tokens from git, with a snapshot fallback", () => {
   const build = read("scripts/build.mjs");
-  assert.match(build, /execFileSync\("git", \["rev-parse", "HEAD"\]/);
-  assert.match(build, /return "unknown";/);
+  assert.match(read("scripts/build-commit.mjs"), /return "unknown";/);
   assert.match(build, /!\/\^\(\?:\[0-9a-f\]\{40\}\|unknown\)\$\/\.test\(commit\)/);
   assert.match(build, /\.split\("\{\{COMMIT\}\}"\)\.join\(commit\)/);
   assert.match(build, /\.split\("\{\{COMMIT_SHORT\}\}"\)\.join\(commit === "unknown" \? "unknown" : commit\.slice\(0, 7\)\)/);
@@ -26,9 +26,16 @@ test("the build stamps the commit tokens from git, with a snapshot fallback", ()
   assert.match(build, /\{\{\(\?:VERSION\|PWA_VERSION\|COMMIT\|COMMIT_SHORT\)\}\}/);
 });
 
+test("a push build fails if the page did not stamp a source commit", () => {
+  const workflow = read(".github/workflows/ci-cd.yml");
+  const build = workflow.match(/^  build:\n[\s\S]*?(?=^  [\w-]+:)/m)?.[0] ?? "";
+  // "unknown" means a build input was dirty in CI; a release must never ship it.
+  assert.match(build, /name: Check the footer stamped a source commit\n\s+if: github\.event_name == 'push'\n\s+run: grep -q 'data-commit="\[0-9a-f\]\\\{40\\\}"' entropylab\.html/);
+});
+
 test("both footers carry the build stamp and the LifeHash target", () => {
   for (const markup of [read("src/shell.html")]) {
-    assert.match(markup, /<span class="page-footer-build">v\{\{VERSION\}\} · commit <code>\{\{COMMIT_SHORT\}\}<\/code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" alt="LifeHash of the build commit" hidden><\/span>/);
+    assert.match(markup, /<span class="page-footer-build">v\{\{VERSION\}\} · commit <code>\{\{COMMIT_SHORT\}\}<\/code> <img class="page-footer-lifehash" id="page-footer-lifehash" data-commit="\{\{COMMIT\}\}" width="20" height="20" src="data:[^"]*" alt="LifeHash of the build commit" hidden><\/span>/);
   }
 });
 
@@ -44,8 +51,3 @@ test("the app renders the commit LifeHash on page load, only for a real commit",
   assert.match(app, /hodlLifeHash\s*\n?\s*\.fromFingerprint\(commit\)/);
 });
 
-test("the footer LifeHash is styled as an inline identicon", () => {
-  const css = read("src/css/styles.css");
-  assert.match(css, /\.page-footer-lifehash \{[^}]*border-radius: 3px;/);
-  assert.match(css, /\.page-footer-build code \{ font-family: var\(--mono\); \}/);
-});

@@ -36,11 +36,13 @@ use bitcoin::{
     Witness,
 };
 use serde_json::{json, Map, Value};
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::str::FromStr;
 
 mod sanitize;
+mod scriptcode;
 mod verify;
 
 // Keep the inspector bounded like the JS side (src/js/app.js): 5 MB of PSBT,
@@ -48,10 +50,14 @@ mod verify;
 const MAX_PSBT_BYTES: usize = 5_000_000;
 const MAX_JSON_BYTES: usize = 64_000_000;
 const MAX_PAIRS_PER_MAP: usize = 10_000;
+// Across all maps. A 5 MB file can hold about a million minimal pairs; the
+// inspector builds a JSON view for every one, so bound the total before the
+// 64 MB output check can run (audit M5).
+const MAX_TOTAL_PAIRS: usize = 100_000;
 const MAX_TX_ELEMENTS: usize = 100_000;
 // The problem list is display-facing; a hostile file (10k malformed pairs)
 // must not blow the JSON budget on findings alone.
-const MAX_PROBLEMS: usize = 64;
+pub(crate) const MAX_PROBLEMS: usize = 64;
 
 thread_local! {
     static LAST_ERROR: RefCell<String> = const { RefCell::new(String::new()) };
@@ -63,7 +69,13 @@ fn set_error(message: String) -> i32 {
 }
 
 fn clear_error() {
-    LAST_ERROR.with(|slot| slot.borrow_mut().clear());
+    LAST_ERROR.with(|slot| {
+        let mut message = slot.borrow_mut();
+        // Error text can echo attacker-controlled field data (key/value hex);
+        // clear() alone keeps the bytes in the String's allocation.
+        unsafe { message.as_mut_vec().fill(0) };
+        message.clear();
+    });
 }
 
 /// Allocates `len` zero-filled bytes of linear memory for JS to fill. Pair
@@ -100,6 +112,49 @@ unsafe fn wipe(ptr: *mut u8, len: usize) {
     std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
 }
 
+/// Volatile-zero an owned byte buffer before it deallocates: a dropped Vec
+/// keeps its contents readable until the heap cell is reused, and the buffers
+/// wiped this way can hold a whole pasted PSBT or its JSON form.
+fn wipe_vec(bytes: &mut Vec<u8>) {
+    // Soundness: writes stay within the Vec's owned `len` bytes.
+    unsafe { wipe(bytes.as_mut_ptr(), bytes.len()) };
+}
+
+/// Erase every allocation on free, not only the buffers this crate wipes
+/// explicitly. rust-bitcoin's parse frames and serde_json's strings can hold
+/// pasted key material (a proprietary xprv, say) long after the value that
+/// owned them is dropped.
+struct WipingAllocator;
+
+#[global_allocator]
+static ALLOCATOR: WipingAllocator = WipingAllocator;
+
+unsafe impl GlobalAlloc for WipingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        System.alloc(layout)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        wipe(ptr, layout.size());
+        System.dealloc(ptr, layout);
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // System.realloc may free the old block before we can erase it.
+        // Allocate/copy/erase instead; on failure the old allocation remains
+        // intact, as GlobalAlloc requires. No Rust allocation occurs in wipe.
+        let Ok(new_layout) = Layout::from_size_align(new_size, layout.align()) else {
+            return std::ptr::null_mut();
+        };
+        let next = System.alloc(new_layout);
+        if !next.is_null() {
+            std::ptr::copy_nonoverlapping(ptr, next, layout.size().min(new_size));
+            self.dealloc(ptr, layout);
+        }
+        next
+    }
+}
+
 /// Copies the last error message into `out` (two-call convention: null `out`
 /// returns the required capacity). Returns the byte length, 0 when there is
 /// no error, or -1 (and a fresh "buffer too small" error) when `out` is
@@ -132,7 +187,15 @@ pub unsafe extern "C" fn psbt_inspect(
     clear_error();
     let input = std::slice::from_raw_parts(in_ptr, in_len);
     match inspect(input) {
-        Ok(json) => write_out(json.as_bytes(), out, out_cap),
+        // The finished JSON names every pair value in the file, including a
+        // proprietary field's pasted xprv; into_bytes reowns the String's
+        // allocation so the dropped copy leaves nothing behind.
+        Ok(json) => {
+            let mut bytes = json.into_bytes();
+            let written = write_out(&bytes, out, out_cap);
+            wipe_vec(&mut bytes);
+            written
+        }
         Err(message) => set_error(message),
     }
 }
@@ -150,7 +213,13 @@ pub unsafe extern "C" fn psbt_build(
     clear_error();
     let input = std::slice::from_raw_parts(in_ptr, in_len);
     match build(input) {
-        Ok(bytes) => write_out(&bytes, out, out_cap),
+        // The finished file keeps whatever the pasted or edited PSBT
+        // carried; wipe the owned copy before it deallocates.
+        Ok(mut bytes) => {
+            let written = write_out(&bytes, out, out_cap);
+            wipe_vec(&mut bytes);
+            written
+        }
         Err(message) => set_error(message),
     }
 }
@@ -248,6 +317,7 @@ fn span_end(off: usize, len: u64, total: usize) -> Option<usize> {
 
 // ── Raw map parsing ─────────────────────────────────────────────────────────
 
+#[cfg_attr(test, derive(Debug))]
 pub(crate) struct RawPair {
     pub(crate) key: Vec<u8>,     // type byte + keydata, exactly as serialized
     pub(crate) value: Vec<u8>,
@@ -278,6 +348,7 @@ fn read_map(bytes: &[u8], off: &mut usize) -> Result<Vec<RawPair>, String> {
     }
 }
 
+#[cfg_attr(test, derive(Debug))]
 struct RawPsbt {
     globals: Vec<RawPair>,
     inputs: Vec<Vec<RawPair>>,
@@ -297,6 +368,52 @@ struct RawPsbt {
 
 /// The BIP-125-style threshold separating height- from time-based locktimes.
 const LOCKTIME_THRESHOLD: u32 = 500_000_000;
+
+/// BIP-370 fields whose key is the type byte alone. BIP-174 says a key with
+/// no data except the type specifier must contain only that specifier; a
+/// longer key is not that field, and the PSBT is invalid.
+const BIP370_SINGLETON_GLOBAL: [u8; 5] = [0x02, 0x03, 0x04, 0x05, 0x06];
+const BIP370_SINGLETON_INPUT: [u8; 5] = [0x0e, 0x0f, 0x10, 0x11, 0x12];
+const BIP370_SINGLETON_OUTPUT: [u8; 2] = [0x03, 0x04];
+
+fn reject_singleton_keydata(kind: &str, pairs: &[RawPair], types: &[u8]) -> Result<(), String> {
+    for pair in pairs {
+        if pair.key.len() > 1 && types.contains(&pair.key[0]) {
+            return Err(format!("{} must not carry key data", pair_type_name(kind, pair.key[0])));
+        }
+    }
+    Ok(())
+}
+
+fn reject_bip370_singleton_keydata(
+    globals: &[RawPair],
+    inputs: &[Vec<RawPair>],
+    outputs: &[Vec<RawPair>],
+) -> Result<(), String> {
+    reject_singleton_keydata("global", globals, &BIP370_SINGLETON_GLOBAL)?;
+    for map in inputs {
+        reject_singleton_keydata("input", map, &BIP370_SINGLETON_INPUT)?;
+    }
+    for map in outputs {
+        reject_singleton_keydata("output", map, &BIP370_SINGLETON_OUTPUT)?;
+    }
+    Ok(())
+}
+
+/// Refuses every keyless typed field that carries key data, not just BIP-370's.
+/// `is_singleton` names the fields whose key is the type byte alone; a longer
+/// key is a lookalike (`decode_pair` reports it as "this field must not carry
+/// key data"). The v2 builder passes unknown pairs through verbatim, so
+/// without this check a hand-edited document could emit a file whose typed
+/// fields mean one thing here and another to a reader that ignores keydata.
+fn reject_lookalike_keydata(kind: &str, pairs: &[RawPair]) -> Result<(), String> {
+    for pair in pairs {
+        if pair.key.len() > 1 && is_singleton(kind, pair.key[0]) {
+            return Err(format!("{} must not carry key data", pair_type_name(kind, pair.key[0])));
+        }
+    }
+    Ok(())
+}
 
 /// The one occurrence of a keyless-data typed field in a v2 map; duplicates
 /// of a typed field are a format error, not an ambiguity to resolve.
@@ -475,7 +592,13 @@ fn parse_raw(bytes: &[u8]) -> Result<RawPsbt, String> {
     let mut unsigned: Option<Vec<u8>> = None;
     for pair in &globals {
         let (kind, keydata) = (pair.key[0], &pair.key[1..]);
-        if kind == 0xfb && keydata.is_empty() {
+        if kind == 0xfb {
+            // BIP-174 defines this key as the type byte alone. A longer key
+            // is not a version field: ignoring it made a v2 file look like v0
+            // and left a second version key unread.
+            if !keydata.is_empty() {
+                return Err("PSBT_GLOBAL_VERSION must not carry key data".into());
+            }
             if pair.value.len() != 4 {
                 return Err("PSBT_GLOBAL_VERSION must be a 4-byte value".into());
             }
@@ -534,9 +657,47 @@ fn parse_raw(bytes: &[u8]) -> Result<RawPsbt, String> {
     if off != bytes.len() {
         return Err("PSBT contains trailing data or extra maps".into());
     }
+    let total_pairs = globals.len()
+        + inputs.iter().map(Vec::len).sum::<usize>()
+        + outputs.iter().map(Vec::len).sum::<usize>();
+    if total_pairs > MAX_TOTAL_PAIRS {
+        return Err("this PSBT has too many key-value pairs to inspect safely".into());
+    }
+    // BIP-370: PSBT_GLOBAL_TX_VERSION, _FALLBACK_LOCKTIME, _INPUT_COUNT,
+    // _OUTPUT_COUNT, _TX_MODIFIABLE, and their per-input/per-output
+    // counterparts are exclusive to PSBTv2 and "must not be included" in a
+    // v0 PSBT (BIP-370's own invalid-vector test cases exercise exactly
+    // this). The v0 branch above only checked for the *presence* of the
+    // unsigned tx; nothing rejected a v0 file that also carries these v2
+    // fields, so it decoded — and rebuilt — as if it were valid.
+    if v0_tx.is_some() {
+        let reject = |kind: &str, type_byte: u8| -> String {
+            format!("{} is a PSBT v2 field and must not appear in a PSBT v0", pair_type_name(kind, type_byte))
+        };
+        for pair in &globals {
+            if BIP370_SINGLETON_GLOBAL.contains(&pair.key[0]) {
+                return Err(reject("global", pair.key[0]));
+            }
+        }
+        for map in &inputs {
+            for pair in map {
+                if BIP370_SINGLETON_INPUT.contains(&pair.key[0]) {
+                    return Err(reject("input", pair.key[0]));
+                }
+            }
+        }
+        for map in &outputs {
+            for pair in map {
+                if BIP370_SINGLETON_OUTPUT.contains(&pair.key[0]) {
+                    return Err(reject("output", pair.key[0]));
+                }
+            }
+        }
+    }
     let unsigned_tx = match v0_tx {
         Some(tx) => tx,
         None => {
+            reject_bip370_singleton_keydata(&globals, &inputs, &outputs)?;
             let tx_version = v2_u32(&globals, 0x02, "PSBT_GLOBAL_TX_VERSION")?
                 .ok_or("a PSBT v2 is missing PSBT_GLOBAL_TX_VERSION")? as i32;
             let fallback_locktime = v2_u32(&globals, 0x03, "PSBT_GLOBAL_FALLBACK_LOCKTIME")?;
@@ -635,7 +796,7 @@ fn fingerprint_and_path(value: &[u8]) -> Result<(String, String), String> {
     Ok((fingerprint, path))
 }
 
-/// BIP-174 / BIP-370 / BIP-371 type names used by inspect and sanitize.
+/// BIP-174 / BIP-370 / BIP-371 / BIP-373 type names used by inspect and sanitize.
 pub(crate) fn pair_type_name(kind: &str, type_byte: u8) -> &'static str {
     match (kind, type_byte) {
         ("global", 0x00) => "PSBT_GLOBAL_UNSIGNED_TX",
@@ -672,6 +833,13 @@ pub(crate) fn pair_type_name(kind: &str, type_byte: u8) -> &'static str {
         ("input", 0x16) => "PSBT_IN_TAP_BIP32_DERIVATION",
         ("input", 0x17) => "PSBT_IN_TAP_INTERNAL_KEY",
         ("input", 0x18) => "PSBT_IN_TAP_MERKLE_ROOT",
+        // BIP-373 MuSig2 fields (the scheme itself is BIP-327): participant
+        // pubkeys, public nonces, and partial signatures are all
+        // signing-session material — the diff layer keys its signing
+        // classification off these names (audit B3).
+        ("input", 0x1a) => "PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS",
+        ("input", 0x1b) => "PSBT_IN_MUSIG2_PUB_NONCE",
+        ("input", 0x1c) => "PSBT_IN_MUSIG2_PARTIAL_SIG",
         ("input", 0xfc) => "PSBT_IN_PROPRIETARY",
         ("input", _) => "PSBT_IN_UNKNOWN",
         ("output", 0x00) => "PSBT_OUT_REDEEM_SCRIPT",
@@ -682,9 +850,28 @@ pub(crate) fn pair_type_name(kind: &str, type_byte: u8) -> &'static str {
         ("output", 0x05) => "PSBT_OUT_TAP_INTERNAL_KEY",
         ("output", 0x06) => "PSBT_OUT_TAP_TREE",
         ("output", 0x07) => "PSBT_OUT_TAP_BIP32_DERIVATION",
+        // BIP-373: the aggregate key's participant list. Metadata, not
+        // signing material, but named like its input-side twin.
+        ("output", 0x08) => "PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS",
         ("output", 0xfc) => "PSBT_OUT_PROPRIETARY",
         ("output", _) => "PSBT_OUT_UNKNOWN",
         _ => "PSBT_UNKNOWN",
+    }
+}
+
+/// True when `type_byte` names a PSBT field that must not carry key data.
+/// A pair with keydata on one of these is a lookalike, not the field: a
+/// decoder that ignored the extra bytes would present attacker-chosen data
+/// as, say, the witness UTXO.
+fn is_singleton(kind: &str, type_byte: u8) -> bool {
+    match kind {
+        "global" => matches!(type_byte, 0x00 | 0x02 | 0x03 | 0x04 | 0x05 | 0x06 | 0xfb),
+        "input" => matches!(
+            type_byte,
+            0x00 | 0x01 | 0x03 | 0x04 | 0x05 | 0x07 | 0x08 | 0x0e | 0x0f | 0x10 | 0x11 | 0x12 | 0x13 | 0x17 | 0x18
+        ),
+        "output" => matches!(type_byte, 0x00 | 0x01 | 0x03 | 0x04 | 0x05 | 0x06),
+        _ => false,
     }
 }
 
@@ -696,7 +883,10 @@ fn decode_pair(kind: &str, pair: &RawPair, tx: &Transaction, input_index: Option
     let keydata = &pair.key[1..];
     let name = pair_type_name(kind, type_byte).to_string();
 
-    let decoded: Result<Value, String> = (|| {
+    let decoded: Result<Value, String> = if !keydata.is_empty() && is_singleton(kind, type_byte) {
+        Err("this field must not carry key data".into())
+    } else {
+        (|| {
         Ok(match (kind, type_byte) {
             ("global", 0x00) => json!({
                 "note": "Decoded in the transaction section; edit it there.",
@@ -908,7 +1098,8 @@ fn decode_pair(kind: &str, pair: &RawPair, tx: &Transaction, input_index: Option
             ("output", 0x06) => tap_tree_json(&pair.value)?,
             _ => return Ok(Value::Null),
         })
-    })();
+        })()
+    };
 
     let mut view = Map::new();
     view.insert("name".into(), Value::String(name));
@@ -922,9 +1113,23 @@ fn decode_pair(kind: &str, pair: &RawPair, tx: &Transaction, input_index: Option
     view.into()
 }
 
+// A Schnorr/Taproot signature is exactly 64 bytes, or 65 with a defined
+// Taproot sighash byte appended (BIP-341). SIGHASH_DEFAULT (0x00) exists only
+// as the 64-byte implicit form: an appended 0x00 suffix is not a valid
+// encoding, and neither is any other byte outside this set. This mirrors
+// TAPROOT_SIGHASH_BYTES / hodlLooksSchnorr in src/js/psbt-schnorr.js (issue
+// #333) — that fix closed the gap in the standalone inspector's hand-rolled
+// JS parser, but the PSBT editor's diagram reads its "decoded" signing status
+// from this WASM decoder, which accepted any 65th byte and so still let a
+// signature with an undefined sighash suffix read as genuinely signed.
+const TAPROOT_SIGHASH_BYTES: [u8; 6] = [0x01, 0x02, 0x03, 0x81, 0x82, 0x83];
+
 fn tap_sig_json(value: &[u8]) -> Result<Value, String> {
     if value.len() != 64 && value.len() != 65 {
         return Err("taproot signature must be 64 or 65 bytes".into());
+    }
+    if value.len() == 65 && !TAPROOT_SIGHASH_BYTES.contains(&value[64]) {
+        return Err("taproot signature's sighash byte is not a defined Taproot sighash type".into());
     }
     let sighash = if value.len() == 65 { value[64] } else { 0 };
     Ok(json!({
@@ -1213,6 +1418,11 @@ fn inspect(bytes: &[u8]) -> Result<String, String> {
             problems.push(verify::Problem::warning("transaction".into(), "fee_impossible", error.to_string()));
         }
     }
+    // Count before truncating: the display list is capped, but the severity
+    // totals must describe the whole list or a crafted file could push every
+    // error off it and read as warnings-only (audit C3-4).
+    let problem_count = problems.len();
+    let error_count = problems.iter().filter(|p| p.severity == verify::ERROR).count();
     let problems_truncated = problems.len() > MAX_PROBLEMS;
     problems.truncate(MAX_PROBLEMS);
 
@@ -1236,6 +1446,8 @@ fn inspect(bytes: &[u8]) -> Result<String, String> {
             "message": p.message,
         })).collect::<Vec<_>>(),
         "problemsTruncated": problems_truncated,
+        "problemCount": problem_count,
+        "errorCount": error_count,
     });
     let text = serde_json::to_string(&doc).map_err(|e| format!("JSON encode failed: {e}"))?;
     if text.len() > MAX_JSON_BYTES {
@@ -1385,6 +1597,9 @@ fn build(json_bytes: &[u8]) -> Result<Vec<u8>, String> {
     let global_pairs = build_map(&doc["globals"], "`globals`")?;
     let mut version = 0u32;
     for pair in &global_pairs {
+        if pair.key.first() == Some(&0xfb) && pair.key.len() != 1 {
+            return Err("PSBT_GLOBAL_VERSION must not carry key data".into());
+        }
         if pair.key == [0xfb] {
             if pair.value.len() != 4 {
                 return Err("PSBT_GLOBAL_VERSION must be a 4-byte value".into());
@@ -1478,6 +1693,17 @@ fn build_v2(doc: &Value, tx: &Transaction, global_pairs: Vec<RawPair>, insane: b
             outputs.len(),
             tx.output.len()
         ));
+    }
+    // A non-exact singleton key is passed through below (only the one-byte
+    // key is regenerated). Refuse every lookalike here — BIP-370's fields and
+    // the rest — so the editor cannot emit a file whose reader would have to
+    // ignore that key. (v0 gets the same rule from rust-bitcoin's parser.)
+    reject_lookalike_keydata("global", &global_pairs)?;
+    for map in &inputs {
+        reject_lookalike_keydata("input", map)?;
+    }
+    for map in &outputs {
+        reject_lookalike_keydata("output", map)?;
     }
 
     // Same export gate as the v0 path: BIP-370 changes the container, not
@@ -1608,4 +1834,225 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn parse_raw_rejects_over_5mb() {
+        let big = vec![0u8; super::MAX_PSBT_BYTES + 1];
+        let err = match parse_raw(&big) {
+            Ok(_) => panic!("should reject >5MB"),
+            Err(e) => e,
+        };
+        assert_eq!(err, "this PSBT is too large to inspect safely");
+    }
+
+    #[test]
+    fn parse_raw_accepts_exactly_5mb_at_size_gate() {
+        let exact = vec![0u8; super::MAX_PSBT_BYTES];
+        let err = match parse_raw(&exact) {
+            Ok(_) => return,
+            Err(e) => e,
+        };
+        assert_ne!(err, "this PSBT is too large to inspect safely");
+    }
+
+    #[test]
+    fn parse_raw_rejects_10001_pairs_in_map() {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(b"psbt\xFF");
+        for _ in 0..10_001 {
+            raw.push(0x01);
+            raw.push(0x00);
+            raw.push(0x00);
+        }
+        raw.push(0x00);
+        let err = match parse_raw(&raw) {
+            Ok(_) => panic!("should reject >10000 pairs"),
+            Err(e) => e,
+        };
+        assert_eq!(err, "PSBT map has too many entries to inspect safely");
+    }
+
+    #[test]
+    fn parse_raw_accepts_10000_pairs_at_count_gate() {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(b"psbt\xFF");
+        for _ in 0..10_000 {
+            raw.push(0x01);
+            raw.push(0x00);
+            raw.push(0x00);
+        }
+        raw.push(0x00);
+        // Synthetic PSBT need not be otherwise valid.
+        // We only pin that the pair-count gate is strictly > 10,000, not >=.
+        let res = parse_raw(&raw);
+        if let Err(e) = res {
+            assert_ne!(e, "PSBT map has too many entries to inspect safely");
+        }
+    }
+
+    // BIP-174: a key defined with no key data "must only have the type
+    // specifier in the key." BIP-370 marks every new field that way, and
+    // BIP-174 does the same for PSBT_GLOBAL_VERSION. Matching only a
+    // one-byte key used to ignore the long key and accept the file.
+    fn unhex(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn read_compact(bytes: &[u8], at: &mut usize) -> usize {
+        let first = bytes[*at] as usize;
+        *at += 1;
+        if first < 0xfd {
+            return first;
+        }
+        assert_eq!(first, 0xfd);
+        let n = bytes[*at] as usize | ((bytes[*at + 1] as usize) << 8);
+        *at += 2;
+        n
+    }
+
+    fn push_compact(out: &mut Vec<u8>, n: usize) {
+        if n < 0xfd {
+            out.push(n as u8);
+        } else {
+            out.push(0xfd);
+            out.push(n as u8);
+            out.push((n >> 8) as u8);
+        }
+    }
+
+    fn split_maps(bytes: &[u8]) -> Vec<Vec<(Vec<u8>, Vec<u8>)>> {
+        let mut at = 5;
+        let mut maps = Vec::new();
+        while at < bytes.len() {
+            let mut pairs = Vec::new();
+            loop {
+                let key_len = read_compact(bytes, &mut at);
+                if key_len == 0 {
+                    break;
+                }
+                let key = bytes[at..at + key_len].to_vec();
+                at += key_len;
+                let val_len = read_compact(bytes, &mut at);
+                let val = bytes[at..at + val_len].to_vec();
+                at += val_len;
+                pairs.push((key, val));
+            }
+            maps.push(pairs);
+        }
+        maps
+    }
+
+    fn join_maps(maps: &[Vec<(Vec<u8>, Vec<u8>)>]) -> Vec<u8> {
+        let mut out = b"psbt\xff".to_vec();
+        for pairs in maps {
+            for (key, val) in pairs {
+                push_compact(&mut out, key.len());
+                out.extend_from_slice(key);
+                push_compact(&mut out, val.len());
+                out.extend_from_slice(val);
+            }
+            out.push(0);
+        }
+        out
+    }
+
+    fn with_keydata(bytes: &[u8], map_index: usize, type_byte: u8, value: &[u8]) -> Vec<u8> {
+        let mut maps = split_maps(bytes);
+        maps[map_index].push((vec![type_byte, 0x00], value.to_vec()));
+        join_maps(&maps)
+    }
+
+    #[test]
+    fn bip370_singleton_keydata_is_refused() {
+        // BIP-370's own minimal valid vector.
+        let minimal = unhex(
+            "70736274ff01020402000000010401010105010201fb040200000000010e200b0ad921419c1c8719735d72dc739f9ea9e0638d1fe4c1eef0f9944084815fc8010f0400000000000103080008af2f000000000104160014c430f64c4756da310dbd1a085572ef299926272c000103088bbdeb0b0000000001041600144dd193ac964a56ac1b9e1cca8454fe2f474f851300",
+        );
+        let cases: &[(&str, usize, u8, &[u8])] = &[
+            ("PSBT_GLOBAL_TX_VERSION", 0, 0x02, &[1, 0, 0, 0][..]),
+            ("PSBT_GLOBAL_FALLBACK_LOCKTIME", 0, 0x03, &[0x10, 0x27, 0, 0][..]),
+            ("PSBT_GLOBAL_INPUT_COUNT", 0, 0x04, &[2][..]),
+            ("PSBT_GLOBAL_OUTPUT_COUNT", 0, 0x05, &[2][..]),
+            ("PSBT_GLOBAL_TX_MODIFIABLE", 0, 0x06, &[0x07][..]),
+            ("PSBT_GLOBAL_VERSION", 0, 0xfb, &[2, 0, 0, 0][..]),
+            ("PSBT_IN_PREVIOUS_TXID", 1, 0x0e, &[0x11; 32][..]),
+            ("PSBT_IN_OUTPUT_INDEX", 1, 0x0f, &[1, 0, 0, 0][..]),
+            ("PSBT_IN_SEQUENCE", 1, 0x10, &[0xfd, 0xff, 0xff, 0xff][..]),
+            ("PSBT_IN_REQUIRED_TIME_LOCKTIME", 1, 0x11, &[0x00, 0x65, 0xcd, 0x1d][..]),
+            ("PSBT_IN_REQUIRED_HEIGHT_LOCKTIME", 1, 0x12, &[0x10, 0x27, 0, 0][..]),
+            ("PSBT_OUT_AMOUNT", 2, 0x03, &[0; 8][..]),
+            ("PSBT_OUT_SCRIPT", 2, 0x04, &[0x51][..]),
+        ];
+        for (name, map_index, type_byte, value) in cases {
+            let err = parse_raw(&with_keydata(&minimal, *map_index, *type_byte, value))
+                .expect_err(name);
+            assert!(
+                err.contains(&format!("{name} must not carry key data")),
+                "{name}: {err}"
+            );
+        }
+        // A proprietary key is defined to carry key data.
+        let mut maps = split_maps(&minimal);
+        maps[0].push((vec![0xfc, 0x00, 0x00], vec![0x01]));
+        assert!(parse_raw(&join_maps(&maps)).is_ok());
+        // An input partial signature's pubkey is key data, not a singleton.
+        let mut maps = split_maps(&minimal);
+        let mut key = vec![0x02, 0x02];
+        key.extend(std::iter::repeat(0x11).take(32));
+        maps[1].push((key, vec![0x01]));
+        assert!(parse_raw(&join_maps(&maps)).is_ok());
+
+        // The only version key is the long one. It must not be dropped and
+        // the rest of the file read as v0.
+        let mut maps = split_maps(&minimal);
+        let version = maps[0].iter_mut().find(|(key, _)| key.as_slice() == [0xfb]).unwrap();
+        version.0 = vec![0xfb, 0x00];
+        let err = parse_raw(&join_maps(&maps)).expect_err("malformed version key");
+        assert!(err.contains("PSBT_GLOBAL_VERSION must not carry key data"), "{err}");
+    }
+
+    // The inspect document names BIP-174 types because the diff layer
+    // (src/js/psbt-diff.js) classifies signing material by those names.
+    // BIP-373's MuSig2 input types are signing material: a swapped nonce or
+    // partial signature must surface by name, not as UNKNOWN (audit B3).
+    // The expected strings are BIP-373's own type identifiers.
+    #[test]
+    fn bip373_musig2_types_are_named() {
+        assert_eq!(
+            pair_type_name("input", 0x1a),
+            "PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS"
+        );
+        assert_eq!(pair_type_name("input", 0x1b), "PSBT_IN_MUSIG2_PUB_NONCE");
+        assert_eq!(pair_type_name("input", 0x1c), "PSBT_IN_MUSIG2_PARTIAL_SIG");
+        // Unassigned bytes keep the UNKNOWN fallback: 0x19 is unassigned,
+        // 0x1d and up are not BIP-373's, and on outputs BIP-373 assigns 0x08
+        // (participant pubkeys) only.
+        assert_eq!(pair_type_name("input", 0x19), "PSBT_IN_UNKNOWN");
+        assert_eq!(pair_type_name("input", 0x1d), "PSBT_IN_UNKNOWN");
+        assert_eq!(
+            pair_type_name("output", 0x08),
+            "PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS"
+        );
+        assert_eq!(pair_type_name("output", 0x1a), "PSBT_OUT_UNKNOWN");
+        assert_eq!(pair_type_name("global", 0x1a), "PSBT_GLOBAL_UNKNOWN");
+    }
+
+    /// The v2 builder passes unknown pairs through verbatim. A keyless field
+    /// with key data is a lookalike: `decode_pair` rejects it, and the build
+    /// must too, not emit a file another reader could interpret differently.
+    #[test]
+    fn the_v2_builder_refuses_every_singleton_lookalike() {
+        for (kind, type_byte) in [("global", 0x02), ("input", 0x00), ("output", 0x06)] {
+            let pair = RawPair { key: vec![type_byte, 0xaa], value: vec![0x01] };
+            let err = reject_lookalike_keydata(kind, &[pair]).expect_err(kind);
+            assert!(err.contains("must not carry key data"), "{kind}: {err}");
+        }
+        // Keyed fields that legitimately carry key data are not singleton.
+        let pair = RawPair { key: vec![0x02, 0x02], value: vec![0x01] };
+        assert!(reject_lookalike_keydata("input", &[pair]).is_ok());
+    }
+
 }

@@ -14,6 +14,11 @@ Guidelines for AI coding agents.
   includes `entropylab.html` and the `src/js/*-wasm-b64.js` modules
   (regenerate them with `npm run build:wasm`; it needs Rust, toolchain pinned
   by each crate's `rust-toolchain.toml`).
+- Reproducibility is a tested property: `npm run reproduce` builds the tree
+  twice from different staging paths and requires byte-identical output, and
+  the `reproduce` CI job additionally requires the runner and the pinned dev
+  image to agree on the digest (the image is the canonical build
+  environment).
 - The page body lives once in `src/shell.html`: the build injects it into
   `index.html`, and `app.js` assigns it at boot. Edit markup there, never in
   two places.
@@ -49,6 +54,12 @@ Guidelines for AI coding agents.
   Chrome/Chromium, Microsoft Edge — and skips the absent ones).
 - Make the smallest change that works. No refactors, reformatting, or new
   dependencies. This governs logic and functionality.
+- **Read [docs/UI_Patterns.md](docs/UI_Patterns.md) before touching UI
+  code** — `src/css/styles.css`, `src/shell.html`, or markup and styling
+  built in `src/js/`. It lists the design tokens (text sizes, spacing,
+  insets, radii, colours) and the shared patterns every UI change must use:
+  no raw values where a token exists, no per-tool tokens, one pattern per
+  control.
 - **UI and design work is the exception**, and is currently a site-wide
   cleanup led by the project's design lead. There, reuse outranks minimalism:
   before adding a style or a block of markup, look for the paradigm it
@@ -111,14 +122,56 @@ Guidelines for AI coding agents.
 
 ### Security-sensitive test coverage
 
-For changes to verification, cryptography, consensus-sensitive behaviour,
-scripts, or transaction/PSBT parsing:
+For changes to derivation, parsing, validation, verification, cryptography,
+consensus-sensitive behaviour, scripts, transaction/PSBT handling,
+network-silence, or "we do not invent entropy":
 
-- Include tests for both accepted and rejected inputs.
-- For bug fixes, add a regression case that fails before the fix and passes
-  afterward when practicable.
-- Cover applicable negative cases identified in the issue or review. Explain
-  in the pull request when a listed case is intentionally out of scope.
+- State the security contract in one sentence: what must be accepted and what
+  must be refused.
+- Write or extend the test before changing production code.
+- Run that test against the current sources before the implementation change.
+  For a bug fix or tighter validation, it must fail for the claimed reason.
+  A failure caused only by a missing import/export or unrelated setup does not
+  establish the claimed defect. If that bug-fix or tighter-validation test is
+  already green, it has not pinned the claimed change — tighten it.
+- For a new capability, a missing export/API is an acceptable first red, but
+  the test must already contain an independently determined expected result or
+  rejection condition.
+- Coverage-only changes may add tests that pass on the current sources.
+  Behaviour-preserving refactors must keep the relevant tests green before
+  and after the change. Neither requires an artificial failing test or a
+  production change merely to satisfy this order. Record the unchanged
+  contract and the passing commands in the PR; targeted fault injection below
+  may provide additional evidence that the tests detect a violation.
+- Expected results must be established independently of the implementation
+  under test. Prefer published BIP / Bitcoin Core vectors, protocol
+  specifications, stated rejection conditions, or behaviour already pinned by
+  existing repository tests for the same contract. Never compute the expected
+  answer by running the code under test and copying its output. Do not invent
+  a second implementation alongside the change as the sole test oracle.
+  Established independent reference libraries and differential testing are
+  allowed: identify the reference and the contract being compared, and keep
+  applicable published vectors and explicit rejection cases. Agreement alone
+  is not proof of correctness. New dependencies still require review.
+- Include meaningful accepted and rejected inputs where both apply. Cover
+  negative cases named in the issue or review; if one is intentionally out of
+  scope, explain why in the PR.
+- For a bug fix, tighter validation, or new capability, only then make the
+  smallest production change that makes the test pass.
+- Do not delete, skip, weaken, or soften a test to make it pass.
+- For those behaviour changes, record in the PR the command/test used for the
+  initial red and the same test/command after the implementation is green.
 
-Documentation-only and presentation-only changes do not need test vectors
-solely to satisfy this section.
+Documentation-only and presentation-only changes do not need test vectors solely
+to satisfy this section. "When practicable" is not an exemption for the
+security-sensitive changes covered above.
+
+As optional additional evidence, contributors may use targeted fault injection
+when a small, meaningful weakening can be tested cleanly: temporarily change a
+comparison boundary, remove a required condition or check, or otherwise weaken
+the protected behaviour, confirm that the focused test fails, and revert the
+temporary change. Never commit or push the temporary change to the pull request.
+
+This provides additional evidence of test adequacy, not proof of completeness
+or correctness. It does not require exhaustive mutations, a mutation score, or
+a mutation-testing framework.

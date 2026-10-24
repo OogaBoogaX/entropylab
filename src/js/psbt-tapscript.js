@@ -81,7 +81,10 @@ export function hodlTapWitnessPath(items) {
   if (!items || !items.length) return { path: "empty", annex: null, control: null, script: null };
   const stack = items.slice();
   let annex = null;
-  if (stack[stack.length - 1].length && stack[stack.length - 1][0] === 0x50) annex = stack.pop();
+  // BIP-341: only with at least two witness elements may the last element be
+  // the annex — a lone 0x50-prefixed element is a key-path signature, not an
+  // annex (same rule as psbt-wasm/src/verify.rs).
+  if (stack.length >= 2 && stack[stack.length - 1].length && stack[stack.length - 1][0] === 0x50) annex = stack.pop();
   if (stack.length === 1 && stack[0].length >= 64 && stack[0].length <= 65) {
     return { path: "key", annex, control: null, script: null };
   }

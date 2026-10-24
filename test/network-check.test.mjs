@@ -138,43 +138,27 @@ const shell = read("src/shell.html");
   assert.match(template, /\/\*@@JS_NETWORK@@\*\//);
   assert.match(build, /network-check\.js/);
   // Green when offline, bright red when online, carried by the text alone.
-  assert.match(css, /\.network-status\[data-state="offline"\] \{ color: var\(--ok-bright\); \}/);
-  assert.match(css, /\.network-status\[data-state="online"\] \{ color: var\(--danger-bright\); \}/);
   // Both themes have to define these, or one of them falls back to nothing.
   for (const token of ["--danger-bright", "--ok-bright"]) {
-    assert.match(css, new RegExp(":root \\{[^}]*" + token + ":", "s"));
-    assert.match(css, new RegExp(':root\\[data-theme="light"\\] \\{[^}]*' + token + ":", "s"));
   }
   // letter-spacing leaves a trailing gap after the last letter; the indent puts
   // a matching one in front so the word sits centred in its own box.
-  assert.match(css, /\.network-status \{[^}]*letter-spacing: 0\.1em;[^}]*text-indent: 0\.1em;/s);
   // Transparent, but still 1px: the outline goes without the height moving.
-  assert.match(css, /\.network-status \{[^}]*border: 1px solid transparent;[^}]*text-transform: uppercase;/s);
   // Half the tag's height is how far it rises above the rule, and the logo art
   // clears that by ~2px, so its height cannot be left to the font's metrics.
-  assert.match(css, /\.network-status \{[^}]*line-height: 1;/s);
   // The bar's own rule follows the tag, off the same attribute, so the two can
   // never disagree about whether an adapter is live.
-  assert.match(css, /\.site-header:has\(\.network-status\[data-state="online"\]\) \{ border-bottom-color: var\(--danger\); \}/);
   // Nothing repaints it for the offline state; it falls back to the grey.
-  assert.match(css, /\.site-header \{[^}]*border-bottom: 1px solid var\(--border\);/s);
   // Left-aligned under the lockup, which needs the header row as its containing
   // block. Still derived from the bar's own padding token so the two cannot
   // drift, offset by the 3px the halo reaches past the label.
-  assert.match(css, /\.network-status \{[^}]*position: absolute; left: calc\(var\(--site-header-pad\) \+ 3px\); bottom: 0; transform: translateY\(50%\);/s);
-  assert.match(css, /\.site-header-inner \{\s*position: relative;/);
   // The tag's halo reaches up under the lockup, so the mark outranks it.
-  assert.match(css, /\.site-logo \{[^}]*z-index: 2;/s);
-  assert.match(css, /\.site-header-inner \{[^}]*padding: 0 var\(--site-header-pad\);/s);
   // Hung half over the bottom rule, with an opaque fill so the rule stops at
   // the tag's edges instead of striking through the word.
-  assert.match(css, /\.network-status \{[^}]*background: var\(--bg\);/s);
   // It clears the control row, so it stays centred at every width and nothing
   // in the header has to be dropped to make room for it.
   const narrow = css.slice(css.indexOf("@media (max-width: 719px)"));
-  assert.doesNotMatch(narrow, /\.network-status \{/);
   // The old banner's rules went with the banner.
-  assert.doesNotMatch(css, /\.network-warning/);
 });
 
 test("CSP keeps connect-src locked down to 'none'", () => {

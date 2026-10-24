@@ -1,0 +1,60 @@
+# Check that a published release's assets all describe the released
+# entropylab.html. Each merge to rock lands the HTML, SHA256SUMS.txt and
+# CID.txt in one bot commit and the OpenTimestamps proof in the next, so the
+# artifact commit, and any tree cut before it, still carries the previous
+# build's proof: v1.0.0rc1 shipped that stale proof. This job fails the
+# release when the proof, the checksums or the CID describe other bytes. It
+# contacts no calendar; a pending proof passes if it covers the digest.
+
+name: Release assets
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to check
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Release · assets describe the released HTML
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install OpenTimestamps client
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ots"
+          "$RUNNER_TEMP/ots/bin/pip" install --disable-pip-version-check --require-hashes --no-deps --only-binary :all: -r "$GITHUB_WORKSPACE/.github/ots-requirements.txt"
+      - name: Download the release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/release"
+      - name: Check the assets against the released HTML
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/release"
+          OTS="$RUNNER_TEMP/ots/bin/ots"
+          ACTUAL=$(sha256sum entropylab.html | cut -d' ' -f1)
+          sha256sum -c SHA256SUMS.txt
+          if ! node "$GITHUB_WORKSPACE/scripts/cid.mjs" entropylab.html | cmp -s - CID.txt; then
+            echo "::error title=Stale CID::CID.txt does not name entropylab.html ($ACTUAL)."
+            exit 1
+          fi
+          STAMPED=$("$OTS" info entropylab.html.ots 2>/dev/null | sed -n 's/^File sha256 hash: //p' | head -1 || true)
+          if [ "$STAMPED" != "$ACTUAL" ]; then
+            # The matching proof is in the stamp commit that follows the
+            # release's "Rebuild site artifact" commit on rock.
+            echo "::error title=Stale OpenTimestamps proof::entropylab.html.ots stamps ${STAMPED:-no sha256 digest}, but entropylab.html is $ACTUAL."
+            exit 1
+          fi
+          echo "SHA256SUMS.txt, CID.txt and entropylab.html.ots all describe $ACTUAL."

@@ -1,6 +1,8 @@
 // OP_RETURN detector (and builder) for EntropyLab.
 // Parses nulldata outputs in a PSBT, and constructs the minimal-push
 // nulldata scripts the PSBT editor's output-script builder emits.
+import { hodlNeutralizeControls } from "./i18n-sanitize.js";
+
 const OP_RETURN = 0x6a;
 const OP_PUSHDATA1 = 0x4c;
 const OP_PUSHDATA2 = 0x4d;
@@ -187,8 +189,11 @@ export function describeOpReturn(row) {
   if (row.ok && row.payloadBytes) {
     const text = utf8Decode(row.payload);
     if (text !== null) {
+      // The payload is untrusted text: bidi overrides and invisible
+      // codepoints would render live in the report line. Neutralize the
+      // preview only — the parsed bytes (and any export of them) stay raw.
       const preview = text.length > 160 ? `${text.slice(0, 160)}…` : text;
-      lines.push(`text: ${preview}`);
+      lines.push(`text: ${hodlNeutralizeControls(preview)}`);
     } else {
       const preview = row.payloadBytes > 40 ? `${bytesToHex(row.payload.slice(0, 40))}…` : bytesToHex(row.payload);
       lines.push(`hex: ${preview}`);

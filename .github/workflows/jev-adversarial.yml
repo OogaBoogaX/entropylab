@@ -1,0 +1,62 @@
+# Jev adversarial browser testing — scheduled exploration of the built page
+# with hostile inputs, judged by TypeSafe System One when TYPESAFE_API_KEY is
+# set (the harness degrades to invariant-only without it).
+name: Jev adversarial
+
+on:
+  schedule:
+    - cron: "37 5 * * *"
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "22.23.4"
+  # portlandhodl/jev-cli, pinned like every action here: the binary is handed
+  # TYPESAFE_API_KEY, so it is built from a reviewed commit and its committed
+  # Cargo.lock (--locked), never from whatever HEAD and crates.io resolve to.
+  # Bump deliberately; the cache key follows the pin.
+  JEV_CLI_REV: "4bce084ac80b165419fa9692b295b4d759f3e1ae"
+
+permissions: {}
+
+jobs:
+  adversarial:
+    name: Jev adversarial scenarios
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        # full history: the footer stamps the last commit that changed a build
+        # input (scripts/build-commit.mjs), which a shallow clone cannot see
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Cache jev-cli
+        id: jev-cli-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/jev-cli
+          key: jev-cli-${{ env.JEV_CLI_REV }}
+      - name: Install jev-cli (portlandhodl/jev-cli)
+        if: steps.jev-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/portlandhodl/jev-cli --rev "$JEV_CLI_REV" --locked
+      - name: Build the page under test
+        run: npm run build
+      - name: Run the adversarial harness
+        # The key lives on this step only: npm ci, cargo's build scripts and
+        # the page build never see it.
+        env:
+          CHROME: "google-chrome"
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+        run: set -o pipefail && node test/adversarial/harness.mjs 2>&1 | tee test/adversarial/jev-adversarial.log
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jev-adversarial-log
+          path: test/adversarial/jev-adversarial.log

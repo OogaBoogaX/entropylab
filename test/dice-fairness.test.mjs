@@ -49,34 +49,19 @@ function hodlSeedConfig(words = 24) {
   return hodlSeedLengths[words] || hodlSeedLengths[24];
 }
 const hodlDiceFairnessSamples = new Function(
-  "hodlDPlusRolls",
   "hodlSeedConfig",
   "hodlAnalyzeDiceInput",
   "hodlTargetWordCount",
-  "hodlDPlusFinalSteps",
-  "hodlDPlusD16Value",
   `${loadSlice("hodlDiceFairnessSamples")}; return hodlDiceFairnessSamples;`,
 )(
-  () => {
-    const entries = [];
-    entries[hodlSeedConfig(24).partialWords * 3] = { face: "4" };
-    return {
-      groups: [
-        { faces: ["1", "0", "F"], validity: [true, true, true] },
-        { faces: ["8", "A", "B"], validity: [true, true, true] },
-      ],
-      entries,
-    };
-  },
   hodlSeedConfig,
   (value) => ({ acceptedRolls: [...String(value)].filter((character) => character >= "1" && character <= "6") }),
   24,
-  () => ["d8"],
-  (face) => {
-    const normalized = String(face ?? "").toUpperCase();
-    return /^[0-9A-F]$/.test(normalized) ? Number.parseInt(normalized, 16) : null;
-  },
 );
+const hodlDiceFairnessControlsMarkup = new Function(
+  "hodlDiceFairnessToggleMarkup",
+  `${loadSlice("hodlDiceFairnessControlsMarkup")}; return hodlDiceFairnessControlsMarkup;`,
+)(() => '<button id="dice-fairness-toggle"></button>');
 
 test("log-gamma matches known values", () => {
   assert.ok(Math.abs(Math.exp(hodlLogGamma(0.5)) - Math.sqrt(Math.PI)) < 1e-12);
@@ -96,7 +81,7 @@ test("minimum rolls follow the five-per-face Pearson rule of thumb", () => {
   assert.equal(hodlDiceMinimumRolls(16), 80);
 });
 
-test("uniform d6 rolls look fair once the minimum is reached", () => {
+test("balanced counts score zero even when the roll sequence is predictable", () => {
   const rolls = Array.from({ length: 30 }, (_, index) => String((index % 6) + 1));
   const report = hodlDiceFairnessAssess(rolls, ["1", "2", "3", "4", "5", "6"], "D6");
   assert.equal(report.chi, 0);
@@ -104,6 +89,11 @@ test("uniform d6 rolls look fair once the minimum is reached", () => {
   assert.equal(report.enough, true);
   assert.equal(report.verdict.id, "fair");
   assert.deepEqual(report.counts.map((face) => face.count), [5, 5, 5, 5, 5, 5]);
+  // Unchanged contract: Pearson's frequency statistic ignores ordering.
+  // A repeated cycle and sorted runs are equally predictable examples; this
+  // statistic alone cannot establish independent or unpredictable rolls.
+  const sorted = hodlDiceFairnessAssess([...rolls].sort(), ["1", "2", "3", "4", "5", "6"], "D6");
+  assert.deepEqual(sorted, report);
 });
 
 test("a constant face is reported as biased", () => {
@@ -133,46 +123,19 @@ test("BitBox samples split D4 entropy rolls from the coin / sixth die", () => {
   assert.deepEqual(coin.rolls, ["Heads", "Tails", "Heads", "Tails"]);
 });
 
-test("D++ samples keep D8 and D16 rolls separate", () => {
-  const [d8, d16] = hodlDiceFairnessSamples("10F8AB4", "dplus", 24);
-  assert.equal(d8.title, "D8");
-  assert.deepEqual(d8.rolls, ["1", "8", "4"]);
-  assert.equal(d16.title, "D16 (0–F)");
-  assert.deepEqual(d16.rolls, ["0", "F", "A", "B"]);
+test("D++ omits fairness samples that can never meet the panel's Pearson threshold", () => {
+  for (const words of [12, 15, 18, 21, 24]) {
+    assert.deepEqual(hodlDiceFairnessSamples("10F8AB4", "dplus", words), []);
+  }
 });
 
-const hodlDiceFairnessSamples18 = new Function(
-  "hodlDPlusRolls",
-  "hodlSeedConfig",
-  "hodlAnalyzeDiceInput",
-  "hodlTargetWordCount",
-  "hodlDPlusFinalSteps",
-  "hodlDPlusD16Value",
-  `${loadSlice("hodlDiceFairnessSamples")}; return hodlDiceFairnessSamples;`,
-)(
-  () => {
-    const entries = [];
-    entries[hodlSeedConfig(18).partialWords * 3] = { face: "F" };
-    entries[hodlSeedConfig(18).partialWords * 3 + 1] = { face: "6" };
-    return { groups: [], entries };
-  },
-  hodlSeedConfig,
-  () => ({ acceptedRolls: [] }),
-  18,
-  () => ["d16", "coin"],
-  (face) => {
-    const normalized = String(face ?? "").toUpperCase();
-    return /^[0-9A-F]$/.test(normalized) ? Number.parseInt(normalized, 16) : null;
-  },
-);
-
-test("D++ 18-word final coin flip joins the fairness samples", () => {
-  const [d8, d16, coin] = hodlDiceFairnessSamples18("", "dplus", 18);
-  assert.deepEqual(d8.rolls, []);
-  assert.deepEqual(d16.rolls, ["F"]);
-  assert.equal(coin.title, "Coin");
-  assert.deepEqual(coin.rolls, ["Tails"]);
-  assert.deepEqual(coin.labels, ["Heads", "Tails"]);
+test("D++ omits the fairness controls while every supported analysis method keeps them", () => {
+  assert.equal(hodlDiceFairnessControlsMarkup("dplus", true), "");
+  for (const method of ["coldcard", "coleman", "bitbox"]) {
+    const markup = hodlDiceFairnessControlsMarkup(method, false);
+    assert.match(markup, /id="dice-fairness-toggle"/);
+    assert.match(markup, /id="dice-fairness"/);
+  }
 });
 
 test("fairness UI stays collapsed until the Die Distribution / Fairness Analysis text button expands it", () => {

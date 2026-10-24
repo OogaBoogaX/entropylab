@@ -20,14 +20,6 @@ export const HARDENED_OFFSET = 0x80000000;
 const MAX_DEPTH = 255;
 export const BITCOIN_VERSIONS = { private: 0x0488ade4, public: 0x0488b21e };
 
-const ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
-const bytesToBig = (bytes) => bytes.reduce((n, b) => (n << 8n) | BigInt(b), 0n);
-const isValidSecretKey = (bytes) => {
-  if (!(bytes instanceof Uint8Array) || bytes.length !== 32) return false;
-  const n = bytesToBig(bytes);
-  return n > 0n && n < ORDER;
-};
-
 const toU32 = (value, title) => {
   if (!Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) throw new Error(`${title} must be a uint32`);
   return value;
@@ -54,12 +46,14 @@ const packNode = (isPrivate, node) => {
   return body;
 };
 
+// Borrow views of the serialization only until HDKey copies its owned fields.
+// The caller wipes the backing body in finally, including constructor failures.
 const unpackNode = (body) => ({
   depth: body[4],
   parentFingerprint: new DataView(body.buffer, body.byteOffset).getUint32(5, false),
   index: new DataView(body.buffer, body.byteOffset).getUint32(9, false),
-  chainCode: body.slice(13, 45),
-  key: body.slice(45),
+  chainCode: body.subarray(13, 45),
+  key: body.subarray(45),
 });
 
 export class HDKey {
@@ -73,7 +67,7 @@ export class HDKey {
     if (!body) throw new Error("HDKey: master key derivation failed (invalid key material)");
     try {
       const node = unpackNode(body);
-      return new HDKey({ versions, depth: 0, index: 0, parentFingerprint: 0, chainCode: node.chainCode, privateKey: body.slice(46) });
+      return new HDKey({ versions, depth: 0, index: 0, parentFingerprint: 0, chainCode: node.chainCode, privateKey: node.key.subarray(1) });
     } finally {
       body.fill(0); // the master serialization (private key + chain code) is secret
     }
@@ -83,7 +77,6 @@ export class HDKey {
     versions = validateVersions(versions);
     // => version(4) || depth(1) || fingerprint(4) || index(4) || chain(32) || key(33)
     const keyBuffer = base58checkDecode(base58key);
-    let key = null;
     try {
       if (keyBuffer.length !== 78) {
         throw new Error(`HDKey: invalid extended key length: expected 78 bytes, got ${keyBuffer.length}`);
@@ -95,22 +88,21 @@ export class HDKey {
         depth: keyBuffer[4],
         parentFingerprint: keyView.getUint32(5, false),
         index: keyView.getUint32(9, false),
-        chainCode: keyBuffer.slice(13, 45),
+        chainCode: keyBuffer.subarray(13, 45),
       };
-      key = keyBuffer.slice(45);
+      const key = keyBuffer.subarray(45);
       const isPriv = key[0] === 0;
       if (version !== versions[isPriv ? "private" : "public"]) {
         throw new Error("Version mismatch");
       }
       if (isPriv) {
-        return new HDKey({ ...opt, privateKey: key.slice(1) });
+        return new HDKey({ ...opt, privateKey: key.subarray(1) });
       }
       return new HDKey({ ...opt, publicKey: key });
     } finally {
-      // The decoded 78-byte payload (and the sliced key copy) can carry an
-      // extended private key; the HDKey constructor copies what it needs.
+      // The decoded payload backs every temporary view; HDKey copies
+      // what it needs before this wipe, including on the public path.
       keyBuffer.fill(0);
-      if (key) key.fill(0);
     }
   }
 
@@ -135,7 +127,7 @@ export class HDKey {
     this.parentFingerprint = parentFingerprint;
     if (opt.publicKey && opt.privateKey) throw new Error("HDKey: publicKey and privateKey at same time.");
     if (opt.privateKey) {
-      if (!isValidSecretKey(opt.privateKey)) throw new Error("Invalid private key");
+      if (!secp256k1.utils.isValidSecretKey(opt.privateKey)) throw new Error("Invalid private key");
       // Don't alias caller-owned secret buffers.
       this._privateKey = Uint8Array.from(opt.privateKey);
       this._publicKey = secp256k1.getPublicKey(this._privateKey, true);
@@ -160,6 +152,10 @@ export class HDKey {
   get privateKey() {
     return this._privateKey ? Uint8Array.from(this._privateKey) : null;
   }
+  // Whether the node holds a private key, without copying it out.
+  get hasPrivateKey() {
+    return Boolean(this._privateKey);
+  }
   get publicKey() {
     return this._publicKey ? Uint8Array.from(this._publicKey) : null;
   }
@@ -169,7 +165,8 @@ export class HDKey {
   get privateExtendedKey() {
     const priv = this._privateKey;
     if (!priv) throw new Error("No private key");
-    const key = new Uint8Array([0, ...priv]);
+    const key = new Uint8Array(33);
+    key.set(priv, 1);
     try {
       return this.serialize(this.versions.private, key);
     } finally {
@@ -222,21 +219,28 @@ export class HDKey {
       throw new Error("HDKey: path exceeds the serializable depth 255");
     }
     let child = this;
-    for (const part of parts) {
-      // The hardened marker accepts h, H, or ' — the same grammar the UI
-      // path parsers (app.js) accept before they normalize to '.
-      const m = /^(\d+)([hH']?)$/.exec(part);
-      if (!m) throw new Error("invalid child index: " + part);
-      let idx = +m[1];
-      if (!Number.isSafeInteger(idx) || idx >= HARDENED_OFFSET) throw new Error("Invalid index");
-      if (m[2]) idx += HARDENED_OFFSET;
-      const next = child.deriveChild(idx);
-      // Intermediate path nodes are dead once their child exists; wipe the
-      // private half instead of leaving the keys for the GC to keep.
+    try {
+      for (const part of parts) {
+        // The hardened marker accepts h, H, or ' — the same grammar the UI
+        // path parsers (app.js) accept before they normalize to '.
+        const m = /^(\d+)([hH']?)$/.exec(part);
+        if (!m) throw new Error("invalid child index: " + part);
+        let idx = +m[1];
+        if (!Number.isSafeInteger(idx) || idx >= HARDENED_OFFSET) throw new Error("Invalid index");
+        if (m[2]) idx += HARDENED_OFFSET;
+        const next = child.deriveChild(idx);
+        // Intermediate path nodes are dead once their child exists; wipe the
+        // private half instead of leaving the keys for the GC to keep.
+        if (child !== this) child.wipePrivateData();
+        child = next;
+      }
+      return child;
+    } catch (error) {
+      // A rejected later segment must not abandon the last derived secret.
+      // The caller owns this root; only our intermediate node is disposable.
       if (child !== this) child.wipePrivateData();
-      child = next;
+      throw error;
     }
-    return child;
   }
 
   deriveChild(index) {
@@ -270,17 +274,20 @@ export class HDKey {
       return this.deriveChild(index + 1);
     }
     if (code !== 78 || !body) throw new Error("HDKey: child derivation failed");
-    const node = unpackNode(body);
-    body.fill(0); // unpackNode slices (copies) what the child keeps
-    const opt = {
-      versions: this.versions,
-      chainCode: node.chainCode,
-      depth: node.depth,
-      parentFingerprint: node.parentFingerprint,
-      index: node.index,
-    };
-    if (this._privateKey) opt.privateKey = node.key.slice(1);
-    else opt.publicKey = node.key;
-    return new HDKey(opt);
+    try {
+      const node = unpackNode(body);
+      const opt = {
+        versions: this.versions,
+        chainCode: node.chainCode,
+        depth: node.depth,
+        parentFingerprint: node.parentFingerprint,
+        index: node.index,
+      };
+      if (this._privateKey) opt.privateKey = node.key.subarray(1);
+      else opt.publicKey = node.key;
+      return new HDKey(opt);
+    } finally {
+      body.fill(0); // clears the serialization and every borrowed view
+    }
   }
 }

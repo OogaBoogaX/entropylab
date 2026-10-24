@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { catalogProblems, hashSource, sidecarProblems, sourceMarkupProblems, valueProblems } from "../scripts/i18n-validate.mjs";
+import { hodlCatalogTagForm, hodlCatalogTokens } from "../src/js/i18n-sanitize.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -28,8 +29,18 @@ test("honest translations pass", () => {
   );
   valid("D++ D8 &amp; D16 method", "Método D++ D8 &amp; D16");
   valid("Raw & unparsed ampersand", "Y sin codificar & así");
-  // A translation may drop the source's link; it just cannot retarget one.
-  valid("See <a href=\"https://github.com/iancoleman/bip39\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a> docs", "Ver la documentación de BIP39");
+  // Word order may move a tagged word.
+  valid("Use <strong>{n}</strong> dice, then <code>roll</code>", "Con <code>roll</code>, usa <strong>{n}</strong> dados");
+});
+
+test("a translation keeps exactly the English formatting", () => {
+  // Every committed translation already does; this keeps it so (#862).
+  const link = "<a href=\"https://github.com/iancoleman/bip39\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a>";
+  invalid(`See ${link} docs`, "Ver la documentación de BIP39", "keeps the English formatting");
+  invalid("Plain label", "Etiqueta <strong>simple</strong>", "keeps the English formatting");
+  invalid("Fair dice: <strong>{n}</strong> sides", "Dados justos: {n} caras", "keeps the English formatting");
+  invalid("Fair dice: <strong>{n}</strong> sides", "Dados justos: <em>{n}</em> caras", "keeps the English formatting");
+  invalid("Run <code>x</code>", "Ejecuta <code>x</code> y <code>y</code>", "keeps the English formatting");
 });
 
 test("rejects empty and non-string values", () => {
@@ -65,6 +76,70 @@ test("anchors can never be invented or retargeted", () => {
   invalid(key, "Ver <a href=\"https://evil.example/bip39\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a>", "outside the allowlist");
   invalid(key, "Ver <a href=\"https://github.com/pointbiz/bitaddress.org\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a>", "does not match a link");
   invalid("no link here", "Ver <a href=\"https://github.com/iancoleman/bip39\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a>", "does not match a link");
+});
+
+test("translation cannot retarget BIP link to self-link (F9)", () => {
+  const closingToken = [...hodlCatalogTokens("</a>")].find((t) => t.name === "a" && t.closing);
+  assert.ok(closingToken, "closing </a> token should exist");
+  const closingForm = hodlCatalogTagForm(closingToken);
+  assert.ok(closingForm, "closing </a> should map to first allowlist form");
+  const bipAnchor = "<a href=\"https://github.com/iancoleman/bip39\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a>";
+  const bipToken = [...hodlCatalogTokens(bipAnchor)].find((t) => t.name === "a" && !t.closing);
+  const bipForm = hodlCatalogTagForm(bipToken);
+  assert.ok(bipForm, "bip39 anchor must be allowlisted");
+  assert.notEqual(bipForm, closingForm, "bip39 form must differ from self-link form");
+  let selfLinkAnchor = null;
+  if (closingForm && typeof closingForm === "object") {
+    const attrs = Object.entries(closingForm)
+      .map(([k, v]) => `${k}="${v}"`)
+      .join(" ");
+    const tag = `<a ${attrs}>BIP39</a>`;
+    const tok = [...hodlCatalogTokens(tag)].find((t) => t.name === "a" && !t.closing);
+    if (tok && hodlCatalogTagForm(tok) === closingForm) selfLinkAnchor = tag;
+    if (!selfLinkAnchor && closingForm.href) {
+      const variants = [
+        `<a href="${closingForm.href}" download="${closingForm.download ?? closingForm.href}">BIP39</a>`,
+        `<a href="${closingForm.href}" download>BIP39</a>`,
+        `<a href="${closingForm.href}">BIP39</a>`,
+      ];
+      for (const v of variants) {
+        const t = [...hodlCatalogTokens(v)].find((x) => x.name === "a" && !x.closing);
+        if (t && hodlCatalogTagForm(t) === closingForm) {
+          selfLinkAnchor = v;
+          break;
+        }
+      }
+    }
+  } else if (typeof closingForm === "string" && closingForm.includes("<a")) {
+    let tag = closingForm;
+    if (!tag.includes("</a>")) tag += "BIP39</a>";
+    else tag = tag.replace(/>.*<\/a>/, ">BIP39</a>");
+    const tok = [...hodlCatalogTokens(tag)].find((t) => t.name === "a" && !t.closing);
+    if (tok && hodlCatalogTagForm(tok) === closingForm) selfLinkAnchor = tag;
+  }
+  assert.ok(selfLinkAnchor, `could not find opening anchor for closing form ${JSON.stringify(closingForm)}`);
+  const source = `See ${bipAnchor} docs`;
+  const translation = `See ${selfLinkAnchor} docs`;
+  const problems = valueProblems(source, translation);
+  assert.ok(problems.length > 0, `expected retargeting BIP link to ${selfLinkAnchor} to be reported, got ${JSON.stringify(problems)}`);
+  assert.ok(
+    problems.some((p) => p.includes("does not match") || p.includes("outside the allowlist")),
+    `expected anchor mismatch for ${selfLinkAnchor}, got ${JSON.stringify(problems)}`,
+  );
+});
+
+test("faithful translation with same anchors passes (F9)", () => {
+  const source = "See <a href=\"https://github.com/iancoleman/bip39\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a> docs";
+  const translation = "Ver <a href=\"https://github.com/iancoleman/bip39\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a> docs";
+  assert.deepEqual(valueProblems(source, translation), []);
+});
+
+test("reordering two different source anchors still passes (F9)", () => {
+  const bip = "<a href=\"https://github.com/iancoleman/bip39\" target=\"_blank\" rel=\"noopener noreferrer\">BIP39</a>";
+  const bit = "<a href=\"https://github.com/pointbiz/bitaddress.org\" target=\"_blank\" rel=\"noopener noreferrer\">bitaddress</a>";
+  const source = `See ${bip} and ${bit} docs`;
+  const translation = `Ver ${bit} y ${bip} docs`;
+  assert.deepEqual(valueProblems(source, translation), []);
 });
 
 test("rejects non-canonical character references and executable schemes", () => {

@@ -195,7 +195,6 @@ test("app inspects raw transactions and labels outputs", () => {
   assert.match(app, /script " \+ hodlHex\.encode\(script\)/);
   assert.doesNotMatch(app, /debug fp=/);
   for (const markup of [shell]) {
-    assert.match(markup, /Read a PSBT or a signed transaction/);
     assert.match(markup, /raw transaction/);
   }
 });

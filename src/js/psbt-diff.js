@@ -19,6 +19,12 @@ const SIGNING_FIELDS = new Set([
   "PSBT_IN_TAP_KEY_SIG",
   "PSBT_IN_TAP_SCRIPT_SIG",
   "PSBT_IN_SIGHASH_TYPE",
+  // BIP-373 MuSig2 signing-session material (audit B3): nonce substitution
+  // is the key-extraction class, a swapped participant key re-targets the
+  // aggregate key, and a partial signature is a signature share.
+  "PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS",
+  "PSBT_IN_MUSIG2_PUB_NONCE",
+  "PSBT_IN_MUSIG2_PARTIAL_SIG",
 ]);
 
 // The unsigned transaction rides in the global map as key 00
@@ -30,28 +36,58 @@ const UNSIGNED_TX_GLOBAL_KEY = "00";
 
 const categoryFor = (name) => (SIGNING_FIELDS.has(name) ? "signing" : "metadata");
 
-const mapByKey = (pairs = []) => {
+// Duplicate keys within one map are invalid PSBT, but the inspect decoder
+// does not reject them (psbt-wasm read_map caps the pair count yet keeps
+// every pair), so one key can genuinely map to several pairs here. The
+// comparison therefore groups pairs by key and compares the groups as
+// multisets: equal values pair off regardless of map order, and whatever is
+// left over on either side — including an extra occurrence of a key the
+// other side also lists — is a real difference (audit B2: a duplicate
+// PSBT_IN_SIGHASH_TYPE hidden behind a matching first record must surface).
+const groupByKey = (pairs = []) => {
   const out = new Map();
   for (const pair of pairs) {
-    // Duplicate keys within one map are invalid PSBT (rust-bitcoin rejects
-    // them), so the first occurrence is the only one that can exist.
-    if (!out.has(pair.key)) out.set(pair.key, pair);
+    const group = out.get(pair.key);
+    if (group) group.push(pair);
+    else out.set(pair.key, [pair]);
   }
   return out;
 };
 
 const compareMap = (before, after, scope, index = null) => {
-  const left = mapByKey(before);
-  const right = mapByKey(after);
+  const left = groupByKey(before);
+  const right = groupByKey(after);
   const changes = [];
-  for (const [key, pair] of left) {
-    const other = right.get(key);
-    const path = { scope, index, key, name: pair.name || null };
-    if (!other) changes.push({ ...path, kind: "removed", before: pair.value, after: null, category: categoryFor(pair.name) });
-    else if (pair.value !== other.value) changes.push({ ...path, kind: "changed", before: pair.value, after: other.value, category: categoryFor(pair.name) });
+  for (const [key, leftPairs] of left) {
+    const rightPairs = right.get(key) || [];
+    const name = leftPairs[0].name || rightPairs[0]?.name || null;
+    const path = { scope, index, key, name };
+    const category = categoryFor(name);
+    // Multiset pairing by value: a value found on both sides cancels out,
+    // whichever map position it sat at. Leftovers are reported; each entry
+    // carries the ordinal of its occurrence within the key's group so the
+    // report can show the exact pair that differs.
+    const unmatchedRight = rightPairs.map((pair, ordinal) => ({ pair, ordinal }));
+    const unmatchedLeft = [];
+    leftPairs.forEach((pair, ordinal) => {
+      const at = unmatchedRight.findIndex((entry) => entry.pair.value === pair.value);
+      if (at === -1) unmatchedLeft.push({ pair, ordinal });
+      else unmatchedRight.splice(at, 1);
+    });
+    const count = Math.max(unmatchedLeft.length, unmatchedRight.length);
+    for (let i = 0; i < count; i++) {
+      const l = unmatchedLeft[i];
+      const r = unmatchedRight[i];
+      if (l && r) changes.push({ ...path, kind: "changed", before: l.pair.value, after: r.pair.value, beforeOrdinal: l.ordinal, afterOrdinal: r.ordinal, category });
+      else if (l) changes.push({ ...path, kind: "removed", before: l.pair.value, after: null, beforeOrdinal: l.ordinal, category });
+      else changes.push({ ...path, kind: "added", before: null, after: r.pair.value, afterOrdinal: r.ordinal, category });
+    }
   }
-  for (const [key, pair] of right) {
-    if (!left.has(key)) changes.push({ scope, index, key, name: pair.name || null, kind: "added", before: null, after: pair.value, category: categoryFor(pair.name) });
+  for (const [key, rightPairs] of right) {
+    if (left.has(key)) continue;
+    rightPairs.forEach((pair, ordinal) => {
+      changes.push({ scope, index, key, name: pair.name || null, kind: "added", before: null, after: pair.value, afterOrdinal: ordinal, category: categoryFor(pair.name) });
+    });
   }
   return changes;
 };

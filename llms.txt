@@ -8,7 +8,7 @@ EntropyLab is a single HTML file with no runtime dependencies. It is designed to
 
 - Accepts dice rolls, coin flips, playing cards, hexadecimal entropy, BIP39 seed phrases (12–24 words), extended keys, WIF keys, raw private keys, Casascius mini keys, and a lab brain-wallet mode (SHA-256 of exact UTF-8 text as 256-bit BIP39 entropy → 24 words; not a BIP39 passphrase, not a Core-key backup, and not the private-key scalar brain-wallet path).
 - Derives BIP39 seeds, BIP32 extended keys, master fingerprints, addresses, and Bitcoin Core-compatible descriptors for legacy, nested SegWit, native SegWit, and Taproot; mainnet and testnet.
-- Builds multisignature wallets, including watch-only multisig from extended public keys alone. A derived multisig can export Bitcoin Core importdescriptors JSON (watch-only receive+change) for a blank disable_private_keys wallet. Calculator export, not a generator. Not a wallet.dat.
+- Builds multisignature wallets, including watch-only multisig from extended public keys alone. A derived multisig can export a watch-only Bitcoin Core wallet.dat (drop in wallets/<name>/ and loadwallet), importdescriptors JSON for a blank disable_private_keys wallet, a one-page watch-only policy sheet (fingerprints, descriptor checksum, receive address 0) to verify before funding, and a BIP 388 wallet policy (template + xpubs). Calculator export, not a generator. Never includes private keys.
 - Inspects PSBT v0 and raw signed transactions: amounts, fees (PSBT claims), repeated ECDSA nonces, optional anti-exfil transcript checks, inscription envelopes in taproot witnesses (detector only — does not number sats or create inscriptions), session-key output ownership (change vs not yours), and OP_RETURN data-carrier outputs (detector only — does not create them).
 - Edits PSBT v0 files field by field (bip174.org-style): every global/input/output key-value pair decoded and editable, structured transaction fields, and rust-bitcoin-validated re-serialization. A mempool.space-style flow diagram (clickable input/output/transaction boxes joined by bezier connectors, inline output amounts) doubles as the editing surface. Never signs.
 - Derives BIP-85 child entropy from a BIP32 root: English BIP-39, WIF, XPRV, HEX, and Base64/Base85 passwords.
@@ -19,7 +19,7 @@ EntropyLab is a single HTML file with no runtime dependencies. It is designed to
 - SLIP-132 display is prefix-swap only. Shows as-pasted, Bitcoin Core xpub/xprv (or tpub/tprv), and descriptor. SLIP form only when path/script match. No Taproot prefix. Testnet t/u/v/U/V.
 - Exports a Bitcoin Core wallet.dat (watch-only by default) with all derived descriptors imported.
 - Runs startup sanity checks on the host browser and refuses to render if they fail. Lockdown Mode blocks WebAssembly; exclude the site in Safari or use Firefox on an air-gapped computer. No JS secp256k1 fallback.
-- Each release publishes SHA256SUMS.txt and CID.txt (CIDv1 raw sha2-256 of the same bytes). The app never talks to IPFS; fetch by CID is an online local-node step, then verify the checksum, then air-gap.
+- Each release publishes SHA256SUMS.txt, CID.txt (CIDv1 raw sha2-256 of the same bytes), and entropylab.html.ots (OpenTimestamps); WASM-SHA256SUMS.txt lists the committed WASM modules. The app never talks to IPFS or to OTS calendars; fetch by CID is an online local-node step, then verify the checksum, then air-gap. A pending .ots is not a Bitcoin timestamp — `ots verify` against Core after upgrade.
 
 ## Links
 

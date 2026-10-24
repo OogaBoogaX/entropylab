@@ -1,0 +1,195 @@
+# Upgrade a pending OpenTimestamps proof to a Bitcoin attestation.
+# Does not rebuild entropylab.html, does not change checksums or CID,
+# does not block Pages. A pending .ots is not a timestamp; this job is what
+# makes it one. Calendars only — no Bitcoin node required to upgrade.
+
+name: OpenTimestamps upgrade
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ots-upgrade
+  cancel-in-progress: false
+
+jobs:
+  # The third-party OTS client runs only here: no environment, no secret and
+  # a read-only token. It upgrades the proof and uploads it; upgrade-push
+  # commits and pushes it on a fresh runner that never installs or runs the
+  # client. A step boundary is not isolation: a client that writes
+  # .git/hooks/pre-push or leaves a background process would meet the push
+  # token in the same workspace.
+  upgrade:
+    name: Upgrade · complete pending OpenTimestamps proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      upgraded: ${{ steps.upgrade.outputs.upgraded }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: rock
+          # The OTS client is third-party code; keep GITHUB_TOKEN out of
+          # .git/config, where it could read it.
+          persist-credentials: false
+      - name: Install OpenTimestamps client
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ots"
+          "$RUNNER_TEMP/ots/bin/pip" install --disable-pip-version-check --require-hashes --no-deps --only-binary :all: -r "$GITHUB_WORKSPACE/.github/ots-requirements.txt"
+      - name: Upgrade the committed proof
+        id: upgrade
+        run: |
+          set -euo pipefail
+          if [ ! -f entropylab.html.ots ]; then
+            echo "No entropylab.html.ots yet; stamp job has not run."
+            exit 0
+          fi
+          OTS="$RUNNER_TEMP/ots/bin/ots"
+          # Bind the proof to this checkout before touching it: a proof left
+          # on rock for bytes the tree no longer carries must never be
+          # upgraded into a Bitcoin attestation and republished (audit L8).
+          # The stamp job replaces a stale proof on its next run.
+          ACTUAL=$(sha256sum entropylab.html | cut -d' ' -f1)
+          EXISTING=$("$OTS" info entropylab.html.ots 2>/dev/null | sed -n 's/^File sha256 hash: //p' | head -1 || true)
+          if [ "$EXISTING" != "$ACTUAL" ]; then
+            echo "Committed proof covers ${EXISTING:-an unknown digest}; rock's entropylab.html is $ACTUAL. Not upgrading; the stamp job will replace the stale proof."
+            exit 0
+          fi
+          # ots upgrade entropylab.html.ots — completes a pending calendar receipt.
+          # It exits non-zero whenever the timestamp is still incomplete, which
+          # is the ordinary state until a calendar has a block attestation.
+          # That is a "come back tomorrow", not a failure, so do not let it
+          # take the job down; any partial progress it wrote is still worth
+          # committing.
+          if "$OTS" upgrade entropylab.html.ots; then
+            echo "Timestamp complete."
+          else
+            echo "Proof is still pending a Bitcoin attestation; retrying on the next run."
+          fi
+          rm -f entropylab.html.ots.bak
+          if [ -z "$(git status --porcelain -- entropylab.html.ots)" ]; then
+            echo "Proof unchanged (still pending, or already complete)."
+            exit 0
+          fi
+          echo "upgraded=true" >> "$GITHUB_OUTPUT"
+      - name: Upload the upgraded proof
+        if: steps.upgrade.outputs.upgraded == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: entropylab-ots
+          path: entropylab.html.ots
+          if-no-files-found: error
+          retention-days: 7
+
+  # The commit and push of the proof. This job holds the release environment
+  # and the admin push token, so it never installs or runs the OTS client: it
+  # validates the uploaded proof with coreutils and pushes it from a fresh
+  # runner.
+  upgrade-push:
+    name: Upgrade · commit the OpenTimestamps proof
+    needs: [upgrade]
+    if: needs.upgrade.outputs.upgraded == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: rock
+          persist-credentials: false
+      - name: Download the upgraded proof
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: entropylab-ots
+          path: ${{ runner.temp }}
+      - name: Validate the proof before committing it
+        run: |
+          set -euo pipefail
+          PROOF="$RUNNER_TEMP/entropylab.html.ots"
+          EXPECTED=$(sha256sum entropylab.html | cut -d' ' -f1)
+          # The proof is untrusted input from the upgrade job. Refuse anything
+          # that is not a small OpenTimestamps file whose header names the
+          # SHA-256 of rock's entropylab.html.
+          SIZE=$(stat -c %s "$PROOF")
+          if [ "$SIZE" -gt 65536 ]; then
+            echo "::error::proof is $SIZE bytes, over the 65536-byte limit"
+            exit 1
+          fi
+          # 31-byte magic, major version 0x01, OpSHA256 tag 0x08.
+          MAGIC=004f70656e54696d657374616d7073000050726f6f6600bf89e2e884e892940108
+          HEADER=$(head -c 33 "$PROOF" | od -An -v -tx1 | tr -d ' \n')
+          if [ "$HEADER" != "$MAGIC" ]; then
+            echo "::error::proof does not start with the OpenTimestamps magic, version 1 and a SHA-256 file hash"
+            exit 1
+          fi
+          DIGEST=$(head -c 65 "$PROOF" | tail -c 32 | od -An -v -tx1 | tr -d ' \n')
+          if [ "$DIGEST" != "$EXPECTED" ]; then
+            echo "::error::proof covers $DIGEST, but rock's entropylab.html is $EXPECTED"
+            exit 1
+          fi
+          # The proof already on rock must cover the same digest: an upgrade
+          # completes an attestation, it never re-points the proof.
+          COMMITTED=$(head -c 65 entropylab.html.ots | tail -c 32 | od -An -v -tx1 | tr -d ' \n')
+          if [ "$COMMITTED" != "$EXPECTED" ]; then
+            echo "::error::the committed proof covers $COMMITTED, but rock's entropylab.html is $EXPECTED"
+            exit 1
+          fi
+          # An upgrade may only add attestations. The client is untrusted, so
+          # every Bitcoin attestation of the committed proof (its exact op path
+          # and payload) must still be in the upload: a complete proof swapped
+          # for a pending one, or a real attestation swapped for a fake, is
+          # refused. The check walks the proof's structure (standard-library
+          # Python from rock's own checkout, no third-party code), and a
+          # malformed proof fails the job.
+          if ! python3 scripts/ots-attestations.py --preserves entropylab.html.ots "$PROOF"; then
+            echo "::error::the upgraded proof drops or changes a Bitcoin attestation of the committed proof"
+            exit 1
+          fi
+      - name: Commit the proof
+        id: proof
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/entropylab.html.ots" entropylab.html.ots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add entropylab.html.ots
+          if git diff --cached --quiet; then
+            echo "Proof is already on rock; nothing to commit."
+            exit 0
+          fi
+          git commit -m "Upgrade OpenTimestamps proof for entropylab.html [skip ci]"
+          git fetch --quiet origin rock
+          AHEAD=$(git rev-list --count origin/rock..HEAD)
+          if [ "$AHEAD" != 1 ]; then
+            echo "::error::expected exactly one commit ahead of origin/rock, found $AHEAD"
+            exit 1
+          fi
+          CHANGED=$(git diff --name-only origin/rock..HEAD)
+          if [ "$CHANGED" != "entropylab.html.ots" ]; then
+            echo "::error::the proof commit changes more than entropylab.html.ots: $CHANGED"
+            exit 1
+          fi
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+      - name: Push the proof
+        # Only after a checked commit: "already on rock" exits 0 above.
+        if: steps.proof.outputs.committed == 'true'
+        env:
+          PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Push with the maintainer token: rock is protected, and required
+          # status checks reject direct pushes from GITHUB_TOKEN (an admin
+          # token bypasses while enforce_admins is off). The token goes on
+          # the command line, which outranks every config file. Hooks are
+          # disabled: this runner never ran the OTS client, but a hook could
+          # still arrive with the checkout.
+          git -c http.https://github.com/.extraheader=             -c http.https://github.com/.extraheader="AUTHORIZATION: basic $(echo -n x-access-token:$PUSH_TOKEN | base64)"             -c core.hooksPath=/dev/null push origin HEAD:rock

@@ -142,6 +142,8 @@ export function parseRecipientLine(line) {
       amount: uri.amount || null,
       amountSats: uri.amountSats,
       alternatives: distinct.length > 1 ? distinct.length : 0,
+      // Display-only: never silently discard a hybrid URI's unused fallback.
+      ...(uri.address ? { fallbackAddress: uri.address } : {}),
     }];
   }
   if (text.includes("@") && !SP_ADDRESS.test(text)) {
@@ -158,7 +160,9 @@ export function parseRecipientLines(text) {
   let lightning = false, alternatives = 0;
   for (const line of lines) {
     for (const row of parseRecipientLine(line)) {
-      recipients.push({ address: row.address, count: row.count, amount: row.amount ?? null, amountSats: row.amountSats ?? null });
+      recipients.push({ address: row.address, count: row.count, amount: row.amount ?? null, amountSats: row.amountSats ?? null,
+        ...(row.fallbackAddress ? { fallbackAddress: row.fallbackAddress } : {}),
+      });
       if (row.lightning) lightning = true;
       alternatives += row.alternatives ?? 0;
     }

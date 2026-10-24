@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 import { psbtInspectDoc, psbtBuildBytes, psbtWasmReady } from "../src/js/psbt-wasm.js";
 import { psbtBytesFromText, psbtEditorBuildDoc, satsToBtc } from "../src/js/psbt-editor.js";
 
@@ -647,6 +648,110 @@ test("PSBT v2: BIP-370's invalid cases are refused (issue #358)", () => {
   assert.throws(() => psbtInspectDoc(unhex(v3)), /only PSBT v0 and v2/);
 });
 
+// BIP-174: "any key that has no data except for the type specifier must only
+// have the type specifier in the key." BIP-370 marks every new field "No key
+// data", and BIP-174 does the same for PSBT_GLOBAL_VERSION. A reader that
+// matches only a one-byte key ignores the malformed sibling and accepts the
+// file: a required height or an RBF sequence sitting in that sibling never
+// reaches the transaction.
+const readCompact = (bytes, at) => {
+  const first = bytes[at.i++];
+  if (first < 0xfd) return first;
+  if (first === 0xfd) {
+    const n = bytes[at.i] | (bytes[at.i + 1] << 8);
+    at.i += 2;
+    return n;
+  }
+  throw new Error("this fixture builder does not use compact sizes over 16 bits");
+};
+const writeCompact = (n) => (n < 0xfd ? [n] : [0xfd, n & 255, (n >>> 8) & 255]);
+const splitPsbtMaps = (bytes) => {
+  const at = { i: 5 };
+  const maps = [];
+  while (at.i < bytes.length) {
+    const pairs = [];
+    for (;;) {
+      const keyLen = readCompact(bytes, at);
+      if (keyLen === 0) break;
+      const key = bytes.slice(at.i, at.i + keyLen);
+      at.i += keyLen;
+      const valLen = readCompact(bytes, at);
+      const val = bytes.slice(at.i, at.i + valLen);
+      at.i += valLen;
+      pairs.push([key, val]);
+    }
+    maps.push(pairs);
+  }
+  if (at.i !== bytes.length) throw new Error("fixture PSBT did not end on a map boundary");
+  return maps;
+};
+const joinPsbtMaps = (maps) => {
+  const out = [0x70, 0x73, 0x62, 0x74, 0xff];
+  for (const pairs of maps) {
+    for (const [key, val] of pairs) out.push(...writeCompact(key.length), ...key, ...writeCompact(val.length), ...val);
+    out.push(0x00);
+  }
+  return Uint8Array.from(out);
+};
+const le32 = (n) => Uint8Array.of(n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255);
+const withSingletonKeyData = (bytes, mapIndex, type, value) => {
+  const maps = splitPsbtMaps(bytes);
+  maps[mapIndex].push([Uint8Array.of(type, 0x00), value]);
+  return joinPsbtMaps(maps);
+};
+
+test("BIP-370 singleton fields and PSBT_GLOBAL_VERSION must not carry key data", () => {
+  const minimal = unhex(V2_MINIMAL_HEX);
+  const maps = splitPsbtMaps(minimal);
+  assert.equal(maps.length, 4, "minimal BIP-370 vector is global, one input, two outputs");
+  // Each value would be meaningful if a reader treated the long key as the field.
+  const refused = [
+    ["PSBT_GLOBAL_TX_VERSION", 0, 0x02, le32(1)],
+    ["PSBT_GLOBAL_FALLBACK_LOCKTIME", 0, 0x03, le32(10000)],
+    ["PSBT_GLOBAL_INPUT_COUNT", 0, 0x04, Uint8Array.of(2)],
+    ["PSBT_GLOBAL_OUTPUT_COUNT", 0, 0x05, Uint8Array.of(2)],
+    ["PSBT_GLOBAL_TX_MODIFIABLE", 0, 0x06, Uint8Array.of(0x07)],
+    ["PSBT_GLOBAL_VERSION", 0, 0xfb, le32(2)],
+    ["PSBT_IN_PREVIOUS_TXID", 1, 0x0e, new Uint8Array(32).fill(0x11)],
+    ["PSBT_IN_OUTPUT_INDEX", 1, 0x0f, le32(1)],
+    ["PSBT_IN_SEQUENCE", 1, 0x10, le32(0xfffffffd)],
+    ["PSBT_IN_REQUIRED_TIME_LOCKTIME", 1, 0x11, le32(500000000)],
+    ["PSBT_IN_REQUIRED_HEIGHT_LOCKTIME", 1, 0x12, le32(10000)],
+    ["PSBT_OUT_AMOUNT", 2, 0x03, new Uint8Array(8).fill(0)],
+    ["PSBT_OUT_SCRIPT", 2, 0x04, Uint8Array.of(0x51)],
+  ];
+  for (const [name, mapIndex, type, value] of refused) {
+    const file = withSingletonKeyData(minimal, mapIndex, type, value);
+    assert.throws(() => psbtInspectDoc(file), new RegExp(`${name} must not carry key data`), name);
+  }
+  // The only version key is the malformed one, so it must not be dropped and
+  // the file re-read as v0.
+  const versionOnly = splitPsbtMaps(minimal);
+  const versionPair = versionOnly[0].find(([key]) => key.length === 1 && key[0] === 0xfb);
+  versionPair[0] = Uint8Array.of(0xfb, 0x00);
+  assert.throws(() => psbtInspectDoc(joinPsbtMaps(versionOnly)), /PSBT_GLOBAL_VERSION must not carry key data/);
+  // A v0 file whose version key claims "2" behind an extra key byte.
+  const v0BadVersion = unhex("70736274ff" + minimalGlobal + "02fb000402000000" + "00" + "00" + "00");
+  assert.throws(() => psbtInspectDoc(v0BadVersion), /PSBT_GLOBAL_VERSION must not carry key data/);
+
+  // Key data is the defined shape of a proprietary field and of a partial
+  // signature. An input type 0x02 is a pubkey, not PSBT_GLOBAL_TX_VERSION.
+  const propMaps = splitPsbtMaps(minimal);
+  propMaps[0].push([Uint8Array.of(0xfc, 0x00, 0x00), Uint8Array.of(0x01)]);
+  const propDoc = psbtInspectDoc(joinPsbtMaps(propMaps));
+  assert.equal(propDoc.psbtVersion, 2);
+  assert.equal(propDoc.tx.locktime, 0);
+  const partialMaps = splitPsbtMaps(minimal);
+  partialMaps[1].push([Uint8Array.of(0x02, 0x02, ...new Uint8Array(32).fill(0x11)), Uint8Array.of(0x01)]);
+  assert.equal(psbtInspectDoc(joinPsbtMaps(partialMaps)).psbtVersion, 2);
+
+  // The builder passes a non-exact key through. It must not emit a file the
+  // reader would then accept.
+  const doc = inspectB64(V2_MINIMAL_B64);
+  doc.globals.push({ key: "0200", value: "01000000" });
+  assert.throws(() => rebuild(doc), /PSBT_GLOBAL_TX_VERSION must not carry key data/);
+});
+
 test("PSBT v2: builds from the tx section, and a locktime edit must go through the requirement fields (issue #337)", () => {
   // An amount edit regenerates the PSBT_OUT_AMOUNT pair and stays parseable.
   const doc = inspectB64(V2_MINIMAL_B64);
@@ -703,6 +808,44 @@ test("a taproot derivation pair with a huge leaf count decodes to an error, not 
   const doc = psbtInspectDoc(unhex(psbt));
   const pair = doc.inputs[0].find((p) => p.name === "PSBT_IN_TAP_BIP32_DERIVATION");
   assert.match(pair.decodeError, /tap bip32 derivation is truncated/);
+});
+
+test("a truncated problem list still reports its true severity totals (audit C3-4)", () => {
+  // The display list caps at 64 entries in collection order. Fixture: input 0
+  // carries 65 partial signatures that parse but do not verify (65 warnings);
+  // input 1 carries a malformed final witness for its P2WPKH claim (an error,
+  // collected after them). The counts must be taken before truncation, or the
+  // error drops out of view and the list reads as warnings-only.
+  const vi = (n) => (n < 0xfd ? [n] : n <= 0xffff ? [0xfd, n & 0xff, n >> 8] : [0xfe, n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff]);
+  const bytes = [];
+  const push = (...chunks) => { for (const chunk of chunks.flat(2)) bytes.push(chunk); };
+  // Unsigned transaction: two inputs, one 1000-sat OP_TRUE output.
+  const tx = [2, 0, 0, 0, 2];
+  for (const fill of [0xaa, 0xbb]) tx.push(...new Array(32).fill(fill), 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff);
+  tx.push(1, 0xe8, 0x03, 0, 0, 0, 0, 0, 0, 1, 0x51, 0, 0, 0, 0);
+  push([0x70, 0x73, 0x62, 0x74, 0xff], [0x01, 0x00], vi(tx.length), tx, 0x00);
+  // Input 0: a P2WPKH witness UTXO plus 65 well-formed but invalid partial
+  // signatures (r = s = 1 under distinct junk keys).
+  const witnessUtxo = (fill) => [0x50, 0xc3, 0, 0, 0, 0, 0, 0, 0x16, 0x00, 0x14, ...new Array(20).fill(fill)];
+  push(vi(1), [0x01], vi(31), witnessUtxo(0x11));
+  for (let i = 0; i < 65; i++) {
+    const pub = [0x02, ...new Array(28).fill(0), (i >> 8) & 0xff, i & 0xff, 0x00, 0x01];
+    const sig = [0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01];
+    push(vi(34), [0x02, ...pub], vi(sig.length), sig);
+  }
+  push(0x00);
+  // Input 1: same claim, plus a three-item final witness — structurally bad
+  // for P2WPKH, an error-severity problem.
+  push(vi(1), [0x01], vi(31), witnessUtxo(0x22));
+  const badWitness = [0x03, 0x01, 0xaa, 0x01, 0xbb, 0x01, 0xcc];
+  push(vi(1), [0x08], vi(badWitness.length), badWitness, 0x00);
+  push(0x00);
+  const doc = psbtInspectDoc(Uint8Array.from(bytes));
+  assert.equal(doc.problemsTruncated, true);
+  assert.equal(doc.problems.length, 64, "the display list is capped");
+  assert.ok(doc.problems.every((p) => p.severity === "warning"), "the kept entries are all warnings");
+  assert.equal(doc.errorCount, 1, "the hidden error must still be counted");
+  assert.equal(doc.problemCount, 66, "the total must count what was dropped");
 });
 
 test("build and inspect limits agree: exactly 10,000 pairs per map round-trips (issue #355)", () => {
@@ -766,6 +909,67 @@ test("malformed signing fields keep their names but carry decode errors, never a
   assert.ok(!byName("PSBT_IN_FINAL_SCRIPTSIG").decodeError);
 });
 
+// A minimal one-input, one-output v0 transaction shared by the tests below.
+const minimalTx =
+  "02000000" + "01" + "00".repeat(32) + "00000000" + "00" + "ffffffff" +
+  "01" + "0000000000000000" + "00" + "00000000";
+const minimalGlobal = "0100" + (minimalTx.length / 2).toString(16).padStart(2, "0") + minimalTx;
+
+test("a taproot signature's sighash suffix must be a defined Taproot sighash byte (issue #333, diagram-side)", () => {
+  // psbt-schnorr.js's hodlLooksSchnorr (issue #333) rejects a 65-byte Schnorr
+  // signature unless its trailing byte is one of the six defined Taproot
+  // sighash bytes — SIGHASH_DEFAULT (0x00) is valid only as the implicit
+  // 64-byte form, and every other byte is undefined. That fix landed in the
+  // standalone inspector's hand-rolled JS parser only; the PSBT editor's
+  // typed decode goes through this WASM crate instead, and tap_sig_json()
+  // accepted any 65th byte at all, so an invalid or SIGHASH_DEFAULT suffix
+  // still decoded as a "real" signature there.
+  const psbtWith = (suffixByte) =>
+    "70736274ff" + minimalGlobal + "00" +
+    "01" + "13" + "41" + "5a".repeat(64) + suffixByte +
+    "00" + "00";
+  // Defined bytes: SIGHASH_ALL, NONE, SINGLE, and their ANYONECANPAY forms.
+  for (const good of ["01", "02", "03", "81", "82", "83"]) {
+    const doc = psbtInspectDoc(unhex(psbtWith(good)));
+    const pair = doc.inputs[0].find((p) => p.name === "PSBT_IN_TAP_KEY_SIG");
+    assert.ok(pair.decoded, `sighash byte 0x${good} should decode`);
+    assert.equal(pair.decodeError, undefined);
+  }
+  // Undefined bytes, and the explicit-DEFAULT-suffix case, must not decode.
+  for (const bad of ["00", "04", "80", "84", "ff"]) {
+    const doc = psbtInspectDoc(unhex(psbtWith(bad)));
+    const pair = doc.inputs[0].find((p) => p.name === "PSBT_IN_TAP_KEY_SIG");
+    assert.equal(pair.decoded, null, `sighash byte 0x${bad} must not decode`);
+    assert.match(pair.decodeError, /sighash byte is not a defined Taproot sighash type/);
+  }
+  // The 64-byte implicit-DEFAULT form is unaffected.
+  const implicit = psbtInspectDoc(
+    unhex("70736274ff" + minimalGlobal + "00" + "01" + "13" + "40" + "5a".repeat(64) + "00" + "00")
+  );
+  assert.ok(implicit.inputs[0].find((p) => p.name === "PSBT_IN_TAP_KEY_SIG").decoded);
+});
+
+test("a PSBT v0 must not carry PSBT v2-exclusive fields (BIP-370)", () => {
+  // BIP-370's own invalid-vector cases cover a v2 PSBT missing v2-required
+  // fields (see the "BIP-370's invalid cases are refused" test above), but
+  // the BIP is symmetric: a v2 field appearing in a v0 PSBT is equally
+  // invalid ("must not be included"). Nothing enforced that direction — a v0
+  // PSBT decoded fine no matter what v2-only global/input/output fields it
+  // also carried, because the v0 branch only checked for the unsigned tx's
+  // presence.
+  const withExtraGlobal = // PSBT_GLOBAL_INPUT_COUNT (0x04) beside the unsigned tx
+    "70736274ff" + minimalGlobal + "01" + "04" + "04" + "01000000" + "00" + "00" + "00";
+  assert.throws(() => psbtInspectDoc(unhex(withExtraGlobal)), /PSBT_GLOBAL_INPUT_COUNT is a PSBT v2 field/);
+  const withExtraInput = // PSBT_IN_SEQUENCE (0x10) in the input map
+    "70736274ff" + minimalGlobal + "00" + "01" + "10" + "04" + "ffffffff" + "00" + "00";
+  assert.throws(() => psbtInspectDoc(unhex(withExtraInput)), /PSBT_IN_SEQUENCE is a PSBT v2 field/);
+  const withExtraOutput = // PSBT_OUT_AMOUNT (0x03) in the output map
+    "70736274ff" + minimalGlobal + "00" + "00" + "01" + "03" + "08" + "0000000000000000" + "00";
+  assert.throws(() => psbtInspectDoc(unhex(withExtraOutput)), /PSBT_OUT_AMOUNT is a PSBT v2 field/);
+  // A clean v0 PSBT with none of these fields still decodes.
+  assert.equal(psbtInspectDoc(unhex("70736274ff" + minimalGlobal + "00" + "00" + "00")).psbtVersion, 0);
+});
+
 test("psbtBytesFromText accepts base64 and hex with whitespace", () => {
   assert.deepEqual(psbtBytesFromText(VALID_B64), VALID);
   assert.deepEqual(psbtBytesFromText(VALID_HEX.toUpperCase()), VALID);
@@ -780,4 +984,138 @@ test("satsToBtc formats like the inspector", () => {
   assert.equal(satsToBtc(199900000), "1.99900000");
   assert.equal(satsToBtc("2100000000000000"), "21000000.00000000");
   assert.equal(satsToBtc(1), "0.00000001");
+});
+
+// #525 review: strip_codeseparators runs for any legacy input that carries a
+// partial signature, before the signature itself is parsed. A PUSHDATA4
+// length near 2^32 must not overflow the 32-bit module's bounds check:
+// "4efbffffff" made the walk never advance (hang), and "51 x10 4ef6ffffff"
+// wrapped the slice end below its start (trap). Each PSBT below has one
+// input spending a bare legacy output with that script, plus a partial
+// signature, and psbtInspectDoc must return. A wasm infinite loop cannot be
+// interrupted by node:test's timeout, so each run happens in a worker with
+// its own deadline; without the fix the first case stalls the worker and the
+// second aborts it.
+const hostileLegacyPsbt = (scriptHex) => {
+  const le32 = (n) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  const compactSize = (n) => (n < 0xfd ? [n] : n <= 0xffff ? [0xfd, n & 255, (n >>> 8) & 255] : [0xfe, ...le32(n)]);
+  const kv = (key, value) => [key.length, ...key, ...compactSize(value.length), ...value];
+  const prev = prevTx([1000, unhex(scriptHex)]);
+  const unsigned = new Uint8Array([
+    ...le32(2), 1, ...unhex(prev.txid).reverse(), ...le32(0), 0, ...le32(0xffffffff),
+    1, ...[244, 1, 0, 0, 0, 0, 0, 0], 1, 0x51,
+    ...le32(0),
+  ]);
+  const pubkey = unhex("02" + "11".repeat(32));
+  const sig = new Uint8Array(72).fill(0x30); // not DER: the sighash runs first
+  return new Uint8Array([
+    ...unhex("70736274ff"),
+    ...kv([0x00], unsigned), 0x00,
+    ...kv([0x00], unhex(prev.hex)),
+    ...kv([0x02, ...pubkey], sig), 0x00,
+    0x00,
+  ]);
+};
+
+const inspectInWorker = (psbt, timeoutMs = 15000) =>
+  new Promise((resolve, reject) => {
+    const worker = new Worker(
+      `const { parentPort, workerData } = require("node:worker_threads");
+       import(workerData.moduleUrl).then((m) => {
+         const doc = m.psbtInspectDoc(new Uint8Array(workerData.psbt));
+         parentPort.postMessage({ codes: doc.problems.map((p) => p.code) });
+       }).catch((error) => parentPort.postMessage({ error: String(error) }));`,
+      { eval: true, workerData: { moduleUrl: new URL("../src/js/psbt-wasm.js", import.meta.url).href, psbt } }
+    );
+    const deadline = setTimeout(() => {
+      worker.terminate();
+      reject(new Error("psbtInspectDoc did not return within " + timeoutMs + "ms (module hung)"));
+    }, timeoutMs);
+    worker.once("message", (msg) => { clearTimeout(deadline); worker.terminate(); msg.error ? reject(new Error(msg.error)) : resolve(msg.codes); });
+    worker.once("error", (error) => { clearTimeout(deadline); worker.terminate(); reject(error); });
+  });
+
+test("crafted PUSHDATA4 scripts can neither hang nor trap the module (#525)", async () => {
+  for (const [name, script] of [
+    ["hang (PUSHDATA4 len 2^32-5)", "4efbffffff"],
+    ["trap (slice end wraps below start)", "51515151515151515151" + "4ef6ffffff"],
+  ]) {
+    const codes = await inspectInWorker(hostileLegacyPsbt(script));
+    // partial_sig_invalid proves the sighash ran to completion (the stripping
+    // is inside it): check_ecdsa computes the digest before the DER parse
+    // that rejects this dummy signature. sighash_nonstandard would also
+    // appear, but it is added before the sighash is computed.
+    assert.ok(codes.includes("partial_sig_invalid"), `${name}: the sighash ran to completion, got [${codes}]`);
+  }
+});
+
+// ── Finalization rules ─────────────────────────────────────────────────────
+// BIP-341 forbids an explicit SIGHASH_DEFAULT suffix, and BIP-141 requires an
+// empty scriptSig for native witness programs and the redeem-script push for
+// wrapped ones. The build gate must refuse each invalid finalization instead
+// of reporting it as clean.
+
+const fvLe32 = (n) => Uint8Array.of(n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255);
+const fvLe64 = (n) => {
+  const out = new Uint8Array(8);
+  new DataView(out.buffer).setBigUint64(0, BigInt(n), true);
+  return out;
+};
+const fvCompact = (n) => (n < 0xfd ? Uint8Array.of(n) : n <= 0xffff ? Uint8Array.of(0xfd, n & 255, (n >>> 8) & 255) : Uint8Array.of(0xfe, n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255));
+const fvPair = (key, value) => Uint8Array.from([...fvCompact(key.length), ...key, ...fvCompact(value.length), ...value]);
+const finalizationPsbt = (claimScript, extraPairs = []) => {
+  const tx = Uint8Array.from([
+    ...fvLe32(2), 1, ...new Uint8Array(32).fill(0xaa), ...fvLe32(0), 0, ...fvLe32(0xffffffff),
+    1, ...fvLe64(1000), ...fvCompact(claimScript.length), ...claimScript, ...fvLe32(0),
+  ]);
+  const txOut = Uint8Array.from([...fvLe64(5000), ...fvCompact(claimScript.length), ...claimScript]);
+  const bytes = [0x70, 0x73, 0x62, 0x74, 0xff, ...fvPair([0x00], tx), 0x00, ...fvPair([0x01], txOut)];
+  for (const [key, value] of extraPairs) bytes.push(...fvPair(key, value));
+  bytes.push(0x00, 0x00);
+  return Uint8Array.from(bytes);
+};
+
+test("a native SegWit final scriptSig must be empty (BIP-141)", () => {
+  const p2wpkh = Uint8Array.from([0x00, 0x14, ...new Uint8Array(20).fill(0x11)]);
+  const doc = psbtInspectDoc(finalizationPsbt(p2wpkh, [[[0x07], Uint8Array.of(0x51)]]));
+  const problem = doc.problems.find((entry) => entry.code === "final_scriptsig_bad");
+  assert.ok(problem, "the native-witness scriptSig rule is enforced");
+  assert.match(problem.message, /native SegWit input must be empty/);
+  assert.throws(() => rebuild(doc), /native SegWit input must be empty/);
+});
+
+test("a taproot signature must not append an explicit SIGHASH_DEFAULT byte (BIP-341)", () => {
+  const internal = unhex("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+  const claim = Uint8Array.from([0x51, 0x20, ...internal]);
+  const sig = unhex("e907831f80848d1069a5371b402410364bdf1c5f8307b0084c55f1ce2dca821525f66a4a85ea8b71e482a74f382d2ce5ebeee8fdb2172f477df4900d310536c0");
+  const witness = Uint8Array.from([0x01, 0x41, ...sig, 0x00]);
+  const doc = psbtInspectDoc(finalizationPsbt(claim, [[[0x08], witness]]));
+  const problem = doc.problems.find((entry) => entry.code === "final_witness_bad");
+  assert.ok(problem, "the explicit-default signature is refused");
+  assert.match(problem.message, /SIGHASH_DEFAULT/);
+  assert.throws(() => rebuild(doc), /SIGHASH_DEFAULT/);
+});
+
+test("a wrapped-segwit final witness must also carry its redeem script in scriptSig", () => {
+  const maps = splitPsbtMaps(VALID);
+  // VALID input 1 is P2SH-P2WPKH with a witness UTXO and redeem script. Add a
+  // final witness without the required final scriptSig.
+  const witness = Uint8Array.from([0x02, 0x01, 0xaa, 0x21, 0x02, ...new Uint8Array(32).fill(0x11)]);
+  maps[2].push([Uint8Array.of(0x08), witness]);
+  const doc = psbtInspectDoc(joinPsbtMaps(maps));
+  const problem = doc.problems.find((entry) => entry.code === "final_witness_bad" && /no final scriptSig/.test(entry.message));
+  assert.ok(problem, "a wrapped witness without its scriptSig is refused");
+});
+
+test("a PSBT with more than 100,000 total pairs is refused before JSON expansion (audit M5)", () => {
+  const le32 = (n) => Uint8Array.of(n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255);
+  const tx = [2, 0, 0, 0, 11];
+  for (let i = 0; i < 11; i++) tx.push(...new Uint8Array(32).fill(i), 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff);
+  tx.push(1, 0xe8, 0x03, 0, 0, 0, 0, 0, 0, 1, 0x51, 0, 0, 0, 0);
+  const pair = (j) => [Uint8Array.from([0x99, ...le32(j)]), Uint8Array.of(0)];
+  const maps = [[[Uint8Array.of(0x00), Uint8Array.from(tx)]]];
+  for (let map = 0; map < 10; map++) maps.push(Array.from({ length: 10_000 }, (_, j) => pair(j)));
+  maps.push([pair(0)]);
+  maps.push([]);
+  assert.throws(() => psbtInspectDoc(joinPsbtMaps(maps)), /too many key-value pairs to inspect safely/);
 });

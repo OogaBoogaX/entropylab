@@ -11,7 +11,9 @@ import { heap, wasmExports as wasm, withInput } from "./entropylab-wasm.js";
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-const HRP_CAP = 16; // "sp" / "tsp" / "spscan" / "spspend" / "tspscan" / "tspspend" / "bc" / "tb"
+// Decode buffer for the human-readable part. BIP-173 allows 1–83 characters,
+// so size for the standard, not only the app's own short HRPs ("sp", "bc", …).
+const HRP_CAP = 84;
 const WORDS_CAP = 1024;
 const STRING_CAP = 1024;
 
@@ -49,21 +51,44 @@ export const fromWords = (words) => {
 
 export const bech32mEncode = (hrp, words) => {
   if (typeof hrp !== "string" || !hrp) throw new Error("bech32m hrp must be a non-empty string.");
+  if (!Array.isArray(words) && !ArrayBuffer.isView(words)) throw new Error("bech32m words must be an array of integers 0..31.");
+  // Validate in place: Array.from(words) would keep a second unwiped copy of
+  // the private-key bits carried by spscan/spspend word arrays (AR-07).
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    if (!Number.isInteger(word) || word < 0 || word > 31) throw new Error("bech32m word values must be integers 0..31.");
+  }
   const hrpBytes = textEncoder.encode(hrp);
   const wordBytes = Uint8Array.from(words);
-  const out = withInput(hrpBytes, (h) =>
-    withInput(wordBytes, (w) => {
-      const outPtr = wasm().el_alloc(STRING_CAP);
-      try {
-        const length = wasm().el_bech32m_encode(h, hrpBytes.length, w, wordBytes.length, outPtr, STRING_CAP);
-        return length < 0 ? null : textDecoder.decode(heap().slice(outPtr, outPtr + length));
-      } finally {
-        wasm().el_free(outPtr, STRING_CAP);
-      }
-    })
-  );
-  if (!out) throw new Error("bech32m encoding failed (bad hrp or word values).");
-  return out;
+  // Word arrays for spscan/spspend carry private-key bits; the 5-bit copy
+  // handed to WASM is zeroed once the call returns (audit follow-up).
+  try {
+    const out = withInput(hrpBytes, (h) =>
+      withInput(wordBytes, (w) => {
+        const outPtr = wasm().el_alloc(STRING_CAP);
+        try {
+          const length = wasm().el_bech32m_encode(h, hrpBytes.length, w, wordBytes.length, outPtr, STRING_CAP);
+          if (length < 0) return null;
+          // The encoded string is the result; its UTF-8 byte copy carries the
+          // same private-key bits (spscan/spspend) and is erased here
+          // (RT-JSBOUNDARY-1).
+          const encoded = heap().slice(outPtr, outPtr + length);
+          try {
+            return textDecoder.decode(encoded);
+          } finally {
+            encoded.fill(0);
+          }
+        } finally {
+          wasm().el_free(outPtr, STRING_CAP);
+        }
+      })
+    );
+    if (!out) throw new Error("bech32m encoding failed (bad hrp or word values).");
+    return out;
+  } finally {
+    wordBytes.fill(0);
+    hrpBytes.fill(0);
+  }
 };
 
 // Returns { prefix, words } like scure's decodeUnsafe, or null on any
@@ -72,21 +97,35 @@ export const bech32mEncode = (hrp, words) => {
 export const bech32mDecode = (text) => {
   if (typeof text !== "string" || !text) return null;
   const bytes = textEncoder.encode(text);
-  return withInput(bytes, (p) => {
-    const hrpPtr = wasm().el_alloc(HRP_CAP);
-    const wordsPtr = wasm().el_alloc(WORDS_CAP);
-    try {
-      const packed = wasm().el_bech32m_decode(p, bytes.length, hrpPtr, HRP_CAP, wordsPtr, WORDS_CAP);
-      if (packed < 0) return null;
-      const hrpLen = packed & 0xfff;
-      const wordCount = packed >> 12;
-      return {
-        prefix: textDecoder.decode(heap().slice(hrpPtr, hrpPtr + hrpLen)),
-        words: Array.from(heap().slice(wordsPtr, wordsPtr + wordCount)),
-      };
-    } finally {
-      wasm().el_free(hrpPtr, HRP_CAP);
-      wasm().el_free(wordsPtr, WORDS_CAP);
-    }
-  });
+  try {
+    return withInput(bytes, (p) => {
+      const hrpPtr = wasm().el_alloc(HRP_CAP);
+      const wordsPtr = wasm().el_alloc(WORDS_CAP);
+      try {
+        const packed = wasm().el_bech32m_decode(p, bytes.length, hrpPtr, HRP_CAP, wordsPtr, WORDS_CAP);
+        if (packed < 0) return null;
+        const hrpLen = packed & 0xfff;
+        const wordCount = packed >> 12;
+        // Both outputs arrive as byte copies. The number array returned to the
+        // caller owns the decoded words; these two copies carry the same bits
+        // and are erased before returning (RT-JSBOUNDARY-1).
+        const hrpOut = heap().slice(hrpPtr, hrpPtr + hrpLen);
+        const wordsOut = heap().slice(wordsPtr, wordsPtr + wordCount);
+        try {
+          return {
+            prefix: textDecoder.decode(hrpOut).toLowerCase(),
+            words: Array.from(wordsOut),
+          };
+        } finally {
+          hrpOut.fill(0);
+          wordsOut.fill(0);
+        }
+      } finally {
+        wasm().el_free(hrpPtr, HRP_CAP);
+        wasm().el_free(wordsPtr, WORDS_CAP);
+      }
+    });
+  } finally {
+    bytes.fill(0);
+  }
 };

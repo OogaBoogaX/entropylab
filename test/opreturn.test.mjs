@@ -26,6 +26,21 @@ test("single text push is previewed", () => {
   assert.ok(lines.some((line) => line.includes("hello world")));
 });
 
+test("the text preview neutralizes bidi and invisible characters, display only (audit S36-2)", () => {
+  // 61 62 63 = "abc", e2 80 ae = U+202E (right-to-left override), 64 65 66 =
+  // "def": rendered raw, the override reorders the surrounding report line.
+  const parsed = parseOpReturn(hex("6a09616263e280ae646566"));
+  assert.equal(parsed.ok, true);
+  const lines = describeOpReturn({ ...parsed, amount: 0n, burned: false });
+  const preview = lines.find((line) => line.startsWith("text: "));
+  assert.ok(preview, "the payload decodes as UTF-8 text");
+  assert.ok(!preview.includes("\u202E"), "the preview carries a live bidi override");
+  assert.ok(preview.includes("abc\uFFFDdef"), "the override is named by the replacement character");
+  // Display-only: the parsed payload keeps the raw bytes, so the transaction's
+  // hex/base64 export reads exactly what the script pushes.
+  assert.deepEqual([...parsed.payload], [0x61, 0x62, 0x63, 0xe2, 0x80, 0xae, 0x64, 0x65, 0x66]);
+});
+
 test("omni and runes-style hints", () => {
   assert.equal(parseOpReturn(hex("6a046f6d6e69")).hint, "omni-prefix");
   // OP_RETURN OP_13 PUSH(1) 00

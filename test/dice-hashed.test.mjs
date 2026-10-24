@@ -56,12 +56,34 @@ const api = new Function(
 const SIZES = [12, 15, 18, 21, 24];
 const METHODS = ["coldcard", "coleman"];
 
-test("hashed-dice recommendation exactly reaches the entropy bits", () => {
-  const expected = { 12: 50, 15: 62, 18: 75, 21: 87, 24: 99 };
+test("hashed-dice recommendations cover the entropy target", () => {
+  const expected = { 12: 50, 15: 62, 18: 75, 21: 87, 24: 100 };
   for (const words of SIZES) {
     const config = api.hodlSeedConfig(words);
     assert.equal(config.hashRolls, expected[words], `${words}: recommendation off`);
-    assert.ok(api.hodlDiceEntropyBits(config.hashRolls - 1) < config.bits, `${words}: shorter input still reaches ${config.bits} bits`);
+    assert.ok(api.hodlDiceEntropyBits(config.hashRolls) >= config.bits, `${words}: recommendation falls short of ${config.bits} bits`);
+    // The 24-word recommendation is rounded up to 100; other lengths retain
+    // the minimum whole-roll count needed for their entropy target.
+    if (words !== 24) assert.ok(api.hodlDiceEntropyBits(config.hashRolls - 1) < config.bits, `${words}: shorter input still reaches ${config.bits} bits`);
+  }
+});
+
+test("24-word hashed dice warn below 100 rolls and hash every entered roll", () => {
+  for (const method of METHODS) {
+    for (const count of [1, 99, 100, 101]) {
+      const rolls = "123456".repeat(Math.ceil(count / 6)).slice(0, count);
+      const entropy = api.hodlDiceEntropy(rolls, method, 24);
+      assert.equal(entropy.ok, true, `${method}, ${count}: valid transcript rejected`);
+      assert.equal(entropy.warnings.length, count < 100 ? 1 : 0, `${method}, ${count}: warning boundary`);
+      if (count < 100) assert.deepEqual(entropy.warnings[0].vars, { have: count, need: 100, words: 24, bits: (count * Math.log2(6)).toFixed(1) });
+      // Node's SHA-256 is the independent reference for the existing
+      // original-digit / 6-to-0 transcript contract.
+      const transcript = method === "coleman" ? rolls.replaceAll("6", "0") : rolls;
+      assert.equal(entropy.hex, createHash("sha256").update(transcript).digest("hex"));
+    }
+    for (const value of ["", "123X456", "1".repeat(100) + "X"]) {
+      assert.equal(api.hodlDiceEntropy(value, method, 24).ok, false, `${method}: invalid transcript accepted`);
+    }
   }
 });
 

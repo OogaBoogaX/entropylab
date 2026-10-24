@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   hodlCatalogAllowedTags,
+  hodlCatalogHasControlCharacters,
   hodlCatalogHasMarkup,
   hodlCatalogTokens,
   hodlEscapeAttribute,
@@ -149,6 +150,24 @@ test("the text view removes allowed formatting and leaves rejected markup inert 
   assert.equal(hodlSanitizeCatalogText('<img src=x onerror="x">visible'), '<img src=x onerror="x">visible');
 });
 
+test("the neutralizer covers the invisible Unicode ranges (audit S36-1)", () => {
+  // Invisible or reformatting codepoints a catalog string must never carry to
+  // the page: soft hyphen, Hangul fillers and Jungseong filler, Mongolian
+  // vowel separator, Braille pattern blank, halfwidth Hangul filler, line and
+  // paragraph separators, the deprecated interlinear anchors, language tags,
+  // and the variation selectors. Both endpoints of every added range.
+  const added = [0x00ad, 0x115f, 0x1160, 0x180e, 0x2800, 0x3164, 0xffa0, 0x2028, 0x2029, 0x2065, 0x206a, 0x206f, 0xfe00, 0xfe0f, 0xe0001, 0xe0020, 0xe007f];
+  // The ranges the table already had must behave identically under the u flag:
+  // the endpoints of each, including the already-passing bidi/zero-width ones.
+  const existing = [0x00, 0x08, 0x0b, 0x0c, 0x0e, 0x1f, 0x7f, 0x9f, 0x061c, 0x200b, 0x200f, 0x202a, 0x202e, 0x2060, 0x2064, 0x2066, 0x2069, 0xfeff];
+  for (const cp of [...added, ...existing]) {
+    const char = String.fromCodePoint(cp), where = `U+${cp.toString(16).toUpperCase()}`;
+    assert.equal(hodlSanitizeCatalogText(`a${char}b`), "a\uFFFDb", `${where} in the text view`);
+    assert.equal(hodlSanitizeCatalogHtml(`a${char}b`), "a\uFFFDb", `${where} in the HTML view`);
+    assert.equal(hodlCatalogHasControlCharacters(`a${char}b`), true, `${where} is detected`);
+  }
+});
+
 test("the tokenizer sees tags the way the sanitizer does", () => {
   const tokens = hodlCatalogTokens('a <span class="mono">b</span> <0;1> <x-y data-z=1>');
   // A '<' that does not start a tag stays inside the text run.
@@ -185,6 +204,38 @@ test("a hostile catalog value can only reach t() and tHtml() sanitized", () => {
   const dirty = { "Greeting": 'Hello <img src=x onerror="alert(1)">' };
   assert.equal(hodlSanitizeCatalog(dirty)["Greeting"], "Hello &lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
   assert.equal(hodlSanitizeTextCatalog(dirty)["Greeting"], 'Hello <img src=x onerror="alert(1)">');
+});
+
+test("non-string catalog values are dropped by both catalog views, never passed through (audit B6)", () => {
+  // JSON catalogs can carry arrays, objects, numbers — a value the sweep
+  // assigns to innerHTML coerces to its string payload. The sanitizer is the
+  // trust boundary, so it must refuse the entry, not pass it through.
+  const dirty = {
+    "Array value": ['<img src=x onerror="alert(1)">'],
+    "Object value": { injected: "<img src=x onerror=alert(1)>" },
+    "Number value": 7,
+    "Boolean value": true,
+    "Null value": null,
+    "Clean value": "Use <strong>care</strong>",
+  };
+  const html = hodlSanitizeCatalog(dirty), text = hodlSanitizeTextCatalog(dirty);
+  assert.deepEqual(Object.keys(html), ["Clean value"]);
+  assert.deepEqual(Object.keys(text), ["Clean value"]);
+  assert.equal(html["Clean value"], "Use <strong>care</strong>");
+  assert.equal(text["Clean value"], "Use care");
+});
+
+test("a __proto__ key in a JSON-parsed catalog cannot mutate the sanitized catalog's prototype", () => {
+  // JSON.parse creates an own "__proto__" property; assigning it onto a plain
+  // object would hit the Object.prototype setter instead of adding an entry.
+  const dirty = JSON.parse('{"__proto__": {"polluted": "yes"}, "Greeting": "Hello"}');
+  assert.equal(Object.hasOwn(dirty, "__proto__"), true);
+  for (const clean of [hodlSanitizeCatalog(dirty), hodlSanitizeTextCatalog(dirty)]) {
+    assert.equal(Object.getPrototypeOf(clean), Object.prototype);
+    assert.equal(Object.hasOwn(clean, "__proto__"), false);
+    assert.equal(clean.polluted, undefined);
+    assert.equal(clean.Greeting, "Hello");
+  }
 });
 
 test("i18n.js routes every catalog through the sanitizer before t() can read it", () => {

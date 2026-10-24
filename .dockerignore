@@ -3,6 +3,7 @@ node_modules
 secp256k1-wasm/target
 entropylab.html
 SHA256SUMS.txt
+WASM-SHA256SUMS.txt
 versions.json
 _site
 tmp

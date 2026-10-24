@@ -307,9 +307,16 @@ export class VanityGrinder {
       failed = true;
       this.callbacks.onError?.(message);
       finish(true);
+      // End the run id too: a late message from a torn-down worker must not be
+      // answered with the grind job (the key material is already zeroed) nor
+      // deliver a match — the same drop cancel() gets by bumping the id.
+      this.runId += 1;
     };
 
     buckets.forEach((bucket, index) => {
+      // A failed spawn ends the run; do not spawn the remaining buckets into
+      // the torn-down pool.
+      if (failed) return;
       let spawned;
       try {
         spawned = this.spawn();
@@ -337,7 +344,11 @@ export class VanityGrinder {
           }
           // Every worker gets its own copy of the key material (structured
           // clone); it lives in that worker's WASM memory until termination.
-          worker.postMessage({ type: "grind", mode, key: key.slice(), salt: salt.slice(), path: pathIndexes, counterSlot, prefix, passLen, start: bucket.start, count: bucket.count, script: scriptCode });
+          // Transfer each copy instead of structured-cloning it: the worker
+          // owns the buffer and wipes it after copying into WASM memory. A
+          // clone would leave a copy in the worker heap for the GC.
+          let keyCopy = key.slice(), saltCopy = salt.slice();
+          worker.postMessage({ type: "grind", mode, key: keyCopy.buffer, salt: saltCopy.buffer, path: pathIndexes, counterSlot, prefix, passLen, start: bucket.start, count: bucket.count, script: scriptCode }, [keyCopy.buffer, saltCopy.buffer]);
           handed += 1;
           if (handed === buckets.length) wipe();
         } else if (msg.type === "progress") {
@@ -383,6 +394,9 @@ export class VanityGrinder {
 
   #terminate() {
     this.wipe?.();
+    // A run shares one scope among its closures, and it holds the passphrase
+    // as text: once the key bytes are zeroed, nothing keeps it (#546 B3).
+    this.wipe = null;
     for (const worker of this.workers) worker.terminate();
     for (const url of this.urls) URL.revokeObjectURL(url);
     this.workers = [];

@@ -3,6 +3,8 @@
 // content — and stay out of the way of ordinary PRs.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -58,15 +60,17 @@ test("the head branch must be in the automation namespace", () => {
   assert.deepEqual(gate({ headRef: "i18n/translate-pt-br", changedFiles: ["src/locales/pt-br.json", "src/locales/.sources/pt-br.json"] }), []);
 });
 
-test("exactly one catalog and its matching sidecar may change", () => {
+test("exactly one catalog, and at most its matching sidecar, may change", () => {
   // A second language's catalog: out of scope.
   assert.ok(gate({ changedFiles: [...ES_FILES, "src/locales/fr.json"] }).some((p) => p.includes("fr.json")));
   // Anything executable or build-related: out of scope.
   for (const file of ["src/js/app.js", "package.json", ".github/workflows/ci-cd.yml", "src/shell.html"]) {
     assert.ok(gate({ changedFiles: [...ES_FILES, file] }).some((p) => p.includes(file)), file);
   }
-  // Catalog without sidecar (or vice versa) fails: they move together.
-  assert.ok(gate({ changedFiles: ["src/locales/es.json"] }).some((p) => p.includes("sidecar")));
+  // A catalog-only diff is in scope: a value-only correction (#862) leaves
+  // the key-hash sidecar untouched, and contentProblems below still requires
+  // that sidecar to match the new catalog. A sidecar-only diff is not.
+  assert.deepEqual(gate({ changedFiles: ["src/locales/es.json"] }), []);
   assert.ok(gate({ changedFiles: ["src/locales/.sources/es.json"] }).some((p) => p.includes("catalog")));
   // A mismatched pair (branch says es, files say de) fails.
   assert.ok(gate({ changedFiles: ["src/locales/de.json", "src/locales/.sources/de.json"] }).some((p) => p.includes("de.json")));
@@ -77,6 +81,32 @@ test("the committed catalogs and seeded sidecars are mutually consistent", () =>
   // provenance sidecars ever rot, this fails before the gate would.
   for (const lang of ["es", "fr", "pt", "de"]) {
     assert.deepEqual(contentProblems(root, lang), [], lang);
+  }
+});
+
+test("an unchanged sidecar passes only while it still matches the catalog key for key", () => {
+  const tree = mkdtempSync(join(tmpdir(), "i18n-gate-"));
+  try {
+    mkdirSync(join(tree, "src/locales/.sources"), { recursive: true });
+    const catalog = JSON.parse(readFileSync(join(root, "src/locales/es.json"), "utf8"));
+    copyFileSync(join(root, "src/locales/.sources/es.json"), join(tree, "src/locales/.sources/es.json"));
+    const write = (next) => writeFileSync(join(tree, "src/locales/es.json"), JSON.stringify(next, null, 2) + "\n");
+    // A value corrected in place: same keys, so the committed sidecar holds.
+    const [first] = Object.keys(catalog);
+    write({ ...catalog, [first]: `${catalog[first]} (corrected)` });
+    assert.deepEqual(contentProblems(tree, "es"), []);
+    // A key added or removed without its sidecar: rejected.
+    write({ ...catalog, "A string the sidecar has never seen": "Una cadena" });
+    assert.ok(contentProblems(tree, "es").some((p) => p.includes("no source hash for translated key")));
+    const { [first]: _gone, ...fewer } = catalog;
+    write(fewer);
+    assert.ok(contentProblems(tree, "es").some((p) => p.includes("source hash with no catalog entry")));
+    // No sidecar at all: rejected.
+    rmSync(join(tree, "src/locales/.sources/es.json"));
+    write(catalog);
+    assert.ok(contentProblems(tree, "es").some((p) => p.includes("does not exist")));
+  } finally {
+    rmSync(tree, { recursive: true, force: true });
   }
 });
 
