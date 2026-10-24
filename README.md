@@ -128,6 +128,11 @@ an explicit error before those pairs are allocated.
   derived from the exported
   output descriptor itself by rust-miniscript (in the WASM crate), so the two
   cannot drift.
+- Watch-only descriptors (single-signature and multisig) and a multisig's
+  BIP 388 wallet policy each carry a QR button. Up to 1,000 characters the
+  code is the text itself; a longer one is shown as an animated `ur:bytes`
+  sequence, in the same fixed-rate UR parts the PSBT editor uses for
+  `ur:crypto-psbt`. An extended private key never gets a code.
 - Inspects PSBT v0 transactions (paste, or upload a binary .psbt / hex or
   base64 text export; the loaded bytes download as .psbt or .txn), reports
   PSBT-provided amounts and fees, checks
