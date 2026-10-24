@@ -988,3 +988,31 @@ test("every setBytes refusal wipes the code points decoded so far (source guard)
   assert.match(setBytes, /catch/, "the decode loop has no refusal path that wipes points");
   assert.equal((setBytes.match(/points\.fill\(0\)/g) || []).length, 2, "exactly the success path and the refusal path zero points");
 });
+
+// Red-team runs on PR #1087: bytes() must hand the caller its own array.
+// Callers wipe it after use (hodlPassphraseHasLineBreak in app.js does
+// `held.fill(0)` in a finally), so an array backed by the vault's own store
+// would erase the passphrase and change the wallet. The expected encoding is
+// Node's TextEncoder, the standard UTF-8, not the code under test.
+test("bytes() returns a fresh array the caller owns: wiping it never touches the vault", () => {
+  const text = "Grüße 🔑\n";
+  const vault = new PassphraseVault();
+  vault.setText(text);
+  const expected = hex(utf8(text));
+  const a = vault.bytes();
+  assert.ok(a instanceof Uint8Array, "bytes() returns a Uint8Array");
+  assert.equal(hex(a), expected);
+  a.fill(0);
+  assert.equal(hex(vault.bytes()), expected, "wiping the returned array changed the vault's bytes");
+  assert.equal(vault.text(), text, "wiping the returned array changed the vault's text");
+  assert.equal(vault.length, [...text].length);
+  // Two calls must not share an array, nor a buffer: a second view over the
+  // same bytes would be wiped by the first caller's fill(0) just the same.
+  const b = vault.bytes(), c = vault.bytes();
+  assert.notEqual(b, c, "two calls must not hand out the same array");
+  assert.notEqual(b.buffer, c.buffer, "two calls must not share a buffer");
+  b.fill(0);
+  assert.equal(hex(c), expected, "wiping one returned array changed another");
+  assert.equal(hex(vault.bytes()), expected);
+  assert.equal(vault.text(), text);
+});

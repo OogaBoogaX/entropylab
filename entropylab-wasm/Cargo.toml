@@ -15,11 +15,13 @@ crate-type = ["cdylib"]
 # vendored by secp256k1-sys and build with clang). "lowmemory" shrinks the
 # precomputed EC tables baked into the WASM data segment (~1.1 MB ->
 # negligible); signing speed is irrelevant for a calculator. No rand features:
-# this library never generates randomness.
-secp256k1 = { version = "=0.29.1", default-features = false, features = ["std", "lowmemory"] }
+# this library never generates randomness. "recovery" is for the BOLT11 invoice decoder.
+secp256k1 = { version = "=0.29.1", default-features = false, features = ["std", "lowmemory", "recovery"] }
 bitcoin_hashes = { version = "=0.14.101", default-features = false, features = ["alloc"] }
-# rust-bitcoin proper: BIP32 extended keys (bitcoin::bip32). default-features
-# are off so no rand/serde/recovery code is compiled in.
+# rust-bitcoin proper: BIP32 extended keys (bitcoin::bip32). Its own
+# default features stay off; "recovery" is enabled on the secp256k1
+# dependency above for the BOLT11 invoice decoder (features unify across
+# the build).
 bitcoin = { version = "=0.32.11", default-features = false, features = ["std", "secp-lowmemory"] }
 # rust-bitcoin ecosystem BIP39 (English wordlist only). No features: NFKD
 # normalization is done JS-side (String.normalize, exactly as the previous

@@ -1,16 +1,14 @@
-// Key-switch / derivation race: switching the active key or multisig tab, or
-// ignoring a key that is in the Key Station, while a derivation is in flight
-// must cancel that derivation — never let its commit land on the tab that
-// becomes active.
+// Key-switch / derivation race: switching the active key or multisig tab
+// must cancel an in-flight derivation. Archiving a live station key is
+// refused, so that attempt must leave the originating tab and its derivation
+// intact.
 //
 // Security contract: a derivation started from one tab's form must either
 // commit to that same tab's state or fail with HodlDerivationCancelledError;
 // it must never write its result into a tab that became active mid-flight
 // (which would corrupt that key's saved wallet and silently lose the wallet
-// the user actually derived). The suite drives the two mutation paths it
-// covers — hodlSelectKey / hodlSelectMsig tab switches and the station-key
-// splice in hodlKeyManagerIgnore — mid-derivation and asserts cancellation;
-// an undisturbed derivation still commits, as a control.
+// the user actually derived). Tab switches cancel; a refused archive and an
+// undisturbed derivation still commit to their originating key.
 //
 // The real app.js functions run under a stub DOM through the shared slice
 // harness; only the derivation boundary (the slow wallet build) is stubbed,
@@ -51,6 +49,7 @@ const app = await (async () => {
       {
         stubs: {
           HodlDerivationCancelledError,
+          hodlJournalKeyDerivation: null,
           // Load-time DOM touches (the shared var statement builds elements).
           hodlElement: () => inert,
           // Workspace plumbing.
@@ -84,7 +83,6 @@ const app = await (async () => {
           hodlSetSelectedScriptType: () => {},
           hodlSnapshotKeySummary: () => {},
           hodlCommitDerivedKey: () => keyCommits.push("key"),
-          hodlJournalCaptureDerivedKey: () => {},
           hodlDisposeDroppedWallets: () => {},
           hodlFocusWalletResult: () => {},
           // hodlCaptureKey's remaining helpers.
@@ -146,7 +144,7 @@ const app = await (async () => {
           hodlAssertPrivateKeyKind: unused("hodlAssertPrivateKeyKind"),
           hodlSingleKeyWallet: unused("hodlSingleKeyWallet"),
         },
-        settable: ["hodlKeys", "hodlActiveKey", "hodlMsigs", "hodlActiveMsig", "hodlKeyMode"],
+        settable: ["hodlKeys", "hodlActiveKey", "hodlMsigs", "hodlActiveMsig", "hodlKeyMode", "hodlWorkspace"],
       },
     );
   } finally {
@@ -222,6 +220,20 @@ test("an undisturbed derivation still commits to its own key", async () => {
   assert.deepEqual(keyCommits, ["key"], "the commit ran once, on the originating key");
 });
 
+test("key completion Debug events keep their owner when another workspace is selected", async () => {
+  for (const tool of ["calc", "journal"]) {
+    keyStation(1); journal.length = 0;
+    app.__set.hodlWorkspace(tool);
+    const wallet = { kind: "wallet", network: "mainnet", masterFingerprint: "aaaa0002" };
+    const { enteredPromise, release } = gatedDerivation(wallet);
+    const pending = app.hodlCalculateKey({ setTotal() {}, step() {} }, "derive", { logTool: tool });
+    await enteredPromise;
+    app.__set.hodlWorkspace("psbt");
+    release(); assert.equal(await pending, true);
+    assert.deepEqual(journal.filter(([action]) => action === "derive"), [["derive", "aaaa0002", tool]]);
+  }
+});
+
 test("switching multisig tabs mid-build cancels the commit instead of corrupting the switched-to wallet", async () => {
   const msigs = msigStation(2);
   msigCommits.length = 0;
@@ -246,21 +258,26 @@ test("switching multisig tabs mid-build cancels the commit instead of corrupting
   assert.equal(msigCommits.length, 0, "no multisig commit ran for the cancelled build");
 });
 
-test("ignoring the active station key mid-derivation cancels the commit instead of corrupting the key that takes its place", async () => {
+test("archiving the active station key mid-derivation is refused and the result commits only to its originating key", async () => {
   const keys = keyStation(2);
+  const origin = keys[0], adjacent = keys[1];
+  adjacent.result = { kind: "wallet", network: "mainnet", masterFingerprint: "bbbb0004" };
+  const adjacentBefore = structuredClone(adjacent);
   keyCommits.length = 0;
   const wallet = { kind: "wallet", network: "mainnet", masterFingerprint: "aaaa0003" };
   const { enteredPromise, release } = gatedDerivation(wallet);
   const pending = app.hodlCalculateKey({ setTotal() {}, step() {} });
   await enteredPromise;
-  // The Key Manager's Ignore splices the active key out of the station; the
-  // next key slides into its index while the derivation is in flight.
-  app.hodlKeyManagerIgnore(keys[0]);
-  assert.equal(keys.length, 1, "the ignore removed the key from the station");
-  assert.equal(keys[0].number, 2, "the second key took over the active slot");
+  const eventsBefore = journal.length;
+  app.hodlKeyManagerIgnore(origin);
+  assert.equal(keys.length, 2, "the refused archive removed a station key");
+  assert.equal(keys[0], origin, "the originating key lost its station slot");
+  assert.equal(keys[1], adjacent, "the adjacent key moved into the active slot");
+  assert.deepEqual(adjacent, adjacentBefore, "the archive attempt changed the adjacent key");
+  assert.equal(journal.length, eventsBefore, "the refused archive recorded a mutation");
   release();
-  const result = await outcome(pending);
-  assert.ok(result instanceof HodlDerivationCancelledError, "the in-flight derivation must be cancelled once the station loses its key; instead it committed");
-  assert.equal(keys[0].result, null, "the key that slid into the active slot kept its own state");
-  assert.equal(keyCommits.length, 0, "no key commit ran for the cancelled derivation");
+  assert.equal(await pending, true, "the refused archive cancelled the active derivation");
+  assert.equal(origin.result, wallet, "the result did not commit to its originating key");
+  assert.deepEqual(adjacent, adjacentBefore, "the derivation overwrote the adjacent key");
+  assert.deepEqual(keyCommits, ["key"], "the derivation must commit exactly once");
 });

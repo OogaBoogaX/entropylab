@@ -19,6 +19,7 @@ const app = read("src/js/app.js");
 const shell = read("src/shell.html");
 const expandable = read("src/js/expandable.js");
 const psbtEditor = read("src/js/psbt-editor.js");
+const coreWallet = read("src/js/core-wallet-ui.js");
 
 // A named top-level function body in app.js, for "this id is cleared in
 // this function" probes.
@@ -35,7 +36,7 @@ const fnBody = (name) => {
 const lifecycle = fnBody("hodlInitSecretFieldAutoClear");
 const journalFields = fnBody("hodlJournalClearFields");
 const journalWipe = fnBody("hodlJournalWipeMem");
-const journalLock = fnBody("hodlJournalLock");
+const journalEditor = fnBody("hodlJournalHideEditor");
 const msigRestore = fnBody("hodlRestoreMsig");
 
 // One slice of source around a marker, for "the change handler that reads
@@ -75,26 +76,40 @@ const CLEARING_PATHS = [
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
   },
   {
-    ids: ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-search", "journal-file"],
-    why: "Journal: passwords, raw entropy input, seed phrases, entry text",
+    ids: ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-search", "journal-file"],
+    why: "Journal: passwords and saved-record searches",
     probe: (id) => assert.ok(journalFields.includes(`"${id}"`), `#${id} missing from the journal field clear`),
   },
   {
-    ids: ["journal-state-text", "journal-state-private"],
+    ids: ["journal-input", "journal-phrase", "journal-label", "journal-entry-notes"],
+    why: "Legacy Journal editor: raw recovery input, seed or passphrase, and user-supplied labels and notes",
+    probe: (id) => {
+      assert.ok(journalEditor.includes(`"${id}"`), `#${id} missing from the saved-record editor clear`);
+      assert.match(journalEditor, /field\.value = ""/, "closing the editor must erase its temporary values");
+      assert.match(journalWipe, /hodlJournalHideEditor\(\)/, "Journal Clear must close and scrub the saved-record editor");
+      assert.match(lifecycle, /hodlJournalWipeMem\(\)/, "End Session and pagehide must reach the Journal wipe");
+    },
+  },
+  {
+    ids: ["journal-report-file"],
+    why: "Read-only report picker is cleared on consumption and Journal teardown",
+    probe: (id) => assert.ok(fnBody("hodlJournalClearReport").includes(`"${id}"`) && /file\.value = ""/.test(fnBody("hodlJournalClearReport"))),
+  },
+  {
+    ids: ["journal-state-text", "journal-state-private", "journal-saved-state-text", "journal-saved-state-private"],
     why: "Session snapshot: with the private box ticked it holds the whole session's recovery texts",
     probe: (id) => {
       assert.ok(journalWipe.includes(`"${id}"`), `#${id} must be dropped by the journal Clear`);
-      if (id === "journal-state-text") assert.match(journalLock, /stateText\.textContent = ""/, "Lock must empty the snapshot");
-      else assert.match(journalLock, /privateBox\.checked = false/, "Lock must untick the private box");
+      if (id.endsWith("-text")) assert.match(journalWipe, /field\.textContent = ""/, "Clear must empty the snapshot");
+      else assert.match(journalWipe, /privateBox\.checked = false/, "Clear must untick the private box");
     },
   },
   {
     ids: ["journal-notes-text", "journal-log-out"],
-    why: "Session notepad and session log — free text; Lock drops them with the password (#522)",
+    why: "Session notepad and session log — free text; Clear drops them with the password (#522)",
     probe: (id) => {
       assert.ok(journalWipe.includes(`"${id}"`), `#${id} missing from the journal full wipe`);
-      assert.match(journalLock, /wipeJournal\(hodlJournal\)/, "Lock must wipe the journal's in-memory session text");
-      assert.match(journalLock, new RegExp(`getElementById\\("${id}"\\)`), `#${id} missing from the journal Lock`);
+      assert.match(journalWipe, /wipeJournal\(hodlJournal\)/, "Clear must wipe the journal's in-memory session text");
     },
   },
   {
@@ -144,6 +159,16 @@ const CLEARING_PATHS = [
     why: "the PSBT editor's file picker (reset on consume)",
     probe: () => assert.match(around(psbtEditor, `$("psbted-file")`), /file\.value = ""/, "#psbted-file must be reset on consume"),
   },
+  {
+    ids: ["core-add-text"],
+    why: "Core Wallet: the add-descriptor paste may carry an xprv",
+    probe: () => assert.match(coreWallet, /wipe\.onclick[\s\S]*?addText\.value = ""/, "the Core Wallet wipe must empty #core-add-text"),
+  },
+  {
+    ids: ["core-file"],
+    why: "the Core Wallet file picker (reset on consume)",
+    probe: () => assert.match(coreWallet, /file\.addEventListener\("change", \(\) => \{\s*const chosen = file\.files\?\.\[0\];\s*file\.value = "";/, "#core-file must be reset on consume"),
+  },
 ];
 
 const SECRET_FIELDS = CLEARING_PATHS.flatMap((row) => row.ids);
@@ -166,10 +191,11 @@ const PUBLIC_FIELDS = {
   "branch-range": "address window setting",
   "branch-start": "address window setting",
   "branch-start-harden": "hardening toggle",
+  "core-add-active": "editor policy checkbox",
+  "core-add-internal": "editor policy checkbox",
+  "core-reveal": "privacy reveal toggle — session state, not key material",
   "derivation-path": "public derivation path text",
-  "journal-log-encrypt": "download-encryption checkbox",
-  "journal-notes-encrypt": "download-encryption checkbox",
-  "journal-state-encrypt": "download-encryption checkbox",
+  "journal-method": "saved-record input-method enum; contains no recovery text",
   "msig-account": "derivation setting",
   "msig-account-harden": "derivation setting",
   "msig-address-range": "derivation setting",
@@ -206,7 +232,7 @@ const PUBLIC_FIELDS = {
 };
 
 test("the registry covers every known secret-bearing field", () => {
-  for (const id of ["dice", "pass", "seed", "key", "bip85-key", "sp-key", "psbt-key", "nonce-key", "ln-seed", "journal-input", "journal-phrase", "journal-state-text", "psbted-text", "msig-descriptor", "exp-text"]) {
+  for (const id of ["dice", "pass", "seed", "key", "bip85-key", "sp-key", "psbt-key", "nonce-key", "ln-seed", "journal-search", "journal-input", "journal-phrase", "journal-label", "journal-entry-notes", "journal-state-text", "psbted-text", "msig-descriptor", "exp-text"]) {
     assert.ok(SECRET_FIELDS.includes(id), `#${id} is secret but missing from the registry`);
   }
 });

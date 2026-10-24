@@ -319,3 +319,92 @@ test("the attestation walker refuses the same op twice at one node", (t) => {
   assert.equal(status([...header, 0xff, 0xf0, 1, 0xaa, ...att(1), 0xf0, 1, 0xbb, ...att(2)]), 0, "two different appends at one node");
   assert.equal(status([...header, 0x08, 0x08, ...att(1)]), 0, "sha256 under sha256 (different nodes)");
 });
+
+test("the proof push survives a rock that moved: bounded retry, re-checked commit, no force", () => {
+  // Rock CI run 39990729021: the translation bot pushed between the job's
+  // fetch and its push, so the proof push was rejected and the run went red
+  // although the site had built and deployed. A moved rock is re-fetched and
+  // the proof rebased and re-checked, a bounded number of times.
+  const all = steps(jobBlock(read(".github/workflows/ci-cd.yml"), "timestamp-push"));
+  const push = all.find((step) => step.includes("push origin HEAD:rock"));
+  assert.ok(push, "the push step exists");
+  // Bounded retry: a fixed number of retries, then a clear error.
+  assert.match(push, /^ {10}MAX_RETRIES=3$/m, "the retry is bounded");
+  assert.match(
+    push,
+    /if \[ "\$attempt" -ge "\$MAX_RETRIES" \]; then\n\s+echo "::error::[^"]*"\n\s+exit 1/,
+    "exhausting the retries is an error, not a silent success",
+  );
+  // Only a rejected push is retried; an auth or network error fails at once.
+  assert.match(push, /grep -Eq '[^']*rejected[^']*'/, "only a rejected push is retried");
+  assert.match(push, /echo "::error::pushing the proof failed for a reason other than a moved rock"/, "any other push error fails at once");
+  // A moved rock is fetched again and its HTML digest read from the ref, not
+  // from the working tree (which is the rock this job started from).
+  assert.match(push, /git fetch --quiet origin rock/, "the moved rock is fetched again");
+  assert.match(push, /git show origin\/rock:entropylab\.html \| sha256sum/, "the digest comes from origin/rock");
+  // A newer site build supersedes this proof: push nothing, exit 0.
+  assert.match(
+    push,
+    /if \[ "\$ON_ROCK" != "\$EXPECTED" \]; then\n\s+echo "[^"]*superseded[^"]*"\n\s+exit 0/,
+    "a superseded proof exits 0 without pushing",
+  );
+  // A well-formed proof already on rock is kept, as in "Commit the proof".
+  assert.match(push, /git show origin\/rock:entropylab\.html\.ots/, "rock's proof is read from the ref");
+  assert.match(push, /python3 "\$WALKER" "\$RUNNER_TEMP\/rock\.ots"/, "the same attestation walk decides");
+  // The single proof commit is replayed, then the same two checks run.
+  assert.match(push, /git -c core\.hooksPath=\/dev\/null rebase origin\/rock/, "the proof commit is rebased with hooks disabled");
+  const rebase = push.indexOf("rebase origin/rock");
+  assert.ok(push.indexOf("rev-list --count origin/rock..HEAD", rebase) > rebase, "one commit ahead is re-checked after the rebase");
+  assert.ok(push.indexOf("diff --name-only origin/rock..HEAD", rebase) > rebase, "the proof-only rule is re-checked after the rebase");
+  // Never force-push, and never push anything but the one proof commit.
+  assert.doesNotMatch(push, /--force|force-with-lease|\+HEAD:rock/, "no force push");
+  assert.doesNotMatch(push, /push\s+-f\b/, "no short force flag");
+});
+
+test("the proof push re-checks the rebased proof's blob, annotates a superseded or kept proof, retries only a moved rock and masks the auth header", () => {
+  // Round 2 of #1127: the retry loop re-checked the commit's shape but not the
+  // proof's bytes, so a rebase that resolved a conflict could push a proof
+  // this job never validated; a green run that pushed nothing said so only in
+  // the log; "cannot lock ref" is a local lock error, not a moved rock; and
+  // the base64 auth header was never masked.
+  const all = steps(jobBlock(read(".github/workflows/ci-cd.yml"), "timestamp-push"));
+  const push = all.find((step) => step.includes("push origin HEAD:rock"));
+  assert.ok(push, "the push step exists");
+  // 1. The validated proof's blob id is recorded before the loop, and every
+  //    rebase must replay exactly those bytes.
+  const blob = push.indexOf("PROOF_BLOB=$(git rev-parse HEAD:entropylab.html.ots)");
+  assert.ok(blob > 0, "the validated proof's blob id is recorded");
+  assert.ok(blob < push.indexOf("while :; do"), "before the retry loop");
+  const rebase = push.indexOf("rebase origin/rock");
+  assert.ok(
+    push.indexOf('if [ "$(git rev-parse HEAD:entropylab.html.ots)" != "$PROOF_BLOB" ]; then', rebase) > rebase,
+    "the rebased proof must be the validated blob",
+  );
+  assert.match(
+    push,
+    /if \[ "\$\(git rev-parse HEAD:entropylab\.html\.ots\)" != "\$PROOF_BLOB" \]; then\n\s+echo "::error::[^"]*differs from the validated[^"]*"\n\s+exit 1/,
+    "a rebased proof that differs from the validated one fails",
+  );
+  // 2. A green run that pushed nothing says why, as an annotation.
+  assert.match(
+    push,
+    /echo "::notice title=Proof superseded::[^"]*superseded[^"]*"/,
+    "a superseded proof is annotated",
+  );
+  assert.match(
+    push,
+    /echo "::notice title=Proof kept::[^"]*"/,
+    "a kept proof on rock is annotated",
+  );
+  // 3. Only a moved rock is retried; a local lock error fails at once.
+  assert.doesNotMatch(push, /cannot lock ref/, "a local lock error is not a moved rock");
+  assert.match(push, /grep -Eq '[^']*rejected[^']*'/, "only a rejected push is retried");
+  // 4. The base64 auth header is masked before any push.
+  const auth = push.indexOf("AUTH_B64=$(echo -n x-access-token:$PUSH_TOKEN | base64)");
+  const mask = push.indexOf('echo "::add-mask::$AUTH_B64"');
+  assert.ok(auth > 0, "the base64 value is computed once");
+  assert.ok(mask > auth, "the base64 value is masked");
+  assert.ok(mask < push.indexOf("while :; do"), "before any push");
+  assert.match(push, /AUTHORIZATION: basic \$AUTH_B64/, "the header uses the variable");
+  assert.doesNotMatch(push, /AUTHORIZATION: basic \$\(echo -n x-access-token:\$PUSH_TOKEN \| base64\)/, "the header is not recomputed inline");
+});

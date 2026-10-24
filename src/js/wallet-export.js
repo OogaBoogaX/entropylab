@@ -173,6 +173,11 @@ var hodlWalletExport = (() => {
     if (!match) throw new Error(`wallet.dat export: no extended key found in ${label} descriptor`);
     return match[1];
   };
+  const extractExtendedPrivateKey = (descriptor) => {
+    const match = descriptor.match(PRIVATE_KEY);
+    if (!match) throw new Error("wallet.dat export: no extended private key found in spending descriptor");
+    return match[0];
+  };
   const extractExtendedPubs = (descriptor) => {
     EXTENDED_PUB_GLOBAL.lastIndex = 0;
     const keys = [];
@@ -520,50 +525,25 @@ var hodlWalletExport = (() => {
     }
   };
 
-  // Builds the exact key/value rows of the `main` table.
-  // deps = { sha256, checksum, base58Decode, deriveBranchBody, publicKeyForPrivate,
-  //           canonicalizeDescriptor? } — the optional canonicalizer re-versions
-  //           SLIP-132 prefixes to the xpub/tpub Core parses; without it such
-  //           keys are refused.
-  const buildWalletRecords = (wallet, includePrivate, deps, creationTime) => {
-    const network = NETWORKS[wallet?.network];
-    if (!network) throw new Error(`wallet.dat export: unknown network ${wallet?.network}`);
-    const units = walletDescriptorUnits(wallet, includePrivate);
-    if (!units.length) throw new Error("wallet.dat export: no descriptors to export");
+  // The 74-byte serialized node (no version bytes), as Core's descriptor
+  // cache stores it.
+  const extendedKeyBody = (extendedKey, deps) => {
+    const raw = deps.base58Decode(extendedKey);
+    if (raw.length !== 78) throw new Error("wallet.dat export: unexpected extended key payload");
+    return raw.slice(4);
+  };
 
-    // Fail closed before any record is written: every descriptor, public and
-    // private, must be exactly one of the shapes this writer can place, and
-    // its wrapper must produce the output type the wallet declared.
-    for (const unit of units) {
-      assertDescriptorShape(unit.descriptor, "watch-only", deps, unit.type, Boolean(unit.multiKey));
-      if (unit.privateDescriptor) assertDescriptorShape(unit.privateDescriptor, "spending", deps, unit.type, Boolean(unit.multiKey));
-    }
-
+  // The records one descriptor unit contributes to the `main` table:
+  // walletdescriptor, one walletdescriptorcache per pubkey provider, an
+  // optional walletdescriptorkey for spending material, and (unless
+  // unit.active === false) the activeexternalspk/activeinternalspk pointer.
+  // Exported for the Core Wallet tab, which appends units to an existing
+  // wallet and resolves active-record conflicts itself.
+  // deps = { sha256, checksum, base58Decode, deriveBranchBody, publicKeyForPrivate }
+  const descriptorUnitRecords = (unit, deps, creationTime) => {
     const records = [];
     const push = (key, value) => records.push([key, value]);
 
-    // The 74-byte serialized node (no version bytes), as Core's descriptor
-    // cache stores it.
-    const extendedKeyBody = (extendedKey) => {
-      const raw = deps.base58Decode(extendedKey);
-      if (raw.length !== 78) throw new Error("wallet.dat export: unexpected extended key payload");
-      return raw.slice(4);
-    };
-
-    push(streamString("version"), u32le(RECORD_VERSION));
-    push(streamString("minversion"), u32le(RECORD_MINVERSION));
-    // The wallet is only signing-capable if at least one descriptor got a
-    // private key record; otherwise keep the disable-private-keys flag.
-    const hasPrivateKeys = includePrivate && units.some((unit) => unit.privateDescriptor);
-    const flags = FLAG_DESCRIPTORS | FLAG_BLANK_WALLET | (hasPrivateKeys ? 0n : FLAG_DISABLE_PRIVATE_KEYS);
-    push(streamString("flags"), u64le(flags));
-    // Fresh wallets sit on the genesis block: an empty locator for bestblock,
-    // and a one-hash locator for bestblock_nomerkle.
-    push(streamString("bestblock"), concat(u32le(DUMMY_LOCATOR_VERSION), compactSize(0)));
-    push(streamString("bestblock_nomerkle"), concat(u32le(DUMMY_LOCATOR_VERSION), compactSize(1), reverseHex(network.genesis)));
-
-    const seenActive = new Set();
-    for (const unit of units) {
       // Every unit's watch-only descriptor is stored in canonical form:
       // Bitcoin Core's descriptor parser accepts only xpub/tpub, so a
       // SLIP-132 prefix (ypub/zpub/…) on a single-sig descriptor must be
@@ -607,7 +587,7 @@ var hodlWalletExport = (() => {
         // subtree than the descriptor's. Multisig writes one parent per
         // co-signer at that key's Core key_exp_index (0..n-1, or 1..n when a
         // Taproot NUMS internal key occupies 0).
-        const branchBody = tail.branch === null ? extendedKeyBody(xpub) : deps.deriveBranchBody(xpub, tail.branch);
+        const branchBody = tail.branch === null ? extendedKeyBody(xpub, deps) : deps.deriveBranchBody(xpub, tail.branch);
         if (branchBody.length !== 74) throw new Error("wallet.dat export: branch xpub body must be 74 bytes");
         push(
           concat(streamString("walletdescriptorcache"), id, u32le(cacheKeyExpIndex(stored, index))),
@@ -622,7 +602,7 @@ var hodlWalletExport = (() => {
         let keyHash = null;
         let hashInput = null;
         try {
-          let xprv = extractExtendedKey(unit.privateDescriptor, "spending");
+          let xprv = extractExtendedPrivateKey(unit.privateDescriptor);
           // The key record must map the stored descriptor's root pubkey, or
           // Core's GetExtKey finds no key for it and the wallet cannot sign.
           // A hardened branch step means the stored root is the branch key, so
@@ -660,18 +640,57 @@ var hodlWalletExport = (() => {
         }
       }
 
-      // A branch beyond the first external/internal one is a stored
-      // descriptor, not an active chain: Core has one active record per
-      // (internal, type), and a second would refuse the file.
       if (unit.active !== false) {
-        const activeKey = `${unit.internal}:${unit.type}`;
-        if (seenActive.has(activeKey)) throw new Error("wallet.dat export: duplicate script type across accounts");
-        seenActive.add(activeKey);
         push(
           concat(streamString(unit.internal ? "activeinternalspk" : "activeexternalspk"), u8(unit.type)),
           id,
         );
       }
+    return records;
+  };
+
+  // Builds the exact key/value rows of the `main` table.
+  // deps = { sha256, checksum, base58Decode, deriveBranchBody, publicKeyForPrivate,
+  //           canonicalizeDescriptor? } — the optional canonicalizer re-versions
+  //           SLIP-132 prefixes to the xpub/tpub Core parses; without it such
+  //           keys are refused.
+  const buildWalletRecords = (wallet, includePrivate, deps, creationTime) => {
+    const network = NETWORKS[wallet?.network];
+    if (!network) throw new Error(`wallet.dat export: unknown network ${wallet?.network}`);
+    const units = walletDescriptorUnits(wallet, includePrivate);
+    if (!units.length) throw new Error("wallet.dat export: no descriptors to export");
+
+    // Fail closed before any record is written: every descriptor, public and
+    // private, must be exactly one of the shapes this writer can place, and
+    // its wrapper must produce the output type the wallet declared.
+    for (const unit of units) {
+      assertDescriptorShape(unit.descriptor, "watch-only", deps, unit.type, Boolean(unit.multiKey));
+      if (unit.privateDescriptor) assertDescriptorShape(unit.privateDescriptor, "spending", deps, unit.type, Boolean(unit.multiKey));
+    }
+
+    const records = [];
+    const push = (key, value) => records.push([key, value]);
+
+    push(streamString("version"), u32le(RECORD_VERSION));
+    push(streamString("minversion"), u32le(RECORD_MINVERSION));
+    // The wallet is only signing-capable if at least one descriptor got a
+    // private key record; otherwise keep the disable-private-keys flag.
+    const hasPrivateKeys = includePrivate && units.some((unit) => unit.privateDescriptor);
+    const flags = FLAG_DESCRIPTORS | FLAG_BLANK_WALLET | (hasPrivateKeys ? 0n : FLAG_DISABLE_PRIVATE_KEYS);
+    push(streamString("flags"), u64le(flags));
+    // Fresh wallets sit on the genesis block: an empty locator for bestblock,
+    // and a one-hash locator for bestblock_nomerkle.
+    push(streamString("bestblock"), concat(u32le(DUMMY_LOCATOR_VERSION), compactSize(0)));
+    push(streamString("bestblock_nomerkle"), concat(u32le(DUMMY_LOCATOR_VERSION), compactSize(1), reverseHex(network.genesis)));
+
+    const seenActive = new Set();
+    for (const unit of units) {
+      if (unit.active !== false) {
+        const activeKey = `${unit.internal}:${unit.type}`;
+        if (seenActive.has(activeKey)) throw new Error("wallet.dat export: duplicate script type across accounts");
+        seenActive.add(activeKey);
+      }
+      records.push(...descriptorUnitRecords(unit, deps, creationTime));
     }
     return records;
   };
@@ -713,13 +732,23 @@ var hodlWalletExport = (() => {
 
   return {
     walletDescriptorUnits,
+    assertDescriptorShape,
     hasDescriptors,
     hasPrivateDescriptors,
     walletDatSupported,
     bip388Supported,
+    descriptorUnitRecords,
     buildWalletRecords,
     buildWalletDat,
     walletDatFilename,
     walletDatButtonLabel,
+    // Shared with the Core Wallet tab's verifier and add-descriptor path.
+    NETWORKS,
+    toCompatForm,
+    descriptorKeyTail,
+    extendedKeyBody,
+    cacheKeyExpIndex,
+    assertDescriptorShape,
+    FLAG_DISABLE_PRIVATE_KEYS,
   };
 })();

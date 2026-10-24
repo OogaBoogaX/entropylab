@@ -12,10 +12,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createLowEntropyAcknowledgement,
+  initLowEntropyConfirm,
   LOW_ENTROPY_ACKNOWLEDGED_KEY,
   lowEntropyConfirmCardHtml,
   nextDialogFocus,
 } from "../src/js/low-entropy-confirm.js";
+import { initFingerprintCollisionConfirm } from "../src/js/fingerprint-collision-confirm.js";
+import { MiniDocument } from "./mini-dom.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
@@ -205,4 +208,161 @@ test("the focus trap cycles forward and backward through the dialog", () => {
   assert.equal(nextDialogFocus(focusables, proceed, true), more);
   assert.equal(nextDialogFocus(focusables, null, false), dismiss, "focus outside the dialog did not land on the first control");
   assert.equal(nextDialogFocus([], more, false), null, "an empty dialog must not invent a focus target");
+});
+
+// A derivation decision accepts only the current dialog's explicit Proceed;
+// every dismissal, replacement, and teardown must cancel exactly once.
+const decisionDialogs = [
+  { name: "low entropy", init: initLowEntropyConfirm, prefix: "low-entropy", cancel: "more", first: "more", payload: { bits: "25.8", recommended: 256, words: 24 } },
+  { name: "fingerprint collision", init: initFingerprintCollisionConfirm, prefix: "fingerprint-collision", cancel: "cancel", first: "proceed", payload: "deadbeef" },
+];
+
+async function withDecisionDialog(definition, run) {
+  const savedDocument = globalThis.document, savedStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const document = new MiniDocument(), store = fakeStore();
+  globalThis.document = document;
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: store });
+  try {
+    const dialog = definition.init(), el = (name) => document.getElementById(`${definition.prefix}-${name}`);
+    for (const node of document.querySelectorAll("button, input")) {
+      node.focus = () => { document.activeElement = node; };
+      node.click = () => node.dispatchEvent({ type: "click", target: node });
+    }
+    const opener = document.createElement("button");
+    opener.focus = () => { document.activeElement = opener; };
+    document.body.append(opener);
+    opener.focus();
+    await run({ document, store, dialog, el, opener, open: (proceed, cancel) => dialog.open(definition.payload, proceed, cancel) });
+  } finally {
+    globalThis.document = savedDocument;
+    if (savedStorage) Object.defineProperty(globalThis, "localStorage", savedStorage);
+    else delete globalThis.localStorage;
+  }
+}
+
+const dismissDecision = (kind, { el, dialog }, definition) => {
+  if (kind === "button") el(definition.cancel).click();
+  if (kind === "Escape") el("overlay").dispatchEvent({ type: "keydown", key: "Escape" });
+  if (kind === "backdrop") el("overlay").dispatchEvent({ type: "click", target: el("overlay") });
+  if (kind === "close") dialog.close();
+};
+
+for (const definition of decisionDialogs) {
+  test(`${definition.name} notifies the existing cancel callback on every dismissal`, async () => {
+    for (const kind of ["button", "Escape", "backdrop"]) {
+      await withDecisionDialog(definition, async (h) => {
+        const calls = [];
+        h.open(() => calls.push(true), () => calls.push(false));
+        assert.equal(h.document.activeElement, h.el(definition.first));
+        dismissDecision(kind, h, definition);
+        assert.deepEqual(calls, [false], `${kind} must cancel the pending derivation`);
+        assert.equal(h.dialog.isOpen(), false);
+        assert.equal(h.document.activeElement, h.opener);
+        h.el("proceed").click();
+        dismissDecision(kind, h, definition);
+        assert.deepEqual(calls, [false], "a dismissed decision cannot run again");
+      });
+    }
+  });
+
+  test(`${definition.name} settles replacement callbacks before accepting the new request`, async () => {
+    await withDecisionDialog(definition, async (h) => {
+      const calls = [];
+      h.open(() => calls.push("first accepted"), () => calls.push("first canceled"));
+      h.open(() => calls.push("second accepted"), () => calls.push("second canceled"));
+      assert.deepEqual(calls, ["first canceled"]);
+      h.el("proceed").click();
+      h.el("proceed").click();
+      assert.deepEqual(calls, ["first canceled", "second accepted"]);
+    });
+  });
+
+  test(`${definition.name} exposes an awaitable decision with or without legacy callbacks`, async () => {
+    for (const kind of ["proceed", "button", "Escape", "backdrop", "close"]) {
+      for (const callbacks of [false, true]) {
+        await withDecisionDialog(definition, async (h) => {
+          const calls = [];
+          const decision = callbacks ? h.open(() => calls.push(true), () => calls.push(false)) : h.open();
+          assert.equal(typeof decision?.then, "function", "open must expose a pending decision");
+          if (kind === "proceed") h.el("proceed").click();
+          else dismissDecision(kind, h, definition);
+          const expected = kind === "proceed";
+          assert.equal(await decision, expected);
+          assert.deepEqual(calls, callbacks ? [expected] : []);
+          h.dialog.close();
+          h.el("proceed").click();
+          assert.deepEqual(calls, callbacks ? [expected] : []);
+        });
+      }
+    }
+  });
+
+  test(`${definition.name} teardown cancels once without restoring focus`, async () => {
+    await withDecisionDialog(definition, async (h) => {
+      const calls = [], decision = h.open(() => calls.push(true), () => calls.push(false));
+      assert.equal(typeof decision?.then, "function");
+      const active = h.document.activeElement;
+      h.dialog.close({ restoreFocus: false });
+      assert.equal(await decision, false);
+      assert.deepEqual(calls, [false]);
+      assert.equal(h.dialog.isOpen(), false);
+      assert.equal(h.document.activeElement, active);
+      h.dialog.close();
+      assert.equal(h.document.activeElement, active, "repeated close cannot restore stale focus");
+      h.el("proceed").click();
+      assert.deepEqual(calls, [false]);
+    });
+  });
+
+  test(`${definition.name} resolves a replaced decision and preserves a callback's newer request`, async () => {
+    await withDecisionDialog(definition, async (h) => {
+      let newest;
+      const calls = [];
+      const first = h.open(undefined, () => { calls.push("first canceled"); newest = h.open(); });
+      assert.equal(typeof first?.then, "function");
+      const replaced = h.open(undefined, () => calls.push("replacement canceled"));
+      assert.equal(await first, false);
+      assert.equal(await replaced, false, "a newer callback request must settle the superseded request");
+      assert.deepEqual(calls, ["first canceled", "replacement canceled"]);
+      assert.equal(h.dialog.isOpen(), true);
+      h.el("proceed").click();
+      assert.equal(await newest, true);
+    });
+  });
+
+  test(`${definition.name} settles before invoking a legacy callback that opens another dialog or throws`, async () => {
+    await withDecisionDialog(definition, async (h) => {
+      let second;
+      const first = h.open(() => { second = h.open(); });
+      assert.equal(typeof first?.then, "function");
+      h.el("proceed").click();
+      assert.equal(await first, true);
+      assert.equal(h.dialog.isOpen(), true);
+      h.el(definition.cancel).click();
+      assert.equal(await second, false);
+      const failedCallback = h.open(() => { throw new Error("callback failure"); });
+      assert.throws(() => h.el("proceed").click(), /callback failure/);
+      assert.equal(await failedCallback, true, "a callback error must not strand the decision");
+      assert.equal(h.dialog.isOpen(), false);
+    });
+  });
+}
+
+test("low entropy acknowledgement requires Proceed on an active decision", async () => {
+  for (const kind of ["button", "Escape", "backdrop"]) {
+    await withDecisionDialog(decisionDialogs[0], async (h) => {
+      h.open(() => {});
+      h.el("ack").checked = true;
+      dismissDecision(kind, h, decisionDialogs[0]);
+      h.el("proceed").click();
+      assert.equal(h.dialog.isAcknowledged(), false, "a hidden Proceed must not remember the canceled checkbox");
+      assert.equal(h.store.getItem(LOW_ENTROPY_ACKNOWLEDGED_KEY), null);
+      h.open(() => {});
+      assert.equal(h.el("ack").checked, false);
+      h.el("ack").checked = true;
+      h.el("proceed").click();
+      assert.equal(h.dialog.isAcknowledged(), true);
+      assert.equal(h.store.getItem(LOW_ENTROPY_ACKNOWLEDGED_KEY), "1");
+    });
+  }
 });

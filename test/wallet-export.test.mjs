@@ -551,11 +551,11 @@ test("a kept 'now' birthday becomes 0 for a BIP 45 Core JSON export", () => {
   ui.setResult(MSIG_WALLET, false);
   ui.setWalletDatBirthday("now");
   ui.setResult(BIP45_WALLET, false);
-  const imported = JSON.parse(ui.hodlMsigCoreImportDescriptorsJson());
+  const imported = JSON.parse(ui.hodlCoreImportDescriptorsJson());
   assert.equal(imported.length, 2);
   for (const record of imported) assert.equal(record.timestamp, 0, "recovery of an old BIP 45 wallet must scan from genesis");
   ui.setResult(MSIG_WALLET, false);
-  for (const record of JSON.parse(ui.hodlMsigCoreImportDescriptorsJson())) assert.equal(record.timestamp, "now", "a supported wallet keeps the choice");
+  for (const record of JSON.parse(ui.hodlCoreImportDescriptorsJson())) assert.equal(record.timestamp, "now", "a supported wallet keeps the choice");
   ui.setWalletDatBirthday("genesis");
 });
 
@@ -887,7 +887,7 @@ ${walletSrc}
 const msigBip388Markup = typeof hodlMsigBip388Markup === "function" ? hodlMsigBip388Markup : () => "";
 const setResult = (value, flag) => { hodlWalletResult = value; hodlRevealPrivate = flag; };
 const setWalletDatBirthday = (value) => { hodlWalletDatBirthday = value; };
-export { captured, elements, copies, calls, hodlMsigCoreImportDescriptorsJson, hodlPrivateDataControls, hodlSaveRecoveryControl, hodlDownloadWalletDat, hodlBindWalletResultActions, hodlMsigCoreImportDescriptorsMarkup, hodlMsigPolicySheetMarkup, msigBip388Markup, hodlBindMsigCoreImportDescriptors, setResult, setWalletDatBirthday };
+export { captured, elements, copies, calls, hodlCoreImportDescriptorsJson, hodlPrivateDataControls, hodlSaveRecoveryControl, hodlDownloadWalletDat, hodlBindWalletResultActions, hodlMsigCoreImportDescriptorsMarkup, hodlMsigPolicySheetMarkup, msigBip388Markup, hodlBindMsigCoreImportDescriptors, setResult, setWalletDatBirthday };
 `;
 
 // Keep the transient harness out of test/ so parallel suites that list the
@@ -982,7 +982,7 @@ test("the wallet.dat control offers the birthday choice with genesis as the safe
   assert.match(html, /wallet-dat-birthday-help/);
   assert.match(html, /rescanblockchain 0/);
   // The app reset keeps a stale "new keys" choice out of later derivations.
-  assert.match(app, /function hodlCalculateKey\(progress, action = "derive"\) \{\s*hodlSetWorkspaceError\("key", null\);\s*\n?[^}]*hodlWalletDatBirthday = "genesis";/);
+  assert.match(app, /function hodlCalculateKey\([^\n]*\) \{\s*hodlSetWorkspaceError\("key", null\);\s*\n?[^}]*hodlWalletDatBirthday = "genesis";/);
   assert.match(app, /hodlWalletDatBirthday === "now" \? Math\.floor\(Date\.now\(\) \/ 1000\) : 0/);
 });
 
@@ -1130,9 +1130,9 @@ test("the Core JSON download covers the displayed address window plus Core's loo
   ui.captured.blob = null;
   ui.elements.get("msig-save-importdescriptors").click();
   const entries = JSON.parse(ui.captured.blob.parts[0]);
-  for (const entry of entries) assert.deepEqual(entry.range, [0, 6002], "saved JSON range");
+  for (const entry of entries) assert.deepEqual(entry.range, [0, entry.internal ? 6000 : 6002], "saved per-branch JSON range");
   ui.elements.get("msig-copy-importdescriptors").click();
-  for (const entry of JSON.parse(ui.copies.at(-1))) assert.deepEqual(entry.range, [0, 6002], "copied JSON range");
+  for (const entry of JSON.parse(ui.copies.at(-1))) assert.deepEqual(entry.range, [0, entry.internal ? 6000 : 6002], "copied per-branch JSON range");
   ui.elements.clear();
 });
 

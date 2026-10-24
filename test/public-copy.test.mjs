@@ -8,7 +8,7 @@ import { MiniDocument, MiniElement } from "./mini-dom.mjs";
 const app = await loadAppFunctions(["hodlPublicFieldHtml", "hodlPublicInlineHtml", "hodlCopyFieldHtml", "hodlInitDescriptorCopy"]);
 // SEC2's secp256k1 generator, compressed. This is public test data.
 const PUBLIC_KEY = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
-async function withPage(body) {
+async function withPage(body, { onCopyStart, denied = false } = {}) {
   const saved = Object.fromEntries(["document", "navigator"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const document = new MiniDocument(), writes = [];
   let listener;
@@ -16,9 +16,10 @@ async function withPage(body) {
   document.defaultView = { getComputedStyle: () => ({ visibility: "visible" }) };
   Object.defineProperty(MiniElement.prototype, "getClientRects", { configurable: true, value() { return [{}]; } });
   Object.defineProperty(globalThis, "document", { configurable: true, value: document });
-  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async (value) => { writes.push(value); } } } });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async (value) => { if (denied) throw new Error("refused"); writes.push(value); } } } });
+  document.execCommand = () => false;
   mock.timers.enable({ apis: ["setTimeout"] });
-  app.hodlInitDescriptorCopy();
+  app.hodlInitDescriptorCopy({ onCopyStart });
   const click = async (target) => { assert.ok(target, "copy target exists"); await listener({ target }); await new Promise((resolve) => setImmediate(resolve)); };
   try { await body({ document, writes, click }); }
   finally {
@@ -30,6 +31,19 @@ async function withPage(body) {
     }
   }
 }
+
+for (const denied of [false, true]) test(`public copy diagnostics retain control identity without the displayed payload (${denied ? "refused" : "copied"})`, async () => {
+  const starts = [], outcomes = [];
+  await withPage(async ({ document, writes, click }) => {
+    document.body.innerHTML = app.hodlPublicFieldHtml("Public key", PUBLIC_KEY);
+    const control = document.querySelector("[data-public-copy]"), value = document.querySelector("[data-public-value]");
+    value.hidden = true; await click(control); assert.equal(starts.length, 0);
+    value.hidden = false; await click(control);
+    assert.deepEqual(starts, [[control]], "the callback must not receive a value or its label");
+    assert.deepEqual(outcomes, [!denied]);
+    assert.deepEqual(writes, denied ? [] : [PUBLIC_KEY]);
+  }, { denied, onCopyStart: (...args) => { starts.push(args); return copied => outcomes.push(copied); } });
+});
 
 test("public values without QR controls copy through the value and label clipboard", () => withPage(async ({ document, writes, click }) => {
   document.body.innerHTML = app.hodlPublicFieldHtml("Compressed public key", PUBLIC_KEY);

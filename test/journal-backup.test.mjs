@@ -8,13 +8,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import * as journalModule from "../src/js/journal.js";
 import {
   IV_BYTES,
   JOURNAL_CIPHER,
   JOURNAL_EXPORT_VERSION,
   JOURNAL_ITERATIONS,
   JOURNAL_KDF,
+  JOURNAL_LOG_LIMIT,
   JOURNAL_MAX_ITERATIONS,
+  JOURNAL_MAX_TEXT_LENGTH,
   JOURNAL_MIN_ITERATIONS,
   JOURNAL_VERSION,
   NOTEBOOK_FORMAT,
@@ -43,6 +46,7 @@ import {
   openDocument,
   openExport,
   parseFile,
+  parseDocument,
   parseNotebook,
   removeEntry,
   replaceEntry,
@@ -56,6 +60,7 @@ import {
   wipeBytes,
   wipeDocument,
   wipeEntry,
+  wipeJournal,
 } from "../src/js/journal.js";
 import {
   KEY_VAULT_FORMAT,
@@ -484,6 +489,20 @@ test("notebook serialization clamps the active page and survives an empty journa
   assert.equal(fallback.pages[0].notesText, "");
 });
 
+test("notebook export accepts 100 pages and refuses an unreadable 101-page file", () => {
+  const journal = createJournal();
+  journal.pages = Array.from({ length: 100 }, (_, index) => ({
+    id: index + 1, number: index + 1, name: `Page ${index + 1}`, notesText: `Note ${index + 1}`,
+  }));
+  const restored = parseNotebook(serializeNotebook(journal));
+  assert.equal(restored.pages.length, 100);
+  assert.equal(restored.pages[99].notesText, "Note 100");
+  journal.pages.push({ id: 101, number: 101, name: "Page 101", notesText: "Keep this note in memory" });
+  assert.throws(() => serializeNotebook(journal), /between 1 and/);
+  assert.equal(journal.pages.length, 101, "refusing export must not delete the excess page");
+  assert.equal(journal.pages[100].notesText, "Keep this note in memory");
+});
+
 test("notebook import repairs duplicate numbers, names, and styles", () => {
   const page = (overrides) => JSON.stringify({
     format: NOTEBOOK_FORMAT,
@@ -541,8 +560,7 @@ test("key reference tokens survive careless names and reject bad fingerprints", 
 test("only well-formed tokens parse; lookalikes stay plain text", () => {
   assert.deepEqual(journalNotebookRuns("◆◆ [1234567] ◆"), [{ type: "text", text: "◆◆ [1234567] ◆" }]);
   assert.deepEqual(journalNotebookRuns("◆◆ [123456789] ◆"), [{ type: "text", text: "◆◆ [123456789] ◆" }]);
-  // A token's trailing ◆ doubles as the next token's opener.
-  const adjacent = journalNotebookRuns("◆◆ [aaaaaaaa] ◆◆◆ Key B [bbbbbbbb] ◆");
+  const adjacent = journalNotebookRuns(journalKeyReferenceToken("aaaaaaaa", "aaaaaaaa") + journalKeyReferenceToken("Key B", "bbbbbbbb"));
   assert.deepEqual(adjacent, [
     { type: "key", name: "aaaaaaaa", fingerprint: "aaaaaaaa" },
     { type: "key", name: "Key B", fingerprint: "bbbbbbbb" },
@@ -550,7 +568,10 @@ test("only well-formed tokens parse; lookalikes stay plain text", () => {
   // Repeated calls see the same input (no hidden regex cursor state).
   const source = "x ◆◆ [aaaaaaaa] ◆ y";
   assert.deepEqual(journalNotebookRuns(source), journalNotebookRuns(source));
-  assert.equal(journalFromPlainText(source).notesText, "x ◆◆ [aaaaaaaa]\u2063 y", "plain-text imports should upgrade the visible legacy boundary");
+  assert.equal(journalFromPlainText(source).notesText, source, "plain-text imports must preserve visible legacy boundaries");
+  const legacyAdjacent = "◆◆ [aaaaaaaa] ◆◆◆ Key B [bbbbbbbb] ◆";
+  assert.deepEqual(journalNotebookRuns(legacyAdjacent), [{ type: "text", text: legacyAdjacent }]);
+  assert.equal(parseNotebook(serializeNotebook(journalFromPlainText(legacyAdjacent))).notesText, legacyAdjacent);
 });
 
 test("key reference ranges identify the complete atomic token", () => {
@@ -562,11 +583,11 @@ test("key reference ranges identify the complete atomic token", () => {
   assert.deepEqual(journalKeyReferenceRanges("◆◆ [deadbeef]"), []);
 });
 
-test("the plain-text download strips only untouched hint lines", () => {
+test("the plain-text download preserves saved timestamps and former hint text", () => {
   assert.equal(formatNotebook("2026-09-02 10:00:00  real words"), "2026-09-02 10:00:00  real words");
-  assert.equal(formatNotebook("2026-09-02 10:00:00 Add new note"), "2026-09-02 10:00:00 Add new note"); // single space: not a hint
+  assert.equal(formatNotebook("2026-09-02 10:00:00 Add new note"), "2026-09-02 10:00:00 Add new note");
   assert.equal(formatNotebook("2026-09-02 10:00:00  Add new notes"), "2026-09-02 10:00:00  Add new notes");
-  assert.equal(formatNotebook("2026-09-02 10:00:00  \n"), "No notes.");
+  assert.equal(formatNotebook("2026-09-02 10:00:00  \n"), "2026-09-02 10:00:00");
   assert.deepEqual(formatNotebookPages([]), "No notes.");
   assert.equal(formatNotebookPages(undefined), "No notes.");
 });
@@ -727,17 +748,22 @@ test("vault backups are bounded and schema-checked on both directions", () => {
   assert.ok(serializeKeyVault([]).endsWith("}\n")); // stable on-disk shape
 });
 
-test("vault identity prefers the full wallet identity, then xpubs, fingerprint, id", () => {
-  // The 4-byte fingerprint is display metadata and can be shared by two
-  // wallets (GHSA-6rr2-5r82-grwc's Key Station sibling), so the full identity
-  // and the xpubs come first; the fingerprint only serves states that have
-  // nothing else.
-  assert.equal(keyVaultIdentity({ result: { masterIdentity: "mi", masterFingerprint: "deadbeef", rootXpub: "xpub1", xpub: "xpub2" }, id: 7 }), "mi");
-  assert.equal(keyVaultIdentity({ result: { masterFingerprint: "deadbeef", rootXpub: "xpub1", xpub: "xpub2" }, id: 7 }), "xpub1");
-  assert.equal(keyVaultIdentity({ result: { rootXpub: "xpub1", xpub: "xpub2" }, id: 7 }), "xpub1");
-  assert.equal(keyVaultIdentity({ result: { xpub: "xpub2" }, id: 7 }), "xpub2");
-  assert.equal(keyVaultIdentity({ result: { masterFingerprint: "deadbeef" }, id: 7 }), "deadbeef");
+test("vault entry identity prefers the app-assigned ID without merging wallet configurations", () => {
+  const result = { masterIdentity: "mi", masterFingerprint: "deadbeef", rootXpub: "xpub1", xpub: "xpub2" };
+  assert.equal(keyVaultIdentity({ result, id: 7 }), "7");
+  assert.equal(keyVaultIdentity({ result, id: 8 }), "8");
   assert.equal(keyVaultIdentity({ result: {}, id: 7 }), "7");
+  // Legacy states without runtime IDs still prefer a complete wallet
+  // identity over a potentially colliding four-byte fingerprint. File
+  // parsing strips both IDs and cached identities before creating states.
+  assert.equal(keyVaultIdentity({ result }), "mi");
+  assert.equal(keyVaultIdentity({ result: { masterFingerprint: "deadbeef", rootXpub: "xpub1", xpub: "xpub2" } }), "xpub1");
+  assert.equal(keyVaultIdentity({ result: { rootXpub: "xpub1", xpub: "xpub2" } }), "xpub1");
+  assert.equal(keyVaultIdentity({ result: { xpub: "xpub2" } }), "xpub2");
+  assert.equal(keyVaultIdentity({ result: { masterFingerprint: "deadbeef" } }), "deadbeef");
+  for (const id of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "7", {}, []]) {
+    assert.equal(keyVaultIdentity({ result, id }), "mi", "an invalid runtime ID must not shadow the legacy identity");
+  }
   assert.equal(keyVaultIdentity({}), "");
   assert.equal(keyVaultIdentity(null), "");
 });
@@ -762,23 +788,22 @@ test("an .elkeys backup is opaque until opened with the journal password", async
 
 test("the app routes every journal backup through the sealed primitives", () => {
   const app = read("src/js/app.js");
-  // Automatic Key Station capture persists the snapshot's method variant;
-  // manual entries still keep their selected variant through the editor.
-  assert.match(app, /hodlJournalSyncKeySnapshots\(hodlJournalDoc, snapshots, hodlJournalKeyEntries\)/);
-  assert.match(app, /method: document\.getElementById\("journal-method"\)\?\.value \|\| "dice",\s+\.\.\.hodlJournalEntryVariants,/);
+  // Existing records remain editable without creating new duplicate
+  // records from Key Station activity.
+  assert.doesNotMatch(app, /hodlJournalSyncKeySnapshots|hodlJournalCaptureDerivedKey/);
   assert.equal((app.match(/hodlJournalEntryMethodLabel\(entry\)/g) || []).length, 2);
   // Downloads encrypt with the unlocked journal keys by default and mark the
   // file as encrypted.
   assert.match(app, /async function hodlJournalDownloadContent\(kind, filename, text[\s\S]*?hodlJournalSealExport\(kind, text, hodlJournalKeys\)/);
   assert.match(app, /filename\.replace\(\/\\\.\[\^\.\]\+\$\/, ""\) \+ "\.encrypted\.json"/);
-  // The journal file itself downloads through sealDocument as JSON.
-  assert.match(app, /hodlJournalSealDocument\(hodlJournalDoc, hodlJournalKeys\)/);
+  // The journal file includes all components in the complete sealed backup.
+  assert.match(app, /hodlJournalSealBackup\(hodlJournalDoc, hodlJournalKeys, backup\)/);
   assert.match(app, /link\.download = "entropylab-journal\.json"/);
   // Imports are size-bounded and sniff the export envelope before parsing.
-  assert.match(app, /async function hodlJournalImportFile\(file\)[\s\S]*?file\.size > 2 \* 1024 \* 1024/);
+  assert.match(app, /async function hodlJournalImportFile\(file\)[\s\S]*?file\.size > hodlJournalMaxFileLength/);
   assert.match(app, /outer\?\.entropylabJournalExport[\s\S]*?hodlJournalOpenExport\(outer, hodlJournalKeys\)/);
   assert.match(app, /hodlJournalStoreNotesText\(field\)[\s\S]*?hodlMergeNotebookImport\(hodlJournal, imported\)/);
-  assert.match(app, /async function hodlKeyManagerImportFile\(file\)[\s\S]*?file\.size > 2 \* 1024 \* 1024/);
+  assert.match(app, /async function hodlKeyManagerImportFile\(file[^)]*\)[\s\S]*?file\.size > hodlJournalMaxFileLength/);
   assert.match(app, /opened\.kind !== "key-manager"/);
   // Plain-text .txt uploads stay a legacy single-page import.
   assert.match(app, /\\\.txt\$\/i\.test\(file\.name\) \? hodlJournalFromPlainText\(text\) : hodlParseNotebook\(text\)/);
@@ -823,4 +848,452 @@ test("backup drill: seal everything, restore from a cold start", async () => {
   const again = await openDocument(pack(await sealDocument(restored.doc, restored.keys)), password);
   assert.equal(again.doc.entries.length, 3);
   assert.equal(again.doc.entries[2].label, "third");
+});
+
+// Complete backup contract: accept legacy v2 and complete v3 documents, refuse
+// malformed/oversized or unauthenticated components before restoring anything,
+// and keep restored key inputs unverified. Fixtures below are literal format
+// examples, not expected output generated by the implementation under test.
+function completeBackupFixture() {
+  return {
+    version: 3,
+    nextId: 8,
+    entries: [{ id: 7, method: "seed", input: "user seed input", phrase: "user seed phrase", label: "Savings", notes: "safe shelf", created: "2026-10-22T12:00:00.000Z", walletId: null, walletName: "", fingerprint: "deadbeef" }],
+    backup: {
+      notebook: JSON.stringify({ format: "entropylab-notebook", version: 1, activePage: 1, pages: [
+        { number: 3, name: "Checklist", style: { font: "serif", size: "large", spacing: "spacious" }, content: [{ type: "text", text: "check the paper backup" }] },
+        { number: 9, name: "Recovery", style: { font: "mono", size: "small", spacing: "compact" }, content: [{ type: "text", text: "second secret note" }] },
+      ] }),
+      keyManager: JSON.stringify({ format: "entropylab-key-manager", version: 2, keys: [
+        { name: "Included", mode: "seed", fields: { seed: "managed seed input", pass: "typed passphrase", privateKeys: { wif: "private key input" } }, result: { masterIdentity: "forged identity", rootXprv: "forged private output" }, reveal: true, needsDerivation: false },
+        { name: "Excluded", mode: "hex", fields: { hex: "001122" } },
+      ], ignoredKeys: [{ name: "Ignored", mode: "dice", fields: { dice: "123456", pass: "ignored passphrase" } }] }),
+      includedKeys: [0],
+      activeKey: 1,
+      snapshot: { text: "Historical session with private recovery text", includePrivate: true },
+      log: [{ at: "2026-10-22 12:00:00", tool: "calc", action: "derive", detail: "deadbeef" }],
+    },
+  };
+}
+
+test("complete backup: literal v3 restores every component and strips key trust claims", () => {
+  const doc = parseDocument(JSON.stringify(completeBackupFixture()));
+  assert.equal(doc.version, 3);
+  assert.equal(doc.nextId, 8);
+  assert.deepEqual(doc.entries, [{ id: 7, method: "seed", input: "user seed input", phrase: "user seed phrase", label: "Savings", notes: "safe shelf", created: "2026-10-22T12:00:00.000Z", walletId: null, walletName: "", fingerprint: "deadbeef" }]);
+  const backup = doc.backup;
+  assert.deepEqual(backup.notebook.pages, [
+    { id: 1, number: 3, name: "Checklist", notesText: "check the paper backup", style: { font: "serif", size: "large", spacing: "spacious" } },
+    { id: 2, number: 9, name: "Recovery", notesText: "second secret note", style: { font: "mono", size: "small", spacing: "compact" } },
+  ]);
+  assert.equal(backup.notebook.activePage, 1);
+  assert.equal(backup.notebook.notesText, "second secret note");
+  assert.equal(backup.notebook.nextPageId, 3);
+  assert.equal(backup.notebook.nextPageNumber, 10);
+  assert.deepEqual(backup.keyManager.keys.map((key) => key.name), ["Included", "Excluded"]);
+  assert.deepEqual(backup.keyManager.keys[0].fields, { seed: "managed seed input", pass: "typed passphrase", privateKeys: { wif: "private key input" } });
+  assert.equal(backup.keyManager.ignoredKeys[0].fields.pass, "ignored passphrase");
+  for (const key of [...backup.keyManager.keys, ...backup.keyManager.ignoredKeys]) {
+    assert.equal(key.result, null);
+    assert.equal(key.reveal, false);
+    assert.equal(key.needsDerivation, true);
+    assert.equal(keyVaultIdentity(key), "");
+  }
+  assert.deepEqual(backup.includedKeys, [0]);
+  assert.equal(backup.activeKey, 1);
+  assert.deepEqual(backup.snapshot, { text: "Historical session with private recovery text", includePrivate: true });
+  assert.deepEqual(backup.log, [{ at: "2026-10-22 12:00:00", tool: "calc", action: "derive", detail: "deadbeef" }]);
+});
+
+test("complete backup: v2 remains entry-only and unknown document versions are refused", () => {
+  assert.deepEqual(parseDocument('{"version":2,"nextId":1,"entries":[]}'), { version: 2, nextId: 1, entries: [] });
+  for (const version of [0, 1, 4, "3"]) {
+    assert.throws(() => parseDocument(JSON.stringify({ ...completeBackupFixture(), version })), /corrupt|unsupported/);
+  }
+});
+
+// A legacy file accepted at its original limit must remain preservable when
+// the default complete-backup sections are added, with no entry truncation.
+test("complete backup: a maximum-size legacy document can be saved with the default sections", async () => {
+  const legacy = { version: 2, nextId: 2, entries: [{
+    id: 1, method: "seed", input: "", phrase: "", label: "Legacy notebook", notes: "",
+    created: "2026-10-22T12:00:00.000Z", walletId: null, walletName: "", fingerprint: "",
+  }] };
+  legacy.entries[0].notes = "n".repeat(1024 * 1024 - JSON.stringify(legacy).length);
+  const originalText = JSON.stringify(legacy);
+  assert.equal(originalText.length, 1024 * 1024);
+  assert.deepEqual(parseDocument(originalText), legacy);
+  assert.throws(() => parseDocument(originalText + " "), /too large/);
+  await assert.rejects(() => sealDocument({ ...legacy, entries: [{ ...legacy.entries[0], notes: legacy.entries[0].notes + "n" }] }, keys), /too large/);
+  const originalFile = pack(await sealDocument(legacy, keys));
+  const reopened = await openDocument(originalFile, password);
+  const backup = {
+    notebook: JSON.stringify({ format: "entropylab-notebook", version: 1, activePage: 0, pages: [
+      { number: 1, name: "Page 1", style: { font: "mono", size: "medium", spacing: "comfortable" }, content: [] },
+    ] }),
+    keyManager: '{"format":"entropylab-key-manager","version":2,"keys":[],"ignoredKeys":[]}',
+    includedKeys: [], activeKey: null, snapshot: { text: "", includePrivate: true }, log: [],
+  };
+  const completeFile = pack(await journalModule.sealBackup(reopened.doc, reopened.keys, backup));
+  assert.ok(Buffer.byteLength(completeFile) <= 4 * 1024 * 1024);
+  const restored = await openDocument(completeFile, password);
+  assert.equal(restored.doc.version, 3);
+  assert.deepEqual(restored.doc.entries, legacy.entries, "upgrading a valid legacy backup changed its record text");
+  assert.equal(restored.doc.backup.notebook.pages[0].notesText, "");
+  assert.deepEqual(restored.doc.backup.keyManager, { keys: [], ignoredKeys: [] });
+  assert.deepEqual(restored.doc.backup.snapshot, { text: "", includePrivate: true });
+});
+
+test("complete backup: the separate two-MiB total limit does not relax component or legacy limits", async () => {
+  const fixture = completeBackupFixture();
+  fixture.entries[0].notes = "n".repeat(1024 * 1024);
+  fixture.backup.snapshot.text = "";
+  fixture.backup.snapshot.text = "s".repeat(2 * 1024 * 1024 - JSON.stringify(fixture).length);
+  const text = JSON.stringify(fixture);
+  assert.equal(text.length, 2 * 1024 * 1024);
+  const opened = parseDocument(text);
+  assert.equal(opened.entries[0].notes, fixture.entries[0].notes);
+  assert.equal(opened.backup.snapshot.text, fixture.backup.snapshot.text);
+  assert.throws(() => parseDocument(text + " "), /too large/);
+  const oversized = { ...fixture, entries: [{ ...fixture.entries[0], input: fixture.entries[0].input + "n" }] };
+  await assert.rejects(() => journalModule.sealBackup(oversized, keys, oversized.backup), /too large/);
+  assert.throws(() => parseDocument(JSON.stringify({ ...fixture, version: 2 })), /too large/);
+  assert.throws(() => parseDocument("x".repeat(1024 * 1024 + 1)), /too large/);
+  const snapshotTooLarge = completeBackupFixture();
+  snapshotTooLarge.backup.snapshot.text = "s".repeat(1024 * 1024 + 1);
+  assert.throws(() => parseDocument(JSON.stringify(snapshotTooLarge)), /snapshot|too large/);
+  const entryTooLarge = completeBackupFixture();
+  entryTooLarge.entries[0].notes = "n".repeat(1024 * 1024 + 1);
+  assert.throws(() => parseDocument(JSON.stringify(entryTooLarge)), /too large/);
+});
+
+test("complete backup: every component is required and schema checked", () => {
+  for (const field of ["notebook", "keyManager", "includedKeys", "activeKey", "snapshot", "log"]) {
+    const fixture = completeBackupFixture();
+    delete fixture.backup[field];
+    assert.throws(() => parseDocument(JSON.stringify(fixture)), /backup|notebook|key file|snapshot|log/i, `missing ${field}`);
+  }
+  for (const badBackup of [null, [], "text", {}]) {
+    assert.throws(() => parseDocument(JSON.stringify({ ...completeBackupFixture(), backup: badBackup })), /backup/i);
+  }
+  const mutations = [
+    (b) => { b.notebook = {}; },
+    (b) => { b.notebook = '{"format":"wrong","version":1,"pages":[]}'; },
+    (b) => { b.notebook = JSON.stringify({ format: NOTEBOOK_FORMAT, version: NOTEBOOK_VERSION, pages: [{ content: [{ type: "html", text: "<script>" }] }] }); },
+    (b) => { b.keyManager = []; },
+    (b) => { b.keyManager = '{"format":"entropylab-key-manager","version":3,"keys":[]}'; },
+    (b) => { b.keyManager = '{"format":"entropylab-key-manager","version":2,"keys":[{"fields":null}]}'; },
+    (b) => { b.snapshot = { text: "saved", includePrivate: "false" }; },
+    (b) => { b.snapshot.text = { secret: "text" }; },
+    (b) => { b.log = {}; },
+    (b) => { b.log = [null]; },
+    (b) => { b.log[0].detail = { secret: "text" }; },
+    (b) => { delete b.log[0].at; },
+    (b) => { b.log[0].detail = "x".repeat(301); },
+  ];
+  for (const mutate of mutations) {
+    const fixture = completeBackupFixture();
+    mutate(fixture.backup);
+    assert.throws(() => parseDocument(JSON.stringify(fixture)), /backup|notebook|key file|content item|invalid key|snapshot|log/i);
+  }
+});
+
+test("complete backup: key selections are unique in-range integer indexes", () => {
+  for (const includedKeys of [[-1], [2], [0.5], ["0"], [0, 0], null, {}]) {
+    const fixture = completeBackupFixture();
+    fixture.backup.includedKeys = includedKeys;
+    assert.throws(() => parseDocument(JSON.stringify(fixture)), /backup|key selection/i);
+  }
+  for (const activeKey of [-1, 2, 0.5, "0"]) {
+    const fixture = completeBackupFixture();
+    fixture.backup.activeKey = activeKey;
+    assert.throws(() => parseDocument(JSON.stringify(fixture)), /backup|active key/i);
+  }
+  const fixture = completeBackupFixture();
+  fixture.backup.keyManager = '{"format":"entropylab-key-manager","version":2,"keys":[],"ignoredKeys":[]}';
+  fixture.backup.includedKeys = [];
+  fixture.backup.activeKey = null;
+  const backup = parseDocument(JSON.stringify(fixture)).backup;
+  assert.deepEqual(backup.keyManager, { keys: [], ignoredKeys: [] });
+  assert.deepEqual(backup.includedKeys, []);
+  assert.equal(backup.activeKey, null);
+});
+
+// Serialized v3 passphrases must be absent or text. Other JSON values must
+// never reach runtime conversion after the current journal has been replaced.
+test("complete backup: non-text stored passphrases are rejected before restore", async () => {
+  for (const collection of ["keys", "ignoredKeys"]) {
+    for (const pass of [{ toString: null }, {}, [], 0, 42, false, true, null]) {
+      const fixture = completeBackupFixture(), vault = JSON.parse(fixture.backup.keyManager);
+      vault[collection][0].fields.pass = pass;
+      fixture.backup.keyManager = JSON.stringify(vault);
+      assert.throws(() => parseDocument(JSON.stringify(fixture)), /passphrase.*text/i, `${collection} accepted ${JSON.stringify(pass)}`);
+      await assert.rejects(() => journalModule.sealBackup(fixture, keys, fixture.backup), /passphrase.*text/i);
+    }
+  }
+});
+
+test("complete backup: text or absent passphrases retain their exact value", () => {
+  for (const collection of ["keys", "ignoredKeys"]) {
+    for (const pass of [undefined, "", " ", "0", "TREZOR", "e\u0301"]) {
+      const fixture = completeBackupFixture(), vault = JSON.parse(fixture.backup.keyManager);
+      if (pass === undefined) delete vault[collection][0].fields.pass;
+      else vault[collection][0].fields.pass = pass;
+      fixture.backup.keyManager = JSON.stringify(vault);
+      const opened = parseDocument(JSON.stringify(fixture));
+      assert.equal(opened.backup.keyManager[collection][0].fields.pass, pass);
+    }
+  }
+  // The shared portable-input boundary now rejects malformed passphrases in
+  // standalone legacy vaults too, before any caller can coerce them to text.
+  const legacy = '{"format":"entropylab-key-manager","version":1,"keys":[{"fields":{"pass":0}}]}';
+  assert.throws(() => parseKeyVault(legacy), /passphrase.*text/i);
+});
+
+test("complete backup: malformed passphrase rejection wipes staged component objects", () => {
+  const source = read("src/js/journal.js"), start = source.indexOf("function parseBackup("), end = source.indexOf("\nasync function sealPlainText(", start);
+  assert.ok(start >= 0 && end > start);
+  let notebook, vault;
+  const parse = new Function("parseNotebook", "parseKeyVault", "JOURNAL_MAX_TEXT_LENGTH", "JOURNAL_LOG_LIMIT", "JOURNAL_LOG_MAX_BYTES", "logEventBytes", "wipeBackup", `${source.slice(start, end)}\nreturn parseBackup;`)(
+    (text) => (notebook = parseNotebook(text)),
+    (text) => {
+      // Fault injection preserves the later complete-backup guard's wipe
+      // coverage even though the real vault parser now rejects this sooner.
+      const raw = JSON.parse(text), malformed = raw.ignoredKeys[0].fields.pass;
+      raw.ignoredKeys[0].fields.pass = "";
+      vault = parseKeyVault(JSON.stringify(raw));
+      vault.ignoredKeys[0].fields.pass = malformed;
+      return vault;
+    },
+    JOURNAL_MAX_TEXT_LENGTH, JOURNAL_LOG_LIMIT, journalModule.JOURNAL_LOG_MAX_BYTES, event => journalModule.logUsage({ log: [event] }).bytes - 2, journalModule.wipeBackup,
+  );
+  const fixture = completeBackupFixture(), rawVault = JSON.parse(fixture.backup.keyManager);
+  rawVault.ignoredKeys[0].fields.pass = { toString: null, text: "temporary secret" };
+  fixture.backup.keyManager = JSON.stringify(rawVault);
+  assert.throws(() => parse(fixture.backup), /passphrase.*text/i);
+  assert.equal(notebook.pages[0].notesText, "");
+  assert.equal(vault.keys[0].fields.seed, "");
+  assert.equal(vault.keys[0].fields.pass, "");
+  assert.equal(vault.ignoredKeys[0].fields.pass.text, "");
+});
+
+test("complete backup: early vault passphrase rejection wipes the notebook before a vault is staged", () => {
+  const source = read("src/js/journal.js"), start = source.indexOf("function parseBackup("), end = source.indexOf("\nasync function sealPlainText(", start);
+  let notebook, vault;
+  const parse = new Function("parseNotebook", "parseKeyVault", "JOURNAL_MAX_TEXT_LENGTH", "JOURNAL_LOG_LIMIT", "JOURNAL_LOG_MAX_BYTES", "logEventBytes", "wipeBackup", `${source.slice(start, end)}\nreturn parseBackup;`)(
+    (text) => (notebook = parseNotebook(text)),
+    (text) => (vault = parseKeyVault(text)),
+    JOURNAL_MAX_TEXT_LENGTH, JOURNAL_LOG_LIMIT, journalModule.JOURNAL_LOG_MAX_BYTES, event => journalModule.logUsage({ log: [event] }).bytes - 2, journalModule.wipeBackup,
+  );
+  const fixture = completeBackupFixture(), rawVault = JSON.parse(fixture.backup.keyManager);
+  rawVault.ignoredKeys[0].fields.pass = { value: "must not coerce" };
+  fixture.backup.keyManager = JSON.stringify(rawVault);
+  assert.throws(() => parse(fixture.backup), /passphrase.*text/i);
+  assert.equal(notebook.pages[0].notesText, "");
+  assert.equal(vault, undefined);
+});
+
+test("complete backup: component counts and individual snapshot text are bounded", () => {
+  const mutations = [
+    (b) => { b.notebook = JSON.stringify({ format: NOTEBOOK_FORMAT, version: NOTEBOOK_VERSION, pages: Array.from({ length: 101 }, () => ({ content: [] })) }); },
+    (b) => { b.keyManager = JSON.stringify({ format: KEY_VAULT_FORMAT, version: KEY_VAULT_VERSION, keys: Array.from({ length: 101 }, () => ({ fields: {} })) }); },
+    (b) => { b.keyManager = JSON.stringify({ format: KEY_VAULT_FORMAT, version: KEY_VAULT_VERSION, keys: [], ignoredKeys: Array.from({ length: 101 }, () => ({ fields: {} })) }); },
+    (b) => { b.log = Array.from({ length: JOURNAL_LOG_LIMIT + 1 }, () => b.log[0]); },
+    (b) => { b.snapshot.text = "s".repeat(JOURNAL_MAX_TEXT_LENGTH + 1); },
+  ];
+  for (const mutate of mutations) {
+    const fixture = completeBackupFixture();
+    mutate(fixture.backup);
+    assert.throws(() => parseDocument(JSON.stringify(fixture)), /between 1 and|too many|too large|snapshot|log/i);
+  }
+  const fixture = completeBackupFixture();
+  fixture.entries.push({ ...fixture.entries[0] });
+  assert.throws(() => parseDocument(JSON.stringify(fixture)), /duplicate entry ids/);
+});
+
+test("complete backup: sealing is deterministic, opaque, and keeps envelope v2", async () => {
+  const fixture = completeBackupFixture();
+  const first = await journalModule.sealBackup(fixture, keys, fixture.backup);
+  assert.deepEqual(await journalModule.sealBackup(fixture, keys, fixture.backup), first);
+  assert.equal(first.entropylabJournal, 2);
+  const opened = await openDocument(pack(first), password);
+  assert.equal(opened.doc.version, 3);
+  assert.equal(opened.doc.backup.notebook.pages[1].notesText, "second secret note");
+  assert.equal(opened.doc.backup.keyManager.keys[0].fields.pass, "typed passphrase");
+  for (const secret of ["user seed phrase", "second secret note", "typed passphrase", "Historical session", "ignored passphrase"]) assert.ok(!pack(first).includes(secret));
+  const plain = new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: Buffer.from(first.iv, "hex") }, keys.encKey, Buffer.from(first.ciphertext, "hex")));
+  assert.equal(JSON.parse(plain).version, 3, "old readers must reject the new payload instead of dropping its components");
+  assert.ok(!plain.includes("forged private output"));
+  assert.ok(!plain.includes("forged identity"));
+});
+
+test("complete backup: wrong password and modified ciphertext or IV never restore", async () => {
+  const fixture = completeBackupFixture();
+  const file = await journalModule.sealBackup(fixture, keys, fixture.backup);
+  await assert.rejects(() => openDocument(pack(file), "wrong password"), /password is incorrect/);
+  await assert.rejects(() => openDocument(pack({ ...file, ciphertext: flip(file.ciphertext, 0) }), password), /password is incorrect/);
+  await assert.rejects(() => openDocument(pack({ ...file, iv: flip(file.iv, 0) }), password), /password is incorrect/);
+  await assert.rejects(() => journalModule.sealBackup(fixture, null, fixture.backup), /Unlock/);
+});
+
+test("complete backup: passwordless files remain explicitly unprotected", async () => {
+  const fixture = completeBackupFixture();
+  const unprotected = await createDocument("", "");
+  const file = await journalModule.sealBackup(fixture, unprotected.keys, fixture.backup);
+  const opened = await openDocument(pack(file), "");
+  assert.equal(opened.keys.passwordProtected, false);
+  assert.equal(opened.doc.backup.snapshot.text, "Historical session with private recovery text");
+});
+
+test("complete backup: save validates components and refuses unreadable sizes", async () => {
+  const fixture = completeBackupFixture();
+  await assert.rejects(() => journalModule.sealBackup(fixture, keys, { ...fixture.backup, includedKeys: [9] }), /backup|key selection/i);
+  await assert.rejects(() => journalModule.sealBackup(fixture, keys, { ...fixture.backup, snapshot: { text: "x".repeat(JOURNAL_MAX_TEXT_LENGTH + 1), includePrivate: false } }), /snapshot|too large/);
+  // UTF-8 expansion followed by hex encoding can exceed the outer 4 MiB cap
+  // even when every field and the complete plaintext are below their caps.
+  await assert.rejects(() => journalModule.sealBackup(fixture, keys, { ...fixture.backup, snapshot: { text: "界".repeat(750000), includePrivate: false } }), /too large/);
+});
+
+test("complete backup: discard wipes nested source inputs and retained references", () => {
+  // Built directly so this regression detects incomplete wiping independently
+  // of whether the new parser has been implemented yet.
+  for (const owner of ["document", "journal"]) {
+    const page = { name: "secret title", notesText: "secret notes" };
+    const fields = { seed: "secret seed", pass: "secret pass", privateKeys: { wif: "secret WIF" }, nested: [{ text: "nested secret" }], bytes: new Uint8Array([4, 5, 6]) };
+    const ignoredFields = { pass: "ignored secret" };
+    const snapshot = { text: "secret snapshot", includePrivate: true };
+    const event = { at: "date", tool: "tool", action: "action", detail: "secret detail" };
+    const backup = { notebook: { pages: [page], notesText: "secret notes" }, keyManager: { keys: [{ fields }], ignoredKeys: [{ fields: ignoredFields }] }, snapshot, log: [event], logDiscarded: 37, includedKeys: [0], activeKey: 0 };
+    const holder = owner === "document" ? { entries: [], nextId: 1, backup } : { ...createJournal(), backup };
+    (owner === "document" ? wipeDocument : wipeJournal)(holder);
+    for (const value of [page.notesText, page.name, fields.seed, fields.pass, fields.privateKeys.wif, fields.nested[0].text, ignoredFields.pass, snapshot.text, event.detail]) assert.equal(value, "", `${owner} kept a backup secret`);
+    assert.deepEqual([...fields.bytes], [0, 0, 0]);
+    assert.equal(backup.logDiscarded, 0);
+    assert.equal(holder.backup, null);
+  }
+});
+
+// Retention metadata is data, not a trusted size claim. Old backups default to
+// zero discarded events; new ones must fit the actual UTF-8 log budget.
+test("complete backup: larger debug history and discarded count roundtrip without changing encryption", async () => {
+  const fixture = completeBackupFixture();
+  fixture.backup.log = Array.from({ length: 450 }, (_, index) => ({ at: "t", tool: "calc", action: "derive", detail: String(index) }));
+  fixture.backup.logDiscarded = 37;
+  const parsed = parseDocument(JSON.stringify(fixture));
+  assert.equal(parsed.backup.log.length, 450);
+  assert.equal(parsed.backup.logDiscarded, 37);
+  const file = await journalModule.sealBackup(fixture, keys, fixture.backup);
+  const opened = await openDocument(pack(file), password);
+  assert.deepEqual(opened.doc.backup.log, fixture.backup.log);
+  assert.equal(opened.doc.backup.logDiscarded, 37);
+  const legacy = completeBackupFixture();
+  legacy.backup.log = Array.from({ length: 400 }, (_, index) => ({ at: "t", tool: "calc", action: "derive", detail: String(index) }));
+  const legacyBackup = parseDocument(JSON.stringify(legacy)).backup;
+  assert.equal(legacyBackup.logDiscarded, 0);
+  assert.deepEqual(legacyBackup.log, legacy.backup.log);
+});
+
+test("complete backup: exact serialized UTF-8 log byte boundary is accepted and one byte more is rejected", () => {
+  const fixture = completeBackupFixture(), event = { at: "t", tool: "", action: "", detail: "界".repeat(300) };
+  const budget = 512 * 1024, bytes = value => Buffer.byteLength(JSON.stringify(value), "utf8");
+  const log = [];
+  while (bytes(log) + bytes(event) + 1 <= budget - 400) log.push({ ...event });
+  let remaining = budget - bytes(log) - bytes({ ...event, detail: "" }) - 1;
+  while (remaining > 300) {
+    log.push({ ...event, detail: "x".repeat(300) });
+    remaining = budget - bytes(log) - bytes({ ...event, detail: "" }) - 1;
+  }
+  assert.ok(remaining >= 0 && remaining <= 300);
+  log.push({ ...event, detail: "x".repeat(remaining) });
+  assert.equal(bytes(log), budget);
+  fixture.backup.log = log;
+  fixture.backup.logDiscarded = 0;
+  assert.equal(parseDocument(JSON.stringify(fixture)).backup.log.length, log.length);
+  fixture.backup.log.at(-1).detail += "x";
+  assert.equal(bytes(log), budget + 1);
+  assert.throws(() => parseDocument(JSON.stringify(fixture)), /log|large/i);
+});
+
+test("complete backup: forged discarded metadata and oversized Unicode histories are rejected", () => {
+  for (const value of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, "1", null, {}, true]) {
+    const fixture = completeBackupFixture();
+    fixture.backup.logDiscarded = value;
+    assert.throws(() => parseDocument(JSON.stringify(fixture)), /log|discarded/i);
+  }
+  const fixture = completeBackupFixture();
+  fixture.backup.log = Array.from({ length: 200 }, () => ({ at: "界".repeat(300), tool: "界".repeat(300), action: "界".repeat(300), detail: "界".repeat(300) }));
+  assert.ok(JSON.stringify(fixture).length < 2 * 1024 * 1024, "the test must reach the independent UTF-8 log cap");
+  fixture.backup.logBytes = 2; // A supplied byte claim never overrides measurement.
+  assert.throws(() => parseDocument(JSON.stringify(fixture)), /log|large/i);
+});
+
+test("complete backup: Unicode log bytes are checked even below the old event-count cap", () => {
+  const fixture = completeBackupFixture();
+  fixture.backup.log = Array.from({ length: 200 }, () => ({ at: "界".repeat(300), tool: "界".repeat(300), action: "界".repeat(300), detail: "界".repeat(300) }));
+  assert.ok(Buffer.byteLength(JSON.stringify(fixture.backup.log), "utf8") > 512 * 1024);
+  assert.ok(JSON.stringify(fixture).length < 2 * 1024 * 1024);
+  assert.throws(() => parseDocument(JSON.stringify(fixture)), /log|large/i);
+});
+
+// Snapshot metadata selects an equality-comparison suffix only; it must never
+// authorize truncating imported history or silently removing recovery text.
+test("complete backup: snapshot latest offsets are optional validated integers preserved through encryption", async () => {
+  for (const latestStart of [0, 2, 4]) {
+    const fixture = completeBackupFixture();
+    fixture.backup.snapshot = { text: "abcd", includePrivate: true, latestStart };
+    assert.deepEqual(parseDocument(JSON.stringify(fixture)).backup.snapshot, fixture.backup.snapshot);
+    const sealed = await journalModule.sealBackup(fixture, keys, fixture.backup);
+    const opened = await openDocument(pack(sealed), password);
+    assert.deepEqual(opened.doc.backup.snapshot, fixture.backup.snapshot);
+  }
+  const legacy = completeBackupFixture();
+  assert.deepEqual(parseDocument(JSON.stringify(legacy)).backup.snapshot, legacy.backup.snapshot);
+});
+
+test("complete backup: malformed snapshot offsets are rejected instead of ignored", () => {
+  for (const latestStart of [-1, 5, 0.5, "0", null, true, {}, [], Number.MAX_SAFE_INTEGER + 1]) {
+    const fixture = completeBackupFixture();
+    fixture.backup.snapshot = { text: "abcd", includePrivate: true, latestStart };
+    assert.throws(() => parseDocument(JSON.stringify(fixture)), /snapshot/i);
+  }
+});
+
+const snapshotReport = (body, stamp = "2026-10-23 12:00:00") => ({ text: `ENTROPYLAB SESSION STATE\nUpdated: ${stamp}\n${body}`, includePrivate: true });
+test("snapshot combination retains historical secrets once across empty and identical restore-save cycles", () => {
+  const original = { text: "Literal legacy private material <tag>\nUpdated: keep this line", includePrivate: true };
+  const first = journalModule.combineSnapshots(original, snapshotReport("BIP-85\nchild-secret-one"));
+  const expected = original.text + "\n\n" + snapshotReport("BIP-85\nchild-secret-one").text;
+  assert.equal(first.text, expected);
+  assert.equal(first.latestStart, original.text.length + 2);
+  let saved = first;
+  for (let cycle = 0; cycle < 20; cycle++) {
+    const fixture = completeBackupFixture();
+    fixture.backup.snapshot = saved;
+    saved = parseDocument(JSON.stringify(fixture)).backup.snapshot;
+    saved = journalModule.combineSnapshots(saved, snapshotReport("KEYS\n(none)", "later"), false);
+    saved = journalModule.combineSnapshots(saved, snapshotReport("BIP-85\nchild-secret-one", `later ${cycle}`));
+    assert.equal(saved.text, expected, "an empty restore or changed capture time must not add another report");
+    assert.equal(saved.latestStart, first.latestStart);
+  }
+  assert.equal(original.text, "Literal legacy private material <tag>\nUpdated: keep this line");
+});
+
+test("snapshot combination preserves new private material from every changed derived session", () => {
+  const first = snapshotReport("KEYS\noriginal-root"), second = snapshotReport("BIP-85\nchild-secret-two");
+  const saved = journalModule.combineSnapshots(first, second);
+  const third = snapshotReport("KEYS\nnew-root");
+  const combined = journalModule.combineSnapshots(saved, third);
+  assert.equal(combined.text, first.text + "\n\n" + second.text + "\n\n" + third.text);
+  assert.equal(combined.latestStart, saved.text.length + 2);
+  assert.deepEqual(journalModule.combineSnapshots(combined, snapshotReport("KEYS\n(none)"), false), combined);
+  assert.deepEqual(journalModule.combineSnapshots(null, first), first);
+});
+
+test("snapshot combination ignores only capture time and never truncates history to fit", () => {
+  const before = snapshotReport("BIP-85\nUpdated: secret-one"), after = snapshotReport("BIP-85\nUpdated: secret-two");
+  assert.equal(journalModule.combineSnapshots(before, after).text, before.text + "\n\n" + after.text);
+  const full = { text: "p".repeat(JOURNAL_MAX_TEXT_LENGTH), includePrivate: true };
+  assert.deepEqual(journalModule.combineSnapshots(full, snapshotReport("empty"), false), full);
+  assert.throws(() => journalModule.combineSnapshots(full, snapshotReport("new recovery")), /snapshot.*large.*export.*remove/i);
+  assert.equal(full.text.length, JOURNAL_MAX_TEXT_LENGTH);
 });

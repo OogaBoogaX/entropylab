@@ -282,7 +282,7 @@ test("the Bitcoin Core interop job verifies the pinned bitcoind download before 
   assert.ok(extract > verify, "the archive is extracted only after the hash check");
   assert.ok(run > extract, "the binaries run only after the verified extraction");
   // One file at a time: concurrent --version probes flaked in CI (PR #818).
-  assert.match(job, /REQUIRE_BITCOIND=1 node --test --test-concurrency=1 test\/wallet-export\.test\.mjs test\/msig-wallet-output\.test\.mjs/);
+  assert.match(job, /REQUIRE_BITCOIND=1 node --test --test-concurrency=1 test\/wallet-export\.test\.mjs test\/msig-wallet-output\.test\.mjs test\/core-importdescriptors\.test\.mjs/);
   // The job gates a merge exactly like the other behavioral test gates.
   const needsOf = (name) => workflowJob(workflow, name).match(/^    needs: \[([^\]]+)\]$/m)?.[1] ?? "";
   assert.ok(needsOf("artifact").split(", ").includes("test-bitcoind"), "the artifact job must need the interop job");

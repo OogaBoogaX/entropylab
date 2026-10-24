@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { MiniDocument, MiniElement, MiniNodeFilter } from "./mini-dom.mjs";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
 import { privateCopyButtonHtml, initPrivateCopy } from "../src/js/private-data.js";
+import * as privateData from "../src/js/private-data.js";
 import { hodlInitLn, hodlLnWipeMem } from "../src/js/lightning.js";
 import { hodlApplyStaticI18n, hodlSetLocale } from "../src/js/i18n.js";
 
@@ -20,7 +21,7 @@ const copiedIcon = () => '<svg data-test-copied-icon aria-hidden="true"><path></
 const SECRET = "000102030405060708090a0b0c0d0e0f";
 const PHRASE = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
-async function withPage(body, { fallback = false, denied = false } = {}) {
+async function withPage(body, { fallback = false, denied = false, onCopyStart } = {}) {
   const saved = Object.fromEntries(["document", "navigator", "NodeFilter"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const document = new MiniDocument(), writes = [], executed = [], listeners = new WeakMap();
   const listen = function (type, callback) {
@@ -45,7 +46,7 @@ async function withPage(body, { fallback = false, denied = false } = {}) {
     writes.push(value);
   } } } });
   mock.timers.enable({ apis: ["setTimeout"] });
-  const teardown = initPrivateCopy({ copyIcon, copiedIcon });
+  const teardown = initPrivateCopy({ copyIcon, copiedIcon, onCopyStart });
   const click = (target) => listeners.get(document)?.get("click")?.({ target });
   const change = (target) => listeners.get(target)?.get("change")?.({ target });
   try { await body({ document, writes, executed, click, change, teardown }); }
@@ -77,6 +78,21 @@ function assertNoSecret(button, secret) {
   for (const [name, value] of Object.entries(button)) if (typeof value === "string") assert.ok(!value.includes(secret), name);
   assert.ok(!button.textContent.includes(secret));
 }
+
+for (const denied of [false, true]) test(`private copy diagnostics expose only the control and boolean outcome (${denied ? "refused" : "copied"})`, async () => {
+  const starts = [], outcomes = [];
+  await withPage(async ({ document, click, writes }) => {
+    const shown = field(document), hidden = field(document, PHRASE);
+    hidden.container.hidden = true;
+    await click(hidden.button);
+    assert.deepEqual(starts, []);
+    await click(shown.button);
+    assert.equal(starts.length, 1);
+    assert.deepEqual(starts[0], [shown.button], "the callback must not receive a payload or label");
+    assert.deepEqual(outcomes, [!denied]);
+    assert.deepEqual(writes, denied ? [] : [SECRET]);
+  }, { denied, onCopyStart: (...args) => { starts.push(args); return copied => outcomes.push(copied); } });
+});
 
 test("an intentional clipboard click copies only its field, with accessible confirmation and no secret on the button", () => withPage(async ({ document, writes, click }) => {
   field(document, "unrelated secret");
@@ -284,4 +300,95 @@ test("Lightning reveals each secret beside a copy control and removes the contro
   assert.equal(document.querySelectorAll("[data-private-value]").length, 0);
   for (const button of controls) await click(button);
   assert.deepEqual(writes, [SECRET]);
+}));
+
+// An annotated readout uses safe text nodes. Its whole visible report remains
+// the copy source, even when individual private fields have inline styling.
+test("annotated private reports preserve literal text and exact shared copying", () => withPage(async ({ document, writes, click }) => {
+  const text = "Public <img src=x>\nPrivate label\n  000102030405060708090a0b0c0d0e0f\nPublic tail";
+  const labelStart = text.indexOf("Private label"), valueStart = text.indexOf(SECRET);
+  const spans = [{ start: labelStart, end: labelStart + "Private label".length, kind: "label" }, { start: valueStart, end: valueStart + SECRET.length, kind: "value" }];
+  const { value, button } = field(document);
+  privateData.renderAnnotatedPrivateText(value, text, spans);
+  assert.equal(value.textContent, text);
+  assert.equal(value.querySelector("img"), null);
+  assert.equal(value.querySelector("[data-report-private-label]").textContent, "Private label");
+  assert.equal(value.querySelector("[data-report-private-value]").textContent, SECRET);
+  await click(button);
+  assert.deepEqual(writes, [text]);
+  // Without supplied ranges, field names and HTML-looking text are ordinary
+  // text, even when this readout previously held an annotated report.
+  privateData.renderAnnotatedPrivateText(value, text);
+  assert.equal(value.textContent, text);
+  assert.equal(value.querySelector("[data-report-private-value]"), null);
+  privateData.renderAnnotatedPrivateText(value, "Public view");
+  assert.equal(value.textContent, "Public view");
+  assert.equal(value.querySelector("[data-report-private-label]"), null);
+  assert.ok(!value.textContent.includes(SECRET));
+}));
+
+test("invalid private annotations cannot hide, reorder or turn report text into HTML", () => {
+  const document = new MiniDocument(), output = document.createElement("pre");
+  const text = "<img src=x> Public and private text";
+  for (const spans of [
+    [{ start: -1, end: 2, kind: "value" }],
+    [{ start: 0, end: text.length + 1, kind: "value" }],
+    [{ start: 0, end: 10, kind: "value" }, { start: 9, end: 12, kind: "label" }],
+    [{ start: 0, end: 3, kind: "unknown" }],
+  ]) {
+    privateData.renderAnnotatedPrivateText(output, text, spans);
+    assert.equal(output.textContent, text);
+    assert.equal(output.querySelector("img"), null);
+    assert.equal(output.querySelector("[data-report-private-value]"), null);
+  }
+});
+
+test("Session refresh independently annotates revealed current and saved reports and clears them on conceal", () => withPage(async ({ document, writes, click }) => {
+  document.body.innerHTML = `
+    <input id="journal-state-private" type="checkbox">
+    <span id="journal-state-label"></span>
+    <div id="journal-state-field" data-private-field data-copy-group><span id="journal-state-copy"></span><pre id="journal-state-text"></pre></div>
+    <details id="journal-state-history"><input id="journal-saved-state-private" type="checkbox"><span id="journal-saved-state-label"></span>
+    <div id="journal-saved-state-field" data-private-field data-copy-group><span id="journal-saved-state-copy"></span><pre id="journal-saved-state-text"></pre></div></details>`;
+  document.getElementById("journal-state-history").setAttribute("open", "");
+  const history = `ENTROPYLAB SESSION STATE\nPrivate material: INCLUDED\n\nKEYS\n- Saved key\nENTROPYLAB — RECOVERY SHEET\n\nPRIVATE RECOVERY MATERIAL\nHex private key:  ${SECRET}\nPUBLIC KEYS AND ADDRESSES\n<img src=x>`, live = `Public information\nPrivate label\n${SECRET}`;
+  const journal = { stateText: "", backup: { snapshot: { text: history, includePrivate: false } } };
+  const api = await loadAppFunctions(["hodlJournalRefreshSessionState"], { stubs: {
+    document, hodlJournal: journal,
+    hodlJournalSessionSnapshot(revealed, spans) {
+      if (!revealed) return "Public information";
+      const label = live.indexOf("Private label"), value = live.indexOf(SECRET);
+      spans.push({ start: label, end: label + "Private label".length, kind: "label" }, { start: value, end: value + SECRET.length, kind: "value" });
+      return live;
+    },
+  } });
+  const currentBox = document.getElementById("journal-state-private"), savedBox = document.getElementById("journal-saved-state-private");
+  const current = document.getElementById("journal-state-text"), saved = document.getElementById("journal-saved-state-text");
+  currentBox.checked = true;
+  api.hodlJournalRefreshSessionState();
+  assert.equal(current.textContent, live);
+  assert.equal(journal.stateText, live);
+  assert.equal(current.querySelector("[data-report-private-value]").textContent, SECRET);
+  assert.ok(!saved.textContent.includes(SECRET));
+  await click(document.getElementById("journal-state-copy").querySelector("button"));
+  assert.deepEqual(writes, [live]);
+  savedBox.checked = true;
+  api.hodlJournalRefreshSessionState();
+  assert.equal(saved.textContent, history);
+  assert.equal(saved.querySelector("img"), null);
+  assert.ok(saved.querySelector("[data-report-private-label]"));
+  assert.equal(saved.querySelector("[data-report-private-value]")?.textContent, SECRET);
+  await click(document.getElementById("journal-saved-state-copy").querySelector("button"));
+  assert.deepEqual(writes, [live, history]);
+  currentBox.checked = false;
+  api.hodlJournalRefreshSessionState();
+  assert.equal(current.textContent, "Public information");
+  assert.equal(current.querySelector("[data-report-private-value]"), null);
+  assert.equal(current.hasAttribute("data-private-value"), false);
+  assert.equal(saved.textContent, history);
+  savedBox.checked = false;
+  api.hodlJournalRefreshSessionState();
+  assert.ok(!saved.textContent.includes(SECRET));
+  assert.equal(saved.querySelector("[data-report-private-label], [data-report-private-value]"), null);
+  assert.equal(journal.backup.snapshot.text, history);
 }));
