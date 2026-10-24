@@ -1768,5 +1768,7 @@
   "Upload a wallet.dat to view its records and checks here.": "Carregue um wallet.dat para ver seus registros e verificações aqui.",
   "Upload wallet.dat": "Carregar wallet.dat",
   "Download wallet.dat": "Baixar wallet.dat",
-  "End Session / Clear Fields": "Encerrar Sessão / Limpar Campos"
+  "End Session / Clear Fields": "Encerrar Sessão / Limpar Campos",
+  "change": "troco",
+  "receive and change": "receber e troco"
 }

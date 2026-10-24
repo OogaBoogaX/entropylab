@@ -1768,5 +1768,7 @@
   "Upload a wallet.dat to view its records and checks here.": "f809a19eb239902bc82ece6bbd46c5e7f85723fd2b81a975562680af15fd248b",
   "Upload wallet.dat": "545d32d9ad8a2790d62823dbbdef08b24cc769bbd981da6232c6bea6a29df59d",
   "Download wallet.dat": "2a3cd9e79e9e550cb45abcba5947cc92f928567d5f31cd3680bd91472a608bc7",
-  "End Session / Clear Fields": "a4afea54eba7db8b64869b4fb7d5c58748e31b9f517b678e2cd1a36aa6c67132"
+  "End Session / Clear Fields": "a4afea54eba7db8b64869b4fb7d5c58748e31b9f517b678e2cd1a36aa6c67132",
+  "change": "12ea12eace7d655f471ce55e34f89b1b77a3d9d05a445ca82877dd2235beaa51",
+  "receive and change": "eb6f03c0386af46808f3a9a90a4491dcbb21a6e8d2cb268154e424e08bc3684f"
 }
