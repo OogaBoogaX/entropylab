@@ -1916,5 +1916,6 @@
   "Descriptor origin claims master {fingerprint}, account {account}' — not provable from the account key": "El origen del descriptor reclama la maestra {fingerprint}, cuenta {account}' — no se puede probar desde la clave de la cuenta",
   "This file has no password protection — anyone with it can read or alter its contents. Press Open journal again to accept it.": "Este archivo no tiene protección de contraseña; cualquiera que lo tenga puede leer o alterar su contenido. Presiona Abrir diario de nuevo para aceptarlo.",
   "Core Wallet": "Core Wallet",
-  "Core": "Core"
+  "Core": "Core",
+  "Wallets only look about 20 unused addresses ahead. If coins arrive at index {n}, raise your wallet's gap limit above that, or the balance will show as zero (Sparrow: Settings → Advanced → Gap limit). EntropyLab's Bitcoin Core export already covers this window.": "Las billeteras solo buscan unas 20 direcciones no utilizadas por delante. Si llegan monedas al índice {n}, aumenta el límite de brecha de tu billetera por encima de eso, o el saldo se mostrará como cero (Sparrow: Configuración → Avanzado → Límite de brecha). La exportación de Bitcoin Core de EntropyLab ya cubre esta ventana."
 }
