@@ -51,6 +51,9 @@ import { wordlist as bip39English } from "./bip39-english.js";
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFromUpload, psbtQrPlan as hodlPsbtQrPlan } from "./psbt-editor.js";
 import { initCoreWallet } from "./core-wallet-ui.js";
+import { auditSigner as hodlAuditSigner } from "./psbt-signer-audit.js";
+import { psbtSignerAuditVerification as hodlPsbtSignerAuditVerify } from "./psbt-signer-audit-verify.js";
+import { psbtSignerAuditErrorHtml as hodlPsbtSignerAuditErrorHtml, psbtSignerAuditHtml as hodlPsbtSignerAuditHtml } from "./psbt-signer-audit-view.js";
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
@@ -11191,7 +11194,7 @@ function hodlSetButtonEnabled(id, on) {
 }
 // The two cards that run an inspection, and what each one's run reads.
 var hodlPsbtCards = [
-  { text: "psbt-text", fields: ["psbt-key", "psbt-pass"], go: "psbt-go", download: "psbt-download", out: "psbt-out", session: "psbt-session" },
+  { text: "psbt-text", fields: ["psbt-key", "psbt-pass", "psbt-audit-before"], go: "psbt-go", download: "psbt-download", out: "psbt-out", session: "psbt-session" },
   { text: "nonce-text", fields: ["nonce-key", "nonce-pass", "psbt-ax-transcript"], go: "nonce-go", out: "nonce-out", session: "nonce-session" },
 ];
 // A run is stamped with everything it read: the payload, the key fields and
@@ -11259,7 +11262,7 @@ function hodlEndPsbtSession() {
   hodlPsbtLast = null;
   hodlPsbtInspected = {};
   hodlPsbtSessionSpec = hodlNote("Accessible fields were cleared (best effort).");
-  for (let id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"]) {
+  for (let id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-audit-before", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"]) {
     let field = document.getElementById(id);
     if (field) field.value = "";
   }
@@ -11423,6 +11426,27 @@ function hodlInitPsbt() {
       hodlSyncPsbtControls();
     })();
   });
+  // The sent PSBT for the signer audit loads through the same upload path:
+  // a binary .psbt (Sparrow/Coldcard) or a base64/hex text export, mirrored
+  // into its field as base64. It runs nothing by itself — the next Inspect
+  // picks it up — but it retires a shown verdict.
+  const auditFile = document.getElementById("psbt-audit-file");
+  document.getElementById("psbt-audit-upload").onclick = () => auditFile.click();
+  auditFile.addEventListener("change", () => {
+    const chosen = auditFile.files?.[0];
+    auditFile.value = "";
+    if (!chosen) return;
+    (async () => {
+      try {
+        const bytes = psbtBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
+        document.getElementById("psbt-audit-before").value = hodlBytesToB64(bytes);
+        hodlPsbtClearSignerAudit();
+      } catch (exception) {
+        hodlSetPsbtError({ raw: exception.message || String(exception) });
+      }
+      hodlSyncPsbtControls();
+    })();
+  });
   document.getElementById("psbt-download").onclick = () => {
     hodlSetPsbtError(null);
     try {
@@ -11467,6 +11491,11 @@ function hodlInitPsbt() {
   };
   document.getElementById("nonce-text").addEventListener("input", hodlPsbtResetNonceInspection);
   document.getElementById("psbt-card").addEventListener("input", hodlSyncPsbtControls);
+  // Editing either PSBT field (or the key fields) retires a shown
+  // signer-audit verdict immediately — it belongs to the exact pair of
+  // PSBTs it was computed from, and a stale verdict must never stay on
+  // screen. The next Inspect re-runs it.
+  document.getElementById("psbt-card").addEventListener("input", hodlPsbtClearSignerAudit);
   document.getElementById("nonce-card").addEventListener("input", hodlSyncPsbtControls);
   hodlPsbtSyncNonceHistoryControls();
   // Page hide ends the whole session: the key bytes, the paste fields, and
@@ -11962,6 +11991,56 @@ function hodlInitBip85() {
   }
   hodlBip85SyncOptions();
 }
+// The optional signer audit (the "PSBT you sent" field inside
+// #psbt-audit-options). When the field holds text, both PSBTs go through
+// the reference decoder and the signer-audit engine, and the report is
+// prepended to the Inspector's output so the live region announces the
+// verdict first. An empty field changes nothing — the Inspector output is
+// byte-identical to a run without the audit. A sent field that does not
+// decode fails closed: an error note, never a verdict. New signatures are
+// verified against the returned PSBT's own UTXO claims and the sent PSBT's
+// prevouts (psbt-signer-audit-verify.js) before the engine runs; a
+// signature that cannot be checked soundly is reported unverified, never
+// valid. Nonce, anti-exfil and wallet inputs are not wired here (the
+// Inspector's own results are not readable in this run path), so those
+// checks report "Not checked"/"Not available".
+function hodlPsbtPrependSignerAudit(output, returnedBytes, kind, network) {
+  let raw = String(document.getElementById("psbt-audit-before")?.value || "").trim();
+  if (!raw) return;
+  let auditHtml;
+  try {
+    if (kind !== "psbt") throw new Error("The signer audit compares two PSBTs; the inspected payload above is a raw transaction, not a PSBT.");
+    let sentBytes = hodlPsbtBytesFromText(raw);
+    if (!isPsbtMagic(sentBytes)) throw new Error("The PSBT you sent must be a PSBT (base64 or hex), not a raw transaction.");
+    let beforeDoc = psbtInspectDoc(sentBytes), afterDoc = psbtInspectDoc(returnedBytes), verification;
+    // Verification fails closed: an error here leaves the engine without
+    // its verification input, and every new signature is reported
+    // unverified rather than waved through.
+    try {
+      verification = hodlPsbtSignerAuditVerify(beforeDoc, afterDoc);
+    } catch {
+      verification = undefined;
+    }
+    auditHtml = hodlPsbtSignerAuditHtml(hodlAuditSigner(beforeDoc, afterDoc, { verification }), beforeDoc, afterDoc, network);
+  } catch (exception) {
+    auditHtml = hodlPsbtSignerAuditErrorHtml(exception instanceof Error ? exception.message : String(exception));
+  }
+  output.insertAdjacentHTML("afterbegin", auditHtml);
+}
+// A shown signer-audit verdict belongs to the exact pair of PSBTs it was
+// computed from: any edit inside the card retires it on the spot, so a
+// stale verdict is never left on screen. The next Inspect re-runs it.
+function hodlPsbtClearSignerAudit() {
+  const section = document.getElementById("psbt-out")?.querySelector("[data-audit-section]");
+  if (!section) return;
+  section.remove();
+  // The verdict belonged to the exact pair of PSBTs it was computed from, so
+  // retiring it must also let the user re-run Inspect on those same inputs.
+  // Let the ordinary input sync decide the button state: it applies the
+  // decode check and the run stamp, so a field that does not decode never
+  // enables Inspect.
+  hodlSyncPsbtControls();
+}
 function hodlRunPsbt() {
   let output = document.getElementById("psbt-out"), manual = document.getElementById("psbt-key").value;
   hodlSetPsbtError(null);
@@ -11988,6 +12067,7 @@ function hodlRunPsbt() {
     let parsed = kind === "psbt" ? hodlParsePsbt(bytes) : parseRawTx(bytes), network = hodlInspectorNetwork();
     let limits = { inputs: PSBT_INSPECTOR_LIMIT, outputs: PSBT_INSPECTOR_LIMIT, step: PSBT_INSPECTOR_LIMIT, format: hodlFormatCount };
     output.innerHTML = kind === "psbt" ? hodlRenderPsbt(parsed, sourceTag, checkedAt, "inspect", { network, limits }) : hodlRenderRawTx(parsed, sourceTag, checkedAt, "inspect", { network, limits });
+    hodlPsbtPrependSignerAudit(output, bytes, kind, network);
     hodlPsbtLast = { kind, parsed, sourceTag, checkedAt, network, limits };
     hodlJournalLog("inspect", kind, "psbt");
   } catch (exception) {
@@ -19896,9 +19976,13 @@ function hodlInitSecretFieldAutoClear() {
     if (psbtKey) psbtKey.value = "";
     if (psbtPass) psbtPass.value = "";
     hodlClearStationPassphrase("psbt-pass");
-    let psbtText = document.getElementById("psbt-text"), psbtAxTranscript = document.getElementById("psbt-ax-transcript");
+    let psbtText = document.getElementById("psbt-text"), psbtAxTranscript = document.getElementById("psbt-ax-transcript"), psbtAuditBefore = document.getElementById("psbt-audit-before");
     if (psbtText) psbtText.value = "";
     if (psbtAxTranscript) psbtAxTranscript.value = "";
+    if (psbtAuditBefore) psbtAuditBefore.value = "";
+    // The rendered audit holds change addresses and fingerprints derived
+    // from the loaded key; retire it with the field it was computed from.
+    try { hodlPsbtClearSignerAudit(); } catch {}
     for (let id of ["nonce-key", "nonce-pass", "nonce-text"]) {
       let field = document.getElementById(id);
       if (field) field.value = "";

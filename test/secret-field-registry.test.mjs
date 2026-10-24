@@ -56,7 +56,7 @@ const CLEARING_PATHS = [
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle field sweep`),
   },
   {
-    ids: ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"],
+    ids: ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "psbt-audit-before", "nonce-key", "nonce-pass", "nonce-text"],
     why: "PSBT/Nonce stations: session keys, pasted PSBTs (xprvs in proprietary fields), anti-exfil transcript",
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`) && fnBody("hodlEndPsbtSession").includes(`"${id}"`), `#${id} missing from the PSBT lifecycle/session-end sweeps`),
   },
@@ -150,7 +150,7 @@ const CLEARING_PATHS = [
   {
     // File inputs hold no content once consumed, but the reset is what lets
     // "pick the same file again" work AND keeps the fake path off screen.
-    ids: ["psbt-file", "nonce-file", "psbt-nonce-history-file", "journal-notes-file", "journal-keymanager-file"],
+    ids: ["psbt-file", "psbt-audit-file", "nonce-file", "psbt-nonce-history-file", "journal-notes-file", "journal-keymanager-file"],
     why: "file pickers for PSBT / nonce / journal / vault uploads (reset on consume)",
     probe: (id) => assert.match(around(app, `getElementById("${id}")`), /value = ""/, `#${id} must be reset on consume`),
   },

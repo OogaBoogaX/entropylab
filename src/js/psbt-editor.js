@@ -464,7 +464,7 @@ const mapDiffRows = (changes, scope, index, before, after, network, copyIcon) =>
 const docBlocksEqualityClaims = (doc) =>
   Boolean(doc?.rustBitcoinError || doc?.txSanityError) || doc?.sanitize?.duplicateKeys?.state === "problem";
 
-export const psbtDiffHtml = (diff, before, after, network, { copyIcon = () => "" } = {}) => {
+export const psbtDiffHtml = (diff, before, after, network, { copyIcon = () => "", beforeLabel = "the PSBT in the editor", afterLabel = "the pasted PSBT" } = {}) => {
   const blocked = docBlocksEqualityClaims(before) || docBlocksEqualityClaims(after);
   if (diff.equal && !blocked) return `<p class="psbted-note-ok">Semantically identical — the underlying transaction, the signing state, and the metadata all match.</p>`;
   const summary = [
@@ -548,7 +548,7 @@ export const psbtDiffHtml = (diff, before, after, network, { copyIcon = () => ""
   if (globalRows.length && !pushSection("Global key-value map", globalRows)) budgetElided += globalRows.length;
   if (budgetElided) sections.push(moreChanges(budgetElided));
 
-  return `<p class="muted">before = the PSBT in the editor · after = the pasted PSBT. Only differences are listed.</p>${summary.join("")}${sections.join("")}`;
+  return `<p class="muted">before = ${escapeHtml(beforeLabel)} · after = ${escapeHtml(afterLabel)}. Only differences are listed.</p>${summary.join("")}${sections.join("")}`;
 };
 
 // Sanitize banner (inspect + compare footer). Three-state per issue #217:
