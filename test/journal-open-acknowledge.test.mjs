@@ -24,12 +24,15 @@ import {
   JOURNAL_MIN_ITERATIONS,
   addEntry,
   createDocument,
+  createJournal,
   deriveJournalKeys,
   emptyDocument,
   openDocument,
+  mergeLogHistory,
   sealDocument,
   wipeBytes,
   wipeDocument,
+  wipeJournal,
 } from "../src/js/journal.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -70,7 +73,10 @@ const source = [
   varLine("hodlJournalGeneration"),
   varLine("hodlJournalFileRead"),
   varLine("hodlJournalTool"),
+  varLine("hodlJournalReportViewer"),
+  loadSlice("hodlJournalClearReport"),
   loadSlice("hodlJournalError"),
+  loadSlice("hodlJournalSetGateBusy"),
   loadSlice("hodlJournalChooseFile"),
   loadSlice("hodlJournalUnlock"),
   loadSlice("hodlJournalWipeNotebook"),
@@ -91,7 +97,8 @@ const loadApp = ({ password = "", onOpen = (file, password) => openDocument(file
     "hodlJournalWipeDocument", "hodlJournalWipeBytes",
     "hodlKeyManagerReset", "hodlJournalHideEditor",
     "hodlJournalShowWork", "hodlShowJournalTool", "hodlJournalLog",
-    "hodlJournalBackfillDerivedKeys", "hodlJournalDiscardOpened",
+    "hodlJournalBackfillDerivedKeys", "hodlJournalDiscardOpened", "hodlTText", "wipeJournal", "hodlJournal",
+    "hodlJournalCheckInventory", "hodlJournalMergeLogHistory",
     `${source}; return {
       choose: hodlJournalChooseFile,
       unlock: hodlJournalUnlock,
@@ -106,7 +113,9 @@ const loadApp = ({ password = "", onOpen = (file, password) => openDocument(file
     wipeDocument, wipeBytes,
     noop,
     noop, noop, noop,
-    noop, noop,
+    noop, noop, noop,
+    (text) => text, wipeJournal, createJournal(),
+    noop, mergeLogHistory,
   );
   return { ...api, error: () => fields["journal-error"].textContent };
 };

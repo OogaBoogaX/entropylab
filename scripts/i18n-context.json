@@ -2012,17 +2012,6 @@
       "fr": "Return exactly: La dérivation de la clé mise à jour a échoué."
     }
   },
-  "Download notepad": {
-    "retranslate": {
-      "pt": "Baixar bloco"
-    },
-    "exact": {
-      "pt": "Baixar bloco de notas"
-    },
-    "noteByLanguage": {
-      "pt": "Return exactly: Baixar bloco de notas"
-    }
-  },
   "Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress must match receive index 0 here.": {
     "retranslate": {
       "pt": "Nó online: createwallet disable_private_keys=true blank=true, depois importe os descritores. O primeiro getnewaddress deve corresponder ao índice de recebimento 0 aqui."

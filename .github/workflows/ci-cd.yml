@@ -514,7 +514,7 @@ jobs:
           tar -xzf "bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz" -C "$RUNNER_TEMP/bitcoin-bin" --strip-components=2 "bitcoin-${BITCOIN_CORE_VERSION}/bin/bitcoind" "bitcoin-${BITCOIN_CORE_VERSION}/bin/bitcoin-cli"
           echo "$RUNNER_TEMP/bitcoin-bin" >> "$GITHUB_PATH"
       - name: Run the Bitcoin Core interop tests
-        run: REQUIRE_BITCOIND=1 node --test --test-concurrency=1 test/wallet-export.test.mjs test/msig-wallet-output.test.mjs
+        run: REQUIRE_BITCOIND=1 node --test --test-concurrency=1 test/wallet-export.test.mjs test/msig-wallet-output.test.mjs test/core-importdescriptors.test.mjs
 
   # ── Fuzz: differential check of the shipped LifeHash against the ──────────
   # official `lifehash` package. The fuzzer has its own locked dependency tree
@@ -838,6 +838,7 @@ jobs:
         if: steps.proof.outputs.committed == 'true'
         env:
           PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
         run: |
           set -euo pipefail
           # Push with the maintainer token: rock is protected, and required
@@ -846,7 +847,82 @@ jobs:
           # the command line, which outranks every config file. Hooks are
           # disabled: this runner never ran the OTS client, but a hook could
           # still arrive with the checkout.
-          git -c http.https://github.com/.extraheader=             -c http.https://github.com/.extraheader="AUTHORIZATION: basic $(echo -n x-access-token:$PUSH_TOKEN | base64)"             -c core.hooksPath=/dev/null push origin HEAD:rock
+          AUTH_B64=$(echo -n x-access-token:$PUSH_TOKEN | base64)
+          echo "::add-mask::$AUTH_B64"
+          push_proof() {
+            git -c http.https://github.com/.extraheader= \
+                -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH_B64" \
+                -c core.hooksPath=/dev/null push origin HEAD:rock
+          }
+          # The walker is this checkout's, not the fetched rock's: a rebase
+          # replaces the working tree with the new rock's files, and this job
+          # must never run code from the commits it fetched.
+          WALKER="$RUNNER_TEMP/attestations.py"
+          cp scripts/ots-attestations.py "$WALKER"
+          # The validated proof's blob id: a rebase must replay exactly these
+          # bytes, never a conflict resolution or a different proof.
+          PROOF_BLOB=$(git rev-parse HEAD:entropylab.html.ots)
+          # The translation bot pushes in a burst right after a merge, so rock
+          # can move between this job's fetch and its push. Re-fetch and
+          # decide instead of failing the run; retry a bounded number of times.
+          MAX_RETRIES=3
+          attempt=0
+          while :; do
+            if OUT=$(push_proof 2>&1); then
+              printf '%s\n' "$OUT"
+              exit 0
+            fi
+            printf '%s\n' "$OUT"
+            # Only a rejected push is retried; an auth or network error fails now.
+            if ! printf '%s\n' "$OUT" | grep -Eq 'rejected|non-fast-forward|fetch first'; then
+              echo "::error::pushing the proof failed for a reason other than a moved rock"
+              exit 1
+            fi
+            if [ "$attempt" -ge "$MAX_RETRIES" ]; then
+              echo "::error::the proof push was rejected $MAX_RETRIES times; giving up"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            git fetch --quiet origin rock
+            # Read the HTML from origin/rock, not the working tree: the
+            # checkout is the rock this job started from.
+            ON_ROCK=$(git show origin/rock:entropylab.html | sha256sum | cut -d' ' -f1)
+            if [ "$ON_ROCK" != "$EXPECTED" ]; then
+              echo "::notice title=Proof superseded::Rock's entropylab.html is now $ON_ROCK, not the $EXPECTED this run stamped; a newer site build superseded this proof. Pushing nothing."
+              exit 0
+            fi
+            # Another run may have pushed a well-formed proof for this HTML
+            # while this one waited; keep it rather than replace it.
+            if git cat-file -e origin/rock:entropylab.html.ots 2>/dev/null; then
+              git show origin/rock:entropylab.html.ots > "$RUNNER_TEMP/rock.ots"
+              if [ "$(head -c 65 "$RUNNER_TEMP/rock.ots" | tail -c 32 | od -An -v -tx1 | tr -d ' \n')" = "$EXPECTED" ] \
+                 && python3 "$WALKER" "$RUNNER_TEMP/rock.ots" > /dev/null 2>&1; then
+                echo "::notice title=Proof kept::Rock already has a proof for $EXPECTED; not replacing it."
+                exit 0
+              fi
+            fi
+            # Replay the single proof commit onto the moved rock, then repeat
+            # the checks "Commit the proof" made before pushing again.
+            if ! git -c core.hooksPath=/dev/null rebase origin/rock; then
+              echo "::error::could not rebase the proof commit onto origin/rock"
+              git -c core.hooksPath=/dev/null rebase --abort || true
+              exit 1
+            fi
+            AHEAD=$(git rev-list --count origin/rock..HEAD)
+            if [ "$AHEAD" != 1 ]; then
+              echo "::error::expected exactly one commit ahead of origin/rock after rebase, found $AHEAD"
+              exit 1
+            fi
+            CHANGED=$(git diff --name-only origin/rock..HEAD)
+            if [ "$CHANGED" != "entropylab.html.ots" ]; then
+              echo "::error::the proof commit changes more than entropylab.html.ots after rebase: $CHANGED"
+              exit 1
+            fi
+            if [ "$(git rev-parse HEAD:entropylab.html.ots)" != "$PROOF_BLOB" ]; then
+              echo "::error::the rebased proof differs from the validated one"
+              exit 1
+            fi
+          done
 
   # ── Verify: independent check of the generated site artifact ──
 

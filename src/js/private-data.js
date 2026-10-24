@@ -19,17 +19,48 @@ export const isReadoutShown = (node) => {
   return !view || (node.getClientRects().length > 0 && view.getComputedStyle(node).visibility === "visible");
 };
 
-export function initPrivateCopy({ copyIcon = () => "", copiedIcon = () => "" } = {}) {
+export function initPrivateCopy({ copyIcon = () => "", copiedIcon = () => "", onCopyStart = () => {} } = {}) {
   const onClick = async (event) => {
     const button = event.target.closest?.("button[data-private-copy]");
     if (!button || button.disabled || !isReadoutShown(button)) return;
     const field = button.closest("[data-private-field]");
     const value = field?.querySelector("[data-private-value]");
     if (!isReadoutShown(value) || value.closest("[data-private-field]") !== field || !value.textContent) return;
-    if (!await copyText(value.textContent, { host: field })) return;
+    const complete = onCopyStart(button);
+    const copied = await copyText(value.textContent, { host: field });
+    complete?.(copied);
+    if (!copied) return;
     if (!isReadoutShown(button) || !isReadoutShown(value)) return;
     showCopiedIcon(button, { copyIcon: copyIcon(), copiedIcon: copiedIcon(), label: hodlTText(button.dataset.copyLabel || "Copy") });
   };
   document.addEventListener("click", onClick);
   return () => document.removeEventListener("click", onClick);
+}
+
+// Ranges control display styling only. The complete original text is always
+// rendered literally, never interpreted as HTML or used to restore app state.
+export function renderAnnotatedPrivateText(readout, text, spans = []) {
+  let end = 0;
+  const valid = spans.every((span) => {
+    if (!Number.isSafeInteger(span.start) || !Number.isSafeInteger(span.end) || span.start < end || span.end <= span.start || span.end > text.length || !["label", "value"].includes(span.kind)) return false;
+    end = span.end;
+    return true;
+  });
+  if (!valid || !spans.length) {
+    if (readout.textContent !== text || readout.firstElementChild) readout.textContent = text;
+    return;
+  }
+  const document = readout.ownerDocument, fragment = document.createDocumentFragment();
+  let start = 0;
+  for (const span of spans) {
+    fragment.append(document.createTextNode(text.slice(start, span.start)));
+    const node = document.createElement("span");
+    node.className = span.kind === "label" ? "private-heading is-revealed" : "inline-private-field-value";
+    node.setAttribute(`data-report-private-${span.kind}`, "");
+    node.textContent = text.slice(span.start, span.end);
+    fragment.append(node);
+    start = span.end;
+  }
+  fragment.append(document.createTextNode(text.slice(start)));
+  readout.replaceChildren(fragment);
 }

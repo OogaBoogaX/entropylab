@@ -23,19 +23,32 @@
 // Run with `npm test`.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { HDKey } from "@scure/bip32";
 import { entropyToMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { deriveApplication, wipeBip85Result } from "../src/js/bip85.js";
 import { hodlApplyStaticI18n, hodlSetLocale, t as translate } from "../src/js/i18n.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
-import { MiniDocument, MiniNodeFilter } from "./mini-dom.mjs";
+import { MiniDocument, MiniElement, MiniNodeFilter } from "./mini-dom.mjs";
 
 const inert = new Proxy(function () {}, { get: (target, key) => key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inert, apply: () => inert, construct: () => inert });
 Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
 const seed = await loadAppFunctions(["hodlRenderDiceWordGrid", "hodlCopySeedPhraseButton", "hodlDerivedSeedRowMarkup"]);
 const station = await loadAppFunctions(["hodlRenderBip85Out", "hodlCopyBip85Child"], { stubs: { hodlFillKeyTabLifehash: () => {} }, settable: ["hodlBip85Children", "hodlActiveBip85", "hodlBip85Reveal"] });
 const publicReadouts = await loadAppFunctions(["hodlVanityKeyMarkup", "hodlSetMasterFingerprintCard"]);
+const journal = await loadAppFunctions(["hodlJournalSyncCopyButton", "hodlJournalCopyContent"]);
+const journalText = await loadAppFunctions([
+  "hodlJournalRenderVisual", "hodlCreateJournalPageTab", "hodlKeyManagerRender", "hodlJournalRenderList", "hodlJournalOpenView",
+], {
+  stubs: {
+    hodlJournalSyncNotesRender() {}, hodlJournalSyncCopyButton() {}, hodlFillKeyTabLifehash() {}, hodlJournalFillFingerprint() {},
+    hodlBeginJournalPageRename() {}, hodlSelectJournalPage() {}, hodlJournalPageTabKeydown() {},
+    hodlKeyManagerDetails: () => [], hodlKeyManagerRename() {}, hodlKeyManagerUseInStation() {}, hodlKeyManagerIgnore() {}, hodlKeyManagerRestoreIgnored() {},
+    hodlKeyManagerStatus() {}, hodlJournalHideEditor() {}, hodlJournalShowWork() {}, hodlJournalLog() {}, hodlRevealTab() {},
+  },
+  settable: ["hodlJournal", "hodlKeys", "hodlKeyManagerPending", "hodlKeyManagerIgnored", "hodlJournalDoc"],
+});
 delete globalThis.document;
 delete globalThis.window;
 
@@ -54,11 +67,20 @@ const [TWELVE, , TWENTY_FOUR] = VECTORS.map(([, , phrase]) => phrase.split(" "))
 // The page, per test: a fresh document, mocked timers and a clipboard that
 // records what it is given.
 const written = [], executed = [];
+const previousContains = MiniElement.prototype.contains, previousFocus = MiniElement.prototype.focus;
 const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
 const clipboard = (mode) => Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: mode === "none" ? {} : { clipboard: { writeText: (text) => mode === "denied" ? Promise.reject(new Error("denied")) : (written.push(text), Promise.resolve()) } } });
 function page(mode = "works") {
   written.length = executed.length = 0;
   globalThis.document = new MiniDocument();
+  // Record rerenders preserve focus only when the old control belongs to
+  // that view. Model DOM ancestry and activeElement, including detached
+  // nodes, rather than treating every element as contained or focused.
+  MiniElement.prototype.contains = function (target) {
+    for (let node = target; node; node = node.parentNode) if (node === this) return true;
+    return false;
+  };
+  MiniElement.prototype.focus = function () { this.ownerDocument.activeElement = this; };
   globalThis.document.execCommand = (command) => (executed.push([command, globalThis.document.querySelector("textarea")?.value]), true);
   globalThis.NodeFilter = MiniNodeFilter;
   clipboard(mode);
@@ -67,6 +89,9 @@ function page(mode = "works") {
 }
 function leave() {
   mock.timers.reset();
+  if (previousContains) MiniElement.prototype.contains = previousContains;
+  else delete MiniElement.prototype.contains;
+  MiniElement.prototype.focus = previousFocus;
   hodlSetLocale("en", false);
   delete globalThis.NodeFilter;
   delete globalThis.document;
@@ -306,24 +331,74 @@ test("after the page's pagehide sweep the button copies nothing", withPage("work
   assert.deepEqual(leaks(button, TWELVE.join(" ")), []);
 }));
 
-test("the Journal's copy buttons still copy what they carry", withPage("works", async (document) => {
-  // Out of scope here: they keep their text in data-phrase, and share the
-  // click and Copied handling with the seed button.
+test("the Journal's Notes copy control never retains page text", withPage("works", async (document) => {
   document.body.innerHTML = '<button id="journal-notes-copy" type="button" aria-label="Copy notepad page" title="Copy notepad page" data-copy-label="Copy notepad page" data-copied-label="Notepad page copied"></button>';
   const button = document.getElementById("journal-notes-copy");
-  button.dataset.phrase = "first line\nsecond line";
-  seed.hodlCopySeedPhraseButton(button);
-  await settle();
-  assert.deepEqual(written, ["first line\nsecond line"]);
-  assert.equal(button.getAttribute("aria-label"), "Notepad page copied");
-  mock.timers.tick(1600);
-  assert.equal(button.getAttribute("aria-label"), "Copy notepad page");
-  assert.equal(button.title, "Copy notepad page");
-  delete button.dataset.phrase;
-  seed.hodlCopySeedPhraseButton(button);
-  await settle();
-  assert.deepEqual(written, ["first line\nsecond line"]);
+  const field = { value: VECTORS[0][2] };
+  journal.hodlJournalSyncCopyButton(field, button);
+  assert.equal(button.disabled, false);
+  assert.deepEqual(leaks(button, field.value), []);
+  field.value = "";
+  journal.hodlJournalSyncCopyButton(field, button);
+  assert.equal(button.disabled, true);
+  assert.deepEqual(leaks(button, VECTORS[0][2]), []);
 }));
+
+// Notes can hold recovery material; imported Activity is untrusted text and
+// may do the same. Both read the live field at the click, use the notebook's
+// readable-text formatting or the exact activity text, and refuse a control
+// or source that is no longer shown.
+for (const notebook of [true, false]) {
+  const area = notebook ? "Notes" : "Activity";
+  function journalPage(document) {
+    document.body.innerHTML = `<div id="journal-section"><${notebook ? "textarea" : "pre"} id="journal-content"></${notebook ? "textarea" : "pre"}><button id="journal-copy" type="button" aria-label="Copy" title="Copy" data-copy-label="Copy" data-copied-label="Copied"></button></div>`;
+    const button = document.getElementById("journal-copy"), field = document.getElementById("journal-content");
+    const setText = (text) => { if (notebook) field.value = text; else field.textContent = text; };
+    return { button, field, setText };
+  }
+  test(`Journal ${area} copies current text without retaining it on the control`, withPage("works", async (document) => {
+    const { button, field, setText } = journalPage(document);
+    for (const phrase of [VECTORS[0][2], VECTORS[1][2]]) {
+      const content = `first line\n  ${phrase}${notebook ? "" : "\n\n"}`;
+      setText(content);
+      await journal.hodlJournalCopyContent(button, field, notebook);
+      assert.equal(written.at(-1), content);
+      assert.deepEqual(leaks(button, phrase), [], "the control retains no payload during confirmation");
+      mock.timers.tick(1600);
+      assert.deepEqual(leaks(button, phrase), [], "the control retains no payload after confirmation");
+      assert.equal(button.getAttribute("aria-label"), button.dataset.copyLabel);
+    }
+    assert.equal(written.length, 2);
+  }));
+  test(`Journal ${area} uses the shared clipboard fallback`, withPage("none", async (document) => {
+    const { button, field, setText } = journalPage(document);
+    const content = `  ${VECTORS[0][2]}${notebook ? "" : "\n"}`;
+    setText(content);
+    // The fallback creates a temporary textarea. Locate that readonly field
+    // rather than the notebook's editable textarea.
+    document.execCommand = (command) => (executed.push([command, document.querySelector("textarea[readonly]")?.value]), true);
+    await journal.hodlJournalCopyContent(button, field, notebook);
+    assert.deepEqual(executed, [["copy", content]]);
+    assert.equal(document.querySelector("textarea[readonly]"), null);
+    assert.deepEqual(leaks(button, VECTORS[0][2]), []);
+  }));
+  for (const condition of ["disabled", "hidden source", "hidden control", "detached source", "detached control", "empty source"]) {
+    test(`Journal ${area} refuses a ${condition}`, withPage("works", async (document) => {
+      const { button, field, setText } = journalPage(document);
+      setText(VECTORS[0][2]);
+      if (condition === "disabled") button.disabled = true;
+      else if (condition === "hidden source") field.hidden = true;
+      else if (condition === "hidden control") button.hidden = true;
+      else if (condition === "detached source") field.remove();
+      else if (condition === "detached control") button.remove();
+      else setText("");
+      await journal.hodlJournalCopyContent(button, field, notebook);
+      assert.deepEqual(written, []);
+      assert.deepEqual(executed, []);
+      assert.deepEqual(leaks(button, VECTORS[0][2]), []);
+    }));
+  }
+}
 
 // ---- A seed word is data, not text to translate ----------------------------
 
@@ -332,6 +407,40 @@ test("the Journal's copy buttons still copy what they carry", withPage("works", 
 // words are keys: "account", "coin" and "online". The grid must show them, and
 // the button must copy them, unchanged in every language (#609 review).
 const LOCALES = ["es", "pt", "fr", "de"];
+const shell = readFileSync(new URL("../src/shell.html", import.meta.url), "utf8");
+for (const locale of LOCALES) {
+  test(`Journal user content remains exact after the ${locale} translation sweep`, withPage("works", async (document) => {
+    const noteMarkup = shell.match(/<div\b[^>]*\bid="journal-notes-render"[^>]*><\/div>/)?.[0];
+    assert.ok(noteMarkup, "fixture uses the actual notebook rendering surface");
+    document.body.innerHTML = `${noteMarkup}<div id="page-tabs"></div><div id="journal-keymanager-tabs"></div><div id="journal-keymanager-panel"></div><section id="journal-keymanager-ignored"><div id="journal-keymanager-ignored-list"></div></section><div id="journal-list"></div><div id="journal-view"></div>`;
+    const pages = [{ id: 1, number: 1, name: "account", notesText: "coin" }];
+    journalText.__set.hodlJournal({ pages, activePage: 0 });
+    journalText.hodlJournalRenderVisual({ value: "coin" });
+    document.getElementById("page-tabs").append(journalText.hodlCreateJournalPageTab(0));
+    journalText.__set.hodlKeys([]);
+    journalText.__set.hodlKeyManagerPending([{ id: 1, number: 1, name: "account", needsDerivation: true, result: null }]);
+    journalText.__set.hodlKeyManagerIgnored([{ id: 2, number: 2, name: "coin", needsDerivation: true, result: null }]);
+    journalText.hodlKeyManagerRender();
+    journalText.__set.hodlJournalDoc({ entries: [{ id: 1, label: "online", method: "dice", created: "2026-10-22", input: "account", phrase: "coin" }] });
+    journalText.hodlJournalRenderList();
+    journalText.hodlJournalOpenView(1);
+    const note = document.getElementById("journal-notes-render");
+    const pageLabel = document.getElementById("page-tabs").children[0].children[0];
+    const keyLabel = document.getElementById("journal-keymanager-tabs").children[0].children[1];
+    const keyHeading = document.getElementById("journal-keymanager-panel").querySelector("h3");
+    const archived = document.getElementById("journal-keymanager-ignored-list").querySelector("strong");
+    const recordLabel = document.getElementById("journal-list").children[0].children[1];
+    const recordHeading = document.getElementById("journal-entry-heading");
+    const names = [note, pageLabel, keyLabel, keyHeading, archived, recordLabel, recordHeading];
+    const before = names.map((node) => node.textContent);
+    hodlSetLocale(locale, false);
+    hodlApplyStaticI18n();
+    assert.deepEqual(names.map((node) => node.textContent), before);
+    assert.equal(note.textContent, "coin");
+    assert.equal(pages[0].name, "account");
+    assert.equal(pages[0].notesText, "coin");
+  }));
+}
 // Entropy whose phrase starts with the given words: their 11-bit indices, then
 // zero bits. @scure/bip39 turns it into the phrase, checksum word included.
 function entropyStartingWith(words, bytes) {

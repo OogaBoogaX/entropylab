@@ -20,22 +20,11 @@ function hodlError(key, vars) {
 }
 
 function loadSlice(name) {
-  const start = app.indexOf(`function ${name}(`);
-  assert.ok(start >= 0, name);
-  let depth = 0;
-  let end = -1;
-  for (let index = app.indexOf("{", start); index < app.length; index++) {
-    if (app[index] === "{") depth++;
-    else if (app[index] === "}") {
-      depth--;
-      if (depth === 0) {
-        end = index + 1;
-        break;
-      }
-    }
-  }
-  assert.ok(end > start, name);
-  return app.slice(start, end);
+  // Top-level declarations close at column zero. Braces in default
+  // parameters (options = {}) must not be mistaken for the function body.
+  const match = app.match(new RegExp(`^(?:async )?function ${name}\\([^]*?^}`, "m"));
+  assert.ok(match, name);
+  return match[0];
 }
 
 const hodlSha256 = (input) => new Uint8Array(createHash("sha256").update(input).digest());

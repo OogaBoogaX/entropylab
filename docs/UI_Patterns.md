@@ -159,7 +159,7 @@ Some values are geometry, not design decisions, and stay raw px on purpose
 - negative offsets and 1px border overlaps;
 - the number-base and D++ calculation panels, fitted to their grids;
 - room reserved for an overlay or button (the derivation index fields, the
-  Journal log's copy button);
+  Journal notes' copy button);
 - position nudges (`top`, `left`, `translate`);
 - the PSBT diagram's column gap, a few shadow strengths, and the 1px
   fairness marker;
@@ -265,6 +265,12 @@ is the temporary green checkmark, without adjacent visible status text.
 Editable input fields keep normal editing.
 Revealed private fields color their `.copy-field-label` with `--danger-bright`;
 private table headings use `.private-heading.is-revealed` for the same cue.
+Mixed reports use the same heading cue and `.inline-private-field-value`
+for blue private values without changing text layout. Their formatter supplies
+exact field ranges to `renderAnnotatedPrivateText()`. Saved snapshots recognize
+the app's report layout for the same display styling. These ranges never change
+the literal text, establish trust, or control reveal/copy permissions; the whole
+saved report keeps its private reveal and copy controls.
 
 Public derivation readouts carry `data-public-value` and remain selectable.
 `publicFieldHtml()` and `publicValueHtml()` in `src/js/public-data.js` group a

@@ -13,6 +13,8 @@ import assert from "node:assert/strict";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { createBase58check, hex } from "@scure/base";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
+import { HDKey } from "../src/js/hdkey.js";
+import { HDKey as ReferenceHDKey } from "@scure/bip32";
 
 const b58 = createBase58check(sha256);
 const wifOf = (key, network, compressed) => b58.encode(Uint8Array.from([network === "mainnet" ? 0x80 : 0xef, ...key, ...(compressed ? [1] : [])]));
@@ -167,4 +169,76 @@ test("a single key is recorded by the derivation that decodes it", async () => {
   assert.ok(control.rowKeys.includes(result.privateKey), "the derivation did not record the key bytes");
   api.hodlSettleDerivationKeys(control);
   assert.ok(result.privateKey.every((byte) => byte === 0), "an uncommitted single key kept its bytes");
+});
+
+// Live report annotations are emitted by the formatter, never inferred from
+// report text. They must preserve exact export bytes and cover actual private
+// values, while a public report must not ask for any private encoding.
+test("recovery report annotations cover only emitted private values and preserve text", async () => {
+  const api = await load(["hodlSingleKeyWallet", "hodlRecoverySheetText"]);
+  for (const [label, input, kind, network, key, expectedNetwork] of cases) {
+    const result = api.hodlSingleKeyWallet(input, network, kind);
+    result.notes = [WIKI_WIF]; // Public note text must never be classified by matching a secret.
+    const spans = [], text = api.hodlRecoverySheetText(result, true, spans);
+    assert.equal(text, api.hodlRecoverySheetText(result, true), label);
+    const values = spans.filter(span => span.kind === "value").map(span => text.slice(span.start, span.end));
+    assert.deepEqual(values, [...secretTexts(key, expectedNetwork), ...(kind === "minikey" ? [MINI] : [])], label);
+    assert.ok(spans.some(span => span.kind === "label" && span.end > span.start));
+    let end = 0;
+    for (const span of spans) {
+      assert.ok(span.start >= end && span.end > span.start && span.end <= text.length);
+      end = span.end;
+    }
+    const publicSpans = [];
+    const publicText = api.hodlRecoverySheetText(result, false, publicSpans);
+    assert.equal(publicText, api.hodlRecoverySheetText(result, false));
+    assert.deepEqual(publicSpans, []);
+  }
+});
+
+test("public recovery reports never invoke private encoding getters", async () => {
+  const forbidden = () => assert.fail("a public report encoded private material");
+  const api = await load(["hodlRecoverySheetText"], Object.fromEntries([
+    "hodlSingleWif", "hodlSinglePrivateHex", "hodlResultMinikey", "hodlResultMnemonic",
+    "hodlResultEntropyHex", "hodlResultSeedHex", "hodlResultRootXprv",
+    "hodlImportedPrivateKey", "hodlAccountPrivateKey", "hodlBranchPrivateDescriptor", "hodlRowWif",
+  ].map(name => [name, forbidden])));
+  const single = hodlSingleKeyWallet(WIKI_WIF, "mainnet", "wif");
+  const rootNode = { get privateExtendedKey() { forbidden(); } };
+  const hd = { kind: "hd", network: "mainnet", entropy: new Uint8Array(16), seed: WIKI_KEY, rootNode, accounts: [], notes: [], warnings: [] };
+  for (const wallet of [single, hd]) {
+    const spans = [];
+    assert.ok(api.hodlRecoverySheetText(wallet, false, spans));
+    assert.deepEqual(spans, []);
+  }
+});
+
+test("HD report annotations distinguish private keys and WIFs from public paths and xpubs", async () => {
+  // Published BIP32 vector 1; scure supplies independent child WIF bytes.
+  const xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+  const xpub = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8";
+  const reference = ReferenceHDKey.fromExtendedKey(xprv), rootNode = HDKey.fromExtendedKey(xprv);
+  const rowKey = reference.derive("m/0/0").privateKey;
+  const account = {
+    imported: true, def: { label: "Imported BIP32", bip: "BIP32", script: "p2wpkh" },
+    network: "mainnet", accountPath: "m", privateNode: rootNode,
+    primaryFamily: "x", primaryPrivateLabel: "xprv", primaryPublicLabel: "xpub", primaryPublic: xpub,
+    addressBranches: [{ branch: 0, publicDescriptor: `wpkh(${xpub}/0/*)`, rows: [{ index: 0, path: "m/0/0", address: "public address", network: "mainnet", privateKey: rowKey }] }],
+  };
+  const wallet = { kind: "hd", network: "mainnet", rootNode, rootXpub: xpub, accounts: [account], notes: [], warnings: [] };
+  const api = await load(["hodlRecoverySheetText"]), spans = [];
+  const text = api.hodlRecoverySheetText(wallet, true, spans);
+  assert.equal(text, api.hodlRecoverySheetText(wallet, true));
+  const values = spans.filter(span => span.kind === "value").map(span => text.slice(span.start, span.end));
+  assert.equal(values.length, 4);
+  assert.deepEqual(values.slice(0, 2), [xprv, xprv]);
+  assert.ok(values[2].startsWith(`wpkh(${xprv}/0/*)#`));
+  assert.equal(values[3], wifOf(rowKey, "mainnet", true));
+  assert.ok(!values.includes(xpub));
+  assert.ok(!values.includes("m/0/0"));
+  assert.ok(!values.includes("public address"));
+  const publicSpans = [];
+  assert.ok(!api.hodlRecoverySheetText(wallet, false, publicSpans).includes(xprv));
+  assert.deepEqual(publicSpans, []);
+  rootNode.wipePrivateData();
 });

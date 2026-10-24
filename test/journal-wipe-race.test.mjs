@@ -23,6 +23,7 @@ import {
   deriveJournalKeys,
   emptyDocument,
   openDocument,
+  mergeLogHistory,
   sealDocument,
   wipeBytes,
   wipeDocument,
@@ -66,8 +67,13 @@ const source = [
   varLine("hodlJournalUnlockBusy"),
   varLine("hodlJournalFileRead"),
   varLine("hodlJournalTool"),
-  varLine("hodlJournalEncryptDownloads"),
+  varLine("hodlJournalKeyDerivation"),
+  varLine("hodlJournalReportViewer"),
+  loadSlice("hodlJournalClearReport"),
+  loadSlice("hodlJournalActivePage"),
+  loadSlice("hodlJournalStartPage"),
   loadSlice("hodlJournalError"),
+  loadSlice("hodlJournalSetGateBusy"),
   loadSlice("hodlJournalWipeNotebook"),
   loadSlice("hodlJournalDiscardOpened"),
   loadSlice("hodlJournalChooseFile"),
@@ -77,10 +83,12 @@ const source = [
 ].join("\n");
 
 const PASSWORD = "correct horse battery staple";
+const FIRST_NOTE_STAMP = "2026-10-22 09:08:07";
 const noop = () => {};
 
 // Every DOM and cross-module touch the sliced functions make, stubbed neutral.
 const loadApp = ({ onOpen = (file, password) => openDocument(file, password), onCreate = (password, confirm) => createDocument(password, confirm) } = {}) => {
+  const journal = createJournal(), stamps = [];
   const fields = {
     "journal-open-password": { value: PASSWORD },
     "journal-create-password": { value: PASSWORD },
@@ -93,9 +101,10 @@ const loadApp = ({ onOpen = (file, password) => openDocument(file, password), on
     "wipeJournal", "hodlJournal", "hodlJournalWipeDocument", "hodlJournalWipeBytes",
     "hodlJournalOpenDocument", "hodlJournalCreateDocument", "hodlJournalMaxFileLength", "document",
     "hodlKeyManagerReset", "hodlJournalClearFields", "hodlJournalHideEditor", "hodlJournalSetGate",
-    "hodlJournalSyncEncryptDownloads", "hodlJournalShowWork", "hodlSyncJournalTool",
+    "hodlJournalShowWork", "hodlSyncJournalTool",
     "hodlRenderJournalPageTabs", "hodlJournalApplyPageStyle", "hodlJournalSetStatus",
-    "hodlShowJournalTool", "hodlJournalLog", "hodlJournalBackfillDerivedKeys",
+    "hodlShowJournalTool", "hodlJournalLog", "hodlTText", "hodlKeyManagerCancelDerivation", "hodlJournalStamp",
+    "hodlJournalCheckInventory", "hodlJournalMergeLogHistory",
     `${source}; return {
       choose: hodlJournalChooseFile,
       unlock: hodlJournalUnlock,
@@ -105,14 +114,16 @@ const loadApp = ({ onOpen = (file, password) => openDocument(file, password), on
       state: () => ({ keys: hodlJournalKeys, doc: hodlJournalDoc }),
     };`,
   )(
-    wipeJournal, createJournal(), wipeDocument, wipeBytes,
+    wipeJournal, journal, wipeDocument, wipeBytes,
     onOpen, onCreate, JOURNAL_MAX_FILE_LENGTH, documentStub,
     noop, noop, noop, noop,
+    noop, noop,
     noop, noop, noop,
-    noop, noop, noop,
-    noop, noop, noop,
+    noop, noop,
+    (text) => text, noop, () => { stamps.push(FIRST_NOTE_STAMP); return FIRST_NOTE_STAMP; },
+    noop, mergeLogHistory,
   );
-  return { ...api, error: () => fields["journal-error"].textContent };
+  return { ...api, journal, stamps, error: () => fields["journal-error"].textContent };
 };
 
 // An encrypted test notebook holding one seed entry, at the on-disk iteration
@@ -157,6 +168,10 @@ test("an undisturbed unlock still installs the notebook", async () => {
   assert.equal(env.state().doc.entries.length, 1);
   assert.equal(env.state().doc.entries[0].label, "seed entry");
   assert.ok(captured.keys, "the discarded keys object still existed to be dropped");
+  assert.equal(env.journal.notesText, "", "opening a legacy Journal must preserve its empty Notes page");
+  assert.equal(env.journal.pages[0].notesText, "");
+  assert.equal(env.journal.pages[0].pendingStamp, undefined, "opening must not turn an imported page into a live note");
+  assert.deepEqual(env.stamps, []);
 });
 
 test("a create that completes after a wipe discards the new notebook (issue #389)", async () => {
@@ -173,13 +188,22 @@ test("a create that completes after a wipe discards the new notebook (issue #389
   await pending;
   assert.deepEqual(env.state(), { keys: null, doc: null }, "the journal stays locked");
   assert.ok(captured, "the create did complete and its keys object was dropped");
+  assert.equal(env.journal.notesText, "", "a stale creation must not repopulate the wiped notes");
+  assert.equal(env.journal.pages[0].notesText, "");
+  assert.equal(env.journal.pages[0].pendingStamp, undefined);
+  assert.deepEqual(env.stamps, []);
 });
 
-test("an undisturbed create still installs the notebook", async () => {
+test("an undisturbed create installs the notebook with its first live timestamp", async () => {
   const env = loadApp();
   await env.create();
   assert.ok(env.state().keys && env.state().doc, "unlocked");
   assert.equal(env.state().doc.entries.length, 0);
+  assert.equal(env.journal.pages.length, 1);
+  assert.equal(env.journal.notesText, `${FIRST_NOTE_STAMP}  `);
+  assert.equal(env.journal.pages[0].notesText, env.journal.notesText);
+  assert.deepEqual(env.journal.pages[0].pendingStamp, { start: 0, stamp: FIRST_NOTE_STAMP });
+  assert.deepEqual(env.stamps, [FIRST_NOTE_STAMP]);
 });
 
 test("a stale unlock cannot displace a freshly opened session", async () => {

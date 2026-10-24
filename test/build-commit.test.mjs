@@ -60,12 +60,14 @@ const withRepo = (fn) => {
     const repo = join(dir, "repo");
     for (const path of COPIED) cpSync(join(root, path), join(repo, path), { recursive: true });
     git(repo, "init", "-q");
+    git(repo, "config", "gc.auto", "0");
+    git(repo, "config", "maintenance.auto", "false");
     // node_modules is linked, not committed, so commits record the sources alone
     writeFileSync(join(repo, ".gitignore"), "node_modules\n");
     linkModules(repo);
     return fn({ dir, repo, sources: commit(repo, "sources") });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 };
 

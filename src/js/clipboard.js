@@ -40,8 +40,8 @@ const fallbackCopy = (text, host) => {
 // clipboard the page might have written.
 let wroteClipboard = false;
 
-export const copyText = async (text, { host = document.body } = {}) => {
-  if (!text) return false;
+export const copyText = async (text, { host = document.body, isCurrent = () => true } = {}) => {
+  if (!text || !isCurrent()) return false;
   const writeText = navigator.clipboard?.writeText;
   if (typeof writeText === "function") {
     try {
@@ -50,6 +50,9 @@ export const copyText = async (text, { host = document.body } = {}) => {
       return true;
     } catch {}
   }
+  // A source can be cleared while the browser decides a native request.
+  // That request cannot be retracted, but it must not start a fresh fallback.
+  if (!isCurrent()) return false;
   const copied = fallbackCopy(text, host);
   if (copied) wroteClipboard = true;
   return copied;

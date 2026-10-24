@@ -102,15 +102,18 @@ material. Its security posture rests on the following model:
   parsed report and its rendered views), resets every Multisig tab, and the
   two body-level overlays — the expand editor (whose value can be an entire
   previous transaction) and the QR dialog — release their contents on close
-  and on page hide because station wipes cannot reach them. Locking the
+  and on page hide because station wipes cannot reach them. Clearing the
   Journal empties the session's unsecured text: the snapshot (which can
   hold the whole session's recovery texts), the notepad, and the session
-  log; the notebook's own entries come back from the journal file on
-  unlock. The
+  log, including historical snapshots restored from a backup. Opening a
+  complete journal file restores its saved sections; entry-only legacy files
+  restore only entries. The
   Vanity source block drops the passphrase it displayed the moment the key
-  pick is dropped. Journal teardown (including Lock) invalidates pending
+  pick is dropped. Journal teardown invalidates pending
   notebook and Key Manager imports at both file-read and decryption
-  boundaries. Obsolete completions cannot restore cleared state; this is
+  boundaries, and invalidates a pending complete-backup download. Changing
+  the chosen journal file while it decrypts also discards that obsolete open.
+  Obsolete completions cannot restore cleared state; this is
   not guaranteed erasure of immutable strings or browser-managed memory.
 - Secret byte buffers are overwritten after use, on a best-effort basis. The
   WASM bindings zero every linear-memory buffer before freeing it
@@ -230,41 +233,190 @@ material. Its security posture rests on the following model:
   upgrades it once a calendar has a block attestation. Verify upgraded
   proofs with `ots verify` against a local Bitcoin Core node. The calculator
   never stamps, upgrades, or fetches calendars.
-- The session Journal (notepad, session snapshot, session log) lives only in
+- The session Journal (notepad, session snapshot, debug log) lives only in
   this page's memory. It is never written to `localStorage`, IndexedDB, or the
   network. Closing or hiding the page discards it with the other secret
-  fields. Downloads from all three tabs reuse the unlocked Entropy Journal
-  keys and use Journal file encryption by default; the synchronized checkbox
-  can explicitly switch them back to plain JSON or text. If the Journal was
-  created without a password, its encoded downloads have no access protection.
-  The log records tool
-  names, timestamps, and fingerprints — not seed phrases, xprvs, or typed
-  secrets.
-- Key Manager lives behind the same unlocked Journal gate. Its `.elkeys`
+  fields. Notes, Keys, and Session share the Journal's password setting.
+  Complete backups and recovery section exports reuse its encryption keys;
+  there is no per-section switch to plaintext. Debug log exports use the same
+  protection setting. If the Journal was created
+  without a password, its encoded downloads have no access protection.
+  New log events record tool names, timestamps, public fingerprints, and
+  allowlisted settings. Freeform derivation paths record only that a change
+  occurred, so a private value pasted into that field is not retained in the
+  log. Seed phrases, xprvs, and other secret input fields are excluded.
+  Historical events imported from a backup are unverified literal text and
+  may contain secrets; this exclusion applies to newly recorded events.
+  Displayed/copied/exported fields escape controls, backslashes, and invisible
+  Unicode formatting or separators; stored backup fields remain literal.
+  Opening a backup combines its events with this session's events without
+  trusting timestamps or deduplicating records, then applies the retention
+  bounds and combines discarded counts. Entry-only files preserve this
+  session's existing log as well.
+  The debug history is bounded by 10,000 events and 512 KiB of serialized
+  UTF-8 JSON event data, with each event field limited to 300 characters.
+  Runtime eviction removes the oldest events and increments a visible
+  discarded-event count. Complete-backup parsing rejects invalid counts,
+  oversized fields, or a log exceeding either bound; it never silently trims
+  an imported log. Older backups without a discarded count default to zero.
+  The whole-document and encrypted-file limits are unchanged. The displayed
+  400-event page does not limit Copy, Export, or complete backups.
+- Inserted multisig note references contain only a descriptive name,
+  threshold, and ordered public co-signer fingerprints, with missing origins
+  retained as unknowns. They never install wallets or identify keys for
+  derivation. Import validates reference thresholds and fingerprint shapes;
+  ordinary note text remains untrusted text, never HTML.
+- The Journal's **Clear journal** control requires an explicit discard
+  choice. Its confirmation also offers a backup download and Cancel; both
+  preserve the open Journal. Starting a download does not prove the browser
+  saved the file, so it never automatically clears the Journal. Confirmed
+  discard wipes the Journal's password, entries, notes, pending and archived
+  key inputs, snapshots, and log on a best-effort basis. Keys still open in
+  Key Station and its unfinished draft remain available. Pagehide cleanup
+  remains unconditional and does not open this confirmation.
+- A complete Journal download seals entries, notepad pages, managed/ignored
+  source inputs (including an unfinished Key Station form), saved historical
+  snapshots, the current private recovery snapshot, and the log in one
+  authenticated payload. The on-screen reveal
+  controls independently govern current and historical display, copying,
+  and separate snapshot exports; they do not omit recovery material from a
+  complete backup. Unfinished inputs are captured verbatim and restore as
+  unverified pending inputs with fresh IDs; they cannot overwrite an existing
+  draft or install cached outputs. Empty forms are excluded. Journal creation,
+  opening, and collection refuse an overflowing input inventory or an active
+  key derivation before changing state. Standalone derivation has no Journal
+  inventory limit. Revealing one report never reveals the other. Live snapshots
+  mark private labels and values at their formatting sites; only those explicit
+  ranges receive private field styling. Saved and opened snapshots recognize
+  the app's report headings and field layout for display styling only. This
+  does not validate keys, infer wallet state, or establish trust in the saved
+  contents. Unknown report text remains plain, and all text is inserted as
+  literal text nodes, never HTML. The entire saved report stays behind its own
+  reveal control and private copy path, regardless of individual field colors.
+  Formatting preserves the exact report text used by copy and export and adds
+  no metadata to the backup or export format. It uses document
+  version 3 inside the unchanged version 2 encrypted
+  envelope; entry-only version 2 documents remain readable. Every component
+  is parsed and bounded before installation. Complete backups allow up to
+  2,097,152 UTF-16 code units of combined plaintext, providing room for the new
+  sections around legacy records. Legacy documents and individual fields keep
+  their existing 1,048,576-unit limits. Downloaded JSON still cannot exceed
+  4 MiB; UTF-8 expansion and envelope overhead can exhaust that limit sooner.
+  A larger backup is refused
+  rather than silently truncated. Imported snapshots are untrusted historical
+  text and remain concealed until revealed; they cannot install live wallets
+  or session state. Backup-only snapshots omit recomputable HD address/WIF
+  rows and multisig address rows while retaining root/seed/account recovery
+  material, descriptors, and BIP-85 child secrets. Formatter failure refuses
+  the backup. Existing historical text is never truncated. An optional validated
+  offset identifies the most recent appended report for comparison only;
+  a changed capture time alone or an empty restored session adds no duplicate.
+  New derived reports preserve all earlier recovery text within the same limit.
+  Historical snapshot text is retained by default. An
+  explicit, confirmed removal drops it from this Journal's display and future
+  backups without changing the current session, notes, or key inputs. A
+  confirmation captured before Journal Clear or replacement cannot remove
+  a newer snapshot; downloaded files are unaffected. The no-password
+  acknowledgement applies to the entire backup. Restored key inputs still
+  require fresh derivation, including when
+  the backup was password protected. The whole backup always uses the
+  Journal's password setting. Historical entry-only records remain readable
+  and are preserved in complete backups; the interface no longer creates
+  manual entries or duplicates derived keys into new entry records.
+  Editing an existing record is explicit. Temporary fields are scrubbed when
+  editing ends, and stale callbacks cannot change a replacement Journal.
+  Changing recovery material removes its unverified historical wallet link.
+  Complete backup refuses an open record editor so an unsaved draft cannot
+  be mistaken for backed-up content. Section exports, including Debug log,
+  follow the same Journal password setting. The read-only Session report
+  viewer accepts only authenticated snapshot or debug log exports using the
+  open Journal's keys, bounded by the same 4 MiB file limit. Report contents
+  are untrusted literal text and start concealed, regardless of export kind.
+  Revealed text uses the shared private copy path. Close, automatic concealment,
+  Journal Clear, and pagehide drop the viewer's text and invalidate pending
+  reads; it never installs wallets or appends imported report text to the log.
+  Clear debug log offers Export first, Clear, and Cancel. Export first leaves
+  the data intact and requires a separate explicit Clear after download handoff;
+  dismissing the dialog invalidates its pending export. It rejects stale confirmations after
+  Journal replacement or teardown. It scrubs the old events on a best-effort
+  basis and starts a fresh log with one clear event. Pending exports cannot
+  hand off the old log after Clear, and pending copy/export outcomes cannot
+  repopulate it. A pending native clipboard rejection cannot start a fallback
+  copy of the cleared log. Clearing cannot retract text already sent to the clipboard
+  or files already downloaded. Copy and export capture all retained events
+  before recording their own outcome. A download-started event confirms only
+  browser handoff, not a saved file. Exports retain the `session-log` envelope
+  kind for compatibility.
+- Keys lives behind the same unlocked Journal gate. Its `.elkeys`
   exports reuse the Journal's deterministic export encryption and optional password;
   the Key Manager does not generate a salt, nonce, password, or key material.
-  Version 2 vaults store source inputs/settings, not cached wallet results.
+  Key exports include all available and archived source inputs; there is no
+  inclusion selection that silently changes export scope. Version 2 vaults
+  store source inputs/settings, not cached wallet results.
   Both version 1 and 2 imports discard cached results, claimed identities,
-  and any claimed verification state. Imports (including ignored entries)
-  are labeled unverified and must be loaded into the lab and freshly derived
-  before becoming station wallets or supplying outputs to other tools.
+  file-local IDs, and any claimed verification state. A present portable
+  passphrase must be a string; malformed passphrases reject the complete file
+  before preview or mutation, including when they occur in archived inputs.
+  The import preview names the inputs and counts archived entries. Confirming
+  installs them and derives active inputs; archive-only files stay archived.
+  Canceling the preview installs
+  nothing. Imported and restored inputs, including archived entries, cannot
+  supply wallet outputs before fresh derivation. A complete backup restores
+  active inputs as pending and keeps archived inputs archived; **Derive all
+  pending** starts derivation of the pending inputs. **Restore and derive**
+  uses that same fresh-derivation path for one archived input set, preserving
+  the restored inputs if derivation fails or stops.
+  Derivation uses each input's saved chain and rejects unknown chains or a
+  chain incompatible with the input's network family.
+  Import matching uses the freshly derived full-root identity or a single
+  key's compressed public key, never a four-byte fingerprint or a file's
+  claimed identity. Ordinary manual single-key derivation is unchanged.
+  Exact setup reuse also requires
+  matching network, scripts, derivation paths and ranges, purpose settings,
+  and recovery capabilities. It preserves the existing station object and
+  archives the imported source inputs. If a reviewed draft changed those
+  inputs, reuse also preserves the corrected inputs as a distinct archive
+  entry; archive capacity is checked before either source is consumed.
+  A different setup requires a choice
+  to keep the existing setup, add a separate one, or stop the remaining
+  derivations. Keeping the existing setup leaves the imported inputs pending.
+  Account-level imports without a comparable full-root identity are appended
+  conservatively rather than used to replace a key.
+  Failed, skipped, and unprocessed inputs remain pending; completed keys
+  remain when a batch stops. Existing low-entropy and fingerprint-collision
+  checks still apply.
   Re-derivation proves consistency with the supplied inputs, not that the
   sender lacks a copy of the key or that the inputs have adequate entropy.
-  Imported private material remains in page memory and is not loaded into Key
-  Station until the user explicitly chooses it. Locking or clearing the
-  Journal drops pending and ignored Key Manager entries on a best-effort basis.
+  During a batch, the unfinished Key Station draft remains a live owner of
+  its secret material while temporary inputs are derived. Completing or
+  stopping the batch restores that draft and the previous station selection;
+  it must not wipe material the draft still owns. Reviewing an input for
+  manual editing asks before replacing a nonempty draft. A reviewed draft
+  keeps its saved chain and setup checks after its original inputs are
+  archived or cleared from Journal. Exact reuse after Journal Clear keeps
+  the reviewed inputs in the draft and uses the existing key without
+  creating another tab or reopening Journal. Import, archive, and restore refuse
+  competing derivations; obsolete restore callbacks cannot revive removed
+  inputs. Journal Clear
+  cancels the batch and restores the draft before clearing Journal content.
+  End Session and pagehide instead clear the retained draft along with the
+  other session secrets. Pending decisions are dismissed and obsolete work
+  cannot commit after teardown. Temporary input copies and dropped wallet
+  buffers are cleared on a best-effort basis; the browser-memory limits
+  below still apply. Archiving is limited to detached inputs and does not
+  unload live Key Station keys; restoring them requires fresh derivation.
 - The Entropy Journal notebook holds entropy the user
   already produced, not a password manager and not a key generator. The
   AES-256-GCM key is PBKDF2-SHA-256 (600,000 rounds) of the optional password
   the user types, with the salt derived from the password itself; the IV is
   HMAC-SHA-256 of the plaintext under a second derived key. The file is
-  therefore a deterministic function of the password and the entries — the
+  therefore a deterministic function of the password and backup content — the
   journal never calls a CSPRNG. The trade-off is brute-force cost: anyone
   holding a password-protected file can test passwords at 600,000 SHA-256
   rounds per guess, so a password should have real length. An empty password
   is allowed to preserve a frictionless local workflow and the same file
   format, but it provides no access protection: anyone with the file can open
-  every entry by leaving the password blank. The plaintext never goes to
+  every saved section by leaving the password blank. The plaintext never goes to
   localStorage, IndexedDB, or the network.
 - Low-entropy dice and card transcripts are accepted intentionally so the
   calculator can be used for deterministic tests, demonstrations, and
@@ -370,9 +522,9 @@ completely (its reports included), resets every Multisig form, and empties
 the panels that echo what you typed (dealt cards, the worked calculations,
 the fairness tally, the progress lines) and the two dialogs (the value
 editor and the QR view) — the dialogs also drop their contents the moment
-you close them. Locking the Journal empties the session snapshot, the
-notepad, and the session log; what an unlock restores is the notebook the
-journal file holds, nothing looser. The WebAssembly modules overwrite every
+you close them. Clearing the Journal empties the session snapshot, the
+notepad, and the debug log, including imported historical snapshots;
+reopening restores only the data held in the saved journal file. The WebAssembly modules overwrite every
 buffer passed in or out and their working stacks after they run, and the
 PSBT module also wipes the whole-file copies its exports assemble. Vanity
 shuts its workers and their module down when a run ends. The

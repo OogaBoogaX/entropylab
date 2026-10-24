@@ -8,15 +8,17 @@ import vm from "node:vm";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { NETWORK, p2wpkh } from "@scure/btc-signer";
-import { createJournal, wipeJournal } from "../src/js/journal.js";
+import { JOURNAL_MAX_FILE_LENGTH, createJournal, wipeJournal } from "../src/js/journal.js";
 import { createBase58check, hex } from "@scure/base";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
 import { MiniDocument } from "./mini-dom.mjs";
 import { HDKey } from "../src/js/hdkey.js";
 import { hex as appHex } from "../src/js/coders.js";
-import { keyVaultIdentity } from "../src/js/keymanager.js";
+import { KEY_VAULT_MAX_KEYS, keyVaultIdentity } from "../src/js/keymanager.js";
 import { hodlInitLn } from "../src/js/lightning.js";
+import { initLowEntropyConfirm } from "../src/js/low-entropy-confirm.js";
+import { initFingerprintCollisionConfirm } from "../src/js/fingerprint-collision-confirm.js";
 
 // The helpers that zero address-row key bytes (#546 B2). The lifecycle
 // harness loads whichever of them app.js defines, so a source without them
@@ -46,6 +48,10 @@ const passphraseHelpers = ["hodlPassphraseVaultActive", "hodlPassphraseFieldByte
 function createContext(sandbox) {
   const context = vm.createContext({
     hodlPassphraseVaultField: null, hodlPassphraseShown: false, hodlStationPassphraseFields: null,
+    hodlJournalClearConfirm: null, hodlJournalPageDeleteConfirm: null,
+    hodlJournalKeyDerivation: null, hodlJournalKeyImportConfirm: null, hodlKeyManagerFileRequest: 0,
+    hodlLowEntropyConfirm: null, hodlFingerprintCollisionConfirm: null,
+    hodlKeyManagerCancelDerivation() {},
     // Session state hodlReleaseKeyConsumers reads; a key drop releases any
     // consumer bound to it (PSBT, BIP-85, Silent Payments, vanity).
     hodlPsbtSource: "", hodlBip85Source: "", hodlSpSource: "", hodlSpVerifyMatches: null,
@@ -72,7 +78,7 @@ function raceHarness() {
     },
     addEventListener: (type, callback) => { events[type] = callback; },
     hodlActiveDerivation: { kind: "key", cancelled: false }, hodlDerivationGeneration: 0, hodlCommittedResults: new Set(),
-    hodlJournalGeneration: 0, hodlJournalKeys: {}, hodlJournal: {},
+    hodlJournalGeneration: 0, hodlJournalKeys: {}, hodlJournal: {}, hodlJournalMaxFileLength: JOURNAL_MAX_FILE_LENGTH,
     hodlKeys: [{ id: 1, number: 1, fields: {}, result: null }], hodlActiveKey: 0, hodlKeyManagerPending: [],
     hodlMsigs: [], hodlActiveMsig: -1,
     hodlNewMsigState: (name, id, number) => ({ name, id, number, fields: { descriptor: "", xpubs: ["", "", ""] }, result: null }),
@@ -98,7 +104,7 @@ function raceHarness() {
   fields.set("pass", { value: "private passphrase", dataset: {} });
   fields.set("dice", { value: "1 2 3 4 5 6", dataset: { previousValue: "1 2 3 4 5 6" } });
   for (const name of ["hodlThrowIfFailed", "hodlSetSelectedScriptType", "hodlCaptureKey",
-    "hodlSnapshotKeySummary", "hodlCommitDerivedKey", "hodlJournalCaptureDerivedKey",
+    "hodlSnapshotKeySummary", "hodlCommitDerivedKey",
     "hodlFocusWalletResult", "hodlJournalLog", "hodlSetWorkspaceError", "hodlJournalSetStatus",
     "hodlKeyManagerStatus", "hodlPsbtWipeMem", "hodlBip85WipeMem", "hodlBip85WipeParent",
     "hodlDropBip85ChildrenOf", "hodlSpWipeMem",
@@ -117,6 +123,149 @@ function raceHarness() {
   context.hodlInitSecretFieldAutoClear();
   return { context, pending, decryptStarted, events, effects, mirrors, fields };
 }
+
+// Use the actual dialogs so teardown must release the promises held by a
+// paused derivation, not merely hide a fake overlay. A normal pageshow keeps
+// the live session; pagehide and a persisted restore cancel and wipe it.
+async function withDerivationWarnings(run) {
+  const savedDocument = globalThis.document, savedStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const document = new MiniDocument(), focused = [];
+  globalThis.document = document;
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: () => null, setItem() {} } });
+  const warnings = [];
+  try {
+    warnings.push(
+      { name: "low entropy", global: "hodlLowEntropyConfirm", prefix: "low-entropy", dialog: initLowEntropyConfirm(), payload: { bits: "25.8", recommended: 256, words: 24 } },
+      { name: "fingerprint collision", global: "hodlFingerprintCollisionConfirm", prefix: "fingerprint-collision", dialog: initFingerprintCollisionConfirm(), payload: "deadbeef" },
+    );
+    for (const node of document.querySelectorAll("button, input")) {
+      node.focus = () => { document.activeElement = node; focused.push(node); };
+      node.click = () => node.dispatchEvent({ type: "click", target: node });
+    }
+    const opener = document.createElement("button");
+    opener.focus = () => { document.activeElement = opener; focused.push(opener); };
+    document.body.append(opener);
+    opener.focus();
+    const open = (warning) => {
+      warning.calls = [];
+      warning.decision = warning.dialog.open(warning.payload,
+        () => warning.calls.push(true), () => warning.calls.push(false));
+      warning.decision.then((value) => { warning.outcome = value; });
+      return warning.decision;
+    };
+    await run({ document, warnings, open, focused });
+  } finally {
+    for (const warning of warnings) try { warning.dialog.close({ restoreFocus: false }); } catch {}
+    globalThis.document = savedDocument;
+    if (savedStorage) Object.defineProperty(globalThis, "localStorage", savedStorage);
+    else delete globalThis.localStorage;
+  }
+}
+
+for (const event of ["pagehide", "pageshow"]) {
+  test(`${event} cancels the Journal derivation and wipes its parked draft before invalidation`, () => {
+    const { context, events, fields } = raceHarness(), calls = [];
+    const passphrase = new Uint8Array([1, 2, 3]);
+    const draft = { fields: { seed: "private seed", pass: passphrase } };
+    const transaction = { draft, temporary: [], generation: 0, activeId: 1, cancelled: false };
+    context.hodlJournalKeyDerivation = transaction;
+    // The batch suite tests the real cancel helper. This boundary must ask
+    // it to erase the parked draft, unlike an ordinary Journal clear.
+    context.hodlKeyManagerCancelDerivation = (options) => {
+      calls.push("cancel");
+      assert.equal(options?.wipeDraft, true);
+      transaction.cancelled = true;
+      passphrase.fill(0);
+      draft.fields.seed = "";
+      transaction.draft = null;
+      context.hodlJournalKeyDerivation = null;
+    };
+    const invalidate = context.hodlInvalidateDerivation;
+    context.hodlInvalidateDerivation = () => { calls.push("invalidate"); invalidate(); };
+    events[event]({ persisted: true });
+    assert.deepEqual(calls.slice(0, 2), ["cancel", "invalidate"]);
+    assert.equal(transaction.cancelled, true);
+    assert.equal(transaction.draft, null);
+    assert.equal(context.hodlJournalKeyDerivation, null);
+    assert.ok(passphrase.every((value) => value === 0));
+    assert.equal(draft.fields.seed, "");
+    assert.equal(fields.get("pass").value, "");
+  });
+
+  test(`${event} settles both derivation warnings once without restoring focus`, async () => {
+    await withDerivationWarnings(async ({ document, warnings, open, focused }) => {
+      const { context, events } = raceHarness();
+      for (const warning of warnings) {
+        context[warning.global] = warning.dialog;
+        open(warning);
+      }
+      focused.length = 0;
+      events[event]({ persisted: true });
+      await Promise.resolve();
+      for (const warning of warnings) {
+        assert.equal(warning.outcome, false, `${warning.name}: teardown left a suspended decision`);
+        assert.equal(warning.dialog.isOpen(), false);
+        assert.deepEqual(warning.calls, [false]);
+        document.getElementById(`${warning.prefix}-proceed`).click();
+        warning.dialog.close();
+        assert.deepEqual(warning.calls, [false], "a late click cannot restart a wiped derivation");
+      }
+      assert.deepEqual(focused, [], "teardown must not focus a field that is being wiped");
+    });
+  });
+}
+
+test("an ordinary pageshow preserves the batch and its pending warning decisions", async () => {
+  await withDerivationWarnings(async ({ document, warnings, open, focused }) => {
+    const { context, events, fields } = raceHarness();
+    const draft = { fields: { seed: "private seed" } }, transaction = { draft, cancelled: false };
+    context.hodlJournalKeyDerivation = transaction;
+    let cancelled = false;
+    context.hodlKeyManagerCancelDerivation = () => { cancelled = true; };
+    for (const warning of warnings) {
+      context[warning.global] = warning.dialog;
+      open(warning);
+    }
+    focused.length = 0;
+    events.pageshow({ persisted: false });
+    await Promise.resolve();
+    assert.equal(cancelled, false);
+    assert.equal(context.hodlJournalKeyDerivation, transaction);
+    assert.equal(draft.fields.seed, "private seed");
+    assert.notEqual(fields.get("pass").value, "");
+    assert.deepEqual(focused, []);
+    for (const warning of warnings) {
+      assert.equal(warning.outcome, undefined);
+      assert.equal(warning.dialog.isOpen(), true);
+      document.getElementById(`${warning.prefix}-proceed`).click();
+      assert.equal(await warning.decision, true, "only explicit Proceed accepts the live request");
+    }
+  });
+});
+
+test("a failing batch cancel or warning callback cannot skip other teardown work", async () => {
+  await withDerivationWarnings(async ({ warnings, open, focused }) => {
+    const { context, events, fields } = raceHarness(), calls = [];
+    context.hodlKeyManagerCancelDerivation = () => { calls.push("cancel"); throw new Error("mid-update"); };
+    const [low, collision] = warnings;
+    context.hodlLowEntropyConfirm = low.dialog;
+    context.hodlFingerprintCollisionConfirm = collision.dialog;
+    low.decision = low.dialog.open(low.payload, undefined, () => { calls.push("low closed"); throw new Error("callback failure"); });
+    low.decision.then((value) => { low.outcome = value; });
+    open(collision);
+    focused.length = 0;
+    events.pagehide({});
+    await Promise.resolve();
+    assert.deepEqual(calls, ["cancel", "low closed"]);
+    assert.equal(low.outcome, false);
+    assert.equal(collision.outcome, false, "one warning's callback must not strand the other promise");
+    assert.equal(low.dialog.isOpen(), false);
+    assert.equal(collision.dialog.isOpen(), false);
+    assert.deepEqual(focused, []);
+    assert.equal(context.hodlJournalGeneration, 1);
+    assert.equal(fields.get("pass").value, "");
+  });
+});
 
 for (const teardown of ["clear", "pagehide", "pageshow", "stop"]) {
   for (const rejects of [false, true]) test(`${teardown} discards a late derivation ${rejects ? "error" : "result"}`, async () => {
@@ -223,6 +372,10 @@ for (const name of ["hodlJournalImportFile", "hodlKeyManagerImportFile"]) {
   for (const phase of ["read", "decrypt"]) {
     for (const rejects of [false, true]) test(`${name} discards stale ${phase} ${rejects ? "failure" : "completion"}`, async () => {
       const { context, pending, decryptStarted, effects } = raceHarness();
+      // The import must start idle so this test reaches the asynchronous
+      // read/decrypt boundary whose late completion is being rejected.
+      context.hodlActiveDerivation = null;
+      context.hodlJournalKeyDerivation = null;
       const read = deferred();
       const operation = context[name]({ size: 1, name: "notes.elkeys", text: () => read.promise });
       if (phase === "decrypt") {
@@ -336,9 +489,7 @@ test("Entropy Journal password, entries, and encrypted session are explicitly cl
   assert.match(lifecycle, /hodlJournalWipeMem\(\)/);
   assert.match(app, /function hodlJournalWipeMem\(\) \{[\s\S]*?hodlJournalWipeNotebook\(\)[\s\S]*?hodlJournalClearFields\(\)/);
   assert.match(app, /journal-create-password/);
-  assert.match(app, /journal-input/);
-  assert.match(app, /journal-phrase/);
-  assert.match(app, /journal-entry-notes/);
+  assert.match(app, /journal-search/);
 });
 
 test("Silent Payments session key and passphrase fields are explicitly cleared", () => {
@@ -454,17 +605,23 @@ test("dropping the vanity key pick clears the note the source block showed", () 
   assert.equal(elements.get("vanity-pass-note").textContent, "", "unpicking left the passphrase note behind");
 });
 
-test("journal Lock empties the snapshot, the notepad and the session log", () => {
+test("journal Clear empties the snapshot, the notepad and the session log", () => {
   // With #journal-state-private ticked, #journal-state-text holds the whole
   // session's recovery texts — seed words, xprvs, WIFs. And the notepad plus
   // the session log are free text the user pasted keystrokes into. #522:
-  // a locked journal keeps none of it (#625 review follow-up).
+  // a cleared journal keeps none of it (#625 review follow-up).
   const elements = new Map([
-    ["journal-state-text", { textContent: "24 seed words and xprvs", dataset: {} }],
+    ["journal-state-text", { textContent: "24 seed words and xprvs", dataset: {}, removeAttribute() {} }],
+    ["journal-saved-state-text", { textContent: "saved private marker", dataset: {}, removeAttribute() {} }],
+    ["journal-saved-state-private", { checked: true }],
     ["journal-state-private", { checked: true, dataset: {} }],
     ["journal-status-note", { textContent: "", dataset: {} }],
     ["journal-notes-text", { value: "dice rolls and brain text", dataset: {} }],
     ["journal-log-out", { textContent: "journal-unlock 12:00", dataset: {} }],
+    ["journal-log-range", { textContent: "imported timestamp secret" }],
+    ["journal-log-status", { textContent: "old usage" }],
+    ["journal-log-truncated", { textContent: "old discarded history", hidden: false }],
+    ["journal-log-navigation", { hidden: false }],
   ]);
   const journal = createJournal();
   journal.pages[0].notesText = "dice rolls and brain text";
@@ -477,18 +634,25 @@ test("journal Lock empties the snapshot, the notepad and the session log", () =>
     hodlKeyManagerReset() {}, hodlJournalWipeNotebook() {}, hodlJournalClearFields() {},
     hodlJournalHideEditor() {}, hodlJournalSetGate() {}, hodlJournalShowWork() {},
     hodlSyncJournalTool() {}, hodlJournalLog() {}, hodlRenderJournalPageTabs() {},
-    hodlJournalApplyPageStyle() {}, hodlJournalResetPendingNote(field, label) { field.dataset.pendingNote = label; },
-    hodlJournalTool: "book",
+    hodlJournalSetStatus() {},
+    hodlJournalApplyPageStyle() {}, hodlJournalRenderVisual() {},
+    hodlJournalTool: "notes",
+    // Clear's log and status lines go through the translation helper.
+    hodlTText: (text) => text,
   });
-  vm.runInContext(`${functionSource("hodlJournalLock")}\nhodlJournalLock();`, context);
-  assert.equal(elements.get("journal-state-text").textContent, "", "Lock left the session snapshot filled");
-  assert.equal(elements.get("journal-state-private").checked, false, "Lock left the private toggle ticked");
-  assert.equal(elements.get("journal-notes-text").value, "", "Lock left the notepad filled");
-  assert.equal(elements.get("journal-log-out").textContent, "No events yet.", "Lock left the session log rendered");
-  assert.equal(journal.pages.length, 1, "Lock left notepad pages behind");
-  assert.equal(journal.pages[0].notesText, "", "Lock left notepad text behind");
-  assert.equal(journal.log.length, 0, "Lock left the session log in memory");
-  assert.equal(journal.stateText, "", "Lock left the snapshot's in-memory text");
+  vm.runInContext(`${functionSource("hodlJournalWipeMem")}\nhodlJournalWipeMem();`, context);
+  assert.equal(elements.get("journal-state-text").textContent, "", "Clear left the session snapshot filled");
+  assert.equal(elements.get("journal-state-private").checked, false, "Clear left the private toggle ticked");
+  assert.equal(elements.get("journal-saved-state-text").textContent, "");
+  assert.equal(elements.get("journal-saved-state-private").checked, false);
+  assert.equal(elements.get("journal-notes-text").value, "", "Clear left the notepad filled");
+  assert.ok(!elements.get("journal-log-out").textContent.includes("journal-unlock 12:00"), "Clear left the session log rendered");
+  for (const id of ["journal-log-range", "journal-log-status", "journal-log-truncated"]) assert.equal(elements.get(id).textContent, "", "Clear left debug history metadata in the DOM");
+  assert.equal(elements.get("journal-log-navigation").hidden, true);
+  assert.equal(journal.pages.length, 1, "Clear left notepad pages behind");
+  assert.equal(journal.pages[0].notesText, "", "Clear left notepad text behind");
+  assert.equal(journal.log.length, 0, "Clear left the session log in memory");
+  assert.equal(journal.stateText, "", "Clear left the snapshot's in-memory text");
 });
 
 // Conceal-on-leave (blur, visibility-hidden, five idle minutes — all landing
@@ -509,7 +673,6 @@ async function loadJournalConcealSlice() {
   // to keep a wide but unused closure out of the slice.
   const stubs = {
     hodlRecoverySheetText: () => "",
-    hodlJournalFillWallets: () => {},
     hodlJournalShowWork: () => {},
     hodlRenderJournalNotes: () => {},
     hodlKeyManagerRender: () => {},
@@ -524,7 +687,7 @@ async function loadJournalConcealSlice() {
     // The slice's load-time form-element lookups need a document to call into.
     Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
     try {
-      journalConcealSlice = await loadAppFunctions(["hodlInitJournalToolTabs", "hodlConcealPrivateValues", "hodlJournalRefreshSessionState"], { stubs, settable: ["hodlBip85Children"] });
+      journalConcealSlice = await loadAppFunctions(["hodlInitJournalToolTabs", "hodlConcealPrivateValues", "hodlJournalRefreshSessionState"], { stubs, settable: ["hodlBip85Children", "hodlJournal"] });
     } finally {
       delete globalThis.__ENTROPYLAB_TEST_HOOKS__;
       delete globalThis.document;
@@ -541,15 +704,20 @@ function journalSessionStateHarness(slice) {
   const page = new MiniDocument();
   globalThis.document = page;
   page.body.innerHTML = '<div id="journal-tool-tabs"></div><div id="journal-page-tabs"></div><div id="journal-keymanager-tabs"></div>'
-    + '<section id="journal-card"></section><section id="journal-notes-card"></section>'
+    + '<section id="journal-card"></section><section id="journal-notes-card"></section><section id="journal-session-card"></section>'
     + '<section id="journal-keymanager-card"></section><section id="journal-log-card"></section>'
-    + `<section id="journal-state-card"><label>${boxTag[0]}</label><pre id="journal-state-text"></pre></section>`;
+    + `<section id="journal-state-card"><label>${boxTag[0]}</label><pre id="journal-state-text"></pre></section>`
+    + `<section id="journal-state-history"><label>${readFileSync(join(root, "src/shell.html"), "utf8").match(/<input\s[^>]*\bid="journal-saved-state-private"[^>]*>/)[0]}</label><pre id="journal-saved-state-text"></pre></section>`;
   slice.hodlInitJournalToolTabs();
   const secret = "bip85-child-secret-0fe1d2c3";
   slice.__set.hodlBip85Children([{ id: 9, isLab: false, name: "Child A", fingerprint: "deadbeef", result: { app: "bip39", secret } }]);
+  const journal = createJournal();
+  journal.backup = { snapshot: { text: "historical private marker", includePrivate: false } };
+  slice.__set.hodlJournal(journal);
+  const savedBox = page.getElementById("journal-saved-state-private"), savedText = page.getElementById("journal-saved-state-text");
   const box = page.getElementById("journal-state-private"), text = page.getElementById("journal-state-text");
   return {
-    box, text, secret,
+    box, text, secret, savedBox, savedText,
     change: () => box.dispatchEvent(new Event("change", { bubbles: true })),
     done: () => { slice.__set.hodlBip85Children([]); delete globalThis.document; },
   };
@@ -564,7 +732,12 @@ test("conceal-on-leave masks the session-state snapshot and unticks its box", as
     // The on-screen state the user stepped away from, however it got there.
     slice.hodlJournalRefreshSessionState();
     assert.ok(page.text.textContent.includes(page.secret), "the ticked box should put private material into the snapshot");
+    page.savedBox.checked = true;
+    page.savedBox.dispatchEvent(new Event("change", { bubbles: true }));
+    assert.ok(page.savedText.textContent.includes("historical private marker"));
     slice.hodlConcealPrivateValues();
+    assert.equal(page.savedBox.checked, false);
+    assert.ok(!page.savedText.textContent.includes("historical private marker"));
     assert.equal(page.box.checked, false, "conceal left the snapshot's private box ticked");
     assert.ok(!page.text.textContent.includes(page.secret), "conceal left private recovery material in the rendered snapshot");
     assert.ok(page.text.textContent.includes("Private material: omitted"), "conceal did not re-render the snapshot masked");
@@ -972,6 +1145,23 @@ const walletWithRows = (Bytes = Uint8Array) => {
 };
 const zeroed = (rows) => rows.every((row) => row.privateKey.every((byte) => byte === 0));
 
+test("a parked Journal batch draft owns its wallet until it is restored or wiped", () => {
+  const { context } = raceHarness(), parked = walletWithRows(), temporary = walletWithRows();
+  const expected = parked.rows.map((row) => Uint8Array.from(row.privateKey));
+  context.hodlJournalKeyDerivation = { draft: { result: parked.result } };
+  context.hodlCommittedResults.add(parked.result);
+  const control = { rowKeys: [...parked.rows, ...temporary.rows].map((row) => row.privateKey), nodes: [] };
+  context.hodlDisposeDroppedWallets();
+  context.hodlSettleDerivationKeys(control);
+  assert.deepEqual(parked.rows.map((row) => row.privateKey), expected, "cancelling temporary work must not erase the unrelated parked draft");
+  assert.ok(context.hodlCommittedResults.has(parked.result));
+  assert.ok(zeroed(temporary.rows), "unowned temporary row keys must still be erased");
+  context.hodlJournalKeyDerivation = null;
+  context.hodlDisposeDroppedWallets();
+  assert.ok(zeroed(parked.rows), "dropping the draft's last owner must erase its row keys");
+  assert.equal(context.hodlCommittedResults.has(parked.result), false);
+});
+
 test("Wipe zeroes a wallet's row key bytes unless another key tab still shows the wallet", () => {
   for (const shared of [false, true]) {
     const { rows, result } = walletWithRows();
@@ -1037,7 +1227,7 @@ test("an ignored key's saved copy carries no key bytes", async () => {
 
 // A key detached from a station moves, result and all, into the Key Manager's
 // pending list, and the Key Station can still show that same result. The Key
-// Manager's reset (Journal lock, unlock, create, wipe) zeroes every byte array
+// Manager's reset (Journal clear, unlock, create) zeroes every byte array
 // its pending keys reach; it must not reach rows a station still shows.
 test("a Key Manager reset leaves the row key bytes of a wallet a station still shows", () => {
   const context = createContext({
@@ -1098,7 +1288,7 @@ async function derivationHarness({ failAtAddress = 0, identity = () => "bip32-ve
     // Every progress step yields, and each yield waits for the test.
     performance: { now: () => (clock += 20) }, setTimeout: () => 0, clearTimeout() {},
     hodlDerivationPause() { const gate = deferred(); pauses.push(gate); return gate.promise; },
-    hodlResetDerivationProgress() {}, hodlSetDerivationButtonState() {}, hodlSyncDeriveButton() {}, hodlSyncMsigDeriveButton() {}, hodlSyncPurposeMatchControls() {},
+    hodlResetDerivationProgress() {}, hodlSetDerivationButtonState() {}, hodlSyncDeriveButton() {}, hodlSyncMsigDeriveButton() {}, hodlSyncPurposeMatchControls() {}, hodlKeyManagerSyncDerivationUI() {},
     // The rows come from the real row builder; the real account and wallet
     // builders then assemble them into the result a derivation commits.
     async hodlEntropyWalletWithProgress(entropy, passphrase, network, count, accountIndex, addressStart, tracker) {
@@ -1213,6 +1403,34 @@ test("pagehide while the fingerprint confirmation is open zeroes the pending res
   assert.ok(allZero(keys));
 });
 
+for (const event of ["pagehide", "pageshow"]) {
+  test(`${event} releases a real derivation suspended at the fingerprint warning`, async () => {
+    await withDerivationWarnings(async ({ warnings, open }) => {
+      const { context, events, keys, driveUntil, start } = await derivationHarness();
+      const collision = warnings[1];
+      context.hodlFingerprintCollisionConfirm = collision.dialog;
+      context.hodlConfirmKeyFingerprint = () => open(collision);
+      const run = start();
+      try {
+        await driveUntil(() => collision.dialog.isOpen());
+        assert.deepEqual(keys, vectorRowKeys, "the unfinished decision owns the derived BIP32 row keys");
+        events[event]({ persisted: true });
+        await Promise.resolve();
+        assert.equal(collision.outcome, false, "the suspended derivation must receive cancellation without another click");
+        assert.ok(allZero(keys), "teardown must erase result bytes before the asynchronous frame resumes");
+        await driveUntil(() => run.settled);
+        await run.promise;
+        assert.equal(context.hodlWalletResult, null);
+        assert.equal(context.hodlActiveDerivation, null, "no derivation control may retain the cancelled frame");
+      } finally {
+        collision.dialog.close({ restoreFocus: false });
+        await driveUntil(() => run.settled);
+        await run.promise;
+      }
+    });
+  });
+}
+
 test("a committed derivation keeps its row keys, and a later stopped one zeroes only its own", async () => {
   const { context, keys, pauses, driveUntil, start } = await derivationHarness();
   const first = start();
@@ -1263,7 +1481,7 @@ test("a stopped import of an account key wipes the imported node", async () => {
 // #546 B2 step 2a: a wallet the Key Station stops holding cannot come back,
 // so its row keys are zeroed when it goes rather than left for the collector.
 // A station drops a wallet when an edit clears it, a re-derive replaces it,
-// a failed re-derive loses it, its tab is deleted or ignored, or a revoked
+// a failed re-derive loses it, its detached input is archived, or a revoked
 // brain-wallet acknowledgement retracts it. These run the real derivation
 // (as above) and commit it through the real hodlCommitDerivedKey; the two
 // bookkeeping stand-ins do only what the real ones do with results:
@@ -1275,7 +1493,8 @@ async function stationHarness(options = {}) {
   const lab = () => ({ id: 0, number: 0, isLab: true, fields: {}, result: null });
   Object.assign(context, {
     hodlKeys: [lab()], hodlActiveKey: 0, hodlNextKeyNumber: 1, hodlWorkspace: "calc",
-    hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "", hodlKeyManagerIgnored: [], keyVaultIdentity,
+    hodlPrivateKeyKinds: ["wif", "hex-key", "minikey", "brain"],
+    hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "", hodlKeyManagerIgnored: [], keyVaultIdentity, hodlKeyVaultMaxKeys: KEY_VAULT_MAX_KEYS,
     hodlCaptureKey() { const state = context.hodlKeys[context.hodlActiveKey]; if (state) state.result = context.hodlWalletResult; },
     hodlRestoreKey() { context.hodlWalletResult = context.hodlKeys[context.hodlActiveKey]?.result ?? null; },
     hodlNewLabState: lab, hodlNewKeyState: () => { const id = nextId++; return { id, number: id, fields: {}, result: null }; },
@@ -1287,15 +1506,17 @@ async function stationHarness(options = {}) {
     Uint8Array,
     hodlJournalWipeNotebook() {}, hodlJournalClearFields() {}, hodlJournalHideEditor() {}, hodlJournalSetGate() {},
     hodlJournalShowWork() {}, hodlSyncJournalTool() {}, hodlJournalTool: "notes",
-    // Journal Lock wipes the session notepad/log (with the real wipeJournal
+    // Journal Clear wipes the session notepad/log (with the real wipeJournal
     // on a real journal object); the DOM sides are absent elements here.
     hodlJournal: createJournal(), wipeJournal,
-    hodlRenderJournalPageTabs() {}, hodlJournalApplyPageStyle() {}, hodlJournalResetPendingNote() {},
+    hodlRenderJournalPageTabs() {}, hodlJournalApplyPageStyle() {}, hodlJournalRenderVisual() {},
+    // Journal Clear's log and status lines go through the translation helper.
+    hodlTText: (text) => text,
   });
   context.document.getElementById = ((byId, note = { textContent: "" }) => (id) => id === "journal-status-note" ? note : byId(id))(context.document.getElementById);
-  for (const name of ["hodlCommitDerivedKey", "hodlCloneDerivedKey", "hodlKeyWalletIdentity", "hodlInvalidateLiveKeyResult",
+  for (const name of ["hodlCommitDerivedKey", "hodlCloneDerivedKey", "hodlKeyWalletIdentity", "hodlKeyManagerStates", "hodlKeyManagerCapacityError", "hodlInvalidateLiveKeyResult",
     "hodlInvalidateActiveKeyOutput", "hodlRetractBrainWalletResults", "hodlDeleteActiveKey", "hodlKeyManagerIgnore",
-    "hodlKeyManagerEntry", "hodlKeyManagerDetachFromStation", "hodlKeyManagerReset", "hodlKeyManagerWipeValue", "hodlJournalLock"])
+    "hodlKeyManagerEntry", "hodlKeyManagerDetachFromStation", "hodlKeyManagerHasInputs", "hodlPrivateKeyValues", "hodlNormalizePrivateKeyKind", "hodlDetectPrivateKeyKind", "hodlKeyManagerArchiveEntry", "hodlKeyManagerReset", "hodlKeyManagerWipeValue", "hodlJournalWipeMem"])
     vm.runInContext(functionSource(name), context);
   // Derives BIP32 test vector 1 on the active tab and commits it, returning
   // the key buffers the committed rows hold.
@@ -1395,23 +1616,48 @@ test("deleting a key tab zeroes its wallet; with the journal open it moves to th
 // active tab and clears the shown wallet (hodlShowWorkspace), so anything
 // that runs there must not capture again: that would file the cleared value
 // over the selected tab's wallet, and the next sweep would zero it.
-test("ignoring a key from the Journal zeroes its wallet and leaves the selected wallet intact", async () => {
-  for (const [ignored, from] of [["a", "station"], ["b", "station"], ["a", "pending"]]) {
+test("archiving refuses a key still in Key Station without releasing or wiping it", async () => {
+  const { context, derive, leaveKeys, held, active } = await stationHarness();
+  const keys = await derive("still-live"), state = active(), wallet = state.result;
+  const passphrase = new TextEncoder().encode("TREZOR"), released = [];
+  vm.runInContext(functionSource("hodlTypedText"), context);
+  state.fields.pass = passphrase;
+  context.hodlKeyManagerIds.add(keyVaultIdentity(state));
+  context.hodlKeyManagerActiveId = keyVaultIdentity(state);
+  context.hodlReleaseKeyConsumers = (id) => released.push(id);
+  const states = [...context.hodlKeys], selected = context.hodlActiveKey;
+  leaveKeys("journal");
+  context.hodlKeyManagerIgnore(state);
+  assert.deepEqual([...context.hodlKeys], states, "archiving removed a live station key");
+  assert.equal(context.hodlActiveKey, selected, "archiving moved the active station tab");
+  assert.equal(state.result, wallet);
+  assert.ok(held(wallet), "archiving forgot the station's wallet");
+  assert.deepEqual(keys, vectorRowKeys, "archiving wiped the station's row keys");
+  assert.equal(new TextDecoder().decode(passphrase), "TREZOR", "archiving wiped the station's passphrase");
+  assert.deepEqual(released, [], "archiving released consumers of the station's key");
+  assert.equal(context.hodlKeyManagerIgnored.length, 0, "archiving copied a live key into the archive");
+  assert.ok(context.hodlKeyManagerIds.has(keyVaultIdentity(state)));
+  assert.equal(context.hodlKeyManagerActiveId, keyVaultIdentity(state));
+});
+
+test("archiving a detached key zeroes its wallet and leaves the selected wallet intact", async () => {
+  for (const ignored of ["a", "b"]) {
     const { context, derive, selectLab, leaveKeys, returnToKeys, held } = await stationHarness();
     const keys = { a: await derive("wallet-a") };
     selectLab();
     keys.b = await derive("wallet-b");
     const tab = (wallet) => context.hodlKeys.find((state) => state.result?.masterIdentity === `wallet-${wallet}`);
     const states = { a: tab("a"), b: tab("b") }, kept = ignored === "a" ? "b" : "a", keptResult = states[kept].result, ignoredResult = states[ignored].result;
-    if (from === "pending") {
-      // Deleting a tab with the journal open moves it to the Key Manager.
-      context.hodlActiveKey = context.hodlKeys.indexOf(states.a);
-      context.hodlRestoreKey();
-      context.hodlJournalUnlocked = () => true;
-      context.hodlDeleteActiveKey();
-      assert.deepEqual(context.hodlKeyManagerPending, [states.a]);
-    }
-    const label = `ignoring ${ignored} from ${from} with b selected`;
+    // Deleting a tab with the journal open moves it to the Key Manager;
+    // archiving accepts only this detached state, never a live station tab.
+    context.hodlActiveKey = context.hodlKeys.indexOf(states[ignored]);
+    context.hodlRestoreKey();
+    context.hodlJournalUnlocked = () => true;
+    context.hodlDeleteActiveKey();
+    assert.deepEqual(context.hodlKeyManagerPending, [states[ignored]]);
+    context.hodlActiveKey = context.hodlKeys.indexOf(states[kept]);
+    context.hodlRestoreKey();
+    const label = `archiving ${ignored} with ${kept} selected`;
     leaveKeys("journal");
     context.hodlKeyManagerIgnore(states[ignored]);
     assert.equal(context.hodlKeyManagerIgnored.length, 1);
@@ -1542,12 +1788,12 @@ test("pagehide also zeroes a dropped wallet no drop site has zeroed yet", async 
   assert.equal(context.hodlCommittedResults.size, 0, "pagehide left wallets referenced by the Key Station");
 });
 
-// Locking the journal (and unlocking, creating or wiping it) resets the Key
+// Clearing the journal (and unlocking or creating it) resets the Key
 // Manager: its pending keys are zeroed and dropped. The Key Station must
 // forget those wallets too, or its record keeps each whole result, root xprv
-// included, reachable after the lock (Codex, #590). A wallet a station still
+// included, reachable after the clear (Codex, #590). A wallet a station still
 // shows stays zeroed-free and held.
-test("locking the journal forgets the Key Manager's wallets and keeps the ones a station shows", async () => {
+test("clearing the journal forgets the Key Manager's wallets and keeps the ones a station shows", async () => {
   const { context, derive, selectLab, leaveKeys, returnToKeys, held, active } = await stationHarness();
   context.hodlJournalUnlocked = () => true;
   const detachedKeys = await derive("detached"), detached = active().result;
@@ -1558,17 +1804,17 @@ test("locking the journal forgets the Key Manager's wallets and keeps the ones a
   // A Key Manager entry that still shares its wallet with a station tab.
   context.hodlKeyManagerPending.push({ id: 77, number: 77, fields: {}, result: shared });
   leaveKeys("journal");
-  context.hodlJournalLock();
+  context.hodlJournalWipeMem();
   assert.equal(context.hodlKeyManagerPending.length, 0);
-  assert.ok(!held(detached), "Lock left the Key Manager's wallet referenced by the Key Station");
-  assert.ok(allZero(detachedKeys), "Lock left the Key Manager's wallet's row key bytes in memory");
-  assert.ok(held(shared), "Lock forgot a wallet a station still shows");
+  assert.ok(!held(detached), "Clear left the Key Manager's wallet referenced by the Key Station");
+  assert.ok(allZero(detachedKeys), "Clear left the Key Manager's wallet's row key bytes in memory");
+  assert.ok(held(shared), "Clear forgot a wallet a station still shows");
   assert.equal(sharedTab.result, shared);
-  assert.deepEqual(sharedKeys, vectorRowKeys, "Lock zeroed a wallet a station still shows");
+  assert.deepEqual(sharedKeys, vectorRowKeys, "Clear zeroed a wallet a station still shows");
   // It is still disposed of once the station drops it.
   returnToKeys();
   context.hodlInvalidateLiveKeyResult();
-  assert.ok(allZero(sharedKeys) && !held(shared), "the shared wallet escaped disposal after the lock");
+  assert.ok(allZero(sharedKeys) && !held(shared), "the shared wallet escaped disposal after the clear");
 });
 
 // #546 B2 step 2b: the extended private keys a wallet result keeps (its root
@@ -1609,9 +1855,9 @@ const usableKeyMaterial = (result) => {
 const bothKeys = ["account", "root"];
 
 test("a wallet's extended private keys stay usable while it is held and are gone once it is dropped or the page goes", async () => {
-  for (const drop of ["Wipe", "edit", "re-derive", "delete", "journal lock", "pagehide"]) {
+  for (const drop of ["Wipe", "edit", "re-derive", "delete", "journal clear", "pagehide"]) {
     const { context, events, derive, selectLab, leaveKeys, active } = await stationHarness();
-    context.hodlJournalUnlocked = () => drop === "journal lock";
+    context.hodlJournalUnlocked = () => drop === "journal clear";
     await derive("dropped");
     const dropped = active().result;
     selectLab();
@@ -1625,10 +1871,10 @@ test("a wallet's extended private keys stay usable while it is held and are gone
     else if (drop === "edit") context.hodlInvalidateLiveKeyResult();
     else if (drop === "re-derive") await derive("dropped");
     else if (drop === "delete") context.hodlDeleteActiveKey();
-    else if (drop === "journal lock") {
+    else if (drop === "journal clear") {
       context.hodlDeleteActiveKey();
       leaveKeys("journal");
-      context.hodlJournalLock();
+      context.hodlJournalWipeMem();
     } else events.pagehide({});
     assert.deepEqual(usableKeyMaterial(dropped), [], `${drop}: the dropped wallet's extended private keys are still usable`);
     if (drop === "pagehide") assert.deepEqual(usableKeyMaterial(kept), [], "pagehide left a shown wallet's extended private keys usable");
@@ -1701,9 +1947,9 @@ const usableSingleKey = (result) => {
 };
 
 test("a single key stays usable while it is held and is zeroed once it is dropped or the page goes", async () => {
-  for (const drop of ["Wipe", "edit", "re-derive", "delete", "journal lock", "pagehide"]) {
+  for (const drop of ["Wipe", "edit", "re-derive", "delete", "journal clear", "pagehide"]) {
     const { context, events, derive, selectLab, leaveKeys, active } = await stationHarness({ single: true });
-    context.hodlJournalUnlocked = () => drop === "journal lock";
+    context.hodlJournalUnlocked = () => drop === "journal clear";
     await derive();
     const dropped = active().result;
     selectLab();
@@ -1718,10 +1964,10 @@ test("a single key stays usable while it is held and is zeroed once it is droppe
     else if (drop === "edit") context.hodlInvalidateLiveKeyResult();
     else if (drop === "re-derive") await derive();
     else if (drop === "delete") context.hodlDeleteActiveKey();
-    else if (drop === "journal lock") {
+    else if (drop === "journal clear") {
       context.hodlDeleteActiveKey();
       leaveKeys("journal");
-      context.hodlJournalLock();
+      context.hodlJournalWipeMem();
     } else events.pagehide({});
     assert.equal(usableSingleKey(dropped), false, `${drop}: the dropped single key is still usable`);
     if (drop === "pagehide") assert.equal(usableSingleKey(kept), false, "pagehide left a shown single key usable");
@@ -1802,9 +2048,9 @@ const usableSeedMaterial = (result) => {
 const bothSeeds = ["entropy", "passphrase", "seed"];
 
 test("a seed wallet's seed material stays usable while it is held and is zeroed once it is dropped or the page goes", async () => {
-  for (const drop of ["Wipe", "edit", "re-derive", "delete", "journal lock", "pagehide"]) {
+  for (const drop of ["Wipe", "edit", "re-derive", "delete", "journal clear", "pagehide"]) {
     const { context, events, derive, selectLab, leaveKeys, active } = await stationHarness({ seedWords: true });
-    context.hodlJournalUnlocked = () => drop === "journal lock";
+    context.hodlJournalUnlocked = () => drop === "journal clear";
     await derive("dropped");
     const dropped = active().result;
     selectLab();
@@ -1818,10 +2064,10 @@ test("a seed wallet's seed material stays usable while it is held and is zeroed 
     else if (drop === "edit") context.hodlInvalidateLiveKeyResult();
     else if (drop === "re-derive") await derive("dropped");
     else if (drop === "delete") context.hodlDeleteActiveKey();
-    else if (drop === "journal lock") {
+    else if (drop === "journal clear") {
       context.hodlDeleteActiveKey();
       leaveKeys("journal");
-      context.hodlJournalLock();
+      context.hodlJournalWipeMem();
     } else events.pagehide({});
     assert.deepEqual(usableSeedMaterial(dropped), [], `${drop}: the dropped wallet's seed material is still usable`);
     if (drop === "pagehide") assert.deepEqual(usableSeedMaterial(kept), [], "pagehide left a shown wallet's seed material usable");
@@ -1860,5 +2106,35 @@ test("a seed wallet declined at the fingerprint confirmation, or hidden while it
     await run.promise;
     assert.equal(context.hodlWalletResult, null);
     assert.deepEqual(usableSeedMaterial(pending), [], `${ending}: the uncommitted wallet's seed material is still usable`);
+  }
+});
+
+
+// External review claimed Journal keep/reuse dropped fresh seed buffers.
+// Exercise the actual builder's registration and the outer controller's
+// finally, not a replacement builder returning unregistered synthetic bytes.
+test("Journal keep-existing and exact-reuse zero fresh seed material through the real controller", async () => {
+  for (const kind of ["skip", "reuse"]) {
+    const { context, derive, selectLab, active } = await stationHarness({ seedWords: true });
+    await derive("same-wallet");
+    const existing = active(), previous = existing.result;
+    selectLab();
+    const calculate = context.hodlCalculateKey;
+    let fresh, control;
+    context.hodlCalculateKey = progress => calculate(progress, "derive", {
+      decideCommit: async result => {
+        fresh = result; control = context.hodlActiveDerivation;
+        assert.deepEqual(usableSeedMaterial(fresh), bothSeeds);
+        for (const bytes of [fresh.entropy, fresh.seed, fresh.passphrase])
+          assert.ok(control.rowKeys.includes(bytes), "the real builder must register the exact result buffer");
+        return kind === "reuse" ? { kind, state: existing, previousResult: previous } : { kind };
+      },
+    });
+    await derive("same-wallet");
+    assert.ok(fresh && fresh !== previous);
+    assert.deepEqual(usableSeedMaterial(fresh), [], `${kind}: the uncommitted seed material remained usable`);
+    assert.deepEqual(usableSeedMaterial(previous), bothSeeds, `${kind}: the retained wallet was wiped`);
+    assert.equal(context.hodlActiveDerivation, null);
+    assert.equal(context.hodlKeys.filter(state => !state.isLab).length, 1);
   }
 });

@@ -129,6 +129,7 @@ test("switching away from Vanity leaves an active grind running", () => {
      let hodlWorkspaceScrollFrame = 0;
      let hodlWalletResult = null;
      let hodlRevealPrivate = false;
+     let hodlJournalKeyDerivation = null;
      ${appSlice("hodlShowWorkspace")}
      return (id) => hodlShowWorkspace(id);`,
   );
