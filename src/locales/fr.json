@@ -1916,5 +1916,6 @@
   "Imported {n} page from {name}.": "Importé {n} page de {name}.",
   "Imported {n} pages from {name}.": "Importé {n} pages de {name}.",
   "Core Wallet": "Core Wallet",
-  "Core": "Core"
+  "Core": "Core",
+  "Wallets only look about 20 unused addresses ahead. If coins arrive at index {n}, raise your wallet's gap limit above that, or the balance will show as zero (Sparrow: Settings → Advanced → Gap limit). EntropyLab's Bitcoin Core export already covers this window.": "Les portefeuilles ne regardent qu'environ 20 adresses inutilisées à l'avance. Si des pièces arrivent à l'index {n}, augmentez la limite d'écart de votre portefeuille au-delà de cela, sinon le solde s'affichera comme zéro (Sparrow : Paramètres → Avancé → Limite d'écart). L'exportation Bitcoin Core d'EntropyLab couvre déjà cette fenêtre."
 }

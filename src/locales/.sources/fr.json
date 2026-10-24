@@ -1916,5 +1916,6 @@
   "Imported {n} page from {name}.": "ed967c2930588030c7628d1076d8b9125b529f6e212c2024388bb2323dd8de7e",
   "Imported {n} pages from {name}.": "fb060df3bda3cdac9eae9109ae7290cbbfa0fc09ed87210223452553d50b9e0f",
   "Core Wallet": "f323633c1f67055a45aac84e321af6ffe46322da677ffdd32f9bc1e33bafe29c",
-  "Core": "70ea1983c983deacc1b61805aea3d43648afd932f346fb2e5d9b15facd4035c2"
+  "Core": "70ea1983c983deacc1b61805aea3d43648afd932f346fb2e5d9b15facd4035c2",
+  "Wallets only look about 20 unused addresses ahead. If coins arrive at index {n}, raise your wallet's gap limit above that, or the balance will show as zero (Sparrow: Settings → Advanced → Gap limit). EntropyLab's Bitcoin Core export already covers this window.": "eb6cab4410b78e92cf0ab8d2b3c3e4b8502ce5052b897002c2a06bacd45be03c"
 }
