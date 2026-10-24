@@ -193,8 +193,12 @@ for UI testing only and must never receive funds. The loader and its
 - **Not accepted:** anything violating sections 1 or 3; license/authorship
   changes (the software is public domain); changes that obscure what the
   compiled `entropylab.html` does.
-- **Security issues:** report privately via GitHub Security Advisories
-  ([SECURITY.md](SECURITY.md)), not as public issues.
+- **Security issues and red-team work:** start unpublished findings in a
+  private report or draft GitHub Security Advisory. Follow
+  [private review and publication](SECURITY.md#private-review-and-publication)
+  before opening a public fix PR or adding a report to `docs/audits/`.
+  Public branches, draft PRs, comments, CI logs, and artifacts can disclose
+  the issue too. Existing public audit records remain available.
 - **License:** public domain ([LICENSE](LICENSE)). By opening a pull request
   you confirm your contribution can be public domain; if not, open an issue
   instead. Exceptions: `src/js/lifehash.js` is an adaptation of the LifeHash

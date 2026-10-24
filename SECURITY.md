@@ -655,14 +655,67 @@ extension that ignores them, or one written to steal.
 
 ## Reporting a Vulnerability
 
-Please report suspected security issues privately through
-[GitHub Security Advisories](https://github.com/OogaBoogaX/entropylab/security/advisories/new)
-rather than opening a public issue. If private reporting is unavailable, reach
-the maintainers through the [official website](https://entropylab.online).
+Report suspected security issues, including new red-team findings, through
+[GitHub's private vulnerability reporting form](https://github.com/OogaBoogaX/entropylab/security/advisories/new).
+Do not publish the details in an issue, PR, branch, comment, or audit report.
+If the form is unavailable, contact the project owner or a maintainer through
+an established private channel to arrange a private report. Do not fall back
+to a public issue or include the reproduction in a public request for contact.
 
-Include the version, the affected input type and derivation path if relevant,
-and a description of the impact. A maintainer will acknowledge the report and
-coordinate a fix; scope it as narrowly as needed to reproduce responsibly.
+Include the affected version or commit, impact, relevant input type and
+derivation path, and a minimal reproduction using test-only material. Never
+include real seed phrases, private keys, passwords, or funded wallets.
+A maintainer will acknowledge the report and coordinate its review.
+
+### Private review and publication
+
+1. Keep unpublished findings and supporting red-team notes in a private report
+   or draft security advisory while assessing validity, impact, and severity.
+   The owner or responsible maintainer coordinates the response and invites
+   only the people needed to investigate, implement, or independently review
+   the fix. Review GitHub's existing advisory access as well as explicit
+   invitations; ordinary contribution history is not a reason to grant access.
+2. Develop sensitive fixes and regression tests in the advisory's temporary
+   private fork. Do not push them to public branches or draft PRs, or expose
+   reproductions through public CI logs or artifacts, before disclosure is
+   approved. Use only tools and workspaces approved for the private material;
+   if an agent lacks private access, arrange a private handoff.
+3. Record the affected commits/releases, reproduction, decision, fix, and
+   independent review in the private discussion. For a code fix, retain the
+   existing requirement for a regression that fails before the fix and passes
+   afterward. Agree on a disclosure date and revisit it if release is delayed.
+4. Coordinate any public fix with the release. Normally publish the advisory
+   and reviewed report after the patch is released, with affected and fixed
+   versions, user action or mitigations, and verification evidence. Consider
+   the time users need to update before releasing detailed exploit material.
+   If users need protection before a patch is ready, publish timely protective
+   guidance; private handling must not delay a necessary warning.
+5. Publish cleared reports in [the audit archive](docs/audits/README.md).
+   Refuted findings and accepted limitations may be published after review
+   with their rationale and honest status. A mixed report containing
+   undisclosed actionable findings stays private; publish only the cleared
+   portion, clearly identified as partial, until the remainder is cleared.
+
+Existing public reports, known limitations, and their correction history stay
+available. Moving or deleting them cannot recall copies already made.
+Newly discovered exploit details about a public limitation still go through
+private review. This process does not change repository visibility or make
+`docs/audits/` private; access controls come from GitHub's private advisory
+workspace.
+
+### Owner setup
+
+The repository owner or an administrator should confirm that **Private
+vulnerability reporting** is enabled under **Settings → Advanced Security**.
+If it is disabled, enable it and confirm that **Report a vulnerability** is
+available on the repository's Advisories page. These documentation changes
+do not enable the setting or grant anyone access. Review the responders and
+existing advisory permissions when handling each report.
+
+GitHub documents
+[enabling private reports](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository),
+[creating draft advisories](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/fix-reported-vulnerabilities/create-repository-advisory),
+and [working on fixes privately](https://docs.github.com/code-security/security-advisories/collaborating-in-a-temporary-private-fork-to-resolve-a-security-vulnerability).
 
 ## Disclaimer
 
