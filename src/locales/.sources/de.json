@@ -2097,5 +2097,6 @@
   "Paste the PSBT exactly as you sent it to the signer, then Inspect again. The returned PSBT above is compared with it field by field — the transaction, the signatures, and every other value the signer touched — and the verdict appears on top of the inspection.": "cb14dd769406c66017b7e8d47e65d9e1bec8b96f31dd69a2d9038aa263e1fa43",
   "PSBT you sent (base64 or hex)": "dc100a04ff8180fc63952aeadbdc9c1c72656bc7949f550e38137772eeb1b131",
   "cHNidP8B…": "257149535e808242c02f534d2e7bd4e46f2efd641d163e7bf5d55bf3f218c385",
-  "Upload sent .psbt": "f1bf2998350aca82c07f61ad4aed324dfce13839da81112123f4ce4f0c3f2e09"
+  "Upload sent .psbt": "f1bf2998350aca82c07f61ad4aed324dfce13839da81112123f4ce4f0c3f2e09",
+  "Change outputs": "72fd82883c9c7feea5aa3c07407d387da093c94d59ee138b861f731525727f82"
 }

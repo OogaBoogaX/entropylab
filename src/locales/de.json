@@ -2097,5 +2097,6 @@
   "Paste the PSBT exactly as you sent it to the signer, then Inspect again. The returned PSBT above is compared with it field by field — the transaction, the signatures, and every other value the signer touched — and the verdict appears on top of the inspection.": "Fügen Sie die PSBT genau so ein, wie Sie sie an den Signierer gesendet haben, und klicken Sie dann erneut auf „Prüfen“. Die oben zurückgegebene PSBT wird Feld für Feld damit verglichen – die Transaktion, die Signaturen und jeder andere Wert, den der Signierer berührt hat – und das Ergebnis erscheint oben auf der Prüfung.",
   "PSBT you sent (base64 or hex)": "Von Ihnen gesendete PSBT (Base64 oder Hex)",
   "cHNidP8B…": "cHNidP8B…",
-  "Upload sent .psbt": "Gesendete .psbt hochladen"
+  "Upload sent .psbt": "Gesendete .psbt hochladen",
+  "Change outputs": "Änderungsausgaben"
 }
