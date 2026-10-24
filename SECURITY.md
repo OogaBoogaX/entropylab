@@ -478,6 +478,21 @@ material. Its security posture rests on the following model:
   to overwrite spilled frame temporaries. The Node suite asserts the derived
   key and the scrypt buffers are absent from linear memory after a decode;
   closing the tab remains the only guaranteed erasure.
+- The Codex32 tab (held back from release navigation) is a BIP-93 MS1
+  calculator: checksum completion, secret recovery and share derivation are
+  checksum math and Lagrange interpolation over exactly the strings the user
+  supplies, so it never splits a fresh seed or reads randomness. Only 16-,
+  32- and 64-byte master seeds are accepted, which keeps their complete and
+  checksum-free string lengths disjoint: a mistyped complete 16-, 32- or
+  64-byte string is refused instead of being completed into a different
+  seed, and a failed checksum is never repaired by substituting characters.
+  A 61-character input is read as a 32-byte header and payload, so a valid
+  24-byte string is refused, but a mistyped one can still complete into a
+  different 32-byte seed. Derive
+  refuses index `s`, which would reveal the secret; CW1 and CX1 strings are
+  refused. Shares typed in, the recovered secret and its master seed are
+  shown in the page and cleared with the other secret fields on page hide
+  and back/forward-cache restore.
 - The single-file design inlines all scripts (`script-src 'unsafe-inline'`),
   and the secp256k1 WebAssembly module adds `wasm-unsafe-eval` to the
   content security policy: Chromium and WebKit engines refuse to compile a
