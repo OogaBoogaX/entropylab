@@ -3,6 +3,9 @@ import { sha256 as hodlSha256, hash160 as hodlHash160 } from "./hashes.js";
 // is a drop-in for the noble/curves surface this file uses (see
 // src/js/secp256k1.js). App boot waits for the module to be ready.
 import { secp256k1 as hodlSecp256k1, secp256k1Ready } from "./secp256k1.js";
+// The ECDSA sign-to-contract (anti-exfil) relation, shared with the AEXB-v1
+// verifier (aexb.js).
+import { s2cSignatureMatches } from "./s2c.js";
 import {
   createLabeledSilentPaymentAddress,
   createSilentPaymentOutputs,
@@ -12743,11 +12746,12 @@ function hodlParseAntiExfil(raw) {
   return { host, openings };
 }
 function hodlAntiExfilCommitOk(r, opening, host) {
-  const n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
-  let tweak = hodlTaggedSha256("s2c/ecdsa/point", opening, host), tweakInt = hodlBytesToBig(tweak);
-  if (tweakInt >= n || tweakInt === 0n) return false;
-  let committed = hodlPointFrom(opening).add(hodlSecp256k1.Point.BASE.multiply(tweakInt)), xBytes = hodlPointBytes(committed, true).slice(1);
-  return hodlBytesToBig(r) % n === hodlBytesToBig(xBytes) % n;
+  // The relation (tweak = TaggedHash("s2c/ecdsa/point", opening, host),
+  // committed = opening + tweak*G, r mod n == x(committed) mod n) lives in
+  // s2c.js. A malformed opening still throws so the caller's try/catch
+  // reports it as an error rather than as a mismatch.
+  hodlPointFrom(opening);
+  return s2cSignatureMatches(r, opening, host);
 }
 function hodlLe32Counter(n) {
   let b = new Uint8Array(32);

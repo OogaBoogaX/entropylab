@@ -3,6 +3,7 @@
 
 import { secp256k1 } from "./secp256k1.js";
 import { sha256 } from "./hashes.js";
+import { s2cHostCommitment, s2cSignatureMatches } from "./s2c.js";
 
 const MAGIC_AEXB = ascii("AEXB");
 const MAGIC_AEXT = ascii("AEXT");
@@ -14,8 +15,6 @@ const MAX_SLOTS_PER_INPUT = 16;
 const MAX_MESSAGE_BYTES = 65536;
 const MAX_PSBT_BYTES = 2000000;
 const GROUP_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
-const DATA_TAG = "s2c/ecdsa/data";
-const POINT_TAG = "s2c/ecdsa/point";
 
 export class AexbError extends Error {
   constructor(code, message) {
@@ -123,7 +122,7 @@ function verifyReveal(reveal, commitment) {
     if (!slot.rho || slot.rho.length !== 32) {
       return { slot: index, ok: false, reason: "COMMITMENT_MISMATCH" };
     }
-    const expected = taggedHash(DATA_TAG, slot.rho);
+    const expected = s2cHostCommitment(slot.rho);
     if (!equalBytes(expected, originalSlots[index].commitment)) {
       return { slot: index, ok: false, reason: "COMMITMENT_MISMATCH" };
     }
@@ -181,50 +180,19 @@ function verifySignatures(signatures, reveal, commitment) {
       slots.push({ slot: index, ok: false, reason: "COMMITMENT_MISMATCH" });
       continue;
     }
-    const expectedCommitment = taggedHash(DATA_TAG, revealSlot.rho);
+    const expectedCommitment = s2cHostCommitment(revealSlot.rho);
     if (!equalBytes(expectedCommitment, originalSlots[index].commitment)) {
       slots.push({ slot: index, ok: false, reason: "COMMITMENT_MISMATCH" });
       continue;
     }
 
-    let tweak;
-    try {
-      tweak = bytesToBigInt(taggedHash(POINT_TAG, sigSlot.opening, revealSlot.rho));
-    } catch {
-      slots.push({ slot: index, ok: false, reason: "TWEAK_INVALID" });
-      continue;
-    }
-    if (tweak >= GROUP_N || tweak === 0n) {
-      slots.push({ slot: index, ok: false, reason: "TWEAK_INVALID" });
-      continue;
-    }
-
-    let committed;
-    try {
-      const openingPoint = pointFromBytes(sigSlot.opening);
-      committed = openingPoint.add(secp256k1.Point.BASE.multiply(tweak));
-    } catch {
-      slots.push({ slot: index, ok: false, reason: "OPENING_MISMATCH" });
-      continue;
-    }
-    if (!committed) {
-      slots.push({ slot: index, ok: false, reason: "OPENING_MISMATCH" });
-      continue;
-    }
-
-    let x;
-    try {
-      x = bytesToBigInt(pointToBytes(committed).slice(1)) % GROUP_N;
-    } catch {
-      slots.push({ slot: index, ok: false, reason: "OPENING_MISMATCH" });
-      continue;
-    }
     if (!(sigSlot.signature instanceof Uint8Array) || sigSlot.signature.length !== 64) {
       slots.push({ slot: index, ok: false, reason: "SIGNATURE_INVALID" });
       continue;
     }
-    const r = bytesToBigInt(sigSlot.signature.slice(0, 32));
-    if (x !== r) {
+    const rBytes = sigSlot.signature.slice(0, 32);
+    const r = bytesToBigInt(rBytes);
+    if (!s2cSignatureMatches(rBytes, sigSlot.opening, revealSlot.rho)) {
       slots.push({ slot: index, ok: false, reason: "OPENING_MISMATCH" });
       continue;
     }
@@ -624,30 +592,6 @@ function compareBytes(a, b) {
 
 function pointFromBytes(bytes) {
   return secp256k1.Point.fromBytes(bytes);
-}
-
-function pointToBytes(point) {
-  return point.toBytes(true);
-}
-
-function taggedHash(tag, ...parts) {
-  const tagBytes = new TextEncoder().encode(tag);
-  const tagHash = sha256(tagBytes);
-  const data = concatBytes(tagHash, tagHash, ...parts.map(normalizeBytes));
-  return sha256(data);
-}
-
-
-
-function concatBytes(...arrays) {
-  const total = arrays.reduce((sum, arr) => sum + arr.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const arr of arrays) {
-    out.set(arr, offset);
-    offset += arr.length;
-  }
-  return out;
 }
 
 function bytesToBigInt(bytes) {

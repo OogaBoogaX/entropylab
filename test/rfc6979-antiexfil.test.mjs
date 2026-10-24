@@ -37,6 +37,7 @@ const source = [
   importLine("secp256k1"),
   importLine("coders"),
   importLine("i18n"),
+  'import { s2cSignatureMatches } from "../src/js/s2c.js";',
   ...["hodlTaggedSha256", "hodlBytesToBig", "hodlPointFrom", "hodlPointBytes", "hodlEq", "hodlLe32Counter", "hodlIsLowR", "hodlRfc6979Compare", "hodlAntiExfilCommitOk"].map(slice),
   "export { hodlRfc6979Compare, hodlAntiExfilCommitOk };",
 ].join("\n");
