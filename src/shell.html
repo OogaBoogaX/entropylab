@@ -646,6 +646,17 @@ words, pick one of the checksum words.</span></span>
         </label>
         <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </details>
+      <details class="derivation-advanced" id="psbt-audit-options">
+        <summary>Check what the signer changed (optional)</summary>
+        <p class="muted label-description">Paste the PSBT exactly as you sent it to the signer, then Inspect again. The returned PSBT above is compared with it field by field — the transaction, the signatures, and every other value the signer touched — and the verdict appears on top of the inspection.</p>
+        <label class="field">PSBT you sent (base64 or hex)
+          <textarea id="psbt-audit-before" placeholder="cHNidP8B…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <div class="row tool-actions">
+          <button class="btn secondary" id="psbt-audit-upload" type="button">Upload sent .psbt</button>
+          <input type="file" id="psbt-audit-file" accept=".psbt,.txn,.txt,.hex" hidden>
+        </div>
+      </details>
       <p class="edge-note is-muted" id="psbt-session" aria-live="polite" hidden>No session key. Inspect-only mode.</p>
       <p class="label" id="psbt-result-label">PSBT inspect result</p>
       <div class="tool-result" role="region" aria-labelledby="psbt-result-label">
