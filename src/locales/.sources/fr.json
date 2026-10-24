@@ -1912,5 +1912,7 @@
   "Latest events": "f5d73340802b8682ac5e6f5e836d49f0a823b0063c51bdb98d623114d5ec58ea",
   "Export debug log": "7d51fa259f8df8f5194a2d73a1471c3764e530462e01d0356cb9e3878f282f70",
   "Clear debug log": "470605e585489aa38d77860e7e85e3d29821df9adf63aeef699291f8949531d3",
-  "Entropy Journal: AES-256-GCM from an optional typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. An empty password preserves the file format but provides no access protection. No relays, no accounts, no localStorage for secrets.": "99031f730014258677b174bdb8871c04ef079f426d9b11094950f73e8b406737"
+  "Entropy Journal: AES-256-GCM from an optional typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. An empty password preserves the file format but provides no access protection. No relays, no accounts, no localStorage for secrets.": "99031f730014258677b174bdb8871c04ef079f426d9b11094950f73e8b406737",
+  "Imported {n} page from {name}.": "ed967c2930588030c7628d1076d8b9125b529f6e212c2024388bb2323dd8de7e",
+  "Imported {n} pages from {name}.": "fb060df3bda3cdac9eae9109ae7290cbbfa0fc09ed87210223452553d50b9e0f"
 }
