@@ -1915,5 +1915,6 @@
   "Clear debug log": "470605e585489aa38d77860e7e85e3d29821df9adf63aeef699291f8949531d3",
   "Entropy Journal: AES-256-GCM from an optional typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. An empty password preserves the file format but provides no access protection. No relays, no accounts, no localStorage for secrets.": "99031f730014258677b174bdb8871c04ef079f426d9b11094950f73e8b406737",
   "Core Wallet": "f323633c1f67055a45aac84e321af6ffe46322da677ffdd32f9bc1e33bafe29c",
-  "Core": "70ea1983c983deacc1b61805aea3d43648afd932f346fb2e5d9b15facd4035c2"
+  "Core": "70ea1983c983deacc1b61805aea3d43648afd932f346fb2e5d9b15facd4035c2",
+  "Wallets only look about 20 unused addresses ahead. If coins arrive at index {n}, raise your wallet's gap limit above that, or the balance will show as zero (Sparrow: Settings → Advanced → Gap limit). EntropyLab's Bitcoin Core export already covers this window.": "eb6cab4410b78e92cf0ab8d2b3c3e4b8502ce5052b897002c2a06bacd45be03c"
 }
