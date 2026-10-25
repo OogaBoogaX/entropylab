@@ -1856,7 +1856,6 @@
   "session-state": "edb4517fc7f16f1a92d038f8d2580f21816518570996b0375c7c678f89c13d54",
   "Opened session snapshot": "8a0ffa88e4f6bc191586497786d4630d1150bf383c0ddcfb8dbc91c8d1f20e51",
   "Opened debug log": "1d63686fcda256c032fc33448cee103ea24dea4e4095e7e42b6febaba2687a83",
-  "Download wallet.dat": "2a3cd9e79e9e550cb45abcba5947cc92f928567d5f31cd3680bd91472a608bc7",
   "Keep notes, reusable key inputs, and session history together. Download a complete backup, including private key inputs and recovery material, to keep your work before closing this page. A password protects your files; without one, anyone with the file can open them.": "6b5d03581de05c4ce38eb9cbcafb6811b7be1d117ee2c97a9d2cb376157cf75b",
   "Download backup": "669211280b637c0855891124d3ac8c013d2de7d2a128402cf3a17ab0e6d7bd91",
   "Journal sections": "436bae2630703a277a3a399a680756e774d70b2545362e0695bf4d7059b77c0e",
@@ -2098,5 +2097,6 @@
   "PSBT you sent (base64 or hex)": "dc100a04ff8180fc63952aeadbdc9c1c72656bc7949f550e38137772eeb1b131",
   "cHNidP8B…": "257149535e808242c02f534d2e7bd4e46f2efd641d163e7bf5d55bf3f218c385",
   "Change outputs": "72fd82883c9c7feea5aa3c07407d387da093c94d59ee138b861f731525727f82",
-  "Output {n} is change back to your wallet.": "7fbb60b07fbd14365e2ff110ddc16acd6ab90fca8fb8b2ea1741329ba0f92e7b"
+  "Output {n} is change back to your wallet.": "7fbb60b07fbd14365e2ff110ddc16acd6ab90fca8fb8b2ea1741329ba0f92e7b",
+  "Download updated wallet.dat": "f727ca714d4e6a281a1e1780ed4bd423e68bfb11d9d8535eeb620bb1fa16d135"
 }

@@ -1722,7 +1722,6 @@
   "Wallet check result": "Resultado de la verificación de la billetera",
   "Upload a wallet.dat to view its records and checks here.": "Cargue un wallet.dat para ver sus registros y verificaciones aquí.",
   "Upload wallet.dat": "Cargar wallet.dat",
-  "Download wallet.dat": "Descargar wallet.dat",
   "End Session / Clear Fields": "Finalizar sesión / Borrar campos",
   "Derive all pending": "Derivar todo lo pendiente",
   "Reviewing {name} for {network}. Derive to verify these inputs. Use the Network menu to change the saved network.": "Revisando {name} para {network}. Derive para verificar estas entradas. Use el menú Red para cambiar la red guardada.",
@@ -2098,5 +2097,7 @@
   "Check what the signer changed (optional)": "Verifica qué cambió el firmante (opcional)",
   "Paste the PSBT exactly as you sent it to the signer, then Inspect again. The returned PSBT above is compared with it field by field — the transaction, the signatures, and every other value the signer touched — and the verdict appears on top of the inspection.": "Pega el PSBT exactamente como lo enviaste al firmante, luego presiona Inspeccionar nuevamente. El PSBT devuelto arriba se compara campo por campo con él — la transacción, las firmas y cualquier otro valor que el firmante haya tocado — y el veredicto aparece en la parte superior de la inspección.",
   "PSBT you sent (base64 or hex)": "PSBT que enviaste (base64 o hex)",
-  "cHNidP8B…": "cHNidP8B…"
+  "cHNidP8B…": "cHNidP8B…",
+  "Upload sent .psbt": "Subir .psbt enviado",
+  "Download updated wallet.dat": "Descargar wallet.dat actualizado"
 }
