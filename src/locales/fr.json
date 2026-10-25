@@ -2098,5 +2098,14 @@
   "cHNidP8B…": "cHNidP8B…",
   "Change outputs": "Sorties de monnaie",
   "Output {n} is change back to your wallet.": "La sortie {n} est une monnaie retournée à votre portefeuille.",
-  "Download updated wallet.dat": "Télécharger wallet.dat mis à jour"
+  "Download updated wallet.dat": "Télécharger wallet.dat mis à jour",
+  "Copy Core deriveaddresses": "Copier Core deriveaddresses",
+  "Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.": "Collez dans la console de Bitcoin Core (Fenêtre → Console), ou après bitcoin-cli. Core imprime les adresses ; elles doivent correspondre à celles affichées ici. Utilisez un nœud sur le même réseau.",
+  "No duplicate derived keys detected in the first 20 addresses of each branch.": "Aucune clé dérivée en double détectée dans les 20 premières adresses de chaque branche.",
+  "Key {a} at {pathA} and key {b} at {pathB}": "Clé {a} à {pathA} et clé {b} à {pathB}",
+  "…and {count} more.": "…et {count} de plus.",
+  "Potential key reuse: this descriptor derives the same public key in more than one place": "Réutilisation potentielle de clé : ce descripteur dérive la même clé publique à plusieurs endroits",
+  "Check a descriptor for key reuse": "Vérifier un descripteur pour la réutilisation de clé",
+  "wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…))": "wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…))",
+  "Check": "Vérifier"
 }

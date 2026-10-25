@@ -2099,5 +2099,14 @@
   "PSBT you sent (base64 or hex)": "PSBT que enviaste (base64 o hex)",
   "cHNidP8B…": "cHNidP8B…",
   "Upload sent .psbt": "Subir .psbt enviado",
-  "Download updated wallet.dat": "Descargar wallet.dat actualizado"
+  "Download updated wallet.dat": "Descargar wallet.dat actualizado",
+  "Copy Core deriveaddresses": "Copiar Core deriveaddresses",
+  "Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.": "Pega en la consola de Bitcoin Core (Ventana → Consola), o después de bitcoin-cli. Core imprime las direcciones; deben coincidir con las que se muestran aquí. Usa un nodo en la misma red.",
+  "No duplicate derived keys detected in the first 20 addresses of each branch.": "No se detectaron claves derivadas duplicadas en las primeras 20 direcciones de cada rama.",
+  "Key {a} at {pathA} and key {b} at {pathB}": "Clave {a} en {pathA} y clave {b} en {pathB}",
+  "…and {count} more.": "...y {count} más.",
+  "Potential key reuse: this descriptor derives the same public key in more than one place": "Reutilización potencial de clave: este descriptor deriva la misma clave pública en más de un lugar",
+  "Check a descriptor for key reuse": "Verificar un descriptor para reutilización de clave",
+  "wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…))": "wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…))",
+  "Check": "Verificar"
 }
