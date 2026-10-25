@@ -273,9 +273,11 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
     out.dataset.added = String(added);
     bindImportButtons(imports, failed);
     addSection.hidden = false;
-    // A file this page has edited is offered only once every check passes:
-    // an addition must never hand out a wallet that verification refuses.
-    setEnabled(download, !(added > 0 && failed));
+    // Download is for a file this page has edited: the user already has the
+    // one they uploaded. It is offered only after at least one descriptor was
+    // added, and only once every check passes: an addition must never hand
+    // out a wallet that verification refuses.
+    setEnabled(download, added > 0 && !failed);
     setEnabled(wipe, true);
     syncAddGo();
   };

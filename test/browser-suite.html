@@ -5148,7 +5148,8 @@
     // reason and offers no import button.
     assert(coreOut().includes("Watch-only wallet"), "watch-only import reason missing");
     assert(!document.querySelector("#core-out [data-core-import-go]"), "a watch-only wallet offered an import");
-    assert(!document.getElementById("core-download").disabled, "download stayed disabled after a load");
+    // Nothing edited yet: the user already has this file, so it is not offered.
+    assert(document.getElementById("core-download").disabled, "download offered before any descriptor was added");
     assert(document.getElementById("core-add-go").disabled, "add enabled with no descriptor typed");
     assert(!document.getElementById("core-add").hidden, "add-descriptor section stayed hidden");
     // Append the reference legacy (pkh) descriptor: the file re-parses and
@@ -5159,6 +5160,7 @@
     equal(document.getElementById("core-error").textContent, "", "descriptor addition failed");
     assert(!coreChecks().querySelector('[data-tone="bad"]'), "a verification check failed after adding a descriptor");
     equal(document.getElementById("core-out").dataset.added, "1", "added count");
+    assert(!document.getElementById("core-download").disabled, "download stayed disabled after a descriptor was added");
     // The same rows filed as mainnet: their tpub keys fail the network check.
     // A tpub addition is refused outright; a valid mainnet one is added, but
     // the rebuilt file still fails a check, so it is not offered for download.

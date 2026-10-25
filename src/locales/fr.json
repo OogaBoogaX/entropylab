@@ -1856,7 +1856,6 @@
   "session-state": "état de session",
   "Opened session snapshot": "Instantané de session ouvert",
   "Opened debug log": "Journal de débogage ouvert",
-  "Download wallet.dat": "Télécharger wallet.dat",
   "Keep notes, reusable key inputs, and session history together. Download a complete backup, including private key inputs and recovery material, to keep your work before closing this page. A password protects your files; without one, anyone with the file can open them.": "Conservez ensemble les notes, les entrées de clé réutilisables et l'historique de session. Téléchargez une sauvegarde complète, y compris les entrées de clé privée et le matériel de récupération, pour conserver votre travail avant de fermer cette page. Un mot de passe protège vos fichiers ; sans lui, toute personne possédant le fichier peut les ouvrir.",
   "Download backup": "Télécharger la sauvegarde",
   "Journal sections": "Sections du Journal",
@@ -2098,5 +2097,6 @@
   "PSBT you sent (base64 or hex)": "PSBT envoyé (base64 ou hex)",
   "cHNidP8B…": "cHNidP8B…",
   "Change outputs": "Sorties de monnaie",
-  "Output {n} is change back to your wallet.": "La sortie {n} est une monnaie retournée à votre portefeuille."
+  "Output {n} is change back to your wallet.": "La sortie {n} est une monnaie retournée à votre portefeuille.",
+  "Download updated wallet.dat": "Télécharger wallet.dat mis à jour"
 }
