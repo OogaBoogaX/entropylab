@@ -2098,5 +2098,7 @@
   "cHNidP8B…": "257149535e808242c02f534d2e7bd4e46f2efd641d163e7bf5d55bf3f218c385",
   "Change outputs": "72fd82883c9c7feea5aa3c07407d387da093c94d59ee138b861f731525727f82",
   "Output {n} is change back to your wallet.": "7fbb60b07fbd14365e2ff110ddc16acd6ab90fca8fb8b2ea1741329ba0f92e7b",
-  "Download updated wallet.dat": "f727ca714d4e6a281a1e1780ed4bd423e68bfb11d9d8535eeb620bb1fa16d135"
+  "Download updated wallet.dat": "f727ca714d4e6a281a1e1780ed4bd423e68bfb11d9d8535eeb620bb1fa16d135",
+  "Copy Core deriveaddresses": "fb37991ca57a9f3d29e919ee8262eb3e630fa0b1ed92890b3c9a684ef9a15e2d",
+  "Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.": "f1d411ec6cef72c342594c9aa8ed1bfacb56b53f5b80e079196946dc05f69a71"
 }

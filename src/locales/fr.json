@@ -2098,5 +2098,7 @@
   "cHNidP8B…": "cHNidP8B…",
   "Change outputs": "Sorties de monnaie",
   "Output {n} is change back to your wallet.": "La sortie {n} est une monnaie retournée à votre portefeuille.",
-  "Download updated wallet.dat": "Télécharger wallet.dat mis à jour"
+  "Download updated wallet.dat": "Télécharger wallet.dat mis à jour",
+  "Copy Core deriveaddresses": "Copier Core deriveaddresses",
+  "Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.": "Collez dans la console de Bitcoin Core (Fenêtre → Console), ou après bitcoin-cli. Core imprime les adresses ; elles doivent correspondre à celles affichées ici. Utilisez un nœud sur le même réseau."
 }
