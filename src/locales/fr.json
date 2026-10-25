@@ -2096,5 +2096,7 @@
   "Check what the signer changed (optional)": "Vérifiez ce que le signataire a modifié (facultatif)",
   "Paste the PSBT exactly as you sent it to the signer, then Inspect again. The returned PSBT above is compared with it field by field — the transaction, the signatures, and every other value the signer touched — and the verdict appears on top of the inspection.": "Collez le PSBT exactement tel que vous l'avez envoyé au signataire, puis Inspectez à nouveau. Le PSBT retourné ci-dessus est comparé champ par champ — la transaction, les signatures et toutes les autres valeurs touchées par le signataire — et le verdict apparaît en haut de l'inspection.",
   "PSBT you sent (base64 or hex)": "PSBT envoyé (base64 ou hex)",
-  "cHNidP8B…": "cHNidP8B…"
+  "cHNidP8B…": "cHNidP8B…",
+  "Change outputs": "Sorties de monnaie",
+  "Output {n} is change back to your wallet.": "La sortie {n} est une monnaie retournée à votre portefeuille."
 }
