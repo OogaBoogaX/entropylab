@@ -1721,7 +1721,6 @@
   "Wallet check result": "Wallet-Prüfergebnis",
   "Upload a wallet.dat to view its records and checks here.": "Laden Sie eine wallet.dat hoch, um ihre Aufzeichnungen und Prüfungen hier anzuzeigen.",
   "Upload wallet.dat": "wallet.dat hochladen",
-  "Download wallet.dat": "wallet.dat herunterladen",
   "End Session / Clear Fields": "Sitzung beenden / Felder löschen",
   "Derive all pending": "Alle ausstehenden ableiten",
   "Reviewing {name} for {network}. Derive to verify these inputs. Use the Network menu to change the saved network.": "Überprüfe {name} für {network}. Leiten Sie ab, um diese Eingaben zu verifizieren. Verwenden Sie das Netzwerkmenü, um das gespeicherte Netzwerk zu ändern.",
@@ -2098,5 +2097,6 @@
   "PSBT you sent (base64 or hex)": "Von Ihnen gesendete PSBT (Base64 oder Hex)",
   "cHNidP8B…": "cHNidP8B…",
   "Upload sent .psbt": "Gesendete .psbt hochladen",
-  "Change outputs": "Änderungsausgaben"
+  "Change outputs": "Änderungsausgaben",
+  "Download updated wallet.dat": "Aktualisierte wallet.dat herunterladen"
 }
