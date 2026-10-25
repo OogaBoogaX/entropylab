@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import * as journalDisplay from "../src/js/journal.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -98,10 +99,10 @@ test("formatStamp is local wall-clock, not UTC ISO", () => {
   assert.doesNotMatch(stamp, /T|Z/);
 });
 
-test("the notebook download preserves blank lines and removes untouched inline hints", () => {
+test("the notebook download preserves blank lines and editable timestamp text", () => {
   let text = "2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note";
-  assert.equal(formatNotebook(text), "2026-09-02 10:00:00  first note");
-  assert.equal(formatNotebook("2026-09-02 10:00:00  first note\n2026-09-02 10:01:00  "), "2026-09-02 10:00:00  first note");
+  assert.equal(formatNotebook(text), "2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note");
+  assert.equal(formatNotebook("2026-09-02 10:00:00  first note\n2026-09-02 10:01:00  "), "2026-09-02 10:00:00  first note\n2026-09-02 10:01:00");
   assert.equal(formatNotebook(""), "No notes.");
 });
 
@@ -109,7 +110,7 @@ test("a multi-page notebook download includes every named page", () => {
   assert.equal(formatNotebookPages([
     { number: 1, name: "Field notes", notesText: "2026-09-02 10:00:00  first note" },
     { number: 2, name: "Page 2", notesText: "2026-09-02 10:01:00  " },
-  ]), "Field notes\n2026-09-02 10:00:00  first note\n\nPage 2\nNo notes.");
+  ]), "Field notes\n2026-09-02 10:00:00  first note\n\nPage 2\n2026-09-02 10:01:00");
   assert.equal(formatNotebookPages([{ number: 1, name: "Page 1", notesText: "" }]), "No notes.");
 });
 
@@ -195,8 +196,8 @@ test("notebook imports validate their schema and legacy text becomes one page", 
 });
 
 test("notebook uploads preserve a filled page and reuse an empty current page", () => {
-  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), false);
-  assert.equal(notebookPageHasContent("\n  \n2026-09-04 13:17:24  Add new note"), false);
+  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), true);
+  assert.equal(notebookPageHasContent("\n  \n2026-09-04 13:17:24  Add new note"), true);
   assert.equal(notebookPageHasContent("2026-09-04 13:17:24  kept"), true);
   let imported = journalFromPlainText("uploaded notes");
   let journal = createJournal();
@@ -209,7 +210,7 @@ test("notebook uploads preserve a filled page and reuse an empty current page", 
   assert.equal(merged.pages[1].name, "Page 2");
   assert.equal(merged.activePage, 1);
   let empty = createJournal();
-  empty.pages[0].notesText = "2026-09-04 13:17:24  ";
+  empty.pages[0].notesText = " \n\t";
   merged = mergeNotebookImport(empty, imported);
   assert.equal(merged.pages.length, 1);
   assert.equal(merged.pages[0].id, 1);
@@ -220,8 +221,10 @@ test("notebook uploads preserve a filled page and reuse an empty current page", 
 
 test("the log is a ring buffer and never stores more than the cap", () => {
   let journal = createJournal();
-  for (let i = 0; i < JOURNAL_LOG_LIMIT + 5; i++) {
-    appendLog(journal, { tool: "calc", action: "derive", detail: `n=${i}` }, new Date(2026, 0, 1, 0, 0, 0));
+  // Short records isolate the count ceiling from the independent byte ceiling.
+  journal.log = Array.from({ length: JOURNAL_LOG_LIMIT - 5 }, (_, i) => ({ at: "t", tool: "", action: "", detail: `n=${i}` }));
+  for (let i = JOURNAL_LOG_LIMIT - 5; i < JOURNAL_LOG_LIMIT + 5; i++) {
+    appendLog(journal, { at: "t", tool: "calc", action: "derive", detail: `n=${i}` });
   }
   assert.equal(journal.log.length, JOURNAL_LOG_LIMIT);
   assert.match(journal.log[0].detail, /n=5/);
@@ -266,10 +269,25 @@ test("a public snapshot names fingerprints and omits secrets unless asked", () =
     psbt: { loaded: true, nonce: "reuse", nonceKind: "psbt", historyCount: 2, historyVerdict: "reuse" },
   });
   assert.match(reuseText, /payload present in the inspector/);
-  assert.match(reuseText, /nonce verdict: reused ECDSA nonce in this PSBT/);
+  assert.match(reuseText, /nonce verdict: .*reused nonce/);
   assert.match(reuseText, /nonce history: 2 records/);
   assert.match(reuseText, /cross-session comparison: reused ECDSA nonce detected/);
   assert.doesNotMatch(reuseText, /\br=/);
+});
+
+test("snapshot nonce summaries follow the loaded verdict without assuming a signature family", () => {
+  for (const nonceKind of ["psbt", "transaction"]) {
+    const report = (loaded, nonce) => snapshotSession({ psbt: { loaded, nonceKind, nonce } });
+    const empty = report(false, ""), unknown = report(true, ""), results = [];
+    for (const nonce of ["reuse", "possible", "cross-key", "incomplete", "clean"]) {
+      const text = report(true, nonce);
+      assert.notEqual(text, unknown, "a recognized verdict must be recorded");
+      assert.equal(report(false, nonce), empty, "a closed inspector must not report a stale verdict");
+      assert.doesNotMatch(text, /ECDSA|Schnorr|same key, different digest/, "the combined verdict does not identify a signature family or key relationship");
+      results.push(text);
+    }
+    assert.equal(new Set(results).size, results.length, "distinct verdicts must not collapse into one result");
+  }
 });
 
 test("wipe drops notes, log, and snapshot text", () => {
@@ -796,11 +814,11 @@ test("mutant kill: journal basics and formatting", () => {
   assert.equal(formatNotebook(`before ${token} after`), "before [Key: My Key · a1b2c3d4] after");
   assert.equal(formatNotebook(`before ${journalKeyReferenceToken("a1b2c3d4", "a1b2c3d4")} after`), "before [Key: a1b2c3d4] after");
   assert.equal(formatNotebook(`before ${journalBip85ReferenceToken("bip39", "deadbeef")} after`), "before [BIP-85 BIP-39: deadbeef] after");
-  assert.equal(formatNotebook("2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note"), "2026-09-02 10:00:00  first note");
+  assert.equal(formatNotebook("2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note"), "2026-09-02 10:00:00  first note\n\n2026-09-02 10:01:00  Add new note");
   assert.equal(formatNotebook(""), "No notes.");
   assert.equal(formatNotebook(null), "No notes.");
   assert.equal(formatNotebookPages([{ number: 1, name: "Page 1", notesText: "" }]), "No notes.");
-  assert.equal(formatNotebookPages([{ number: 1, name: "Field notes", notesText: "2026-09-02 10:00:00  first note" }, { number: 2, name: "Page 2", notesText: "2026-09-02 10:01:00  " }]), "Field notes\n2026-09-02 10:00:00  first note\n\nPage 2\nNo notes.");
+  assert.equal(formatNotebookPages([{ number: 1, name: "Field notes", notesText: "2026-09-02 10:00:00  first note" }, { number: 2, name: "Page 2", notesText: "2026-09-02 10:01:00  " }]), "Field notes\n2026-09-02 10:00:00  first note\n\nPage 2\n2026-09-02 10:01:00");
   assert.equal(formatNotebookPages([]), "No notes.");
   assert.equal(formatNotebookPages(null), "No notes.");
 });
@@ -851,7 +869,7 @@ test("mutant kill: notebook serialize/parse boundaries", () => {
 });
 
 test("mutant kill: notebook import and page content", () => {
-  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), false);
+  assert.equal(notebookPageHasContent("2026-09-04 13:17:24  "), true);
   assert.equal(notebookPageHasContent("2026-09-04 13:17:24  kept"), true);
   assert.equal(notebookPageHasContent("hello"), true);
   assert.equal(notebookPageHasContent(""), false);
@@ -865,7 +883,7 @@ test("mutant kill: notebook import and page content", () => {
   assert.equal(merged.pages[1].notesText, "uploaded notes");
   assert.equal(merged.activePage, 1);
   const empty = createJournal();
-  empty.pages[0].notesText = "2026-09-04 13:17:24  ";
+  empty.pages[0].notesText = " \n\t";
   merged = mergeNotebookImport(empty, imported);
   assert.equal(merged.pages.length, 1);
   assert.equal(merged.pages[0].id, 1);
@@ -977,7 +995,8 @@ test("mutant kill: appendLog and formatLog and wipeJournal", () => {
   assert.equal(j.log[0].tool, "calc");
   assert.equal(formatLog(j.log).includes("calc\tderive"), true);
   assert.equal(formatLog([]), "No events yet.");
-  for (let i = 0; i < JOURNAL_LOG_LIMIT + 5; i++) appendLog(j, { tool: "t", action: "a", detail: `n=${i}` }, new Date(2026, 0, 1));
+  j.log.push(...Array.from({ length: JOURNAL_LOG_LIMIT - 1 }, () => ({ at: "t", tool: "", action: "", detail: "" })));
+  for (let i = 0; i < 6; i++) appendLog(j, { at: "t", tool: "t", action: "a", detail: `n=${i}` });
   assert.equal(j.log.length, JOURNAL_LOG_LIMIT);
   j.stateText = "xprv...";
   j.notesText = "secret";
@@ -1000,4 +1019,249 @@ test("mutant kill: deriveJournalKeys validation", async () => {
   assert.equal(keys.passwordProtected, true);
   const emptyKeys = await deriveJournalKeys("", JOURNAL_MIN_ITERATIONS);
   assert.equal(emptyKeys.passwordProtected, false);
+});
+
+// Annotation offsets are supplied by live formatters. User-authored names and
+// public report text that happen to match secret values must stay ordinary.
+test("snapshot annotations preserve sheet offsets and classify BIP85 output only", () => {
+  const secret = "000102030405060708090a0b0c0d0e0f"; // BIP32 vector 1 seed.
+  const sheet = `Public ${secret}\nPrivate label\n${secret}\nPublic tail`;
+  const start = sheet.indexOf("Private label");
+  const sheetSpans = [
+    { start, end: start + "Private label".length, kind: "label" },
+    { start: start + "Private label\n".length, end: start + "Private label\n".length + secret.length, kind: "value" },
+  ];
+  const session = { includePrivate: true, keys: [{ name: secret, derived: true, sheet, sheetSpans }], bip85: [{ name: secret, app: "hex", secret }] };
+  const spans = [], text = snapshotSession(session, spans);
+  assert.equal(text, snapshotSession(session));
+  assert.deepEqual(spans.map(span => [span.kind, text.slice(span.start, span.end)]), [["label", "Private label"], ["value", secret], ["value", secret]]);
+  assert.ok(spans[0].start > text.indexOf(sheet));
+  const publicSpans = [];
+  const publicSession = { includePrivate: false, keys: [], bip85: [{ name: secret, get secret() { assert.fail("a public snapshot read private BIP85 output"); } }] };
+  assert.ok(snapshotSession(publicSession, publicSpans).includes(secret));
+  assert.deepEqual(publicSpans, []);
+});
+
+test("a public snapshot never reads a BIP85 private output getter", () => {
+  const spans = [];
+  snapshotSession({ includePrivate: false, bip85: [{ get secret() { assert.fail("public snapshot read a private output"); } }] }, spans);
+  assert.deepEqual(spans, []);
+});
+
+// Historical reports have no field metadata. This recognized display grammar
+// supplies color ranges only: it never authenticates material or installs state,
+// and every byte remains literal report text. These labels are export syntax.
+const reportWif = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ"; // Published Bitcoin wiki WIF.
+const reportWords = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const reportRoot = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi"; // BIP32 vector 1.
+const reportHeader = "ENTROPYLAB — RECOVERY SHEET";
+const reportParts = text => journalDisplay.snapshotPrivateSpans(text).map(span => [span.kind, text.slice(span.start, span.end)]);
+
+test("saved recovery reports recognize single-key fields without interpreting their values", () => {
+  const weird = "<img src=x onerror=alert(1)> & 🔐 literal value";
+  const text = [reportHeader, "Network: mainnet", "", "PRIVATE RECOVERY MATERIAL",
+    `WIF compressed:   ${reportWif}`, `WIF uncompressed: ${reportWif}`,
+    "Hex private key:  000102030405060708090a0b0c0d0e0f", `Mini key: ${weird}`,
+    "", "PUBLIC KEYS AND ADDRESSES", `WIF compressed:   ${reportWif}`, "unknown: arbitrary text"].join("\n");
+  assert.deepEqual(reportParts(text), [
+    ["label", "PRIVATE RECOVERY MATERIAL"],
+    ["label", "WIF compressed:"], ["value", reportWif],
+    ["label", "WIF uncompressed:"], ["value", reportWif],
+    ["label", "Hex private key:"], ["value", "000102030405060708090a0b0c0d0e0f"],
+    ["label", "Mini key:"], ["value", weird],
+  ]);
+  assert.ok(text.includes(weird), "the parser cannot replace the source text");
+});
+
+test("saved HD reports distinguish private headings, descriptors and WIFs from paths and public data", () => {
+  const descriptor = `wpkh(${reportRoot}/7/*)#display-only`;
+  const text = [reportHeader, "PRIVATE RECOVERY MATERIAL", "", "YOUR SEED PHRASE", reportWords,
+    "", "SEEDQR DIGITS", "0000000000000000000000000000000000000000000000000003",
+    "", "BIP39 ENTROPY HEX", "00000000000000000000000000000000",
+    "", "MASTER SEED HEX (BIP39 PBKDF2, 512 bits)", "fixed seed hex",
+    "", "MASTER XPRV", reportRoot, "", "IMPORTED ZPRV", "fixed SLIP-132 private value",
+    "", "-- Imported account (BIP32) PRIVATE ACCOUNT MATERIAL --",
+    `SLIP-132 zprv: ${reportRoot}`, `Account xprv: ${reportRoot}`,
+    `Spending receive descriptor: ${descriptor}`, `Spending custom branch 7 descriptor: ${descriptor}`,
+    "Warning: informational warning remains ordinary.", "CUSTOM BRANCH 7-ADDRESS PRIVATE KEYS (WIF)",
+    `  10  m/84'/0'/0'/7/10  ${reportWif}`,
+    `  11  m/84'/0'/0'/7/11  ${reportWif}`,
+    "unknown table continuation", `  12  m/84'/0'/0'/7/12  ${reportWif}`,
+    "", "WATCH-ONLY WALLET DATA", `Account xpub: ${reportRoot}`,
+    `Watch-only receive descriptor: ${descriptor}`, "YOUR SEED PHRASE", reportWords].join("\n");
+  const parts = reportParts(text), values = parts.filter(([kind]) => kind === "value").map(([, value]) => value);
+  assert.deepEqual(values, [reportWords, "0000000000000000000000000000000000000000000000000003",
+    "00000000000000000000000000000000", "fixed seed hex", reportRoot, "fixed SLIP-132 private value",
+    reportRoot, reportRoot, descriptor, descriptor, reportWif, reportWif]);
+  assert.ok(parts.some(([kind, value]) => kind === "label" && value === "CUSTOM BRANCH 7-ADDRESS PRIVATE KEYS (WIF)"));
+  assert.ok(!parts.some(([, value]) => value.includes("m/84'")), "WIF indexes and derivation paths stay ordinary");
+  assert.ok(!parts.some(([, value]) => value.includes("Warning:") || value.includes("Watch-only") || value.includes("Account xpub")));
+});
+
+test("saved snapshots recognize BIP85 output only in a private child position and reset across concatenated reports", () => {
+  const snapshot = ["ENTROPYLAB SESSION STATE", "Updated: fixed fixture", "Build: fixture", "Private material: INCLUDED", "", "KEYS",
+    "- wallet 🔐 with literal <b>name</b>", reportHeader, "PRIVATE RECOVERY MATERIAL", "YOUR SEED PHRASE", reportWords,
+    "WATCH-ONLY WALLET DATA", "", "MULTISIG", "- public wallet", "  public address",
+    "", "BIP-85", "- child 🔐 · deadbeef · pwd-base85", "  <tag> & : punctuation 🔑",
+    "  extra line is not a child output", "- another child", "unknown line breaks adjacency", "  ignored value",
+    "- valid next child", `  ${reportRoot}`, "", "SILENT PAYMENTS", "- fingerprint public", "  public address",
+    "", "PSBT", "- inspector empty"].join("\n");
+  const publicSnapshot = ["ENTROPYLAB SESSION STATE", "Private material: omitted", "BIP-85", "- child", `  ${reportWords}`].join("\n");
+  for (const newline of ["\n", "\r\n"]) {
+    const text = ["Ancienne session enregistrée 🔐", snapshot, "Aktuelle Sitzung", publicSnapshot, "Saved again", snapshot].join("\n").replaceAll("\n", newline);
+    const spans = journalDisplay.snapshotPrivateSpans(text);
+    assert.deepEqual(spans.filter(span => span.kind === "value").map(span => text.slice(span.start, span.end)), [reportWords, "<tag> & : punctuation 🔑", reportRoot, reportWords, "<tag> & : punctuation 🔑", reportRoot]);
+    let end = 0;
+    for (const span of spans) {
+      assert.ok(span.start >= end && span.end > span.start && span.end <= text.length);
+      assert.ok(!text.slice(span.start, span.end).includes("\r"));
+      end = span.end;
+    }
+  }
+});
+
+test("unrecognized history, malformed adjacency and unsupported input remain plain", () => {
+  for (const text of [
+    `YOUR SEED PHRASE\n${reportWords}\nWIF compressed: ${reportWif}`,
+    `PRIVATE RECOVERY MATERIAL\nWIF compressed: ${reportWif}`,
+    `${reportHeader}\nYOUR SEED PHRASE\n${reportWords}`,
+    `${reportHeader}\nPRIVATE RECOVERY MATERIAL OMITTED\nWIF compressed: ${reportWif}`,
+    `ENTROPYLAB SESSION STATE\nPrivate material: omitted\nBIP-85\n- child\n  ${reportWords}`,
+    `ENTROPYLAB SESSION STATE\nPrivate material: INCLUDED\nSILENT PAYMENTS\n- child\n  ${reportWords}`,
+    `${reportHeader}\nPRIVATE RECOVERY MATERIAL\nunknown label: ${reportWif}\nAccount xpub: public`,
+  ]) {
+    assert.ok(reportParts(text).every(([kind, value]) => kind === "label" && value === "PRIVATE RECOVERY MATERIAL"));
+  }
+  const broken = [reportHeader, "PRIVATE RECOVERY MATERIAL", "YOUR SEED PHRASE", "WATCH-ONLY WALLET DATA", reportWords,
+    "BIP-85", "- child", `  ${reportWif}`].join("\n");
+  assert.ok(reportParts(broken).every(([kind]) => kind === "label"), "a section boundary cannot become the previous private field's value");
+  for (const value of [null, undefined, 1, {}, "x".repeat(JOURNAL_MAX_TEXT_LENGTH + 1)]) assert.deepEqual(journalDisplay.snapshotPrivateSpans(value), []);
+});
+
+test("a closed public or omitted recovery section cannot reopen without a new report header", () => {
+  for (const boundary of ["WATCH-ONLY WALLET DATA", "PUBLIC KEYS AND ADDRESSES", "PRIVATE RECOVERY MATERIAL OMITTED", "NO PRIVATE RECOVERY MATERIAL"]) {
+    const text = [reportHeader, boundary, "PRIVATE RECOVERY MATERIAL", "YOUR SEED PHRASE", reportWords, `WIF compressed: ${reportWif}`].join("\n");
+    assert.deepEqual(journalDisplay.snapshotPrivateSpans(text), [], boundary);
+  }
+});
+
+test("private inline and WIF values preserve Unicode separators without suffix matching", () => {
+  const value = "literal <tag>\u2028still literal\rtext", spaces = " ".repeat(4096);
+  const text = [reportHeader, "PRIVATE RECOVERY MATERIAL", `Mini key:${spaces}${value}`,
+    "RECEIVE-ADDRESS PRIVATE KEYS (WIF)", `  0  m/0/0  ${value}`].join("\n");
+  assert.deepEqual(reportParts(text).filter(([kind]) => kind === "value").map(([, text]) => text), [value, value]);
+});
+
+// Retention contract: keep the newest events within both 10,000 records and
+// 512 KiB of serialized UTF-8 JSON, disclose every eviction, and bound every
+// field before storage. Expected byte counts use Node's independent UTF-8 API.
+const LOG_BYTES = 512 * 1024;
+const storedLogBytes = log => Buffer.byteLength(JSON.stringify(log), "utf8");
+test("debug retention keeps more than the original 400 events and reports actual usage", () => {
+  const journal = createJournal();
+  for (let n = 0; n < 450; n++) appendLog(journal, { at: "t", tool: "calc", action: "derive", detail: String(n) });
+  assert.equal(journal.log.length, 450);
+  assert.equal(journal.log[0].detail, "0");
+  assert.equal(journal.logDiscarded, 0);
+  assert.deepEqual(journalDisplay.logUsage(journal), { count: 450, bytes: storedLogBytes(journal.log), discarded: 0 });
+});
+
+test("UTF-8 byte retention evicts oldest Unicode events and reports the lost count", () => {
+  const journal = createJournal(), count = 200;
+  for (let n = 0; n < count; n++) appendLog(journal, { at: String(n).padStart(3, "0") + "界".repeat(297), tool: "界".repeat(300), action: "界".repeat(300), detail: "界".repeat(300) });
+  assert.ok(storedLogBytes(journal.log) <= LOG_BYTES, "UTF-16 character counts understate UTF-8 retention");
+  const one = Buffer.byteLength(JSON.stringify({ at: "000" + "界".repeat(297), tool: "界".repeat(300), action: "界".repeat(300), detail: "界".repeat(300) }), "utf8");
+  const retained = Math.floor((LOG_BYTES - 1) / (one + 1));
+  assert.equal(journal.log.length, retained);
+  assert.equal(journal.log[0].at.slice(0, 3), String(count - retained).padStart(3, "0"));
+  assert.equal(journal.log.at(-1).at.slice(0, 3), "199");
+  assert.equal(journal.logDiscarded, count - retained);
+  assert.deepEqual(journalDisplay.logUsage(journal), { count: retained, bytes: storedLogBytes(journal.log), discarded: count - retained });
+});
+
+test("event-count retention remains bounded for small records and discarded counts saturate safely", () => {
+  const journal = createJournal();
+  journal.log = Array.from({ length: 10000 }, () => ({ at: "t", tool: "", action: "", detail: "" }));
+  assert.ok(storedLogBytes(journal.log) < LOG_BYTES);
+  journal.logDiscarded = Number.MAX_SAFE_INTEGER;
+  const newest = appendLog(journal, { at: "t", detail: "newest" });
+  assert.equal(journal.log.length, 10000);
+  assert.equal(journal.log.at(-1), newest);
+  assert.equal(journal.logDiscarded, Number.MAX_SAFE_INTEGER);
+});
+
+test("all event fields are bounded and eviction metadata is wiped with the Journal", () => {
+  const journal = createJournal(), source = "x".repeat(301);
+  appendLog(journal, { at: source, tool: source, action: source, detail: source });
+  for (const key of ["at", "tool", "action", "detail"]) assert.equal(journal.log[0][key], "x".repeat(300));
+  journal.logDiscarded = 17;
+  wipeJournal(journal);
+  assert.equal(journal.logDiscarded, 0);
+  assert.deepEqual(journalDisplay.logUsage(journal), { count: 0, bytes: 2, discarded: 0 });
+});
+
+test("debug reports disclose discarded history without rewriting retained events", () => {
+  const events = [{ at: "literal date", tool: "tool", action: "action", detail: "<literal> details" }];
+  const original = formatLog(events), text = formatLog(events, 19);
+  assert.ok(text.endsWith(original));
+  assert.ok(text.includes("19"));
+  assert.ok(/discarded|removed|dropped/i.test(text));
+  assert.equal(formatLog(events, 0), original);
+  assert.deepEqual(events, [{ at: "literal date", tool: "tool", action: "action", detail: "<literal> details" }]);
+});
+
+// Imported fields remain literal in the backup, but a readable log must not
+// let one field introduce another event/column or hide/reorder its characters.
+test("debug report fields escape record separators and invisible controls without changing stored data", () => {
+  const events = [{ at: "t\r\nforged", tool: "key\tstation", action: "a\u2028b\u2029c", detail: "<tag> \\n \u0000\b\u001b\u0085\u200b\u202e\u2066\ufeff\u{e0001}" }];
+  const original = structuredClone(events);
+  const expected = "t\\r\\nforged\tkey\\tstation\ta\\u2028b\\u2029c  <tag> \\\\n \\u0000\\u0008\\u001b\\u0085\\u200b\\u202e\\u2066\\ufeff\\u{e0001}";
+  assert.equal(formatLog(events), expected);
+  assert.equal(formatLog(events).split("\n").length, 1);
+  assert.equal(formatLog(events).split("\t").length, 3);
+  assert.deepEqual(events, original, "formatting must not rewrite imported event fields");
+  assert.equal(formatLog([{ at: "2026-10-23 12:34:56", tool: "journal", action: "note", detail: "日本語 café <literal>" }]),
+    "2026-10-23 12:34:56\tjournal\tnote  日本語 café <literal>");
+});
+
+test("debug history merge preserves imported and current events without trusting timestamps or deduplicating repeats", () => {
+  const same = { at: "same second", tool: "app", action: "click", detail: "" };
+  const live = [{ at: "1900", tool: "app", action: "boot", detail: "current" }, { ...same }];
+  const imported = [{ at: "2999\nforged", tool: "app", action: "boot", detail: "imported" }, { ...same }];
+  const before = structuredClone([imported, live]);
+  const journal = { log: live, logDiscarded: 3 };
+  journalDisplay.mergeLogHistory(journal, imported, 7);
+  assert.deepEqual(journal.log, [...before[0], ...before[1]]);
+  assert.equal(journal.logDiscarded, 10);
+  assert.notEqual(journal.log, live);
+  for (const [index, original] of [...imported, ...live].entries()) {
+    assert.notEqual(journal.log[index], original, "merged history must survive both prior document wipes");
+    for (const name of ["at", "tool", "action", "detail"]) original[name] = "";
+  }
+  assert.deepEqual(journal.log, [...before[0], ...before[1]]);
+});
+
+test("debug history merge enforces the count limit and accounts for both prior loss and new evictions", () => {
+  const imported = Array.from({ length: 10000 }, () => ({ at: "t", tool: "", action: "", detail: "" }));
+  const live = [{ at: "t", tool: "", action: "", detail: "newest" }];
+  const journal = { log: live, logDiscarded: 3 };
+  journalDisplay.mergeLogHistory(journal, imported, 7);
+  assert.equal(journal.log.length, 10000);
+  assert.equal(journal.log.at(-1).detail, "newest");
+  assert.equal(journal.logDiscarded, 11);
+  assert.equal(imported[0].at, "t", "retention must not mutate the separately owned source document");
+  assert.equal(live[0].detail, "newest");
+});
+
+test("debug history merge enforces UTF-8 bytes and safely saturates discarded metadata", () => {
+  const event = { at: "界".repeat(300), tool: "界".repeat(300), action: "界".repeat(300), detail: "界".repeat(300) };
+  const imported = Array.from({ length: 100 }, () => ({ ...event }));
+  const journal = { log: Array.from({ length: 100 }, () => ({ ...event })), logDiscarded: Number.MAX_SAFE_INTEGER };
+  journalDisplay.mergeLogHistory(journal, imported, Number.MAX_SAFE_INTEGER);
+  const one = Buffer.byteLength(JSON.stringify(event), "utf8");
+  const retained = Math.floor((LOG_BYTES - 1) / (one + 1));
+  assert.equal(journal.log.length, retained);
+  assert.ok(storedLogBytes(journal.log) <= LOG_BYTES);
+  assert.equal(journal.logDiscarded, Number.MAX_SAFE_INTEGER);
+  assert.deepEqual(imported[0], event);
 });

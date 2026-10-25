@@ -861,6 +861,7 @@ async function vanityApplyHarness({ method, script, address = applyRecordedAddre
     Uint8Array, ArrayBuffer, TextEncoder, TextDecoder,
     document: { getElementById: id => elements[id] || null },
     hodlKeys: [lab, source], hodlActiveKey: 1, hodlActiveDerivation: null, hodlDerivationGeneration: 0,
+    hodlKeyManagerPending: [], hodlJournalGeneration: 0,
     hodlWalletResult: source.result, hodlCommittedResults: new Set(), hodlWalletDatBirthday: "genesis",
     hodlKeyMode: "seed", hodlTargetWordCount: 12, hodlSeedMethod: "words", hodlNetworkChoice: "mainnet",
     hodlVanityMatches: [match], hodlVanityRun: run, hodlVanityApplying: false,

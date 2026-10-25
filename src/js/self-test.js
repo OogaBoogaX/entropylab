@@ -19,7 +19,9 @@
 //
 // Every expected value is a published vector (BIP32 test vector 1, the BIP39
 // reference vectors, the BIP44/49/84/86 "abandon ... about" first receive
-// addresses, the d = 1 "Satoshi Nakamoto" RFC 6979 signature), checked
+// addresses, the d = 1 "Satoshi Nakamoto" RFC 6979 signature, the published
+// root keys and hardcoded node pubkeys of the Lightning LND/LDK node
+// derivations), checked
 // against @scure/bip32, @scure/bip39, @scure/btc-signer and @noble/curves in
 // test/self-test-wasm.test.mjs. No randomness is generated or consumed.
 import { entropyToMnemonic, mnemonicToSeedSync } from "./bip39.js";
@@ -29,6 +31,7 @@ import { secp256k1 } from "./secp256k1.js";
 import { hex } from "./coders.js";
 import { psbtInspectDoc, psbtBuildBytes } from "./psbt-wasm.js";
 import { psbtEditorBuildDoc } from "./psbt-editor.js";
+import { deriveLndNode, deriveLdkNode } from "./lightning.js";
 
 const ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const BIP32_V1_SEED = "000102030405060708090a0b0c0d0e0f";
@@ -51,6 +54,25 @@ const firstReceive = (purpose, scriptType) => {
   if (!abandonRoot) abandonRoot = HDKey.fromMasterSeed(mnemonicToSeedSync(ABANDON));
   return addressFor(scriptType, abandonRoot.derive(`m/${purpose}'/0'/0'/0/0`).publicKey, "mainnet");
 };
+
+// The Lightning node pubkey is the tool's security-relevant output, so the
+// Lightning self-tests gate it too, not just the path and root xprv. The
+// expected pubkeys are HARDCODED constants, never values re-derived through
+// the engine under test: a systematic engine fault — one shared by the
+// tool's derivation and any boot-time re-derivation — could otherwise make
+// the two agree on a wrong key and boot with a wrong node identity. Every
+// constant is proven equal to the value @scure/bip32 + @scure/bip39 derive
+// for the same input in test/self-test-wasm.test.mjs, so the oracle is the
+// independent implementation; the tool's own outputs are differentials
+// against @scure in test/lightning.test.mjs.
+// LND: BIP32 test vector 1's seed at m/1017'/coinType'/6'/0/0.
+export const LND_MAINNET_NODE_PUBKEY = "0282faf17eeae0aa1dbdbe49c4fcbdb6738595ead9afdd7f8fb4a22c6c44d2849b";
+export const LND_TESTNET_NODE_PUBKEY = "02a14ebdb9129db3dee2220dd26e01da2dba312dd086e61653c4faaebca3fb31c8";
+// LDK (ldk-node): the "abandon ... about" seed, re-seeded from the stage-1
+// master's private key, at m/0' — and, apart from it, the plain m/0' of the
+// seed that a skipped second-stage re-seed would derive instead.
+export const LDK_NODE_PUBKEY = "027cf7c81dc777e46572ff964f17650a0f6f783319fcc140fb9a69425e2fbdc93c";
+export const LDK_PLAIN_NODE_PUBKEY = "027f1d87730e460e921b382242911565bf93daf2081ed685b2edd1d01176b2c13c";
 
 // Names are trusted literals: the failure screen renders them as markup.
 export const SELF_TESTS = [
@@ -100,6 +122,47 @@ export const SELF_TESTS = [
       const valid = secp256k1.verify(hex.decode(ECDSA_SIG), msghash, pubkey, { prehash: false });
       const forged = secp256k1.verify(tampered, msghash, pubkey, { prehash: false });
       return `valid:${valid} tampered:${forged}`;
+    },
+  },
+  {
+    // LND (lnd/keychain/derivation.go): the aezeed entropy is the BIP32
+    // seed; the node key sits at m/1017'/coinType'/6'/0/0. The published
+    // characterization entropy (test/lightning.test.mjs) equals BIP32 test
+    // vector 1's seed, so the root xprv is the BIP's published chain-m key.
+    // The node pubkey itself is a hardcoded constant proven against
+    // @scure/bip32 in test/self-test-wasm.test.mjs.
+    name: "LND node key (aezeed, mainnet)",
+    expected: "m/1017'/0'/6'/0/0 xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi",
+    run: () => {
+      const derived = deriveLndNode(hex.decode(BIP32_V1_SEED), 0);
+      if (derived.nodePubKey !== LND_MAINNET_NODE_PUBKEY) throw new Error("LND mainnet node pubkey mismatch");
+      return `${derived.path} ${derived.rootXprv}`;
+    },
+  },
+  {
+    name: "LND node key (aezeed, testnet)",
+    expected: "m/1017'/1'/6'/0/0 xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi",
+    run: () => {
+      const derived = deriveLndNode(hex.decode(BIP32_V1_SEED), 1);
+      if (derived.nodePubKey !== LND_TESTNET_NODE_PUBKEY) throw new Error("LND testnet node pubkey mismatch");
+      return `${derived.path} ${derived.rootXprv}`;
+    },
+  },
+  {
+    // ldk-node: BIP39 seed -> master -> its private key re-seeds a second
+    // BIP32 tree -> node secret at m/0'. The first-stage root xprv is the
+    // published "abandon ... about" root (the BIP84 vector's key); the node
+    // pubkey is a hardcoded constant proven against @scure in
+    // test/self-test-wasm.test.mjs.
+    name: "LDK node key (ldk-node)",
+    expected: "m/0' xprv9s21ZrQH143K3GJpoapnV8SFfukcVBSfeCficPSGfubmSFDxo1kuHnLisriDvSnRRuL2Qrg5ggqHKNVpxR86QEC8w35uxmGoggxtQTPvfUu",
+    run: () => {
+      const derived = deriveLdkNode(ABANDON);
+      if (derived.nodePubKey !== LDK_NODE_PUBKEY) throw new Error("LDK node pubkey mismatch");
+      // A skipped second-stage re-seed yields exactly the plain m/0' child,
+      // so refuse it even when both derivations agree on the wrong key.
+      if (derived.nodePubKey === LDK_PLAIN_NODE_PUBKEY) throw new Error("LDK node pubkey skipped the second-stage re-seed");
+      return `${derived.path} ${derived.rootXprv}`;
     },
   },
 ];

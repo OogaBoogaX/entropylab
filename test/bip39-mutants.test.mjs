@@ -228,6 +228,20 @@ test("mnemonicToSeedSync: a mnemonic with a lone surrogate is refused, not hashe
   assert.throws(() => mnemonicToSeedSync(phrase), invalidMnemonic);
 });
 
+test("mnemonicToSeedSync: the lone-surrogate refusal does not need the native isWellFormed", () => {
+  // Deep sweep of cb18b09 (eight reports across five models): the guard was
+  // feature-tested on String.prototype.isWellFormed, so an engine without it
+  // hashed the surrogate as U+FFFD. The module's own check runs everywhere.
+  const phrase = `${VECTOR_PHRASE.slice(0, -5)}abou\uD800t`;
+  const native = Object.getOwnPropertyDescriptor(String.prototype, "isWellFormed");
+  if (native) delete String.prototype.isWellFormed;
+  try {
+    assert.throws(() => mnemonicToSeedSync(phrase), invalidMnemonic);
+  } finally {
+    if (native) Object.defineProperty(String.prototype, "isWellFormed", native);
+  }
+});
+
 test("mnemonicToSeedSync: a passphrase with a lone surrogate is refused, not hashed as U+FFFD", () => {
   // saltFor's isWellFormed guard: without it, TextEncoder would silently
   // substitute U+FFFD into the PBKDF2 salt and derive a different wallet.

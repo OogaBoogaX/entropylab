@@ -276,7 +276,7 @@ export const SCENARIOS = [
     description:
       "Dispatches a junk nonce-history JSON (valid JSON, wrong shape) plus a non-JSON blob through the PSBT nonce-history file input.",
     actions: [
-      `(() => { click('[aria-label="PSBT"]'); return "workspace=psbt"; })()`,
+      `(() => { click('[data-workspace="psbt"]'); return "workspace=psbt"; })()`,
       `(() => { const ok = upload(["#psbt-nonce-history-file"], "hist.json", JSON.stringify({ this: "is", totally: ["wrong", 1, 2, 3] })); return "junk-json=" + ok; })()`,
       `(() => { const ok = upload(["#psbt-nonce-history-file"], "blob.bin", "\\x00\\x01\\x02 not json \\xFF"); return "binary-blob=" + ok; })()`,
       `(async () => { await sleep(800); const status = $("#psbt-nonce-history-status"); return "status=" + (status ? (status.textContent || "").slice(0, 140) : "(none)"); })()`,

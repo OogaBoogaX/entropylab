@@ -51,9 +51,9 @@ const DECLARED = new Set([
   "hodlSha256", "hodlHash160", "hodlSecp256k1", "hodlHex", "p2shScript", "p2wshScript", "addressFromScript",
   "parseRawTx", "serializeTx", "hodlWasm", "hodlWasmIn", "hodlWasmOut", "psbtInspectDoc",
   "hodlT", "hodlTText", "hodlTAttr", "matchOwnership", "indexHdKey", "indexSingleKey", "pathLabel",
-  "hodlTapKeySigs", "hodlTapScriptSigs", "hodlTapSighashProblems",
+  "hodlCompareSchnorrNonces", "hodlParseSchnorr", "hodlTapKeySigs", "hodlTapScriptPathSigs", "hodlTapScriptSigs", "hodlTapSighashProblems", "hodlTapWitnessShape",
   "inspectPsbtInscriptions", "describeEnvelope", "parseOpReturn", "describeOpReturn",
-  "hodlPublicValueHtml",
+  "hodlPublicValueHtml", "PSBT_RENDER_LIMIT", "hodlRenderAnnotatedPrivateText", "hodlJournalSnapshotPrivateSpans",
   // Harness seams from the prelude below (no browser chrome; controllable session).
   "document", "hodlNetworkDefault", "hodlNetworkChoice", "hodlPsbtPriv", "hodlPsbtHd", "hodlPsbtRecordNonceInspection",
 ]);
@@ -113,10 +113,14 @@ import { wasmExports as hodlWasm, withInput as hodlWasmIn, withOutput as hodlWas
 import { psbtInspectDoc } from "../src/js/psbt-wasm.js";
 import { tHtml as hodlT, t as hodlTText, tAttr as hodlTAttr } from "../src/js/i18n.js";
 import { matchOwnership, indexHdKey, indexSingleKey, pathLabel } from "../src/js/ownership.js";
-import { hodlTapKeySigs, hodlTapScriptSigs, hodlTapSighashProblems } from "../src/js/psbt-schnorr.js";
+import { hodlCompareSchnorrNonces, hodlParseSchnorr, hodlTapKeySigs, hodlTapScriptPathSigs, hodlTapScriptSigs, hodlTapSighashProblems, hodlTapWitnessShape } from "../src/js/psbt-schnorr.js";
+import { isP2tr } from "../src/js/bip352.js";
 import { inspectPsbtInscriptions, describeEnvelope } from "../src/js/inscription.js";
 import { parseOpReturn, describeOpReturn } from "../src/js/opreturn.js";
 import { publicValueHtml as hodlPublicValueHtml } from "../src/js/public-data.js";
+import { PSBT_RENDER_LIMIT, cappedHtml, renderBudget } from "../src/js/psbt-viz.js";
+import { renderAnnotatedPrivateText as hodlRenderAnnotatedPrivateText } from "../src/js/private-data.js";
+import { snapshotPrivateSpans as hodlJournalSnapshotPrivateSpans } from "../src/js/journal.js";
 const document = { getElementById: () => null };
 const hodlNetworkDefault = "mainnet";
 const hodlNetworkChoice = "mainnet";
@@ -204,14 +208,14 @@ const derEncode = (compact) => {
 // case digestScript is the full separated script (what the JS reconstruction
 // computed before the fix); for the honest case it is the post-separator
 // bytes, exactly what a network consensus check hashes.
-function buildPsbt(witnessScript, digestScript) {
+function buildPsbt(witnessScript, digestScript, entropy = null) {
   const tx = unsignedTxBytes();
   const out = [0x70, 0x73, 0x62, 0x74, 0xff, ...kv([0x00], tx), 0x00];
   for (let i = 0; i < INPUTS; i++) {
     out.push(...kv([0x01], [...le64(AMOUNT), ...varBytes(p2wshScript(witnessScript))]));
     const digest = harness.hodlBip143({ raw: tx }, i, digestScript, AMOUNT, 1);
     assert.ok(digest, "fixture digest");
-    const sig = Uint8Array.of(...derEncode(secp256k1.sign(digest, SECRET, { prehash: false, extraEntropy: false })), 0x01);
+    const sig = Uint8Array.of(...derEncode(secp256k1.sign(digest, SECRET, { prehash: false, extraEntropy: entropy && i === 0 ? entropy : false })), 0x01);
     out.push(...kv([0x02, ...PUBKEY], sig));
     out.push(...kv([0x05], witnessScript));
     out.push(0x00);
@@ -255,6 +259,35 @@ test("codeseparated P2WSH: an honest post-separator signature is reported incomp
 test("control: a P2WSH script without separators keeps the existing verdicts", () => {
   harness.hodlTestSetPriv(SECRET);
   assertControlUnchanged(render(buildPsbt(CONTROL_SCRIPT, CONTROL_SCRIPT)));
+});
+
+// DeepSeek's red-team of #1051, F1: ECDSA r values and BIP340 R values are
+// never compared with each other, so one Taproot signature beside the
+// control's two checked ECDSA signatures had nothing to be compared with.
+// Summing the families turned that into a green "Completed".
+function withTaprootInputs(rBytes) {
+  const psbt = harness.hodlParsePsbt(buildPsbt(CONTROL_SCRIPT, CONTROL_SCRIPT));
+  const base = psbt.inputs[0][0];
+  const outputKey = new Uint8Array(32).fill(0x5a);
+  const p2trUtxo = Uint8Array.of(...le64(AMOUNT), 34, 0x51, 0x20, ...outputKey);
+  rBytes.forEach((r, k) => {
+    psbt.tx.inputs.push({ ...psbt.tx.inputs[0], vout: INPUTS + k });
+    psbt.inputs.push([
+      { ...base, type: 0x01, keydata: new Uint8Array(), val: p2trUtxo },
+      { ...base, type: 0x13, keydata: new Uint8Array(), val: Uint8Array.of(...new Uint8Array(32).fill(r), ...new Uint8Array(32).fill(0x01 + k)) },
+    ]);
+  });
+  return harness.hodlRenderPsbt(psbt, new Uint8Array(), new Date().toISOString(), "all");
+}
+
+test("one Taproot signature beside two checked ECDSA signatures is not a completed nonce check (#1051 red-team F1)", () => {
+  harness.hodlTestSetPriv(SECRET);
+  const one = withTaprootInputs([0x31]);
+  assert.match(one, /Matches RFC 6979/, "the ECDSA side is still fully checked");
+  assert.match(one, /Nonce analysis<\/span> — <span class='psbt-warn'>Incomplete<\/span>/);
+  const two = withTaprootInputs([0x31, 0x32]);
+  assert.match(two, /Nonce analysis<\/span> — <span class='psbt-ok'>Completed<\/span>/, "two of each, all distinct");
+  assert.match(two, /All ECDSA and Taproot signatures in this PSBT had comparable nonce values/);
 });
 
 test("control: a separator byte inside pushed data is not an opcode", () => {
@@ -315,4 +348,106 @@ test("control: a finalized two-key P2WSH script without separators attributes by
   assert.equal(control.uninspected, 0);
   assert.equal(control.signatures.length, 1);
   assert.deepEqual([...control.signatures[0].pubkey], [...PUBKEY], "the verifying key, not the other candidate");
+});
+
+// --- RFC 6979 coverage line -------------------------------------------------
+// The summary and the Nonce Inspector must say, in one line, whether RFC 6979
+// was recomputed and for how many signatures, so a reader cannot mistake the
+// public-data reuse check for the deeper per-signature nonce check.
+
+function nonceSummaryDetail(html) {
+  const match = html.match(/Nonce analysis<\/span> — <span class='[^']*'>[^<]*<\/span><br><span class='muted'>([^<]*)<\/span>/);
+  assert.ok(match, "Nonce analysis summary row");
+  return match[1];
+}
+
+function rfc6979Notes(html) {
+  return [...html.matchAll(/data-rfc6979-coverage>([^<]*)<\/p>/g)].map((match) => match[1]);
+}
+
+test("no session key: the summary and the Nonce Inspector say RFC 6979 was not checked", () => {
+  harness.hodlTestSetPriv(null);
+  try {
+    const html = render(buildPsbt(CONTROL_SCRIPT, CONTROL_SCRIPT));
+    const sentence = "RFC 6979: not checked (no matching key in this session).";
+    const detail = nonceSummaryDetail(html);
+    assert.ok(detail.endsWith(sentence), detail);
+    assert.deepEqual(rfc6979Notes(html), [sentence]);
+    const rows = html.match(/Need the matching key in this session to check RFC 6979 and low-r grind\./g) || [];
+    assert.equal(rows.length, INPUTS, "both signature rows still ask for the key");
+    assert.match(html, /Nonce analysis<\/span> — <span class='psbt-warn'>Incomplete<\/span>/);
+  } finally {
+    harness.hodlTestSetPriv(SECRET);
+  }
+});
+
+test("session key, control script: the summary and the Nonce Inspector say all ECDSA signatures were checked", () => {
+  harness.hodlTestSetPriv(SECRET);
+  const html = render(buildPsbt(CONTROL_SCRIPT, CONTROL_SCRIPT));
+  const sentence = "RFC 6979: checked for all 2 ECDSA signatures.";
+  const detail = nonceSummaryDetail(html);
+  assert.ok(detail.endsWith(sentence), detail);
+  assert.deepEqual(rfc6979Notes(html), [sentence]);
+  assert.doesNotMatch(html, /did not match/);
+});
+
+test("session key, codeseparated script: the summary says RFC 6979 was checked for 0 of 2 signatures", () => {
+  harness.hodlTestSetPriv(SECRET);
+  const html = render(buildPsbt(SEPARATED_SCRIPT, SEPARATED_SCRIPT));
+  const sentence = "RFC 6979: checked for 0 of 2 ECDSA signatures.";
+  const detail = nonceSummaryDetail(html);
+  assert.ok(detail.endsWith(sentence), detail);
+  assert.deepEqual(rfc6979Notes(html), [sentence]);
+});
+
+test("a signature made with extra entropy is counted as checked and as a mismatch", () => {
+  harness.hodlTestSetPriv(SECRET);
+  const html = render(buildPsbt(CONTROL_SCRIPT, CONTROL_SCRIPT, new Uint8Array(32).fill(0x07)));
+  const sentence = "RFC 6979: checked for all 2 ECDSA signatures. 1 did not match.";
+  const detail = nonceSummaryDetail(html);
+  assert.ok(detail.endsWith(sentence), detail);
+  assert.deepEqual(rfc6979Notes(html), [sentence]);
+});
+
+test("an ECDSA signature with no extractable r still counts toward the RFC 6979 coverage line (#1074 red-team)", () => {
+  harness.hodlTestSetPriv(SECRET);
+  // The control's two signatures are checked; a third input carries a 0x02
+  // partial signature that is neither DER nor loose-r readable. Before the
+  // fix that row took the uninspected branch before rfcTotal was
+  // incremented, so the coverage line claimed "all 2" and never mentioned
+  // the third signature.
+  const psbt = harness.hodlParsePsbt(buildPsbt(CONTROL_SCRIPT, CONTROL_SCRIPT));
+  const base = psbt.inputs[0];
+  psbt.tx.inputs.push({ ...psbt.tx.inputs[0], vout: INPUTS });
+  psbt.inputs.push([
+    { ...base.find((entry) => entry.type === 0x01) }, // witness UTXO, same P2WSH script
+    { ...base.find((entry) => entry.type === 0x02), val: Uint8Array.of(0x30, 0x00, 0x01) }, // non-DER, no extractable r
+    { ...base.find((entry) => entry.type === 0x05) }, // witness script
+  ]);
+  const html = harness.hodlRenderPsbt(psbt, new Uint8Array(), new Date().toISOString(), "all");
+  const sentence = "RFC 6979: checked for 2 of 3 ECDSA signatures.";
+  const detail = nonceSummaryDetail(html);
+  assert.ok(detail.endsWith(sentence), detail);
+  assert.deepEqual(rfc6979Notes(html), [sentence]);
+  const rows = html.match(/Signature is not DER and its nonce cannot be inspected\./g) || [];
+  assert.equal(rows.length, 1, "the extra input's row reports the unreadable signature");
+});
+
+test("a finalized ECDSA signature that cannot be attributed counts toward the RFC 6979 coverage line (#1074)", () => {
+  harness.hodlTestSetPriv(SECRET);
+  // The control's two partial signatures are checked. A third input carries
+  // a finalized ECDSA signature that hodlFinalSigs cannot attribute (its
+  // script has OP_CODESEPARATOR, so the digest is not reconstructed). Before
+  // the fix that signature was counted as uninspected but never entered
+  // rfcTotal, so the coverage line claimed "all 2" while three ECDSA
+  // signatures were present.
+  const psbt = harness.hodlParsePsbt(buildPsbt(CONTROL_SCRIPT, CONTROL_SCRIPT));
+  const { entries } = finalizedEntries(TWO_KEY_SEPARATED, CONTROL_SCRIPT);
+  psbt.tx.inputs.push({ ...psbt.tx.inputs[0], vout: INPUTS });
+  psbt.inputs.push(entries);
+  const html = harness.hodlRenderPsbt(psbt, new Uint8Array(), new Date().toISOString(), "all");
+  const sentence = "RFC 6979: checked for 2 of 3 ECDSA signatures.";
+  const detail = nonceSummaryDetail(html);
+  assert.ok(detail.endsWith(sentence), detail);
+  assert.deepEqual(rfc6979Notes(html), [sentence]);
 });

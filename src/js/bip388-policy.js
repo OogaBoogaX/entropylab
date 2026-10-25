@@ -23,17 +23,19 @@ function originToBip388(info) {
     `[${fingerprint}/${path.replace(/(\d+)h/gi, "$1'")}]`);
 }
 
-function extractRangedKeys(body) {
+function extractRangedKeys(body, branch) {
   const keys = [];
-  const seen = new Map();
+  const seen = new Set();
   RANGED_KEY.lastIndex = 0;
   let match;
   while ((match = RANGED_KEY.exec(body))) {
     const info = `${match[1] || ""}${match[2]}`;
-    if (!seen.has(info)) {
-      seen.set(info, keys.length);
-      keys.push(info);
+    if (seen.has(match[2])) throw new Error("BIP 388 export: a key appears in more than one slot.");
+    seen.add(match[2]);
+    if (match[3] !== branch) {
+      throw new Error("BIP 388 export: every receive key must end in /0/* and every change key in /1/*.");
     }
+    keys.push(info);
   }
   if (!keys.length) throw new Error("BIP 388 export: no /0/* or /1/* xpub keys in the descriptor.");
   return keys;
@@ -68,10 +70,13 @@ export function buildBip388Policy({ receiveDescriptor, changeDescriptor, decode,
   }
   const body = stripDescriptorChecksum(canonicalReceive);
   if (NUMS_TR.test(body)) throw new Error("BIP 388 export: taproot with a NUMS internal key is not a BIP 388 policy (keys must be xpubs).");
-  const keys = extractRangedKeys(body);
+  const keys = extractRangedKeys(body, "0");
   const descriptorTemplate = toTemplate(body, keys);
   if (canonicalChange) {
-    const changeTemplate = toTemplate(stripDescriptorChecksum(canonicalChange), keys);
+    const changeBody = stripDescriptorChecksum(canonicalChange);
+    // The change side must be the same keys, every one on /1/*.
+    extractRangedKeys(changeBody, "1");
+    const changeTemplate = toTemplate(changeBody, keys);
     if (changeTemplate !== descriptorTemplate) throw new Error("BIP 388 export: receive and change do not share one policy template.");
   }
   return {

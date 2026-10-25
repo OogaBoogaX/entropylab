@@ -514,7 +514,7 @@ jobs:
           tar -xzf "bitcoin-${BITCOIN_CORE_VERSION}-x86_64-linux-gnu.tar.gz" -C "$RUNNER_TEMP/bitcoin-bin" --strip-components=2 "bitcoin-${BITCOIN_CORE_VERSION}/bin/bitcoind" "bitcoin-${BITCOIN_CORE_VERSION}/bin/bitcoin-cli"
           echo "$RUNNER_TEMP/bitcoin-bin" >> "$GITHUB_PATH"
       - name: Run the Bitcoin Core interop tests
-        run: REQUIRE_BITCOIND=1 node --test --test-concurrency=1 test/wallet-export.test.mjs test/msig-wallet-output.test.mjs
+        run: REQUIRE_BITCOIND=1 node --test --test-concurrency=1 test/wallet-export.test.mjs test/msig-wallet-output.test.mjs test/core-importdescriptors.test.mjs
 
   # ── Fuzz: differential check of the shipped LifeHash against the ──────────
   # official `lifehash` package. The fuzzer has its own locked dependency tree
@@ -660,6 +660,13 @@ jobs:
   # Calendars are online; this job must not block tests, the HTML commit, or
   # Pages. It stamps the exact candidate digest (issue #93), never a rebuild.
   # A pending .ots is not a Bitcoin timestamp — ots-upgrade.yml completes it.
+  #
+  # The third-party OTS client runs only in `timestamp`, which holds no
+  # environment, no secret and a read-only token. It writes the proof and
+  # uploads it; `timestamp-push` commits and pushes it on a fresh runner that
+  # never installs or runs the client. A step boundary is not isolation: a
+  # client that writes .git/hooks/pre-push or leaves a background process
+  # would meet the push token in the same workspace.
 
   timestamp:
     name: Timestamp · OpenTimestamps the tested HTML
@@ -668,10 +675,11 @@ jobs:
     if: github.ref == 'refs/heads/rock' && github.event_name == 'push' && needs.artifact.outputs.superseded != 'true'
     needs: [build, artifact]
     runs-on: ubuntu-latest
-    environment: release
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      stamped: ${{ steps.stamp.outputs.stamped }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -711,28 +719,210 @@ jobs:
           fi
           # ots stamp entropylab.html — pending calendar receipt, not a Bitcoin timestamp.
           "$OTS" stamp entropylab.html
+          if [ -z "$(git status --porcelain -- entropylab.html.ots)" ]; then
+            echo "No OpenTimestamps proof to commit."
+            exit 0
+          fi
+          echo "stamped=true" >> "$GITHUB_OUTPUT"
+      - name: Upload the stamped proof
+        if: steps.stamp.outputs.stamped == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: entropylab-ots
+          path: entropylab.html.ots
+          if-no-files-found: error
+          retention-days: 7
+
+  # The commit and push of the proof. This job holds the release environment
+  # and the admin push token, so it never installs or runs the OTS client: it
+  # validates the uploaded proof with coreutils and pushes it from a fresh
+  # runner.
+  timestamp-push:
+    name: Timestamp · commit the OpenTimestamps proof
+    needs: [build, timestamp]
+    if: github.ref == 'refs/heads/rock' && github.event_name == 'push' && needs.timestamp.outputs.stamped == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: rock
+          persist-credentials: false
+      - name: Download the stamped proof
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: entropylab-ots
+          path: ${{ runner.temp }}
+      - name: Validate the proof before committing it
+        env:
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          PROOF="$RUNNER_TEMP/entropylab.html.ots"
+          # The proof is untrusted input from the stamp job. Refuse anything
+          # that is not a small OpenTimestamps file whose header names the
+          # SHA-256 of the HTML this run tested.
+          SIZE=$(stat -c %s "$PROOF")
+          if [ "$SIZE" -gt 65536 ]; then
+            echo "::error::proof is $SIZE bytes, over the 65536-byte limit"
+            exit 1
+          fi
+          # 31-byte magic, major version 0x01, OpSHA256 tag 0x08.
+          MAGIC=004f70656e54696d657374616d7073000050726f6f6600bf89e2e884e892940108
+          HEADER=$(head -c 33 "$PROOF" | od -An -v -tx1 | tr -d ' \n')
+          if [ "$HEADER" != "$MAGIC" ]; then
+            echo "::error::proof does not start with the OpenTimestamps magic, version 1 and a SHA-256 file hash"
+            exit 1
+          fi
+          DIGEST=$(head -c 65 "$PROOF" | tail -c 32 | od -An -v -tx1 | tr -d ' \n')
+          if [ "$DIGEST" != "$EXPECTED" ]; then
+            echo "::error::proof covers $DIGEST, but this run tested $EXPECTED"
+            exit 1
+          fi
+          # This runner checked rock out after the stamp job finished, so rock
+          # may carry newer HTML by now; a proof is committed only next to the
+          # HTML it covers.
+          ON_ROCK=$(sha256sum entropylab.html | cut -d' ' -f1)
+          if [ "$ON_ROCK" != "$EXPECTED" ]; then
+            echo "::error::rock's entropylab.html is $ON_ROCK, not the $EXPECTED this run stamped"
+            exit 1
+          fi
+          # The rest of the proof must be well formed too, walked the way the
+          # upgrade push walks it (standard-library Python from rock's own
+          # checkout, no third-party code).
+          if ! python3 scripts/ots-attestations.py "$PROOF" > /dev/null; then
+            echo "::error::the stamped proof is not a well-formed OpenTimestamps proof"
+            exit 1
+          fi
+      - name: Commit the proof
+        id: proof
+        env:
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          # A well-formed proof on rock that already covers this HTML stays.
+          # Another run (a re-run, or one whose push waited for approval) may
+          # have pushed it and ots-upgrade completed it since, and a fresh
+          # pending proof must not replace a completed one. A malformed one is
+          # replaced by this validated proof.
+          if [ -f entropylab.html.ots ] && [ "$(head -c 65 entropylab.html.ots | tail -c 32 | od -An -v -tx1 | tr -d ' \n')" = "$EXPECTED" ] && python3 scripts/ots-attestations.py entropylab.html.ots > /dev/null 2>&1; then
+            echo "Rock already has a proof for $EXPECTED; not replacing it."
+            exit 0
+          fi
+          cp "$RUNNER_TEMP/entropylab.html.ots" entropylab.html.ots
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add entropylab.html.ots
           if git diff --cached --quiet; then
-            echo "No OpenTimestamps proof to commit."
+            echo "Proof is already on rock; nothing to commit."
             exit 0
           fi
           git commit -m "OpenTimestamps pending proof for entropylab.html [skip ci]"
+          git fetch --quiet origin rock
+          AHEAD=$(git rev-list --count origin/rock..HEAD)
+          if [ "$AHEAD" != 1 ]; then
+            echo "::error::expected exactly one commit ahead of origin/rock, found $AHEAD"
+            exit 1
+          fi
+          CHANGED=$(git diff --name-only origin/rock..HEAD)
+          if [ "$CHANGED" != "entropylab.html.ots" ]; then
+            echo "::error::the proof commit changes more than entropylab.html.ots: $CHANGED"
+            exit 1
+          fi
           echo "committed=true" >> "$GITHUB_OUTPUT"
-      # A step of its own, so the OTS client never runs while the push token
-      # is in reach.
       - name: Push the proof
-        if: steps.stamp.outputs.committed == 'true'
+        # Only after a checked commit: "already on rock" exits 0 above.
+        if: steps.proof.outputs.committed == 'true'
         env:
           PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
         run: |
           set -euo pipefail
           # Push with the maintainer token: rock is protected, and required
           # status checks reject direct pushes from GITHUB_TOKEN (an admin
           # token bypasses while enforce_admins is off). The token goes on
-          # the command line, which outranks every config file.
-          git -c http.https://github.com/.extraheader=             -c http.https://github.com/.extraheader="AUTHORIZATION: basic $(echo -n x-access-token:$PUSH_TOKEN | base64)"             push
+          # the command line, which outranks every config file. Hooks are
+          # disabled: this runner never ran the OTS client, but a hook could
+          # still arrive with the checkout.
+          AUTH_B64=$(echo -n x-access-token:$PUSH_TOKEN | base64)
+          echo "::add-mask::$AUTH_B64"
+          push_proof() {
+            git -c http.https://github.com/.extraheader= \
+                -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH_B64" \
+                -c core.hooksPath=/dev/null push origin HEAD:rock
+          }
+          # The walker is this checkout's, not the fetched rock's: a rebase
+          # replaces the working tree with the new rock's files, and this job
+          # must never run code from the commits it fetched.
+          WALKER="$RUNNER_TEMP/attestations.py"
+          cp scripts/ots-attestations.py "$WALKER"
+          # The validated proof's blob id: a rebase must replay exactly these
+          # bytes, never a conflict resolution or a different proof.
+          PROOF_BLOB=$(git rev-parse HEAD:entropylab.html.ots)
+          # The translation bot pushes in a burst right after a merge, so rock
+          # can move between this job's fetch and its push. Re-fetch and
+          # decide instead of failing the run; retry a bounded number of times.
+          MAX_RETRIES=3
+          attempt=0
+          while :; do
+            if OUT=$(push_proof 2>&1); then
+              printf '%s\n' "$OUT"
+              exit 0
+            fi
+            printf '%s\n' "$OUT"
+            # Only a rejected push is retried; an auth or network error fails now.
+            if ! printf '%s\n' "$OUT" | grep -Eq 'rejected|non-fast-forward|fetch first'; then
+              echo "::error::pushing the proof failed for a reason other than a moved rock"
+              exit 1
+            fi
+            if [ "$attempt" -ge "$MAX_RETRIES" ]; then
+              echo "::error::the proof push was rejected $MAX_RETRIES times; giving up"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            git fetch --quiet origin rock
+            # Read the HTML from origin/rock, not the working tree: the
+            # checkout is the rock this job started from.
+            ON_ROCK=$(git show origin/rock:entropylab.html | sha256sum | cut -d' ' -f1)
+            if [ "$ON_ROCK" != "$EXPECTED" ]; then
+              echo "::notice title=Proof superseded::Rock's entropylab.html is now $ON_ROCK, not the $EXPECTED this run stamped; a newer site build superseded this proof. Pushing nothing."
+              exit 0
+            fi
+            # Another run may have pushed a well-formed proof for this HTML
+            # while this one waited; keep it rather than replace it.
+            if git cat-file -e origin/rock:entropylab.html.ots 2>/dev/null; then
+              git show origin/rock:entropylab.html.ots > "$RUNNER_TEMP/rock.ots"
+              if [ "$(head -c 65 "$RUNNER_TEMP/rock.ots" | tail -c 32 | od -An -v -tx1 | tr -d ' \n')" = "$EXPECTED" ] \
+                 && python3 "$WALKER" "$RUNNER_TEMP/rock.ots" > /dev/null 2>&1; then
+                echo "::notice title=Proof kept::Rock already has a proof for $EXPECTED; not replacing it."
+                exit 0
+              fi
+            fi
+            # Replay the single proof commit onto the moved rock, then repeat
+            # the checks "Commit the proof" made before pushing again.
+            if ! git -c core.hooksPath=/dev/null rebase origin/rock; then
+              echo "::error::could not rebase the proof commit onto origin/rock"
+              git -c core.hooksPath=/dev/null rebase --abort || true
+              exit 1
+            fi
+            AHEAD=$(git rev-list --count origin/rock..HEAD)
+            if [ "$AHEAD" != 1 ]; then
+              echo "::error::expected exactly one commit ahead of origin/rock after rebase, found $AHEAD"
+              exit 1
+            fi
+            CHANGED=$(git diff --name-only origin/rock..HEAD)
+            if [ "$CHANGED" != "entropylab.html.ots" ]; then
+              echo "::error::the proof commit changes more than entropylab.html.ots after rebase: $CHANGED"
+              exit 1
+            fi
+            if [ "$(git rev-parse HEAD:entropylab.html.ots)" != "$PROOF_BLOB" ]; then
+              echo "::error::the rebased proof differs from the validated one"
+              exit 1
+            fi
+          done
 
   # ── Verify: independent check of the generated site artifact ──
 

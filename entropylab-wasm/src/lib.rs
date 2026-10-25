@@ -50,7 +50,8 @@
 //! lifetime.
 
 use bitcoin_hashes::{hash160, ripemd160, sha256, sha512, Hash, HashEngine, Hmac, HmacEngine};
-use secp256k1::ecdsa::Signature;
+use secp256k1::ecdsa::{RecoverableSignature, RecoveryId, Signature};
+use secp256k1::schnorr::Signature as SchnorrSignature;
 use secp256k1::{Message, PublicKey, Scalar, Secp256k1, SecretKey};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::OnceLock;
@@ -330,6 +331,71 @@ pub unsafe extern "C" fn secp_verify(
         Err(_) => return 0,
     };
     i32::from(ctx().verify_ecdsa(&msg, &sig, &pk).is_ok())
+}
+
+/// Verifies a BIP-340 Schnorr signature over a 32-byte message.
+/// Returns 1 for a valid signature, 0 for an invalid one, and -1 when the
+/// input is malformed (message not exactly 32 bytes, signature not 64 bytes,
+/// or an x-only key that is not a curve point / is >= the field size).
+/// Never panics.
+#[no_mangle]
+pub unsafe extern "C" fn secp_schnorr_verify(
+    sig64: *const u8,
+    msg_ptr: *const u8,
+    msg_len: usize,
+    xonly32: *const u8,
+) -> i32 {
+    // secp256k1 0.29 verifies BIP-340 signatures over a fixed 32-byte
+    // message; anything else is refused rather than truncated.
+    if msg_len != 32 {
+        return -1;
+    }
+    let sig = match SchnorrSignature::from_slice(read(sig64, 64)) {
+        Ok(sig) => sig,
+        Err(_) => return -1,
+    };
+    let msg = match Message::from_digest_slice(read(msg_ptr, 32)) {
+        Ok(msg) => msg,
+        Err(_) => return -1,
+    };
+    let pk = match XOnlyPublicKey::from_slice(read(xonly32, 32)) {
+        Ok(pk) => pk,
+        Err(_) => return -1,
+    };
+    i32::from(ctx().verify_schnorr(&sig, &msg, &pk).is_ok())
+}
+
+/// Recovers the public key from a compact (r || s) ECDSA signature over the
+/// 32-byte `msg32` and a recovery id (0-3), serialized compressed into `out`.
+/// Used by the BOLT11 invoice decoder to recover the payee node id from the
+/// invoice signature. Returns 33, or -1 on any malformed input.
+#[no_mangle]
+pub unsafe extern "C" fn secp_ecdsa_recover(
+    msg32: *const u8,
+    sig64: *const u8,
+    recid: i32,
+    out: *mut u8,
+) -> i32 {
+    let msg = match Message::from_digest_slice(read(msg32, 32)) {
+        Ok(msg) => msg,
+        Err(_) => return -1,
+    };
+    let id = match RecoveryId::from_i32(recid) {
+        Ok(id) => id,
+        Err(_) => return -1,
+    };
+    let sig = match RecoverableSignature::from_compact(read(sig64, 64), id) {
+        Ok(sig) => sig,
+        Err(_) => return -1,
+    };
+    match ctx().recover_ecdsa(&msg, &sig) {
+        Ok(pk) => {
+            let serialized = pk.serialize();
+            std::ptr::copy_nonoverlapping(serialized.as_ptr(), out, 33);
+            33
+        }
+        Err(_) => -1,
+    }
 }
 
 /// Normalizes a compact signature to low-S form in place. Returns 1 if S was

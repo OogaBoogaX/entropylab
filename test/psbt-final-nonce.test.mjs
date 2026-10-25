@@ -48,6 +48,8 @@ import { hex as hodlHex } from "../src/js/coders.js";
 import { p2shScript, p2wshScript } from "../src/js/addresses.js";
 import { wasmExports as hodlWasm, withInput as hodlWasmIn, withOutput as hodlWasmOut } from "../src/js/entropylab-wasm.js";
 import { serializeTx } from "../src/js/tx.js";
+import { isP2tr } from "../src/js/bip352.js";
+import { hodlTapWitnessShape } from "../src/js/psbt-schnorr.js";
 ${[
   "hodlPsbtNeed",
   "hodlR32",
@@ -275,6 +277,9 @@ test("a Taproot-only final witness yields no ECDSA material", () => {
   const result = harness.hodlFinalSigs([finalWitnessEntry([schnorr])], null, makeTx(0), 0);
   assert.equal(result.signatures.length, 0);
   assert.equal(result.uninspected, 0);
+  // With no previous output the witness is recognized as Taproot by its
+  // shape and skipped, not swallowed as an error (Kimi K3 review of #1051).
+  assert.equal(result.malformed, false);
 });
 
 test("the render loop merges final fields and never issues a clean verdict for unanalyzed final signatures", () => {
