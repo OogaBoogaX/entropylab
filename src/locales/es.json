@@ -2099,5 +2099,7 @@
   "PSBT you sent (base64 or hex)": "PSBT que enviaste (base64 o hex)",
   "cHNidP8B…": "cHNidP8B…",
   "Upload sent .psbt": "Subir .psbt enviado",
-  "Download updated wallet.dat": "Descargar wallet.dat actualizado"
+  "Download updated wallet.dat": "Descargar wallet.dat actualizado",
+  "Copy Core deriveaddresses": "Copiar Core deriveaddresses",
+  "Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.": "Pega en la consola de Bitcoin Core (Ventana → Consola), o después de bitcoin-cli. Core imprime las direcciones; deben coincidir con las que se muestran aquí. Usa un nodo en la misma red."
 }
