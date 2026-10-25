@@ -53,6 +53,7 @@ import { wordlist as bip39English } from "./bip39-english.js";
 // The PSBT editor (its own workspace tab) drives the rust-bitcoin WASM
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFromUpload, psbtQrPlan as hodlPsbtQrPlan } from "./psbt-editor.js";
+import { watchOnlyQrFrames as hodlWatchOnlyQrFrames } from "./psbt-ur.js";
 import { initCoreWallet } from "./core-wallet-ui.js";
 import { initDescriptorReuseCheck } from "./descriptor-reuse-ui.js";
 import { auditSigner as hodlAuditSigner } from "./psbt-signer-audit.js";
@@ -79,7 +80,7 @@ import {
   buildBip388PolicyText,
 } from "./bip388-policy.js";
 import { initQrReferences } from "./qr-references.js";
-import { addressQrButtonHtml as hodlAddressQrButton, initAddressQr as hodlInitAddressQr } from "./address-qr.js";
+import { addressQrButtonHtml as hodlAddressQrButton, initAddressQr as hodlInitAddressQr, watchOnlyQrButtonHtml as hodlWatchOnlyQrButton } from "./address-qr.js";
 import { initFeatureGuide } from "./feature-guide.js";
 import { initLowEntropyConfirm } from "./low-entropy-confirm.js";
 import { initFingerprintCollisionConfirm } from "./fingerprint-collision-confirm.js";
@@ -1100,9 +1101,11 @@ function hodlWatchOnlyMultipathDescriptor(receiveDescriptor, branches = [0, 1]) 
 }
 // A PSBT past a single code's capacity is scanned as a ur:crypto-psbt
 // sequence — the same plan the editor used inline before the overlay took
-// the job. Anything else (an address, an xpub, a descriptor) has no frames
-// and stays one static code.
-function hodlPsbtQrFrames(value) {
+// the job. A watch-only descriptor or BIP-388 policy past one QR uses that
+// same UR family (ur:bytes, fixed-rate parts). An address or an xpub has no
+// frames and stays one static code.
+function hodlPsbtQrFrames(value, kind) {
+  if (kind === "watch") return hodlWatchOnlyQrFrames(value);
   try {
     let plan = hodlPsbtQrPlan(hodlPsbtBytesFromText(value));
     return plan.mode === "ur" ? plan.parts : null;
@@ -1147,8 +1150,14 @@ function hodlInitDescriptorCopy({ onCopyStart = () => {} } = {}) {
 // A long value the user is meant to move somewhere else — a descriptor, an
 // extended key — reads as one row: the label carries its QR button and the
 // copy confirmation, and the value itself is the copy target.
-function hodlCopyFieldHtml(labelText, value, labelClass = "label", showQr = true) {
-  let qr = showQr && value && value !== "\u2014" && value.length <= 1e3 ? hodlAddressQrButton(value, labelText) : "";
+function hodlCopyFieldHtml(labelText, value, labelClass = "label", options = {}) {
+  let shown = options !== false && value && value !== "\u2014";
+  let qr = "";
+  // Watch-only descriptors and BIP-388 policies: a short value keeps today's
+  // single text QR. Past one QR, the shared overlay animates the same UR
+  // family crypto-psbt uses. Private key material gets no code; psbt-ur.js
+  // makes that decision for the field and the encoder alike.
+  if (shown && options.watchOnly) qr = hodlWatchOnlyQrButton(value, labelText); else if (shown && String(value).length <= 1e3) qr = hodlAddressQrButton(value, labelText);
   return hodlPublicFieldMarkup(hodlEscapeHtml(labelText), value, { copyIcon: hodlClipboardIconMarkup, qrHtml: qr, labelClass });
 }
 function hodlWatchOnlyDescriptorExport(receiveDescriptor, changeDescriptor, addressBranches = null, { labelClass = "label", collapsible = true } = {}) {
@@ -1158,8 +1167,8 @@ function hodlWatchOnlyDescriptorExport(receiveDescriptor, changeDescriptor, addr
   ]).filter((entry) => entry.publicDescriptor), first = branches[0], multipath = first ? branches.length === 1 ? first.publicDescriptor : hodlWatchOnlyMultipathDescriptor(first.publicDescriptor, branches.map((entry) => entry.branch)) : "";
   // Each descriptor is titled with a QR button beside it, the same control an
   // address row carries: the code opens in the shared overlay instead of one
-  // being drawn inline. A payload too long to encode simply offers no button.
-  let field = (labelText, value) => hodlCopyFieldHtml(labelText, value, labelClass);
+  // being drawn inline. A payload past one QR animates as UR; an xprv does not.
+  let field = (labelText, value) => hodlCopyFieldHtml(labelText, value, labelClass, { watchOnly: true });
   let details = branches.map((entry) => field(hodlTText(entry.branch === 0 ? "Watch-only receive descriptor" : entry.branch === 1 ? "Watch-only change descriptor" : "Watch-only custom branch {n} descriptor", { n: entry.branch }), entry.publicDescriptor)).join("");
   let wallet = field(hodlTText("Watch-only wallet descriptor"), multipath || "\u2014");
   return `${wallet}${collapsible ? `<details class="wallet-advanced"><summary>${hodlT("Address branch descriptors")}</summary>${details}</details>` : details}`;
@@ -2450,6 +2459,16 @@ function hodlDownloadCoreImportDescriptors(scope = "msig") {
   link.download = coreImportDescriptorsFilename(hodlWalletResult);
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1e3);
+}
+function hodlMsigBip388Field() {
+  let text = "";
+  try {
+    text = hodlMsigBip388PolicyText();
+  } catch {
+    return "";
+  }
+  if (!text) return "";
+  return hodlCopyFieldHtml(hodlTText("BIP 388 wallet policy"), text, "label", { watchOnly: true });
 }
 function hodlMsigBip388PolicyText() {
   if (!hodlWalletResult || hodlWalletResult.kind !== "msig") return "";
@@ -10218,6 +10237,7 @@ function hodlShowMsig() {
       ${hodlMsigGroupMarkup("watch", hodlT("Watch-only wallet data"), `
         <p class="edge-note is-public">${hodlT("These descriptors reveal every address in the selected branches for this multisig, but cannot authorize spending. Descriptors can be imported into Sparrow or another wallet.")}</p>
         ${hodlWatchOnlyDescriptorExport(hodlWalletResult.receiveDescriptor, hodlWalletResult.changeDescriptor, branches, { collapsible: false })}
+        ${hodlMsigBip388Field()}
       `, "account-watch-section")}
       ${hodlMsigGroupMarkup("addresses", hodlT("Addresses"), `
         <p class="edge-note is-public">${hodlT("Verify the first selected address on every signing device before accepting bitcoin.")}</p>

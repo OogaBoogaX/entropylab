@@ -128,6 +128,11 @@ an explicit error before those pairs are allocated.
   derived from the exported
   output descriptor itself by rust-miniscript (in the WASM crate), so the two
   cannot drift.
+- Watch-only descriptors (single-signature and multisig) and a multisig's
+  BIP 388 wallet policy each carry a QR button. Up to 1,000 characters the
+  code is the text itself; a longer one is shown as an animated `ur:bytes`
+  sequence, in the same fixed-rate UR parts the PSBT editor uses for
+  `ur:crypto-psbt`. An extended private key never gets a code.
 - Inspects PSBT v0 transactions (paste, or upload a binary .psbt / hex or
   base64 text export; the loaded bytes download as .psbt or .txn), reports
   PSBT-provided amounts and fees, checks
@@ -962,7 +967,7 @@ To remove generated files, run `npm run clean`.
 ├── test/
 │   ├── browser-instrumentation.html  In-page browser test hooks
 │   ├── browser-suite.html            In-page browser test suite
-│   ├── browser.test.mjs              Headless-Firefox integration harness
+│   ├── browser.test.mjs              Headless-browser integration harness (Firefox, Chrome/Chromium, Edge)
 │   ├── browser-check.test.mjs        Tests for the startup browser sanity checks
 │   ├── self-test-wasm.test.mjs       Tests for the boot self-test (oracle-checked vectors)
 │   ├── network-check.test.mjs        Tests for the network-check module
@@ -1007,10 +1012,10 @@ The toolchain is npm and Node.js (>=20.19). Install the exact dependency tree
 with `npm ci`; every local and CI operation is exposed as an npm script:
 
 ```bash
-npm test                    # run all tests, including the headless-Firefox suite
+npm test                    # run all tests, including the headless browser suites
 npm run test:ci             # every test file except the two browser suites (what CI's "complete dependency-free suite" runs)
 npm run test:validate       # validate source and security invariants
-npm run test:browser        # test crypto, sanitization, networking, exports in a headless browser (Firefox in CI; Chrome/Chromium too when installed)
+npm run test:browser        # test crypto, sanitization, networking, exports in headless browsers (Firefox in CI; Chrome/Chromium and Edge too when installed)
 npm run build               # compile src/ into the generated root files
 npm run build:wasm          # rebuild the committed crypto WASM artifact (needs Rust)
 npm run verify              # verify the site artifact (entropylab.html, assets)
@@ -1026,13 +1031,16 @@ carry the generated output, so they stop conflicting on it. The staging step
 copies the verified `entropylab.html` to a deployment-only `index.html`,
 allowing both the site root and `/entropylab.html` to serve the same
 application without committing a second application artifact. CI runs every
-test file on every pull request: `npm run test:ci` and the two headless-Firefox
-browser suites (`npm run test:browser`); locally the browser suites also run in
-Chrome/Chromium when one is installed. Local checks and CI/CD use the same
-commands; the workflow contains no separate build implementation.
+test file on every pull request: `npm run test:ci` and the two headless browser
+suites (`npm run test:browser`, Firefox in CI); locally the browser suites also
+run in Chrome/Chromium and Microsoft Edge when installed. Local checks and CI/CD
+use the same commands; the workflow contains no separate build implementation.
 
-The browser suite runs the assembled application in headless Firefox against a
-local Node.js HTTP server. It feeds hostile markup and event-handler strings
+The browser suite runs the assembled application in every installed supported
+engine: Firefox, Chrome/Chromium, and Microsoft Edge. Missing engines are
+skipped; at least one must be installed. Set `FIREFOX_BINARY`,
+`CHROME_BINARY` (or `CHROMIUM_BINARY`), or `EDGE_BINARY` to select a binary.
+The harness uses a local Node.js HTTP server. It feeds hostile markup and event-handler strings
 through user-facing fields, verifies the application makes no network
 requests at runtime, exercises the hosted warning and
 assets, derives a known wallet through the UI, and inspects both watch-only
