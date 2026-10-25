@@ -153,6 +153,34 @@ function resolveRangeEnd(displayedEnd, lookahead = CORE_IMPORT_RANGE_END) {
   return Math.min(displayedEnd + lookahead, CORE_IMPORT_MAX_INDEX);
 }
 
+// deriveaddresses takes the displayed window itself, with no lookahead.
+// Refuse a range whose inclusive span reaches 1,000,000, as the
+// importdescriptors export does for its lookahead-extended range.
+function resolveDeriveRangeEnd(displayedEnd) {
+  // No implied window: a silent default could check fewer addresses than the
+  // page shows, and the user would read a match as "all verified".
+  if (displayedEnd === undefined) throw new Error("deriveaddresses needs the deepest displayed address index (displayedEnd), so the check covers exactly the window the page shows.");
+  if (!Number.isSafeInteger(displayedEnd) || displayedEnd < 0 || displayedEnd > CORE_IMPORT_MAX_INDEX) {
+    throw new Error("Address range end must be a whole number from 0 to 2,147,483,647.");
+  }
+  if (displayedEnd >= 999999) {
+    throw new Error("Bitcoin Core deriveaddresses refuses a range span of 1,000,000 or more, so this address window cannot be checked. Show a shallower window and try again.");
+  }
+  return displayedEnd;
+}
+
+function assertCommandSafe(descriptor, label) {
+  const text = String(descriptor ?? "");
+  if (/["\r\n]/.test(text)) {
+    throw new Error(`${label} contains a double quote or newline and cannot be pasted into a Bitcoin Core command.`);
+  }
+  // Inside double quotes a shell still expands \ $ ` (and ! in interactive
+  // bash history expansion); canonical descriptors never contain them.
+  if (/[\\$`!]/.test(text)) {
+    throw new Error(`${label} contains a shell metacharacter and cannot be pasted into a Bitcoin Core command.`);
+  }
+}
+
 function descriptorEntry(descriptor, internal, timestamp, codec, label, rangeEnd) {
   return {
     desc: canonicalizeWatchDescriptor(descriptor, codec, label),
@@ -190,6 +218,55 @@ export function buildImportDescriptorsJson({ receiveDescriptor, changeDescriptor
   if (change) entries.push(descriptorEntry(change, true, resolveTimestamp(timestamp), codec, "Change descriptor", resolvedRangeEnd));
   if (receive && change) assertMatchingWatchDescriptors(entries[0].desc, entries[1].desc);
   return JSON.stringify(entries, null, 2);
+}
+
+export function buildDeriveAddressesCommands({ receiveDescriptor, changeDescriptor, descriptorUnits, branchHardened = false, displayedEnd, decode, encode } = {}) {
+  const codec = decode && encode ? { decode, encode } : null;
+  const lines = [];
+  if (descriptorUnits !== undefined) {
+    if (!Array.isArray(descriptorUnits) || !descriptorUnits.length) throw new Error("No watch-only descriptors to export.");
+    const entries = descriptorUnits.map((unit) => {
+      if (!unit || typeof unit.internal !== "boolean" || typeof unit.active !== "boolean") throw new Error("Core descriptor units need explicit internal and active flags.");
+      assertCommandSafe(unit.descriptor, "Public branch descriptor");
+      return {
+        descriptor: canonicalizeWatchDescriptor(unit.descriptor, codec, "Public branch descriptor"),
+        displayedEnd: unit.displayedEnd,
+      };
+    });
+    if (branchHardened !== true) for (const entry of entries.slice(1)) assertMatchingWatchDescriptors(entries[0].descriptor, entry.descriptor);
+    for (const entry of entries) {
+      assertCommandSafe(entry.descriptor, "Public branch descriptor");
+      // Units come from the wallet export's public projection, whose
+      // rangeEnd adds Core's importdescriptors lookahead. deriveaddresses
+      // checks only the displayed window, and branches can show different
+      // windows, so every unit carries its own displayedEnd: no top-level
+      // value and no silent [0,19] can make a branch's check shallower than
+      // the page shows.
+      if (entry.displayedEnd === undefined) throw new Error("Branch-aware deriveaddresses needs each branch's deepest displayed address index (displayedEnd), not the importdescriptors range, which adds lookahead.");
+      lines.push(`deriveaddresses "${entry.descriptor}" "[0,${resolveDeriveRangeEnd(entry.displayedEnd)}]"`);
+    }
+    return `${lines.join("\n")}\n`;
+  }
+  const receiveRaw = String(receiveDescriptor ?? "");
+  const changeRaw = String(changeDescriptor ?? "");
+  assertCommandSafe(receiveRaw, "Receive descriptor");
+  assertCommandSafe(changeRaw, "Change descriptor");
+  const receive = receiveRaw.trim();
+  const change = changeRaw.trim();
+  if (!receive && !change) throw new Error("No watch-only descriptors to export.");
+  const entries = [];
+  if (receive) entries.push({ descriptor: canonicalizeWatchDescriptor(receive, codec, "Receive descriptor"), internal: false });
+  if (change) entries.push({ descriptor: canonicalizeWatchDescriptor(change, codec, "Change descriptor"), internal: true });
+  if (receive && change && branchHardened !== true) assertMatchingWatchDescriptors(entries[0].descriptor, entries[1].descriptor);
+  for (const entry of entries) {
+    assertCommandSafe(entry.descriptor, entry.internal ? "Change descriptor" : "Receive descriptor");
+    lines.push(`deriveaddresses "${entry.descriptor}" "[0,${resolveDeriveRangeEnd(displayedEnd)}]"`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+export function coreDeriveAddressesHelp() {
+  return "Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.";
 }
 
 export function coreImportDescriptorsFilename(wallet = {}) {

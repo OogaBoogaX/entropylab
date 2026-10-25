@@ -14,8 +14,10 @@ import { BITCOIND, CHAIN_FIXTURES, withChainNode } from "./bitcoind-harness.mjs"
 import {
   CORE_IMPORT_RANGE_END,
   assertMatchingWatchDescriptors,
+  buildDeriveAddressesCommands,
   buildImportDescriptorsJson,
   canonicalizeWatchDescriptor,
+  coreDeriveAddressesHelp,
   coreImportDescriptorsFilename,
   descriptorChecksum,
   stripDescriptorChecksum,
@@ -41,6 +43,12 @@ const receiveBody = `wsh(sortedmulti(2,${keyA}/0/*,${keyB}/0/*,${keyC}/0/*))`;
 const changeBody = `wsh(sortedmulti(2,${keyA}/1/*,${keyB}/1/*,${keyC}/1/*))`;
 const receive = `${receiveBody}#${descriptorChecksum(receiveBody)}`;
 const change = `${changeBody}#${descriptorChecksum(changeBody)}`;
+
+const bip84 = master.derive("m/84'/0'/0'");
+const bip84ReceiveBody = `wpkh([${fingerprint}/84h/0h/0h]${bip84.publicExtendedKey}/0/*)`;
+const bip84ChangeBody = `wpkh([${fingerprint}/84h/0h/0h]${bip84.publicExtendedKey}/1/*)`;
+const bip84Receive = `${bip84ReceiveBody}#${harnessChecksum(bip84ReceiveBody)}`;
+const bip84Change = `${bip84ChangeBody}#${harnessChecksum(bip84ChangeBody)}`;
 
 const parse = (json) => JSON.parse(json);
 
@@ -439,6 +447,123 @@ test("a receive-only wallet still exports one external descriptor", () => {
   assert.equal(entries.length, 1);
   assert.equal(entries[0].internal, false);
   assert.equal(entries[0].desc, receive);
+});
+
+test("deriveaddresses commands cover receive and change with the displayed window", () => {
+  const commands = buildDeriveAddressesCommands({ receiveDescriptor: bip84Receive, changeDescriptor: bip84Change, displayedEnd: 19 });
+  assert.equal(commands, `deriveaddresses "${bip84Receive}" "[0,19]"\nderiveaddresses "${bip84Change}" "[0,19]"\n`);
+  const [jsonReceive, jsonChange] = parse(buildImportDescriptorsJson({ receiveDescriptor: bip84Receive, changeDescriptor: bip84Change }));
+  assert.equal(commands.split("\n")[0], `deriveaddresses "${jsonReceive.desc}" "[0,19]"`);
+  assert.equal(commands.split("\n")[1], `deriveaddresses "${jsonChange.desc}" "[0,19]"`);
+});
+
+test("deriveaddresses commands keep descriptor-unit order and per-unit windows", () => {
+  const units = [
+    { descriptor: bip84Receive, internal: false, active: true, displayedEnd: 5 },
+    { descriptor: bip84Change, internal: true, active: true, displayedEnd: 7 },
+  ];
+  const commands = buildDeriveAddressesCommands({ descriptorUnits: units });
+  assert.equal(commands, `deriveaddresses "${bip84Receive}" "[0,5]"\nderiveaddresses "${bip84Change}" "[0,7]"\n`);
+  const [jsonReceive, jsonChange] = parse(buildImportDescriptorsJson({ descriptorUnits: units }));
+  assert.equal(commands.split("\n")[0], `deriveaddresses "${jsonReceive.desc}" "[0,5]"`);
+  assert.equal(commands.split("\n")[1], `deriveaddresses "${jsonChange.desc}" "[0,7]"`);
+});
+
+test("branch-aware deriveaddresses needs an explicit displayed window and ignores the lookahead rangeEnd", () => {
+  // The projection's units carry rangeEnd (displayed end plus Core's
+  // importdescriptors lookahead); deriveaddresses must check the displayed
+  // window only, and never fall back to [0,19] for a unit without one.
+  const units = [
+    { descriptor: bip84Receive, internal: false, active: true, rangeEnd: 5002 },
+    { descriptor: bip84Change, internal: true, active: true, rangeEnd: 5003 },
+  ];
+  assert.throws(() => buildDeriveAddressesCommands({ descriptorUnits: units }), /displayedEnd/);
+  // A top-level displayedEnd does not stand in for a branch's own window.
+  assert.throws(() => buildDeriveAddressesCommands({ descriptorUnits: units, displayedEnd: 5000 }), /displayedEnd/);
+  const withOne = [{ ...units[0], displayedEnd: 5000 }, units[1]];
+  assert.throws(() => buildDeriveAddressesCommands({ descriptorUnits: withOne, displayedEnd: 5000 }), /displayedEnd/);
+  assert.equal(
+    buildDeriveAddressesCommands({ descriptorUnits: [{ ...units[0], displayedEnd: 5000 }, { ...units[1], displayedEnd: 5002 }] }),
+    `deriveaddresses "${bip84Receive}" "[0,5000]"\nderiveaddresses "${bip84Change}" "[0,5002]"\n`,
+  );
+});
+
+test("deriveaddresses rewrites SLIP-132 zpub to xpub", () => {
+  const raw = b58checkDecode(bip84.publicExtendedKey);
+  raw.set([0x04, 0xb2, 0x47, 0x46]);
+  const zpub = b58checkEncode(raw);
+  const body = `wpkh([${fingerprint}/84h/0h/0h]${zpub}/0/*)`;
+  const descriptor = `${body}#${harnessChecksum(body)}`;
+  const commands = buildDeriveAddressesCommands({ receiveDescriptor: descriptor, displayedEnd: 19, decode: codec.decode, encode: codec.encode });
+  assert.equal(commands, `deriveaddresses "${bip84Receive}" "[0,19]"\n`);
+  assert.doesNotMatch(commands, /zpub/);
+});
+
+test("deriveaddresses refuses an extended private key without echoing it", () => {
+  const xprv = bip84.privateExtendedKey;
+  const body = `wpkh(${xprv}/0/*)`;
+  const descriptor = `${body}#${harnessChecksum(body)}`;
+  assert.throws(() => buildDeriveAddressesCommands({ receiveDescriptor: descriptor }), error => {
+    assert.match(error.message, /extended private key/);
+    assert.ok(!error.message.includes(xprv));
+    return true;
+  });
+});
+
+test("deriveaddresses refuses mismatched receive/change keys unless branchHardened", () => {
+  const other = master.derive("m/84'/0'/1'");
+  const otherBody = `wpkh([${fingerprint}/84h/0h/1h]${other.publicExtendedKey}/1/*)`;
+  const otherChange = `${otherBody}#${harnessChecksum(otherBody)}`;
+  assert.throws(() => buildDeriveAddressesCommands({ receiveDescriptor: bip84Receive, changeDescriptor: otherChange }), /different keys/);
+  const commands = buildDeriveAddressesCommands({ receiveDescriptor: bip84Receive, changeDescriptor: otherChange, branchHardened: true, displayedEnd: 19 });
+  assert.equal(commands, `deriveaddresses "${bip84Receive}" "[0,19]"\nderiveaddresses "${otherChange}" "[0,19]"\n`);
+});
+
+test("deriveaddresses range defaults, overrides and refuses unsafe windows", () => {
+  // No implied window: the check must cover exactly what the page shows.
+  assert.throws(() => buildDeriveAddressesCommands({ receiveDescriptor: bip84Receive }), /displayedEnd/);
+  assert.throws(() => buildDeriveAddressesCommands({ receiveDescriptor: bip84Receive, rangeEnd: 1019 }), /displayedEnd/);
+  assert.match(buildDeriveAddressesCommands({ receiveDescriptor: bip84Receive, displayedEnd: 42 }), /"\[0,42\]"/);
+  const units = [
+    { descriptor: bip84Receive, internal: false, active: true, displayedEnd: 3 },
+    { descriptor: bip84Change, internal: true, active: true, displayedEnd: 8 },
+  ];
+  const lines = buildDeriveAddressesCommands({ descriptorUnits: units }).trimEnd().split("\n");
+  assert.match(lines[0], /"\[0,3\]"/);
+  assert.match(lines[1], /"\[0,8\]"/);
+  assert.throws(() => buildDeriveAddressesCommands({ receiveDescriptor: bip84Receive, displayedEnd: 999999 }), /deriveaddresses refuses a range span/);
+  for (const displayedEnd of [-1, 1.5, "19", Number.NaN, Number.POSITIVE_INFINITY, null, 2147483648]) {
+    assert.throws(() => buildDeriveAddressesCommands({ receiveDescriptor: bip84Receive, displayedEnd }), /a whole number from 0 to 2,147,483,647/);
+  }
+});
+
+test("deriveaddresses output is one paste-safe line per descriptor with a trailing newline", () => {
+  const commands = buildDeriveAddressesCommands({ receiveDescriptor: bip84Receive, changeDescriptor: bip84Change, displayedEnd: 4 });
+  assert.ok(commands.endsWith("\n"));
+  assert.ok(!commands.endsWith("\n\n"));
+  const lines = commands.trimEnd().split("\n");
+  assert.equal(lines.length, 2);
+  for (const line of lines) assert.match(line, /^deriveaddresses "[^"\n]+" "\[0,\d+\]"$/);
+});
+
+test("deriveaddresses refuses descriptors that would break the command line", () => {
+  for (const bad of [
+    `wpkh(${bip84.publicExtendedKey}/0/*)"`,
+    `wpkh(${bip84.publicExtendedKey}/0/*)\n`,
+    `wpkh(${bip84.publicExtendedKey}/0/*)\``,
+    `wpkh(${bip84.publicExtendedKey}/0/*)$`,
+    `wpkh(${bip84.publicExtendedKey}/0/*)\\`,
+    `wpkh(${bip84.publicExtendedKey}/0/*)!`,
+  ]) {
+    assert.throws(() => buildDeriveAddressesCommands({ receiveDescriptor: bad }), /double quote or newline|shell metacharacter/);
+  }
+});
+
+test("deriveaddresses help points at the Core console and the same network", () => {
+  const help = coreDeriveAddressesHelp();
+  assert.equal(typeof help, "string");
+  assert.match(help, /Window → Console/);
+  assert.match(help, /same network/);
 });
 
 test("SLIP-132 Zpub is rewritten to xpub when the codec is supplied", () => {
