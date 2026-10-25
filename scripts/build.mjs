@@ -17,19 +17,29 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildSync } from "esbuild";
+import { build } from "esbuild";
 import { buildCommit } from "./build-commit.mjs";
+import { applyPreviewBlocks, previewHtmlPlugin } from "./preview-blocks.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const SRC = join(root, "src");
 
 const testHooks = process.argv.includes("--test-hooks");
+const preview = process.argv.includes("--preview");
 const outFlag = process.argv.indexOf("--out");
 if (outFlag !== -1 && !process.argv[outFlag + 1]) throw new Error("--out requires a directory");
 const outDir = outFlag === -1 ? root : resolve(root, process.argv[outFlag + 1]);
 if (testHooks && outDir === root) {
   throw new Error("--test-hooks requires --out outside the repository root: the release artifact ships no test code");
 }
+if (preview && outDir === root) {
+  throw new Error("--preview requires --out outside the repository root: the release artifact ships no unreleased features");
+}
+// Unreleased features merge hidden, in two mechanisms. JavaScript gates on the
+// __ENTROPYLAB_PREVIEW__ define below: esbuild folds it to false in a release
+// build and drops the dead branch. Markup gates on the <!-- preview --> /
+// <!-- /preview --> comment blocks that applyPreviewBlocks strips from the
+// shell. A preview build is never deployed.
 
 const read = (path) => readFileSync(join(SRC, path), "utf8");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
@@ -59,11 +69,12 @@ if (process.argv.includes("--clean")) {
   process.exit(0);
 }
 
-const template = read("index.html");
+// Both templates that reach the artifact take the same preview-block pass.
+const template = applyPreviewBlocks(read("index.html"), preview);
 // The page body lives once in shell.html: it is injected into index.html for
 // first paint / no-JS and imported by app.js (esbuild text loader) for the
 // boot render, so the two can never drift.
-const shell = read("shell.html");
+const shell = applyPreviewBlocks(read("shell.html"), preview);
 const workerTemplate = read("service-worker.js");
 const css = read("css/styles.css");
 // The header logo is inlined as SVG markup so the downloaded file shows it
@@ -114,7 +125,13 @@ const wasmAezNotice = `/*!
  *   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 `;
-const jsMain = buildSync({
+// shell.html reaches the artifact twice: injected into index.html below and
+// inlined into the app bundle by esbuild's text loader for the boot render.
+// previewHtmlPlugin applies the same preview-block transform to every .html
+// module esbuild loads, so a release build hides the markup in both copies.
+// Plugins need the async API.
+const previewHtml = previewHtmlPlugin(preview);
+const jsMain = (await build({
   entryPoints: [join(SRC, "js/app.js")],
   bundle: true,
   minify: true,
@@ -126,8 +143,12 @@ const jsMain = buildSync({
   charset: "utf8",
   loader: { ".html": "text" },
   banner: { js: wasmAezNotice },
-  define: { __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false" },
-}).outputFiles[0].text.split(siteLogoSpan).join(siteLogo)
+  plugins: [previewHtml],
+  define: {
+    __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false",
+    __ENTROPYLAB_PREVIEW__: preview ? "true" : "false",
+  },
+})).outputFiles[0].text.split(siteLogoSpan).join(siteLogo)
   // @scure/base probes TextDecoder with "A0+" and a DEL (U+007F). Its source
   // spells DEL as an escape, but esbuild writes the character itself, which
   // HTML forbids in a script. Put the escape back: the string is unchanged.
@@ -142,6 +163,12 @@ const jsBrowserCheck = read("js/browser-check.js");
 const jsLifeHash = read("js/lifehash.js");
 const jsEnhanced = read("js/enhanced-inputs.js");
 const jsRepeat = read("js/repeat-inputs.js");
+// The classic scripts are inlined verbatim: esbuild never sees them, so the
+// preview constant would be an undefined name there and break the release
+// page. Refuse it at build time; gate classic-script features from app.js.
+for (const [name, text] of Object.entries({ jsSqliteWriter, jsSqliteReader, jsWalletExport, jsCoreWallet, jsOnline, jsNetwork, jsBrowserCheck, jsLifeHash, jsEnhanced, jsRepeat })) {
+  if (text.includes("__ENTROPYLAB_PREVIEW__")) throw new Error(`${name}: classic scripts cannot use __ENTROPYLAB_PREVIEW__ (only ES modules bundled by esbuild see it)`);
+}
 
 let html = template
   .replace("/*@@SHELL@@*/", () => shell)
@@ -201,6 +228,6 @@ if (outDir === root) {
 writeFileSync(join(outDir, appFile), html);
 writeFileSync(join(outDir, workerFile), worker);
 
-console.log(`Built EntropyLab v${version}${testHooks ? " (test hooks enabled; not for release)" : ""}`);
+console.log(`Built EntropyLab v${version}${testHooks ? " (test hooks enabled; not for release)" : ""}${preview ? " (preview: unreleased features on; not for release)" : ""}`);
 console.log(`  ${appFile} (${Buffer.byteLength(html, "utf8")} bytes)`);
 console.log(`  ${workerFile} (${Buffer.byteLength(worker, "utf8")} bytes)`);
