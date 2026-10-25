@@ -5,7 +5,8 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { addressQrButtonHtml, initAddressQr } from "../src/js/address-qr.js";
+import { addressQrButtonHtml, initAddressQr, watchOnlyQrButtonHtml } from "../src/js/address-qr.js";
+import { WATCH_ONLY_QR_STATIC_MAX_CHARS, hodlUrDecodeWatchOnly, watchOnlyQrFrames } from "../src/js/psbt-ur.js";
 import { MiniDocument, MiniElement } from "./mini-dom.mjs";
 
 const ADDRESS = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
@@ -77,7 +78,7 @@ test("pagehide and persisted pageshow release the overlay contents", () => {
 const PSBT = readFileSync(new URL("fixtures/psbt/p2wpkh-1in-2out.b64", import.meta.url), "utf8").trim();
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-async function withOverlay(run, { fallback = false } = {}) {
+async function withOverlay(run, { fallback = false, frames = null, renderQr = () => "<svg></svg>" } = {}) {
   const saved = Object.fromEntries(["document", "navigator", "addEventListener"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const document = new MiniDocument(), writes = [], listeners = new WeakMap();
   const listen = function (type, callback) {
@@ -106,7 +107,7 @@ async function withOverlay(run, { fallback = false } = {}) {
     fire(document, "click", { target: node });
     await settle();
   };
-  initAddressQr(() => "<svg></svg>", { copy: () => "<svg></svg>", copied: () => "<svg></svg>" });
+  initAddressQr(renderQr, { copy: () => "<svg></svg>", copied: () => "<svg></svg>" }, { frames });
   const open = async (value, animate = "") => {
     const host = document.createElement("div");
     host.innerHTML = addressQrButtonHtml(value, "Fixture", { animate });
@@ -169,3 +170,63 @@ test("closing a private QR preview makes its clipboard inert", () => withOverlay
   await click(button);
   assert.deepEqual(writes, []);
 }));
+
+// End to end for a watch-only descriptor (review 5644223329): the button comes
+// from the field builder's watchOnlyQrButtonHtml, a click goes through the
+// real overlay handler, and the frames come from psbt-ur.js, as app.js wires
+// them (hodlPsbtQrFrames hands kind "watch" to watchOnlyQrFrames).
+const WATCH_KEY = (i) => `[73c5da0a/48h/0h/${i}h/2h]xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC8fRrjw7A9f/0/*`;
+const watchHarness = () => {
+  const asked = [], drawn = [];
+  return {
+    asked, drawn,
+    frames: (value, kind) => { asked.push(kind); return kind === "watch" ? watchOnlyQrFrames(value) : null; },
+    renderQr: (value) => { drawn.push(value); return "<svg></svg>"; },
+  };
+};
+const openWatch = async (document, click, value) => {
+  const host = document.createElement("div");
+  host.innerHTML = watchOnlyQrButtonHtml(value, "Watch-only wallet descriptor");
+  document.body.append(host);
+  const button = host.querySelector("button");
+  if (button) await click(button);
+  return button;
+};
+
+test("a long watch-only descriptor animates its UR parts through the overlay", () => {
+  const spy = watchHarness();
+  const descriptor = `wsh(sortedmulti(2,${Array.from({ length: 10 }, (_, i) => WATCH_KEY(i)).join(",")}))`;
+  assert.ok(descriptor.length > WATCH_ONLY_QR_STATIC_MAX_CHARS, "fixture must overflow one QR");
+  return withOverlay(async ({ document, click }) => {
+    assert.ok(await openWatch(document, click, descriptor), "a public descriptor got no QR button");
+    assert.deepEqual(spy.asked, ["watch"], "the overlay did not ask for watch frames");
+    const parts = watchOnlyQrFrames(descriptor);
+    assert.ok(parts.length > 1);
+    mock.timers.tick(600 * (parts.length - 1));
+    assert.deepEqual(spy.drawn, parts, "the overlay did not cycle every UR part");
+    assert.equal(hodlUrDecodeWatchOnly(spy.drawn.join("\n")), descriptor);
+  }, { frames: spy.frames, renderQr: spy.renderQr });
+});
+
+test("a short watch-only descriptor stays one static QR of its text", () => {
+  const spy = watchHarness();
+  const descriptor = `wpkh(${WATCH_KEY(0)})`;
+  return withOverlay(async ({ document, click }) => {
+    const button = await openWatch(document, click, descriptor);
+    assert.ok(button && !button.hasAttribute("data-address-qr-animate"), "a short descriptor asked to animate");
+    assert.deepEqual(spy.asked, [], "a static QR asked for frames");
+    mock.timers.tick(1200);
+    assert.deepEqual(spy.drawn, [descriptor]);
+  }, { frames: spy.frames, renderQr: spy.renderQr });
+});
+
+test("a watch-only field with private key material offers no QR button", () => {
+  const spy = watchHarness();
+  return withOverlay(async ({ document, click }) => {
+    for (const text of ["wpkh(L4rK1yDtCWekvXuE6oXD9jCYfFNV2cWRpVuPLBcCU2z8TrisoyY1)", `wpkh(${"0".repeat(63)}1)`]) {
+      assert.equal(await openWatch(document, click, text), null, "private material got a QR button");
+    }
+    assert.deepEqual(spy.asked, []);
+    assert.deepEqual(spy.drawn, []);
+  }, { frames: spy.frames, renderQr: spy.renderQr });
+});
