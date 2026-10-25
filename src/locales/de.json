@@ -2107,5 +2107,6 @@
   "Potential key reuse: this descriptor derives the same public key in more than one place": "Potenzielle Schlüsselwiederverwendung: Dieser Deskriptor leitet denselben öffentlichen Schlüssel an mehreren Stellen ab",
   "Check a descriptor for key reuse": "Deskriptor auf Schlüsselwiederverwendung prüfen",
   "wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…))": "wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…))",
-  "Check": "Prüfen"
+  "Check": "Prüfen",
+  "BIP 388 wallet policy": "BIP 388 Wallet-Richtlinie"
 }
