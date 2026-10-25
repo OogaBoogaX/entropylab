@@ -1719,7 +1719,6 @@
   "Wallet check result": "Resultado da verificação da carteira",
   "Upload a wallet.dat to view its records and checks here.": "Carregue um wallet.dat para ver seus registros e verificações aqui.",
   "Upload wallet.dat": "Carregar wallet.dat",
-  "Download wallet.dat": "Baixar wallet.dat",
   "End Session / Clear Fields": "Encerrar Sessão / Limpar Campos",
   "change": "troco",
   "receive and change": "receber e troco",
@@ -2098,5 +2097,6 @@
   "Paste the PSBT exactly as you sent it to the signer, then Inspect again. The returned PSBT above is compared with it field by field — the transaction, the signatures, and every other value the signer touched — and the verdict appears on top of the inspection.": "Cole o PSBT exatamente como você o enviou ao signatário, então Inspecione novamente. O PSBT retornado acima é comparado campo por campo — a transação, as assinaturas e todos os outros valores que o signatário tocou — e o veredito aparece no topo da inspeção.",
   "PSBT you sent (base64 or hex)": "PSBT que você enviou (base64 ou hex)",
   "cHNidP8B…": "cHNidP8B…",
-  "Upload sent .psbt": "Carregar .psbt enviado"
+  "Upload sent .psbt": "Carregar .psbt enviado",
+  "Download updated wallet.dat": "Baixar wallet.dat atualizado"
 }

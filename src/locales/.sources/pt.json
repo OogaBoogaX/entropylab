@@ -1719,7 +1719,6 @@
   "Wallet check result": "a5154a02a7b04aa2eb0731714a408987af2e552d33cb78ee6b54d426fb37e543",
   "Upload a wallet.dat to view its records and checks here.": "f809a19eb239902bc82ece6bbd46c5e7f85723fd2b81a975562680af15fd248b",
   "Upload wallet.dat": "545d32d9ad8a2790d62823dbbdef08b24cc769bbd981da6232c6bea6a29df59d",
-  "Download wallet.dat": "2a3cd9e79e9e550cb45abcba5947cc92f928567d5f31cd3680bd91472a608bc7",
   "End Session / Clear Fields": "a4afea54eba7db8b64869b4fb7d5c58748e31b9f517b678e2cd1a36aa6c67132",
   "change": "12ea12eace7d655f471ce55e34f89b1b77a3d9d05a445ca82877dd2235beaa51",
   "receive and change": "eb6f03c0386af46808f3a9a90a4491dcbb21a6e8d2cb268154e424e08bc3684f",
@@ -2098,5 +2097,6 @@
   "Paste the PSBT exactly as you sent it to the signer, then Inspect again. The returned PSBT above is compared with it field by field — the transaction, the signatures, and every other value the signer touched — and the verdict appears on top of the inspection.": "cb14dd769406c66017b7e8d47e65d9e1bec8b96f31dd69a2d9038aa263e1fa43",
   "PSBT you sent (base64 or hex)": "dc100a04ff8180fc63952aeadbdc9c1c72656bc7949f550e38137772eeb1b131",
   "cHNidP8B…": "257149535e808242c02f534d2e7bd4e46f2efd641d163e7bf5d55bf3f218c385",
-  "Upload sent .psbt": "f1bf2998350aca82c07f61ad4aed324dfce13839da81112123f4ce4f0c3f2e09"
+  "Upload sent .psbt": "f1bf2998350aca82c07f61ad4aed324dfce13839da81112123f4ce4f0c3f2e09",
+  "Download updated wallet.dat": "f727ca714d4e6a281a1e1780ed4bd423e68bfb11d9d8535eeb620bb1fa16d135"
 }
