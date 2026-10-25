@@ -2100,5 +2100,12 @@
   "Upload sent .psbt": "f1bf2998350aca82c07f61ad4aed324dfce13839da81112123f4ce4f0c3f2e09",
   "Download updated wallet.dat": "f727ca714d4e6a281a1e1780ed4bd423e68bfb11d9d8535eeb620bb1fa16d135",
   "Copy Core deriveaddresses": "fb37991ca57a9f3d29e919ee8262eb3e630fa0b1ed92890b3c9a684ef9a15e2d",
-  "Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.": "f1d411ec6cef72c342594c9aa8ed1bfacb56b53f5b80e079196946dc05f69a71"
+  "Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.": "f1d411ec6cef72c342594c9aa8ed1bfacb56b53f5b80e079196946dc05f69a71",
+  "No duplicate derived keys detected in the first 20 addresses of each branch.": "34d38924d24f8cd8103d7f4dea9f819d6a9df4becc27fc37d801b7a22d6e1e32",
+  "Key {a} at {pathA} and key {b} at {pathB}": "96cc0ba7eb11a0289962d76438c8c2b995d0dd7a317d1fa95a6292ab16622a9b",
+  "…and {count} more.": "44b64c51c6ff64b93453bdd115da0acd808db158ed93539a9e5b849ac127fb77",
+  "Potential key reuse: this descriptor derives the same public key in more than one place": "f625e767aa0dc98ca19f9674a48cb8500ea36d4c6fcdcc887b48a19cc0336f06",
+  "Check a descriptor for key reuse": "8189aeb4915a7b324ce4673f28faa3cf4ebc2ed98bd8d4b9ab101df3866ee87f",
+  "wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…))": "bee6e2cd15a545eda761eb46410c74dd66cca32537f3fdeec6cf8be921ef844d",
+  "Check": "9d60841e0a7891df0fd55b24d5c883a5d92ae544808675c2ec84537c12589c49"
 }
