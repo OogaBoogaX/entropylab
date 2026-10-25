@@ -671,6 +671,19 @@ words, pick one of the checksum words.</span></span>
         <button class="btn secondary" id="psbt-download" type="button" disabled>Download .psbt</button>
         <button class="btn red clear-current-action" id="psbt-wipe" type="button" disabled>Clear Inspectors</button>
       </div>
+<!-- preview -->
+      <details class="derivation-advanced" id="descriptor-reuse-options">
+        <summary>Check a descriptor for key reuse</summary>
+        <label class="field">Descriptor
+          <textarea id="descriptor-reuse-text" placeholder="wsh(sortedmulti(2,[…]xpub…/&lt;0;1&gt;/*,…))" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <div class="row tool-actions">
+          <button class="btn secondary" id="descriptor-reuse-go" type="button">Check</button>
+        </div>
+        <p class="err" id="descriptor-reuse-error" role="alert"></p>
+        <div id="descriptor-reuse-out" aria-live="polite"></div>
+      </details>
+<!-- /preview -->
     </div>
       <div class="card no-print tool-card" id="psbted-card" role="tabpanel" hidden>
       <label class="field">PSBT v0 (base64 or hex)

@@ -54,6 +54,7 @@ import { wordlist as bip39English } from "./bip39-english.js";
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFromUpload, psbtQrPlan as hodlPsbtQrPlan } from "./psbt-editor.js";
 import { initCoreWallet } from "./core-wallet-ui.js";
+import { initDescriptorReuseCheck } from "./descriptor-reuse-ui.js";
 import { auditSigner as hodlAuditSigner } from "./psbt-signer-audit.js";
 import { psbtSignerAuditVerification as hodlPsbtSignerAuditVerify } from "./psbt-signer-audit-verify.js";
 import { psbtSignerAuditErrorHtml as hodlPsbtSignerAuditErrorHtml, psbtSignerAuditHtml as hodlPsbtSignerAuditHtml } from "./psbt-signer-audit-view.js";
@@ -63,6 +64,7 @@ import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
 import { hodlInitCodex32 } from "./codex32.js";
 import { hodlCompareSchnorrNonces, hodlParseSchnorr, hodlTapKeySigs, hodlTapScriptPathSigs, hodlTapScriptSigs, hodlTapSighashProblems, hodlTapWitnessShape } from "./psbt-schnorr.js";
 import {
+  buildDeriveAddressesCommands,
   buildImportDescriptorsJson,
   canonicalizeWatchDescriptor,
   coreImportDescriptorsFilename,
@@ -2285,18 +2287,26 @@ function hodlCoreImportDescriptorsPublicWallet(wallet, scope) {
   }
   return scope === "msig" ? { ...publicAccount, kind: "msig" } : { kind: "hd", accounts: [publicAccount] };
 }
-function hodlCoreImportDescriptorsJson(scope = "msig") {
+// The public branch units both Core exports read, each checked as a
+// watch-only descriptor before anything leaves; null when there are none.
+function hodlCoreDescriptorUnits(scope) {
   const wallet = hodlCoreImportDescriptorsWallet(scope);
-  if (!wallet) return "";
+  if (!wallet) return null;
   const codec = hodlMsigCoreImportCodec();
   const publicWallet = hodlCoreImportDescriptorsPublicWallet(wallet, scope);
   const units = hodlWalletExport.walletDescriptorUnits(publicWallet, false);
-  if (!units.length) return "";
+  if (!units.length) return null;
   for (const unit of units) {
     hodlWalletExport.assertDescriptorShape(unit.descriptor, "watch-only", {
       checksum: hodlDescriptorChecksum, base58Decode: codec.decode
     }, unit.type, Boolean(unit.multiKey));
   }
+  return { wallet, publicWallet, units, codec };
+}
+function hodlCoreImportDescriptorsJson(scope = "msig") {
+  const core = hodlCoreDescriptorUnits(scope);
+  if (!core) return "";
+  const { wallet, publicWallet, units, codec } = core;
   return buildImportDescriptorsJson({
     descriptorUnits: units,
     branchHardened: wallet.branchHardened === true,
@@ -2307,9 +2317,28 @@ function hodlCoreImportDescriptorsJson(scope = "msig") {
     encode: codec.encode
   });
 }
+// One deriveaddresses line per exported branch, over exactly the window the
+// page shows (no lookahead), so Core's output can be compared row by row.
+function hodlCoreDeriveAddressesText(scope = "msig") {
+  const core = hodlCoreDescriptorUnits(scope);
+  if (!core) return "";
+  return buildDeriveAddressesCommands({
+    descriptorUnits: core.units,
+    branchHardened: core.wallet.branchHardened === true,
+    decode: core.codec.decode,
+    encode: core.codec.encode
+  });
+}
+// The deriveaddresses copy is unreleased: only a preview build shows it
+// (docs/PREVIEW.md). typeof keeps the standalone Node extraction working.
 function hodlCoreImportDescriptorsButtons(prefix) {
   return `<button class="btn secondary green" id="${prefix}-save-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Save Core Watch-only JSON")}</button>
-    <button class="btn secondary" id="${prefix}-copy-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Copy Core importdescriptors")}</button>`;
+    <button class="btn secondary" id="${prefix}-copy-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Copy Core importdescriptors")}</button>${typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? `
+    <button class="btn secondary" id="${prefix}-copy-deriveaddresses" type="button" aria-describedby="${prefix}-core-deriveaddresses-help">${hodlT("Copy Core deriveaddresses")}</button>` : ""}`;
+}
+function hodlCoreDeriveAddressesNote(prefix) {
+  if (typeof __ENTROPYLAB_PREVIEW__ === "undefined" || !__ENTROPYLAB_PREVIEW__) return "";
+  return `<p class="edge-note is-public" id="${prefix}-core-deriveaddresses-help">${hodlT("Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.")}</p>`;
 }
 function hodlCoreImportDescriptorsNote(wallet) {
   if (wallet.branchStart > 0) return hodlT("Imports the displayed public branches. Bitcoin Core uses branch {branch} for new receiving addresses, starting at address index 0. Verify that address on another trusted wallet or signer before funding.", { branch: wallet.branchStart });
@@ -2320,13 +2349,16 @@ function hodlCoreImportDescriptorsNote(wallet) {
     : hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress is this wallet's receive index 0, which is not in the address window shown above — display from index 0 or verify it on a signer before funding.");
 }
 function hodlKeyCoreImportDescriptorsMarkup(account) {
-  // Hidden in release builds until the team opens the Key Station Core export.
-  // typeof keeps the standalone Node extraction working; every shipped build defines the flag.
-  if (typeof __ENTROPYLAB_TEST_HOOKS__ !== "undefined" && !__ENTROPYLAB_TEST_HOOKS__) return "";
+  // Hidden in release builds until the team opens the Key Station Core export;
+  // test-hook and preview builds show it. typeof keeps the standalone Node
+  // extraction working; every shipped build defines both flags.
+  const preview = typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__;
+  if (!preview && typeof __ENTROPYLAB_TEST_HOOKS__ !== "undefined" && !__ENTROPYLAB_TEST_HOOKS__) return "";
   if (!account?.receiveDescriptor && !account?.changeDescriptor && !account?.addressBranches?.some(entry => entry.publicDescriptor)) return "";
   return `<div class="wallet-data-actions no-print" id="key-core-importdescriptors">
     <p class="edge-note is-public" id="key-core-importdescriptors-help">${hodlCoreImportDescriptorsNote(account)} ${hodlT("Exports the selected script type's displayed branches, using the wallet birthday under Downloads below.")}</p>
     ${hodlCoreImportDescriptorsButtons("key")}
+    ${hodlCoreDeriveAddressesNote("key")}
     <p class="edge-note is-private" id="key-core-importdescriptors-error" role="alert"></p>
   </div>`;
 }
@@ -2348,6 +2380,7 @@ function hodlMsigCoreImportDescriptorsMarkup() {
     <div class="wallet-birthday-field"><p class="label" id="msig-birthday-label">${hodlT("Wallet birthday")}</p><p class="muted label-description wallet-dat-birthday-help" id="msig-birthday-help">${hodlT("Bitcoin Core only auto-scans history back to the birthday. Choose “New keys” only for entropy created right now; recovering older keys with today's birthday can look empty until you run <code>rescanblockchain 0</code> in Bitcoin Core.")}</p><select data-wallet-dat-birthday aria-labelledby="msig-birthday-label" aria-describedby="msig-birthday-help msig-core-importdescriptors-help"><option value="genesis"${hodlWalletDatBirthday === "genesis" ? " selected" : ""}>${hodlT("Recovering keys · scan from genesis")}</option><option value="now"${hodlWalletDatBirthday === "now" ? " selected" : ""}>${hodlT("New keys · created today")}</option></select></div>
     ${hodlCoreImportDescriptorsButtons("msig")}
     ${walletDat ? `<button class="btn secondary green save-wallet-dat" id="msig-download-wallet-dat" type="button" aria-describedby="msig-core-importdescriptors-help msig-birthday-help">${hodlWalletExport.walletDatButtonLabel(false)}</button>` : ""}
+    ${hodlCoreDeriveAddressesNote("msig")}
   </div>`;
 }
 // The BIP 388 wallet policy export (template + co-signer xpubs), one block
@@ -2369,19 +2402,26 @@ function hodlCoreImportDescriptorsError(scope, spec) {
   if (error) error.textContent = hodlFormatErrorSpec(spec);
 }
 function hodlCopyCoreImportDescriptors(scope = "msig") {
+  hodlCopyCoreText(scope, hodlCoreImportDescriptorsJson, "copy-importdescriptors", hodlTText("Copy Core importdescriptors"));
+}
+function hodlCopyCoreDeriveAddresses(scope = "msig") {
+  hodlCopyCoreText(scope, hodlCoreDeriveAddressesText, "copy-deriveaddresses", hodlTText("Copy Core deriveaddresses"));
+}
+// Copies one Core export: a failure reaches the scope's error slot and copies
+// nothing; a copy shows "Copied" on its button, then restores the label.
+function hodlCopyCoreText(scope, build, action, label) {
   hodlCoreImportDescriptorsError(scope, null);
-  let json = "";
+  let text = "";
   try {
-    json = hodlCoreImportDescriptorsJson(scope);
+    text = build(scope);
   } catch (error) {
     hodlCoreImportDescriptorsError(scope, hodlErrorSpecFrom(error));
     return;
   }
-  if (!json) return;
-  let button = document.getElementById(`${scope === "calc" ? "key" : "msig"}-copy-importdescriptors`);
-  let label = hodlTText("Copy Core importdescriptors");
+  if (!text) return;
+  let button = document.getElementById(`${scope === "calc" ? "key" : "msig"}-${action}`);
   let done = (copied) => {
-    json = "";
+    text = "";
     if (!copied || !button) return;
     button.classList.add("is-copied");
     button.textContent = hodlTText("Copied");
@@ -2392,7 +2432,7 @@ function hodlCopyCoreImportDescriptors(scope = "msig") {
       button.textContent = label;
     }, 1600);
   };
-  copyText(json).then(done);
+  copyText(text).then(done);
 }
 function hodlDownloadCoreImportDescriptors(scope = "msig") {
   hodlCoreImportDescriptorsError(scope, null);
@@ -2451,8 +2491,8 @@ function hodlDownloadMsigBip388Policy() {
 }
 function hodlBindCoreImportDescriptors(scope) {
   const prefix = scope === "calc" ? "key" : "msig";
-  for (const [action, handler] of [["copy", hodlCopyCoreImportDescriptors], ["save", hodlDownloadCoreImportDescriptors]]) {
-    const button = document.getElementById(`${prefix}-${action}-importdescriptors`);
+  for (const [action, handler] of [["copy-importdescriptors", hodlCopyCoreImportDescriptors], ["save-importdescriptors", hodlDownloadCoreImportDescriptors], ["copy-deriveaddresses", hodlCopyCoreDeriveAddresses]]) {
+    const button = document.getElementById(`${prefix}-${action}`);
     if (!button) continue;
     const clean = button.cloneNode(true);
     button.replaceWith(clean);
@@ -11245,6 +11285,8 @@ function hodlSyncPsbtControls() {
     }
     anything ||= typed || Boolean(document.getElementById(card.out)?.childElementCount);
   }
+  // The key-reuse check (preview builds) holds a pasted descriptor too.
+  anything ||= Boolean(value("descriptor-reuse-text") || document.getElementById("descriptor-reuse-out")?.childElementCount);
   enable("psbt-wipe", anything);
   enable("nonce-wipe", anything);
 }
@@ -11270,13 +11312,13 @@ function hodlEndPsbtSession() {
   hodlPsbtLast = null;
   hodlPsbtInspected = {};
   hodlPsbtSessionSpec = hodlNote("Accessible fields were cleared (best effort).");
-  for (let id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-audit-before", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"]) {
+  for (let id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-audit-before", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"]) {
     let field = document.getElementById(id);
     if (field) field.value = "";
   }
   hodlClearStationPassphrase("psbt-pass");
   hodlClearStationPassphrase("nonce-pass");
-  for (let id of ["psbt-out", "nonce-out"]) {
+  for (let id of ["psbt-out", "nonce-out", "descriptor-reuse-out", "descriptor-reuse-error"]) {
     let output = document.getElementById(id);
     if (output) output.innerHTML = "";
   }
@@ -19616,6 +19658,8 @@ function hodlInitWorkspace() {
   hodlInitPsbt();
   initPsbtEditor({ networkDefault: () => hodlInspectorNetwork(), copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup, journalLog: hodlJournalLog });
   initCoreWallet({ deps: hodlWalletDatDeps(), onImportIntoStation: hodlCoreImportIntoStation, copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup });
+  // Unreleased (#164): a release build strips its markup (docs/PREVIEW.md).
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) initDescriptorReuseCheck(document, { onChange: hodlSyncPsbtControls });
   hodlInitBip85();
   hodlInitVanity();
   hodlInitSp();
@@ -20037,9 +20081,14 @@ function hodlInitSecretFieldAutoClear() {
     // The rendered audit holds change addresses and fingerprints derived
     // from the loaded key; retire it with the field it was computed from.
     try { hodlPsbtClearSignerAudit(); } catch {}
-    for (let id of ["nonce-key", "nonce-pass", "nonce-text"]) {
+    for (let id of ["nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"]) {
       let field = document.getElementById(id);
       if (field) field.value = "";
+    }
+    // The key-reuse verdict lists derived keys and paths: retire it with its field.
+    for (let id of ["descriptor-reuse-out", "descriptor-reuse-error"]) {
+      let output = document.getElementById(id);
+      if (output) output.innerHTML = "";
     }
     hodlClearStationPassphrase("nonce-pass");
     hodlSyncPsbtControls();

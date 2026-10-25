@@ -55,10 +55,10 @@ const parse = (json) => JSON.parse(json);
 // Exercise the application adapter with independently derived public fixtures.
 function keyExportHarness() {
   const source = read("src/js/app.js");
-  const context = vm.createContext({ buildImportDescriptorsJson, hodlBase58Check: codec,
+  const context = vm.createContext({ buildImportDescriptorsJson, buildDeriveAddressesCommands, hodlBase58Check: codec,
     hodlWalletExport: loadModule(), hodlDescriptorChecksum: descriptorChecksum, hodlT: text => text, hodlTText: text => text,
     hodlWalletDatBirthday: "genesis", hodlAccountId: "bip84", hodlWalletResult: null });
-  for (const name of ["hodlError", "hodlFormatErrorSpec", "hodlMsigCoreImportCodec", "hodlCoreImportDescriptorsWallet", "hodlCoreImportDescriptorsJson", "hodlCoreImportDescriptorsPublicWallet", "hodlCoreImportDescriptorsError", "hodlCopyCoreImportDescriptors", "hodlDownloadCoreImportDescriptors", "hodlKeyCoreImportDescriptorsMarkup", "hodlCoreImportDescriptorsNote", "hodlCoreImportDescriptorsButtons"]) {
+  for (const name of ["hodlError", "hodlFormatErrorSpec", "hodlMsigCoreImportCodec", "hodlCoreImportDescriptorsWallet", "hodlCoreDescriptorUnits", "hodlCoreImportDescriptorsJson", "hodlCoreDeriveAddressesText", "hodlCoreImportDescriptorsPublicWallet", "hodlCoreImportDescriptorsError", "hodlCopyCoreImportDescriptors", "hodlCopyCoreDeriveAddresses", "hodlCopyCoreText", "hodlDownloadCoreImportDescriptors", "hodlKeyCoreImportDescriptorsMarkup", "hodlMsigCoreImportDescriptorsMarkup", "hodlCoreImportDescriptorsNote", "hodlCoreImportDescriptorsButtons", "hodlCoreDeriveAddressesNote"]) {
     const match = source.match(new RegExp(`^function ${name}\\([^]*?^}`, "m"));
     assert.ok(match, `application export adapter ${name} exists`);
     vm.runInContext(match[0], context);
@@ -559,6 +559,87 @@ test("deriveaddresses refuses descriptors that would break the command line", ()
   }
 });
 
+// The app's copy reads the same public units as the Core JSON, each branch
+// over exactly its displayed window (the deepest row shown), never the
+// importdescriptors range with its lookahead.
+for (const [start, count] of CUSTOM_WINDOWS) {
+  test(`Key Station deriveaddresses covers branch window ${start}+${count} exactly as displayed`, () => {
+    const ui = keyExportHarness();
+    const { account } = customAccount(84, "mainnet", start, count);
+    ui.hodlWalletResult = { kind: "hd", accounts: [account] };
+    assert.equal(ui.hodlCoreDeriveAddressesText("calc"),
+      account.addressBranches.map(entry => `deriveaddresses "${entry.publicDescriptor}" "[0,${entry.branch + 2}]"\n`).join(""));
+  });
+}
+
+test("deriveaddresses follows each branch's deepest displayed row, for Key Station and multisig", () => {
+  const ui = keyExportHarness();
+  const account = { def: { id: "bip84" }, receiveDescriptor: bip84Receive, changeDescriptor: bip84Change,
+    addressBranches: [{ branch: 0, rows: [{ index: 5000 }, { index: 5019 }, { index: 5007 }] }, { branch: 1, rows: [{ index: 3 }] }],
+    get receiveDescriptorPriv() { throw new Error("private descriptor read"); },
+    get changeDescriptorPriv() { throw new Error("private descriptor read"); } };
+  ui.hodlWalletResult = { kind: "hd", accounts: [account] };
+  assert.equal(ui.hodlCoreDeriveAddressesText("calc"), `deriveaddresses "${bip84Receive}" "[0,5019]"\nderiveaddresses "${bip84Change}" "[0,3]"\n`);
+  assert.equal(ui.hodlCoreDeriveAddressesText("msig"), "", "a stale multisig control cannot copy the active key");
+  ui.hodlWalletResult = { kind: "msig", script: "p2wsh", receiveDescriptor: receive, changeDescriptor: change,
+    receive: [{ index: 0 }, { index: 1 }, { index: 2 }], change: [{ index: 0 }] };
+  assert.equal(ui.hodlCoreDeriveAddressesText("msig"), `deriveaddresses "${receive}" "[0,2]"\nderiveaddresses "${change}" "[0,0]"\n`);
+  assert.equal(ui.hodlCoreDeriveAddressesText("calc"), "", "a stale key control cannot copy the active multisig");
+  // A branch that shows no rows has no window to check: refuse, never [0,0].
+  ui.hodlWalletResult = { kind: "msig", script: "p2wsh", receiveDescriptor: receive, changeDescriptor: change,
+    receive: [{ index: 0 }], change: [] };
+  assert.throws(() => ui.hodlCoreDeriveAddressesText("msig"), /displayedEnd/);
+});
+
+test("Copy Core deriveaddresses copies the lines and flashes Copied; a refusal copies nothing", async () => {
+  const ui = keyExportHarness();
+  const button = { textContent: "Copy Core deriveaddresses", isConnected: true, classList: { add() {}, remove() {} } };
+  const elements = { "key-core-importdescriptors-error": { textContent: "" }, "key-copy-deriveaddresses": button };
+  ui.document = { getElementById: id => elements[id] ?? null };
+  ui.hodlErrorSpecFrom = error => ({ raw: error.message });
+  ui.setTimeout = () => 0;
+  ui.clearTimeout = () => {};
+  const copied = [];
+  ui.copyText = text => { copied.push(text); return Promise.resolve(true); };
+  const { account } = customAccount(84, "mainnet", 0, 2);
+  ui.hodlWalletResult = { kind: "hd", accounts: [account] };
+  ui.hodlCopyCoreDeriveAddresses("calc");
+  await Promise.resolve();
+  // Expected text from the fixture, not from the code under test.
+  assert.deepEqual(copied, [account.addressBranches.map(entry => `deriveaddresses "${entry.publicDescriptor}" "[0,${entry.branch + 2}]"\n`).join("")]);
+  assert.equal(button.textContent, "Copied");
+  account.addressBranches[0].publicDescriptor = "invalid";
+  account.receiveDescriptor = "invalid";
+  ui.hodlCopyCoreDeriveAddresses("calc");
+  assert.ok(elements["key-core-importdescriptors-error"].textContent, "the refusal reaches the result's error slot");
+  assert.equal(copied.length, 1, "a refused export copies nothing");
+});
+
+test("the deriveaddresses copy and its note show only in a preview build", () => {
+  const ui = keyExportHarness();
+  const { account } = customAccount(84, "mainnet", 0, 2);
+  const msig = { kind: "msig", script: "p2wsh", receiveDescriptor: receive, changeDescriptor: change, receive: [{ index: 0 }], change: [{ index: 0 }] };
+  // A test-hook build without the preview flag: the Key Station export, no copy.
+  ui.__ENTROPYLAB_TEST_HOOKS__ = true;
+  ui.__ENTROPYLAB_PREVIEW__ = false;
+  assert.match(ui.hodlKeyCoreImportDescriptorsMarkup(account), /id="key-copy-importdescriptors"/);
+  assert.doesNotMatch(ui.hodlKeyCoreImportDescriptorsMarkup(account), /deriveaddresses/);
+  ui.hodlWalletResult = msig;
+  assert.doesNotMatch(ui.hodlMsigCoreImportDescriptorsMarkup(), /deriveaddresses/);
+  // A release build: the Key Station export stays hidden, as before.
+  ui.__ENTROPYLAB_TEST_HOOKS__ = false;
+  assert.equal(ui.hodlKeyCoreImportDescriptorsMarkup(account), "");
+  // A preview build shows both blocks with the button beside the
+  // importdescriptors copy and the agreed note.
+  ui.__ENTROPYLAB_PREVIEW__ = true;
+  for (const [prefix, markup] of [["key", ui.hodlKeyCoreImportDescriptorsMarkup(account)], ["msig", ui.hodlMsigCoreImportDescriptorsMarkup()]]) {
+    assert.match(markup, new RegExp(`id="${prefix}-copy-importdescriptors"[^]*?</button>\\s*<button class="btn secondary" id="${prefix}-copy-deriveaddresses" type="button" aria-describedby="${prefix}-core-deriveaddresses-help">Copy Core deriveaddresses</button>`));
+    assert.ok(markup.includes(`<p class="edge-note is-public" id="${prefix}-core-deriveaddresses-help">${coreDeriveAddressesHelp()}</p>`), `${prefix}: the agreed note`);
+  }
+  const app = read("src/js/app.js");
+  assert.match(app, /\["copy-deriveaddresses", hodlCopyCoreDeriveAddresses\]/, "the button is bound with the other Core exports");
+});
+
 test("deriveaddresses help points at the Core console and the same network", () => {
   const help = coreDeriveAddressesHelp();
   assert.equal(typeof help, "string");
@@ -787,6 +868,29 @@ for (const network of Object.keys(CHAIN_FIXTURES)) {
         assert.equal(cli([wallet, "getnewaddress", "", type]).stdout.trim(), expectedAddress(start, 0));
         if (start === 0 && count > 1) assert.equal(cli([wallet, "getrawchangeaddress", type]).stdout.trim(), expectedAddress(1, 0));
         else assert.notEqual(cli([wallet, "getrawchangeaddress", type], { check: false }).status, 0, "no change branch may be invented");
+      }
+    });
+  });
+}
+
+// Core runs the copied lines: each prints the branch's addresses from index 0
+// through the deepest displayed row, matching independently derived ones.
+for (const network of Object.keys(CHAIN_FIXTURES)) {
+  test(`Bitcoin Core runs the Key Station deriveaddresses copy on ${network}`, { skip: !BITCOIND, timeout: 120000 }, async () => {
+    const ui = keyExportHarness();
+    await withChainNode(network, cli => {
+      const rpc = (...args) => JSON.parse(cli(args).stdout);
+      for (const purpose of [44, 49, 84, 86]) for (const [start, count, hardened] of [...CUSTOM_WINDOWS, [2, 2, true]]) {
+        const { account, expectedAddress } = customAccount(purpose, network, start, count, hardened);
+        ui.hodlAccountId = account.def.id;
+        ui.hodlWalletResult = { kind: "hd", accounts: [account] };
+        const lines = ui.hodlCoreDeriveAddressesText("calc").trimEnd().split("\n");
+        assert.equal(lines.length, count, "one line per displayed branch");
+        lines.forEach((line, offset) => {
+          const [, descriptor, range] = line.match(/^deriveaddresses "([^"]+)" "(\[0,\d+\])"$/);
+          const branch = start + offset;
+          assert.deepEqual(rpc("deriveaddresses", descriptor, range), Array.from({ length: branch + 3 }, (_, index) => expectedAddress(branch, index)));
+        });
       }
     });
   });

@@ -409,6 +409,19 @@ test("descriptor ranges cover displayed addresses plus a recovery gap", () => {
   assert.deepEqual(readRange(descriptorValues[1]), { nextIndex: 7001, rangeStart: 7000, rangeEnd: 8000 });
 });
 
+test("descriptor units carry the deepest displayed index, and none for a branch with no rows", () => {
+  // deriveaddresses checks exactly the displayed window; a branch showing
+  // nothing must not fall back to index 0.
+  const { walletDescriptorUnits } = loadModule();
+  const wallet = structuredClone(WATCH_ONLY_WALLET);
+  wallet.accounts[0].addressBranches = [
+    { branch: 0, rows: [{ index: 5000 }, { index: 5002 }, { index: 5001 }] },
+    { branch: 1, rows: [] },
+  ];
+  const units = walletDescriptorUnits(wallet, false);
+  assert.deepEqual(units.slice(0, 2).map((unit) => unit.displayedEnd), [5002, undefined]);
+});
+
 test("a branch window starting above 0 exports every derived branch as external", () => {
   // The picker can derive branches {1, 2}; the old [0, 1] loop exported only
   // branch 1 and filed it as change, so Core watched no receive chain.

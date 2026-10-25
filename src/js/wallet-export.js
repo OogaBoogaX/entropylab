@@ -227,7 +227,10 @@ var hodlWalletExport = (() => {
     const displayedEnd = indexes.length ? Math.max(...indexes) : 0;
     const rangeEnd = indexes.length ? Math.min(MAX_ADDRESS_INDEX, displayedEnd + RANGE_END) : RANGE_END;
     const nextIndex = indexes.length ? Math.min(MAX_ADDRESS_INDEX, displayedEnd + 1) : 0;
-    return { nextIndex, rangeStart, rangeEnd };
+    // The deepest index the page shows, for a check over exactly that window
+    // (deriveaddresses); undefined when the branch shows no rows, so the
+    // check refuses instead of covering addresses nobody saw.
+    return { nextIndex, rangeStart, rangeEnd, displayedEnd: indexes.length ? displayedEnd : undefined };
   };
 
   const msigDescriptorUnits = (wallet) => {

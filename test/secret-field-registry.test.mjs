@@ -56,8 +56,8 @@ const CLEARING_PATHS = [
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle field sweep`),
   },
   {
-    ids: ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "psbt-audit-before", "nonce-key", "nonce-pass", "nonce-text"],
-    why: "PSBT/Nonce stations: session keys, pasted PSBTs (xprvs in proprietary fields), anti-exfil transcript",
+    ids: ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "psbt-audit-before", "nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"],
+    why: "PSBT/Nonce stations: session keys, pasted PSBTs (xprvs in proprietary fields), anti-exfil transcript, a descriptor pasted for the key-reuse check (an xprv by mistake)",
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`) && fnBody("hodlEndPsbtSession").includes(`"${id}"`), `#${id} missing from the PSBT lifecycle/session-end sweeps`),
   },
   {
