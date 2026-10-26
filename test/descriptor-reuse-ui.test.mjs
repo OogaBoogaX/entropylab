@@ -1,5 +1,5 @@
-// "Check a descriptor for key reuse" (issue #164): the verdict markup, the
-// controls' wiring, and the preview gate that keeps it out of release builds.
+// "Check a descriptor for key reuse" (issue #164): the verdict markup and the
+// controls' wiring, which ship in every build.
 // Run with: node --test test/descriptor-reuse-ui.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -93,21 +93,22 @@ test("a refusal shows in the error line without echoing the input, and an edit r
   assert.equal(elements["descriptor-reuse-error"].textContent, "");
 });
 
-test("the section is preview-only: release builds strip the markup and never wire it", () => {
+test("the section ships in every build and is wired without a preview gate", () => {
   const shell = read("src/shell.html");
   assert.ok(shell.includes("<summary>Check a descriptor for key reuse</summary>"));
-  assert.doesNotMatch(applyPreviewBlocks(shell, false), /descriptor-reuse/);
-  const preview = applyPreviewBlocks(shell, true);
+  const release = applyPreviewBlocks(shell, false);
   for (const id of ["descriptor-reuse-options", "descriptor-reuse-text", "descriptor-reuse-go", "descriptor-reuse-error", "descriptor-reuse-out"]) {
-    assert.match(preview, new RegExp(`id="${id}"`));
+    assert.match(release, new RegExp(`id="${id}"`), `a release build keeps #${id}`);
   }
   // Inside the PSBT Inspector's card, after its actions.
-  const card = preview.slice(preview.indexOf('id="psbt-card"'), preview.indexOf('id="psbted-card"'));
+  const card = release.slice(release.indexOf('id="psbt-card"'), release.indexOf('id="psbted-card"'));
   assert.ok(card.indexOf('id="psbt-wipe"') < card.indexOf('id="descriptor-reuse-options"'));
   const app = read("src/js/app.js");
-  assert.match(app, /if \(typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__\) initDescriptorReuseCheck\(document, \{ onChange: hodlSyncPsbtControls \}\);/);
-  // Second line of defence: in a release build the markup is gone, so even a
-  // stray call wires nothing and touches nothing.
+  const callAt = app.indexOf("initDescriptorReuseCheck(document, { onChange: hodlSyncPsbtControls })");
+  assert.ok(callAt > 0, "the check is wired");
+  assert.doesNotMatch(app.slice(Math.max(0, callAt - 200), callAt), /__ENTROPYLAB_PREVIEW__/, "the wiring is ungated");
+  // Second line of defence: a stray call with no markup wires nothing and
+  // touches nothing.
   const asked = [];
   assert.doesNotThrow(() => initDescriptorReuseCheck({ getElementById: (id) => { asked.push(id); return null; } }, { onChange: () => assert.fail("onChange ran") }));
   assert.deepEqual(asked, ["descriptor-reuse-text", "descriptor-reuse-go", "descriptor-reuse-out", "descriptor-reuse-error"]);

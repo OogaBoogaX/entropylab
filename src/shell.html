@@ -646,14 +646,12 @@ words, pick one of the checksum words.</span></span>
         </label>
         <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </details>
-      <!-- preview -->
 <details class="derivation-advanced" id="psbt-rbf-options">
 <summary>Check a fee bump (RBF) (optional)</summary>
 <p class="muted label-description">Paste the original transaction you broadcast, then Inspect the fee-bump PSBT above. EntropyLab checks that the bump only raises the fee: the same payments to the same addresses, with the extra fee taken from your change. Use your own copy of the original — the one you signed or saved — not the one your wallet or server shows you now. A malicious server can change that copy.</p>
 <label class="field">Original transaction you broadcast (raw hex or PSBT)<textarea id="psbt-rbf-original" placeholder="cHNidP8B… or 0200000001…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></label>
 <div class="row tool-actions"><button class="btn secondary" id="psbt-rbf-upload" type="button">Upload original</button><input type="file" id="psbt-rbf-file" accept=".psbt,.txn,.txt,.hex" hidden></div>
 </details>
-<!-- /preview -->
 <details class="derivation-advanced" id="psbt-audit-options">
         <summary>Check what the signer changed (optional)</summary>
         <p class="muted label-description">Paste the PSBT exactly as you sent it to the signer, then Inspect again. The returned PSBT above is compared with it field by field — the transaction, the signatures, and every other value the signer touched — and the verdict appears on top of the inspection.</p>
@@ -679,7 +677,6 @@ words, pick one of the checksum words.</span></span>
         <button class="btn secondary" id="psbt-download" type="button" disabled>Download .psbt</button>
         <button class="btn red clear-current-action" id="psbt-wipe" type="button" disabled>Clear Inspectors</button>
       </div>
-<!-- preview -->
       <details class="derivation-advanced" id="descriptor-reuse-options">
         <summary>Check a descriptor for key reuse</summary>
         <label class="field">Descriptor
@@ -691,7 +688,6 @@ words, pick one of the checksum words.</span></span>
         <p class="err" id="descriptor-reuse-error" role="alert"></p>
         <div id="descriptor-reuse-out" aria-live="polite"></div>
       </details>
-<!-- /preview -->
     </div>
       <div class="card no-print tool-card" id="psbted-card" role="tabpanel" hidden>
       <label class="field">PSBT v0 (base64 or hex)

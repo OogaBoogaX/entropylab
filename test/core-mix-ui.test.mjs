@@ -608,13 +608,14 @@ test("Derive follows the loaded wallet and the active tab", () => {
   assert.equal(context.hodlCanDeriveCurrentKey(), false, "a tab switch (reset) disables Derive");
 });
 
-test("the preview gate pushes corewallet before the picker is built", () => {
-  const gate = app.indexOf('if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) hodlKeyModes.push("corewallet");');
+test("corewallet is pushed unconditionally before the picker is built", () => {
+  const push = app.search(/^\s*hodlKeyModes\.push\("corewallet"\);$/m);
+  const set = app.indexOf("setKeyVaultModes(hodlKeyModes);");
   const picker = app.indexOf('var hodlKeyModeSelectEl = document.createElement("select");');
-  assert.ok(gate >= 0, "the preview gate exists");
+  assert.ok(push >= 0, "the method is pushed unconditionally");
+  assert.ok(set > push, "setKeyVaultModes runs right after the push");
   assert.ok(picker >= 0, "the picker is built");
-  assert.ok(gate < picker, "the gate runs before the picker");
-  assert.doesNotMatch(app, /^\s*hodlKeyModes\.push\("corewallet"\);/m, "no unconditional push");
+  assert.ok(push < picker, "the push runs before the picker");
 });
 
 test("the method has a label and a summary sub-method label", () => {

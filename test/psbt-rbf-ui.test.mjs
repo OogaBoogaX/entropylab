@@ -1,4 +1,4 @@
-// Tests for the preview RBF fee-bump check in the PSBT Inspector: the
+// Tests for the RBF fee-bump check in the PSBT Inspector: the
 // hodlPsbtPrependRbfCheck wiring in src/js/app.js over the real
 // checkRbfReplacement from src/js/psbt-rbf-check.js. The screen defends
 // against Electrum GHSA-6jp4-8v48-cc5v — a malicious server handing the
@@ -18,6 +18,7 @@ import { checkRbfReplacement } from "../src/js/psbt-rbf-check.js";
 import { hex as hodlHex } from "../src/js/coders.js";
 import { serializeTx as realSerializeTx, parseRawTx as realParseRawTx } from "../src/js/tx.js";
 import { psbtBytesFromUpload as realPsbtBytesFromUpload } from "../src/js/psbt-editor.js";
+import { applyPreviewBlocks } from "../scripts/preview-blocks.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -455,23 +456,28 @@ test("scripts render as addresses when they decode for the network, else as hex"
   assert.equal(context.hodlPsbtRbfShowScript(OURS_HEX, "mainnet"), OURS_HEX, "a decoder failure falls back to hex");
 });
 
-test("the screen and its wiring exist only behind the preview flag", () => {
+test("the screen and its wiring ship in every build", () => {
   const runStart = app.indexOf("function hodlRunPsbt(");
   const run = app.slice(runStart, app.indexOf("\nfunction ", runStart));
-  assert.match(run, /typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__\)\s*hodlPsbtPrependRbfCheck\(/, "the call in hodlRunPsbt is preview-gated");
-  assert.match(app, /if \(typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__\) \{\s*const rbfFile = document\.getElementById\("psbt-rbf-file"\);/, "the upload wiring is preview-gated");
+  const callAt = run.indexOf("hodlPsbtPrependRbfCheck(");
+  assert.ok(callAt >= 0, "the call in hodlRunPsbt exists");
+  assert.doesNotMatch(run.slice(Math.max(0, callAt - 200), callAt), /__ENTROPYLAB_PREVIEW__/, "the call in hodlRunPsbt is ungated");
+  const uploadAt = app.indexOf('const rbfFile = document.getElementById("psbt-rbf-file");');
+  assert.ok(uploadAt >= 0, "the upload wiring exists");
+  assert.doesNotMatch(app.slice(Math.max(0, uploadAt - 200), uploadAt), /__ENTROPYLAB_PREVIEW__/, "the upload wiring is ungated");
   assert.match(app, /document\.getElementById\("psbt-rbf-original"\)\?\.addEventListener\("input", hodlPsbtClearRbfVerdict\)/, "editing the original retires the verdict");
   const optionsAt = shell.indexOf('id="psbt-rbf-options"');
   assert.ok(optionsAt > 0, "the RBF options block exists in the shell");
-  const previewOpen = shell.lastIndexOf("<!-- preview -->", optionsAt);
-  const previewClose = shell.indexOf("<!-- /preview -->", optionsAt);
-  assert.ok(previewOpen >= 0 && previewOpen < optionsAt, "a preview marker opens the block");
-  assert.ok(previewClose > optionsAt, "a preview marker closes the block");
+  const before = shell.slice(0, optionsAt);
+  const open = before.lastIndexOf("<!-- preview -->");
+  const close = before.lastIndexOf("<!-- /preview -->");
+  assert.ok(open === -1 || open < close, "no preview marker opens the block");
+  const release = applyPreviewBlocks(shell, false);
+  assert.match(release, /id="psbt-rbf-options"/, "a release build keeps the RBF section");
   for (const id of ["psbt-rbf-original", "psbt-rbf-upload", "psbt-rbf-file"]) {
-    const idAt = shell.indexOf(`id="${id}"`);
-    assert.ok(idAt > optionsAt && idAt < previewClose, `#${id} sits inside the preview block`);
+    assert.match(release, new RegExp(`id="${id}"`), `a release build keeps #${id}`);
   }
-  assert.match(shell, /<summary>Check a fee bump \(RBF\) \(optional\)<\/summary>/);
+  assert.match(release, /<summary>Check a fee bump \(RBF\) \(optional\)<\/summary>/);
 });
 
 test("the RBF upload fills #psbt-rbf-original from a File-like object with arrayBuffer()", async () => {
