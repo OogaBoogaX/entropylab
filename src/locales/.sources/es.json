@@ -2109,5 +2109,7 @@
   "Check a descriptor for key reuse": "8189aeb4915a7b324ce4673f28faa3cf4ebc2ed98bd8d4b9ab101df3866ee87f",
   "wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…))": "bee6e2cd15a545eda761eb46410c74dd66cca32537f3fdeec6cf8be921ef844d",
   "Check": "9d60841e0a7891df0fd55b24d5c883a5d92ae544808675c2ec84537c12589c49",
-  "BIP 388 wallet policy": "4c10bd9f78c46ed6090d8dabfba58cd00e4420423688890368d86fe2e462c9bd"
+  "BIP 388 wallet policy": "4c10bd9f78c46ed6090d8dabfba58cd00e4420423688890368d86fe2e462c9bd",
+  "Download verification package": "6a38cd493a6f50880becd739f432f358762b8c92050ec31e5735a0416c574ffb",
+  "Public data only (descriptors, xpubs, addresses) for checking this wallet with an independent Bitcoin Core tool.": "4784b524de5f1fca3328d385b66a8657bae7e15a7e9f1e3c1c0a0f7b9e8a8cb6"
 }
