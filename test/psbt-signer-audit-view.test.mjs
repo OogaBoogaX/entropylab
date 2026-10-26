@@ -260,6 +260,26 @@ test("the three unwired checks fold into one Not checked here line; any other va
   assert.ok(bare.includes('data-audit-check="nonceReuse" data-audit-tone="warn"'));
 });
 
+test("the Not checked here note stays visible outside the folded checks block", () => {
+  // TC's point 6: the checks, the note and the next disclosure are three
+  // separate pieces. A passing audit folds the checks, so a note inside the
+  // block would be hidden — it must render after the disclosure, outside it.
+  const html = psbtSignerAuditHtml(reportFor([]), null, null, "mainnet");
+  const open = html.indexOf('<details class="derivation-advanced" data-audit-checks');
+  const close = html.indexOf("</details>", open);
+  assert.ok(open >= 0 && close > open, "fixture: the checks block renders");
+  assert.ok(!/\bopen\b/.test(html.slice(open, html.indexOf(">", open))), "fixture: a passing audit folds the checks");
+  const note = html.indexOf("data-audit-unchecked");
+  assert.ok(note > close, "the note renders after the disclosure, not inside it");
+  const depth = (html.slice(0, note).match(/<details\b/g) || []).length - (html.slice(0, note).match(/<\/details>/g) || []).length;
+  assert.equal(depth, 0, "the note is outside every details element");
+});
+
+test("the checks block's open state comes from the check tones, never the rendered class names", () => {
+  const source = readFileSync(new URL("../src/js/psbt-signer-audit-view.js", import.meta.url), "utf8");
+  assert.ok(!/\.includes\(\s*["']psbt-(bad|warn)["']\s*\)/.test(source), "the view must not decide folding from psbt-bad/psbt-warn");
+});
+
 test("a missing check value renders Unknown in the warning tone, never a table row named undefined", () => {
   // sighashPolicy has an "undefined" value (a real sighash state); a check
   // the report leaves out must not read it.
@@ -284,7 +304,7 @@ test("an undecodable-document report renders the error finding, unknown checks, 
   assert.ok(html.includes('data-audit-tier="fail"'));
   assert.ok(html.includes('data-audit-code="DOC_UNDECODABLE"'));
   assert.ok(html.includes('data-audit-check="transactionBody" data-audit-tone="warn"'));
-  assert.ok(!html.includes("<details"), "no diff block without a diff");
+  assert.ok(!html.includes("data-audit-diff"), "no diff block without a diff");
 });
 
 test("the read-error note names its case, escapes the parser's message, and carries no verdict", () => {
@@ -383,7 +403,7 @@ test("psbtDiffHtml labels: the default output is byte-identical, custom labels r
 test("the view renders the collapsed technical diff with the sent/returned labels", () => {
   const { before, after, diff } = versionBumpDocs();
   const html = psbtSignerAuditHtml(reportFor([], { diff, equal: false }), before, after, "mainnet");
-  assert.ok(html.includes("<details"));
+  assert.ok(html.includes("data-audit-diff"));
   assert.ok(html.includes("the PSBT you sent"));
   assert.ok(html.includes("the returned PSBT"));
   assert.ok(!html.includes("the PSBT in the editor"));
@@ -618,4 +638,58 @@ test("the technical diff neutralizes bidi controls in a pair's decodeError", () 
   const diff = comparePsbtDocs(before, after);
   const html = psbtSignerAuditHtml(reportFor([], { diff, equal: false }), before, after, "mainnet");
   assert.ok(!html.includes("\u202e") && !html.includes("\u2066"), "bidi controls in a decodeError must be neutralized");
+});
+
+test("retiring a shown verdict removes the combined overall line", async () => {
+  const overall = { removed: false, remove() { this.removed = true; } };
+  const section = { removed: false, remove() { this.removed = true; } };
+  const output = {
+    querySelector(selector) {
+      if (selector === "[data-audit-section]") return section;
+      if (selector === "[data-psbt-overall]") return overall;
+      return null;
+    },
+  };
+  const app = await loadAppFunctions(["hodlPsbtClearSignerAudit"], { settable: ["hodlPsbtLast", "hodlPsbtInspected"], stubs: {
+    document: { getElementById: (id) => (id === "psbt-out" ? output : null) },
+    hodlSyncPsbtControls: () => {},
+  } });
+  app.__set.hodlPsbtLast({ audit: { report: { verdict: "pass" } } });
+  app.__set.hodlPsbtInspected({});
+  app.hodlPsbtClearSignerAudit();
+  assert.equal(section.removed, true, "the audit section is removed");
+  assert.equal(overall.removed, true, "the overall line is removed with it");
+});
+
+test("a language change paints the audit after the answer block and recomputes the overall line", async () => {
+  const answer = { inserted: [], insertAdjacentHTML(position, html) { this.inserted.push({ position, html }); } };
+  const output = {
+    innerHTML: "",
+    querySelector(selector) {
+      if (selector === "[data-psbt-answer]") return answer;
+      return null;
+    },
+    insertAdjacentHTML(position, html) { this.innerHTML = html + this.innerHTML; },
+  };
+  let overallCalls = 0;
+  const app = await loadAppFunctions(["hodlRefreshPsbtLocale", "hodlPsbtPaintSignerAudit"], { settable: ["hodlPsbtLast", "hodlNonceLast"], stubs: {
+    document: { getElementById: (id) => (id === "psbt-out" ? output : null) },
+    hodlPaintPsbtSession: () => {},
+    hodlPaintPsbtKeyNotes: () => {},
+    hodlSetPsbtError: () => {},
+    hodlSetNonceError: () => {},
+    hodlPsbtSyncNonceHistoryControls: () => {},
+    hodlRenderPsbt: () => "inspection",
+    hodlRenderRawTx: () => "inspection",
+    hodlPsbtSignerAuditMarkup: () => "AUDIT",
+    hodlPsbtInsertOverall: () => { overallCalls += 1; },
+  } });
+  const last = { kind: "psbt", parsed: {}, sourceTag: new Uint8Array([1]), checkedAt: "t", network: "mainnet", audit: { report: { verdict: "pass" } } };
+  app.__set.hodlPsbtLast(last);
+  app.__set.hodlNonceLast(null);
+  app.hodlRefreshPsbtLocale();
+  assert.equal(answer.inserted.length, 1, "the audit is inserted after the answer block");
+  assert.equal(answer.inserted[0].position, "afterend");
+  assert.equal(answer.inserted[0].html, "AUDIT");
+  assert.equal(overallCalls, 1, "the overall line is recomputed");
 });

@@ -5509,7 +5509,9 @@
     const box = document.getElementById("psbt-text");
     input(box, btoa(psbtHex.match(/../g).map((pair) => String.fromCharCode(parseInt(pair, 16))).join("")));
     document.getElementById("psbt-go").click();
-    await until(() => document.getElementById("psbt-out").textContent.includes("Tx inputs") || document.getElementById("psbt-error").textContent, "script-conflict report");
+    // The PSBT view folds its inputs under a [data-psbt-inputs] disclosure
+    // (#1145); a raw transaction still renders the "Tx inputs" heading.
+    await until(() => document.getElementById("psbt-out").querySelector("[data-psbt-inputs]") || document.getElementById("psbt-out").textContent.includes("Tx inputs") || document.getElementById("psbt-error").textContent, "script-conflict report");
     equal(document.getElementById("psbt-error").textContent, "", "inspector rejected the script-conflict fixture");
     const out = document.getElementById("psbt-out").textContent;
     assert(out.includes("Conflicting previous-output claims"), "script conflict at one amount was not flagged");

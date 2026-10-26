@@ -54,11 +54,13 @@ import { wordlist as bip39English } from "./bip39-english.js";
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFromUpload, psbtQrPlan as hodlPsbtQrPlan } from "./psbt-editor.js";
 import { watchOnlyQrFrames as hodlWatchOnlyQrFrames } from "./psbt-ur.js";
-import { initCoreWallet } from "./core-wallet-ui.js";
+import { CORE_WALLET_MAX_BYTES, initCoreWallet } from "./core-wallet-ui.js";
 import { initDescriptorReuseCheck } from "./descriptor-reuse-ui.js";
+import { coreMixEntropy, coreMixSecrets, wipeCoreMixSecrets } from "./core-mix.js";
 import { auditSigner as hodlAuditSigner } from "./psbt-signer-audit.js";
 import { psbtSignerAuditVerification as hodlPsbtSignerAuditVerify } from "./psbt-signer-audit-verify.js";
 import { psbtSignerAuditErrorHtml as hodlPsbtSignerAuditErrorHtml, psbtSignerAuditHtml as hodlPsbtSignerAuditHtml } from "./psbt-signer-audit-view.js";
+import { checkRbfReplacement as hodlCheckRbfReplacement } from "./psbt-rbf-check.js";
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
@@ -139,7 +141,7 @@ import {
   serializeNotebook as hodlSerializeNotebook,
   wipeJournal,
 } from "./journal.js";
-import { KEY_VAULT_MAX_KEYS as hodlKeyVaultMaxKeys, keyVaultIdentity, keyResultSetup as hodlKeyResultSetup, parseKeyVault, serializeKeyVault } from "./keymanager.js";
+import { KEY_VAULT_MAX_KEYS as hodlKeyVaultMaxKeys, keyVaultIdentity, keyResultSetup as hodlKeyResultSetup, parseKeyVault, serializeKeyVault, setKeyVaultModes } from "./keymanager.js";
 import { clearClipboard as hodlClearClipboard, showCopiedIcon as hodlShowCopiedIcon, copyText } from "./clipboard.js";
 import { privateCopyButtonHtml as hodlPrivateCopyButtonHtml, initPrivateCopy as hodlInitPrivateCopy, isReadoutShown as hodlReadoutIsShown, renderAnnotatedPrivateText as hodlRenderAnnotatedPrivateText } from "./private-data.js";
 import { publicFieldHtml as hodlPublicFieldMarkup, publicValueHtml as hodlPublicValueHtml } from "./public-data.js";
@@ -807,7 +809,7 @@ function hodlCreateKeyMethodIcon(mode) {
   svg.setAttribute("stroke-linejoin", "round");
   svg.setAttribute("focusable", "false");
   svg.setAttribute("aria-hidden", "true");
-  if (mode === "dice") {
+  if (mode === "dice" || mode === "corewallet") {
     add("rect", { x: "3.5", y: "3.5", width: "17", height: "17", rx: "3.2" });
     [[8, 8], [16, 8], [12, 12], [8, 16], [16, 16]].forEach(([cx, cy]) => add("circle", { cx: String(cx), cy: String(cy), r: "1.15", fill: "currentColor", stroke: "none" }));
   } else if (mode === "cards") {
@@ -828,6 +830,95 @@ function hodlCreateKeyMethodIcon(mode) {
   }
   span.appendChild(svg);
   return span;
+}
+// Core wallet.dat + dice/cards (issue #552): the wallet's spend secrets are
+// mixed with a dice or card transcript. The wallet alone never makes a phrase,
+// and the secrets live only in this holder, wiped on every exit path.
+if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) hodlKeyModes.push("corewallet");
+// Key files and journal backups may only bring in the methods offered here.
+setKeyVaultModes(hodlKeyModes);
+var hodlCoreMix = null, hodlCoreMixSource = "dice", hodlCoreMixGeneration = 0;
+function hodlCoreMixReset() {
+  // Every reset also retires a wallet.dat read still in flight: the file
+  // handler compares this counter after the await and drops the bytes unloaded.
+  hodlCoreMixGeneration++;
+  if (hodlCoreMix) wipeCoreMixSecrets(hodlCoreMix.secrets);
+  hodlCoreMix = null;
+  // The summary describes the holder just dropped (End Session, a tab switch):
+  // it must not stay on screen as if a wallet were still loaded.
+  let summary = typeof document !== "undefined" ? document.getElementById("core-mix-summary") : null;
+  if (summary) {
+    summary.hidden = true;
+    summary.textContent = "";
+  }
+  // Its error line goes too: a refusal for the dropped file must not linger.
+  let error = typeof document !== "undefined" ? document.getElementById("core-mix-error") : null;
+  if (error) error.textContent = "";
+}
+function hodlCoreMixShowError(message) {
+  let error = document.getElementById("core-mix-error");
+  if (error) error.textContent = message || "";
+  let summary = document.getElementById("core-mix-summary");
+  if (summary) {
+    summary.hidden = true;
+    summary.textContent = "";
+  }
+}
+function hodlCoreMixShowSummary() {
+  let summary = document.getElementById("core-mix-summary");
+  if (!summary || !hodlCoreMix) return;
+  summary.textContent = hodlCoreMix.count === 1
+    ? hodlTText("{name} · 1 key · fingerprint {fingerprint}", { name: hodlCoreMix.name, fingerprint: hodlCoreMix.fingerprint })
+    : hodlTText("{name} · {count} keys · fingerprint {fingerprint}", { name: hodlCoreMix.name, count: hodlCoreMix.count, fingerprint: hodlCoreMix.fingerprint });
+  summary.hidden = false;
+}
+// The parsed document keeps its own copy of every record's bytes, and the
+// secrets were taken from them: zero every buffer it still holds, whether the
+// mix succeeded or threw.
+function hodlCoreMixWipeDoc(doc) {
+  // Walk the whole parsed document, not a list of known fields: doc.rows holds
+  // every raw database row (the DER key records among them) as [key, value]
+  // buffers, and records nest buffers inside arrays and sub-objects.
+  let seen = new Set(), stack = [doc];
+  while (stack.length) {
+    let value = stack.pop();
+    if (!value || typeof value !== "object" || seen.has(value)) continue;
+    seen.add(value);
+    // ArrayBuffer.isView, not instanceof: a typed array from another realm
+    // (or a Buffer) is still a copy of the secret and must be zeroed.
+    if (ArrayBuffer.isView(value)) {
+      // A DataView has no fill(): zero the bytes it covers through a byte view.
+      if (typeof value.fill === "function") value.fill(0);
+      else new Uint8Array(value.buffer, value.byteOffset, value.byteLength).fill(0);
+      continue;
+    }
+    // The tag, not instanceof, so an ArrayBuffer from another realm counts.
+    if (Object.prototype.toString.call(value) === "[object ArrayBuffer]") {
+      new Uint8Array(value).fill(0);
+      continue;
+    }
+    for (let child of Array.isArray(value) ? value : value instanceof Map ? [...value.keys(), ...value.values()] : Object.values(value)) stack.push(child);
+  }
+}
+function hodlCoreMixLoadBytes(bytes, name) {
+  hodlCoreMixReset();
+  let error = document.getElementById("core-mix-error");
+  if (error) error.textContent = "";
+  let doc = null;
+  try {
+    doc = hodlCoreWallet.parseWalletDat(bytes);
+    let secrets = coreMixSecrets(doc, { sha256: (b) => hodlSha256(b), publicKeyForPrivate: hodlWalletDatDeps().publicKeyForPrivate });
+    hodlCoreMix = { keyId: hodlKeys[hodlActiveKey]?.id ?? null, name: name || "wallet.dat", count: secrets.count, fingerprint: secrets.fingerprint, secrets: secrets.secrets };
+    hodlCoreMixShowSummary();
+    return true;
+  } catch (exception) {
+    hodlCoreMixReset();
+    hodlCoreMixShowError(exception.message || String(exception));
+    return false;
+  } finally {
+    hodlCoreMixWipeDoc(doc);
+    bytes.fill(0);
+  }
 }
 // The method picker is a dropdown at every width, wearing the Script type
 // control's chrome: enhanced-inputs.js upgrades it and asks
@@ -4583,6 +4674,37 @@ function hodlSelectedCardsEntropy(targetWords = hodlTargetWordCount) {
   if (!input) return { ok: false, error: hodlNote("Card input is unavailable.") };
   return hodlCardMethod === "direct" ? hodlDirectCardsEntropy(input.value, targetWords) : hodlCardsEntropy(input.value, targetWords, hodlCardColemanSymbols);
 }
+function hodlCoreMixSelectedEntropy(targetWords = hodlTargetWordCount) {
+  // The secrets belong to the tab that loaded them: a tab switch, a delete or
+  // a method switch resets the holder, and a holder left over from another tab
+  // is refused here too.
+  if (!hodlCoreMix || hodlCoreMix.keyId !== (hodlKeys[hodlActiveKey]?.id ?? null)) return { ok: false, error: hodlNote("Choose a Bitcoin Core wallet.dat first.") };
+  let config = hodlSeedConfig(targetWords), notes = [], warnings = [];
+  let source = hodlCoreMixSource === "cards" ? "cards" : "dice";
+  let value = document.getElementById("core-mix-transcript")?.value ?? "";
+  let transcript, sourceBits;
+  if (source === "cards") {
+    let cards = hodlCardsEntropy(value, targetWords);
+    if (!cards.ok) return cards;
+    transcript = cards.hashInput;
+    sourceBits = cards.sourceBits;
+    warnings = cards.warnings || [];
+  } else {
+    let dice = hodlDiceEntropy(value, "coldcard", targetWords);
+    if (!dice.ok) return dice;
+    transcript = hodlSplitDiceString(value).rolls.join("");
+    sourceBits = dice.sourceBits;
+    warnings = dice.warnings || [];
+  }
+  let bytes;
+  try {
+    bytes = coreMixEntropy(hodlCoreMix.secrets, transcript, config.bytes, { sha256: (b) => hodlSha256(b) });
+  } catch (error) {
+    return { ok: false, error: hodlNote(error.message || String(error)) };
+  }
+  notes.push(hodlNote("SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.", { count: hodlCoreMix.count, source, bits: config.bits }));
+  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: config.bits, sourceBits, method: "core-wallet-mix-v1", notes, warnings };
+}
 function hodlUpdateCards() {
   let input = document.getElementById("cards");
   if (!input) return;
@@ -6084,6 +6206,7 @@ function hodlGlobalSyncIsHashedMode() {
 function hodlGlobalSyncSourceId() {
   if (hodlKeyMode === "dice") return `dice:${hodlDiceMethod}`;
   if (hodlKeyMode === "cards") return `cards:${hodlCardMethod}`;
+  if (hodlKeyMode === "corewallet") return `corewallet:${hodlCoreMixSource}`;
   if (hodlKeyMode === "hex") return `number:${hodlEntropyFormat}`;
   if (hodlKeyMode === "seed") return `seed:${hodlSeedMethod}`;
   let kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value || hodlKeys[hodlActiveKey]?.fields?.keyKind, "");
@@ -6093,6 +6216,7 @@ function hodlGlobalSyncCurrentValue() {
   let state = hodlKeys[hodlActiveKey], fields = state?.fields || {};
   if (hodlKeyMode === "dice") return document.getElementById("dice")?.value ?? hodlStoredDiceValue(fields) ?? "";
   if (hodlKeyMode === "cards") return document.getElementById(hodlCardMethod === "direct" ? "direct-cards" : "cards")?.value ?? fields[hodlCardMethod === "direct" ? "directCards" : "cards"] ?? "";
+  if (hodlKeyMode === "corewallet") return document.getElementById("core-mix-transcript")?.value ?? fields.coreMixTranscript ?? "";
   if (hodlKeyMode === "hex") return document.getElementById(hodlEntropyFormat)?.value ?? fields[hodlEntropyFormat] ?? "";
   if (hodlKeyMode === "seed") return document.getElementById(hodlSeedMethod === "numbers" ? "seed-numbers" : "seed")?.value ?? fields[hodlSeedMethod === "numbers" ? "seedNumbers" : "seed"] ?? "";
   let values = hodlPrivateKeyValues(fields), kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value || fields.keyKind, "");
@@ -6730,6 +6854,81 @@ function hodlRenderKeyForm() {
   }
   hodlUpdateSeedLengthControl();
   hodlRenderGlobalSyncControl();
+  if (hodlKeyMode === "corewallet") {
+    let state = hodlKeys[hodlActiveKey];
+    hodlCoreMixSource = state?.coreMixSource === "cards" ? "cards" : "dice";
+    let source = hodlCoreMixSource;
+    let help = source === "cards" ? hodlT("Two characters per card, rank then suit (AS 7H TD …).") : hodlT("Faces 1–6, as many rolls as the dice method recommends.");
+    hodlFormEl.innerHTML = `
+      <p class="label" id="core-mix-file-label">${hodlT("Bitcoin Core wallet.dat")}</p>
+      <div class="row tool-actions"><button class="btn secondary" id="core-mix-upload" type="button" aria-describedby="core-mix-summary">${hodlT("Choose wallet.dat")}</button><input type="file" id="core-mix-file" accept=".dat" hidden></div>
+      <p class="edge-note is-public" id="core-mix-summary" hidden></p>
+      <p class="err" id="core-mix-error" role="alert"></p>
+      <label class="field">${hodlT("Entropy source")}<select id="core-mix-source"><option value="dice">${hodlT("Dice rolls (D6)")}</option><option value="cards">${hodlT("Cards")}</option></select></label>
+      <label class="field">${hodlT("Rolls or cards")}<textarea id="core-mix-transcript" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="core-mix-transcript-help"></textarea><span class="field-note" id="core-mix-transcript-help">${help}</span></label>`;
+    let upload = document.getElementById("core-mix-upload"), file = document.getElementById("core-mix-file");
+    let sourceSelect = document.getElementById("core-mix-source"), transcript = document.getElementById("core-mix-transcript");
+    sourceSelect.value = source;
+    if (state) transcript.value = state.fields?.coreMixTranscript || "";
+    if (hodlCoreMix) hodlCoreMixShowSummary();
+    upload.onclick = () => file.click();
+    file.onchange = () => {
+      let chosen = file.files?.[0];
+      file.value = "";
+      if (!chosen) return;
+      // A read can finish after End Session, Clear, a tab switch or a method
+      // switch: the generation and the tab it was started for decide whether
+      // the bytes may still be loaded.
+      // Each pick makes any earlier read still in flight stale, so the last
+      // file chosen is the one that loads. A new wallet also retires the
+      // derived result, as a transcript edit does. The loaded wallet goes at
+      // once, before the read: a Derive clicked while the new file is still
+      // being read must not mix the old wallet's secrets under the new name.
+      if (typeof hodlCoreMixReset === "function") hodlCoreMixReset();
+      let generation = ++hodlCoreMixGeneration, keyId = hodlKeys[hodlActiveKey]?.id ?? null;
+      // typeof keeps the standalone Node extraction working (narrow test slices).
+      if (typeof hodlInvalidateDerivation === "function") hodlInvalidateDerivation();
+      if (typeof hodlInvalidateLiveKeyResult === "function") hodlInvalidateLiveKeyResult();
+      let stale =() => hodlKeyMode !== "corewallet" || generation !== hodlCoreMixGeneration || keyId !== (hodlKeys[hodlActiveKey]?.id ?? null);
+      (async () => {
+        let bytes = null;
+        try {
+          if (chosen.size > CORE_WALLET_MAX_BYTES) throw new Error(hodlTText("This wallet file is too large to inspect safely."));
+          bytes = new Uint8Array(await chosen.arrayBuffer());
+          if (stale()) return;
+          hodlCoreMixLoadBytes(bytes, chosen.name);
+        } catch (exception) {
+          // A stale read that fails must not clear the wallet a newer pick loaded.
+          if (stale()) return;
+          hodlCoreMixReset();
+          hodlCoreMixShowError(exception.message || String(exception));
+        } finally {
+          if (bytes) bytes.fill(0);
+          hodlSyncDeriveButton();
+        }
+      })();
+    };
+    sourceSelect.onchange = () => {
+      hodlCoreMixSource = sourceSelect.value === "cards" ? "cards" : "dice";
+      if (state) state.coreMixSource = hodlCoreMixSource;
+      let helpEl = document.getElementById("core-mix-transcript-help");
+      if (helpEl) helpEl.textContent = hodlCoreMixSource === "cards" ? hodlTText("Two characters per card, rank then suit (AS 7H TD …).") : hodlTText("Faces 1–6, as many rolls as the dice method recommends.");
+      // A stale result, or a derivation still running on the old source, must
+      // not survive the change.
+      hodlInvalidateDerivation();
+      hodlInvalidateLiveKeyResult();
+      hodlSyncDeriveButton();
+    };
+    transcript.oninput = () => {
+      hodlInvalidateDerivation();
+      hodlInvalidateLiveKeyResult();
+      hodlSyncDeriveButton();
+    };
+    hodlBindKeyFields();
+    hodlRenderPassphraseKeyboard();
+    hodlSyncDeriveButton();
+    return;
+  }
   if (hodlKeyMode === "dice") {
     let dplusFaces = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"],
       dplusPad = dplusFaces.map(face => `<button type="button" data-d="${face}" aria-label="${hodlTAttr("Hexadecimal D16 result {face}", { face })}">${face}</button>`).join("");
@@ -7500,6 +7699,13 @@ function hodlCanDeriveCurrentKey() {
     if (hodlKeyMode === "cards") {
       return hodlSelectedCardsEntropy(hodlTargetWordCount).ok;
     }
+    if (hodlKeyMode === "corewallet") {
+      if (!hodlCoreMix) return false;
+      // Only the verdict is needed here: zero the seed entropy it computed.
+      let entropy = hodlCoreMixSelectedEntropy(hodlTargetWordCount);
+      if (entropy.ok && entropy.bytes) entropy.bytes.fill(0);
+      return entropy.ok;
+    }
     if (hodlKeyMode === "hex") return hodlSelectedEntropy().ok;
     if (hodlKeyMode === "seed") {
       let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
@@ -7533,6 +7739,15 @@ var hodlLowEntropyConfirm = null, hodlFingerprintCollisionConfirm = null;
 // "recommended amount" the user can fall short of at derive time. The brain
 // wallet keeps its own explicit acknowledgement instead.
 function hodlLowEntropyWarningFor(mode, method, value, targetWords) {
+  // The wallet's secrets add entropy, but if the wallet.dat ever leaks only
+  // the transcript protects the seed: warn exactly as the chosen source does.
+  if (mode === "corewallet") {
+    let transcript = typeof value === "string" ? value : "";
+    if (!transcript && typeof document !== "undefined") transcript = document.getElementById("core-mix-transcript")?.value ?? "";
+    return hodlCoreMixSource === "cards"
+      ? hodlLowEntropyWarningFor("cards", "hashed", transcript, targetWords)
+      : hodlLowEntropyWarningFor("dice", "coldcard", transcript, targetWords);
+  }
   let config = hodlSeedConfig(targetWords);
   if (mode === "dice" && (method === "coldcard" || method === "coleman")) {
     let rolls = hodlSplitDiceString(value).rolls;
@@ -7552,6 +7767,7 @@ function hodlLowEntropyWarning() {
   try {
     if (hodlKeyMode === "dice") return hodlLowEntropyWarningFor("dice", hodlDiceMethod, document.getElementById("dice")?.value ?? "", hodlTargetWordCount);
     if (hodlKeyMode === "cards") return hodlLowEntropyWarningFor("cards", hodlCardMethod, document.getElementById(hodlCardMethod === "direct" ? "direct-cards" : "cards")?.value ?? "", hodlTargetWordCount);
+    if (hodlKeyMode === "corewallet") return hodlLowEntropyWarningFor("corewallet", null, document.getElementById("core-mix-transcript")?.value ?? "", hodlTargetWordCount);
   } catch {
   }
   return null;
@@ -7873,6 +8089,10 @@ async function hodlCalculateKey(progress, action = "derive", options = {}) {
       }
     } else if (hodlKeyMode === "cards") {
       let entropy = hodlSelectedCardsEntropy(hodlTargetWordCount);
+      hodlThrowIfFailed(entropy);
+      result = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+    } else if (hodlKeyMode === "corewallet") {
+      let entropy = hodlCoreMixSelectedEntropy(hodlTargetWordCount);
       hodlThrowIfFailed(entropy);
       result = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
     } else if (hodlKeyMode === "hex") {
@@ -10333,9 +10553,11 @@ function hodlRefreshPsbtLocale() {
     let options = { network: last.network, transcript: last.transcript, record: false, ...(last.limits ? { limits: last.limits } : {}) };
     try {
       output.innerHTML = last.kind === "psbt" ? hodlRenderPsbt(last.parsed, last.sourceTag, last.checkedAt, view, options) : hodlRenderRawTx(last.parsed, last.sourceTag, last.checkedAt, view, options);
-      // The signer audit above it is painted again too: a "Do not broadcast"
-      // verdict must not vanish on a language switch.
-      if (last.audit) output.insertAdjacentHTML("afterbegin", hodlPsbtSignerAuditMarkup(last.audit));
+      // The signer audit is painted again too, in the same answer-first
+      // order as a fresh render: a "Do not broadcast" verdict must not
+      // vanish on a language switch, and the combined overall line must
+      // come back with it.
+      if (last.audit) hodlPsbtPaintSignerAudit(output, last.audit);
     } catch {
       // The run rendered this once; if it cannot again, the shown result stays.
     }
@@ -11315,7 +11537,7 @@ function hodlSetButtonEnabled(id, on) {
 }
 // The two cards that run an inspection, and what each one's run reads.
 var hodlPsbtCards = [
-  { text: "psbt-text", fields: ["psbt-key", "psbt-pass", "psbt-audit-before"], go: "psbt-go", download: "psbt-download", out: "psbt-out", session: "psbt-session" },
+  { text: "psbt-text", fields: ["psbt-key", "psbt-pass", "psbt-audit-before", "psbt-rbf-original"], go: "psbt-go", download: "psbt-download", out: "psbt-out", session: "psbt-session" },
   { text: "nonce-text", fields: ["nonce-key", "nonce-pass", "psbt-ax-transcript"], go: "nonce-go", out: "nonce-out", session: "nonce-session" },
 ];
 // A run is stamped with everything it read: the payload, the key fields and
@@ -11383,10 +11605,11 @@ function hodlEndPsbtSession() {
   hodlPsbtWipeMem();
   hodlPsbtClearNonceHistory(true);
   hodlPsbtRetireAuditUploads();
+  hodlPsbtRetireRbfUploads();
   hodlPsbtLast = null;
   hodlPsbtInspected = {};
   hodlPsbtSessionSpec = hodlNote("Accessible fields were cleared (best effort).");
-  for (let id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-audit-before", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"]) {
+  for (let id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-audit-before", "psbt-rbf-original", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"]) {
     let field = document.getElementById(id);
     if (field) field.value = "";
   }
@@ -11468,8 +11691,13 @@ function hodlPsbtShowMore(event) {
   // A full repaint keeps the signer audit above the inspection (Wicked's
   // review of #1118): it would otherwise vanish while its report stays cached.
   let paintAll = () => {
+    let inputsOpen = output.querySelector?.("[data-psbt-inputs]")?.open;
     output.innerHTML = render(options);
-    if (last.audit) output.insertAdjacentHTML("afterbegin", hodlPsbtSignerAuditMarkup(last.audit));
+    if (last.audit) hodlPsbtPaintSignerAudit(output, last.audit);
+    if (inputsOpen) {
+      let details = output.querySelector?.("[data-psbt-inputs]");
+      if (details) details.open = true;
+    }
   };
   // Only the new block is rendered and inserted above the list's tail, so a
   // click costs one block however much is already shown. When the render
@@ -11480,6 +11708,17 @@ function hodlPsbtShowMore(event) {
     tail.insertAdjacentHTML("beforebegin", part.chunk);
     tail.innerHTML = part.tail;
     last.limits = limits;
+    // A chunk that reveals a problem must not stay hidden in a collapsed
+    // block: open the inputs block and mark it.
+    if (kind === "inputs") {
+      let inputsDetails = output.querySelector?.("[data-psbt-inputs]");
+      let revealed = part.chunk + String(part.tail ?? "");
+      // The renderer's own flag, never the rendered class names.
+      if (inputsDetails && revealed.includes("data-problem='true'")) {
+        inputsDetails.open = true;
+        inputsDetails.setAttribute?.("data-problem", "true");
+      }
+    }
     // The grown window also grows the view's render budget, so the other
     // list's tail (its collected warnings and their count) is rendered again
     // at the new limits. When that render declines or would add a block, the
@@ -11567,6 +11806,19 @@ function hodlInitPsbt() {
     auditFile.value = "";
     if (chosen) hodlPsbtLoadAuditUpload(chosen);
   });
+  // The RBF screen is preview-only: its field and picker exist only in
+  // preview builds, so the wiring is gated the same way as the markup.
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    const rbfFile = document.getElementById("psbt-rbf-file");
+    document.getElementById("psbt-rbf-upload").onclick = () => rbfFile.click();
+    rbfFile.addEventListener("change", () => {
+      const chosen = rbfFile.files?.[0];
+      rbfFile.value = "";
+      if (chosen) hodlPsbtLoadRbfUpload(chosen);
+    });
+    // Editing the original retires a verdict computed from the old one.
+    document.getElementById("psbt-rbf-original")?.addEventListener("input", hodlPsbtClearRbfVerdict);
+  }
   document.getElementById("psbt-download").onclick = () => {
     hodlSetPsbtError(null);
     try {
@@ -12132,6 +12384,32 @@ function hodlInitBip85() {
 function hodlPsbtSignerAuditMarkup(audit) {
   return audit.error !== undefined ? hodlPsbtSignerAuditErrorHtml(audit.error) : hodlPsbtSignerAuditHtml(audit.report, audit.beforeDoc, audit.afterDoc, audit.network);
 }
+// The one-line overall verdict above the signer audit. It reads the audit's
+// own tier from the rendered section and the analysis's overall state from
+// the summary, so it can never disagree with either. It appears only when
+// the audit ran (an error section carries no tier).
+function hodlPsbtInsertOverall(output) {
+  let section = output.querySelector?.("[data-audit-section]"), tier = section?.dataset?.auditTier;
+  if (!tier) return;
+  let analysis = output.querySelector?.("[data-psbt-analysis-overall]")?.dataset?.psbtAnalysisOverall || "",
+    problem = analysis === "problem",
+    state = tier === "fail" || problem ? "bad" : tier === "pass" && analysis === "complete" ? "ok" : "warn",
+    text = state === "bad" ? hodlT("Overall: do not broadcast — see the checks below.") : state === "ok" ? hodlT("Overall: no problems in the listed checks.") : hodlT("Overall: review the warnings below.");
+  output.querySelector?.("[data-psbt-overall]")?.remove?.();
+  section.insertAdjacentHTML("beforebegin", "<p data-psbt-overall data-psbt-overall-state='" + state + "' class='psbt-" + state + "'><strong>" + text + "</strong></p>");
+}
+
+// Paints a signer audit into the Inspector's output in the answer-first
+// order: the answer block first, the audit after it, then the combined
+// overall line. Every repaint (Show more, a language change) goes through
+// here, so the order and the overall line never drift apart.
+function hodlPsbtPaintSignerAudit(output, audit) {
+  let markup = hodlPsbtSignerAuditMarkup(audit);
+  let answer = output.querySelector?.("[data-psbt-answer]");
+  if (answer) answer.insertAdjacentHTML("afterend", markup);
+  else output.insertAdjacentHTML("afterbegin", markup);
+  hodlPsbtInsertOverall(output);
+}
 function hodlPsbtPrependSignerAudit(output, returnedBytes, kind, network) {
   let raw = String(document.getElementById("psbt-audit-before")?.value || "").trim();
   if (!raw) return null;
@@ -12160,7 +12438,9 @@ function hodlPsbtPrependSignerAudit(output, returnedBytes, kind, network) {
   } catch (exception) {
     audit = { error: { kind: stage, detail: exception instanceof Error ? exception.message : String(exception) } };
   }
-  output.insertAdjacentHTML("afterbegin", hodlPsbtSignerAuditMarkup(audit));
+  // The audit sits after the answer block, never above it: the answer comes
+  // first, the audit's detail one click away.
+  hodlPsbtPaintSignerAudit(output, audit);
   return audit;
 }
 // An audit upload belongs to the session it started in. Ending the session
@@ -12170,6 +12450,190 @@ function hodlPsbtPrependSignerAudit(output, returnedBytes, kind, network) {
 var hodlPsbtAuditUploadGeneration = 0;
 function hodlPsbtRetireAuditUploads() {
   hodlPsbtAuditUploadGeneration += 1;
+}
+// An RBF-original upload belongs to the session it started in, exactly like
+// the audit upload: ending the session retires a read that is still pending.
+var hodlPsbtRbfUploadGeneration = 0;
+
+function hodlPsbtRetireRbfUploads() {
+  hodlPsbtRbfUploadGeneration += 1;
+}
+
+// The rendered verdict belongs to the exact pair of PSBTs it was computed
+// from: any change to either side retires it, so a green verdict can never
+// sit next to a different original.
+function hodlPsbtClearRbfVerdict() {
+  document.getElementById("psbt-out")?.querySelector("[data-rbf-verdict]")?.remove();
+}
+
+function hodlPsbtLoadRbfUpload(file) {
+  // Each pick retires the reads still pending, so the last file chosen wins.
+  let generation = ++hodlPsbtRbfUploadGeneration;
+  (async () => {
+    try {
+      let bytes = psbtBytesFromUpload(new Uint8Array(await file.arrayBuffer()));
+      if (generation !== hodlPsbtRbfUploadGeneration) return;
+      document.getElementById("psbt-rbf-original").value = hodlBytesToB64(bytes);
+      hodlPsbtClearRbfVerdict();
+      // A programmatic fill fires no input event: refresh Inspect and Clear
+      // like the audit upload does (typeof: narrow test slices).
+      if (typeof hodlSyncPsbtControls === "function") hodlSyncPsbtControls();
+    } catch (exception) {
+      if (generation !== hodlPsbtRbfUploadGeneration) return;
+      hodlSetPsbtError({ raw: exception.message || String(exception) });
+    }
+  })();
+}
+
+function hodlPsbtRbfAmount(value) {
+  if (typeof value === "bigint") return value;
+  if (Number.isInteger(value) && value >= 0) return BigInt(value);
+  throw new Error("An output amount must be a non-negative integer.");
+}
+
+function hodlPsbtRbfBtc(sats) {
+  let abs = sats < 0n ? -sats : sats;
+  return `${sats < 0n ? "-" : ""}${abs / 100000000n}.${String(abs % 100000000n).padStart(8, "0")}`;
+}
+
+function hodlPsbtRbfShowScript(scriptHex, network) {
+  try {
+    let address = hodlAddressFromScript(hodlHex.decode(scriptHex), network);
+    if (address) return address;
+  } catch {
+    // A script that does not decode on this network is shown as hex.
+  }
+  return scriptHex;
+}
+
+// checkRbfReplacement compares plain transaction descriptions. These build
+// them from the inspector's parsed shapes; input txids keep the byte order
+// the parser reports, the same on both sides of the comparison.
+function hodlPsbtRbfNormalizeTx(tx) {
+  return {
+    version: tx.version,
+    locktime: tx.locktime,
+    inputs: tx.inputs.map((input) => ({
+      txid: hodlHex.encode(input.txid),
+      vout: input.vout,
+      sequence: input.sequence,
+      sighash: null,
+      amount: null,
+      amountVerified: false,
+    })),
+    outputs: tx.outputs.map((output) => ({ script: hodlHex.encode(output.script), amount: hodlPsbtRbfAmount(output.amount) })),
+  };
+}
+
+function hodlPsbtRbfNormalizePsbt(doc) {
+  let normalized = hodlPsbtRbfNormalizeTx(doc.tx);
+  for (let i = 0; i < normalized.inputs.length; i++) {
+    let entries = doc.inputs[i] || [], input = normalized.inputs[i];
+    // BIP-174 input types: 0x00 non_witness_utxo, 0x01 witness_utxo,
+    // 0x03 sighash type.
+    let sighash = entries.find((entry) => entry.type === 3 && entry.keydata.length === 0);
+    if (sighash) {
+      if (sighash.val.length !== 4) throw new Error("A sighash type must be 4 bytes.");
+      input.sighash = hodlR32(sighash.val, 0);
+    }
+    let witness = entries.find((entry) => entry.type === 1 && entry.keydata.length === 0);
+    if (witness) {
+      if (witness.val.length < 8) throw new Error("A witness utxo is too short.");
+      input.amount = hodlPsbtRbfAmount(new DataView(witness.val.buffer, witness.val.byteOffset, witness.val.byteLength).getBigUint64(0, true));
+    }
+    let nonWitness = entries.find((entry) => entry.type === 0 && entry.keydata.length === 0);
+    if (nonWitness) {
+      let prevTx = parseRawTx(nonWitness.val), prevOutput = prevTx.outputs[input.vout];
+      if (!prevOutput) throw new Error("The non-witness utxo has no output at this input's index.");
+      input.amount = hodlPsbtRbfAmount(prevOutput.amount);
+      // Verified only when the previous transaction's txid — double SHA-256
+      // of its non-witness serialization — is the input's outpoint txid. A
+      // bare witness_utxo amount stays an unverified claim.
+      input.amountVerified = hodlHex.encode(hodlSha256(hodlSha256(serializeTx(prevTx)))) === input.txid;
+    }
+  }
+  return normalized;
+}
+
+function hodlPsbtRbfItemLine(item, network) {
+  let dest = item.script !== undefined ? hodlPsbtRbfShowScript(item.script, network) : "";
+  switch (item.code) {
+    case "payment-changed": return hodlT("A payment to {dest} changed from {before} BTC to {after} BTC.", { dest, before: hodlPsbtRbfBtc(item.before), after: hodlPsbtRbfBtc(item.after) });
+    case "payment-removed": return hodlT("A payment of {before} BTC to {dest} was removed.", { dest, before: hodlPsbtRbfBtc(item.before) });
+    case "change-removed": return hodlT("Your change output of {before} BTC was removed.", { before: hodlPsbtRbfBtc(item.before) });
+    case "change-decreased": return hodlT("Your change decreased from {before} BTC to {after} BTC.", { before: hodlPsbtRbfBtc(item.before), after: hodlPsbtRbfBtc(item.after) });
+    case "output-decreased-unverified": return hodlT("One output decreased. Check that it is your change.");
+    case "own-output-increased": return hodlT("An output this key derives increased from {before} BTC to {after} BTC.", { before: hodlPsbtRbfBtc(item.before), after: hodlPsbtRbfBtc(item.after) });
+    case "new-own-output": return hodlT("A new output of {after} BTC goes to an address this key derives.", { after: hodlPsbtRbfBtc(item.after) });
+    case "new-output-unverified": return hodlT("A new output of {after} BTC to {dest} appeared.", { dest, after: hodlPsbtRbfBtc(item.after) });
+    case "multiple-decreases": return hodlT("More than one output decreased.");
+    case "input-dropped": return hodlT("An input from the original transaction was dropped.");
+    case "input-added": return hodlT("An input was added.");
+    case "fee-incomplete": return hodlT("Fee comparison incomplete.");
+    case "fee-not-increased": return hodlT("The fee did not increase.");
+    case "version-changed": return hodlT("The transaction version changed.");
+    case "locktime-changed": return hodlT("The transaction locktime changed.");
+    case "sequence-changed": return hodlT("An input's sequence changed.");
+    case "sighash-changed": return hodlT("An input's sighash type changed.");
+    case "sighash-not-all": return hodlT("An input does not sign with SIGHASH_ALL.");
+    case "change-redirected": return hodlT("Your change was redirected: your own output went down or disappeared while a new output this key cannot derive appeared.");
+    default: return hodlT("A change this check does not recognize.");
+  }
+}
+
+function hodlPsbtRbfNote(verdict, lines) {
+  let cls = { green: "is-public", red: "is-private", amber: "is-caution", neutral: "is-muted" }[verdict] || "is-caution";
+  let headline = {
+    green: hodlT("Payments preserved; fee increased."),
+    red: hodlT("A payment was changed or removed."),
+    amber: hodlT("Additional review needed."),
+    neutral: hodlT("No shared inputs."),
+  }[verdict] || hodlT("Additional review needed.");
+  let html = `<div class="edge-note ${cls}" data-rbf-verdict="${verdict}"><p><strong>${headline}</strong></p>`;
+  if (verdict === "neutral") html += `<p>${hodlT("This does not directly replace the supplied transaction.")}</p>`;
+  if (lines.length > 0) html += `<ul>${lines.map((line) => `<li data-rbf-item="${line.code}">${line.message}</li>`).join("")}</ul>`;
+  html += `<p>${hodlT("This compares the supplied transactions. It does not confirm that the network will accept the replacement.")}</p></div>`;
+  return html;
+}
+
+// The fee-bump check (preview): compare the transaction the user broadcast
+// with the replacement PSBT being inspected and fail closed — a bump is
+// clean only when the payments are provably intact and the extra fee comes
+// out of the user's own change (Electrum GHSA-6jp4-8v48-cc5v).
+function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network) {
+  let raw = String(document.getElementById("psbt-rbf-original")?.value || "").trim();
+  if (!raw) return null;
+  let result = null, note;
+  if (kind !== "psbt") {
+    note = hodlPsbtRbfNote("amber", [{ code: "replacement-raw", message: hodlT("Inspect the fee-bump PSBT, not a raw transaction.") }]);
+  } else {
+    let original = null;
+    try {
+      let originalBytes = hodlPsbtBytesFromText(raw);
+      original = isPsbtMagic(originalBytes) ? hodlPsbtRbfNormalizePsbt(hodlParsePsbt(originalBytes)) : hodlPsbtRbfNormalizeTx(parseRawTx(originalBytes));
+    } catch {
+      // The original is the only side this failure can be blamed on.
+      result = null;
+      note = hodlPsbtRbfNote("amber", [{ code: "original-unreadable", message: hodlT("The original transaction could not be read. Check the paste and Inspect again.") }]);
+    }
+    if (original) {
+      try {
+        let replacement = hodlPsbtRbfNormalizePsbt(hodlParsePsbt(returnedBytes));
+        let ownership = hodlSessionOwnership(network);
+        let ownsScript = ownership.size === 0 ? null : (scriptHex) => matchOwnership(ownership, hodlHex.decode(scriptHex)).state === "ours";
+        result = hodlCheckRbfReplacement({ original, replacement, ownsScript });
+        let lines = result.verdict === "neutral" ? [] : result.items.map((item) => ({ code: item.code, message: hodlPsbtRbfItemLine(item, network) }));
+        note = hodlPsbtRbfNote(result.verdict, lines);
+      } catch {
+        // The inspected PSBT failed to normalize or compare: never blame the
+        // original, and never pass.
+        result = null;
+        note = hodlPsbtRbfNote("amber", []);
+      }
+    }
+  }
+  output.insertAdjacentHTML("afterbegin", note);
+  return result;
 }
 async function hodlPsbtLoadAuditUpload(chosen) {
   const generation = ++hodlPsbtAuditUploadGeneration;
@@ -12188,11 +12652,17 @@ async function hodlPsbtLoadAuditUpload(chosen) {
 // computed from: any edit inside the card retires it on the spot, so a
 // stale verdict is never left on screen. The next Inspect re-runs it.
 function hodlPsbtClearSignerAudit() {
-  const section = document.getElementById("psbt-out")?.querySelector("[data-audit-section]");
+  const output = document.getElementById("psbt-out");
+  const section = output?.querySelector("[data-audit-section]");
+  // The RBF verdict is retired for the same reasons, and before the early
+  // return below: it must go even when no audit section is on screen.
+  hodlPsbtClearRbfVerdict();
   // The cached report counts as a shown verdict even when a repaint left it
   // out of the DOM: both are retired together (Wicked's review of #1118).
   if (!section && !hodlPsbtLast?.audit) return;
   section?.remove();
+  // The combined overall line was computed from the verdict: it goes with it.
+  output?.querySelector("[data-psbt-overall]")?.remove();
   // Nor may a language change paint the retired verdict again.
   if (hodlPsbtLast) hodlPsbtLast.audit = null;
   // The verdict belonged to the exact pair of PSBTs it was computed from, so
@@ -12231,6 +12701,9 @@ function hodlRunPsbt() {
     let limits = { inputs: PSBT_INSPECTOR_LIMIT, outputs: PSBT_INSPECTOR_LIMIT, step: PSBT_INSPECTOR_LIMIT, format: hodlFormatCount };
     output.innerHTML = kind === "psbt" ? hodlRenderPsbt(parsed, sourceTag, checkedAt, "inspect", { network, limits }) : hodlRenderRawTx(parsed, sourceTag, checkedAt, "inspect", { network, limits });
     let audit = hodlPsbtPrependSignerAudit(output, bytes, kind, network);
+    // Preview only: the RBF verdict is prepended after the audit so it
+    // renders above it (Electrum GHSA-6jp4-8v48-cc5v).
+    if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) hodlPsbtPrependRbfCheck(output, bytes, kind, network);
     hodlPsbtLast = { kind, parsed, sourceTag, checkedAt, network, limits, audit };
     hodlJournalLog("inspect", kind, "psbt");
   } catch (exception) {
@@ -13216,17 +13689,43 @@ function hodlOwnershipWarning(outputs, network, map) {
   if (outputs.length < 2) return "<p class='muted'>" + hodlT("This output is not in the session wallet (accounts 0\u20132, 50 receive + 50 change, four script types).") + "</p>";
   return "<p class='psbt-bad'><strong>" + hodlT("No output belongs to this session wallet.") + "</strong> " + hodlT("If you expected change, do not sign. A destination-swap can replace both the payment and the change.") + "</p>";
 }
+// The one-line overall verdict in the answer block. A check that is
+// incomplete only for want of a session key does not count toward it (the
+// owner's option (b)); it still shows as its own row in the summary. A
+// problem outranks incomplete coverage, and both are named when both hold.
+function hodlPsbtOverallLine(checks) {
+  let counted = checks.filter((check) => check.incompleteReason !== "no-key" && check.incompleteReason !== "nothing-to-compare"),
+    incomplete = counted.some((check) => check.state === "incomplete"),
+    problem = counted.some((check) => check.state === "problem"),
+    text = problem && incomplete ? hodlT("ISSUES FOUND — ANALYSIS ALSO INCOMPLETE") : problem ? hodlT("ISSUES FOUND") : incomplete ? hodlT("ANALYSIS INCOMPLETE") : hodlT("LISTED CHECKS COMPLETE"),
+    className = problem ? "psbt-bad" : incomplete ? "psbt-warn" : "psbt-ok";
+  return {
+    state: problem ? "problem" : incomplete ? "incomplete" : "complete",
+    html: "<p class='" + className + "'><strong>" + text + "</strong></p>",
+  };
+}
 function hodlPsbtAnalysisSummary(checks) {
-  let incomplete = checks.some((check) => check.state === "incomplete"),
-    problem = checks.some((check) => check.state === "problem"),
-    overall = problem && incomplete ? hodlT("ISSUES FOUND — ANALYSIS ALSO INCOMPLETE") : problem ? hodlT("ISSUES FOUND") : incomplete ? hodlT("ANALYSIS INCOMPLETE") : hodlT("LISTED CHECKS COMPLETE"),
-    overallClass = problem ? "psbt-bad" : incomplete ? "psbt-warn" : "psbt-ok";
+  // A completed check's detail is coverage, not a problem: it moves into the
+  // one collapsed block below the list. A problem or an incomplete check
+  // keeps its detail inline, where collapsing can never hide it. The overall
+  // verdict and the glance line live in the answer block above.
+  let covered = [];
   let rows = checks.map((check) => {
-    let label = check.state === "complete" ? hodlT("Completed") : check.state === "problem" ? hodlT("Problem found") : hodlT("Incomplete"),
-      className = check.state === "complete" ? "psbt-ok" : check.state === "problem" ? "psbt-bad" : "psbt-warn";
-    return "<li><span class='label'>" + hodlEscapeHtml(check.label) + "</span> — <span class='" + className + "'>" + label + "</span><br><span class='muted'>" + hodlEscapeHtml(check.detail) + "</span></li>";
+    let state = check.state === "complete" ? "complete" : check.state === "problem" ? "problem" : "incomplete",
+      label = state === "complete" ? hodlT("Completed") : state === "problem" ? hodlT("Problem found") : hodlT("Incomplete"),
+      className = state === "complete" ? "psbt-ok" : state === "problem" ? "psbt-bad" : "psbt-warn";
+    // The row's own reason, so the overall rule reads a flag, never the text.
+    let reason = check.incompleteReason === "no-key" ? " data-incomplete-reason='no-key'" : check.incompleteReason === "nothing-to-compare" ? " data-incomplete-reason='nothing-to-compare'" : "";
+    if (state === "complete") {
+      covered.push("<li><span class='label'>" + hodlEscapeHtml(check.label) + "</span>: " + hodlEscapeHtml(check.detail) + "</li>");
+      return "<li data-psbt-check-state='complete'><span class='label'>" + hodlEscapeHtml(check.label) + "</span> — <span class='" + className + "'>" + label + "</span></li>";
+    }
+    return "<li data-psbt-check-state='" + state + "'" + reason + "><span class='label'>" + hodlEscapeHtml(check.label) + "</span> — <span class='" + className + "'>" + label + "</span><br><span class='muted'>" + hodlEscapeHtml(check.detail) + "</span></li>";
   }).join("");
-  return "<section class='psbt-analysis-summary' aria-label='" + hodlTAttr("PSBT security analysis status") + "'><p class='label psbt-section-label'>" + hodlT("PSBT security analysis") + "</p><p class='" + overallClass + "'><strong>" + overall + "</strong></p><ul>" + rows + "</ul><p class='edge-note is-private'>" + hodlT("Completed means only that the named check ran on the information available here. It does not prove that the PSBT claims are true or that the transaction is safe to sign.") + "</p></section>";
+  let coveredBlock = covered.length
+    ? "<details class='derivation-advanced' data-psbt-analysis-details><summary>" + hodlT("Show what each completed check covered") + "</summary><ul>" + covered.join("") + "</ul></details>"
+    : "";
+  return "<section class='psbt-analysis-summary' aria-label='" + hodlTAttr("PSBT security analysis") + "'><ul>" + rows + "</ul>" + coveredBlock + "<p class='edge-note is-private'>" + hodlT("Completed means only that the named check ran on the information available here. It does not prove that the PSBT claims are true or that the transaction is safe to sign.") + "</p></section>";
 }
 // The Taproot nonce-reuse warning: the same key, or different keys (a
 // reused nonce leaks related keys; DeepSeek's red-team of #1051, F1).
@@ -13235,12 +13734,12 @@ function hodlSchnorrReuseHtml(schnorrReused) {
     ? "<p class='psbt-bad'><strong>" + hodlT("Reused Schnorr nonce detected for the same key.") + "</strong> " + hodlT("The same R value appears on two Taproot signatures that sign different messages. If both signatures are valid, the private key can be recovered. Do not broadcast this transaction.") + "</p>"
     : "<p class='psbt-bad'><strong>" + hodlT("Reused Schnorr nonce across different keys.") + "</strong> " + hodlT("The same R value appears on Taproot signatures under different keys, so their nonce was reused. If the keys are related, as a Taproot output key is to its internal key or as keys from one wallet are, the private key can be recovered. Do not broadcast this transaction.") + "</p>";
 }
-function hodlPsbtNonceCheck(reused, possible, nonceIncomplete, schnorrReused = [], ecdsaCompared = 2, schnorrCompared = 0, rfc6979Note = "") {
+function hodlPsbtNonceCheck(reused, possible, nonceIncomplete, schnorrReused = [], ecdsaCompared = 2, schnorrCompared = 0, rfc6979Note = "", incompleteReason = "") {
   let label = hodlTText("Nonce analysis"), row;
   if (reused.length) row = { label, state: "problem", detail: hodlTText("A repeated ECDSA nonce was detected; open the Nonce Inspector for the affected signatures.") };
   else if (schnorrReused.length) row = { label, state: "problem", detail: schnorrReused.some((pair) => pair.sameKey) ? hodlTText("Two Taproot signatures reuse a nonce under the same key, which can reveal the private key. Open the Nonce Inspector to see which ones.") : hodlTText("Two Taproot signatures share a nonce under different keys, which can reveal a private key. Open the Nonce Inspector to see which ones.") };
   else if (possible.length) row = { label, state: "incomplete", detail: hodlTText("A possible repeated ECDSA nonce for the same public key could not be confirmed from this file; open the Nonce Inspector and verify the signatures independently.") };
-  else if (nonceIncomplete) row = { label, state: "incomplete", detail: hodlTText("Coverage is partial: unreadable signatures, fewer than two comparable ECDSA signatures, missing key/digest data, unsupported scripts, or Taproot/Schnorr signatures prevented one or more nonce checks.") };
+  else if (nonceIncomplete) row = { label, state: "incomplete", detail: hodlTText("Coverage is partial: unreadable signatures, fewer than two comparable ECDSA signatures, missing key/digest data, unsupported scripts, or Taproot/Schnorr signatures prevented one or more nonce checks."), incompleteReason: incompleteReason || undefined };
   // The completed line names the signatures that were compared (DeepSeek's
   // red-team of #1051, F4).
   else if (schnorrCompared) row = { label, state: "complete", detail: ecdsaCompared ? hodlTText("All ECDSA and Taproot signatures in this PSBT had comparable nonce values; no repeated nonce was found for the same key within this file.") : hodlTText("All Taproot signatures in this PSBT had comparable nonce values; no repeated R value was found for the same key within this file.") };
@@ -13280,6 +13779,12 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     policyProblems = 0,
     policyIncomplete = 0,
     unsupportedNonceChecks = 0,
+    // Signatures whose digest was reconstructed and whose r value was
+    // compared, but whose RFC 6979 nonce could not be recomputed because no
+    // session key matches. That is the no-key case, not an unsupported
+    // script: it keeps the row Incomplete without blocking the "nothing to
+    // compare" exclusion (owner, 2026-10-26).
+    nonceKeyMissing = 0,
     rfcTotal = 0,
     rfcChecked = 0,
     rfcMismatched = 0,
@@ -13394,7 +13899,15 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   html.push("<div data-psbt-tail='outputs'>" + outputsTail + "</div>");
   html.push(hodlOwnershipWarning(tx.outputs, network, ownershipMap));
   html.push("<hr class='result-divider'>");
-  html.push("<p class='label psbt-section-label'>" + hodlT("Tx inputs") + " <span class='label-value'>(" + tx.inputs.length + ")</span></p><p class='muted label-description'>" + hodlT("Where this transaction’s outputs are spending from") + "</p>");
+  // The inputs render into their own list so the whole section can be wrapped
+  // in one collapsed block whose open state depends on what the inputs hold.
+  let inputsHtml = [];
+  // Signing progress and the per-input problem flags come from the renderer's
+  // own state, never from the class names in the markup: the collapsed
+  // block's open state reads these, so a problem can never be folded away.
+  let signingExpected = psbt.inputs.some((entries) => hodlPartialSigs(entries).length || hodlTapSigsParsed(entries).length || hodlFinalized(entries));
+  let signedInputs = 0;
+  let anyInputProblem = false;
   psbt.inputs.forEach((entries, index) => {
     // This input's warning paragraphs are collected from here and placed at
     // the end of the loop (see there).
@@ -13472,6 +13985,9 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // counted (issue #333).
     let parsedTapSignatures = tapSignatures.reduce((count, tapSig) => count + (tapSig.r ? 1 : 0), 0);
     tapSignatureCount += parsedTapSignatures;
+    let inputSigned = signatures.length + parsedTapSignatures > 0 || finalized;
+    if (inputSigned) signedInputs++;
+    let inputHasProblem = false;
     let destinationHtml = claim && !destination.startsWith("script ") ? hodlPublicInlineHtml(destination, { className: "psbt-address", label: hodlTText("Address") }) : hodlEscapeHtml(destination);
     // Everything in this loop — UTXO claim resolution and the fee total,
     // conflict and sighash-policy warnings, inscription findings, nonce and
@@ -13480,26 +13996,32 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // this input's warning paragraphs are placed at the end of the loop —
     // inline, exactly where they belong, while the per-list cap and the
     // view's render budget allow; collected and summarized past them.
-    const sectionHtml = "<p class='psbt-kv'><strong>" + hodlT("Input {n}", { n: index }) + "</strong> \xB7 " + hodlHexRev(previous.txid) + " : " + previous.vout + (claim ? "<br><span class='psbt-amount'>" + hodlT("{amount} BTC claimed", { amount: hodlSats(claim.amount) }) + "</span><br>" + destinationHtml : "<br>" + destinationHtml) + "<br>" + (signatures.length + parsedTapSignatures ? "<span class='psbt-sig-present'>" + hodlT("{count} signature(s) present", { count: signatures.length + parsedTapSignatures }) + "</span>" : finalized ? "<span class='psbt-sig-finalized'>" + hodlT("Finalized input data present") + "</span>" : "<span class='psbt-sig-unsigned'>" + hodlT("Not signed yet") + "</span>") + "<br><span class='psbt-sig-policy'>" + (declaredSighashError ? hodlT("Declared sighash policy unreadable: {error}", { error: declaredSighashError }) : hodlT("Signature policy: {policy}", { policy: declaredLabel })) + "</span></p>";
     if (claimConflict) {
+      inputHasProblem = true;
       let conflictReason = witnessUtxo.amount !== nonWitnessUtxo.amount
         ? hodlT("input {n} declares {witness} BTC in its witness UTXO but {nonWitness} BTC in its non-witness UTXO (checked against the embedded previous transaction). Neither amount is trusted and the fee is left unknown.", { n: index, witness: hodlSats(witnessUtxo.amount), nonWitness: hodlSats(nonWitnessUtxo.amount) })
         : hodlT("input {n} names different previous-output scripts in its witness UTXO and its non-witness UTXO (the non-witness side checked against the embedded previous transaction). Neither claim is trusted and the fee is left unknown.", { n: index });
       warnings.push("<p class='psbt-bad'><strong>" + hodlT("Conflicting previous-output claims:") + "</strong> " + conflictReason + "</p>");
     }
-    if (nonWitnessError) warnings.push("<p class='psbt-bad'><strong>" + hodlT("Non-witness UTXO problem:") + "</strong> " + hodlT("input {n}: {error} That field claims nothing.", { n: index, error: nonWitnessError }) + "</p>");
+    if (nonWitnessError) {
+      inputHasProblem = true;
+      warnings.push("<p class='psbt-bad'><strong>" + hodlT("Non-witness UTXO problem:") + "</strong> " + hodlT("input {n}: {error} That field claims nothing.", { n: index, error: nonWitnessError }) + "</p>");
+    }
     let inputEnvelopes = (inscriptionReport.inputs[index] && inscriptionReport.inputs[index].envelopes) || [];
     inputEnvelopes.forEach((envelope) => {
+      inputHasProblem = true;
       let className = envelope.unrecognizedEven || envelope.bodyBytes > 100000 ? "psbt-bad" : "psbt-warn";
       warnings.push("<p class='" + className + "'><strong>" + hodlT("Inscription envelope") + "</strong> \xB7 " + hodlT("input {n}", { n: index }) + " \xB7 #" + envelope.envelopeIndex + " \xB7 " + hodlEscapeHtml(envelope.source) + "<br>" + describeEnvelope(envelope).map(hodlEscapeHtml).join("<br>") + "</p>");
     });
     if (declaredSighashError) {
+      inputHasProblem = true;
       policyProblems++;
       warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n} declares a malformed sighash policy. Do not sign until its policy is known.", { n: index }) + "</p>");
     } else if (declaredSighash !== null && declaredSighash !== 1 && !(taprootish && declaredSighash === 0)) {
       // SIGHASH_DEFAULT (0) is Taproot's full-commitment policy, so only
       // ECDSA inputs treat 0 as undefined. The warning names which commitment
       // side is missing (issue #333).
+      inputHasProblem = true;
       policyProblems++;
       let base = declaredSighash & 0x7f, vars = { n: index, policy: declaredLabel };
       let problem = base === 1 ? hodlT("input {n} requests {policy}; that policy does not commit to all shown inputs. Do not accept the displayed outputs as what a signature will authorize.", vars)
@@ -13512,6 +14034,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // sighash byte) is a policy problem, not a countable signature.
     tapSignatures.forEach((tapSig) => {
       if (!tapSig.r) {
+        inputHasProblem = true;
         uninspected += 1;
         policyIncomplete += 1;
         policyProblems++;
@@ -13519,6 +14042,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
         return;
       }
       hodlTapSighashProblems(declaredSighash, tapSig.sighash, hodlSighashLabel).forEach((problem) => {
+        inputHasProblem = true;
         policyProblems++;
         warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n}: {problem} Do not sign until its policy is known.", { n: index, problem }) + "</p>");
       });
@@ -13668,14 +14192,24 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
             message = hodlT("Matching key found, but this input script is not yet supported for RFC 6979 comparison.");
             className = "psbt-warn";
             unsupportedNonceChecks += 1;
-          } else if (!privateKey || !sighash) {
+          } else if (!sighash) {
+            // No digest could be reconstructed (unsupported script, a policy
+            // other than SIGHASH_ALL, or the per-file budget): a real gap.
             unsupportedNonceChecks += 1;
+          } else if (!privateKey) {
+            // The digest was reconstructed from the witness UTXO and the r
+            // value was compared; only the session key is missing, so RFC
+            // 6979 cannot be recomputed. Counting that as an unsupported
+            // nonce check made a one-signature, no-key PSBT (the signer-audit
+            // fixture) amber although its only gap is "nothing to compare".
+            nonceKeyMissing += 1;
           }
         }
       } finally {
         if (privateKey && !privateKey.owned) privateKey.key.fill(0);
       }
       ecdsaIndex += 1;
+      if (className === "psbt-bad" || className === "psbt-warn") inputHasProblem = true;
       rows.push({ input: index, message, className, pubkey: hodlHex.encode(signature.pubkey) });
     });
     // Placement: while the per-list cap and the view's render budget allow,
@@ -13683,6 +14217,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // where they belong (rock's order); past them the warnings join the
     // collected list rendered capped after the loop, and the unrendered
     // section is counted in the inputs elision line below.
+    // The section is built last, once every finding above has set this
+    // input's problem flag, so data-problem reflects its own state.
+    if (!inputSigned && signingExpected) inputHasProblem = true;
+    if (inputHasProblem) anyInputProblem = true;
+    const sectionHtml = "<p class='psbt-kv'" + (inputHasProblem ? " data-problem='true'" : "") + "><strong>" + hodlT("Input {n}", { n: index }) + "</strong> \xB7 " + hodlHexRev(previous.txid) + " : " + previous.vout + (claim ? "<br><span class='psbt-amount'>" + hodlT("{amount} BTC claimed", { amount: hodlSats(claim.amount) }) + "</span><br>" + destinationHtml : "<br>" + destinationHtml) + "<br>" + (signatures.length + parsedTapSignatures ? "<span class='psbt-sig-present'>" + hodlT("{count} signature(s) present", { count: signatures.length + parsedTapSignatures }) + "</span>" : finalized ? "<span class='psbt-sig-finalized'>" + hodlT("Finalized input data present") + "</span>" : "<span class='psbt-sig-unsigned'>" + hodlT("Not signed yet") + "</span>") + "<br><span class='psbt-sig-policy'>" + (declaredSighashError ? hodlT("Declared sighash policy unreadable: {error}", { error: declaredSighashError }) : hodlT("Signature policy: {policy}", { policy: declaredLabel })) + "</span></p>";
     const own = warnings.splice(warningsBefore);
     // The section needs one unit; as many of its own warnings as the budget
     // then holds render inline under it, and the rest join the collected
@@ -13696,7 +14235,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       // earlier input that has any could have shown a different split: the
       // click then repaints the whole run instead.
       if (only && index < only.from && own.length) splitShown = true;
-      const sink = !only ? html : index >= only.from ? chunk : null;
+      const sink = !only ? inputsHtml : index >= only.from ? chunk : null;
       if (sink) sink.push(sectionHtml);
       // One unit stays reserved for every later section in the window, so
       // one input's warnings can never starve the inputs after it.
@@ -13715,18 +14254,63 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   const inputsTail = (psbt.inputs.length > shownInputs ? elidedNote("inputs", psbt.inputs.length - shownInputs) + moreButton("inputs", psbt.inputs.length - shownInputs) : "")
     + cappedHtml(warnings, (warning) => warning, "warnings", (n) => hodlT("…and {n} more warnings (not rendered).", { n }), budget);
   if (only?.kind === "inputs") return splitShown ? null : { chunk: chunk.join(""), tail: inputsTail };
+  // The whole inputs section is one collapsed block. It opens when any input
+  // carries a problem or a warning, so collapsing never hides one.
+  let inputsBody = inputsHtml.join("");
+  // The section's own flag: any input's problem, or the elided-inputs note
+  // (rendered in the warning tone) when the window hides some of them.
+  let inputsProblem = anyInputProblem || psbt.inputs.length > shownInputs;
+  html.push("<details class='derivation-advanced' data-psbt-inputs" + (inputsProblem ? " open data-problem='true'" : "") + "><summary><span class='label psbt-section-label'>" + hodlT("Inputs ({count}): what this transaction spends", { count: tx.inputs.length }) + "</span></summary>");
+  html.push(inputsBody);
   html.push("<div data-psbt-tail='inputs'>" + inputsTail + "</div>");
-  html.push("<hr class='result-divider'>");
+  // The collapsed block draws its own bottom border, so no divider follows it.
+  html.push("</details>");
   html.push("<p class='label psbt-section-label'>" + hodlT("Tx fees") + "</p><p class='muted label-description'>" + hodlT("Remainder of total inputs after total outputs are accounted for") + "</p>");
-  if (conflictedInputs.length) html.push("<p class='psbt-bad'><strong>" + hodlT("Fee unknown") + "</strong> — " + hodlT("input(s) {inputs} carry conflicting witness and non-witness UTXO amounts.", { inputs: conflictedInputs.join(", ") }) + "</p>");
-  else if (knownInputs === tx.inputs.length) {
+  // The fee analysis is computed once and rendered twice: the Fees section
+  // below and the glance line above. feeProblem holds the problem's own
+  // markup, so the glance can repeat it in the same severity instead of
+  // softening it to "fee unknown".
+  let feeKnown = false, feeValue = 0n, feeProblem = "";
+  if (conflictedInputs.length) {
+    feeProblem = "<strong>" + hodlT("Fee unknown") + "</strong> — " + hodlT("input(s) {inputs} carry conflicting witness and non-witness UTXO amounts.", { inputs: conflictedInputs.join(", ") });
+    html.push("<p class='psbt-bad'>" + feeProblem + "</p>");
+  } else if (knownInputs === tx.inputs.length) {
     let outputSum = tx.outputs.reduce((sum, output) => sum + output.amount, 0n), fee = inputSum - outputSum;
-    if (fee >= 0n) html.push("<p class='psbt-kv'><strong>" + hodlT("Unverified fee (PSBT previous-output claims)") + "</strong><br><span class='psbt-amount'>" + hodlSats(fee) + " BTC</span></p>");
-    else {
+    if (fee >= 0n) {
+      feeKnown = true;
+      feeValue = fee;
+      html.push("<p class='psbt-kv'><strong>" + hodlT("Unverified fee (PSBT previous-output claims)") + "</strong><br><span class='psbt-amount'>" + hodlSats(fee) + " BTC</span></p>");
+    } else {
       feeInconsistent = 1;
-      html.push("<p class='psbt-bad'><strong>" + hodlT("Inconsistent claimed amounts:") + "</strong> " + hodlT("outputs exceed claimed inputs by {amount} BTC.", { amount: hodlSats(-fee) }) + "</p>");
+      feeProblem = "<strong>" + hodlT("Inconsistent claimed amounts:") + "</strong> " + hodlT("outputs exceed claimed inputs by {amount} BTC.", { amount: hodlSats(-fee) });
+      html.push("<p class='psbt-bad'>" + feeProblem + "</p>");
     }
   } else html.push("<p class='muted'>" + hodlT("Fee unknown — some inputs do not include a claimed previous-output amount.") + "</p>");
+  // The one-line answer above the detail: what this transaction sends, in how
+  // many outputs, and the fee the section above computed. Every amount uses
+  // the Fees section's unit (BTC, 8 decimals), and a problem the Fees section
+  // shows appears here in the same severity, never as "fee unknown": the fee
+  // state is the Fees section's own result (feeProblem), so a conflicting
+  // UTXO claim is repeated here too. The change part appears only when the
+  // loaded key's ownership map claims an output; "Sends" then counts only
+  // what does not return to the key.
+  let glanceTotal = tx.outputs.reduce((sum, output) => sum + output.amount, 0n),
+    glanceCount = tx.outputs.length,
+    glanceChange = 0n;
+  // The same ownership rule as the warning below, address fallback included,
+  // so the glance line and the warning can never disagree about what is ours.
+  if (ownershipMap.size) for (const output of tx.outputs) if (matchOwnership(ownershipMap, output.script).state === "ours" || matchOwnership(ownershipMap, hodlAddr(output.script, network)).state === "ours") glanceChange += output.amount;
+  let glanceParts = [];
+  if (feeProblem) {
+    glanceParts.push(feeProblem);
+  } else {
+    glanceParts.push(ownershipMap.size ? hodlT("Sends {amount} BTC", { amount: hodlSats(glanceTotal - glanceChange) }) : hodlT("Outputs total {amount} BTC", { amount: hodlSats(glanceTotal) }));
+    glanceParts.push(glanceCount === 1 ? hodlT("in 1 output") : hodlT("in {count} outputs", { count: glanceCount }));
+    glanceParts.push(feeKnown ? hodlT("fee {fee} BTC", { fee: hodlSats(feeValue) }) : hodlT("fee unknown"));
+    if (glanceChange > 0n) glanceParts.push(hodlT("{change} BTC returns to your key", { change: hodlSats(glanceChange) }));
+  }
+  if (signingExpected) glanceParts.push(hodlT("{signed} of {total} inputs signed", { signed: signedInputs, total: tx.inputs.length }));
+  let glance = "<p class='" + (feeProblem ? "psbt-bad" : "psbt-kv") + "' data-psbt-glance data-severity='" + (feeProblem ? "bad" : "ok") + "'>" + glanceParts.join(" · ") + "</p>";
   html.push("<p class='edge-note is-public'>" + hodlT("Witness-UTXO amounts are unverified PSBT claims; non-witness UTXO amounts are cross-checked against the embedded previous transaction. Neither is checked against the blockchain.") + "</p>");
   if (inscriptionReport.envelopes.length) {
     let count = inscriptionReport.envelopes.length;
@@ -13791,13 +14375,22 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   // so each family needs two comparable signatures of its own: one of each
   // is not a clean result (DeepSeek's red-team of #1051, F1).
   let schnorrCompared = schnorrRecords.length - schnorrIncomplete;
-  let nonceIncomplete = uninspected || schnorrIncomplete || tapUninspected || unsupportedNonceChecks || crossKey.length || rValues.length === 1 || schnorrCompared === 1 || rValues.length + schnorrCompared === 0;
+  let nonceIncomplete = uninspected || schnorrIncomplete || tapUninspected || unsupportedNonceChecks || nonceKeyMissing || crossKey.length || rValues.length === 1 || schnorrCompared === 1 || rValues.length + schnorrCompared === 0;
+  // A nonce check that is incomplete only because there is nothing to
+  // compare (one comparable signature, or none) is the no-key case's
+  // sibling: the row still reads Incomplete, but the overall line does not
+  // count it (owner, 2026-10-26). Any other cause keeps the check counting.
+  // A signature whose only missing piece is the session key (nonceKeyMissing)
+  // is not such a cause: its r was compared, and the missing key is the
+  // no-key case the overall line already ignores. It still makes the row
+  // Incomplete, so a PSBT with two or more signatures and no key stays amber.
+  let nonceNothingToCompare = !possible.length && !uninspected && !schnorrIncomplete && !tapUninspected && !unsupportedNonceChecks && !crossKey.length && (rValues.length === 1 || schnorrCompared === 1 || rValues.length + schnorrCompared === 0);
   let nonceVerdict = reused.length || schnorrReused.length ? "reuse" : crossKey.length ? "cross-key" : possible.length ? "possible" : nonceIncomplete ? "incomplete" : "clean";
   if (view !== "inspect" && options?.record !== false) hodlPsbtRecordNonceInspection("psbt", rValues, nonceSourceTag, nonceVerdict, nonceCheckedAt);
   let checks = [
     {
       label: hodlTText("Previous outputs and fee"),
-      state: feeInconsistent ? "problem" : "incomplete",
+      state: feeInconsistent ? "problem" : knownInputs === tx.inputs.length ? "complete" : "incomplete",
       detail: feeInconsistent
         ? hodlTText("The claimed output amounts exceed the claimed input amounts, so the PSBT's own claims are inconsistent; claims were not checked against previous transactions or the blockchain.")
         : knownInputs === tx.inputs.length
@@ -13816,11 +14409,12 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     {
       label: hodlTText("Output ownership / derivation"),
       state: "incomplete",
+      incompleteReason: ownershipMap.size ? undefined : "no-key",
       detail: ownershipMap.size
         ? hodlTText("Compared with the loaded session key only within accounts 0–2, 50 receive and 50 change addresses, and four supported script types; outputs outside that range remain unclassified.")
         : hodlTText("No session key was loaded, so output ownership and change derivation were not checked."),
     },
-    hodlPsbtNonceCheck(reused, possible, nonceIncomplete, schnorrReused, rValues.length, schnorrCompared, rfc6979Note),
+    hodlPsbtNonceCheck(reused, possible, nonceIncomplete, schnorrReused, rValues.length, schnorrCompared, rfc6979Note, nonceNothingToCompare ? "nothing-to-compare" : ""),
     {
       label: hodlTText("BIP-174 / consensus cross-check"),
       state: referenceVerdict.state,
@@ -13839,7 +14433,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     },
   ];
   if (view === "nonce") return nonceHtml.join("");
-  html.unshift(hodlPsbtAnalysisSummary(checks));
+  // The answer block comes first: the section band, the overall status line
+  // and the glance line, in one block.
+  let overallLine = hodlPsbtOverallLine(checks);
+  let answerBlock = "<section class='psbt-analysis-summary' data-psbt-answer data-psbt-analysis-overall='" + overallLine.state + "' aria-label='" + hodlTAttr("PSBT security analysis status") + "'><p class='label psbt-section-label'>" + hodlT("PSBT security analysis") + "</p>" + overallLine.html + glance + "</section>";
+  html.unshift(answerBlock, hodlPsbtAnalysisSummary(checks));
   return (view === "inspect" ? html : html.concat(nonceHtml)).join("");
 }
 // Same three views as hodlRenderPsbt. A raw transaction has no summary table,
@@ -14926,6 +15524,7 @@ function hodlKeySummaryMethodParts(state) {
     : state.mode === "cards" ? state.cardMethod === "direct" ? "direct" : "hashed"
     : state.mode === "hex" ? state.entropyFormat || "bin"
     : state.mode === "seed" ? state.seedMethod === "numbers" ? "numbers" : "words"
+    : state.mode === "corewallet" ? state.coreMixSource === "cards" ? "cards" : "dice"
     : state.mode === "key" ? state.fields?.keyKind || "wif" : "";
   return [hodlKeyModeLabels[state.mode] || "", hodlKeySummarySubmethodLabels[state.mode]?.[variant] || ""];
 }
@@ -15040,6 +15639,8 @@ function hodlRestoreFormFields(state) {
 }
 function hodlSetMode(mode) {
   hodlCaptureKey();
+  // typeof keeps the standalone Node extraction working (narrow test slices).
+  if (mode !== "corewallet" && typeof hodlCoreMixReset === "function") hodlCoreMixReset();
   let state = hodlKeys[hodlActiveKey];
   if (state) state.mode = mode;
   hodlKeyMode = mode;
@@ -15056,7 +15657,7 @@ function hodlSetMode(mode) {
 function hodlKeyStateNeedsClear(state) {
   if (!state) return false;
   let fields = state.fields || {}, privateKeys = hodlPrivateKeyValues(fields), hasText = (id) => String(fields[id] ?? "").length > 0;
-  return String(state.mode ?? "dice") !== "dice" || String(state.diceMethod ?? "coldcard") !== "coldcard" || String(state.cardMethod ?? "hashed") !== "hashed" || String(state.seedMethod ?? "words") !== "words" || Boolean(state.seedZeroIndexed) || Boolean(state.cardColemanSymbols) || String(state.entropyFormat ?? "bin") !== "bin" || Boolean(state.globalSync) || state.seedAutocomplete === false || Boolean(state.passphraseBip39Words) || state.passphraseAutocomplete === false || Boolean(state.brainWalletTrim) || Boolean(state.showCards) || Boolean(state.showDiceFairness) || Number(state.targetWords ?? 24) !== 24 || Array.isArray(state.diceCoinPositions) && state.diceCoinPositions.length > 0 || String(state.lastWord ?? "").length > 0 || String(state.dplusLastWord ?? "").length > 0 || Boolean(state.result) || Boolean(state.reveal) || String(state.error ?? "").length > 0 || String(state.accountId ?? "bip84") !== "bip84" || String(fields.script ?? "bip84") !== "bip84" || String(fields.derivationPath ?? "m/84'/0'/0'/{0-1}/{0-9}") !== "m/84'/0'/0'/{0-1}/{0-9}" || String(fields.purpose ?? "84'") !== "84'" || fields.purposeHarden === false || String(fields.coinType ?? (fields.network === "testnet" ? "1'" : "0'")) !== "0'" || fields.coinTypeHarden === false || String(fields.account ?? "0'") !== "0'" || fields.accountHarden === false || String(fields.branchStart ?? "0") !== "0" || Boolean(fields.branchHarden) || String(fields.branchRange ?? "2") !== "2" || String(fields.addressStart ?? "0") !== "0" || Boolean(fields.addressHarden) || String(fields.addressRange ?? fields.count ?? "10") !== "10" || hodlNormalizePrivateKeyKind(fields.keyKind, privateKeys[fields.keyKind] || "") !== "wif" || ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key"].some(hasText) || hodlPrivateKeyKinds.some((kind) => privateKeys[kind].length > 0);
+  return String(state.mode ?? "dice") !== "dice" || String(state.diceMethod ?? "coldcard") !== "coldcard" || String(state.cardMethod ?? "hashed") !== "hashed" || String(state.seedMethod ?? "words") !== "words" || Boolean(state.seedZeroIndexed) || Boolean(state.cardColemanSymbols) || String(state.entropyFormat ?? "bin") !== "bin" || Boolean(state.globalSync) || state.seedAutocomplete === false || Boolean(state.passphraseBip39Words) || state.passphraseAutocomplete === false || Boolean(state.brainWalletTrim) || Boolean(state.showCards) || Boolean(state.showDiceFairness) || Number(state.targetWords ?? 24) !== 24 || Array.isArray(state.diceCoinPositions) && state.diceCoinPositions.length > 0 || String(state.lastWord ?? "").length > 0 || String(state.dplusLastWord ?? "").length > 0 || Boolean(state.result) || Boolean(state.reveal) || String(state.error ?? "").length > 0 || String(state.accountId ?? "bip84") !== "bip84" || String(fields.script ?? "bip84") !== "bip84" || String(fields.derivationPath ?? "m/84'/0'/0'/{0-1}/{0-9}") !== "m/84'/0'/0'/{0-1}/{0-9}" || String(fields.purpose ?? "84'") !== "84'" || fields.purposeHarden === false || String(fields.coinType ?? (fields.network === "testnet" ? "1'" : "0'")) !== "0'" || fields.coinTypeHarden === false || String(fields.account ?? "0'") !== "0'" || fields.accountHarden === false || String(fields.branchStart ?? "0") !== "0" || Boolean(fields.branchHarden) || String(fields.branchRange ?? "2") !== "2" || String(fields.addressStart ?? "0") !== "0" || Boolean(fields.addressHarden) || String(fields.addressRange ?? fields.count ?? "10") !== "10" || hodlNormalizePrivateKeyKind(fields.keyKind, privateKeys[fields.keyKind] || "") !== "wif" || ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key", "coreMixTranscript"].some(hasText) || hodlPrivateKeyKinds.some((kind) => privateKeys[kind].length > 0);
 }
 function hodlSyncKeyClearButton(capture = false) {
   if (capture) hodlCaptureKey();
@@ -15067,6 +15668,7 @@ function hodlSyncKeyClearButton(capture = false) {
 }
 function hodlWipeActiveKey() {
   hodlInvalidateDerivation();
+  if (typeof hodlCoreMixReset === "function") hodlCoreMixReset();
   // Cache keys are partial mnemonics (23 of 24 words, 11 of 12): wiping a key
   // must not leave its seed, minus the last word, referenced until pagehide.
   hodlLastWordCache.clear();
@@ -15096,6 +15698,8 @@ function hodlCaptureKey() {
   state.diceMethod = hodlDiceMethod;
   state.cardMethod = hodlCardMethod;
   state.seedMethod = hodlSeedMethod;
+  state.coreMixSource = hodlCoreMixSource;
+  if (hodlKeyMode === "corewallet" && state.fields) state.fields.coreMixTranscript = document.getElementById("core-mix-transcript")?.value ?? state.fields.coreMixTranscript ?? "";
   state.seedZeroIndexed = Boolean(hodlSeedZeroIndexed);
   state.cardColemanSymbols = Boolean(hodlCardColemanSymbols);
   state.entropyFormat = hodlEntropyFormat;
@@ -15168,6 +15772,9 @@ function hodlSelectedKeyNetwork() {
 function hodlRestoreKey() {
   hodlKeyManagerSyncReviewedContext();
   let state = hodlKeys[hodlActiveKey];
+  // A wallet loaded for a key that was removed or replaced (Journal detach)
+  // must not stay in memory under the next key.
+  if (typeof hodlCoreMixReset === "function" && hodlCoreMix && hodlCoreMix.keyId !== (state?.id ?? null)) hodlCoreMixReset();
   if (!state) {
     hodlKeyMode = "dice";
     hodlDiceMethod = "coldcard";
@@ -15584,6 +16191,8 @@ function hodlSelectKey(index) {
   // Switching tabs mid-derivation must cancel it: the pending commit would
   // otherwise land on the tab being switched to (the wipe path already does).
   hodlInvalidateDerivation();
+  // The wallet.dat secrets belong to the tab that loaded them.
+  if (typeof hodlCoreMixReset === "function") hodlCoreMixReset();
   hodlCaptureKey();
   hodlActiveKey = index;
   hodlRenderKeyTabs();
@@ -15714,6 +16323,7 @@ function hodlDeleteActiveKey() {
   // Removing the active key mid-derivation cancels it, so its commit cannot
   // land on whatever tab the splice makes active.
   hodlInvalidateDerivation();
+  if (typeof hodlCoreMixReset === "function") hodlCoreMixReset();
   if (hodlJournalUnlocked()) {
     hodlKeyManagerDetachFromStation(state);
     return;
@@ -20138,6 +20748,9 @@ function hodlInitSecretFieldAutoClear() {
       }
     }
     hodlClearPassphraseField();
+    if (typeof hodlCoreMixReset === "function") hodlCoreMixReset();
+    let coreMixTranscript = document.getElementById("core-mix-transcript");
+    if (coreMixTranscript) coreMixTranscript.value = "";
     let psbtKey = document.getElementById("psbt-key"), psbtPass = document.getElementById("psbt-pass");
     if (psbtKey) psbtKey.value = "";
     if (psbtPass) psbtPass.value = "";
@@ -20155,6 +20768,12 @@ function hodlInitSecretFieldAutoClear() {
       let field = document.getElementById(id);
       if (field) field.value = "";
     }
+    // The pasted RBF original is a PSBT too: it can hide an xprv in
+    // proprietary fields, so it wipes with the same sweep, and a pending
+    // upload of it retires with the session.
+    let psbtRbfOriginal = document.getElementById("psbt-rbf-original");
+    if (psbtRbfOriginal) psbtRbfOriginal.value = "";
+    try { hodlPsbtRetireRbfUploads(); } catch {}
     // The key-reuse verdict lists derived keys and paths: retire it with its field.
     for (let id of ["descriptor-reuse-out", "descriptor-reuse-error"]) {
       let output = document.getElementById(id);

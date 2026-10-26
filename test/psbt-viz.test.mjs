@@ -655,6 +655,9 @@ const hodlRenderPsbtForTest = (overrides = {}) => {
       captured.checks = checks;
       return "";
     },
+    // The real overall-line helper: the answer block it feeds renders above
+    // the detail, and the budget counts below read the detail only.
+    hodlPsbtOverallLine: new Function("hodlT", `${extractAppFunction("hodlPsbtOverallLine")}; return hodlPsbtOverallLine;`)((text, vars) => String(text).replace(/\{(\w+)\}/g, (match, key) => (vars && key in vars ? vars[key] : match))),
   };
   Object.assign(stubs, overrides);
   const names = Object.keys(stubs);
@@ -748,10 +751,14 @@ test("per-input policy warnings render inline within the cap and are collected a
   // Every input declares SIGHASH_SINGLE: one policy warning per input.
   doc.inputs.forEach((map) => map.push({ type: 0x03, sighash: 3 }));
   const html = render(doc, new Uint8Array(), "2024-01-01T00:00:00Z", "inspect", { network: "mainnet" });
+  // Re-pointed for TC's answer block: the overall verdict line is one
+  // constant paragraph above the detail and outside the render budget, so
+  // the warning counts read the detail only, from the first divider on.
+  const detail = html.slice(html.indexOf("<hr class='result-divider'>"));
   // The first 500 inputs render their warning directly under their own
   // section (rock's placement); the 700 over-cap inputs' warnings are
   // collected and rendered capped at 500 after the loop: 500 + 500 in all.
-  assert.equal((html.match(/<p class='psbt-bad'>/g) || []).length, 1000, "500 inline + 500 collected warning paragraphs");
+  assert.equal((detail.match(/<p class='psbt-bad'>/g) || []).length, 1000, "500 inline + 500 collected warning paragraphs");
   assert.ok(html.includes("200 more warnings"), "the collected list notes its elided count");
   const input0 = html.indexOf("<strong>Input 0</strong>");
   const warning0 = html.indexOf("input 0 requests SIGHASH_SINGLE");
@@ -1023,10 +1030,14 @@ test("the inspector's whole view stays within the render budget when every input
     envelopes: [],
   };
   const html = render(doc, new Uint8Array(), "2024-01-01T00:00:00Z", "inspect", { network: "mainnet" });
-  const sections = (html.match(/<strong>Input \d+<\/strong>/g) || []).length;
-  const outputs = (html.match(/<strong>Output \d+<\/strong>/g) || []).length;
+  // Re-pointed for TC's answer block: the overall verdict line is one
+  // constant paragraph above the detail and outside the render budget, so
+  // the counts below read the detail only. The budget assertion is unchanged.
+  const detail = html.slice(html.indexOf("<hr class='result-divider'>"));
+  const sections = (detail.match(/<strong>Input \d+<\/strong>/g) || []).length;
+  const outputs = (detail.match(/<strong>Output \d+<\/strong>/g) || []).length;
   // The capped-list note is warning-styled too (TC's review), but it is not a rendered warning row.
-  const warnings = (html.match(/<p class='psbt-(?:bad|warn)'>(?!\d+ more (?:input|output)s? not shown)/g) || []).length;
+  const warnings = (detail.match(/<p class='psbt-(?:bad|warn)'>(?!\d+ more (?:input|output)s? not shown)/g) || []).length;
   assert.equal(sections, 500, "input sections capped at 500");
   assert.equal(outputs, 1, "the one output renders");
   // 1 output block + 500 inputs × (1 section + 2 warnings) = 1,501 units
@@ -1327,6 +1338,10 @@ test("a capped view counts every input's warnings through the collected list, wi
   const doc = inspectorDoc(2000, 1);
   doc.inputs.forEach((map) => map.push({ type: 0x03, sighash: 3 }));
   const html = render(doc, new Uint8Array(), "2024-01-01T00:00:00Z", "inspect", { network: "mainnet" });
+  // Re-pointed for TC's answer block: the overall verdict line is one
+  // constant paragraph above the detail and outside the render budget, so
+  // the warning count reads the detail only, from the first divider on.
+  const detail = html.slice(html.indexOf("<hr class='result-divider'>"));
   // Every input's warning is collected: the first 500 render inline under
   // their own sections (1,001 budget units with the output block), then the
   // collected list renders 500 of the remaining 1,500 — 1,000 paragraphs
@@ -1334,7 +1349,7 @@ test("a capped view counts every input's warnings through the collected list, wi
   // for every input, and the round-6 per-input hidden-warnings line (whose
   // helper re-scanned every warning, O(W²) at the load gates, and was
   // visible text the owner never approved) must not reappear.
-  assert.equal((html.match(/<p class='psbt-bad'>/g) || []).length, 1000, "500 inline + 500 collected warning paragraphs");
+  assert.equal((detail.match(/<p class='psbt-bad'>/g) || []).length, 1000, "500 inline + 500 collected warning paragraphs");
   assert.ok(html.includes("1000 more warnings (not rendered)"), "the collected list counts the warnings the budget cut");
   assert.ok(!html.includes("more inputs have warnings"), "no per-input hidden-warnings line is rendered");
   assert.equal(captured.checks.find((check) => check.label === "SIGHASH policy").state, "problem", "the analysis still covers every input");

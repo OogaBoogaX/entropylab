@@ -26,6 +26,8 @@ import { hex } from "./coders.js";
 import { t, tHtml as hodlT } from "./i18n.js";
 import { privateCopyButtonHtml } from "./private-data.js";
 import { publicFieldHtml, publicValueHtml } from "./public-data.js";
+import { detectHsmSecretType, readClnMnemonic, deriveClnNode, HSM_SECRET_PLAIN, HSM_SECRET_ENCRYPTED, HSM_SECRET_MNEMONIC_WITH_PASS, HSM_SECRET_INVALID } from "./hsm-secret.js";
+import * as hodlHashes from "./hashes.js";
 import { bolt11Decode } from "./bolt11.js";
 import { bolt12Decode, bolt12RecipientVisibility } from "./bolt12.js";
 
@@ -106,11 +108,104 @@ export const deriveLdkNode = (mnemonic, passphrase = "") => {
   }
 };
 
+// ── Core Lightning hsm_secret (type 2) ──────────────────────────────────────
+
+// CLN fixes coin type 0' on every network (hsm-secret.js); the network only
+// changes the extended-key version bytes and the bech32 address prefix.
+const CLN_NETWORKS = {
+  bitcoin: { private: 0x0488ade4, public: 0x0488b21e, hrp: "bc" },
+  testnet: { private: 0x04358394, public: 0x043587cf, hrp: "tb" },
+};
+
+const hodlHash160 = (bytes) => {
+  if (typeof hodlHashes.hash160 === "function") return hodlHashes.hash160(bytes);
+  if (typeof hodlHashes.ripemd160 === "function") return hodlHashes.ripemd160(hodlHashes.sha256(bytes));
+  throw new Error("hash160 is unavailable.");
+};
+
+const BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+const BECH32_GENERATOR = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+
+const hodlLnBech32Polymod = (values) => {
+  let checksum = 1;
+  for (const value of values) {
+    const top = checksum >>> 25;
+    checksum = ((checksum & 0x1ffffff) << 5) ^ value;
+    for (let i = 0; i < 5; i++) if ((top >>> i) & 1) checksum ^= BECH32_GENERATOR[i];
+  }
+  return checksum;
+};
+
+const hodlLnConvertBits = (bytes, from, to, pad) => {
+  let accumulator = 0;
+  let bits = 0;
+  const out = [];
+  const maxValue = (1 << to) - 1;
+  for (const byte of bytes) {
+    accumulator = (accumulator << from) | byte;
+    bits += from;
+    while (bits >= to) {
+      bits -= to;
+      out.push((accumulator >> bits) & maxValue);
+    }
+  }
+  if (pad && bits > 0) out.push((accumulator << (to - bits)) & maxValue);
+  return out;
+};
+
+const hodlLnBech32Encode = (hrp, data) => {
+  const expanded = [];
+  for (const char of hrp) expanded.push(char.charCodeAt(0) >> 5);
+  expanded.push(0);
+  for (const char of hrp) expanded.push(char.charCodeAt(0) & 31);
+  const values = [...expanded, ...data, 0, 0, 0, 0, 0, 0];
+  const mod = hodlLnBech32Polymod(values) ^ 1;
+  const checksum = [];
+  for (let i = 0; i < 6; i++) checksum.push((mod >>> (5 * (5 - i))) & 31);
+  return `${hrp}1${[...data, ...checksum].map((value) => BECH32_CHARSET[value]).join("")}`;
+};
+
+const hodlLnP2wpkhAddress = (publicKey, hrp) => hodlLnBech32Encode(hrp, [0, ...hodlLnConvertBits(hodlHash160(publicKey), 8, 5, true)]);
+
+// The BIP86 account xprv and the first ten native-segwit receive addresses.
+// deriveClnNode returns the node id and the descriptors; the xprv and the
+// addresses are derived here from the same seed, then every buffer is wiped.
+const hodlLnDeriveClnAccount = (phrase, network) => {
+  const params = Object.hasOwn(CLN_NETWORKS, network) ? CLN_NETWORKS[network] : null;
+  if (!params) throw Object.assign(new Error("Unknown network."), { key: "Unknown network.", code: "hsm-secret-network" });
+  const seed = mnemonicToSeedSync(phrase, "");
+  let master = null;
+  let account = null;
+  let chain = null;
+  try {
+    master = HDKey.fromMasterSeed(seed, { private: params.private, public: params.public });
+    account = master.derive("m/86'/0'/0'");
+    const xprv = account.privateExtendedKey;
+    chain = account.deriveChild(0);
+    const addresses = [];
+    for (let index = 0; index < 10; index++) {
+      const child = chain.deriveChild(index);
+      try {
+        addresses.push(hodlLnP2wpkhAddress(child.publicKey, params.hrp));
+      } finally {
+        child.wipePrivateData();
+      }
+    }
+    return { xprv, addresses };
+  } finally {
+    seed.fill(0);
+    if (chain) chain.wipePrivateData();
+    if (account) account.wipePrivateData();
+    if (master) master.wipePrivateData();
+  }
+};
+
 // ── Tool wiring (markup in src/shell.html, #ln-card) ────────────────────────
 
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 let hodlLnLast = null; // last successful derivation, kept for the reveal toggle
+let hodlLnHsmMnemonic = null; // the type-2 words read from a chosen hsm_secret file
 let hodlLnReveal = false;
 let hodlLnJournalLog = () => {};
 let hodlLnCopyIcon = () => "";
@@ -120,7 +215,7 @@ let hodlLnCopyIcon = () => "";
 // normalizing or deriving.
 const LN_SEED_MAX_LENGTH = 4096;
 
-export function hodlLnKeyWipeMem() {
+const hodlLnClearResult = () => {
   if (hodlLnLast) {
     if (hodlLnLast.entropy) hodlLnLast.entropy.fill(0);
     if (hodlLnLast.salt) hodlLnLast.salt.fill(0);
@@ -130,18 +225,31 @@ export function hodlLnKeyWipeMem() {
   }
   hodlLnLast = null;
   hodlLnReveal = false;
+};
+
+// The key side: the derived result and any held hsm_secret words. A
+// format, network or coin-type change calls this; the pasted invoice
+// survives it.
+export function hodlLnKeyWipeMem() {
+  hodlLnClearResult();
+  hodlLnHsmMnemonic = null;
 }
 
 // The full wipe: key material and the pasted invoice. Clear, End Session
-// and pagehide call this; a format, network or coin-type change only wipes
-// the key side (hodlLnKeyWipeMem), so a pasted invoice survives it.
+// and pagehide call this.
 export function hodlLnWipeMem() {
   hodlLnKeyWipeMem();
   hodlLnInvWipeMem();
 }
 
-const hodlLnFormat = () => (document.getElementById("ln-format")?.value === "bip39" ? "bip39" : "aezeed");
+const hodlLnFormat = () => {
+  const value = document.getElementById("ln-format")?.value;
+  if (value === "bip39") return "bip39";
+  if (value === "cln-hsm") return "cln-hsm";
+  return "aezeed";
+};
 const hodlLnCoinType = () => (document.getElementById("ln-network")?.value === "testnet" ? 1 : 0);
+const hodlLnNetworkName = () => (document.getElementById("ln-network")?.value === "testnet" ? "testnet" : "bitcoin");
 
 const hodlLnNormalize = (text) => String(text || "").trim().toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
 
@@ -175,30 +283,48 @@ function hodlLnRender() {
   const r = hodlLnLast;
   const secrets = hodlLnReveal;
   const aezeed = r.format === "aezeed";
-  const implementation = aezeed ? "LND" : "LDK (ldk-node)";
+  const cln = r.format === "cln-hsm";
+  const implementation = cln ? "Core Lightning" : aezeed ? "LND" : "LDK (ldk-node)";
   // Every translated string is computed ahead of the template with the
   // helper for its sink (AGENTS.md): hodlT for HTML element content, t for
   // the labels hodlLnPrivateField escapes itself.
   const nodeKeyLabel = hodlT("{implementation} node identity public key", { implementation });
-  const pathLabel = hodlT("Identity key path");
-  const networkName = aezeed ? (r.coinType === 1 ? t("testnet") : t("mainnet")) : "";
-  const pathNote = aezeed
-    ? ` · ${hodlT("coin type {coinType} ({network})", { coinType: r.coinType, network: networkName })}`
-    : ` · ${hodlT("the LDK node identity does not depend on the network")}`;
-  const detailNote = aezeed
-    ? `<p class="muted">${hodlT("Internal (key-derivation) version {v} · wallet birthday day {days} ({date} UTC, day 0 = Bitcoin genesis). Rescans from the birthday recover on-chain funds; channel funds need the node's channel backup.", { v: r.internalVersion, days: r.birthdayDays, date: hodlLnBirthdayIso(r.birthdayTimestamp) })}</p>`
-    : `<p class="muted">${hodlT("Derived the ldk-node way: BIP39 seed → master key → its private key re-seeds a second BIP32 tree → node secret at")} <code>m/0'</code>.</p>`;
-  const revealLabel = aezeed ? hodlT("Reveal the root private key and decoded entropy") : hodlT("Reveal the root private key");
+  const pathLabel = cln ? hodlT("On-chain account path") : hodlT("Identity key path");
+  const networkName = cln
+    ? (r.network === "testnet" ? t("testnet") : t("mainnet"))
+    : aezeed ? (r.coinType === 1 ? t("testnet") : t("mainnet")) : "";
+  const pathNote = cln
+    ? ` · ${escapeHtml(networkName)}`
+    : aezeed
+      ? ` · ${hodlT("coin type {coinType} ({network})", { coinType: r.coinType, network: networkName })}`
+      : ` · ${hodlT("the LDK node identity does not depend on the network")}`;
+  const detailNote = cln
+    ? ""
+    : aezeed
+      ? `<p class="muted">${hodlT("Internal (key-derivation) version {v} · wallet birthday day {days} ({date} UTC, day 0 = Bitcoin genesis). Rescans from the birthday recover on-chain funds; channel funds need the node's channel backup.", { v: r.internalVersion, days: r.birthdayDays, date: hodlLnBirthdayIso(r.birthdayTimestamp) })}</p>`
+      : `<p class="muted">${hodlT("Derived the ldk-node way: BIP39 seed → master key → its private key re-seeds a second BIP32 tree → node secret at")} <code>m/0'</code>.</p>`;
+  const revealLabel = cln
+    ? hodlT("Reveal the account private key (xprv)")
+    : aezeed ? hodlT("Reveal the root private key and decoded entropy") : hodlT("Reveal the root private key");
   const entropyLabel = t("Decoded entropy (the BIP32 master seed)");
   const saltLabel = t("Salt");
-  const rootXprvLabel = t("BIP32 root private key (xprv)");
-  const privateNote = hodlT("The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.");
+  const rootXprvLabel = cln ? t("BIP86 account private key (xprv)") : t("BIP32 root private key (xprv)");
+  const privateNote = cln
+    ? hodlT("The account xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.")
+    : hodlT("The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.");
   const hiddenNote = hodlT("Private material stays hidden until you reveal it.");
+  const clnDetails = cln ? `
+      <p class="label">${hodlT("Watch-only descriptors")}</p>
+      <ul class="ln-descriptors">${r.descriptors.map((descriptor) => `<li>${publicValueHtml(descriptor, { clipboard: true })}</li>`).join("")}</ul>
+      <p class="label">${hodlT("First 10 receive addresses")}</p>
+      <ul class="ln-addresses">${r.addresses.map((address, index) => `<li><span class="muted">${index}</span> ${publicValueHtml(address, { clipboard: true })}</li>`).join("")}</ul>` : "";
   output.innerHTML = `
     <div class="ln-result">
+      ${cln ? `<p class="muted" data-ln-note="single-key">${hodlT("Single key. This is not a channel backup.")}</p>` : ""}
       ${publicFieldHtml(nodeKeyLabel, r.nodePubKey, { id: "ln-node-pubkey", copyIcon: hodlLnCopyIcon })}
       <p class="muted">${pathLabel} ${publicValueHtml(r.path, { clipboard: false })}${pathNote}</p>
       ${detailNote}
+      ${clnDetails}
       <label class="choice"><input type="checkbox" id="ln-reveal" data-private-reveal ${secrets ? "checked" : ""}> <span>${revealLabel}</span></label>
       ${secrets ? `
         ${aezeed ? `${hodlLnPrivateField("ln-entropy", entropyLabel, hex.encode(r.entropy))}
@@ -226,7 +352,8 @@ function hodlRunLn() {
   const error = document.getElementById("ln-error");
   const session = document.getElementById("ln-session");
   error.textContent = "";
-  hodlLnKeyWipeMem();
+  error.dataset.code = "";
+  hodlLnClearResult();
   const format = hodlLnFormat();
   try {
     const text = String(document.getElementById("ln-seed").value || "");
@@ -257,6 +384,24 @@ function hodlRunLn() {
         decoded.salt.fill(0);
         throw exception;
       }
+    } else if (format === "cln-hsm") {
+      if (passphrase !== "") {
+        throw Object.assign(new Error("No passphrase is needed for a type 2 hsm_secret."), {
+          key: "No passphrase is needed for a type 2 hsm_secret.",
+          code: "hsm-secret-passphrase-not-needed",
+        });
+      }
+      const phrase = words.length > 0 ? readClnMnemonic(text) : hodlLnHsmMnemonic;
+      if (!phrase) {
+        throw Object.assign(new Error("Type or paste the 12 words, or choose the hsm_secret file."), {
+          key: "Type or paste the 12 words, or choose the hsm_secret file.",
+          code: "hsm-secret-missing",
+        });
+      }
+      const network = hodlLnNetworkName();
+      const derived = deriveClnNode(phrase, network);
+      const account = hodlLnDeriveClnAccount(phrase, network);
+      hodlLnLast = { format, network, path: "m/86'/0'/0'", nodePubKey: derived.nodeId, descriptors: derived.descriptors, xpub: derived.xpub, rootXprv: account.xprv, addresses: account.addresses };
     } else {
       const phrase = hodlLnValidateBip39(words);
       const derived = deriveLdkNode(phrase, passphrase);
@@ -266,26 +411,96 @@ function hodlRunLn() {
     session.textContent = t("Node key derived. Decoded key material stays in page memory until you clear it.");
     hodlLnJournalLog("derive", `${format} ${hodlLnLast.nodePubKey.slice(0, 8)}`, "ln");
   } catch (exception) {
-    hodlLnKeyWipeMem();
+    hodlLnClearResult();
     hodlLnRender();
     // Keyed errors (aezeed.js taxonomy, the validations above) format and
     // translate through t(); anything else shows its raw message.
     error.textContent = exception && typeof exception.key === "string"
       ? t(exception.key, exception.vars)
       : exception instanceof Error ? exception.message : String(exception);
+    error.dataset.code = exception && typeof exception.code === "string" ? exception.code : "";
     hodlLnJournalLog("derive-error", format, "ln");
   }
 }
 
 function hodlLnSyncFormat() {
-  const aezeed = hodlLnFormat() === "aezeed";
+  const format = hodlLnFormat();
   const network = document.getElementById("ln-network-field");
-  if (network) network.hidden = !aezeed;
+  if (network) network.hidden = format === "bip39";
+  const upload = document.getElementById("ln-hsm-upload");
+  if (upload) upload.hidden = format !== "cln-hsm";
   const note = document.getElementById("ln-seed-help");
   if (note) {
-    note.textContent = aezeed
-      ? t("The 24-word cipher seed LND printed at wallet creation.")
-      : t("A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.");
+    if (format === "aezeed") note.textContent = t("The 24-word cipher seed LND printed at wallet creation.");
+    else if (format === "bip39") note.textContent = t("A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.");
+    else note.textContent = t("The 12 words lightning-hsmtool getsecret prints, or choose the hsm_secret file.");
+  }
+}
+
+
+// Reads the chosen hsm_secret, refuses every non-type-2 shape with a keyed
+// error, and zeroes the bytes and resets the input in a finally block.
+async function hodlLnReadHsmFile() {
+  const input = document.getElementById("ln-hsm-file");
+  const error = document.getElementById("ln-error");
+  const session = document.getElementById("ln-session");
+  if (!input) return;
+  const file = input.files && input.files[0];
+  if (!file) return;
+  let bytes = null;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+    const type = detectHsmSecretType(bytes);
+    if (type === HSM_SECRET_MNEMONIC_WITH_PASS) {
+      throw Object.assign(new Error("This hsm_secret needs a passphrase; only type 2 (no passphrase) is supported."), {
+        key: "This hsm_secret needs a passphrase; only type 2 (no passphrase) is supported.",
+        code: "hsm-secret-passphrase",
+      });
+    }
+    if (type === HSM_SECRET_PLAIN) {
+      throw Object.assign(new Error("This is a legacy 32-byte hsm_secret, not a mnemonic secret."), {
+        key: "This is a legacy 32-byte hsm_secret, not a mnemonic secret.",
+        code: "hsm-secret-plain",
+      });
+    }
+    if (type === HSM_SECRET_ENCRYPTED) {
+      throw Object.assign(new Error("This encrypted legacy hsm_secret is not supported."), {
+        key: "This encrypted legacy hsm_secret is not supported.",
+        code: "hsm-secret-encrypted",
+      });
+    }
+    if (type === HSM_SECRET_INVALID) {
+      throw Object.assign(new Error("This hsm_secret is truncated."), {
+        key: "This hsm_secret is truncated.",
+        code: "hsm-secret-truncated",
+      });
+    }
+    hodlLnClearResult();
+    hodlLnHsmMnemonic = readClnMnemonic(bytes);
+    // The file is the most recent entry: drop any typed words so Derive
+    // cannot silently use them instead of the file the status line names.
+    const seed = document.getElementById("ln-seed");
+    if (seed) seed.value = "";
+    if (error) {
+      error.textContent = "";
+      error.dataset.code = "";
+    }
+    if (session) session.textContent = t("hsm_secret read. Press Derive.");
+    hodlLnRender();
+  } catch (exception) {
+    hodlLnClearResult();
+    hodlLnHsmMnemonic = null;
+    hodlLnRender();
+    if (error) {
+      error.textContent = exception && typeof exception.key === "string"
+        ? t(exception.key, exception.vars)
+        : exception instanceof Error ? exception.message : String(exception);
+      error.dataset.code = exception && typeof exception.code === "string" ? exception.code : "";
+    }
+    hodlLnJournalLog("hsm-file-error", exception && typeof exception.code === "string" ? exception.code : "unknown", "ln");
+  } finally {
+    if (bytes) bytes.fill(0);
+    input.value = "";
   }
 }
 
@@ -535,15 +750,40 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
   if (clear) clear.onclick = () => hodlLnInvWipeMem();
   const go = document.getElementById("ln-go");
   if (!go) return;
+  // The shell owns the CLN controls (#ln-hsm-upload / #ln-hsm-file); the
+  // tool only wires them. A page without them (the LND/LDK fixtures, and any
+  // shell that predates C2) must behave exactly as before: no CLN-only code
+  // runs, and no format option is invented.
+  const upload = document.getElementById("ln-hsm-upload");
+  const hsmFile = document.getElementById("ln-hsm-file");
+  if (upload && hsmFile) {
+    upload.onclick = () => hsmFile.click();
+    hsmFile.onchange = hodlLnReadHsmFile;
+  }
+  // Typing is the most recent entry too: drop the held file mnemonic and its
+  // status line so Derive cannot silently use the file instead of the words.
+  // Only when a file mnemonic is held, so the LND/LDK formats are untouched.
+  const seedField = document.getElementById("ln-seed");
+  if (seedField) {
+    seedField.addEventListener("input", () => {
+      if (!hodlLnHsmMnemonic) return;
+      hodlLnHsmMnemonic = null;
+      const file = document.getElementById("ln-hsm-file");
+      if (file) file.value = "";
+      const session = document.getElementById("ln-session");
+      if (session) session.textContent = "";
+    });
+  }
   go.onclick = hodlRunLn;
   document.getElementById("ln-wipe").onclick = () => {
     hodlLnWipeMem();
-    for (const id of ["ln-seed", "ln-pass"]) {
+    for (const id of ["ln-seed", "ln-pass", "ln-hsm-file"]) {
       const field = document.getElementById(id);
       if (field) field.value = "";
     }
     document.getElementById("ln-out").innerHTML = "";
     document.getElementById("ln-error").textContent = "";
+    document.getElementById("ln-error").dataset.code = "";
     document.getElementById("ln-session").textContent = t("Accessible fields were cleared (best effort).");
   };
   for (const id of ["ln-format", "ln-network"]) {
@@ -552,7 +792,11 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
       // wrong (a mainnet pubkey beside "Testnet"): wipe and re-render on any
       // format or network change. The invoice card is not key material: it
       // survives, and is re-rendered so its network warning matches the page.
+      // The key side includes a held hsm_secret file's words, so the file
+      // input goes too.
       hodlLnKeyWipeMem();
+      const file = document.getElementById("ln-hsm-file");
+      if (file) file.value = "";
       hodlLnRender();
       hodlLnSyncFormat();
       hodlLnInvRender();

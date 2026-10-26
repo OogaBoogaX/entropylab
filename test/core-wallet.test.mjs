@@ -111,7 +111,7 @@ test("the build and the shell register the module and the tab", () => {
   assert.match(build, /JS_CORE_WALLET/);
   assert.match(template, /\/\*@@JS_CORE_WALLET@@\*\//);
   const app = read("src/js/app.js");
-  assert.match(app, /import \{ initCoreWallet \} from "\.\/core-wallet-ui\.js"/);
+  assert.match(app, /import \{ (?:\w+, )*initCoreWallet(?:, \w+)* \} from "\.\/core-wallet-ui\.js"/);
   assert.match(app, /initCoreWallet\(\{ deps: hodlWalletDatDeps\(\), onImportIntoStation: hodlCoreImportIntoStation, copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup \}\)/);
 });
 
