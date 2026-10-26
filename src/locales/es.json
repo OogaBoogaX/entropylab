@@ -2187,7 +2187,6 @@
   "{name} · 1 key · fingerprint {fingerprint}": "{name} · 1 clave · huella digital {fingerprint}",
   "{name} · {count} keys · fingerprint {fingerprint}": "{name} · {count} claves · huella digital {fingerprint}",
   "Choose a Bitcoin Core wallet.dat first.": "Elige primero un Bitcoin Core wallet.dat.",
-  "SHA-256 of the domain tag, the wallet's {count} spend secrets and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 de la etiqueta del dominio, los {count} secretos de gasto de la billetera y la transcripción {source}; los primeros {bits} bits de ese hash se convierten en la semilla.",
   "Faces 1–6, as many rolls as the dice method recommends.": "Caras 1–6, tantas tiradas como recomiende el método de los dados.",
   "Bitcoin Core wallet.dat": "Bitcoin Core wallet.dat",
   "Choose wallet.dat": "Elegir wallet.dat",
@@ -2227,5 +2226,6 @@
   "Paste the original transaction you broadcast, then Inspect the fee-bump PSBT above. EntropyLab checks that the bump only raises the fee: the same payments to the same addresses, with the extra fee taken from your change. Use your own copy of the original — the one you signed or saved — not the one your wallet or server shows you now. A malicious server can change that copy.": "Pega la transacción original que transmitiste, luego inspecciona el PSBT de aumento de tarifa de arriba. EntropyLab verifica que el aumento solo incremente la tarifa: los mismos pagos a las mismas direcciones, con la tarifa extra tomada de tu cambio. Usa tu propia copia de la original — la que firmaste o guardaste — no la que tu billetera o servidor te muestra ahora. Un servidor malicioso puede cambiar esa copia.",
   "Original transaction you broadcast (raw hex or PSBT)": "Transacción original que transmitiste (hex raw o PSBT)",
   "cHNidP8B… or 0200000001…": "cHNidP8B… o 0200000001…",
-  "Upload original": "Subir original"
+  "Upload original": "Subir original",
+  "SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 de la etiqueta del dominio, los secretos de gasto de la billetera ({count}) y la transcripción de {source}; los primeros {bits} bits de ese hash se convierten en la semilla."
 }
