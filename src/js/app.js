@@ -54,11 +54,13 @@ import { wordlist as bip39English } from "./bip39-english.js";
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFromUpload, psbtQrPlan as hodlPsbtQrPlan } from "./psbt-editor.js";
 import { watchOnlyQrFrames as hodlWatchOnlyQrFrames } from "./psbt-ur.js";
-import { initCoreWallet } from "./core-wallet-ui.js";
+import { CORE_WALLET_MAX_BYTES, initCoreWallet } from "./core-wallet-ui.js";
 import { initDescriptorReuseCheck } from "./descriptor-reuse-ui.js";
+import { coreMixEntropy, coreMixSecrets, wipeCoreMixSecrets } from "./core-mix.js";
 import { auditSigner as hodlAuditSigner } from "./psbt-signer-audit.js";
 import { psbtSignerAuditVerification as hodlPsbtSignerAuditVerify } from "./psbt-signer-audit-verify.js";
 import { psbtSignerAuditErrorHtml as hodlPsbtSignerAuditErrorHtml, psbtSignerAuditHtml as hodlPsbtSignerAuditHtml } from "./psbt-signer-audit-view.js";
+import { checkRbfReplacement as hodlCheckRbfReplacement } from "./psbt-rbf-check.js";
 // The Lightning node key tool (its own workspace tab): aezeed deciphering
 // and the LND/LDK node identity derivations live in lightning.js/aezeed.js.
 import { hodlInitLn, hodlLnWipeMem } from "./lightning.js";
@@ -808,7 +810,7 @@ function hodlCreateKeyMethodIcon(mode) {
   svg.setAttribute("stroke-linejoin", "round");
   svg.setAttribute("focusable", "false");
   svg.setAttribute("aria-hidden", "true");
-  if (mode === "dice") {
+  if (mode === "dice" || mode === "corewallet") {
     add("rect", { x: "3.5", y: "3.5", width: "17", height: "17", rx: "3.2" });
     [[8, 8], [16, 8], [12, 12], [8, 16], [16, 16]].forEach(([cx, cy]) => add("circle", { cx: String(cx), cy: String(cy), r: "1.15", fill: "currentColor", stroke: "none" }));
   } else if (mode === "cards") {
@@ -829,6 +831,90 @@ function hodlCreateKeyMethodIcon(mode) {
   }
   span.appendChild(svg);
   return span;
+}
+// Core wallet.dat + dice/cards (issue #552): the wallet's spend secrets are
+// mixed with a dice or card transcript. The wallet alone never makes a phrase,
+// and the secrets live only in this holder, wiped on every exit path.
+if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) hodlKeyModes.push("corewallet");
+var hodlCoreMix = null, hodlCoreMixSource = "dice", hodlCoreMixGeneration = 0;
+function hodlCoreMixReset() {
+  // Every reset also retires a wallet.dat read still in flight: the file
+  // handler compares this counter after the await and drops the bytes unloaded.
+  hodlCoreMixGeneration++;
+  if (hodlCoreMix) wipeCoreMixSecrets(hodlCoreMix.secrets);
+  hodlCoreMix = null;
+  // The summary describes the holder just dropped (End Session, a tab switch):
+  // it must not stay on screen as if a wallet were still loaded.
+  let summary = typeof document !== "undefined" ? document.getElementById("core-mix-summary") : null;
+  if (summary) {
+    summary.hidden = true;
+    summary.textContent = "";
+  }
+}
+function hodlCoreMixShowError(message) {
+  let error = document.getElementById("core-mix-error");
+  if (error) error.textContent = message || "";
+  let summary = document.getElementById("core-mix-summary");
+  if (summary) {
+    summary.hidden = true;
+    summary.textContent = "";
+  }
+}
+function hodlCoreMixShowSummary() {
+  let summary = document.getElementById("core-mix-summary");
+  if (!summary || !hodlCoreMix) return;
+  summary.textContent = hodlCoreMix.count === 1
+    ? hodlTText("{name} · 1 key · fingerprint {fingerprint}", { name: hodlCoreMix.name, fingerprint: hodlCoreMix.fingerprint })
+    : hodlTText("{name} · {count} keys · fingerprint {fingerprint}", { name: hodlCoreMix.name, count: hodlCoreMix.count, fingerprint: hodlCoreMix.fingerprint });
+  summary.hidden = false;
+}
+// The parsed document keeps its own copy of every record's bytes, and the
+// secrets were taken from them: zero every buffer it still holds, whether the
+// mix succeeded or threw.
+function hodlCoreMixWipeDoc(doc) {
+  // Walk the whole parsed document, not a list of known fields: doc.rows holds
+  // every raw database row (the DER key records among them) as [key, value]
+  // buffers, and records nest buffers inside arrays and sub-objects.
+  let seen = new Set(), stack = [doc];
+  while (stack.length) {
+    let value = stack.pop();
+    if (!value || typeof value !== "object" || seen.has(value)) continue;
+    seen.add(value);
+    // ArrayBuffer.isView, not instanceof: a typed array from another realm
+    // (or a Buffer) is still a copy of the secret and must be zeroed.
+    if (ArrayBuffer.isView(value)) {
+      // A DataView has no fill(): zero the bytes it covers through a byte view.
+      if (typeof value.fill === "function") value.fill(0);
+      else new Uint8Array(value.buffer, value.byteOffset, value.byteLength).fill(0);
+      continue;
+    }
+    // The tag, not instanceof, so an ArrayBuffer from another realm counts.
+    if (Object.prototype.toString.call(value) === "[object ArrayBuffer]") {
+      new Uint8Array(value).fill(0);
+      continue;
+    }
+    for (let child of Array.isArray(value) ? value : value instanceof Map ? [...value.keys(), ...value.values()] : Object.values(value)) stack.push(child);
+  }
+}
+function hodlCoreMixLoadBytes(bytes, name) {
+  hodlCoreMixReset();
+  let error = document.getElementById("core-mix-error");
+  if (error) error.textContent = "";
+  let doc = null;
+  try {
+    doc = hodlCoreWallet.parseWalletDat(bytes);
+    let secrets = coreMixSecrets(doc, { sha256: (b) => hodlSha256(b), publicKeyForPrivate: hodlWalletDatDeps().publicKeyForPrivate });
+    hodlCoreMix = { keyId: hodlKeys[hodlActiveKey]?.id ?? null, name: name || "wallet.dat", count: secrets.count, fingerprint: secrets.fingerprint, secrets: secrets.secrets };
+    hodlCoreMixShowSummary();
+    return true;
+  } catch (exception) {
+    hodlCoreMixReset();
+    hodlCoreMixShowError(exception.message || String(exception));
+    return false;
+  } finally {
+    hodlCoreMixWipeDoc(doc);
+    bytes.fill(0);
+  }
 }
 // The method picker is a dropdown at every width, wearing the Script type
 // control's chrome: enhanced-inputs.js upgrades it and asks
@@ -4584,6 +4670,37 @@ function hodlSelectedCardsEntropy(targetWords = hodlTargetWordCount) {
   if (!input) return { ok: false, error: hodlNote("Card input is unavailable.") };
   return hodlCardMethod === "direct" ? hodlDirectCardsEntropy(input.value, targetWords) : hodlCardsEntropy(input.value, targetWords, hodlCardColemanSymbols);
 }
+function hodlCoreMixSelectedEntropy(targetWords = hodlTargetWordCount) {
+  // The secrets belong to the tab that loaded them: a tab switch, a delete or
+  // a method switch resets the holder, and a holder left over from another tab
+  // is refused here too.
+  if (!hodlCoreMix || hodlCoreMix.keyId !== (hodlKeys[hodlActiveKey]?.id ?? null)) return { ok: false, error: hodlNote("Choose a Bitcoin Core wallet.dat first.") };
+  let config = hodlSeedConfig(targetWords), notes = [], warnings = [];
+  let source = hodlCoreMixSource === "cards" ? "cards" : "dice";
+  let value = document.getElementById("core-mix-transcript")?.value ?? "";
+  let transcript, sourceBits;
+  if (source === "cards") {
+    let cards = hodlCardsEntropy(value, targetWords);
+    if (!cards.ok) return cards;
+    transcript = cards.hashInput;
+    sourceBits = cards.sourceBits;
+    warnings = cards.warnings || [];
+  } else {
+    let dice = hodlDiceEntropy(value, "coldcard", targetWords);
+    if (!dice.ok) return dice;
+    transcript = hodlSplitDiceString(value).rolls.join("");
+    sourceBits = dice.sourceBits;
+    warnings = dice.warnings || [];
+  }
+  let bytes;
+  try {
+    bytes = coreMixEntropy(hodlCoreMix.secrets, transcript, config.bytes, { sha256: (b) => hodlSha256(b) });
+  } catch (error) {
+    return { ok: false, error: hodlNote(error.message || String(error)) };
+  }
+  notes.push(hodlNote("SHA-256 of the domain tag, the wallet's {count} spend secrets and the {source} transcript; the first {bits} bits of that hash become the seed.", { count: hodlCoreMix.count, source, bits: config.bits }));
+  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: config.bits, sourceBits, method: "core-wallet-mix-v1", notes, warnings };
+}
 function hodlUpdateCards() {
   let input = document.getElementById("cards");
   if (!input) return;
@@ -6085,6 +6202,7 @@ function hodlGlobalSyncIsHashedMode() {
 function hodlGlobalSyncSourceId() {
   if (hodlKeyMode === "dice") return `dice:${hodlDiceMethod}`;
   if (hodlKeyMode === "cards") return `cards:${hodlCardMethod}`;
+  if (hodlKeyMode === "corewallet") return `corewallet:${hodlCoreMixSource}`;
   if (hodlKeyMode === "hex") return `number:${hodlEntropyFormat}`;
   if (hodlKeyMode === "seed") return `seed:${hodlSeedMethod}`;
   let kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value || hodlKeys[hodlActiveKey]?.fields?.keyKind, "");
@@ -6094,6 +6212,7 @@ function hodlGlobalSyncCurrentValue() {
   let state = hodlKeys[hodlActiveKey], fields = state?.fields || {};
   if (hodlKeyMode === "dice") return document.getElementById("dice")?.value ?? hodlStoredDiceValue(fields) ?? "";
   if (hodlKeyMode === "cards") return document.getElementById(hodlCardMethod === "direct" ? "direct-cards" : "cards")?.value ?? fields[hodlCardMethod === "direct" ? "directCards" : "cards"] ?? "";
+  if (hodlKeyMode === "corewallet") return document.getElementById("core-mix-transcript")?.value ?? fields.coreMixTranscript ?? "";
   if (hodlKeyMode === "hex") return document.getElementById(hodlEntropyFormat)?.value ?? fields[hodlEntropyFormat] ?? "";
   if (hodlKeyMode === "seed") return document.getElementById(hodlSeedMethod === "numbers" ? "seed-numbers" : "seed")?.value ?? fields[hodlSeedMethod === "numbers" ? "seedNumbers" : "seed"] ?? "";
   let values = hodlPrivateKeyValues(fields), kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value || fields.keyKind, "");
@@ -6731,6 +6850,81 @@ function hodlRenderKeyForm() {
   }
   hodlUpdateSeedLengthControl();
   hodlRenderGlobalSyncControl();
+  if (hodlKeyMode === "corewallet") {
+    let state = hodlKeys[hodlActiveKey];
+    hodlCoreMixSource = state?.coreMixSource === "cards" ? "cards" : "dice";
+    let source = hodlCoreMixSource;
+    let help = source === "cards" ? hodlT("Two characters per card, rank then suit (AS 7H TD …).") : hodlT("Faces 1–6, as many rolls as the dice method recommends.");
+    hodlFormEl.innerHTML = `
+      <p class="label" id="core-mix-file-label">${hodlT("Bitcoin Core wallet.dat")}</p>
+      <div class="row tool-actions"><button class="btn secondary" id="core-mix-upload" type="button" aria-describedby="core-mix-summary">${hodlT("Choose wallet.dat")}</button><input type="file" id="core-mix-file" accept=".dat" hidden></div>
+      <p class="edge-note is-public" id="core-mix-summary" hidden></p>
+      <p class="err" id="core-mix-error" role="alert"></p>
+      <label class="field">${hodlT("Entropy source")}<select id="core-mix-source"><option value="dice">${hodlT("Dice rolls (D6)")}</option><option value="cards">${hodlT("Cards")}</option></select></label>
+      <label class="field">${hodlT("Rolls or cards")}<textarea id="core-mix-transcript" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="core-mix-transcript-help"></textarea><span class="field-note" id="core-mix-transcript-help">${help}</span></label>`;
+    let upload = document.getElementById("core-mix-upload"), file = document.getElementById("core-mix-file");
+    let sourceSelect = document.getElementById("core-mix-source"), transcript = document.getElementById("core-mix-transcript");
+    sourceSelect.value = source;
+    if (state) transcript.value = state.fields?.coreMixTranscript || "";
+    if (hodlCoreMix) hodlCoreMixShowSummary();
+    upload.onclick = () => file.click();
+    file.onchange = () => {
+      let chosen = file.files?.[0];
+      file.value = "";
+      if (!chosen) return;
+      // A read can finish after End Session, Clear, a tab switch or a method
+      // switch: the generation and the tab it was started for decide whether
+      // the bytes may still be loaded.
+      // Each pick makes any earlier read still in flight stale, so the last
+      // file chosen is the one that loads. A new wallet also retires the
+      // derived result, as a transcript edit does. The loaded wallet goes at
+      // once, before the read: a Derive clicked while the new file is still
+      // being read must not mix the old wallet's secrets under the new name.
+      if (typeof hodlCoreMixReset === "function") hodlCoreMixReset();
+      let generation = ++hodlCoreMixGeneration, keyId = hodlKeys[hodlActiveKey]?.id ?? null;
+      // typeof keeps the standalone Node extraction working (narrow test slices).
+      if (typeof hodlInvalidateDerivation === "function") hodlInvalidateDerivation();
+      if (typeof hodlInvalidateLiveKeyResult === "function") hodlInvalidateLiveKeyResult();
+      let stale =() => hodlKeyMode !== "corewallet" || generation !== hodlCoreMixGeneration || keyId !== (hodlKeys[hodlActiveKey]?.id ?? null);
+      (async () => {
+        let bytes = null;
+        try {
+          if (chosen.size > CORE_WALLET_MAX_BYTES) throw new Error(hodlT("This wallet file is too large to inspect safely."));
+          bytes = new Uint8Array(await chosen.arrayBuffer());
+          if (stale()) return;
+          hodlCoreMixLoadBytes(bytes, chosen.name);
+        } catch (exception) {
+          // A stale read that fails must not clear the wallet a newer pick loaded.
+          if (stale()) return;
+          hodlCoreMixReset();
+          hodlCoreMixShowError(exception.message || String(exception));
+        } finally {
+          if (bytes) bytes.fill(0);
+          hodlSyncDeriveButton();
+        }
+      })();
+    };
+    sourceSelect.onchange = () => {
+      hodlCoreMixSource = sourceSelect.value === "cards" ? "cards" : "dice";
+      if (state) state.coreMixSource = hodlCoreMixSource;
+      let helpEl = document.getElementById("core-mix-transcript-help");
+      if (helpEl) helpEl.textContent = hodlCoreMixSource === "cards" ? hodlT("Two characters per card, rank then suit (AS 7H TD …).") : hodlT("Faces 1–6, as many rolls as the dice method recommends.");
+      // A stale result, or a derivation still running on the old source, must
+      // not survive the change.
+      hodlInvalidateDerivation();
+      hodlInvalidateLiveKeyResult();
+      hodlSyncDeriveButton();
+    };
+    transcript.oninput = () => {
+      hodlInvalidateDerivation();
+      hodlInvalidateLiveKeyResult();
+      hodlSyncDeriveButton();
+    };
+    hodlBindKeyFields();
+    hodlRenderPassphraseKeyboard();
+    hodlSyncDeriveButton();
+    return;
+  }
   if (hodlKeyMode === "dice") {
     let dplusFaces = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"],
       dplusPad = dplusFaces.map(face => `<button type="button" data-d="${face}" aria-label="${hodlTAttr("Hexadecimal D16 result {face}", { face })}">${face}</button>`).join("");
@@ -7501,6 +7695,13 @@ function hodlCanDeriveCurrentKey() {
     if (hodlKeyMode === "cards") {
       return hodlSelectedCardsEntropy(hodlTargetWordCount).ok;
     }
+    if (hodlKeyMode === "corewallet") {
+      if (!hodlCoreMix) return false;
+      // Only the verdict is needed here: zero the seed entropy it computed.
+      let entropy = hodlCoreMixSelectedEntropy(hodlTargetWordCount);
+      if (entropy.ok && entropy.bytes) entropy.bytes.fill(0);
+      return entropy.ok;
+    }
     if (hodlKeyMode === "hex") return hodlSelectedEntropy().ok;
     if (hodlKeyMode === "seed") {
       let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
@@ -7534,6 +7735,15 @@ var hodlLowEntropyConfirm = null, hodlFingerprintCollisionConfirm = null;
 // "recommended amount" the user can fall short of at derive time. The brain
 // wallet keeps its own explicit acknowledgement instead.
 function hodlLowEntropyWarningFor(mode, method, value, targetWords) {
+  // The wallet's secrets add entropy, but if the wallet.dat ever leaks only
+  // the transcript protects the seed: warn exactly as the chosen source does.
+  if (mode === "corewallet") {
+    let transcript = typeof value === "string" ? value : "";
+    if (!transcript && typeof document !== "undefined") transcript = document.getElementById("core-mix-transcript")?.value ?? "";
+    return hodlCoreMixSource === "cards"
+      ? hodlLowEntropyWarningFor("cards", "hashed", transcript, targetWords)
+      : hodlLowEntropyWarningFor("dice", "coldcard", transcript, targetWords);
+  }
   let config = hodlSeedConfig(targetWords);
   if (mode === "dice" && (method === "coldcard" || method === "coleman")) {
     let rolls = hodlSplitDiceString(value).rolls;
@@ -7553,6 +7763,7 @@ function hodlLowEntropyWarning() {
   try {
     if (hodlKeyMode === "dice") return hodlLowEntropyWarningFor("dice", hodlDiceMethod, document.getElementById("dice")?.value ?? "", hodlTargetWordCount);
     if (hodlKeyMode === "cards") return hodlLowEntropyWarningFor("cards", hodlCardMethod, document.getElementById(hodlCardMethod === "direct" ? "direct-cards" : "cards")?.value ?? "", hodlTargetWordCount);
+    if (hodlKeyMode === "corewallet") return hodlLowEntropyWarningFor("corewallet", null, document.getElementById("core-mix-transcript")?.value ?? "", hodlTargetWordCount);
   } catch {
   }
   return null;
@@ -7874,6 +8085,10 @@ async function hodlCalculateKey(progress, action = "derive", options = {}) {
       }
     } else if (hodlKeyMode === "cards") {
       let entropy = hodlSelectedCardsEntropy(hodlTargetWordCount);
+      hodlThrowIfFailed(entropy);
+      result = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+    } else if (hodlKeyMode === "corewallet") {
+      let entropy = hodlCoreMixSelectedEntropy(hodlTargetWordCount);
       hodlThrowIfFailed(entropy);
       result = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
     } else if (hodlKeyMode === "hex") {
@@ -11318,7 +11533,7 @@ function hodlSetButtonEnabled(id, on) {
 }
 // The two cards that run an inspection, and what each one's run reads.
 var hodlPsbtCards = [
-  { text: "psbt-text", fields: ["psbt-key", "psbt-pass", "psbt-audit-before"], go: "psbt-go", download: "psbt-download", out: "psbt-out", session: "psbt-session" },
+  { text: "psbt-text", fields: ["psbt-key", "psbt-pass", "psbt-audit-before", "psbt-rbf-original"], go: "psbt-go", download: "psbt-download", out: "psbt-out", session: "psbt-session" },
   { text: "nonce-text", fields: ["nonce-key", "nonce-pass", "psbt-ax-transcript"], go: "nonce-go", out: "nonce-out", session: "nonce-session" },
 ];
 // A run is stamped with everything it read: the payload, the key fields and
@@ -11386,10 +11601,11 @@ function hodlEndPsbtSession() {
   hodlPsbtWipeMem();
   hodlPsbtClearNonceHistory(true);
   hodlPsbtRetireAuditUploads();
+  hodlPsbtRetireRbfUploads();
   hodlPsbtLast = null;
   hodlPsbtInspected = {};
   hodlPsbtSessionSpec = hodlNote("Accessible fields were cleared (best effort).");
-  for (let id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-audit-before", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"]) {
+  for (let id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-audit-before", "psbt-rbf-original", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"]) {
     let field = document.getElementById(id);
     if (field) field.value = "";
   }
@@ -11586,6 +11802,19 @@ function hodlInitPsbt() {
     auditFile.value = "";
     if (chosen) hodlPsbtLoadAuditUpload(chosen);
   });
+  // The RBF screen is preview-only: its field and picker exist only in
+  // preview builds, so the wiring is gated the same way as the markup.
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    const rbfFile = document.getElementById("psbt-rbf-file");
+    document.getElementById("psbt-rbf-upload").onclick = () => rbfFile.click();
+    rbfFile.addEventListener("change", () => {
+      const chosen = rbfFile.files?.[0];
+      rbfFile.value = "";
+      if (chosen) hodlPsbtLoadRbfUpload(chosen);
+    });
+    // Editing the original retires a verdict computed from the old one.
+    document.getElementById("psbt-rbf-original")?.addEventListener("input", hodlPsbtClearRbfVerdict);
+  }
   document.getElementById("psbt-download").onclick = () => {
     hodlSetPsbtError(null);
     try {
@@ -12218,6 +12447,190 @@ var hodlPsbtAuditUploadGeneration = 0;
 function hodlPsbtRetireAuditUploads() {
   hodlPsbtAuditUploadGeneration += 1;
 }
+// An RBF-original upload belongs to the session it started in, exactly like
+// the audit upload: ending the session retires a read that is still pending.
+var hodlPsbtRbfUploadGeneration = 0;
+
+function hodlPsbtRetireRbfUploads() {
+  hodlPsbtRbfUploadGeneration += 1;
+}
+
+// The rendered verdict belongs to the exact pair of PSBTs it was computed
+// from: any change to either side retires it, so a green verdict can never
+// sit next to a different original.
+function hodlPsbtClearRbfVerdict() {
+  document.getElementById("psbt-out")?.querySelector("[data-rbf-verdict]")?.remove();
+}
+
+function hodlPsbtLoadRbfUpload(file) {
+  // Each pick retires the reads still pending, so the last file chosen wins.
+  let generation = ++hodlPsbtRbfUploadGeneration;
+  (async () => {
+    try {
+      let bytes = psbtBytesFromUpload(new Uint8Array(await file.arrayBuffer()));
+      if (generation !== hodlPsbtRbfUploadGeneration) return;
+      document.getElementById("psbt-rbf-original").value = hodlBytesToB64(bytes);
+      hodlPsbtClearRbfVerdict();
+      // A programmatic fill fires no input event: refresh Inspect and Clear
+      // like the audit upload does (typeof: narrow test slices).
+      if (typeof hodlSyncPsbtControls === "function") hodlSyncPsbtControls();
+    } catch (exception) {
+      if (generation !== hodlPsbtRbfUploadGeneration) return;
+      hodlSetPsbtError({ raw: exception.message || String(exception) });
+    }
+  })();
+}
+
+function hodlPsbtRbfAmount(value) {
+  if (typeof value === "bigint") return value;
+  if (Number.isInteger(value) && value >= 0) return BigInt(value);
+  throw new Error("An output amount must be a non-negative integer.");
+}
+
+function hodlPsbtRbfBtc(sats) {
+  let abs = sats < 0n ? -sats : sats;
+  return `${sats < 0n ? "-" : ""}${abs / 100000000n}.${String(abs % 100000000n).padStart(8, "0")}`;
+}
+
+function hodlPsbtRbfShowScript(scriptHex, network) {
+  try {
+    let address = hodlAddressFromScript(hodlHex.decode(scriptHex), network);
+    if (address) return address;
+  } catch {
+    // A script that does not decode on this network is shown as hex.
+  }
+  return scriptHex;
+}
+
+// checkRbfReplacement compares plain transaction descriptions. These build
+// them from the inspector's parsed shapes; input txids keep the byte order
+// the parser reports, the same on both sides of the comparison.
+function hodlPsbtRbfNormalizeTx(tx) {
+  return {
+    version: tx.version,
+    locktime: tx.locktime,
+    inputs: tx.inputs.map((input) => ({
+      txid: hodlHex.encode(input.txid),
+      vout: input.vout,
+      sequence: input.sequence,
+      sighash: null,
+      amount: null,
+      amountVerified: false,
+    })),
+    outputs: tx.outputs.map((output) => ({ script: hodlHex.encode(output.script), amount: hodlPsbtRbfAmount(output.amount) })),
+  };
+}
+
+function hodlPsbtRbfNormalizePsbt(doc) {
+  let normalized = hodlPsbtRbfNormalizeTx(doc.tx);
+  for (let i = 0; i < normalized.inputs.length; i++) {
+    let entries = doc.inputs[i] || [], input = normalized.inputs[i];
+    // BIP-174 input types: 0x00 non_witness_utxo, 0x01 witness_utxo,
+    // 0x03 sighash type.
+    let sighash = entries.find((entry) => entry.type === 3 && entry.keydata.length === 0);
+    if (sighash) {
+      if (sighash.val.length !== 4) throw new Error("A sighash type must be 4 bytes.");
+      input.sighash = hodlR32(sighash.val, 0);
+    }
+    let witness = entries.find((entry) => entry.type === 1 && entry.keydata.length === 0);
+    if (witness) {
+      if (witness.val.length < 8) throw new Error("A witness utxo is too short.");
+      input.amount = hodlPsbtRbfAmount(new DataView(witness.val.buffer, witness.val.byteOffset, witness.val.byteLength).getBigUint64(0, true));
+    }
+    let nonWitness = entries.find((entry) => entry.type === 0 && entry.keydata.length === 0);
+    if (nonWitness) {
+      let prevTx = parseRawTx(nonWitness.val), prevOutput = prevTx.outputs[input.vout];
+      if (!prevOutput) throw new Error("The non-witness utxo has no output at this input's index.");
+      input.amount = hodlPsbtRbfAmount(prevOutput.amount);
+      // Verified only when the previous transaction's txid — double SHA-256
+      // of its non-witness serialization — is the input's outpoint txid. A
+      // bare witness_utxo amount stays an unverified claim.
+      input.amountVerified = hodlHex.encode(hodlSha256(hodlSha256(serializeTx(prevTx)))) === input.txid;
+    }
+  }
+  return normalized;
+}
+
+function hodlPsbtRbfItemLine(item, network) {
+  let dest = item.script !== undefined ? hodlPsbtRbfShowScript(item.script, network) : "";
+  switch (item.code) {
+    case "payment-changed": return hodlT("A payment to {dest} changed from {before} BTC to {after} BTC.", { dest, before: hodlPsbtRbfBtc(item.before), after: hodlPsbtRbfBtc(item.after) });
+    case "payment-removed": return hodlT("A payment of {before} BTC to {dest} was removed.", { dest, before: hodlPsbtRbfBtc(item.before) });
+    case "change-removed": return hodlT("Your change output of {before} BTC was removed.", { before: hodlPsbtRbfBtc(item.before) });
+    case "change-decreased": return hodlT("Your change decreased from {before} BTC to {after} BTC.", { before: hodlPsbtRbfBtc(item.before), after: hodlPsbtRbfBtc(item.after) });
+    case "output-decreased-unverified": return hodlT("One output decreased. Check that it is your change.");
+    case "own-output-increased": return hodlT("An output this key derives increased from {before} BTC to {after} BTC.", { before: hodlPsbtRbfBtc(item.before), after: hodlPsbtRbfBtc(item.after) });
+    case "new-own-output": return hodlT("A new output of {after} BTC goes to an address this key derives.", { after: hodlPsbtRbfBtc(item.after) });
+    case "new-output-unverified": return hodlT("A new output of {after} BTC to {dest} appeared.", { dest, after: hodlPsbtRbfBtc(item.after) });
+    case "multiple-decreases": return hodlT("More than one output decreased.");
+    case "input-dropped": return hodlT("An input from the original transaction was dropped.");
+    case "input-added": return hodlT("An input was added.");
+    case "fee-incomplete": return hodlT("Fee comparison incomplete.");
+    case "fee-not-increased": return hodlT("The fee did not increase.");
+    case "version-changed": return hodlT("The transaction version changed.");
+    case "locktime-changed": return hodlT("The transaction locktime changed.");
+    case "sequence-changed": return hodlT("An input's sequence changed.");
+    case "sighash-changed": return hodlT("An input's sighash type changed.");
+    case "sighash-not-all": return hodlT("An input does not sign with SIGHASH_ALL.");
+    case "change-redirected": return hodlT("Your change was redirected: your own output went down or disappeared while a new output this key cannot derive appeared.");
+    default: return hodlT("A change this check does not recognize.");
+  }
+}
+
+function hodlPsbtRbfNote(verdict, lines) {
+  let cls = { green: "is-public", red: "is-private", amber: "is-caution", neutral: "is-muted" }[verdict] || "is-caution";
+  let headline = {
+    green: hodlT("Payments preserved; fee increased."),
+    red: hodlT("A payment was changed or removed."),
+    amber: hodlT("Additional review needed."),
+    neutral: hodlT("No shared inputs."),
+  }[verdict] || hodlT("Additional review needed.");
+  let html = `<div class="edge-note ${cls}" data-rbf-verdict="${verdict}"><p><strong>${headline}</strong></p>`;
+  if (verdict === "neutral") html += `<p>${hodlT("This does not directly replace the supplied transaction.")}</p>`;
+  if (lines.length > 0) html += `<ul>${lines.map((line) => `<li data-rbf-item="${line.code}">${line.message}</li>`).join("")}</ul>`;
+  html += `<p>${hodlT("This compares the supplied transactions. It does not confirm that the network will accept the replacement.")}</p></div>`;
+  return html;
+}
+
+// The fee-bump check (preview): compare the transaction the user broadcast
+// with the replacement PSBT being inspected and fail closed — a bump is
+// clean only when the payments are provably intact and the extra fee comes
+// out of the user's own change (Electrum GHSA-6jp4-8v48-cc5v).
+function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network) {
+  let raw = String(document.getElementById("psbt-rbf-original")?.value || "").trim();
+  if (!raw) return null;
+  let result = null, note;
+  if (kind !== "psbt") {
+    note = hodlPsbtRbfNote("amber", [{ code: "replacement-raw", message: hodlT("Inspect the fee-bump PSBT, not a raw transaction.") }]);
+  } else {
+    let original = null;
+    try {
+      let originalBytes = hodlPsbtBytesFromText(raw);
+      original = isPsbtMagic(originalBytes) ? hodlPsbtRbfNormalizePsbt(hodlParsePsbt(originalBytes)) : hodlPsbtRbfNormalizeTx(parseRawTx(originalBytes));
+    } catch {
+      // The original is the only side this failure can be blamed on.
+      result = null;
+      note = hodlPsbtRbfNote("amber", [{ code: "original-unreadable", message: hodlT("The original transaction could not be read. Check the paste and Inspect again.") }]);
+    }
+    if (original) {
+      try {
+        let replacement = hodlPsbtRbfNormalizePsbt(hodlParsePsbt(returnedBytes));
+        let ownership = hodlSessionOwnership(network);
+        let ownsScript = ownership.size === 0 ? null : (scriptHex) => matchOwnership(ownership, hodlHex.decode(scriptHex)).state === "ours";
+        result = hodlCheckRbfReplacement({ original, replacement, ownsScript });
+        let lines = result.verdict === "neutral" ? [] : result.items.map((item) => ({ code: item.code, message: hodlPsbtRbfItemLine(item, network) }));
+        note = hodlPsbtRbfNote(result.verdict, lines);
+      } catch {
+        // The inspected PSBT failed to normalize or compare: never blame the
+        // original, and never pass.
+        result = null;
+        note = hodlPsbtRbfNote("amber", []);
+      }
+    }
+  }
+  output.insertAdjacentHTML("afterbegin", note);
+  return result;
+}
 async function hodlPsbtLoadAuditUpload(chosen) {
   const generation = ++hodlPsbtAuditUploadGeneration;
   try {
@@ -12237,6 +12650,9 @@ async function hodlPsbtLoadAuditUpload(chosen) {
 function hodlPsbtClearSignerAudit() {
   const output = document.getElementById("psbt-out");
   const section = output?.querySelector("[data-audit-section]");
+  // The RBF verdict is retired for the same reasons, and before the early
+  // return below: it must go even when no audit section is on screen.
+  hodlPsbtClearRbfVerdict();
   // The cached report counts as a shown verdict even when a repaint left it
   // out of the DOM: both are retired together (Wicked's review of #1118).
   if (!section && !hodlPsbtLast?.audit) return;
@@ -12281,6 +12697,9 @@ function hodlRunPsbt() {
     let limits = { inputs: PSBT_INSPECTOR_LIMIT, outputs: PSBT_INSPECTOR_LIMIT, step: PSBT_INSPECTOR_LIMIT, format: hodlFormatCount };
     output.innerHTML = kind === "psbt" ? hodlRenderPsbt(parsed, sourceTag, checkedAt, "inspect", { network, limits }) : hodlRenderRawTx(parsed, sourceTag, checkedAt, "inspect", { network, limits });
     let audit = hodlPsbtPrependSignerAudit(output, bytes, kind, network);
+    // Preview only: the RBF verdict is prepended after the audit so it
+    // renders above it (Electrum GHSA-6jp4-8v48-cc5v).
+    if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) hodlPsbtPrependRbfCheck(output, bytes, kind, network);
     hodlPsbtLast = { kind, parsed, sourceTag, checkedAt, network, limits, audit };
     hodlJournalLog("inspect", kind, "psbt");
   } catch (exception) {
@@ -15101,6 +15520,7 @@ function hodlKeySummaryMethodParts(state) {
     : state.mode === "cards" ? state.cardMethod === "direct" ? "direct" : "hashed"
     : state.mode === "hex" ? state.entropyFormat || "bin"
     : state.mode === "seed" ? state.seedMethod === "numbers" ? "numbers" : "words"
+    : state.mode === "corewallet" ? state.coreMixSource === "cards" ? "cards" : "dice"
     : state.mode === "key" ? state.fields?.keyKind || "wif" : "";
   return [hodlKeyModeLabels[state.mode] || "", hodlKeySummarySubmethodLabels[state.mode]?.[variant] || ""];
 }
@@ -15215,6 +15635,8 @@ function hodlRestoreFormFields(state) {
 }
 function hodlSetMode(mode) {
   hodlCaptureKey();
+  // typeof keeps the standalone Node extraction working (narrow test slices).
+  if (mode !== "corewallet" && typeof hodlCoreMixReset === "function") hodlCoreMixReset();
   let state = hodlKeys[hodlActiveKey];
   if (state) state.mode = mode;
   hodlKeyMode = mode;
@@ -15231,7 +15653,7 @@ function hodlSetMode(mode) {
 function hodlKeyStateNeedsClear(state) {
   if (!state) return false;
   let fields = state.fields || {}, privateKeys = hodlPrivateKeyValues(fields), hasText = (id) => String(fields[id] ?? "").length > 0;
-  return String(state.mode ?? "dice") !== "dice" || String(state.diceMethod ?? "coldcard") !== "coldcard" || String(state.cardMethod ?? "hashed") !== "hashed" || String(state.seedMethod ?? "words") !== "words" || Boolean(state.seedZeroIndexed) || Boolean(state.cardColemanSymbols) || String(state.entropyFormat ?? "bin") !== "bin" || Boolean(state.globalSync) || state.seedAutocomplete === false || Boolean(state.passphraseBip39Words) || state.passphraseAutocomplete === false || Boolean(state.brainWalletTrim) || Boolean(state.showCards) || Boolean(state.showDiceFairness) || Number(state.targetWords ?? 24) !== 24 || Array.isArray(state.diceCoinPositions) && state.diceCoinPositions.length > 0 || String(state.lastWord ?? "").length > 0 || String(state.dplusLastWord ?? "").length > 0 || Boolean(state.result) || Boolean(state.reveal) || String(state.error ?? "").length > 0 || String(state.accountId ?? "bip84") !== "bip84" || String(fields.script ?? "bip84") !== "bip84" || String(fields.derivationPath ?? "m/84'/0'/0'/{0-1}/{0-9}") !== "m/84'/0'/0'/{0-1}/{0-9}" || String(fields.purpose ?? "84'") !== "84'" || fields.purposeHarden === false || String(fields.coinType ?? (fields.network === "testnet" ? "1'" : "0'")) !== "0'" || fields.coinTypeHarden === false || String(fields.account ?? "0'") !== "0'" || fields.accountHarden === false || String(fields.branchStart ?? "0") !== "0" || Boolean(fields.branchHarden) || String(fields.branchRange ?? "2") !== "2" || String(fields.addressStart ?? "0") !== "0" || Boolean(fields.addressHarden) || String(fields.addressRange ?? fields.count ?? "10") !== "10" || hodlNormalizePrivateKeyKind(fields.keyKind, privateKeys[fields.keyKind] || "") !== "wif" || ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key"].some(hasText) || hodlPrivateKeyKinds.some((kind) => privateKeys[kind].length > 0);
+  return String(state.mode ?? "dice") !== "dice" || String(state.diceMethod ?? "coldcard") !== "coldcard" || String(state.cardMethod ?? "hashed") !== "hashed" || String(state.seedMethod ?? "words") !== "words" || Boolean(state.seedZeroIndexed) || Boolean(state.cardColemanSymbols) || String(state.entropyFormat ?? "bin") !== "bin" || Boolean(state.globalSync) || state.seedAutocomplete === false || Boolean(state.passphraseBip39Words) || state.passphraseAutocomplete === false || Boolean(state.brainWalletTrim) || Boolean(state.showCards) || Boolean(state.showDiceFairness) || Number(state.targetWords ?? 24) !== 24 || Array.isArray(state.diceCoinPositions) && state.diceCoinPositions.length > 0 || String(state.lastWord ?? "").length > 0 || String(state.dplusLastWord ?? "").length > 0 || Boolean(state.result) || Boolean(state.reveal) || String(state.error ?? "").length > 0 || String(state.accountId ?? "bip84") !== "bip84" || String(fields.script ?? "bip84") !== "bip84" || String(fields.derivationPath ?? "m/84'/0'/0'/{0-1}/{0-9}") !== "m/84'/0'/0'/{0-1}/{0-9}" || String(fields.purpose ?? "84'") !== "84'" || fields.purposeHarden === false || String(fields.coinType ?? (fields.network === "testnet" ? "1'" : "0'")) !== "0'" || fields.coinTypeHarden === false || String(fields.account ?? "0'") !== "0'" || fields.accountHarden === false || String(fields.branchStart ?? "0") !== "0" || Boolean(fields.branchHarden) || String(fields.branchRange ?? "2") !== "2" || String(fields.addressStart ?? "0") !== "0" || Boolean(fields.addressHarden) || String(fields.addressRange ?? fields.count ?? "10") !== "10" || hodlNormalizePrivateKeyKind(fields.keyKind, privateKeys[fields.keyKind] || "") !== "wif" || ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key", "coreMixTranscript"].some(hasText) || hodlPrivateKeyKinds.some((kind) => privateKeys[kind].length > 0);
 }
 function hodlSyncKeyClearButton(capture = false) {
   if (capture) hodlCaptureKey();
@@ -15242,6 +15664,7 @@ function hodlSyncKeyClearButton(capture = false) {
 }
 function hodlWipeActiveKey() {
   hodlInvalidateDerivation();
+  if (typeof hodlCoreMixReset === "function") hodlCoreMixReset();
   // Cache keys are partial mnemonics (23 of 24 words, 11 of 12): wiping a key
   // must not leave its seed, minus the last word, referenced until pagehide.
   hodlLastWordCache.clear();
@@ -15271,6 +15694,8 @@ function hodlCaptureKey() {
   state.diceMethod = hodlDiceMethod;
   state.cardMethod = hodlCardMethod;
   state.seedMethod = hodlSeedMethod;
+  state.coreMixSource = hodlCoreMixSource;
+  if (hodlKeyMode === "corewallet" && state.fields) state.fields.coreMixTranscript = document.getElementById("core-mix-transcript")?.value ?? state.fields.coreMixTranscript ?? "";
   state.seedZeroIndexed = Boolean(hodlSeedZeroIndexed);
   state.cardColemanSymbols = Boolean(hodlCardColemanSymbols);
   state.entropyFormat = hodlEntropyFormat;
@@ -15343,6 +15768,9 @@ function hodlSelectedKeyNetwork() {
 function hodlRestoreKey() {
   hodlKeyManagerSyncReviewedContext();
   let state = hodlKeys[hodlActiveKey];
+  // A wallet loaded for a key that was removed or replaced (Journal detach)
+  // must not stay in memory under the next key.
+  if (typeof hodlCoreMixReset === "function" && hodlCoreMix && hodlCoreMix.keyId !== (state?.id ?? null)) hodlCoreMixReset();
   if (!state) {
     hodlKeyMode = "dice";
     hodlDiceMethod = "coldcard";
@@ -15759,6 +16187,8 @@ function hodlSelectKey(index) {
   // Switching tabs mid-derivation must cancel it: the pending commit would
   // otherwise land on the tab being switched to (the wipe path already does).
   hodlInvalidateDerivation();
+  // The wallet.dat secrets belong to the tab that loaded them.
+  if (typeof hodlCoreMixReset === "function") hodlCoreMixReset();
   hodlCaptureKey();
   hodlActiveKey = index;
   hodlRenderKeyTabs();
@@ -15889,6 +16319,7 @@ function hodlDeleteActiveKey() {
   // Removing the active key mid-derivation cancels it, so its commit cannot
   // land on whatever tab the splice makes active.
   hodlInvalidateDerivation();
+  if (typeof hodlCoreMixReset === "function") hodlCoreMixReset();
   if (hodlJournalUnlocked()) {
     hodlKeyManagerDetachFromStation(state);
     return;
@@ -20313,6 +20744,9 @@ function hodlInitSecretFieldAutoClear() {
       }
     }
     hodlClearPassphraseField();
+    if (typeof hodlCoreMixReset === "function") hodlCoreMixReset();
+    let coreMixTranscript = document.getElementById("core-mix-transcript");
+    if (coreMixTranscript) coreMixTranscript.value = "";
     let psbtKey = document.getElementById("psbt-key"), psbtPass = document.getElementById("psbt-pass");
     if (psbtKey) psbtKey.value = "";
     if (psbtPass) psbtPass.value = "";
@@ -20330,6 +20764,12 @@ function hodlInitSecretFieldAutoClear() {
       let field = document.getElementById(id);
       if (field) field.value = "";
     }
+    // The pasted RBF original is a PSBT too: it can hide an xprv in
+    // proprietary fields, so it wipes with the same sweep, and a pending
+    // upload of it retires with the session.
+    let psbtRbfOriginal = document.getElementById("psbt-rbf-original");
+    if (psbtRbfOriginal) psbtRbfOriginal.value = "";
+    try { hodlPsbtRetireRbfUploads(); } catch {}
     // The key-reuse verdict lists derived keys and paths: retire it with its field.
     for (let id of ["descriptor-reuse-out", "descriptor-reuse-error"]) {
       let output = document.getElementById(id);

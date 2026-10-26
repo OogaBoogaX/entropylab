@@ -932,7 +932,7 @@ run on rust-bitcoin 0.32.102 compiled to WebAssembly from the pinned crate in
 committed as `src/js/psbt-wasm-b64.js`. The WASM sees only PSBT bytes and
 UTF-8 JSON; it holds no keys and generates no randomness.
 
-Requirements: Node.js 20.19 or newer.
+Requirements: Node.js 20.19 or newer. Use a patched release (22.23.4 or 24.22.1 or later, as `.nvmrc` and CI do): older Node releases carry the Brotli decoder flaw CVE-2026-111497, and Node 20 is end of life with no fix.
 
 ```sh
 npm ci
@@ -1008,7 +1008,7 @@ To remove generated files, run `npm run clean`.
 
 ## Development and deployment
 
-The toolchain is npm and Node.js (>=20.19). Install the exact dependency tree
+The toolchain is npm and Node.js (>=20.19; `.nvmrc` pins 22.23.4, the version CI runs). Install the exact dependency tree
 with `npm ci`; every local and CI operation is exposed as an npm script:
 
 ```bash

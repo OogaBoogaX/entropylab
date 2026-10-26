@@ -78,6 +78,9 @@ test("both inspectors clear prior output and report collision-budget refusal wit
     isPsbtMagic: () => kind === "psbt",
     hodlParsePsbt: () => psbt,
     parseRawTx: () => tx,
+    // Stubbed so the loader does not pull tx.js's whole import line (which
+    // also declares isPsbtMagic) in for the RBF check's serializeTx call.
+    serializeTx: () => new Uint8Array(),
     hodlRenderPsbt: app.hodlRenderPsbt,
     hodlRenderRawTx: app.hodlRenderRawTx,
     hodlJournalLog: (event) => events.push(event),

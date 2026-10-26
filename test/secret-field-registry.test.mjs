@@ -52,12 +52,12 @@ const around = (source, marker, span = 500) => {
 // says in one sentence why the field is security-critical.
 const CLEARING_PATHS = [
   {
-    ids: ["dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "pass", "cards", "direct-cards"],
+    ids: ["dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "pass", "cards", "direct-cards", "core-mix-transcript"],
     why: "Key Station: raw entropy transcripts, seed words, passphrases, private keys",
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle field sweep`),
   },
   {
-    ids: ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "psbt-audit-before", "nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"],
+    ids: ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "psbt-audit-before", "psbt-rbf-original", "nonce-key", "nonce-pass", "nonce-text", "descriptor-reuse-text"],
     why: "PSBT/Nonce stations: session keys, pasted PSBTs (xprvs in proprietary fields), anti-exfil transcript, a descriptor pasted for the key-reuse check (an xprv by mistake)",
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`) && fnBody("hodlEndPsbtSession").includes(`"${id}"`), `#${id} missing from the PSBT lifecycle/session-end sweeps`),
   },
@@ -159,7 +159,7 @@ const CLEARING_PATHS = [
   {
     // File inputs hold no content once consumed, but the reset is what lets
     // "pick the same file again" work AND keeps the fake path off screen.
-    ids: ["psbt-file", "psbt-audit-file", "nonce-file", "psbt-nonce-history-file", "journal-notes-file", "journal-keymanager-file"],
+    ids: ["psbt-file", "psbt-audit-file", "psbt-rbf-file", "nonce-file", "psbt-nonce-history-file", "journal-notes-file", "journal-keymanager-file"],
     why: "file pickers for PSBT / nonce / journal / vault uploads (reset on consume)",
     probe: (id) => assert.match(around(app, `getElementById("${id}")`), /value = ""/, `#${id} must be reset on consume`),
   },
@@ -272,7 +272,7 @@ test("every shell field is classified as secret (cleared) or public (settings)",
   // another element, like the pre the session log renders into.)
   const inShell = (id) => shell.includes(`id="${id}"`);
   for (const id of known) {
-    assert.ok(inShell(id) || ["hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "cards", "direct-cards", "exp-text"].includes(id),
+    assert.ok(inShell(id) || ["hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "cards", "direct-cards", "core-mix-transcript", "exp-text"].includes(id),
       `#${id} is classified but no longer in the shell`);
   }
 });
