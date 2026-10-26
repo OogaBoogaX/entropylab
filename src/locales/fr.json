@@ -1606,7 +1606,6 @@
   "BIP32 root private key (xprv)": "Clé privée racine BIP32 (xprv)",
   "The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.": "Le xprv racine peut dépenser le portefeuille sur la chaîne du nœud. Révélez-le uniquement pendant que ce fichier s'exécute hors ligne sur un ordinateur isolé.",
   "Private material stays hidden until you reveal it.": "Le matériel privé reste caché jusqu'à ce que vous le révéliez.",
-  "Node key derived. Decoded key material stays in page memory until you clear it.": "Clé du nœud dérivée. Le matériel de clé décodé reste dans la mémoire de la page jusqu'à ce que vous la effaciez.",
   "A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.": "Une phrase secrète BIP39 de 12 à 24 mots, telle qu'utilisée par ldk-node.",
   "Transactions": "Transactions",
   "Txns": "Txns",
@@ -2228,5 +2227,6 @@
   "cHNidP8B… or 0200000001…": "cHNidP8B… ou 0200000001…",
   "Upload original": "Télécharger l'original",
   "SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 de la balise de domaine, des secrets de dépense du portefeuille ({count}) et de la transcription {source} ; les {bits} premiers bits de ce hachage deviennent la graine.",
-  "The Lightning key worker stopped.": "L'agent de clé Lightning s'est arrêté."
+  "The Lightning key worker stopped.": "L'agent de clé Lightning s'est arrêté.",
+  "Node key derived. Decoded key material stays in an isolated worker until you clear it.": "Clé de nœud dérivée. Le matériel de clé décodé reste dans un worker isolé jusqu'à ce que vous le supprimiez."
 }
