@@ -16,223 +16,140 @@
 //   (hardened), per ldk-node/src/builder.rs and rust-lightning's
 //   sign::KeysManager. The result is network-independent.
 //
+// The derivations themselves (aezeed for LND, BIP-39 for LDK, hsm_secret
+// for Core Lightning) live in lightning-derive.js and run in a terminable
+// key worker (ln-worker.js): the worker holds the decoded entropy, salt,
+// seeds, xprvs and a loaded hsm_secret's words; this page holds the public
+// result, and the secret text only while the user reveals it. Clear, a
+// format or network change, End Session and page hide ask the worker to
+// scrub its secrets and overwrite its WebAssembly memory, then terminate
+// it, so its whole heap goes with it.
+//
 // Deterministic transformations of user input only: nothing here generates
-// entropy, and derived key material stays in page memory until wiped.
-import { HDKey, HARDENED_OFFSET } from "./hdkey.js";
-import { mnemonicToSeedSync, validateMnemonic } from "./bip39.js";
-import { aezeedDecode, BITCOIN_GENESIS_TIMESTAMP } from "./aezeed.js";
-import { wordlist as bip39English } from "./bip39-english.js";
-import { hex } from "./coders.js";
+// entropy.
+import { wasmModuleBytes, wasmRetired } from "./entropylab-wasm.js";
+import { createLnKeyHandler } from "./lightning-derive.js";
 import { t, tHtml as hodlT } from "./i18n.js";
 import { privateCopyButtonHtml } from "./private-data.js";
 import { publicFieldHtml, publicValueHtml } from "./public-data.js";
-import { detectHsmSecretType, readClnMnemonic, deriveClnNode, HSM_SECRET_PLAIN, HSM_SECRET_ENCRYPTED, HSM_SECRET_MNEMONIC_WITH_PASS, HSM_SECRET_INVALID } from "./hsm-secret.js";
-import * as hodlHashes from "./hashes.js";
 import { bolt11Decode } from "./bolt11.js";
 import { bolt12Decode, bolt12RecipientVisibility } from "./bolt12.js";
 
-// ── Derivations (DOM-free, unit-tested directly) ────────────────────────────
-
-// The aezeed internal (key-derivation) version this tool understands: LND
-// writes version 0 and rejects anything else; guggero's cryptography-toolkit
-// also emits version 1. Deriving a node key from an unknown internal version
-// would print a key no Lightning implementation would ever use.
-export const isKnownInternalVersion = (version) => version === 0 || version === 1;
-
-// LND: the aezeed entropy is the BIP32 seed; node key at
-// m/1017'/coinType'/6'/0/0. Returns the compressed pubkey hex, the path, and
-// the root xprv (what chantools showrootkey prints; importable into wallets).
-export const deriveLndNode = (entropy16, coinType) => {
-  if (!(entropy16 instanceof Uint8Array) || entropy16.length !== 16) {
-    throw new Error("aezeed entropy must be 16 bytes.");
-  }
-  if (coinType !== 0 && coinType !== 1) throw new Error("Coin type must be 0 (mainnet) or 1 (testnet).");
-  const path = `m/1017'/${coinType}'/6'/0/0`;
-  const master = HDKey.fromMasterSeed(entropy16);
-  let node = null;
-  try {
-    node = master.derive(path);
-    return { nodePubKey: hex.encode(node.publicKey), path, rootXprv: master.privateExtendedKey };
-  } finally {
-    if (node) node.wipePrivateData();
-    master.wipePrivateData();
-  }
-};
-
-// A BIP39 passphrase is UTF-8 text: a lone surrogate would silently encode
-// as U+FFFD and derive a wallet that is not the one the user typed (the
-// calculator's BIP39 path refuses the same, #1015). JS strings are UTF-16,
-// so the check is a scan for unpaired surrogates.
-const isWellFormedUtf16 = (text) => {
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = text.charCodeAt(i + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
-      i++;
-    } else if (code >= 0xdc00 && code <= 0xdfff) {
-      return false;
-    }
-  }
-  return true;
-};
-
-// LDK (ldk-node): BIP39 seed -> master xprv -> its raw private key re-seeds
-// a second master -> node secret at m/0'. The root xprv returned is the
-// first-stage master (the on-chain wallet root ldk-node uses).
-export const deriveLdkNode = (mnemonic, passphrase = "") => {
-  if (!isWellFormedUtf16(passphrase)) {
-    // The wrong side was the message: the guard fired, but its fallback text
-    // ("not well-formed Unicode") dropped the actionable word the key and
-    // the refusal tests carry — "surrogate", an invisible pasted character
-    // the user must retype rather than paste.
-    throw Object.assign(new Error("The passphrase contains an unpaired surrogate."), {
-      key: "The passphrase contains an unpaired surrogate, which cannot be encoded as UTF-8. Retype the passphrase instead of pasting it.",
-      code: "passphrase-utf8",
-    });
-  }
-  const seed64 = mnemonicToSeedSync(mnemonic, passphrase);
-  let master1 = null, master2 = null, node = null, key32 = null;
-  try {
-    master1 = HDKey.fromMasterSeed(seed64);
-    key32 = master1.privateKey;
-    master2 = HDKey.fromMasterSeed(key32);
-    node = master2.deriveChild(0 + HARDENED_OFFSET);
-    return { nodePubKey: hex.encode(node.publicKey), path: "m/0'", rootXprv: master1.privateExtendedKey };
-  } finally {
-    seed64.fill(0);
-    if (key32) key32.fill(0);
-    if (node) node.wipePrivateData();
-    if (master2) master2.wipePrivateData();
-    if (master1) master1.wipePrivateData();
-  }
-};
-
-// ── Core Lightning hsm_secret (type 2) ──────────────────────────────────────
-
-// CLN fixes coin type 0' on every network (hsm-secret.js); the network only
-// changes the extended-key version bytes and the bech32 address prefix.
-const CLN_NETWORKS = {
-  bitcoin: { private: 0x0488ade4, public: 0x0488b21e, hrp: "bc" },
-  testnet: { private: 0x04358394, public: 0x043587cf, hrp: "tb" },
-};
-
-const hodlHash160 = (bytes) => {
-  if (typeof hodlHashes.hash160 === "function") return hodlHashes.hash160(bytes);
-  if (typeof hodlHashes.ripemd160 === "function") return hodlHashes.ripemd160(hodlHashes.sha256(bytes));
-  throw new Error("hash160 is unavailable.");
-};
-
-const BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-const BECH32_GENERATOR = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
-
-const hodlLnBech32Polymod = (values) => {
-  let checksum = 1;
-  for (const value of values) {
-    const top = checksum >>> 25;
-    checksum = ((checksum & 0x1ffffff) << 5) ^ value;
-    for (let i = 0; i < 5; i++) if ((top >>> i) & 1) checksum ^= BECH32_GENERATOR[i];
-  }
-  return checksum;
-};
-
-const hodlLnConvertBits = (bytes, from, to, pad) => {
-  let accumulator = 0;
-  let bits = 0;
-  const out = [];
-  const maxValue = (1 << to) - 1;
-  for (const byte of bytes) {
-    accumulator = (accumulator << from) | byte;
-    bits += from;
-    while (bits >= to) {
-      bits -= to;
-      out.push((accumulator >> bits) & maxValue);
-    }
-  }
-  if (pad && bits > 0) out.push((accumulator << (to - bits)) & maxValue);
-  return out;
-};
-
-const hodlLnBech32Encode = (hrp, data) => {
-  const expanded = [];
-  for (const char of hrp) expanded.push(char.charCodeAt(0) >> 5);
-  expanded.push(0);
-  for (const char of hrp) expanded.push(char.charCodeAt(0) & 31);
-  const values = [...expanded, ...data, 0, 0, 0, 0, 0, 0];
-  const mod = hodlLnBech32Polymod(values) ^ 1;
-  const checksum = [];
-  for (let i = 0; i < 6; i++) checksum.push((mod >>> (5 * (5 - i))) & 31);
-  return `${hrp}1${[...data, ...checksum].map((value) => BECH32_CHARSET[value]).join("")}`;
-};
-
-const hodlLnP2wpkhAddress = (publicKey, hrp) => hodlLnBech32Encode(hrp, [0, ...hodlLnConvertBits(hodlHash160(publicKey), 8, 5, true)]);
-
-// The BIP86 account xprv and the first ten native-segwit receive addresses.
-// deriveClnNode returns the node id and the descriptors; the xprv and the
-// addresses are derived here from the same seed, then every buffer is wiped.
-const hodlLnDeriveClnAccount = (phrase, network) => {
-  const params = Object.hasOwn(CLN_NETWORKS, network) ? CLN_NETWORKS[network] : null;
-  if (!params) throw Object.assign(new Error("Unknown network."), { key: "Unknown network.", code: "hsm-secret-network" });
-  const seed = mnemonicToSeedSync(phrase, "");
-  let master = null;
-  let account = null;
-  let chain = null;
-  try {
-    master = HDKey.fromMasterSeed(seed, { private: params.private, public: params.public });
-    account = master.derive("m/86'/0'/0'");
-    const xprv = account.privateExtendedKey;
-    chain = account.deriveChild(0);
-    const addresses = [];
-    for (let index = 0; index < 10; index++) {
-      const child = chain.deriveChild(index);
-      try {
-        addresses.push(hodlLnP2wpkhAddress(child.publicKey, params.hrp));
-      } finally {
-        child.wipePrivateData();
-      }
-    }
-    return { xprv, addresses };
-  } finally {
-    seed.fill(0);
-    if (chain) chain.wipePrivateData();
-    if (account) account.wipePrivateData();
-    if (master) master.wipePrivateData();
-  }
-};
+export { isKnownInternalVersion, deriveLndNode, deriveLdkNode } from "./lightning-derive.js";
 
 // ── Tool wiring (markup in src/shell.html, #ln-card) ────────────────────────
 
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-let hodlLnLast = null; // last successful derivation, kept for the reveal toggle
-let hodlLnHsmMnemonic = null; // the type-2 words read from a chosen hsm_secret file
+let hodlLnLast = null; // the last derivation's public result
+let hodlLnRevealed = null; // the secret text, only while it is revealed
 let hodlLnReveal = false;
+let hodlLnHsmLoaded = false; // a type-2 hsm_secret file's words are loaded in the worker
 let hodlLnJournalLog = () => {};
 let hodlLnCopyIcon = () => "";
+let hodlLnWorker = null; // { worker, url } of the running key worker
+let hodlLnRun = 0; // derive generation: answers from a stopped or superseded run are ignored
+let hodlLnHsmRun = 0; // hsm_secret load generation, separate from the derive run
+let hodlLnHsmPending = false; // a load is in the worker, its reply still owed
+let hodlLnPendingFormat = "aezeed"; // the in-flight derive's format, for the journal
 
 // A 24-word seed phrase is a few hundred characters; past this bound the
 // text is a mispaste (a whole file, not a phrase), refused before any
 // normalizing or deriving.
 const LN_SEED_MAX_LENGTH = 4096;
 
-const hodlLnClearResult = () => {
-  if (hodlLnLast) {
-    if (hodlLnLast.entropy) hodlLnLast.entropy.fill(0);
-    if (hodlLnLast.salt) hodlLnLast.salt.fill(0);
-    // The xprv and pubkey strings are immutable JS values; dropping the
-    // references is the best effort available (same limit as the other
-    // tools' extended-key display).
+// The key worker's source (scripts/ln-worker-source.mjs), injected by the
+// build; absent when this module runs outside a build (the Node tests).
+const hodlLnWorkerSource = typeof __LN_WORKER_SOURCE__ === "string" ? __LN_WORKER_SOURCE__ : null;
+let hodlLnSpawnWorker = () => {
+  if (hodlLnWorkerSource) {
+    const url = URL.createObjectURL(new Blob([hodlLnWorkerSource], { type: "text/javascript" }));
+    return { worker: new Worker(url), url };
   }
+  if (typeof Worker === "undefined" && typeof process !== "undefined" && process.versions?.node) {
+    // No Web Workers, and only under Node (the test suite): the same
+    // protocol handler runs in process and answers synchronously. A
+    // production build always carries the worker source, so any other
+    // workerless environment falls through to the refusal below instead of
+    // deriving keys outside the terminable worker.
+    const standIn = { onmessage: null, onerror: null, terminated: false };
+    const handle = createLnKeyHandler((message) => standIn.onmessage?.({ data: message }));
+    standIn.postMessage = (data) => {
+      if (!standIn.terminated) handle(data);
+    };
+    standIn.terminate = () => {
+      standIn.terminated = true;
+    };
+    return { worker: standIn, url: null };
+  }
+  throw new Error("The Lightning key worker is not available in this build.");
+};
+// Tests run the same worker source under node:worker_threads.
+export function hodlLnSetWorkerFactory(factory) {
+  hodlLnSpawnWorker = factory;
+}
+
+const hodlLnStopping = new Set(); // workers asked to scrub, termination still owed
+
+const hodlLnTerminate = (spawned) => {
+  clearTimeout(spawned.scrubTimer);
+  hodlLnStopping.delete(spawned);
+  spawned.worker.terminate();
+  if (spawned.url) URL.revokeObjectURL(spawned.url);
+};
+
+// Terminating a worker hands its memory back to the browser unscrubbed, so
+// every stop first asks the worker to scrub itself: it drops every held
+// secret, zeroes its typed arrays and overwrites its own WebAssembly memory
+// (the same retireWasm End Session uses on the page), then answers
+// "scrubbed". The worker is terminated as soon as that answer arrives, or
+// after a short bound if it is too busy or already gone to answer —
+// whichever comes first.
+const hodlLnStopWorker = () => {
+  const spawned = hodlLnWorker;
+  if (!spawned) return;
+  hodlLnWorker = null;
+  hodlLnStopping.add(spawned);
+  try {
+    spawned.worker.postMessage({ type: "scrub" });
+  } catch {
+    // A worker that cannot take the scrub is terminated all the same.
+  }
+  if (hodlLnStopping.has(spawned)) {
+    // No synchronous "scrubbed" answer: terminate on the answer or the bound.
+    spawned.scrubTimer = setTimeout(() => hodlLnTerminate(spawned), 250);
+  }
+};
+
+// pagehide cannot wait for the "scrubbed" answer — the page may be frozen
+// with the worker's heap intact — so post the scrub and terminate in the
+// same turn. Best effort: the worker may be killed before it runs the
+// scrub, but its heap does not outlive the page.
+const hodlLnStopWorkerNow = () => {
+  hodlLnStopWorker();
+  for (const spawned of [...hodlLnStopping]) hodlLnTerminate(spawned);
+};
+
+// The page's copies: the public result and any revealed secret text. The
+// worker keeps the derivation's secrets (and a loaded hsm_secret's words)
+// until the next derive or the key-side wipe.
+const hodlLnClearResult = () => {
   hodlLnLast = null;
+  hodlLnRevealed = null;
   hodlLnReveal = false;
 };
 
-// The key side: the derived result and any held hsm_secret words. A
-// format, network or coin-type change calls this; the pasted invoice
-// survives it.
+// The key side: terminate the worker, so its whole heap and WebAssembly
+// memory — every copy the derivation made — is released at once, and clear
+// the result. A format, network or coin-type change calls this; the pasted
+// invoice survives it.
 export function hodlLnKeyWipeMem() {
+  hodlLnRun += 1;
+  hodlLnHsmRun += 1;
+  hodlLnStopWorker();
   hodlLnClearResult();
-  hodlLnHsmMnemonic = null;
+  hodlLnHsmLoaded = false;
+  hodlLnHsmPending = false;
 }
 
 // The full wipe: key material and the pasted invoice. Clear, End Session
@@ -257,22 +174,6 @@ const hodlLnBirthdayIso = (timestamp) => new Date(timestamp * 1000).toISOString(
 
 const hodlLnPrivateField = (id, label, value) => `<div class="private-field is-revealed" data-private-field><p class="label copy-field-label">${escapeHtml(label)}${privateCopyButtonHtml(hodlLnCopyIcon)}</p><p class="psbt-kv" id="${id}" data-private-value data-i18n-skip translate="no">${escapeHtml(value)}</p></div>`;
 
-function hodlLnValidateBip39(words) {
-  if (words.length === 0) throw Object.assign(new Error("Type or paste your seed phrase."), { key: "Type or paste your seed phrase." });
-  if (![12, 15, 18, 21, 24].includes(words.length)) {
-    throw Object.assign(new Error("A seed phrase is 12, 15, 18, 21, or 24 words. You entered {n}."), { key: "A seed phrase is 12, 15, 18, 21, or 24 words. You entered {n}.", vars: { n: words.length } });
-  }
-  const unknown = words.map((word, index) => ({ word, index })).filter(({ word }) => !bip39English.includes(word));
-  if (unknown.length > 0) {
-    throw Object.assign(new Error("Unknown word"), { key: "Word {n} (“{word}”) is not on the BIP39 English list.", vars: { n: unknown[0].index + 1, word: unknown[0].word } });
-  }
-  const phrase = words.join(" ");
-  if (!validateMnemonic(phrase)) {
-    throw Object.assign(new Error("Bad checksum"), { key: "The BIP39 checksum does not match. A word is likely mistyped, missing, or swapped." });
-  }
-  return phrase;
-}
-
 function hodlLnRender() {
   const output = document.getElementById("ln-out");
   if (!output) return;
@@ -282,6 +183,7 @@ function hodlLnRender() {
   }
   const r = hodlLnLast;
   const secrets = hodlLnReveal;
+  const shown = secrets ? hodlLnRevealed : null;
   const aezeed = r.format === "aezeed";
   const cln = r.format === "cln-hsm";
   const implementation = cln ? "Core Lightning" : aezeed ? "LND" : "LDK (ldk-node)";
@@ -326,11 +228,11 @@ function hodlLnRender() {
       ${detailNote}
       ${clnDetails}
       <label class="choice"><input type="checkbox" id="ln-reveal" data-private-reveal ${secrets ? "checked" : ""}> <span>${revealLabel}</span></label>
-      ${secrets ? `
-        ${aezeed ? `${hodlLnPrivateField("ln-entropy", entropyLabel, hex.encode(r.entropy))}
-        ${hodlLnPrivateField("ln-salt", saltLabel, hex.encode(r.salt))}` : ""}
-        ${hodlLnPrivateField("ln-root-xprv", rootXprvLabel, r.rootXprv)}
-        <p class="muted">${privateNote}</p>` : `<p class="muted">${hiddenNote}</p>`}
+      ${shown ? `
+        ${aezeed ? `${hodlLnPrivateField("ln-entropy", entropyLabel, shown.entropyHex)}
+        ${hodlLnPrivateField("ln-salt", saltLabel, shown.saltHex)}` : ""}
+        ${hodlLnPrivateField("ln-root-xprv", rootXprvLabel, shown.rootXprv)}
+        <p class="muted">${privateNote}</p>` : secrets ? "" : `<p class="muted">${hiddenNote}</p>`}
     </div>`;
   // The switch reads its own state, not event.target: the conceal-on-leave
   // sweep unticks every switch by replaying a change through this handler.
@@ -343,18 +245,152 @@ function hodlLnRender() {
     revealToggle.checked = hodlLnReveal;
     revealToggle.addEventListener("change", () => {
       hodlLnReveal = revealToggle.checked;
+      // The secret text is asked of the key worker only now, and dropped on hide.
+      hodlLnRevealed = null;
+      // A retired session (End Session) keeps no worker to ask: scrub and
+      // terminate a leftover one instead of posting to it.
+      if (hodlLnReveal) {
+        if (wasmRetired()) hodlLnStopWorker();
+        else hodlLnWorker?.worker.postMessage({ type: "reveal", run: hodlLnRun });
+      }
       hodlLnRender();
     });
   }
 }
 
+// Keyed errors (the aezeed.js and hsm-secret.js taxonomies, the
+// lightning-derive.js validations) format and translate through t();
+// anything else shows its raw message. The worker's error answers carry the
+// same { message, key, vars, code } shape as the page's own thrown errors.
+const hodlLnShowError = (error, exception) => {
+  error.textContent = exception && typeof exception.key === "string"
+    ? t(exception.key, exception.vars)
+    : exception && typeof exception.message === "string" ? exception.message : String(exception);
+  error.dataset.code = exception && typeof exception.code === "string" ? exception.code : "";
+};
+
+// The key worker answers a derive, a reveal or an hsm_secret load. Each
+// request kind has its own generation — the derive run and the hsm_secret
+// load run — and an answer whose id is stale for its kind came from a
+// stopped or superseded request and is ignored.
+function hodlLnMessage(data) {
+  if (!data || typeof data.type !== "string") return;
+  if (data.request === "load-hsm" || data.type === "hsm-loaded" ? data.run !== hodlLnHsmRun : data.run !== hodlLnRun) return;
+  if (data.type === "derived") {
+    hodlLnLast = data.result;
+    hodlLnRender();
+    document.getElementById("ln-session").textContent = t("Node key derived. Decoded key material stays in page memory until you clear it.");
+    hodlLnJournalLog("derive", `${data.result.format} ${hodlLnLast.nodePubKey.slice(0, 8)}`, "ln");
+    return;
+  }
+  if (data.type === "revealed") {
+    // Hidden again before the answer came: keep nothing.
+    if (!hodlLnReveal || !data.secrets) return;
+    hodlLnRevealed = data.secrets;
+    hodlLnRender();
+    return;
+  }
+  if (data.type === "hsm-loaded") {
+    // The worker holds the file's words; the page keeps only the flag.
+    hodlLnHsmPending = false;
+    hodlLnHsmLoaded = true;
+    hodlLnClearResult();
+    // The file is the most recent entry: drop any typed words so Derive
+    // cannot silently use them instead of the file the status line names.
+    const seed = document.getElementById("ln-seed");
+    if (seed) seed.value = "";
+    const error = document.getElementById("ln-error");
+    if (error) {
+      error.textContent = "";
+      error.dataset.code = "";
+    }
+    const session = document.getElementById("ln-session");
+    if (session) session.textContent = t("hsm_secret read. Press Derive.");
+    hodlLnRender();
+    return;
+  }
+  if (data.type === "error") {
+    hodlLnClearResult();
+    if (data.request === "load-hsm") {
+      hodlLnHsmLoaded = false;
+      hodlLnHsmPending = false;
+    }
+    hodlLnRender();
+    const error = document.getElementById("ln-error");
+    if (error) hodlLnShowError(error, data.error);
+    if (data.request === "load-hsm") {
+      hodlLnJournalLog("hsm-file-error", data.error && typeof data.error.code === "string" ? data.error.code : "unknown", "ln");
+    } else {
+      hodlLnJournalLog("derive-error", hodlLnPendingFormat, "ln");
+    }
+  }
+}
+
+// Spawn the key worker on first use and hand it the WebAssembly module
+// bytes (public), from which it instantiates its own copy with its own
+// linear memory. The worker is reused across derives so a loaded
+// hsm_secret's words survive to the next Derive; the wipes terminate it.
+function hodlLnEnsureWorker() {
+  // End Session retires the module while a worker may still be running, so
+  // the retired state is checked on every use, not only at spawn: a retired
+  // session scrubs and terminates any worker it still holds, and refuses.
+  if (wasmRetired()) {
+    hodlLnStopWorker();
+    throw Object.assign(new Error("This session has ended; reload the page to start a new one."), { code: "session-ended" });
+  }
+  if (hodlLnWorker) return hodlLnWorker.worker;
+  // The module bytes come first: a retired session refuses here, before any
+  // worker is spawned.
+  const wasm = wasmModuleBytes();
+  const spawned = hodlLnSpawnWorker();
+  hodlLnWorker = spawned;
+  spawned.worker.onmessage = (event) => {
+    if (event.data && event.data.type === "scrubbed") {
+      // The worker scrubbed its secrets and its WebAssembly memory:
+      // terminate it now, ahead of the bound.
+      hodlLnTerminate(spawned);
+      return;
+    }
+    hodlLnMessage(event.data);
+  };
+  spawned.worker.onerror = (event) => {
+    // A crashed worker can never answer again — and cannot scrub itself:
+    // terminate it and revoke its URL at once, or its heap survives. Both
+    // runs are over, and any answer it already queued is stale.
+    hodlLnTerminate(spawned);
+    if (hodlLnWorker !== spawned) return;
+    hodlLnWorker = null;
+    hodlLnRun += 1;
+    hodlLnHsmRun += 1;
+    hodlLnHsmLoaded = false;
+    hodlLnHsmPending = false;
+    hodlLnClearResult();
+    hodlLnRender();
+    const error = document.getElementById("ln-error");
+    if (error) {
+      error.textContent = event && typeof event.message === "string" && event.message !== "" ? event.message : t("The Lightning key worker stopped.");
+      error.dataset.code = "";
+    }
+  };
+  spawned.worker.postMessage({ type: "init", wasm: wasm.buffer }, [wasm.buffer]);
+  return spawned.worker;
+}
+
 function hodlRunLn() {
   const error = document.getElementById("ln-error");
-  const session = document.getElementById("ln-session");
   error.textContent = "";
   error.dataset.code = "";
   hodlLnClearResult();
+  // Re-render with the click, before anything is posted: the previous
+  // result — and any revealed secret text — leaves the screen now, not when
+  // the worker answers.
+  hodlLnRender();
   const format = hodlLnFormat();
+  // Every Derive click supersedes the previous run — even one refused below,
+  // before anything is posted: the earlier run's in-flight answer is stale
+  // and must not render beside the refusal.
+  hodlLnRun += 1;
+  hodlLnPendingFormat = format;
   try {
     const text = String(document.getElementById("ln-seed").value || "");
     if (text.length > LN_SEED_MAX_LENGTH) {
@@ -366,59 +402,32 @@ function hodlRunLn() {
     }
     const words = hodlLnNormalize(text);
     const passphrase = document.getElementById("ln-pass").value;
-    if (format === "aezeed") {
-      const decoded = aezeedDecode(words, passphrase);
-      const coinType = hodlLnCoinType();
-      try {
-        if (!isKnownInternalVersion(decoded.internalVersion)) {
-          throw Object.assign(new Error("Unsupported internal version"), {
-            key: "This cipher seed uses internal (key-derivation) version {v}, which no current Lightning implementation understands. Refusing to derive from it.",
-            vars: { v: decoded.internalVersion },
-            code: "internal-version",
-          });
-        }
-        const derived = deriveLndNode(decoded.entropy, coinType);
-        hodlLnLast = { format, coinType, ...decoded, ...derived };
-      } catch (exception) {
-        decoded.entropy.fill(0);
-        decoded.salt.fill(0);
-        throw exception;
-      }
-    } else if (format === "cln-hsm") {
-      if (passphrase !== "") {
-        throw Object.assign(new Error("No passphrase is needed for a type 2 hsm_secret."), {
-          key: "No passphrase is needed for a type 2 hsm_secret.",
-          code: "hsm-secret-passphrase-not-needed",
-        });
-      }
-      const phrase = words.length > 0 ? readClnMnemonic(text) : hodlLnHsmMnemonic;
-      if (!phrase) {
-        throw Object.assign(new Error("Type or paste the 12 words, or choose the hsm_secret file."), {
-          key: "Type or paste the 12 words, or choose the hsm_secret file.",
-          code: "hsm-secret-missing",
-        });
-      }
-      const network = hodlLnNetworkName();
-      const derived = deriveClnNode(phrase, network);
-      const account = hodlLnDeriveClnAccount(phrase, network);
-      hodlLnLast = { format, network, path: "m/86'/0'/0'", nodePubKey: derived.nodeId, descriptors: derived.descriptors, xpub: derived.xpub, rootXprv: account.xprv, addresses: account.addresses };
-    } else {
-      const phrase = hodlLnValidateBip39(words);
-      const derived = deriveLdkNode(phrase, passphrase);
-      hodlLnLast = { format, ...derived };
+    if (format === "cln-hsm" && passphrase !== "") {
+      throw Object.assign(new Error("No passphrase is needed for a type 2 hsm_secret."), {
+        key: "No passphrase is needed for a type 2 hsm_secret.",
+        code: "hsm-secret-passphrase-not-needed",
+      });
     }
-    hodlLnRender();
-    session.textContent = t("Node key derived. Decoded key material stays in page memory until you clear it.");
-    hodlLnJournalLog("derive", `${format} ${hodlLnLast.nodePubKey.slice(0, 8)}`, "ln");
+    // A file that is loaded or still loading is the latest entry: derive
+    // from the words the worker holds, not the box. The worker processes
+    // messages in order, so a pending load arrives before this derive.
+    const fromFile = format === "cln-hsm" && (hodlLnHsmPending || hodlLnHsmLoaded);
+    hodlLnEnsureWorker().postMessage({
+      type: "derive",
+      run: hodlLnRun,
+      format,
+      words: fromFile ? [] : words,
+      text: fromFile ? "" : text,
+      passphrase,
+      coinType: format === "aezeed" ? hodlLnCoinType() : 0,
+      network: hodlLnNetworkName(),
+    });
   } catch (exception) {
+    // A refused derive wipes the last result's secrets, as it did in page.
+    hodlLnWorker?.worker.postMessage({ type: "drop" });
     hodlLnClearResult();
     hodlLnRender();
-    // Keyed errors (aezeed.js taxonomy, the validations above) format and
-    // translate through t(); anything else shows its raw message.
-    error.textContent = exception && typeof exception.key === "string"
-      ? t(exception.key, exception.vars)
-      : exception instanceof Error ? exception.message : String(exception);
-    error.dataset.code = exception && typeof exception.code === "string" ? exception.code : "";
+    hodlLnShowError(error, exception);
     hodlLnJournalLog("derive-error", format, "ln");
   }
 }
@@ -438,68 +447,56 @@ function hodlLnSyncFormat() {
 }
 
 
-// Reads the chosen hsm_secret, refuses every non-type-2 shape with a keyed
-// error, and zeroes the bytes and resets the input in a finally block.
+// Reads the chosen hsm_secret and hands its bytes to the key worker, which
+// refuses every non-type-2 shape with the same keyed errors and, for a
+// type-2 file, holds the words. The page keeps only a "file loaded" flag.
+// The page's copy of the bytes is zeroed and the input reset in a finally
+// block; the worker zeroes its own copy after reading.
 async function hodlLnReadHsmFile() {
   const input = document.getElementById("ln-hsm-file");
-  const error = document.getElementById("ln-error");
-  const session = document.getElementById("ln-session");
   if (!input) return;
   const file = input.files && input.files[0];
   if (!file) return;
+  // The file is the latest entry from the moment it is picked: bump the
+  // load generation and mark the load pending BEFORE the read, and clear
+  // any typed words, so words typed earlier cannot win over the file and a
+  // Derive during the read cannot use the box. The load has its own
+  // generation, separate from the derive run: a Derive clicked while the
+  // file loads must not drop the load's reply, and typing supersedes the
+  // load.
+  hodlLnHsmRun += 1;
+  hodlLnHsmPending = true;
+  const run = hodlLnHsmRun;
+  const seed = document.getElementById("ln-seed");
+  if (seed) seed.value = "";
   let bytes = null;
   try {
     bytes = new Uint8Array(await file.arrayBuffer());
-    const type = detectHsmSecretType(bytes);
-    if (type === HSM_SECRET_MNEMONIC_WITH_PASS) {
-      throw Object.assign(new Error("This hsm_secret needs a passphrase; only type 2 (no passphrase) is supported."), {
-        key: "This hsm_secret needs a passphrase; only type 2 (no passphrase) is supported.",
-        code: "hsm-secret-passphrase",
-      });
+    if (run !== hodlLnHsmRun) {
+      // Typing (or a wipe) during the read superseded the file: the load is
+      // never posted. The bytes were never transferred; wipe them here and
+      // keep the typed words.
+      bytes.fill(0);
+      bytes = null;
+      return;
     }
-    if (type === HSM_SECRET_PLAIN) {
-      throw Object.assign(new Error("This is a legacy 32-byte hsm_secret, not a mnemonic secret."), {
-        key: "This is a legacy 32-byte hsm_secret, not a mnemonic secret.",
-        code: "hsm-secret-plain",
-      });
-    }
-    if (type === HSM_SECRET_ENCRYPTED) {
-      throw Object.assign(new Error("This encrypted legacy hsm_secret is not supported."), {
-        key: "This encrypted legacy hsm_secret is not supported.",
-        code: "hsm-secret-encrypted",
-      });
-    }
-    if (type === HSM_SECRET_INVALID) {
-      throw Object.assign(new Error("This hsm_secret is truncated."), {
-        key: "This hsm_secret is truncated.",
-        code: "hsm-secret-truncated",
-      });
-    }
-    hodlLnClearResult();
-    hodlLnHsmMnemonic = readClnMnemonic(bytes);
-    // The file is the most recent entry: drop any typed words so Derive
-    // cannot silently use them instead of the file the status line names.
-    const seed = document.getElementById("ln-seed");
-    if (seed) seed.value = "";
-    if (error) {
-      error.textContent = "";
-      error.dataset.code = "";
-    }
-    if (session) session.textContent = t("hsm_secret read. Press Derive.");
-    hodlLnRender();
+    hodlLnEnsureWorker().postMessage({ type: "load-hsm", run, bytes }, [bytes.buffer]);
   } catch (exception) {
+    // A file that could not be read drops the last result's secrets and the
+    // held file's words, as the in-page refusal did.
+    hodlLnHsmPending = false;
+    hodlLnWorker?.worker.postMessage({ type: "drop" });
+    hodlLnWorker?.worker.postMessage({ type: "drop-hsm" });
     hodlLnClearResult();
-    hodlLnHsmMnemonic = null;
+    hodlLnHsmLoaded = false;
     hodlLnRender();
-    if (error) {
-      error.textContent = exception && typeof exception.key === "string"
-        ? t(exception.key, exception.vars)
-        : exception instanceof Error ? exception.message : String(exception);
-      error.dataset.code = exception && typeof exception.code === "string" ? exception.code : "";
-    }
+    const error = document.getElementById("ln-error");
+    if (error) hodlLnShowError(error, exception);
     hodlLnJournalLog("hsm-file-error", exception && typeof exception.code === "string" ? exception.code : "unknown", "ln");
   } finally {
-    if (bytes) bytes.fill(0);
+    // The transfer detached the buffer: the page holds nothing left to wipe.
+    // The input reset must run either way.
+    if (bytes && bytes.byteLength > 0) bytes.fill(0);
     input.value = "";
   }
 }
@@ -760,14 +757,20 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
     upload.onclick = () => hsmFile.click();
     hsmFile.onchange = hodlLnReadHsmFile;
   }
-  // Typing is the most recent entry too: drop the held file mnemonic and its
-  // status line so Derive cannot silently use the file instead of the words.
-  // Only when a file mnemonic is held, so the LND/LDK formats are untouched.
+  // Typing is the most recent entry too — even while a file is still
+  // loading. Every input supersedes the load's generation, so a late reply
+  // is ignored; and while a load is pending or a file is loaded, the worker
+  // (which processes messages in order) drops the held file mnemonic and the
+  // page its status line, so Derive cannot silently use the file instead of
+  // the words. Otherwise the LND/LDK formats are untouched.
   const seedField = document.getElementById("ln-seed");
   if (seedField) {
     seedField.addEventListener("input", () => {
-      if (!hodlLnHsmMnemonic) return;
-      hodlLnHsmMnemonic = null;
+      hodlLnHsmRun += 1;
+      if (!hodlLnHsmLoaded && !hodlLnHsmPending) return;
+      hodlLnHsmLoaded = false;
+      hodlLnHsmPending = false;
+      hodlLnWorker?.worker.postMessage({ type: "drop-hsm" });
       const file = document.getElementById("ln-hsm-file");
       if (file) file.value = "";
       const session = document.getElementById("ln-session");
@@ -775,6 +778,11 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
     });
   }
   go.onclick = hodlRunLn;
+  // pagehide cannot wait for the worker's scrub answer: scrub and terminate
+  // in the same turn (best effort — see hodlLnStopWorkerNow).
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("pagehide", hodlLnStopWorkerNow);
+  }
   document.getElementById("ln-wipe").onclick = () => {
     hodlLnWipeMem();
     for (const id of ["ln-seed", "ln-pass", "ln-hsm-file"]) {

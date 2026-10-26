@@ -2227,5 +2227,6 @@
   "Original transaction you broadcast (raw hex or PSBT)": "Ursprüngliche Transaktion, die Sie gesendet haben (roher Hex-Code oder PSBT)",
   "cHNidP8B… or 0200000001…": "cHNidP8B… oder 0200000001…",
   "Upload original": "Original hochladen",
-  "SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 des Domain-Tags, der Spend-Secrets der Wallet ({count}) und des {source}-Transkripts; die ersten {bits} Bits dieses Hashs werden zum Seed."
+  "SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 des Domain-Tags, der Spend-Secrets der Wallet ({count}) und des {source}-Transkripts; die ersten {bits} Bits dieses Hashs werden zum Seed.",
+  "The Lightning key worker stopped.": "Der Lightning-Schlüssel-Worker wurde gestoppt."
 }

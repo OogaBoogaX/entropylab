@@ -711,13 +711,13 @@ function hodlBrainWalletPrivateKey(value, trimBoundaryWhitespace = false) {
 function hodlBrainLabEntropy(value, trimmed = false) {
   let text = String(value ?? ""), notes = [], warnings = [];
   if (!text.length) return { ok: false, error: hodlNote("Enter the brain-wallet lab text."), notes, warnings };
-  let bytes = hodlSha256(new TextEncoder().encode(text)), hex = hodlHex.encode(bytes);
+  let bytes = hodlSha256(new TextEncoder().encode(text));
   notes.push(hodlNote(trimmed ? "SHA-256 of the UTF-8 text with boundary whitespace trimmed is 32 bytes of BIP39 entropy (256 bits → 24 words)." : "SHA-256 of the exact UTF-8 text is 32 bytes of BIP39 entropy (256 bits → 24 words)."));
   warnings.push(hodlNote("Lab only. Strength is the entropy of this text, not the 24-word count."));
   warnings.push(hodlNote("SHA-256(text) is unsalted and fast. Anyone who can guess the text recovers the wallet."));
   warnings.push(hodlNote("This is not a BIP39 passphrase, and it is not a Bitcoin Core hdseed or address-key backup."));
   warnings.push(hodlNote("A valid mnemonic does not mean it is the same wallet as hashing the text as a Core private key."));
-  return { ok: true, bytes, hex, bits: 256, sourceBits: 256, method: "brain-lab", notes, warnings };
+  return { ok: true, bytes, bits: 256, sourceBits: 256, method: "brain-lab", notes, warnings };
 }
 function hodlSingleKeyWallet(e, t, r, trimBrainWallet = false) {
   let n = [], o = [], i, s = null, c = t, a = r === "brain" ? hodlBrainWalletPassphrase(e, trimBrainWallet) : e.trim();
@@ -4369,7 +4369,7 @@ function hodlDiceEntropy(value, method, targetWords = hodlTargetWordCount) {
   let hashInput = method === "coleman" ? hodlIanColemanDiceString(rolls) : rolls.join(""), digest = hodlSha256(new TextEncoder().encode(hashInput)), bytes = digest.slice(0, config.bytes);
   if (method === "coleman") notes.push(hodlNote("Hashed rolls / Base 6 [0-5]: convert every 6 to 0, SHA-256 hash the complete mapped digit string, then use the first {bits} bits for the selected {words}-word seed. This matches the method used by Keystone.", { bits: config.bits, words: config.words }));
   else notes.push(hodlNote("Hashed rolls / Base 10 [1-6]: SHA-256 hash the complete original dice digit string, then use the first {bits} bits for the selected {words}-word seed. This matches COLDCARD and SeedSigner.", { bits: config.bits, words: config.words }));
-  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: config.bits, sourceBits, method: method === "coleman" ? "ian-coleman-dice-sha256" : "coldcard-sha256", notes, warnings };
+  return { ok: true, bytes, bits: config.bits, sourceBits, method: method === "coleman" ? "ian-coleman-dice-sha256" : "coldcard-sha256", notes, warnings };
 }
 function hodlNumberBaseEntropy(value, format, targetWords = hodlTargetWordCount) {
   let meta = hodlEntropyFormatConfig(format, targetWords), analysis = hodlAnalyzeEntropyInput(value, meta.id, meta.seed.words), notes = [], warnings = [];
@@ -4382,7 +4382,7 @@ function hodlNumberBaseEntropy(value, format, targetWords = hodlTargetWordCount)
   notes.push(hodlNote("{digits} {unit} = {bits} bits of {label} entropy.", { digits: meta.digits, unit: hodlNote(meta.unit), bits: meta.seed.bits, label: hodlNote(meta.shortLabel) }));
   if (meta.remainderBits) notes.push(meta.binaryRemainder ? hodlNote(meta.remainderBits === 1 ? "{full} complete {label} characters are followed by {n} individual coin-flip entropy bit." : "{full} complete {label} characters are followed by {n} individual coin-flip entropy bits.", { full: meta.fullDigits, label: hodlNote(meta.shortLabel), n: meta.remainderBits }) : hodlNote(meta.remainderBits === 1 ? "The final character is mixed-radix: it contributes the remaining {n} entropy bit and must be one of {chars}." : "The final character is mixed-radix: it contributes the remaining {n} entropy bits and must be one of {chars}.", { n: meta.remainderBits, chars: [...meta.finalCharacters].join(", ") }));
   notes.push(hodlNote("BIP39 entropy length: {bits} bits → {words}-word seed.", { bits: meta.seed.bits, words: meta.seed.words }));
-  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: meta.seed.bits, sourceBits: meta.seed.bits, method: meta.method, notes, warnings };
+  return { ok: true, bytes, bits: meta.seed.bits, sourceBits: meta.seed.bits, method: meta.method, notes, warnings };
 }
 function hodlCardNeeded(targetWords = hodlTargetWordCount) {
   // Derived from the selected BIP39 entropy target, not policy constants:
@@ -4491,7 +4491,7 @@ function hodlCardsEntropy(value, targetWords = hodlTargetWordCount, coleman = fa
   if (parsed.cards.length < required) warnings.push(hodlNote("Only {have} of {need} recommended cards were entered. The {words}-word phrase is deterministic, but its security cannot exceed the approximately {bits} bits supplied. Use only for testing until the recommendation is met.", { have: parsed.cards.length, need: required, words: config.words, bits: parsed.bits.toFixed(1) }));
   if (parsed.cards.length > required) notes.push(hodlNote("All {n} cards, including extras, are included in the hash.", { n: parsed.cards.length }));
   let digest = hodlSha256(new TextEncoder().encode(hashInput)), bytes = digest.slice(0, config.bytes);
-  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: config.bits, sourceBits: parsed.bits, method: coleman ? "ian-coleman-cards-sha256" : "cards-sha256", notes, warnings, parsed, hashInput };
+  return { ok: true, bytes, bits: config.bits, sourceBits: parsed.bits, method: coleman ? "ian-coleman-cards-sha256" : "cards-sha256", notes, warnings, parsed, hashInput };
 }
 function hodlCardSelectionState(cards, needed, selectedSuit = "", selectedRank = "") {
   // Same deck rule as hodlParseCards (audit L1): a one-deck target deals from
@@ -4592,7 +4592,7 @@ function hodlDirectCardsEntropy(value, targetWords = hodlTargetWordCount) {
   let bytes = hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist);
   notes.push(hodlNote("{draws} independent rank-only card draws directly selected {partial} BIP39 words and 1 of {candidates} checksum-valid final words.", { draws: parsed.steps.length, partial: config.partialWords, candidates: config.candidates }));
   notes.push(hodlNote("Every draw is made after shuffling the indicated A–8, A–4, or A–2 card set; suits are ignored."));
-  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: config.bits, sourceBits: config.bits, method: "cards-direct", notes, warnings, parsed, mnemonic };
+  return { ok: true, bytes, bits: config.bits, sourceBits: config.bits, method: "cards-direct", notes, warnings, parsed, mnemonic };
 }
 function hodlDirectCardSetLabel(max) {
   return `A\u2013${max}`;
@@ -4703,7 +4703,7 @@ function hodlCoreMixSelectedEntropy(targetWords = hodlTargetWordCount) {
     return { ok: false, error: hodlNote(error.message || String(error)) };
   }
   notes.push(hodlNote("SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.", { count: hodlCoreMix.count, source, bits: config.bits }));
-  return { ok: true, bytes, hex: hodlHex.encode(bytes), bits: config.bits, sourceBits, method: "core-wallet-mix-v1", notes, warnings };
+  return { ok: true, bytes, bits: config.bits, sourceBits, method: "core-wallet-mix-v1", notes, warnings };
 }
 function hodlUpdateCards() {
   let input = document.getElementById("cards");
@@ -5526,8 +5526,11 @@ function hodlSyncBrainOutput() {
     let value = document.createElement("span");
     value.dataset.privateValue = "";
     value.dataset.i18nSkip = "";
-    value.textContent = entropy.hex;
+    // Encode at the point of display: the string cannot be zeroed, so no
+    // copy of it is kept beyond the rendered text.
+    value.textContent = hodlHex.encode(entropy.bytes);
     hex.replaceChildren(value);
+    entropy.bytes.fill(0);
     if (copy) copy.disabled = false;
   } else hex.textContent = hodlFormatNote(entropy.error);
   hex.className = "muted" + (entropy.ok ? " ok" : " err");

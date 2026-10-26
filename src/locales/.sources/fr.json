@@ -2227,5 +2227,6 @@
   "Original transaction you broadcast (raw hex or PSBT)": "577828da8aee934a74da20cbedc9c51e1b9f06d04b108501fc668210d4e32a35",
   "cHNidP8B… or 0200000001…": "f7b45e437d9e3f39c8bfd5d6d0488ab514acf7b5dcf2ef6464ecb112eaa7c69a",
   "Upload original": "76fddcf1af42578bcaae7ba4ab63201c82b058fcb7ed7e33c96191211c9ac0a1",
-  "SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.": "933cef78dba35bcaf14112db9882445e7a12f01baab850d111747649458e4d7c"
+  "SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.": "933cef78dba35bcaf14112db9882445e7a12f01baab850d111747649458e4d7c",
+  "The Lightning key worker stopped.": "69d60a389cb062341ac56a975b61bc5e70c91a8cdde42fc4b6e7c71b2b8dd5cd"
 }

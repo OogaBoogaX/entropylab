@@ -379,7 +379,7 @@ test("dice: the mixed entropy is SHA-256 of the domain tag, the secret and the C
   assert.equal(result.ok, true);
   const expected = expectedEntropy([secret], "415263", 32);
   assert.deepEqual([...result.bytes], [...expected]);
-  assert.equal(result.hex, Buffer.from(expected).toString("hex"));
+  assert.equal(Buffer.from(result.bytes).toString("hex"), Buffer.from(expected).toString("hex"));
   assert.equal(result.bits, 256);
   assert.equal(result.method, "core-wallet-mix-v1");
   assert.equal(result.notes.length, 1);

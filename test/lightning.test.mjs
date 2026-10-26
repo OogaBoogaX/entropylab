@@ -11,7 +11,8 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import { mnemonicToSeedSync as scureMnemonicToSeed } from "@scure/bip39";
-import { deriveLndNode, deriveLdkNode, isKnownInternalVersion, hodlInitLn, hodlLnWipeMem } from "../src/js/lightning.js";
+import { deriveLndNode, deriveLdkNode, isKnownInternalVersion, hodlInitLn, hodlLnWipeMem, hodlLnSetWorkerFactory } from "../src/js/lightning.js";
+import { createLnKeyHandler } from "../src/js/lightning-derive.js";
 import { aezeedDecode } from "../src/js/aezeed.js";
 import { hashesReady } from "../src/js/hashes.js";
 import { secp256k1Ready } from "../src/js/secp256k1.js";
@@ -67,7 +68,7 @@ test("only known aezeed internal versions derive a node key", () => {
   assert.ok(isKnownInternalVersion(0), "LND's version");
   assert.ok(isKnownInternalVersion(1), "the toolkit's version");
   for (const unknown of [2, 3, 255]) assert.ok(!isKnownInternalVersion(unknown), `version ${unknown} is refused`);
-  const lnSource = read("src/js/lightning.js");
+  const lnSource = read("src/js/lightning-derive.js");
   assert.match(lnSource, /if \(!isKnownInternalVersion\(decoded\.internalVersion\)\)/, "the tool gates on it before deriving");
   assert.match(lnSource, /code: "internal-version"/, "the refusal is a named error");
 });
@@ -181,6 +182,56 @@ const lnDerive = (page) => {
   const go = page.getElementById("ln-go");
   if (typeof go.onclick === "function") go.onclick();
   else go.dispatchEvent(new Event("click", { bubbles: true }));
+};
+
+// Worker factories over the real in-process protocol handler (the default
+// stand-in's twin), for the tests that must control the wire. A test that
+// installs one must restore the plain stand-in afterwards, and must wipe
+// first: the module keeps its worker across tests, so without a wipe the
+// derive would reuse a previous test's worker and never run the factory.
+const standInFactory = () => {
+  const worker = { onmessage: null, onerror: null, terminated: false };
+  const handle = createLnKeyHandler((message) => worker.onmessage?.({ data: message }));
+  worker.postMessage = (data) => {
+    if (!worker.terminated) handle(data);
+  };
+  worker.terminate = () => {
+    worker.terminated = true;
+  };
+  return { worker, url: null };
+};
+
+// A stand-in whose postMessage detaches the transferred buffers, as a real
+// Worker does: the page's view of the hsm_secret bytes is gone once posted.
+const detachingFactory = () => {
+  const worker = { onmessage: null, onerror: null, terminated: false };
+  const handle = createLnKeyHandler((message) => worker.onmessage?.({ data: message }));
+  worker.postMessage = (data, transfer) => {
+    if (!worker.terminated) handle(transfer ? structuredClone(data, { transfer }) : data);
+  };
+  worker.terminate = () => {
+    worker.terminated = true;
+  };
+  return { worker, url: null };
+};
+
+// The same handler, but its replies wait for flush(): the test decides when
+// an in-flight answer lands.
+const queuedWorkers = [];
+const queuedFactory = () => {
+  const worker = { onmessage: null, onerror: null, terminated: false, queue: [] };
+  const handle = createLnKeyHandler((message) => worker.queue.push(message));
+  worker.postMessage = (data) => {
+    if (!worker.terminated) handle(data);
+  };
+  worker.terminate = () => {
+    worker.terminated = true;
+  };
+  worker.flush = () => {
+    for (const message of worker.queue.splice(0)) worker.onmessage?.({ data: message });
+  };
+  queuedWorkers.push(worker);
+  return { worker, url: null };
 };
 
 test("the shell carries the Core Lightning hsm_secret controls", () => {
@@ -507,6 +558,210 @@ test("a passphrase with cln-hsm is refused", () => {
     lnDerive(page);
     assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-passphrase-not-needed");
     assert.equal(page.getElementById("ln-out").innerHTML, "", "a refused passphrase derived a node key");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("a transferred hsm_secret buffer is detached: the load still resolves and resets the input", async () => {
+  // A real Worker detaches a transferred ArrayBuffer; fill() on the page's
+  // view of it throws a TypeError, rejecting the handler before the input
+  // reset. The detaching stand-in reproduces that wire behaviour.
+  hodlLnSetWorkerFactory(detachingFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    const bytes = clnType2File(CLN_ABANDON);
+    fileInput.files = [{ arrayBuffer: async () => bytes.buffer }];
+    await fileInput.onchange();
+    assert.equal(bytes.byteLength, 0, "the test double did not detach the transferred buffer");
+    assert.equal(fileInput.value, "", "the file input was not reset");
+    assert.equal(page.getElementById("ln-error").textContent, "", "the load reported an error");
+    lnDerive(page);
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID), "the file path did not derive the node id");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("a refused derive supersedes the previous run's answer still in flight", () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    const worker = queuedWorkers.at(-1);
+    // The refusal (an oversized paste) happens before anything is posted,
+    // but it must still supersede the earlier run: its answer is now stale.
+    page.getElementById("ln-seed").value = `${AEZEED_VECTOR_WORDS} ${"1!".repeat(3000)}`;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "seed-too-long");
+    worker.flush();
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "a stale derive answer rendered beside the refusal");
+    assert.equal(page.getElementById("ln-error").dataset.code, "seed-too-long", "the stale answer cleared the refusal");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("a new Derive clears the previous result and any revealed secret at once", () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    const worker = queuedWorkers.at(-1);
+    worker.flush(); // the derived answer lands
+    const xprv = ScureHDKey.fromMasterSeed(hexToBytes("000102030405060708090a0b0c0d0e0f")).privateExtendedKey;
+    const reveal = page.getElementById("ln-reveal");
+    reveal.checked = true;
+    reveal.dispatchEvent(new Event("change"));
+    worker.flush(); // the revealed answer lands
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(xprv), "the revealed xprv is not on screen");
+    // The click itself clears the screen, before the worker answers.
+    lnDerive(page);
+    assert.ok(!page.getElementById("ln-out").innerHTML.includes(xprv), "the old secret stayed on screen into the new derive");
+    assert.equal(page.getElementById("ln-root-xprv"), null, "the old secret element survived the click");
+    worker.flush();
+    assert.ok(page.getElementById("ln-out").innerHTML.includes('id="ln-node-pubkey"'), "the new derive rendered no result");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("a Derive clicked while an hsm_secret loads derives from the file, not the box", async () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    // Words typed before the pick lose to the file from the moment it is
+    // picked: the box is cleared before the read even starts.
+    page.getElementById("ln-seed").value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange(); // the load is posted; its reply is still in flight
+    assert.equal(page.getElementById("ln-seed").value, "", "the file pick left the typed words in #ln-seed");
+    // The derive must use the file the worker is loading, not the box: the
+    // worker processes messages in order, so the load arrives first.
+    lnDerive(page);
+    const worker = queuedWorkers.at(-1);
+    worker.flush(); // hsm-loaded, then the derive's answer, in wire order
+    assert.ok(page.getElementById("ln-session").textContent.length > 0, "the derive dropped the hsm-loaded reply");
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID), "Derive did not use the loading file's words");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("words typed while the hsm_secret file is still being read win, and the read's bytes are wiped", async () => {
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    const bytes = clnType2File(CLN_ABANDON);
+    const length = bytes.length;
+    let openRead;
+    const gate = new Promise((resolve) => {
+      openRead = resolve;
+    });
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: () => gate.then(() => bytes.buffer) }];
+    page.getElementById("ln-seed").value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const reading = fileInput.onchange(); // the read is pending on the gate
+    // The file is the latest entry from the pick: the box is cleared at once.
+    assert.equal(page.getElementById("ln-seed").value, "", "the file pick left the typed words in #ln-seed");
+    // Typing during the read supersedes the file.
+    const seed = page.getElementById("ln-seed");
+    seed.value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    seed.dispatchEvent(new Event("input"));
+    openRead();
+    await reading;
+    assert.deepEqual([...bytes], [...new Uint8Array(length)], "the superseded read's bytes were not wiped");
+    assert.equal(seed.value, "legal winner thank year wave sausage worth useful legal winner thank yellow", "the superseded read cleared the typed words");
+    // The load was never posted: with the box cleared, Derive has nothing.
+    seed.value = "";
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-missing", "the superseded file was still loaded");
+  } finally {
+    hodlLnWipeMem();
+    delete globalThis.document;
+  }
+});
+
+test("words typed while an hsm_secret is still loading win over the file", async () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange(); // the load is posted; its reply is still in flight
+    const seed = page.getElementById("ln-seed");
+    seed.value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    seed.dispatchEvent(new Event("input"));
+    queuedWorkers.at(-1).flush(); // the stale hsm-loaded reply lands and is ignored
+    assert.equal(seed.value, "legal winner thank year wave sausage worth useful legal winner thank yellow", "the stale reply cleared the typed words");
+    lnDerive(page);
+    queuedWorkers.at(-1).flush();
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    const html = page.getElementById("ln-out").innerHTML;
+    assert.ok(!html.includes(CLN_NODE_ID), "Derive used the file's words, not the typed ones");
+    assert.ok(html.includes('id="ln-node-pubkey"'), "the typed words rendered no node key");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("a worker error supersedes the answers the crashed worker still has in flight", () => {
+  hodlLnSetWorkerFactory(queuedFactory);
+  const page = lnPage();
+  try {
+    hodlLnWipeMem();
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    const worker = queuedWorkers.at(-1);
+    worker.onerror({ message: "boom" });
+    assert.equal(worker.terminated, true, "the crashed worker was not terminated at once");
+    worker.flush();
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "a crashed worker's queued answer rendered");
+    assert.equal(page.getElementById("ln-error").textContent, "boom");
+  } finally {
+    hodlLnWipeMem();
+    hodlLnSetWorkerFactory(standInFactory);
+    delete globalThis.document;
+  }
+});
+
+test("the worker crash fallback message goes through t()", () => {
+  const lnSource = read("src/js/lightning.js");
+  assert.match(lnSource, /t\("The Lightning key worker stopped\."\)/, "the crash message bypasses t()");
+});
+
+test("typed CLN words pass the same length refusal as the other formats", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = `${CLN_ABANDON} ${"1!".repeat(3000)}`;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "seed-too-long");
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "an oversized CLN paste derived a node key");
   } finally {
     delete globalThis.document;
   }

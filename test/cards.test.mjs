@@ -211,8 +211,8 @@ test("hashed transcript is SHA-256 of the displayed ASCII codes", () => {
   assert.equal(hodlFilterCards("AS 10H TD"), "As Th Td ");
   assert.equal(hodlParseCards(hodlFilterCards("as2ctd"), 12).hashInput, transcript);
   assert.equal(hodlCardsHashInput(["AS", "2C", "TD"], false), transcript);
-  assert.equal(hodlCardsEntropy("AS 2C TD", 12).hex, digest.slice(0, 32));
-  assert.equal(hodlCardsEntropy("as 2c td", 12).hex, digest.slice(0, 32));
+  assert.equal(Buffer.from(hodlCardsEntropy("AS 2C TD", 12).bytes).toString("hex"), digest.slice(0, 32));
+  assert.equal(Buffer.from(hodlCardsEntropy("as 2c td", 12).bytes).toString("hex"), digest.slice(0, 32));
   assert.equal(digest.length, 64);
 });
 
@@ -224,9 +224,9 @@ test("Ian Coleman hashed cards SHA-256 the suit-symbol transcript", () => {
   assert.equal(coleman.ok, true);
   assert.equal(ascii.method, "cards-sha256");
   assert.equal(coleman.method, "ian-coleman-cards-sha256");
-  assert.notEqual(ascii.hex, coleman.hex);
+  assert.notEqual(Buffer.from(ascii.bytes).toString("hex"), Buffer.from(coleman.bytes).toString("hex"));
   assert.equal(coleman.hashInput, "A\u2660 2\u2663 T\u2666");
-  assert.equal(createHash("sha256").update("A\u2660 2\u2663 T\u2666", "utf8").digest("hex").slice(0, 32), coleman.hex);
+  assert.equal(createHash("sha256").update("A\u2660 2\u2663 T\u2666", "utf8").digest("hex").slice(0, 32), Buffer.from(coleman.bytes).toString("hex"));
 });
 
 test("one valid card produces a deterministic testing seed", () => {
