@@ -2193,5 +2193,6 @@
   "Choose wallet.dat": "Elegir wallet.dat",
   "Entropy source": "Fuente de entropía",
   "Rolls or cards": "Tiradas o cartas",
-  "Core wallet.dat + dice/cards": "Core wallet.dat + dados/cartas"
+  "Core wallet.dat + dice/cards": "Core wallet.dat + dados/cartas",
+  "Two characters per card, rank then suit (AS 7H TD …).": "Dos caracteres por carta, rango y luego palo (AS 7H TD …)."
 }

@@ -2193,5 +2193,6 @@
   "Choose wallet.dat": "9013b0678a0017f200f1b4f824a36c3e91cc18a7ce51428b0c88075ac2817f78",
   "Entropy source": "2bac57158e770e79d8ccf0b482b5d17aa83b3150401b1f9e7dee456410900018",
   "Rolls or cards": "c0fc825fc6124c279103fdf208fe606e6f7c9829848c579d842708627cafa4c3",
-  "Core wallet.dat + dice/cards": "813e84a48420c638bbedfc1b304d9b8a3ae26111482091d7281a9bb2b8dfe28e"
+  "Core wallet.dat + dice/cards": "813e84a48420c638bbedfc1b304d9b8a3ae26111482091d7281a9bb2b8dfe28e",
+  "Two characters per card, rank then suit (AS 7H TD …).": "ffcc11719b9b49e09a2d0908c1eb4561a317200189f44ba49fb150aae1ce1133"
 }
