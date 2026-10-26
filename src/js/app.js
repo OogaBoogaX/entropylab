@@ -71,6 +71,10 @@ import {
   coreImportDescriptorsFilename,
 } from "./core-importdescriptors.js";
 import {
+  buildVerificationPackage,
+  verificationPackageFilename,
+} from "./verification-package.js";
+import {
   canPrintPolicySheet,
   policySheetFilename,
   policySheetHtml,
@@ -2341,13 +2345,20 @@ function hodlCoreDeriveAddressesText(scope = "msig") {
 // The deriveaddresses copy is unreleased: only a preview build shows it
 // (docs/PREVIEW.md). typeof keeps the standalone Node extraction working.
 function hodlCoreImportDescriptorsButtons(prefix) {
-  return `<button class="btn secondary green" id="${prefix}-save-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Save Core Watch-only JSON")}</button>
+  return `<button class="btn secondary green" id="${prefix}-save-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Save Core Watch-only JSON")}</button>${typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? `
+    <button class="btn secondary green" id="${prefix}-save-verification-package" type="button" aria-describedby="${prefix}-verification-package-help">${hodlT("Download verification package")}</button>` : ""}
     <button class="btn secondary" id="${prefix}-copy-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Copy Core importdescriptors")}</button>${typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? `
     <button class="btn secondary" id="${prefix}-copy-deriveaddresses" type="button" aria-describedby="${prefix}-core-deriveaddresses-help">${hodlT("Copy Core deriveaddresses")}</button>` : ""}`;
 }
 function hodlCoreDeriveAddressesNote(prefix) {
   if (typeof __ENTROPYLAB_PREVIEW__ === "undefined" || !__ENTROPYLAB_PREVIEW__) return "";
   return `<p class="edge-note is-public" id="${prefix}-core-deriveaddresses-help">${hodlT("Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.")}</p>`;
+}
+// The verification package download is unreleased: only a preview build shows
+// it (docs/PREVIEW.md). typeof keeps the standalone Node extraction working.
+function hodlVerificationPackageNote(prefix) {
+  if (typeof __ENTROPYLAB_PREVIEW__ === "undefined" || !__ENTROPYLAB_PREVIEW__) return "";
+  return `<p class="edge-note is-public" id="${prefix}-verification-package-help">${hodlT("Public data only (descriptors, xpubs, addresses) for checking this wallet with an independent Bitcoin Core tool.")}</p>`;
 }
 function hodlCoreImportDescriptorsNote(wallet) {
   if (wallet.branchStart > 0) return hodlT("Imports the displayed public branches. Bitcoin Core uses branch {branch} for new receiving addresses, starting at address index 0. Verify that address on another trusted wallet or signer before funding.", { branch: wallet.branchStart });
@@ -2368,6 +2379,7 @@ function hodlKeyCoreImportDescriptorsMarkup(account) {
     <p class="edge-note is-public" id="key-core-importdescriptors-help">${hodlCoreImportDescriptorsNote(account)} ${hodlT("Exports the selected script type's displayed branches, using the wallet birthday under Downloads below.")}</p>
     ${hodlCoreImportDescriptorsButtons("key")}
     ${hodlCoreDeriveAddressesNote("key")}
+    ${typeof hodlVerificationPackageNote !== "undefined" ? hodlVerificationPackageNote("key") : ""}
     <p class="edge-note is-private" id="key-core-importdescriptors-error" role="alert"></p>
   </div>`;
 }
@@ -2390,6 +2402,7 @@ function hodlMsigCoreImportDescriptorsMarkup() {
     ${hodlCoreImportDescriptorsButtons("msig")}
     ${walletDat ? `<button class="btn secondary green save-wallet-dat" id="msig-download-wallet-dat" type="button" aria-describedby="msig-core-importdescriptors-help msig-birthday-help">${hodlWalletExport.walletDatButtonLabel(false)}</button>` : ""}
     ${hodlCoreDeriveAddressesNote("msig")}
+    ${typeof hodlVerificationPackageNote !== "undefined" ? hodlVerificationPackageNote("msig") : ""}
   </div>`;
 }
 // The BIP 388 wallet policy export (template + co-signer xpubs), one block
@@ -2460,6 +2473,48 @@ function hodlDownloadCoreImportDescriptors(scope = "msig") {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1e3);
 }
+// The public-only package an independent Bitcoin Core tool checks: the same
+// watch-only units the Core JSON exports, plus the displayed addresses. Rows
+// are read as { index, address } only; their private getters stay untouched.
+function hodlVerificationPackageJson(scope = "msig") {
+  const core = hodlCoreDescriptorUnits(scope);
+  if (!core) return "";
+  const network = scope === "calc" ? core.wallet.network ?? hodlWalletResult.network : hodlWalletResult.network;
+  const masterFingerprint = scope === "calc" ? core.wallet.masterFingerprint ?? hodlWalletResult.masterFingerprint ?? null : null;
+  const rows = (branch) => core.wallet.addressBranches?.find((entry) => entry.branch === branch)?.rows ?? (branch === 0 ? core.wallet.receive : core.wallet.change) ?? [];
+  const addresses = (branch) => rows(branch).map((row) => ({ index: row.index, address: row.address })).sort((a, b) => a.index - b.index);
+  return buildVerificationPackage({
+    network,
+    masterFingerprint,
+    descriptors: core.units.map((unit) => unit.descriptor),
+    xpubs: scope === "calc" ? [core.wallet.xpub].filter((xpub) => typeof xpub === "string" && xpub) : hodlWalletResult.xpubs,
+    receiveAddresses: addresses(0),
+    changeAddresses: addresses(1),
+  });
+}
+function hodlDownloadVerificationPackage(scope = "msig") {
+  hodlCoreImportDescriptorsError(scope, null);
+  let json = "";
+  let filename = "";
+  try {
+    json = hodlVerificationPackageJson(scope);
+    if (!json) return;
+    const core = hodlCoreDescriptorUnits(scope);
+    if (!core) return;
+    const network = scope === "calc" ? core.wallet.network ?? hodlWalletResult.network : hodlWalletResult.network;
+    const masterFingerprint = scope === "calc" ? core.wallet.masterFingerprint ?? hodlWalletResult.masterFingerprint ?? null : null;
+    filename = verificationPackageFilename({ network, masterFingerprint });
+  } catch (error) {
+    hodlCoreImportDescriptorsError(scope, hodlErrorSpecFrom(error));
+    return;
+  }
+  let blob = new Blob([json], { type: "application/json" }), url = URL.createObjectURL(blob), link = document.createElement("a");
+  json = "";
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1e3);
+}
 function hodlMsigBip388Field() {
   let text = "";
   try {
@@ -2510,7 +2565,7 @@ function hodlDownloadMsigBip388Policy() {
 }
 function hodlBindCoreImportDescriptors(scope) {
   const prefix = scope === "calc" ? "key" : "msig";
-  for (const [action, handler] of [["copy-importdescriptors", hodlCopyCoreImportDescriptors], ["save-importdescriptors", hodlDownloadCoreImportDescriptors], ["copy-deriveaddresses", hodlCopyCoreDeriveAddresses]]) {
+  for (const [action, handler] of [["copy-importdescriptors", hodlCopyCoreImportDescriptors], ["save-importdescriptors", hodlDownloadCoreImportDescriptors], ["save-verification-package", hodlDownloadVerificationPackage], ["copy-deriveaddresses", hodlCopyCoreDeriveAddresses]]) {
     const button = document.getElementById(`${prefix}-${action}`);
     if (!button) continue;
     const clean = button.cloneNode(true);
