@@ -2156,5 +2156,7 @@
   "That string is too long to be an invoice or offer.": "Diese Zeichenkette ist zu lang, um eine Rechnung oder ein Angebot zu sein.",
   "This invoice or offer could not be decoded.": "Diese Rechnung oder dieses Angebot konnte nicht dekodiert werden.",
   "Invoice or offer": "Rechnung oder Angebot",
-  "Decode": "Dekodieren"
+  "Decode": "Dekodieren",
+  "Present — no checksum (BOLT12 omits it).": "Anwesend — keine Prüfsumme (BOLT12 lässt sie weg).",
+  "Do not broadcast.": "Nicht übertragen."
 }

@@ -2156,5 +2156,7 @@
   "That string is too long to be an invoice or offer.": "4298c184742081daf12633804dab72ca08ba5b935a224569153e997bfb1988ba",
   "This invoice or offer could not be decoded.": "1999b1d7c17414f7e909a7e71204558001ee2f44854f33244f929717438c957e",
   "Invoice or offer": "52dbc8463501e021ff6bd9408268462a9334e9070e83014eabc190f903d72e3d",
-  "Decode": "1ae3fcff1a58694ed37d127f994d077e4d0a13673427eafeb66b55ad1534a5ce"
+  "Decode": "1ae3fcff1a58694ed37d127f994d077e4d0a13673427eafeb66b55ad1534a5ce",
+  "Present — no checksum (BOLT12 omits it).": "c9c9c1db06773871081e66b1cb5d69eea1a04670178f14e7ef6250efb76a5cfd",
+  "Do not broadcast.": "08cce1434063ef07ed1ab1a2d30a57703b34eb688f9a8a12fb619a1029842035"
 }
