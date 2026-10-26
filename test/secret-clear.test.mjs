@@ -988,13 +988,14 @@ test("pagehide and persisted pageshow end the PSBT session, reports included", (
 
   const elements = new Map();
   for (const id of ["psbt-out", "nonce-out"]) elements.set(id, { innerHTML: "<table>report</table>", dataset: {} });
-  for (const id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"]) elements.set(id, { value: "session material", dataset: {} });
+  for (const id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-rbf-original", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"]) elements.set(id, { value: "session material", dataset: {} });
   const errors = [];
-  let retiredUploads = 0;
+  let retiredUploads = 0, retiredRbfUploads = 0;
   const context = createContext({
     document: { getElementById: id => elements.get(id) ?? null },
     hodlPsbtWipeMem() {}, hodlPsbtClearNonceHistory() {},
     hodlPsbtRetireAuditUploads: () => { retiredUploads += 1; },
+    hodlPsbtRetireRbfUploads: () => { retiredRbfUploads += 1; },
     hodlPsbtLast: { rvalues: ["deadbeef"] }, hodlPsbtInspected: { psbt: "stamp" },
     hodlPsbtSessionSpec: { key: "Session key" },
     hodlSetPsbtError: () => errors.push("psbt"), hodlSetNonceError: () => errors.push("nonce"),
@@ -1003,12 +1004,13 @@ test("pagehide and persisted pageshow end the PSBT session, reports included", (
   vm.runInContext(`${functionSource("hodlNote")}\n${functionSource("hodlEndPsbtSession")}\nhodlEndPsbtSession();`, context);
   assert.equal(context.hodlPsbtLast, null, "session end left the parsed report state");
   assert.equal(retiredUploads, 1, "session end retires a pending signer-audit upload");
+  assert.equal(retiredRbfUploads, 1, "session end retires a pending RBF-original upload");
   // (vm realms: assert.keys rather than deepEqual against a home-realm {}.)
   assert.equal(Object.keys(context.hodlPsbtInspected || {}).length, 0, "session end left run stamps");
   assert.equal(elements.get("psbt-out").innerHTML, "", "session end left the PSBT report rendered");
   assert.equal(elements.get("nonce-out").innerHTML, "", "session end left the nonce report rendered");
   assert.deepEqual(errors.sort(), ["nonce", "psbt"], "session end left an error line");
-  for (const id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"])
+  for (const id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-rbf-original", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"])
     assert.equal(elements.get(id).value, "", `session end left #${id} filled`);
 });
 
