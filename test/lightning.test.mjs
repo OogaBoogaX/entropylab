@@ -123,18 +123,21 @@ test("the workspace switcher retains the held-back Lightning implementation", ()
   assert.match(appSource, /getElementById\("ln-card"\)\.hidden = id !== "ln"/);
   assert.match(appSource, /\["bip85", "sp", "msig", "calc", "vanity", "ln", "core"\]\.forEach/);
   assert.match(appSource, /import \{ hodlInitLn, hodlLnWipeMem \} from "\.\/lightning\.js"/);
-  assert.match(appSource, /hodlInitLn\(\{ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup \}\)/);
+  assert.match(appSource, /hodlInitLn\(\{ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup, qrSvg: hodlQrSvg, pageNetwork: \(\) => hodlInspectorNetwork\(\) \}\)/);
 });
 
-test("a format or network change wipes the derived result", () => {
+test("a format or network change wipes the derived result but not the invoice", () => {
   // A stale mainnet pubkey next to a flipped "Testnet" select is how a
-  // correct seed looks wrong: the change handler wipes and re-renders.
+  // correct seed looks wrong: the change handler wipes and re-renders. The
+  // invoice card is not key material and must survive.
   const lnSource = read("src/js/lightning.js");
   const listener = lnSource.match(/for \(const id of \["ln-format", "ln-network"\]\) \{\s*document\.getElementById\(id\)\?\.addEventListener\("change", \(\) => \{([\s\S]*?)\}\);\s*\}/);
   assert.ok(listener, "the change listener exists");
-  assert.match(listener[1], /hodlLnWipeMem\(\)/, "the change wipes the derived result");
+  assert.match(listener[1], /hodlLnKeyWipeMem\(\)/, "the change wipes the derived key result");
+  assert.doesNotMatch(listener[1], /hodlLnWipeMem\(\)/, "the change must not wipe the invoice card");
   assert.match(listener[1], /hodlLnRender\(\)/, "the change re-renders the empty state");
   assert.match(listener[1], /hodlLnSyncFormat\(\)/, "the change still syncs the network field");
+  assert.match(listener[1], /hodlLnInvRender\(\)/, "the change re-renders the invoice card");
 });
 
 // ── Tool behaviour through the real wiring (mini DOM) ───────────────────────
