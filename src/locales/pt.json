@@ -2186,7 +2186,6 @@
   "{name} · 1 key · fingerprint {fingerprint}": "{name} · 1 chave · impressão digital {fingerprint}",
   "{name} · {count} keys · fingerprint {fingerprint}": "{name} · {count} chaves · impressão digital {fingerprint}",
   "Choose a Bitcoin Core wallet.dat first.": "Escolha um Bitcoin Core wallet.dat primeiro.",
-  "SHA-256 of the domain tag, the wallet's {count} spend secrets and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 da tag de domínio, os {count} segredos de gasto da carteira e a transcrição {source}; os primeiros {bits} bits desse hash se tornam a semente.",
   "Two characters per card, rank then suit (AS 7H TD …).": "Dois caracteres por carta, valor depois naipe (AS 7H TD …).",
   "Faces 1–6, as many rolls as the dice method recommends.": "Faces 1–6, tantos lançamentos quanto o método de dados recomenda.",
   "Bitcoin Core wallet.dat": "Bitcoin Core wallet.dat",
@@ -2226,5 +2225,6 @@
   "Paste the original transaction you broadcast, then Inspect the fee-bump PSBT above. EntropyLab checks that the bump only raises the fee: the same payments to the same addresses, with the extra fee taken from your change. Use your own copy of the original — the one you signed or saved — not the one your wallet or server shows you now. A malicious server can change that copy.": "Cole a transação original que você transmitiu, então inspecione o PSBT de aumento de taxa acima. EntropyLab verifica que o aumento apenas eleva a taxa: os mesmos pagamentos para os mesmos endereços, com a taxa extra retirada da sua mudança. Use sua própria cópia do original — aquela que você assinou ou salvou — não aquela que sua carteira ou servidor mostra a você agora. Um servidor malicioso pode alterar essa cópia.",
   "Original transaction you broadcast (raw hex or PSBT)": "Transação original que você transmitiu (hex bruto ou PSBT)",
   "cHNidP8B… or 0200000001…": "cHNidP8B… ou 0200000001…",
-  "Upload original": "Carregar original"
+  "Upload original": "Carregar original",
+  "SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 da tag de domínio, os segredos de gasto da carteira ({count}) e a transcrição {source}; os primeiros {bits} bits desse hash se tornam a semente."
 }
