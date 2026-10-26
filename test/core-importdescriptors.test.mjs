@@ -615,23 +615,20 @@ test("Copy Core deriveaddresses copies the lines and flashes Copied; a refusal c
   assert.equal(copied.length, 1, "a refused export copies nothing");
 });
 
-test("the deriveaddresses copy and its note show only in a preview build", () => {
+test("the deriveaddresses copy and its note show in every build", () => {
   const ui = keyExportHarness();
   const { account } = customAccount(84, "mainnet", 0, 2);
   const msig = { kind: "msig", script: "p2wsh", receiveDescriptor: receive, changeDescriptor: change, receive: [{ index: 0 }], change: [{ index: 0 }] };
-  // A test-hook build without the preview flag: the Key Station export, no copy.
+  // A test-hook build without the preview flag: the Key Station export and the copy.
   ui.__ENTROPYLAB_TEST_HOOKS__ = true;
   ui.__ENTROPYLAB_PREVIEW__ = false;
   assert.match(ui.hodlKeyCoreImportDescriptorsMarkup(account), /id="key-copy-importdescriptors"/);
-  assert.doesNotMatch(ui.hodlKeyCoreImportDescriptorsMarkup(account), /deriveaddresses/);
+  assert.match(ui.hodlKeyCoreImportDescriptorsMarkup(account), /id="key-copy-deriveaddresses"/);
   ui.hodlWalletResult = msig;
-  assert.doesNotMatch(ui.hodlMsigCoreImportDescriptorsMarkup(), /deriveaddresses/);
-  // A release build: the Key Station export stays hidden, as before.
+  assert.match(ui.hodlMsigCoreImportDescriptorsMarkup(), /id="msig-copy-deriveaddresses"/);
+  // A plain release build (no test hooks, no preview flag) shows both blocks
+  // with the button beside the importdescriptors copy and the agreed note.
   ui.__ENTROPYLAB_TEST_HOOKS__ = false;
-  assert.equal(ui.hodlKeyCoreImportDescriptorsMarkup(account), "");
-  // A preview build shows both blocks with the button beside the
-  // importdescriptors copy and the agreed note.
-  ui.__ENTROPYLAB_PREVIEW__ = true;
   for (const [prefix, markup] of [["key", ui.hodlKeyCoreImportDescriptorsMarkup(account)], ["msig", ui.hodlMsigCoreImportDescriptorsMarkup()]]) {
     assert.match(markup, new RegExp(`id="${prefix}-copy-importdescriptors"[^]*?</button>\\s*<button class="btn secondary" id="${prefix}-copy-deriveaddresses" type="button" aria-describedby="${prefix}-core-deriveaddresses-help">Copy Core deriveaddresses</button>`));
     assert.ok(markup.includes(`<p class="edge-note is-public" id="${prefix}-core-deriveaddresses-help">${coreDeriveAddressesHelp()}</p>`), `${prefix}: the agreed note`);

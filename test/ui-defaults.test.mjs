@@ -1739,8 +1739,12 @@ test("workspace tabs ship Core Wallet and the Journal and hold back only Lightni
   }
 });
 
-test("Key Station Core export markup stays hidden in release builds (test-hook and preview builds show it)", () => {
-  assert.match(appSource, /function hodlKeyCoreImportDescriptorsMarkup\(account\) \{\s*(?:\/\/[^\n]*\n\s*)*const preview = typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__;\s*if \(!preview && typeof __ENTROPYLAB_TEST_HOOKS__ !== "undefined" && !__ENTROPYLAB_TEST_HOOKS__\) return "";/);
+test("Key Station Core export markup shows in every build (released 2026-10-26)", () => {
+  const start = appSource.indexOf("function hodlKeyCoreImportDescriptorsMarkup(account) {");
+  assert.ok(start >= 0, "the Key Station Core export markup function exists");
+  const body = appSource.slice(start, appSource.indexOf("\n}\n", start));
+  assert.doesNotMatch(body, /__ENTROPYLAB_PREVIEW__|__ENTROPYLAB_TEST_HOOKS__/, "no build flag hides the export block");
+  assert.match(body, /id="key-core-importdescriptors"/);
 });
 
 test("one PSBT workspace contains PSBT Inspector, PSBT Editor and Nonce Inspector tabs", () => {

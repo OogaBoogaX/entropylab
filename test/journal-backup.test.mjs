@@ -1299,25 +1299,29 @@ test("snapshot combination ignores only capture time and never truncates history
   assert.equal(full.text.length, JOURNAL_MAX_TEXT_LENGTH);
 });
 
-const RELEASE_MODES = ["dice", "cards", "hex", "seed", "key"];
+const RELEASE_MODES = ["dice", "cards", "hex", "seed", "key", "corewallet"];
 
 test("a key file or journal backup naming a method this build does not offer is refused", () => {
-  // A release build leaves the preview-only core-wallet method out; a key
-  // exported from a preview build must not bring it back on import. Journal
-  // backups carry their keys through the same parseKeyVault.
+  // The shipped build offers the core-wallet method; a key exported from a
+  // build with a method this one lacks must not bring it back on import.
+  // Journal backups carry their keys through the same parseKeyVault.
   setKeyVaultModes(RELEASE_MODES);
   try {
-    const exported = serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: "cards" })]);
+    const exported = serializeKeyVault([managedKey({ mode: "lightning" })]);
     assert.throws(() => parseKeyVault(exported), /invalid key/);
+    assert.equal(parseKeyVault(serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: "cards" })])).keys[0].mode, "corewallet");
     assert.equal(parseKeyVault(serializeKeyVault([managedKey({ mode: "dice" })])).keys[0].mode, "dice");
     assert.equal(parseKeyVault(serializeKeyVault([managedKey()])).keys.length, 1, "a key with no mode stays the default dice method");
+    // A real method the build leaves out is refused the same way.
+    setKeyVaultModes(RELEASE_MODES.filter((mode) => mode !== "corewallet"));
+    assert.throws(() => parseKeyVault(serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: "cards" })])), /invalid key/);
   } finally {
     setKeyVaultModes(null);
   }
 });
 
-test("a preview build imports its core-wallet keys with their dice/cards source", () => {
-  setKeyVaultModes([...RELEASE_MODES, "corewallet"]);
+test("the shipped build imports its core-wallet keys with their dice/cards source", () => {
+  setKeyVaultModes(RELEASE_MODES);
   try {
     const [restored] = parseKeyVault(serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: "cards" })])).keys;
     assert.equal(restored.mode, "corewallet");
@@ -1327,28 +1331,29 @@ test("a preview build imports its core-wallet keys with their dice/cards source"
   }
 });
 
-test("app.js hands the import boundary the methods this build offers, after the preview gate", () => {
+test("app.js hands the import boundary the methods this build offers, after the core-wallet push", () => {
   const app = read("src/js/app.js");
-  const gate = app.indexOf('hodlKeyModes.push("corewallet")');
+  const push = app.search(/^\s*hodlKeyModes\.push\("corewallet"\);$/m);
   const set = app.indexOf("setKeyVaultModes(hodlKeyModes)");
-  assert.ok(gate > 0 && set > gate, "setKeyVaultModes runs after the preview-only method is (or is not) added");
+  assert.ok(push > 0 && set > push, "setKeyVaultModes runs after the core-wallet method is added");
 });
 
-test("the release build's own method list refuses core-wallet keys, the preview list accepts them", () => {
-  // Read the shipped list from app.js (not a hand-written copy), then apply
-  // the preview gate both ways, exactly as app.js does before calling
-  // setKeyVaultModes.
+test("the shipped method list accepts core-wallet keys and refuses a method the build does not offer", () => {
+  // Read the shipped list from app.js (not a hand-written copy): the literal
+  // plus the unconditional core-wallet push, exactly as app.js builds it
+  // before calling setKeyVaultModes.
   const app = read("src/js/app.js");
   const literal = app.match(/^var hodlKeyModes = (\[[^\]]*\])/m);
   assert.ok(literal, "app.js declares hodlKeyModes as an array literal");
-  const release = JSON.parse(literal[1]);
-  assert.ok(!release.includes("corewallet"), "the release list does not offer the preview-only method");
+  const shipped = JSON.parse(literal[1]);
+  assert.match(app, /^\s*hodlKeyModes\.push\("corewallet"\);$/m, "the core-wallet method is pushed unconditionally");
+  shipped.push("corewallet");
+  assert.ok(shipped.includes("corewallet"), "the shipped list offers the core-wallet method");
   const exported = serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: "dice" })]);
   try {
-    setKeyVaultModes(release);
-    assert.throws(() => parseKeyVault(exported), /invalid key/);
-    setKeyVaultModes([...release, "corewallet"]);
+    setKeyVaultModes(shipped);
     assert.equal(parseKeyVault(exported).keys[0].mode, "corewallet");
+    assert.throws(() => parseKeyVault(serializeKeyVault([managedKey({ mode: "lightning" })])), /invalid key/);
   } finally {
     setKeyVaultModes(null);
   }
