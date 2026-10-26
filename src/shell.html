@@ -818,11 +818,14 @@ words, pick one of the checksum words.</span></span>
     <p id="ln-inv-error" class="err" role="alert"></p>
     <div id="ln-inv-out" aria-live="polite"></div>
   </section>
+          <button class="btn secondary" id="ln-hsm-upload" type="button">Choose hsm_secret</button>
+          <input type="file" id="ln-hsm-file" hidden>
         <div class="ln-grid tool-section">
           <label class="field">Seed format
             <select id="ln-format" aria-describedby="ln-format-help">
               <option value="aezeed" selected>aezeed · LND cipher seed</option>
               <option value="bip39">BIP-39 · LDK (ldk-node)</option>
+            <option value="cln-hsm">Core Lightning hsm_secret</option>
             </select>
             <span class="field-note" id="ln-format-help">LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.</span>
           </label>

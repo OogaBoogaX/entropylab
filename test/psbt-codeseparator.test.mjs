@@ -356,7 +356,10 @@ test("control: a finalized two-key P2WSH script without separators attributes by
 // public-data reuse check for the deeper per-signature nonce check.
 
 function nonceSummaryDetail(html) {
-  const match = html.match(/Nonce analysis<\/span> — <span class='[^']*'>[^<]*<\/span><br><span class='muted'>([^<]*)<\/span>/);
+  // A problem or incomplete row keeps its detail inline; a completed row's
+  // detail sits in the "what each completed check covered" block as
+  // "Nonce analysis: detail" (the Inspector's progressive disclosure).
+  const match = html.match(/Nonce analysis<\/span>(?: — <span class='[^']*'>[^<]*<\/span><br><span class='muted'>|: )([^<]*)/);
   assert.ok(match, "Nonce analysis summary row");
   return match[1];
 }
