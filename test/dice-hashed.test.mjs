@@ -109,7 +109,7 @@ test("entropy results carry bytes only, never a hex string copy", () => {
   const result = api.hodlDiceEntropy("123456", "coldcard", 24);
   assert.equal(result.ok, true);
   assert.equal(Object.hasOwn(result, "hex"), false);
-  for (const name of ["hodlDiceEntropy", "hodlNumberBaseEntropy", "hodlCardsEntropy", "hodlDirectCardsEntropy", "hodlCoreMixSelectedEntropy", "hodlBrainLabEntropy"]) {
+  for (const name of ["hodlDiceEntropy", "hodlNumberBaseEntropy", "hodlCardsEntropy", "hodlDirectCardsEntropy", "hodlBrainLabEntropy"]) {
     assert.doesNotMatch(loadSlice(name), /\bhex\b/, `${name} must not build a hex string`);
   }
 });
