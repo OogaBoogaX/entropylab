@@ -8,11 +8,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import { mnemonicToSeedSync as scureMnemonicToSeed } from "@scure/bip39";
-import { deriveLndNode, deriveLdkNode, isKnownInternalVersion, hodlInitLn } from "../src/js/lightning.js";
+import { deriveLndNode, deriveLdkNode, isKnownInternalVersion, hodlInitLn, hodlLnWipeMem } from "../src/js/lightning.js";
 import { aezeedDecode } from "../src/js/aezeed.js";
+import { hashesReady } from "../src/js/hashes.js";
+import { secp256k1Ready } from "../src/js/secp256k1.js";
 import { MiniDocument } from "./mini-dom.mjs";
+
+await Promise.all([secp256k1Ready, hashesReady]);
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -159,8 +164,9 @@ function lnPage() {
   // only holds a set value that matches one of its options, so without them
   // the fixture cannot switch the tool off aezeed and the BIP-39/LDK path
   // never runs.
-  page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed · LND cipher seed</option><option value="bip39">BIP-39 · LDK (ldk-node)</option></select>'
+  page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed · LND cipher seed</option><option value="bip39">BIP-39 · LDK (ldk-node)</option><option value="cln-hsm">Core Lightning hsm_secret</option></select>'
     + '<div id="ln-network-field"><select id="ln-network"><option value="mainnet" selected>Mainnet</option><option value="testnet">Testnet</option></select></div>'
+    + '<button class="btn secondary" id="ln-hsm-upload" type="button">Choose hsm_secret</button><input type="file" id="ln-hsm-file" hidden>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
@@ -176,6 +182,43 @@ const lnDerive = (page) => {
   if (typeof go.onclick === "function") go.onclick();
   else go.dispatchEvent(new Event("click", { bubbles: true }));
 };
+
+test("the shell carries the Core Lightning hsm_secret controls", () => {
+  assert.match(shell, /<option value="cln-hsm">Core Lightning hsm_secret<\/option>/);
+  const upload = shell.match(/<button[^>]*\bid="ln-hsm-upload"[^>]*>/)?.[0];
+  assert.ok(upload, "#ln-hsm-upload is missing from the shell");
+  assert.match(upload, /\btype="button"/);
+  const file = shell.match(/<input[^>]*\bid="ln-hsm-file"[^>]*>/)?.[0];
+  assert.ok(file, "#ln-hsm-file is missing from the shell");
+  assert.match(file, /\btype="file"/);
+  assert.match(file, /\bhidden\b/);
+});
+
+test("the aezeed path renders its reveal switch on a page without the CLN controls", () => {
+  // The shell owns the CLN controls. A page that predates them (the LND/LDK
+  // fixtures, and any shell without the markup) must still derive aezeed and
+  // render #ln-reveal: the tool must not invent a format option, which would
+  // flip an empty select to cln-hsm and send the aezeed words down the CLN
+  // path (the round-1 regression).
+  const page = new MiniDocument();
+  globalThis.document = page;
+  page.body.innerHTML = '<select id="ln-format"></select>'
+    + '<div id="ln-network-field"><select id="ln-network"><option value="mainnet" selected>Mainnet</option><option value="testnet">Testnet</option></select></div>'
+    + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
+    + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
+    + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
+    + '<span id="ln-seed-help"></span>';
+  try {
+    hodlInitLn({ journalLog() {}, copyIcon: () => "" });
+    assert.equal(page.getElementById("ln-format").options.length, 0, "the tool invented a format option");
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the aezeed derive reported an error");
+    assert.ok(page.getElementById("ln-reveal"), "the aezeed derive rendered no reveal switch");
+  } finally {
+    delete globalThis.document;
+  }
+});
 
 test("the tool derives the published aezeed vector through its real wiring", () => {
   const page = lnPage();
@@ -263,4 +306,304 @@ test("deriveLdkNode refuses a passphrase that is not well-formed Unicode", () =>
   // derives exactly what the independent @scure implementation derives.
   const paired = "pass\uD83D\uDE00";
   assert.equal(deriveLdkNode(BIP39_VECTOR_WORDS, paired).nodePubKey, ldkExpected(BIP39_VECTOR_WORDS, paired).nodePubKey);
+});
+
+// ── Core Lightning hsm_secret (type 2) ──────────────────────────────────────
+
+// CLN v26.06.9, tests/test_wallet.py: the mnemonic hsm_secret that
+// `lightning-hsmtool generatehsm` writes with no passphrase.
+const CLN_ABANDON = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const CLN_NODE_ID = "03653e90c1ce4660fd8505dd6d643356e93cfe202af109d382787639dd5890e87d";
+const CLN_DESCRIPTORS = [
+  "wpkh(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)#hjszq0wk",
+  "sh(wpkh(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*))#u0t3u3xz",
+  "tr(xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ/0/*)#8e7pq23w",
+];
+
+// A type-2 hsm_secret: 32 zero bytes (the "no passphrase" marker) followed by
+// the mnemonic text, exactly as `lightning-hsmtool generatehsm` writes it.
+const clnType2File = (mnemonic) => {
+  const words = new TextEncoder().encode(mnemonic);
+  const file = new Uint8Array(32 + words.length);
+  file.set(words, 32);
+  return file;
+};
+
+// The test's own bech32 encoder, validated against the BIP173 example below,
+// so the expected addresses do not come from the code under test.
+const BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+const bech32Polymod = (values) => {
+  const generator = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let checksum = 1;
+  for (const value of values) {
+    const top = checksum >>> 25;
+    checksum = ((checksum & 0x1ffffff) << 5) ^ value;
+    for (let i = 0; i < 5; i++) if ((top >>> i) & 1) checksum ^= generator[i];
+  }
+  return checksum;
+};
+const bech32Encode = (hrp, data) => {
+  const expanded = [];
+  for (const char of hrp) expanded.push(char.charCodeAt(0) >> 5);
+  expanded.push(0);
+  for (const char of hrp) expanded.push(char.charCodeAt(0) & 31);
+  const mod = bech32Polymod([...expanded, ...data, 0, 0, 0, 0, 0, 0]) ^ 1;
+  const checksum = [];
+  for (let i = 0; i < 6; i++) checksum.push((mod >>> (5 * (5 - i))) & 31);
+  return `${hrp}1${[...data, ...checksum].map((value) => BECH32_CHARSET[value]).join("")}`;
+};
+const convertBits = (bytes, from, to, pad) => {
+  let accumulator = 0;
+  let bits = 0;
+  const out = [];
+  const maxValue = (1 << to) - 1;
+  for (const byte of bytes) {
+    accumulator = (accumulator << from) | byte;
+    bits += from;
+    while (bits >= to) {
+      bits -= to;
+      out.push((accumulator >> bits) & maxValue);
+    }
+  }
+  if (pad && bits > 0) out.push((accumulator << (to - bits)) & maxValue);
+  return out;
+};
+const hash160 = (bytes) => {
+  const sha = createHash("sha256").update(bytes).digest();
+  return new Uint8Array(createHash("ripemd160").update(sha).digest());
+};
+const p2wpkh = (publicKey, hrp) => bech32Encode(hrp, [0, ...convertBits(hash160(publicKey), 8, 5, true)]);
+
+const clnExpectedAddresses = (mnemonic, network) => {
+  const master = ScureHDKey.fromMasterSeed(scureMnemonicToSeed(mnemonic, ""));
+  const chain = master.derive("m/86'/0'/0'").deriveChild(0);
+  const hrp = network === "testnet" ? "tb" : "bc";
+  return Array.from({ length: 10 }, (_, index) => p2wpkh(chain.deriveChild(index).publicKey, hrp));
+};
+
+test("the test's bech32 encoder matches the BIP173 example", () => {
+  const publicKey = hexToBytes("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+  assert.equal(p2wpkh(publicKey, "bc"), "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
+});
+
+test("the CLN words path renders the published node id, descriptors and 10 addresses", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    const html = page.getElementById("ln-out").innerHTML;
+    assert.ok(html.includes(CLN_NODE_ID), "the CLN node id is not on screen");
+    for (const descriptor of CLN_DESCRIPTORS) assert.ok(html.includes(descriptor), `descriptor ${descriptor} is not on screen`);
+    for (const address of clnExpectedAddresses(CLN_ABANDON, "bitcoin")) assert.ok(html.includes(address), `address ${address} is not on screen`);
+    const expectedXprv = ScureHDKey.fromMasterSeed(scureMnemonicToSeed(CLN_ABANDON, "")).derive("m/86'/0'/0'").privateExtendedKey;
+    assert.ok(!html.includes(expectedXprv), "the xprv must stay hidden until revealed");
+    const reveal = page.getElementById("ln-reveal");
+    reveal.checked = true;
+    reveal.dispatchEvent(new Event("change"));
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(expectedXprv), "the xprv is not shown after reveal");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("a type-2 hsm_secret file derives the same node id and zeroes the bytes", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    const bytes = clnType2File(CLN_ABANDON);
+    const snapshot = Uint8Array.from(bytes);
+    fileInput.files = [{ arrayBuffer: async () => bytes.buffer }];
+    await fileInput.onchange();
+    assert.deepEqual([...bytes], [...new Uint8Array(snapshot.length)], "the file bytes were not zeroed");
+    assert.equal(fileInput.value, "", "the file input was not reset");
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID), "the file path did not derive the node id");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("a chosen hsm_secret file wins over words typed before it", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    // A valid 12-word mnemonic that is not the file's: if the typed words
+    // still won, the node id would be this one's, not CLN_NODE_ID.
+    page.getElementById("ln-seed").value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange();
+    assert.equal(page.getElementById("ln-seed").value, "", "the file load left the typed words in #ln-seed");
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID), "Derive used the typed words, not the chosen file");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("words typed after a chosen hsm_secret file win, and the file mnemonic is dropped", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
+    await fileInput.onchange();
+    assert.ok(page.getElementById("ln-session").textContent.length > 0, "the file load did not report its status");
+    const seed = page.getElementById("ln-seed");
+    seed.value = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    seed.dispatchEvent(new Event("input"));
+    assert.equal(page.getElementById("ln-session").textContent, "", "typing left the hsm_secret read status on screen");
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    const html = page.getElementById("ln-out").innerHTML;
+    assert.ok(!html.includes(CLN_NODE_ID), "Derive used the file mnemonic, not the typed words");
+    assert.ok(html.includes('id="ln-node-pubkey"'), "the typed words rendered no node key");
+    // The held file mnemonic is gone: with the words cleared, Derive has
+    // nothing to use and refuses.
+    seed.value = "";
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-missing", "the file mnemonic was still held after typing");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the CLN file path refuses type 3, encrypted, plain and invalid files with keyed errors", async () => {
+  const withPassphrase = clnType2File(CLN_ABANDON);
+  withPassphrase[0] = 0x42;
+  const cases = [
+    ["hsm-secret-passphrase", withPassphrase],
+    ["hsm-secret-encrypted", new Uint8Array(73).fill(7)],
+    ["hsm-secret-plain", new Uint8Array(32).fill(7)],
+    ["hsm-secret-truncated", new Uint8Array(16)],
+  ];
+  for (const [code, bytes] of cases) {
+    const page = lnPage();
+    try {
+      page.getElementById("ln-format").value = "cln-hsm";
+      const fileInput = page.getElementById("ln-hsm-file");
+      fileInput.files = [{ arrayBuffer: async () => bytes.buffer }];
+      await fileInput.onchange();
+      assert.equal(page.getElementById("ln-error").dataset.code, code, `expected ${code}`);
+      assert.ok(page.getElementById("ln-error").textContent.length > 0, "the refusal is not on screen");
+      assert.equal(page.getElementById("ln-out").innerHTML, "", "a refused file rendered a result");
+    } finally {
+      delete globalThis.document;
+    }
+  }
+});
+
+test("a passphrase with cln-hsm is refused", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    page.getElementById("ln-pass").value = "secret";
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-passphrase-not-needed");
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "a refused passphrase derived a node key");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the network field shows for aezeed and cln-hsm, not bip39", () => {
+  const page = lnPage();
+  try {
+    const field = page.getElementById("ln-network-field");
+    page.getElementById("ln-format").value = "aezeed";
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    assert.equal(field.hidden, false, "aezeed hides the network field");
+    page.getElementById("ln-format").value = "bip39";
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    assert.equal(field.hidden, true, "bip39 shows the network field");
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    assert.equal(field.hidden, false, "cln-hsm hides the network field");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the CLN network field selects the test-network address prefix and key version", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-network").value = "testnet";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
+    let html = page.getElementById("ln-out").innerHTML;
+    assert.ok(html.includes("tpub"), "the testnet descriptors do not use tpub");
+    for (const address of clnExpectedAddresses(CLN_ABANDON, "testnet")) assert.ok(html.includes(address), `address ${address} is not on screen`);
+    // The account xprv is hidden until revealed; its version byte must be
+    // testnet's (tprv), not mainnet's (xprv).
+    const reveal = page.getElementById("ln-reveal");
+    reveal.checked = true;
+    reveal.dispatchEvent(new Event("change"));
+    assert.match(page.getElementById("ln-out").innerHTML, /id="ln-root-xprv"[^>]*>tprv/, "the testnet account xprv does not use tprv");
+    // Mainnet: the same seed, the other version bytes.
+    page.getElementById("ln-network").value = "mainnet";
+    page.getElementById("ln-network").dispatchEvent(new Event("change"));
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    html = page.getElementById("ln-out").innerHTML;
+    assert.match(html, /wpkh\(xpub/, "the mainnet descriptors do not use xpub");
+    const mainReveal = page.getElementById("ln-reveal");
+    mainReveal.checked = true;
+    mainReveal.dispatchEvent(new Event("change"));
+    assert.match(page.getElementById("ln-out").innerHTML, /id="ln-root-xprv"[^>]*>xprv/, "the mainnet account xprv does not use xprv");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("Clear removes the CLN result and secrets", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID));
+    page.getElementById("ln-wipe").onclick();
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "Clear left the result on screen");
+    assert.equal(page.getElementById("ln-seed").value, "", "Clear left the seed on screen");
+    assert.equal(page.getElementById("ln-pass").value, "", "Clear left the passphrase on screen");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("hodlLnWipeMem drops the CLN result so a re-render shows nothing", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    assert.ok(page.getElementById("ln-out").innerHTML.includes(CLN_NODE_ID));
+    hodlLnWipeMem();
+    page.getElementById("ln-format").dispatchEvent(new Event("change"));
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "the wiped result was re-rendered");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the CLN result carries the not-a-channel-backup note", () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    page.getElementById("ln-seed").value = CLN_ABANDON;
+    lnDerive(page);
+    // The note's wording is translatable copy; the data attribute is the
+    // stable hook (AGENTS.md: tests never assert English text).
+    assert.ok(page.getElementById("ln-out").innerHTML.includes('data-ln-note="single-key"'), "the CLN result is missing its single-key note");
+  } finally {
+    delete globalThis.document;
+  }
 });

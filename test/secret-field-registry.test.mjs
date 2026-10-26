@@ -169,6 +169,19 @@ const CLEARING_PATHS = [
     probe: () => assert.match(around(psbtEditor, `$("psbted-file")`), /file\.value = ""/, "#psbted-file must be reset on consume"),
   },
   {
+    ids: ["ln-hsm-file"],
+    why: "the Core Lightning hsm_secret file picker (the bytes are zeroed on consume; Clear resets the input)",
+    probe: (id) => {
+      assert.match(lightning, /bytes\.fill\(0\)/, `#${id}: the file bytes must be zeroed`);
+      // The Clear button must reset the picker too: slice its handler so a
+      // stray `input.value = ""` elsewhere in the module cannot satisfy it.
+      const wipe = lightning.match(/getElementById\("ln-wipe"\)\.onclick = \(\) => \{([\s\S]*?)\n  \};/);
+      assert.ok(wipe, "the Clear handler exists");
+      assert.ok(wipe[1].includes(`"${id}"`), `#${id} must be reset by the Clear button`);
+      assert.match(wipe[1], /field\.value = ""/, `#${id} must be reset by the Clear button`);
+    },
+  },
+  {
     ids: ["core-add-text"],
     why: "Core Wallet: the add-descriptor paste may carry an xprv",
     probe: () => assert.match(coreWallet, /wipe\.onclick[\s\S]*?addText\.value = ""/, "the Core Wallet wipe must empty #core-add-text"),
