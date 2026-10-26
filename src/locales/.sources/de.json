@@ -2182,5 +2182,6 @@
   "The 12 words lightning-hsmtool getsecret prints, or choose the hsm_secret file.": "436261f1de833fc920ec920a4e8d4b8831ceee82d811aa74e5c544a2e60fae4b",
   "Show the {n} checks": "b036fffd2a27166a5b26c40e25868a17e27738ace8100e2325dcaec2ba63873f",
   "Choose hsm_secret": "aa2d4256e4536c139548d829409c27dfcbfeec2cc3efe1f391d9781463655985",
-  "Core Lightning hsm_secret": "66aa7998e197818ebca1a8e43c03d3f6fa19cf28e7f8ac2b094f03e5d07fa4a5"
+  "Core Lightning hsm_secret": "66aa7998e197818ebca1a8e43c03d3f6fa19cf28e7f8ac2b094f03e5d07fa4a5",
+  "hsm_secret read. Press Derive.": "dd43aba89eee408c9dfa6574fe9a3f7d51d392383f2bcc7ff48a9265e070ee43"
 }
