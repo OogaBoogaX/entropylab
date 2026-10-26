@@ -2181,5 +2181,6 @@
   "The 12 words lightning-hsmtool getsecret prints, or choose the hsm_secret file.": "As 12 palavras que lightning-hsmtool getsecret imprime, ou escolha o arquivo hsm_secret.",
   "Show the {n} checks": "Mostrar as {n} verificações",
   "Choose hsm_secret": "Escolher hsm_secret",
-  "Core Lightning hsm_secret": "Core Lightning hsm_secret"
+  "Core Lightning hsm_secret": "Core Lightning hsm_secret",
+  "hsm_secret read. Press Derive.": "hsm_secret lido. Pressione Derivar."
 }
