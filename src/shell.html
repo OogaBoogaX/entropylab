@@ -808,6 +808,16 @@ words, pick one of the checksum words.</span></span>
         <p class="muted tool-intro-note">LND seed → LND node key. BIP-39 seed → LDK node key. Decode only. Does not create a seed. Nothing leaves this page.</p>
       </div>
       <div class="card no-print tool-card" id="ln-card" role="tabpanel" hidden>
+  <section id="ln-inv-card" class="card no-print tool-card">
+    <label class="field" for="ln-inv-input">Invoice or offer</label>
+    <textarea id="ln-inv-input" class="field" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+    <div class="row">
+      <button type="button" class="btn primary" id="ln-inv-decode">Decode</button>
+      <button type="button" class="btn" id="ln-inv-clear">Clear</button>
+    </div>
+    <p id="ln-inv-error" class="err" role="alert"></p>
+    <div id="ln-inv-out" aria-live="polite"></div>
+  </section>
         <div class="ln-grid tool-section">
           <label class="field">Seed format
             <select id="ln-format" aria-describedby="ln-format-help">
