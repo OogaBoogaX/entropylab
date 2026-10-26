@@ -2187,7 +2187,6 @@
   "{name} · 1 key · fingerprint {fingerprint}": "{name} · 1 clé · empreinte {fingerprint}",
   "{name} · {count} keys · fingerprint {fingerprint}": "{name} · {count} clés · empreinte {fingerprint}",
   "Choose a Bitcoin Core wallet.dat first.": "Choisissez d'abord un wallet.dat de Bitcoin Core.",
-  "SHA-256 of the domain tag, the wallet's {count} spend secrets and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 de la balise de domaine, des {count} secrets de dépense du portefeuille et de la transcription {source} ; les {bits} premiers bits de ce hachage deviennent la graine.",
   "Two characters per card, rank then suit (AS 7H TD …).": "Deux caractères par carte, rang puis couleur (AS 7H TD …).",
   "Faces 1–6, as many rolls as the dice method recommends.": "Faces 1-6, autant de lancers que le recommande la méthode des dés.",
   "Bitcoin Core wallet.dat": "wallet.dat de Bitcoin Core",
@@ -2227,5 +2226,6 @@
   "Paste the original transaction you broadcast, then Inspect the fee-bump PSBT above. EntropyLab checks that the bump only raises the fee: the same payments to the same addresses, with the extra fee taken from your change. Use your own copy of the original — the one you signed or saved — not the one your wallet or server shows you now. A malicious server can change that copy.": "Collez la transaction originale que vous avez diffusée, puis inspectez le PSBT de surajustement des frais ci-dessus. EntropyLab vérifie que le surajustement n'augmente que les frais : les mêmes paiements aux mêmes adresses, les frais supplémentaires étant prélevés sur votre monnaie. Utilisez votre propre copie de l'original — celle que vous avez signée ou sauvegardée — pas celle que votre portefeuille ou serveur vous montre maintenant. Un serveur malveillant peut modifier cette copie.",
   "Original transaction you broadcast (raw hex or PSBT)": "Transaction originale que vous avez diffusée (hex brut ou PSBT)",
   "cHNidP8B… or 0200000001…": "cHNidP8B… ou 0200000001…",
-  "Upload original": "Télécharger l'original"
+  "Upload original": "Télécharger l'original",
+  "SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 de la balise de domaine, des secrets de dépense du portefeuille ({count}) et de la transcription {source} ; les {bits} premiers bits de ce hachage deviennent la graine."
 }
