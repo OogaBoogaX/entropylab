@@ -1606,7 +1606,6 @@
   "BIP32 root private key (xprv)": "4bf41abd6a6fc248347fd2ba96c12fda50546509a72dc14a097220857b5de15a",
   "The root xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.": "8bc44b01a0359016ff8cb6532757dec1da5be3fc34127fd7e2188b308d9145c0",
   "Private material stays hidden until you reveal it.": "15cdae6b69743519bfc009aed99a8d8be70badf835a16404095ba35c0ffd5c33",
-  "Node key derived. Decoded key material stays in page memory until you clear it.": "0b0f6756bb51acd9d3b8511382b3fb3d3eea1a7d46cfcc47aae28feacfe38ea2",
   "A 12 to 24 word BIP-39 seed phrase, as used by ldk-node.": "b15a4db175c7b9237c886388a3fb6cf690dbadf1d678727ac27210ce5f00f68e",
   "Transactions": "3e5136fd4b11c0dd3c1443977567433fb03e46134450d9a368d80c7ebf207a5f",
   "Txns": "bf9b463d1af4e8391d34cdef54bd60c31152ee8cdcd04a6905bd46520e22b4a7",
@@ -2228,5 +2227,6 @@
   "cHNidP8B… or 0200000001…": "f7b45e437d9e3f39c8bfd5d6d0488ab514acf7b5dcf2ef6464ecb112eaa7c69a",
   "Upload original": "76fddcf1af42578bcaae7ba4ab63201c82b058fcb7ed7e33c96191211c9ac0a1",
   "SHA-256 of the domain tag, the wallet's spend secrets ({count}) and the {source} transcript; the first {bits} bits of that hash become the seed.": "933cef78dba35bcaf14112db9882445e7a12f01baab850d111747649458e4d7c",
-  "The Lightning key worker stopped.": "69d60a389cb062341ac56a975b61bc5e70c91a8cdde42fc4b6e7c71b2b8dd5cd"
+  "The Lightning key worker stopped.": "69d60a389cb062341ac56a975b61bc5e70c91a8cdde42fc4b6e7c71b2b8dd5cd",
+  "Node key derived. Decoded key material stays in an isolated worker until you clear it.": "15c659e7974365cb388c4b5fc5e9a843c018752e5a2763fe3d71c050c76932e6"
 }
