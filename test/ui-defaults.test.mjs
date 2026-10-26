@@ -2622,7 +2622,7 @@ test("Update key carries the fingerprint and LifeHash with it: rows show the res
   // A passphrase-grind row is its own seed, so its fingerprint is computed
   // from the key's words once and rendered with a LifeHash; an account row
   // keeps the key's fingerprint.
-  assert.match(vanityController, /function hodlVanityMatchFingerprint\(match, run\) \{[\s\S]*?if \(run\.method !== "passphrase"\) return \(match\.fingerprint = run\.sourceLabel\);[\s\S]*?hodlMnemonicToSeed\(mnemonic, match\.passphrase\)[\s\S]*?hodlFingerprintHex\(root\.fingerprint\)/);
+  assert.match(vanityController, /function hodlVanityMatchFingerprint\(match, run\) \{[\s\S]*?if \(run\.method !== "passphrase"\) return \(match\.fingerprint = run\.sourceLabel\);[\s\S]*?hodlSeedFromEntropy\(state\.result\.entropy, match\.passphrase\)[\s\S]*?hodlFingerprintHex\(root\.fingerprint\)/);
   assert.match(vanityController, /box\.querySelectorAll\("img\[data-vanity-lifehash\]"\)\.forEach\(\(image\) => hodlFillKeyTabLifehash\(image, image\.dataset\.vanityLifehash\)\);/);
   // The shared LifeHash filler tags the image with the fingerprint it was
   // asked for and lets only the latest request paint.
@@ -2659,4 +2659,13 @@ test("the gap-limit note shows from index 20 for both prefixes, through hodlTTex
   assert.match(fn, /gapNote\.textContent = start >= 20 \? hodlTText\("[^"]*\{n\}[^"]*", \{ n: start\.toLocaleString\(\) \}\) : "";/);
   // An invalid window hides and clears the note.
   assert.match(fn, /catch \(error\) \{[\s\S]*?gapNote\.hidden = true;\s*gapNote\.textContent = "";/);
+});
+
+// The Core wallet.dat + dice/cards method was removed (owner, 2026-10-26: back
+// burner). The Core Wallet tab and its wallet.dat reader stay; the mix goes.
+test("the Core wallet.dat + dice/cards key method is gone", () => {
+  assert.doesNotMatch(appSource, /corewallet|coreMix|CoreMix|core-mix/);
+  assert.equal(Object.hasOwn(hodlKeyModeLabels, "corewallet"), false);
+  assert.throws(() => read("src/js/core-mix.js"), /ENOENT/);
+  assert.match(appSource, /import \{ initCoreWallet \} from "\.\/core-wallet-ui\.js";/, "the Core Wallet tab stays");
 });

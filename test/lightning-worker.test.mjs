@@ -513,6 +513,94 @@ test("the page resets the file input after the transfer detaches the hsm_secret 
   }
 });
 
+test("picking a new hsm_secret file drops a Derive queued for the earlier one", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    const idle = page.getElementById("ln-session").textContent;
+    let finishA;
+    fileInput.files = [{ arrayBuffer: () => new Promise((resolve) => { finishA = () => resolve(clnType2File(CLN_WORDS).buffer); }) }];
+    const readingA = fileInput.onchange();
+    page.getElementById("ln-go").onclick(); // queued behind file A's read
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_WORDS).buffer }];
+    await fileInput.onchange();
+    await until(() => page.getElementById("ln-session").textContent !== idle, "file B's loaded status");
+    finishA();
+    await readingA;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "a Derive queued for file A ran against file B without a click");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("a worker crash during an hsm_secret read does not leave Derive waiting for that read", async () => {
+  const page = lnPage();
+  try {
+    // A live worker from an earlier derive, for the crash to retire.
+    page.getElementById("ln-seed").value = AEZEED_WORDS;
+    page.getElementById("ln-go").onclick();
+    await until(() => page.getElementById("ln-out").innerHTML.includes(lndMainnet.nodePubKey), "the node key");
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    let finishRead;
+    const bytes = clnType2File(CLN_WORDS);
+    fileInput.files = [{ arrayBuffer: () => new Promise((resolve) => { finishRead = () => resolve(bytes.buffer); }) }];
+    const reading = fileInput.onchange();
+    spawned.at(-1).onerror?.({ message: "boom" });
+    finishRead();
+    await reading;
+    page.getElementById("ln-go").onclick();
+    // The click must be answered (a keyed refusal for the dropped file), not
+    // queued behind a read the crash superseded.
+    await until(() => (page.getElementById("ln-error").dataset.code || "").length > 0, "an answer to the Derive click");
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "a derive ran from a read the crash superseded");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("a refused hsm_secret file does not leave the earlier file's read status", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    const idle = page.getElementById("ln-session").textContent;
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_WORDS).buffer }];
+    await fileInput.onchange();
+    await until(() => page.getElementById("ln-session").textContent !== idle, "the hsm-loaded status");
+    const readStatus = page.getElementById("ln-session").textContent;
+    const refused = clnType2File(CLN_WORDS);
+    refused[0] = 0x42; // a type-3 (passphrase) file: the worker refuses it
+    fileInput.files = [{ arrayBuffer: async () => refused.buffer }];
+    await fileInput.onchange();
+    await until(() => page.getElementById("ln-error").dataset.code === "hsm-secret-passphrase", "the type-3 refusal");
+    assert.notEqual(page.getElementById("ln-session").textContent, readStatus, "the dropped file's read status is still shown");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("a file that cannot be read does not leave the earlier file's read status", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    const idle = page.getElementById("ln-session").textContent;
+    fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_WORDS).buffer }];
+    await fileInput.onchange();
+    await until(() => page.getElementById("ln-session").textContent !== idle, "the hsm-loaded status");
+    const readStatus = page.getElementById("ln-session").textContent;
+    fileInput.files = [{ arrayBuffer: async () => { throw new Error("NotReadableError"); } }];
+    await fileInput.onchange();
+    assert.ok(page.getElementById("ln-error").textContent.length > 0, "the read failure was not reported");
+    assert.notEqual(page.getElementById("ln-session").textContent, readStatus, "the dropped file's read status is still shown");
+  } finally {
+    await cleanup();
+  }
+});
+
 test("scripts/build.mjs injects the bundled worker source as __LN_WORKER_SOURCE__", () => {
   const build = readFileSync(new URL("../scripts/build.mjs", import.meta.url), "utf8");
   assert.match(build, /__LN_WORKER_SOURCE__: JSON\.stringify\(/, "the page bundle must carry the key worker source");

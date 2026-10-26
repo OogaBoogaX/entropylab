@@ -1299,70 +1299,44 @@ test("snapshot combination ignores only capture time and never truncates history
   assert.equal(full.text.length, JOURNAL_MAX_TEXT_LENGTH);
 });
 
-const RELEASE_MODES = ["dice", "cards", "hex", "seed", "key", "corewallet"];
+const RELEASE_MODES = ["dice", "cards", "hex", "seed", "key"];
 
 test("a key file or journal backup naming a method this build does not offer is refused", () => {
-  // The shipped build offers the core-wallet method; a key exported from a
-  // build with a method this one lacks must not bring it back on import.
-  // Journal backups carry their keys through the same parseKeyVault.
+  // A key exported from a build with a method this one lacks must not bring
+  // it back on import. Journal backups carry their keys through the same
+  // parseKeyVault.
   setKeyVaultModes(RELEASE_MODES);
   try {
     const exported = serializeKeyVault([managedKey({ mode: "lightning" })]);
     assert.throws(() => parseKeyVault(exported), /invalid key/);
-    assert.equal(parseKeyVault(serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: "cards" })])).keys[0].mode, "corewallet");
+    assert.throws(() => parseKeyVault(serializeKeyVault([managedKey({ mode: "corewallet" })])), /invalid key/);
     assert.equal(parseKeyVault(serializeKeyVault([managedKey({ mode: "dice" })])).keys[0].mode, "dice");
     assert.equal(parseKeyVault(serializeKeyVault([managedKey()])).keys.length, 1, "a key with no mode stays the default dice method");
-    // A real method the build leaves out is refused the same way.
-    setKeyVaultModes(RELEASE_MODES.filter((mode) => mode !== "corewallet"));
-    assert.throws(() => parseKeyVault(serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: "cards" })])), /invalid key/);
   } finally {
     setKeyVaultModes(null);
   }
 });
 
-test("the shipped build imports its core-wallet keys with their dice/cards source", () => {
+test("a key that kept the retired Core mix transcript imports without it", () => {
+  // A key switched from the removed method to dice still carried its
+  // transcript; nothing would show, use or clear it after import.
+  const fields = { derivationPath: "m/84'/0'/0'/0/0", dice: "123456", coreMixTranscript: "415263415263" };
   setKeyVaultModes(RELEASE_MODES);
   try {
-    const [restored] = parseKeyVault(serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: "cards" })])).keys;
-    assert.equal(restored.mode, "corewallet");
-    assert.equal(restored.coreMixSource, "cards");
+    const [restored] = parseKeyVault(serializeKeyVault([managedKey({ mode: "dice", fields })])).keys;
+    assert.equal(restored.mode, "dice");
+    assert.equal(restored.fields.dice, "123456");
+    assert.equal(Object.hasOwn(restored.fields, "coreMixTranscript"), false);
+    assert.equal(serializeKeyVault([managedKey({ mode: "dice", fields })]).includes("415263415263"), false, "an export carried the retired transcript");
   } finally {
     setKeyVaultModes(null);
   }
 });
 
-test("app.js hands the import boundary the methods this build offers, after the core-wallet push", () => {
+test("the Core wallet.dat mix method is gone from the source", () => {
   const app = read("src/js/app.js");
-  const push = app.search(/^\s*hodlKeyModes\.push\("corewallet"\);$/m);
-  const set = app.indexOf("setKeyVaultModes(hodlKeyModes)");
-  assert.ok(push > 0 && set > push, "setKeyVaultModes runs after the core-wallet method is added");
-});
-
-test("the shipped method list accepts core-wallet keys and refuses a method the build does not offer", () => {
-  // Read the shipped list from app.js (not a hand-written copy): the literal
-  // plus the unconditional core-wallet push, exactly as app.js builds it
-  // before calling setKeyVaultModes.
-  const app = read("src/js/app.js");
-  const literal = app.match(/^var hodlKeyModes = (\[[^\]]*\])/m);
-  assert.ok(literal, "app.js declares hodlKeyModes as an array literal");
-  const shipped = JSON.parse(literal[1]);
-  assert.match(app, /^\s*hodlKeyModes\.push\("corewallet"\);$/m, "the core-wallet method is pushed unconditionally");
-  shipped.push("corewallet");
-  assert.ok(shipped.includes("corewallet"), "the shipped list offers the core-wallet method");
-  const exported = serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: "dice" })]);
-  try {
-    setKeyVaultModes(shipped);
-    assert.equal(parseKeyVault(exported).keys[0].mode, "corewallet");
-    assert.throws(() => parseKeyVault(serializeKeyVault([managedKey({ mode: "lightning" })])), /invalid key/);
-  } finally {
-    setKeyVaultModes(null);
+  for (const token of ["corewallet", "coreMix", "CoreMix", "core-mix"]) {
+    assert.ok(!app.includes(token), `app.js still mentions ${token}`);
   }
-});
-
-test("a core-wallet source other than dice or cards is refused at import", () => {
-  for (const source of ["hex", "", 1, null, { toString: () => "dice" }]) {
-    const exported = serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: source })]);
-    assert.throws(() => parseKeyVault(exported), /invalid key/, `coreMixSource ${JSON.stringify(source)} must be refused`);
-  }
-  assert.equal(parseKeyVault(serializeKeyVault([managedKey({ mode: "corewallet", coreMixSource: "cards" })])).keys[0].coreMixSource, "cards");
+  assert.throws(() => read("src/js/core-mix.js"), /ENOENT/);
 });

@@ -9,7 +9,7 @@
 // The English wordlist itself stays JS-side (bip39-english.js) because the UI
 // reads it directly; a test proves it identical to the crate's list.
 import { wasmExports as wasm, withInput, withOutput } from "./entropylab-wasm.js";
-import { pbkdf2Sha512 } from "./hashes.js";
+import { pbkdf2Sha512, sha256 } from "./hashes.js";
 import { wordlist as bip39English } from "./bip39-english.js";
 
 export { bip39English };
@@ -167,4 +167,112 @@ const mnemonicToSeedSync = (mnemonic, passphrase = "") => {
   }
 };
 
-export { entropyToMnemonic, mnemonicToEntropy, mnemonicToSeedSync, validateMnemonic };
+// Byte-based seed derivation: the BIP39 seed without ever building the
+// phrase as a JavaScript string (strings cannot be zeroed). The canonical
+// English mnemonic is pure ASCII, so it is its own NFKD form and needs no
+// normalization; the passphrase is handled exactly as in mnemonicToSeedSync,
+// through saltFor. The wordlist's own entries are the only word strings.
+const encodedWords = bip39English.map((word) => textEncoder.encode(word));
+
+// The 11-bit groups over the entropy plus its SHA-256 checksum bits.
+const indicesFromEntropy = (entropy) => {
+  const checksum = sha256(entropy);
+  try {
+    const entropyBits = entropy.length * 8;
+    const indices = new Uint16Array((entropyBits + entropyBits / 32) / 11);
+    for (let i = 0; i < indices.length; i++) {
+      let value = 0;
+      for (let j = 0; j < 11; j++) {
+        const position = i * 11 + j;
+        const byte = position < entropyBits ? entropy[position >> 3] : checksum[(position - entropyBits) >> 3];
+        value = (value << 1) | ((byte >> (7 - (position & 7))) & 1);
+      }
+      indices[i] = value;
+    }
+    return indices;
+  } finally {
+    checksum.fill(0);
+  }
+};
+
+// The entropy carried by the leading whole bits of the 11-bit groups.
+const entropyFromIndices = (indices) => {
+  const entropy = new Uint8Array((indices.length / 3) * 4);
+  for (let i = 0; i < entropy.length * 8; i++) {
+    if ((indices[(i / 11) | 0] >> (10 - (i % 11))) & 1) entropy[i >> 3] |= 0x80 >> (i & 7);
+  }
+  return entropy;
+};
+
+// The trailing bits of the groups must equal the top bits of SHA-256(entropy),
+// exactly as mnemonicToEntropy's round trip through the crate requires.
+const validChecksum = (indices, entropy) => {
+  const checksum = sha256(entropy);
+  try {
+    const entropyBits = entropy.length * 8;
+    for (let j = 0; j < indices.length / 3; j++) {
+      const position = entropyBits + j;
+      const actual = (indices[(position / 11) | 0] >> (10 - (position % 11))) & 1;
+      if (actual !== ((checksum[j >> 3] >> (7 - (j & 7))) & 1)) return false;
+    }
+    return true;
+  } finally {
+    checksum.fill(0);
+  }
+};
+
+// The mnemonic's UTF-8 bytes: each word's ASCII bytes, one 0x20 between words.
+const phraseBytesFromIndices = (indices) => {
+  let length = indices.length - 1;
+  for (const index of indices) length += encodedWords[index].length;
+  const phrase = new Uint8Array(length);
+  let offset = 0;
+  for (let i = 0; i < indices.length; i++) {
+    if (i > 0) phrase[offset++] = 0x20;
+    phrase.set(encodedWords[indices[i]], offset);
+    offset += encodedWords[indices[i]].length;
+  }
+  return phrase;
+};
+
+// PBKDF2-HMAC-SHA512(phrase bytes, saltFor(passphrase), 2048, 64), with the
+// phrase bytes, the indices copy and the salt zeroed in finally, as
+// mnemonicToSeedSync does. Every secret copy is made inside the try, so a
+// passphrase saltFor refuses still leaves nothing behind.
+const seedFromEntropy = (entropy, passphrase = "") => {
+  if (!(entropy instanceof Uint8Array) || ![16, 20, 24, 28, 32].includes(entropy.length)) {
+    throw new RangeError("invalid entropy length");
+  }
+  let indices = new Uint16Array(0), salt = new Uint8Array(0), phrase = new Uint8Array(0);
+  try {
+    indices = indicesFromEntropy(entropy);
+    salt = saltFor(passphrase);
+    phrase = phraseBytesFromIndices(indices);
+    return pbkdf2Sha512(phrase, salt, 2048, 64);
+  } finally {
+    phrase.fill(0);
+    salt.fill(0);
+    indices.fill(0);
+  }
+};
+
+const seedFromIndices = (indices, passphrase = "") => {
+  if (!(indices instanceof Uint16Array) || !WORD_COUNTS.includes(indices.length)) throw new Error("Invalid mnemonic");
+  let owned = new Uint16Array(0), salt = new Uint8Array(0), phrase = new Uint8Array(0), entropy = new Uint8Array(0);
+  try {
+    owned = Uint16Array.from(indices);
+    salt = saltFor(passphrase);
+    for (const index of owned) if (index > 2047) throw new Error("Invalid mnemonic");
+    entropy = entropyFromIndices(owned);
+    if (!validChecksum(owned, entropy)) throw new Error("Invalid mnemonic");
+    phrase = phraseBytesFromIndices(owned);
+    return pbkdf2Sha512(phrase, salt, 2048, 64);
+  } finally {
+    phrase.fill(0);
+    salt.fill(0);
+    entropy.fill(0);
+    owned.fill(0);
+  }
+};
+
+export { entropyToMnemonic, mnemonicToEntropy, mnemonicToSeedSync, seedFromEntropy, seedFromIndices, validateMnemonic };

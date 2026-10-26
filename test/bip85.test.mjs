@@ -238,11 +238,12 @@ test("the mnemonic load path follows the session network like the xprv path", ()
     throw new Error(name);
   };
   const hodlUseKeyForBip85 = new Function(
-    "hodlBip85WipeParent", "hodlMnemonicToSeed", "hodlHDKey", "hodlWipeBytes", "hodlNetworkFamily", "hodlParseExtendedKey", "hodlResultRootNode", "hodlEntropyToMnemonic", "hodlBip39Wordlist",
+    "hodlBip85WipeParent", "hodlMnemonicToSeed", "hodlSeedFromEntropy", "hodlHDKey", "hodlWipeBytes", "hodlNetworkFamily", "hodlParseExtendedKey", "hodlResultRootNode", "hodlEntropyToMnemonic", "hodlBip39Wordlist",
     `${slice("hodlNetworkFamily")}; ${slice("hodlResultHasSeed")}; ${slice("hodlResultMnemonic")}; ${slice("hodlSeedSessionRoot")}; ${slice("hodlUseKeyForBip85")}; return hodlUseKeyForBip85;`,
   )(
     () => {},
     () => new Uint8Array(64), // a stand-in seed; only the flag is under test
+    () => new Uint8Array(64), // the same stand-in for the byte-based path
     HDKey,
     (bytes) => bytes.fill(0),
     undefined, // hodlNetworkFamily is sliced in

@@ -12,7 +12,7 @@ export const hodlKeyModeLabels = Object.freeze({
   hex: "Number bases",
   seed: "Seed phrase",
   key: "Private key",
-  corewallet: "Core wallet.dat + dice/cards",
+
 });
 
 // MS Station co-signer derivation specs (app.js's hodlMsigSpecs indexes these).
@@ -117,5 +117,5 @@ export const hodlKeySummarySubmethodLabels = Object.freeze({
   }),
   seed: Object.freeze({ numbers: "BIP39 word numbers", words: "Direct word entry" }),
   key: Object.freeze({ wif: "WIF", "hex-key": "Private key hex", minikey: "Mini key", brain: "Brain wallet" }),
-  corewallet: Object.freeze({ dice: "Dice rolls (D6)", cards: "Cards" }),
+
 });

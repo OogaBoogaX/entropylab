@@ -461,7 +461,9 @@ test("a vanity grind leaves no input or derived secret in its linear memory once
 test("the JS facades wipe their secret byte buffers (source guard)", () => {
   const bip39 = read("src/js/bip39.js");
   assert.match(bip39, /phrase\.fill\(0\);\s*salt\.fill\(0\);/, "mnemonicToSeedSync must wipe the encoded phrase and salt");
-  assert.equal((bip39.match(/phrase\.fill\(0\)/g) || []).length, 3, "every encoded phrase buffer must be wiped");
+  // mnemonicToEntropy, validateMnemonic, mnemonicToSeedSync, and the
+  // byte-based seedFromEntropy and seedFromIndices.
+  assert.equal((bip39.match(/phrase\.fill\(0\)/g) || []).length, 5, "every encoded phrase buffer must be wiped");
   const bip85 = read("src/js/bip85.js");
   assert.match(bip85, /child\.wipePrivateData\(\)/, "deriveBip85Entropy must wipe the derived child node");
   assert.ok((bip85.match(/wipeBytes\(digest\)/g) || []).length >= 6, "every BIP-85 HMAC digest must be wiped");
