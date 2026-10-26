@@ -2172,5 +2172,16 @@
   "{change} BTC returns to your key": "{change} BTC retournent à votre clé",
   "{signed} of {total} inputs signed": "{signed} sur {total} entrées signées",
   "Show the {n} checks": "Afficher les {n} vérifications",
-  "Upload sent .psbt": "Télécharger .psbt envoyé"
+  "Upload sent .psbt": "Télécharger .psbt envoyé",
+  "On-chain account path": "Chemin du compte on-chain",
+  "Reveal the account private key (xprv)": "Révéler la clé privée du compte (xprv)",
+  "BIP86 account private key (xprv)": "Clé privée du compte BIP86 (xprv)",
+  "The account xprv can spend the node's on-chain wallet. Reveal it only while this file runs offline on an air-gapped computer.": "Le xprv du compte peut dépenser le portefeuille on-chain du nœud. Ne le révélez que pendant que ce fichier s'exécute hors ligne sur un ordinateur isolé.",
+  "Watch-only descriptors": "Descripteurs watch-only",
+  "First 10 receive addresses": "10 premières adresses de réception",
+  "Single key. This is not a channel backup.": "Clé unique. Ceci n'est pas une sauvegarde de canal.",
+  "The 12 words lightning-hsmtool getsecret prints, or choose the hsm_secret file.": "Les 12 mots que lightning-hsmtool getsecret imprime, ou choisissez le fichier hsm_secret.",
+  "hsm_secret read. Press Derive.": "hsm_secret lu. Appuyez sur Dériver.",
+  "Choose hsm_secret": "Choisir hsm_secret",
+  "Core Lightning hsm_secret": "Core Lightning hsm_secret"
 }
