@@ -2183,5 +2183,16 @@
   "The 12 words lightning-hsmtool getsecret prints, or choose the hsm_secret file.": "Les 12 mots que lightning-hsmtool getsecret imprime, ou choisissez le fichier hsm_secret.",
   "hsm_secret read. Press Derive.": "hsm_secret lu. Appuyez sur Dériver.",
   "Choose hsm_secret": "Choisir hsm_secret",
-  "Core Lightning hsm_secret": "Core Lightning hsm_secret"
+  "Core Lightning hsm_secret": "Core Lightning hsm_secret",
+  "{name} · 1 key · fingerprint {fingerprint}": "{name} · 1 clé · empreinte {fingerprint}",
+  "{name} · {count} keys · fingerprint {fingerprint}": "{name} · {count} clés · empreinte {fingerprint}",
+  "Choose a Bitcoin Core wallet.dat first.": "Choisissez d'abord un wallet.dat de Bitcoin Core.",
+  "SHA-256 of the domain tag, the wallet's {count} spend secrets and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 de la balise de domaine, des {count} secrets de dépense du portefeuille et de la transcription {source} ; les {bits} premiers bits de ce hachage deviennent la graine.",
+  "Two characters per card, rank then suit (AS 7H TD …).": "Deux caractères par carte, rang puis couleur (AS 7H TD …).",
+  "Faces 1–6, as many rolls as the dice method recommends.": "Faces 1-6, autant de lancers que le recommande la méthode des dés.",
+  "Bitcoin Core wallet.dat": "wallet.dat de Bitcoin Core",
+  "Choose wallet.dat": "Choisir wallet.dat",
+  "Entropy source": "Source d'entropie",
+  "Rolls or cards": "Lancers ou cartes",
+  "Core wallet.dat + dice/cards": "wallet.dat Core + dés/cartes"
 }
