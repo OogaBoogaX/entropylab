@@ -20,6 +20,7 @@ const shell = read("src/shell.html");
 const expandable = read("src/js/expandable.js");
 const psbtEditor = read("src/js/psbt-editor.js");
 const coreWallet = read("src/js/core-wallet-ui.js");
+const lightning = read("src/js/lightning.js");
 
 // A named top-level function body in app.js, for "this id is cleared in
 // this function" probes.
@@ -71,9 +72,17 @@ const CLEARING_PATHS = [
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
   },
   {
-    ids: ["ln-seed", "ln-pass"],
-    why: "Lightning: aezeed cipher seed and passphrase",
-    probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
+    ids: ["ln-seed", "ln-pass", "ln-inv-input"],
+    why: "Lightning: aezeed cipher seed and passphrase, and the pasted invoice/offer (a payment request that must not outlive the session)",
+    probe: (id) => {
+      if (id === "ln-inv-input") {
+        assert.match(lightning, /function hodlLnInvWipeMem\(\) \{[\s\S]*?getElementById\("ln-inv-input"\)[\s\S]*?input\.value = ""/, `#${id} must be emptied by the invoice wipe`);
+        assert.match(lightning, /export function hodlLnWipeMem\(\) \{[\s\S]*?hodlLnInvWipeMem\(\)/, "hodlLnWipeMem must reach the invoice wipe");
+        assert.match(lifecycle, /hodlLnWipeMem\(\)/, "End Session and pagehide must reach the Lightning wipe");
+        return;
+      }
+      assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`);
+    },
   },
   {
     ids: ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-search", "journal-file"],
@@ -196,6 +205,7 @@ const PUBLIC_FIELDS = {
   "core-reveal": "privacy reveal toggle — session state, not key material",
   "derivation-path": "public derivation path text",
   "journal-method": "saved-record input-method enum; contains no recovery text",
+
   "msig-account": "derivation setting",
   "msig-account-harden": "derivation setting",
   "msig-address-range": "derivation setting",
