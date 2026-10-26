@@ -2108,5 +2108,7 @@
   "Check a descriptor for key reuse": "Verificar um descritor para reutilização de chave",
   "wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…))": "wsh(sortedmulti(2,[…]xpub…/<0;1>/*,…))",
   "Check": "Verificar",
-  "BIP 388 wallet policy": "Política de carteira BIP 388"
+  "BIP 388 wallet policy": "Política de carteira BIP 388",
+  "Download verification package": "Baixar pacote de verificação",
+  "Public data only (descriptors, xpubs, addresses) for checking this wallet with an independent Bitcoin Core tool.": "Apenas dados públicos (descritores, xpubs, endereços) para verificar esta carteira com uma ferramenta Bitcoin Core independente."
 }
