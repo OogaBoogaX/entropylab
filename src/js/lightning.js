@@ -45,6 +45,8 @@ let hodlLnLast = null; // the last derivation's public result
 let hodlLnRevealed = null; // the secret text, only while it is revealed
 let hodlLnReveal = false;
 let hodlLnHsmLoaded = false; // a type-2 hsm_secret file's words are loaded in the worker
+let hodlLnHsmReading = false; // the chosen file's bytes are still being read (no load posted yet)
+let hodlLnHsmDeriveQueued = false; // a Derive clicked during the read, to run once the file is loaded
 let hodlLnJournalLog = () => {};
 let hodlLnCopyIcon = () => "";
 let hodlLnWorker = null; // { worker, url } of the running key worker
@@ -150,6 +152,10 @@ export function hodlLnKeyWipeMem() {
   hodlLnClearResult();
   hodlLnHsmLoaded = false;
   hodlLnHsmPending = false;
+  hodlLnHsmReading = false;
+  hodlLnHsmDeriveQueued = false;
+  const session = document.getElementById("ln-session");
+  if (session) session.textContent = "";
 }
 
 // The full wipe: key material and the pasted invoice. Clear, End Session
@@ -279,7 +285,8 @@ function hodlLnMessage(data) {
   if (data.type === "derived") {
     hodlLnLast = data.result;
     hodlLnRender();
-    document.getElementById("ln-session").textContent = t("Node key derived. Decoded key material stays in page memory until you clear it.");
+    const session = document.getElementById("ln-session");
+    if (session) session.textContent = t("Node key derived. Decoded key material stays in an isolated worker until you clear it.");
     hodlLnJournalLog("derive", `${data.result.format} ${hodlLnLast.nodePubKey.slice(0, 8)}`, "ln");
     return;
   }
@@ -307,6 +314,12 @@ function hodlLnMessage(data) {
     const session = document.getElementById("ln-session");
     if (session) session.textContent = t("hsm_secret read. Press Derive.");
     hodlLnRender();
+    // A Derive clicked while the file was still being read is remembered:
+    // the worker now holds the words, so run it.
+    if (hodlLnHsmDeriveQueued) {
+      hodlLnHsmDeriveQueued = false;
+      hodlRunLn();
+    }
     return;
   }
   if (data.type === "error") {
@@ -314,8 +327,18 @@ function hodlLnMessage(data) {
     if (data.request === "load-hsm") {
       hodlLnHsmLoaded = false;
       hodlLnHsmPending = false;
+      hodlLnHsmDeriveQueued = false;
+      // A derive that raced this load (posted after it, before its refusal
+      // arrived) must not overwrite the load's keyed refusal with a generic
+      // "hsm-secret-missing": supersede it.
+      hodlLnRun += 1;
     }
     hodlLnRender();
+    // The result is gone, and a refused load drops the held file: the status
+    // says what is left, never "Node key derived…" or a dropped file's
+    // "hsm_secret read…".
+    const session = document.getElementById("ln-session");
+    if (session) session.textContent = hodlLnHsmLoaded ? t("hsm_secret read. Press Derive.") : t("No node key derived. Enter a seed phrase and derive.");
     const error = document.getElementById("ln-error");
     if (error) hodlLnShowError(error, data.error);
     if (data.request === "load-hsm") {
@@ -364,7 +387,13 @@ function hodlLnEnsureWorker() {
     hodlLnHsmRun += 1;
     hodlLnHsmLoaded = false;
     hodlLnHsmPending = false;
+    // A read still in flight is superseded by the run bump and returns early,
+    // so its flags are cleared here or every later Derive would wait forever.
+    hodlLnHsmReading = false;
+    hodlLnHsmDeriveQueued = false;
     hodlLnClearResult();
+    const session = document.getElementById("ln-session");
+    if (session) session.textContent = t("No node key derived. Enter a seed phrase and derive.");
     hodlLnRender();
     const error = document.getElementById("ln-error");
     if (error) {
@@ -408,6 +437,12 @@ function hodlRunLn() {
         code: "hsm-secret-passphrase-not-needed",
       });
     }
+    if (format === "cln-hsm" && hodlLnHsmReading) {
+      // The file is still being read: remember the click and derive once
+      // the worker holds the words (the hsm-loaded answer runs it).
+      hodlLnHsmDeriveQueued = true;
+      return;
+    }
     // A file that is loaded or still loading is the latest entry: derive
     // from the words the worker holds, not the box. The worker processes
     // messages in order, so a pending load arrives before this derive.
@@ -427,6 +462,9 @@ function hodlRunLn() {
     hodlLnWorker?.worker.postMessage({ type: "drop" });
     hodlLnClearResult();
     hodlLnRender();
+    // As for a worker refusal: the status says what is left.
+    const session = document.getElementById("ln-session");
+    if (session) session.textContent = hodlLnHsmLoaded ? t("hsm_secret read. Press Derive.") : t("No node key derived. Enter a seed phrase and derive.");
     hodlLnShowError(error, exception);
     hodlLnJournalLog("derive-error", format, "ln");
   }
@@ -466,6 +504,10 @@ async function hodlLnReadHsmFile() {
   // load.
   hodlLnHsmRun += 1;
   hodlLnHsmPending = true;
+  hodlLnHsmReading = true;
+  // A Derive queued for an earlier file is not a request for this one: it
+  // goes, as it does when words are typed.
+  hodlLnHsmDeriveQueued = false;
   const run = hodlLnHsmRun;
   const seed = document.getElementById("ln-seed");
   if (seed) seed.value = "";
@@ -480,16 +522,25 @@ async function hodlLnReadHsmFile() {
       bytes = null;
       return;
     }
+    hodlLnHsmReading = false;
     hodlLnEnsureWorker().postMessage({ type: "load-hsm", run, bytes }, [bytes.buffer]);
   } catch (exception) {
+    // A superseded read's failure is not this file's: it must not drop the
+    // newer file's words or clear its flags.
+    if (run !== hodlLnHsmRun) return;
     // A file that could not be read drops the last result's secrets and the
     // held file's words, as the in-page refusal did.
+    hodlLnHsmReading = false;
+    hodlLnHsmDeriveQueued = false;
     hodlLnHsmPending = false;
     hodlLnWorker?.worker.postMessage({ type: "drop" });
     hodlLnWorker?.worker.postMessage({ type: "drop-hsm" });
     hodlLnClearResult();
     hodlLnHsmLoaded = false;
     hodlLnRender();
+    // The held file is gone too: its "hsm_secret read…" status goes with it.
+    const session = document.getElementById("ln-session");
+    if (session) session.textContent = t("No node key derived. Enter a seed phrase and derive.");
     const error = document.getElementById("ln-error");
     if (error) hodlLnShowError(error, exception);
     hodlLnJournalLog("hsm-file-error", exception && typeof exception.code === "string" ? exception.code : "unknown", "ln");
@@ -575,8 +626,6 @@ const lnInvFormatUtc = (seconds) => {
 
 const lnInvRow = (label, valueHtml) => `<p class="psbt-kv"><span class="label">${label}</span> ${valueHtml}</p>`;
 
-const lnInvCopy = (id, value) => `<button type="button" class="btn" id="${id}" data-copy="${escapeHtml(value)}" aria-label="${escapeHtml(t("Copy"))}">${hodlLnCopyIcon()}</button>`;
-
 // Drops the decoded result and its rendering. The pasted text belongs to the
 // caller: a decode keeps it, Clear and the session wipe empty it too.
 function hodlLnInvReset() {
@@ -615,13 +664,13 @@ function hodlLnInvRender() {
     if (lnInvNetworkName(r.network) !== pageNetwork) {
       parts.push(`<p class="warn" data-ln-inv-warning="network">${hodlT("This invoice is for Bitcoin {network}, but page network is {pageNetwork}.", { network: lnInvNetworkName(r.network), pageNetwork })}</p>`);
     }
-    parts.push(lnInvRow(hodlT("Amount"), r.amountMsat === null
+    parts.push(lnInvRow(hodlT("Amount"), r.amountMsat === null || r.amountMsat === undefined
       ? hodlT("No amount set — payer chooses.")
       : `${escapeHtml(lnInvFormatMsat(r.amountMsat))} (${escapeHtml(r.amountMsat)} msat)`));
     if (r.description !== null) parts.push(lnInvRow(hodlT("Description"), escapeHtml(r.description)));
     if (r.descriptionHash) parts.push(lnInvRow(hodlT("Description hash"), `<code>${escapeHtml(r.descriptionHash)}</code>`));
-    parts.push(lnInvRow(hodlT("Payment hash"), `<code>${escapeHtml(r.paymentHash)}</code> ${lnInvCopy("ln-inv-payment-hash", r.paymentHash)}`));
-    parts.push(lnInvRow(hodlT("Node id (recovered)"), `<code>${escapeHtml(r.nodeId)}</code> ${lnInvCopy("ln-inv-node-id", r.nodeId)}`));
+    parts.push(lnInvRow(hodlT("Payment hash"), publicValueHtml(r.paymentHash, { id: "ln-inv-payment-hash", copyIcon: hodlLnCopyIcon })));
+    parts.push(lnInvRow(hodlT("Node id (recovered)"), publicValueHtml(r.nodeId, { id: "ln-inv-node-id", copyIcon: hodlLnCopyIcon })));
     parts.push(lnInvRow(hodlT("Created (UTC)"), escapeHtml(lnInvFormatUtc(r.timestamp))));
     parts.push(lnInvRow(hodlT("Expiry"), r.expiry === null ? "—" : `${escapeHtml(String(r.expiry))} s`));
     parts.push(lnInvRow(hodlT("Min final CLTV delta"), r.minFinalCltvExpiry === null ? "—" : escapeHtml(String(r.minFinalCltvExpiry))));
@@ -634,7 +683,7 @@ function hodlLnInvRender() {
     if (r.paymentSecret) {
       parts.push(`<label class="choice"><input type="checkbox" id="ln-inv-reveal" data-private-reveal ${hodlLnInvReveal ? "checked" : ""}> <span>${hodlT("Reveal the payment secret")}</span></label>`);
       if (hodlLnInvReveal) {
-        parts.push(`<p class="psbt-kv">${hodlT("Payment secret")} <code data-private-value data-i18n-skip translate="no">${escapeHtml(r.paymentSecret)}</code> ${lnInvCopy("ln-inv-payment-secret", r.paymentSecret)}</p>`);
+        parts.push(hodlLnPrivateField("ln-inv-payment-secret", t("Payment secret"), r.paymentSecret));
       } else {
         parts.push(`<p class="muted">${hodlT("The payment secret stays hidden until you reveal it.")}</p>`);
       }
@@ -668,8 +717,8 @@ function hodlLnInvRender() {
     if (r.fields.description !== undefined) parts.push(lnInvRow(hodlT("Description"), escapeHtml(r.fields.description)));
     if (r.fields.currency !== undefined) parts.push(lnInvRow(hodlT("Currency"), escapeHtml(r.fields.currency)));
     if (r.fields.issuer !== undefined) parts.push(lnInvRow(hodlT("Issuer"), escapeHtml(r.fields.issuer)));
-    if (r.fields.issuerId !== undefined) parts.push(lnInvRow(hodlT("Issuer signing key"), `<code>${escapeHtml(r.fields.issuerId)}</code> ${lnInvCopy("ln-inv-issuer-id", r.fields.issuerId)}`));
-    if (r.fields.nodeId !== undefined) parts.push(lnInvRow(hodlT("Invoice node id"), `<code>${escapeHtml(r.fields.nodeId)}</code> ${lnInvCopy("ln-inv-invoice-node-id", r.fields.nodeId)}`));
+    if (r.fields.issuerId !== undefined) parts.push(lnInvRow(hodlT("Issuer signing key"), publicValueHtml(r.fields.issuerId, { id: "ln-inv-issuer-id", copyIcon: hodlLnCopyIcon })));
+    if (r.fields.nodeId !== undefined) parts.push(lnInvRow(hodlT("Invoice node id"), publicValueHtml(r.fields.nodeId, { id: "ln-inv-invoice-node-id", copyIcon: hodlLnCopyIcon })));
     if (r.fields.payerId !== undefined) parts.push(lnInvRow(hodlT("Payer id"), `<code>${escapeHtml(r.fields.payerId)}</code>`));
     if (r.fields.payerNote !== undefined) parts.push(lnInvRow(hodlT("Payer note"), escapeHtml(r.fields.payerNote)));
     if (r.fields.paymentHash !== undefined) parts.push(lnInvRow(hodlT("Payment hash"), `<code>${escapeHtml(r.fields.paymentHash)}</code>`));
@@ -696,6 +745,14 @@ function hodlLnInvRender() {
       hodlLnInvRender();
     });
   }
+}
+
+// Test hook: render a decoded result directly, so the amountless rendering
+// can be checked for both null and undefined without a decoder that emits
+// the other.
+export function hodlLnInvRenderResult(result) {
+  hodlLnInvLast = result;
+  hodlLnInvRender();
 }
 
 function hodlRunLnInv() {
@@ -745,6 +802,12 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
   if (decode) decode.onclick = hodlRunLnInv;
   const clear = document.getElementById("ln-inv-clear");
   if (clear) clear.onclick = () => hodlLnInvWipeMem();
+  // The page's network setting is not the LND coin-type select: re-render
+  // the invoice card when the page announces a change, so its warning
+  // matches the new page network.
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("hodl:network-default", () => hodlLnInvRender());
+  }
   const go = document.getElementById("ln-go");
   if (!go) return;
   // The shell owns the CLN controls (#ln-hsm-upload / #ln-hsm-file); the
@@ -767,6 +830,8 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
   if (seedField) {
     seedField.addEventListener("input", () => {
       hodlLnHsmRun += 1;
+      hodlLnHsmReading = false;
+      hodlLnHsmDeriveQueued = false;
       if (!hodlLnHsmLoaded && !hodlLnHsmPending) return;
       hodlLnHsmLoaded = false;
       hodlLnHsmPending = false;
@@ -792,7 +857,8 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
     document.getElementById("ln-out").innerHTML = "";
     document.getElementById("ln-error").textContent = "";
     document.getElementById("ln-error").dataset.code = "";
-    document.getElementById("ln-session").textContent = t("Accessible fields were cleared (best effort).");
+    const session = document.getElementById("ln-session");
+    if (session) session.textContent = t("Accessible fields were cleared (best effort).");
   };
   for (const id of ["ln-format", "ln-network"]) {
     document.getElementById(id)?.addEventListener("change", () => {
@@ -810,6 +876,7 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
       hodlLnInvRender();
     });
   }
-  document.getElementById("ln-session").textContent = t("No node key derived. Enter a seed phrase and derive.");
+  const session = document.getElementById("ln-session");
+  if (session) session.textContent = t("No node key derived. Enter a seed phrase and derive.");
   hodlLnSyncFormat();
 }

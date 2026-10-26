@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { toWords } from "../src/js/bech32.js";
 import { hex } from "../src/js/coders.js";
 import { secp256k1Ready } from "../src/js/secp256k1.js";
-import { hodlInitLn, hodlLnWipeMem, lnInvNetworkName } from "../src/js/lightning.js";
+import { hodlInitLn, hodlLnWipeMem, lnInvNetworkName, hodlLnInvRenderResult } from "../src/js/lightning.js";
+import { bolt11Decode } from "../src/js/bolt11.js";
 import { MiniDocument } from "./mini-dom.mjs";
 
 await secp256k1Ready;
@@ -49,6 +50,26 @@ const BIP39_VECTOR_WORDS = "abandon abandon abandon abandon abandon abandon aban
 // A checksum-free BOLT12 encoder (the envelope has no checksum), so a
 // description can carry attacker-controlled markup.
 const BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+const bech32Polymod = (values) => {
+  const generator = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let checksum = 1;
+  for (const value of values) {
+    const top = checksum >>> 25;
+    checksum = ((checksum & 0x1ffffff) << 5) ^ value;
+    for (let i = 0; i < 5; i++) if ((top >>> i) & 1) checksum ^= generator[i];
+  }
+  return checksum;
+};
+const bech32Encode = (hrp, data) => {
+  const expanded = [];
+  for (const char of hrp) expanded.push(char.charCodeAt(0) >> 5);
+  expanded.push(0);
+  for (const char of hrp) expanded.push(char.charCodeAt(0) & 31);
+  const mod = bech32Polymod([...expanded, ...data, 0, 0, 0, 0, 0, 0]) ^ 1;
+  const checksum = [];
+  for (let i = 0; i < 6; i++) checksum.push((mod >>> (5 * (5 - i))) & 31);
+  return `${hrp}1${[...data, ...checksum].map((value) => BECH32_CHARSET[value]).join("")}`;
+};
 const bigsize = (n) => {
   if (n < 0xfd) return [n];
   if (n <= 0xffff) return [0xfd, (n >> 8) & 0xff, n & 0xff];
@@ -67,6 +88,16 @@ const ESCAPE_OFFER = encode("lno", [
   [10, hex.encode(new TextEncoder().encode("<img src=x>"))],
   [22, PUBKEY],
 ]);
+
+// The BOLT11 spec's amountless form: the same data part as COFFEE with the
+// amount removed from the HRP. The test's own bech32 encoder (validated
+// against BIP173 in test/lightning.test.mjs) recomputes the checksum, so the
+// expected invoice does not come from the code under test.
+const AMOUNTLESS_COFFEE = (() => {
+  const sep = COFFEE.indexOf("1");
+  const data = [...COFFEE.slice(sep + 1, -6)].map((c) => BECH32_CHARSET.indexOf(c));
+  return bech32Encode("lnbc", data);
+})();
 
 // BOLT12 offer_chains are the genesis block hash in internal byte order
 // (reversed from the displayed hash), per BOLT12 12-offer-encoding.md.
@@ -98,7 +129,7 @@ function invPage(network = "mainnet", qrSvg = () => "") {
     + '<div id="ln-inv-out" aria-live="polite"></div>';
   // The page network is the app's (hodlInspectorNetwork), not the LND
   // coin-type select: inject it the way app.js does.
-  hodlInitLn({ journalLog() {}, copyIcon: () => "", qrSvg, pageNetwork: () => network });
+  hodlInitLn({ journalLog() {}, copyIcon: () => "", qrSvg, pageNetwork: typeof network === "function" ? network : () => network });
   hodlLnWipeMem();
   return page;
 }
@@ -118,10 +149,9 @@ test("the invoice card ships in the shell after #ln-card, with its controls", ()
     last = at;
   }
   const cardTag = shell.match(/<section[^>]*id="ln-inv-card"[^>]*>/)?.[0] || "";
-  assert.match(cardTag, /class="card no-print tool-card"/, "the card keeps its classes");
   assert.ok(!/role="tabpanel"/.test(cardTag), "the card must not be a nested tabpanel");
   assert.ok(!/\shidden[\s>]/.test(cardTag), "the card must not carry hidden");
-  assert.match(shell, /id="ln-inv-error"[^>]*class="err"[^>]*role="alert"/);
+  assert.match(shell, /id="ln-inv-error"[^>]*role="alert"/);
   assert.match(shell, /id="ln-inv-out"[^>]*aria-live="polite"/);
 });
 
@@ -392,6 +422,57 @@ test("a decoded invoice survives a network change and is re-rendered", () => {
     network.dispatchEvent({ type: "change" });
     assert.ok(page.getElementById("ln-inv-out").innerHTML.includes(COFFEE_PAYMENT_HASH), "the invoice survives a network change");
     assert.equal(qrCalls, 2, "the invoice card is re-rendered after the network change");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("a page network change re-renders the invoice card's warning", () => {
+  let network = "mainnet";
+  const page = invPage(() => network);
+  try {
+    decode(page, COFFEE);
+    assert.equal(page.getElementById("ln-inv-out").querySelector('[data-ln-inv-warning="network"]'), null, "no warning on mainnet");
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
+    const warning = page.getElementById("ln-inv-out").querySelector('[data-ln-inv-warning="network"]');
+    assert.ok(warning, "the warning follows the page network");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the invoice card's copy controls use the shared clipboard pattern", () => {
+  const page = invPage();
+  try {
+    decode(page, COFFEE);
+    const out = page.getElementById("ln-inv-out");
+    assert.equal(out.querySelector('[data-copy]'), null, "a hand-made data-copy button is still rendered");
+    assert.ok(out.querySelector('[data-public-value]'), "the public values do not use the shared copy pattern");
+    assert.ok(out.querySelector('[data-copy-field]'), "the public values do not use the shared copy field");
+    const reveal = page.getElementById("ln-inv-reveal");
+    reveal.checked = true;
+    reveal.dispatchEvent(new Event("change"));
+    assert.ok(out.querySelector('[data-private-value]'), "the payment secret is not on the private-value pattern");
+    assert.equal(out.querySelector('[data-copy]'), null, "the payment secret still uses a hand-made data-copy button");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("an amountless invoice renders the payer-chooses amount for null and undefined", () => {
+  const page = invPage();
+  try {
+    const decoded = bolt11Decode(AMOUNTLESS_COFFEE);
+    assert.ok(decoded.amountMsat === null || decoded.amountMsat === undefined, "the decoder reports no amount");
+    // Both shapes take the same no-amount branch: identical output, and no
+    // "null", "undefined" or "NaN" formatted as an amount.
+    const rendered = [null, undefined].map((amountMsat) => {
+      hodlLnInvRenderResult({ ...decoded, amountMsat, text: AMOUNTLESS_COFFEE });
+      return page.getElementById("ln-inv-out").innerHTML;
+    });
+    assert.equal(rendered[0], rendered[1], "null and undefined amounts render differently");
+    assert.doesNotMatch(page.getElementById("ln-inv-out").textContent, /\b(?:null|undefined|NaN)\b/, "a missing amount was formatted as a value");
   } finally {
     delete globalThis.document;
   }

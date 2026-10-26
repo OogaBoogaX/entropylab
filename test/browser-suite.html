@@ -4174,13 +4174,13 @@
     const select = document.getElementById("key-mode-select");
     assert(select && modes.contains(select), "The method select is missing from #modes");
     assert(!modes.querySelector(".tab"), "The segmented method row should be gone at every width");
-    equal([...select.options].map((option) => option.value).join(","), "dice,cards,hex,seed,key,corewallet");
+    equal([...select.options].map((option) => option.value).join(","), "dice,cards,hex,seed,key");
     equal(select.getAttribute("aria-labelledby"), "key-method-label");
     equal(document.getElementById("key-method-label").textContent, "Derivation method");
     const root = modes.querySelector(".custom-select");
     assert(root, "The method select was not upgraded to the shared dropdown");
     const button = root.querySelector(".custom-select-button");
-    const labels = { dice: "Dice rolls", cards: "Cards", hex: "Number bases", seed: "Seed phrase", key: "Private key", corewallet: "Core wallet.dat" };
+    const labels = { dice: "Dice rolls", cards: "Cards", hex: "Number bases", seed: "Seed phrase", key: "Private key" };
     // Earlier tests leave their own method selected, so read the state rather
     // than assuming the page opened on dice.
     const opening = select.value;
@@ -4189,7 +4189,7 @@
     button.click();
     await wait(25);
     const options = [...root.querySelectorAll(".custom-select-option")];
-    equal(options.length, 6);
+    equal(options.length, 5);
     options.forEach((option, index) => {
       assert(option.querySelector(".key-method-icon svg"), `Option ${index} is missing its SVG mark`);
       assert(option.textContent.trim().length > 0, `Option ${index} is missing its label`);

@@ -41,6 +41,8 @@ function harness(parsed, reuse = false, sessionState = state) {
       return root;
     },
     hodlMnemonicToSeed: (words, pass) => (seedBytes = mnemonicToSeedSync(words, pass)), hodlHDKey: HDKey,
+    // The byte-based seed, checked against scure's text path.
+    hodlSeedFromEntropy: (entropy, pass) => (seedBytes = mnemonicToSeedSync(entropyToMnemonic(entropy, wordlist), pass)),
     hodlEntropyToMnemonic: entropyToMnemonic, hodlBip39Wordlist: wordlist,
     hodlWipeBytes: (bytes) => bytes?.fill(0),
     hodlEq: (a, b) => Buffer.from(a).equals(Buffer.from(b)),

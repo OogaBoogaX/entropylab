@@ -52,7 +52,7 @@ const around = (source, marker, span = 500) => {
 // says in one sentence why the field is security-critical.
 const CLEARING_PATHS = [
   {
-    ids: ["dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "pass", "cards", "direct-cards", "core-mix-transcript"],
+    ids: ["dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "pass", "cards", "direct-cards"],
     why: "Key Station: raw entropy transcripts, seed words, passphrases, private keys",
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle field sweep`),
   },
@@ -272,7 +272,7 @@ test("every shell field is classified as secret (cleared) or public (settings)",
   // another element, like the pre the session log renders into.)
   const inShell = (id) => shell.includes(`id="${id}"`);
   for (const id of known) {
-    assert.ok(inShell(id) || ["hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "cards", "direct-cards", "core-mix-transcript", "exp-text"].includes(id),
+    assert.ok(inShell(id) || ["hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "cards", "direct-cards", "exp-text"].includes(id),
       `#${id} is classified but no longer in the shell`);
   }
 });
