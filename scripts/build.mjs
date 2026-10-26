@@ -145,7 +145,7 @@ const jsMain = (await build({
   banner: { js: wasmAezNotice },
   plugins: [previewHtml],
   define: {
-    __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false",
+    __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false", __LN_WORKER_SOURCE__: JSON.stringify(await (await import("./ln-worker-source.mjs")).buildLnWorkerSource()),
     __ENTROPYLAB_PREVIEW__: preview ? "true" : "false",
   },
 })).outputFiles[0].text.split(siteLogoSpan).join(siteLogo)

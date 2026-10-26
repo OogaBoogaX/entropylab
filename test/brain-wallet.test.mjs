@@ -75,7 +75,7 @@ test("brain-wallet lab hashes exact UTF-8 text as 256-bit BIP39 entropy", () => 
   const expected = createHash("sha256").update(text, "utf8").digest("hex");
   const result = lab.hodlBrainLabEntropy(text);
   assert.equal(result.ok, true);
-  assert.equal(result.hex, expected);
+  assert.equal(Buffer.from(result.bytes).toString("hex"), expected);
   assert.equal(result.bits, 256);
   assert.equal(result.sourceBits, 256);
   assert.equal(result.method, "brain-lab");
@@ -103,7 +103,7 @@ test("the lab note says when the hashed text was trimmed (audit #365)", () => {
 test("brain-wallet lab rejects empty text and keeps private-key hashing separate", () => {
   assert.equal(lab.hodlBrainLabEntropy("").ok, false);
   const text = "correct horse battery staple";
-  const labHex = lab.hodlBrainLabEntropy(text).hex;
+  const labHex = Buffer.from(lab.hodlBrainLabEntropy(text).bytes).toString("hex");
   const scalarHex = Buffer.from(helpers.hodlBrainWalletPrivateKey(text)).toString("hex");
   assert.equal(labHex, scalarHex);
   assert.match(app, /kind === "brain" && hodlBrainWalletOutput\(\) === "hd"/);

@@ -71,6 +71,15 @@ export function keyVaultIdentity(state) {
   return String(state?.result?.masterIdentity || state?.result?.rootXpub || state?.result?.xpub || state?.result?.masterFingerprint || "");
 }
 
+// The key methods this build offers. app.js sets them once at load, and a
+// release build leaves out the preview-only ones. A key file or journal
+// backup naming any other method is refused at import, so it cannot bring a
+// hidden method back. Unset (the Node tests), every method passes.
+let vaultModes = null;
+export function setKeyVaultModes(modes) {
+  vaultModes = Array.isArray(modes) ? modes.slice() : null;
+}
+
 function vaultEntry(entry, exporting = false) {
   if (!entry || typeof entry !== "object" || Array.isArray(entry) || entry.isLab || !entry.fields || typeof entry.fields !== "object" || Array.isArray(entry.fields)) {
     throw new Error("The key file contains an invalid key.");
@@ -88,7 +97,7 @@ function vaultEntry(entry, exporting = false) {
     "globalSyncSource", "globalSyncBitCount", "seedAutocomplete",
     "passphraseBip39Words", "brainWalletOutput", "passphraseAutocomplete",
     "brainWalletTrim", "showCards", "showDiceFairness", "showNumberBaseCalculations",
-    "targetWords", "diceCoinPositions", "lastWord", "dplusLastWord", "accountId", "fields",
+    "targetWords", "diceCoinPositions", "lastWord", "dplusLastWord", "accountId", "coreMixSource", "fields",
   ]) {
     if (Object.prototype.hasOwnProperty.call(entry, field) && entry[field] !== undefined) copy[field] = JSON.parse(JSON.stringify(entry[field]));
   }
@@ -103,6 +112,10 @@ function vaultEntry(entry, exporting = false) {
   if (exporting && Number.isSafeInteger(entry.id) && entry.id > 0 && !entry.needsDerivation && KEY_NETWORKS.includes(entry.result?.network)) {
     copy.fields.network = entry.result.network;
   }
+  if (!exporting && vaultModes && !vaultModes.includes(copy.mode ?? "dice")) throw new Error("The key file contains an invalid key.");
+  // The core-wallet source picks how the transcript is parsed: only the two
+  // sources the method knows may cross the boundary.
+  if (!exporting && Object.hasOwn(copy, "coreMixSource") && copy.coreMixSource !== "dice" && copy.coreMixSource !== "cards") throw new Error("The key file contains an invalid key.");
   copy.name = String(copy.name || "Imported key").trim().replace(/\s+/g, " ").slice(0, 120) || "Imported key";
   copy.reveal = false;
   copy.result = null;

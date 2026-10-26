@@ -111,7 +111,7 @@ test("all six formats decode to the same entropy bytes", () => {
       const encoded = encodeInFormat(hex, format, words);
       const result = api.hodlNumberBaseEntropy(encoded, format, words);
       assert.equal(result.ok, true, `${words} words, ${format}`);
-      assert.equal(result.hex, hex, `${words} words, ${format}`);
+      assert.equal(Buffer.from(result.bytes).toString("hex"), hex, `${words} words, ${format}`);
     }
   }
 });
@@ -160,7 +160,7 @@ test("complete entropy can be synchronized into every number base", () => {
     for (const format of ["bin", "base4", "base8", "hex", "base32", "base64"]) {
       const value = api.hodlNumberBaseValueFromBytes(bytes, format, words);
       assert.equal(value.replace(/\s/g, ""), encodeInFormat(hex, format, words), `${words} words, ${format}`);
-      assert.equal(api.hodlNumberBaseEntropy(value, format, words).hex, hex, `${words} words, ${format}`);
+      assert.equal(Buffer.from(api.hodlNumberBaseEntropy(value, format, words).bytes).toString("hex"), hex, `${words} words, ${format}`);
     }
   }
 });

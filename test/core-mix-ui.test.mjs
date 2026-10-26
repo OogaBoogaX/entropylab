@@ -263,6 +263,13 @@ test("the reset zeroes every secret, drops the holder and hides its summary", ()
   assert.equal(elements["core-mix-summary"].textContent, "");
 });
 
+test("the reset clears a refusal left by the dropped file", () => {
+  const { context, elements } = loadContext();
+  elements["core-mix-error"].textContent = "This wallet file is too large to inspect safely.";
+  context.hodlCoreMixReset();
+  assert.equal(elements["core-mix-error"].textContent, "", "no stale error after the holder is dropped");
+});
+
 test("the active key's wipe drops the wallet secrets", () => {
   const secrets = [new Uint8Array(32).fill(7)];
   const context = vm.createContext({
@@ -372,11 +379,11 @@ test("dice: the mixed entropy is SHA-256 of the domain tag, the secret and the C
   assert.equal(result.ok, true);
   const expected = expectedEntropy([secret], "415263", 32);
   assert.deepEqual([...result.bytes], [...expected]);
-  assert.equal(result.hex, Buffer.from(expected).toString("hex"));
+  assert.equal(Buffer.from(result.bytes).toString("hex"), Buffer.from(expected).toString("hex"));
   assert.equal(result.bits, 256);
   assert.equal(result.method, "core-wallet-mix-v1");
   assert.equal(result.notes.length, 1);
-  assert.match(result.notes[0], /wallet's 1 spend secrets and the dice transcript/);
+  assert.match(result.notes[0], /wallet's spend secrets \(1\) and the dice transcript/);
   assert.match(result.notes[0], /of that hash become the seed/);
   const plain = sha256(utf8("415263")).slice(0, 32);
   assert.notDeepEqual([...result.bytes], [...plain], "not the plain dice method's bytes");

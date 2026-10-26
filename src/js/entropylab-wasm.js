@@ -21,12 +21,22 @@ import { makeStackScrub, stackRegion, overwriteWithPatterns } from "./wasm-stack
 
 export { stackRegion };
 
-const wasmBytes = (() => {
+// A key worker (ln-worker.js) is bundled without the base64 module and gets
+// the page's bytes in its first message, set here before this runs.
+const injectedBytes = globalThis.__entropyLabWasmBytes instanceof ArrayBuffer ? new Uint8Array(globalThis.__entropyLabWasmBytes) : null;
+const wasmBytes = injectedBytes ?? (() => {
   const binary = atob(ENTROPYLAB_WASM_B64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 })();
+// A copy of the module bytes (public) for a key worker to instantiate its own
+// instance, with its own linear memory, from. A retired session gets none:
+// the module must not run again, so no key worker can be spawned from it.
+export const wasmModuleBytes = () => {
+  if (retired) throw new Error("This session has ended; reload the page to start a new one.");
+  return wasmBytes.slice();
+};
 
 // The shadow-stack region is verified against the binary at load and the
 // exports are wrapped to zero that region once per task; see
@@ -45,15 +55,20 @@ const bind = (instance) => {
 };
 
 const isNode = typeof process !== "undefined" && !!(process.versions && process.versions.node);
-if (isNode) {
-  // Node has no synchronous-compilation size limit; tests stay synchronous.
+// Node has no synchronous-compilation size limit, so tests stay synchronous;
+// neither has a key worker, which is ready before its first message.
+const syncInit = isNode || injectedBytes !== null;
+if (syncInit) {
   bind(new WebAssembly.Instance(new WebAssembly.Module(wasmBytes), {}));
 }
-export const wasmReady = isNode
+export const wasmReady = syncInit
   ? Promise.resolve()
   : WebAssembly.instantiate(wasmBytes, {}).then(({ instance }) => bind(instance));
 
 let retired = false;
+// The Lightning key worker can outlive End Session unless the page stops it:
+// the page checks this on every worker use, not only at spawn.
+export const wasmRetired = () => retired;
 export const requireReady = () => {
   if (retired) throw new Error("This session has ended; reload the page to start a new one.");
   if (!wasm) throw new Error("EntropyLab WebAssembly is not initialized yet; await wasmReady.");
