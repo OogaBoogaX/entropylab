@@ -2183,5 +2183,16 @@
   "Show the {n} checks": "Zeige die {n} Prüfungen",
   "Choose hsm_secret": "Wählen Sie hsm_secret",
   "Core Lightning hsm_secret": "Core Lightning hsm_secret",
-  "hsm_secret read. Press Derive.": "hsm_secret lesen. Drücken Sie Ableiten."
+  "hsm_secret read. Press Derive.": "hsm_secret lesen. Drücken Sie Ableiten.",
+  "{name} · 1 key · fingerprint {fingerprint}": "{name} · 1 Schlüssel · Fingerabdruck {fingerprint}",
+  "{name} · {count} keys · fingerprint {fingerprint}": "{name} · {count} Schlüssel · Fingerabdruck {fingerprint}",
+  "Choose a Bitcoin Core wallet.dat first.": "Wählen Sie zuerst eine Bitcoin Core wallet.dat.",
+  "SHA-256 of the domain tag, the wallet's {count} spend secrets and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 des Domain-Tags, der {count} Spend-Secrets der Wallet und des {source}-Transkripts; die ersten {bits} Bits dieses Hashs werden zum Seed.",
+  "Two characters per card, rank then suit (AS 7H TD …).": "Zwei Zeichen pro Karte, Rang dann Farbe (AS 7H TD …).",
+  "Faces 1–6, as many rolls as the dice method recommends.": "Augenzahlen 1–6, so viele Würfe, wie die Würfelmethode empfiehlt.",
+  "Bitcoin Core wallet.dat": "Bitcoin Core wallet.dat",
+  "Choose wallet.dat": "wallet.dat wählen",
+  "Entropy source": "Entropiequelle",
+  "Rolls or cards": "Würfe oder Karten",
+  "Core wallet.dat + dice/cards": "Core wallet.dat + Würfel/Karten"
 }

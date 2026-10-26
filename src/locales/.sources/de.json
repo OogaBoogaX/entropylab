@@ -2183,5 +2183,16 @@
   "Show the {n} checks": "b036fffd2a27166a5b26c40e25868a17e27738ace8100e2325dcaec2ba63873f",
   "Choose hsm_secret": "aa2d4256e4536c139548d829409c27dfcbfeec2cc3efe1f391d9781463655985",
   "Core Lightning hsm_secret": "66aa7998e197818ebca1a8e43c03d3f6fa19cf28e7f8ac2b094f03e5d07fa4a5",
-  "hsm_secret read. Press Derive.": "dd43aba89eee408c9dfa6574fe9a3f7d51d392383f2bcc7ff48a9265e070ee43"
+  "hsm_secret read. Press Derive.": "dd43aba89eee408c9dfa6574fe9a3f7d51d392383f2bcc7ff48a9265e070ee43",
+  "{name} · 1 key · fingerprint {fingerprint}": "7cbbd3078ac215bd2064bb839986e415dd5e397281396f007f32c77404607526",
+  "{name} · {count} keys · fingerprint {fingerprint}": "67da373a69b809ebcdc2386174ab1cded60ed23154d930e1d6268d101859d0cd",
+  "Choose a Bitcoin Core wallet.dat first.": "7d957306de4f404e1b9cf69db5d5644920080fc5e5092e0428d33e99bab7c60d",
+  "SHA-256 of the domain tag, the wallet's {count} spend secrets and the {source} transcript; the first {bits} bits of that hash become the seed.": "d02a7c348f9678b573463d98da5e3d4a811de8fec2e557f6d0e135ad77ee59cb",
+  "Two characters per card, rank then suit (AS 7H TD …).": "ffcc11719b9b49e09a2d0908c1eb4561a317200189f44ba49fb150aae1ce1133",
+  "Faces 1–6, as many rolls as the dice method recommends.": "920bde7f4812338e724bf33ca726cc0585e5a8f53e4cb86b5f70219da808a274",
+  "Bitcoin Core wallet.dat": "9fce2b77dc18a19df85527371c027b1ca3b994d7e3ffbdbb38c75c36449a5969",
+  "Choose wallet.dat": "9013b0678a0017f200f1b4f824a36c3e91cc18a7ce51428b0c88075ac2817f78",
+  "Entropy source": "2bac57158e770e79d8ccf0b482b5d17aa83b3150401b1f9e7dee456410900018",
+  "Rolls or cards": "c0fc825fc6124c279103fdf208fe606e6f7c9829848c579d842708627cafa4c3",
+  "Core wallet.dat + dice/cards": "813e84a48420c638bbedfc1b304d9b8a3ae26111482091d7281a9bb2b8dfe28e"
 }
