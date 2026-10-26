@@ -216,15 +216,16 @@ test("a refusal reaches the error slot and creates no Blob", () => {
   assert.equal(blobs, 0, "no Blob is created");
 });
 
-test("the verification package button and note show only in a preview build", () => {
+test("the verification package button and note show in every build", () => {
   const ui = keyExportHarness();
   const account = keyStation();
   ui.__ENTROPYLAB_TEST_HOOKS__ = true;
   ui.__ENTROPYLAB_PREVIEW__ = false;
-  assert.doesNotMatch(ui.hodlKeyCoreImportDescriptorsMarkup(account), /verification-package/);
+  assert.match(ui.hodlKeyCoreImportDescriptorsMarkup(account), /id="key-save-verification-package"/);
   ui.hodlWalletResult = { ...msigResult(), receive: [{ index: 0 }], change: [{ index: 0 }] };
-  assert.doesNotMatch(ui.hodlMsigCoreImportDescriptorsMarkup(), /verification-package/);
-  ui.__ENTROPYLAB_PREVIEW__ = true;
+  assert.match(ui.hodlMsigCoreImportDescriptorsMarkup(), /id="msig-save-verification-package"/);
+  // A plain release build (no test hooks, no preview flag) shows both blocks.
+  ui.__ENTROPYLAB_TEST_HOOKS__ = false;
   for (const [prefix, markup] of [["key", ui.hodlKeyCoreImportDescriptorsMarkup(account)], ["msig", ui.hodlMsigCoreImportDescriptorsMarkup()]]) {
     assert.match(markup, new RegExp(`id="${prefix}-save-verification-package"`));
     assert.ok(markup.includes(`<p class="edge-note is-public" id="${prefix}-verification-package-help">Public data only (descriptors, xpubs, addresses) for checking this wallet with an independent Bitcoin Core tool.</p>`), `${prefix}: the approved note`);

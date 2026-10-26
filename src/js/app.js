@@ -834,7 +834,7 @@ function hodlCreateKeyMethodIcon(mode) {
 // Core wallet.dat + dice/cards (issue #552): the wallet's spend secrets are
 // mixed with a dice or card transcript. The wallet alone never makes a phrase,
 // and the secrets live only in this holder, wiped on every exit path.
-if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) hodlKeyModes.push("corewallet");
+hodlKeyModes.push("corewallet");
 // Key files and journal backups may only bring in the methods offered here.
 setKeyVaultModes(hodlKeyModes);
 var hodlCoreMix = null, hodlCoreMixSource = "dice", hodlCoreMixGeneration = 0;
@@ -2432,22 +2432,19 @@ function hodlCoreDeriveAddressesText(scope = "msig") {
     encode: core.codec.encode
   });
 }
-// The deriveaddresses copy is unreleased: only a preview build shows it
-// (docs/PREVIEW.md). typeof keeps the standalone Node extraction working.
+// The Core exports: importdescriptors save/copy, the verification package and
+// the deriveaddresses copy (released 2026-10-26).
 function hodlCoreImportDescriptorsButtons(prefix) {
-  return `<button class="btn secondary green" id="${prefix}-save-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Save Core Watch-only JSON")}</button>${typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? `
-    <button class="btn secondary green" id="${prefix}-save-verification-package" type="button" aria-describedby="${prefix}-verification-package-help">${hodlT("Download verification package")}</button>` : ""}
-    <button class="btn secondary" id="${prefix}-copy-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Copy Core importdescriptors")}</button>${typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? `
-    <button class="btn secondary" id="${prefix}-copy-deriveaddresses" type="button" aria-describedby="${prefix}-core-deriveaddresses-help">${hodlT("Copy Core deriveaddresses")}</button>` : ""}`;
+  return `<button class="btn secondary green" id="${prefix}-save-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Save Core Watch-only JSON")}</button>
+    <button class="btn secondary green" id="${prefix}-save-verification-package" type="button" aria-describedby="${prefix}-verification-package-help">${hodlT("Download verification package")}</button>
+    <button class="btn secondary" id="${prefix}-copy-importdescriptors" type="button" aria-describedby="${prefix}-core-importdescriptors-help">${hodlT("Copy Core importdescriptors")}</button>
+    <button class="btn secondary" id="${prefix}-copy-deriveaddresses" type="button" aria-describedby="${prefix}-core-deriveaddresses-help">${hodlT("Copy Core deriveaddresses")}</button>`;
 }
 function hodlCoreDeriveAddressesNote(prefix) {
-  if (typeof __ENTROPYLAB_PREVIEW__ === "undefined" || !__ENTROPYLAB_PREVIEW__) return "";
   return `<p class="edge-note is-public" id="${prefix}-core-deriveaddresses-help">${hodlT("Paste into Bitcoin Core's console (Window → Console), or after bitcoin-cli. Core prints the addresses; they must match the ones shown here. Use a node on the same network.")}</p>`;
 }
-// The verification package download is unreleased: only a preview build shows
-// it (docs/PREVIEW.md). typeof keeps the standalone Node extraction working.
+// The verification package note (released 2026-10-26).
 function hodlVerificationPackageNote(prefix) {
-  if (typeof __ENTROPYLAB_PREVIEW__ === "undefined" || !__ENTROPYLAB_PREVIEW__) return "";
   return `<p class="edge-note is-public" id="${prefix}-verification-package-help">${hodlT("Public data only (descriptors, xpubs, addresses) for checking this wallet with an independent Bitcoin Core tool.")}</p>`;
 }
 function hodlCoreImportDescriptorsNote(wallet) {
@@ -2459,11 +2456,6 @@ function hodlCoreImportDescriptorsNote(wallet) {
     : hodlT("Online node: createwallet disable_private_keys=true blank=true, then importdescriptors. First getnewaddress is this wallet's receive index 0, which is not in the address window shown above — display from index 0 or verify it on a signer before funding.");
 }
 function hodlKeyCoreImportDescriptorsMarkup(account) {
-  // Hidden in release builds until the team opens the Key Station Core export;
-  // test-hook and preview builds show it. typeof keeps the standalone Node
-  // extraction working; every shipped build defines both flags.
-  const preview = typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__;
-  if (!preview && typeof __ENTROPYLAB_TEST_HOOKS__ !== "undefined" && !__ENTROPYLAB_TEST_HOOKS__) return "";
   if (!account?.receiveDescriptor && !account?.changeDescriptor && !account?.addressBranches?.some(entry => entry.publicDescriptor)) return "";
   return `<div class="wallet-data-actions no-print" id="key-core-importdescriptors">
     <p class="edge-note is-public" id="key-core-importdescriptors-help">${hodlCoreImportDescriptorsNote(account)} ${hodlT("Exports the selected script type's displayed branches, using the wallet birthday under Downloads below.")}</p>
@@ -11584,7 +11576,7 @@ function hodlSyncPsbtControls() {
     }
     anything ||= typed || Boolean(document.getElementById(card.out)?.childElementCount);
   }
-  // The key-reuse check (preview builds) holds a pasted descriptor too.
+  // The key-reuse check holds a pasted descriptor too.
   anything ||= Boolean(value("descriptor-reuse-text") || document.getElementById("descriptor-reuse-out")?.childElementCount);
   enable("psbt-wipe", anything);
   enable("nonce-wipe", anything);
@@ -11809,19 +11801,16 @@ function hodlInitPsbt() {
     auditFile.value = "";
     if (chosen) hodlPsbtLoadAuditUpload(chosen);
   });
-  // The RBF screen is preview-only: its field and picker exist only in
-  // preview builds, so the wiring is gated the same way as the markup.
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    const rbfFile = document.getElementById("psbt-rbf-file");
-    document.getElementById("psbt-rbf-upload").onclick = () => rbfFile.click();
-    rbfFile.addEventListener("change", () => {
-      const chosen = rbfFile.files?.[0];
-      rbfFile.value = "";
-      if (chosen) hodlPsbtLoadRbfUpload(chosen);
-    });
-    // Editing the original retires a verdict computed from the old one.
-    document.getElementById("psbt-rbf-original")?.addEventListener("input", hodlPsbtClearRbfVerdict);
-  }
+  // The RBF fee-bump check (released 2026-10-26).
+  const rbfFile = document.getElementById("psbt-rbf-file");
+  document.getElementById("psbt-rbf-upload").onclick = () => rbfFile.click();
+  rbfFile.addEventListener("change", () => {
+    const chosen = rbfFile.files?.[0];
+    rbfFile.value = "";
+    if (chosen) hodlPsbtLoadRbfUpload(chosen);
+  });
+  // Editing the original retires a verdict computed from the old one.
+  document.getElementById("psbt-rbf-original")?.addEventListener("input", hodlPsbtClearRbfVerdict);
   document.getElementById("psbt-download").onclick = () => {
     hodlSetPsbtError(null);
     try {
@@ -12704,9 +12693,9 @@ function hodlRunPsbt() {
     let limits = { inputs: PSBT_INSPECTOR_LIMIT, outputs: PSBT_INSPECTOR_LIMIT, step: PSBT_INSPECTOR_LIMIT, format: hodlFormatCount };
     output.innerHTML = kind === "psbt" ? hodlRenderPsbt(parsed, sourceTag, checkedAt, "inspect", { network, limits }) : hodlRenderRawTx(parsed, sourceTag, checkedAt, "inspect", { network, limits });
     let audit = hodlPsbtPrependSignerAudit(output, bytes, kind, network);
-    // Preview only: the RBF verdict is prepended after the audit so it
+    // The RBF verdict is prepended after the audit so it
     // renders above it (Electrum GHSA-6jp4-8v48-cc5v).
-    if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) hodlPsbtPrependRbfCheck(output, bytes, kind, network);
+    hodlPsbtPrependRbfCheck(output, bytes, kind, network);
     hodlPsbtLast = { kind, parsed, sourceTag, checkedAt, network, limits, audit };
     hodlJournalLog("inspect", kind, "psbt");
   } catch (exception) {
@@ -20342,8 +20331,8 @@ function hodlInitWorkspace() {
   hodlInitPsbt();
   initPsbtEditor({ networkDefault: () => hodlInspectorNetwork(), copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup, journalLog: hodlJournalLog });
   initCoreWallet({ deps: hodlWalletDatDeps(), onImportIntoStation: hodlCoreImportIntoStation, copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup });
-  // Unreleased (#164): a release build strips its markup (docs/PREVIEW.md).
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) initDescriptorReuseCheck(document, { onChange: hodlSyncPsbtControls });
+  // The descriptor key-reuse check (#164, released 2026-10-26).
+  initDescriptorReuseCheck(document, { onChange: hodlSyncPsbtControls });
   hodlInitBip85();
   hodlInitVanity();
   hodlInitSp();
