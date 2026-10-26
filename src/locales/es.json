@@ -2183,5 +2183,15 @@
   "hsm_secret read. Press Derive.": "hsm_secret leído. Presiona Derivar.",
   "Show the {n} checks": "Mostrar las {n} verificaciones",
   "Choose hsm_secret": "Elegir hsm_secret",
-  "Core Lightning hsm_secret": "Core Lightning hsm_secret"
+  "Core Lightning hsm_secret": "Core Lightning hsm_secret",
+  "{name} · 1 key · fingerprint {fingerprint}": "{name} · 1 clave · huella digital {fingerprint}",
+  "{name} · {count} keys · fingerprint {fingerprint}": "{name} · {count} claves · huella digital {fingerprint}",
+  "Choose a Bitcoin Core wallet.dat first.": "Elige primero un Bitcoin Core wallet.dat.",
+  "SHA-256 of the domain tag, the wallet's {count} spend secrets and the {source} transcript; the first {bits} bits of that hash become the seed.": "SHA-256 de la etiqueta del dominio, los {count} secretos de gasto de la billetera y la transcripción {source}; los primeros {bits} bits de ese hash se convierten en la semilla.",
+  "Faces 1–6, as many rolls as the dice method recommends.": "Caras 1–6, tantas tiradas como recomiende el método de los dados.",
+  "Bitcoin Core wallet.dat": "Bitcoin Core wallet.dat",
+  "Choose wallet.dat": "Elegir wallet.dat",
+  "Entropy source": "Fuente de entropía",
+  "Rolls or cards": "Tiradas o cartas",
+  "Core wallet.dat + dice/cards": "Core wallet.dat + dados/cartas"
 }
