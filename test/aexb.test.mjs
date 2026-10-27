@@ -22,10 +22,81 @@ await hashesReady;
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtures = join(here, "fixtures", "aexb");
 const readJson = (name) => JSON.parse(readFileSync(join(fixtures, name), "utf8"));
-
 const positive = readJson("protocol-v1-multislot-vectors.json");
 const negative = readJson("protocol-v1-negative-vectors.json");
 const transport = readJson("transport-v1-vectors.json");
+
+// The verifier accepts objects, so canonical v1 constraints must hold even
+// when callers modify decoder output. Expectations come from wire-format
+// sections 4-7, independently of the verifier implementation.
+for (const mutation of [
+  ["duplicate slots", (m) => { m.slots = [m.slots[0], m.slots[0]]; }],
+  ["reordered slots", (m) => { m.slots.reverse(); }],
+  ["unsupported sighash", (m) => { m.slots[0].sighashType = 2; }],
+  ["invalid network", (m) => { m.network = 255; }],
+  ["fractional network", (m) => { m.network = 1.5; }],
+  ["missing network", (m) => { delete m.network; }],
+  ["short session", (m) => { m.sessionId = new Uint8Array(1); }],
+  ["short PSBT digest", (m) => { m.psbtDigest = new Uint8Array(1); }],
+  ["too many slots", (m) => { m.slots = Array(129).fill(m.slots[0]); }],
+  ["null slot", (m) => { m.slots[0] = null; }],
+  ["invalid input index", (m) => { m.slots[0].inputIndex = -1; }],
+  ["invalid opening", (m) => { m.slots[0].opening = new Uint8Array(33); }],
+]) {
+  test(`object verifier rejects ${mutation[0]} in signatures and reveals`, () => {
+    const [stage2, reveal, signatures] = [2, 3, 4].map((stage) =>
+      aexbDecode(positive.messages.find((m) => m.stage === stage).message_hex));
+    for (const message of [stage2, reveal, signatures]) mutation[1](message);
+    assert.equal(aexbVerify(signatures, reveal, stage2).ok, false);
+    assert.equal(aexbVerify(reveal, null, stage2).ok, false);
+  });
+  for (const stage of [2, 3, 4]) {
+    test(`object verifier rejects ${mutation[0]} in stage ${stage} with canonical reason`, () => {
+      const messages = [2, 3, 4].map((s) =>
+        aexbDecode(positive.messages.find((m) => m.stage === s).message_hex));
+      mutation[1](messages[stage - 2]);
+      const reason = ["duplicate slots", "reordered slots"].includes(mutation[0])
+        ? "SIGNATURE_SLOT_MISMATCH" : "INVALID_MESSAGE";
+      const expected = { ok: false, verdict: "fail", reason, slots: [] };
+      assert.deepEqual(aexbVerify(messages[2], messages[1], messages[0]), expected);
+      if (stage !== 4) {
+        assert.deepEqual(aexbVerify(messages[1], null, messages[0]), expected);
+      }
+    });
+  }
+}
+
+test("canonical object rejection precedes signature verification", () => {
+  const [stage2, reveal, signatures] = [2, 3, 4].map((stage) =>
+    aexbDecode(positive.messages.find((m) => m.stage === stage).message_hex));
+  signatures.slots.reverse();
+  signatures.slots[0].signature.fill(0);
+  assert.deepEqual(aexbVerify(signatures, reveal, stage2), {
+    ok: false, verdict: "fail", reason: "SIGNATURE_SLOT_MISMATCH", slots: []
+  });
+});
+
+test("object verifier validates stage-specific fields on every supplied stage", () => {
+  for (const stage of [2, 3, 4]) {
+    const messages = [2, 3, 4].map((s) =>
+      aexbDecode(positive.messages.find((m) => m.stage === s).message_hex));
+    const changed = messages[stage - 2].slots[0];
+    if (stage === 2) changed.rho = new Uint8Array(32);
+    if (stage === 3) changed.signature = new Uint8Array(64);
+    if (stage === 4) changed.rho = new Uint8Array(32);
+    assert.equal(aexbVerify(messages[2], messages[1], messages[0]).ok, false);
+  }
+});
+
+test("encoder rejects noninteger stage and network values", () => {
+  for (const field of ["stage", "network"]) {
+    for (const value of [undefined, NaN, 1.5, "1"]) {
+      const message = aexbDecode(positive.messages[0].message_hex);
+      message[field] = value;
+      assert.throws(() => aexbEncode(message), AexbError);
+    }
+  }
+});
 
 function bytesToHex(bytes) {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
