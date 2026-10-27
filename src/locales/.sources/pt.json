@@ -136,7 +136,6 @@
   "PSBT v0 (base64 or hex)": "4d77cc0b4cd4bf7910e141feb222301f42267413be592a85bf0a89e772600af8",
   "Address network": "0f94f94394b690fa5af62173c20b83f56dce88c63b332a56f3064fad755bc8ee",
   "Leave blank for inspect-only mode": "3b5f9c1575db2ec35aa8a1068b8255a4c4b474d2a3a59ea0a2097c359edcc17f",
-  "USB Jade only (Green host nonce + opening). QR / sign_psbt does not run anti-exfil yet. BitBox anti-klepto is a different mix — do not paste it here.": "e9e72e53afd02c6ec575ebc6ab61754c98914b7f907d07c51fe4c37a33a8f745",
   "Bitcoin mainnet": "cf4799ee4c9f9409cd3baa26cfe9639103cf7890e71c2c30a1fab4c2c04d88e8",
   "Testnet (practice)": "735aaaa0e0101e3cfa24a3e44963f31f7363fd8642a6c56a306983fbb96b566e",
   "Watch-only wallet data": "1e2f99c4e3df0ce5593c393dddba0915ff29ea994b644c05b79108309b6c2204",
@@ -220,7 +219,6 @@
   "Multisig {n} ({suffix})": "f8f22b543747b7fc6625c1342fa03a70d328d0229e21561fff8daed1836743f8",
   "BIP45 purpose keys do not contain an account number.": "9411aaa52dc8850baca03efa4ebcfdb22696cf9e1ecba3e60d1681f093134978",
   "Import the watch-only wallet descriptor into Sparrow or another wallet.": "1682b265142c5ebe9e49d1b75198a45cea486a45ae671e56e01ffbb18b868e90",
-  "32-byte host nonce ρ, then 33-byte compressed opening R, as hex": "e95e52e0f147cfb9a33d67232d4bcc9003a40f50e2cb1e900d7003bce5febcec",
   "Save unencrypted private sheet": "56f108a6bd08a6fb29236cf8455c095b0ff2fd12840a4520f9fa9f89a9bbc999",
   "Save watch-only sheet": "19c61b803b1bc5b079c32983648087893e0bd1e26f1482682c7c161999107078",
   "Wallet birthday": "afb4510f4d16336bdec1851013cdb1b9a31e93f8bd7625c888d72f14c1e0c99d",
@@ -947,8 +945,6 @@
   "Inspect with key": "a5a38fd7a8917ec2d828e8065e15c05c9ee93002ed9635588e5580181712ebf1",
   "Add a key to check each signature against RFC 6979 and low-r grinding, so an unexpected nonce can be told apart from a deterministic one.": "fe6a7e6be8c3679d7d6921fd2ba93acb8f2cdd306309130080470a38fc2a275a",
   "Enter a BIP39 seed phrase, root xprv/tprv, WIF, or 64-character hex.": "ece4c66181e6cb98cc8c00770ab9612d9ab548e441e42382dd83a8cb8f31e1dd",
-  "Jade anti-exfil transcript (optional)": "bb204d366fdb2752a99e4cf8c979ed605e152af833be5963a5a76672484b433d",
-  "Jade anti-exfil transcript": "c0f3671ac83cb8af38423592517685287b16bd4628a648c2d9590d4bda84333b",
   "Cross-session ECDSA nonce history": "e510543b2736897a4f823524a79eb5290540851f485728083d375138d599bef6",
   "Compare this inspection with earlier ECDSA signatures without keeping a PSBT or signature. The versioned file records when each r value was checked, its master fingerprint when available, the raw r value, hashed signing-key and message/source identifiers, and a verification flag. A master fingerprint groups a wallet; the hashed signing-key identifier keeps different child keys distinct. This is correlation-sensitive metadata, so keep it offline.": "6e1d0b2982c407d90bb3db28b2d83b4b547227a2564f9592fa50c656f770a2ee",
   "Upload Nonce History": "4d4c2d25566bb949ca8a74a83d194aa8114ffdc28c6a038a4f2181ba7ef3eb3c",
@@ -1392,7 +1388,6 @@
   "{count} inscription envelopes in this PSBT.": "c18b5c4ae4efaa14f7fefae2a8b1ab8813fda7ed3c30603ced46823f905ca263",
   "This is what the file reveals in witness or tap-leaf scripts. EntropyLab does not number sats, fetch content from the chain, or render binary payloads.": "11ad88fb2204111b0629004177b9d2fcb6f96d7869c89fa8f154ffc652080061",
   "ECDSA nonce check": "06c00a26b41bd9453d770ed62da5a999da61bb9e978976b0344cff5a2ec56292",
-  "Jade anti-exfil transcript not used:": "7731b337343c541af986ecb341db66170771c002e3d005553fb0ac3e8a6c084d",
   "Reused nonce detected for the same public key.": "ab09acf9131848488557ef4eaf5b01fe7c2d0f1a59091a5046ccee27c2dd8ec0",
   "The same r value appears on different message digests. If both signatures are valid, the private key can be recovered. Do not broadcast this transaction.": "fcf446e0dbda71b979963064415c6bee8ff0d314689d922d20b9a4bb65f64f99",
   "Possible repeated nonce for the same public key.": "8a49b92885ec77771ad2367f68ceef988afc70e29feea185a5dc71cd98a20218",
@@ -1406,7 +1401,6 @@
   "No ECDSA signatures with a readable r value are present, so there is no nonce to compare yet.": "b0a8f6f0518e63e4833e0ae9c6bee15720d6f514f5da2b6ff97767abeabce78f",
   "r values:": "6d231644e6cc23e2d7a8d7af64a1bee535c98ab4e387607d83a5b5770a42dbab",
   "(input {n})": "0725163fb5f6a0b092570edd497841f332ed4c1cefd45626808bea1e5c8f805c",
-  "RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding; a signature on a script containing OP_CODESEPARATOR is reported as unverifiable instead of compared. Jade anti-exfil is secp256k1-zkp sign-to-contract and needs the USB host nonce plus signer opening; QR / sign_psbt Jade does not run it yet. BitBox anti-klepto is a different construction. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER; the same r value claimed under two different public keys is flagged as a mislabeled field rather than skipped. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0–2, 50 receive + 50 change, all four script types. It does not talk to the chain.": "8c985bc6f77a639e9ed5fed4bc8d8fa4022da256ee9b3b98acea8e69f03a1d50",
   "Previous outputs and fee": "3f48ccff70d32ce956e404123b8f2156a2c9ab814a49029730f159c67a8d4e62",
   "The claimed output amounts exceed the claimed input amounts, so the PSBT's own claims are inconsistent; claims were not checked against previous transactions or the blockchain.": "7d1b9dfac8aef495fe1c59f5e8a742f27d85595347cb1855836a72db51821c47",
   "Amounts and fee were calculated from PSBT-provided witness UTXO claims, but those claims were not checked against previous transactions or the blockchain.": "0cc5ab7908ffa8455ae7f450ed98afa7e1b73dbb512c58677dabb0d68820ff9e",
@@ -2240,5 +2234,6 @@
   "Lightning tools": "3db42df22e47268174884c0ded41b6cd5231c59a39e5e99f94526ff464471e7c",
   "Decode BOLT11 invoices and BOLT12 offers, or derive a node key: LND seed → LND node key, BIP-39 seed → LDK node key. Does not create a seed. Nothing leaves this page.": "1c8e79785ddc351281fd1887278ae22d698ceabc15227203fdb55c6b32150088",
   "Decode an invoice or offer (BOLT11 / BOLT12)": "e8eace3722dab742bac5380b1fa7874892c0536872b92dfe4f90e418737229a0",
-  "Paste a BOLT11 invoice or BOLT12 offer": "b18313ea52d1a4c8c8b799e9c4413895279ee104a9d20f8bee82ec2985347ad4"
+  "Paste a BOLT11 invoice or BOLT12 offer": "b18313ea52d1a4c8c8b799e9c4413895279ee104a9d20f8bee82ec2985347ad4",
+  "RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding; a signature on a script containing OP_CODESEPARATOR is reported as unverifiable instead of compared. Anti-exfil reads a Jade or BitBox02 host nonce plus the signer opening (secp256k1-zkp sign-to-contract), or the AEXB/AEXT messages of one session; QR / sign_psbt Jade does not run it yet. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER; the same r value claimed under two different public keys is flagged as a mislabeled field rather than skipped. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0–2, 50 receive + 50 change, all four script types. It does not talk to the chain.": "2993d8fc448dec7b9f1e40c775ebb082fbcbb4fa47a813d89be87ea46aa9337a"
 }
