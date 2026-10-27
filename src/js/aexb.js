@@ -109,9 +109,21 @@ function fail(reason) {
   return { ok: false, verdict: "fail", reason, slots: [] };
 }
 
+function messageValidationFailure(message, checkSignatureScalars = true) {
+  try {
+    validateMessage(message, checkSignatureScalars);
+    return null;
+  } catch (error) {
+    if (error instanceof AexbError) return fail(error.code);
+    throw error;
+  }
+}
+
 function verifyReveal(reveal, commitment) {
   if (!reveal || reveal.stage !== 3 || !Array.isArray(reveal.slots)) return fail("INVALID_MESSAGE");
   if (reveal.slots.length === 0) return fail("EMPTY_SLOT_SET");
+  const invalid = messageValidationFailure(reveal);
+  if (invalid) return invalid;
   const binding = checkCommitmentBinding(reveal, commitment);
   if (binding.fail) return binding.fail;
   const originalSlots = binding.slots;
@@ -142,6 +154,10 @@ function verifySignatures(signatures, reveal, commitment) {
   if (signatures.slots.length === 0 || reveal.slots.length === 0) {
     return fail("EMPTY_SLOT_SET");
   }
+  // Keep scalar failures in the existing per-slot NON_LOW_S result below;
+  // all message/set constraints must hold before any cryptographic checks.
+  const invalid = messageValidationFailure(signatures, false) || messageValidationFailure(reveal);
+  if (invalid) return invalid;
   if (
     signatures.network !== reveal.network ||
     !equalBytes(signatures.sessionId, reveal.sessionId) ||
@@ -232,6 +248,8 @@ function checkCommitmentBinding(message, commitment) {
   if (!Array.isArray(commitment.slots)) {
     return { fail: fail("INVALID_COMMITMENT") };
   }
+  const invalid = messageValidationFailure(commitment);
+  if (invalid) return { fail: invalid };
   if (
     message.network !== commitment.network ||
     !equalBytes(message.sessionId, commitment.sessionId) ||
@@ -338,10 +356,10 @@ function decodeSlot(stage, encoded, offset) {
   return { inputIndex, sighashType, signerPubkey, messageHash, commitment, opening, rho, signature };
 }
 
-function validateMessage(message) {
+function validateMessage(message, checkSignatureScalars = true) {
   if (!message || typeof message !== "object") throw new AexbError("INVALID_MESSAGE", "invalid message");
-  if (message.network < 0 || message.network > 4) throw new AexbError("INVALID_MESSAGE", "invalid network");
-  if (message.stage < 1 || message.stage > 4) throw new AexbError("INVALID_MESSAGE", "invalid stage");
+  if (!Number.isInteger(message.network) || message.network < 0 || message.network > 4) throw new AexbError("INVALID_MESSAGE", "invalid network");
+  if (!Number.isInteger(message.stage) || message.stage < 1 || message.stage > 4) throw new AexbError("INVALID_MESSAGE", "invalid stage");
   requireBytes("session ID", message.sessionId, 32);
   requireBytes("PSBT digest", message.psbtDigest, 32);
   if (!Array.isArray(message.slots) || message.slots.length < 1 || message.slots.length > MAX_SLOTS) {
@@ -355,7 +373,7 @@ function validateMessage(message) {
   const openings = new Set();
 
   for (const slot of message.slots) {
-    validateSlot(message.stage, slot);
+    validateSlot(message.stage, slot, checkSignatureScalars);
     const identifier = [slot.inputIndex, slot.signerPubkey];
     if (previousIdentifier !== null && compareIdentifier(identifier, previousIdentifier) <= 0) {
       throw new AexbError(
@@ -401,7 +419,8 @@ function validateMessage(message) {
   }
 }
 
-function validateSlot(stage, slot) {
+function validateSlot(stage, slot, checkSignatureScalars = true) {
+  if (!slot || typeof slot !== "object") throw new AexbError("INVALID_MESSAGE", "invalid slot");
   if (!Number.isInteger(slot.inputIndex) || slot.inputIndex < 0 || slot.inputIndex > 0xFFFFFFFF) {
     throw new AexbError("INVALID_MESSAGE", "input index must be a uint32");
   }
@@ -428,10 +447,12 @@ function validateSlot(stage, slot) {
   if (slot.rho !== null) requireBytes("host reveal", slot.rho, 32);
   if (slot.signature !== null) {
     requireBytes("compact signature", slot.signature, 64);
-    const r = bytesToBigInt(slot.signature.slice(0, 32));
-    const s = bytesToBigInt(slot.signature.slice(32));
-    if (!(r >= 1n && r < GROUP_N && s >= 1n && s <= GROUP_N / 2n)) {
-      throw new AexbError("INVALID_MESSAGE", "signature scalars are invalid or non-low-S");
+    if (checkSignatureScalars) {
+      const r = bytesToBigInt(slot.signature.slice(0, 32));
+      const s = bytesToBigInt(slot.signature.slice(32));
+      if (!(r >= 1n && r < GROUP_N && s >= 1n && s <= GROUP_N / 2n)) {
+        throw new AexbError("INVALID_MESSAGE", "signature scalars are invalid or non-low-S");
+      }
     }
   }
 }
