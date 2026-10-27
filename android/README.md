@@ -4,7 +4,7 @@ This directory is a thin Android wrapper around the **release** file `entropylab
 
 ## Pinned release bytes
 
-The HTML the APK embeds is **vendored** at `app/src/main/assets/entropylab.html`. These are the published **v1.0.0rc1** release bytes, SHA-256 `7f8685814e2bab0c80f75dd6d2cff1b3354bee51faecd65942a73e12968808a0`, taken from the GitHub release and checked against that release's `SHA256SUMS.txt` before committing. The `SHA256SUMS.asc` signature was not verified locally (no `gpg` on that host); check it before the next pin update. The same digest is the pin in `ENTROPYLAB_HTML.sha256`; `ENTROPYLAB_HTML.version` pins its displayed release identity independently of the root package version.
+The HTML the APK embeds is **vendored** at `app/src/main/assets/entropylab.html`. These are the published **v1.0.0** release bytes, SHA-256 `bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d`, taken from the GitHub release and checked against that release's `SHA256SUMS.txt` before committing. The `SHA256SUMS.asc` signatures on that manifest were verified locally with `gpg` against the release's `KEYS` file: four good signatures, from the keys with fingerprints `3428CBB54C369D8AF14EF600C801EE1D5285101E` (russeree), `64434EE48A96C38E78B7875F4E7E416EE17D237C` (MrHodlX), `542ECCA3B5CB74CEC95729B392C21496202E3774` (w-s-bitcoin) and `63EF760EE641A58516D54930F0B7D606C6FD9D52` (timechainb). The same digest is the pin in `ENTROPYLAB_HTML.sha256`; `ENTROPYLAB_HTML.version` pins its displayed release identity independently of the root package version.
 
 The wrapper deliberately does **not** package the `entropylab.html` at the repository root: that file is a CI artifact rebuilt and recommitted on every merge to `rock`, so a pin against it goes stale on merge. The vendored asset changes only when this module is deliberately updated to a new release.
 
@@ -16,8 +16,8 @@ The build and the app both fail closed on the pin:
 
 ### Updating to a future release
 
-1. Download `entropylab.html`, `SHA256SUMS.txt`, and `SHA256SUMS.asc` from the new GitHub release tag.
-2. Verify: `gpg --verify SHA256SUMS.asc SHA256SUMS.txt`, then `sha256sum -c SHA256SUMS.txt`.
+1. Download `entropylab.html`, `SHA256SUMS.txt`, `SHA256SUMS.asc`, and `KEYS` from the new GitHub release tag into an empty directory.
+2. Verify: import `KEYS` into a temporary `GNUPGHOME`, run `gpg --verify SHA256SUMS.asc SHA256SUMS.txt` (every signature must be good and come from a key in `KEYS`), then `sha256sum -c SHA256SUMS.txt`.
 3. Replace `app/src/main/assets/entropylab.html` with the verified file.
 4. Write the new digest into `ENTROPYLAB_HTML.sha256` (`<sha256>  entropylab.html`).
 5. Update `ENTROPYLAB_HTML.version`, the `RELEASE_SHA256` constant in `app/src/test/java/online/entropylab/android/HtmlPinTest.java` and the tag named in this section.
@@ -60,7 +60,7 @@ javac -d build/pincheck app/src/main/java/online/entropylab/android/HtmlPin.java
 java -cp build/pincheck online.entropylab.android.HtmlPinTest
 ```
 
-`HtmlPinTest` hashes `app/src/main/assets/entropylab.html` and compares it to `ENTROPYLAB_HTML.sha256` and the attested v1.0.0rc1 release digest.
+`HtmlPinTest` hashes `app/src/main/assets/entropylab.html` and compares it to `ENTROPYLAB_HTML.sha256` and the attested v1.0.0 release digest.
 
 ## CI and device acceptance
 
