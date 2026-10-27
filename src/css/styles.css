@@ -1353,6 +1353,8 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 .guide-example th, .guide-example td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
 .guide-example td { font-family: inherit; }
 .guide-example tbody th { border-top: 1px solid var(--border); font-weight: normal; }
+/* This shared phone padding has to come first. The guide rule below sets the same four sides, and a later shorthand of equal weight would wipe the safe-area insets. */
+@media (max-width: 520px) { .modal-card { padding: var(--inset-card); } }
 /* Reading uses the phone's full width; the shared modal still owns focus and dismissal. */
 @media (max-width: 520px) {
   /* Stretch into the fixed overlay instead of a second viewport height, and keep controls off the notch and home indicator. */
@@ -1367,7 +1369,6 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
   .feature-guide-card > .guide-content { flex: 1; }
 }
 .modal-title { margin: 0 0 var(--space-section); font-weight: 600; font-size: var(--text-heading-small); overflow-wrap: anywhere; }
-@media (max-width: 520px) { .modal-card { padding: var(--inset-card); } }
 /* The gate alone fades in, and wears the danger frame its warning calls for. */
 .disclaimer-overlay { opacity: 0; transition: opacity .24s ease; }
 .disclaimer-overlay.is-visible { opacity: 1; }
