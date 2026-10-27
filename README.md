@@ -632,7 +632,7 @@ build the PR's checked-out sources locally. Do not commit generated HTML.
 Choose **Basics**, immediately after the newcomer introduction above the tool
 tabs, to start the eight-step beginner lesson as the first lesson of the
 **Understand wallets** route, so its finish offers the next lesson. **Guide** opens the
-contents and individual feature lessons. **Explain this tool** in each released tool's
+contents and individual feature lessons. **Explain this tool** in each covered tool's
 introduction opens its lesson directly. Every step explains the feature,
 what to check, and its limits. No wallet secrets are needed. Optional goal-based
 routes group lessons with summaries; **Understand wallets** is the beginner route and Browse all lessons keeps direct access. Expandable diagrams
@@ -661,7 +661,8 @@ Reading lessons does not derive, reveal, import, or change wallet material.
 **Open this tool** explicitly leaves the guide and uses normal tool
 navigation, which can change displayed results and runs Vanity's usual
 benchmark on entry. The guide explains limitations; it does not certify a
-wallet, transaction, or computer safe. Lightning and Journal lessons are omitted until their tabs ship.
+wallet, transaction, or computer safe. Lightning and Journal lessons remain
+outside this Guide's current scope; both tabs are released.
 
 ### iPhone home-screen app
 
