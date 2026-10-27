@@ -256,3 +256,42 @@ including all 130 Chrome hosted/offline integration checks. Verify, two-path
 reproduce, and report-only i18n validation pass. Locale catalogs are unchanged.
 Physical-phone, screen-reader, and further independent novice retesting remain
 human validation gaps; desktop mobile emulation does not establish those.
+
+### Review follow-up (2026-10-26)
+
+Fixes from an LLM-assisted review of the novice flow (attributed in the commit):
+
+- The **Basics** entry starts the Understand wallets route, so finishing the
+  eight steps offers **Continue route** to Keys as the primary action instead
+  of a dead end. The duplicate "New here? Start with the basics" contents
+  button is removed; the route and Browse all lessons remain.
+- Step 1 keeps two short sentences of safety framing. Download verification
+  moves into a collapsed **Before real funds: verify your download**
+  disclosure that defines a checksum (a fingerprint of the file) and build
+  provenance (a record of where it was built) before naming SHA256SUMS.txt
+  and the GitHub/Sigstore attestation. The fixed README link is unchanged.
+  At 320×640 step 1 scrolls 2.1 screens instead of 3.2.
+- Finish screens no longer offer the lesson just finished or the lesson
+  already offered by **Continue route**, and the "Choose another lesson"
+  heading regains the shared 16px component gap (it measured 0px).
+- The guide header and its `role=status` progress line persist across
+  renders and update in place, so the step announcement no longer depends on
+  a newly inserted live region. Progress and answer feedback use
+  whole-sentence translation keys instead of concatenated fragments.
+- Two glossary sentences that repeated their step's own text were removed.
+
+Security contract unchanged: lessons render bundled text without secret
+access, storage, I/O, randomness, or automatic tool navigation. Initial red:
+the five new focused tests in `test/feature-guide.test.mjs` failed against
+`5a85618` for the claimed reasons (no route continuation, self-offering
+finish list, recreated live region, nested template, no disclosure); all 20
+focused tests pass after the change. Browser-suite checks add the step 1
+height bound and the finish-list gap as `getComputedStyle`/layout outcomes.
+
+Size: the unstamped local artifact grows by 597 bytes (7,874,084 → 7,874,681)
+for the whole-sentence keys, disclosure and persistent status; removed
+duplicates offset about 200 bytes. Returning under the provisional 30 KiB
+budget needs a separate copy-trimming pass. Deferred to follow-up PRs: a
+worked example from a published test vector, a tool chooser and shared
+glossary, the full three-question beginner self-check, and a Basics entry
+inside the intro card on small phones (a layout decision for design review).

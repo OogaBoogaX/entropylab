@@ -293,3 +293,73 @@ test("diagram highlights are bound to concept IDs and first-use basics terms are
   assert.equal(doc.querySelector('[aria-current="step"]').dataset.guideStage, 'input');
   assert.ok(featureGuideLessons().find(item => item.id === 'basics').steps.every(item => item.term?.length === 2));
 }));
+
+test("the Basics entry continues into the wallet route and contents offers one way to start it", () => withPage(({ doc, click, opened, opener }) => {
+  const basics = doc.createElement("button");
+  basics.id = "basics-entry";
+  basics.dataset.guideOpen = "basics";
+  doc.body.append(basics);
+  click("#basics-entry");
+  while (doc.getElementById("guide-next")) click("#guide-next");
+  assert.equal(doc.getElementById("guide-content").dataset.guideComplete, "basics");
+  assert.equal(doc.getElementById("guide-route-next")?.dataset.guideLesson, "keys", "the beginner entry must not dead-end");
+  click("#guide-route-next");
+  assert.equal(doc.getElementById("guide-step").dataset.guideStep, "keys-methods");
+  assert.deepEqual(opened, []);
+  click("#guide-close");
+  click("#guide-open");
+  const starts = doc.querySelectorAll('#guide-content [data-guide-lesson="wallet"], #guide-content [data-guide-lesson="basics"]').filter(node => !node.closest("#guide-browse"));
+  assert.equal(starts.length, 1, "one contents control starts the beginner route");
+}));
+test("finish screens never offer the lesson just finished", () => withPage(({ guide, click, doc, opener }) => {
+  for (const lesson of featureGuideLessons()) {
+    guide.open(lesson.id, opener);
+    while (doc.getElementById("guide-next")) click("#guide-next");
+    assert.ok(doc.getElementById("guide-finish-lessons")?.querySelector("[data-guide-lesson]"), `${lesson.id} offers other lessons`);
+    assert.equal(doc.querySelector(`#guide-finish-lessons [data-guide-lesson="${lesson.id}"]`), null, `${lesson.id} offers itself`);
+  }
+}));
+test("the step announcement is one persistent live region updated in place", () => withPage(({ guide, click, doc, opener }) => {
+  guide.open("keys", opener);
+  const progress = doc.getElementById("guide-progress");
+  assert.equal(progress.getAttribute("role"), "status");
+  assert.equal(progress.getAttribute("aria-live"), "polite");
+  const first = progress.textContent;
+  click("#guide-next");
+  assert.equal(doc.getElementById("guide-progress"), progress, "Next must not recreate the live region");
+  assert.notEqual(progress.textContent, first);
+  click("#guide-next");
+  click("#guide-back");
+  assert.equal(doc.getElementById("guide-progress"), progress, "Back and finish must not recreate the live region");
+  assert.ok(progress.isConnected);
+}, (text, params) => text.replace(/\{(\w+)\}/g, (_, key) => params?.[key] ?? "")));
+test("guide sentences are whole translation units, never glued fragments", () => {
+  const keys = [];
+  // A template's output must never be fed into another template or concatenated.
+  const translate = (text, params) => {
+    keys.push(text);
+    for (const value of Object.values(params ?? {})) assert.ok(!String(value).includes("\u27e6"), `${JSON.stringify(text)} nests a translated template`);
+    return text.includes("{") ? `\u27e6${text}\u27e7` : text;
+  };
+  withPage(({ guide, click, doc, opener }) => {
+    guide.open(null, opener);
+    click("#guide-route-wallet");
+    click("#guide-next");
+    guide.open("basics", opener);
+    while (!doc.getElementById("guide-check")) click("#guide-next");
+    click("#guide-answer-0");
+    click("#guide-answer-1");
+    while (doc.getElementById("guide-next")) click("#guide-next");
+  }, translate);
+  assert.ok(keys.length);
+  for (const key of keys) assert.equal(key, key.trim(), `${JSON.stringify(key)} is a sentence fragment`);
+});
+test("step 1 keeps download verification in a closed disclosure with its fixed link", () => withPage(({ guide, doc, opener }) => {
+  guide.open("basics", opener);
+  const link = doc.getElementById("guide-download-verification");
+  const disclosure = link?.closest("details");
+  assert.ok(disclosure, "verification detail sits in a disclosure");
+  assert.ok(disclosure.closest("#guide-step"));
+  assert.equal(disclosure.hasAttribute("open"), false, "verification detail starts collapsed");
+  assert.equal(disclosure.firstElementChild?.tagName, "SUMMARY");
+}));

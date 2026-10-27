@@ -630,22 +630,24 @@ build the PR's checked-out sources locally. Do not commit generated HTML.
 ### Feature guide
 
 Choose **Basics**, immediately after the newcomer introduction above the tool
-tabs, to open the eight-step beginner lesson directly. **Guide** opens the
+tabs, to start the eight-step beginner lesson as the first lesson of the
+**Understand wallets** route, so its finish offers the next lesson. **Guide** opens the
 contents and individual feature lessons. **Explain this tool** in each released tool's
 introduction opens its lesson directly. Every step explains the feature,
 what to check, and its limits. No wallet secrets are needed. Optional goal-based
-routes group lessons with summaries; **New here? Start with the basics** opens the beginner route and Browse all lessons keeps direct access. Expandable diagrams
+routes group lessons with summaries; **Understand wallets** is the beginner route and Browse all lessons keeps direct access. Expandable diagrams
 and ungraded quick checks live only inside Guide and never block progress. Each check appears once, after its lesson concepts. First-use basics terms have expandable explanations.
 
 Back, Contents, Close, and replay are always available. Closing retains your
-place for this page session; **Continue learning** resumes an unfinished lesson. After a route lesson finishes, an explicit **Continue route** action opens the next lesson. Finish screens also link to feature lessons, without opening tools. Reloading or
+place for this page session; **Continue learning** resumes an unfinished lesson. After a route lesson finishes, an explicit **Continue route** action opens the next lesson. Finish screens also link to other feature lessons, without opening tools. Reloading or
 leaving the page resets progress. Completing a lesson never removes Guide.
 The lessons are bundled in the downloaded HTML and work without network or
 browser storage. New lesson translations fall back to English until the
 translation workflow fills them.
 
-The first Basics step has a tappable **Verifying the download (online README)**
-link. Only choosing it opens GitHub in a new tab; it requires a connection, so
+The first Basics step keeps download verification in a collapsed **Before real
+funds: verify your download** section, which explains checksums and build
+provenance and has a tappable **Verifying the download (online README)** link. Only choosing it opens GitHub in a new tab; it requires a connection, so
 read those instructions before transferring the verified file offline. The
 bundled lesson remains available without following that link.
 

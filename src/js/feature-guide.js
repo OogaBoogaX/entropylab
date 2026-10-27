@@ -64,9 +64,19 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
     const view = session.view();
     const lessons = featureGuideLessons(hodlTText);
     const lesson = lessons.find((item) => item.id === view.lessonId);
-    const header = element("div", "", "row");
-    const title = element("h2", hodlTText("EntropyLab guide"), "modal-title", "guide-title");
-    header.append(title, button(hodlTText("Close"), "close", "guide-close"));
+    // Header and live region persist across renders: a status node is announced
+    // reliably only when it already exists before its text changes.
+    if (!card.firstElementChild) {
+      const header = element("div", "", "row");
+      header.append(element("h2", "", "modal-title", "guide-title"), button("", "close", "guide-close"));
+      const status = element("p", "", "field-note", "guide-progress");
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      card.append(header, status);
+    }
+    document.getElementById("guide-title").textContent = hodlTText("EntropyLab guide");
+    document.getElementById("guide-close").textContent = hodlTText("Close");
+    let progress = "";
     const content = element("div", "", "guide-content", "guide-content");
     const footer = element("div", "", "row modal-actions");
     let focus;
@@ -78,7 +88,6 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
         const next = lessons.find(item => item.id === nextRouteLesson(view));
         content.append(button(hodlTText("Continue route: {lesson}", { lesson: next.title }), "continue-route", "guide-continue-route"));
       }
-      content.append(button(hodlTText("New here? Start with the basics"), "route", "guide-start-basics", "wallet"));
       content.append(element("p", hodlTText("Read {count} of {total} lessons this session", { count: view.completed.length, total: lessons.length }), "field-note", "guide-session-progress"));
       const choices = (items, action, prefix) => {
         const list = element("div", "", "guide-lessons");
@@ -98,11 +107,10 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       content.append(browse);
     } else {
       footer.append(button(hodlTText("Contents"), "contents", "guide-contents"));
-      const status = element("p", view.mode === "complete" ? hodlTText("Lesson finished · {lesson}", { lesson: lesson.title }) : hodlTText("Step {step} of {total} · {lesson}", { step: view.index + 1, total: lesson.steps.length, lesson: lesson.title }), "field-note", "guide-progress");
-      status.setAttribute("role", "status");
-      status.setAttribute("aria-live", "polite");
-      content.append(status);
-      if (route) status.textContent = hodlTText("{route} · Lesson {lessonNumber} of {lessonTotal} · {progress}", { route: route.title, lessonNumber: route.lessons.indexOf(view.lessonId) + 1, lessonTotal: route.lessons.length, progress: status.textContent });
+      // Whole-sentence keys so translators can reorder every part.
+      const place = { step: view.index + 1, total: lesson.steps.length, lesson: lesson.title, route: route?.title, lessonNumber: route?.lessons.indexOf(view.lessonId) + 1, lessonTotal: route?.lessons.length };
+      if (route) progress = view.mode === "complete" ? hodlTText("{route} · Lesson {lessonNumber} of {lessonTotal} · Lesson finished · {lesson}", place) : hodlTText("{route} · Lesson {lessonNumber} of {lessonTotal} · Step {step} of {total} · {lesson}", place);
+      else progress = view.mode === "complete" ? hodlTText("Lesson finished · {lesson}", place) : hodlTText("Step {step} of {total} · {lesson}", place);
       const currentStep = lesson.steps[view.index];
       if (currentStep?.diagramStage) {
         const story = element("details", "", "", "guide-story");
@@ -120,12 +128,16 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
         content.append(focus, element("p", hodlTText("You can revisit this lesson whenever you like. Reading a lesson does not certify a wallet, device, or transaction safe.")));
         const finishActions = element("div", "", "row", "guide-finish-actions");
         finishActions.append(button(hodlTText("Read this lesson again"), "restart", "guide-restart"));
-        const nextId = route?.lessons[route.lessons.indexOf(view.lessonId) + 1];
-        if (nextId) finishActions.append(button(hodlTText("Continue route: {lesson}", { lesson: lessons.find(item => item.id === nextId).title }), "route-next", "guide-route-next", nextId));
+        const nextId = nextRouteLesson(view);
+        if (nextId) {
+          const next = button(hodlTText("Continue route: {lesson}", { lesson: lessons.find(item => item.id === nextId).title }), "route-next", "guide-route-next", nextId);
+          next.className = "btn primary";
+          finishActions.append(next);
+        }
         content.append(finishActions);
         content.append(element("h4", hodlTText("Choose another lesson"), "label"));
         const links = element("div", "", "guide-lessons", "guide-finish-lessons");
-        for (const id of ["keys", "multisig", "inspect", "bip85", "silent", "vanity"]) {
+        for (const id of ["keys", "multisig", "inspect", "bip85", "silent", "vanity"].filter(id => id !== lesson.id && id !== nextId)) {
           const item = lessons.find(item => item.id === id);
           links.append(button(item.title, "choose", `guide-finish-${id}`, id));
         }
@@ -144,7 +156,9 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
           link.setAttribute("rel", "noopener noreferrer");
           const instructions = element("p");
           instructions.append(link);
-          body.append(instructions, element("p", hodlTText("Opens GitHub in a new tab only when you choose the link. Read the instructions while connected, before moving the verified file to an offline computer. The lesson itself remains available offline."), "field-note"));
+          const verify = element("details", "", "", "guide-verify");
+          verify.append(element("summary", hodlTText("Before real funds: verify your download")), element("p", hodlTText("For real recovery material, use a trusted computer isolated from all networks, and first verify your copy. A checksum is a fingerprint of the file: matching SHA256SUMS.txt shows the bytes are intact. Build provenance records where the file was built: the GitHub/Sigstore artifact attestation shows the project's CI built these exact bytes. The checksum list alone does not prove who made the file.")), instructions, element("p", hodlTText("Opens GitHub in a new tab only when you choose the link. Read the instructions while connected, before moving the verified file to an offline computer. The lesson itself remains available offline."), "field-note"));
+          body.append(verify);
         }
         if (step.example) body.append(element("p", step.example, "edge-note is-info"));
         const check = element("div", "", "guide-note");
@@ -187,13 +201,18 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
     }
     focus.id = "guide-focus";
     focus.tabIndex = -1;
-    card.replaceChildren(header, content, footer);
+    const status = document.getElementById("guide-progress");
+    if (status.textContent !== progress) status.textContent = progress;
+    status.hidden = !progress;
+    for (const node of [...card.children].slice(2)) node.remove();
+    card.append(content, footer);
     return focus;
   };
   const open = (id, opener) => {
     if (!active) return;
     ensureModal();
-    if (id) { route = null; session.choose(id); } else session.contents();
+    // The Basics entry is the beginner route, so its finish offers the next lesson.
+    if (id) { route = id === "basics" ? featureGuideRoutes(hodlTText)[0] : null; session.choose(id); } else session.contents();
     modal.show(render(), opener);
   };
   const click = (event) => {
@@ -215,7 +234,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       const feedback = document.getElementById("guide-feedback");
       const correct = Number(control.dataset.guideLesson) === quiz[2];
       feedback.dataset.guideCorrect = String(correct);
-      feedback.textContent = (correct ? hodlTText("That's right. ") : hodlTText("Take another look. ")) + quiz[3];
+      feedback.textContent = correct ? hodlTText("That's right. {explanation}", { explanation: quiz[3] }) : hodlTText("Take another look. {explanation}", { explanation: quiz[3] });
       feedback.focus();
       feedback.scrollIntoView?.({ block: "nearest" });
       return;

@@ -295,7 +295,8 @@
       const basicsClose = document.getElementById("guide-close");
       basicsClose.focus();
       basicsClose.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
-      equal(document.activeElement, verification);
+      // The verification detail is collapsed: its summary takes focus, the link only once opened.
+      equal(document.activeElement, verification.closest("details").querySelector("summary"));
       basicsClose.click();
       equal(document.activeElement, basics);
       entry.focus(); entry.click();
@@ -369,7 +370,10 @@
     // separate visual captures use the actual 320px mobile viewport.
     dialog.style.width = "320px"; dialog.style.maxHeight = "480px";
     try {
-      document.getElementById("guide-start-basics").click();
+      document.getElementById("guide-route-wallet").click();
+      // Step 1 stays short at phone size: at most about two and a half screens of the scroll area (it was over three).
+      const first = document.getElementById("guide-content");
+      assert(first.scrollHeight <= 2.5 * first.clientHeight, `step 1 runs ${first.scrollHeight}px in a ${first.clientHeight}px view`);
       while (!document.getElementById("guide-check")) document.getElementById("guide-next").click();
       document.getElementById("guide-check").open = true;
       document.getElementById("guide-answer-1").scrollIntoView({ block: "center" });
@@ -385,6 +389,10 @@
       const gap = b.top >= a.bottom ? b.top - a.bottom : b.left - a.right;
       const rhythm = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-control"));
       assert(gap >= rhythm - 1, "finish buttons touch");
+      const actions = document.getElementById("guide-finish-actions");
+      const below = actions.nextElementSibling.getBoundingClientRect().top - actions.getBoundingClientRect().bottom;
+      const component = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-component"));
+      assert(below >= component - 1, `finish actions touch the lesson list (${below}px)`);
       assert(content.scrollWidth <= content.clientWidth, "narrow guide overflows horizontally");
       document.getElementById("guide-finish-inspect").click();
       equal(document.getElementById("guide-step").dataset.guideStep, "inspect-worksheet");

@@ -10,10 +10,10 @@ export const featureGuideEntries = [
 export function featureGuideLessons(hodlTText = (text) => text) {
   const glossary = {
     "basics-safety": [hodlTText("air gap"), hodlTText("A computer isolated from every network, including Wi-Fi, Bluetooth, and wired connections. The browser cannot prove this isolation.")],
-    "basics-family": [hodlTText("seed phrase"), hodlTText("Recovery words that can rebuild a family of wallet keys. A private key is a spending secret; an address is a destination you can share.")],
+    "basics-family": [hodlTText("seed phrase"), hodlTText("Recovery words that can rebuild a family of wallet keys.")],
     "basics-input": [hodlTText("entropy"), hodlTText("Unpredictability in the original input. Changing its format or hashing it does not create more unpredictability.")],
     "basics-recipe": [hodlTText("BIP39 passphrase and derivation path"), hodlTText("A BIP39 passphrase is extra exact text combined with seed words to select a wallet. A derivation path is a sequence of numbered branches leading to a key or address.")],
-    "basics-sharing": [hodlTText("watch-only descriptor and xpub"), hodlTText("A descriptor describes a wallet's address recipe. An xpub is an extended public key: it can derive public keys and addresses for a branch, but cannot spend. Watch-only descriptors contain public information, not spending secrets.")],
+    "basics-sharing": [hodlTText("watch-only descriptor and xpub"), hodlTText("A descriptor describes a wallet's address recipe. An xpub is an extended public key: it can derive public keys and addresses for a branch, but cannot spend.")],
     "basics-check": [hodlTText("master fingerprint and signing device"), hodlTText("A master fingerprint is a short identifier of the root key, not proof of identity. A signing device uses private keys to authorize spending; EntropyLab does not sign.")],
     "basics-backup": [hodlTText("multisig policy"), hodlTText("The recipe describing which signers belong to a wallet and how many must agree to spend. Keep it with a recovery plan and enough independent signer backups.")],
     "basics-ready": [hodlTText("PSBT"), hodlTText("A Partially Signed Bitcoin Transaction is a file carrying a proposed transaction and information for signers to review. Reading it is not permission to sign.")],
@@ -28,7 +28,7 @@ export function featureGuideLessons(hodlTText = (text) => text) {
   return [
     { id: "basics", title: hodlTText("Start with the basics"), summary: hodlTText("Eight steps from your own randomness to checks and backups."), steps: [
       step("basics-safety", hodlTText("First, make a safe place to learn"),
-        hodlTText("Learn with practice material only, never real recovery secrets. EntropyLab is experimental and its startup warning is for advanced users only; this guide explains concepts, not readiness to secure funds. Before using real recovery material, follow the repository README’s Verifying the download instructions: compare the HTML with SHA256SUMS.txt for byte integrity, and verify the GitHub/Sigstore artifact attestation for build provenance. The checksum manifest alone does not authenticate the producer. Use a trusted computer isolated from all networks."),
+        hodlTText("Learn with practice material only, never real recovery secrets. EntropyLab is experimental, its startup warning is for advanced users only, and this guide explains concepts, not readiness to secure funds."),
         hodlTText("Keep your seed phrase and private keys put away. This tour needs neither."),
         hodlTText("An Offline label is a browser signal, not proof of an air gap. This app cannot protect a compromised computer, clipboard history, screenshots, or a printer.")),
       step("basics-family", hodlTText("Your wallet is a family of keys"),
