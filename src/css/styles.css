@@ -1325,10 +1325,13 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 .feature-guide-card {
   --modal-width: 640px;
   max-height: calc(100dvh - var(--space-lede)); box-sizing: border-box;
+  padding: var(--inset-card);
   display: flex; flex-direction: column;
   font-size: var(--text-base); overflow-wrap: anywhere;
 }
 .feature-guide-card > .row { justify-content: space-between; flex: 0 0 auto; }
+/* Compact navigation keeps the reading area available in a narrow dialog. */
+.feature-guide-card > .modal-actions .btn { padding: var(--inset-button-tight); }
 .feature-guide-card .modal-title { margin: 0; }
 .feature-guide-card > .field-note { margin: var(--space-control) 0 0; }
 .feature-guide-card > .field-note[hidden] { display: none; }
