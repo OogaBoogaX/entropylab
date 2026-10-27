@@ -1713,26 +1713,37 @@ test("virtual keypads never focus the field on touch so the mobile keyboard stay
   }
 });
 
-test("workspace tabs ship Core Wallet and the Journal and hold back only Lightning", () => {
-  // The release tab list is unconditional: exactly eight entries, in order,
-  // with Core Wallet and the Journal released and Lightning held back.
+test("workspace tabs ship every tool, with Lightning after Transactions", () => {
+  // The release tab list is unconditional: exactly nine entries, in order.
+  // Lightning joined after Transactions (owner, 2026-10-26).
   const declaration = appSource.match(/^var hodlWorkspaceTabs = (\[.*\]);$/m);
   assert.ok(declaration, "the workspace tab list is missing");
   assert.doesNotMatch(declaration[1], /__ENTROPYLAB_TEST_HOOKS__|\.\.\./, "no release tab may be gated behind test hooks");
-  const entries = [...declaration[1].matchAll(/\["([a-z0-9]+)", "([^"]*)", "([^"]*)"\]/g)].map((match) => [match[1], match[2], match[3]]);
+  // [id, full name, narrow label, wide label]; the wide label defaults to the
+  // full name. Three tools show their short name on wide screens too so the
+  // nine fit the desktop strip (owner, 2026-10-26).
+  const entries = [...declaration[1].matchAll(/\["([a-z0-9]+)", "([^"]*)", "([^"]*)"(?:, "([^"]*)")?\]/g)].map((match) => [match[1], match[2], match[3], match[4] ?? match[2]]);
   assert.deepEqual(entries, [
-    ["calc", "Keys", "Keys"],
-    ["msig", "Multi Signature", "MultiSig"],
-    ["psbt", "Transactions", "Txns"],
-    ["core", "Core Wallet", "Core"],
-    ["bip85", "BIP-85 Child", "BIP-85"],
-    ["sp", "Silent Payments", "SP"],
-    ["vanity", "Vanity Address", "Vanity"],
-    ["journal", "Journal", "Journal"],
+    ["calc", "Keys", "Keys", "Keys"],
+    ["msig", "Multi Signature", "MultiSig", "MultiSig"],
+    ["psbt", "Transactions", "Txns", "Transactions"],
+    ["ln", "Lightning", "LN", "Lightning"],
+    ["core", "Core Wallet", "Core", "Core Wallet"],
+    ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"],
+    ["sp", "Silent Payments", "SP", "Silent Payments"],
+    ["vanity", "Vanity Address", "Vanity", "Vanity"],
+    ["journal", "Journal", "Journal", "Journal"],
   ]);
-  assert.equal(entries.some((entry) => entry[0] === "ln"), false, "Lightning stays held back from the release tab list");
+  // The full name stays the accessible name, and a shortened wide label
+  // carries it as the hover title.
+  assert.match(appSource, /fullLabel\.textContent = hodlTText\(wide\);/);
+  // A language switch relabels the tabs the same way.
+  assert.match(appSource, /let \[, label, short, wide = label\] = entry;\s*if \(button\.firstChild\) button\.firstChild\.textContent = hodlTText\(wide\);/);
+  assert.match(appSource, /button\.setAttribute\("aria-label", hodlTText\(label\)\);\s*if \(wide !== label\) button\.title = hodlTText\(label\);/);
   // Release first paint and no-JS show the static strip: every release tool has its button there.
   assert.match(shell, /aria-controls="core-card"/);
+  assert.match(shell, /aria-controls="ln-card"/);
+  assert.doesNotMatch(shell, /held back/);
   for (const markup of [shell]) {
     assert.match(markup, /id="bip85-card"/);
     assert.match(markup, /id="bip85-go"/);
@@ -2049,8 +2060,8 @@ test("Silent Payments is a registered tool with its own card", () => {
   for (const name of ["Keys", "Multi Signature", "Silent Payments", "Transactions"]) {
     assert.match(shell, new RegExp(`aria-label="${name}"`));
   }
-  for (const entry of [/\["calc", "Keys", "Keys"\]/, /\["vanity", "Vanity Address", "Vanity"\]/, /\["bip85", "BIP-85 Child", "BIP-85"\]/,
-    /\["msig", "Multi Signature", "MultiSig"\]/, /\["sp", "Silent Payments", "SP"\]/, /\["psbt", "Transactions", "Txns"\]/,
+  for (const entry of [/\["calc", "Keys", "Keys"\]/, /\["vanity", "Vanity Address", "Vanity", "Vanity"\]/, /\["bip85", "BIP-85 Child", "BIP-85", "BIP-85"\]/,
+    /\["msig", "Multi Signature", "MultiSig", "MultiSig"\]/, /\["sp", "Silent Payments", "SP"\]/, /\["psbt", "Transactions", "Txns"\]/,
     /\["core", "Core Wallet", "Core"\]/,
     /\["journal", "Journal", "Journal"\]/]) {
     assert.match(appSource, entry);
@@ -2094,23 +2105,27 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   assert.match(appSource, /function hodlInitWorkspace\(\) \{\s*let box = hodlElement\("#workspace"\);\s*box\.innerHTML = "";/);
   assert.doesNotMatch(shell, /segmented-control" id="workspace"/);
   assert.match(shell, /<div class="workspace-tabs" id="workspace-tabs" role="tablist" aria-label="Tool">/);
-  // Every tool with a tab ships in the static markup, each with a full name
-  // and the
-  // short form narrow screens show instead.
-  for (const [full, short] of [["Keys", "Keys"], ["Vanity Address", "Vanity"], ["BIP-85 Child", "BIP-85"], ["Multi Signature", "MultiSig"], ["Silent Payments", "SP"], ["Transactions", "Txns"], ["Core Wallet", "Core"]]) {
+  // Every tool with a tab ships in the static markup, named in full, with its
+  // wide label (the full name, or the short one where nine full names would
+  // not fit) and the short form narrow screens show instead.
+  const escape = (text) => text.replace(/[$()*+.?[\]^{|}]/g, "\\$&");
+  for (const [full, short, wide = full] of [["Keys", "Keys"], ["Vanity Address", "Vanity", "Vanity"], ["BIP-85 Child", "BIP-85", "BIP-85"], ["Multi Signature", "MultiSig", "MultiSig"], ["Silent Payments", "SP"], ["Transactions", "Txns"], ["Core Wallet", "Core"], ["Lightning", "LN"]]) {
     assert.ok(
-      shell.includes(`<span class="workspace-tab-full">${full}</span><span class="workspace-tab-short">${short}</span>`),
+      shell.includes(`aria-label="${full}"`) && shell.includes(`<span class="workspace-tab-full">${wide}</span><span class="workspace-tab-short">${short}</span>`),
       `${full} is missing from the workspace strip`,
     );
-    assert.match(appSource, new RegExp(`\\["[a-z0-9]+", "${full.replace(/[$()*+.?[\]^{|}]/g, "\\$&")}", "${short}"\\]`));
+    assert.match(appSource, new RegExp(`\\["[a-z0-9]+", "${escape(full)}", "${escape(short)}"(?:, "${escape(wide)}")?\\]`));
   }
   // One swaps for the other at the width the header drops its own labels.
-  assert.match(appSource, /fullLabel\.textContent = hodlTText\(label\);\s*shortLabel\.textContent = hodlTText\(short\);/);
+  assert.match(appSource, /fullLabel\.textContent = hodlTText\(wide\);\s*shortLabel\.textContent = hodlTText\(short\);/);
   // Hidden text leaves the accessibility tree, so the full name is stated on
   // the tab itself and assistive tech hears it at every width.
   assert.match(appSource, /button\.setAttribute\("aria-label", hodlTText\(label\)\);/);
-  for (const full of ["Keys", "Vanity Address", "BIP-85 Child", "Multi Signature", "Silent Payments", "Transactions", "Core Wallet"]) {
-    assert.match(shell, new RegExp(`aria-label="${full.replace("/", "\\/")}">[\\s\\S]*?<span class="workspace-tab-full">${full.replace("/", "\\/")}</span>`), `${full} tab needs its accessible name`);
+  // A shortened wide label keeps the full name as the accessible name and the
+  // hover title.
+  for (const [full, wide = full] of [["Keys"], ["Vanity Address", "Vanity"], ["BIP-85 Child", "BIP-85"], ["Multi Signature", "MultiSig"], ["Silent Payments"], ["Transactions"], ["Core Wallet"], ["Lightning"]]) {
+    const title = wide === full ? "" : ` title="${full}"`;
+    assert.match(shell, new RegExp(`aria-label="${full}"${title}>[\\s\\S]*?<span class="workspace-tab-full">${wide}</span>`), `${full} tab needs its accessible name`);
   }
   // A tablist owes arrow keys; the key and multisig strips already answer them.
   assert.match(appSource, /function hodlWorkspaceTabKeydown\(event, index\) \{/);
@@ -2183,7 +2198,8 @@ test("each static tool tab points at a tab panel the shell has", () => {
   const start = shell.indexOf('id="workspace-tabs"');
   const strip = shell.slice(start, shell.indexOf("</div>", start));
   const tabs = strip.match(/<button[^>]*role="tab"[^>]*>/g) ?? [];
-  assert.equal(tabs.length, 7, "the static strip carries the seven release tools");
+  // Every release tool except the Journal, which the boot render adds.
+  assert.equal(tabs.length, 8, "the static strip carries the eight static release tools");
   for (const tab of tabs) {
     const ids = tab.match(/aria-controls="([^"]*)"/)?.[1].split(" ").filter(Boolean) ?? [];
     assert.ok(ids.length, `${tab} names no panel`);
@@ -2433,7 +2449,7 @@ test("session wallets use folder tabs that merge into the card", () => {
 
 test("the vanity grinder is a workspace tab that ships collapsed and never auto-runs", () => {
   // The tab is registered between Keys and BIP-85 and localized like the rest.
-  assert.match(appSource, /\["vanity", "Vanity Address", "Vanity"\]/);
+  assert.match(appSource, /\["vanity", "Vanity Address", "Vanity", "Vanity"\]/);
   for (const code of ["de", "es", "fr", "pt"]) {
     const catalog = JSON.parse(read(`src/locales/${code}.json`));
     assert.ok(catalog["Vanity"]?.length, `${code} Vanity`);

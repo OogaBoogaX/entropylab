@@ -16858,10 +16858,13 @@ async function hodlLoadTestKeys() {
   addEventListener("load", () => hodlRenderKeyTabs(), { once: true });
 }
 // Each tool carries a full name and a short one. Narrow screens show the
-// short form so more tools stay on screen instead of off the right edge.
-var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig"], ["psbt", "Transactions", "Txns"], ["core", "Core Wallet", "Core"], ["bip85", "BIP-85 Child", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity"], ["journal", "Journal", "Journal"]];
-// Lightning is still held back from release navigation while its
-// implementation remains in source. Core Wallet and the Journal are released.
+// short form so more tools stay on screen instead of off the right edge. An
+// optional fourth entry is the wide-screen label where the full name would
+// push the nine tools past the desktop strip (owner, 2026-10-26); the full
+// name stays the accessible name and the hover title.
+var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig", "MultiSig"], ["psbt", "Transactions", "Txns"], ["ln", "Lightning", "LN"], ["core", "Core Wallet", "Core"], ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity", "Vanity"], ["journal", "Journal", "Journal"]];
+// Every tool is released: Lightning joined after its key worker (#1203) and
+// polish (#1211), placed after Transactions (owner, 2026-10-26).
 var hodlPsbtTool = "inspector";
 function hodlSyncPsbtTool() {
   let visible = hodlWorkspace === "psbt",
@@ -20116,7 +20119,7 @@ function hodlInitWorkspace() {
   strip.id = "workspace-tabs";
   strip.setAttribute("role", "tablist");
   strip.setAttribute("aria-label", "Tool");
-  hodlWorkspaceTabs.forEach(([id, label, short], index) => {
+  hodlWorkspaceTabs.forEach(([id, label, short, wide = label], index) => {
     let button = document.createElement("button"), active = hodlWorkspace === id;
     button.type = "button";
     button.className = "workspace-tab" + (active ? " active" : "");
@@ -20132,13 +20135,14 @@ function hodlInitWorkspace() {
     let fullLabel = document.createElement("span"), shortLabel = document.createElement("span");
     fullLabel.className = "workspace-tab-full";
     shortLabel.className = "workspace-tab-short";
-    fullLabel.textContent = hodlTText(label);
+    fullLabel.textContent = hodlTText(wide);
     shortLabel.textContent = hodlTText(short);
     button.append(fullLabel, shortLabel);
     // The short form is display:none at wide widths and the full one is hidden
     // at narrow ones, and hidden text is not in the accessibility tree — so the
     // name is stated outright rather than left to whichever span is showing.
     button.setAttribute("aria-label", hodlTText(label));
+    if (wide !== label) button.title = hodlTText(label);
     button.onclick = () => hodlShowWorkspace(id);
     button.onkeydown = (event) => hodlWorkspaceTabKeydown(event, index);
     strip.appendChild(button);
@@ -20719,10 +20723,11 @@ function hodlApplyLocale() {
   document.querySelectorAll("#workspace-tabs [data-workspace]").forEach((button) => {
     let entry = hodlWorkspaceTabs.find(([id]) => id === button.dataset.workspace);
     if (!entry) return;
-    let [, label, short] = entry;
-    if (button.firstChild) button.firstChild.textContent = hodlTText(label);
+    let [, label, short, wide = label] = entry;
+    if (button.firstChild) button.firstChild.textContent = hodlTText(wide);
     if (button.lastChild) button.lastChild.textContent = hodlTText(short);
     button.setAttribute("aria-label", hodlTText(label));
+    if (wide !== label) button.title = hodlTText(label);
   });
   [...hodlKeyModeSelectEl.options].forEach((option) => {
     option.textContent = hodlTText(hodlKeyModeLabels[option.value]);
