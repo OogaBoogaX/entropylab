@@ -2140,5 +2140,20 @@
     "noteByLanguage": {
       "pt": "Return exactly: afirma {path} · sua chave aparece no script desta saída; as outras chaves deste script não são verificadas"
     }
+  },
+  "Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session (stages 2 to 4) as hex, exported from your host software. The format is detected automatically.": {
+    "note": "Where the hex comes from: the user's host (coordinator) software exports the AEXB/AEXT messages; keep \"AEXB/AEXT\", \"hex\" and the stage numbers as they are.",
+    "noteByLanguage": {
+      "de": "Return exactly: Fügen Sie einen Jade- oder BitBox02-Host-Nonce und eine Öffnung oder die AEXB/AEXT-Nachrichten einer Sitzung (Stufen 2 bis 4) als Hexadezimalwert ein, exportiert aus Ihrer Host-Software. Das Format wird automatisch erkannt.",
+      "es": "Return exactly: Pega un nonce y apertura de host Jade o BitBox02, o los mensajes AEXB/AEXT de una sesión (etapas 2 a 4) en formato hexadecimal, exportados desde tu software de host. El formato se detecta automáticamente.",
+      "fr": "Return exactly: Collez un nonce hôte et une ouverture Jade ou BitBox02, ou les messages AEXB/AEXT d'une session (étapes 2 à 4) en hexadécimal, exportés depuis votre logiciel hôte. Le format est détecté automatiquement.",
+      "pt": "Return exactly: Cole um nonce e abertura do host Jade ou BitBox02, ou as mensagens AEXB/AEXT de uma sessão (estágios 2 a 4) como hex, exportadas do seu software host. O formato é detectado automaticamente."
+    },
+    "exact": {
+      "de": "Fügen Sie einen Jade- oder BitBox02-Host-Nonce und eine Öffnung oder die AEXB/AEXT-Nachrichten einer Sitzung (Stufen 2 bis 4) als Hexadezimalwert ein, exportiert aus Ihrer Host-Software. Das Format wird automatisch erkannt.",
+      "es": "Pega un nonce y apertura de host Jade o BitBox02, o los mensajes AEXB/AEXT de una sesión (etapas 2 a 4) en formato hexadecimal, exportados desde tu software de host. El formato se detecta automáticamente.",
+      "fr": "Collez un nonce hôte et une ouverture Jade ou BitBox02, ou les messages AEXB/AEXT d'une session (étapes 2 à 4) en hexadécimal, exportés depuis votre logiciel hôte. Le format est détecté automatiquement.",
+      "pt": "Cole um nonce e abertura do host Jade ou BitBox02, ou as mensagens AEXB/AEXT de uma sessão (estágios 2 a 4) como hex, exportadas do seu software host. O formato é detectado automaticamente."
+    }
   }
 }
