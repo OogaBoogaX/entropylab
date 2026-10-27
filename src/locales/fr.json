@@ -26,7 +26,6 @@
   "Vanity": "Vanity",
   "PSBT Editor": "Éditeur PSBT",
   "MultiSig": "MultiSig",
-  "SP": "SP",
   "Delete current key": "Supprimer la clé actuelle",
   "Multisigs": "Multisigs",
   "Delete current multisig": "Supprimer le multisig actuel",
@@ -960,7 +959,6 @@
   "Provide a PSBT or signed transaction and click Inspect Nonces to view the details here.": "Fournissez une PSBT ou une transaction signée et cliquez sur Inspecter les nonces pour voir les détails ici.",
   "Inspect Nonces": "Inspecter les nonces",
   "Derive a Lightning node key": "Dériver une clé de nœud Lightning",
-  "LND seed → LND node key. BIP-39 seed → LDK node key. Decode only. Does not create a seed. Nothing leaves this page.": "Graine LND → clé de nœud LND. Graine BIP-39 → clé de nœud LDK. Décodage uniquement. Ne crée pas de graine. Rien ne quitte cette page.",
   "Seed format": "Format de la graine",
   "aezeed · LND cipher seed": "aezeed · Graine chiffrée LND",
   "BIP-39 · LDK (ldk-node)": "BIP-39 · LDK (ldk-node)",
@@ -2236,5 +2234,11 @@
   "This reads as a Jade host nonce ρ or a BitBox02 host nonce. Both are checked the same way. From a BitBox02, paste the host nonce, not its SHA-256 commitment.": "Ceci est lu comme un nonce hôte ρ Jade ou un nonce hôte BitBox02. Les deux sont vérifiés de la même manière. Depuis un BitBox02, collez le nonce hôte, pas son engagement SHA-256.",
   "AEXB transcript checks out for {n} signature slot(s). This checks the transcript's math only, not that an honest host ran the exchange.": "La transcription AEXB est correcte pour {n} emplacement(s) de signature. Ceci vérifie uniquement les calculs de la transcription, pas qu'un hôte honnête a exécuté l'échange.",
   "AEXB transcript checks out, but it does not cover every signature in this PSBT.": "La transcription AEXB est correcte, mais elle ne couvre pas toutes les signatures de ce PSBT.",
-  "AEXB transcript does not check out:": "La transcription AEXB n'est pas correcte :"
+  "AEXB transcript does not check out:": "La transcription AEXB n'est pas correcte :",
+  "Privacy": "Confidentialité",
+  "Privacy stations": "Stations de confidentialité",
+  "Lightning tools": "Outils Lightning",
+  "Decode BOLT11 invoices and BOLT12 offers, or derive a node key: LND seed → LND node key, BIP-39 seed → LDK node key. Does not create a seed. Nothing leaves this page.": "Décodez les factures BOLT11 et les offres BOLT12, ou dérivez une clé de nœud : graine LND → clé de nœud LND, graine BIP-39 → clé de nœud LDK. Ne crée pas de graine. Rien ne quitte cette page.",
+  "Decode an invoice or offer (BOLT11 / BOLT12)": "Décodez une facture ou une offre (BOLT11 / BOLT12)",
+  "Paste a BOLT11 invoice or BOLT12 offer": "Collez une facture BOLT11 ou une offre BOLT12"
 }

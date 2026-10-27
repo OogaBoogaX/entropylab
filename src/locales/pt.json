@@ -26,7 +26,6 @@
   "Vanity": "Vanity",
   "PSBT Editor": "Editor PSBT",
   "MultiSig": "MultiSig",
-  "SP": "SP",
   "Delete current key": "Excluir chave atual",
   "Multisigs": "Multiassinaturas",
   "Delete current multisig": "Excluir multiassinatura atual",
@@ -959,7 +958,6 @@
   "Provide a PSBT or signed transaction and click Inspect Nonces to view the details here.": "Forneça um PSBT ou transação assinada e clique em Inspecionar Nonces para ver os detalhes aqui.",
   "Inspect Nonces": "Inspecionar Nonces",
   "Derive a Lightning node key": "Derivar uma chave de nó Lightning",
-  "LND seed → LND node key. BIP-39 seed → LDK node key. Decode only. Does not create a seed. Nothing leaves this page.": "Seed LND → chave de nó LND. Seed BIP-39 → chave de nó LDK. Apenas decodifica. Não cria uma seed. Nada sai desta página.",
   "Seed format": "Formato da seed",
   "aezeed · LND cipher seed": "aezeed · Seed cifrada LND",
   "BIP-39 · LDK (ldk-node)": "BIP-39 · LDK (ldk-node)",
@@ -2236,5 +2234,11 @@
   "AEXB transcript checks out for {n} signature slot(s). This checks the transcript's math only, not that an honest host ran the exchange.": "A transcrição AEXB está correta para {n} slot(s) de assinatura. Isso verifica apenas a matemática da transcrição, não que um host honesto executou a troca.",
   "AEXB transcript checks out, but it does not cover every signature in this PSBT.": "A transcrição AEXB está correta, mas não cobre todas as assinaturas neste PSBT.",
   "AEXB transcript does not check out:": "A transcrição AEXB não está correta:",
-  "Descriptor origin claims master {fingerprint}, account {account}' — not provable from the account key": "A origem do descritor afirma mestre {fingerprint}, conta {account}' — não comprovável a partir da chave da conta"
+  "Descriptor origin claims master {fingerprint}, account {account}' — not provable from the account key": "A origem do descritor afirma mestre {fingerprint}, conta {account}' — não comprovável a partir da chave da conta",
+  "Privacy": "Privacidade",
+  "Privacy stations": "Estações de privacidade",
+  "Lightning tools": "Ferramentas Lightning",
+  "Decode BOLT11 invoices and BOLT12 offers, or derive a node key: LND seed → LND node key, BIP-39 seed → LDK node key. Does not create a seed. Nothing leaves this page.": "Decodifique faturas BOLT11 e ofertas BOLT12, ou derive uma chave de nó: semente LND → chave de nó LND, semente BIP-39 → chave de nó LDK. Não cria uma semente. Nada sai desta página.",
+  "Decode an invoice or offer (BOLT11 / BOLT12)": "Decodificar uma fatura ou oferta (BOLT11 / BOLT12)",
+  "Paste a BOLT11 invoice or BOLT12 offer": "Cole uma fatura BOLT11 ou oferta BOLT12"
 }
