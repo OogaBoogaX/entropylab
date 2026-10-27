@@ -114,8 +114,9 @@ public final class MainActivity extends Activity {
     @Override
     protected void onStop() {
         super.onStop();
-        // By design: leaving the foreground ends the session (like the web app's
-        // conceal-on-leave) so no secret outlives the visit. See android/README.md.
+        // By design: genuine backgrounding ends this process and calculator
+        // session; the next open is cold. This is not a secure-erasure guarantee.
+        // See android/README.md.
         if (!isChangingConfigurations()) shutDown();
     }
 

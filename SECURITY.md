@@ -495,8 +495,9 @@ material. Its security posture rests on the following model:
   network egress) is treated as a security issue.
 - The Android wrapper in `android/` embeds the pinned v1.0.0rc1 release
   `entropylab.html` (vendored bytes, SHA-256
-  `7f8685814e2bab0c80f75dd6d2cff1b3354bee51faecd65942a73e12968808a0`, verified
-  against that release's signed checksum manifest) in a WebView. Its offline
+  `7f8685814e2bab0c80f75dd6d2cff1b3354bee51faecd65942a73e12968808a0`, matched
+  against that release's `SHA256SUMS.txt`) in a WebView. The PGP signature
+  in `SHA256SUMS.asc` was not verified in the recorded check. Its offline
   guarantee is enforced by the platform: the manifest requests no permissions
   (including `INTERNET`), the WebView blocks network loads and refuses any
   load that is not the bundled asset, backups and device transfer are
