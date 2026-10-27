@@ -265,7 +265,7 @@ test("the shell carries the unified anti-exfil strings on their ids", () => {
   assert.ok(block.includes('id="psbt-ax-transcript-help"'), "the help paragraph keeps its id");
   assert.ok(block.includes('id="psbt-ax-transcript"'), "the field keeps its id");
   assert.ok(block.includes("Anti-exfil transcript (Jade, BitBox02 or AEXB, optional)"), "the summary names all three formats");
-  assert.ok(block.includes("Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session as hex, stages 2 to 4. The format is detected automatically."), "the help text describes the unified field");
+  assert.ok(block.includes("Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session (stages 2 to 4) as hex, exported from your host software. The format is detected automatically."), "the help text describes the unified field");
   assert.ok(block.includes('aria-label="Anti-exfil transcript"'), "the field's accessible name is the unified one");
   assert.ok(block.includes('placeholder="Host nonce and opening, or AEXB messages, as hex"'), "the placeholder describes both formats");
 });
