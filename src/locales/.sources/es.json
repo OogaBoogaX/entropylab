@@ -951,7 +951,6 @@
   "Provide a PSBT or signed transaction and click Inspect Nonces to view the details here.": "50c20014a3f4518a39a29591cf3f4c9677b201dac578896b27423bfad5b1a95d",
   "Inspect Nonces": "c1ba1452657cb99612c50811ac75c9b6645c69288a9c5ed579cc88dff5995048",
   "Derive a Lightning node key": "98f98bca88ffcbc4de5773f8d0db7bb057b1256e4d6322381debc2345548a5d9",
-  "LND seed → LND node key. BIP-39 seed → LDK node key. Decode only. Does not create a seed. Nothing leaves this page.": "9bf64bddacffebce6809d25a760c0c8d4453b03eadca747fbe23765f30f7c28c",
   "Seed format": "06f96657d373d942e335c4fcb6eb37b5b4b94032c6b62e0e8df263acfba748ce",
   "aezeed · LND cipher seed": "1ef9f27a4e6b5398101042de41dd2b1d2e37044964271809a1c5a2e5f60ca46b",
   "BIP-39 · LDK (ldk-node)": "e47db1f9b05a42e5a80f65df1a0feb46af571d561343b1e93e0788cf9944d9ca",
@@ -2237,5 +2236,9 @@
   "AEXB transcript checks out, but it does not cover every signature in this PSBT.": "d5f8840ecdff52494675affc2a59c2a8ba9c22bf87a827ef108c28dde9c85b18",
   "AEXB transcript does not check out:": "b16115e40477a252c7dd39f77ebb6ce536716a7f35248dbac3e51491d68530fb",
   "Privacy": "54a57c3147c49f33de5898b87084ad2b14c4ab308f762454bf92aca907478ad5",
-  "Privacy stations": "8a8616b329fbf23ef9f21003ede8969a58117ddd1160c90fe295211916f5054a"
+  "Privacy stations": "8a8616b329fbf23ef9f21003ede8969a58117ddd1160c90fe295211916f5054a",
+  "Lightning tools": "3db42df22e47268174884c0ded41b6cd5231c59a39e5e99f94526ff464471e7c",
+  "Decode BOLT11 invoices and BOLT12 offers, or derive a node key: LND seed → LND node key, BIP-39 seed → LDK node key. Does not create a seed. Nothing leaves this page.": "1c8e79785ddc351281fd1887278ae22d698ceabc15227203fdb55c6b32150088",
+  "Decode an invoice or offer (BOLT11 / BOLT12)": "e8eace3722dab742bac5380b1fa7874892c0536872b92dfe4f90e418737229a0",
+  "Paste a BOLT11 invoice or BOLT12 offer": "b18313ea52d1a4c8c8b799e9c4413895279ee104a9d20f8bee82ec2985347ad4"
 }
