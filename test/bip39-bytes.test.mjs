@@ -212,10 +212,19 @@ test("byte-based seeds match @scure/bip39 for every length and passphrase", () =
 test("hodlMasterFingerprint derives from { entropy } and { indices } with the real bip39 and hdkey", () => {
   const appSource = readFileSync(join(repoRoot, "src/js/app.js"), "utf8");
   const fnSource = appSource.match(/^function hodlMasterFingerprint\([^]*?^}/m)[0];
+  // Record every root the function builds, so the test can see whether the
+  // master private key was wiped before the node was dropped.
+  const roots = [];
   const context = vm.createContext({
     hodlSeedFromEntropy: seedFromEntropy,
     hodlSeedFromIndices: seedFromIndices,
-    hodlHDKey: HDKey,
+    hodlHDKey: {
+      fromMasterSeed(seed, versions) {
+        const root = HDKey.fromMasterSeed(seed, versions);
+        roots.push(root);
+        return root;
+      },
+    },
     hodlFingerprintHex: (fingerprint) => fingerprint,
   });
   vm.runInContext(fnSource, context);
@@ -223,8 +232,23 @@ test("hodlMasterFingerprint derives from { entropy } and { indices } with the re
     const seed = scureBip39.mnemonicToSeedSync(VECTOR_PHRASE, passphrase);
     return ScureHDKey.fromMasterSeed(seed).fingerprint;
   };
+  const assertRootsWiped = (label) => {
+    assert.ok(roots.length > 0, `must observe the root node for ${label}`);
+    for (const root of roots) {
+      assert.equal(root.privateKey, null, `the root node for ${label} still holds the master private key`);
+    }
+    roots.length = 0;
+  };
   for (const passphrase of ["", "TREZOR"]) {
     assert.equal(context.hodlMasterFingerprint({ entropy: VECTOR_ENTROPY }, passphrase), expected(passphrase), `entropy ${passphrase}`);
+    assertRootsWiped(`entropy ${JSON.stringify(passphrase)}`);
     assert.equal(context.hodlMasterFingerprint({ indices: indicesOf(VECTOR_PHRASE) }, passphrase), expected(passphrase), `indices ${passphrase}`);
+    assertRootsWiped(`indices ${JSON.stringify(passphrase)}`);
   }
+});
+
+test("hodlRenderMasterFingerprintPreview zeroes the fingerprint source in a finally", () => {
+  const appSource = readFileSync(join(repoRoot, "src/js/app.js"), "utf8");
+  const fnSource = appSource.match(/^function hodlRenderMasterFingerprintPreview\([^]*?^}/m)[0];
+  assert.match(fnSource, /finally\s*\{\s*source\.entropy\?\.fill\(0\);\s*source\.indices\?\.fill\(0\);\s*\}/);
 });
