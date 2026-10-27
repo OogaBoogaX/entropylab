@@ -203,7 +203,10 @@ test("the render reads the transcript through the helper, behind the preview fla
   assert.match(render, /let preview = typeof PREVIEW !== "undefined" && PREVIEW;/);
   assert.match(render, /let raw = \(options\?\.transcript \?\? document\.getElementById\("psbt-ax-transcript"\)\?\.value\) \|\| "";\s*if \(!preview\) transcript = hodlParseAntiExfil\(raw\);\s*else \{\s*const read = hodlReadNonceTranscript\(raw, true\);/);
   assert.match(app, /transcript: hodlParseAntiExfil\(raw\)/);
-  assert.match(app, /if \(PREVIEW\) \{[\s\S]*?Anti-exfil transcript \(Jade, BitBox02 or AEXB, optional\)/);
+  // The preview labels are no longer an inline block: they are re-applied by
+  // the locale listener, behind the same PREVIEW guard.
+  assert.match(app, /if \(PREVIEW\) hodlApplyAexbPreviewLabels\(\);/);
+  assert.match(app, /function hodlApplyAexbPreviewLabels\(\) \{[\s\S]*?Anti-exfil transcript \(Jade, BitBox02 or AEXB, optional\)/);
 });
 
 test("the preview flag is defined behind a typeof guard, so release builds still boot", () => {

@@ -10400,7 +10400,35 @@ function hodlSetPsbtError(spec) {
   if (!error) return;
   error.textContent = !spec ? "" : spec.key ? hodlTText(spec.key, spec.vars) : spec.raw || "";
 }
+// The preview build's anti-exfil labels name AEXB as well as Jade and
+// BitBox02. They are set through hodlTText on every language switch (the
+// locale listener runs before the static sweep) and marked data-i18n-skip so
+// the sweep leaves them alone: it would otherwise restore the cached
+// Jade-only English original and translate that.
+function hodlApplyAexbPreviewLabels() {
+  const summary = document.querySelector("#nonce-jade-options > summary");
+  if (summary) {
+    summary.textContent = hodlTText("Anti-exfil transcript (Jade, BitBox02 or AEXB, optional)");
+    summary.setAttribute("data-i18n-skip", "");
+  }
+  const help = document.getElementById("psbt-ax-transcript-help");
+  if (help) {
+    help.textContent = hodlTText("Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session as hex, stages 2 to 4. The format is detected automatically.");
+    help.setAttribute("data-i18n-skip", "");
+  }
+  const field = document.getElementById("psbt-ax-transcript");
+  if (field) {
+    field.setAttribute("aria-label", hodlTText("Anti-exfil transcript"));
+    field.setAttribute("placeholder", hodlTText("Host nonce and opening, or AEXB messages, as hex"));
+    field.setAttribute("data-i18n-skip", "");
+  }
+}
+
 function hodlRefreshPsbtLocale() {
+  // The preview labels name AEXB too, and the static sweep would restore the
+  // cached Jade-only English original: set them here, in the new language,
+  // before the sweep runs, and mark them so it leaves them alone.
+  if (typeof PREVIEW !== "undefined" && PREVIEW) hodlApplyAexbPreviewLabels();
   hodlPaintPsbtSession();
   hodlPaintPsbtKeyNotes();
   if (hodlPsbtErrorSpec) hodlSetPsbtError(hodlPsbtErrorSpec);
@@ -11638,17 +11666,7 @@ var PREVIEW = typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREV
 function hodlInitPsbt() {
   let go = document.getElementById("psbt-go");
   if (!go) return;
-  if (PREVIEW) {
-    const summary = document.querySelector("#nonce-jade-options > summary");
-    if (summary) summary.textContent = hodlTText("Anti-exfil transcript (Jade, BitBox02 or AEXB, optional)");
-    const help = document.getElementById("psbt-ax-transcript-help");
-    if (help) help.textContent = hodlTText("Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session as hex, stages 2 to 4. The format is detected automatically.");
-    const field = document.getElementById("psbt-ax-transcript");
-    if (field) {
-      field.setAttribute("aria-label", hodlTText("Anti-exfil transcript"));
-      field.setAttribute("placeholder", hodlTText("Host nonce and opening, or AEXB messages, as hex"));
-    }
-  }
+  if (PREVIEW) hodlApplyAexbPreviewLabels();
   go.onclick = () => {
     hodlRunPsbt();
     hodlRefreshStationKeyPickers();
@@ -14067,6 +14085,9 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
         }) : null,
         message = hodlT("Need the matching key in this session to check RFC 6979 and low-r grind."),
         className = "muted";
+      // Set only by the AEXB branch below, so a release render (or a slice
+      // loaded without PREVIEW) never emits the test hook.
+      let aexbVerdict = null;
       let suffixForPolicy = signature.raw.length >= 2 ? signature.sighash : null,
         sighashProblems = hodlSighashProblems(declaredSighash, suffixForPolicy);
       if (sighashProblems.length) policyProblems++;
@@ -14148,6 +14169,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
             }
           } else if (aexbSignatures) {
             const slotVerdict = hodlAexbSlotVerdict(aexbSignatures.slots, index, hodlCompressedPubkey(signature.pubkey), parts.r, parts.s, sighash);
+            aexbVerdict = slotVerdict;
             if (slotVerdict === "no-slot") {
               message = hodlT("No AEXB transcript slot covers this signature.");
               className = "psbt-warn";
@@ -14203,7 +14225,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       }
       ecdsaIndex += 1;
       if (className === "psbt-bad" || className === "psbt-warn") inputHasProblem = true;
-      rows.push({ input: index, message, className, pubkey: hodlHex.encode(signature.pubkey) });
+      rows.push({ input: index, message, className, pubkey: hodlHex.encode(signature.pubkey), aexbVerdict });
     });
     // Placement: while the per-list cap and the view's render budget allow,
     // the input's section and its warning paragraphs render inline, exactly
@@ -14320,9 +14342,9 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     const aexbCovered = rfcTotal > 0 && aexbMatched === rfcTotal;
     nonceHtml.push(aexbResult.ok
       ? aexbCovered
-        ? "<p class='psbt-ok'>" + hodlT("AEXB transcript checks out for {n} signature slot(s). This checks the transcript's math only, not that an honest host ran the exchange.", { n: aexbMatched }) + "</p>"
-        : "<p class='psbt-warn'>" + hodlT("AEXB transcript checks out, but it does not cover every signature in this PSBT.") + "</p>"
-      : "<p class='psbt-warn'>" + hodlT("AEXB transcript does not check out:") + " <code>" + hodlEscapeHtml(aexbResult.reason || aexbResult.slots?.find((slot) => !slot.ok)?.reason || "") + "</code></p>");
+        ? "<p class='psbt-ok' data-aexb-summary='covered'>" + hodlT("AEXB transcript checks out for {n} signature slot(s). This checks the transcript's math only, not that an honest host ran the exchange.", { n: aexbMatched }) + "</p>"
+        : "<p class='psbt-warn' data-aexb-summary='partial'>" + hodlT("AEXB transcript checks out, but it does not cover every signature in this PSBT.") + "</p>"
+      : "<p class='psbt-warn' data-aexb-summary='fail'>" + hodlT("AEXB transcript does not check out:") + " <code>" + hodlEscapeHtml(aexbResult.reason || aexbResult.slots?.find((slot) => !slot.ok)?.reason || "") + "</code></p>");
   }
   let {
     reused,
@@ -14349,7 +14371,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   else nonceHtml.push("<p class='muted'>" + hodlT("No ECDSA signatures with a readable r value are present, so there is no nonce to compare yet.") + "</p>");
   if (schnorrReused.length) nonceHtml.push(hodlSchnorrReuseHtml(schnorrReused));
   if (rValues.length) nonceHtml.push("<p class='psbt-kv'>" + hodlT("r values:") + cappedHtml(rValues, (value) => "<br>" + hodlEscapeHtml(value.hex) + " " + hodlT("(input {n})", { n: value.input }), "rows", (n) => hodlT("…and {n} more rows (not rendered).", { n }), budget) + "</p>");
-  nonceHtml.push(cappedHtml(rows, (row) => "<p class='psbt-kv'><strong>" + hodlT("Input {n}", { n: row.input }) + "</strong><br>" + hodlPublicInlineHtml(row.pubkey, { label: hodlTText("Public key"), preview: row.pubkey.slice(0, 18) + "…", className: "psbt-address" }) + "<br><span class='" + row.className + "'>" + hodlEscapeHtml(row.message) + "</span></p>", "rows", (n) => hodlT("…and {n} more rows (not rendered).", { n }), budget));
+  nonceHtml.push(cappedHtml(rows, (row) => "<p class='psbt-kv'" + (row.aexbVerdict ? " data-aexb-verdict='" + row.aexbVerdict + "'" : "") + "><strong>" + hodlT("Input {n}", { n: row.input }) + "</strong><br>" + hodlPublicInlineHtml(row.pubkey, { label: hodlTText("Public key"), preview: row.pubkey.slice(0, 18) + "…", className: "psbt-address" }) + "<br><span class='" + row.className + "'>" + hodlEscapeHtml(row.message) + "</span></p>", "rows", (n) => hodlT("…and {n} more rows (not rendered).", { n }), budget));
   // The Taproot total counts parseable signatures only (issue #333); an
   // unreadable one still makes the result incomplete. A single comparable
   // signature has nothing to be compared with, like a single ECDSA r
