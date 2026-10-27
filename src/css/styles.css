@@ -1340,7 +1340,7 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 /* Labels reset first, so the shared rhythm below still separates a label that follows a block. */
 .guide-content .label { margin: 0 0 var(--space-control); }
 .feature-guide-card .guide-content > * + *, .feature-guide-card .guide-step > * + * { margin-top: var(--space-component); }
-.guide-content h3 { margin-bottom: 0; font-size: var(--text-heading-small); }
+.guide-content h3 { margin: 0; font-size: var(--text-heading-small); }
 .guide-lessons { display: grid; gap: var(--space-control); }
 .guide-lessons > .btn { display: grid; gap: var(--space-control); height: auto; text-align: start; white-space: normal; padding: var(--inset-box); }
 .guide-lessons > .btn > .muted { font-size: var(--text-body); font-weight: normal; }
