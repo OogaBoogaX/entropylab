@@ -2217,5 +2217,7 @@
   "cHNidP8B… or 0200000001…": "cHNidP8B… ou 0200000001…",
   "Upload original": "Télécharger l'original",
   "The Lightning key worker stopped.": "L'agent de clé Lightning s'est arrêté.",
-  "Node key derived. Decoded key material stays in an isolated worker until you clear it.": "Clé de nœud dérivée. Le matériel de clé décodé reste dans un worker isolé jusqu'à ce que vous le supprimiez."
+  "Node key derived. Decoded key material stays in an isolated worker until you clear it.": "Clé de nœud dérivée. Le matériel de clé décodé reste dans un worker isolé jusqu'à ce que vous le supprimiez.",
+  "Lightning": "Lightning",
+  "LN": "LN"
 }
