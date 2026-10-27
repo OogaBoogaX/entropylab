@@ -2221,5 +2221,20 @@
   "Lightning": "Lightning",
   "LN": "LN",
   "{count} generated item": "{count} generierter Eintrag",
-  "{count} generated items": "{count} generierte Einträge"
+  "{count} generated items": "{count} generierte Einträge",
+  "Anti-exfil transcript (Jade, BitBox02 or AEXB, optional)": "Anti-Exfiltration-Transkript (Jade, BitBox02 oder AEXB, optional)",
+  "Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session as hex, stages 2 to 4. The format is detected automatically.": "Fügen Sie einen Jade- oder BitBox02-Host-Nonce und eine Öffnung oder die AEXB/AEXT-Nachrichten einer Sitzung als Hexadezimalwert ein, Stufen 2 bis 4. Das Format wird automatisch erkannt.",
+  "Anti-exfil transcript": "Anti-Exfiltration-Transkript",
+  "Host nonce and opening, or AEXB messages, as hex": "Host-Nonce und Öffnung oder AEXB-Nachrichten als Hexadezimalwert",
+  "No BitBox02 opening R was provided for this signature.": "Für diese Signatur wurde keine BitBox02-Öffnung R bereitgestellt.",
+  "Matches BitBox02 anti-klepto (sign-to-contract). Host entropy mixed into the nonce. Not a leak.": "Entspricht BitBox02 Anti-Klepto (Sign-to-Contract). Host-Entropie in den Nonce gemischt. Kein Leak.",
+  "Does not match this BitBox02 anti-klepto transcript.": "Entspricht nicht diesem BitBox02 Anti-Klepto-Transkript.",
+  "No AEXB transcript slot covers this signature.": "Kein AEXB-Transkript-Slot deckt diese Signatur ab.",
+  "Matches the AEXB transcript: this is the signature the transcript checks.": "Entspricht dem AEXB-Transkript: Dies ist die Signatur, die das Transkript prüft.",
+  "Does not match the AEXB transcript's signature for this input.": "Entspricht nicht der Signatur des AEXB-Transkripts für diese Eingabe.",
+  "Anti-exfil transcript not used:": "Anti-Exfiltration-Transkript nicht verwendet:",
+  "This reads as a Jade host nonce ρ or a BitBox02 host nonce. Both are checked the same way. From a BitBox02, paste the host nonce, not its SHA-256 commitment.": "Dies wird als Jade-Host-Nonce ρ oder BitBox02-Host-Nonce gelesen. Beide werden auf die gleiche Weise geprüft. Fügen Sie von einem BitBox02 den Host-Nonce ein, nicht dessen SHA-256-Commitment.",
+  "AEXB transcript checks out for {n} signature slot(s). This checks the transcript's math only, not that an honest host ran the exchange.": "AEXB-Transkript ist in Ordnung für {n} Signatur-Slot(s). Dies prüft nur die Mathematik des Transkripts, nicht ob ein ehrlicher Host den Austausch durchgeführt hat.",
+  "AEXB transcript checks out, but it does not cover every signature in this PSBT.": "AEXB-Transkript ist in Ordnung, aber es deckt nicht jede Signatur in diesem PSBT ab.",
+  "AEXB transcript does not check out:": "AEXB-Transkript ist nicht in Ordnung:"
 }
