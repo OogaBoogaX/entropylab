@@ -1,0 +1,28 @@
+# SeedSigner SeedQR spec fixtures: https://github.com/SeedSigner/seedsigner/tree/830a6889378df28bab165b67266af2c05010e9f1/docs/seed_qr
+# License: MIT, see seedsigner/LICENSE. expected_hex is the exact byte payload a decoder must return (Standard SeedQR is numeric mode, so ASCII digits); - means the spec does not print it.
+# expected_hex was computed from the spec's published digit streams and CompactSeedQR bitstreams (test vectors 1-9 and the walkthrough example), never from a decoder.
+# file	image	format	expected_hex	note
+seedsigner/vector1_standard_24word.png	png	standard-seedqr	303131353133323531313534303132373131393030373731303431353037343231323839313930363230303830383730303236363133343331343230323031363137393230363134303839363139323930333030313532343038303130363433	SeedSigner test vector 1
+seedsigner/vector1_compact_24word.png	png	compact-seedqr	0e74b64107f94cc0ccfae6a13dcbec3662154fec67e0e00999c07892597d190a	SeedSigner test vector 1
+seedsigner/vector2_standard_24word.png	png	standard-seedqr	303131343136353530393634313838383030373331313139313537323138383730313536303631303032353631393332313232353134343330353733303033363131303131343035313130363133323932303138313735343131393731353736	SeedSigner test vector 2
+seedsigner/vector2_compact_24word.png	png	compact-seedqr	0e59dde276009317f1275f1389888078c99368d1e82489b5f629531fc5b6a56e	SeedSigner test vector 2 (0x00 mid-stream)
+seedsigner/vector3_standard_24word.png	png	standard-seedqr	313636323036373530323033303138383130333631343137303635383035393431353037313731323139303831343536313430383138363531343031303734343132373330373237313433373039393430373938313833363133353031373130	SeedSigner test vector 3
+seedsigner/vector3_compact_24word.png	png	compact-seedqr	cfca8c658bc81962549252bc7ac3ba5b0b01d26bcae89f2b5ecebe263dcb2a36	SeedSigner test vector 3
+seedsigner/vector4_standard_12word.png	png	standard-seedqr	303733333138393530373339303635343135393631363032303039393037363730343238313837323132323631313136	SeedSigner test vector 4
+seedsigner/vector4_compact_12word.png	png	compact-seedqr	5bbd9d71a8ec7990831aff359d426545	SeedSigner test vector 4
+seedsigner/vector5_standard_12word.png	png	standard-seedqr	303830333031353430323030303632363030323531353539303037303038393331373330303738383032373532303034	SeedSigner test vector 5
+seedsigner/vector5_compact_12word.png	png	compact-seedqr	6462686427203385c2337dd84c5089fd	SeedSigner test vector 5
+seedsigner/vector6_standard_12word.png	png	standard-seedqr	303038363037353031303235303231373134383830303233313731353033363330353137303230393137323131343235	SeedSigner test vector 6
+seedsigner/vector6_compact_12word.png	png	compact-seedqr	0acbba008d9ba005f5996b40a3475cd9	SeedSigner test vector 6 (0x00 mid-stream)
+seedsigner/vector7_compact_12word.png	png	compact-seedqr	3e1e0bc1e31e0e4315348b76dfec0a98	SeedSigner test vector 7 (0x0a)
+seedsigner/vector8_compact_12word.png	png	compact-seedqr	307eaf058659ca7a7a0d63152509e541	SeedSigner test vector 8 (0x0d)
+seedsigner/vector9_compact_12word.png	png	compact-seedqr	f55cf587f2543d01090d0ae710bd3b6d	SeedSigner test vector 9 (0x0d 0x0a)
+seedsigner/standard_12word.png	png	standard-seedqr	313932343032323230323335313734333036333131313234303337383137373030363431313938303132393031323130	spec walkthrough example
+seedsigner/compact_12word.png	png	compact-seedqr	f0837875ecf4ef190bd6ea503ef2854b	spec walkthrough example
+seedsigner/phone_screenshot_standard.jpg	jpeg	standard-seedqr	313932343032323230323335313734333036333131313234303337383137373030363431313938303132393031323130	phone screenshot of a scan of the walkthrough example (JPEG)
+seedsigner/phone_screenshot_compact.jpg	jpeg	compact-seedqr	f0837875ecf4ef190bd6ea503ef2854b	phone screenshot of the walkthrough example's CompactSeedQR (JPEG)
+seedsigner/standard_24word.png	png	standard-seedqr	-	24-word example; payload not printed in the spec
+seedsigner/compact_24word.png	png	compact-seedqr	-	24-word example; payload not printed in the spec
+seedsigner/standard_24word_with_logo.png	png	standard-seedqr	-	logo over the centre (error correction test)
+seedsigner/handmade_qr.jpg	jpeg	standard-seedqr	-	photo of a hand-drawn SeedQR (progressive JPEG)
+seedsigner/seedqr_plate.jpg	jpeg	unknown	-	photo of a punched metal SeedQR plate (progressive JPEG)

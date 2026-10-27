@@ -1,0 +1,25 @@
+[package]
+name = "qr-eval"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Unlicense"
+description = "Scan QR decoder evaluation (rqrr vs quircs) for EntropyLab. A test harness only: nothing here is built into the app."
+
+[dependencies]
+# Exact versions, lockfile-committed, per CONTRIBUTING.md §2.
+# The two candidate decoders. Both get 8-bit luminance input only, so the
+# optional `image` integration stays off.
+rqrr = { version = "=0.11.0", default-features = false }
+quircs = { version = "=0.10.3", default-features = false }
+# An encoder independent of the app's uqr, for the synthetic corpus.
+qrcode = { version = "=0.14.1", default-features = false }
+# Readers for the independent fixture images (SeedSigner's spec images and
+# photos).
+png = { version = "=0.18.1", default-features = false }
+jpeg-decoder = { version = "=0.3.2", default-features = false }
+
+[profile.release]
+# Integer overflow in a decoder on a hostile image is a finding: keep the
+# checks on in the optimised build the evaluation runs.
+overflow-checks = true

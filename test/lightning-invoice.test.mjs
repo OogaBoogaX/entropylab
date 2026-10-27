@@ -155,6 +155,65 @@ test("the invoice card ships in the shell after #ln-card, with its controls", ()
   assert.match(shell, /id="ln-inv-out"[^>]*aria-live="polite"/);
 });
 
+test("the decoder card is a labelled tool whose heading comes first", () => {
+  const cardTag = shell.match(/<section[^>]*id="ln-inv-card"[^>]*>/)?.[0] || "";
+  assert.ok(cardTag, "the decoder card is in the shell");
+  assert.match(cardTag, /aria-labelledby="ln-inv-heading"/, "the card must take its accessible name from its heading");
+  const cardStart = shell.indexOf(cardTag);
+  const cardEnd = shell.indexOf("</section>", cardStart);
+  assert.ok(cardEnd > cardStart, "the decoder card is closed");
+  const card = shell.slice(cardStart, cardEnd);
+  const headingAt = card.indexOf('id="ln-inv-heading"');
+  const labelAt = card.indexOf('for="ln-inv-input"');
+  assert.ok(headingAt >= 0, "the decoder heading is missing");
+  assert.ok(labelAt > headingAt, "the heading must come before the input label");
+  // First element child: nothing but the opening <section …> tag precedes it.
+  const firstChild = card.slice(card.indexOf(">") + 1).trimStart();
+  assert.ok(firstChild.startsWith("<h2"), "the heading must be the card's first element child");
+  assert.match(card, /<h2 id="ln-inv-heading">Decode an invoice or offer \(BOLT11 \/ BOLT12\)<\/h2>/);
+});
+
+test("the node-key heading sits between the decoder card and the hsm_secret upload", () => {
+  const cardEnd = shell.indexOf("</section>", shell.indexOf('id="ln-inv-card"'));
+  const keyAt = shell.indexOf('id="ln-key-heading"');
+  const uploadAt = shell.indexOf('id="ln-hsm-upload"');
+  assert.ok(cardEnd >= 0, "the decoder card is closed");
+  assert.ok(keyAt > cardEnd, "the node-key heading must come after the decoder card");
+  assert.ok(uploadAt > keyAt, "the node-key heading must come before the hsm_secret upload");
+  assert.match(shell, /<h2 id="ln-key-heading">Derive a Lightning node key<\/h2>/);
+});
+
+test("the decoder input advertises the formats it accepts", () => {
+  const inputTag = shell.match(/<textarea[^>]*id="ln-inv-input"[^>]*>/)?.[0] || "";
+  assert.ok(inputTag, "the decoder input is in the shell");
+  assert.match(inputTag, /\splaceholder="[^"]*"/, "the decoder input must carry a placeholder");
+  assert.match(inputTag, /placeholder="[^"]*BOLT11[^"]*BOLT12[^"]*"/, "the placeholder must name both formats");
+});
+
+test("the tab intro names both tools and the BOLT formats", () => {
+  const introStart = shell.indexOf('id="ln-tool-intro"');
+  const introEnd = shell.indexOf('id="ln-card"');
+  assert.ok(introStart >= 0 && introEnd > introStart, "the tab intro is in the shell");
+  const intro = shell.slice(introStart, introEnd);
+  assert.match(intro, /<h2>Lightning tools<\/h2>/);
+  assert.match(intro, /Decode BOLT11 invoices and BOLT12 offers/);
+  assert.doesNotMatch(intro, /Decode only\./);
+});
+
+test("the Lightning headings are not preview-gated", () => {
+  // The headings are plain markup inside #ln-tool-intro and #ln-inv-card; no
+  // preview gate sits between the tab intro and the hsm_secret upload, so a
+  // release build keeps them.
+  const start = shell.indexOf('id="ln-tool-intro"');
+  const end = shell.indexOf('id="ln-hsm-upload"');
+  assert.ok(start >= 0 && end > start, "the Lightning tab is in the shell");
+  const region = shell.slice(start, end);
+  assert.match(region, /<h2>Lightning tools<\/h2>/);
+  assert.match(region, /<h2 id="ln-inv-heading">/);
+  assert.match(region, /<h2 id="ln-key-heading">/);
+  assert.doesNotMatch(region, /preview/i, "the headings must not sit inside a preview-gated block");
+});
+
 test("a BOLT11 invoice renders amount, payment hash, node id, and the signature state", () => {
   const page = invPage();
   try {
