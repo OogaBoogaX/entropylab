@@ -7702,12 +7702,20 @@ function hodlFingerprintSource() {
 }
 // Derives from hodlFingerprintSource's bytes ({ entropy } or { indices }),
 // never a phrase string; the caller zeroes the source.
+// The root node holds the master private key, so it is wiped as well as the
+// seed: the preview runs on every edit and must not leave the key for the GC.
 function hodlMasterFingerprint(source, passphrase = "") {
   let seed = source.entropy ? hodlSeedFromEntropy(source.entropy, passphrase) : hodlSeedFromIndices(source.indices, passphrase);
+  let root;
   try {
-    return hodlFingerprintHex(hodlHDKey.fromMasterSeed(seed).fingerprint);
+    root = hodlHDKey.fromMasterSeed(seed);
+    return hodlFingerprintHex(root.fingerprint);
   } finally {
-    seed.fill(0);
+    try {
+      root?.wipePrivateData();
+    } finally {
+      seed.fill(0);
+    }
   }
 }
 function hodlSetMasterFingerprintCard(card, valueNode, value, imageNode) {
