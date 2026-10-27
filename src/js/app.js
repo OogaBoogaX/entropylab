@@ -1,4 +1,5 @@
 import { sha256 as hodlSha256, hash160 as hodlHash160 } from "./hashes.js";
+import { workspaceItemCounts, syncWorkspaceCounts } from "./workspace-counts.js";
 // secp256k1 operations run in the libsecp256k1 WebAssembly module; the facade
 // is a drop-in for the noble/curves surface this file uses (see
 // src/js/secp256k1.js). App boot waits for the module to be ready.
@@ -623,6 +624,7 @@ function hodlDisposeDroppedWallets() {
   // The stations offer only the keys the Key Station still has (#546 B3).
   hodlRefreshStationKeyPickers();
   hodlRefreshMsigSessionPickers();
+  hodlSyncWorkspaceCounts();
 }
 // Wipes the private keys a derivation made that no station shows (its row
 // keys, its result's secret bytes, and the root and account nodes its result
@@ -11994,6 +11996,7 @@ function hodlSyncStationDeleteButton(config) {
   button.setAttribute("aria-disabled", String(button.disabled));
 }
 function hodlRenderStationTabs(config) {
+  hodlSyncWorkspaceCounts();
   let box = document.getElementById(config.tabs), panel = document.getElementById(config.panel);
   if (!box || !panel) return;
   box.innerHTML = "";
@@ -15600,6 +15603,7 @@ function hodlSelectedKeyNetwork() {
 }
 function hodlRestoreKey() {
   hodlKeyManagerSyncReviewedContext();
+  hodlSyncWorkspaceCounts();
   let state = hodlKeys[hodlActiveKey];
 
   if (!state) {
@@ -15997,6 +16001,7 @@ function hodlSyncKeyAddButton() {
   button.setAttribute("aria-disabled", String(button.disabled));
 }
 function hodlRenderKeyTabs() {
+  hodlSyncWorkspaceCounts();
   let box = hodlElement("#key-tabs"), panel = hodlElement("#calc-card");
   box.innerHTML = "";
   panel.removeAttribute("aria-labelledby");
@@ -16421,6 +16426,7 @@ function hodlCaptureMsig() {
   state.error = hodlFormatErrorSpec(hodlMsigErrorSpec);
 }
 function hodlRestoreMsig() {
+  hodlSyncWorkspaceCounts();
   let state = hodlMsigs[hodlActiveMsig], panel = document.getElementById("msig-card");
   if (!state) {
     hodlWalletResult = null;
@@ -16631,6 +16637,7 @@ function hodlSyncMsigAddButton() {
   button.setAttribute("aria-disabled", String(button.disabled));
 }
 function hodlRenderMsigTabs() {
+  hodlSyncWorkspaceCounts();
   let box = hodlElement("#msig-tabs"), panel = hodlElement("#msig-card");
   box.innerHTML = "";
   panel.removeAttribute("aria-labelledby");
@@ -16741,6 +16748,11 @@ function hodlShowWorkspace(id) {
     hodlQueueSegmentedControlSync();
     hodlWorkspaceScrollFrame = 0;
   });
+}
+function hodlSyncWorkspaceCounts() {
+  const counts = workspaceItemCounts({ keys: hodlKeys, multisigs: hodlMsigs, children: hodlBip85Children, addresses: hodlSpAddresses, matches: hodlVanityMatches });
+  syncWorkspaceCounts(document.getElementById("workspace-tabs"), counts, (count) => hodlTText(count === 1 ? "{count} generated item" : "{count} generated items", { count }));
+  hodlSyncWorkspaceOverflow();
 }
 function hodlInitTabDrag(box) {
   let pointerId = null, startX = 0, startScroll = 0, moved = false, suppressClick = false;
@@ -19628,6 +19640,7 @@ function hodlVanityKeyMarkup(fingerprint) {
   return `<span class="vanity-key"><img class="key-tab-lifehash" width="22" height="22" alt="" hidden data-vanity-lifehash="${hodlEscapeHtml(fingerprint)}">${hodlPublicInlineHtml(fingerprint)}</span>`;
 }
 function hodlRenderVanityOut() {
+  hodlSyncWorkspaceCounts();
   let box = document.getElementById("vanity-out"), heading = document.getElementById("vanity-matches-heading");
   if (!box) return;
   let method = hodlVanityRun?.method || hodlVanityMethod();
@@ -20135,6 +20148,8 @@ function hodlInitWorkspace() {
     let fullLabel = document.createElement("span"), shortLabel = document.createElement("span");
     fullLabel.className = "workspace-tab-full";
     shortLabel.className = "workspace-tab-short";
+    fullLabel.dataset.workspaceLabel = "full";
+    shortLabel.dataset.workspaceLabel = "short";
     fullLabel.textContent = hodlTText(wide);
     shortLabel.textContent = hodlTText(short);
     button.append(fullLabel, shortLabel);
@@ -20148,6 +20163,7 @@ function hodlInitWorkspace() {
     strip.appendChild(button);
   });
   box.append(hint, strip);
+  hodlSyncWorkspaceCounts();
   hodlInitTabDrag(strip);
   // The hint points at tools that are off the right edge, so it answers "is
   // there more that way": it goes once the end is reached, and one click
@@ -20690,6 +20706,7 @@ function hodlInitSecretFieldAutoClear() {
     } catch {} finally {
       delete psbtEditorWipe.dataset.journalSilent;
     }
+    hodlSyncWorkspaceCounts();
   };
   addEventListener("pagehide", clearSecretFields);
   addEventListener("pageshow", (event) => {
@@ -20724,8 +20741,9 @@ function hodlApplyLocale() {
     let entry = hodlWorkspaceTabs.find(([id]) => id === button.dataset.workspace);
     if (!entry) return;
     let [, label, short, wide = label] = entry;
-    if (button.firstChild) button.firstChild.textContent = hodlTText(wide);
-    if (button.lastChild) button.lastChild.textContent = hodlTText(short);
+    let fullLabel = button.querySelector('[data-workspace-label="full"]'), shortLabel = button.querySelector('[data-workspace-label="short"]');
+    if (fullLabel) fullLabel.textContent = hodlTText(wide);
+    if (shortLabel) shortLabel.textContent = hodlTText(short);
     button.setAttribute("aria-label", hodlTText(label));
     if (wide !== label) button.title = hodlTText(label);
   });

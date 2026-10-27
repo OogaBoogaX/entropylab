@@ -16,14 +16,17 @@
 //   2. the WebAssembly modules' whole linear memory, overwritten with the
 //      patterns 0x55, 0xAA and 0xFF and then zeroed, and the modules retired
 //      so nothing can run on them again;
-//   3. the clipboard, emptied if this page wrote it;
-//   4. the page replaced by a short screen, which drops the old DOM;
-//   5. window.close(). A browser closes a tab by script only when it allows
+//   3. the saved preferences in localStorage and sessionStorage: every
+//      `entropylab-` key except the language, so a shared machine does not
+//      show that EntropyLab was used;
+//   4. the clipboard, emptied if this page wrote it;
+//   5. the page replaced by a short screen, which drops the old DOM;
+//   6. window.close(). A browser closes a tab by script only when it allows
 //      it (typically a tab opened straight to this file, with no history to
 //      go back to), so the screen says to close the tab when it is still
 //      showing.
 //
-// Steps 2 and 3 come from the caller, so the suite can drive the sequence.
+// Steps 2 and 4 come from the caller, so the suite can drive the sequence.
 //
 // Edge is the exception to "closing the tab is enough". Measured on
 // 2026-10-06 (Windows 11, Edge 154): after Copy seed phrase, Edge's browser
@@ -99,11 +102,39 @@ export const renderSessionEnded = (doc, { clipboardCleared = false } = {}) => {
   doc.body.replaceChildren(main);
 };
 
+// Must equal hodlLocaleStorageKey in i18n.js; End session keeps the language.
+const KEPT_PREFERENCE_KEY = "entropylab-locale";
+
+// Removes EntropyLab's saved preferences from both storages, keeping the
+// language. They are not secrets, but on a shared machine they show the page
+// was used. Each storage is tried on its own: blocked storage, private mode
+// or a throwing getter must not stop End session.
+export const clearSavedPreferences = (win) => {
+  for (const name of ["localStorage", "sessionStorage"]) {
+    try {
+      const storage = win?.[name];
+      if (!storage) continue;
+      // Collect first: removing while indexing shifts the indices.
+      const keys = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (typeof key === "string" && key.startsWith("entropylab-") && key !== KEPT_PREFERENCE_KEY) keys.push(key);
+      }
+      for (const key of keys) storage.removeItem(key);
+    } catch {
+      // Ignore this storage and go on to the next.
+    }
+  }
+};
+
 export const endSession = async ({ win = window, doc = document, retireModules = [], clearClipboard = async () => false } = {}) => {
   win.dispatchEvent(new win.PageTransitionEvent("pagehide", { persisted: false }));
   // The retires cannot throw today; if one ever does, the screen and
   // window.close() below must still run, so keep this sequence flat.
   for (const retire of retireModules) retire();
+  // Saved preferences are not secrets, but on a shared machine they show
+  // EntropyLab was used; the language stays. This cannot throw.
+  clearSavedPreferences(win);
   // Started inside the confirm click, while the browser still counts it as
   // the user's action; some browsers refuse a clipboard write without one.
   const clipboardCleared = await clearClipboard().catch(() => false);
