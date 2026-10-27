@@ -13,7 +13,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bip39English, entropyToMnemonic, mnemonicToSeedSync, seedFromEntropy, seedFromIndices } from "../src/js/bip39.js";
+import { bip39English, entropyToMnemonic, mnemonicToSeedSync, seedFromEntropy, seedFromIndices, entropyFromWordIndices } from "../src/js/bip39.js";
+import * as scureBip39 from "@scure/bip39";
+import { wordlist as scureEnglish } from "@scure/bip39/wordlists/english.js";
+import { HDKey as ScureHDKey } from "@scure/bip32";
+import { HDKey } from "../src/js/hdkey.js";
+import vm from "node:vm";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const hexToBytes = (hex) => new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
@@ -146,4 +151,80 @@ test("no call site passes a joined or regenerated phrase string to hodlMnemonicT
   assert.doesNotMatch(source, /hodlMnemonicToSeed\(\s*hodlResultMnemonic/);
   assert.doesNotMatch(source, /hodlMnemonicToSeed\(\s*[a-z]+\.words\.join\(/);
   assert.doesNotMatch(source, /let mnemonic = validation\.words\.join\(" "\), seed = hodlMnemonicToSeed/);
+});
+
+test("entropyFromWordIndices round-trips with seedFromEntropy's indices and refuses bad input", () => {
+  for (let length = 16; length <= 32; length += 4) {
+    for (let round = 0; round < 4; round++) {
+      const entropy = new Uint8Array(length).map((_, j) => (length * 53 + round * 77 + j * 31 + 11) & 0xff);
+      const phrase = entropyToMnemonic(entropy);
+      const indices = indicesOf(phrase);
+      assert.deepEqual(entropyFromWordIndices(indices), entropy, `entropy ${length}/${round}`);
+    }
+  }
+  // Bad checksum: the all-"abandon" twelve-word phrase is invalid.
+  const badChecksum = Uint16Array.from(indicesOf(VECTOR_PHRASE));
+  badChecksum[11] = 0; // "about" -> "abandon"
+  assert.throws(() => entropyFromWordIndices(badChecksum), /Invalid mnemonic/);
+  // Wrong number of indices.
+  for (const count of [11, 13, 23]) {
+    assert.throws(() => entropyFromWordIndices(new Uint16Array(count)), /Invalid mnemonic/);
+  }
+  // An index above 2047.
+  const tooBig = Uint16Array.from(indicesOf(VECTOR_PHRASE));
+  tooBig[3] = 2048;
+  assert.throws(() => entropyFromWordIndices(tooBig), /Invalid mnemonic/);
+});
+
+test("entropyFromWordIndices zeroes its index copy", () => {
+  const { result, allocated } = observeBip39Allocations(() => entropyFromWordIndices(indicesOf(VECTOR_PHRASE)));
+  assert.deepEqual(result, VECTOR_ENTROPY);
+  assert.ok(allocated.some((buffer) => buffer instanceof globalThis.Uint16Array && buffer.length > 0), "must observe the word-index copy");
+  for (const buffer of allocated) {
+    if (buffer instanceof globalThis.Uint16Array) {
+      assert.ok(buffer.every((value) => value === 0), "the index copy still holds secret material");
+    }
+  }
+});
+
+test("byte-based seeds match @scure/bip39 for every length and passphrase", () => {
+  const passphrases = [
+    "",
+    "TREZOR",
+    "pässwörd",
+    "pässwörd".normalize("NFD"),
+    "a\u030A\u0301",
+    "日本語",
+    "🔑",
+  ];
+  for (let length = 16; length <= 32; length += 4) {
+    for (let round = 0; round < 4; round++) {
+      const entropy = new Uint8Array(length).map((_, j) => (length * 53 + round * 77 + j * 31 + 11) & 0xff);
+      const phrase = scureBip39.entropyToMnemonic(entropy, scureEnglish);
+      for (const passphrase of passphrases) {
+        const expected = scureBip39.mnemonicToSeedSync(phrase, passphrase);
+        assert.deepEqual(seedFromEntropy(entropy, passphrase), expected, `entropy ${length}/${round} ${JSON.stringify(passphrase)}`);
+      }
+    }
+  }
+});
+
+test("hodlMasterFingerprint derives from { entropy } and { indices } with the real bip39 and hdkey", () => {
+  const appSource = readFileSync(join(repoRoot, "src/js/app.js"), "utf8");
+  const fnSource = appSource.match(/^function hodlMasterFingerprint\([^]*?^}/m)[0];
+  const context = vm.createContext({
+    hodlSeedFromEntropy: seedFromEntropy,
+    hodlSeedFromIndices: seedFromIndices,
+    hodlHDKey: HDKey,
+    hodlFingerprintHex: (fingerprint) => fingerprint,
+  });
+  vm.runInContext(fnSource, context);
+  const expected = (passphrase) => {
+    const seed = scureBip39.mnemonicToSeedSync(VECTOR_PHRASE, passphrase);
+    return ScureHDKey.fromMasterSeed(seed).fingerprint;
+  };
+  for (const passphrase of ["", "TREZOR"]) {
+    assert.equal(context.hodlMasterFingerprint({ entropy: VECTOR_ENTROPY }, passphrase), expected(passphrase), `entropy ${passphrase}`);
+    assert.equal(context.hodlMasterFingerprint({ indices: indicesOf(VECTOR_PHRASE) }, passphrase), expected(passphrase), `indices ${passphrase}`);
+  }
 });
