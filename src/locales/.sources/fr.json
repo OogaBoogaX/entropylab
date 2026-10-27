@@ -2221,5 +2221,20 @@
   "Lightning": "41e68f2cdb3806bb899cb2f3c3d80a2171f37c85b60e8e486742234e4e5f5738",
   "LN": "69a844cab6d32d051e1aad4e3682a2ed5da89bd7ec38cc827bc38293bba4ce27",
   "{count} generated item": "30b82adc7ed675e0d6049110eea18732a1dfae5be9d0a3e9204ebfef6bf317f3",
-  "{count} generated items": "8534d55639d8ea486831c5878cf1b28efd935b6caa5cfa5e20ba0e5259c0e11e"
+  "{count} generated items": "8534d55639d8ea486831c5878cf1b28efd935b6caa5cfa5e20ba0e5259c0e11e",
+  "Anti-exfil transcript (Jade, BitBox02 or AEXB, optional)": "1e5a889ef547cfdc0e92daacf8ee9f4170161b7e17311219ae3c45f4f32c2a9a",
+  "Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session as hex, stages 2 to 4. The format is detected automatically.": "8bfe607d4823bf1dad1c98a7705002f7af0fe5a4c31ca441f6b7ab80b5376802",
+  "Anti-exfil transcript": "8d6a819f1d898d93adee275e81d6c2be07e8a348ac0a110a2d9a5ffd1d3d284c",
+  "Host nonce and opening, or AEXB messages, as hex": "90199b0eed54348304b61f7f7b39e4e4144b1e5d4d31fbfef81b582b64193719",
+  "No BitBox02 opening R was provided for this signature.": "033118f7a9e2cf8e6ec2720963ae2ed03f265ba0ec20454d74a504798573c2d1",
+  "Matches BitBox02 anti-klepto (sign-to-contract). Host entropy mixed into the nonce. Not a leak.": "5af3910e00be6e216b00f88858dd40997f3f46b1ef6f9fdc4b625350d20bc82e",
+  "Does not match this BitBox02 anti-klepto transcript.": "37d92801f79a9d3f2915047b9cf552681b059494512a9b8ea657c96651ffa7a1",
+  "No AEXB transcript slot covers this signature.": "5da9064e0be35ecbc136d855bf0c0621f2061ca3f65cb27e6d542a47bba07e8a",
+  "Matches the AEXB transcript: this is the signature the transcript checks.": "9c91eda9523af30cad318c0615bf28f7d0eee2ba596e8ccedc29c6ab19780867",
+  "Does not match the AEXB transcript's signature for this input.": "951838cb1e14da5dfb0c8484f286306edbac32207cebdb8fb7f6fc502f3b6920",
+  "Anti-exfil transcript not used:": "bb270d02f94a289b972078e5df12523d33dad02d1c11358dd4e94f7303de744b",
+  "This reads as a Jade host nonce ρ or a BitBox02 host nonce. Both are checked the same way. From a BitBox02, paste the host nonce, not its SHA-256 commitment.": "13e2dea9ae0f1610ba835afb0dcb44f74e4b4b34f8acdf79f0660bbef6111057",
+  "AEXB transcript checks out for {n} signature slot(s). This checks the transcript's math only, not that an honest host ran the exchange.": "b211c247a4ae3fe2636c25db089dadafe23f06a70b3edb5c56547d9052c44bfb",
+  "AEXB transcript checks out, but it does not cover every signature in this PSBT.": "d5f8840ecdff52494675affc2a59c2a8ba9c22bf87a827ef108c28dde9c85b18",
+  "AEXB transcript does not check out:": "b16115e40477a252c7dd39f77ebb6ce536716a7f35248dbac3e51491d68530fb"
 }
