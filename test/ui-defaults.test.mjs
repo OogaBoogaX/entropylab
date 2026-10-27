@@ -1738,7 +1738,7 @@ test("workspace tabs ship every tool, with Lightning after Transactions", () => 
   // carries it as the hover title.
   assert.match(appSource, /fullLabel\.textContent = hodlTText\(wide\);/);
   // A language switch relabels the tabs the same way.
-  assert.match(appSource, /let \[, label, short, wide = label\] = entry;\s*if \(button\.firstChild\) button\.firstChild\.textContent = hodlTText\(wide\);/);
+  assert.match(appSource, /let \[, label, short, wide = label\] = entry;\s*let fullLabel = button\.querySelector\('\[data-workspace-label="full"\]'\), shortLabel = button\.querySelector\('\[data-workspace-label="short"\]'\);\s*if \(fullLabel\) fullLabel\.textContent = hodlTText\(wide\);\s*if \(shortLabel\) shortLabel\.textContent = hodlTText\(short\);/);
   assert.match(appSource, /button\.setAttribute\("aria-label", hodlTText\(label\)\);\s*if \(wide !== label\) button\.title = hodlTText\(label\);/);
   // Release first paint and no-JS show the static strip: every release tool has its button there.
   assert.match(shell, /aria-controls="core-card"/);

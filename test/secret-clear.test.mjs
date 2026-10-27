@@ -52,6 +52,7 @@ function createContext(sandbox) {
     hodlJournalKeyDerivation: null, hodlJournalKeyImportConfirm: null, hodlKeyManagerFileRequest: 0,
     hodlLowEntropyConfirm: null, hodlFingerprintCollisionConfirm: null,
     hodlKeyManagerCancelDerivation() {},
+    hodlSyncWorkspaceCounts() {},
     // Session state hodlReleaseKeyConsumers reads; a key drop releases any
     // consumer bound to it (PSBT, BIP-85, Silent Payments, vanity).
     hodlPsbtSource: "", hodlBip85Source: "", hodlSpSource: "", hodlSpVerifyMatches: null,
