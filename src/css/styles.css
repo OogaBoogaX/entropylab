@@ -1355,8 +1355,15 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 .guide-example tbody th { border-top: 1px solid var(--border); font-weight: normal; }
 /* Reading uses the phone's full width; the shared modal still owns focus and dismissal. */
 @media (max-width: 520px) {
-  .feature-guide-overlay { padding: 0; }
-  .feature-guide-card { width: 100%; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
+  /* Stretch into the fixed overlay instead of a second viewport height, and keep controls off the notch and home indicator. */
+  .feature-guide-overlay { padding: 0; place-items: stretch; grid-template-rows: minmax(0, 1fr); }
+  .feature-guide-card {
+    width: 100%; height: auto; max-height: none; min-height: 0; border: 0; border-radius: 0;
+    padding-top: max(var(--inset-card), env(safe-area-inset-top));
+    padding-right: max(var(--inset-card), env(safe-area-inset-right));
+    padding-bottom: max(var(--inset-card), env(safe-area-inset-bottom));
+    padding-left: max(var(--inset-card), env(safe-area-inset-left));
+  }
   .feature-guide-card > .guide-content { flex: 1; }
 }
 .modal-title { margin: 0 0 var(--space-section); font-weight: 600; font-size: var(--text-heading-small); overflow-wrap: anywhere; }

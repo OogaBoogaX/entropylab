@@ -172,7 +172,9 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
         const body = element("section", "", "guide-step", "guide-step");
         body.dataset.guideStep = step.id;
         focus = element("h3", step.title);
-        body.append(focus, element("p", step.body));
+        body.append(focus);
+        if (story) body.append(story);
+        body.append(element("p", step.body));
         if (step.id === "basics-safety") {
           // A deliberate external navigation, never a runtime request or translated URL.
           const link = element("a", hodlTText("Verifying the download (online README)"), "", "guide-download-verification");
@@ -190,14 +192,15 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
         if (example) body.append(workedExample(example));
         const check = element("div", "", "guide-note");
         check.append(element("h4", hodlTText("Remember"), "label"), element("p", step.check));
-        body.append(check, element("p", step.limit, "edge-note is-muted"));
+        const limit = element("div", "", "guide-note", "guide-limit");
+        limit.append(element("h4", hodlTText("Limits"), "label"), element("p", step.limit));
+        body.append(check, limit);
         if (step.term) {
           const details = element("details");
           details.append(element("summary", hodlTText("Explain this word: {word}", { word: step.term[0] })), element("p", step.term[1]));
           body.append(details);
         }
         content.append(body);
-        if (story) content.append(story);
       }
       const quiz = featureGuideCheck(currentStep?.id, hodlTText);
       if (quiz && view.mode === "lesson") {
@@ -222,7 +225,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       footer.append(actions);
       if (view.tool) {
         const open = button(hodlTText("Open this tool"), "open-tool", "guide-open-tool");
-        content.append(open, element("p", hodlTText(view.tool === "vanity" ? "Opens Vanity and runs its usual timing sample. No search starts." : "Opens the tool. This lesson and its examples do not enter any values."), "field-note"));
+        content.append(open, element("p", hodlTText(view.tool === "vanity" ? "Opens Vanity and can change what is on screen. It runs the usual timing sample. No search starts, and this lesson does not enter any values." : "Opens the tool and can change what is on screen. No search or derivation starts, and this lesson does not enter any values."), "field-note"));
       }
     }
     focus.id = "guide-focus";

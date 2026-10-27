@@ -12,13 +12,13 @@ export function featureGuideLessons(hodlTText = (text) => text) {
     "basics-safety": [hodlTText("air gap"), hodlTText("A computer disconnected from every network, including Wi-Fi, Bluetooth, and cables. The browser cannot prove this isolation.")],
     "basics-family": [hodlTText("watch-only"), hodlTText("Public wallet information that can calculate addresses without spending keys. An xpub is an extended public key; a watch-only descriptor adds the address recipe. Both can reveal your activity.")],
     "basics-input": [hodlTText("entropy"), hodlTText("Unpredictability in your original input. Changing its format or hashing it does not add more.")],
-    "basics-recipe": [hodlTText("derivation path"), hodlTText("The numbered route from a wallet's root key to an address. Keep it with the network, address type, and recovery instructions.")],
+    "basics-recipe": [hodlTText("BIP39 passphrase"), hodlTText("Extra exact text combined with the seed words to choose a wallet. A typo normally selects a different valid wallet, usually with no wrong-password message.")],
     "basics-check": [hodlTText("master fingerprint"), hodlTText("A short label for the root key. It helps recognition but can collide, so a matching fingerprint is not proof of identity.")],
     "basics-backup": [hodlTText("multisig policy"), hodlTText("The wallet recipe listing its signers and how many must agree to spend. Recovery needs this policy and enough independent signer backups.")],
   };
   // Explicit concept metadata: no step-index guesses about what a diagram teaches.
   const stages = {
-    "basics-family": "keys", "basics-input": "input", "basics-recipe": "recovery", "basics-backup": "recovery",
+    "basics-family": "addresses", "basics-input": "input", "basics-recipe": "recovery", "basics-backup": "recovery",
     "keys-methods": "input", "keys-strength": "input", "keys-labs": "input", "settings-phrase": "recovery", "settings-path": "keys", "results-recognize": "addresses", "results-edit": "keys",
     "exports-public": "addresses", "exports-core": "recovery", "exports-transfer": "recovery", "bip85-recipe": "recovery", "bip85-use": "recovery",
   };
@@ -125,7 +125,7 @@ export function featureGuideLessons(hodlTText = (text) => text) {
         hodlTText("Check destinations, amounts, change, and fee before signing, then compare the returned file before broadcasting."),
         hodlTText("A valid signature can authorize the wrong payment. An unchanged transaction can still have been wrong before it reached the signer.")),
       step("signer-use", hodlTText("Compare your own before and after copies"),
-        hodlTText("In PSBT Inspector, put the returned PSBT in the main input. Open Check what the signer changed (optional), paste your saved original into PSBT you sent, and Inspect again."),
+        hodlTText("In PSBT Inspector, put the returned PSBT in the main input. Open Check what the signer changed (optional), paste your saved original into PSBT you sent (base64 or hex), and Inspect again."),
         hodlTText("Read the verdict and each finding: transaction changes, signatures, signer keys, change, and other data. Investigate unexplained differences."),
         hodlTText("Use your own saved original. A replacement supplied later by a compromised wallet or server can hide a change. Missing verification data remains unanswered.")),
     ] },
@@ -135,7 +135,7 @@ export function featureGuideLessons(hodlTText = (text) => text) {
         hodlTText("Compare the recipient's full address and amount. A different recipient, a reduced payment, or redirected change needs investigation."),
         hodlTText("These numbers illustrate the idea. The real check also needs verified input amounts and enough wallet information to identify your change.")),
       step("bump-use", hodlTText("Check against the transaction you kept"),
-        hodlTText("In PSBT Inspector, load the replacement PSBT. Open Check a fee bump (RBF) (optional), paste or upload your saved original transaction, then Inspect. RBF means replace-by-fee."),
+        hodlTText("In PSBT Inspector, load the replacement PSBT. Open Check a fee bump (RBF) (optional), paste or upload into Original transaction you broadcast (raw hex or PSBT), and Inspect. RBF means replace-by-fee."),
         hodlTText("Use the original you signed or saved. Read the fee-bump verdict and its findings; unknown ownership or missing amounts must not be treated as approval."),
         hodlTText("A fee-only result describes the supplied comparison. It does not prove the original payment was intended, that the network will accept the replacement, or that it will confirm.")),
     ] },
@@ -211,8 +211,8 @@ export function featureGuideLessons(hodlTText = (text) => text) {
 
 export function featureGuideRoutes(hodlTText = (text) => text) {
   return [
-    { id: "wallet", title: hodlTText("Understand wallets"), summary: hodlTText("Learn what to protect, choose an input, and check an address."), lessons: ["basics", "keys", "results"] },
-    { id: "recovery", title: hodlTText("Prepare for recovery"), summary: hodlTText("Distinguish public exports from spending backups and plan signer recovery."), lessons: ["settings", "exports", "multisig", "session"] },
+    { id: "wallet", title: hodlTText("Understand wallets"), summary: hodlTText("Learn what to protect, choose an input, keep the recipe, and check an address."), lessons: ["basics", "keys", "settings", "results"] },
+    { id: "recovery", title: hodlTText("Prepare for recovery"), summary: hodlTText("Distinguish public exports from spending backups and plan signer recovery."), lessons: ["exports", "multisig", "session"] },
     { id: "transaction", title: hodlTText("Understand a transaction"), summary: hodlTText("Read a payment, check a signer or fee bump, and understand the limits."), lessons: ["inspect", "signer", "fee-bump", "edit", "nonce"] },
     { id: "advanced", title: hodlTText("Explore advanced tools"), summary: hodlTText("Learn child recovery material, Silent Payments, and vanity search limits."), lessons: ["bip85", "silent", "vanity", "labs"] },
   ];

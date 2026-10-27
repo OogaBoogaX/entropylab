@@ -9,10 +9,10 @@ Status: implemented on feature-guide-wizard. Original planning base: upstream/ro
 ## Current refinement — 2026-10-27
 
 The first practical-content pass has 16 lessons / 36 steps. Basics is six
-steps; the beginner route then covers input selection and results. Wallet
-settings start the recovery route; Brain wallet and method sync are in a
-separate advanced lesson. Two new transaction lessons explain signer
-comparison and fee bumps using the user's own saved original.
+steps; the beginner route then covers input selection, wallet settings, and
+results. Brain wallet and method sync are in a separate advanced lesson.
+Two new transaction lessons explain signer comparison and fee bumps using
+the user's own saved original.
 
 Five fixed, read-only tables show public/private information, passphrase
 mismatch, payment arithmetic, a redirected recipient, and change paying a
@@ -20,9 +20,11 @@ higher fee. They contain no usable wallet material and never fill fields or
 call the transaction engines. Translated cells use text sinks. Navigation,
 network silence, memory-only progress and the security contract below remain
 unchanged. Deeper vocabulary and the concept diagram remain disclosures;
-critical limitations stay visible. Finish screens disclose other lessons and
+the diagram sits directly under the step heading. Each limit keeps a visible
+heading. Finish screens disclose other lessons and
 keep route continuation directly available. On phones the shared modal fills
-the viewport, retaining its focus trap, header, scrolling body and navigation.
+the overlay, retaining its focus trap, header, scrolling body, navigation,
+and padding for the display safe area.
 
 The sections below record the original plan and earlier validation. For the
 current user flow see README's Feature guide section. The earlier eight-step

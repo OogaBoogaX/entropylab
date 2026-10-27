@@ -154,7 +154,7 @@ test("catalog covers released workspaces with complete steps, unique IDs, and ex
   const stepIds = [];
   for (const lesson of lessons) {
     strings.push(lesson.title, lesson.summary);
-    assert.ok(lesson.steps.length > 0);
+    assert.ok(lesson.id === "labs" ? lesson.steps.length === 1 : lesson.steps.length >= 2, lesson.id);
     for (const step of lesson.steps) {
       stepIds.push(step.id);
       for (const field of ["title", "body", "check", "limit"]) {
@@ -236,10 +236,10 @@ test("the first basics step exposes a fixed verification link without automatic 
 test("optional routes advance only explicitly and reject unknown routes", () => withPage(({ guide, click, doc, opened, opener }) => {
   guide.open(null, opener);
   click('#guide-route-recovery');
-  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'settings-phrase');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'exports-public');
   while (doc.getElementById('guide-next')) click('#guide-next');
   click('#guide-route-next');
-  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'exports-public');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'multisig-quorum');
   assert.deepEqual(opened, []);
   click('#guide-contents');
   click('#guide-lesson-basics');
@@ -287,8 +287,15 @@ test("completed route reopening offers the next lesson, while interruptions resu
 test("diagram highlights are bound to concept IDs and first-use basics terms are explained", () => withPage(({ guide, click, doc, opener }) => {
   guide.open('basics', opener);
   assert.equal(doc.getElementById('guide-story'), null);
+  const limit = doc.getElementById('guide-limit');
+  assert.equal(limit?.firstElementChild?.tagName, 'H4');
+  assert.equal(limit?.querySelector('p')?.textContent, featureGuideLessons().find(item => item.id === 'basics').steps[0].limit);
   click('#guide-next');
-  assert.equal(doc.querySelector('[aria-current="step"]').dataset.guideStage, 'keys');
+  const story = doc.getElementById('guide-story');
+  const step = doc.getElementById('guide-step');
+  assert.equal(story?.parentElement, step);
+  assert.equal([...step.children].indexOf(story), [...step.children].indexOf(step.querySelector('h3')) + 1);
+  assert.equal(doc.querySelector('[aria-current="step"]').dataset.guideStage, 'addresses');
   click('#guide-next');
   assert.equal(doc.querySelector('[aria-current="step"]').dataset.guideStage, 'input');
   assert.ok(featureGuideLessons().find(item => item.id === 'basics').steps.every(item => item.term?.length === 2));
@@ -396,6 +403,8 @@ test("beginner and transaction routes keep labs separate and reach the new compa
   const routes = guideContent.featureGuideRoutes();
   const lessons = featureGuideLessons();
   const beginner = routes.find(route => route.id === "wallet");
+  assert.deepEqual(beginner.lessons, ["basics", "keys", "settings", "results"]);
+  assert.deepEqual(routes.find(route => route.id === "recovery").lessons, ["exports", "multisig", "session"]);
   assert.ok(!beginner.lessons.includes("labs"));
   assert.ok(!beginner.lessons.flatMap(id => lessons.find(lesson => lesson.id === id).steps).some(step => step.id === "keys-labs"));
   assert.ok(routes.find(route => route.id === "advanced").lessons.includes("labs"));
