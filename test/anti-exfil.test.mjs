@@ -69,13 +69,13 @@ const taggedHash = (tag, ...chunks) => {
 };
 const bigOf = (bytes) => BigInt(`0x${toHex(bytes)}`);
 
-const jadeTest = read("psbt-anti-exfil.test.mjs");
-const jadeHost = jadeTest.match(/"([0-9a-f]{2})"\.repeat\(32\)/)[1].repeat(32);
-const jadeOpening = jadeTest.match(/"(02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27)"/)[1];
+// From test/psbt-anti-exfil.test.mjs, "parses host nonce and compressed opening as separate hex".
+const jadeHost = "11".repeat(32);
+const jadeOpening = "02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27";
 
-const bitboxTest = read("psbt-bitbox-s2c.test.mjs");
-const bitboxHost = bitboxTest.match(/"([0-9a-f]{2})"\.repeat\(32\)/)[1].repeat(32);
-const bitboxOpening = bitboxTest.match(/"(02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27)"/)[1];
+// From test/psbt-bitbox-s2c.test.mjs, "one 32-byte field is the revealed host nonce, not the SHA256 commitment".
+const bitboxHost = "11".repeat(32);
+const bitboxOpening = "02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27";
 const bitboxCommitment = toHex(sha256(hexDecode(bitboxHost)));
 
 const aexbFixtures = join(root, "fixtures", "aexb");
@@ -97,6 +97,7 @@ test("Jade vectors agree with hodlParseAntiExfil", () => {
     assert.deepEqual(result.transcript, expected);
     assert.deepEqual(result.candidates, ["jade", "bitbox02"]);
     assert.equal(result.warning, JADE_BITBOX_WARNING);
+    assert.equal(result.warningCode, "jade-or-bitbox02");
   }
 });
 
@@ -114,6 +115,7 @@ test("BitBox vectors agree with hodlParseBitboxTranscript", () => {
     assert.equal(toHex(result.transcript.openings[0]), toHex(expected.opening));
     assert.equal(toHex(result.transcript.commitment), toHex(expected.commitment));
     assert.equal(result.transcript.commitmentMatches, expected.commitmentMatches);
+    assert.equal(result.warningCode, null);
   }
 });
 
@@ -122,6 +124,7 @@ test("AEXB vectors decode and verify", () => {
   for (const vector of positive.messages) {
     const result = readAntiExfil(vector.message_hex);
     assert.equal(result.kind, "aexb");
+    assert.equal(result.warningCode, null);
     assert.equal(result.transcript.decoded.stage, vector.stage);
     byStage.set(vector.stage, result.transcript.decoded);
 
@@ -139,6 +142,56 @@ test("AEXB vectors decode and verify", () => {
   const signatureResult = aexbVerify(signatures, reveal, stage2);
   assert.equal(signatureResult.ok, true);
   assert.equal(signatureResult.verdict, "ok");
+});
+
+test("AEXB messages split on whitespace and keep paste order", () => {
+  const stage2 = positive.messages.find((vector) => vector.stage === 2);
+  const stage3 = positive.messages.find((vector) => vector.stage === 3);
+  const result = readAntiExfil(`${stage2.message_hex}\n${stage3.message_hex}`);
+  assert.equal(result.kind, "aexb");
+  assert.equal(result.transcript.messages.length, 2);
+  assert.equal(result.transcript.messages[0].stage, 2);
+  assert.equal(result.transcript.messages[1].stage, 3);
+  assert.equal(result.transcript.decoded.stage, 2);
+});
+
+test("a line-wrapped AEXB message decodes as one message", () => {
+  const stage4 = positive.messages.find((vector) => vector.stage === 4);
+  const wrapped = stage4.message_hex.match(/.{1,64}/g).join("\n");
+  const result = readAntiExfil(wrapped);
+  assert.equal(result.kind, "aexb");
+  assert.equal(result.transcript.messages.length, 1);
+  assert.equal(result.transcript.decoded.stage, 4);
+});
+
+test("a bad second AEXB message reports its position", () => {
+  const stage2 = positive.messages.find((vector) => vector.stage === 2);
+  const result = readAntiExfil(`${stage2.message_hex}\n41455842`);
+  assert.equal(result.kind, null);
+  assert.match(result.error, /^Message 2: /);
+});
+
+test("a single truncated AEXB message keeps today's error text", () => {
+  const result = readAntiExfil("41455842" + "00".repeat(10));
+  assert.equal(result.kind, null);
+  assert.equal(result.error, "message is shorter than the AEXB header");
+});
+
+test("a line-wrapped truncated AEXB message reports the AEXB error", () => {
+  const result = readAntiExfil("41455842\n" + "00".repeat(10));
+  assert.equal(result.kind, null);
+  assert.match(result.error, /AEXB/);
+  assert.doesNotMatch(result.error, /Jade/);
+});
+
+test("a Jade host nonce that starts with the AEXB magic still reads as Jade", () => {
+  for (const magic of ["41455842", "41455854"]) {
+    const host = magic + "11".repeat(28);
+    const result = readAntiExfil(`${host}\n${jadeOpening}`);
+    assert.equal(result.kind, "jade");
+    assert.equal(Buffer.from(result.transcript.host).toString("hex"), host);
+    assert.equal(Buffer.from(result.transcript.openings[0]).toString("hex"), jadeOpening);
+  }
 });
 
 test("a BitBox commitment pasted as rho reads as Jade with the warning and fails the check", () => {
@@ -200,6 +253,21 @@ test("bad input returns kind null with an error and never throws", () => {
     assert.equal(result.transcript, null);
     assert.deepEqual(result.candidates, []);
     assert.equal(result.warning, null);
+    assert.equal(result.warningCode, null);
+  }
+});
+
+test("a truncated AEXB or AEXT message reports its own decode error first", () => {
+  const cases = [
+    ["41455842" + "00".repeat(10), /AEXB/],
+    ["AEXB" + "00".repeat(10), /AEXB/],
+    ["41455854" + "00".repeat(10), /AEXT/],
+  ];
+  for (const [input, pattern] of cases) {
+    const result = readAntiExfil(input);
+    assert.equal(result.kind, null, input);
+    assert.match(result.error, pattern, input);
+    assert.doesNotMatch(result.error, /Jade/, input);
   }
 });
 
