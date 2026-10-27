@@ -4,17 +4,21 @@
 //
 // Contract: End session runs, in this order, every wipe the page runs when it
 // is left (a pagehide that is not a bfcache entry), the modules' retirement
-// (their whole linear memory overwritten with patterns, then zeroed), the clipboard clear, the page's
-// replacement by the ended screen (nothing of the old DOM left), and
-// window.close(). A clipboard the browser refuses to clear does not stop the
-// rest. The live page (the header control, the dialog, a real tab) is covered
-// in the browser suite; the modules' retirement in wasm-retire.test.mjs.
+// (their whole linear memory overwritten with patterns, then zeroed), the
+// saved preferences cleared from both storages (every `entropylab-` key
+// except the language), the clipboard clear, the page's replacement by the
+// ended screen (nothing of the old DOM left), and window.close(). A clipboard
+// the browser refuses to clear does not stop the rest, and neither does a
+// storage that throws. The live page (the header control, the dialog, a real
+// tab) is covered in the browser suite; the modules' retirement in
+// wasm-retire.test.mjs.
 // Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MiniDocument } from "./mini-dom.mjs";
 import * as endSessionModule from "../src/js/end-session.js";
 import { endSession, renderSessionEnded } from "../src/js/end-session.js";
+import { hodlLocaleStorageKey } from "../src/js/i18n.js";
 
 const SECRET = "legal winner thank year wave sausage worth useful legal winner thank yellow";
 
@@ -31,6 +35,20 @@ const fakePage = () => {
     close: () => { log.push(`close:${doc.querySelector("[data-session-ended]") ? "after the ended screen" : "before it"}`); },
   };
   return { log, doc, win };
+};
+
+// A Storage stand-in: key(index) reflects the current order, so a loop that
+// removes while indexing skips the next key.
+const fakeStorage = (entries) => {
+  const map = new Map(Object.entries(entries));
+  return {
+    get length() { return map.size; },
+    key: (index) => [...map.keys()][index] ?? null,
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => { map.set(String(key), String(value)); },
+    removeItem: (key) => { map.delete(key); },
+    get keys() { return [...map.keys()]; },
+  };
 };
 
 test("End session wipes, retires, clears, replaces the page and closes, in that order", async () => {
@@ -144,4 +162,71 @@ test("the ended screen is unchanged by the Edge warning", async () => {
     return doc.body.textContent;
   };
   assert.equal(await ended({ userAgent: EDGE_WINDOWS }), await ended({ userAgent: CHROME_WINDOWS }), "the ended screen differs between Edge and other browsers");
+});
+
+// Contract: End session clears EntropyLab's saved preferences from both
+// storages, keeping the language (owner decision 2026-10-26). The keys are
+// not secrets, but on a shared machine they show the page was used.
+test("End session clears every saved preference except the language, in both storages", async () => {
+  const { doc, win } = fakePage();
+  const saved = {
+    "entropylab-theme": "dark",
+    "entropylab-intro-dismissed": "1",
+    "entropylab-disclaimer-banner-dismissed": "1",
+    "entropylab-sources-open": "1",
+    "entropylab-important-open": "1",
+    "entropylab-disclaimer-accepted": "1.0.0",
+    "entropylab-locale": "fr",
+    "other-site-key": "keep me",
+  };
+  win.localStorage = fakeStorage(saved);
+  win.sessionStorage = fakeStorage(saved);
+  await endSession({ win, doc });
+  for (const storage of [win.localStorage, win.sessionStorage]) {
+    assert.deepEqual(storage.keys.sort(), ["entropylab-locale", "other-site-key"]);
+    assert.equal(storage.getItem("entropylab-locale"), "fr");
+    assert.equal(storage.getItem("other-site-key"), "keep me");
+  }
+});
+
+test("a storage that throws does not stop the session ending", async () => {
+  const blocked = fakePage();
+  Object.defineProperty(blocked.win, "localStorage", { get() { throw new Error("SecurityError"); } });
+  blocked.win.sessionStorage = fakeStorage({ "entropylab-theme": "dark", "entropylab-locale": "fr" });
+  await endSession({ win: blocked.win, doc: blocked.doc });
+  assert.ok(blocked.doc.querySelector("[data-session-ended]"), "the ended screen must still render");
+  assert.ok(blocked.log.includes("close:after the ended screen"), "close() must still run");
+  assert.deepEqual(blocked.win.sessionStorage.keys.sort(), ["entropylab-locale"], "the other storage must still be cleared");
+
+  const refusing = fakePage();
+  const storage = fakeStorage({ "entropylab-theme": "dark" });
+  storage.removeItem = () => { throw new Error("QuotaExceededError"); };
+  refusing.win.localStorage = storage;
+  refusing.win.sessionStorage = fakeStorage({ "entropylab-theme": "dark", "entropylab-locale": "fr" });
+  await endSession({ win: refusing.win, doc: refusing.doc });
+  assert.ok(refusing.doc.querySelector("[data-session-ended]"), "the ended screen must still render");
+  assert.ok(refusing.log.includes("close:after the ended screen"), "close() must still run");
+  assert.deepEqual(refusing.win.sessionStorage.keys.sort(), ["entropylab-locale"], "the other storage must still be cleared");
+});
+
+test("clearSavedPreferences removes adjacent matching keys without skipping one", () => {
+  const { clearSavedPreferences } = endSessionModule;
+  assert.equal(typeof clearSavedPreferences, "function");
+  const storage = fakeStorage({
+    "entropylab-a": "1",
+    "entropylab-b": "1",
+    "entropylab-c": "1",
+    "entropylab-locale": "de",
+    "other-site-key": "keep",
+  });
+  clearSavedPreferences({ localStorage: storage, sessionStorage: fakeStorage({}) });
+  assert.deepEqual(storage.keys.sort(), ["entropylab-locale", "other-site-key"]);
+});
+
+test("the kept preference key is the locale key i18n.js writes", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../src/js/end-session.js", import.meta.url), "utf8");
+  const match = source.match(/const KEPT_PREFERENCE_KEY = "([^"]+)";/);
+  assert.ok(match, "end-session.js must define KEPT_PREFERENCE_KEY as a string literal");
+  assert.equal(match[1], hodlLocaleStorageKey);
 });
