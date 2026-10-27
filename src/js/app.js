@@ -16893,6 +16893,7 @@ function hodlShowWorkspace(id) {
   });
   hodlSyncPsbtTool();
   hodlSyncJournalTool();
+  hodlSyncPrivacyTool();
   hodlJournalLog("workspace", id);
   hodlWalletResult = null;
   hodlRevealPrivate = false;
@@ -17046,7 +17047,11 @@ async function hodlLoadTestKeys() {
 // optional fourth entry is the wide-screen label where the full name would
 // push the nine tools past the desktop strip (owner, 2026-10-26); the full
 // name stays the accessible name and the hover title.
-var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig", "MultiSig"], ["psbt", "Transactions", "Txns"], ["ln", "Lightning", "LN"], ["core", "Core Wallet", "Core"], ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"], ["sp", "Silent Payments", "SP"], ["vanity", "Vanity Address", "Vanity", "Vanity"], ["journal", "Journal", "Journal"]];
+var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig", "MultiSig"], ["psbt", "Transactions", "Txns"], ["ln", "Lightning", "LN"], ["core", "Core Wallet", "Core"], ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"], ["sp", "Privacy", "Privacy"], ["vanity", "Vanity Address", "Vanity", "Vanity"], ["journal", "Journal", "Journal"]];
+// The Privacy workspace's stations: the id a station tab carries and the card
+// it shows. Later PRs add ["bip47", …] and ["check", …] rows here.
+var hodlPrivacyTools = [["sp", "sp-card"]];
+var hodlPrivacyTool = "sp";
 // Lightning joined after its key worker (#1203) and
 // polish (#1211), placed after Transactions (owner, 2026-10-26).
 // Codex32 remains outside release navigation; its MS1 calculator stays in source.
@@ -17098,6 +17103,57 @@ function hodlInitPsbtToolTabs() {
   });
   hodlInitTabDrag(document.getElementById("psbt-tool-tabs"));
   hodlSyncPsbtTool();
+}
+
+function hodlSyncPrivacyTool() {
+  let tabs = document.getElementById("privacy-tool-tabs");
+  if (!tabs) return;
+  let visible = hodlWorkspace === "sp",
+      manager = document.getElementById("privacy-manager");
+  // The strip sits outside the cards, so its wrapper (hidden in the markup,
+  // like #psbt-manager) is shown only on its workspace.
+  if (manager) manager.hidden = !visible;
+  tabs.querySelectorAll("[data-privacy-tool]").forEach((button) => {
+    let active = button.dataset.privacyTool === hodlPrivacyTool;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  for (let [tool, card] of hodlPrivacyTools) {
+    let node = document.getElementById(card);
+    if (node) node.hidden = !(visible && hodlPrivacyTool === tool);
+  }
+}
+
+function hodlShowPrivacyTool(id, focus = false) {
+  if (!document.getElementById("privacy-tool-tabs")) return;
+  let next = hodlPrivacyTools.some(([tool]) => tool === id) ? id : "sp",
+      changed = next !== hodlPrivacyTool;
+  hodlPrivacyTool = next;
+  hodlSyncPrivacyTool();
+  if (changed) hodlJournalLog("tool-tab", hodlPrivacyTool, "sp");
+  if (focus) document.querySelector(`#privacy-tool-tabs [data-privacy-tool="${hodlPrivacyTool}"]`)?.focus();
+}
+
+function hodlInitPrivacyToolTabs() {
+  let strip = document.getElementById("privacy-tool-tabs");
+  if (!strip) return;
+  let buttons = [...strip.querySelectorAll("[data-privacy-tool]")];
+  buttons.forEach((button, index) => {
+    button.onclick = () => hodlShowPrivacyTool(button.dataset.privacyTool);
+    button.onkeydown = (event) => {
+      let next = null;
+      if (event.key === "ArrowRight") next = (index + 1) % buttons.length;
+      else if (event.key === "ArrowLeft") next = (index - 1 + buttons.length) % buttons.length;
+      else if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = buttons.length - 1;
+      if (next === null) return;
+      event.preventDefault();
+      hodlShowPrivacyTool(buttons[next].dataset.privacyTool, true);
+    };
+  });
+  hodlInitTabDrag(strip);
+  hodlSyncPrivacyTool();
 }
 var hodlJournal = createJournal();
 var hodlJournalTool = "notes";
@@ -20350,6 +20406,7 @@ function hodlInitWorkspace() {
   addEventListener("resize", hodlSyncWorkspaceOverflow);
   new ResizeObserver(hodlSyncWorkspaceOverflow).observe(strip);
   hodlInitPsbtToolTabs();
+  if (PREVIEW) hodlInitPrivacyToolTabs();
   hodlInitJournalToolTabs();
   hodlInitJournalNotebook();
   hodlInitMsig();
