@@ -116,11 +116,11 @@ test("malformed anti-exfil transcript is try/caught so parse errors cannot wipe 
   const render = loadSlice("hodlRenderPsbt");
   assert.match(
     render,
-    /try\s*\{\s*let\s+raw\s*=\s*\(options\?\.transcript\s*\?\?\s*document\.getElementById\("psbt-ax-transcript"\)\?\.value\)\s*\|\|\s*""\s*;\s*if\s*\(!preview\)\s*transcript\s*=\s*hodlParseAntiExfil\(raw\);[\s\S]*?\}\s*catch\s*\(\s*exception\s*\)\s*\{\s*transcriptError\s*=\s*exception\.message\s*\|\|\s*String\(\s*exception\s*\)\s*;?\s*\}/,
+    /try\s*\{\s*let\s+raw\s*=\s*\(options\?\.transcript\s*\?\?\s*document\.getElementById\("psbt-ax-transcript"\)\?\.value\)\s*\|\|\s*""\s*;\s*const\s+read\s*=\s*hodlReadNonceTranscript\(raw,\s*true\);\s*transcript\s*=\s*read\.transcript;[\s\S]*?\}\s*catch\s*\(\s*exception\s*\)\s*\{\s*transcriptError\s*=\s*exception\.message\s*\|\|\s*String\(\s*exception\s*\)\s*;?\s*\}/,
   );
   assert.match(
     render,
-    /if\s*\(\s*transcriptError\s*\)\s*nonceHtml\.push\("<p class='psbt-warn'><strong>"\s*\+\s*hodlT\(preview\s*\?\s*"Anti-exfil transcript not used:"\s*:\s*"Jade anti-exfil transcript not used:"\)\s*\+\s*"<\/strong> "\s*\+\s*hodlEscapeHtml\(\s*transcriptError\s*\)\s*\+\s*"<\/p>"\)/,
+    /if\s*\(\s*transcriptError\s*\)\s*nonceHtml\.push\("<p class='psbt-warn'><strong>"\s*\+\s*hodlT\("Anti-exfil transcript not used:"\)\s*\+\s*"<\/strong> "\s*\+\s*hodlEscapeHtml\(\s*transcriptError\s*\)\s*\+\s*"<\/p>"\)/,
   );
 });
 
