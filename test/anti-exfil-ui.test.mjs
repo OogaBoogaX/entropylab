@@ -1,4 +1,4 @@
-// Nonce Inspector transcript reader: release path vs preview path.
+// Nonce Inspector transcript reader: one path, the format detected.
 // Run with: npm run test:ci
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -196,17 +196,18 @@ test("preview path returns an error for malformed input and nothing for empty in
   assert.deepEqual({ ...hodlReadNonceTranscript("", true) }, { transcript: null });
 });
 
-test("the render reads the transcript through the helper, behind the preview flag", () => {
+test("the render reads the transcript through the helper, unconditionally", () => {
   const render = loadSlice("hodlRenderPsbt");
-  // The flag is read through a typeof guard, and a release build (or a slice
-  // loaded alone) keeps the exact Jade-only call.
-  assert.match(render, /let preview = typeof PREVIEW !== "undefined" && PREVIEW;/);
-  assert.match(render, /let raw = \(options\?\.transcript \?\? document\.getElementById\("psbt-ax-transcript"\)\?\.value\) \|\| "";\s*if \(!preview\) transcript = hodlParseAntiExfil\(raw\);\s*else \{\s*const read = hodlReadNonceTranscript\(raw, true\);/);
-  assert.match(app, /transcript: hodlParseAntiExfil\(raw\)/);
-  // The preview labels are no longer an inline block: they are re-applied by
-  // the locale listener, behind the same PREVIEW guard.
-  assert.match(app, /if \(PREVIEW\) hodlApplyAexbPreviewLabels\(\);/);
-  assert.match(app, /function hodlApplyAexbPreviewLabels\(\) \{[\s\S]*?Anti-exfil transcript \(Jade, BitBox02 or AEXB, optional\)/);
+  // One path: the reader detects the format, and no PREVIEW gate decides it.
+  assert.doesNotMatch(render, /PREVIEW/);
+  assert.doesNotMatch(render, /let preview =/);
+  assert.doesNotMatch(render, /if \(!preview\)/);
+  assert.match(render, /let raw = \(options\?\.transcript \?\? document\.getElementById\("psbt-ax-transcript"\)\?\.value\) \|\| "";\s*const read = hodlReadNonceTranscript\(raw, true\);/);
+  assert.match(render, /aexbSignatures = read\.aexbSignatures \|\| null;/);
+  // The release-only Jade wording went with the branch that chose it.
+  assert.doesNotMatch(render, /Jade anti-exfil transcript not used/);
+  // The labels live in the markup now; the label helper is gone.
+  assert.doesNotMatch(app, /hodlApplyAexbPreviewLabels/);
 });
 
 test("the preview flag is defined behind a typeof guard, so release builds still boot", () => {

@@ -752,9 +752,9 @@ words, pick one of the checksum words.</span></span>
         <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </div>
       <details class="derivation-advanced" id="nonce-jade-options">
-        <summary>Jade anti-exfil transcript (optional)</summary>
-        <p class="field-note" id="psbt-ax-transcript-help">USB Jade only (Green host nonce + opening). QR / sign_psbt does not run anti-exfil yet. BitBox anti-klepto is a different mix — do not paste it here.</p>
-        <textarea id="psbt-ax-transcript" aria-label="Jade anti-exfil transcript" aria-describedby="psbt-ax-transcript-help" placeholder="32-byte host nonce ρ, then 33-byte compressed opening R, as hex" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <summary>Anti-exfil transcript (Jade, BitBox02 or AEXB, optional)</summary>
+        <p class="field-note" id="psbt-ax-transcript-help">Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session as hex, stages 2 to 4. The format is detected automatically.</p>
+        <textarea id="psbt-ax-transcript" aria-label="Anti-exfil transcript" aria-describedby="psbt-ax-transcript-help" placeholder="Host nonce and opening, or AEXB messages, as hex" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </details>
       <details class="derivation-advanced" id="nonce-history-options">
         <summary>Cross-session ECDSA nonce history</summary>
