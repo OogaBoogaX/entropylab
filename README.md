@@ -634,7 +634,7 @@ file is still self-contained and never registers the hosted service worker.
 
 ### Android wrapper (experimental)
 
-The `android/` directory builds a debug APK that embeds the pinned v1.0.0rc1
+The `android/` directory builds a debug APK that embeds the pinned v1.0.0
 release `entropylab.html` (vendored at `android/app/src/main/assets/`, SHA-256
 checked against `android/ENTROPYLAB_HTML.sha256` at build time and again
 before the calculator opens). The app requests no Android permissions —

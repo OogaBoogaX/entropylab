@@ -4,7 +4,7 @@ plugins {
     id("com.android.application")
 }
 
-// The packaged bytes are the vendored v1.0.0rc1 release asset, pinned by
+// The packaged bytes are the vendored v1.0.0 release asset, pinned by
 // ENTROPYLAB_HTML.sha256 — not the repo-root entropylab.html, which CI
 // rebuilds and recommits on every merge to rock.
 val htmlFile = project.file("src/main/assets/entropylab.html")
