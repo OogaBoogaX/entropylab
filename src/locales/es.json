@@ -951,7 +951,6 @@
   "Provide a PSBT or signed transaction and click Inspect Nonces to view the details here.": "Proporcione una PSBT o una transacción firmada y haga clic en Inspeccionar nonces para ver los detalles aquí.",
   "Inspect Nonces": "Inspeccionar nonces",
   "Derive a Lightning node key": "Derivar una clave de nodo Lightning",
-  "LND seed → LND node key. BIP-39 seed → LDK node key. Decode only. Does not create a seed. Nothing leaves this page.": "Semilla LND → clave de nodo LND. Semilla BIP-39 → clave de nodo LDK. Solo decodifica. No crea una semilla. Nada sale de esta página.",
   "Seed format": "Formato de semilla",
   "aezeed · LND cipher seed": "aezeed · Semilla cifrada LND",
   "BIP-39 · LDK (ldk-node)": "BIP-39 · LDK (ldk-node)",
@@ -2237,5 +2236,9 @@
   "AEXB transcript checks out, but it does not cover every signature in this PSBT.": "La transcripción AEXB es correcta, pero no cubre todas las firmas en este PSBT.",
   "AEXB transcript does not check out:": "La transcripción AEXB no es correcta:",
   "Privacy": "Privacidad",
-  "Privacy stations": "Estaciones de privacidad"
+  "Privacy stations": "Estaciones de privacidad",
+  "Lightning tools": "Herramientas Lightning",
+  "Decode BOLT11 invoices and BOLT12 offers, or derive a node key: LND seed → LND node key, BIP-39 seed → LDK node key. Does not create a seed. Nothing leaves this page.": "Decodifica facturas BOLT11 y ofertas BOLT12, o deriva una clave de nodo: semilla LND → clave de nodo LND, semilla BIP-39 → clave de nodo LDK. No crea una semilla. Nada sale de esta página.",
+  "Decode an invoice or offer (BOLT11 / BOLT12)": "Decodificar una factura u oferta (BOLT11 / BOLT12)",
+  "Paste a BOLT11 invoice or BOLT12 offer": "Pega una factura BOLT11 o una oferta BOLT12"
 }
