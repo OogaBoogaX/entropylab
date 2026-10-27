@@ -1,5 +1,5 @@
 // End-to-end: a P2WPKH PSBT signed with ECDSA sign-to-contract, the AEXB
-// stages 2-4 of that session, and the preview render's per-signature verdicts.
+// stages 2-4 of that session, and the render's per-signature verdicts.
 // Run with: npm run test:ci
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -189,9 +189,11 @@ const psbtFor = (signature) => ({
   outputs: [[]],
 });
 
-// The render reads PREVIEW through a typeof guard. The harness's `settable`
+// The render reads the transcript through hodlReadNonceTranscript
+// unconditionally; the reader detects the format. The harness's `settable`
 // path does not reach the top-level `var PREVIEW`, so the flag is supplied as
-// a stub (and written through __set when the harness exposes it).
+// a stub (and written through __set when the harness exposes it) to prove a
+// release build (PREVIEW false) takes the same path.
 const baseStubs = {
   document: { getElementById: () => null },
   readAntiExfil,
@@ -206,14 +208,11 @@ const baseStubs = {
   hodlPsbtMasterFingerprint: () => null,
   hodlPsbtRecordNonceInspection: () => {},
 };
-const previewApi = await loadAppFunctions(["hodlRenderPsbt"], { settable: ["PREVIEW"], stubs: { ...baseStubs, PREVIEW: true } });
-if (previewApi.__set) previewApi.__set.PREVIEW = true;
 const releaseApi = await loadAppFunctions(["hodlRenderPsbt"], { settable: ["PREVIEW"], stubs: { ...baseStubs, PREVIEW: false } });
 if (releaseApi.__set) releaseApi.__set.PREVIEW = false;
 
-function renderNonce(signature, raw, preview = true) {
-  const api = preview ? previewApi : releaseApi;
-  return api.hodlRenderPsbt(psbtFor(signature), undefined, undefined, "nonce", { network: "mainnet", transcript: raw, record: false });
+function renderNonce(signature, raw) {
+  return releaseApi.hodlRenderPsbt(psbtFor(signature), undefined, undefined, "nonce", { network: "mainnet", transcript: raw, record: false });
 }
 
 test("a sign-to-contract signature matches its AEXB transcript slot", () => {
@@ -250,43 +249,23 @@ test("a flipped signature byte fails the transcript", () => {
   assert.doesNotMatch(html, /data-aexb-verdict=/);
 });
 
-test("a release build renders no AEXB verdict attributes", () => {
+test("a release render (PREVIEW false) verifies the AEXB transcript too", () => {
   const session = aexbSession(signature64);
-  const html = renderNonce(partialSignature, transcript(session), false);
-  assert.doesNotMatch(html, /data-aexb-verdict/);
-  assert.doesNotMatch(html, /data-aexb-summary/);
+  const html = renderNonce(partialSignature, transcript(session));
+  assert.match(html, /data-aexb-verdict='match'/);
+  assert.match(html, /data-aexb-summary='covered'/);
 });
 
-// --- the preview labels ----------------------------------------------------
-test("the preview labels are set through hodlTText and marked data-i18n-skip", async () => {
-  const marked = [];
-  const mark = (source) => {
-    const value = "⟦" + source + "⟧";
-    marked.push({ source, value });
-    return value;
-  };
-  const element = () => ({ textContent: "", attrs: {}, setAttribute(name, value) { this.attrs[name] = value; } });
-  const summary = element(), help = element(), field = element();
-  const document = {
-    querySelector: (selector) => (selector === "#nonce-jade-options > summary" ? summary : null),
-    getElementById: (id) => (id === "psbt-ax-transcript-help" ? help : id === "psbt-ax-transcript" ? field : null),
-  };
-  const { hodlApplyAexbPreviewLabels } = await loadAppFunctions(["hodlApplyAexbPreviewLabels"], { stubs: { document, hodlTText: mark } });
-  hodlApplyAexbPreviewLabels();
-  assert.equal(marked.length, 4, "four strings go through hodlTText");
-  assert.equal(summary.textContent, marked[0].value);
-  assert.match(marked[0].source, /AEXB/);
-  assert.equal(summary.attrs["data-i18n-skip"], "");
-  assert.equal(help.textContent, marked[1].value);
-  assert.equal(help.attrs["data-i18n-skip"], "");
-  assert.equal(field.attrs["aria-label"], marked[2].value);
-  assert.equal(field.attrs["placeholder"], marked[3].value);
-  assert.match(marked[3].source, /AEXB/);
-  assert.equal(field.attrs["data-i18n-skip"], "");
-});
-
-test("the locale refresh and the init call the preview labels behind the PREVIEW guard", () => {
-  assert.match(loadSlice("hodlRefreshPsbtLocale"), /if \(typeof PREVIEW !== "undefined" && PREVIEW\) hodlApplyAexbPreviewLabels\(\);/);
-  assert.match(loadSlice("hodlInitPsbt"), /if \(PREVIEW\) hodlApplyAexbPreviewLabels\(\);/);
-  assert.match(loadSlice("hodlApplyAexbPreviewLabels"), /data-i18n-skip/);
+// --- the markup ------------------------------------------------------------
+test("the shell carries the unified anti-exfil strings on their ids", () => {
+  const shell = readFileSync(join(root, "..", "src/shell.html"), "utf8");
+  const start = shell.indexOf('id="nonce-jade-options"');
+  assert.ok(start >= 0, "#nonce-jade-options is no longer in the shell");
+  const block = shell.slice(start, shell.indexOf("</details>", start));
+  assert.ok(block.includes('id="psbt-ax-transcript-help"'), "the help paragraph keeps its id");
+  assert.ok(block.includes('id="psbt-ax-transcript"'), "the field keeps its id");
+  assert.ok(block.includes("Anti-exfil transcript (Jade, BitBox02 or AEXB, optional)"), "the summary names all three formats");
+  assert.ok(block.includes("Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session as hex, stages 2 to 4. The format is detected automatically."), "the help text describes the unified field");
+  assert.ok(block.includes('aria-label="Anti-exfil transcript"'), "the field's accessible name is the unified one");
+  assert.ok(block.includes('placeholder="Host nonce and opening, or AEXB messages, as hex"'), "the placeholder describes both formats");
 });
