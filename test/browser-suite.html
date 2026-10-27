@@ -411,6 +411,7 @@
       const component = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-component"));
       assert(below >= component - 1, `finish actions touch the lesson list (${below}px)`);
       assert(content.scrollWidth <= content.clientWidth, "narrow guide overflows horizontally");
+      document.querySelector("#guide-finish-browse summary").click();
       document.getElementById("guide-finish-inspect").click();
       equal(document.getElementById("guide-step").dataset.guideStep, "inspect-worksheet");
     } finally {
@@ -423,7 +424,7 @@
     const entry = document.getElementById("guide-open");
     const initialWorkspace = document.querySelector('#workspace-tabs [aria-selected="true"]').dataset.workspace;
     const initialPsbtTool = document.querySelector('#psbt-tool-tabs [aria-selected="true"]').dataset.psbtTool;
-    const cases = [["keys", "calc", null], ["inspect", "psbt", "inspector"], ["edit", "psbt", "editor"], ["nonce", "psbt", "nonce"]];
+    const cases = [["keys", "calc", null], ["inspect", "psbt", "inspector"], ["signer", "psbt", "inspector"], ["fee-bump", "psbt", "inspector"], ["edit", "psbt", "editor"], ["nonce", "psbt", "nonce"]];
     try {
       for (const [lesson, workspace, subtool] of cases) {
         entry.click(); document.getElementById(`guide-lesson-${lesson}`).click();

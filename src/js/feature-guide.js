@@ -1,5 +1,5 @@
 import { createModal } from "./modal.js";
-import { featureGuideLessons, featureGuideEntries, featureGuideRoutes, featureGuideCheck } from "./feature-guide-content.js";
+import { featureGuideLessons, featureGuideEntries, featureGuideRoutes, featureGuideCheck, featureGuideExample } from "./feature-guide-content.js";
 
 // This state contains only public lesson IDs and progress, never wallet data.
 export function createFeatureGuideSession(lessons, availableTools) {
@@ -43,6 +43,29 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
     return node;
   };
   const close = () => modal?.hide();
+  // Examples use the same text-only sink as lessons, including translated cells.
+  const workedExample = (example) => {
+    const table = element("table", "", "guide-example", "guide-example");
+    table.append(element("caption", example.caption));
+    const head = element("thead"), headings = element("tr"), body = element("tbody");
+    for (const text of example.columns) {
+      const cell = element("th", text);
+      cell.setAttribute("scope", "col");
+      headings.append(cell);
+    }
+    head.append(headings);
+    for (const values of example.rows) {
+      const row = element("tr");
+      values.forEach((text, index) => {
+        const cell = element(index === 0 ? "th" : "td", text);
+        if (index === 0) cell.setAttribute("scope", "row");
+        row.append(cell);
+      });
+      body.append(row);
+    }
+    table.append(head, body);
+    return table;
+  };
   const nextRouteLesson = (view) => route?.lessons[route.lessons.indexOf(view.lessonId) + 1];
   const ensureModal = () => {
     if (modal) return;
@@ -112,19 +135,19 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       if (route) progress = view.mode === "complete" ? hodlTText("{route} · Lesson {lessonNumber} of {lessonTotal} · Lesson finished · {lesson}", place) : hodlTText("{route} · Lesson {lessonNumber} of {lessonTotal} · Step {step} of {total} · {lesson}", place);
       else progress = view.mode === "complete" ? hodlTText("Lesson finished · {lesson}", place) : hodlTText("Step {step} of {total} · {lesson}", place);
       const currentStep = lesson.steps[view.index];
+      let story;
       if (currentStep?.diagramStage) {
-        const story = element("details", "", "", "guide-story");
+        story = element("details", "", "", "guide-story");
         story.append(element("summary", hodlTText("See how the pieces fit")));
         const chain = element("ol", "", "guide-chain");
         const labels = [hodlTText("Your input"), hodlTText("Recovery material"), hodlTText("Keys"), hodlTText("Addresses")];
         const stages = ["input", "recovery", "keys", "addresses"];
         labels.forEach((label, index) => { const node = element("li", label); node.dataset.guideStage = stages[index]; if (stages[index] === currentStep.diagramStage) node.setAttribute("aria-current", "step"); chain.append(node); });
         story.append(chain, element("p", hodlTText("Your input follows a deterministic recipe into recovery material, keys, and addresses. Settings affect the recipe. This diagram calculates nothing."), "field-note"));
-        content.append(story);
       }
       if (view.mode === "complete") {
         content.dataset.guideComplete = lesson.id;
-        focus = element("h3", hodlTText("A little clearer, one lesson at a time"));
+        focus = element("h3", hodlTText("Lesson finished"));
         content.append(focus, element("p", hodlTText("You can revisit this lesson whenever you like. Reading a lesson does not certify a wallet, device, or transaction safe.")));
         const finishActions = element("div", "", "row", "guide-finish-actions");
         finishActions.append(button(hodlTText("Read this lesson again"), "restart", "guide-restart"));
@@ -135,13 +158,15 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
           finishActions.append(next);
         }
         content.append(finishActions);
-        content.append(element("h4", hodlTText("Choose another lesson"), "label"));
+        const browse = element("details", "", "", "guide-finish-browse");
+        browse.append(element("summary", hodlTText("Browse other lessons")));
         const links = element("div", "", "guide-lessons", "guide-finish-lessons");
-        for (const id of ["keys", "multisig", "inspect", "bip85", "silent", "vanity"].filter(id => id !== lesson.id && id !== nextId)) {
+        for (const id of lessons.map(item => item.id).filter(id => id !== lesson.id && id !== nextId)) {
           const item = lessons.find(item => item.id === id);
           links.append(button(item.title, "choose", `guide-finish-${id}`, id));
         }
-        content.append(links);
+        browse.append(links);
+        content.append(browse);
       } else {
         const step = lesson.steps[view.index];
         const body = element("section", "", "guide-step", "guide-step");
@@ -161,17 +186,18 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
           body.append(verify);
         }
         if (step.example) body.append(element("p", step.example, "edge-note is-info"));
+        const example = featureGuideExample(step.id, hodlTText);
+        if (example) body.append(workedExample(example));
         const check = element("div", "", "guide-note");
-        check.append(element("h4", hodlTText("What to check"), "label"), element("p", step.check));
-        const limit = element("div", "", "guide-note");
-        limit.append(element("h4", hodlTText("Limits"), "label"), element("p", step.limit, "edge-note is-muted"));
-        body.append(check, limit);
+        check.append(element("h4", hodlTText("Remember"), "label"), element("p", step.check));
+        body.append(check, element("p", step.limit, "edge-note is-muted"));
         if (step.term) {
           const details = element("details");
           details.append(element("summary", hodlTText("Explain this word: {word}", { word: step.term[0] })), element("p", step.term[1]));
           body.append(details);
         }
         content.append(body);
+        if (story) content.append(story);
       }
       const quiz = featureGuideCheck(currentStep?.id, hodlTText);
       if (quiz && view.mode === "lesson") {
@@ -196,7 +222,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       footer.append(actions);
       if (view.tool) {
         const open = button(hodlTText("Open this tool"), "open-tool", "guide-open-tool");
-        content.append(open, element("p", hodlTText("Uses normal tool navigation and changes displayed results. Vanity runs its usual timing sample. No search or derivation starts."), "field-note"));
+        content.append(open, element("p", hodlTText(view.tool === "vanity" ? "Opens Vanity and runs its usual timing sample. No search starts." : "Opens the tool. This lesson and its examples do not enter any values."), "field-note"));
       }
     }
     focus.id = "guide-focus";

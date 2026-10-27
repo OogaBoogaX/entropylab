@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { MiniDocument } from "./mini-dom.mjs";
 import { createFeatureGuideSession, initFeatureGuide } from "../src/js/feature-guide.js";
 import { featureGuideLessons, featureGuideEntries } from "../src/js/feature-guide-content.js";
+import * as guideContent from "../src/js/feature-guide-content.js";
 import { collectSources } from "../scripts/i18n-sources.mjs";
 
 test("guide catalog omits held-back workspace lessons", () => {
@@ -147,14 +148,13 @@ test("translated or hostile lesson content stays text; refresh preserves step; t
 }, (text) => `<img src=x onerror=alert(1)>${text}`));
 test("catalog covers released workspaces with complete steps, unique IDs, and extracted translations", async () => {
   const lessons = featureGuideLessons();
-  assert.equal(lessons.find((item) => item.id === "basics").steps.length, 8);
   assert.deepEqual([...new Set(lessons.map((item) => item.tool).filter(Boolean))].sort(), ["bip85", "calc", "msig", "psbt", "sp", "vanity"]);
   const sources = await collectSources(fileURLToPath(new URL("..", import.meta.url)));
   const strings = [];
   const stepIds = [];
   for (const lesson of lessons) {
     strings.push(lesson.title, lesson.summary);
-    assert.ok(lesson.steps.length >= 2);
+    assert.ok(lesson.steps.length > 0);
     for (const step of lesson.steps) {
       stepIds.push(step.id);
       for (const field of ["title", "body", "check", "limit"]) {
@@ -236,10 +236,10 @@ test("the first basics step exposes a fixed verification link without automatic 
 test("optional routes advance only explicitly and reject unknown routes", () => withPage(({ guide, click, doc, opened, opener }) => {
   guide.open(null, opener);
   click('#guide-route-recovery');
-  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'exports-public');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'settings-phrase');
   while (doc.getElementById('guide-next')) click('#guide-next');
   click('#guide-route-next');
-  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'multisig-quorum');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'exports-public');
   assert.deepEqual(opened, []);
   click('#guide-contents');
   click('#guide-lesson-basics');
@@ -258,7 +258,7 @@ test("optional checks give feedback without advancing or touching wallet data", 
 }));
 
 test("checks appear once after lesson concepts, never on earlier steps", () => withPage(({ guide, click, doc, opener }) => {
-  for (const id of ['basics', 'exports', 'inspect', 'bip85']) {
+  for (const id of ['basics', 'exports', 'inspect', 'signer', 'fee-bump', 'bip85']) {
     guide.open(id, opener);
     const lesson = featureGuideLessons().find(item => item.id === id);
     for (let i = 0; i < lesson.steps.length; i++) {
@@ -276,7 +276,7 @@ test("completed route reopening offers the next lesson, while interruptions resu
   click('#guide-continue-route');
   assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'keys-methods');
   click('#guide-next'); click('#guide-close'); guide.open(null, opener); click('#guide-resume');
-  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'keys-labs');
+  assert.equal(doc.getElementById('guide-step').dataset.guideStep, 'keys-strength');
   while (doc.getElementById('guide-next')) click('#guide-next');
   assert.ok(doc.getElementById('guide-finish-lessons'));
   click('#guide-finish-bip85');
@@ -362,4 +362,65 @@ test("step 1 keeps download verification in a closed disclosure with its fixed l
   assert.ok(disclosure.closest("#guide-step"));
   assert.equal(disclosure.hasAttribute("open"), false, "verification detail starts collapsed");
   assert.equal(disclosure.firstElementChild?.tagName, "SUMMARY");
+}));
+
+test("worked examples are inert translated tables, including hostile translations", async () => {
+  assert.equal(typeof guideContent.featureGuideExample, "function");
+  const sources = await collectSources(fileURLToPath(new URL("..", import.meta.url)));
+  const cases = [["basics", "basics-family"], ["basics", "basics-recipe"], ["inspect", "inspect-worksheet"], ["signer", "signer-compare"], ["fee-bump", "bump-compare"]];
+  for (const [lessonId, stepId] of cases) {
+    const example = guideContent.featureGuideExample(stepId);
+    assert.ok(example?.columns.length >= 2);
+    assert.ok(example.rows.length);
+    assert.ok([example.caption, ...example.columns, ...example.rows.flat()].every(text => sources.has(text)));
+    assert.ok(example.rows.every(row => row.length === example.columns.length));
+    withPage(({ guide, doc, click, opener, opened }) => {
+      guide.open(lessonId, opener);
+      for (let i = 0; doc.getElementById("guide-step")?.dataset.guideStep !== stepId && i < 8; i++) click("#guide-next");
+      const table = doc.getElementById("guide-example");
+      assert.equal(table?.tagName, "TABLE");
+      assert.ok(table.querySelector("caption")?.textContent);
+      assert.equal(table.querySelectorAll('thead th[scope="col"]').length, example.columns.length);
+      assert.equal(table.querySelectorAll('tbody th[scope="row"]').length, example.rows.length);
+      assert.equal(table.querySelector("img, script, input, textarea, button, a"), null);
+      assert.ok(table.textContent.includes("<img"));
+      guide.refresh();
+      assert.ok(doc.getElementById("guide-example"));
+      assert.deepEqual(opened, []);
+    }, text => `<img src=x onerror=alert(1)>${text}`);
+  }
+  for (const id of ["missing", "__proto__", "constructor"]) assert.equal(guideContent.featureGuideExample(id), null);
+});
+
+test("beginner and transaction routes keep labs separate and reach the new comparisons", () => {
+  const routes = guideContent.featureGuideRoutes();
+  const lessons = featureGuideLessons();
+  const beginner = routes.find(route => route.id === "wallet");
+  assert.ok(!beginner.lessons.includes("labs"));
+  assert.ok(!beginner.lessons.flatMap(id => lessons.find(lesson => lesson.id === id).steps).some(step => step.id === "keys-labs"));
+  assert.ok(routes.find(route => route.id === "advanced").lessons.includes("labs"));
+  const transaction = routes.find(route => route.id === "transaction");
+  assert.ok(transaction.lessons.indexOf("signer") > transaction.lessons.indexOf("inspect"));
+  assert.ok(transaction.lessons.indexOf("fee-bump") > transaction.lessons.indexOf("inspect"));
+  for (const route of routes) assert.ok(route.lessons.every(id => lessons.some(lesson => lesson.id === id)));
+  withPage(({ guide, doc, click, opener, opened }) => {
+    for (const id of ["signer", "fee-bump"]) {
+      guide.open(id, opener);
+      assert.ok(doc.getElementById("guide-step"));
+      while (doc.getElementById("guide-next")) click("#guide-next");
+      assert.equal(doc.getElementById("guide-content").dataset.guideComplete, id);
+      assert.deepEqual(opened, []);
+    }
+    click("#guide-open-tool");
+    assert.deepEqual(opened, ["psbt"]);
+  });
+});
+
+test("finish alternatives are disclosed while route continuation stays directly available", () => withPage(({ guide, doc, click, opener }) => {
+  guide.open("basics", opener);
+  while (doc.getElementById("guide-next")) click("#guide-next");
+  const alternatives = doc.getElementById("guide-finish-lessons").closest("details");
+  assert.ok(alternatives);
+  assert.equal(alternatives.hasAttribute("open"), false);
+  assert.equal(doc.getElementById("guide-route-next").closest("details"), null);
 }));

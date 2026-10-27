@@ -9,72 +9,57 @@ export const featureGuideEntries = [
 
 export function featureGuideLessons(hodlTText = (text) => text) {
   const glossary = {
-    "basics-safety": [hodlTText("air gap"), hodlTText("A computer isolated from every network, including Wi-Fi, Bluetooth, and wired connections. The browser cannot prove this isolation.")],
-    "basics-family": [hodlTText("seed phrase"), hodlTText("Recovery words that can rebuild a family of wallet keys.")],
-    "basics-input": [hodlTText("entropy"), hodlTText("Unpredictability in the original input. Changing its format or hashing it does not create more unpredictability.")],
-    "basics-recipe": [hodlTText("BIP39 passphrase and derivation path"), hodlTText("A BIP39 passphrase is extra exact text combined with seed words to select a wallet. A derivation path is a sequence of numbered branches leading to a key or address.")],
-    "basics-sharing": [hodlTText("watch-only descriptor and xpub"), hodlTText("A descriptor describes a wallet's address recipe. An xpub is an extended public key: it can derive public keys and addresses for a branch, but cannot spend.")],
-    "basics-check": [hodlTText("master fingerprint and signing device"), hodlTText("A master fingerprint is a short identifier of the root key, not proof of identity. A signing device uses private keys to authorize spending; EntropyLab does not sign.")],
-    "basics-backup": [hodlTText("multisig policy"), hodlTText("The recipe describing which signers belong to a wallet and how many must agree to spend. Keep it with a recovery plan and enough independent signer backups.")],
-    "basics-ready": [hodlTText("PSBT"), hodlTText("A Partially Signed Bitcoin Transaction is a file carrying a proposed transaction and information for signers to review. Reading it is not permission to sign.")],
+    "basics-safety": [hodlTText("air gap"), hodlTText("A computer disconnected from every network, including Wi-Fi, Bluetooth, and cables. The browser cannot prove this isolation.")],
+    "basics-family": [hodlTText("watch-only"), hodlTText("Public wallet information that can calculate addresses without spending keys. An xpub is an extended public key; a watch-only descriptor adds the address recipe. Both can reveal your activity.")],
+    "basics-input": [hodlTText("entropy"), hodlTText("Unpredictability in your original input. Changing its format or hashing it does not add more.")],
+    "basics-recipe": [hodlTText("derivation path"), hodlTText("The numbered route from a wallet's root key to an address. Keep it with the network, address type, and recovery instructions.")],
+    "basics-check": [hodlTText("master fingerprint"), hodlTText("A short label for the root key. It helps recognition but can collide, so a matching fingerprint is not proof of identity.")],
+    "basics-backup": [hodlTText("multisig policy"), hodlTText("The wallet recipe listing its signers and how many must agree to spend. Recovery needs this policy and enough independent signer backups.")],
   };
   // Explicit concept metadata: no step-index guesses about what a diagram teaches.
   const stages = {
-    "basics-family": "keys", "basics-input": "input", "basics-recipe": "recovery", "basics-sharing": "addresses", "basics-backup": "recovery",
-    "keys-methods": "input", "keys-labs": "input", "settings-phrase": "recovery", "settings-path": "keys", "results-recognize": "addresses", "results-edit": "keys",
+    "basics-family": "keys", "basics-input": "input", "basics-recipe": "recovery", "basics-backup": "recovery",
+    "keys-methods": "input", "keys-strength": "input", "keys-labs": "input", "settings-phrase": "recovery", "settings-path": "keys", "results-recognize": "addresses", "results-edit": "keys",
     "exports-public": "addresses", "exports-core": "recovery", "exports-transfer": "recovery", "bip85-recipe": "recovery", "bip85-use": "recovery",
   };
   const step = (id, title, body, check, limit, example = "", term = null) => ({ id, title, body, check, limit, example, term: term ?? glossary[id], diagramStage: stages[id] });
   return [
-    { id: "basics", title: hodlTText("Start with the basics"), summary: hodlTText("Eight steps from your own randomness to checks and backups."), steps: [
-      step("basics-safety", hodlTText("First, make a safe place to learn"),
-        hodlTText("Learn with practice material only, never real recovery secrets. EntropyLab is experimental, its startup warning is for advanced users only, and this guide explains concepts, not readiness to secure funds."),
-        hodlTText("Keep your seed phrase and private keys put away. This tour needs neither."),
-        hodlTText("An Offline label is a browser signal, not proof of an air gap. This app cannot protect a compromised computer, clipboard history, screenshots, or a printer.")),
-      step("basics-family", hodlTText("Your wallet is a family of keys"),
-        hodlTText("Bitcoin lives on a shared transaction record. A wallet holds spending secrets. A seed phrase writes down recovery material that can lead to many private keys and addresses."),
-        hodlTText("Separate the destination you share to receive from the secret you protect to spend."),
-        hodlTText("EntropyLab does not hold bitcoin, check your balance, sign transactions, or send them to the network."),
-        hodlTText("An address is a payment destination. A private key is permission to spend. Knowing the destination does not give you permission.")),
+    { id: "basics", title: hodlTText("Start with the basics"), summary: hodlTText("Six short steps: secrets, your input, recovery, and checks."), steps: [
+      step("basics-safety", hodlTText("Learn without entering secrets"),
+        hodlTText("EntropyLab calculates wallet information from input you supply. It does not check balances, sign, or send payments. This guide needs no seed phrase or private key."),
+        hodlTText("Keep real recovery material put away. Use only the public examples shown here."),
+        hodlTText("The advanced-user startup warning still applies. Reading this guide does not make a device safe; an Offline label cannot prove an air gap.")),
+      step("basics-family", hodlTText("Know what you can share"),
+        hodlTText("An address tells someone where to pay you. Private keys authorize spending. A seed phrase is a set of recovery words that can rebuild many keys."),
+        hodlTText("Share a receiving address when you want payment. Keep seed words, private keys, and required passphrases secret."),
+        hodlTText("Watch-only cannot spend, but sharing it can expose many addresses and their activity.")),
       step("basics-input", hodlTText("You bring the randomness"),
-        hodlTText("Entropy means unpredictability. You supply dice, coins, cards, or existing recovery material. A fixed recipe turns it into wallet information; EntropyLab never invents secret randomness."),
-        hodlTText("If you record the exact input and method, protect that record like a seed phrase: the rolls or other input plus the recipe can rebuild the wallet. Follow the recommended input amount. Never use a memorable sentence or this guide's practice examples for funds."),
-        hodlTText("Hashing cannot add unpredictability. A short transcript can produce a long phrase while still being weak. A dice fairness panel cannot certify that your input is secure."),
-        hodlTText("A blender changes ingredients without creating more. Hashing is similar: different-looking output, but weak input stays weak.")),
-      step("basics-recipe", hodlTText("Keep the whole recipe"),
-        hodlTText("Derivation calculates keys or addresses from existing material. A path selects a branch of the wallet family. Network and address type matter too. Receive addresses accept payments; change addresses take the leftover part."),
-        hodlTText("Compare or restore with the same seed, passphrase, path, network, and address type."),
-        hodlTText("A different BIP39 passphrase usually makes a different valid wallet, without a wrong-password error. The network picker changes formats and checks; it does not connect anywhere."),
-        hodlTText("A path is like a shelf location: one building, many books. Another shelf gives you a different book.")),
-      step("basics-sharing", hodlTText("Public does not mean private"),
-        hodlTText("Addresses, extended public keys, and watch-only descriptors help wallets receive without spending power. Seed phrases, private keys, extended private keys, and required passphrases are secrets."),
-        hodlTText("Before exporting, check whether it is watch-only or contains secrets."),
-        hodlTText("Watch-only information cannot spend, but it can reveal your addresses and activity. A fingerprint or LifeHash picture helps recognize a key; it does not prove identity."),
-        hodlTText("Watch-only is a window, not the door key.")),
-      step("basics-check", hodlTText("Check before you trust"),
-        hodlTText("Compare network, path, fingerprint, and addresses with an independent trusted wallet or signing device. Known-answer startup checks catch some broken environments."),
-        hodlTText("Compare the first receiving address and master fingerprint independently before using recovery information that matters."),
-        hodlTText("Startup checks cannot detect every attack. An address calculation is not a balance check. A completed transaction check is not permission to sign.")),
-      step("basics-backup", hodlTText("Make recovery possible"),
-        hodlTText("Keep original recovery material, settings, and any exact BIP39 passphrase. Multisig also needs its policy and enough independent signer backups. Test recovery before relying on it."),
-        hodlTText("Ask: could I recover if this computer and every open tab disappeared? Save what you need deliberately and protect any secret copies."),
-        hodlTText("A watch-only sheet is not a spending backup. Unsaved session work can be lost. Clearing the page cannot guarantee removal of copies held by the browser or operating system.")),
-      step("basics-ready", hodlTText("Choose your next small adventure"),
-        hodlTText("Choose Keys for inputs and addresses; Multi Signature for shared control; PSBT for transaction files; BIP85 for children; Silent Payments for payment codes; or Vanity for address-prefix searches."),
-        hodlTText("Explain which information is secret, why watch-only cannot spend, and why Offline does not prove safety."),
-        hodlTText("Finishing records reading, not wallet, device, or transaction safety."),
-        hodlTText("Seed phrases and private keys are secrets. Watch-only holds public information. A browser cannot prove isolation. Guide stays available for another look.")),
+        hodlTText("You supply dice rolls, coins, cards, or existing recovery material. EntropyLab follows a repeatable recipe; it never invents secret randomness."),
+        hodlTText("Follow the input method's recommended amount. Recorded rolls plus the recipe can rebuild the wallet: protect them like seed words."),
+        hodlTText("A long result can still come from weak input. Hashing and a dice fairness check cannot make predictable input secure.")),
+      step("basics-recipe", hodlTText("The exact recipe selects your wallet"),
+        hodlTText("Recovery uses the same seed words, any BIP39 passphrase, and wallet settings. A BIP39 passphrase is extra text combined with the words; a typo normally selects another valid wallet."),
+        hodlTText("Preserve the exact passphrase and the path, network, and address type your wallet uses."),
+        hodlTText("There is usually no wrong-password message. An empty-looking wallet may mean a different recipe, not lost funds.")),
+      step("basics-check", hodlTText("Compare an address independently"),
+        hodlTText("Use an independent trusted wallet or signing device to calculate the same first receiving address. Match the network and wallet settings, then compare the full address."),
+        hodlTText("Check the complete address and master fingerprint. A matching picture or a few characters is not enough."),
+        hodlTText("An address match checks that calculation. It does not prove a balance, a safe computer, or a safe transaction.")),
+      step("basics-backup", hodlTText("Plan for this computer disappearing"),
+        hodlTText("Keep the original recovery material, required passphrase, and wallet settings. Test recovery before relying on it. A multisig wallet also needs its policy and enough signer backups."),
+        hodlTText("Could you recover if this computer and every open tab disappeared? A watch-only sheet cannot replace your secret backup."),
+        hodlTText("Tabs are not backups. End Session cannot guarantee erasure of browser, operating-system, screenshot, or printed copies.")),
     ] },
     { id: "keys", tool: "calc", title: hodlTText("Keys: bring your own input"), summary: hodlTText("Choose an input method for your recovery material."), steps: [
       step("keys-methods", hodlTText("Pick the method that matches your material"),
-        hodlTText("Key Station offers Dice rolls, Cards, Number bases, Seed phrase, and Private key. For coins choose Binary (Base 2) under Number bases; for hex choose Hexadecimal (Base 16). If you record dice rolls and the method, protect them like a seed phrase: the input plus recipe can rebuild the wallet. WIF, raw, and mini keys describe individual private keys; extended keys describe a wallet branch."),
-        hodlTText("Choose your input type. Follow its instructions and warnings before Derive Key."),
+        hodlTText("Key Station offers Dice rolls, Cards, Number bases, Seed phrase, and Private key. For coins choose Binary (Base 2) under Number bases; for hex choose Hexadecimal (Base 16)."),
+        hodlTText("Choose the method that matches your material. Protect recorded dice rolls and their recipe like a seed phrase: together they can rebuild the wallet."),
         hodlTText("A valid input is not necessarily strong or safe. Recommended roll counts matter; a fairness test is only a statistical hint."),
         "", [hodlTText("What is hex?"), hodlTText("Hexadecimal writes numbers using 0–9 and a–f. It is an encoding, not extra randomness.")]),
-      step("keys-labs", hodlTText("Understand previews and lab modes"),
-        hodlTText("Sync entropy across methods shows other representations of your input; it starts off, and hashed inputs sync one way. Brain wallet under Private key hashes exact typed text into recovery material. It is separate from a BIP39 passphrase."),
-        hodlTText("Explore transformations with worthless examples separate from real wallets."),
-        hodlTText("Human-chosen text is often guessable even after hashing into 24 words. The guide never fills seed fields or creates demo wallets.")),
+      step("keys-strength", hodlTText("A valid input can still be weak"),
+        hodlTText("Derive Key checks whether your input can be processed. That does not establish how unpredictable it was. A memorable sentence is not a substitute for independent randomness."),
+        hodlTText("Read the selected method's instructions and warnings before deriving. Keep practice inputs separate from any real wallet."),
+        hodlTText("More seed words or a different encoding cannot repair weak original input.")),
     ] },
     { id: "settings", tool: "calc", title: hodlTText("Keys: wallet settings"), summary: hodlTText("Understand passphrases, paths, networks, and address types."), steps: [
       step("settings-phrase", hodlTText("Words and passphrases have different jobs"),
@@ -125,7 +110,7 @@ export function featureGuideLessons(hodlTText = (text) => text) {
     ] },
     { id: "inspect", tool: "psbt", title: hodlTText("PSBT Inspector"), summary: hodlTText("Read transaction files and the scope of their checks."), steps: [
       step("inspect-worksheet", hodlTText("Read where the payment is going"),
-        hodlTText("A PSBT is a transaction worksheet for wallets and signers. Paste or upload v0 to inspect inputs, destinations, claimed amounts, fees, and signatures. Signed raw transactions also work. A supported session key helps identify receive and change outputs."),
+        hodlTText("A PSBT carries a proposed payment for signing. Check the recipient, change back to you, and fee. This example uses sats, the smallest bitcoin unit."),
         hodlTText("Independently check destination, amount, change, and fee before signing."),
         hodlTText("Amounts and previous-output information supplied by the file are not chain truth. Raw transactions without previous outputs cannot establish the fee. Ownership searches have a limited scope."),
         "", [hodlTText("What is change?"), hodlTText("Bitcoin spends whole previous outputs. The part not paid to the recipient or fee usually returns to an address in your wallet.")]),
@@ -133,6 +118,26 @@ export function featureGuideLessons(hodlTText = (text) => text) {
         hodlTText("Checks report completed, problem, or incomplete. Sighash policies describe signature commitments. Nonstandard policies, unreadable signatures, or missing data can block a clean check. Inscription and OP_RETURN previews explain embedded data without fetching remote content."),
         hodlTText("Read each check's scope. Missing data and unsupported cases stay unanswered."),
         hodlTText("The inspector cannot certify a transaction safe, fetch chain information, sign, broadcast, create inscriptions, or tell you which sats you own.")),
+    ] },
+    { id: "signer", tool: "psbt", title: hodlTText("Check what the signer changed"), summary: hodlTText("Compare the file you sent with the file your signer returned."), steps: [
+      step("signer-compare", hodlTText("Did the signer keep your payment intact?"),
+        hodlTText("Save the exact PSBT you send to the signer. Compare it with the returned file: adding a signature should not redirect the payment. The example shows one change to stop and investigate."),
+        hodlTText("Check destinations, amounts, change, and fee before signing, then compare the returned file before broadcasting."),
+        hodlTText("A valid signature can authorize the wrong payment. An unchanged transaction can still have been wrong before it reached the signer.")),
+      step("signer-use", hodlTText("Compare your own before and after copies"),
+        hodlTText("In PSBT Inspector, put the returned PSBT in the main input. Open Check what the signer changed (optional), paste your saved original into PSBT you sent, and Inspect again."),
+        hodlTText("Read the verdict and each finding: transaction changes, signatures, signer keys, change, and other data. Investigate unexplained differences."),
+        hodlTText("Use your own saved original. A replacement supplied later by a compromised wallet or server can hide a change. Missing verification data remains unanswered.")),
+    ] },
+    { id: "fee-bump", tool: "psbt", title: hodlTText("Check a fee bump"), summary: hodlTText("See whether a replacement preserves the payment and raises the fee."), steps: [
+      step("bump-compare", hodlTText("More fee, the same payment"),
+        hodlTText("A fee bump proposes replacing an unconfirmed transaction. In this example the inputs and recipient stay the same. Your change falls by 500 sats and the fee rises by 500 sats."),
+        hodlTText("Compare the recipient's full address and amount. A different recipient, a reduced payment, or redirected change needs investigation."),
+        hodlTText("These numbers illustrate the idea. The real check also needs verified input amounts and enough wallet information to identify your change.")),
+      step("bump-use", hodlTText("Check against the transaction you kept"),
+        hodlTText("In PSBT Inspector, load the replacement PSBT. Open Check a fee bump (RBF) (optional), paste or upload your saved original transaction, then Inspect. RBF means replace-by-fee."),
+        hodlTText("Use the original you signed or saved. Read the fee-bump verdict and its findings; unknown ownership or missing amounts must not be treated as approval."),
+        hodlTText("A fee-only result describes the supplied comparison. It does not prove the original payment was intended, that the network will accept the replacement, or that it will confirm.")),
     ] },
     { id: "edit", tool: "psbt", title: hodlTText("PSBT Editor"), summary: hodlTText("Edit, compare, and export transaction worksheets."), steps: [
       step("edit-fields", hodlTText("Edit the worksheet, not the blockchain"),
@@ -185,6 +190,12 @@ export function featureGuideLessons(hodlTText = (text) => text) {
         hodlTText("Preserve the exact found passphrase or path. Independently check and back up the wallet."),
         hodlTText("Your old settings may not recover the vanity address. Found secrets stay in session memory until cleared; a copied address alone is not recovery material.")),
     ] },
+    { id: "labs", tool: "calc", title: hodlTText("Advanced: input transformations"), summary: hodlTText("Understand method sync and the Brain wallet experiment."), steps: [
+      step("keys-labs", hodlTText("Understand previews and lab modes"),
+        hodlTText("Sync entropy across methods shows other representations of your input; it starts off, and hashed inputs sync one way. Brain wallet under Private key hashes exact typed text into recovery material. It is separate from a BIP39 passphrase."),
+        hodlTText("Explore transformations with worthless examples separate from real wallets."),
+        hodlTText("Human-chosen text is often guessable even after hashing into 24 words. The guide never fills seed fields or creates demo wallets.")),
+    ] },
     { id: "session", title: hodlTText("Session and safety controls"), summary: hodlTText("Understand reveal, clear, End Session, and local signals."), steps: [
       step("session-controls", hodlTText("Keep secrets out of unnecessary places"),
         hodlTText("Reveal exposes private information. On-screen keyboards offer another entry method; theme and language change presentation. Offline reference links open as QR codes for another device, keeping this computer from navigating online."),
@@ -200,18 +211,76 @@ export function featureGuideLessons(hodlTText = (text) => text) {
 
 export function featureGuideRoutes(hodlTText = (text) => text) {
   return [
-    { id: "wallet", title: hodlTText("Understand wallets"), summary: hodlTText("Start with the basics, then learn inputs, settings, and results."), lessons: ["basics", "keys", "settings", "results"] },
-    { id: "recovery", title: hodlTText("Prepare for recovery"), summary: hodlTText("Distinguish public exports from spending backups and plan signer recovery."), lessons: ["exports", "multisig", "session"] },
-    { id: "transaction", title: hodlTText("Understand a transaction"), summary: hodlTText("Read a proposed payment, compare edits, and understand check limits."), lessons: ["inspect", "edit", "nonce"] },
-    { id: "advanced", title: hodlTText("Explore advanced tools"), summary: hodlTText("Learn child recovery material, Silent Payments, and vanity search limits."), lessons: ["bip85", "silent", "vanity"] },
+    { id: "wallet", title: hodlTText("Understand wallets"), summary: hodlTText("Learn what to protect, choose an input, and check an address."), lessons: ["basics", "keys", "results"] },
+    { id: "recovery", title: hodlTText("Prepare for recovery"), summary: hodlTText("Distinguish public exports from spending backups and plan signer recovery."), lessons: ["settings", "exports", "multisig", "session"] },
+    { id: "transaction", title: hodlTText("Understand a transaction"), summary: hodlTText("Read a payment, check a signer or fee bump, and understand the limits."), lessons: ["inspect", "signer", "fee-bump", "edit", "nonce"] },
+    { id: "advanced", title: hodlTText("Explore advanced tools"), summary: hodlTText("Learn child recovery material, Silent Payments, and vanity search limits."), lessons: ["bip85", "silent", "vanity", "labs"] },
   ];
 }
 export function featureGuideCheck(id, hodlTText) {
   const checks = {
-    "basics-ready": [hodlTText("Which lets someone spend bitcoin?"), [hodlTText("A receiving address"), hodlTText("A private key")], 1, hodlTText("An address is a destination you can share. A private key grants spending power and must stay secret.")],
+    "basics-backup": [hodlTText("Which lets someone spend bitcoin?"), [hodlTText("A receiving address"), hodlTText("A private key")], 1, hodlTText("An address is a destination you can share. A private key grants spending power and must stay secret.")],
     "exports-transfer": [hodlTText("Does a watch-only sheet replace a secret recovery backup?"), [hodlTText("Yes"), hodlTText("No")], 1, hodlTText("Watch-only helps you check addresses. Recovery still needs the original secrets and wallet settings.")],
     "inspect-verdict": [hodlTText("Does a completed check mean a transaction is safe to sign?"), [hodlTText("Yes"), hodlTText("No")], 1, hodlTText("A check covers only its stated scope. Independently verify the destination, amount, change, and fee.")],
+    "signer-use": [hodlTText("The returned transaction is unchanged. Does that prove the original payment was the one you intended?"), [hodlTText("Yes"), hodlTText("No")], 1, hodlTText("The comparison checks for changes. You still need to verify the original destination, amount, change, and fee independently.")],
+    "bump-use": [hodlTText("The fee rose, but the recipient changed. Is that only a fee bump?"), [hodlTText("Yes"), hodlTText("No")], 1, hodlTText("A higher fee does not excuse a different payment destination. Stop and investigate the changed recipient.")],
     "bip85-use": [hodlTText("Can someone with the parent derive its BIP85 children?"), [hodlTText("Yes"), hodlTText("No")], 0, hodlTText("Protect the parent: access to it threatens all children derived from it.")],
   };
   return checks[id];
+}
+
+// Public teaching material only: no keys, addresses, PSBT bytes, or calculations.
+// Each table is read-only and never supplies values to the app's real tools.
+export function featureGuideExample(id, hodlTText = (text) => text) {
+  const examples = {
+    "basics-family": {
+      caption: hodlTText("Practice example: which information can you share?"),
+      columns: [hodlTText("Information"), hodlTText("How to treat it")],
+      rows: [
+        [hodlTText("Receiving address"), hodlTText("Share to receive a payment")],
+        [hodlTText("Seed words or private key"), hodlTText("Keep secret: spending power")],
+        [hodlTText("Watch-only information"), hodlTText("Cannot spend; reveals wallet activity")],
+      ],
+    },
+    "basics-recipe": {
+      caption: hodlTText("Practice example: same seed words, different passphrase"),
+      columns: [hodlTText("Passphrase supplied"), hodlTText("Result")],
+      rows: [
+        [hodlTText("Your original exact text"), hodlTText("Your original wallet")],
+        [hodlTText("One-character typo"), hodlTText("Normally a different valid wallet")],
+      ],
+    },
+    "inspect-worksheet": {
+      caption: hodlTText("Practice example: where 100,000 sats go"),
+      columns: [hodlTText("Part of the payment"), hodlTText("Amount")],
+      rows: [
+        [hodlTText("Total input"), hodlTText("100,000 sats")],
+        [hodlTText("To the recipient"), hodlTText("60,000 sats")],
+        [hodlTText("Change back to you"), hodlTText("39,000 sats")],
+        [hodlTText("Fee: input minus outputs"), hodlTText("1,000 sats")],
+      ],
+    },
+    "signer-compare": {
+      caption: hodlTText("Practice example: the amount stayed, the recipient changed"),
+      columns: [hodlTText("Check"), hodlTText("Before"), hodlTText("After")],
+      rows: [
+        [hodlTText("Recipient"), hodlTText("Recipient A"), hodlTText("Different recipient B")],
+        [hodlTText("Payment"), hodlTText("60,000 sats"), hodlTText("60,000 sats")],
+        [hodlTText("Change"), hodlTText("39,000 sats"), hodlTText("39,000 sats")],
+        [hodlTText("Fee"), hodlTText("1,000 sats"), hodlTText("1,000 sats")],
+      ],
+    },
+    "bump-compare": {
+      caption: hodlTText("Practice example: 500 sats move from change to fee"),
+      columns: [hodlTText("Check"), hodlTText("Original"), hodlTText("After bump")],
+      rows: [
+        [hodlTText("Total input"), hodlTText("100,000 sats"), hodlTText("100,000 sats")],
+        [hodlTText("Recipient"), hodlTText("Recipient A"), hodlTText("Recipient A")],
+        [hodlTText("Payment"), hodlTText("60,000 sats"), hodlTText("60,000 sats")],
+        [hodlTText("Change"), hodlTText("39,000 sats"), hodlTText("38,500 sats")],
+        [hodlTText("Fee"), hodlTText("1,000 sats"), hodlTText("1,500 sats")],
+      ],
+    },
+  };
+  return Object.hasOwn(examples, id) ? examples[id] : null;
 }
