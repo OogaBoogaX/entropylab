@@ -1347,9 +1347,28 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 .guide-chain { display: flex; flex-wrap: wrap; gap: var(--space-control); padding-left: var(--indent-list); }
 .guide-chain li { padding: var(--inset-chip); margin-right: var(--space-component); }
 .guide-chain [aria-current] { color: var(--accent); font-weight: bold; border-bottom: 1px solid var(--accent); }
-#guide-check > * + *, #guide-story > * + *, #guide-browse > * + *, #guide-verify > * + * { margin-top: var(--space-component); }
-.modal-title { margin: 0 0 var(--space-section); font-weight: 600; font-size: var(--text-heading-small); overflow-wrap: anywhere; }
+#guide-check > * + *, #guide-story > * + *, #guide-browse > * + *, #guide-verify > * + *, #guide-finish-browse > * + * { margin-top: var(--space-component); }
+.guide-example { width: 100%; table-layout: fixed; font-size: var(--text-body); }
+.guide-example caption { text-align: start; padding-bottom: var(--space-control); color: var(--muted); }
+.guide-example th, .guide-example td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.guide-example td { font-family: inherit; }
+.guide-example tbody th { border-top: 1px solid var(--border); font-weight: normal; }
+/* This shared phone padding has to come first. The guide rule below sets the same four sides, and a later shorthand of equal weight would wipe the safe-area insets. */
 @media (max-width: 520px) { .modal-card { padding: var(--inset-card); } }
+/* Reading uses the phone's full width; the shared modal still owns focus and dismissal. */
+@media (max-width: 520px) {
+  /* Stretch into the fixed overlay instead of a second viewport height, and keep controls off the notch and home indicator. */
+  .feature-guide-overlay { padding: 0; place-items: stretch; grid-template-rows: minmax(0, 1fr); }
+  .feature-guide-card {
+    width: 100%; height: auto; max-height: none; min-height: 0; border: 0; border-radius: 0;
+    padding-top: max(var(--inset-card), env(safe-area-inset-top));
+    padding-right: max(var(--inset-card), env(safe-area-inset-right));
+    padding-bottom: max(var(--inset-card), env(safe-area-inset-bottom));
+    padding-left: max(var(--inset-card), env(safe-area-inset-left));
+  }
+  .feature-guide-card > .guide-content { flex: 1; }
+}
+.modal-title { margin: 0 0 var(--space-section); font-weight: 600; font-size: var(--text-heading-small); overflow-wrap: anywhere; }
 /* The gate alone fades in, and wears the danger frame its warning calls for. */
 .disclaimer-overlay { opacity: 0; transition: opacity .24s ease; }
 .disclaimer-overlay.is-visible { opacity: 1; }

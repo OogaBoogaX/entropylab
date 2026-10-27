@@ -630,16 +630,25 @@ build the PR's checked-out sources locally. Do not commit generated HTML.
 ### Feature guide
 
 Choose **Basics**, immediately after the newcomer introduction above the tool
-tabs, to start the eight-step beginner lesson as the first lesson of the
+tabs, to start the six-step beginner lesson as the first lesson of the
 **Understand wallets** route, so its finish offers the next lesson. **Guide** opens the
 contents and individual feature lessons. **Explain this tool** in each released tool's
-introduction opens its lesson directly. Every step explains the feature,
-what to check, and its limits. No wallet secrets are needed. Optional goal-based
-routes group lessons with summaries; **Understand wallets** is the beginner route and Browse all lessons keeps direct access. Expandable diagrams
-and ungraded quick checks live only inside Guide and never block progress. Each check appears once, after its lesson concepts. First-use basics terms have expandable explanations.
+introduction opens its lesson directly. Each step gives one explanation, a practical takeaway, and a labeled limit.
+Public, read-only examples illustrate what to share, a passphrase typo, payment
+arithmetic, a changed recipient, and a fee bump paid from change. They contain
+no usable keys, addresses, or transaction files and never fill tool inputs. No wallet secrets are needed. Optional goal-based
+routes group lessons with summaries; **Understand wallets** is the beginner route (basics, input selection, wallet settings, then results) and Browse all lessons keeps direct access. Expandable diagrams
+and ungraded quick checks live only inside Guide and never block progress. Each check appears once, after its lesson concepts. First-use basics terms have expandable explanations. Brain wallet and method
+sync are in **Advanced: input transformations**, outside the beginner route.
+The transaction route includes **Check what the signer changed** and **Check a
+fee bump**: both teach using your own saved original and investigating
+unexplained changes or incomplete checks.
 
-Back, Contents, Close, and replay are always available. Closing retains your
-place for this page session; **Continue learning** resumes an unfinished lesson. After a route lesson finishes, an explicit **Continue route** action opens the next lesson. Finish screens also link to other feature lessons, without opening tools. Reloading or
+On phones the guide fills the screen and keeps its controls inside the display safe area, leaving more room for examples while
+keeping its header and navigation visible. Back, Contents, Close, and replay
+are always available. Closing retains your
+place for this page session; **Continue learning** resumes an unfinished lesson. After a route lesson finishes, an explicit **Continue route** action opens the next lesson. Finish screens keep the next route lesson visible and place other lessons under
+**Browse other lessons**, without opening tools. Reloading or
 leaving the page resets progress. Completing a lesson never removes Guide.
 The lessons are bundled in the downloaded HTML and work without network or
 browser storage. New lesson translations fall back to English until the

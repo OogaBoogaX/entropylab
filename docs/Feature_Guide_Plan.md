@@ -6,6 +6,46 @@ omitted per maintainer review.
 Status: implemented on feature-guide-wizard. Original planning base: upstream/rock at
 2ee665940195bb61188e339fecfdbe18a80920b4. Branch: feature-guide-wizard.
 
+## Current refinement — 2026-10-27
+
+The first practical-content pass has 16 lessons / 36 steps. Basics is six
+steps; the beginner route then covers input selection, wallet settings, and
+results. Brain wallet and method sync are in a separate advanced lesson.
+Two new transaction lessons explain signer comparison and fee bumps using
+the user's own saved original.
+
+Five fixed, read-only tables show public/private information, passphrase
+mismatch, payment arithmetic, a redirected recipient, and change paying a
+higher fee. They contain no usable wallet material and never fill fields or
+call the transaction engines. Translated cells use text sinks. Navigation,
+network silence, memory-only progress and the security contract below remain
+unchanged. Deeper vocabulary and the concept diagram remain disclosures;
+the diagram sits directly under the step heading. Each limit keeps a visible
+heading. Finish screens disclose other lessons and
+keep route continuation directly available. On phones the shared modal fills
+the overlay, retaining its focus trap, header, scrolling body, navigation,
+and padding for the display safe area.
+
+The sections below record the original plan and earlier validation. For the
+current user flow see README's Feature guide section. The earlier eight-step
+and 13-lesson counts describe historical revisions, not this pass.
+
+### Human acceptance still needed
+
+Use the exact PR candidate (record footer commit, CI run and digest), with no
+wallet secrets. Ask a newcomer, without coaching, to identify what they can
+share, account for the sample payment and fee, explain why a different
+recipient is a problem even if the amount matches, and find the relevant
+comparison tool. Check closing/resuming the guide and keyboard navigation.
+Record misunderstandings before revising the copy; do not treat completion
+as a safety qualification.
+
+Physical-phone and screen-reader checks remain human acceptance work.
+The reported iPhone Quick Look file path did not execute JavaScript; it did
+not test the Guide. A runnable HTTPS candidate can be used for public-example
+practice, with its commit identified. Desktop viewport captures do not
+establish that physical-device behavior. A desktop side panel and a larger tool chooser remain separate design work.
+
 ## Goal
 
 Give a Bitcoin novice a clear explanation of every released main feature,

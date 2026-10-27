@@ -24,7 +24,11 @@ following model:
 
 - The tool is self-contained and designed for offline, air-gapped use. It does
   not intentionally transmit sensitive data to any server.
-- The optional feature guide renders bundled, translated lesson text. It
+- The optional feature guide renders bundled, translated lesson text and
+  read-only practice tables through text sinks. Examples are public teaching
+  material, contain no usable keys/addresses/PSBTs, and never populate wallet
+  fields or invoke transaction checks. They illustrate concepts, not verdicts
+  about the user's wallet. It
   accepts known lesson IDs and keeps only lesson progress in page memory;
   it reads no wallet inputs, saves nothing in browser storage, and makes no
   network calls. Its download-verification link has a fixed GitHub README
