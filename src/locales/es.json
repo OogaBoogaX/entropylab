@@ -2219,5 +2219,7 @@
   "The Lightning key worker stopped.": "El trabajador de claves Lightning se detuvo.",
   "Node key derived. Decoded key material stays in an isolated worker until you clear it.": "Clave del nodo derivada. El material de clave decodificado permanece en un trabajador aislado hasta que lo borres.",
   "Lightning": "Lightning",
-  "LN": "LN"
+  "LN": "LN",
+  "{count} generated item": "{count} elemento generado",
+  "{count} generated items": "{count} elementos generados"
 }

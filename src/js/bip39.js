@@ -275,4 +275,20 @@ const seedFromIndices = (indices, passphrase = "") => {
   }
 };
 
-export { entropyToMnemonic, mnemonicToEntropy, mnemonicToSeedSync, seedFromEntropy, seedFromIndices, validateMnemonic };
+const entropyFromWordIndices = (indices) => {
+  if (!(indices instanceof Uint16Array) || !WORD_COUNTS.includes(indices.length)) throw new Error("Invalid mnemonic");
+  let owned = new Uint16Array(0), entropy = new Uint8Array(0), ok = false;
+  try {
+    owned = Uint16Array.from(indices);
+    for (const index of owned) if (index > 2047) throw new Error("Invalid mnemonic");
+    entropy = entropyFromIndices(owned);
+    if (!validChecksum(owned, entropy)) throw new Error("Invalid mnemonic");
+    ok = true;
+    return entropy;
+  } finally {
+    owned.fill(0);
+    if (!ok) entropy.fill(0);
+  }
+};
+
+export { entropyToMnemonic, mnemonicToEntropy, mnemonicToSeedSync, seedFromEntropy, seedFromIndices, entropyFromWordIndices, validateMnemonic };

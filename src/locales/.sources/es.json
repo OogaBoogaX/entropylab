@@ -2219,5 +2219,7 @@
   "The Lightning key worker stopped.": "69d60a389cb062341ac56a975b61bc5e70c91a8cdde42fc4b6e7c71b2b8dd5cd",
   "Node key derived. Decoded key material stays in an isolated worker until you clear it.": "15c659e7974365cb388c4b5fc5e9a843c018752e5a2763fe3d71c050c76932e6",
   "Lightning": "41e68f2cdb3806bb899cb2f3c3d80a2171f37c85b60e8e486742234e4e5f5738",
-  "LN": "69a844cab6d32d051e1aad4e3682a2ed5da89bd7ec38cc827bc38293bba4ce27"
+  "LN": "69a844cab6d32d051e1aad4e3682a2ed5da89bd7ec38cc827bc38293bba4ce27",
+  "{count} generated item": "30b82adc7ed675e0d6049110eea18732a1dfae5be9d0a3e9204ebfef6bf317f3",
+  "{count} generated items": "8534d55639d8ea486831c5878cf1b28efd935b6caa5cfa5e20ba0e5259c0e11e"
 }
