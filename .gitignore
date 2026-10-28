@@ -15,6 +15,7 @@ node_modules/
 entropylab-wasm/target/
 psbt-wasm/target/
 vanity-wasm/target/
+qr-wasm/target/
 test/adversarial/jev-adversarial.log
 
 # Residue-audit captures and reports (local only; may contain memory dumps)

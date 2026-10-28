@@ -942,7 +942,7 @@ npm ci
 npm run build
 ```
 
-To modify the Rust bindings (`entropylab-wasm/`, `psbt-wasm/`, `vanity-wasm/`),
+To modify the Rust bindings (`entropylab-wasm/`, `psbt-wasm/`, `vanity-wasm/`, `qr-wasm/`),
 Rust (with the `wasm32-unknown-unknown` target, installed automatically by
 rustup) is also required; regenerate the committed artifacts with
 `npm run build:wasm`.

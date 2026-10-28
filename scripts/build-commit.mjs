@@ -25,6 +25,7 @@ export const BUILD_INPUTS = [
   "entropylab-wasm",
   "psbt-wasm",
   "vanity-wasm",
+  "qr-wasm",
 ];
 
 // Generated from the Rust crates and committed by the post-merge artifact job.
@@ -35,6 +36,7 @@ export const GENERATED_WASM = [
   "src/js/entropylab-wasm-b64.js",
   "src/js/psbt-wasm-b64.js",
   "src/js/vanity-wasm-b64.js",
+  "src/js/qr-wasm-b64.js",
 ];
 
 // Returns the commit id, or "unknown" for a snapshot without git metadata.

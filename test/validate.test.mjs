@@ -202,9 +202,9 @@ test("the release build attests the wallet artifact and ships a checksum manifes
   const build = workflow.match(/^  build:\n(?:.|\n)*?(?=^  [a-z-]+:)/m)?.[0] ?? "";
   // SHA256SUMS.txt names only the HTML, so `sha256sum -c` passes for someone
   // holding just the downloaded file. The modules get a manifest of their own.
-  const wasmSums = /sha256sum \\\n\s+src\/js\/entropylab-wasm-b64\.js \\\n\s+src\/js\/psbt-wasm-b64\.js \\\n\s+src\/js\/vanity-wasm-b64\.js \\\n\s+> WASM-SHA256SUMS\.txt\n/;
+  const wasmSums = /sha256sum \\\n\s+src\/js\/entropylab-wasm-b64\.js \\\n\s+src\/js\/psbt-wasm-b64\.js \\\n\s+src\/js\/vanity-wasm-b64\.js \\\n\s+src\/js\/qr-wasm-b64\.js \\\n\s+> WASM-SHA256SUMS\.txt\n/;
   assert.match(build, /run: sha256sum entropylab\.html > SHA256SUMS\.txt\n/, "build must hash only the HTML into SHA256SUMS.txt");
-  assert.match(build, wasmSums, "build must hash exactly the three WASM modules into WASM-SHA256SUMS.txt");
+  assert.match(build, wasmSums, "build must hash exactly the four WASM modules into WASM-SHA256SUMS.txt");
   assert.match(build, /name: entropylab-sha256sums\n\s+path: \|\n\s+SHA256SUMS\.txt\n\s+WASM-SHA256SUMS\.txt\n\s+CID\.txt\n/, "build must upload both manifests");
   assert.match(build, /node scripts\/cid\.mjs entropylab\.html > CID\.txt/, "build must generate CID.txt from the same HTML");
   // Attestation is a separate push-only job so a pull request never runs
@@ -219,7 +219,7 @@ test("the release build attests the wallet artifact and ships a checksum manifes
   assert.match(attest, /if: github\.ref == 'refs\/heads\/rock' && github\.event_name == 'push'/);
   const artifact = workflow.match(/^  artifact:\n(?:.|\n)*?(?=^  [a-z-]+:)/m)?.[0] ?? "";
   assert.match(artifact, /run: sha256sum entropylab\.html > SHA256SUMS\.txt\n/, "artifact must hash only the HTML into SHA256SUMS.txt");
-  assert.match(artifact, wasmSums, "artifact must hash exactly the three WASM modules into WASM-SHA256SUMS.txt");
+  assert.match(artifact, wasmSums, "artifact must hash exactly the four WASM modules into WASM-SHA256SUMS.txt");
   const commitLine = artifact.match(/^\s+git add -f ([^\n]+)$/m)?.[1].split(/\s+/) ?? [];
   for (const file of ["entropylab.html", "SHA256SUMS.txt", "WASM-SHA256SUMS.txt", "CID.txt"]) {
     assert.ok(commitLine.includes(file), `the committed artifact includes ${file}`);
@@ -472,7 +472,7 @@ function workflowJob(workflow, name) {
 }
 const workflowSteps = (job) => job.match(/^      - [\s\S]*?(?=^      - |(?![\s\S]))/gm) ?? [];
 const jobNeeds = (job) => (job.match(/^    needs: \[([^\]\n]*)\]/m)?.[1] ?? "").split(",").map(value => value.trim());
-const wasmModulePaths = ["src/js/entropylab-wasm-b64.js", "src/js/psbt-wasm-b64.js", "src/js/vanity-wasm-b64.js"];
+const wasmModulePaths = ["src/js/entropylab-wasm-b64.js", "src/js/psbt-wasm-b64.js", "src/js/vanity-wasm-b64.js", "src/js/qr-wasm-b64.js"];
 const candidateConsumers = {
   "test-ci": "npm run test:ci",
   "test-browser": "npm run test:browser",

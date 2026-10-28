@@ -92,6 +92,7 @@ jobs:
             src/js/entropylab-wasm-b64.js \
             src/js/psbt-wasm-b64.js \
             src/js/vanity-wasm-b64.js \
+            src/js/qr-wasm-b64.js \
             > WASM-SHA256SUMS.txt
       - name: Generate the IPFS CID name
         run: node scripts/cid.mjs entropylab.html > CID.txt
@@ -117,6 +118,7 @@ jobs:
             src/js/entropylab-wasm-b64.js
             src/js/psbt-wasm-b64.js
             src/js/vanity-wasm-b64.js
+            src/js/qr-wasm-b64.js
           if-no-files-found: error
           retention-days: 7
       - name: Prepare static site
@@ -160,8 +162,8 @@ jobs:
           subject-path: candidate/entropylab.html
 
   # The WASM artifacts (src/js/entropylab-wasm-b64.js, src/js/psbt-wasm-b64.js,
-  # src/js/vanity-wasm-b64.js) are built from the pinned Rust crates
-  # (entropylab-wasm/, psbt-wasm/, vanity-wasm/, each
+  # src/js/vanity-wasm-b64.js, src/js/qr-wasm-b64.js) are built from the pinned Rust crates
+  # (entropylab-wasm/, psbt-wasm/, vanity-wasm/, qr-wasm/, each
   # with Cargo.lock and rust-toolchain.toml). This job rebuilds them from
   # scratch and runs their test suites against the fresh build, so a stale or
   # hand-edited committed artifact cannot hide a broken crate. The artifacts
@@ -211,9 +213,11 @@ jobs:
               cd entropylab-wasm
               cargo test --locked --lib
               cd ../psbt-wasm
+              cargo test --locked --lib
+              cd ../qr-wasm
               cargo test --locked --lib'
       - name: Test the freshly built bindings
-        run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/psbt-sanitize.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs test/aezeed-wasm.test.mjs test/self-test-wasm.test.mjs
+        run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/psbt-sanitize.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs test/qr-wasm.test.mjs test/aezeed-wasm.test.mjs test/self-test-wasm.test.mjs
       - name: Upload the freshly tested WASM modules
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -222,6 +226,7 @@ jobs:
             src/js/entropylab-wasm-b64.js
             src/js/psbt-wasm-b64.js
             src/js/vanity-wasm-b64.js
+            src/js/qr-wasm-b64.js
           if-no-files-found: error
           retention-days: 7
 
@@ -621,6 +626,7 @@ jobs:
             src/js/entropylab-wasm-b64.js \
             src/js/psbt-wasm-b64.js \
             src/js/vanity-wasm-b64.js \
+            src/js/qr-wasm-b64.js \
             > WASM-SHA256SUMS.txt
       - name: Generate the IPFS CID name
         run: node scripts/cid.mjs entropylab.html > CID.txt
@@ -629,7 +635,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f entropylab.html src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js SHA256SUMS.txt WASM-SHA256SUMS.txt CID.txt
+          git add -f entropylab.html src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js src/js/qr-wasm-b64.js SHA256SUMS.txt WASM-SHA256SUMS.txt CID.txt
           if git diff --cached --quiet; then
             echo "Build output is unchanged; nothing to commit."
             exit 0
@@ -1026,21 +1032,22 @@ jobs:
             bash -c 'set -euo pipefail
               git config --global --add safe.directory "*"
               npm run build:wasm
-              sha256sum src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js | tee /tmp/wasm-first.sums
+              sha256sum src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js src/js/qr-wasm-b64.js | tee /tmp/wasm-first.sums
               git clone -q /workspace /tmp/second
               cd /tmp/second
               node scripts/build-wasm.mjs
-              sha256sum src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js | tee /tmp/wasm-second.sums
+              sha256sum src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js src/js/qr-wasm-b64.js | tee /tmp/wasm-second.sums
               diff /tmp/wasm-first.sums /tmp/wasm-second.sums
               cut -d" " -f1 /tmp/wasm-first.sums > /tmp/wasm-first.hashes
               sha256sum \
                 /workspace/published-wasm/src/js/entropylab-wasm-b64.js \
                 /workspace/published-wasm/src/js/psbt-wasm-b64.js \
                 /workspace/published-wasm/src/js/vanity-wasm-b64.js \
+                /workspace/published-wasm/src/js/qr-wasm-b64.js \
                 | cut -d" " -f1 > /tmp/wasm-published.hashes
               diff /tmp/wasm-first.hashes /tmp/wasm-published.hashes
               cd /workspace
-              if ! git diff --exit-code -- src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js > /tmp/wasm-drift.diff; then
+              if ! git diff --exit-code -- src/js/entropylab-wasm-b64.js src/js/psbt-wasm-b64.js src/js/vanity-wasm-b64.js src/js/qr-wasm-b64.js > /tmp/wasm-drift.diff; then
                 echo "::warning file=scripts/build-wasm.mjs::Fresh in-image WASM build differs from the modules committed on this branch. The artifact job commits the image bytes on the next rock merge; that commit skips CI."
                 head -20 /tmp/wasm-drift.diff
               fi'
