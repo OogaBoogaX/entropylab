@@ -47,17 +47,13 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
   const ensureModal = () => {
     if (modal) return;
     modal = createModal({
-      id: "feature-guide-overlay", className: "feature-guide-overlay", card: "",
+      id: "feature-guide-overlay", className: "feature-guide-overlay",
+      card: '<section class="modal-card feature-guide-card" id="feature-guide-dialog" role="dialog" aria-modal="true" aria-labelledby="guide-title"></section>',
       focusables: () => [...modal.overlay.querySelectorAll("button, summary, a[href]")].filter((node) => !node.disabled && !node.closest("[hidden]") && (node.tagName === "SUMMARY" || !node.closest("details") || node.closest("details").open)),
       onDismiss: close,
     });
     // Every word is rendered through a text sink, including catalog values.
     modal.overlay.setAttribute("data-i18n-skip", "");
-    const card = element("section", "", "modal-card feature-guide-card", "feature-guide-dialog");
-    card.setAttribute("role", "dialog");
-    card.setAttribute("aria-modal", "true");
-    card.setAttribute("aria-labelledby", "guide-title");
-    modal.overlay.append(card);
   };
   const render = () => {
     const card = document.getElementById("feature-guide-dialog");
