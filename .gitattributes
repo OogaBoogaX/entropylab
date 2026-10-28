@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.png binary
 *.jpg binary
+test/fixtures/ots/opentimestamps-client/** binary
+test/fixtures/ots/entropylab-v1.0.0/** binary

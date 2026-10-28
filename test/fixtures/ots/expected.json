@@ -1,0 +1,30 @@
+{
+  "note": "Expected outcomes recorded with an independent minimal OTS walker (not the code under test), against the headers in headers.json. bitcoin = completed Bitcoin attestations reachable through supported operations, with whether each leaf's digest equals its own block's merkle root. Results use the verdict rules in the #460 rework (see TASK.md).",
+  "cases": [
+    { "name": "hello-world, its block header and original file", "proof": "opentimestamps-client/hello-world.txt.ots", "header": 358391, "original": "opentimestamps-client/hello-world.txt", "result": "MATCHES_SUPPLIED_HEADER", "bitcoin": [358391] },
+    { "name": "hello-world without a header", "proof": "opentimestamps-client/hello-world.txt.ots", "header": null, "result": "HEADER_REQUIRED", "claimedHeights": [358391] },
+    { "name": "hello-world against another block's header", "proof": "opentimestamps-client/hello-world.txt.ots", "header": 129405, "result": "INVALID", "reason": "header-mismatch" },
+    { "name": "bad-stamp: well formed, fails header validation", "proof": "opentimestamps-client/bad-stamp.txt.ots", "header": 358391, "original": "opentimestamps-client/bad-stamp.txt", "result": "INVALID", "reason": "header-mismatch" },
+    { "name": "bitcoin.pdf: SHA-1 file hash, path uses only append/sha256/prepend", "proof": "opentimestamps-client/bitcoin.pdf.ots", "header": 465751, "result": "MATCHES_SUPPLIED_HEADER", "fileHashOp": "sha1", "bitcoin": [465751] },
+    { "name": "different-blockchains: Bitcoin leaf plus unknown attestation plus pending", "proof": "opentimestamps-client/different-blockchains.txt.ots", "header": 455605, "original": "opentimestamps-client/different-blockchains.txt", "result": "MATCHES_SUPPLIED_HEADER", "bitcoin": [455605] },
+    { "name": "different-blockchains without a header", "proof": "opentimestamps-client/different-blockchains.txt.ots", "header": null, "result": "HEADER_REQUIRED", "claimedHeights": [455605] },
+    { "name": "empty file, ripemd160 in the path", "proof": "opentimestamps-client/empty.ots", "header": 129405, "original": "opentimestamps-client/empty", "result": "MATCHES_SUPPLIED_HEADER", "bitcoin": [129405] },
+    { "name": "gdp2q25: manually constructed proof", "proof": "opentimestamps-client/gdp2q25-2nd.pdf.ots", "header": 912095, "result": "MATCHES_SUPPLIED_HEADER", "bitcoin": [912095] },
+    { "name": "incomplete: one pending calendar", "proof": "opentimestamps-client/incomplete.txt.ots", "header": null, "original": "opentimestamps-client/incomplete.txt", "result": "PENDING" },
+    { "name": "two-calendars", "proof": "opentimestamps-client/two-calendars.txt.ots", "header": null, "result": "PENDING" },
+    { "name": "merkle1", "proof": "opentimestamps-client/merkle1.txt.ots", "header": null, "original": "opentimestamps-client/merkle1.txt", "result": "PENDING" },
+    { "name": "merkle2", "proof": "opentimestamps-client/merkle2.txt.ots", "header": null, "original": "opentimestamps-client/merkle2.txt", "result": "PENDING" },
+    { "name": "merkle3", "proof": "opentimestamps-client/merkle3.txt.ots", "header": null, "original": "opentimestamps-client/merkle3.txt", "result": "PENDING" },
+    { "name": "known-and-unknown-notary", "proof": "opentimestamps-client/known-and-unknown-notary.txt.ots", "header": null, "result": "PENDING" },
+    { "name": "unknown-notary only", "proof": "opentimestamps-client/unknown-notary.txt.ots", "header": null, "result": "UNSUPPORTED" },
+    { "name": "invalid: bad major version", "proof": "opentimestamps-client/invalid/bad-major-version.ots", "header": null, "parseError": true },
+    { "name": "invalid: file digest type is hexlify", "proof": "opentimestamps-client/invalid/invalid-file-digest-type.ots", "header": null, "parseError": true },
+    { "name": "exceeds-max-msg-length: 7 hexlify ops then an append; hexlify is unsupported in v1, so UNSUPPORTED (the reference client rejects it: 4112 bytes after 8 ops)", "proof": "opentimestamps-client/invalid/exceeds-max-msg-length.ots", "header": null, "result": "UNSUPPORTED" },
+    { "name": "EntropyLab v1.0.0 release proof, block 970791", "proof": "entropylab-v1.0.0/entropylab.html.ots", "header": 970791, "expectedDigest": "bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d", "result": "MATCHES_SUPPLIED_HEADER", "bitcoin": [970791, 970794, 970801] },
+    { "name": "EntropyLab v1.0.0, block 970794", "proof": "entropylab-v1.0.0/entropylab.html.ots", "header": 970794, "result": "MATCHES_SUPPLIED_HEADER" },
+    { "name": "EntropyLab v1.0.0, block 970801", "proof": "entropylab-v1.0.0/entropylab.html.ots", "header": 970801, "result": "MATCHES_SUPPLIED_HEADER" },
+    { "name": "EntropyLab v1.0.0 without a header", "proof": "entropylab-v1.0.0/entropylab.html.ots", "header": null, "result": "HEADER_REQUIRED", "claimedHeights": [970791, 970794, 970801] },
+    { "name": "EntropyLab v1.0.0 with a wrong expected digest", "proof": "entropylab-v1.0.0/entropylab.html.ots", "header": 970791, "expectedDigest": "bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8e", "result": "INVALID", "reason": "expected-digest" },
+    { "name": "EntropyLab v1.0.0 against an unrelated block", "proof": "entropylab-v1.0.0/entropylab.html.ots", "header": 358391, "result": "INVALID", "reason": "header-mismatch" }
+  ]
+}
