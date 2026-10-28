@@ -53,6 +53,9 @@
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="bip85-card" aria-label="BIP-85 Child" title="BIP-85 Child"><span class="workspace-tab-full">BIP-85</span><span class="workspace-tab-short">BIP-85</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="sp-card" aria-label="Privacy"><span class="workspace-tab-full">Privacy</span><span class="workspace-tab-short">Privacy</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="vanity-card" aria-label="Vanity Address" title="Vanity Address"><span class="workspace-tab-full">Vanity</span><span class="workspace-tab-short">Vanity</span></button>
+        <!-- preview -->
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="verify-card" aria-label="Verify"><span class="workspace-tab-full">Verify</span><span class="workspace-tab-short">Verify</span></button>
+        <!-- /preview -->
       </div>
     </nav>
       <div class="workspace-panel" id="workspace-panel">
@@ -816,6 +819,38 @@ words, pick one of the checksum words.</span></span>
         <button class="btn secondary" id="core-wipe" type="button" disabled aria-disabled="true">End Session / Clear Fields</button>
       </div>
     </section>
+      <!-- preview -->
+      <section class="card" id="verify-card" role="tabpanel" hidden>
+        <h2>Verify</h2>
+        <p class="edge-note is-info">Check an OpenTimestamps proof against a Bitcoin block header you supply. Nothing leaves this page.</p>
+        <section class="tool-section" id="ots-station">
+          <h3 class="label">OpenTimestamps proof</h3>
+          <div class="row">
+            <button type="button" class="btn" id="ots-proof-choose">Choose .ots file</button>
+            <input type="file" id="ots-proof-file" accept=".ots" hidden>
+          </div>
+          <p class="field-note" id="ots-proof-name" hidden></p>
+          <label class="label" for="ots-proof-hex">or paste the proof as hex</label>
+          <textarea id="ots-proof-hex" class="field" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          <p class="label" id="ots-original-label">Original file (optional)</p>
+          <div class="row">
+            <button type="button" class="btn" id="ots-original-choose" aria-describedby="ots-original-label">Choose file</button>
+            <input type="file" id="ots-original-file" hidden>
+          </div>
+          <p class="field-note" id="ots-original-name" hidden></p>
+          <label class="label" for="ots-header-hex">Bitcoin block header (80 bytes, hex)</label>
+          <textarea id="ots-header-hex" class="field" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="ots-header-note"></textarea>
+          <p class="field-note" id="ots-header-note">The header is supplied by you and is not checked against the Bitcoin network.</p>
+          <label class="label" for="ots-expected-digest">Expected digest (hex)</label>
+          <input type="text" id="ots-expected-digest" class="field" spellcheck="false" autocomplete="off" autocapitalize="off">
+          <div class="row tool-actions">
+            <button type="button" class="btn primary" id="ots-verify">Verify</button>
+            <button type="button" class="btn" id="ots-clear">Clear</button>
+          </div>
+          <div id="ots-result" aria-live="polite"></div>
+        </section>
+      </section>
+      <!-- /preview -->
       <div class="tool-intro edge-note is-info" id="ln-tool-intro" hidden>
         <h2>Lightning tools</h2>
         <p class="muted tool-intro-note">Decode BOLT11 invoices and BOLT12 offers, or derive a node key: LND seed → LND node key, BIP-39 seed → LDK node key. Does not create a seed. Nothing leaves this page.</p>

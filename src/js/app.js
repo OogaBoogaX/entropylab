@@ -60,6 +60,7 @@ import { initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFr
 import { watchOnlyQrFrames as hodlWatchOnlyQrFrames } from "./psbt-ur.js";
 import { initCoreWallet } from "./core-wallet-ui.js";
 import { initDescriptorReuseCheck } from "./descriptor-reuse-ui.js";
+import { initOtsVerifier } from "./ots-verifier-ui.js";
 
 import { auditSigner as hodlAuditSigner } from "./psbt-signer-audit.js";
 import { psbtSignerAuditVerification as hodlPsbtSignerAuditVerify } from "./psbt-signer-audit-verify.js";
@@ -16907,6 +16908,9 @@ function hodlShowWorkspace(id) {
   document.getElementById("vanity-card").hidden = id !== "vanity";
   document.getElementById("ln-card").hidden = id !== "ln";
   document.getElementById("core-card").hidden = id !== "core";
+  // Preview builds only: a release build strips the Verify card.
+  const verifyCard = document.getElementById("verify-card");
+  if (verifyCard) verifyCard.hidden = id !== "verify";
   // The context block sits outside its tool's card, so it is shown and hidden
   // with the card rather than by it.
   ["bip85", "sp", "msig", "calc", "vanity", "ln", "core"].forEach((tool) => {
@@ -17069,6 +17073,7 @@ async function hodlLoadTestKeys() {
 // push the nine tools past the desktop strip (owner, 2026-10-26); the full
 // name stays the accessible name and the hover title.
 var hodlWorkspaceTabs = [["calc", "Keys", "Keys"], ["msig", "Multi Signature", "MultiSig", "MultiSig"], ["psbt", "Transactions", "Txns"], ["ln", "Lightning", "LN"], ["core", "Core Wallet", "Core"], ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"], ["sp", "Privacy", "Privacy"], ["vanity", "Vanity Address", "Vanity", "Vanity"], ["journal", "Journal", "Journal"]];
+if (PREVIEW) hodlWorkspaceTabs.push(["verify", "Verify", "Verify"]);
 // The Privacy workspace's stations: the id a station tab carries and the card
 // it shows. Later PRs add ["bip47", …] and ["check", …] rows here.
 var hodlPrivacyTools = [["sp", "sp-card"]];
@@ -21048,6 +21053,7 @@ async function hodlBoot() {
   hodlInitPassphraseVault();
   hodlInitStationPassphraseVaults();
   hodlInitWorkspace();
+  if (PREVIEW) initOtsVerifier(document);
   hodlInitAddressQr(hodlQrSvg, { copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup }, { frames: hodlPsbtQrFrames });
   hodlLowEntropyConfirm = initLowEntropyConfirm();
   hodlFingerprintCollisionConfirm = initFingerprintCollisionConfirm();
