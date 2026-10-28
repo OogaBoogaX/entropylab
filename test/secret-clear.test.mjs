@@ -1043,6 +1043,8 @@ test("the key Wipe button drops the cached partial mnemonics", () => {
   for (const activeKey of [-1, 0]) {
     const cache = new Map([["24:abandon abandon abandon", { candidates: [] }]]);
     const context = createContext({
+      // hodlWipeActiveKey empties the form fields it finds; this slice has none.
+      document: { getElementById: () => null, querySelectorAll: () => [] },
       hodlLastWordCache: cache,
       hodlInvalidateDerivation() {},
       hodlActiveKey: activeKey,
@@ -1094,7 +1096,13 @@ test("the key Wipe clears the partial-phrase cache after the form restore refill
   }
   slice.__set.hodlKeys([{ name: "Key 1", id: 1, number: 1, isLab: false }]);
   slice.__set.hodlActiveKey(0);
-  slice.hodlWipeActiveKey();
+  // hodlWipeActiveKey empties the form fields it finds; this slice has none.
+  globalThis.document = { getElementById: () => null, querySelectorAll: () => [] };
+  try {
+    slice.hodlWipeActiveKey();
+  } finally {
+    delete globalThis.document;
+  }
   assert.equal(slice.hodlLastWordCache.size, 0, "Wipe left the restore's re-cached partial phrase in the last-word cache");
 });
 
@@ -1173,7 +1181,7 @@ test("Wipe zeroes a wallet's row key bytes unless another key tab still shows th
     const { rows, result } = walletWithRows();
     const active = { name: "Key 1", id: 1, number: 1, isLab: false, result };
     const context = createContext({
-      hodlLastWordCache: new Map(), hodlInvalidateDerivation() {}, hodlActiveKey: 0,
+      document: { getElementById: () => null, querySelectorAll: () => [] }, hodlLastWordCache: new Map(), hodlInvalidateDerivation() {}, hodlActiveKey: 0,
       hodlKeys: shared ? [active, { isLab: true, result }] : [active], hodlKeyManagerPending: [], hodlWalletResult: result,
       hodlNewKeyState: () => ({ result: null }), hodlNewLabState: () => ({ result: null }),
       hodlRestoreKey() { context.hodlWalletResult = context.hodlKeys[context.hodlActiveKey]?.result ?? null; }, hodlJournalLog() {},
@@ -1238,7 +1246,7 @@ test("an ignored key's saved copy carries no key bytes", async () => {
 test("a Key Manager reset leaves the row key bytes of a wallet a station still shows", () => {
   const context = createContext({
     hodlKeyManagerIgnored: [], hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "",
-    document: { getElementById: () => null }, hodlKeyManagerStatus() {}, hodlKeyManagerRender() {},
+    document: { getElementById: () => null, querySelectorAll: () => [] }, hodlKeyManagerStatus() {}, hodlKeyManagerRender() {},
     hodlRefreshStationKeyPickers() {}, hodlRefreshMsigSessionPickers() {},
     hodlSpDropAddressesFrom() {}, hodlBip85WipeParent() {}, hodlDropBip85ChildrenOf() {},
   });

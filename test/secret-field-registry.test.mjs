@@ -9,7 +9,7 @@
 // Run with `npm test` (part of the default and CI suites).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -46,6 +46,25 @@ const around = (source, marker, span = 500) => {
   const at = source.indexOf(marker);
   assert.ok(at >= 0, `marker not found: ${marker}`);
   return source.slice(at, at + span);
+};
+
+// An inline `element.onclick = () => { ... };` handler, from the assignment
+// to its matching closing brace. Fails loudly if the marker is gone, so a
+// rename cannot silently drop the handler from the Undo sweep.
+const inlineHandler = (marker) => {
+  const at = app.indexOf(marker);
+  assert.ok(at >= 0, `inline handler not found: ${marker}`);
+  const open = app.indexOf("{", at);
+  assert.ok(open >= 0, `inline handler has no body: ${marker}`);
+  let depth = 0;
+  for (let i = open; i < app.length; i += 1) {
+    if (app[i] === "{") depth += 1;
+    else if (app[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return app.slice(at, i + 1);
+    }
+  }
+  assert.fail(`inline handler is not closed: ${marker}`);
 };
 
 // id → probe. Every probe is a regex run against the named source; the row
@@ -275,4 +294,86 @@ test("every shell field is classified as secret (cleared) or public (settings)",
     assert.ok(inShell(id) || ["hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "cards", "direct-cards", "exp-text"].includes(id),
       `#${id} is classified but no longer in the shell`);
   }
+});
+
+// Clear must be an assignment. execCommand("delete") and setRangeText both
+// leave the old text in the field's Undo history, where execCommand("undo")
+// brings it back (measured in Chrome, Edge and Firefox, 2026-10-27). The
+// Journal notes field is the one place Undo is intended. The module Clear
+// handlers are already pinned to `.value = ""` by their probes above.
+const CLEAR_HANDLERS = {
+  hodlInitSecretFieldAutoClear: lifecycle,
+  hodlEndPsbtSession: fnBody("hodlEndPsbtSession"),
+  hodlWipeActiveKey: fnBody("hodlWipeActiveKey"),
+  hodlWipeActiveMsig: fnBody("hodlWipeActiveMsig"),
+  bip85Wipe: inlineHandler('document.getElementById("bip85-wipe").onclick = () => {'),
+  spWipe: inlineHandler('document.getElementById("sp-wipe").onclick = () => {'),
+  hodlJournalClearFields: journalFields,
+  hodlJournalWipeMem: journalWipe,
+  hodlJournalHideEditor: journalEditor,
+  hodlJournalClearReport: fnBody("hodlJournalClearReport"),
+  hodlRestoreMsig: msigRestore,
+};
+
+test("no Clear handler uses an editing command that keeps text in Undo", () => {
+  for (const [name, source] of Object.entries(CLEAR_HANDLERS)) {
+    assert.ok(!source.includes("execCommand"), `${name} clears with execCommand, which keeps the text in Undo`);
+    assert.ok(!source.includes("setRangeText"), `${name} clears with setRangeText, which keeps the text in Undo`);
+  }
+});
+
+test("app.js calls document.execCommand only in the Journal notes field", () => {
+  const journal = fnBody("hodlJournalCommitNoteClock");
+  assert.ok(journal.length < app.length / 4, "hodlJournalCommitNoteClock's body must be a bounded slice of app.js");
+  const total = app.split("execCommand(").length - 1;
+  const inside = journal.split("execCommand(").length - 1;
+  assert.equal(total, inside, "app.js calls execCommand outside hodlJournalCommitNoteClock: editing commands keep text in Undo, so Clear must assign .value = \"\"");
+});
+
+test("no other module calls document.execCommand except the clipboard's copy fallback", () => {
+  const dir = join(root, "src/js");
+  for (const name of readdirSync(dir).filter((file) => file.endsWith(".js") && file !== "app.js")) {
+    const source = readFileSync(join(dir, name), "utf8");
+    const calls = source.match(/execCommand\([^)]*\)/g) || [];
+    if (name === "clipboard.js") {
+      for (const call of calls) assert.equal(call, 'execCommand("copy")', `clipboard.js may only call execCommand("copy"), found ${call}`);
+    } else {
+      assert.equal(calls.length, 0, `${name} calls execCommand: editing commands keep text in Undo, so a Clear must assign .value = ""`);
+    }
+  }
+});
+
+// The Key Station's Clear builds a fresh key and re-renders the form, which
+// drops the old field nodes. Measured in CI (Firefox, Chrome): a dropped #seed
+// still held its text. The handler must empty the fields in place first.
+test("the Key Station Clear empties its secret fields in place before the form re-renders", () => {
+  const body = fnBody("hodlWipeActiveKey");
+  const empty = body.indexOf('el.value = ""');
+  const restore = body.indexOf("hodlRestoreKey()");
+  assert.ok(empty >= 0 && restore > empty, 'hodlWipeActiveKey must assign "" to the secret fields before hodlRestoreKey re-renders the form');
+  for (const id of ["dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "key", "cards", "direct-cards"]) {
+    assert.ok(body.includes(`"${id}"`), `hodlWipeActiveKey must empty #${id} in place`);
+  }
+  assert.ok(body.includes(".dice-input-highlight"), "hodlWipeActiveKey must empty the highlight mirrors, which repeat the typed text");
+  // The transcript panels: whatever the pagehide sweep empties, Clear empties too.
+  const sweep = fnBody("hodlInitSecretFieldAutoClear").match(/for \(let id of \[([^\]]+)\]\) \{\s*let panel/);
+  assert.ok(sweep, "the pagehide sweep's transcript-panel list was not found");
+  const panelIds = [...sweep[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(panelIds.length >= 5, "the pagehide sweep's transcript-panel list looks truncated");
+  for (const id of panelIds) {
+    assert.ok(body.includes(`"${id}"`), `hodlWipeActiveKey must empty #${id}, which the pagehide sweep empties`);
+  }
+  assert.ok(body.includes("delete el.dataset.previousValue"), "hodlWipeActiveKey must drop the dice field's previous-text copy");
+  assert.ok(body.includes("hodlPassphraseVaultField.clear()") && body.includes("getElementById(\"pass\")"), "hodlWipeActiveKey must empty the BIP39 passphrase field");
+});
+
+// MultiSig's Clear re-renders the station the same way (measured in CI: a
+// dropped #msig-x-0 still held its text), so it empties the cosigner fields
+// in place first.
+test("the MultiSig Clear empties its cosigner fields in place before the station re-renders", () => {
+  const body = fnBody("hodlWipeActiveMsig");
+  const empty = body.indexOf('[id^="msig-x-"]');
+  const restore = body.indexOf("hodlRestoreMsig()");
+  assert.ok(empty >= 0 && restore > empty, "hodlWipeActiveMsig must empty the msig-x-* fields before hodlRestoreMsig re-renders the station");
+  assert.ok(body.includes('el.value = ""'), "hodlWipeActiveMsig must empty the cosigner fields by assignment");
 });

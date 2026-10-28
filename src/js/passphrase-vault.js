@@ -1,4 +1,5 @@
-// Passphrase vault: the BIP39 passphrase field never holds the passphrase.
+// Passphrase vault: the BIP39 passphrase field keeps the passphrase out of
+// its value. This reduces copies; it does not remove them.
 //
 // A field's value is text the page cannot erase, and the browser copies it
 // on every keystroke: its editor, undo history and session restore, the
