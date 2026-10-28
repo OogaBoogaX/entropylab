@@ -259,8 +259,11 @@ test("OpenTimestamps stamps the tested HTML off the Pages/test critical path", (
   assert.match(read("README.md"), /pending/);
   assert.match(read("llms.txt"), /entropylab\.html\.ots/);
   assert.match(read("SECURITY.md"), /OpenTimestamps/);
-  for (const path of ["src/js/app.js", "src/js/online.js", "src/shell.html"]) {
-    assert.doesNotMatch(read(path), /opentimestamps|\.ots\b/i, `${path} must not talk to OTS calendars`);
+  assert.doesNotMatch(read("src/js/online.js"), /opentimestamps|\.ots\b/i, "src/js/online.js must not talk to OTS calendars");
+  // The preview Verify card checks .ots proofs offline, so the page may name
+  // OpenTimestamps; it must never name a calendar server.
+  for (const path of ["src/js/app.js", "src/shell.html", "src/js/ots-parser.js", "src/js/ots-verifier.js", "src/js/ots-verifier-ui.js"]) {
+    assert.doesNotMatch(read(path), /https?:\/\/[^\s"'`]*(?:calendar|opentimestamps|eternitywall|catallaxy)/i, `${path} must not talk to OTS calendars`);
   }
 });
 

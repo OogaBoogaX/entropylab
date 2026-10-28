@@ -2198,8 +2198,10 @@ test("each static tool tab points at a tab panel the shell has", () => {
   const start = shell.indexOf('id="workspace-tabs"');
   const strip = shell.slice(start, shell.indexOf("</div>", start));
   const tabs = strip.match(/<button[^>]*role="tab"[^>]*>/g) ?? [];
-  // Every release tool except the Journal, which the boot render adds.
-  assert.equal(tabs.length, 8, "the static strip carries the eight static release tools");
+  // Every release tool except the Journal, which the boot render adds; preview
+  // blocks (the Verify tab) are stripped from release builds, so they don't count.
+  const releaseTabs = strip.replace(/<!-- preview -->[\s\S]*?<!-- \/preview -->/g, "").match(/<button[^>]*role="tab"[^>]*>/g) ?? [];
+  assert.equal(releaseTabs.length, 8, "the static strip carries the eight static release tools");
   for (const tab of tabs) {
     const ids = tab.match(/aria-controls="([^"]*)"/)?.[1].split(" ").filter(Boolean) ?? [];
     assert.ok(ids.length, `${tab} names no panel`);

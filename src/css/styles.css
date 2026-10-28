@@ -3238,3 +3238,50 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
   background: color-mix(in oklab, var(--accent) 9%, var(--surface)); color: inherit;
   font: inherit; line-height: 1.2; outline: 0;
 }
+
+/* Verify card (preview): OpenTimestamps result panel. */
+#ots-result:not([hidden]) {
+  display: grid;
+  gap: var(--space-section);
+  margin-top: var(--space-section);
+  min-width: 0;
+}
+#ots-result:not([hidden]) > * { margin: 0; min-width: 0; }
+#ots-result[data-ots-tone="success"] > [data-ots-headline] { color: var(--ok); }
+#ots-result[data-ots-tone="danger"] > [data-ots-headline] { color: var(--danger); }
+#ots-result[data-ots-tone="warning"] > [data-ots-headline] { color: var(--warn); }
+#ots-result[data-ots-tone="neutral"] > [data-ots-headline] { color: var(--fg); }
+.ots-path {
+  display: grid;
+  gap: var(--space-control);
+  min-width: 0;
+}
+/* Every field wraps: a mismatch detail is one long hex run, and one
+   unbreakable child would widen the whole disclosure past the card. */
+.ots-path > * { display: block; min-width: 0; overflow-wrap: anywhere; }
+.ots-outcome {
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--muted);
+}
+.ots-outcome[data-ots-path-outcome="matches"] { color: var(--ok); }
+.ots-outcome[data-ots-path-outcome="mismatch"] { color: var(--danger); }
+.ots-outcome[data-ots-path-outcome="pending"] { color: var(--warn); }
+[data-ots-path-ops],
+[data-ots-path-digest],
+[data-ots-path-attestation] {
+  font-family: var(--mono);
+  font-size: var(--text-data);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+details[data-ots-paths] { min-width: 0; }
+.ots-paths-body {
+  display: grid;
+  gap: var(--space-component);
+  margin-top: var(--space-component);
+  min-width: 0;
+}
+.ots-paths-body > * { margin: 0; min-width: 0; }
+/* Field names are <label class="label">: block, so the label spacing applies. */
+#verify-card label.label { display: block; }
