@@ -563,9 +563,13 @@ cannot overwrite them:
 
 - Text you type or paste. A field's value is text, and the browser's editor,
   undo history, spell checker and on-screen keyboard may keep copies of their
-  own. The Key Station's BIP39 passphrase field is the exception: it shows
-  one bullet per character and never holds the passphrase, which is kept in
-  a form the page can wipe and reaches the seed as bytes. Each key still
+  own. Clear empties a field by assignment, which also drops that field's
+  Undo history in Chrome, Edge and Firefox (measured 2026-10-27); earlier
+  copies can still sit in browser memory until it is reused. The Key
+  Station's BIP39 passphrase field is the exception: it shows one bullet per
+  character and keeps the passphrase out of its value. The passphrase is kept
+  in a form the page can wipe and reaches the seed as bytes. This reduces
+  copies; it does not remove them. Each key still
   arrives as a one-character string, a paste or an input-method word arrives
   as its text once, and showing the passphrase builds it. In
   BIP39-word mode the field holds the text, as other fields do.
