@@ -1,3 +1,4 @@
 dc41f4f3744c4207fc8109736ecdc77455f6b1ee65ae3b515ce9e657dcfbfe97  src/js/entropylab-wasm-b64.js
 42fdc55a1ded21619eec43dbded7f0f744ae8c32f4f95fb4ff55b7d2dd3097d4  src/js/psbt-wasm-b64.js
 2bb4344b2233b2172b7781f84675933bc7e37f317e9272eb11ce68b2119a6c8d  src/js/vanity-wasm-b64.js
+abdde2ec0e41188d1afc37502f14017d99a176e85f3c377a624bdad4592b82a0  src/js/qr-wasm-b64.js

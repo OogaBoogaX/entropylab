@@ -139,7 +139,7 @@ RUN groupmod -n dev ubuntu && usermod -l dev ubuntu && usermod -d /home/dev -m d
 
 # Rust: `default-toolchain none` keeps the base image lean; the exact
 # 1.95.0 toolchain + wasm32 target activate from each crate's
-# rust-toolchain.toml. The dependency graphs of all three crates are
+# rust-toolchain.toml. The dependency graphs of all four crates are
 # fetched into the shared CARGO_HOME so the first `npm run build:wasm`
 # needs no network.
 RUN curl -fsSLO "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
@@ -151,12 +151,15 @@ RUN curl -fsSLO "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x
 COPY entropylab-wasm/ /warm/crate/
 COPY vanity-wasm/ /warm/vanity-crate/
 COPY psbt-wasm/ /warm/psbt-crate/
+COPY qr-wasm/ /warm/qr-crate/
 RUN cd /warm/crate \
     && rustup target add wasm32-unknown-unknown --toolchain 1.95.0 \
     && cargo fetch \
     && cd /warm/vanity-crate \
     && cargo fetch \
     && cd /warm/psbt-crate \
+    && cargo fetch \
+    && cd /warm/qr-crate \
     && cargo fetch
 
 # Warm the shared npm cache (locked dependencies only — the app has no
