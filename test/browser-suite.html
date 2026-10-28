@@ -8347,6 +8347,76 @@
     }
   });
 
+  // A station Clear must leave nothing to Undo. execCommand("delete") keeps
+  // the old text in the field's Undo history; assigning .value = "" drops it
+  // (measured in Chrome, Edge and Firefox, 2026-10-27). Each row is a secret
+  // text field and the Clear button of the station that owns it.
+  await test("a station Clear leaves the secret out of Undo", async () => {
+    const rows = [
+      ["seed", "calc", "wipe", "Seed phrase"],
+      ["key", "calc", "wipe", "Private key"],
+      ["msig-x-0", "msig", "msig-wipe"],
+      ["bip85-key", "bip85", "bip85-wipe"],
+      ["sp-key", "sp", "sp-wipe"],
+      ["psbt-key", "psbt", "psbt-wipe"],
+      ["psbt-pass", "psbt", "psbt-wipe"],
+      ["psbt-text", "psbt", "psbt-wipe"],
+      // Core's add-key field (#core-add-text) appears only after a wallet file
+      // is opened, so it is not reachable here; the module source guard in
+      // test/secret-field-registry.test.mjs pins its Clear instead.
+    ];
+    const skippedFields = [];
+    for (const [fieldId, workspace, clearId, mode] of rows) {
+      document.querySelector(`#workspace-tabs [data-workspace="${workspace}"]`).click();
+      if (mode) {
+        await chooseMode(mode);
+        await until(() => document.getElementById(fieldId), `${mode} input`);
+      }
+      const field = document.getElementById(fieldId);
+      const clear = document.getElementById(clearId);
+      assert(field, `#${fieldId} is missing`);
+      assert(clear, `#${clearId} is missing`);
+      await until(() => field.getClientRects().length > 0, `${workspace} workspace for #${fieldId}`);
+      field.focus();
+      const before = field.value;
+      const inserted = document.execCommand("insertText", false, "abandon test words");
+      if (!inserted || field.value === before) {
+        skippedFields.push(fieldId);
+        continue;
+      }
+      // Positive control: Undo must actually work on this field here, or the
+      // check after Clear would pass without proving anything.
+      document.execCommand("undo");
+      if (field.value !== before) {
+        // Undo did not take the text back out: put the field back as it was,
+        // so the skipped row leaves nothing for later tests.
+        field.value = before;
+        skippedFields.push(fieldId);
+        continue;
+      }
+      field.focus();
+      document.execCommand("insertText", false, "abandon test words");
+      assert(field.value.includes("abandon test words"), `#${fieldId}: the text did not go back in after the Undo control`);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      await until(() => !clear.hidden && !clear.disabled, `${clearId} enabled for #${fieldId}`);
+      clear.click();
+      // A Clear may re-render its form (the Key Station does): the node it
+      // drops must be emptied too, or it keeps the text until garbage collection.
+      assert(field.value === "", `#${fieldId} (${field.isConnected ? "in the page" : "the node Clear dropped"}) still holds ${field.value.length} characters after #${clearId}`);
+      const current = document.getElementById(fieldId);
+      if (current && current !== field) assert(current.value === "", `the new #${fieldId} is not empty after #${clearId}`);
+      const target = current || field;
+      target.focus();
+      document.execCommand("undo");
+      assert(!target.value.includes("abandon test words"), `#${fieldId} got its text back from Undo after #${clearId}`);
+    }
+    // Later tests start on the Key Station.
+    document.querySelector('#workspace-tabs [data-workspace="calc"]').click();
+    if (skippedFields.length === rows.length) {
+      skipped("a station Clear leaves the secret out of Undo", "execCommand(\"insertText\") is unsupported in this browser");
+    }
+  });
+
   // End session wipes what the page holds and asks the browser to close the
   // tab, the one step the residue audit found removes every copy. It ends the
   // page, so it runs after every test that needs one. window.close and the
