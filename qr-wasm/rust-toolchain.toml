@@ -1,0 +1,7 @@
+# Pinned so `npm run build:wasm` builds with the same Rust locally and in CI.
+# Release WASM is compiled inside the pinned dev image (one clang). A host
+# clang build is not those bytes. CI checks two image builds match.
+[toolchain]
+channel = "1.95.0"
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

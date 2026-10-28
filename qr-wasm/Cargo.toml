@@ -1,0 +1,27 @@
+[package]
+name = "qr-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Unlicense"
+description = "QR decoder for EntropyLab's Scan QR (quircs, chosen by qr-eval/RESULTS.md), built by CI and committed as src/js/qr-wasm-b64.js"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Exact versions, lockfile-committed, per CONTRIBUTING.md §2. quircs is the
+# decoder qr-eval picked (#1244): pure Rust, 8-bit luminance in, raw payload
+# bytes out.
+quircs = { version = "=0.10.3", default-features = false }
+
+[dev-dependencies]
+# An encoder independent of the app's uqr, for the native tests only.
+qrcode = { version = "=0.14.1", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

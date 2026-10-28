@@ -156,9 +156,9 @@ test("the uploaded WASM modules land where every downstream job reads them", () 
   const workflow = read(".github/workflows/ci-cd.yml");
   const uploaded = artifactStep(workflowJob(workflow, "build-wasm"), "upload-artifact")
     .match(/path: \|\n((?: {12}\S+\n)+)/)?.[1].trim().split(/\s+/) ?? [];
-  assert.deepEqual(uploaded, ["src/js/entropylab-wasm-b64.js", "src/js/psbt-wasm-b64.js", "src/js/vanity-wasm-b64.js"]);
+  assert.deepEqual(uploaded, ["src/js/entropylab-wasm-b64.js", "src/js/psbt-wasm-b64.js", "src/js/vanity-wasm-b64.js", "src/js/qr-wasm-b64.js"]);
   const entries = artifactEntries(uploaded);
-  assert.deepEqual(entries, ["entropylab-wasm-b64.js", "psbt-wasm-b64.js", "vanity-wasm-b64.js"], "the artifact is rooted at src/js");
+  assert.deepEqual(entries, ["entropylab-wasm-b64.js", "psbt-wasm-b64.js", "vanity-wasm-b64.js", "qr-wasm-b64.js"], "the artifact is rooted at src/js");
   const downloadDir = (name) => artifactStep(workflowJob(workflow, name), "download-artifact").match(/^\s+path: (\S+)$/m)?.[1];
   // The site build consumes the fresh modules in place of the committed ones.
   assert.deepEqual(entries.map((entry) => `${downloadDir("build")}/${entry}`), uploaded);
