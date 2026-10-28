@@ -2235,5 +2235,14 @@
   "Decode an invoice or offer (BOLT11 / BOLT12)": "e8eace3722dab742bac5380b1fa7874892c0536872b92dfe4f90e418737229a0",
   "Paste a BOLT11 invoice or BOLT12 offer": "b18313ea52d1a4c8c8b799e9c4413895279ee104a9d20f8bee82ec2985347ad4",
   "RFC 6979 comparison currently covers SegWit v0 P2WPKH and P2WSH signatures using SIGHASH_ALL, including Bitcoin Core-style low-r grinding; a signature on a script containing OP_CODESEPARATOR is reported as unverifiable instead of compared. Anti-exfil reads a Jade or BitBox02 host nonce plus the signer opening (secp256k1-zkp sign-to-contract), or the AEXB/AEXT messages of one session; QR / sign_psbt Jade does not run it yet. Nonce reuse detection compares r values for the same secp256k1 point, including signatures carried by finalized scriptSig/witness fields, compressed and uncompressed encodings, and recoverable non-strict DER; the same r value claimed under two different public keys is flagged as a mislabeled field rather than skipped. A clean verdict is not issued when a signature cannot be inspected. Inscription detection reads OP_FALSE OP_IF \"ord\" envelopes in tap-leaf scripts and finalized witnesses; it does not number sats. Output ownership is derived from the session key: accounts 0–2, 50 receive + 50 change, all four script types. It does not talk to the chain.": "2993d8fc448dec7b9f1e40c775ebb082fbcbb4fa47a813d89be87ea46aa9337a",
-  "Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session (stages 2 to 4) as hex, exported from your host software. The format is detected automatically.": "51a2b30923aab2695798cbe42ede6878f880d1f98ba599d2cc26dd021dc69dba"
+  "Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session (stages 2 to 4) as hex, exported from your host software. The format is detected automatically.": "51a2b30923aab2695798cbe42ede6878f880d1f98ba599d2cc26dd021dc69dba",
+  "Check an OpenTimestamps proof against a Bitcoin block header you supply. Nothing leaves this page.": "8ad49532d3b91aceac2d21da2cd216beef832e7221905ca1f1401f93cab03ad5",
+  "OpenTimestamps proof": "010dc912c9df5a197f86e5cb964a902cfc90dd3c01e4e3b615b2b35a65a13138",
+  "Choose .ots file": "bfd306fe64c55f1193dd41e7c39b0da7df4f34e484e331bc825f3b432d98ec9b",
+  "or paste the proof as hex": "0e7b549f793c7fe912e828a730b4d3f3116124e073a481cd77261c414ef344c8",
+  "Original file (optional)": "269b7d2869a72c4f0c2dec9e01042d86b3797763401053b2963223e6883796bc",
+  "Choose file": "b09c73d9d3f802101ab763e35a520ed14101c966c87ef6f2130171b121db8b51",
+  "Bitcoin block header (80 bytes, hex)": "50dafbe8c75705378446d1d8d68535cb4a1ec30c010e0e6d2856952170f4a873",
+  "The header is supplied by you and is not checked against the Bitcoin network.": "92748f5bc09ed36ec153e9397acb77eed02a1ad9320dde73e854dc185cb04f62",
+  "Expected digest (hex)": "4dbd1ccb51bba9b1f6268184c9d80b45c4f5c37931888340669d87def29a2fb0"
 }

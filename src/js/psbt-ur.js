@@ -144,7 +144,7 @@ export function hodlUrPartCbor(seqNum, seqLen, messageLen, checksum, data) {
 
 // The inverse: strict parse of the part structure, or null when the payload
 // is anything else (a legacy raw-fragment chunk, garbage).
-function hodlUrPartParse(bytes) {
+export function hodlUrPartParse(bytes) {
   try {
     if (!bytes.length || bytes[0] !== 0x85) return null;
     let offset = 1;
