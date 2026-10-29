@@ -110,35 +110,6 @@ A freshly published proof can still be *pending*. Wait until
 extra step; see [Verifying the download](../README.md#verifying-the-download)
 in the README.
 
-## Coming next: the Bitcoin-signed release message
-
-Starting with the next release, each release also comes with a short
-message signed by the EntropyLab release address. You can check it with
-the wallet you already use, with no GnuPG and no GitHub. The message names
-the version, the source commit and the checksum:
-
-```
-EntropyLab release
-version: <version>
-commit: <source commit>
-entropylab.html sha256: <checksum>
-```
-
-- **Check it** with "Verify message" in Sparrow or Electrum, or with
-  `bitcoin-cli verifymessage <address> <signature> "<message>"` in Bitcoin Core.
-  Then check that the checksum in the message matches yours from step 1.
-- **The address** will be listed here, in the README and in the app. It is a
-  legacy address (starting with `1`), because Bitcoin Core's `verifymessage`
-  only checks that type. SegWit signing (BIP-322) may be added later.
-- **It only ever signs releases.** It never receives coins: a payment to it
-  is not EntropyLab's. Its key stays on a hardware wallet.
-- **Old releases.** The version and commit are signed too, so a real
-  signature from an old release can't pass for a new one. Check that the
-  version is the one you meant to download.
-- **If the address ever changes,** the new address will be announced only in
-  a message signed by the current address. Never trust a new address
-  announced any other way.
-
 ## Already have a verified copy?
 
 You can rebuild the file yourself from the source commit in its footer, and
