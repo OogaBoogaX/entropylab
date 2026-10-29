@@ -537,7 +537,11 @@ test("two sender outputs to one script are counted, not matched as a set (GLM)",
     [[], []],
   ));
   const result = checkPayjoinProposal(orig, prop, { paymentScript: hex(spk(PAYMENT)), maxAdditionalFeeContribution: 1000 });
-  assert.ok(result.problems.some((p) => p.code === "sender_output_missing"));
+  // Two outputs to one script cannot be told apart by script alone, so the
+  // duplicate is refused outright.
+  const problem = result.problems.find((p) => p.code === "original_duplicate_script");
+  assert.ok(problem);
+  assert.equal(problem.output, 2);
   // The sender-spend check sees it too: 60k before, 80k after.
   assert.ok(result.problems.some((p) => p.code === "sender_overpays"));
 });
@@ -552,6 +556,187 @@ test("no contribution means no contribution_not_fee, even when the fee drops (De
   const result = checkPayjoinProposal(original(), prop, options());
   assert.equal(result.problems.some((p) => p.code === "contribution_not_fee"), false);
   assert.ok(result.problems.some((p) => p.code === "fee_decreased"));
+});
+
+// --- Round 3 fixes (#1316) --------------------------------------------------
+
+test("the reviewers' duplicate-script drain is refused (GLM)", () => {
+  // Original: 100000 in, outputs [P 50000, P 10000, X 19000, X 20000].
+  const orig = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0)], [txout(50_000, spk(PAYMENT)), txout(10_000, spk(PAYMENT)), txout(19_000, spk(CHANGE)), txout(20_000, spk(CHANGE))]),
+    [[witnessUtxo(100_000, spk(SENDER_SPK)), finalWitness()]],
+    [[], [], [], []],
+  ));
+  // Proposal: a 41000 receiver input, outputs [P 120000, P 0, X 20000, X 0].
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(120_000, spk(PAYMENT)), txout(0, spk(PAYMENT)), txout(20_000, spk(CHANGE)), txout(0, spk(CHANGE))]),
+    [[], [witnessUtxo(41_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], [], [], []],
+  ));
+  const result = checkPayjoinProposal(orig, prop, { paymentScript: hex(spk(PAYMENT)), maxAdditionalFeeContribution: 1000 });
+  const p = result.problems.find((p) => p.code === "original_duplicate_script" && p.output === 1);
+  assert.ok(p, "the second payment output is flagged");
+  const x = result.problems.find((p) => p.code === "original_duplicate_script" && p.output === 3);
+  assert.ok(x, "the second change output is flagged");
+  assert.equal(result.status, "problems");
+});
+
+test("a fee output split across two outputs is summed (GLM)", () => {
+  // Original: 100000 in, [P 50000, C 40000], fee 10000.
+  // Proposal: [P 80000, C 20000, C 19000], receiver input 30000.
+  // The change script C sums to 39000, so the contribution is 1000.
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(20_000, spk(CHANGE)), txout(19_000, spk(CHANGE))]),
+    [[], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], [], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  assert.equal(result.status, "ok");
+  assert.deepEqual(result.problems, []);
+});
+
+test("a fee output split that over-contributes is refused (GLM)", () => {
+  // Same, but the change sums to 38000: the contribution is 2000 > 1000.
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(20_000, spk(CHANGE)), txout(18_000, spk(CHANGE))]),
+    [[], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], [], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  const problem = result.problems.find((p) => p.code === "contribution_over_max");
+  assert.ok(problem);
+  assert.equal(problem.output, 1);
+});
+
+test("a fee output that is the payment output allows no contribution (GLM)", () => {
+  // feeOutputIndex 0 is the payment output, so it is treated as out of range.
+  const result = checkPayjoinProposal(original(), proposal(), options({ feeOutputIndex: 0 }));
+  const problem = result.problems.find((p) => p.code === "sender_output_decreased");
+  assert.ok(problem);
+  assert.equal(problem.output, 1);
+});
+
+test("a non-witness UTXO that disagrees with the witness claim is refused (GLM)", () => {
+  const prev = prevTx(30_000, spk(RECEIVER_SPK));
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txinRaw(prev.txid, 0)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[], [pair(Uint8Array.of(0x00), prev.bytes), witnessUtxo(31_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  const problem = result.problems.find((p) => p.code === "utxo_mismatch");
+  assert.ok(problem);
+  assert.equal(problem.input, 1);
+  assert.equal(problem.doc, "proposal");
+});
+
+test("a matching non-witness UTXO wins over the witness claim (GLM)", () => {
+  const prev = prevTx(30_000, spk(RECEIVER_SPK));
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txinRaw(prev.txid, 0)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[], [pair(Uint8Array.of(0x00), prev.bytes), witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  assert.equal(result.problems.some((p) => p.code === "utxo_mismatch"), false);
+  // The fee uses the checked 30000, so the contribution is still 1000.
+  assert.equal(result.status, "ok");
+});
+
+test("a non-witness UTXO for another outpoint is refused (GLM)", () => {
+  const prev = prevTx(30_000, spk(RECEIVER_SPK));
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[], [pair(Uint8Array.of(0x00), prev.bytes), witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  const problem = result.problems.find((p) => p.code === "utxo_mismatch");
+  assert.ok(problem);
+  assert.equal(problem.input, 1);
+  assert.equal(problem.doc, "proposal");
+});
+
+test("a field the receiver added to a sender input is refused (GLM)", () => {
+  // 0x05 is PSBT_IN_WITNESS_SCRIPT; the original sender input has none.
+  const witnessScript = pair(Uint8Array.of(0x05), Uint8Array.of(0x51));
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[witnessScript], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  const problem = result.problems.find((p) => p.code === "sender_input_field_added");
+  assert.ok(problem);
+  assert.equal(problem.input, 0);
+});
+
+test("a tap internal key the receiver added to a sender input is refused (GLM)", () => {
+  // 0x17 is PSBT_IN_TAP_INTERNAL_KEY; 32 bytes.
+  const tapInternalKey = pair(Uint8Array.of(0x17), Uint8Array.from(Array(32).fill(0x07)));
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[tapInternalKey], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  const problem = result.problems.find((p) => p.code === "sender_input_field_added");
+  assert.ok(problem);
+  assert.equal(problem.input, 0);
+});
+
+test("the minimum fee rate uses the proposal's real size (GLM)", () => {
+  // Original: 100000 in, [P 50000, C 40000], fee 10000.
+  // Proposal: receiver input 30000, [P 50000, C 40000, R 30000], fee 10000.
+  // base = 4 + 1 + 2*41 + 1 + 3*31 + 4 = 185; witness = 2 + 2 + 2 = 6;
+  // weight = 185*3 + 191 = 746; vsize = ceil(746/4) = 187; +1 sender = 188.
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(50_000, spk(PAYMENT)), txout(40_000, spk(CHANGE)), txout(30_000, spk(RECEIVER_SPK))]),
+    [[], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], [], []],
+  ));
+  const below = checkPayjoinProposal(original(), prop, { paymentScript: hex(spk(PAYMENT)), minFeeRate: 54 });
+  assert.ok(below.problems.some((p) => p.code === "below_min_fee_rate"));
+  const ok = checkPayjoinProposal(original(), prop, { paymentScript: hex(spk(PAYMENT)), minFeeRate: 53 });
+  assert.equal(ok.problems.some((p) => p.code === "below_min_fee_rate"), false);
+  assert.equal(ok.status, "ok");
+});
+
+test("an unknown fee is not silently ok (GLM)", () => {
+  const doc = JSON.parse(JSON.stringify(proposal()));
+  const receiverMap = doc.inputs[1];
+  const witness = receiverMap.find((p) => p.key === "01");
+  delete witness.decoded.value;
+  const result = checkPayjoinProposal(original(), doc, options());
+  assert.ok(result.unchecked.includes("fee_decreased"));
+  assert.notEqual(result.status, "ok");
+});
+
+test("two different non-standard input templates are mixed (GLM)", () => {
+  // 0x51 0x14 + 20 bytes and 0x52 0x14 + 20 bytes are both "other", but
+  // different templates.
+  const senderSpk = Uint8Array.of(0x51, 0x14, ...Array(20).fill(0x01));
+  const receiverSpk = Uint8Array.of(0x52, 0x14, ...Array(20).fill(0x02));
+  const orig = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0)], [txout(50_000, spk(PAYMENT)), txout(40_000, spk(CHANGE))]),
+    [[witnessUtxo(100_000, senderSpk), finalWitness()]],
+    [[], []],
+  ));
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[], [witnessUtxo(30_000, receiverSpk), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(orig, prop, options());
+  assert.ok(result.problems.some((p) => p.code === "mixed_input_type"));
+});
+
+test("an odd-length output script is a bad document (GLM)", () => {
+  const doc = JSON.parse(JSON.stringify(proposal()));
+  doc.tx.outputs[0].scriptPubKey = "001";
+  const result = checkPayjoinProposal(original(), doc, options());
+  assert.equal(result.status, "problems");
+  assert.deepEqual(result.problems, [{ code: "bad_document" }]);
 });
 
 // --- Source check -----------------------------------------------------------
