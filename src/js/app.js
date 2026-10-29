@@ -98,7 +98,8 @@ import { initJournalClearConfirm } from "./journal-clear-confirm.js";
 import { initJournalPageDeleteConfirm } from "./journal-page-delete-confirm.js";
 import { initJournalKeyImportConfirm } from "./journal-key-import-confirm.js";
 import { initJournalReportViewer } from "./journal-report-viewer.js";
-import { NONCE_HISTORY_MAX_TEXT, compareNonceHistory, mergeNonceHistory, nonceHistoryRecord, parseNonceHistory, serializeNonceHistory } from "./nonce-history.js";
+import { NONCE_HISTORY_ENCRYPTED_MAX_TEXT, compareNonceHistory, decryptNonceHistory, encryptNonceHistory, isEncryptedNonceHistory, mergeNonceHistory, nonceHistoryRecord, parseNonceHistory } from "./nonce-history.js";
+import { initNonceHistoryConfirm } from "./nonce-history-confirm.js";
 import { renderSVG as hodlUqrRenderSvg } from "uqr";
 import { BIP39_LANGUAGE_ENGLISH, BIP85_APPS, bip85Path, bip85SecretLength, deriveApplication, parseChildIndex, wipeBip85Result, wipeBytes as hodlWipeBytes } from "./bip85.js";
 import { VANITY_HARDENED, VANITY_MAX_INDEX, VANITY_METHODS, VANITY_SCRIPTS, VanityGrinder, estimateVanityWork, validateVanityIndexRange, validateVanityMnemonic, validateVanityPassphrase, validateVanityPrefix, validateVanityRange, vanityBenchmark, vanityPathIndexes, vanityPathString } from "./vanity.js";
@@ -11859,6 +11860,12 @@ function hodlPsbtNonceHistoryPriorRecords() {
   let current = new Set(hodlPsbtCurrentNonceRecords.map(hodlPsbtNonceRecordIdentity));
   return hodlPsbtNonceHistory.filter((record) => !current.has(hodlPsbtNonceRecordIdentity(record)));
 }
+let hodlNonceHistoryConfirmDialog = null;
+function hodlNonceHistoryConfirm() {
+  if (!hodlNonceHistoryConfirmDialog) hodlNonceHistoryConfirmDialog = initNonceHistoryConfirm();
+  return hodlNonceHistoryConfirmDialog;
+}
+
 function hodlPsbtSyncNonceHistoryControls(message = "", error = false) {
   let count = hodlPsbtNonceHistory.length,
     download = document.getElementById("psbt-nonce-history-download"),
@@ -12171,6 +12178,7 @@ function hodlSetNonceError(spec) {
 function hodlEndPsbtSession() {
   hodlPsbtWipeMem();
   hodlPsbtClearNonceHistory(true);
+  try { hodlNonceHistoryConfirmDialog?.close(); } catch {}
   hodlPsbtRetireAuditUploads();
   hodlPsbtRetireRbfUploads();
   hodlPsbtLast = null;
@@ -12518,21 +12526,47 @@ function hodlInitPsbt() {
     if (!chosen) return;
     (async () => {
       try {
-        if (chosen.size > NONCE_HISTORY_MAX_TEXT) throw new Error("Nonce history file is too large.");
-        let imported = parseNonceHistory(await chosen.text());
-        hodlPsbtNonceHistory = mergeNonceHistory(hodlPsbtNonceHistory, imported);
-        hodlPsbtSyncNonceHistoryControls(hodlTText("Loaded {loaded} nonce history record(s); {total} record(s) are now in memory.", { loaded: imported.length, total: hodlPsbtNonceHistory.length }));
-        hodlPsbtRenderNonceHistoryComparison();
+        if (chosen.size > NONCE_HISTORY_ENCRYPTED_MAX_TEXT) throw new Error("Nonce history file is too large.");
+        const text = await chosen.text();
+        if (isEncryptedNonceHistory(text)) {
+          const passphrase = await hodlNonceHistoryConfirm().open({ mode: "import", opener: document.getElementById("psbt-nonce-history-upload") });
+          if (passphrase === null) return;
+          let imported;
+          try {
+            imported = await decryptNonceHistory(text, passphrase);
+          } catch (exception) {
+            if (exception?.code === "NONCE_HISTORY_WRONG_KEY") {
+              hodlPsbtSyncNonceHistoryControls(hodlTText("Nonce history was not loaded: the passphrase is wrong, or the file is damaged."), true);
+              return;
+            }
+            if (exception?.code === "NONCE_HISTORY_BAD_FILE") {
+              hodlPsbtSyncNonceHistoryControls(hodlTText("Nonce history was not loaded: {message}", { message: hodlTText("the file is not a valid encrypted nonce history.") }), true);
+              return;
+            }
+            throw exception;
+          }
+          hodlPsbtNonceHistory = mergeNonceHistory(hodlPsbtNonceHistory, imported);
+          hodlPsbtSyncNonceHistoryControls(hodlTText("Loaded {loaded} nonce history record(s); {total} record(s) are now in memory.", { loaded: imported.length, total: hodlPsbtNonceHistory.length }));
+          hodlPsbtRenderNonceHistoryComparison();
+        } else {
+          const imported = parseNonceHistory(text);
+          hodlPsbtNonceHistory = mergeNonceHistory(hodlPsbtNonceHistory, imported);
+          hodlPsbtSyncNonceHistoryControls(hodlTText("Loaded {loaded} nonce history record(s); {total} record(s) are now in memory.", { loaded: imported.length, total: hodlPsbtNonceHistory.length }) + hodlTText(" This file was not encrypted: download the history again to save an encrypted copy, and delete the plain file."), true);
+          hodlPsbtRenderNonceHistoryComparison();
+        }
       } catch (exception) {
         hodlPsbtSyncNonceHistoryControls(hodlTText("Nonce history was not loaded: {message}", { message: exception.message || String(exception) }), true);
       }
     })();
   });
-  document.getElementById("psbt-nonce-history-download").onclick = () => {
+  document.getElementById("psbt-nonce-history-download").onclick = async () => {
     try {
       if (!hodlPsbtNonceHistory.length) throw new Error("There is no nonce history to download.");
-      hodlDownloadBytes(new TextEncoder().encode(serializeNonceHistory(hodlPsbtNonceHistory)), "entropylab-nonce-history.json");
-      hodlPsbtSyncNonceHistoryControls(hodlTText("Downloaded {count} nonce history record(s).", { count: hodlPsbtNonceHistory.length }));
+      const passphrase = await hodlNonceHistoryConfirm().open({ mode: "download", opener: document.getElementById("psbt-nonce-history-download") });
+      if (passphrase === null) return;
+      const text = await encryptNonceHistory(hodlPsbtNonceHistory, passphrase);
+      hodlDownloadBytes(new TextEncoder().encode(text), "entropylab-nonce-history.json");
+      hodlPsbtSyncNonceHistoryControls(hodlTText("Downloaded {count} nonce history record(s).", { count: hodlPsbtNonceHistory.length }) + hodlTText(" The file is encrypted."));
     } catch (exception) {
       hodlPsbtSyncNonceHistoryControls(hodlTText("Nonce history was not downloaded: {message}", { message: exception.message || String(exception) }), true);
     }

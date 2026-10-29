@@ -626,6 +626,7 @@ export const JOURNAL_MAX_TEXT_LENGTH = 1024 * 1024;
 // UTF-8 expansion and the hex envelope can exhaust that cap sooner.
 export const JOURNAL_BACKUP_MAX_TEXT_LENGTH = 2 * 1024 * 1024;
 export const JOURNAL_SALT_PREFIX = "entropylab-journal-salt-v1:";
+export const NONCE_HISTORY_SALT_PREFIX = "entropylab-nonce-history-salt-v1:";
 export const IV_BYTES = 12;
 export const METHODS = Object.freeze(["dice", "coin", "hex", "brain", "seed", "cards"]);
 const JOURNAL_EXPORT_KINDS = new Set(["notebook", "key-manager", "session-state", "session-log"]);
@@ -733,10 +734,10 @@ function requireSubtle() {
 // generated: the journal file stays a pure function of what the user typed.
 // Salts still differ between passwords, so no precomputed table can be shared
 // from one password to the next.
-async function deriveMasterBits(password, iterations) {
+async function deriveMasterBits(password, iterations, saltPrefix = JOURNAL_SALT_PREFIX) {
   const subtle = requireSubtle();
   const ikm = encoder.encode(password);
-  const saltInput = encoder.encode(JOURNAL_SALT_PREFIX + password);
+  const saltInput = encoder.encode(saltPrefix + password);
   let baseKey;
   try {
     const salt = new Uint8Array(await subtle.digest("SHA-256", saltInput));
@@ -765,6 +766,30 @@ export async function deriveJournalKeys(password, iterations = JOURNAL_ITERATION
     const encKey = await subtle.importKey("raw", master.subarray(0, 32), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
     const ivKey = await subtle.importKey("raw", master.subarray(32), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
     return { encKey, ivKey, iterations, passwordProtected: password.length > 0 };
+  } finally {
+    wipeBytes(master);
+  }
+}
+
+// The nonce history file uses the Journal's construction under its own salt
+// prefix, so its key never equals a Journal key. The salt comes from the
+// passphrase, not from randomness (EntropyLab never calls a random-number
+// generator), so the same passphrase gives the same key in every file and for
+// every user: an attacker can grind common passphrases once for all files, and
+// the same history under the same passphrase encrypts to the same file. That is
+// the deliberate price of not trusting a random-number generator. Use a long,
+// unique passphrase.
+export async function deriveNonceHistoryKeys(passphrase, iterations = JOURNAL_ITERATIONS) {
+  if (typeof passphrase !== "string" || !passphrase.length) throw new Error("Nonce history passphrase must be text.");
+  if (!Number.isInteger(iterations) || iterations < JOURNAL_MIN_ITERATIONS || iterations > JOURNAL_MAX_ITERATIONS) {
+    throw new Error("This nonce history file uses an unsupported key-derivation cost.");
+  }
+  const subtle = requireSubtle();
+  const master = await deriveMasterBits(passphrase, iterations, NONCE_HISTORY_SALT_PREFIX);
+  try {
+    const encKey = await subtle.importKey("raw", master.subarray(0, 32), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+    const ivKey = await subtle.importKey("raw", master.subarray(32), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    return { encKey, ivKey, iterations, domain: "nonce-history" };
   } finally {
     wipeBytes(master);
   }
@@ -1109,6 +1134,21 @@ function parseBackup(value) {
 // different plaintexts share an IV only on an HMAC collision. No randomness
 // is generated, matching the rest of EntropyLab.
 async function sealPlainText(plainText, keys) {
+  const { iv, ciphertext } = await sealBytesWithKeys(plainText, keys);
+  const file = encodeFile({ iv, ciphertext, iterations: keys.iterations });
+  // parseFile caps the text it is handed, and every download writes
+  // JSON.stringify(file, null, 2) + "\n": a plaintext under the cap can
+  // still grow past the file cap through UTF-8 expansion and hex coding.
+  // Refuse here so a save never produces a file the reader rejects.
+  if (JSON.stringify(file, null, 2).length + 1 > JOURNAL_MAX_FILE_LENGTH) {
+    throw new Error("The journal is too large to save as one file.");
+  }
+  return file;
+}
+
+// Shared with nonce-history.js, which seals under its own keys
+// (deriveNonceHistoryKeys).
+export async function sealBytesWithKeys(plainText, keys) {
   if (!keys?.encKey || !keys?.ivKey) throw new Error("Unlock the journal before saving.");
   const subtle = requireSubtle();
   const plain = encoder.encode(plainText);
@@ -1117,20 +1157,30 @@ async function sealPlainText(plainText, keys) {
     try {
       const iv = tag.slice(0, IV_BYTES);
       const ciphertext = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv }, keys.encKey, plain));
-      const file = encodeFile({ iv, ciphertext, iterations: keys.iterations });
-      // parseFile caps the text it is handed, and every download writes
-      // JSON.stringify(file, null, 2) + "\n": a plaintext under the cap can
-      // still grow past the file cap through UTF-8 expansion and hex coding.
-      // Refuse here so a save never produces a file the reader rejects.
-      if (JSON.stringify(file, null, 2).length + 1 > JOURNAL_MAX_FILE_LENGTH) {
-        throw new Error("The journal is too large to save as one file.");
-      }
-      return file;
+      return { iv, ciphertext };
     } finally {
       wipeBytes(tag);
     }
   } finally {
     wipeBytes(plain);
+  }
+}
+
+export async function openBytesWithKeys({ iv, ciphertext }, keys) {
+  if (!keys?.encKey || !keys?.ivKey) throw new Error("Unlock the journal before saving.");
+  const subtle = requireSubtle();
+  let plainBytes;
+  try {
+    plainBytes = new Uint8Array(await subtle.decrypt({ name: "AES-GCM", iv }, keys.encKey, ciphertext));
+  } catch {
+    const error = new Error("NONCE_HISTORY_WRONG_KEY");
+    error.code = "NONCE_HISTORY_WRONG_KEY";
+    throw error;
+  }
+  try {
+    return decoder.decode(plainBytes);
+  } finally {
+    wipeBytes(plainBytes);
   }
 }
 
