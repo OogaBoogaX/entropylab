@@ -2314,5 +2314,7 @@
   "Turn off secure entry?": "Desativar entrada segura?",
   "Converting puts the words back into standard text fields, which creates text copies. Either choice applies to every key in this session.": "Converter devolve as palavras para campos de texto padrão, o que cria cópias de texto. Qualquer escolha se aplica a cada chave nesta sessão.",
   "Convert entries to standard text": "Converter entradas para texto padrão",
-  "Clear entries and turn off": "Limpar entradas e desativar"
+  "Clear entries and turn off": "Limpar entradas e desativar",
+  "Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again.": "O Diário ainda não pode fazer backup de palavras inseridas com Entrada Segura. Desative a Entrada Segura e converta-as em texto, ou limpe essas chaves, e tente novamente.",
+  "This key has words entered with Secure entry, which Journal cannot keep yet. Turn Secure entry off or clear the key first.": "Esta chave tem palavras inseridas com Entrada Segura, que o Diário ainda não pode manter. Desative a Entrada Segura ou limpe a chave primeiro."
 }
