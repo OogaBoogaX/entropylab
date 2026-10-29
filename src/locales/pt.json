@@ -2304,5 +2304,15 @@
   "BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.": "BIP-47 precisa de uma chave privada raiz BIP32 (profundidade 0), não de um xprv de conta.",
   "Derive a key in Key Station first, then return to the BIP-47 station.": "Derive uma chave na Key Station primeiro, depois retorne à estação BIP-47.",
   "BIP-47 needs a seed or root xprv. Account-level and single keys cannot derive m/47'.": "BIP-47 precisa de uma semente ou xprv raiz. Chaves de nível de conta e individuais não podem derivar m/47'.",
-  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "Escolha uma chave existente compatível, ou insira uma semente BIP39 ou xprv raiz."
+  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "Escolha uma chave existente compatível, ou insira uma semente BIP39 ou xprv raiz.",
+  "Turn on secure entry?": "Ativar entrada segura?",
+  "{name} already has words in the text field. Turning this on cannot remove copies already created.": "{name} já tem palavras no campo de texto. Ativar isso não pode remover cópias já criadas.",
+  "These keys already have words in the text field. Turning this on cannot remove copies already created.": "Estas chaves já têm palavras no campo de texto. Ativar isso não pode remover cópias já criadas.",
+  "Keep current entry": "Manter entrada atual",
+  "Clear and start again": "Limpar e começar de novo",
+  "Some of these words are not on the BIP39 English list, so they cannot be kept.": "Algumas destas palavras não estão na lista BIP39 em inglês, portanto não podem ser mantidas.",
+  "Turn off secure entry?": "Desativar entrada segura?",
+  "Converting puts the words back into standard text fields, which creates text copies. Either choice applies to every key in this session.": "Converter devolve as palavras para campos de texto padrão, o que cria cópias de texto. Qualquer escolha se aplica a cada chave nesta sessão.",
+  "Convert entries to standard text": "Converter entradas para texto padrão",
+  "Clear entries and turn off": "Limpar entradas e desativar"
 }

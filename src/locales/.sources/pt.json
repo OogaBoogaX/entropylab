@@ -2304,5 +2304,15 @@
   "BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.": "2bd36ca041ee027038343d8b5a08198546826f751c80ec2f016fc419d68d9f99",
   "Derive a key in Key Station first, then return to the BIP-47 station.": "1cdff182708ffde5b9a4129e125f9aa591f2f8a875377cefd94d1607a07a2242",
   "BIP-47 needs a seed or root xprv. Account-level and single keys cannot derive m/47'.": "a348754593f3881bea0a81b88c2a191c15a8dd9bc0f38596339b4334da1420c7",
-  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "5a5a6146e166500e477f1d8a7d31585340fc57da4f616f339493fcde60145a30"
+  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "5a5a6146e166500e477f1d8a7d31585340fc57da4f616f339493fcde60145a30",
+  "Turn on secure entry?": "c84577fdb088d95b96cd94d77f5540e8a65884f0c91d6159956b40257cc05d33",
+  "{name} already has words in the text field. Turning this on cannot remove copies already created.": "5e75876fb7b3d50f95ee3f4dc4335f732e98d07cffc308f7db9128b552f20eea",
+  "These keys already have words in the text field. Turning this on cannot remove copies already created.": "fcae81a38dc02adf0cf0bdcf7d51cdeeba562e865f2681f02dcad9b9992751fe",
+  "Keep current entry": "5132949583fe248b20b2a3b47125880f0ce8323ad9478ba1d2f9846c920c5bb2",
+  "Clear and start again": "e7a1daef2cf153a01c3258856cea191d3721f4201fab35a583d64060b35aacc2",
+  "Some of these words are not on the BIP39 English list, so they cannot be kept.": "b744e2b595157e81f680952e7a27a35359c2518a91d7c28b791bb32945e9af97",
+  "Turn off secure entry?": "8e86e55b0fc11fa8e03a921857750cbe794ee1cb78889b10c67289d1134607cc",
+  "Converting puts the words back into standard text fields, which creates text copies. Either choice applies to every key in this session.": "39c42fc5f18e45bfbb44ac1e1c568fcb752a3d3615ff72cdca4f16744b326d71",
+  "Convert entries to standard text": "c3524bf2f09ebd07c3d853396f7933c46caf2efbe64d8da9b59139a3701db1b1",
+  "Clear entries and turn off": "41a9b058dfa8e37e5045334abebf79d6ac62dfea0e1f820eb5c3719c60c61f16"
 }
