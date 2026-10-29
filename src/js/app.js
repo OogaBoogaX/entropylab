@@ -12091,7 +12091,11 @@ function hodlDownloadBytes(bytes, name) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+// Bumped whenever the history is emptied (Clear, End Session): an import still
+// reading or decrypting its file then drops its records instead of refilling it.
+var hodlPsbtNonceHistoryGeneration = 0;
 function hodlPsbtClearNonceHistory(all = false) {
+  hodlPsbtNonceHistoryGeneration += 1;
   hodlPsbtNonceHistory = [];
   if (all) hodlPsbtResetNonceInspection();
   hodlPsbtSyncNonceHistoryControls();
@@ -12524,6 +12528,7 @@ function hodlInitPsbt() {
     const chosen = historyFile.files?.[0];
     historyFile.value = "";
     if (!chosen) return;
+    const generation = hodlPsbtNonceHistoryGeneration;
     (async () => {
       try {
         if (chosen.size > NONCE_HISTORY_ENCRYPTED_MAX_TEXT) throw new Error("Nonce history file is too large.");
@@ -12545,11 +12550,13 @@ function hodlInitPsbt() {
             }
             throw exception;
           }
+          if (generation !== hodlPsbtNonceHistoryGeneration) return;
           hodlPsbtNonceHistory = mergeNonceHistory(hodlPsbtNonceHistory, imported);
           hodlPsbtSyncNonceHistoryControls(hodlTText("Loaded {loaded} nonce history record(s); {total} record(s) are now in memory.", { loaded: imported.length, total: hodlPsbtNonceHistory.length }));
           hodlPsbtRenderNonceHistoryComparison();
         } else {
           const imported = parseNonceHistory(text);
+          if (generation !== hodlPsbtNonceHistoryGeneration) return;
           hodlPsbtNonceHistory = mergeNonceHistory(hodlPsbtNonceHistory, imported);
           hodlPsbtSyncNonceHistoryControls(hodlTText("Loaded {loaded} nonce history record(s); {total} record(s) are now in memory.", { loaded: imported.length, total: hodlPsbtNonceHistory.length }) + hodlTText(" This file was not encrypted: download the history again to save an encrypted copy, and delete the plain file."), true);
           hodlPsbtRenderNonceHistoryComparison();

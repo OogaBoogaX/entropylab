@@ -1,7 +1,6 @@
 import { sha256 } from "./hashes.js";
 import {
-  JOURNAL_MAX_ITERATIONS,
-  JOURNAL_MIN_ITERATIONS,
+  JOURNAL_ITERATIONS,
   deriveNonceHistoryKeys,
   openBytesWithKeys,
   sealBytesWithKeys,
@@ -246,7 +245,9 @@ export async function decryptNonceHistory(text, passphrase) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw codedError("NONCE_HISTORY_BAD_FILE");
   if (parsed.format !== NONCE_HISTORY_ENCRYPTED_FORMAT || parsed.version !== NONCE_HISTORY_ENCRYPTED_VERSION) throw codedError("NONCE_HISTORY_BAD_FILE");
   if (parsed.kdf !== "PBKDF2-SHA-256" || parsed.cipher !== "AES-256-GCM") throw codedError("NONCE_HISTORY_BAD_FILE");
-  if (!Number.isInteger(parsed.iterations) || parsed.iterations < JOURNAL_MIN_ITERATIONS || parsed.iterations > JOURNAL_MAX_ITERATIONS) throw codedError("NONCE_HISTORY_BAD_FILE");
+  // Version 1 is always written at JOURNAL_ITERATIONS. A file may not pick its
+  // own cost: a crafted count would stall the page on every attempt.
+  if (parsed.iterations !== JOURNAL_ITERATIONS) throw codedError("NONCE_HISTORY_BAD_FILE");
   let iv, ciphertext;
   try {
     iv = fromHex(parsed.iv);

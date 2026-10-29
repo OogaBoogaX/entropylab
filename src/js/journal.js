@@ -1167,7 +1167,7 @@ export async function sealBytesWithKeys(plainText, keys) {
 }
 
 export async function openBytesWithKeys({ iv, ciphertext }, keys) {
-  if (!keys?.encKey || !keys?.ivKey) throw new Error("Unlock the journal before saving.");
+  if (!keys?.encKey || !keys?.ivKey) throw new Error("Derive the keys before opening the file.");
   const subtle = requireSubtle();
   let plainBytes;
   try {

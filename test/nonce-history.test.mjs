@@ -121,8 +121,8 @@ test("an older plain nonce history still parses and is not mistaken for encrypte
 // from the HMAC of the plaintext. This reference is written from that
 // description with node:crypto, not from journal.js, so it pins the shared
 // helper refactor to the same bytes the old sealPlainText produced.
-function referenceSeal(plainText, password, iterations) {
-  const salt = createHash("sha256").update("entropylab-journal-salt-v1:" + password, "utf8").digest();
+function referenceSeal(plainText, password, iterations, prefix = "entropylab-journal-salt-v1:") {
+  const salt = createHash("sha256").update(prefix + password, "utf8").digest();
   const master = pbkdf2Sync(Buffer.from(password, "utf8"), salt, iterations, 64, "sha256");
   const plain = Buffer.from(plainText, "utf8");
   const iv = createHmac("sha256", master.subarray(32)).update(plain).digest().subarray(0, 12);
@@ -137,6 +137,43 @@ test("the Journal seal is unchanged by the shared-helper refactor", async () => 
   const expected = referenceSeal(JSON.stringify({ entropylabJournalExport: 1, kind: "notebook", content: "hello" }), passphrase, JOURNAL_ITERATIONS);
   assert.equal(file.iv, expected.iv);
   assert.equal(file.ciphertext, expected.ciphertext);
+});
+
+test("the encrypted nonce history matches an independent node:crypto reference (GLM)", async () => {
+  // The same construction under the nonce history's own salt prefix, so a
+  // silent change to the format's bytes breaks this test, not saved files.
+  const source = records();
+  const file = JSON.parse(await encryptNonceHistory(source, passphrase));
+  const expected = referenceSeal(serializeNonceHistory(source), passphrase, 600000, "entropylab-nonce-history-salt-v1:");
+  assert.equal(file.iterations, 600000);
+  assert.equal(file.iv, expected.iv);
+  assert.equal(file.ciphertext, expected.ciphertext);
+});
+
+test("the encrypted file holds exactly its seven outer fields (red team N4)", async () => {
+  const file = JSON.parse(await encryptNonceHistory(records(), passphrase));
+  assert.deepEqual(Object.keys(file).sort(), ["cipher", "ciphertext", "format", "iterations", "iv", "kdf", "version"]);
+});
+
+test("a file that picks its own PBKDF2 cost is refused before any derivation (MiniMax)", async () => {
+  const file = JSON.parse(await encryptNonceHistory(records(), passphrase));
+  for (const iterations of [10000000, 600001, 599999, 1]) {
+    await assert.rejects(decryptNonceHistory(JSON.stringify({ ...file, iterations }), passphrase), (error) => error.code === "NONCE_HISTORY_BAD_FILE");
+  }
+});
+
+test("an import that finishes after Clear or End Session merges nothing (GLM)", () => {
+  const app = read("src/js/app.js");
+  const clear = app.slice(app.indexOf("function hodlPsbtClearNonceHistory("), app.indexOf("\n}", app.indexOf("function hodlPsbtClearNonceHistory(")));
+  assert.match(clear, /hodlPsbtNonceHistoryGeneration \+= 1;/);
+  const start = app.indexOf('historyFile.addEventListener("change"');
+  const handler = app.slice(start, app.indexOf('document.getElementById("psbt-nonce-history-download")', start));
+  assert.match(handler, /const generation = hodlPsbtNonceHistoryGeneration;\s*\(async/);
+  const merges = [...handler.matchAll(/hodlPsbtNonceHistory = mergeNonceHistory\(/g)];
+  assert.equal(merges.length, 2);
+  for (const merge of merges) {
+    assert.match(handler.slice(0, merge.index), /if \(generation !== hodlPsbtNonceHistoryGeneration\) return;\s*$/);
+  }
 });
 
 test("End Session empties the nonce history", async () => {
