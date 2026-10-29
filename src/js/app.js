@@ -12179,7 +12179,9 @@ function hodlSetNonceError(spec) {
 }
 // Ending the session is one act wherever it starts: the shared key goes, and
 // so does everything either card holds.
+var hodlNonceQrCapture = null;
 function hodlEndPsbtSession() {
+  hodlNonceQrCapture?.clear();
   hodlPsbtWipeMem();
   hodlPsbtClearNonceHistory(true);
   try { hodlNonceHistoryConfirmDialog?.close(); } catch {}
@@ -12436,6 +12438,21 @@ function hodlSecureEntryBackupRefusal() {
   return new Error(hodlTText("Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again."));
 }
 function hodlInitPsbt() {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    import("./nonce-qr-capture.js").then(async ({ initNonceQrCapture }) => {
+      await psbtWasmReady;
+      hodlNonceQrCapture = initNonceQrCapture({
+        translate: hodlTText,
+        onClear: () => {
+          document.getElementById("psbt-ax-transcript").value = "";
+          hodlNonceLast = null;
+          document.getElementById("nonce-out").innerHTML = "";
+          hodlPsbtResetNonceInspection();
+        }
+      });
+    });
+  }
+
   let go = document.getElementById("psbt-go");
   if (!go) return;
   go.onclick = () => {
@@ -21621,8 +21638,17 @@ function hodlInitEndSession() {
 // change handler, so its view re-renders masked exactly as a click would.
 // Five minutes untouched is long enough to copy a phrase onto paper.
 var hodlRevealIdleMs = 5 * 60 * 1000;
-function hodlConcealPrivateValues() {
+function hodlConcealPrivateValues(options) {
   if (typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  // Plain blur permits copying the opening/PSBT from another window. Other
+  // conceal triggers retire the pasted host reveal, which remains sensitive.
+  if (options?.reason !== "blur") {
+    const transcript = document.getElementById("psbt-ax-transcript");
+    if (transcript) transcript.value = "";
+    const transcriptSection = document.getElementById("nonce-jade-options");
+    if (transcriptSection) transcriptSection.open = false;
+    hodlNonceLast = null;
+  }
   for (let state of [...hodlKeys, ...hodlBip85Children, ...hodlSpAddresses]) state.reveal = false;
   if (hodlSpVerifyMatches) hodlSpVerifyMatches.reveal = false;
   hodlRevealPrivate = hodlBip85Reveal = hodlVanityReveal = hodlJournalReveal = false;

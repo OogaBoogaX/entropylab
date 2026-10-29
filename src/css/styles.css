@@ -3250,6 +3250,21 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
   font: inherit; line-height: 1.2; outline: 0;
 }
 
+/* Camera geometry follows its container; shared tokens supply its spacing. */
+.camera-viewer { position: relative; width: fit-content; max-width: 100%; margin-block: var(--space-component); }
+.camera-preview { display: block; width: auto; height: auto; max-width: 100%; max-height: 50vh; object-fit: contain; }
+.camera-progress-overlay { position: relative; padding: var(--space-control); background: color-mix(in oklab, var(--surface) 85%, transparent); color: var(--fg); font-size: var(--text-note); border-radius: var(--radius-panel); pointer-events: none; }
+.camera-progress-bars { display: flex; flex-wrap: wrap; gap: var(--space-hairline); margin-bottom: var(--space-tight); }
+.camera-progress-bars > span { flex: 1 0 var(--space-tight); height: var(--space-control); background: var(--border); }
+.camera-progress-bars > span[data-filled="true"] { background: var(--ok-bright); }
+
+/* Captured-message indicators use text and state, not colour alone. */
+.capture-stages { display: flex; flex-wrap: wrap; gap: var(--space-control); margin-top: var(--space-component); }
+.capture-stages > span { border: 1px solid var(--border); border-radius: var(--radius-panel); padding: var(--inset-button); font-size: var(--text-label); }
+.capture-stages > span[data-captured="true"] { border-color: var(--ok-bright); background: color-mix(in oklab, var(--ok-bright) 18%, var(--surface)); }
+
+/* The preview camera selector follows disabled-button treatment. */
+#nonce-qr-camera:disabled { color: var(--muted); opacity: .52; cursor: not-allowed; }
 /* Verify card (preview): OpenTimestamps result panel. */
 #ots-result:not([hidden]) {
   display: grid;
