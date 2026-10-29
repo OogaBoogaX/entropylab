@@ -491,7 +491,7 @@ test("after a decode times out, the retiring worker gets the long deadline and a
   decoder.stop();
 });
 
-test("a release build ships neither the QR WASM module nor the QR worker source", () => {
+test("a release build ships the QR decoder for the Nonce Inspector's live observer", () => {
   const out = mkdtempSync(join(tmpdir(), "entropylab-release-"));
   try {
     // CI checks the repository out shallow, where build-commit.mjs refuses to
@@ -504,8 +504,11 @@ test("a release build ships neither the QR WASM module nor the QR worker source"
     // QR_WASM_B64 are renamed, but a slice of the base64 module and the
     // decoder's export name (only the worker body calls qr_decode) are not.
     assert.ok(workerSource.includes("qr_decode"), "the worker fingerprint is in the bundled worker");
-    assert.ok(!page.includes(QR_WASM_B64.slice(4096, 4160)), "the release build carries no QR WASM module");
-    assert.ok(!page.includes("qr_decode"), "the release build carries no QR worker source");
+    // The live anti-exfil observer ships in every build since its unhide
+    // (owner, 2026-10-29), so its decoder does too. The Key Station's
+    // private-key scan stays behind its own preview guard.
+    assert.ok(page.includes(QR_WASM_B64.slice(4096, 4160)), "the release build carries the QR WASM module");
+    assert.ok(page.includes("qr_decode"), "the release build carries the QR worker source");
   } finally {
     rmSync(out, { recursive: true, force: true });
   }

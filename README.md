@@ -637,15 +637,14 @@ through the [computer hardening checklist](docs/Computer_Hardening_Checklist.md)
 
 To build the HTML file yourself, see [Building from source](#building-from-source).
 
-### Local preview: anti-exfil QR observer
+### Anti-exfil QR observer
 
 Unexpected proof-verifier exceptions produce a STOP result and completion clears
 the capture. Oversized QR decode results are skipped so scanning can continue.
 Invalid/conflicting frames discard partial fragments for the current message;
 already completed messages remain available for the same exchange.
 
-Preview builds include an experimental in-memory camera observer in the Nonce
-Inspector. First allow camera access and choose a camera, then scan
+The Nonce Inspector includes an experimental in-memory camera observer. First allow camera access and choose a camera, then scan
 `ur:x-btc-anti-exfil` stages 2/4 on the signer and stage 3 on Sparrow. It checks
 the AEXB proof and the supplied signatures against the embedded PSBT. It never
 signs or broadcasts. Completion clears captured messages before showing a

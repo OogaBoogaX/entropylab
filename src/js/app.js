@@ -12426,20 +12426,18 @@ function hodlSecureEntryBackupRefusal() {
   return new Error(hodlTText("Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again."));
 }
 function hodlInitPsbt() {
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    import("./nonce-qr-capture.js").then(async ({ initNonceQrCapture }) => {
-      await psbtWasmReady;
-      hodlNonceQrCapture = initNonceQrCapture({
-        translate: hodlTText,
-        onClear: () => {
-          document.getElementById("psbt-ax-transcript").value = "";
-          hodlNonceLast = null;
-          document.getElementById("nonce-out").innerHTML = "";
-          hodlPsbtResetNonceInspection();
-        }
-      });
+  import("./nonce-qr-capture.js").then(async ({ initNonceQrCapture }) => {
+    await psbtWasmReady;
+    hodlNonceQrCapture = initNonceQrCapture({
+      translate: hodlTText,
+      onClear: () => {
+        document.getElementById("psbt-ax-transcript").value = "";
+        hodlNonceLast = null;
+        document.getElementById("nonce-out").innerHTML = "";
+        hodlPsbtResetNonceInspection();
+      }
     });
-  }
+  });
 
   let go = document.getElementById("psbt-go");
   if (!go) return;

@@ -1,6 +1,6 @@
 # Local Nonce Inspector QR prototype
 
-Experimental preview-only observer. AI implementation: OpenAI Codex (GPT-6).
+Experimental observer, in every build since its unhide PR. AI implementation: OpenAI Codex (GPT-6).
 Integration base checked 2026-10-29 UTC:
 d0d9841592f27a137bda3773e38dfaa593e6d1a7, including shared-worker PR #1272,
 shared UR collector #1273, worker scrub hardening and Key Station scanner #1281.
@@ -18,8 +18,7 @@ Stop and camera errors reset the discarded assembly's progress indicators too.
 The completion cleanup guard includes the slot-count lookup; if that lookup
 fails, no verified slot count is available and the failure reports zero.
 The `-4` case is defensive API handling, not an observed failure at the current
-1280-by-960 capture limit. Camera-control CSS is scoped to the preview control;
-unused observer CSS still exists in release builds, while observer JS is excluded.
+1280-by-960 capture limit. Camera-control CSS is scoped to the observer control.
 
 1. Allow Camera Access (blue). The permission probe lists cameras, stops its
    tracks, and never decodes/records frames. Browser-prompt focus loss does not
@@ -104,8 +103,8 @@ reusable: decoding after stop creates a fresh shared decoder. Camera cleanup
 continues if decoder retirement throws. Multiple different QR codes
 in one frame are refused; point the camera at one code at a time. The worker's
 4096-byte decoded payload limit is below the transport parser's defensive ceiling.
-The prior decoder has been removed. UR2 notices remain in preview artifacts.
-Normal builds exclude camera decoding. The #1273 integration preserves the
+The prior decoder has been removed. Every build carries the UR2 notice and the
+camera observer. The #1273 integration preserves the
 observer's limits and canonical envelope checks, removes its separate fountain
 assembler, and refuses nonzero fountain padding. Progress counts recovered
 fragments rather than the old assembler's independent equations. Fresh review
