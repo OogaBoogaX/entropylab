@@ -12170,7 +12170,8 @@ function hodlSetNonceError(spec) {
 // so does everything either card holds.
 var hodlNonceQrCapture = null;
 function hodlEndPsbtSession() {
-  hodlNonceQrCapture?.clear();
+  // A camera failure must not skip the wipe below.
+  try { hodlNonceQrCapture?.clear(); } catch {}
   hodlPsbtWipeMem();
   hodlPsbtClearNonceHistory(true);
   hodlPsbtRetireAuditUploads();
