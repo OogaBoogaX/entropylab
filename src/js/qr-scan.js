@@ -5,13 +5,26 @@
 // Security contract: a frame is decoded only inside the terminable worker;
 // the frame and the worker's WASM buffers are zeroed after every decode, and
 // a frame refused here or in the worker is zeroed too; a
-// stale or malformed reply never resolves a decode; stop() scrubs the
-// worker's WASM memory before terminating it.
+// stale or malformed reply never resolves a decode; stop() asks the worker to
+// overwrite its WASM memory and waits for the acknowledgement, up to the
+// decode timeout while a decode is running. A worker that does not answer by
+// then (a hung decode) is terminated without the overwrite, and stop()
+// reports scrubbed: false. Termination frees the memory but does not
+// overwrite it. A failed scrub is not forgotten: a decoder's stop() reports
+// false if any of its workers was cut off unscrubbed, including one retired
+// earlier by the watchdog or an error, and retireQrDecoders() reports false
+// if any worker was, since it last reported.
 const MIN_DIM = 21;
 const MAX_DIM = 4096;
 const MAX_PIXELS = 4_194_304;
 
 const decoders = new Set();
+// Stops whose workers are still scrubbing: a stopped decoder leaves the
+// registry at once, so retireQrDecoders() waits for these too.
+const retiringStops = new Set();
+// A worker terminated without acknowledging its scrub since the last
+// retireQrDecoders() report.
+let unscrubbedSinceReport = false;
 
 const failure = (code) => Object.assign(new Error(code), { code });
 
@@ -42,28 +55,42 @@ export function createQrDecoder({
   let pending = null;
   let nextRun = 1;
   let stoppedFlag = false;
+  let stopPromise = null;
+  let failedScrub = false;
   const stopping = new Set();
 
-  const terminate = (entry) => {
-    clearTimeout(entry.scrubTimer);
+  const terminate = (entry, scrubbed) => {
+    if (!stopping.has(entry)) return;
     stopping.delete(entry);
+    clearTimeout(entry.scrubTimer);
     entry.worker.terminate();
     if (entry.url) URL.revokeObjectURL(entry.url);
+    if (!scrubbed) {
+      failedScrub = true;
+      unscrubbedSinceReport = true;
+    }
+    entry.resolve(scrubbed);
   };
 
   const retire = () => {
     const entry = spawned;
-    if (!entry) return;
+    if (!entry) return null;
     spawned = null;
     stopping.add(entry);
+    const deadline = entry.busy ? Math.max(scrubMs, timeoutMs) : scrubMs;
+    entry.busy = false;
+    entry.retired = new Promise((resolve) => {
+      entry.resolve = resolve;
+    });
     try {
       entry.worker.postMessage({ type: "scrub" });
     } catch {
       // A worker that cannot take the scrub is terminated all the same.
     }
     if (stopping.has(entry)) {
-      entry.scrubTimer = setTimeout(() => terminate(entry), scrubMs);
+      entry.scrubTimer = setTimeout(() => terminate(entry, false), deadline);
     }
+    return entry.retired;
   };
 
   const zeroPayload = (data) => {
@@ -71,6 +98,9 @@ export function createQrDecoder({
   };
 
   const settle = (entry, data) => {
+    // Only the reply to the decode in flight ends it: a stale reply must not
+    // make a busy worker look idle and shorten its scrub deadline.
+    if ((data?.type === "decoded" || data?.type === "error") && data.run === entry.busyRun) entry.busy = false;
     if (entry !== spawned || !pending || data?.run !== pending.run) {
       zeroPayload(data);
       return;
@@ -121,11 +151,11 @@ export function createQrDecoder({
       URL.revokeObjectURL(url);
       throw error;
     }
-    const entry = { worker, url, scrubTimer: null };
+    const entry = { worker, url, scrubTimer: null, busy: false, retired: null, resolve: null };
     worker.onmessage = (event) => {
       const data = event.data;
       if (data?.type === "scrubbed") {
-        if (stopping.has(entry)) terminate(entry);
+        if (stopping.has(entry)) terminate(entry, true);
         return;
       }
       settle(entry, data);
@@ -173,6 +203,8 @@ export function createQrDecoder({
       pending = { run, resolve, reject, timer };
       try {
         entry.worker.postMessage({ type: "decode", run, width, height, gray: gray.buffer }, [gray.buffer]);
+        entry.busy = true;
+        entry.busyRun = run;
       } catch (error) {
         // The transfer failed (a SharedArrayBuffer frame, say), so the frame
         // is still here: zero it.
@@ -185,7 +217,7 @@ export function createQrDecoder({
   };
 
   const stop = () => {
-    if (stoppedFlag) return;
+    if (stopPromise) return stopPromise;
     stoppedFlag = true;
     decoders.delete(decoder);
     if (pending) {
@@ -194,7 +226,15 @@ export function createQrDecoder({
       clearTimeout(timer);
       reject(failure("STOPPED"));
     }
-    retire();
+    const retiring = [...stopping];
+    const fresh = retire();
+    const promises = retiring.map((entry) => entry.retired);
+    if (fresh) promises.push(fresh);
+    stopPromise = Promise.all(promises).then((results) => ({ scrubbed: results.every(Boolean) && !failedScrub }));
+    const settled = stopPromise;
+    retiringStops.add(settled);
+    settled.then(() => retiringStops.delete(settled));
+    return stopPromise;
   };
 
   const decoder = { decode, stop };
@@ -203,5 +243,11 @@ export function createQrDecoder({
 }
 
 export function retireQrDecoders() {
-  for (const decoder of [...decoders]) decoder.stop();
+  const earlier = [...retiringStops];
+  const stops = [...decoders].map((decoder) => decoder.stop());
+  return Promise.all([...earlier, ...stops]).then((results) => {
+    const scrubbed = results.every((result) => result.scrubbed) && !unscrubbedSinceReport;
+    unscrubbedSinceReport = false;
+    return { scrubbed };
+  });
 }
