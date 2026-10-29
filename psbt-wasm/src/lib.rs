@@ -6,7 +6,6 @@
 //!
 //!   psbt_inspect(psbt_ptr, psbt_len, out, out_cap) -> JSON document
 //!   psbt_build(json_ptr, json_len, out, out_cap)  -> PSBT bytes
-//!   psbt_payjoin_compare(json_ptr, json_len, out, out_cap) -> JSON report
 //!
 //! Both use a two-call convention: a null `out` returns the required capacity,
 //! a second call with a big enough buffer writes the payload and returns its
@@ -222,25 +221,6 @@ pub unsafe extern "C" fn psbt_build(
             wipe_vec(&mut bytes);
             written
         }
-        Err(message) => set_error(message),
-    }
-}
-
-/// Compares an Original PSBT with a Payjoin Proposal. Input is the JSON
-/// request `{"original": hex, "proposal": hex, "paymentScript": hex|null}` at
-/// `in_ptr`/`in_len`; output is the report. Two-call convention; negative
-/// return + psbt_last_error on failure.
-#[no_mangle]
-pub unsafe extern "C" fn psbt_payjoin_compare(
-    in_ptr: *const u8,
-    in_len: usize,
-    out: *mut u8,
-    out_cap: usize,
-) -> i32 {
-    clear_error();
-    let input = std::slice::from_raw_parts(in_ptr, in_len);
-    match payjoin::compare_request(input) {
-        Ok(json) => write_out(json.as_bytes(), out, out_cap),
         Err(message) => set_error(message),
     }
 }
