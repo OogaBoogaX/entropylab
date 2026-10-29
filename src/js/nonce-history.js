@@ -243,6 +243,10 @@ export async function decryptNonceHistory(text, passphrase) {
     throw codedError("NONCE_HISTORY_BAD_FILE");
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw codedError("NONCE_HISTORY_BAD_FILE");
+  // Exactly the seven fields the writer emits, as the plain reader refuses
+  // unknown fields too.
+  const fields = ["cipher", "ciphertext", "format", "iterations", "iv", "kdf", "version"];
+  if (Object.keys(parsed).sort().join() !== fields.join()) throw codedError("NONCE_HISTORY_BAD_FILE");
   if (parsed.format !== NONCE_HISTORY_ENCRYPTED_FORMAT || parsed.version !== NONCE_HISTORY_ENCRYPTED_VERSION) throw codedError("NONCE_HISTORY_BAD_FILE");
   if (parsed.kdf !== "PBKDF2-SHA-256" || parsed.cipher !== "AES-256-GCM") throw codedError("NONCE_HISTORY_BAD_FILE");
   // Version 1 is always written at JOURNAL_ITERATIONS. A file may not pick its

@@ -12587,11 +12587,12 @@ function hodlInitPsbt() {
   document.getElementById("psbt-nonce-history-download").onclick = async () => {
     try {
       if (!hodlPsbtNonceHistory.length) throw new Error("There is no nonce history to download.");
-      const passphrase = await hodlNonceHistoryConfirm().open({ mode: "download", opener: document.getElementById("psbt-nonce-history-download") });
-      if (passphrase === null) return;
-      // The records as confirmed: Clear or End Session during the encryption
-      // cancels the download rather than saving what was just wiped.
+      // The records as they were when Download was clicked: Clear or End
+      // Session during the dialog or the encryption cancels the download
+      // rather than saving what was just wiped.
       const records = hodlPsbtNonceHistory, generation = hodlPsbtNonceHistoryGeneration;
+      const passphrase = await hodlNonceHistoryConfirm().open({ mode: "download", opener: document.getElementById("psbt-nonce-history-download") });
+      if (passphrase === null || generation !== hodlPsbtNonceHistoryGeneration) return;
       const text = await encryptNonceHistory(records, passphrase);
       if (generation !== hodlPsbtNonceHistoryGeneration) return;
       hodlDownloadBytes(new TextEncoder().encode(text), "entropylab-nonce-history.json");

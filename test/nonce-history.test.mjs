@@ -155,6 +155,13 @@ test("the encrypted file holds exactly its seven outer fields (red team N4)", as
   assert.deepEqual(Object.keys(file).sort(), ["cipher", "ciphertext", "format", "iterations", "iv", "kdf", "version"]);
 });
 
+test("an encrypted file with an extra outer field is refused (GLM)", async () => {
+  const file = JSON.parse(await encryptNonceHistory(records(), passphrase));
+  await assert.rejects(decryptNonceHistory(JSON.stringify({ ...file, extra: 1 }), passphrase), (error) => error.code === "NONCE_HISTORY_BAD_FILE");
+  const { kdf, ...missing } = file;
+  await assert.rejects(decryptNonceHistory(JSON.stringify(missing), passphrase), (error) => error.code === "NONCE_HISTORY_BAD_FILE");
+});
+
 test("a file that picks its own PBKDF2 cost is refused before any derivation (MiniMax)", async () => {
   const file = JSON.parse(await encryptNonceHistory(records(), passphrase));
   for (const iterations of [10000000, 600001, 599999, 1]) {
@@ -176,10 +183,13 @@ test("an import that finishes after Clear or End Session merges nothing (GLM)", 
   }
   // No passphrase dialog for a file that finished reading after the wipe (Kimi).
   assert.match(handler, /const text = await chosen\.text\(\);\s*if \(generation !== hodlPsbtNonceHistoryGeneration\) return;/);
-  // A download confirmed before the wipe is not saved after it (GLM).
+  // A download is not saved after a wipe during its dialog or its encryption
+  // (GLM, MiniMax): the guard is taken before the dialog opens.
   const downloadStart = app.indexOf('document.getElementById("psbt-nonce-history-download").onclick');
   const download = app.slice(downloadStart, app.indexOf('document.getElementById("psbt-nonce-history-clear")', downloadStart));
   assert.match(download, /if \(generation !== hodlPsbtNonceHistoryGeneration\) return;\s*hodlDownloadBytes\(/);
+  assert.ok(download.indexOf("generation = hodlPsbtNonceHistoryGeneration") < download.indexOf("hodlNonceHistoryConfirm().open("), "the guard is taken before the dialog");
+  assert.match(download, /if \(passphrase === null \|\| generation !== hodlPsbtNonceHistoryGeneration\) return;/);
   assert.match(download, /\{ count: records\.length \}/);
 });
 
