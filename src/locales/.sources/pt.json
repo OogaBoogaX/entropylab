@@ -2298,5 +2298,11 @@
   "Raw transaction (hex)": "71414ae061226d000ff8703d75ace8eec4d5ea81f8def6cfa4e4a78f82dc53cc",
   "Manual override (unverified)": "60df265593c3b1299d4357a1a53df8ee883e8bca70710820bdd3cb3c6ebfdd99",
   "Input that holds the public key": "5edf01600f326c24babe3b457538e1d6c2b49ea23c87f6badf4a91bf0c1bd706",
-  "Public key of that input (hex)": "a2c8f42be8370ca73373f46c53f5c534d7f56f5af5667ce7189aa6632a7aa36d"
+  "Public key of that input (hex)": "a2c8f42be8370ca73373f46c53f5c534d7f56f5af5667ce7189aa6632a7aa36d",
+  "Paste a BIP39 seed phrase or a BIP32 root xprv/tprv.": "f90457c7573ef11241b531f4d710b16edc0a75d010193de6f9e4b1db85a38e8a",
+  "Watch-only extended keys cannot derive BIP-47 payment codes.": "19f70bea9f5e86ab6e9d8430071ae099d04b8520b16929311f2e8b5743caca05",
+  "BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.": "2bd36ca041ee027038343d8b5a08198546826f751c80ec2f016fc419d68d9f99",
+  "Derive a key in Key Station first, then return to the BIP-47 station.": "1cdff182708ffde5b9a4129e125f9aa591f2f8a875377cefd94d1607a07a2242",
+  "BIP-47 needs a seed or root xprv. Account-level and single keys cannot derive m/47'.": "a348754593f3881bea0a81b88c2a191c15a8dd9bc0f38596339b4334da1420c7",
+  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "5a5a6146e166500e477f1d8a7d31585340fc57da4f616f339493fcde60145a30"
 }
