@@ -173,6 +173,59 @@ test("an extended key in the seed field stays text and opens no dialog (MiniMax)
   }
 });
 
+test("a phrase longer than the key's length stays text and opens no dialog (MiniMax)", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    let dialogCalls = 0;
+    const session = createSecureSession();
+    // 24 valid words, but this key's length is 12.
+    const phrase = Array(23).fill("abandon").concat("art").join(" ");
+    const keys = [{ id: 1, seedMethod: "words", targetWords: 12, fields: { seed: phrase }, globalSync: false }];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => { dialogCalls++; return { open: async () => "clear" }; },
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys(keys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(dialogCalls, 0);
+    assert.equal(keys[0].fields.seed, phrase);
+    assert.equal(mod.hodlSecureEntryOn, true);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("End Session redraws a seed form that showed the picker (GLM)", () => {
+  const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
+  const end = app.indexOf("try { hodlSecureEntryEnd(); } catch {}");
+  assert.ok(end > 0);
+  assert.match(app.slice(end, end + 300), /try \{ if \(document\.getElementById\("seed-picker-host"\)\) hodlSetMode\(hodlKeyMode\); \} catch \{\}/);
+});
+
+test("the seed-length dropdown is told to resync only when something changed (MiniMax)", () => {
+  const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
+  const start = app.indexOf("function hodlUpdateSeedLengthControl(");
+  const body = app.slice(start, app.indexOf("\nfunction ", start + 1));
+  assert.equal(body.match(/dispatchEvent\(new Event\("entropylab:sync-select"\)\)/g)?.length, 1);
+  assert.match(body, /if \(changed\) hodlSeedLengthSelectEl\.dispatchEvent/);
+});
+
 test("a redraw that throws after the commit leaves the switch on with the session (red team)", async () => {
   const previous = globalThis.document;
   globalThis.document = { getElementById: () => null };

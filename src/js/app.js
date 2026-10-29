@@ -6755,16 +6755,25 @@ function hodlUpdateSeedLengthControl() {
   if (!section) return;
   let config = hodlSeedConfig();
   section.hidden = hodlKeyMode === "key";
-  // Sync, not change: change would come straight back through onchange.
+  // Sync, not change: change would come straight back through onchange. The
+  // custom dropdown is told only when the value or a lock actually changed.
+  let changed = false;
   if (hodlSeedLengthSelectEl.value !== String(config.words)) {
     hodlSeedLengthSelectEl.value = String(config.words);
+    changed = true;
   }
   // Locked while the key holds secure words, in any method: a length changed
   // under Word numbers or another mode would no longer match the entry.
   let locked = hodlSecureEntryOn && hodlSecureEntryHasData(hodlSecureKeyOf(hodlKeys[hodlActiveKey]));
   let lockNote = locked ? " " + hodlTText("To change the length, undo or clear the words entered so far.") : "";
-  for (const option of hodlSeedLengthSelectEl.options) option.disabled = locked && option.value !== String(config.words);
-  hodlSeedLengthSelectEl.dispatchEvent(new Event("entropylab:sync-select"));
+  for (const option of hodlSeedLengthSelectEl.options) {
+    let disabled = locked && option.value !== String(config.words);
+    if (option.disabled !== disabled) {
+      option.disabled = disabled;
+      changed = true;
+    }
+  }
+  if (changed) hodlSeedLengthSelectEl.dispatchEvent(new Event("entropylab:sync-select"));
   let help = document.getElementById("seed-length-help");
   if (!help) return;
   if (hodlKeyMode === "hex") {
@@ -12414,7 +12423,9 @@ async function hodlSecureEntryToggle(wanted) {
         if (hodlNormalizeSeedMethod(state.seedMethod) !== "words") continue;
         let phrase = String(state.fields?.seed ?? "").trim();
         // An extended key in the seed field is not words: it stays text.
-        if (!phrase || hodlLooksExtendedKey(phrase)) continue;
+        // A phrase longer than the key's length cannot be its words (the text
+        // path refuses it too): it stays text, with nothing to clear.
+        if (!phrase || hodlLooksExtendedKey(phrase) || phrase.split(/\s+/).length > (Number(state.targetWords) || 24)) continue;
         keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { seed: { phrase: state.fields.seed, length: Number(state.targetWords) || 24 } } });
         names.push(state.name);
         states.push(state);
@@ -22034,6 +22045,8 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlBindKeyScan(); } catch {}
     try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
     try { hodlSecureEntryEnd(); } catch {}
+    // The seed form showed the picker: redraw it as the standard field.
+    try { if (document.getElementById("seed-picker-host")) hodlSetMode(hodlKeyMode); } catch {}
     hodlSyncWorkspaceCounts();
   };
   addEventListener("pagehide", clearSecretFields);
