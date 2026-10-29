@@ -2304,5 +2304,15 @@
   "BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.": "BIP-47 nécessite une clé privée racine BIP32 (profondeur 0), pas une xprv de compte.",
   "Derive a key in Key Station first, then return to the BIP-47 station.": "Dérivez une clé dans Key Station d'abord, puis revenez à la station BIP-47.",
   "BIP-47 needs a seed or root xprv. Account-level and single keys cannot derive m/47'.": "BIP-47 nécessite une graine ou une xprv racine. Les clés de niveau compte et les clés uniques ne peuvent pas dériver m/47'.",
-  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "Choisissez une clé existante compatible, ou entrez une graine BIP39 ou une xprv racine."
+  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "Choisissez une clé existante compatible, ou entrez une graine BIP39 ou une xprv racine.",
+  "Turn on secure entry?": "Activer la saisie sécurisée ?",
+  "{name} already has words in the text field. Turning this on cannot remove copies already created.": "{name} a déjà des mots dans le champ de texte. L'activation de cette option ne peut pas supprimer les copies déjà créées.",
+  "These keys already have words in the text field. Turning this on cannot remove copies already created.": "Ces clés ont déjà des mots dans le champ de texte. L'activation de cette option ne peut pas supprimer les copies déjà créées.",
+  "Keep current entry": "Conserver l'entrée actuelle",
+  "Clear and start again": "Effacer et recommencer",
+  "Some of these words are not on the BIP39 English list, so they cannot be kept.": "Certains de ces mots ne figurent pas sur la liste anglaise BIP39, ils ne peuvent donc pas être conservés.",
+  "Turn off secure entry?": "Désactiver la saisie sécurisée ?",
+  "Converting puts the words back into standard text fields, which creates text copies. Either choice applies to every key in this session.": "La conversion replace les mots dans des champs de texte standard, ce qui crée des copies de texte. Chaque choix s'applique à toutes les clés de cette session.",
+  "Convert entries to standard text": "Convertir les entrées en texte standard",
+  "Clear entries and turn off": "Effacer les entrées et désactiver"
 }
