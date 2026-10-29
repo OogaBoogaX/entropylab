@@ -2304,5 +2304,15 @@
   "BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.": "BIP-47 benötigt einen BIP32-Root-Privatschlüssel (Tiefe 0), keinen Konto-xprv.",
   "Derive a key in Key Station first, then return to the BIP-47 station.": "Leiten Sie zuerst einen Schlüssel in der Schlüsselstation ab und kehren Sie dann zur BIP-47-Station zurück.",
   "BIP-47 needs a seed or root xprv. Account-level and single keys cannot derive m/47'.": "BIP-47 benötigt einen Seed oder Root-xprv. Konto-Level- und einzelne Schlüssel können m/47' nicht ableiten.",
-  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "Wählen Sie einen kompatiblen vorhandenen Schlüssel aus oder geben Sie einen BIP39-Seed oder Root-xprv ein."
+  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "Wählen Sie einen kompatiblen vorhandenen Schlüssel aus oder geben Sie einen BIP39-Seed oder Root-xprv ein.",
+  "Turn on secure entry?": "Sichere Eingabe aktivieren?",
+  "{name} already has words in the text field. Turning this on cannot remove copies already created.": "{name} hat bereits Wörter im Textfeld. Das Aktivieren kann keine bereits erstellten Kopien entfernen.",
+  "These keys already have words in the text field. Turning this on cannot remove copies already created.": "Diese Schlüssel haben bereits Wörter im Textfeld. Das Aktivieren kann keine bereits erstellten Kopien entfernen.",
+  "Keep current entry": "Aktuellen Eintrag behalten",
+  "Clear and start again": "Löschen und neu beginnen",
+  "Some of these words are not on the BIP39 English list, so they cannot be kept.": "Einige dieser Wörter stehen nicht auf der englischen BIP39-Liste und können daher nicht beibehalten werden.",
+  "Turn off secure entry?": "Sichere Eingabe deaktivieren?",
+  "Converting puts the words back into standard text fields, which creates text copies. Either choice applies to every key in this session.": "Die Konvertierung legt die Wörter zurück in Standard-Textfelder, was Textkopien erstellt. Jede Wahl gilt für jeden Schlüssel in dieser Sitzung.",
+  "Convert entries to standard text": "Einträge in Standardtext konvertieren",
+  "Clear entries and turn off": "Einträge löschen und deaktivieren"
 }
