@@ -60,7 +60,7 @@ export function featureGuideLessons(hodlTText = (text) => text) {
         hodlTText("Ask: could I recover if this computer and every open tab disappeared? Save what you need deliberately and protect any secret copies."),
         hodlTText("A watch-only sheet is not a spending backup. Unsaved session work can be lost. Clearing the page cannot guarantee removal of copies held by the browser or operating system.")),
       step("basics-ready", hodlTText("Choose your next small adventure"),
-        hodlTText("Choose Keys for inputs and addresses; Multi Signature for shared control; PSBT for transaction files; BIP85 for children; Silent Payments for payment codes; or Vanity for address-prefix searches."),
+        hodlTText("Choose Keys for inputs and addresses; MultiSig for shared control; Transactions (Txns on narrow screens) for PSBT files; Lightning for invoices, offers, and node keys; Core Wallet to check a Bitcoin Core wallet file; BIP-85 for child recovery material; Privacy for Silent Payments addresses; Vanity for address-prefix searches; or Journal for notes, key inputs, and session history."),
         hodlTText("Explain which information is secret, why watch-only cannot spend, and why Offline does not prove safety."),
         hodlTText("Finishing records reading, not wallet, device, or transaction safety."),
         hodlTText("Seed phrases and private keys are secrets. Watch-only holds public information. A browser cannot prove isolation. Guide stays available for another look.")),

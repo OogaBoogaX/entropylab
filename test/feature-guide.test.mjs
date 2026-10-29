@@ -363,3 +363,19 @@ test("step 1 keeps download verification in a closed disclosure with its fixed l
   assert.equal(disclosure.hasAttribute("open"), false, "verification detail starts collapsed");
   assert.equal(disclosure.firstElementChild?.tagName, "SUMMARY");
 }));
+
+// Contract with the workspace tab strip (app.js builds it from
+// hodlWorkspaceTabs): the basics tour's tool list names every released tab by
+// the label the strip shows, so a renamed or added tab cannot leave the guide
+// pointing at a tab that does not exist.
+test("basics tour names every released workspace tab by its shown label", () => {
+  const source = readFileSync(fileURLToPath(new URL("../src/js/app.js", import.meta.url)), "utf8");
+  const match = source.match(/^var hodlWorkspaceTabs = (\[.*\]);$/m);
+  assert.ok(match, "hodlWorkspaceTabs declaration not found");
+  const tabs = JSON.parse(match[1]);
+  assert.ok(tabs.length > 0);
+  const ready = featureGuideLessons()[0].steps.find(step => step.id === "basics-ready");
+  for (const [id, label, , wide = label] of tabs) {
+    assert.ok(ready.body.includes(wide), `basics-ready omits the ${id} tab label "${wide}"`);
+  }
+});
