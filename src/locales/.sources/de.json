@@ -2349,5 +2349,7 @@
   "Repeat the passphrase": "4b93336c5db8a45761eb495c41c94a2b6c4f77650d1ceec1a12e8c4a26a7645c",
   "Encrypt and download": "84768b93e863c007da9bfeec15c51c7957fe201f55fca6cd70793cba8cab61da",
   "Open an encrypted nonce history": "3b09a2a899e28d8c133bbef1a6110cc4c0d6511faedac4dc090fe27301b7d911",
-  "Open": "ed077f3d8125d60dca1979c7133601bd187d47c73ed9975028f677e49e709942"
+  "Open": "ed077f3d8125d60dca1979c7133601bd187d47c73ed9975028f677e49e709942",
+  " This file was not encrypted: download the history again to save an encrypted copy, and delete the plain file.": "a5483212576fac5c8160571e93e6526630250a94a1da5510f6236cd64b5eb57a",
+  " The file is encrypted.": "f42ebfb2b953182af5fff3f6130c589440902253a59d511f029d6580db2d2cc3"
 }
