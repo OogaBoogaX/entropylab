@@ -1,6 +1,6 @@
 # Local Nonce Inspector QR prototype
 
-Experimental preview-only observer. AI implementation: OpenAI Codex (GPT-6).
+Experimental observer, in every build since its unhide PR. AI implementation: OpenAI Codex (GPT-6).
 Integration base checked 2026-10-29 UTC:
 d0d9841592f27a137bda3773e38dfaa593e6d1a7, including shared-worker PR #1272,
 shared UR collector #1273, worker scrub hardening and Key Station scanner #1281.
@@ -18,8 +18,7 @@ Stop and camera errors reset the discarded assembly's progress indicators too.
 The completion cleanup guard includes the slot-count lookup; if that lookup
 fails, no verified slot count is available and the failure reports zero.
 The `-4` case is defensive API handling, not an observed failure at the current
-1280-by-960 capture limit. Camera-control CSS is scoped to the preview control;
-unused observer CSS still exists in release builds, while observer JS is excluded.
+1280-by-960 capture limit. Camera-control CSS is scoped to the observer control.
 
 1. Allow Camera Access (blue). The permission probe lists cameras, stops its
    tracks, and never decodes/records frames. Browser-prompt focus loss does not
@@ -53,7 +52,7 @@ observer check. Capture order is unrestricted, not evidence of real exchange ord
   digests and supplied-signature checks; reuses the audit/WASM BIP143 path.
 - `qr-camera.js`: cancellable camera lifetime; late permission/decode and track
   disconnect handling. No recording or audio.
-- `nonce-qr-capture.js`: preview-only shared worker decoding, permission/access states,
+- `nonce-qr-capture.js`: shared worker decoding, permission/access states,
   message indicators, in-view progress and shared result modal.
 
 Bounds: frame text 20,000 characters; 512 fountain parts; 8,192 bytes per fragment;
@@ -85,8 +84,8 @@ not real capture exports.
 
 ## Build, dependency and review
 
-Use pinned Node 22.23.4/npm 11.17.0 and npm ci. Preview command:
-`node scripts/build.mjs --preview --out ../preview`.
+Use pinned Node 22.23.4/npm 11.17.0 and npm ci. Build command (every build
+now includes the observer): `npm run build`.
 Serve on loopback or another secure local browser context. No runtime downloads.
 Capture now uses the shared quircs worker and `createQrDecoder` interface from
 merged PR #1272 (head 2c2c3088c5f1d3921877c3b80d4fd6931cb4e52e).
@@ -104,8 +103,8 @@ reusable: decoding after stop creates a fresh shared decoder. Camera cleanup
 continues if decoder retirement throws. Multiple different QR codes
 in one frame are refused; point the camera at one code at a time. The worker's
 4096-byte decoded payload limit is below the transport parser's defensive ceiling.
-The prior decoder has been removed. UR2 notices remain in preview artifacts.
-Normal builds exclude camera decoding. The #1273 integration preserves the
+The prior decoder has been removed. Every build carries the UR2 notice and the
+camera observer. The #1273 integration preserves the
 observer's limits and canonical envelope checks, removes its separate fountain
 assembler, and refuses nonzero fountain padding. Progress counts recovered
 fragments rather than the old assembler's independent equations. Fresh review
