@@ -2298,5 +2298,11 @@
   "Raw transaction (hex)": "Rohe Transaktion (hex)",
   "Manual override (unverified)": "Manuelle Überschreibung (unverifiziert)",
   "Input that holds the public key": "Eingabe, die den öffentlichen Schlüssel enthält",
-  "Public key of that input (hex)": "Öffentlicher Schlüssel dieser Eingabe (hex)"
+  "Public key of that input (hex)": "Öffentlicher Schlüssel dieser Eingabe (hex)",
+  "Paste a BIP39 seed phrase or a BIP32 root xprv/tprv.": "Fügen Sie eine BIP39-Seed-Phrase oder einen BIP32-Root-xprv/tprv ein.",
+  "Watch-only extended keys cannot derive BIP-47 payment codes.": "Nur-Anzeige-Erweiterungsschlüssel können keine BIP-47-Zahlungscodes ableiten.",
+  "BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.": "BIP-47 benötigt einen BIP32-Root-Privatschlüssel (Tiefe 0), keinen Konto-xprv.",
+  "Derive a key in Key Station first, then return to the BIP-47 station.": "Leiten Sie zuerst einen Schlüssel in der Schlüsselstation ab und kehren Sie dann zur BIP-47-Station zurück.",
+  "BIP-47 needs a seed or root xprv. Account-level and single keys cannot derive m/47'.": "BIP-47 benötigt einen Seed oder Root-xprv. Konto-Level- und einzelne Schlüssel können m/47' nicht ableiten.",
+  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "Wählen Sie einen kompatiblen vorhandenen Schlüssel aus oder geben Sie einen BIP39-Seed oder Root-xprv ein."
 }
