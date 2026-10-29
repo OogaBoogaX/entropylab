@@ -2314,5 +2314,7 @@
   "Turn off secure entry?": "Sichere Eingabe deaktivieren?",
   "Converting puts the words back into standard text fields, which creates text copies. Either choice applies to every key in this session.": "Die Konvertierung legt die Wörter zurück in Standard-Textfelder, was Textkopien erstellt. Jede Wahl gilt für jeden Schlüssel in dieser Sitzung.",
   "Convert entries to standard text": "Einträge in Standardtext konvertieren",
-  "Clear entries and turn off": "Einträge löschen und deaktivieren"
+  "Clear entries and turn off": "Einträge löschen und deaktivieren",
+  "Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again.": "Journal kann noch keine Wörter sichern, die mit Secure Entry eingegeben wurden. Schalten Sie Secure Entry aus und konvertieren Sie sie in Text, oder löschen Sie diese Schlüssel, und versuchen Sie es dann erneut.",
+  "This key has words entered with Secure entry, which Journal cannot keep yet. Turn Secure entry off or clear the key first.": "Dieser Schlüssel hat Wörter, die mit Secure Entry eingegeben wurden und die Journal noch nicht speichern kann. Schalten Sie Secure Entry aus oder löschen Sie zuerst den Schlüssel."
 }
