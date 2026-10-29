@@ -703,6 +703,12 @@ file is still self-contained and never registers the hosted service worker.
 
 ### Verifying the download
 
+New to checksums and signatures? The step-by-step guide, with Windows, Mac and
+Linux commands, is [Verify your download](docs/Verify_Your_Download.md). A
+signed release also carries `SHA256SUMS.asc` and `KEYS`: run
+`gpg --import KEYS` and `gpg --verify SHA256SUMS.asc SHA256SUMS.txt`, and
+compare each signer's fingerprint with the guide's list.
+
 Every merge to `rock` publishes a `SHA256SUMS.txt` checksum manifest for
 `entropylab.html` (committed next to it in this repository), a matching
 `CID.txt` (CIDv1 raw sha2-256 of those same bytes), a
