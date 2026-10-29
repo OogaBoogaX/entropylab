@@ -55,33 +55,73 @@ A checksum alone only proves the file matches `SHA256SUMS.txt`. Someone who
 could change the file could change that list too. Step 2 shows who vouches
 for the list.
 
-## Step 2: check the release signatures (signed releases)
+## Step 2: check the team's signatures (GPG, signed releases)
 
-Several people signed `SHA256SUMS.txt` independently. You need GnuPG:
-[Gpg4win](https://www.gpg4win.org/) on Windows, GPG Suite or
-`brew install gnupg` on a Mac, and it is usually already installed on Linux.
+EntropyLab maintainers sign each release. Their signatures cover
+`SHA256SUMS.txt`, the file that lists the hash of `entropylab.html`. The
+release notes list who signed; v1.0.0 and its release candidates were signed
+by all four maintainers below. If the signatures are good and your file's hash
+matches that list (step 1), the file you downloaded is the one they signed.
+
+> **Use the files from the release page only.** Download `entropylab.html`,
+> `SHA256SUMS.txt`, `SHA256SUMS.asc` and `KEYS` together from the same release
+> on the [Releases page](https://github.com/OogaBoogaX/entropylab/releases).
+> Don't use `SHA256SUMS.txt` or `SHA256SUMS.asc` from the `rock` branch. Those
+> files change between releases and won't match each other.
+
+### 1. Install GPG
+
+- **Windows:** install [Gpg4win](https://www.gpg4win.org/), then use PowerShell.
+- **Mac:** install [GPG Suite](https://gpgtools.org/), or run `brew install gnupg`.
+- **Linux:** usually installed already. If not, run `sudo apt install gnupg`
+  (Debian/Ubuntu) or use your distro's package manager.
+
+### 2. Import the signers' keys
+
+Open a terminal in the folder with your downloads and run:
 
 ```sh
 gpg --import KEYS
+```
+
+The `KEYS` file is a release download. It is not in the repository.
+
+### 3. Verify the signatures
+
+```sh
 gpg --verify SHA256SUMS.asc SHA256SUMS.txt
 ```
 
-**A good result** is one `Good signature from …` line per signer. GnuPG also
-prints `WARNING: This key is not certified with a trusted signature!` That is
-normal: it only means you haven't personally certified these keys. What
-matters is that each `Primary key fingerprint` matches this list:
+You should see one `Good signature from` line for each signer the release
+notes list (four for v1.0.0). Then check that each fingerprint GPG prints
+matches this list:
 
 | Signer | Primary key fingerprint |
 | --- | --- |
-| Portland.HODL | `3428 CBB5 4C36 9D8A F14E  F600 C801 EE1D 5285 101E` |
+| Portland.HODL (russeree) | `3428 CBB5 4C36 9D8A F14E  F600 C801 EE1D 5285 101E` |
 | MrHodlX | `6443 4EE4 8A96 C38E 78B7  875F 4E7E 416E E17D 237C` |
 | w-s-bitcoin | `542E CCA3 B5CB 74CE C957  29B3 92C2 1496 202E 3774` |
 | timechainb | `63EF 760E E641 A585 16D5  4930 F0B7 D606 C6FD 9D52` |
 
-Check these fingerprints in more than one place, such as this page on GitHub
-and the signers' own profiles. A tampered download page could swap them.
+Portland.HODL and w-s-bitcoin sign with subkeys (`C0AF3AD083D6B40A` and
+`EFBB6C556124B3DE`). GPG shows the subkey and its primary fingerprint, and the
+primary fingerprint is the one to compare.
 
-`BAD signature`, or a fingerprint that is not in this list, means stop.
+**What the results mean**
+
+- **A good signature from every listed signer, with matching fingerprints:**
+  the hash list is genuine. With step 1's matching checksum, your file is the
+  one they signed.
+- **`WARNING: This key is not certified with a trusted signature`:** this is
+  normal. It only means you haven't personally marked these keys as trusted in
+  GPG. What matters is that the fingerprints match the table.
+- **`BAD signature`, or fewer good signatures than the release lists:** stop.
+  Don't use the file. Download the release again and recheck, and if it still
+  fails, report it.
+
+Don't rely on fingerprints shown inside a copy of EntropyLab you haven't
+verified. Compare them against this guide on GitHub, the release notes, or a
+maintainer's own published key.
 
 ## Step 3 (optional): check that GitHub's CI built it
 
