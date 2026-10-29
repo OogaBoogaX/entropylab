@@ -21,6 +21,8 @@ function harness() {
     hodlCaptureKey() {}, hodlRenderKeyTabs() {}, hodlRestoreKey() {},
     hodlZeroKeyPassphrase(state) { if (ArrayBuffer.isView(state?.fields?.pass)) state.fields.pass.fill(0); },
     hodlReleaseKeyConsumers() {},
+    // Secure entry stays off here; its wiring is covered in secure-entry-wiring.test.mjs.
+    hodlSecureEntryHasData: () => false, hodlSecureKeyOf: () => null,
     hodlSelectKey: index => { context.hodlActiveKey = index; },
     hodlSelectLab: () => { context.hodlActiveKey = 0; },
     hodlKeyManagerPending: [], hodlKeyManagerIgnored: [], hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "",

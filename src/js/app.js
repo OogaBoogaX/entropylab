@@ -154,7 +154,7 @@ import { bip47AccountNode as hodlBip47AccountNode, bip47AccountPath as hodlBip47
 import { bip47OwnHtml as hodlBip47OwnHtml, bip47ContactHtml as hodlBip47ContactHtml, bip47ErrorHtml as hodlBip47ErrorHtml, bip47RowsHtml as hodlBip47RowsHtml, bip47NotifyInputsHtml as hodlBip47NotifyInputsHtml, bip47NotifyHtml as hodlBip47NotifyHtml, bip47NotifyErrorHtml as hodlBip47NotifyErrorHtml } from "./bip47-ui.js";
 import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
 import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-session.js";
-import { createSecureSession, sessionWipe, sessionDeleteKey, SUPPORTED_METHODS as hodlSecureSupported } from "./secure-entry.js";
+import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedIndices, SUPPORTED_METHODS as hodlSecureSupported } from "./secure-entry.js";
 import { initTextServiceOptOuts, initTranslationWarning } from "./text-services.js";
 import { initSecurityLog } from "./security-log.js";
 import { initConcealOnLeave } from "./conceal-on-leave.js";
@@ -1452,15 +1452,30 @@ async function hodlTogglePurposeMatch(enabled) {
   }
 }
 async function hodlMnemonicWalletWithProgress(value, passphrase, network, count, source, accountIndex, addressStart, tracker, purposeIndex, coinType = hodlCoinTypeFromNetwork(network), hardening = hodlDefaultHardening(), branchStart = 0, branchRange = 2, derivationPlan = null) {
-  let validation = hodlValidateMnemonic(value);
-  if (!validation.ok) throw validation.error?.key ? hodlError(validation.error.key, validation.error.vars) : hodlError("Invalid seed phrase");
+  // Secure entry hands over { indices }: a copy this function owns, checked
+  // here and zeroed below like the text path's own indices. Text is validated
+  // into indices as before.
+  let indices;
+  if (value?.indices instanceof Uint16Array) {
+    indices = value.indices;
+    try {
+      hodlEntropyFromWordIndices(indices).fill(0);
+    } catch {
+      indices.fill(0);
+      throw hodlError("Invalid seed phrase");
+    }
+  } else {
+    let validation = hodlValidateMnemonic(value);
+    if (!validation.ok) throw validation.error?.key ? hodlError(validation.error.key, validation.error.vars) : hodlError("Invalid seed phrase");
+    indices = hodlWordIndices(validation.words);
+  }
   // The wallet keeps its BIP39 entropy and seed as bytes that can be zeroed,
   // never as text (#546 B2).
   // The derivation records them with its row keys, so one that never commits
   // zeroes them.
   // Both the seed and the entropy come from the word indices as bytes, never
   // a joined phrase string.
-  let indices = hodlWordIndices(validation.words), seed, entropy, root;
+  let seed, entropy, root;
   try {
     seed = hodlSeedFromIndices(indices, passphrase);
     entropy = hodlEntropyFromWordIndices(indices);
@@ -7597,6 +7612,7 @@ function hodlCanDeriveCurrentKey() {
     }
     if (hodlKeyMode === "hex") return hodlSelectedEntropy().ok;
     if (hodlKeyMode === "seed") {
+      if (hodlSecureSeedApplies()) return hodlSecureSeedReady();
       let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
       if (!value) return false;
       if (selected.extended) {
@@ -7744,6 +7760,10 @@ function hodlFingerprintSource() {
       return entropy.ok ? { entropy: entropy.bytes } : null;
     }
     if (hodlKeyMode === "seed") {
+      if (hodlSecureSeedApplies()) {
+        let indices = hodlSecureSeedIndices();
+        return indices ? { indices } : null;
+      }
       let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
       if (!value || selected.extended) return null;
       let validation = hodlValidateTargetMnemonic(value, hodlTargetWordCount);
@@ -8008,13 +8028,20 @@ async function hodlCalculateKey(progress, action = "derive", options = {}) {
       hodlThrowIfFailed(entropy);
       result = await hodlEntropyWalletWithProgress(entropy, passphrase, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
     } else if (hodlKeyMode === "seed") {
-      let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
-      if (selected.extended) result = await hodlImportedWalletWithProgress(value, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
-      else {
-        if (hodlSeedMethod === "numbers" && !selected.parsed?.complete) throw selected.parsed?.invalidEntries.length ? hodlError("Word numbers must be between {min} and {max}.", { min: selected.parsed.minimum, max: selected.parsed.maximum }) : selected.parsed?.extraEntries.length ? hodlError("Enter exactly {words} BIP39 word numbers.", { words: hodlTargetWordCount }) : selected.parsed?.checksumInvalid ? hodlError("The entered word numbers do not have a valid BIP39 checksum.") : hodlError("Enter exactly {words} BIP39 word numbers before deriving the wallet.", { words: hodlTargetWordCount });
-        let validation = hodlValidateTargetMnemonic(value, hodlTargetWordCount);
-        hodlThrowIfFailed(validation);
-        result = await hodlMnemonicWalletWithProgress(validation.words.join(" "), passphrase, chain, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      if (hodlSecureSeedApplies()) {
+        // Secure entry: the words are indices in the session, never text.
+        let indices = hodlSecureSeedIndices();
+        if (!indices) throw hodlError("Invalid seed phrase");
+        result = await hodlMnemonicWalletWithProgress({ indices }, passphrase, chain, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      } else {
+        let selected = hodlSelectedSeedInput(hodlTargetWordCount), value = selected.value;
+        if (selected.extended) result = await hodlImportedWalletWithProgress(value, chain, count, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        else {
+          if (hodlSeedMethod === "numbers" && !selected.parsed?.complete) throw selected.parsed?.invalidEntries.length ? hodlError("Word numbers must be between {min} and {max}.", { min: selected.parsed.minimum, max: selected.parsed.maximum }) : selected.parsed?.extraEntries.length ? hodlError("Enter exactly {words} BIP39 word numbers.", { words: hodlTargetWordCount }) : selected.parsed?.checksumInvalid ? hodlError("The entered word numbers do not have a valid BIP39 checksum.") : hodlError("Enter exactly {words} BIP39 word numbers before deriving the wallet.", { words: hodlTargetWordCount });
+          let validation = hodlValidateTargetMnemonic(value, hodlTargetWordCount);
+          hodlThrowIfFailed(validation);
+          result = await hodlMnemonicWalletWithProgress(validation.words.join(" "), passphrase, chain, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+        }
       }
     } else {
       let value = document.getElementById("key").value, kind = hodlNormalizePrivateKeyKind(document.querySelector("input[name=kk]:checked")?.value, value);
@@ -12141,7 +12168,9 @@ function hodlSetNonceError(spec) {
 }
 // Ending the session is one act wherever it starts: the shared key goes, and
 // so does everything either card holds.
+var hodlNonceQrCapture = null;
 function hodlEndPsbtSession() {
+  hodlNonceQrCapture?.clear();
   hodlPsbtWipeMem();
   hodlPsbtClearNonceHistory(true);
   hodlPsbtRetireAuditUploads();
@@ -12303,7 +12332,115 @@ function hodlSecureEntryDropKey(keyId) {
   if (keyId == null) return;
   try { sessionDeleteKey(hodlSecureSession, keyId); } catch {}
 }
+// Secure entries belong to a key state object, never to its id: Journal can
+// fill the station's editor with a copy that keeps the editor's id (and a
+// batch parks the original to restore it afterwards), so an id would let one
+// copy's words decide the other's derivation. A copy never inherits the
+// token, so it starts without secure words.
+var hodlSecureKeys = new WeakMap(), hodlSecureKeyCount = 0;
+function hodlSecureKeyOf(state, create = false) {
+  if (!state || typeof state !== "object") return null;
+  let key = hodlSecureKeys.get(state) ?? null;
+  if (key == null && create) {
+    key = `k${++hodlSecureKeyCount}`;
+    hodlSecureKeys.set(state, key);
+  }
+  return key;
+}
+// Secure seed entry applies while the switch is on, the method is Seed and
+// the seed is typed as words (word numbers keep their own field for now).
+function hodlSecureSeedActive() {
+  return hodlSecureEntryOn && hodlKeyMode === "seed" && hodlSeedMethod === "words";
+}
+// The active key's secure seed entry, or null when secure seed entry does not
+// apply. With create, a key without one gets a fresh entry of the current word
+// count, and an empty entry of another count is replaced; an entry that holds
+// words is never replaced here.
+function hodlSecureSeedEntry(create = false) {
+  let state = hodlKeys[hodlActiveKey];
+  if (!hodlSecureSeedActive()) return null;
+  let key = hodlSecureKeyOf(state, create);
+  if (key == null) return null;
+  let entry = sessionGet(hodlSecureSession, key, "seed");
+  if (create && (!entry || entry.count === 0 && entry.length !== hodlTargetWordCount)) {
+    entry = seedEntry(hodlTargetWordCount);
+    sessionSet(hodlSecureSession, key, "seed", entry);
+  }
+  return entry;
+}
+// A fresh copy of the secure seed's indices once every word is in, the count
+// matches the chosen length and the checksum passes; otherwise null. The
+// caller owns the copy and zeroes it.
+function hodlSecureSeedIndices() {
+  let entry = hodlSecureSeedEntry();
+  if (!entry || entry.count !== entry.length || entry.length !== hodlTargetWordCount) return null;
+  let indices = seedIndices(entry);
+  try {
+    hodlEntropyFromWordIndices(indices).fill(0);
+    return indices;
+  } catch {
+    indices.fill(0);
+    return null;
+  }
+}
+// True when the secure seed is complete with a valid checksum. The copy it
+// checks is zeroed before returning.
+function hodlSecureSeedReady() {
+  let indices = hodlSecureSeedIndices();
+  if (!indices) return false;
+  indices.fill(0);
+  return true;
+}
+// True when the key holds any securely entered word. Only seeds can be entered
+// securely so far; later methods extend this. A read that fails counts as
+// holding words, so the callers that guard against losing them stay closed.
+function hodlSecureEntryHasData(keyId) {
+  if (keyId == null) return false;
+  try {
+    return (sessionGet(hodlSecureSession, keyId, "seed")?.count ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
+// Secure entry decides a seed key's words only when they were entered with it:
+// a key holding secure words, or one with nothing typed yet. A seed that came
+// in as text while the switch was on (a Journal import, Review inputs, a
+// vanity update) keeps the text path, so it still derives.
+function hodlSecureSeedApplies() {
+  if (!hodlSecureSeedActive()) return false;
+  let state = hodlKeys[hodlActiveKey];
+  if (hodlSecureEntryHasData(hodlSecureKeyOf(state))) return true;
+  let typed = document.getElementById("seed")?.value ?? state?.fields?.seed ?? "";
+  return !String(typed).trim();
+}
+// True when the key holds securely entered words, or was derived from words
+// held that way: a derived key keeps no copy of them (they stay with the
+// editor that held them), so Journal must refuse it as it refuses the editor.
+function hodlSecureEntryHeld(state) {
+  return Boolean(state?.secureSource) || hodlSecureEntryHasData(hodlSecureKeyOf(state));
+}
+// Journal cannot hold securely entered words yet (a later backup format will):
+// a backup taken now would keep such a key without its recovery words.
+function hodlSecureEntryBackupRefusal() {
+  if (!hodlKeys.some((state) => hodlSecureEntryHeld(state))) return null;
+  return new Error(hodlTText("Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again."));
+}
 function hodlInitPsbt() {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    import("./nonce-qr-capture.js").then(async ({ initNonceQrCapture }) => {
+      await psbtWasmReady;
+      hodlNonceQrCapture = initNonceQrCapture({
+        translate: hodlTText,
+        onClear: () => {
+          document.getElementById("psbt-ax-transcript").value = "";
+          hodlNonceLast = null;
+          document.getElementById("nonce-out").innerHTML = "";
+          hodlPsbtResetNonceInspection();
+        }
+      });
+    });
+  }
+
   let go = document.getElementById("psbt-go");
   if (!go) return;
   go.onclick = () => {
@@ -15600,6 +15737,8 @@ function hodlKeyManagerResultPaths(result) {
 function hodlKeyManagerDiscardInputs(state) {
   if (!state) return;
   hodlZeroKeyPassphrase(state);
+  // Its securely entered words are inputs too. A failed wipe must not stop the rest.
+  try { hodlSecureEntryDropKey(hodlSecureKeyOf(state)); } catch {}
   for (let key of Object.keys(state.fields || {})) {
     if (key === "privateKeys") {
       for (let kind of Object.keys(state.fields.privateKeys || {})) state.fields.privateKeys[kind] = "";
@@ -15780,7 +15919,7 @@ async function hodlKeyManagerReviewInputs(state) {
   if (hodlWorkspace === "calc") hodlCaptureKey();
   let draft = hodlKeys.find(candidate => candidate.isLab), fields = draft?.fields || {}, generation = hodlJournalGeneration;
   let hasInputs = draft?.result || ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key"].some(key => fields[key]?.length) || Object.values(fields.privateKeys || {}).some(Boolean);
-  if (hasInputs && await hodlKeyManagerDecision({ mode: "draft", name: state.name }) !== "load") return;
+  if ((hasInputs || hodlSecureEntryHasData(hodlSecureKeyOf(draft))) && await hodlKeyManagerDecision({ mode: "draft", name: state.name }) !== "load") return;
   if (generation !== hodlJournalGeneration || hodlActiveDerivation || hodlJournalKeyDerivation || !hodlKeyManagerPending.includes(state) || hodlKeys.find(candidate => candidate.isLab) !== draft) return;
   hodlKeyManagerUseInStation(state);
   if (draft && !hodlKeys.includes(draft)) hodlKeyManagerDiscardInputs(draft);
@@ -15892,14 +16031,19 @@ async function hodlKeyManagerRestoreIgnored(entry) {
 function hodlKeyManagerDetachFromStation(state) {
   let identity = keyVaultIdentity(state), index = hodlKeys.indexOf(state);
   if (index < 0) return;
+  // Journal cannot hold securely entered words yet (a later backup format
+  // will), so a key with any stays in the Key Station rather than lose them.
+  if (hodlSecureEntryHeld(state)) {
+    hodlKeyManagerStatus(hodlTText("This key has words entered with Secure entry, which Journal cannot keep yet. Turn Secure entry off or clear the key first."), true);
+    return;
+  }
   hodlCaptureKey();
   let retainInputs = Boolean(state.result || hodlKeyManagerHasInputs(state));
   let capacityError = retainInputs && hodlKeyManagerCapacityError();
   if (capacityError) { hodlKeyManagerStatus(capacityError, true); return; }
   hodlReleaseKeyConsumers(state.id);
-  // Key Manager cannot hold secure entries yet, so a later PR must block this
-  // path while the key has any. A failed wipe must not abort the detach.
-  try { hodlSecureEntryDropKey(state.id); } catch {}
+  // An empty secure entry left behind goes with the key. A failed wipe must not abort the detach.
+  try { hodlSecureEntryDropKey(hodlSecureKeyOf(state)); } catch {}
   hodlKeys.splice(index, 1);
   if (retainInputs && !hodlKeyManagerPending.some((candidate) => keyVaultIdentity(candidate) === identity)) {
     if (!state.result) state.needsDerivation = true;
@@ -15983,6 +16127,9 @@ function hodlCloneDerivedKey(source, existing) {
     createdScript: source.createdScript,
     createdPath: source.createdPath,
     error: source.error,
+    // GLM on #1294: a key derived from secure words carries no copy of them,
+    // so it is marked for the Journal refusals (hodlSecureEntryHeld).
+    secureSource: Boolean(source.secureSource) || hodlSecureEntryHasData(hodlSecureKeyOf(source)),
     fields: { ...source.fields, ...(source.fields?.privateKeys ? { privateKeys: { ...source.fields.privateKeys } } : {}), pass: hodlStoredPassphraseBytes(source.fields?.pass) }
   });
   return state;
@@ -16162,7 +16309,7 @@ function hodlFillLabFromKey(source) {
   let labIndex = hodlKeys.findIndex((state) => state.isLab);
   let existing = labIndex >= 0 ? hodlKeys[labIndex] : hodlNewLabState();
   let lab = hodlCloneDerivedKey(source, existing);
-  Object.assign(lab, { isLab: true, editSourceId: hodlKeys.includes(source) ? source.id : null, name: "Key Station", result: null, importedKeyId: null, importedName: null, importedNetworkChoice: null, error: "", reveal: false, createdScript: "", createdPath: "" });
+  Object.assign(lab, { isLab: true, secureSource: false, editSourceId: hodlKeys.includes(source) ? source.id : null, name: "Key Station", result: null, importedKeyId: null, importedName: null, importedNetworkChoice: null, error: "", reveal: false, createdScript: "", createdPath: "" });
   if (labIndex < 0) {
     hodlKeys.unshift(lab);
     labIndex = 0;
@@ -16320,7 +16467,7 @@ function hodlSetMode(mode) {
 function hodlKeyStateNeedsClear(state) {
   if (!state) return false;
   let fields = state.fields || {}, privateKeys = hodlPrivateKeyValues(fields), hasText = (id) => String(fields[id] ?? "").length > 0;
-  return String(state.mode ?? "dice") !== "dice" || String(state.diceMethod ?? "coldcard") !== "coldcard" || String(state.cardMethod ?? "hashed") !== "hashed" || String(state.seedMethod ?? "words") !== "words" || Boolean(state.seedZeroIndexed) || Boolean(state.cardColemanSymbols) || String(state.entropyFormat ?? "bin") !== "bin" || Boolean(state.globalSync) || state.seedAutocomplete === false || Boolean(state.passphraseBip39Words) || state.passphraseAutocomplete === false || Boolean(state.brainWalletTrim) || Boolean(state.showCards) || Boolean(state.showDiceFairness) || Number(state.targetWords ?? 24) !== 24 || Array.isArray(state.diceCoinPositions) && state.diceCoinPositions.length > 0 || String(state.lastWord ?? "").length > 0 || String(state.dplusLastWord ?? "").length > 0 || Boolean(state.result) || Boolean(state.reveal) || String(state.error ?? "").length > 0 || String(state.accountId ?? "bip84") !== "bip84" || String(fields.script ?? "bip84") !== "bip84" || String(fields.derivationPath ?? "m/84'/0'/0'/{0-1}/{0-9}") !== "m/84'/0'/0'/{0-1}/{0-9}" || String(fields.purpose ?? "84'") !== "84'" || fields.purposeHarden === false || String(fields.coinType ?? (fields.network === "testnet" ? "1'" : "0'")) !== "0'" || fields.coinTypeHarden === false || String(fields.account ?? "0'") !== "0'" || fields.accountHarden === false || String(fields.branchStart ?? "0") !== "0" || Boolean(fields.branchHarden) || String(fields.branchRange ?? "2") !== "2" || String(fields.addressStart ?? "0") !== "0" || Boolean(fields.addressHarden) || String(fields.addressRange ?? fields.count ?? "10") !== "10" || hodlNormalizePrivateKeyKind(fields.keyKind, privateKeys[fields.keyKind] || "") !== "wif" || ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key"].some(hasText) || hodlPrivateKeyKinds.some((kind) => privateKeys[kind].length > 0);
+  return String(state.mode ?? "dice") !== "dice" || String(state.diceMethod ?? "coldcard") !== "coldcard" || String(state.cardMethod ?? "hashed") !== "hashed" || String(state.seedMethod ?? "words") !== "words" || Boolean(state.seedZeroIndexed) || Boolean(state.cardColemanSymbols) || String(state.entropyFormat ?? "bin") !== "bin" || Boolean(state.globalSync) || state.seedAutocomplete === false || Boolean(state.passphraseBip39Words) || state.passphraseAutocomplete === false || Boolean(state.brainWalletTrim) || Boolean(state.showCards) || Boolean(state.showDiceFairness) || Number(state.targetWords ?? 24) !== 24 || Array.isArray(state.diceCoinPositions) && state.diceCoinPositions.length > 0 || String(state.lastWord ?? "").length > 0 || String(state.dplusLastWord ?? "").length > 0 || Boolean(state.result) || Boolean(state.reveal) || String(state.error ?? "").length > 0 || String(state.accountId ?? "bip84") !== "bip84" || String(fields.script ?? "bip84") !== "bip84" || String(fields.derivationPath ?? "m/84'/0'/0'/{0-1}/{0-9}") !== "m/84'/0'/0'/{0-1}/{0-9}" || String(fields.purpose ?? "84'") !== "84'" || fields.purposeHarden === false || String(fields.coinType ?? (fields.network === "testnet" ? "1'" : "0'")) !== "0'" || fields.coinTypeHarden === false || String(fields.account ?? "0'") !== "0'" || fields.accountHarden === false || String(fields.branchStart ?? "0") !== "0" || Boolean(fields.branchHarden) || String(fields.branchRange ?? "2") !== "2" || String(fields.addressStart ?? "0") !== "0" || Boolean(fields.addressHarden) || String(fields.addressRange ?? fields.count ?? "10") !== "10" || hodlNormalizePrivateKeyKind(fields.keyKind, privateKeys[fields.keyKind] || "") !== "wif" || ["pass", "dice", "colemanDice", "bitboxDice", "dplusDice", "hex", "bin", "base4", "base8", "base32", "base64", "cards", "directCards", "seed", "seedNumbers", "brainLab", "key"].some(hasText) || hodlPrivateKeyKinds.some((kind) => privateKeys[kind].length > 0) || hodlSecureEntryHasData(hodlSecureKeyOf(state));
 }
 function hodlSyncKeyClearButton(capture = false) {
   if (capture) hodlCaptureKey();
@@ -16339,6 +16486,8 @@ function hodlWipeActiveKey() {
   // Clear replaces the derived material, so the sessions cloned from it go
   // too, and the passphrase bytes are zeroed rather than left to GC.
   hodlReleaseKeyConsumers(state.id);
+  // Clear also wipes the key's securely entered words.
+  hodlSecureEntryDropKey(hodlSecureKeyOf(state));
   hodlZeroKeyPassphrase(state);
   // Empty the secret fields in place before the form re-renders for the fresh
   // key: the nodes it drops would otherwise keep their text, and its Undo
@@ -17022,7 +17171,7 @@ function hodlDeleteActiveKey() {
   hodlZeroKeyPassphrase(deletedState);
   hodlReleaseKeyConsumers(deletedState.id);
   // A failed wipe must not abort the delete.
-  try { hodlSecureEntryDropKey(deletedState.id); } catch {}
+  try { hodlSecureEntryDropKey(hodlSecureKeyOf(deletedState)); } catch {}
   hodlKeys.splice(deletedIndex, 1);
   hodlNextKeyNumber = hodlKeys.length ? hodlKeys.reduce((latest, state) => Math.max(latest, state.number), 0) + 1 : deletedState.number;
   if (!hodlKeys.length) {
@@ -18629,6 +18778,8 @@ async function hodlKeyManagerDownload() {
   let generation = hodlJournalGeneration;
   try {
     if (!hodlJournalUnlocked()) throw new Error("Create or open a journal first.");
+    let secureRefusal = hodlSecureEntryBackupRefusal();
+    if (secureRefusal) throw secureRefusal;
     let states = hodlKeyManagerStates();
     if (!states.length && !hodlKeyManagerIgnored.length) throw new Error("Derive or import a key before exporting key inputs.");
     let content = serializeKeyVault(states.map(hodlKeyManagerEntry), hodlKeyManagerIgnored.map(hodlKeyManagerEntry));
@@ -19959,6 +20110,8 @@ async function hodlJournalUnlock() {
 }
 function hodlJournalCollectBackup() {
   if (hodlActiveDerivation || hodlJournalKeyDerivation) throw new Error(hodlTText("Wait for derivation to finish before downloading a complete backup."));
+  let secureRefusal = hodlSecureEntryBackupRefusal();
+  if (secureRefusal) throw secureRefusal;
   if (hodlWorkspace === "calc") hodlCaptureKey();
   let field = document.getElementById("journal-notes-text");
   if (field) hodlJournalStoreNotesText(field);
@@ -21443,8 +21596,17 @@ function hodlInitEndSession() {
 // change handler, so its view re-renders masked exactly as a click would.
 // Five minutes untouched is long enough to copy a phrase onto paper.
 var hodlRevealIdleMs = 5 * 60 * 1000;
-function hodlConcealPrivateValues() {
+function hodlConcealPrivateValues(options) {
   if (typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  // Plain blur permits copying the opening/PSBT from another window. Other
+  // conceal triggers retire the pasted host reveal, which remains sensitive.
+  if (options?.reason !== "blur") {
+    const transcript = document.getElementById("psbt-ax-transcript");
+    if (transcript) transcript.value = "";
+    const transcriptSection = document.getElementById("nonce-jade-options");
+    if (transcriptSection) transcriptSection.open = false;
+    hodlNonceLast = null;
+  }
   for (let state of [...hodlKeys, ...hodlBip85Children, ...hodlSpAddresses]) state.reveal = false;
   if (hodlSpVerifyMatches) hodlSpVerifyMatches.reveal = false;
   hodlRevealPrivate = hodlBip85Reveal = hodlVanityReveal = hodlJournalReveal = false;
