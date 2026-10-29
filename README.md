@@ -714,7 +714,8 @@ sha256sum -c SHA256SUMS.txt
 gh attestation verify entropylab.html -R OogaBoogaX/entropylab
 ```
 
-The three WASM modules embedded in the HTML are committed as
+The four WASM modules embedded in the HTML (secp256k1, PSBT, vanity and the
+QR decoder) are committed as
 `src/js/*-wasm-b64.js`; their digests are in `WASM-SHA256SUMS.txt`, committed
 next to `SHA256SUMS.txt`. From a checkout of the release commit:
 

@@ -52,7 +52,7 @@ observer check. Capture order is unrestricted, not evidence of real exchange ord
   digests and supplied-signature checks; reuses the audit/WASM BIP143 path.
 - `qr-camera.js`: cancellable camera lifetime; late permission/decode and track
   disconnect handling. No recording or audio.
-- `nonce-qr-capture.js`: preview-only shared worker decoding, permission/access states,
+- `nonce-qr-capture.js`: shared worker decoding, permission/access states,
   message indicators, in-view progress and shared result modal.
 
 Bounds: frame text 20,000 characters; 512 fountain parts; 8,192 bytes per fragment;
@@ -84,8 +84,8 @@ not real capture exports.
 
 ## Build, dependency and review
 
-Use pinned Node 22.23.4/npm 11.17.0 and npm ci. Preview command:
-`node scripts/build.mjs --preview --out ../preview`.
+Use pinned Node 22.23.4/npm 11.17.0 and npm ci. Build command (every build
+now includes the observer): `npm run build`.
 Serve on loopback or another secure local browser context. No runtime downloads.
 Capture now uses the shared quircs worker and `createQrDecoder` interface from
 merged PR #1272 (head 2c2c3088c5f1d3921877c3b80d4fd6931cb4e52e).

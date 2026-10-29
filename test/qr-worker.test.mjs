@@ -491,6 +491,29 @@ test("after a decode times out, the retiring worker gets the long deadline and a
   decoder.stop();
 });
 
+test("the release boundary: the live observer ships, the Key Station scan stays preview-only", async () => {
+  // GLM/MiniMax on #1315: with the decoder in every build, pin who may use it.
+  const { applyPreviewBlocks } = await import("../scripts/preview-blocks.mjs");
+  const shell = readFileSync(join(root, "src/shell.html"), "utf8");
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const body = (name) => {
+    const start = app.indexOf("function " + name + "(");
+    assert.ok(start >= 0, name + " exists");
+    return app.slice(start, app.indexOf("\nfunction ", start + 1));
+  };
+  // The observer is in the release shell, and hodlInitPsbt imports it with no
+  // preview guard in front of the import.
+  assert.match(applyPreviewBlocks(shell, false), /id="nonce-qr-capture"/);
+  const init = body("hodlInitPsbt");
+  const at = init.indexOf('import("./nonce-qr-capture.js")');
+  assert.ok(at >= 0, "hodlInitPsbt imports the observer");
+  assert.doesNotMatch(init.slice(0, at), /__ENTROPYLAB_PREVIEW__/);
+  // The Key Station's private-key scan keeps both of its preview guards.
+  assert.match(body("hodlKeyScanHostMarkup"), /typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__/);
+  const bind = body("hodlBindKeyScan");
+  assert.ok(bind.indexOf("__ENTROPYLAB_PREVIEW__") >= 0 && bind.indexOf("__ENTROPYLAB_PREVIEW__") < bind.indexOf('import("./qr-key-scan.js")'), "the key scan import sits behind the preview flag");
+});
+
 test("a release build ships the QR decoder for the Nonce Inspector's live observer", () => {
   const out = mkdtempSync(join(tmpdir(), "entropylab-release-"));
   try {
