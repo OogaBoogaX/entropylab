@@ -14120,6 +14120,8 @@ function hodlPointBytes(point, compressed = true) {
   if (typeof point.toRawBytes === "function") return point.toRawBytes(compressed);
   throw new Error("Unsupported curve point encoding.");
 }
+// The page no longer calls this Jade-only parser (hodlReadNonceTranscript
+// detects every format); the tests keep it as an independent Jade reference.
 function hodlParseAntiExfil(raw) {
   if (!raw || !String(raw).trim()) return null;
   let text = String(raw).replace(/0x/gi, ""), tokens = text.split(/[^0-9a-fA-F]+/).filter((token) => token.length), host = null, openings = [];
@@ -14163,17 +14165,11 @@ function hodlVerifyAexbMessages(messages) {
   }
   return aexbVerify(messages[0]);
 }
-// Reads the Nonce Inspector's transcript field. Release builds keep the
-// Jade-only parser and its exact behaviour; preview builds detect the format
-// (Jade, BitBox02 or AEXB/AEXT) and verify an AEXB transcript's math.
-function hodlReadNonceTranscript(raw, preview) {
-  if (!preview) {
-    try {
-      return { transcript: hodlParseAntiExfil(raw), kind: "jade", warningCode: null, aexb: null };
-    } catch (exception) {
-      return { error: exception.message || String(exception) };
-    }
-  }
+// Reads the Nonce Inspector's transcript field: detects the format (Jade,
+// BitBox02 or AEXB/AEXT) and verifies an AEXB transcript's math. Every
+// build takes this path since the anti-exfil box was unhidden (8e1b9a1a,
+// owner-approved); the Jade-only release parser and its flag are gone.
+function hodlReadNonceTranscript(raw) {
   const result = readAntiExfil(raw);
   if (!result) return { transcript: null };
   if (result.kind === "jade" || result.kind === "bitbox02") {
@@ -14602,7 +14598,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   let transcriptKind = "jade", transcriptWarningCode = null, aexbResult = null, aexbSignatures = null;
   if (view !== "inspect") try {
     let raw = (options?.transcript ?? document.getElementById("psbt-ax-transcript")?.value) || "";
-    const read = hodlReadNonceTranscript(raw, true);
+    const read = hodlReadNonceTranscript(raw);
     transcript = read.transcript;
     transcriptKind = read.kind || "jade";
     transcriptWarningCode = read.warningCode || null;
