@@ -2304,5 +2304,15 @@
   "BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.": "BIP-47 necesita una clave privada raíz BIP32 (profundidad 0), no una xprv de cuenta.",
   "Derive a key in Key Station first, then return to the BIP-47 station.": "Deriva una clave en Key Station primero, luego regresa a la estación BIP-47.",
   "BIP-47 needs a seed or root xprv. Account-level and single keys cannot derive m/47'.": "BIP-47 necesita una semilla o xprv raíz. Las claves de nivel de cuenta y las claves únicas no pueden derivar m/47'.",
-  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "Elige una clave existente compatible, o introduce una semilla BIP39 o una xprv raíz."
+  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "Elige una clave existente compatible, o introduce una semilla BIP39 o una xprv raíz.",
+  "Turn on secure entry?": "¿Activar entrada segura?",
+  "{name} already has words in the text field. Turning this on cannot remove copies already created.": "{name} ya tiene palabras en el campo de texto. Activar esto no puede eliminar copias ya creadas.",
+  "These keys already have words in the text field. Turning this on cannot remove copies already created.": "Estas claves ya tienen palabras en el campo de texto. Activar esto no puede eliminar copias ya creadas.",
+  "Keep current entry": "Mantener entrada actual",
+  "Clear and start again": "Borrar y empezar de nuevo",
+  "Some of these words are not on the BIP39 English list, so they cannot be kept.": "Algunas de estas palabras no están en la lista inglesa BIP39, por lo que no se pueden conservar.",
+  "Turn off secure entry?": "¿Desactivar entrada segura?",
+  "Converting puts the words back into standard text fields, which creates text copies. Either choice applies to every key in this session.": "Convertir devuelve las palabras a campos de texto estándar, lo que crea copias de texto. Cualquiera de las opciones se aplica a cada clave en esta sesión.",
+  "Convert entries to standard text": "Convertir entradas a texto estándar",
+  "Clear entries and turn off": "Borrar entradas y desactivar"
 }
