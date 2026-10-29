@@ -211,6 +211,16 @@ test("a phrase longer than the key's length stays text and opens no dialog (Mini
   }
 });
 
+test("turning on drops the last-word cache, and the length lock holds in hodlSetSeedLength (GLM, Kimi, MiniMax)", () => {
+  const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
+  const toggle = app.slice(app.indexOf("async function hodlSecureEntryToggle("), app.indexOf("\nfunction ", app.indexOf("async function hodlSecureEntryToggle(")));
+  const committed = toggle.indexOf("hodlSecureEntryOn = true;");
+  assert.ok(committed > 0 && toggle.indexOf("hodlLastWordCache.clear();", committed) > committed, "turning on clears the last-word cache");
+  const setter = app.slice(app.indexOf("function hodlSetSeedLength("), app.indexOf("\nfunction ", app.indexOf("function hodlSetSeedLength(")));
+  const guard = setter.indexOf("hodlSecureEntryHasData(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))");
+  assert.ok(guard > 0 && guard < setter.indexOf("hodlCaptureKey();"), "the setter refuses a new length before changing anything");
+});
+
 test("End Session redraws a seed form that showed the picker (GLM)", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
   const end = app.indexOf("try { hodlSecureEntryEnd(); } catch {}");

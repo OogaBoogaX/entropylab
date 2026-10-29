@@ -6807,6 +6807,12 @@ function hodlInvalidateActiveKeyOutput() {
 function hodlSetSeedLength(words) {
   let config = hodlSeedLengths[Number(words)];
   if (!config) return;
+  // The lock is enforced here, not only in the dropdown: a key holding secure
+  // words keeps the length its entry was made for.
+  if (config.words !== hodlTargetWordCount && hodlSecureEntryOn && hodlSecureEntryHasData(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))) {
+    hodlUpdateSeedLengthControl();
+    return;
+  }
   if (hodlTargetWordCount === config.words) {
     hodlUpdateSeedLengthControl();
     hodlQueueMasterFingerprintPreview(0);
@@ -12471,6 +12477,8 @@ async function hodlSecureEntryToggle(wanted) {
       // below throws.
       committed = true;
       hodlSecureEntryOn = true;
+      // The last-word helper caches partial phrases as text: drop them with the field.
+      hodlLastWordCache.clear();
       let seedField = document.getElementById("seed");
       if (seedField) {
         seedField.value = "";
