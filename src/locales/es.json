@@ -2298,5 +2298,11 @@
   "Raw transaction (hex)": "Transacción sin procesar (hex)",
   "Manual override (unverified)": "Anulación manual (no verificado)",
   "Input that holds the public key": "Entrada que contiene la clave pública",
-  "Public key of that input (hex)": "Clave pública de esa entrada (hex)"
+  "Public key of that input (hex)": "Clave pública de esa entrada (hex)",
+  "Paste a BIP39 seed phrase or a BIP32 root xprv/tprv.": "Pega una frase semilla BIP39 o una xprv/tprv raíz BIP32.",
+  "Watch-only extended keys cannot derive BIP-47 payment codes.": "Las claves extendidas solo de visualización no pueden derivar códigos de pago BIP-47.",
+  "BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.": "BIP-47 necesita una clave privada raíz BIP32 (profundidad 0), no una xprv de cuenta.",
+  "Derive a key in Key Station first, then return to the BIP-47 station.": "Deriva una clave en Key Station primero, luego regresa a la estación BIP-47.",
+  "BIP-47 needs a seed or root xprv. Account-level and single keys cannot derive m/47'.": "BIP-47 necesita una semilla o xprv raíz. Las claves de nivel de cuenta y las claves únicas no pueden derivar m/47'.",
+  "Choose a compatible existing key, or enter a BIP39 seed or root xprv.": "Elige una clave existente compatible, o introduce una semilla BIP39 o una xprv raíz."
 }
