@@ -2349,5 +2349,7 @@
   "Repeat the passphrase": "Repita a passphrase",
   "Encrypt and download": "Criptografar e baixar",
   "Open an encrypted nonce history": "Abrir um histórico de nonce criptografado",
-  "Open": "Abrir"
+  "Open": "Abrir",
+  " This file was not encrypted: download the history again to save an encrypted copy, and delete the plain file.": " Este arquivo não foi criptografado: baixe o histórico novamente para salvar uma cópia criptografada e exclua o arquivo simples.",
+  " The file is encrypted.": " O arquivo está criptografado."
 }
