@@ -520,6 +520,7 @@ words, pick one of the checksum words.</span></span>
       <div class="key-tab-strip">
         <div class="key-tabs" id="privacy-tool-tabs" role="tablist" aria-label="Privacy stations">
           <button class="tab key-tab active" id="privacy-sp-tab" type="button" role="tab" aria-selected="true" aria-controls="sp-card" data-privacy-tool="sp"><span class="key-tab-label">Silent Payments</span></button>
+          <button class="tab key-tab" id="privacy-bip47-tab" type="button" role="tab" aria-selected="false" aria-controls="bip47-card" data-privacy-tool="bip47"><span class="key-tab-label">BIP-47 payment codes</span></button>
         </div>
       </div>
     </div>
@@ -531,6 +532,92 @@ words, pick one of the checksum words.</span></span>
       <div class="key-manager no-print" id="sp-manager" hidden>
         <div class="key-tab-strip"><div class="key-tabs" id="sp-tabs" role="tablist" aria-label="Silent Payments"></div><div class="add-item-control"><button class="add-key" id="add-sp" type="button" aria-label="Open SP Station to derive another address" aria-describedby="add-sp-tooltip">+</button><span class="add-item-tooltip" id="add-sp-tooltip" role="tooltip">Open SP Station</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-sp" type="button" aria-label="Delete current silent payment address" aria-describedby="delete-sp-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-sp-tooltip" role="tooltip">Delete this silent payment address</span></div></div>
       </div>
+    <!-- preview -->
+    <div class="card no-print tool-card" id="bip47-card" role="tabpanel" hidden>
+      <div data-bip47-section="intro">
+        <p class="edge-note is-info">A payment code lets a compatible wallet derive payment addresses for you. This station calculates them and checks pasted data offline. It never builds, signs or broadcasts transactions, and it does not check the blockchain.</p>
+      </div>
+      <div data-bip47-section="source">
+        <div class="station-key-source tool-section">
+          <p class="label">Use a key from Key Station</p>
+          <div class="session-key-picker" id="bip47-session-keys" role="group" aria-label="Compatible Key Station keys" hidden></div>
+          <p class="field-note" id="bip47-session-keys-note"></p>
+        </div>
+        <label class="field">Session key
+          <span class="field-note">BIP39 seed phrase or root xprv/tprv</span>
+          <textarea id="bip47-key" placeholder="Enter a seed phrase or root xprv/tprv" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <label class="field">Passphrase (optional)
+          <input id="bip47-pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none">
+        </label>
+        <div class="key-settings">
+          <div class="key-settings-row">
+            <label class="field">Address network
+              <select id="bip47-network"><option value="mainnet" selected>Bitcoin mainnet</option><option value="testnet">Testnet (practice)</option></select>
+            </label>
+          </div>
+        </div>
+        <p class="field-note">Payment codes do not name a network. Addresses use the network selected here.</p>
+        <p class="label">Account path</p>
+        <p class="mono" id="bip47-path">m/47'/0'/0'</p>
+        <div class="tool-actions">
+          <button class="btn primary" id="bip47-go" type="button">Derive</button>
+        </div>
+        <p class="err" id="bip47-error" role="alert"></p>
+        <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      </div>
+      <div data-bip47-section="own">
+        <div id="bip47-own"></div>
+      </div>
+      <div data-bip47-section="counterparty">
+        <label class="label" for="bip47-contact">Payment code</label>
+        <p class="field-note">Decoding a payment code needs no private key.</p>
+        <textarea id="bip47-contact" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <div class="tool-actions">
+          <button class="btn" id="bip47-decode" type="button">Decode</button>
+        </div>
+        <div id="bip47-contact-out" aria-live="polite"></div>
+      </div>
+      <details class="derivation-advanced" id="bip47-pairs" data-bip47-section="pairs">
+        <summary>Payment addresses</summary>
+        <p class="field-note" id="bip47-pairs-needs">Choose a key and decode a contact's payment code first.</p>
+        <div class="row no-print segmented-control is-wide" id="bip47-directions" role="group">
+          <button class="tab active" type="button" data-direction="send" aria-pressed="true">Send to this contact</button>
+          <button class="tab" type="button" data-direction="receive" aria-pressed="false">Receive from this contact</button>
+        </div>
+        <label class="field">Start index
+          <input id="bip47-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+        </label>
+        <div class="row tool-actions">
+          <button class="btn primary" id="bip47-rows-go" type="button">Derive</button>
+          <button class="btn" id="bip47-rows-next" type="button" hidden>Next 10</button>
+        </div>
+        <div id="bip47-rows" aria-live="polite"></div>
+        <p class="edge-note is-info">These addresses have not been checked for previous use. Keep your own record of used indexes.</p>
+      </details>
+      <details class="derivation-advanced" id="bip47-notify" data-bip47-section="notify">
+        <summary>Check a notification transaction</summary>
+        <p class="field-note" id="bip47-notify-needs">Choose a key first.</p>
+        <label class="field">Raw transaction (hex)
+          <textarea id="bip47-notify-tx" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <details class="derivation-advanced" id="bip47-notify-manual">
+          <summary>Manual override (unverified)</summary>
+          <p class="edge-note is-info">Unverified override: this check uses the public key and input you selected. It does not verify that the key belongs to that input.</p>
+          <label class="field">Input that holds the public key
+            <select id="bip47-notify-input"><option value="" disabled selected></option></select>
+          </label>
+          <label class="field">Public key of that input (hex)
+            <input id="bip47-notify-pub" spellcheck="false" autocomplete="off" autocapitalize="off">
+          </label>
+        </details>
+        <div class="row tool-actions">
+          <button class="btn primary" id="bip47-notify-go" type="button">Check</button>
+        </div>
+        <div id="bip47-notify-out" aria-live="polite"></div>
+      </details>
+    </div>
+    <!-- /preview -->
       <div class="card no-print tool-card" id="sp-card" role="tabpanel" hidden>
       <div id="sp-bench">
       <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
