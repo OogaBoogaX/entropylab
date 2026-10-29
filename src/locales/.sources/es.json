@@ -2341,5 +2341,15 @@
   "Capture clearing, supported transactions and limits": "d8ed2a34f1237138834e9f5962c75b561f261932c198218045415670f7ef6c98",
   "Captured messages stay in memory while scanning and are cleared automatically when verification finishes, whether it passes or fails. For an unfinished capture, use Clear Capture above, End Session, or close the tab. Switching tabs or idle conceal pauses the camera but keeps unfinished messages. Clearing capture also clears the separate pasted transcript and its last result.": "f9ddcc917013d6a2038543382a74bec9c60348d11ffc547e93e38769f22543c8",
   "Captured messages are cleared before the result dialog appears. Acknowledge the result to start another capture. Sparrow remains responsible for its transaction checks and broadcast decision.": "64ea32df5e6ab0c7d27edec2aef787d9858b320b9764ca39d19cb642b67be3b5",
-  "This observer checks the supplied signatures against signing hashes recomputed from the embedded PSBT and reports signature/input coverage. Inputs without supplied slots are not signature-checked. It does not establish wallet ownership, blockchain UTXO status or your approval of the destination and amount.": "02cb0f5a14d9358e01523c5c3bbd912690ea9be2580288b0b7cc33d3094e5f49"
+  "This observer checks the supplied signatures against signing hashes recomputed from the embedded PSBT and reports signature/input coverage. Inputs without supplied slots are not signature-checked. It does not establish wallet ownership, blockchain UTXO status or your approval of the destination and amount.": "02cb0f5a14d9358e01523c5c3bbd912690ea9be2580288b0b7cc33d3094e5f49",
+  "Nonce history was not loaded: the passphrase is wrong, or the file is damaged.": "6482ff612d6aaeb895e3661f5ccdb9c28dc017b60ca7bfd8c09cbb51cef1cc09",
+  "the file is not a valid encrypted nonce history.": "d58c27876735e2830c38258738aecaa3b5b78fd3b56f04bea184c684608c0dbe",
+  " This file was not encrypted: download the history again to save an encrypted copy, and delete the plain file.": "a5483212576fac5c8160571e93e6526630250a94a1da5510f6236cd64b5eb57a",
+  " The file is encrypted.": "f42ebfb2b953182af5fff3f6130c589440902253a59d511f029d6580db2d2cc3",
+  "Download an encrypted nonce history?": "17165b46aa948b922fa4951bf2d1b389aa70f4a1707651b2b7f0515872c7ced7",
+  "This file links your signatures to your key's fingerprint. Keep it offline, and use a long, unique passphrase (at least 4–5 random words): the file is only as strong as the passphrase.": "bb306738679dabef2992d0a3283e42d3caeac673905a487ccdb2d9f919b6263d",
+  "Repeat the passphrase": "4b93336c5db8a45761eb495c41c94a2b6c4f77650d1ceec1a12e8c4a26a7645c",
+  "Encrypt and download": "84768b93e863c007da9bfeec15c51c7957fe201f55fca6cd70793cba8cab61da",
+  "Open an encrypted nonce history": "3b09a2a899e28d8c133bbef1a6110cc4c0d6511faedac4dc090fe27301b7d911",
+  "Open": "ed077f3d8125d60dca1979c7133601bd187d47c73ed9975028f677e49e709942"
 }
