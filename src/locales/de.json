@@ -2349,5 +2349,7 @@
   "Repeat the passphrase": "Passphrase wiederholen",
   "Encrypt and download": "Verschlüsseln und herunterladen",
   "Open an encrypted nonce history": "Einen verschlüsselten Nonce-Verlauf öffnen",
-  "Open": "Öffnen"
+  "Open": "Öffnen",
+  " This file was not encrypted: download the history again to save an encrypted copy, and delete the plain file.": "Diese Datei wurde nicht verschlüsselt: Laden Sie den Verlauf erneut herunter, um eine verschlüsselte Kopie zu speichern, und löschen Sie die unverschlüsselte Datei.",
+  " The file is encrypted.": "Die Datei ist verschlüsselt."
 }
