@@ -129,11 +129,10 @@ test("the BIP-47 station joins the privacy tool list from its own init", () => {
   assert.ok(init.indexOf('if (!document.getElementById("bip47-card")) return;') < init.indexOf("hodlPrivacyTools.push"), "only after the card is found");
 });
 
-test("only the Privacy stations were unhidden: Verify stays preview-only", () => {
-  // Red team (#1286 gate): pin the boundary that remains.
+test("the Verify workspace ships in release builds (owner, 2026-10-29)", () => {
   const release = applyPreviewBlocks(shell, false);
-  assert.doesNotMatch(release, /id="verify-card"|aria-controls="verify-card"/, "the Verify workspace stays out of release builds");
-  assert.match(applyPreviewBlocks(shell, true), /id="verify-card"/);
+  assert.match(release, /id="verify-card"/, "the Verify card is in release builds");
+  assert.match(release, /aria-controls="verify-card"/, "the Verify tab is in release builds");
 });
 
 test("the BIP-47 station's thrown messages are translated, and its input picker is capped", () => {

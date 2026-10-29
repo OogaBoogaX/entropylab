@@ -1714,8 +1714,9 @@ test("virtual keypads never focus the field on touch so the mobile keyboard stay
 });
 
 test("workspace tabs ship every tool, with Lightning after Transactions", () => {
-  // The release tab list is unconditional: exactly nine entries, in order.
-  // Lightning joined after Transactions (owner, 2026-10-26).
+  // The release tab list is unconditional: exactly ten entries, in order.
+  // Lightning joined after Transactions (owner, 2026-10-26); Verify last
+  // (owner, 2026-10-29).
   const declaration = appSource.match(/^var hodlWorkspaceTabs = (\[.*\]);$/m);
   assert.ok(declaration, "the workspace tab list is missing");
   assert.doesNotMatch(declaration[1], /__ENTROPYLAB_TEST_HOOKS__|\.\.\./, "no release tab may be gated behind test hooks");
@@ -1733,6 +1734,7 @@ test("workspace tabs ship every tool, with Lightning after Transactions", () => 
     ["sp", "Privacy", "Privacy", "Privacy"],
     ["vanity", "Vanity Address", "Vanity", "Vanity"],
     ["journal", "Journal", "Journal", "Journal"],
+    ["verify", "Verify", "Verify", "Verify"],
   ]);
   // The full name stays the accessible name, and a shortened wide label
   // carries it as the hover title.
@@ -2109,7 +2111,7 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   // wide label (the full name, or the short one where nine full names would
   // not fit) and the short form narrow screens show instead.
   const escape = (text) => text.replace(/[$()*+.?[\]^{|}]/g, "\\$&");
-  for (const [full, short, wide = full] of [["Keys", "Keys"], ["Vanity Address", "Vanity", "Vanity"], ["BIP-85 Child", "BIP-85", "BIP-85"], ["Multi Signature", "MultiSig", "MultiSig"], ["Privacy", "Privacy"], ["Transactions", "Txns"], ["Core Wallet", "Core"], ["Lightning", "LN"]]) {
+  for (const [full, short, wide = full] of [["Keys", "Keys"], ["Vanity Address", "Vanity", "Vanity"], ["BIP-85 Child", "BIP-85", "BIP-85"], ["Multi Signature", "MultiSig", "MultiSig"], ["Privacy", "Privacy"], ["Transactions", "Txns"], ["Core Wallet", "Core"], ["Lightning", "LN"], ["Verify", "Verify"]]) {
     assert.ok(
       shell.includes(`aria-label="${full}"`) && shell.includes(`<span class="workspace-tab-full">${wide}</span><span class="workspace-tab-short">${short}</span>`),
       `${full} is missing from the workspace strip`,
@@ -2198,10 +2200,10 @@ test("each static tool tab points at a tab panel the shell has", () => {
   const start = shell.indexOf('id="workspace-tabs"');
   const strip = shell.slice(start, shell.indexOf("</div>", start));
   const tabs = strip.match(/<button[^>]*role="tab"[^>]*>/g) ?? [];
-  // Every release tool except the Journal, which the boot render adds; preview
-  // blocks (the Verify tab) are stripped from release builds, so they don't count.
+  // Every release tool except the Journal, which the boot render adds; Verify
+  // ships in release builds since the owner unhid it (2026-10-29).
   const releaseTabs = strip.replace(/<!-- preview -->[\s\S]*?<!-- \/preview -->/g, "").match(/<button[^>]*role="tab"[^>]*>/g) ?? [];
-  assert.equal(releaseTabs.length, 8, "the static strip carries the eight static release tools");
+  assert.equal(releaseTabs.length, 9, "the static strip carries the nine static release tools");
   for (const tab of tabs) {
     const ids = tab.match(/aria-controls="([^"]*)"/)?.[1].split(" ").filter(Boolean) ?? [];
     assert.ok(ids.length, `${tab} names no panel`);
