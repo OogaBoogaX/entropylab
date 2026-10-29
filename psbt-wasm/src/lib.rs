@@ -41,6 +41,7 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::str::FromStr;
 
+mod payjoin;
 mod sanitize;
 mod scriptcode;
 mod verify;
@@ -1439,6 +1440,7 @@ fn inspect(bytes: &[u8]) -> Result<String, String> {
         "rustBitcoinError": rust_bitcoin_error,
         "txSanityError": tx_sanity,
         "sanitize": sanitize,
+        "payjoin": payjoin::shape(&raw.inputs),
         "problems": problems.iter().map(|p| json!({
             "severity": p.severity,
             "scope": p.scope,
