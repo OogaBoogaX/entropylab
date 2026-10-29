@@ -150,6 +150,8 @@ import { KEY_VAULT_MAX_KEYS as hodlKeyVaultMaxKeys, keyVaultIdentity, keyResultS
 import { clearClipboard as hodlClearClipboard, showCopiedIcon as hodlShowCopiedIcon, copyText } from "./clipboard.js";
 import { privateCopyButtonHtml as hodlPrivateCopyButtonHtml, initPrivateCopy as hodlInitPrivateCopy, isReadoutShown as hodlReadoutIsShown, renderAnnotatedPrivateText as hodlRenderAnnotatedPrivateText } from "./private-data.js";
 import { publicFieldHtml as hodlPublicFieldMarkup, publicValueHtml as hodlPublicValueHtml } from "./public-data.js";
+import { bip47AccountNode as hodlBip47AccountNode, bip47AccountPath as hodlBip47AccountPath, bip47NotificationAddress as hodlBip47NotificationAddress, decodePaymentCode as hodlBip47DecodePaymentCode, encodePaymentCode as hodlBip47EncodePaymentCode, Bip47Error as hodlBip47Error, bip47PairRows as hodlBip47PairRows, bip47ReceiveRow as hodlBip47ReceiveRow, bip47DecodeNotificationTx as hodlBip47DecodeNotificationTx, hexToBytes as hodlBip47HexToBytes } from "./bip47.js";
+import { bip47OwnHtml as hodlBip47OwnHtml, bip47ContactHtml as hodlBip47ContactHtml, bip47ErrorHtml as hodlBip47ErrorHtml, bip47RowsHtml as hodlBip47RowsHtml, bip47NotifyInputsHtml as hodlBip47NotifyInputsHtml, bip47NotifyHtml as hodlBip47NotifyHtml, bip47NotifyErrorHtml as hodlBip47NotifyErrorHtml } from "./bip47-ui.js";
 import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
 import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-session.js";
 import { initTextServiceOptOuts, initTranslationWarning } from "./text-services.js";
@@ -4955,7 +4957,7 @@ function hodlClearPassphraseField() {
 // stays active. A reader takes a byte copy and wipes it.
 var hodlStationPassphraseFields = Object.create(null);
 function hodlInitStationPassphraseVaults() {
-  for (let id of ["sp-pass", "psbt-pass", "nonce-pass"]) {
+  for (let id of ["sp-pass", "psbt-pass", "nonce-pass", "bip47-pass"]) {
     if (hodlStationPassphraseFields[id]) continue;
     let field = document.getElementById(id);
     if (!field) continue;
@@ -9298,9 +9300,605 @@ function hodlOpenKeyStation() {
   let lab = hodlKeys.findIndex((state) => state.isLab);
   if (lab >= 0) hodlSelectKey(lab);
 }
+// BIP-47 station (preview only). A depth-0 private root derives the
+// m/47'/coin'/0' account node; the payment code and its notification address
+// are public readouts. Nothing here builds, signs or broadcasts a transaction.
+var hodlBip47Source = "";
+// The Key Station key whose seed or root text was copied into #bip47-key. It
+// outlives hodlBip47Source (a passphrase edit makes the session manual) and is
+// cleared only when the key text itself is edited, so clearing or deleting
+// that Key Station key still empties the copy.
+var hodlBip47Origin = "";
+var hodlBip47Hd = null;
+var hodlBip47Contact = null;
+var hodlBip47Direction = "send";
+var hodlBip47RowsLast = null;
+var hodlBip47Revealed = null;
+var hodlBip47NotifyCode = null;
+
+function hodlBip47Network() {
+  return document.getElementById("bip47-network")?.value === "testnet" ? "testnet" : "mainnet";
+}
+
+function hodlBip47Path() {
+  return hodlBip47AccountPath(hodlBip47Network() === "mainnet" ? 0 : 1);
+}
+
+function hodlSyncBip47Path() {
+  let field = document.getElementById("bip47-path");
+  if (field) field.textContent = hodlBip47Path();
+}
+
+function hodlBip47WipeKeys() {
+  if (hodlBip47Hd) {
+    try { hodlBip47Hd.wipePrivateData(); } catch {}
+  }
+  hodlBip47Hd = null;
+  hodlBip47Source = "";
+}
+
+function hodlBip47ClearOwn() {
+  let own = document.getElementById("bip47-own");
+  if (own) own.innerHTML = "";
+}
+
+// The notification report is public, but it belongs to the key and network it
+// was checked with: any change clears it rather than leaving a stale verdict.
+function hodlBip47ClearNotify() {
+  hodlBip47NotifyCode = null;
+  let out = document.getElementById("bip47-notify-out");
+  if (out) out.innerHTML = "";
+}
+
+// Every derived result goes, the key stays. The root does not depend on the
+// network (the account path does, at derive time), so a network change clears
+// only these: keeping the root also keeps its Key Station link, and with it
+// the wipe when that key is cleared or deleted.
+function hodlBip47ClearResults() {
+  hodlBip47ClearOwn();
+  hodlBip47ClearRows();
+  hodlBip47ClearNotify();
+  let error = document.getElementById("bip47-error");
+  if (error) error.textContent = "";
+  hodlBip47SyncPairsNeeds();
+}
+
+function hodlBip47Invalidate() {
+  hodlBip47WipeKeys();
+  hodlBip47ClearResults();
+}
+
+// The key source and everything derived from it: the root, the readouts and
+// the seed or root text in the station's own fields.
+function hodlBip47WipeSource() {
+  hodlBip47Invalidate();
+  hodlBip47Origin = "";
+  for (let id of ["bip47-key", "bip47-pass"]) {
+    let field = document.getElementById(id);
+    if (field) field.value = "";
+  }
+  hodlClearStationPassphrase("bip47-pass");
+  hodlBip47SyncPairsNeeds();
+}
+
+// A decoded contact code is public, but its notification address belongs to
+// the network it was decoded for.
+function hodlBip47ClearContact() {
+  hodlBip47Contact = null;
+  hodlBip47ClearRows();
+  let contactOut = document.getElementById("bip47-contact-out");
+  if (contactOut) contactOut.innerHTML = "";
+  hodlBip47SyncPairsNeeds();
+}
+
+// The direction state and its segmented control always change together: a
+// "Receive" tab left active over send rows would offer the contact's address
+// as the user's own.
+function hodlBip47SetDirection(direction) {
+  hodlBip47Direction = direction === "receive" ? "receive" : "send";
+  let directions = document.getElementById("bip47-directions");
+  for (let button of directions?.querySelectorAll("[data-direction]") || []) {
+    let active = button.dataset.direction === hodlBip47Direction;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+}
+
+function hodlBip47WipeMem() {
+  hodlBip47WipeSource();
+  hodlBip47ClearContact();
+  hodlBip47Contact = null;
+  hodlBip47SetDirection("send");
+  hodlBip47RowsLast = null;
+  hodlBip47Revealed = null;
+  hodlBip47ClearNotify();
+  // A contact's code is public, but it names who the session was paying:
+  // ending the session leaves nothing on screen.
+  for (let id of ["bip47-contact", "bip47-notify-tx", "bip47-notify-pub"]) {
+    let field = document.getElementById(id);
+    if (field) field.value = "";
+  }
+  let notifyInput = document.getElementById("bip47-notify-input");
+  if (notifyInput) notifyInput.innerHTML = '<option value="" disabled selected></option>';
+  let notifyManual = document.getElementById("bip47-notify-manual");
+  if (notifyManual) notifyManual.open = false;
+}
+
+function hodlBip47LoadKey(text, passphrase) {
+  hodlBip47WipeKeys();
+  let value = String(text || "").trim();
+  if (!value) throw new Error("Paste a BIP39 seed phrase or a BIP32 root xprv/tprv.");
+  if (/^[xt]prv[1-9A-HJ-NP-Za-km-z]+$/.test(value.replace(/\s/g, ""))) {
+    let parsed = hodlParseExtendedKey(value.replace(/\s/g, ""));
+    if (!parsed.isPrivate) throw new Error("Watch-only extended keys cannot derive BIP-47 payment codes.");
+    if (parsed.node.depth !== 0) {
+      // A refused account key is still private material: wipe it here.
+      try { parsed.node.wipePrivateData(); } catch {}
+      throw new Error("BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.");
+    }
+    hodlBip47Hd = parsed.node;
+    hodlBip47Source = "manual";
+    return;
+  }
+  let mnemonic = hodlValidateMnemonic(value);
+  if (!mnemonic.ok) {
+    if (mnemonic.error?.key) throw hodlError(mnemonic.error.key, mnemonic.error.vars);
+    throw hodlError("Enter a BIP39 seed phrase or a BIP32 root xprv/tprv.");
+  }
+  let indices = hodlWordIndices(mnemonic.words), seed;
+  try {
+    seed = hodlSeedFromIndices(indices, passphrase || "");
+  } finally {
+    indices.fill(0);
+  }
+  try {
+    hodlBip47Hd = hodlHDKey.fromMasterSeed(seed);
+  } finally {
+    seed.fill(0);
+  }
+  hodlBip47Source = "manual";
+}
+
+function hodlBip47UseKey(state) {
+  if (!state || !state.result) throw new Error("Derive a key in Key Station first, then return to the BIP-47 station.");
+  let result = state.result;
+  hodlBip47WipeKeys();
+  if (result.kind === "hd" && hodlResultHasSeed(result)) {
+    hodlBip47Hd = hodlSeedSessionRoot(result, state.fields.pass || "");
+  } else if (result.kind === "hd" && hodlResultHasRoot(result)) {
+    let root = hodlResultRootNode(result);
+    // The same rule as a pasted xprv: m/47' hangs off the master key. The
+    // copy is this station's own, so a refused one is wiped here.
+    if (root?.depth !== 0) {
+      try { root?.wipePrivateData(); } catch {}
+      throw new Error("BIP-47 needs a BIP32 root private key (depth 0), not an account xprv.");
+    }
+    hodlBip47Hd = root;
+  } else throw new Error("BIP-47 needs a seed or root xprv. Account-level and single keys cannot derive m/47'.");
+  hodlBip47Source = "key:" + state.id;
+}
+
+function hodlPickBip47SessionKey(state) {
+  let error = document.getElementById("bip47-error");
+  if (error) error.textContent = "";
+  hodlBip47Invalidate();
+  try {
+    hodlBip47UseKey(state);
+    document.getElementById("bip47-key").value = hodlResultMnemonic(state.result) || hodlResultRootXprv(state.result) || "";
+    hodlBip47Origin = hodlBip47Source;
+    hodlSetStationPassphrase("bip47-pass", hodlResultHasSeed(state.result) ? state.fields?.pass : "");
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+  }
+  // The prerequisite notes follow the key that was just picked.
+  hodlBip47SyncPairsNeeds();
+  hodlRefreshStationKeyPickers();
+}
+
+function hodlBip47EnsureHd() {
+  let manual = document.getElementById("bip47-key")?.value;
+  if (manual && manual.trim()) {
+    if (!hodlBip47Hd || !hodlBip47Source.startsWith("key:")) {
+      let pass = hodlStationPassphraseBytes("bip47-pass");
+      try {
+        hodlBip47LoadKey(manual, pass || "");
+      } finally {
+        if (pass) pass.fill(0);
+      }
+    }
+    hodlRefreshStationKeyPickers();
+  }
+  if (!hodlNodeHasPrivateKey(hodlBip47Hd)) throw new Error("Choose a compatible existing key, or enter a BIP39 seed or root xprv.");
+}
+
+function hodlRunBip47() {
+  let error = document.getElementById("bip47-error"), out = document.getElementById("bip47-own");
+  // Working elsewhere in the station hides a shown spending key.
+  hodlBip47Conceal();
+  if (error) error.textContent = "";
+  if (out) out.innerHTML = "";
+  let account = null;
+  try {
+    hodlBip47EnsureHd();
+    let network = hodlBip47Network();
+    account = hodlBip47AccountNode(hodlBip47Hd, network);
+    let code = hodlBip47EncodePaymentCode(account.publicKey, account.chainCode);
+    let notificationAddress = hodlBip47NotificationAddress({ derivable: true, publicKey: account.publicKey, chainCode: account.chainCode }, network);
+    if (out) out.innerHTML = hodlBip47OwnHtml({ code, notificationAddress, network, path: hodlBip47Path() }, {});
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+  } finally {
+    if (account) {
+      try { account.wipePrivateData(); } catch {}
+    }
+    hodlBip47SyncPairsNeeds();
+  }
+}
+
+function hodlDecodeBip47Contact() {
+  let field = document.getElementById("bip47-contact"), out = document.getElementById("bip47-contact-out");
+  if (!out) return;
+  out.innerHTML = "";
+  hodlBip47Contact = null;
+  hodlBip47ClearRows();
+  let text = field?.value ?? "";
+  if (!text.trim()) { hodlBip47SyncPairsNeeds(); return; }
+  try {
+    let decoded = hodlBip47DecodePaymentCode(text);
+    out.innerHTML = hodlBip47ContactHtml(decoded, hodlBip47Network(), {});
+    hodlBip47Contact = decoded.derivable === true ? decoded : null;
+  } catch (exception) {
+    out.innerHTML = hodlBip47ErrorHtml(exception instanceof hodlBip47Error ? exception.code : (exception?.message || String(exception)));
+  }
+  hodlBip47SyncPairsNeeds();
+}
+
+// Hooks the shared Key Station, workspace and conceal code calls through a
+// typeof guard: the function-slice test harnesses run those shared functions
+// without this section. The station markup exists only in preview builds.
+function hodlRefreshBip47Picker() {
+  if (!document.getElementById("bip47-session-keys")) return;
+  hodlFillStationKeyPicker("bip47-session-keys", hodlBip47Source, hodlPickBip47SessionKey);
+  hodlPaintKeyStationNote("bip47-session-keys-note", !hodlSessionHdRootKeys().length, hodlTText("Choose a compatible HD-root key from the {station}, or enter a seed phrase or root extended private key below.", { station: hodlKeyStationMarker }));
+}
+
+// A Key Station key was cleared or deleted: a BIP-47 session using it goes too.
+function hodlBip47ReleaseSource(source) {
+  if ((hodlBip47Source && hodlBip47Source === source) || (hodlBip47Origin && hodlBip47Origin === source)) hodlBip47WipeSource();
+}
+
+function hodlInitBip47() {
+  if (!document.getElementById("bip47-card")) return;
+  // The station joins the Privacy stations only where its preview markup is.
+  if (!hodlPrivacyTools.some(([tool]) => tool === "bip47")) hodlPrivacyTools.push(["bip47", "bip47-card"]);
+  let key = document.getElementById("bip47-key"), pass = document.getElementById("bip47-pass"),
+      network = document.getElementById("bip47-network"), contact = document.getElementById("bip47-contact"),
+      go = document.getElementById("bip47-go"), decode = document.getElementById("bip47-decode");
+  if (!key || !pass || !network || !contact || !go || !decode) return;
+  let onKeyEdit = () => {
+    let wasStationKey = hodlBip47Source.startsWith("key:");
+    hodlBip47WipeKeys();
+    if (key.value.trim()) hodlBip47Source = "manual";
+    hodlBip47ClearOwn();
+    hodlBip47ClearRows();
+    // A notification verdict belongs to the key that produced it.
+    hodlBip47ClearNotify();
+    let error = document.getElementById("bip47-error");
+    if (error) error.textContent = "";
+    if (wasStationKey) hodlRefreshStationKeyPickers();
+    hodlBip47SyncPairsNeeds();
+  };
+  // Editing the key text makes it the user's own; a passphrase edit does not.
+  // The passphrase copied with that key goes too: it belonged to the Key
+  // Station key, and kept here it would apply silently to a new seed.
+  key.addEventListener("input", () => {
+    if (hodlBip47Origin) hodlClearStationPassphrase("bip47-pass");
+    hodlBip47Origin = "";
+  });
+  key.addEventListener("input", onKeyEdit);
+  pass.addEventListener("input", onKeyEdit);
+  network.addEventListener("change", () => { hodlBip47ClearResults(); hodlBip47ClearContact(); hodlSyncBip47Path(); });
+  go.onclick = hodlRunBip47;
+  decode.onclick = hodlDecodeBip47Contact;
+  contact.addEventListener("input", () => {
+    hodlBip47ClearContact();
+  });
+  hodlInitBip47Notify();
+  hodlInitBip47Pairs();
+  hodlSyncBip47Path();
+}
+
+// The pairs disclosure needs a private depth-0 source and a derivable
+// contact; until both are present the prerequisite note stays visible. The
+// notification check needs only a key source.
+function hodlBip47SyncPairsNeeds() {
+  // A key typed but not yet derived counts as chosen: deriving the rows or
+  // checking a transaction loads it first.
+  let key = document.getElementById("bip47-key");
+  let keyChosen = hodlNodeHasPrivateKey(hodlBip47Hd) || Boolean((key?.value || "").trim());
+  let needs = document.getElementById("bip47-pairs-needs");
+  if (needs) needs.hidden = keyChosen && hodlBip47Contact?.derivable === true;
+  let notifyNeeds = document.getElementById("bip47-notify-needs");
+  if (notifyNeeds) notifyNeeds.hidden = keyChosen;
+}
+
+// Derived rows are public data only. The revealed key is never kept here: it
+// is re-derived for the one row on show and wiped in `finally`.
+function hodlBip47ClearRows() {
+  hodlBip47Revealed = null;
+  hodlBip47RowsLast = null;
+  let rows = document.getElementById("bip47-rows");
+  if (rows) rows.innerHTML = "";
+  let next = document.getElementById("bip47-rows-next");
+  if (next) next.hidden = true;
+}
+
+function hodlBip47Conceal() {
+  if (!hodlBip47Revealed) return;
+  hodlBip47Revealed = null;
+  hodlBip47RenderRows();
+}
+
+function hodlBip47RenderRows() {
+  let out = document.getElementById("bip47-rows");
+  if (!out || !hodlBip47RowsLast) return;
+  let last = hodlBip47RowsLast;
+  out.innerHTML = hodlBip47RowsHtml({
+    direction: last.direction,
+    rows: last.rows,
+    skipped: last.skipped,
+    budgetExhausted: last.budgetExhausted,
+    network: hodlBip47Network(),
+    revealed: hodlBip47Revealed,
+  }, {
+    copy: hodlClipboardIconMarkup,
+    privateValue: hodlPrivateValue,
+    privateCopy: hodlPrivateCopyButton,
+  });
+}
+
+function hodlBip47StartIndex() {
+  let field = document.getElementById("bip47-start");
+  return field ? field.valueAsNumber : NaN;
+}
+
+function hodlBip47RunRows() {
+  let error = document.getElementById("bip47-error");
+  if (error) error.textContent = "";
+  hodlBip47ClearRows();
+  let account = null, child0 = null, own = null, result = null;
+  try {
+    let ready = false, keyError = null;
+    try {
+      hodlBip47EnsureHd();
+      ready = hodlNodeHasPrivateKey(hodlBip47Hd);
+    } catch (exception) {
+      keyError = exception;
+    }
+    // A key that was entered but cannot be read says why, rather than the
+    // generic prerequisite note.
+    if (keyError && (document.getElementById("bip47-key")?.value || "").trim()) throw keyError;
+    if (!ready || hodlBip47Contact?.derivable !== true) {
+      throw new Error(hodlTText("Choose a key and decode a contact's payment code first."));
+    }
+    let network = hodlBip47Network();
+    let direction = hodlBip47Direction === "receive" ? "receive" : "send";
+    // Fail closed: an empty, fractional or out-of-range start index is
+    // refused, never rewritten, so a used address is not shown again by
+    // accident (Codex review, 10-28).
+    let start = hodlBip47StartIndex();
+    if (!Number.isInteger(start) || start < 0 || start > 2147483647) {
+      throw new Error(hodlTText("Start index must be a whole number from 0 to 2,147,483,647."));
+    }
+    account = hodlBip47AccountNode(hodlBip47Hd, network);
+    if (direction === "send") {
+      child0 = account.deriveChild(0);
+      own = child0.privateKey;
+    } else {
+      own = account;
+    }
+    result = hodlBip47PairRows(direction, { own, code: hodlBip47Contact }, start, 10, network);
+    hodlBip47RowsLast = {
+      direction,
+      start,
+      rows: result.rows.map((row) => ({ index: row.index, address: row.address })),
+      skipped: result.skipped,
+      budgetExhausted: result.budgetExhausted,
+    };
+    hodlBip47RenderRows();
+    let next = document.getElementById("bip47-rows-next");
+    // Nothing follows the last unhardened index (2^31 - 1).
+    if (next) next.hidden = result.budgetExhausted || start + result.rows.length + result.skipped.length > 2147483647;
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+  } finally {
+    if (result) for (let row of result.rows) if (row.privateKey) { try { row.privateKey.fill(0); } catch {} }
+    if (own instanceof Uint8Array) { try { own.fill(0); } catch {} }
+    if (child0) { try { child0.wipePrivateData(); } catch {} }
+    if (account) { try { account.wipePrivateData(); } catch {} }
+    hodlBip47SyncPairsNeeds();
+  }
+}
+
+function hodlBip47RevealRow(index) {
+  if (!Number.isInteger(index) || !hodlBip47RowsLast || hodlBip47RowsLast.direction !== "receive") return;
+  if (hodlBip47Contact?.derivable !== true) return;
+  let error = document.getElementById("bip47-error");
+  if (error) error.textContent = "";
+  let account = null, row = null;
+  try {
+    hodlBip47EnsureHd();
+    let network = hodlBip47Network();
+    account = hodlBip47AccountNode(hodlBip47Hd, network);
+    row = hodlBip47ReceiveRow(account, hodlBip47Contact, index, network);
+    if (!row || !row.privateKey) { hodlBip47Conceal(); return; }
+    // The key is derived again on show, so it must belong to the address on
+    // screen; if it does not, the rows are stale and go.
+    let shown = hodlBip47RowsLast.rows.find((entry) => entry.index === index);
+    if (!shown || row.address !== shown.address) { hodlBip47ClearRows(); return; }
+    hodlBip47Revealed = { index, wif: hodlEncodeWif(row.privateKey, true, network) };
+    hodlBip47RenderRows();
+  } catch (exception) {
+    if (error) error.textContent = exception.message || String(exception);
+  } finally {
+    if (row && row.privateKey) { try { row.privateKey.fill(0); } catch {} }
+    if (account) { try { account.wipePrivateData(); } catch {} }
+  }
+}
+
+function hodlInitBip47Pairs() {
+  let directions = document.getElementById("bip47-directions");
+  if (directions) {
+    for (let button of directions.querySelectorAll("[data-direction]")) {
+      button.addEventListener("click", () => {
+        let direction = button.dataset.direction === "receive" ? "receive" : "send";
+        if (direction === hodlBip47Direction) return;
+        hodlBip47SetDirection(direction);
+        hodlBip47ClearRows();
+      });
+    }
+  }
+  let start = document.getElementById("bip47-start");
+  if (start) start.addEventListener("input", () => { hodlBip47ClearRows(); });
+  let go = document.getElementById("bip47-rows-go");
+  if (go) go.onclick = hodlBip47RunRows;
+  let next = document.getElementById("bip47-rows-next");
+  if (next) next.onclick = () => {
+    if (!hodlBip47RowsLast) return;
+    let after = hodlBip47RowsLast.start + hodlBip47RowsLast.rows.length + hodlBip47RowsLast.skipped.length;
+    let field = document.getElementById("bip47-start");
+    if (field) field.value = String(after);
+    hodlBip47RunRows();
+  };
+  let rows = document.getElementById("bip47-rows");
+  if (rows) {
+    rows.addEventListener("click", (event) => {
+      let reveal = event.target.closest?.("[data-bip47-reveal]");
+      if (reveal) { hodlBip47RevealRow(Number(reveal.dataset.bip47Reveal)); return; }
+      if (event.target.closest?.("[data-bip47-conceal]")) hodlBip47Conceal();
+    });
+    // `toggle` does not bubble; capture reaches the details from its ancestor.
+    rows.addEventListener("toggle", (event) => {
+      let details = event.target;
+      if (details?.matches?.("details[data-bip47-keys]") && !details.open) hodlBip47Conceal();
+    }, true);
+  }
+  // Closing the whole Payment addresses disclosure hides a shown key too.
+  let pairs = document.getElementById("bip47-pairs");
+  if (pairs) pairs.addEventListener("toggle", () => { if (!pairs.open) hodlBip47Conceal(); });
+  hodlBip47SyncPairsNeeds();
+}
+
+// The notification check: the pasted transaction is public data, and the
+// notification private key (child 0) is derived for the one call and wiped in
+// `finally` with every intermediate node. Manual mode is on only while the
+// override is open and both of its values are present; it never falls back to
+// manual silently.
+function hodlBip47NotifyManual() {
+  let manual = document.getElementById("bip47-notify-manual");
+  let select = document.getElementById("bip47-notify-input");
+  let pub = document.getElementById("bip47-notify-pub");
+  let open = manual?.open === true;
+  let index = select && select.value !== "" ? Number(select.value) : NaN;
+  let pubkey = (pub?.value || "").trim();
+  let complete = open && Number.isInteger(index) && index >= 0 && pubkey !== "";
+  return { open, complete, options: complete ? { designatedPub: pubkey, designatedInput: index } : {} };
+}
+
+// The manual picker lists the parsed transaction's inputs; nothing is
+// selected, so the engine's input-0 fallback is never reached by accident.
+function hodlBip47FillNotifyInputs() {
+  let select = document.getElementById("bip47-notify-input");
+  if (!select) return;
+  let text = (document.getElementById("bip47-notify-tx")?.value || "").trim();
+  let tx = null;
+  if (text) {
+    try { tx = parseRawTx(hodlBip47HexToBytes(text)); } catch { tx = null; }
+  }
+  select.innerHTML = '<option value="" disabled selected></option>' + (tx ? hodlBip47NotifyInputsHtml(tx.inputs) : "");
+  select.value = "";
+}
+
+function hodlBip47CheckNotify() {
+  let error = document.getElementById("bip47-error");
+  let out = document.getElementById("bip47-notify-out");
+  hodlBip47Conceal();
+  if (error) error.textContent = "";
+  if (out) out.innerHTML = "";
+  hodlBip47NotifyCode = null;
+  let account = null, child0 = null, priv = null;
+  try {
+    let key = document.getElementById("bip47-key");
+    if (!hodlNodeHasPrivateKey(hodlBip47Hd) && !(key?.value || "").trim()) {
+      if (error) error.textContent = hodlTText("Choose a key first.");
+      return;
+    }
+    try {
+      hodlBip47EnsureHd();
+    } catch (exception) {
+      if (error) error.textContent = exception?.message || String(exception);
+      return;
+    }
+    let manual = hodlBip47NotifyManual();
+    if (manual.open && !manual.complete) {
+      if (error) error.textContent = hodlTText("Choose an input and enter its public key, or close the manual override.");
+      return;
+    }
+    account = hodlBip47AccountNode(hodlBip47Hd, hodlBip47Network());
+    child0 = account.deriveChild(0);
+    priv = child0.privateKey;
+    let result = hodlBip47DecodeNotificationTx(document.getElementById("bip47-notify-tx")?.value ?? "", priv, manual.options);
+    hodlBip47NotifyCode = result?.code || null;
+    if (out) out.innerHTML = hodlBip47NotifyHtml(result, { manual: manual.open });
+  } catch (exception) {
+    if (out) out.innerHTML = hodlBip47NotifyErrorHtml(exception);
+  } finally {
+    if (priv instanceof Uint8Array) { try { priv.fill(0); } catch {} }
+    if (child0) { try { child0.wipePrivateData(); } catch {} }
+    if (account) { try { account.wipePrivateData(); } catch {} }
+    hodlBip47SyncPairsNeeds();
+  }
+}
+
+function hodlInitBip47Notify() {
+  let tx = document.getElementById("bip47-notify-tx");
+  if (tx) {
+    tx.addEventListener("input", () => {
+      hodlBip47ClearNotify();
+      hodlBip47FillNotifyInputs();
+      // A public key entered for the old transaction's input does not carry over.
+      let pub = document.getElementById("bip47-notify-pub");
+      if (pub) pub.value = "";
+    });
+  }
+  // The verdict belongs to the input, key and mode it was checked with.
+  for (let [id, type] of [["bip47-notify-input", "change"], ["bip47-notify-pub", "input"], ["bip47-notify-manual", "toggle"]]) {
+    document.getElementById(id)?.addEventListener(type, () => {
+      hodlBip47ClearNotify();
+      let error = document.getElementById("bip47-error");
+      if (error) error.textContent = "";
+    });
+  }
+  let go = document.getElementById("bip47-notify-go");
+  if (go) go.onclick = hodlBip47CheckNotify;
+  let out = document.getElementById("bip47-notify-out");
+  if (out) {
+    // An explicit transfer: the recovered code is copied into the contact
+    // field and decoded there. Nothing replaces the contact automatically.
+    out.addEventListener("click", (event) => {
+      if (!event.target.closest?.("[data-bip47-use-code]")) return;
+      let contact = document.getElementById("bip47-contact");
+      if (!contact || !hodlBip47NotifyCode) return;
+      contact.value = hodlBip47NotifyCode;
+      hodlDecodeBip47Contact();
+    });
+  }
+}
+
 function hodlRefreshStationKeyPickers() {
   hodlFillStationKeyPicker("bip85-session-keys", hodlBip85Source, hodlPickBip85SessionKey);
   hodlFillStationKeyPicker("sp-session-keys", hodlSpSource, hodlPickSpSessionKey);
+  if (typeof hodlRefreshBip47Picker === "function") hodlRefreshBip47Picker();
   hodlFillStationKeyPicker("vanity-session-keys", hodlVanitySource, hodlPickVanitySessionKey, hodlVanitySourceKeys);
   hodlFillStationKeyPicker("psbt-session-keys", hodlPsbtSource, hodlPickPsbtSessionKey, hodlPsbtSourceKeys);
   hodlFillStationKeyPicker("nonce-session-keys", hodlPsbtSource, hodlPickPsbtSessionKey, hodlPsbtSourceKeys);
@@ -16240,6 +16838,7 @@ function hodlReleaseBip85ChildSource(state) {
     hodlSyncBip85Parent();
   }
   hodlSpDropAddressesFrom(source);
+  if (typeof hodlBip47ReleaseSource === "function") hodlBip47ReleaseSource(source);
   if (hodlSpSource === source) {
     hodlSpWipeKeys();
     for (let id of ["sp-key", "sp-pass"]) {
@@ -16308,6 +16907,7 @@ function hodlReleaseKeyConsumers(keyId, options = {}) {
   }
   hodlDropBip85ChildrenOf(source);
   hodlSpDropAddressesFrom(source);
+  if (typeof hodlBip47ReleaseSource === "function") hodlBip47ReleaseSource(source);
   if (hodlSpSource === source) {
     hodlSpWipeKeys();
     for (let id of ["sp-key", "sp-pass"]) {
@@ -16889,6 +17489,8 @@ function hodlShowWorkspace(id) {
   else if (hodlWorkspace === "msig") hodlCaptureMsig();
   // A running vanity grind survives workspace navigation. Stop, inputs that
   // invalidate the run, and lifecycle/session clearing own cancellation.
+  // Leaving the Privacy workspace hides a revealed BIP-47 spending key.
+  if (hodlWorkspace === "sp" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
   hodlWorkspace = id;
   [...hodlElement("#workspace-tabs").querySelectorAll("[data-workspace]")].forEach((button) => {
     let active = button.dataset.workspace === id;
@@ -17154,6 +17756,8 @@ function hodlShowPrivacyTool(id, focus = false) {
   if (!document.getElementById("privacy-tool-tabs")) return;
   let next = hodlPrivacyTools.some(([tool]) => tool === id) ? id : "sp",
       changed = next !== hodlPrivacyTool;
+  // A revealed spending key never outlives the station it was shown on.
+  if (next !== "bip47" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
   hodlPrivacyTool = next;
   hodlSyncPrivacyTool();
   if (changed) hodlJournalLog("tool-tab", hodlPrivacyTool, "sp");
@@ -20432,6 +21036,7 @@ function hodlInitWorkspace() {
   new ResizeObserver(hodlSyncWorkspaceOverflow).observe(strip);
   hodlInitPsbtToolTabs();
   if (PREVIEW) hodlInitPrivacyToolTabs();
+  if (typeof hodlInitBip47 === "function") hodlInitBip47();
   hodlInitJournalToolTabs();
   hodlInitJournalNotebook();
   hodlInitMsig();
@@ -20763,6 +21368,7 @@ function hodlInitEndSession() {
 // Five minutes untouched is long enough to copy a phrase onto paper.
 var hodlRevealIdleMs = 5 * 60 * 1000;
 function hodlConcealPrivateValues() {
+  if (typeof hodlBip47Conceal === "function") hodlBip47Conceal();
   for (let state of [...hodlKeys, ...hodlBip85Children, ...hodlSpAddresses]) state.reveal = false;
   if (hodlSpVerifyMatches) hodlSpVerifyMatches.reveal = false;
   hodlRevealPrivate = hodlBip85Reveal = hodlVanityReveal = hodlJournalReveal = false;
@@ -20797,6 +21403,7 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlPsbtWipeMem(); } catch {}
     try { hodlBip85WipeMem(); } catch {}
     try { hodlSpWipeMem(); } catch {}
+    try { hodlBip47WipeMem(); } catch {}
     try { hodlLnWipeMem(); } catch {}
     // Every derived wallet's row key bytes, shared results included: the
     // whole session is going (#546 B2). Before the Journal wipe, which empties

@@ -91,6 +91,15 @@ const CLEARING_PATHS = [
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
   },
   {
+    ids: ["bip47-key", "bip47-pass"],
+    why: "BIP-47 station: session key and passphrase (preview only)",
+    probe: (id) => {
+      assert.ok(fnBody("hodlBip47WipeSource").includes(`"${id}"`), `#${id} missing from the BIP-47 wipe`);
+      assert.match(fnBody("hodlBip47WipeMem"), /hodlBip47WipeSource\(\)/, "the full BIP-47 wipe includes the source wipe");
+      assert.match(lifecycle, /hodlBip47WipeMem\(\)/, "End Session and pagehide must reach the BIP-47 wipe");
+    },
+  },
+  {
     ids: ["ln-seed", "ln-pass", "ln-inv-input"],
     why: "Lightning: aezeed cipher seed and passphrase, and the pasted invoice/offer (a payment request that must not outlive the session)",
     probe: (id) => {
@@ -226,6 +235,10 @@ const PUBLIC_FIELDS = {
   "address-range": "address window setting",
   "address-start": "address window setting",
   "address-start-harden": "hardening toggle",
+  "bip47-contact": "a pasted payment code — public data, decoded offline with no key",
+  "bip47-notify-pub": "a manually supplied public key — public data, used only for the unverified override",
+  "bip47-notify-tx": "a pasted raw transaction — public data, decoded offline with no key",
+  "bip47-start": "BIP-47 payment-address start index setting",
   "bip85-bytes": "BIP-85 length setting",
   "bip85-index": "BIP-85 index setting",
   "bip85-pwdlen": "BIP-85 length setting",

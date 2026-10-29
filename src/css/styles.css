@@ -3285,3 +3285,7 @@ details[data-ots-paths] { min-width: 0; }
 .ots-paths-body > * { margin: 0; min-width: 0; }
 /* Field names are <label class="label">: block, so the label spacing applies. */
 #verify-card label.label { display: block; }
+
+/* BIP-47 station (preview). Its notes and buttons toggle `hidden`; .field-note
+   and .btn set display, which would override it. */
+#bip47-card [hidden] { display: none; }
