@@ -136,6 +136,77 @@ test("turning on with no seed text commits without a dialog", async () => {
   }
 });
 
+test("an extended key in the seed field stays text and opens no dialog (MiniMax)", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    let dialogCalls = 0;
+    const session = createSecureSession();
+    const xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+    const keys = [{ id: 1, seedMethod: "words", fields: { seed: xprv }, globalSync: false }];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => { dialogCalls++; return { open: async () => "clear" }; },
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys(keys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(dialogCalls, 0);
+    assert.equal(keys[0].fields.seed, xprv);
+    assert.equal(mod.hodlSecureEntryOn, true);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("a redraw that throws after the commit leaves the switch on with the session (red team)", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const session = createSecureSession();
+    const keys = [{ id: 1, seedMethod: "words", fields: { seed: "" }, globalSync: false }];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => null }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => { throw new Error("redraw failed"); },
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys(keys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(session.on, true);
+    assert.equal(mod.hodlSecureEntryOn, true);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
 test("turning on with seed text keeps or clears the words", async () => {
   const previous = globalThis.document;
   globalThis.document = { getElementById: () => null };
@@ -327,7 +398,7 @@ test("the seed form mounts the picker instead of a text field, and each render d
   const top = body.slice(0, body.indexOf('if (hodlKeyMode === "dice")'));
   assert.match(top, /try \{ hodlSeedPicker\?\.destroy\(\); \} catch \{\}\s*hodlSeedPicker = null;/);
   const seed = body.slice(body.indexOf('if (hodlKeyMode === "seed")'));
-  const secure = seed.indexOf("if (hodlSecureSeedActive()) {"), textarea = seed.indexOf('id="seed"');
+  const secure = seed.indexOf("if (hodlSecureSeedActive() && (hodlSecureEntryHasData(hodlSecureKeyOf(state))"), textarea = seed.indexOf('id="seed"');
   assert.ok(secure > 0 && textarea > secure, "the secure branch comes before the words textarea");
   const branch = seed.slice(secure, seed.indexOf("return;", secure));
   assert.match(branch, /id="seed-picker-host"/);
@@ -383,8 +454,11 @@ test("the seed length locks while secure words are entered", async () => {
       stubs: {
         hodlSeedConfig: () => ({ words: 24 }),
         hodlSeedLengthSelectEl: select,
-        hodlSecureSeedActive: () => true,
-        hodlSecureSeedEntry: () => ({ count }),
+        hodlSecureEntryOn: true,
+        hodlSecureEntryHasData: () => count > 0,
+        hodlSecureKeyOf: () => "k1",
+        hodlKeys: [{}],
+        hodlActiveKey: 0,
         hodlKeyMode: "seed",
         hodlSeedMethod: "words",
         hodlSeedZeroIndexed: false,
@@ -402,10 +476,12 @@ test("the seed length locks while secure words are entered", async () => {
     for (const option of select.options) {
       assert.equal(option.disabled, option.value !== "24");
     }
-    assert.match(help.textContent, /undo or clear/);
+    const lockedHelp = help.textContent;
     count = 0;
     mod.hodlUpdateSeedLengthControl();
     for (const option of select.options) assert.equal(option.disabled, false);
+    // The lock adds a note to the help line (checked by the change, not its words).
+    assert.ok(lockedHelp.startsWith(help.textContent) && lockedHelp.length > help.textContent.length);
   } finally {
     globalThis.document = previous;
   }

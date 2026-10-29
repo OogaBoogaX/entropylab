@@ -6759,7 +6759,9 @@ function hodlUpdateSeedLengthControl() {
   if (hodlSeedLengthSelectEl.value !== String(config.words)) {
     hodlSeedLengthSelectEl.value = String(config.words);
   }
-  let locked = hodlSecureSeedActive() && (hodlSecureSeedEntry()?.count ?? 0) > 0;
+  // Locked while the key holds secure words, in any method: a length changed
+  // under Word numbers or another mode would no longer match the entry.
+  let locked = hodlSecureEntryOn && hodlSecureEntryHasData(hodlSecureKeyOf(hodlKeys[hodlActiveKey]));
   let lockNote = locked ? " " + hodlTText("To change the length, undo or clear the words entered so far.") : "";
   for (const option of hodlSeedLengthSelectEl.options) option.disabled = locked && option.value !== String(config.words);
   hodlSeedLengthSelectEl.dispatchEvent(new Event("entropylab:sync-select"));
@@ -6771,7 +6773,7 @@ function hodlUpdateSeedLengthControl() {
     if (format.remainderBits) extra = format.binaryRemainder
       ? hodlT(" Enter {fullDigits} complete {shortLabel} characters followed by {n} coin flip(s), using Heads (0) or Tails (1).", { fullDigits: format.fullDigits, shortLabel: format.shortLabel, n: format.remainderBits })
       : hodlT(" The final character contributes {n} bit(s) and must be one of {chars}.", { n: format.remainderBits, chars: [...format.finalCharacters].join(", ") });
-    help.textContent = hodlTText("{words} words require exactly {digits} {unit}.", { words: config.words, digits: format.digits, unit: format.unit }) + extra;
+    help.textContent = hodlTText("{words} words require exactly {digits} {unit}.", { words: config.words, digits: format.digits, unit: format.unit }) + extra + lockNote;
     return;
   }
   help.textContent = (hodlKeyMode === "seed" ? hodlSeedMethod === "numbers" ? hodlTText("Enter exactly {words} BIP39 word numbers using {range}.", { words: config.words, range: hodlTText(hodlSeedZeroIndexed ? "0 through 2047" : "1 through 2048") }) : hodlTText("Enter exactly {words} BIP39 words. Extended keys ignore this selection.", { words: config.words }) : hodlKeyMode === "cards" ? hodlCardMethod === "direct" ? hodlTText("{words} words use {partial} complete 11-bit rank selections plus {final} final rank draw(s).", { words: config.words, partial: config.partialWords, final: hodlDirectCardFinalRadices(config.words).length }) : config.words === 24 ? hodlTText("24 words need 256 bits. One deck is about 225.6 bits, so deal 52 unique cards, shuffle again, then deal 6 more.") : hodlTText("{words} words need {bits} bits. Deal {first} unique cards from one shuffled deck.", { words: config.words, bits: config.bits, first: hodlCardNeeded(config.words).first }) : hodlTText("{words} words use {bits} bits of BIP39 entropy.", { words: config.words, bits: config.bits })) + lockNote;
@@ -7169,8 +7171,10 @@ function hodlRenderKeyForm() {
       update();
       return;
     }
-    if (hodlSecureSeedActive()) {
-      // Secure entry: the picker holds the words as indices; no text field.
+    if (hodlSecureSeedActive() && (hodlSecureEntryHasData(hodlSecureKeyOf(state)) || !String(state?.fields?.seed ?? "").trim())) {
+      // Secure entry: the picker holds the words as indices; no text field. A
+      // seed that arrived as text while the switch was on (an import, a Journal
+      // fill) keeps the text field, as hodlSecureSeedApplies decides.
       hodlFormEl.innerHTML = `${choices}<div id="seed-picker-host"></div>`;
       bindMethodChoices({ value: "" });
       hodlMountSeedPicker();
@@ -12400,7 +12404,7 @@ async function hodlSecureEntryToggle(wanted) {
     return;
   }
   hodlSecureEntryBusy = true;
-  let before = hodlSecureEntryOn, plan = null;
+  let before = hodlSecureEntryOn, plan = null, committed = false;
   try {
     hodlRenderSecureEntryControl();
     hodlCaptureKey();
@@ -12409,7 +12413,8 @@ async function hodlSecureEntryToggle(wanted) {
       for (const state of hodlKeys) {
         if (hodlNormalizeSeedMethod(state.seedMethod) !== "words") continue;
         let phrase = String(state.fields?.seed ?? "").trim();
-        if (!phrase) continue;
+        // An extended key in the seed field is not words: it stays text.
+        if (!phrase || hodlLooksExtendedKey(phrase)) continue;
         keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { seed: { phrase: state.fields.seed, length: Number(state.targetWords) || 24 } } });
         names.push(state.name);
         states.push(state);
@@ -12451,6 +12456,10 @@ async function hodlSecureEntryToggle(wanted) {
           return;
         }
       }
+      // Committed: from here the switch follows the session, even if a redraw
+      // below throws.
+      committed = true;
+      hodlSecureEntryOn = true;
       let seedField = document.getElementById("seed");
       if (seedField) {
         seedField.value = "";
@@ -12458,7 +12467,6 @@ async function hodlSecureEntryToggle(wanted) {
       }
       let highlight = document.getElementById("seed-highlight");
       if (highlight) highlight.textContent = "";
-      hodlSecureEntryOn = true;
       for (const state of hodlKeys) {
         state.globalSync = false;
         state.globalSyncBitCount = 0;
@@ -12508,6 +12516,7 @@ async function hodlSecureEntryToggle(wanted) {
           return;
         }
       }
+      committed = true;
       hodlSecureEntryOn = false;
       hodlSetMode(hodlKeyMode);
       hodlSyncKeyClearButton();
@@ -12518,7 +12527,7 @@ async function hodlSecureEntryToggle(wanted) {
     }
   } catch (error) {
     if (plan) discardPlan(plan);
-    hodlSecureEntryOn = before;
+    if (!committed) hodlSecureEntryOn = before;
     hodlRenderSecureEntryControl();
   } finally {
     hodlSecureEntryBusy = false;
