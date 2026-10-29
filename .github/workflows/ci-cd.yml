@@ -217,7 +217,7 @@ jobs:
               cd ../qr-wasm
               cargo test --locked --lib'
       - name: Test the freshly built bindings
-        run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/psbt-sanitize.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs test/qr-wasm.test.mjs test/aezeed-wasm.test.mjs test/self-test-wasm.test.mjs
+        run: node --test test/entropylab-wasm.test.mjs test/hashes-wasm.test.mjs test/hdkey-bip39-wasm.test.mjs test/addresses-wasm.test.mjs test/tx-sighash-wasm.test.mjs test/psbt-wasm.test.mjs test/psbt-payjoin-wasm.test.mjs test/psbt-sanitize.test.mjs test/wipe-wasm.test.mjs test/vanity-wasm.test.mjs test/qr-wasm.test.mjs test/aezeed-wasm.test.mjs test/self-test-wasm.test.mjs
       - name: Upload the freshly tested WASM modules
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

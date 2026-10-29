@@ -34,8 +34,8 @@ const MAX_FINDINGS: usize = 32;
 const MAX_CKD_STEPS: u32 = 4096;
 const MAX_SCAN_ELEMENTS: u32 = 4 * 1024 * 1024;
 
-struct Origin {
-    fingerprint: [u8; 4],
+pub(crate) struct Origin {
+    pub(crate) fingerprint: [u8; 4],
     path: Vec<ChildNumber>,
 }
 
@@ -56,7 +56,7 @@ fn push(findings: &mut Vec<Value>, truncated: &mut bool, finding: Value) {
     findings.push(finding);
 }
 
-fn parse_origin(value: &[u8]) -> Result<Origin, String> {
+pub(crate) fn parse_origin(value: &[u8]) -> Result<Origin, String> {
     if value.len() < 4 {
         return Err("derivation value is shorter than its 4-byte fingerprint".into());
     }
@@ -71,7 +71,7 @@ fn parse_origin(value: &[u8]) -> Result<Origin, String> {
     Ok(Origin { fingerprint, path })
 }
 
-fn tap_origin(value: &[u8]) -> Result<Origin, String> {
+pub(crate) fn tap_origin(value: &[u8]) -> Result<Origin, String> {
     let mut off = 0usize;
     let count = read_varint(value, &mut off)?;
     let hashes_end = usize::try_from(count)
