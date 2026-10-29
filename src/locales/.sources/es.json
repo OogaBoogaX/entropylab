@@ -2314,5 +2314,7 @@
   "Turn off secure entry?": "8e86e55b0fc11fa8e03a921857750cbe794ee1cb78889b10c67289d1134607cc",
   "Converting puts the words back into standard text fields, which creates text copies. Either choice applies to every key in this session.": "39c42fc5f18e45bfbb44ac1e1c568fcb752a3d3615ff72cdca4f16744b326d71",
   "Convert entries to standard text": "c3524bf2f09ebd07c3d853396f7933c46caf2efbe64d8da9b59139a3701db1b1",
-  "Clear entries and turn off": "41a9b058dfa8e37e5045334abebf79d6ac62dfea0e1f820eb5c3719c60c61f16"
+  "Clear entries and turn off": "41a9b058dfa8e37e5045334abebf79d6ac62dfea0e1f820eb5c3719c60c61f16",
+  "Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again.": "943282c61aba119fba0f892670f3a9306c0cdc6fb471043ea4575f77f65f0e99",
+  "This key has words entered with Secure entry, which Journal cannot keep yet. Turn Secure entry off or clear the key first.": "cb45ff6ff224f9bcaf35d50698b3c99ba2699191e042fc4ae1e92bdf7dfa3b5f"
 }
