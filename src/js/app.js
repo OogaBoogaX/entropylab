@@ -154,7 +154,7 @@ import { bip47AccountNode as hodlBip47AccountNode, bip47AccountPath as hodlBip47
 import { bip47OwnHtml as hodlBip47OwnHtml, bip47ContactHtml as hodlBip47ContactHtml, bip47ErrorHtml as hodlBip47ErrorHtml, bip47RowsHtml as hodlBip47RowsHtml, bip47NotifyInputsHtml as hodlBip47NotifyInputsHtml, bip47NotifyHtml as hodlBip47NotifyHtml, bip47NotifyErrorHtml as hodlBip47NotifyErrorHtml } from "./bip47-ui.js";
 import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
 import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-session.js";
-import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedIndices, SUPPORTED_METHODS as hodlSecureSupported } from "./secure-entry.js";
+import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedSet, seedIndices, seedUndo, planTurnOn, commitTurnOn, planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS as hodlSecureSupported } from "./secure-entry.js";
 import { initTextServiceOptOuts, initTranslationWarning } from "./text-services.js";
 import { initSecurityLog } from "./security-log.js";
 import { initConcealOnLeave } from "./conceal-on-leave.js";
@@ -2004,12 +2004,23 @@ function hodlWalletMessages(wallet, idPrefix) {
 // switch, so the existing reveal wiring and its tests keep working.
 // Other views with their own reveal state (an SP address tab) pass it in with
 // their own switch id and description.
-function hodlPrivacyBarMarkup({ id = "reveal", revealed = hodlRevealPrivate, describedBy = "recovery-sheet-disclosure" } = {}) {
-  return `<label class="privacy-bar${revealed ? " is-revealed" : ""}">
-    <input type="checkbox" role="switch" id="${id}" data-private-reveal ${revealed ? "checked" : ""}${describedBy ? ` aria-describedby="${describedBy}"` : ""} />
-    <span class="privacy-bar-state">${revealed ? hodlT("Private data visible") : hodlT("Private data hidden")}</span>
-    <span class="privacy-bar-hint">${revealed ? hodlT("Hide it before sharing your screen or stepping away") : hodlT("Reveal only offline, on an air-gapped computer")}</span>
+function hodlSwitchBarMarkup({ id, checked, describedBy, state, hint, attributes = "", className = "" }) {
+  return `<label class="privacy-bar${className ? ` ${className}` : ""}">
+    <input type="checkbox" role="switch" id="${id}"${attributes ? ` ${attributes}` : ""} ${checked ? "checked" : ""}${describedBy ? ` aria-describedby="${describedBy}"` : ""} />
+    <span class="privacy-bar-state">${state}</span>
+    <span class="privacy-bar-hint">${hint}</span>
   </label>`;
+}
+function hodlPrivacyBarMarkup({ id = "reveal", revealed = hodlRevealPrivate, describedBy = "recovery-sheet-disclosure" } = {}) {
+  return hodlSwitchBarMarkup({
+    id,
+    checked: revealed,
+    describedBy,
+    state: revealed ? hodlT("Private data visible") : hodlT("Private data hidden"),
+    hint: revealed ? hodlT("Hide it before sharing your screen or stepping away") : hodlT("Reveal only offline, on an air-gapped computer"),
+    attributes: "data-private-reveal",
+    className: revealed ? "is-revealed" : "",
+  });
 }
 // The eye beside the Private key group title repeats the privacy state where
 // the private values are: crossed out while hidden, open once revealed.
@@ -6454,8 +6465,12 @@ function hodlGlobalSyncControlMarkup(state) {
     effectiveBits = sourceBits === null ? syncBits : Math.min(syncBits, sourceBits),
     syncUnknown = Boolean(syncBits) && reported === hodlGlobalSyncUnknownBits,
     syncShort = Boolean(syncBits) && !syncUnknown && effectiveBits < hodlGlobalSyncMinimumBits(),
-    caution = syncUnknown ? hodlT("entropy unknown · only as strong as the text") : hodlT("{n} bits of entropy · under {min}", { n: effectiveBits, min: hodlGlobalSyncMinimumBits() });
-  return `<div class="switch-row"><div class="global-sync-head"><label class="switch-toggle global-sync-toggle"><input type="checkbox" id="global-entropy-sync" aria-describedby="global-sync-note" ${state?.globalSync ? "checked" : ""} /><span class="label">${hodlT("Sync entropy across methods")}</span></label><span class="global-sync-status" id="global-sync-status" aria-live="polite" ${state?.globalSync && syncBits ? "" : "hidden"}>${hodlCopiedIconMarkup()}<span>${hodlT("Key synced")}</span>${syncShort || syncUnknown ? `<span class="global-sync-shortfall">${hodlSyncWarningIconMarkup()}<span>${caution}</span></span>` : ""}</span></div><p class="switch-note" id="global-sync-note">${hodlT("Keeps non-hashed methods synchronized. Hashed inputs update them one way and are never overwritten.")}</p></div>`;
+    caution = syncUnknown ? hodlT("entropy unknown · only as strong as the text") : hodlT("{n} bits of entropy · under {min}", { n: effectiveBits, min: hodlGlobalSyncMinimumBits() }),
+    secure = hodlSecureEntryOn,
+    checked = !secure && state?.globalSync,
+    statusHidden = secure || !(state?.globalSync && syncBits),
+    note = secure ? hodlT("Global sync is unavailable while Secure entry is on.") : hodlT("Keeps non-hashed methods synchronized. Hashed inputs update them one way and are never overwritten.");
+  return `<div class="switch-row"><div class="global-sync-head"><label class="switch-toggle global-sync-toggle"><input type="checkbox" id="global-entropy-sync" aria-describedby="global-sync-note" ${checked ? "checked" : ""}${secure ? " disabled" : ""} /><span class="label">${hodlT("Sync entropy across methods")}</span></label><span class="global-sync-status" id="global-sync-status" aria-live="polite" ${statusHidden ? "hidden" : ""}>${hodlCopiedIconMarkup()}<span>${hodlT("Key synced")}</span>${syncShort || syncUnknown ? `<span class="global-sync-shortfall">${hodlSyncWarningIconMarkup()}<span>${caution}</span></span>` : ""}</span></div><p class="switch-note" id="global-sync-note">${note}</p></div>`;
 }
 function hodlRenderGlobalSyncControl() {
   let host = document.getElementById("global-sync-host"), state = hodlKeys[hodlActiveKey];
@@ -6474,6 +6489,27 @@ function hodlRenderGlobalSyncControl() {
     hodlGlobalSyncFromCurrentInput();
     hodlSyncKeyClearButton();
   };
+}
+function hodlRenderSecureEntryControl() {
+  let host = document.getElementById("secure-entry-host");
+  if (!host) return;
+  if (!hodlSecureEntryAvailable()) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  host.hidden = false;
+  let on = hodlSecureEntryOn;
+  host.innerHTML = hodlSwitchBarMarkup({
+    id: "secure-entry-switch",
+    checked: on,
+    describedBy: "",
+    state: on ? hodlT("Secure entry: on") : hodlT("Secure entry"),
+    hint: on ? hodlT("Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.") : hodlT("Off — standard text entry."),
+    className: "secure-entry-bar",
+  }) + (on && !hodlSecureSeedActive() ? `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>` : "");
+  let checkbox = document.getElementById("secure-entry-switch");
+  if (checkbox) checkbox.onchange = () => hodlSecureEntryToggle(checkbox.checked);
 }
 function hodlSeedPhraseCopyText(words, targetWords = hodlTargetWordCount) {
   let needed = hodlSeedConfig(targetWords).words, source = Array.isArray(words) ? words : [], values = Array.from({ length: needed }, (_, index) => String(source[index] || "").trim()), firstMissing = values.findIndex((word) => !word);
@@ -6722,8 +6758,11 @@ function hodlUpdateSeedLengthControl() {
   // Sync, not change: change would come straight back through onchange.
   if (hodlSeedLengthSelectEl.value !== String(config.words)) {
     hodlSeedLengthSelectEl.value = String(config.words);
-    hodlSeedLengthSelectEl.dispatchEvent(new Event("entropylab:sync-select"));
   }
+  let locked = hodlSecureSeedActive() && (hodlSecureSeedEntry()?.count ?? 0) > 0;
+  let lockNote = locked ? " " + hodlTText("To change the length, undo or clear the words entered so far.") : "";
+  for (const option of hodlSeedLengthSelectEl.options) option.disabled = locked && option.value !== String(config.words);
+  hodlSeedLengthSelectEl.dispatchEvent(new Event("entropylab:sync-select"));
   let help = document.getElementById("seed-length-help");
   if (!help) return;
   if (hodlKeyMode === "hex") {
@@ -6735,7 +6774,7 @@ function hodlUpdateSeedLengthControl() {
     help.textContent = hodlTText("{words} words require exactly {digits} {unit}.", { words: config.words, digits: format.digits, unit: format.unit }) + extra;
     return;
   }
-  help.textContent = hodlKeyMode === "seed" ? hodlSeedMethod === "numbers" ? hodlTText("Enter exactly {words} BIP39 word numbers using {range}.", { words: config.words, range: hodlTText(hodlSeedZeroIndexed ? "0 through 2047" : "1 through 2048") }) : hodlTText("Enter exactly {words} BIP39 words. Extended keys ignore this selection.", { words: config.words }) : hodlKeyMode === "cards" ? hodlCardMethod === "direct" ? hodlTText("{words} words use {partial} complete 11-bit rank selections plus {final} final rank draw(s).", { words: config.words, partial: config.partialWords, final: hodlDirectCardFinalRadices(config.words).length }) : config.words === 24 ? hodlTText("24 words need 256 bits. One deck is about 225.6 bits, so deal 52 unique cards, shuffle again, then deal 6 more.") : hodlTText("{words} words need {bits} bits. Deal {first} unique cards from one shuffled deck.", { words: config.words, bits: config.bits, first: hodlCardNeeded(config.words).first }) : hodlTText("{words} words use {bits} bits of BIP39 entropy.", { words: config.words, bits: config.bits });
+  help.textContent = (hodlKeyMode === "seed" ? hodlSeedMethod === "numbers" ? hodlTText("Enter exactly {words} BIP39 word numbers using {range}.", { words: config.words, range: hodlTText(hodlSeedZeroIndexed ? "0 through 2047" : "1 through 2048") }) : hodlTText("Enter exactly {words} BIP39 words. Extended keys ignore this selection.", { words: config.words }) : hodlKeyMode === "cards" ? hodlCardMethod === "direct" ? hodlTText("{words} words use {partial} complete 11-bit rank selections plus {final} final rank draw(s).", { words: config.words, partial: config.partialWords, final: hodlDirectCardFinalRadices(config.words).length }) : config.words === 24 ? hodlTText("24 words need 256 bits. One deck is about 225.6 bits, so deal 52 unique cards, shuffle again, then deal 6 more.") : hodlTText("{words} words need {bits} bits. Deal {first} unique cards from one shuffled deck.", { words: config.words, bits: config.bits, first: hodlCardNeeded(config.words).first }) : hodlTText("{words} words use {bits} bits of BIP39 entropy.", { words: config.words, bits: config.bits })) + lockNote;
 }
 function hodlInvalidateActiveKeyOutput() {
   hodlWalletResult = null;
@@ -6784,6 +6823,7 @@ function hodlSetSeedLength(words) {
 // The Key Station's scan panel is a preview-only extra: release builds define
 // no flag, so the host is never rendered and the module is never imported.
 var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null;
+var hodlSeedPicker = null, hodlSeedPickerImport = null;
 function hodlKeyScanHostMarkup() {
   return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
 }
@@ -6793,6 +6833,8 @@ function hodlRenderKeyForm() {
   hodlReleaseFormListeners();
   try { hodlKeyScan?.destroy(); } catch {}
   hodlKeyScan = null;
+  try { hodlSeedPicker?.destroy(); } catch {}
+  hodlSeedPicker = null;
   let config = hodlSeedConfig(), keyboardHost = document.getElementById("passphrase-keyboard-host"), toggleHost = document.getElementById("passphrase-keyboard-toggle-host");
   if (keyboardHost) {
     keyboardHost.hidden = true;
@@ -6804,6 +6846,7 @@ function hodlRenderKeyForm() {
   }
   hodlUpdateSeedLengthControl();
   hodlRenderGlobalSyncControl();
+  hodlRenderSecureEntryControl();
 
   if (hodlKeyMode === "dice") {
     let dplusFaces = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"],
@@ -7126,6 +7169,15 @@ function hodlRenderKeyForm() {
       update();
       return;
     }
+    if (hodlSecureSeedActive()) {
+      // Secure entry: the picker holds the words as indices; no text field.
+      hodlFormEl.innerHTML = `${choices}<div id="seed-picker-host"></div>`;
+      bindMethodChoices({ value: "" });
+      hodlMountSeedPicker();
+      hodlBindKeyFields();
+      hodlRenderPassphraseKeyboard();
+      return;
+    }
     hodlFormEl.innerHTML = `${choices}<p class="label">${hodlT("Your {words}-word seed phrase", { words: config.words })}</p>${hodlSeedMetaRowMarkup("seed-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-autocomplete", hodlT("Autocomplete BIP39 words"), { checked: autocompleteEnabled })}${hodlSeedKeyboardToggleMarkup()}</div><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" translate="no" aria-hidden="true"></pre><textarea id="seed" placeholder="${hodlTAttr("Enter exactly {words} BIP39 words", { words: config.words })}" aria-describedby="seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>${hodlSeedKeyboardMarkup()}<div id="last-words" translate="no" class="row last-word-options"></div>`;
     let input = document.getElementById("seed"), update = () => {
       let rawValue = input.value, value = rawValue.trim(), meta = hodlElement("#seed-meta"), picker = hodlElement("#last-words"), analysis = hodlRenderSeedInputState(input, config.words);
@@ -7446,6 +7498,28 @@ function hodlBindKeyScan() {
       });
     }).catch(() => {});
   }
+}
+function hodlMountSeedPicker() {
+  let host = document.getElementById("seed-picker-host");
+  if (!host || !hodlSecureSeedActive()) return;
+  if (!hodlSeedPickerImport) hodlSeedPickerImport = import("./seed-picker.js").catch(() => null);
+  hodlSeedPickerImport.then((module) => {
+    if (!module || hodlSeedPicker || !host.isConnected || host.childNodes.length || !hodlSecureSeedActive()) return;
+    let entry = hodlSecureSeedEntry(true);
+    if (!entry) return;
+    hodlSeedPicker = module.mountSeedPicker(host, {
+      entry, wordlist: hodlBip39Wordlist, seedSet, seedUndo, seedIndices,
+      entropyFromWordIndices: hodlEntropyFromWordIndices, translate: hodlTText,
+      onChange: hodlSecureSeedChanged,
+    });
+  }).catch(() => {});
+}
+function hodlSecureSeedChanged() {
+  hodlInvalidateActiveKeyOutput();
+  hodlUpdateSeedLengthControl();
+  hodlSyncKeyClearButton();
+  hodlSyncDeriveButton();
+  hodlQueueMasterFingerprintPreview();
 }
 function hodlBindKeyFields() {
   // Its listener from the last bind goes before this bind adds its own.
@@ -12315,8 +12389,143 @@ var PREVIEW = typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREV
 // Secure entry (secure-entry.js): one session-wide switch, never persisted,
 // off on every load. Its entries live in hodlSecureSession, keyed by key id.
 var hodlSecureEntryOn = false, hodlSecureSession = createSecureSession();
+var hodlSecureEntryConfirm = null, hodlSecureEntryBusy = false;
+async function hodlSecureEntryDialog() {
+  if (!hodlSecureEntryConfirm) hodlSecureEntryConfirm = (await import("./secure-entry-confirm.js")).initSecureEntryConfirm();
+  return hodlSecureEntryConfirm;
+}
+async function hodlSecureEntryToggle(wanted) {
+  if (hodlSecureEntryBusy) {
+    hodlRenderSecureEntryControl();
+    return;
+  }
+  hodlSecureEntryBusy = true;
+  let before = hodlSecureEntryOn, plan = null;
+  try {
+    hodlRenderSecureEntryControl();
+    hodlCaptureKey();
+    if (wanted && !hodlSecureEntryOn) {
+      let keys = [], names = [], states = [];
+      for (const state of hodlKeys) {
+        if (hodlNormalizeSeedMethod(state.seedMethod) !== "words") continue;
+        let phrase = String(state.fields?.seed ?? "").trim();
+        if (!phrase) continue;
+        keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { seed: { phrase: state.fields.seed, length: Number(state.targetWords) || 24 } } });
+        names.push(state.name);
+        states.push(state);
+      }
+      const converter = ({ phrase, length }) => {
+        let words = String(phrase).trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (words.length < 1 || words.length > length) throw new Error("bad seed length");
+        let entry = seedEntry(length);
+        try {
+          for (let i = 0; i < words.length; i += 1) {
+            let index = hodlBip39WordIndex.get(words[i]);
+            if (index === undefined) throw new Error("bad word");
+            seedSet(entry, i, index);
+          }
+          return entry;
+        } catch (error) {
+          try { entry.indices.fill(0); } catch {}
+          throw error;
+        }
+      };
+      if (keys.length === 0) {
+        commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
+      } else {
+        plan = planTurnOn(hodlSecureSession, keys, { seed: converter });
+        let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok });
+        if (choice === "keep" && plan.ok) {
+          commitTurnOn(hodlSecureSession, plan);
+          plan = null;
+          for (const state of states) state.fields.seed = "";
+        } else if (choice === "clear") {
+          discardPlan(plan);
+          plan = null;
+          for (const state of states) state.fields.seed = "";
+          commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
+        } else {
+          discardPlan(plan);
+          plan = null;
+          hodlRenderSecureEntryControl();
+          return;
+        }
+      }
+      let seedField = document.getElementById("seed");
+      if (seedField) {
+        seedField.value = "";
+        delete seedField.dataset.previousValue;
+      }
+      let highlight = document.getElementById("seed-highlight");
+      if (highlight) highlight.textContent = "";
+      hodlSecureEntryOn = true;
+      for (const state of hodlKeys) {
+        state.globalSync = false;
+        state.globalSyncBitCount = 0;
+        state.globalSyncSource = "";
+      }
+      hodlSetMode(hodlKeyMode);
+      hodlSyncKeyClearButton();
+      hodlSyncDeriveButton();
+      hodlQueueMasterFingerprintPreview(0);
+    } else if (!wanted && hodlSecureEntryOn) {
+      if (!hodlKeys.some((state) => hodlSecureEntryHasData(hodlSecureKeyOf(state)))) {
+        commitTurnOff(hodlSecureSession, null, "clear");
+      } else {
+        const serializer = (entry) => {
+          let indices = seedIndices(entry);
+          try {
+            // The joined string is the one text copy turning off creates.
+            return Array.from(indices, (index) => hodlBip39Wordlist[index]).join(" ");
+          } finally {
+            indices.fill(0);
+          }
+        };
+        plan = planTurnOff(hodlSecureSession, { seed: serializer });
+        let choice = await (await hodlSecureEntryDialog()).open({ mode: "off" });
+        if (choice === "convert" && plan.ok) {
+          let texts = [];
+          try {
+            texts = commitTurnOff(hodlSecureSession, plan, "convert");
+            plan = null;
+          } catch (error) {
+            if (!Array.isArray(error.texts)) throw error;
+            texts = error.texts;
+            plan = null;
+          }
+          for (const { keyId, method, text } of texts) {
+            if (method !== "seed") continue;
+            let state = hodlKeys.find((candidate) => hodlSecureKeyOf(candidate) === keyId);
+            if (state) state.fields.seed = text;
+          }
+        } else if (choice === "clear") {
+          commitTurnOff(hodlSecureSession, plan, "clear");
+          plan = null;
+        } else {
+          discardPlan(plan);
+          plan = null;
+          hodlRenderSecureEntryControl();
+          return;
+        }
+      }
+      hodlSecureEntryOn = false;
+      hodlSetMode(hodlKeyMode);
+      hodlSyncKeyClearButton();
+      hodlSyncDeriveButton();
+      hodlQueueMasterFingerprintPreview(0);
+    } else {
+      hodlRenderSecureEntryControl();
+    }
+  } catch (error) {
+    if (plan) discardPlan(plan);
+    hodlSecureEntryOn = before;
+    hodlRenderSecureEntryControl();
+  } finally {
+    hodlSecureEntryBusy = false;
+  }
+}
 // Offered only in preview builds and only once a method can be entered
-// securely; this round supports none, so the switch is never shown.
+// securely; seeds are supported from P2b, so preview builds show the switch.
 function hodlSecureEntryAvailable() {
   return Boolean(PREVIEW) && Object.values(hodlSecureSupported).some(Boolean);
 }
@@ -12326,6 +12535,7 @@ function hodlSecureEntryAvailable() {
 function hodlSecureEntryEnd() {
   hodlSecureEntryOn = false;
   try { sessionWipe(hodlSecureSession); } catch {}
+  try { hodlRenderSecureEntryControl(); } catch {}
 }
 // A key that leaves the station takes its secure entries with it.
 function hodlSecureEntryDropKey(keyId) {
@@ -21808,9 +22018,12 @@ function hodlInitSecretFieldAutoClear() {
     }
     try { hodlKeyScan?.destroy(); } catch {}
     hodlKeyScan = null;
+    try { hodlSeedPicker?.destroy(); } catch {}
+    hodlSeedPicker = null;
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
+    try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
     try { hodlSecureEntryEnd(); } catch {}
     hodlSyncWorkspaceCounts();
   };
