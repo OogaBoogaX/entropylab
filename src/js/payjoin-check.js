@@ -17,6 +17,10 @@ const keyType = (pair) => {
 const isKeyless = (pair) => pair.key.length === 2;
 const hasKeyless = (map, type) => map.some((pair) => isKeyless(pair) && keyType(pair) === type);
 const hasType = (map, types) => map.some((pair) => types.includes(keyType(pair)));
+const keylessValue = (map, type) => {
+  const pair = map.find((candidate) => isKeyless(candidate) && keyType(candidate) === type);
+  return pair ? String(pair.value).toLowerCase() : null;
+};
 
 const outpointKey = (input) => `${input.txid.toLowerCase()}:${input.vout}`;
 
@@ -201,6 +205,12 @@ const check = (original, proposal, options) => {
     }
   });
 
+  for (const [key, count] of proposalCount) {
+    if (count > 1 && !originalIndex.has(key)) {
+      problem("duplicate_input", { input: proposal.tx.inputs.findIndex((candidate) => outpointKey(candidate) === key) });
+    }
+  }
+
   for (const i of senderInputs) {
     const input = proposal.tx.inputs[i];
     const originalInput = original.tx.inputs[originalIndex.get(outpointKey(input))];
@@ -208,6 +218,10 @@ const check = (original, proposal, options) => {
     const map = proposal.inputs[i];
     if (hasKeyless(map, 0x07) || hasKeyless(map, 0x08)) problem("sender_input_finalized", { input: i });
     if (hasKeyless(map, 0x00) || hasKeyless(map, 0x01)) problem("sender_input_utxo_present", { input: i });
+    // A sighash type the receiver added or changed could make the sender sign
+    // less than the whole transaction (SIGHASH_NONE, ANYONECANPAY).
+    const originalMap = original.inputs[originalIndex.get(outpointKey(input))];
+    if (keylessValue(map, 0x03) !== keylessValue(originalMap, 0x03)) problem("sender_sighash_changed", { input: i });
   }
 
   for (const i of receiverInputs) {
@@ -245,14 +259,22 @@ const check = (original, proposal, options) => {
   });
 
   if (paymentIndex !== null) {
+    // Outputs to one script are counted, not matched as a set: two sender
+    // outputs to the same address are two outputs.
+    const countIn = (outputs, script) => outputs.filter((output) => output.scriptPubKey.toLowerCase() === script).length;
+    const reported = new Set();
     for (const j of senderOutputs) {
       const script = original.tx.outputs[j].scriptPubKey.toLowerCase();
-      if (!proposal.tx.outputs.some((output) => output.scriptPubKey.toLowerCase() === script)) {
+      if (reported.has(script)) continue;
+      if (countIn(proposal.tx.outputs, script) < countIn(original.tx.outputs, script)) {
         problem("sender_output_missing", { output: j });
+        reported.add(script);
       }
     }
   }
 
+  // Without feeOutputIndex no contribution is allowed: any decrease of a
+  // sender output is sender_output_decreased, and sender_overpays still runs.
   const feeOutputIndex =
     Number.isInteger(options.feeOutputIndex) &&
     options.feeOutputIndex >= 0 &&
@@ -307,7 +329,7 @@ const check = (original, proposal, options) => {
       proposal.tx.outputs.reduce((sum, output) => sum + BigInt(output.value), 0n)
     : null;
 
-  if (contribution !== null) {
+  if (contribution !== null && contribution > 0n) {
     if (originalFee === null || proposalFee === null) skip("contribution_not_fee");
     else if (contribution > proposalFee - originalFee) problem("contribution_not_fee", { output: feeProposalIndex });
   }

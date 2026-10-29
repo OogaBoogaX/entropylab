@@ -477,6 +477,83 @@ test("a malformed doc is refused", () => {
   assert.deepEqual(result.problems, [{ code: "bad_document" }]);
 });
 
+// --- Gate fixes (#1316) -----------------------------------------------------
+
+// PSBT_IN_SIGHASH_TYPE is keyless 0x03 with a 4-byte little-endian value.
+const sighashType = (type) => pair(Uint8Array.of(0x03), le32(type));
+
+test("a sighash type the receiver added to a sender input is refused (GLM, DeepSeek)", () => {
+  for (const type of [0x02, 0x81]) {
+    const prop = psbtInspectDoc(psbt(
+      tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+      [[sighashType(type)], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+      [[], []],
+    ));
+    const result = checkPayjoinProposal(original(), prop, options());
+    const problem = result.problems.find((p) => p.code === "sender_sighash_changed");
+    assert.ok(problem, `sighash ${type} is refused`);
+    assert.equal(problem.input, 0);
+  }
+});
+
+test("a sender sighash type the original already carried is kept", () => {
+  const orig = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0)], [txout(50_000, spk(PAYMENT)), txout(40_000, spk(CHANGE))]),
+    [[witnessUtxo(100_000, spk(SENDER_SPK)), sighashType(0x01), finalWitness()]],
+    [[], []],
+  ));
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[sighashType(0x01)], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(orig, prop, options());
+  assert.equal(result.problems.some((p) => p.code === "sender_sighash_changed"), false);
+});
+
+test("a duplicated receiver input is refused (MiniMax)", () => {
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1), txin(0x22, 1)], [txout(110_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  const problem = result.problems.find((p) => p.code === "duplicate_input");
+  assert.ok(problem);
+  assert.equal(problem.input, 1);
+});
+
+test("two sender outputs to one script are counted, not matched as a set (GLM)", () => {
+  // Original: 100k in, 50k payment, two 20k outputs to the same change script.
+  const orig = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0)], [txout(50_000, spk(PAYMENT)), txout(20_000, spk(CHANGE)), txout(20_000, spk(CHANGE))]),
+    [[witnessUtxo(100_000, spk(SENDER_SPK)), finalWitness()]],
+    [[], [], []],
+  ));
+  // Proposal drops one change output and moves its 20k into the payment.
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(100_000, spk(PAYMENT)), txout(20_000, spk(CHANGE))]),
+    [[], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(orig, prop, { paymentScript: hex(spk(PAYMENT)), maxAdditionalFeeContribution: 1000 });
+  assert.ok(result.problems.some((p) => p.code === "sender_output_missing"));
+  // The sender-spend check sees it too: 60k before, 80k after.
+  assert.ok(result.problems.some((p) => p.code === "sender_overpays"));
+});
+
+test("no contribution means no contribution_not_fee, even when the fee drops (DeepSeek)", () => {
+  // Change grows by 1k, the payment is unchanged: the fee falls 1k, nothing contributed.
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(41_000, spk(CHANGE))]),
+    [[], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  assert.equal(result.problems.some((p) => p.code === "contribution_not_fee"), false);
+  assert.ok(result.problems.some((p) => p.code === "fee_decreased"));
+});
+
 // --- Source check -----------------------------------------------------------
 
 test("payjoin-check.js has no randomness, network or DOM", () => {
