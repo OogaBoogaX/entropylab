@@ -174,6 +174,13 @@ test("an import that finishes after Clear or End Session merges nothing (GLM)", 
   for (const merge of merges) {
     assert.match(handler.slice(0, merge.index), /if \(generation !== hodlPsbtNonceHistoryGeneration\) return;\s*$/);
   }
+  // No passphrase dialog for a file that finished reading after the wipe (Kimi).
+  assert.match(handler, /const text = await chosen\.text\(\);\s*if \(generation !== hodlPsbtNonceHistoryGeneration\) return;/);
+  // A download confirmed before the wipe is not saved after it (GLM).
+  const downloadStart = app.indexOf('document.getElementById("psbt-nonce-history-download").onclick');
+  const download = app.slice(downloadStart, app.indexOf('document.getElementById("psbt-nonce-history-clear")', downloadStart));
+  assert.match(download, /if \(generation !== hodlPsbtNonceHistoryGeneration\) return;\s*hodlDownloadBytes\(/);
+  assert.match(download, /\{ count: records\.length \}/);
 });
 
 test("End Session empties the nonce history", async () => {

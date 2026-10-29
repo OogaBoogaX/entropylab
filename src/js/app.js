@@ -12533,6 +12533,7 @@ function hodlInitPsbt() {
       try {
         if (chosen.size > NONCE_HISTORY_ENCRYPTED_MAX_TEXT) throw new Error("Nonce history file is too large.");
         const text = await chosen.text();
+        if (generation !== hodlPsbtNonceHistoryGeneration) return;
         if (isEncryptedNonceHistory(text)) {
           const passphrase = await hodlNonceHistoryConfirm().open({ mode: "import", opener: document.getElementById("psbt-nonce-history-upload") });
           if (passphrase === null) return;
@@ -12571,9 +12572,13 @@ function hodlInitPsbt() {
       if (!hodlPsbtNonceHistory.length) throw new Error("There is no nonce history to download.");
       const passphrase = await hodlNonceHistoryConfirm().open({ mode: "download", opener: document.getElementById("psbt-nonce-history-download") });
       if (passphrase === null) return;
-      const text = await encryptNonceHistory(hodlPsbtNonceHistory, passphrase);
+      // The records as confirmed: Clear or End Session during the encryption
+      // cancels the download rather than saving what was just wiped.
+      const records = hodlPsbtNonceHistory, generation = hodlPsbtNonceHistoryGeneration;
+      const text = await encryptNonceHistory(records, passphrase);
+      if (generation !== hodlPsbtNonceHistoryGeneration) return;
       hodlDownloadBytes(new TextEncoder().encode(text), "entropylab-nonce-history.json");
-      hodlPsbtSyncNonceHistoryControls(hodlTText("Downloaded {count} nonce history record(s).", { count: hodlPsbtNonceHistory.length }) + hodlTText(" The file is encrypted."));
+      hodlPsbtSyncNonceHistoryControls(hodlTText("Downloaded {count} nonce history record(s).", { count: records.length }) + hodlTText(" The file is encrypted."));
     } catch (exception) {
       hodlPsbtSyncNonceHistoryControls(hodlTText("Nonce history was not downloaded: {message}", { message: exception.message || String(exception) }), true);
     }
