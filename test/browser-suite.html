@@ -1799,11 +1799,14 @@
         document.getElementById("bip85-tool-intro"),
         document.querySelector("#bip85-manager > .key-tab-strip"),
       );
-      // End jumps to the last tool. Journal begins with create/open choices;
-      // section navigation and whole-Journal actions appear after opening it.
+      // End jumps to the last tool: Verify, since its unhide (#1314).
       tabs[2].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
-      await until(() => !document.getElementById("journal-card").hidden, "End to reach the Journal tool");
+      await until(() => !document.getElementById("verify-card").hidden, "End to reach the last tool (Verify)");
       assert(document.activeElement === tabs[tabs.length - 1], "End should move focus to the last tab");
+      // Reached by name. Journal begins with create/open choices; section
+      // navigation and whole-Journal actions appear after opening it.
+      document.querySelector('#workspace [data-workspace="journal"]').click();
+      await until(() => !document.getElementById("journal-card").hidden, "the Journal tool");
       const journalTabs = [...document.querySelectorAll("#journal-tool-tabs [data-journal-tool]")];
       equal(journalTabs.map((tab) => tab.dataset.journalTool).join("|"), "notes|keymanager|session");
       const journalManager = document.getElementById("journal-manager");
