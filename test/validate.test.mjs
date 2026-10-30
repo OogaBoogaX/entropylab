@@ -255,7 +255,10 @@ test("OpenTimestamps stamps the tested HTML off the Pages/test critical path", (
   assert.doesNotMatch(upgrade, /npm run build/);
   assert.doesNotMatch(upgrade, /SHA256SUMS\.txt/);
   assert.match(upgrade, /uses: actions\/checkout@[0-9a-f]{40}/, "upgrade workflow pins checkout");
-  assert.match(read("README.md"), /ots verify entropylab\.html/);
+  // `ots verify` takes the proof file; given entropylab.html it refuses
+  // ("not a timestamp file").
+  assert.match(read("README.md"), /ots verify entropylab\.html\.ots/);
+  assert.match(read("docs/Verify_Your_Download.md"), /ots verify entropylab\.html\.ots/);
   assert.match(read("README.md"), /pending/);
   assert.match(read("llms.txt"), /entropylab\.html\.ots/);
   assert.match(read("SECURITY.md"), /OpenTimestamps/);
