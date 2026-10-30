@@ -123,7 +123,11 @@ export function initNonceQrCapture({ translate, onClear }) {
     for (const stage of [2, 3, 4]) {
       const captured = s.stages.includes(stage), box = el("nonce-qr-stage-" + stage);
       box.dataset.captured = String(captured);
-      box.textContent = translate(captured ? "Message {stage} — captured" : "Message {stage}", { stage });
+      // Each box names where its message comes from (owner, 10-29).
+      const labels = stage === 3
+        ? ["Message {stage} · Sparrow", "Message {stage} · Sparrow — captured"]
+        : ["Message {stage} · signer", "Message {stage} · signer — captured"];
+      box.textContent = translate(labels[captured ? 1 : 0], { stage });
     }
     el("nonce-qr-remaining").dataset.remaining = String(missing.length);
     el("nonce-qr-remaining").textContent = missing.length
