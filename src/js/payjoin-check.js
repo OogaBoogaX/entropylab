@@ -294,6 +294,11 @@ const check = (original, proposal, options) => {
     // less than the whole transaction (SIGHASH_NONE, ANYONECANPAY).
     const originalMap = original.inputs[originalIndex.get(outpointKey(input))];
     if (keylessValue(map, 0x03) !== keylessValue(originalMap, 0x03)) problem("sender_sighash_changed", { input: i });
+    // Whatever the Original says, the sender signs the whole transaction:
+    // only SIGHASH_ALL (0x01) or the taproot default (0x00) binds the outputs
+    // checked here.
+    const sighash = keylessValue(map, 0x03);
+    if (sighash !== null && sighash !== "01000000" && sighash !== "00000000") problem("sender_sighash_not_all", { input: i });
     // Any other field the receiver added (redeem/witness script, tap leaf,
     // tap internal key, merkle root, proprietary, unknown) would be used by
     // the sender's signer, so it must already be in the original.
@@ -489,8 +494,8 @@ const check = (original, proposal, options) => {
 };
 
 export function checkPayjoinProposal(original, proposal, options = {}) {
-  if (!validDoc(original) || !validDoc(proposal)) return badDoc();
   try {
+    if (!validDoc(original) || !validDoc(proposal)) return badDoc();
     return check(original, proposal, isObject(options) ? options : {});
   } catch {
     return badDoc();

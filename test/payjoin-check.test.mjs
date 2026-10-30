@@ -513,6 +513,62 @@ test("a sender sighash type the original already carried is kept", () => {
   assert.equal(result.problems.some((p) => p.code === "sender_sighash_changed"), false);
 });
 
+// Round 5 (#1316): the sighash the sender signs with must bind the outputs
+// the check verified, whatever the Original carried.
+const withSenderSighash = (type) => {
+  const orig = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0)], [txout(50_000, spk(PAYMENT)), txout(40_000, spk(CHANGE))]),
+    [[witnessUtxo(100_000, spk(SENDER_SPK)), sighashType(type), finalWitness()]],
+    [[], []],
+  ));
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[sighashType(type)], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  return checkPayjoinProposal(orig, prop, options());
+};
+
+test("a non-ALL sighash on both sides is refused (GLM)", () => {
+  for (const type of [0x02, 0x03, 0x81, 0x82, 0x83]) {
+    const result = withSenderSighash(type);
+    assert.equal(result.problems.some((p) => p.code === "sender_sighash_changed"), false, `sighash ${type} is unchanged`);
+    const problem = result.problems.find((p) => p.code === "sender_sighash_not_all");
+    assert.ok(problem, `sighash ${type} is refused`);
+    assert.equal(problem.input, 0);
+    assert.notEqual(result.status, "ok");
+  }
+});
+
+test("SIGHASH_ALL and the taproot default are accepted on a sender input", () => {
+  for (const type of [0x01, 0x00]) {
+    const result = withSenderSighash(type);
+    assert.equal(result.problems.some((p) => p.code === "sender_sighash_not_all"), false, `sighash ${type} is accepted`);
+    assert.equal(result.status, "ok");
+  }
+});
+
+test("a sender input with no sighash field is not refused", () => {
+  const result = checkPayjoinProposal(original(), proposal(), options());
+  assert.equal(result.problems.some((p) => p.code === "sender_sighash_not_all"), false);
+  assert.equal(result.status, "ok");
+});
+
+test("a document whose accessors throw is a bad document, not an exception", () => {
+  const expected = checkPayjoinProposal(null, null);
+  const throwingTx = { get tx() { throw new Error("boom"); } };
+  assert.deepEqual(checkPayjoinProposal(throwingTx, null), expected);
+  // A doc that passes the tx checks but throws on inputs: the getter is only
+  // reached once validDoc is inside the try.
+  const good = proposal();
+  const throwingInputs = {
+    tx: good.tx,
+    outputs: good.outputs,
+    get inputs() { throw new Error("boom"); },
+  };
+  assert.deepEqual(checkPayjoinProposal(original(), throwingInputs), expected);
+});
+
 test("a duplicated receiver input is refused (MiniMax)", () => {
   const prop = psbtInspectDoc(psbt(
     tx([txin(0x11, 0), txin(0x22, 1), txin(0x22, 1)], [txout(110_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
