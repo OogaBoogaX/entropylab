@@ -775,7 +775,7 @@ stamped until `ots info entropylab.html.ots` shows a Bitcoin attestation.
 Then, on a machine with Bitcoin Core (a pruned node is fine):
 
 ```sh
-ots verify entropylab.html
+ots verify entropylab.html.ots
 ```
 
 On **Windows**, `opentimestamps-client`'s `python-bitcoinlib` dependency

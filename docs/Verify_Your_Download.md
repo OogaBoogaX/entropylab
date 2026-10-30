@@ -15,7 +15,10 @@ itself.
   `entropylab.html.ots` into one folder.
 - **The live site** (`entropylab.online`) changes with every update. Each
   build has a checksum, a GitHub attestation and a Bitcoin timestamp (steps
-  1, 3 and 4), but no release signatures.
+  1, 3 and 4), but no release signatures. Its `SHA256SUMS.txt` and
+  `entropylab.html.ots` are next to `entropylab.html` in the
+  [`rock` branch](https://github.com/OogaBoogaX/entropylab/tree/rock). Each
+  update replaces all three, so download them at the same time as the page.
 
 ## Step 1: check the checksum
 
@@ -66,8 +69,9 @@ matches that list (step 1), the file you downloaded is the one they signed.
 > **Use the files from the release page only.** Download `entropylab.html`,
 > `SHA256SUMS.txt`, `SHA256SUMS.asc` and `KEYS` together from the same release
 > on the [Releases page](https://github.com/OogaBoogaX/entropylab/releases).
-> Don't use `SHA256SUMS.txt` or `SHA256SUMS.asc` from the `rock` branch. Those
-> files change between releases and won't match each other.
+> Don't use `SHA256SUMS.txt` or `SHA256SUMS.asc` from the `rock` branch to
+> check a release. Those files change between releases and won't match each
+> other.
 
 ### 1. Install GPG
 
@@ -131,8 +135,9 @@ With the [GitHub CLI](https://cli.github.com/):
 gh attestation verify entropylab.html -R OogaBoogaX/entropylab
 ```
 
-A good result says the verification succeeded. This proves this repository's
-build system produced exactly these bytes.
+A good result says the verification succeeded. It shows that this
+repository's CI built exactly these bytes, but not which source it built them
+from. Rebuilding the file yourself checks that (see below).
 
 ## Step 4 (optional): check the Bitcoin timestamp
 
@@ -142,10 +147,10 @@ block, independently of GitHub. With the
 and a Bitcoin Core node (pruned is fine):
 
 ```sh
-ots verify entropylab.html
+ots verify entropylab.html.ots
 ```
 
-A freshly published proof can still be *pending*. Wait until
+It checks the `entropylab.html` in the same folder. A freshly published proof can still be *pending*. Wait until
 `ots info entropylab.html.ots` shows a Bitcoin attestation. Windows needs one
 extra step; see [Verifying the download](../README.md#verifying-the-download)
 in the README.
