@@ -12508,8 +12508,11 @@ async function hodlSecureEntryToggle(wanted) {
             indices.fill(0);
           }
         };
-        plan = planTurnOff(hodlSecureSession, { seed: serializer });
+        // The texts are made only once the user chooses Convert: Clear and
+        // Cancel create no text copy of the words. The dialog needs nothing
+        // from the plan, and planning after it reads the session as it is now.
         let choice = await (await hodlSecureEntryDialog()).open({ mode: "off" });
+        if (choice === "convert") plan = planTurnOff(hodlSecureSession, { seed: serializer });
         if (choice === "convert" && plan.ok) {
           let texts = [];
           try {
@@ -12526,10 +12529,9 @@ async function hodlSecureEntryToggle(wanted) {
             if (state) state.fields.seed = text;
           }
         } else if (choice === "clear") {
-          commitTurnOff(hodlSecureSession, plan, "clear");
-          plan = null;
+          commitTurnOff(hodlSecureSession, null, "clear");
         } else {
-          discardPlan(plan);
+          if (plan) discardPlan(plan);
           plan = null;
           hodlRenderSecureEntryControl();
           return;

@@ -384,7 +384,7 @@ test("turning on can clear or cancel without leaving a plan", async () => {
   }
 });
 
-test("turning off converts, clears or cancels", async () => {
+test("turning off converts, clears or cancels, and makes texts only for Convert", async () => {
   const previous = globalThis.document;
   globalThis.document = { getElementById: () => null };
   try {
@@ -397,10 +397,22 @@ test("turning off converts, clears or cancels", async () => {
       return { session, key, entry };
     };
     let choice = "convert";
+    // planTurnOff joins the words into text, so it must run only after the
+    // user chooses Convert: Clear and Cancel make no text copy (Kimi K3).
+    const calls = [];
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlSecureEntryHasData"], {
       stubs: {
         ...realSecureEntryStubs,
-        hodlSecureEntryDialog: async () => ({ open: async () => choice }),
+        planTurnOff: (session, serializers) => {
+          calls.push("plan");
+          return planTurnOff(session, serializers);
+        },
+        hodlSecureEntryDialog: async () => ({
+          open: async () => {
+            calls.push("dialog");
+            return choice;
+          },
+        }),
         hodlCaptureKey: () => {},
         hodlRenderSecureEntryControl: () => {},
         hodlSetMode: () => {},
@@ -424,6 +436,8 @@ test("turning off converts, clears or cancels", async () => {
     assert.equal(convert.key.fields.seed, words.join(" "));
     assert.equal(convert.session.entries.size, 0);
     assert.equal(mod.hodlSecureEntryOn, false);
+    assert.deepEqual(calls, ["dialog", "plan"]);
+    calls.length = 0;
 
     const clear = make();
     choice = "clear";
@@ -435,6 +449,9 @@ test("turning off converts, clears or cancels", async () => {
     assert.equal(clear.key.fields.seed, "");
     assert.equal(clear.session.entries.size, 0);
     assert.equal(mod.hodlSecureEntryOn, false);
+    assert.deepEqual(calls, ["dialog"]);
+    assert.equal(clear.entry.count, 0, "Clear wipes the entry");
+    calls.length = 0;
 
     const cancel = make();
     choice = null;
@@ -447,6 +464,7 @@ test("turning off converts, clears or cancels", async () => {
     assert.equal(mod.hodlSecureEntryOn, true);
     assert.equal(sessionGet(cancel.session, owner, "seed"), cancel.entry);
     assert.equal(cancel.entry.count, 12);
+    assert.deepEqual(calls, ["dialog"]);
   } finally {
     globalThis.document = previous;
   }
