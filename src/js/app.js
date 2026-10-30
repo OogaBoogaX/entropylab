@@ -18296,6 +18296,12 @@ function hodlSyncPrivacyTool() {
     let node = document.getElementById(card);
     if (node) node.hidden = !(visible && hodlPrivacyTool === tool);
   }
+  // The Silent Payments intro and its SP Station strip sit outside its card
+  // too: they belong to that station, not to the whole workspace.
+  for (let id of ["sp-tool-intro", "sp-manager"]) {
+    let node = document.getElementById(id);
+    if (node) node.hidden = !(visible && hodlPrivacyTool === "sp");
+  }
 }
 
 function hodlShowPrivacyTool(id, focus = false) {
