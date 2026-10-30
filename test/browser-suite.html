@@ -1762,11 +1762,12 @@
   await test("tool tabs answer the arrow keys and name themselves in full", async () => {
     const strip = document.getElementById("workspace-tabs");
     const tabs = [...strip.querySelectorAll("[data-workspace]")];
-    assert(tabs.length === 9, `Expected nine tool tabs, found ${tabs.length}`);
+    // Verify joined in every build on 2026-10-29 (owner).
+    assert(tabs.length === 10, `Expected ten tool tabs, found ${tabs.length}`);
     // The visible label may be abbreviated; the accessible name never is.
     // Which tools exist and how they name themselves is the contract; where
     // they sit in the strip is a design decision that changes freely.
-    const names = ["BIP-85 Child", "Core Wallet", "Journal", "Keys", "Lightning", "Multi Signature", "Privacy", "Transactions", "Vanity Address"];
+    const names = ["BIP-85 Child", "Core Wallet", "Journal", "Keys", "Lightning", "Multi Signature", "Privacy", "Transactions", "Vanity Address", "Verify"];
     equal(tabs.map((tab) => tab.getAttribute("aria-label")).sort().join("|"), names.join("|"), "every tool tab names itself in full");
     assert(!document.querySelector('#workspace [data-workspace="sp"] .silent-payments-icon'), "Silent Payments icon should not be in the workspace tab");
     // A mismatched end tag in the shell silently reparents every later card

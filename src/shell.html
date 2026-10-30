@@ -934,7 +934,7 @@ words, pick one of the checksum words.</span></span>
         <button class="btn secondary" id="core-wipe" type="button" disabled aria-disabled="true">End Session / Clear Fields</button>
       </div>
     </section>
-      <section class="card" id="verify-card" role="tabpanel" hidden>
+      <section class="card no-print tool-card" id="verify-card" role="tabpanel" hidden>
         <h2>Verify</h2>
         <p class="edge-note is-info">Check an OpenTimestamps proof against a Bitcoin block header you supply. Nothing leaves this page.</p>
         <section class="tool-section" id="ots-station">
@@ -956,7 +956,8 @@ words, pick one of the checksum words.</span></span>
           <textarea id="ots-header-hex" class="field" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="ots-header-note"></textarea>
           <p class="field-note" id="ots-header-note">The header is supplied by you and is not checked against the Bitcoin network.</p>
           <label class="label" for="ots-expected-digest">Expected digest (hex)</label>
-          <input type="text" id="ots-expected-digest" class="field" spellcheck="false" autocomplete="off" autocapitalize="off">
+          <input type="text" id="ots-expected-digest" class="field" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="ots-expected-note">
+          <p class="field-note" id="ots-expected-note">Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.</p>
           <div class="row tool-actions">
             <button type="button" class="btn primary" id="ots-verify">Verify</button>
             <button type="button" class="btn" id="ots-clear">Clear</button>
