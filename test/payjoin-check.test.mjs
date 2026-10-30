@@ -43,6 +43,8 @@ const sha256d = (bytes) => {
 const PAYMENT = 0xaa, SENDER_SPK = 0xbb, CHANGE = 0xcc, RECEIVER_SPK = 0xee;
 const spk = (byte) => Uint8Array.of(0x00, 0x14, ...Array(20).fill(byte));
 const p2trSpk = (byte) => Uint8Array.of(0x51, 0x20, ...Array(32).fill(byte));
+const p2shSpk = (byte) => Uint8Array.of(0xa9, 0x14, ...Array(20).fill(byte), 0x87);
+const p2shP2wpkhScriptSig = (byte) => Uint8Array.of(0x16, 0x00, 0x14, ...Array(20).fill(byte));
 
 const txinRaw = (txid, vout, sequence = 0xfffffffd) =>
   concat([txid, le32(vout), varint(0), le32(sequence)]);
@@ -734,6 +736,72 @@ test("two different non-standard input templates are mixed (GLM)", () => {
 test("an odd-length output script is a bad document (GLM)", () => {
   const doc = JSON.parse(JSON.stringify(proposal()));
   doc.tx.outputs[0].scriptPubKey = "001";
+  const result = checkPayjoinProposal(original(), doc, options());
+  assert.equal(result.status, "problems");
+  assert.deepEqual(result.problems, [{ code: "bad_document" }]);
+});
+
+// --- Round 4 fixes (#1316) --------------------------------------------------
+
+test("a receiver input whose finals contradict its witness_utxo is refused (Grok)", () => {
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalScriptSig(p2shP2wpkhScriptSig(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  assert.equal(result.status, "problems");
+  const problem = result.problems.find((p) => p.code === "input_type_mismatch");
+  assert.ok(problem);
+  assert.equal(problem.input, 1);
+});
+
+test("a P2SH-P2WPKH sender and a legacy P2SH receiver are mixed (K3.1)", () => {
+  const orig = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0)], [txout(50_000, spk(PAYMENT)), txout(40_000, spk(CHANGE))]),
+    [[witnessUtxo(100_000, p2shSpk(SENDER_SPK)), finalScriptSig(p2shP2wpkhScriptSig(SENDER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[], [witnessUtxo(30_000, p2shSpk(RECEIVER_SPK)), finalScriptSig(Uint8Array.of(0x00))]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(orig, prop, options());
+  assert.ok(result.problems.some((p) => p.code === "mixed_input_type"));
+});
+
+test("two P2SH-P2WPKH inputs are one type and use the 91 vB size", () => {
+  const orig = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0)], [txout(50_000, spk(PAYMENT)), txout(40_000, spk(CHANGE))]),
+    [[witnessUtxo(100_000, p2shSpk(SENDER_SPK)), finalScriptSig(p2shP2wpkhScriptSig(SENDER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(35_000, spk(CHANGE))]),
+    [[], [witnessUtxo(30_000, p2shSpk(RECEIVER_SPK)), finalScriptSig(p2shP2wpkhScriptSig(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(orig, prop, options({ maxAdditionalFeeContribution: 10_000 }));
+  assert.equal(result.problems.some((p) => p.code === "mixed_input_type"), false);
+  assert.equal(result.unchecked.includes("contribution_over_added_inputs"), false);
+  assert.equal(result.problems.some((p) => p.code === "contribution_over_added_inputs"), false);
+});
+
+test("a sender input with no original finals leaves mixed_input_type unchecked", () => {
+  const orig = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0)], [txout(50_000, spk(PAYMENT)), txout(40_000, spk(CHANGE))]),
+    [[witnessUtxo(100_000, spk(SENDER_SPK))]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(orig, proposal(), options());
+  assert.ok(result.unchecked.includes("mixed_input_type"));
+  assert.notEqual(result.status, "ok");
+});
+
+test("an odd-length map key is a bad document", () => {
+  const doc = JSON.parse(JSON.stringify(proposal()));
+  doc.inputs[1][0].key = "001";
   const result = checkPayjoinProposal(original(), doc, options());
   assert.equal(result.status, "problems");
   assert.deepEqual(result.problems, [{ code: "bad_document" }]);

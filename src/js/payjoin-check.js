@@ -81,7 +81,37 @@ const typeKey = (script) => {
   return `other:${hex.slice(0, 2)}:${hex.length / 2}`;
 };
 
-const INPUT_VSIZE = { p2wpkh: 68, p2sh: 91, p2pkh: 148, p2tr: 58 };
+// What an input really spends, from its UTXO script and its finals. The
+// receiver's witness_utxo is only a claim: a P2SH-P2WPKH input can claim a
+// native P2WPKH script, so the finals decide. "mismatch" means the finals
+// contradict the script; null means the type cannot be told.
+// Known limit (GLM, round 4): a native witness program is taken at its word
+// when the scriptSig is empty. Telling P2WPKH from P2WSH or P2TR by the
+// witness alone would mean hashing its keys and scripts. Only a receiver
+// lying about its own input gets past this, and that receiver already knows
+// the whole payjoin; an honest claim is classified correctly.
+const spendType = (script, finals) => {
+  if (typeof script !== "string" || finals === null) return null;
+  const type = scriptType(script);
+  const sig = finals.scriptSig && typeof finals.scriptSig.value === "string" ? finals.scriptSig.value.toLowerCase() : "";
+  const witness = Boolean(finals.witnessStack);
+  if (type === "p2wpkh" || type === "p2wsh" || type === "p2tr") {
+    return sig === "" && witness ? type : "mismatch";
+  }
+  if (type === "p2sh") {
+    if (sig === "") return "mismatch";
+    if (witness && /^160014[0-9a-f]{40}$/.test(sig)) return "p2sh-p2wpkh";
+    if (witness && /^220020[0-9a-f]{64}$/.test(sig)) return "p2sh-p2wsh";
+    if (witness) return "p2sh-witness-other";
+    return "p2sh-legacy";
+  }
+  if (type === "p2pkh") return sig !== "" && !witness ? "p2pkh" : "mismatch";
+  return typeKey(script);
+};
+
+// P2WSH has no fixed input size (its witness depends on the script), so it is
+// not in this table and contribution_over_added_inputs is skipped for it.
+const INPUT_VSIZE = { p2wpkh: 68, "p2sh-p2wpkh": 91, p2pkh: 148, p2tr: 58 };
 
 const varintLen = (n) => (n < 0xfd ? 1 : n <= 0xffff ? 3 : n <= 0xffffffff ? 5 : 9);
 
@@ -133,7 +163,7 @@ const originalVsize = (original) =>
 const senderType = (original) => {
   const types = new Set();
   for (const map of original.inputs) {
-    const type = scriptType(inputUtxo(map).script);
+    const type = spendType(inputUtxo(map).script, finalsOf(map));
     if (type === null) return null;
     types.add(type);
   }
@@ -185,7 +215,7 @@ const validDoc = (doc) => {
     if (!Array.isArray(map)) return false;
     for (const pair of map) {
       if (!isObject(pair)) return false;
-      if (typeof pair.key !== "string" || pair.key.length < 2 || !HEX.test(pair.key)) return false;
+      if (typeof pair.key !== "string" || pair.key.length < 2 || pair.key.length % 2 !== 0 || !HEX.test(pair.key)) return false;
     }
   }
   return true;
@@ -288,17 +318,20 @@ const check = (original, proposal, options) => {
   if (new Set(proposal.tx.inputs.map((input) => input.sequence)).size > 1) problem("mixed_sequence");
 
   const senderTypes = new Set();
+  const receiverTypes = new Set();
   let typeUnknown = false;
   for (const i of senderInputs) {
     const originalMap = original.inputs[originalIndex.get(outpointKey(proposal.tx.inputs[i]))];
-    const type = typeKey(inputUtxo(originalMap).script);
-    if (type === null) typeUnknown = true;
+    const type = spendType(inputUtxo(originalMap).script, finalsOf(originalMap));
+    if (type === "mismatch") problem("input_type_mismatch", { input: i });
+    else if (type === null) typeUnknown = true;
     else senderTypes.add(type);
   }
-  const receiverTypes = new Set();
   for (const i of receiverInputs) {
-    const type = typeKey(inputUtxo(proposal.inputs[i]).script);
-    if (type === null) typeUnknown = true;
+    const map = proposal.inputs[i];
+    const type = spendType(inputUtxo(map).script, finalsOf(map));
+    if (type === "mismatch") problem("input_type_mismatch", { input: i });
+    else if (type === null) typeUnknown = true;
     else receiverTypes.add(type);
   }
   if (typeUnknown) skip("mixed_input_type");
