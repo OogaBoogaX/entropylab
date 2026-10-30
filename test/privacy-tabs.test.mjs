@@ -81,9 +81,10 @@ function loadPrivacy(document, { tools = [["sp", "sp-card"]], workspace = "sp" }
   };
 }
 
-test("the privacy station switcher ships only in preview builds", () => {
+test("the privacy station switcher ships in release builds", () => {
+  // Unhidden 2026-10-28 (owner): release and preview carry the same switcher.
   const release = applyPreviewBlocks(shell, false);
-  assert.doesNotMatch(release, /privacy-tool-tabs|data-privacy-tool/, "a release build must not carry the station switcher");
+  assert.match(release, /id="privacy-tool-tabs"/, "release builds carry the station switcher");
   const preview = applyPreviewBlocks(shell, true);
   assert.match(preview, /id="privacy-tool-tabs"/);
   assert.ok(preview.indexOf('id="privacy-tool-tabs"') < preview.indexOf('id="sp-tool-intro"'), "the station tabs sit above the Silent Payments intro");
@@ -101,9 +102,9 @@ test("the privacy station switcher ships only in preview builds", () => {
   assert.match(buttons[1], /aria-selected="false"/);
 });
 
-test("the BIP-47 card ships only in preview builds and holds its sections in order", () => {
+test("the BIP-47 card ships in release builds and holds its sections in order", () => {
   const release = applyPreviewBlocks(shell, false);
-  assert.doesNotMatch(release, /id="bip47-card"|data-bip47-section/, "a release build must not carry the BIP-47 card");
+  assert.match(release, /id="bip47-card"/, "release builds carry the BIP-47 card");
   const preview = applyPreviewBlocks(shell, true);
   assert.match(preview, /<div\b[^>]*\bid="bip47-card"[^>]*\brole="tabpanel"[^>]*\bhidden>/, "the card starts hidden, like every other station card");
   const sections = [...preview.matchAll(/data-bip47-section="([^"]+)"/g)].map((match) => match[1]);
@@ -114,24 +115,40 @@ test("the BIP-47 card ships only in preview builds and holds its sections in ord
   assert.match(preview, /id="bip47-contact-out" aria-live="polite"/);
 });
 
-test("the BIP-47 station joins the privacy tool list only behind the preview flag", () => {
+test("the BIP-47 station joins the privacy tool list from its own init", () => {
   const declaration = /var hodlPrivacyTools = (\[[\s\S]*?\]);/.exec(appSource);
   assert.ok(declaration, "the privacy tool list is missing");
-  assert.doesNotMatch(declaration[1], /bip47/, "the BIP-47 station must not ship in release builds");
+  assert.doesNotMatch(declaration[1], /bip47/, "the BIP-47 station is registered by its init, not listed statically");
   const pushes = appSource.split("\n").filter((line) => line.includes("hodlPrivacyTools.push"));
   assert.equal(pushes.length, 1, "the BIP-47 station is added exactly once");
   // It joins from the station's own init, which returns before this unless
-  // the preview-only card markup exists.
+  // the card markup exists.
   const initStart = appSource.indexOf("function hodlInitBip47() {");
   const init = appSource.slice(initStart, appSource.indexOf("\nfunction ", initStart + 1));
   assert.ok(init.includes(pushes[0].trim()), "the station row is added inside hodlInitBip47");
-  assert.ok(init.indexOf('if (!document.getElementById("bip47-card")) return;') < init.indexOf("hodlPrivacyTools.push"), "only after the preview card is found");
+  assert.ok(init.indexOf('if (!document.getElementById("bip47-card")) return;') < init.indexOf("hodlPrivacyTools.push"), "only after the card is found");
 });
 
-test("the station tabs are wired only behind the preview flag", () => {
+test("only the Privacy stations were unhidden: Verify stays preview-only", () => {
+  // Red team (#1286 gate): pin the boundary that remains.
+  const release = applyPreviewBlocks(shell, false);
+  assert.doesNotMatch(release, /id="verify-card"|aria-controls="verify-card"/, "the Verify workspace stays out of release builds");
+  assert.match(applyPreviewBlocks(shell, true), /id="verify-card"/);
+});
+
+test("the BIP-47 station's thrown messages are translated, and its input picker is capped", () => {
+  const start = appSource.indexOf("function hodlBip47LoadKey(");
+  const section = appSource.slice(start, appSource.indexOf("function hodlInitBip47() {"));
+  assert.ok(start > 0 && section.length > 0, "the BIP-47 key functions are missing");
+  assert.doesNotMatch(section, /new Error\("/, "every BIP-47 message goes through hodlError");
+  // A crafted paste with thousands of inputs must not build one option each.
+  assert.match(fnSource("hodlBip47FillNotifyInputs"), /tx && tx\.inputs\.length <= 1000 \?/);
+});
+
+test("the station tabs are wired in every build", () => {
   const callSites = appSource.split("\n").filter((line) => line.includes("hodlInitPrivacyToolTabs()") && !line.trimStart().startsWith("function "));
   assert.equal(callSites.length, 1, "hodlInitPrivacyToolTabs is called exactly once");
-  assert.match(callSites[0], /^\s*if \(PREVIEW\) hodlInitPrivacyToolTabs\(\);\s*$/);
+  assert.match(callSites[0], /^\s*hodlInitPrivacyToolTabs\(\);\s*$/, "no preview flag: release builds ship the switcher");
 });
 
 test("an unknown station id falls back to Silent Payments", () => {
@@ -206,7 +223,8 @@ test("the Silent Payments workspace tab is named Privacy", () => {
   assert.ok(entry, "the sp workspace tab entry is missing");
   assert.equal(entry[1], "Privacy");
   assert.equal(entry[2], "Privacy");
-  const tab = /<button[^>]*class="workspace-tab"[^>]*aria-controls="sp-card"[^>]*>([\s\S]*?)<\/button>/.exec(shell);
+  // The tab controls both Privacy station cards (Kimi K3, #1286 gate).
+  const tab = /<button[^>]*class="workspace-tab"[^>]*aria-controls="sp-card bip47-card"[^>]*>([\s\S]*?)<\/button>/.exec(shell);
   assert.ok(tab, "the sp workspace tab button is missing");
   assert.match(tab[0], /aria-label="Privacy"/);
   assert.match(tab[1], /<span class="workspace-tab-full">Privacy<\/span>/);
@@ -313,9 +331,9 @@ function divBlock(html, id) {
   throw new Error(`unclosed div for #${id}`);
 }
 
-test("the notification check ships only in preview, after the pairs disclosure", () => {
+test("the notification check ships in release builds, after the pairs disclosure", () => {
   const release = applyPreviewBlocks(shell, false);
-  assert.doesNotMatch(release, /id="bip47-notify"|data-bip47-section="notify"/, "a release build must not carry the notification check");
+  assert.match(release, /id="bip47-notify"/, "release builds carry the notification check");
   const preview = applyPreviewBlocks(shell, true);
   const sections = [...preview.matchAll(/data-bip47-section="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(sections, ["intro", "source", "own", "counterparty", "pairs", "notify"], "the notification check follows the payment addresses");

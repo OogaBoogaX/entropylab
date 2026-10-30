@@ -153,6 +153,21 @@ an explicit error before those pairs are allocated.
   result whenever required data or support is missing. “Completed” describes
   only that check against the data in the file; it is not a claim that the
   transaction is safe or that PSBT-provided data is true.
+
+  Host randomness (rho) remains sensitive after signing. A malicious signer using
+  an operator-known base nonce can expose the signing key if its operator later
+  obtains rho and the signature. With the corresponding account xpub and a
+  non-hardened derivation path, compromise can extend to the account private key.
+  Do not save, share or record real transcripts or paste them on a shared/recorded
+  screen. Clipboard copies can persist outside this page.
+
+  In normal and preview builds, tab hide, idle timeout and print clear the pasted
+  transcript and last-inspection cache and close its disclosure. Plain window
+  blur preserves them so the opening or PSBT can be copied from another window;
+  other revealed secrets and visible result panes are still concealed. End
+  Session and pagehide clear field/cache. Clearing is best-effort; browser/OS
+  copies are outside reliable erasure. A successful transcript check does not
+  establish that host randomness stayed secret.
 - Accepts a fully signed raw Bitcoin transaction (hex or base64) in the same
   inspector: outputs, extracted ECDSA nonces, and inscription-envelope hints.
   Fee and RFC 6979 cannot be checked without previous outputs.
@@ -250,6 +265,16 @@ an explicit error before those pairs are allocated.
   DNS TXT to paste on a domain you control; paste that URI back on Send.
   Hybrid URIs with an ordinary Bitcoin fallback address still use Silent
   Payments; the results identify the fallback address as not used.
+- Privacy tab, BIP-47 payment codes station: derives your payment code and
+  notification address from the BIP-47 account (m/47'/coin'/0') of a seed or
+  root xprv, decodes a
+  contact's code with no private key, lists the pair addresses to pay or
+  receive (10 at a time, real indexes, skipped indexes listed), and checks a
+  pasted notification transaction offline (designated input found
+  automatically; a manual override is marked unverified). A receive key is
+  shown only on request; anyone who paid you there could rebuild your BIP-47
+  account key from it, so it must never be shared. Nothing is signed or
+  broadcast.
   This is a calculator: it does not scan the chain or resolve names.
 - Grinds vanity addresses for a Key Station key or a compatible BIP-85 child
   (Vanity tab), picked through the same chip picker as BIP-85 and Silent
@@ -619,6 +644,49 @@ through the [computer hardening checklist](docs/Computer_Hardening_Checklist.md)
 
 To build the HTML file yourself, see [Building from source](#building-from-source).
 
+### Anti-exfil QR observer
+
+Unexpected proof-verifier exceptions produce a STOP result and completion clears
+the capture. Oversized QR decode results are skipped so scanning can continue.
+Invalid/conflicting frames discard partial fragments for the current message;
+already completed messages remain available for the same exchange.
+
+The Nonce Inspector includes an experimental in-memory camera observer. First allow camera access and choose a camera, then scan
+`ur:x-btc-anti-exfil` stages 2/4 on the signer and stage 3 on Sparrow. It checks
+the AEXB proof and the supplied signatures against the embedded PSBT. It never
+signs or broadcasts. Completion clears captured messages before showing a
+blocking PASS or STOP result; only verdict metadata remains until acknowledgement.
+Animated UR assembly uses the shared collector from #1273 with the observer's
+existing bounds and canonical envelope checks. Worker cleanup requests a memory
+scrub and waits up to four seconds for a busy worker (250 ms when idle).
+An unresponsive worker may terminate before wiping transferred frames or WASM
+memory. The shared decoder returns a scrub result; the observer does not currently
+surface it. Immutable decoded strings and browser/OS copies also
+remain outside reliable erasure guarantees.
+Multipart CRC-32 fields accept the reference encoder's fixed-width uint32 form,
+including small values, as well as previously accepted minimal-width values.
+Other CBOR fields retain canonical encoding checks; message CRC validation is unchanged.
+This does not prove host honesty or randomness secrecy. The user reports successful local SeedSigner and Kern multisig sessions;
+broader compatibility qualification remains pending; see `docs/QR_CAPTURE_PROTOTYPE.md` for limits.
+
+The QR observer supports PSBT v0, SIGHASH_ALL, native P2WPKH, P2SH-P2WPKH,
+native P2WSH standard m-of-n multisig and P2SH-P2WSH standard m-of-n multisig.
+All input contexts are checked. Already-finalized inputs are refused with
+`TRANSACTION_ALREADY_FINALIZED`: a conservative observer scope limit, not a
+tamper finding. Existing partial signatures do not by themselves finalize an input.
+
+The pasted transcript follows the confidentiality lifecycle described above:
+plain window blur preserves it; tab hide, idle timeout and print retire it.
+QR capture still pauses on every conceal trigger, including blur. Incomplete
+captured messages remain in memory until Clear Capture, End Session or page exit.
+Clearing remains best-effort.
+Coverage counts/indexes retained in the result are transaction metadata, not
+cryptographic secrets; Clear Capture retires that result too.
+
+For the QR observer, scan the signer’s M4 into EntropyLab first. Only after EL
+shows PASS, scan that same M4 into Sparrow. Do not continue after an incomplete
+result or STOP. Sparrow’s own checks and broadcast decision remain necessary.
+
 ### iPhone home-screen app
 
 On iPhone, open [entropylab.online](https://entropylab.online) in Safari, then
@@ -653,7 +721,8 @@ sha256sum -c SHA256SUMS.txt
 gh attestation verify entropylab.html -R OogaBoogaX/entropylab
 ```
 
-The three WASM modules embedded in the HTML are committed as
+The four WASM modules embedded in the HTML (secp256k1, PSBT, vanity and the
+QR decoder) are committed as
 `src/js/*-wasm-b64.js`; their digests are in `WASM-SHA256SUMS.txt`, committed
 next to `SHA256SUMS.txt`. From a checkout of the release commit:
 

@@ -20,6 +20,21 @@ Successful signature verification checks the supplied hashes and transcript;
 it does not derive transaction hashes from a PSBT or establish an honest
 host's randomness, secrecy, or live exchange ordering.
 
+Host randomness (rho) remains sensitive after signing. A malicious signer using
+an operator-known base nonce can expose the signing key if its operator later
+obtains rho and the signature. With the corresponding account xpub and a
+non-hardened derivation path, compromise can extend to the account private key.
+Do not save, share or record real transcripts or paste them on a shared/recorded
+screen. Clipboard copies can persist outside this page.
+
+In normal and preview builds, tab hide, idle timeout and print clear the pasted
+transcript and last-inspection cache and close its disclosure. Plain window blur
+preserves them so the opening or PSBT can be copied from another window; other
+revealed secrets and visible result panes are still concealed. End Session and
+pagehide clear field/cache. Clearing is best-effort; browser/OS copies are outside
+reliable erasure. A successful transcript check does not establish that host
+randomness stayed secret.
+
 Who EntropyLab defends against, what it checks against each of them, and
 what it leaves to you: [docs/Threat_Model.md](docs/Threat_Model.md).
 
@@ -508,6 +523,69 @@ material. Its security posture rests on the following model:
 - Material involving loss of funds (incorrect derivations, exfiltration of
   secret data, injected script execution in the generated HTML, unexpected
   network egress) is treated as a security issue.
+
+### Preview-only QR observation
+
+The local QR prototype accepts bounded, checksum-validated AEXT UR messages for
+one session; conflicts cannot replace captured stages and no full verdict is
+shown before stages 2, 3 and 4 are present. Camera frames and transcripts are
+kept in accessible memory only, with no automatic file, clipboard, Journal or
+browser-storage writes. Camera access is a separate permission probe whose tracks
+are stopped without scanning, including late/cancelled requests. Stop releases
+camera tracks; Clear capture, End session and leaving the page retire captured
+data. Completion automatically wipes captured buffers and clears the inspector
+transcript before showing either result; only non-secret verdict metadata remains. Clearing is best effort
+and cannot erase browser/OS copies. The decoded text is untrusted input and is
+never rendered as HTML or included in error messages. Transcript metadata is
+private, and complete signatures may permit broadcasting the authorized payment.
+Stage 3 also contains rho: it must remain confidential after completion. A
+malicious signer can use an operator-known base nonce; its operator can recover
+the signing key if they later obtain rho and the signature, even when transcript
+verification passes. Raw transcript export is therefore excluded from this
+prototype. Live capture adds the browser to the trusted environment holding rho;
+RAM-only operation reduces retention but does not guarantee erasure.
+This remains an observer, not an enforcement boundary against a compromised host.
+Camera pixels use the shared quircs WASM decoder and its preview worker. Camera
+stop/restart, disconnect, Clear Capture and completion retire the worker through
+its scrub/terminate lifecycle; stale replies cannot enter a capture. Accessible
+pixel and returned payload buffers are wiped. Retirement requests a scrub, but
+waits up to four seconds while busy, or 250 ms while idle, for an acknowledgement.
+The shared decoder returns a scrub result, which the observer does not currently
+surface; an unresponsive worker may be stopped
+before it scrubs transferred frames or WASM memory; termination does not prove
+zeroing. Immutable decoded strings and browser/OS copies cannot be reliably
+zeroed either. Camera cleanup continues even if decoder retirement throws. The
+shared UR collector handles fountain assembly and wipes retained fragments on
+completion, conflict, invalid assembly or reset. The observer preserves its
+narrower type, frame, fragment and message limits and canonical CBOR envelope
+checks. The checksum field additionally accepts the reference encoder's fixed-width
+uint32 form even for small values; other fields retain canonical checks and the
+assembled message must still match its CRC. Nonzero fountain padding is refused. Clear Capture and End Session reset
+the collector. Foundation Devices-derived UR notices remain under `src/licenses/`.
+
+The QR observer's current preview also checks every supplied signature slot
+against a BIP143 SIGHASH_ALL digest independently reconstructed from the stage-3
+PSBT. A transcript-only pass cannot bypass this check. This validates supplied
+slots under the PSBT's UTXO claims, not complete input coverage, wallet ownership,
+chain-state availability, destination/fee approval, coordinator policy, or the
+actual broadcast transaction. Both results require explicit acknowledgement via
+Clear Capture; Escape/backdrop cannot dismiss them. Acknowledgement resets the
+result but does not make a failed transaction safe. Optional post-capture transcript
+transfer was removed because completed transcripts are no longer retained.
+
+The QR observer supports PSBT v0, SIGHASH_ALL, native P2WPKH, P2SH-P2WPKH,
+native P2WSH standard m-of-n multisig and P2SH-P2WSH standard m-of-n multisig.
+All input contexts are checked. Already-finalized inputs are refused with
+`TRANSACTION_ALREADY_FINALIZED`: a conservative observer scope limit, not a
+tamper finding. Existing partial signatures do not by themselves finalize an input.
+
+The pasted transcript follows the confidentiality lifecycle described above:
+plain window blur preserves it; tab hide, idle timeout and print retire it.
+QR capture still pauses on every conceal trigger, including blur. Incomplete
+captured messages remain in memory until Clear Capture, End Session or page exit.
+Clearing remains best-effort.
+Coverage counts/indexes retained in the result are transaction metadata, not
+cryptographic secrets; Clear Capture retires that result too.
 
 ## What the page can and cannot erase
 

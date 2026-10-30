@@ -599,3 +599,22 @@ export function psbtSignerAuditVerification(beforeDoc, afterDoc) {
   }
   return { complete, signatures };
 }
+
+// The QR observer reuses the same UTXO/script resolution and BIP143 WASM
+// digest as the audit. Caller must bound total work and check key membership.
+export function psbtSegwitV0Context(doc, index) {
+  if (!Number.isInteger(index) || index < 0 || index >= doc?.tx?.inputs?.length) return null;
+  const claim = inputClaim(doc, index);
+  if (!claim) return null;
+  const resolved = ecdsaScriptCode(doc, index, claim);
+  if (!resolved || resolved.kind !== "bip143" || hasCodeSeparator(resolved.scriptCode)) return null;
+  const raw = serializeDocTx(doc.tx);
+  if (!raw) return null;
+  try {
+    const digest = bip143AllDigest(raw, index, resolved.scriptCode, resolved.amount);
+    const wrapped = isP2sh(claim.scriptPubKey);
+    const program = wrapped ? decodedField(doc, index, "PSBT_IN_REDEEM_SCRIPT") : claim.scriptPubKey;
+    const kind = isP2wpkh(program) ? "p2wpkh" : isP2wsh(program) ? "p2wsh" : null;
+    return digest && kind ? { digest, scriptCode: resolved.scriptCode, form: (wrapped ? "p2sh-" : "") + kind } : null;
+  } finally { raw.fill(0); }
+}

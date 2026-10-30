@@ -142,11 +142,12 @@ const jsMain = (await build({
   legalComments: "none",
   charset: "utf8",
   loader: { ".html": "text" },
-  banner: { js: wasmAezNotice },
+  banner: { js: wasmAezNotice + "\n/*! QR capture: Foundation Devices ur2-derived fragment selection, BSD-2-Clause-Patent.\n" + readFileSync(join(root, "src/licenses/ur2.txt"), "utf8") + "\n*/\n" },
   plugins: [previewHtml],
   define: {
     __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false", __LN_WORKER_SOURCE__: JSON.stringify(await (await import("./ln-worker-source.mjs")).buildLnWorkerSource()),
-    ...(preview ? { __QR_WORKER_SOURCE__: JSON.stringify(await (await import("./qr-worker-source.mjs")).buildQrWorkerSource()), __OTS_WORKER_SOURCE__: JSON.stringify(await (await import("./ots-worker-source.mjs")).buildOtsWorkerSource()) } : {}),
+    __QR_WORKER_SOURCE__: JSON.stringify(await (await import("./qr-worker-source.mjs")).buildQrWorkerSource()),
+    ...(preview ? { __OTS_WORKER_SOURCE__: JSON.stringify(await (await import("./ots-worker-source.mjs")).buildOtsWorkerSource()) } : {}),
     __ENTROPYLAB_PREVIEW__: preview ? "true" : "false",
   },
 })).outputFiles[0].text.split(siteLogoSpan).join(siteLogo)

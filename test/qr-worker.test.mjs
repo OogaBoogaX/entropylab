@@ -491,7 +491,30 @@ test("after a decode times out, the retiring worker gets the long deadline and a
   decoder.stop();
 });
 
-test("a release build ships neither the QR WASM module nor the QR worker source", () => {
+test("the release boundary: the live observer ships, the Key Station scan stays preview-only", async () => {
+  // GLM/MiniMax on #1315: with the decoder in every build, pin who may use it.
+  const { applyPreviewBlocks } = await import("../scripts/preview-blocks.mjs");
+  const shell = readFileSync(join(root, "src/shell.html"), "utf8");
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const body = (name) => {
+    const start = app.indexOf("function " + name + "(");
+    assert.ok(start >= 0, name + " exists");
+    return app.slice(start, app.indexOf("\nfunction ", start + 1));
+  };
+  // The observer is in the release shell, and hodlInitPsbt imports it with no
+  // preview guard in front of the import.
+  assert.match(applyPreviewBlocks(shell, false), /id="nonce-qr-capture"/);
+  const init = body("hodlInitPsbt");
+  const at = init.indexOf('import("./nonce-qr-capture.js")');
+  assert.ok(at >= 0, "hodlInitPsbt imports the observer");
+  assert.doesNotMatch(init.slice(0, at), /__ENTROPYLAB_PREVIEW__/);
+  // The Key Station's private-key scan keeps both of its preview guards.
+  assert.match(body("hodlKeyScanHostMarkup"), /typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__/);
+  const bind = body("hodlBindKeyScan");
+  assert.ok(bind.indexOf("__ENTROPYLAB_PREVIEW__") >= 0 && bind.indexOf("__ENTROPYLAB_PREVIEW__") < bind.indexOf('import("./qr-key-scan.js")'), "the key scan import sits behind the preview flag");
+});
+
+test("a release build ships the QR decoder for the Nonce Inspector's live observer", () => {
   const out = mkdtempSync(join(tmpdir(), "entropylab-release-"));
   try {
     // CI checks the repository out shallow, where build-commit.mjs refuses to
@@ -504,13 +527,60 @@ test("a release build ships neither the QR WASM module nor the QR worker source"
     // QR_WASM_B64 are renamed, but a slice of the base64 module and the
     // decoder's export name (only the worker body calls qr_decode) are not.
     assert.ok(workerSource.includes("qr_decode"), "the worker fingerprint is in the bundled worker");
-    assert.ok(!page.includes(QR_WASM_B64.slice(4096, 4160)), "the release build carries no QR WASM module");
-    assert.ok(!page.includes("qr_decode"), "the release build carries no QR worker source");
+    // The live anti-exfil observer ships in every build since its unhide
+    // (owner, 2026-10-29), so its decoder does too. The Key Station's
+    // private-key scan stays behind its own preview guard.
+    assert.ok(page.includes(QR_WASM_B64.slice(4096, 4160)), "the release build carries the QR WASM module");
+    assert.ok(page.includes("qr_decode"), "the release build carries the QR worker source");
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
 });
 
+
+for (const action of ["timeout", "stop"]) {
+  test(`${action} retires an unresponsive worker without promising a scrub`, async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    class UnresponsiveWorker extends FakeWorker {
+      postMessage(message, transfer) {
+        // Actual transfer semantics, but deliberately no processing or scrub ack.
+        super.postMessage(structuredClone(message, { transfer }), []);
+      }
+    }
+    const decoder = fakeDecoder({ Worker: UnresponsiveWorker, timeoutMs: 4000, scrubMs: 250 });
+    try {
+      const frame = new Uint8Array(21 * 21).fill(99);
+      const pending = decoder.decode(frame, 21, 21);
+      const rejected = assert.rejects(pending, { code: action === "timeout" ? "TIMEOUT" : "STOPPED" });
+      const worker = FakeWorker.instances[0], request = worker.sent("decode")[0];
+      assert.equal(frame.byteLength, 0, "the page has relinquished frame ownership");
+      if (action === "timeout") t.mock.timers.tick(4000);
+      else decoder.stop();
+      await rejected;
+      assert.equal(worker.sent("scrub").length, 1);
+      assert.equal(worker.terminated, false);
+      t.mock.timers.tick(3999);
+      assert.equal(worker.terminated, false);
+      t.mock.timers.tick(1);
+      assert.equal(worker.terminated, true);
+      assert.ok(new Uint8Array(request.gray).every(v => v === 99),
+        "termination is not proof that a queued scrub ran on the transferred frame");
+      const late = new Uint8Array([65]).buffer;
+      worker.emit({ type: "decoded", run: request.run, code: 1, payload: late });
+      assert.equal(new Uint8Array(late)[0], 0, "late payload is rejected and wiped");
+      if (action === "timeout") {
+        const next = decoder.decode(new Uint8Array(21 * 21), 21, 21);
+        const fresh = FakeWorker.instances[1], run = fresh.sent("decode")[0].run;
+        assert.notEqual(fresh, worker);
+        fresh.emit({ type: "decoded", run, code: -1, payload: null });
+        assert.deepEqual(await next, { code: -1, payload: null });
+      }
+    } finally {
+      decoder.stop();
+      t.mock.timers.tick(4000);
+    }
+  });
+}
 test("retireQrDecoders() also waits for a decoder stopped earlier whose worker is still scrubbing", async () => {
   FakeWorker.instances = [];
   const a = createQrDecoder({ source: "x", wasmBytes: new Uint8Array([1]), Worker: FakeWorker, timeoutMs: 600, scrubMs: 5 });

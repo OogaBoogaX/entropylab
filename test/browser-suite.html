@@ -5346,28 +5346,41 @@
     assert(!historyDownload.disabled && !historyClear.disabled, "inspected nonce was not added to history");
     state.lastBlob = null;
     state.downloadName = "";
+    // Downloads are encrypted: the passphrase dialog takes it twice (audit item 2).
+    const historyPass = "browser suite nonce history passphrase";
     historyDownload.click();
-    const historyBlob = await until(() => state.downloadName === "entropylab-nonce-history.json" && state.lastBlob, "nonce history download");
+    const historyPassField = await until(() => {
+      const field = document.getElementById("nonce-history-confirm-passphrase");
+      return field && !field.closest("[hidden]") ? field : null;
+    }, "nonce history passphrase dialog");
+    input(historyPassField, historyPass);
+    input(document.getElementById("nonce-history-confirm-repeat"), historyPass);
+    document.getElementById("nonce-history-confirm-primary").click();
+    const historyBlob = await until(() => state.downloadName === "entropylab-nonce-history.json" && state.lastBlob, "nonce history download", 30000);
     const historyText = await historyBlob.text();
     const historyJson = JSON.parse(historyText);
-    equal(historyJson.format, "entropylab-nonce-history", "nonce history format marker missing");
-    equal(historyJson.version, 1, "nonce history version missing");
-    equal(historyJson.records.length, 1, "nonce history should contain the one inspected ECDSA value");
-    const historyRecord = historyJson.records[0];
-    equal(Object.keys(historyRecord).sort().join("|"), "checkedAt|keyTag|masterFingerprint|messageTag|r|verified", "nonce history exported unexpected metadata");
+    equal(historyJson.format, "entropylab-nonce-history-encrypted", "nonce history download is not the encrypted format");
+    equal(Object.keys(historyJson).sort().join("|"), "cipher|ciphertext|format|iterations|iv|kdf|version", "encrypted nonce history carries unexpected fields");
     const displayedR = nonceOut.match(/r values:\s*([0-9a-f]{64})/)?.[1];
-    assert(displayedR && historyRecord.r === displayedR, "nonce history did not export the inspected raw r value");
-    assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(historyRecord.checkedAt), "nonce history did not export the check time");
-    assert(historyRecord.masterFingerprint === null || /^[0-9a-f]{8}$/.test(historyRecord.masterFingerprint), "nonce history master fingerprint field is invalid");
+    assert(displayedR && !historyText.includes(displayedR), "the encrypted nonce history shows the raw r value");
     assert(!historyText.includes(vector), "nonce history retained the PSBT payload");
     historyClear.click();
     assert(historyDownload.disabled && historyClear.disabled, "cleared nonce history remained available");
+    // The record fields themselves are pinned by test/nonce-history.test.mjs;
+    // here the encrypted file must come back through the import dialog.
     Object.defineProperty(historyInput, "files", {
       configurable: true,
       value: [new File([historyText], "entropylab-nonce-history.json", { type: "application/json" })],
     });
     historyInput.dispatchEvent(new Event("change", { bubbles: true }));
-    await until(() => historyStatus.textContent.includes("Loaded 1 nonce history record"), "nonce history upload");
+    const importPassField = await until(() => {
+      const field = document.getElementById("nonce-history-confirm-passphrase");
+      // Open again, in import mode: the repeat field is hidden.
+      return field && !field.closest("[hidden]") && document.getElementById("nonce-history-confirm-repeat").hidden ? field : null;
+    }, "nonce history import dialog");
+    input(importPassField, historyPass);
+    document.getElementById("nonce-history-confirm-primary").click();
+    await until(() => historyStatus.textContent.includes("Loaded 1 nonce history record"), "nonce history upload", 30000);
     assert(!historyDownload.disabled && !historyClear.disabled, "uploaded nonce history did not restore its controls");
     // Change the finalized signature's SIGHASH_ALL suffix to SIGHASH_NONE.
     // The report remains incomplete for unverified prevouts, but the real
