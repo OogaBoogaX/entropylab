@@ -925,7 +925,10 @@ test("hodlSecureKeyWallet zeroes every vault copy and keeps its own key", async 
 
   doc.state.kind = "wif";
   entry.vault.setText(WIKI_WIF);
+  const vaultLength = entry.vault.length;
+  assert.equal(vaultLength, WIKI_WIF.length);
   const wallet = mod.hodlSecureKeyWallet("mainnet");
+  assert.equal(entry.vault.length, vaultLength, "the vault still holds the key");
   assert.ok(recorded.length > 0);
   for (const bytes of recorded) assert.deepEqual([...bytes], new Array(bytes.length).fill(0));
   // The parsed key was zeroed by the wallet builder, so a non-zero key here is
@@ -1019,6 +1022,132 @@ test("hodlSecureEntryHasData sees a key vault with anything in it", async () => 
   seedSet(seed, 0, 0);
   sessionSet(session, 2, "seed", seed);
   assert.equal(mod.hodlSecureEntryHasData(2), true);
+});
+
+test("a key vault does not make the seed method apply (Kimi K3.1)", async () => {
+  const session = createSecureSession();
+  const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+  const key = { id: 1, seedMethod: "words", targetWords: 12, fields: { seed: phrase } };
+  const mod = await loadAppFunctions(
+    ["hodlSecureSeedApplies", "hodlSecureSeedPickerShown", "hodlSecureEntryHasData", "hodlSecureEntryHeld", "hodlSecureKeyOf"],
+    {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureSupported: { ...SUPPORTED_METHODS, seed: true },
+        hodlKeyMode: "seed",
+        hodlSeedMethod: "words",
+        hodlTargetWordCount: 12,
+        document: { getElementById: () => null },
+      },
+      settable: ["hodlSecureEntryOn", "hodlKeys", "hodlActiveKey", "hodlSecureSession"],
+    }
+  );
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys([key]);
+  mod.__set.hodlActiveKey(0);
+  mod.__set.hodlSecureEntryOn(true);
+  const owner = mod.hodlSecureKeyOf(key, true);
+  const entry = keyEntry();
+  entry.vault.setText("5");
+  sessionSet(session, owner, "key", entry);
+
+  assert.equal(mod.hodlSecureSeedApplies(), false, "a key vault is not seed words");
+  assert.equal(mod.hodlSecureSeedPickerShown(key), false, "the text phrase keeps the text field");
+  assert.equal(mod.hodlSecureEntryHasData(owner), true, "the protective check still sees the vault");
+  assert.equal(mod.hodlSecureEntryHeld(key), true);
+});
+
+test("secure seed words do not make the key method apply (Kimi K3.1)", async () => {
+  const { mod, doc } = await loadKeyApp();
+  const session = createSecureSession();
+  const key = { id: 1, fields: {} };
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys([key]);
+  mod.__set.hodlActiveKey(0);
+  mod.__set.hodlSecureEntryOn(true);
+  doc.state.kind = "wif";
+  doc.state.keyValue = WIKI_WIF;
+  const seed = seedEntry(12);
+  seedSet(seed, 0, 0);
+  sessionSet(session, mod.hodlSecureKeyOf(key, true), "seed", seed);
+  assert.equal(mod.hodlSecureKeyApplies(), false, "seed words are not a key vault");
+});
+
+test("the method-specific checks see only their own method (Kimi K3)", async () => {
+  const session = createSecureSession();
+  const mod = await loadAppFunctions(["hodlSecureSeedHasWords", "hodlSecureKeyHasData"], {
+    stubs: realSecureEntryStubs,
+    settable: ["hodlSecureSession"],
+  });
+  mod.__set.hodlSecureSession(session);
+  assert.equal(mod.hodlSecureSeedHasWords(null), false);
+  assert.equal(mod.hodlSecureKeyHasData(null), false);
+
+  const seed = seedEntry(12);
+  const key = keyEntry();
+  sessionSet(session, 1, "seed", seed);
+  sessionSet(session, 2, "key", key);
+  assert.equal(mod.hodlSecureSeedHasWords(1), false, "an empty seed entry holds no words");
+  assert.equal(mod.hodlSecureKeyHasData(2), false, "an empty vault holds no bytes");
+  assert.equal(mod.hodlSecureKeyHasData(1), false, "a seed entry is not key data");
+  assert.equal(mod.hodlSecureSeedHasWords(2), false, "a key entry is not seed words");
+
+  seedSet(seed, 0, 0);
+  key.vault.setText("5");
+  assert.equal(mod.hodlSecureSeedHasWords(1), true);
+  assert.equal(mod.hodlSecureKeyHasData(2), true);
+  assert.equal(mod.hodlSecureKeyHasData(1), false);
+  assert.equal(mod.hodlSecureSeedHasWords(2), false);
+
+  const failing = await loadAppFunctions(["hodlSecureSeedHasWords", "hodlSecureKeyHasData"], {
+    stubs: { ...realSecureEntryStubs, sessionGet: () => { throw new Error("broken"); } },
+    settable: ["hodlSecureSession"],
+  });
+  failing.__set.hodlSecureSession({});
+  assert.equal(failing.hodlSecureSeedHasWords(1), true, "a failed read counts as holding words");
+  assert.equal(failing.hodlSecureKeyHasData(1), true, "a failed read counts as holding bytes");
+});
+
+test("the length lock ignores key-vault data and holds for seed words (MiniMax)", async () => {
+  const session = createSecureSession();
+  const state = { id: 1, fields: {} };
+  let captured = 0;
+  const mod = await loadAppFunctions(["hodlSetSeedLength", "hodlSecureKeyOf"], {
+    stubs: {
+      ...realSecureEntryStubs,
+      hodlSeedLengths: { 12: { words: 12 }, 24: { words: 24 } },
+      hodlDiceMethod: "coldcard",
+      hodlUpdateSeedLengthControl: () => {},
+      hodlCaptureKey: () => { captured++; },
+      hodlInvalidateActiveKeyOutput: () => {},
+      hodlRenderKeyForm: () => {},
+      hodlRestoreFormFields: () => {},
+      hodlQueueMasterFingerprintPreview: () => {},
+    },
+    settable: ["hodlSecureEntryOn", "hodlKeys", "hodlActiveKey", "hodlSecureSession", "hodlTargetWordCount"],
+  });
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys([state]);
+  mod.__set.hodlActiveKey(0);
+  mod.__set.hodlSecureEntryOn(true);
+  mod.__set.hodlTargetWordCount(24);
+  const owner = mod.hodlSecureKeyOf(state, true);
+
+  // Only key-vault data: the length may change.
+  const key = keyEntry();
+  key.vault.setText("5");
+  sessionSet(session, owner, "key", key);
+  mod.hodlSetSeedLength(12);
+  assert.equal(captured, 1, "a key vault does not lock the length");
+  assert.equal(state.targetWords, 12);
+
+  // Secure seed words: the length is refused.
+  const seed = seedEntry(12);
+  seedSet(seed, 0, 0);
+  sessionSet(session, owner, "seed", seed);
+  mod.hodlSetSeedLength(24);
+  assert.equal(captured, 1, "secure words lock the length");
+  assert.equal(state.targetWords, 12);
 });
 
 test("the key vault path never builds a string", async () => {

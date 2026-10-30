@@ -6768,9 +6768,9 @@ function hodlUpdateSeedLengthControl() {
     hodlSeedLengthSelectEl.value = String(config.words);
     changed = true;
   }
-  // Locked while the key holds secure words, in any method: a length changed
-  // under Word numbers or another mode would no longer match the entry.
-  let locked = hodlSecureEntryOn && hodlSecureEntryHasData(hodlSecureKeyOf(hodlKeys[hodlActiveKey]));
+  // Locked while the key holds secure seed words: a length changed under Word
+  // numbers or another mode would no longer match the entry.
+  let locked = hodlSecureEntryOn && hodlSecureSeedHasWords(hodlSecureKeyOf(hodlKeys[hodlActiveKey]));
   let lockNote = locked ? " " + hodlTText("To change the length, undo or clear the words entered so far.") : "";
   for (const option of hodlSeedLengthSelectEl.options) {
     let disabled = locked && option.value !== String(config.words);
@@ -6814,8 +6814,8 @@ function hodlSetSeedLength(words) {
   let config = hodlSeedLengths[Number(words)];
   if (!config) return;
   // The lock is enforced here, not only in the dropdown: a key holding secure
-  // words keeps the length its entry was made for.
-  if (config.words !== hodlTargetWordCount && hodlSecureEntryOn && hodlSecureEntryHasData(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))) {
+  // seed words keeps the length its entry was made for.
+  if (config.words !== hodlTargetWordCount && hodlSecureEntryOn && hodlSecureSeedHasWords(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))) {
     hodlUpdateSeedLengthControl();
     return;
   }
@@ -7246,7 +7246,7 @@ function hodlRenderKeyForm() {
       update();
       // Emptied while secure entry is on: the next words go to the picker.
       let state = hodlKeys[hodlActiveKey];
-      if (hodlSecureSeedActive() && !input.value.trim() && !hodlSecureEntryHasData(hodlSecureKeyOf(state))) {
+      if (hodlSecureSeedActive() && !input.value.trim() && !hodlSecureSeedHasWords(hodlSecureKeyOf(state))) {
         if (state) state.fields.seed = "";
         hodlLastWordCache.clear();
         hodlSetMode(hodlKeyMode);
@@ -12668,17 +12668,33 @@ function hodlSecureSeedReady() {
   indices.fill(0);
   return true;
 }
-// True when the key holds any securely entered word. Only seeds can be entered
-// securely so far; later methods extend this. A read that fails counts as
-// holding words, so the callers that guard against losing them stay closed.
-function hodlSecureEntryHasData(keyId) {
+// True when the key holds securely entered seed words (routing: the seed path,
+// the picker, the length lock). A read that fails counts as holding words, so
+// the callers that guard against losing them stay closed.
+function hodlSecureSeedHasWords(keyId) {
   if (keyId == null) return false;
   try {
-    return (sessionGet(hodlSecureSession, keyId, "seed")?.count ?? 0) > 0
-      || (sessionGet(hodlSecureSession, keyId, "key")?.vault?.length ?? 0) > 0;
+    return (sessionGet(hodlSecureSession, keyId, "seed")?.count ?? 0) > 0;
   } catch {
     return true;
   }
+}
+
+// True when the key's private-key vault holds anything (routing: the key path).
+function hodlSecureKeyHasData(keyId) {
+  if (keyId == null) return false;
+  try {
+    return (sessionGet(hodlSecureSession, keyId, "key")?.vault?.length ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
+
+function hodlSecureEntryHasData(keyId) {
+  if (keyId == null) return false;
+  // Any method: the protective callers (backup, detach, turn-off, Review,
+  // secureSource) must see secure data of either kind.
+  return hodlSecureSeedHasWords(keyId) || hodlSecureKeyHasData(keyId);
 }
 // Secure entry decides a seed key's words only when they were entered with it:
 // a key holding secure words, or one with nothing typed yet. A seed that came
@@ -12687,7 +12703,7 @@ function hodlSecureEntryHasData(keyId) {
 function hodlSecureSeedApplies() {
   if (!hodlSecureSeedActive()) return false;
   let state = hodlKeys[hodlActiveKey];
-  if (hodlSecureEntryHasData(hodlSecureKeyOf(state))) return true;
+  if (hodlSecureSeedHasWords(hodlSecureKeyOf(state))) return true;
   let typed = document.getElementById("seed")?.value ?? state?.fields?.seed ?? "";
   return !String(typed).trim();
 }
@@ -12720,10 +12736,10 @@ function hodlSecureKeyEntry(create = false) {
 function hodlSecureKeyApplies() {
   if (!hodlSecureKeyActive()) return false;
   let state = hodlKeys[hodlActiveKey];
-  if (hodlSecureEntryHasData(hodlSecureKeyOf(state))) return true;
+  if (hodlSecureKeyHasData(hodlSecureKeyOf(state))) return true;
   // The vault field (P3b-2) is not #key, so #key here is only ever the
   // standard text field.
-  let typed = document.getElementById("key")?.value ?? (state?.fields ? hodlPrivateKeyValues(state.fields)[hodlSecureKeyKind()] : "");
+  let typed = document.getElementById("key")?.value ?? (state?.fields ? hodlPrivateKeyValues(state.fields)[hodlSecureKeyKind()] : "") ?? "";
   return !String(typed).trim();
 }
 
@@ -12812,7 +12828,7 @@ function hodlSecureKeyWallet(network) {
 // The seed form shows the picker for a key holding secure words or with no
 // seed text; a seed that is already text keeps the text field.
 function hodlSecureSeedPickerShown(state) {
-  return hodlSecureEntryHasData(hodlSecureKeyOf(state)) || !String(state?.fields?.seed ?? "").trim();
+  return hodlSecureSeedHasWords(hodlSecureKeyOf(state)) || !String(state?.fields?.seed ?? "").trim();
 }
 // True when the key holds securely entered words, or was derived from words
 // held that way: a derived key keeps no copy of them (they stay with the
