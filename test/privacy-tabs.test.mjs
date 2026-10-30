@@ -41,13 +41,16 @@ function fakeDocument(tools) {
   const cards = Object.fromEntries(tools.map((tool) => [`${tool}-card`, { hidden: true }]));
   const strip = { querySelectorAll: (selector) => (selector === "[data-privacy-tool]" ? buttons : []) };
   const manager = { hidden: true };
+  // The Silent Payments intro and SP Station strip, outside the SP card.
+  const spParts = { "sp-tool-intro": { hidden: false }, "sp-manager": { hidden: false } };
   return {
     buttons,
     cards,
+    spParts,
     getElementById(id) {
       if (id === "privacy-tool-tabs") return strip;
       if (id === "privacy-manager") return manager;
-      return cards[id] ?? null;
+      return cards[id] ?? spParts[id] ?? null;
     },
     querySelector(selector) {
       const match = /^#privacy-tool-tabs \[data-privacy-tool="([^"]+)"\]$/.exec(selector);
@@ -161,6 +164,26 @@ test("an unknown station id falls back to Silent Payments", () => {
   assert.equal(document.buttons[0].tabIndex, 0);
   assert.equal(document.cards["sp-card"].hidden, false);
   assert.deepEqual(api.journal, [], "no station change is logged when the id falls back to the current one");
+});
+
+test("the Silent Payments intro and SP Station strip show only with the Silent Payments station", () => {
+  // Owner, 2026-10-30 (phone): BIP-47 opened under the SP intro and SP Station strip.
+  const document = fakeDocument(["sp", "bip47"]);
+  const api = loadPrivacy(document, { tools: [["sp", "sp-card"], ["bip47", "bip47-card"]] });
+  api.init();
+  assert.equal(document.spParts["sp-tool-intro"].hidden, false);
+  assert.equal(document.spParts["sp-manager"].hidden, false);
+  api.show("bip47");
+  assert.equal(document.cards["bip47-card"].hidden, false);
+  assert.equal(document.spParts["sp-tool-intro"].hidden, true, "the SP intro leaves with its station");
+  assert.equal(document.spParts["sp-manager"].hidden, true, "the SP Station strip leaves with its station");
+  api.show("sp");
+  assert.equal(document.spParts["sp-tool-intro"].hidden, false);
+  assert.equal(document.spParts["sp-manager"].hidden, false);
+  const elsewhere = fakeDocument(["sp"]);
+  loadPrivacy(elsewhere, { workspace: "calc" }).init();
+  assert.equal(elsewhere.spParts["sp-tool-intro"].hidden, true);
+  assert.equal(elsewhere.spParts["sp-manager"].hidden, true);
 });
 
 test("switching away from the BIP-47 station conceals a revealed key; switching to it does not", () => {
