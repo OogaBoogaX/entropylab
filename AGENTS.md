@@ -5,6 +5,13 @@ Guidelines for AI coding agents.
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. The short
   version: never generate entropy used for key material, no network egress, output stays a single
   self-contained `entropylab.html`.
+- **Unpublished security findings:** follow
+  [SECURITY.md](SECURITY.md#private-review-and-publication). Keep new red-team
+  findings, reproductions, and security-fix work in a private report or draft
+  advisory until the responsible maintainer approves disclosure. Public
+  branches, draft pull requests, comments, CI logs, and artifacts are not
+  private channels. If your tools cannot access the approved private
+  workspace, hand off privately instead of posting the details publicly.
 - **Read before acting:** read a file before editing or overwriting it — edit
   what is actually on disk, not what you assume.
 - **Never assume:** when something is unknown, check the documentation or the

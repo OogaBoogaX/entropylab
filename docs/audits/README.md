@@ -1,9 +1,19 @@
 # Audit archive and remediation ledger
 
-Every red-team report is filed here, one file per pass, named
-`YYYY-MM-DD-<auditor-or-scope>.md`. Reports are immutable once merged: a
-correction, a refutation or a new reproduction is a new row in this ledger
-with its own evidence, not an edit to the report.
+This is the **public archive** of reports cleared for publication, not an
+inbox for new red-team findings. Start unpublished findings and supporting
+notes in a private vulnerability report or draft security advisory, following
+[private review and publication](../../SECURITY.md#private-review-and-publication).
+A public branch or draft PR is not a private place to stage a report.
+
+After review and coordinated disclosure, file each cleared report as
+`YYYY-MM-DD-<auditor-or-scope>.md`. Identify any partial publication explicitly
+and keep undisclosed actionable findings in the private workspace. Existing
+public reports and known limitations remain available.
+
+Reports are immutable once merged: a correction, a refutation or a new
+reproduction cleared for disclosure is a new row in this ledger with its own
+evidence, not an edit to the report.
 
 The ledger is the record of what was fixed and what was not. A finding gets
 one of:
@@ -101,6 +111,11 @@ journal salt/IV, boot self-test floor, compatibility claims,
 
 ## Adding to the ledger
 
-New report: add the file, a row in **Reports**, and one row per finding.
+After the responsible maintainer approves publication, add the cleared report,
+a row in **Reports**, and one row per disclosed finding. Include the affected
+and fixed versions where applicable, the public advisory or review reference,
+and any user action. Do not link private reports or copy undisclosed details
+into this public ledger.
+
 Never delete a row; supersede it. A "Fixed" row needs a commit and a test or
 a probe that fails without the fix.
