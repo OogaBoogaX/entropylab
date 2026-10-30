@@ -1779,7 +1779,9 @@ test("one PSBT workspace contains PSBT Inspector, PSBT Editor and Nonce Inspecto
   assert.match(shell, /id="psbt-nonce-history-download"[^>]*disabled/);
   assert.match(shell, /id="psbt-nonce-history-clear"[^>]*disabled/);
   assert.match(shell, /id="psbt-nonce-history-result" aria-live="assertive"/);
-  assert.match(appSource, /parseNonceHistory, serializeNonceHistory/);
+  // Downloads are encrypted (audit item 2); plain files still import.
+  assert.match(appSource, /import \{[^}]*\bencryptNonceHistory\b[^}]*\bparseNonceHistory\b[^}]*\} from "\.\/nonce-history\.js"/);
+  assert.doesNotMatch(appSource, /\bserializeNonceHistory\b/);
   assert.match(appSource, /"entropylab-nonce-history\.json"/);
   assert.match(appSource, /getElementById\("psbt-manager"\)/);
   assert.match(appSource, /getElementById\("psbt-tool-intros"\)/);
