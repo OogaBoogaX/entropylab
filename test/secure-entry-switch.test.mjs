@@ -138,11 +138,14 @@ test("turning on with no seed text commits without a dialog", async () => {
 
 test("an extended key in the seed field stays text and opens no dialog (MiniMax)", async () => {
   const previous = globalThis.document;
-  globalThis.document = { getElementById: () => null };
+  const xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+  // The field on screen keeps the text too: the redraw saves it back into the
+  // key, so emptying it here would silently drop the extended key.
+  const field = { value: xprv, dataset: { previousValue: xprv } };
+  globalThis.document = { getElementById: (id) => id === "seed" ? field : null };
   try {
     let dialogCalls = 0;
     const session = createSecureSession();
-    const xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
     const keys = [{ id: 1, seedMethod: "words", fields: { seed: xprv }, globalSync: false }];
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
       stubs: {
@@ -159,15 +162,56 @@ test("an extended key in the seed field stays text and opens no dialog (MiniMax)
         hodlBip39Wordlist: wordlist,
         hodlKeyMode: "seed",
       },
-      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey"],
     });
     mod.__set.hodlSecureSession(session);
     mod.__set.hodlKeys(keys);
+    mod.__set.hodlActiveKey(0);
     mod.__set.hodlSecureEntryOn(false);
     await mod.hodlSecureEntryToggle(true);
     assert.equal(dialogCalls, 0);
     assert.equal(keys[0].fields.seed, xprv);
+    assert.equal(field.value, xprv, "the field on screen keeps the extended key");
     assert.equal(mod.hodlSecureEntryOn, true);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("Keep empties the field on screen when the active key's words moved", async () => {
+  const previous = globalThis.document;
+  const words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+  const field = { value: words, dataset: { previousValue: words } };
+  globalThis.document = { getElementById: (id) => id === "seed" ? field : null };
+  try {
+    const session = createSecureSession();
+    const keys = [{ id: 1, name: "Key Station", seedMethod: "words", targetWords: 12, fields: { seed: words }, globalSync: false }];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => "keep" }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys(keys);
+    mod.__set.hodlActiveKey(0);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.equal(keys[0].fields.seed, "");
+    assert.equal(field.value, "");
+    assert.equal(field.dataset.previousValue, undefined);
   } finally {
     globalThis.document = previous;
   }

@@ -12500,13 +12500,18 @@ async function hodlSecureEntryToggle(wanted) {
       hodlSecureEntryOn = true;
       // The last-word helper caches partial phrases as text: drop them with the field.
       hodlLastWordCache.clear();
-      let seedField = document.getElementById("seed");
-      if (seedField) {
-        seedField.value = "";
-        delete seedField.dataset.previousValue;
+      // Empty the field only when this key's words were kept or cleared above:
+      // an extended key or an over-length phrase stays text, and the redraw
+      // below saves the field back into the key.
+      if (states.includes(hodlKeys[hodlActiveKey])) {
+        let seedField = document.getElementById("seed");
+        if (seedField) {
+          seedField.value = "";
+          delete seedField.dataset.previousValue;
+        }
+        let highlight = document.getElementById("seed-highlight");
+        if (highlight) highlight.textContent = "";
       }
-      let highlight = document.getElementById("seed-highlight");
-      if (highlight) highlight.textContent = "";
       for (const state of hodlKeys) {
         state.globalSync = false;
         state.globalSyncBitCount = 0;
