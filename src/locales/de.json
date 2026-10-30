@@ -2351,5 +2351,13 @@
   "Open an encrypted nonce history": "Einen verschlüsselten Nonce-Verlauf öffnen",
   "Open": "Öffnen",
   " This file was not encrypted: download the history again to save an encrypted copy, and delete the plain file.": "Diese Datei wurde nicht verschlüsselt: Laden Sie den Verlauf erneut herunter, um eine verschlüsselte Kopie zu speichern, und löschen Sie die unverschlüsselte Datei.",
-  " The file is encrypted.": "Die Datei ist verschlüsselt."
+  " The file is encrypted.": "Die Datei ist verschlüsselt.",
+  "Global sync is unavailable while Secure entry is on.": "Globale Synchronisierung ist nicht verfügbar, während Sichere Eingabe aktiviert ist.",
+  "Secure entry: on": "Sichere Eingabe: an",
+  "Secure entry": "Sichere Eingabe",
+  "Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.": "Begrenzt Kopien von Geheimnissen während der Eingabe. Wörter werden einzeln eingegeben; private Schlüssel und Würfelwürfe sind standardmäßig ausgeblendet. Geheimnisse existieren weiterhin im Speicher. Gilt für alle Schlüssel in dieser Sitzung.",
+  "Off — standard text entry.": "Aus — Standard-Texteingabe.",
+  "Secure entry is not available for this method yet. This method uses standard text entry.": "Sichere Eingabe ist für diese Methode noch nicht verfügbar. Diese Methode verwendet Standard-Texteingabe.",
+  "These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.": "Diese Wörter wurden als Text eingegeben, daher verwendet dieser Schlüssel die Standard-Texteingabe. Löschen Sie das Feld, um Wörter sicher einzugeben.",
+  "To change the length, undo or clear the words entered so far.": "Um die Länge zu ändern, machen Sie die bisher eingegebenen Wörter rückgängig oder löschen Sie sie."
 }

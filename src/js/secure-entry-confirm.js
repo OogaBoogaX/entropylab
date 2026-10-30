@@ -44,14 +44,15 @@ export const initSecureEntryConfirm = () => {
   };
   const close = (options) => settle(null, options);
   const open = (options = {}) => {
-    const from = options.opener || (modal.isOpen() ? opener : document.activeElement);
-    close({ restoreFocus: false });
-    if (options.mode !== "on" && options.mode !== "off") return Promise.resolve(null);
-    const on = options.mode === "on";
+    const mode = options.mode;
+    const on = mode === "on";
     const list = on && Array.isArray(options.names) ? options.names : [];
+    if (mode !== "on" && mode !== "off") return Promise.resolve(null);
     // Turning on asks only about keys that hold words; with none there is
     // nothing to keep, so it never claims there is.
-    if (on && list.length === 0) return Promise.resolve(null);
+    if (on && (!Array.isArray(options.names) || list.length === 0)) return Promise.resolve(null);
+    const from = options.opener || (modal.isOpen() ? opener : document.activeElement);
+    close({ restoreFocus: false });
     opener = from;
     names.hidden = !on;
     cannotKeep.hidden = !on || options.canKeep !== false;
@@ -74,7 +75,7 @@ export const initSecureEntryConfirm = () => {
       primary.textContent = t("Keep current entry");
       secondary.textContent = t("Clear and start again");
       cannotKeep.textContent = t("Some of these words are not on the BIP39 English list, so they cannot be kept.");
-      primaryChoice = "keep";
+      primaryChoice = options.canKeep === false ? null : "keep";
       secondaryChoice = "clear";
     } else {
       title.textContent = t("Turn off secure entry?");

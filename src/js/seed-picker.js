@@ -57,7 +57,6 @@ export function mountSeedPicker(host, {
   translate = (text) => text,
   onChange = () => {},
   doc = document,
-  win = window,
 } = {}) {
   if (!entry || typeof entry !== "object" || entry.kind !== "seed") throw new Error("A seed picker needs a seed entry.");
   if (!Array.isArray(wordlist) || wordlist.length !== WORD_COUNT) throw new Error("A seed picker needs the 2048-word BIP39 list.");
@@ -543,6 +542,10 @@ export function mountSeedPicker(host, {
     pasteError.hidden = true;
     pasteError.textContent = "";
     paste.hidden = true;
+    prefixField.value = "";
+    matches.replaceChildren();
+    countLine.textContent = "";
+    narrowLine.hidden = true;
     render();
     if (entry.count === entry.length) {
       renderProgress();

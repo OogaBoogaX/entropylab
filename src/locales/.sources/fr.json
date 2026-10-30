@@ -2351,5 +2351,13 @@
   "Repeat the passphrase": "4b93336c5db8a45761eb495c41c94a2b6c4f77650d1ceec1a12e8c4a26a7645c",
   "Encrypt and download": "84768b93e863c007da9bfeec15c51c7957fe201f55fca6cd70793cba8cab61da",
   "Open an encrypted nonce history": "3b09a2a899e28d8c133bbef1a6110cc4c0d6511faedac4dc090fe27301b7d911",
-  "Open": "ed077f3d8125d60dca1979c7133601bd187d47c73ed9975028f677e49e709942"
+  "Open": "ed077f3d8125d60dca1979c7133601bd187d47c73ed9975028f677e49e709942",
+  "Global sync is unavailable while Secure entry is on.": "7c776060cad99d17fcc087cbe1d5c36224185b6628a279dbac4a747de062a4af",
+  "Secure entry: on": "d0b88c97ddfe1ddbbc2adf435cdd93bbad71e8197bb89e287a29ea11eec459e6",
+  "Secure entry": "65db22a90f9655d2fbb6b8b096fbc51e967c693f9adf5dcf8467538fe5dcc2c4",
+  "Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.": "17609239ece9874ab92599094dd0c99ecfd74d7d62f30f191abfffc82a93ce9f",
+  "Off — standard text entry.": "8fb8249e25036cf76437fc0b28687f0a148a43721be959f676610c76787eae0d",
+  "Secure entry is not available for this method yet. This method uses standard text entry.": "3038b0540efcefab6e05fe6f826ed343f91dd0bd0f8d4d89231b0d54d5610ba1",
+  "These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.": "7ef839b172e3f66fe39554313e2575ec28fcead1546312fba33bd5ca0a7476e0",
+  "To change the length, undo or clear the words entered so far.": "f96b53a6fea83f93c0085706cf35b432f88c2a798d7b42d0c23cd1f56ce976fa"
 }
