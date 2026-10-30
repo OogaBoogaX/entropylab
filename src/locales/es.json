@@ -2351,5 +2351,12 @@
   "Repeat the passphrase": "Repite la frase de contraseña",
   "Encrypt and download": "Cifrar y descargar",
   "Open an encrypted nonce history": "Abrir un historial de nonces cifrado",
-  "Open": "Abrir"
+  "Open": "Abrir",
+  "Global sync is unavailable while Secure entry is on.": "La sincronización global no está disponible mientras la entrada segura está activada.",
+  "Secure entry: on": "Entrada segura: activada",
+  "Secure entry": "Entrada segura",
+  "Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.": "Limita las copias de secretos durante la entrada. Las palabras se introducen una a la vez; las claves privadas y las tiradas de dados están ocultas por defecto. Los secretos aún existen en la memoria. Se aplica a todas las claves en esta sesión.",
+  "Off — standard text entry.": "Desactivado — entrada de texto estándar.",
+  "These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.": "Estas palabras llegaron como texto, por lo que esta clave utiliza la entrada de texto estándar. Borra el campo para introducir las palabras de forma segura.",
+  "To change the length, undo or clear the words entered so far.": "Para cambiar la longitud, deshace o borra las palabras introducidas hasta ahora."
 }
