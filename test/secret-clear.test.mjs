@@ -1022,6 +1022,30 @@ test("pagehide and persisted pageshow end the PSBT session, reports included", (
     assert.equal(elements.get(id).value, "", `session end left #${id} filled`);
 });
 
+test("End Session still wipes the key and fields when the camera capture fails to clear", () => {
+  const elements = new Map();
+  for (const id of ["psbt-out", "nonce-out"]) elements.set(id, { innerHTML: "<table>report</table>", dataset: {} });
+  for (const id of ["psbt-key", "psbt-pass", "psbt-text", "nonce-key", "nonce-pass", "nonce-text"]) elements.set(id, { value: "session material", dataset: {} });
+  let wiped = 0, history = 0;
+  const context = createContext({
+    document: { getElementById: id => elements.get(id) ?? null },
+    hodlPsbtWipeMem: () => { wiped += 1; }, hodlPsbtClearNonceHistory: () => { history += 1; },
+    hodlNonceQrCapture: { clear: () => { throw new Error("camera track would not stop"); } },
+    hodlPsbtRetireAuditUploads() {}, hodlPsbtRetireRbfUploads() {},
+    hodlPsbtLast: { rvalues: ["deadbeef"] }, hodlPsbtInspected: { psbt: "stamp" },
+    hodlPsbtSessionSpec: null,
+    hodlSetPsbtError() {}, hodlSetNonceError() {},
+    hodlPaintPsbtSession() {}, hodlRefreshStationKeyPickers() {}, hodlSyncPsbtControls() {},
+  });
+  vm.runInContext(`${functionSource("hodlNote")}\n${functionSource("hodlEndPsbtSession")}\nhodlEndPsbtSession();`, context);
+  assert.equal(wiped, 1, "a capture failure skipped the key wipe");
+  assert.equal(history, 1, "a capture failure skipped the nonce history clear");
+  assert.equal(context.hodlPsbtLast, null, "a capture failure left the parsed report state");
+  for (const id of ["psbt-key", "psbt-pass", "psbt-text", "nonce-key", "nonce-pass", "nonce-text"])
+    assert.equal(elements.get(id).value, "", `a capture failure left #${id} filled`);
+  assert.equal(elements.get("psbt-out").innerHTML, "", "a capture failure left the PSBT report rendered");
+});
+
 test("pagehide and persisted pageshow reset every multisig tab", () => {
   // The station is watch-only — the descriptor import refuses private keys —
   // but a bfcache restore must not bring the session's form back: the
