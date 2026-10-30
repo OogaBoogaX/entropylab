@@ -229,6 +229,31 @@ const check = (original, proposal, options) => {
     if (!unchecked.includes(code)) unchecked.push(code);
   };
 
+  // BIP-174: a map holds at most one pair per key. The accessors below read
+  // the first match, so a second copy could carry a different value past them.
+  const duplicateKeys = (doc, name) => {
+    const maps = [];
+    doc.inputs.forEach((map, index) => maps.push({ map, kind: "input", index }));
+    doc.outputs.forEach((map, index) => maps.push({ map, kind: "output", index }));
+    // psbtInspectDoc names the global map "globals" (GLM: "global" never matched).
+    if (Array.isArray(doc.globals)) maps.push({ map: doc.globals, kind: "global", index: null });
+    for (const { map, kind, index } of maps) {
+      const seen = new Set();
+      let duplicate = false;
+      for (const pair of map) {
+        if (!isObject(pair) || typeof pair.key !== "string") continue;
+        const key = pair.key.toLowerCase();
+        if (seen.has(key)) duplicate = true;
+        seen.add(key);
+      }
+      if (duplicate) {
+        problem("duplicate_key", index === null ? { doc: name, map: kind } : { doc: name, map: kind, index });
+      }
+    }
+  };
+  duplicateKeys(original, "original");
+  duplicateKeys(proposal, "proposal");
+
   const originalIndex = new Map();
   original.tx.inputs.forEach((input, i) => {
     const key = outpointKey(input);
@@ -295,10 +320,13 @@ const check = (original, proposal, options) => {
     const originalMap = original.inputs[originalIndex.get(outpointKey(input))];
     if (keylessValue(map, 0x03) !== keylessValue(originalMap, 0x03)) problem("sender_sighash_changed", { input: i });
     // Whatever the Original says, the sender signs the whole transaction:
-    // only SIGHASH_ALL (0x01) or the taproot default (0x00) binds the outputs
-    // checked here.
+    // only SIGHASH_ALL (0x01), or the taproot default (0x00) on a taproot
+    // input, binds the outputs checked here. SIGHASH_DEFAULT exists only for
+    // taproot (BIP-341); on any other input the signer would reject it.
     const sighash = keylessValue(map, 0x03);
-    if (sighash !== null && sighash !== "01000000" && sighash !== "00000000") problem("sender_sighash_not_all", { input: i });
+    const defaultSighash =
+      sighash === "00000000" && spendType(inputUtxo(originalMap).script, finalsOf(originalMap)) === "p2tr";
+    if (sighash !== null && sighash !== "01000000" && !defaultSighash) problem("sender_sighash_not_all", { input: i });
     // Any other field the receiver added (redeem/witness script, tap leaf,
     // tap internal key, merkle root, proprietary, unknown) would be used by
     // the sender's signer, so it must already be in the original.
@@ -429,8 +457,17 @@ const check = (original, proposal, options) => {
         : finalsOf(proposal.inputs[i]);
     };
     const size = txVsize(proposal.tx.inputs, proposal.tx.outputs, finalsFor);
-    // A new ECDSA signature can be one byte longer than the original's.
-    return size === null ? null : size + senderInputs.length;
+    if (size === null) return null;
+    // A re-signed ECDSA signature can be longer than the original's: one byte
+    // in a witness, two in a P2PKH scriptSig (4 weight units per byte). An
+    // unknown type gets the larger allowance.
+    let allowance = 0;
+    for (const i of senderInputs) {
+      const originalMap = original.inputs[originalIndex.get(outpointKey(proposal.tx.inputs[i]))];
+      const spend = spendType(inputUtxo(originalMap).script, finalsOf(originalMap));
+      allowance += spend === "p2pkh" || spend === null ? 2 : 1;
+    }
+    return size + allowance;
   })();
   const type = senderType(original);
   const inputVsize = type ? INPUT_VSIZE[type] : null;

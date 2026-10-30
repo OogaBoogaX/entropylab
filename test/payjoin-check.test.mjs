@@ -515,15 +515,15 @@ test("a sender sighash type the original already carried is kept", () => {
 
 // Round 5 (#1316): the sighash the sender signs with must bind the outputs
 // the check verified, whatever the Original carried.
-const withSenderSighash = (type) => {
+const withSenderSighash = (type, senderSpk = spk(SENDER_SPK), receiverSpk = spk(RECEIVER_SPK)) => {
   const orig = psbtInspectDoc(psbt(
     tx([txin(0x11, 0)], [txout(50_000, spk(PAYMENT)), txout(40_000, spk(CHANGE))]),
-    [[witnessUtxo(100_000, spk(SENDER_SPK)), sighashType(type), finalWitness()]],
+    [[witnessUtxo(100_000, senderSpk), sighashType(type), finalWitness()]],
     [[], []],
   ));
   const prop = psbtInspectDoc(psbt(
     tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
-    [[sighashType(type)], [witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[sighashType(type)], [witnessUtxo(30_000, receiverSpk), finalWitness()]],
     [[], []],
   ));
   return checkPayjoinProposal(orig, prop, options());
@@ -540,12 +540,24 @@ test("a non-ALL sighash on both sides is refused (GLM)", () => {
   }
 });
 
-test("SIGHASH_ALL and the taproot default are accepted on a sender input", () => {
-  for (const type of [0x01, 0x00]) {
-    const result = withSenderSighash(type);
-    assert.equal(result.problems.some((p) => p.code === "sender_sighash_not_all"), false, `sighash ${type} is accepted`);
-    assert.equal(result.status, "ok");
-  }
+test("SIGHASH_ALL is accepted on a sender input", () => {
+  const result = withSenderSighash(0x01);
+  assert.equal(result.problems.some((p) => p.code === "sender_sighash_not_all"), false);
+  assert.equal(result.status, "ok");
+});
+
+test("SIGHASH_DEFAULT is refused on a P2WPKH sender input (BIP-341)", () => {
+  const result = withSenderSighash(0x00);
+  const problem = result.problems.find((p) => p.code === "sender_sighash_not_all");
+  assert.ok(problem);
+  assert.equal(problem.input, 0);
+  assert.notEqual(result.status, "ok");
+});
+
+test("SIGHASH_DEFAULT is accepted on a P2TR sender input (BIP-341)", () => {
+  const result = withSenderSighash(0x00, p2trSpk(SENDER_SPK), p2trSpk(RECEIVER_SPK));
+  assert.equal(result.problems.some((p) => p.code === "sender_sighash_not_all"), false);
+  assert.equal(result.status, "ok");
 });
 
 test("a sender input with no sighash field is not refused", () => {
@@ -861,6 +873,131 @@ test("an odd-length map key is a bad document", () => {
   const result = checkPayjoinProposal(original(), doc, options());
   assert.equal(result.status, "problems");
   assert.deepEqual(result.problems, [{ code: "bad_document" }]);
+});
+
+// --- Round 6 fixes (#1316) --------------------------------------------------
+
+// A hostile PSBT can carry two pairs with one key; psbtInspectDoc keeps both,
+// so the document is edited directly to be sure the duplicate is present.
+const withPairs = (doc, section, index, pairs) => {
+  const copy = JSON.parse(JSON.stringify(doc));
+  copy[section][index].push(...pairs);
+  return copy;
+};
+
+test("a duplicate sighash key in a sender input is refused (P3, GLM)", () => {
+  const doc = withPairs(proposal(), "inputs", 0, [
+    { key: "03", value: "01000000" },
+    { key: "03", value: "02000000" },
+  ]);
+  const result = checkPayjoinProposal(original(), doc, options());
+  const problem = result.problems.find((p) => p.code === "duplicate_key");
+  assert.ok(problem);
+  assert.equal(problem.doc, "proposal");
+  assert.equal(problem.map, "input");
+  assert.equal(problem.index, 0);
+  assert.notEqual(result.status, "ok");
+});
+
+test("a duplicate unknown key in a proposal output map is refused (P3)", () => {
+  const doc = withPairs(proposal(), "outputs", 1, [
+    { key: "fc00", value: "01" },
+    { key: "fc00", value: "02" },
+  ]);
+  const result = checkPayjoinProposal(original(), doc, options());
+  const problem = result.problems.find((p) => p.code === "duplicate_key");
+  assert.ok(problem);
+  assert.equal(problem.doc, "proposal");
+  assert.equal(problem.map, "output");
+  assert.equal(problem.index, 1);
+  assert.notEqual(result.status, "ok");
+});
+
+test("a duplicate unknown key in an original input map is refused (P3)", () => {
+  const doc = withPairs(original(), "inputs", 0, [
+    { key: "fc00", value: "01" },
+    { key: "fc00", value: "02" },
+  ]);
+  const result = checkPayjoinProposal(doc, proposal(), options());
+  const problem = result.problems.find((p) => p.code === "duplicate_key");
+  assert.ok(problem);
+  assert.equal(problem.doc, "original");
+  assert.equal(problem.map, "input");
+  assert.equal(problem.index, 0);
+  assert.notEqual(result.status, "ok");
+});
+
+test("a duplicate key in the proposal's global map is refused (GLM, r6)", () => {
+  const doc = JSON.parse(JSON.stringify(proposal()));
+  assert.ok(Array.isArray(doc.globals), "the inspect document has a globals map");
+  doc.globals.push({ key: "fc01", value: "01" }, { key: "fc01", value: "02" });
+  const result = checkPayjoinProposal(original(), doc, options());
+  const problem = result.problems.find((p) => p.code === "duplicate_key");
+  assert.ok(problem);
+  assert.equal(problem.doc, "proposal");
+  assert.equal(problem.map, "global");
+  assert.equal("index" in problem, false);
+  assert.notEqual(result.status, "ok");
+});
+
+test("a clean proposal has no duplicate keys", () => {
+  const result = checkPayjoinProposal(original(), proposal(), options());
+  assert.equal(result.problems.some((p) => p.code === "duplicate_key"), false);
+  assert.equal(result.status, "ok");
+});
+
+test("a P2PKH sender gets a two-vbyte re-sign allowance (K3.1)", () => {
+  // Both proposals are 156 vB before the allowance:
+  //   P2PKH:  base = 4 + 1 + 2*(32+4+1+1+4) + 1 + 2*31 + 4 = 156, no witness.
+  //   P2WPKH: base = 4 + 1 + 2*(32+4+1+0+4) + 1 + 2*31 + 4 = 154,
+  //           witness = 2 + 2 + 2 = 6, weight = 154*3 + 160 = 622,
+  //           vsize = ceil(622/4) = 156.
+  // A re-signed P2PKH signature can grow two bytes in the scriptSig, so the
+  // P2PKH estimate is 158 and 11000/158 < 70; the P2WPKH estimate is 157 and
+  // 11000/157 >= 70.
+  const p2pkh = (byte) => Uint8Array.of(0x76, 0xa9, 0x14, ...Array(20).fill(byte), 0x88, 0xac);
+  const build = (senderSpk, senderFinal, receiverSpk, receiverFinal) => {
+    const orig = psbtInspectDoc(psbt(
+      tx([txin(0x11, 0)], [txout(50_000, spk(PAYMENT)), txout(40_000, spk(CHANGE))]),
+      [[witnessUtxo(100_000, senderSpk), senderFinal]],
+      [[], []],
+    ));
+    const prop = psbtInspectDoc(psbt(
+      tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+      [[], [witnessUtxo(30_000, receiverSpk), receiverFinal]],
+      [[], []],
+    ));
+    return checkPayjoinProposal(orig, prop, options({ minFeeRate: 70 }));
+  };
+
+  const legacy = build(
+    p2pkh(SENDER_SPK),
+    finalScriptSig(Uint8Array.of(0x51)),
+    p2pkh(RECEIVER_SPK),
+    finalScriptSig(Uint8Array.of(0x51)),
+  );
+  const problem = legacy.problems.find((p) => p.code === "below_min_fee_rate");
+  assert.ok(problem, "the two-vbyte allowance puts the P2PKH proposal below 70 sat/vB");
+
+  const segwit = build(spk(SENDER_SPK), finalWitness(), spk(RECEIVER_SPK), finalWitness());
+  assert.equal(segwit.problems.some((p) => p.code === "below_min_fee_rate"), false);
+  assert.equal(segwit.status, "ok");
+});
+
+test("a non-witness UTXO for another txid is refused (K3)", () => {
+  // The previous transaction has vout 1, so only the txid can be wrong.
+  const prev = prevTx(30_000, spk(RECEIVER_SPK), 1);
+  const prop = psbtInspectDoc(psbt(
+    tx([txin(0x11, 0), txin(0x22, 1)], [txout(80_000, spk(PAYMENT)), txout(39_000, spk(CHANGE))]),
+    [[], [pair(Uint8Array.of(0x00), prev.bytes), witnessUtxo(30_000, spk(RECEIVER_SPK)), finalWitness()]],
+    [[], []],
+  ));
+  const result = checkPayjoinProposal(original(), prop, options());
+  const problem = result.problems.find((p) => p.code === "utxo_mismatch");
+  assert.ok(problem);
+  assert.equal(problem.input, 1);
+  assert.equal(problem.doc, "proposal");
+  assert.notEqual(result.status, "ok");
 });
 
 // --- Source check -----------------------------------------------------------
