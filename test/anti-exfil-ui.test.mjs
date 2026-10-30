@@ -79,26 +79,31 @@ const stage3 = positive.messages.find((vector) => vector.stage === 3);
 const stage4 = positive.messages.find((vector) => vector.stage === 4);
 const negativeStage4 = negative.cases.find((vector) => vector.stage === 4);
 
-test("release path is exactly hodlParseAntiExfil", () => {
-  const raw = `${jadeHost}\n${jadeOpening}`;
-  const expected = hodlParseAntiExfil(raw);
-  const release = hodlReadNonceTranscript(raw, false);
-  assert.equal(release.kind, "jade");
-  assert.equal(release.warningCode, null);
-  assert.equal(release.aexb, null);
-  assert.equal(hodlHex.encode(release.transcript.host), hodlHex.encode(expected.host));
-  assert.equal(release.transcript.openings.length, expected.openings.length);
-  assert.equal(hodlHex.encode(release.transcript.openings[0]), hodlHex.encode(expected.openings[0]));
+test("a Jade host nonce and opening read as a Jade transcript", () => {
+  const result = hodlReadNonceTranscript(`${jadeHost}\n${jadeOpening}`);
+  assert.equal(result.kind, "jade");
+  assert.equal(hodlHex.encode(result.transcript.host), jadeHost);
+  assert.equal(result.transcript.openings.length, 1);
+  assert.equal(hodlHex.encode(result.transcript.openings[0]), jadeOpening);
 });
 
-test("release path reports a parse error instead of throwing", () => {
-  const release = hodlReadNonceTranscript("aa".repeat(40), false);
-  assert.ok(release.error);
-  assert.equal(release.transcript, undefined);
+test("malformed input reports an error instead of throwing", () => {
+  const result = hodlReadNonceTranscript("aa".repeat(40));
+  assert.ok(result.error);
+  assert.equal(result.transcript, undefined);
+});
+
+test("the transcript reader takes one argument and never consults a build flag", () => {
+  const reader = loadSlice("hodlReadNonceTranscript");
+  assert.match(reader, /^function hodlReadNonceTranscript\(raw\) \{/);
+  assert.doesNotMatch(reader, /PREVIEW/);
+  assert.doesNotMatch(reader, /__ENTROPYLAB_PREVIEW__/);
+  assert.match(loadSlice("hodlRenderPsbt"), /hodlReadNonceTranscript\(raw\)/);
+  assert.doesNotMatch(app, /hodlReadNonceTranscript\(raw,/);
 });
 
 test("preview path detects a two-value BitBox02 transcript", () => {
-  const bitbox = hodlReadNonceTranscript(`${bitboxHost} ${bitboxCommitment} ${bitboxOpening}`, true);
+  const bitbox = hodlReadNonceTranscript(`${bitboxHost} ${bitboxCommitment} ${bitboxOpening}`);
   assert.equal(bitbox.kind, "bitbox02");
   assert.equal(bitbox.warningCode, null);
   assert.equal(hodlHex.encode(bitbox.transcript.host), bitboxHost);
@@ -106,7 +111,7 @@ test("preview path detects a two-value BitBox02 transcript", () => {
 });
 
 test("preview path keeps the Jade/BitBox02 warning code for a single host nonce", () => {
-  const jade = hodlReadNonceTranscript(`${jadeHost} ${jadeOpening}`, true);
+  const jade = hodlReadNonceTranscript(`${jadeHost} ${jadeOpening}`);
   assert.equal(jade.kind, "jade");
   assert.equal(jade.warningCode, "jade-or-bitbox02");
   assert.equal(hodlHex.encode(jade.transcript.host), jadeHost);
@@ -115,27 +120,27 @@ test("preview path keeps the Jade/BitBox02 warning code for a single host nonce"
 test("preview path returns an AEXB verdict for an AEXB fixture", () => {
   // A single AEXB/AEXT message carries no earlier stage, so aexbVerify can
   // only refuse it: stage 4 has no reveal, stage 3 has no stage-2 commitment.
-  const signatures = hodlReadNonceTranscript(stage4.message_hex, true);
+  const signatures = hodlReadNonceTranscript(stage4.message_hex);
   assert.equal(signatures.kind, "aexb");
   assert.equal(signatures.transcript, null);
   assert.equal(signatures.aexb.ok, false);
   assert.equal(signatures.aexb.reason, "MISSING_REVEAL");
 
-  const reveal = hodlReadNonceTranscript(stage3.message_hex, true);
+  const reveal = hodlReadNonceTranscript(stage3.message_hex);
   assert.equal(reveal.kind, "aexb");
   assert.equal(reveal.aexb.ok, false);
   assert.equal(reveal.aexb.reason, "MISSING_COMMITMENT");
 });
 
 test("preview path verifies stages 2, 3 and 4 pasted one per line", () => {
-  const result = hodlReadNonceTranscript([stage2.message_hex, stage3.message_hex, stage4.message_hex].join("\n"), true);
+  const result = hodlReadNonceTranscript([stage2.message_hex, stage3.message_hex, stage4.message_hex].join("\n"));
   assert.equal(result.kind, "aexb");
   assert.equal(result.aexb.ok, true);
   assert.equal(result.aexb.slots.length, positive.slot_count);
 });
 
 test("preview path verifies the same stages in reverse order", () => {
-  const result = hodlReadNonceTranscript([stage4.message_hex, stage3.message_hex, stage2.message_hex].join("\n"), true);
+  const result = hodlReadNonceTranscript([stage4.message_hex, stage3.message_hex, stage2.message_hex].join("\n"));
   assert.equal(result.kind, "aexb");
   assert.equal(result.aexb.ok, true);
   assert.equal(result.aexb.slots.length, positive.slot_count);
@@ -143,7 +148,7 @@ test("preview path verifies the same stages in reverse order", () => {
 
 test("preview path verifies stages 2, 3 and 4 when each message is line-wrapped", () => {
   const wrap = (hex) => hex.match(/.{1,64}/g).join("\n");
-  const result = hodlReadNonceTranscript([stage2, stage3, stage4].map((vector) => wrap(vector.message_hex)).join("\n"), true);
+  const result = hodlReadNonceTranscript([stage2, stage3, stage4].map((vector) => wrap(vector.message_hex)).join("\n"));
   assert.equal(result.kind, "aexb");
   assert.equal(result.aexb.ok, true);
   assert.equal(result.aexb.slots.length, positive.slot_count);
@@ -151,13 +156,13 @@ test("preview path verifies stages 2, 3 and 4 when each message is line-wrapped"
 
 test("preview path uses a stage-1 commitment when no stage-2 message is present", () => {
   const expected = aexbVerify(aexbDecode(stage4.message_hex), aexbDecode(stage3.message_hex), aexbDecode(stage1.message_hex));
-  const result = hodlReadNonceTranscript([stage1.message_hex, stage3.message_hex, stage4.message_hex].join("\n"), true);
+  const result = hodlReadNonceTranscript([stage1.message_hex, stage3.message_hex, stage4.message_hex].join("\n"));
   assert.equal(result.kind, "aexb");
   assert.deepEqual(result.aexb, expected);
 });
 
 test("preview path refuses two messages with the same stage", () => {
-  const result = hodlReadNonceTranscript([stage4.message_hex, stage4.message_hex].join("\n"), true);
+  const result = hodlReadNonceTranscript([stage4.message_hex, stage4.message_hex].join("\n"));
   assert.equal(result.kind, "aexb");
   // The verdict is built inside the helper's realm, so compare its fields.
   assert.equal(result.aexb.ok, false);
@@ -167,7 +172,7 @@ test("preview path refuses two messages with the same stage", () => {
 
 test("preview path verifies stage 4 and stage 3 without a commitment", () => {
   const expected = aexbVerify(aexbDecode(stage4.message_hex), aexbDecode(stage3.message_hex), null);
-  const result = hodlReadNonceTranscript([stage4.message_hex, stage3.message_hex].join("\n"), true);
+  const result = hodlReadNonceTranscript([stage4.message_hex, stage3.message_hex].join("\n"));
   assert.equal(result.kind, "aexb");
   assert.deepEqual(result.aexb, expected);
 });
@@ -175,7 +180,7 @@ test("preview path verifies stage 4 and stage 3 without a commitment", () => {
 test("preview path refuses a negative stage-4 message with positive stages 2 and 3", () => {
   // The negative vector already fails while decoding (its expected_error), so
   // the reader names the third message and nothing is verified.
-  const result = hodlReadNonceTranscript([stage2.message_hex, stage3.message_hex, negativeStage4.message_hex].join("\n"), true);
+  const result = hodlReadNonceTranscript([stage2.message_hex, stage3.message_hex, negativeStage4.message_hex].join("\n"));
   assert.equal(result.kind, undefined);
   assert.equal(result.aexb, undefined);
   assert.match(result.error, /^Message 3: /);
@@ -186,14 +191,14 @@ test("preview path never reads a BitBox02 pair whose commitment does not match a
   // SHA256(host nonce) and the host nonce, so such a pair is never a
   // BitBox02 transcript with a mismatched commitment.
   const wrongCommitment = "00".repeat(32);
-  const result = hodlReadNonceTranscript(`${bitboxHost} ${wrongCommitment} ${bitboxOpening}`, true);
+  const result = hodlReadNonceTranscript(`${bitboxHost} ${wrongCommitment} ${bitboxOpening}`);
   assert.notEqual(result.kind, "bitbox02");
 });
 
 test("preview path returns an error for malformed input and nothing for empty input", () => {
-  const bad = hodlReadNonceTranscript("not hex at all", true);
+  const bad = hodlReadNonceTranscript("not hex at all");
   assert.ok(bad.error);
-  assert.deepEqual({ ...hodlReadNonceTranscript("", true) }, { transcript: null });
+  assert.deepEqual({ ...hodlReadNonceTranscript("") }, { transcript: null });
 });
 
 test("the render reads the transcript through the helper, unconditionally", () => {
@@ -202,7 +207,7 @@ test("the render reads the transcript through the helper, unconditionally", () =
   assert.doesNotMatch(render, /PREVIEW/);
   assert.doesNotMatch(render, /let preview =/);
   assert.doesNotMatch(render, /if \(!preview\)/);
-  assert.match(render, /let raw = \(options\?\.transcript \?\? document\.getElementById\("psbt-ax-transcript"\)\?\.value\) \|\| "";\s*const read = hodlReadNonceTranscript\(raw, true\);/);
+  assert.match(render, /let raw = \(options\?\.transcript \?\? document\.getElementById\("psbt-ax-transcript"\)\?\.value\) \|\| "";\s*const read = hodlReadNonceTranscript\(raw\);/);
   assert.match(render, /aexbSignatures = read\.aexbSignatures \|\| null;/);
   // The release-only Jade wording went with the branch that chose it.
   assert.doesNotMatch(render, /Jade anti-exfil transcript not used/);
@@ -232,7 +237,7 @@ test("the render passes the Jade/BitBox02 warning to hodlT as a literal", () => 
 });
 
 test("preview path refuses a stage-3 reveal without a stage-4 signature message", () => {
-  const result = hodlReadNonceTranscript([stage2.message_hex, stage3.message_hex].join("\n"), true);
+  const result = hodlReadNonceTranscript([stage2.message_hex, stage3.message_hex].join("\n"));
   assert.equal(result.kind, "aexb");
   assert.equal(result.aexb.ok, false);
   assert.equal(result.aexb.reason, "MISSING_SIGNATURES");
@@ -241,7 +246,7 @@ test("preview path refuses a stage-3 reveal without a stage-4 signature message"
 });
 
 test("preview path still reports a missing commitment for a lone stage-3 reveal", () => {
-  const result = hodlReadNonceTranscript(stage3.message_hex, true);
+  const result = hodlReadNonceTranscript(stage3.message_hex);
   assert.equal(result.kind, "aexb");
   assert.equal(result.aexb.ok, false);
   assert.equal(result.aexb.reason, "MISSING_COMMITMENT");
@@ -249,7 +254,7 @@ test("preview path still reports a missing commitment for a lone stage-3 reveal"
 });
 
 test("preview path hands the stage-4 message to the render when the verdict passes", () => {
-  const result = hodlReadNonceTranscript([stage2.message_hex, stage3.message_hex, stage4.message_hex].join("\n"), true);
+  const result = hodlReadNonceTranscript([stage2.message_hex, stage3.message_hex, stage4.message_hex].join("\n"));
   assert.equal(result.kind, "aexb");
   assert.equal(result.aexb.ok, true);
   assert.ok(result.aexbSignatures);
@@ -258,7 +263,7 @@ test("preview path hands the stage-4 message to the render when the verdict pass
 });
 
 test("preview path withholds the stage-4 message when the verdict fails", () => {
-  const result = hodlReadNonceTranscript(stage4.message_hex, true);
+  const result = hodlReadNonceTranscript(stage4.message_hex);
   assert.equal(result.kind, "aexb");
   assert.equal(result.aexb.ok, false);
   assert.equal(result.aexbSignatures, null);

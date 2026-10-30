@@ -1,9 +1,30 @@
 import { sha256 } from "./hashes.js";
+import {
+  JOURNAL_ITERATIONS,
+  deriveNonceHistoryKeys,
+  openBytesWithKeys,
+  sealBytesWithKeys,
+} from "./journal.js";
+
+// The encrypted nonce history file uses the Journal's construction under its
+// own salt prefix, so its key never equals a Journal key. The salt comes from
+// the passphrase, not from randomness (EntropyLab never calls a random-number
+// generator), so the same passphrase gives the same key in every file and for
+// every user: an attacker can grind common passphrases once for all files, and
+// the same history under the same passphrase encrypts to the same file. That is
+// the deliberate price of not trusting a random-number generator. Use a long,
+// unique passphrase.
 
 export const NONCE_HISTORY_FORMAT = "entropylab-nonce-history";
 export const NONCE_HISTORY_VERSION = 1;
+export const NONCE_HISTORY_ENCRYPTED_FORMAT = "entropylab-nonce-history-encrypted";
+export const NONCE_HISTORY_ENCRYPTED_VERSION = 1;
 export const NONCE_HISTORY_MAX_RECORDS = 10000;
 export const NONCE_HISTORY_MAX_TEXT = 5000000;
+// An encrypted file hex-codes the ciphertext (twice the plaintext, plus the
+// 16-byte GCM tag) inside a small JSON wrapper. Any plaintext the reader
+// accepts must still fit once encrypted, so this cap is derived from it.
+export const NONCE_HISTORY_ENCRYPTED_MAX_TEXT = 2 * NONCE_HISTORY_MAX_TEXT + 4096;
 
 const encoder = new TextEncoder();
 const hexPattern = /^[0-9a-f]{64}$/;
@@ -17,6 +38,19 @@ function concatBytes(first, second) {
 
 function hex(bytes) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function fromHex(value) {
+  if (typeof value !== "string" || value.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(value)) throw new Error("Nonce history hex is invalid.");
+  const out = new Uint8Array(value.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(value.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
+function codedError(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
 }
 
 function taggedIdentity(label, bytes) {
@@ -168,4 +202,65 @@ export function parseNonceHistory(text) {
   if (!Array.isArray(parsed.records)) throw new Error("Nonce history file must contain a records array.");
   if (parsed.records.length > NONCE_HISTORY_MAX_RECORDS) throw new Error(`Nonce history is limited to ${NONCE_HISTORY_MAX_RECORDS} records.`);
   return mergeNonceHistory(parsed.records);
+}
+
+export async function encryptNonceHistory(records, passphrase) {
+  const plaintext = serializeNonceHistory(records);
+  // Never write a file the reader would refuse: that copy would be lost.
+  if (plaintext.length > NONCE_HISTORY_MAX_TEXT) throw new Error("Nonce history is too large to save as one file.");
+  const keys = await deriveNonceHistoryKeys(passphrase);
+  const { iv, ciphertext } = await sealBytesWithKeys(plaintext, keys);
+  const file = JSON.stringify({
+    format: NONCE_HISTORY_ENCRYPTED_FORMAT,
+    version: NONCE_HISTORY_ENCRYPTED_VERSION,
+    kdf: "PBKDF2-SHA-256",
+    iterations: keys.iterations,
+    cipher: "AES-256-GCM",
+    iv: hex(iv),
+    ciphertext: hex(ciphertext),
+  }, null, 2) + "\n";
+  if (file.length > NONCE_HISTORY_ENCRYPTED_MAX_TEXT) throw new Error("Nonce history is too large to save as one file.");
+  return file;
+}
+
+export function isEncryptedNonceHistory(text) {
+  if (typeof text !== "string" || text.length > NONCE_HISTORY_ENCRYPTED_MAX_TEXT) return false;
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  return Boolean(parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.format === NONCE_HISTORY_ENCRYPTED_FORMAT);
+}
+
+export async function decryptNonceHistory(text, passphrase) {
+  if (typeof text !== "string" || text.length > NONCE_HISTORY_ENCRYPTED_MAX_TEXT) throw codedError("NONCE_HISTORY_BAD_FILE");
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw codedError("NONCE_HISTORY_BAD_FILE");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw codedError("NONCE_HISTORY_BAD_FILE");
+  // Exactly the seven fields the writer emits, as the plain reader refuses
+  // unknown fields too.
+  const fields = ["cipher", "ciphertext", "format", "iterations", "iv", "kdf", "version"];
+  if (Object.keys(parsed).sort().join() !== fields.join()) throw codedError("NONCE_HISTORY_BAD_FILE");
+  if (parsed.format !== NONCE_HISTORY_ENCRYPTED_FORMAT || parsed.version !== NONCE_HISTORY_ENCRYPTED_VERSION) throw codedError("NONCE_HISTORY_BAD_FILE");
+  if (parsed.kdf !== "PBKDF2-SHA-256" || parsed.cipher !== "AES-256-GCM") throw codedError("NONCE_HISTORY_BAD_FILE");
+  // Version 1 is always written at JOURNAL_ITERATIONS. A file may not pick its
+  // own cost: a crafted count would stall the page on every attempt.
+  if (parsed.iterations !== JOURNAL_ITERATIONS) throw codedError("NONCE_HISTORY_BAD_FILE");
+  let iv, ciphertext;
+  try {
+    iv = fromHex(parsed.iv);
+    ciphertext = fromHex(parsed.ciphertext);
+  } catch {
+    throw codedError("NONCE_HISTORY_BAD_FILE");
+  }
+  if (iv.length !== 12 || !ciphertext.length) throw codedError("NONCE_HISTORY_BAD_FILE");
+  const keys = await deriveNonceHistoryKeys(passphrase, parsed.iterations);
+  const plaintext = await openBytesWithKeys({ iv, ciphertext }, keys);
+  return parseNonceHistory(plaintext);
 }

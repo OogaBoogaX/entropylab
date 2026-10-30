@@ -564,7 +564,7 @@ words, pick one of the checksum words.</span></span>
           <button class="btn primary" id="bip47-go" type="button">Derive</button>
         </div>
         <p class="err" id="bip47-error" role="alert"></p>
-        <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+        <p class="edge-note is-private">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </div>
       <div data-bip47-section="own">
         <div id="bip47-own"></div>
@@ -619,7 +619,7 @@ words, pick one of the checksum words.</span></span>
     </div>
       <div class="card no-print tool-card" id="sp-card" role="tabpanel" hidden>
       <div id="sp-bench">
-      <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      <p class="edge-note is-private">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       <p class="label" id="sp-mode-label">Mode</p>
       <div class="row no-print segmented-control is-wide" id="sp-modes" role="group" aria-labelledby="sp-mode-label">
         <button class="tab active" type="button" data-sp-mode="receive" aria-pressed="true">Receive</button>
@@ -742,7 +742,7 @@ words, pick one of the checksum words.</span></span>
         <label class="field"><span>Passphrase (optional)</span>
           <input id="psbt-pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none">
         </label>
-        <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+        <p class="edge-note is-private">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </details>
 <details class="derivation-advanced" id="psbt-rbf-options">
 <summary>Check a fee bump (RBF) (optional)</summary>
@@ -823,8 +823,8 @@ words, pick one of the checksum words.</span></span>
       <label class="field">PSBT v0 or signed raw transaction (base64 or hex)
         <textarea id="nonce-text" placeholder="cHNidP8B… or 020000000001…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </label>
-      <div class="derivation-advanced is-static" id="nonce-key-options">
-        <p class="label">Inspect with key</p>
+      <details class="derivation-advanced" id="nonce-key-options">
+        <summary>Inspect with key (optional)</summary>
         <p class="muted label-description">Add a key to check each signature against RFC 6979 and low-r grinding, so an unexpected nonce can be told apart from a deterministic one.</p>
         <label class="field">Session key
           <span class="field-note">Enter a BIP39 seed phrase, root xprv/tprv, WIF, or 64-character hex.</span>
@@ -838,20 +838,18 @@ words, pick one of the checksum words.</span></span>
         <label class="field"><span>Passphrase (optional)</span>
           <input id="nonce-pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none">
         </label>
-        <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
-      </div>
+        <p class="edge-note is-private">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      </details>
       <details class="derivation-advanced" id="nonce-jade-options">
-        <summary>Anti-exfil transcript (Jade, BitBox02 or AEXB, optional)</summary>
+        <summary>Anti-exfil: paste a transcript (Jade, BitBox02 or AEXB, optional)</summary>
         <p class="field-note" id="psbt-ax-transcript-help">Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session (stages 2 to 4) as hex, exported from your host software. The format is detected automatically.</p>
-        <p class="field-note" id="nonce-transcript-privacy">Host randomness (rho) remains sensitive even after signing. With a malicious signer, later disclosure can expose the signing key. Do not save, share or record real transcripts, or paste them on a recorded or shared screen. Clipboard copies may persist. End the session after checking; browser/OS memory clearing is best-effort.</p>
+        <p class="edge-note is-private" id="nonce-transcript-privacy">Host randomness (rho) remains sensitive even after signing. With a malicious signer, later disclosure can expose the signing key. Do not save, share or record real transcripts, or paste them on a recorded or shared screen. Clipboard copies may persist. End the session after checking; browser/OS memory clearing is best-effort.</p>
         <textarea id="psbt-ax-transcript" aria-label="Anti-exfil transcript" aria-describedby="psbt-ax-transcript-help nonce-transcript-privacy" placeholder="Host nonce and opening, or AEXB messages, as hex" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </details>
-      <!-- preview -->
       <details class="derivation-advanced" id="nonce-qr-capture">
-        <summary>Verify a live anti-exfil QR signing ceremony (prototype)</summary>
+        <summary>Anti-exfil: scan a live QR ceremony (prototype)</summary>
         <p class="field-note">Capture stages 2 and 4 from SeedSigner or Kern and stage 3 from Sparrow. Keep the same signing session open. This observer never signs or broadcasts.</p>
-        <p class="edge-note is-info">Captured messages stay in memory while scanning and are cleared automatically when verification finishes, whether it passes or fails. For an unfinished capture, use Clear Capture below, End Session, or close the tab. Switching tabs or idle conceal pauses the camera but keeps unfinished messages. Clearing capture also clears the separate pasted transcript and its last result. To protect stage 3's secret host randomness (rho), scan directly into this local inspector. Do not save, share or record real session transcripts, even after a successful check. Browser/OS memory clearing is best-effort.</p>
-        <p class="field-note">Supported: PSBT v0, SIGHASH_ALL, native or wrapped P2WPKH, and native or wrapped P2WSH standard multisig. Already-finalized inputs are refused: this is a conservative observer limit, not a tamper finding. Existing partial signatures are not the same as finalized inputs.</p>
+        <p class="edge-note is-private">To protect stage 3's secret host randomness (rho), scan directly into this local inspector. Do not save, share or record real session transcripts, even after a successful check. Browser/OS memory clearing is best-effort.</p>
         <div class="row tool-actions"><button class="btn blue" id="nonce-qr-access" type="button">Allow Camera Access</button></div>
         <label class="field"><span>Camera</span><select id="nonce-qr-camera" disabled><option value="">Default camera (allow access to list cameras)</option></select></label>
         <div id="nonce-qr-viewer" class="camera-viewer" hidden>
@@ -861,24 +859,30 @@ words, pick one of the checksum words.</span></span>
             <span id="nonce-qr-scan-label" aria-live="polite">Point the camera at the QR code.</span>
           </div>
         </div>
+        <p class="field-note">Message 1 is not needed for this observer check.</p>
         <div class="capture-stages" aria-label="Captured protocol messages">
-          <span id="nonce-qr-stage-2" data-captured="false">Message 2</span>
-          <span id="nonce-qr-stage-3" data-captured="false">Message 3</span>
-          <span id="nonce-qr-stage-4" data-captured="false">Message 4</span>
+          <span id="nonce-qr-stage-2" data-captured="false">Message 2 · signer</span>
+          <span id="nonce-qr-stage-3" data-captured="false">Message 3 · Sparrow</span>
+          <span id="nonce-qr-stage-4" data-captured="false">Message 4 · signer</span>
         </div>
+        <p class="field-note">Filled boxes mean captured, not verified. All three messages are needed.</p>
         <p class="field-note" id="nonce-qr-remaining" data-remaining="3" aria-live="polite"></p>
-        <p class="field-note">Filled boxes mean captured, not verified. All three messages are needed. Message 1 is not needed for this observer check.</p>
         <p class="field-note" id="nonce-qr-progress" aria-live="polite"></p>
         <div class="edge-note is-info" id="nonce-qr-status" aria-live="polite">Click Allow Camera Access, choose your camera, then scan each displayed message.</div>
+        <p class="edge-note is-info">When your signer displays Message 4, scan it into EntropyLab first. Continue by scanning the same Message 4 into Sparrow only after EntropyLab shows PASS. If verification fails or is incomplete, do not continue to Sparrow. Message 4 is the signer's final anti-exfil QR.</p>
         <div class="row tool-actions">
           <button class="btn secondary" id="nonce-qr-start" type="button" disabled>Scan Message 2</button>
           <button class="btn secondary" id="nonce-qr-stop" type="button" disabled>Stop camera</button>
           <button class="btn secondary" id="nonce-qr-clear" type="button">Clear Capture</button>
         </div>
-        <p class="field-note">When your signer displays Message 4, scan it into EntropyLab first. Continue by scanning the same Message 4 into Sparrow only after EntropyLab shows PASS. If verification fails or is incomplete, do not continue to Sparrow. Message 4 is the signer's final anti-exfil QR. Captured messages are cleared before the result dialog appears. Acknowledge the result to start another capture. Sparrow remains responsible for its transaction checks and broadcast decision. This observer checks the supplied signatures against signing hashes recomputed from the embedded PSBT and reports signature/input coverage. Inputs without supplied slots are not signature-checked. It does not establish wallet ownership, blockchain UTXO status or your approval of the destination and amount.</p>
-
+        <details class="derivation-advanced" id="nonce-qr-limits">
+          <summary>Capture clearing, supported transactions and limits</summary>
+          <p class="field-note">Captured messages stay in memory while scanning and are cleared automatically when verification finishes, whether it passes or fails. For an unfinished capture, use Clear Capture above, End Session, or close the tab. Switching tabs or idle conceal pauses the camera but keeps unfinished messages. Clearing capture also clears the separate pasted transcript and its last result.</p>
+          <p class="field-note">Captured messages are cleared before the result dialog appears. Acknowledge the result to start another capture. Sparrow remains responsible for its transaction checks and broadcast decision.</p>
+          <p class="field-note">Supported: PSBT v0, SIGHASH_ALL, native or wrapped P2WPKH, and native or wrapped P2WSH standard multisig. Already-finalized inputs are refused: this is a conservative observer limit, not a tamper finding. Existing partial signatures are not the same as finalized inputs.</p>
+          <p class="field-note">This observer checks the supplied signatures against signing hashes recomputed from the embedded PSBT and reports signature/input coverage. Inputs without supplied slots are not signature-checked. It does not establish wallet ownership, blockchain UTXO status or your approval of the destination and amount.</p>
+        </details>
       </details>
-      <!-- /preview -->
       <details class="derivation-advanced" id="nonce-history-options">
         <summary>Cross-session ECDSA nonce history</summary>
         <p class="muted label-description">Compare this inspection with earlier ECDSA signatures without keeping a PSBT or signature. The versioned file records when each r value was checked, its master fingerprint when available, the raw r value, hashed signing-key and message/source identifiers, and a verification flag. A master fingerprint groups a wallet; the hashed signing-key identifier keeps different child keys distinct. This is correlation-sensitive metadata, so keep it offline.</p>
@@ -891,18 +895,18 @@ words, pick one of the checksum words.</span></span>
           <button class="btn secondary" id="psbt-nonce-history-clear" type="button" disabled>Clear Nonce History</button>
         </div>
       </details>
-      <p class="edge-note is-muted" id="nonce-session" aria-live="polite" hidden>No session key. Inspect-only mode.</p>
-      <p class="label" id="nonce-result-label">ECDSA nonce check result</p>
-      <div class="tool-result" role="region" aria-labelledby="nonce-result-label">
-        <p class="field-note tool-result-empty">Provide a PSBT or signed transaction and click Inspect Nonces to view the details here.</p>
-        <div class="tool-result-body" id="nonce-out" aria-live="polite"></div>
-      </div>
-      <p class="err" id="nonce-error" role="alert"></p>
       <div class="row psbt-actions tool-actions current-item-actions">
         <button class="btn primary" id="nonce-go" type="button" disabled>Inspect Nonces</button>
         <button class="btn secondary" id="nonce-upload" type="button">Upload .psbt File</button>
         <input type="file" id="nonce-file" accept=".psbt,.txn,.txt,.hex" hidden>
         <button class="btn red clear-current-action" id="nonce-wipe" type="button" disabled>Clear Inspectors</button>
+      </div>
+      <p class="err" id="nonce-error" role="alert"></p>
+      <p class="edge-note is-muted" id="nonce-session" aria-live="polite" hidden>No session key. Inspect-only mode.</p>
+      <p class="label" id="nonce-result-label">ECDSA nonce check result</p>
+      <div class="tool-result" role="region" aria-labelledby="nonce-result-label">
+        <p class="field-note tool-result-empty">Provide a PSBT or signed transaction and click Inspect Nonces to view the details here.</p>
+        <div class="tool-result-body" id="nonce-out" aria-live="polite"></div>
       </div>
     </div>
       <div class="tool-intro edge-note is-info" id="core-tool-intro" hidden>
