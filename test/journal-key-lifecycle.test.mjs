@@ -49,6 +49,7 @@ function harness() {
     // Secure entry stays off here; its wiring is covered in secure-entry-wiring.test.mjs.
     hodlSecureSeedActive: () => false, hodlSecureEntryHasData: () => false, hodlSecureEntryDropKey() {},
     hodlSecureSeedApplies: () => false, hodlSecureEntryBackupRefusal: () => null, hodlSecureKeyOf: () => null, hodlSecureEntryHeld: () => false,
+    hodlRenderSecureEntryControl() {}, hodlSeedPicker: null, hodlMountSeedPicker() {},
     hodlShowWorkspace: workspace => { c.hodlWorkspace = workspace; },
     hodlCaptureKey: () => { c.hodlKeys[c.hodlActiveKey].result = c.hodlWalletResult; },
     hodlKeyManagerDeriveInputs: async states => { derived.push(states); return false; },

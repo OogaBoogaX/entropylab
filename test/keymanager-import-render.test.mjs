@@ -178,6 +178,7 @@ function importHarness() {
     // Secure entry stays off here; its wiring is covered in secure-entry-wiring.test.mjs.
     hodlSecureSeedActive: () => false, hodlSecureEntryHasData: () => false, hodlSecureEntryDropKey() {},
     hodlSecureSeedApplies: () => false, hodlSecureEntryBackupRefusal: () => null, hodlSecureKeyOf: () => null, hodlSecureEntryHeld: () => false,
+    hodlRenderSecureEntryControl() {}, hodlSeedPicker: null, hodlMountSeedPicker() {},
   };
   for (const name of ["hodlNewKeyState", "hodlNewLabState", "hodlKeyManagerImportedState",
     "hodlKeyManagerStates", "hodlKeyManagerUseInStation", "hodlKeyManagerDetachFromStation", "hodlKeyManagerSyncReviewedContext",

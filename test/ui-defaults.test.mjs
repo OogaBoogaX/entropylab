@@ -2243,7 +2243,7 @@ test("Key Station stays put and a derived key opens a fingerprint tab with a sum
   assert.match(appSource, /state\.createdPath = hodlKeySummaryPath\(state\)/);
   assert.match(appSource, /function hodlFillLabFromKey\(source\) \{/);
   assert.match(appSource, /function hodlEditKeyInputs\(\) \{/);
-  assert.match(appSource, /hodlSelectKey\(hodlFillLabFromKey\(hodlKeys\[hodlActiveKey\]\)\)/);
+  assert.match(appSource, /let labIndex = hodlFillLabFromKey\(source\);[\s\S]*?hodlSelectKey\(labIndex\);/);
   assert.match(appSource, /if \(edit\) edit\.onclick = hodlEditKeyInputs;/);
 });
 
