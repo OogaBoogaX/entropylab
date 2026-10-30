@@ -36,6 +36,8 @@ function harness({ unlocked = true, encrypted = true, selected = ["1"], states =
     hodlKeyManagerRender: () => effects.push(["render"]),
     hodlJournalLog: (...args) => effects.push(["log", ...args]),
     hodlTText: (text) => text,
+    // No key holds Secure entry words here; secure-entry-wiring.test.mjs covers the refusal.
+    hodlSecureEntryBackupRefusal: () => null,
   });
   vm.runInContext(["hodlJournalDownloadContent", "hodlKeyManagerDownload"].map(extract).join("\n"), context);
   return { context, keys, seals, downloads, effects, resolve, reject };

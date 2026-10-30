@@ -2668,6 +2668,17 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
 /* The history controls close the section, so they sit a step further from the
    status line above them than the 16px rhythm inside it. */
 #nonce-history-options > .tool-actions { margin-top: var(--space-section); }
+/* The Key Station's Scan QR panel (preview builds only). `.btn` and the notes
+   set their own display, so hidden parts need the attribute rule here. The
+   camera frame shows only while frames are read, at most a phone's width. */
+#key-scan-host [hidden] { display: none; }
+#key-scan-video { display: block; width: 100%; max-width: 480px; margin-top: var(--space-component); border-radius: var(--radius-field); }
+#key-scan-confirm { margin-top: var(--space-section); }
+#key-scan-confirm .key-scan-value { margin-top: var(--space-control); }
+#seed-picker-host [hidden] { display: none; }
+#seed-picker-chips, #seed-picker-matches, #seed-picker-replace-matches { flex-wrap: wrap; gap: var(--space-control); }
+#seed-picker-chips .btn, #seed-picker-matches .btn, #seed-picker-replace-matches .btn { min-height: 44px; min-width: 44px; }
+#seed-picker-entry, #seed-picker-review, #seed-picker-paste { margin-top: var(--space-component); }
 /* A card's closing actions are the things to press, so their labels carry the
    weight. On the row rather than on .btn, which the tabs share: a tab reads as
    a place you are, not an action you take. */
@@ -3271,6 +3282,21 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
   font: inherit; line-height: 1.2; outline: 0;
 }
 
+/* Camera geometry follows its container; shared tokens supply its spacing. */
+.camera-viewer { position: relative; width: fit-content; max-width: 100%; margin-block: var(--space-component); }
+.camera-preview { display: block; width: auto; height: auto; max-width: 100%; max-height: 50vh; object-fit: contain; }
+.camera-progress-overlay { position: relative; padding: var(--space-control); background: color-mix(in oklab, var(--surface) 85%, transparent); color: var(--fg); font-size: var(--text-note); border-radius: var(--radius-panel); pointer-events: none; }
+.camera-progress-bars { display: flex; flex-wrap: wrap; gap: var(--space-hairline); margin-bottom: var(--space-tight); }
+.camera-progress-bars > span { flex: 1 0 var(--space-tight); height: var(--space-control); background: var(--border); }
+.camera-progress-bars > span[data-filled="true"] { background: var(--ok-bright); }
+
+/* Captured-message indicators use text and state, not colour alone. */
+.capture-stages { display: flex; flex-wrap: wrap; gap: var(--space-control); margin-top: var(--space-component); }
+.capture-stages > span { border: 1px solid var(--border); border-radius: var(--radius-panel); padding: var(--inset-button); font-size: var(--text-label); }
+.capture-stages > span[data-captured="true"] { border-color: var(--ok-bright); background: color-mix(in oklab, var(--ok-bright) 18%, var(--surface)); }
+
+/* The preview camera selector follows disabled-button treatment. */
+#nonce-qr-camera:disabled { color: var(--muted); opacity: .52; cursor: not-allowed; }
 /* Verify card (preview): OpenTimestamps result panel. */
 #ots-result:not([hidden]) {
   display: grid;
