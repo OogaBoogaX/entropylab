@@ -120,3 +120,31 @@ test("settling empties every text node and the names list", async () => {
     assert.equal(el("names").children.length, 0);
   });
 });
+
+test("canKeep false leaves the primary choice unset", async () => {
+  await withDialog(async ({ dialog, document, opener, el }) => {
+    const decision = dialog.open({ mode: "on", names: ["Key 1"], canKeep: false, opener });
+    el("primary").hidden = false;
+    el("primary").click();
+    assert.equal(el("modal").hidden, false);
+    el("cancel").click();
+    assert.equal(await decision, null);
+  });
+});
+
+test("an invalid open leaves an open dialog alone", async () => {
+  await withDialog(async ({ dialog, document, opener, el }) => {
+    const first = dialog.open({ mode: "on", names: ["Key 1"], canKeep: true, opener });
+    assert.equal(await dialog.open({ mode: "bogus", opener }), null);
+    assert.equal(el("modal").hidden, false);
+    assert.ok(el("title").textContent.trim());
+    el("primary").click();
+    assert.equal(await first, "keep");
+
+    const second = dialog.open({ mode: "on", names: ["Key 2"], canKeep: true, opener });
+    assert.equal(await dialog.open({ mode: "on", names: "Key 3", opener }), null);
+    assert.equal(el("modal").hidden, false);
+    el("secondary").click();
+    assert.equal(await second, "clear");
+  });
+});

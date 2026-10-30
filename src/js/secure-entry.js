@@ -120,11 +120,10 @@ const assertEntry = (entry, method) => {
 };
 
 // The four entry kinds the module can hold. The boolean is the UI gate that
-// P1b reads through isSupported(); it is false for every kind in this round,
-// so the Key Station does not yet offer secure entry. Planning recognises the
-// kinds themselves: a method not listed here (a "hex" number base, say) is
-// never plannable.
-export const SUPPORTED_METHODS = Object.freeze({ seed: false, key: false, rolls: false, cards: false });
+// P1b reads through isSupported(); seeds are supported from P2b, so preview
+// builds offer secure seed entry. Planning recognises the kinds themselves: a
+// method not listed here (a "hex" number base, say) is never plannable.
+export const SUPPORTED_METHODS = Object.freeze({ seed: true, key: false, rolls: false, cards: false });
 
 export const isSupported = (method) => typeof method === "string"
   && Object.prototype.hasOwnProperty.call(SUPPORTED_METHODS, method)
