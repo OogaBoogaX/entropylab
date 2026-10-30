@@ -2351,5 +2351,13 @@
   "Open an encrypted nonce history": "Abrir um histórico de nonce criptografado",
   "Open": "Abrir",
   " This file was not encrypted: download the history again to save an encrypted copy, and delete the plain file.": " Este arquivo não foi criptografado: baixe o histórico novamente para salvar uma cópia criptografada e exclua o arquivo simples.",
-  " The file is encrypted.": " O arquivo está criptografado."
+  " The file is encrypted.": " O arquivo está criptografado.",
+  "Global sync is unavailable while Secure entry is on.": "Sincronização global indisponível enquanto a entrada segura estiver ativa.",
+  "Secure entry: on": "Entrada segura: ativa",
+  "Secure entry": "Entrada segura",
+  "Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.": "Limita cópias de segredos durante a entrada. As palavras são inseridas uma de cada vez; chaves privadas e lançamentos de dados ficam ocultos por padrão. Segredos ainda existem na memória. Aplica-se a todas as chaves nesta sessão.",
+  "Off — standard text entry.": "Desativado — entrada de texto padrão.",
+  "Secure entry is not available for this method yet. This method uses standard text entry.": "A entrada segura ainda não está disponível para este método. Este método usa entrada de texto padrão.",
+  "These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.": "Estas palavras vieram como texto, então esta chave usa entrada de texto padrão. Limpe o campo para inserir palavras com segurança.",
+  "To change the length, undo or clear the words entered so far.": "Para alterar o comprimento, desfaça ou limpe as palavras inseridas até agora."
 }
