@@ -493,12 +493,12 @@ jobs:
     permissions:
       contents: read
     env:
-      # bitcoin-31.1-x86_64-linux-gnu.tar.gz from bitcoincore.org. The digest
-      # is the file's line in the release's SHA256SUMS, which carries 11
-      # builder signatures (fanquake, achow101, hebasto, Sjors, and others)
-      # from the bitcoin-core/guix.sigs builder keys.
-      BITCOIN_CORE_VERSION: "31.1"
-      BITCOIN_CORE_SHA256: "b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"
+      # bitcoin-32.1-x86_64-linux-gnu.tar.gz from bitcoincore.org. The digest
+      # is the file's line in the release's SHA256SUMS, which carried 8
+      # builder signatures when pinned (fanquake, achow101, Sjors, guggero,
+      # willcl-ark, and others) from the bitcoin-core/guix.sigs builder keys.
+      BITCOIN_CORE_VERSION: "32.1"
+      BITCOIN_CORE_SHA256: "61545c17c3120fb7412f896d248b11993af04ec8817aad3649c55b2afb044963"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

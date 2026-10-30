@@ -268,8 +268,8 @@ test("the Bitcoin Core interop job verifies the pinned bitcoind download before 
   const job = workflowJob(workflow, "test-bitcoind");
   assert.ok(job, "the test-bitcoind CI job exists");
   assert.match(job, /^    name: Bitcoin Core interop$/m);
-  assert.match(job, /^      BITCOIN_CORE_VERSION: "31\.1"$/m);
-  assert.match(job, /^      BITCOIN_CORE_SHA256: "b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"$/m);
+  assert.match(job, /^      BITCOIN_CORE_VERSION: "32\.1"$/m);
+  assert.match(job, /^      BITCOIN_CORE_SHA256: "61545c17c3120fb7412f896d248b11993af04ec8817aad3649c55b2afb044963"$/m);
   assert.match(job, /curl -fsSL -o "bitcoin-\$\{BITCOIN_CORE_VERSION\}-x86_64-linux-gnu\.tar\.gz" "https:\/\/bitcoincore\.org\/bin\/bitcoin-core-\$\{BITCOIN_CORE_VERSION\}\/bitcoin-\$\{BITCOIN_CORE_VERSION\}-x86_64-linux-gnu\.tar\.gz"/);
   assert.match(job, /echo "\$\{BITCOIN_CORE_SHA256\}  bitcoin-\$\{BITCOIN_CORE_VERSION\}-x86_64-linux-gnu\.tar\.gz" \| sha256sum -c -/);
   // Anchor on the step itself: the env comment above the steps also names

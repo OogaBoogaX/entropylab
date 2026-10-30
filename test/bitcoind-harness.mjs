@@ -1,7 +1,7 @@
 // Bitcoin Core fixtures for tests that check the app against a real node.
 // Every test using these skips where bitcoind and bitcoin-cli are not
 // installed — except under REQUIRE_BITCOIND=1, which the "Bitcoin Core
-// interop" CI job sets after installing its pinned Bitcoin Core v31.1
+// interop" CI job sets after installing its pinned Bitcoin Core v32.1
 // release: there a missing binary throws at import, because a job that
 // silently skips its whole point must fail. Everywhere else (local runs
 // without a node, the dev image) the tests still skip.
