@@ -479,7 +479,7 @@ test("the seed form mounts the picker instead of a text field, and each render d
   const top = body.slice(0, body.indexOf('if (hodlKeyMode === "dice")'));
   assert.match(top, /try \{ hodlSeedPicker\?\.destroy\(\); \} catch \{\}\s*hodlSeedPicker = null;/);
   const seed = body.slice(body.indexOf('if (hodlKeyMode === "seed")'));
-  const secure = seed.indexOf("if (hodlSecureSeedActive() && (hodlSecureEntryHasData(hodlSecureKeyOf(state))"), textarea = seed.indexOf('id="seed"');
+  const secure = seed.indexOf("if (hodlSecureSeedActive() && hodlSecureSeedPickerShown(state))"), textarea = seed.indexOf('id="seed"');
   assert.ok(secure > 0 && textarea > secure, "the secure branch comes before the words textarea");
   const branch = seed.slice(secure, seed.indexOf("return;", secure));
   assert.match(branch, /id="seed-picker-host"/);
@@ -566,4 +566,292 @@ test("the seed length locks while secure words are entered", async () => {
   } finally {
     globalThis.document = previous;
   }
+});
+
+test("deriving a new key drops the editor's secure words", async () => {
+  const session = createSecureSession();
+  const entry = seedEntry(12);
+  for (let i = 0; i < 12; i += 1) seedSet(entry, i, i);
+  const lab = { isLab: true, id: 1, result: { network: "mainnet" }, fields: { seed: "" } };
+  const keys = [lab];
+  let token = null;
+  const mod = await loadAppFunctions(["hodlCommitDerivedKey", "hodlSecureKeyOf"], {
+    stubs: {
+      ...realSecureEntryStubs,
+      hodlKeyManagerPending: [],
+      hodlKeyManagerIgnored: [],
+      hodlKeyManagerStates: () => [],
+      hodlJournalUnlocked: () => false,
+      hodlKeyWalletIdentity: () => null,
+      hodlKeyManagerEntry: () => ({}),
+      hodlNormalizePrivateKeyKind: (kind) => kind,
+      hodlPrivateKeyValues: () => [],
+      hodlKeyManagerCapacityError: () => "",
+      hodlKeyManagerArchiveEntry: (entry) => entry,
+      hodlNextKeyId: 1,
+      hodlNextKeyNumber: 1,
+      hodlReleaseKeyConsumers: () => {},
+      hodlVanityApplying: false,
+      hodlKeyNameTaken: () => false,
+      hodlKeyManagerIds: new Set(),
+      hodlKeyManagerActiveId: null,
+      hodlKeyManagerDiscardInputs: () => {},
+      // The real clone reads the editor's entry to set secureSource; this
+      // stand-in does the same, so the last assertion pins the ordering.
+      hodlCloneDerivedKey: (source) => ({ ...source, isLab: false, secureSource: sessionGet(session, token, "seed") != null, result: source.result }),
+      hodlNewLabState: () => ({ isLab: true, fields: { seed: "" } }),
+      hodlZeroKeyPassphrase: () => {},
+      hodlRenderKeyTabs: () => {},
+      hodlRestoreKey: () => {},
+      hodlTText: (text) => text,
+    },
+    settable: ["hodlKeys", "hodlActiveKey", "hodlSecureSession", "hodlSecureKeys"],
+  });
+  mod.__set.hodlSecureKeys(new WeakMap());
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys(keys);
+  mod.__set.hodlActiveKey(0);
+  token = mod.hodlSecureKeyOf(lab, true);
+  sessionSet(session, token, "seed", entry);
+  mod.hodlCommitDerivedKey();
+  assert.equal(entry.wiped, true);
+  assert.equal(session.entries.size, 0);
+  assert.equal(keys.at(-1).secureSource, true);
+});
+
+test("replacing an existing key drops its kept words and the editor's (GLM)", async () => {
+  const session = createSecureSession();
+  const kept = seedEntry(12), typed = seedEntry(12);
+  for (let i = 0; i < 12; i += 1) {
+    seedSet(kept, i, i);
+    seedSet(typed, i, i + 1);
+  }
+  const lab = { isLab: true, id: 1, editSourceId: 2, result: { network: "mainnet" }, fields: { seed: "" } };
+  const previous = { id: 2, result: { network: "mainnet" }, fields: { seed: "" } };
+  const keys = [lab, previous];
+  const mod = await loadAppFunctions(["hodlCommitDerivedKey", "hodlSecureKeyOf"], {
+    stubs: {
+      ...realSecureEntryStubs,
+      hodlKeyManagerPending: [],
+      hodlKeyManagerIgnored: [],
+      hodlKeyManagerStates: () => [],
+      hodlJournalUnlocked: () => false,
+      hodlKeyWalletIdentity: () => "same-wallet",
+      hodlKeyManagerCapacityError: () => "",
+      hodlReleaseKeyConsumers: () => {},
+      hodlVanityApplying: false,
+      hodlKeyManagerIds: new Set(),
+      hodlKeyManagerActiveId: null,
+      hodlCloneDerivedKey: (source, existing) => ({ ...existing, isLab: false, result: source.result }),
+      hodlNewLabState: () => ({ isLab: true, fields: { seed: "" } }),
+      hodlZeroKeyPassphrase: () => {},
+      hodlRenderKeyTabs: () => {},
+      hodlRestoreKey: () => {},
+      hodlTText: (text) => text,
+    },
+    settable: ["hodlKeys", "hodlActiveKey", "hodlSecureSession", "hodlSecureKeys"],
+  });
+  mod.__set.hodlSecureKeys(new WeakMap());
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys(keys);
+  mod.__set.hodlActiveKey(0);
+  sessionSet(session, mod.hodlSecureKeyOf(previous, true), "seed", kept);
+  sessionSet(session, mod.hodlSecureKeyOf(lab, true), "seed", typed);
+  mod.hodlCommitDerivedKey("update");
+  assert.notEqual(keys[1], previous, "the existing key was replaced");
+  assert.equal(kept.wiped, true);
+  assert.equal(typed.wiped, true);
+  assert.equal(session.entries.size, 0);
+});
+
+test("Edit Input moves a key's secure words into the editor", async () => {
+  const session = createSecureSession();
+  const entryA = seedEntry(12);
+  const entryB = seedEntry(12);
+  for (let i = 0; i < 12; i += 1) {
+    seedSet(entryA, i, i);
+    seedSet(entryB, i, i + 1);
+  }
+  const outgoing = { isLab: true, id: 1, fields: { seed: "" } };
+  const source = { id: 2, fields: { seed: "" }, secureSource: false };
+  const keys = [outgoing, source];
+  const mod = await loadAppFunctions(["hodlEditKeyInputs", "hodlFillLabFromKey", "hodlSecureKeyOf"], {
+    stubs: {
+      ...realSecureEntryStubs,
+      hodlCaptureKey: () => {},
+      hodlSelectKey: () => {},
+      hodlSelectLab: () => {},
+      hodlCloneDerivedKey: (from, existing) => ({ ...existing, ...from }),
+      hodlNewLabState: () => ({ isLab: true, fields: { seed: "" } }),
+    },
+    settable: ["hodlKeys", "hodlActiveKey", "hodlSecureSession", "hodlSecureKeys"],
+  });
+  mod.__set.hodlSecureKeys(new WeakMap());
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys(keys);
+  mod.__set.hodlActiveKey(1);
+  const outgoingToken = mod.hodlSecureKeyOf(outgoing, true);
+  const sourceToken = mod.hodlSecureKeyOf(source, true);
+  sessionSet(session, outgoingToken, "seed", entryB);
+  sessionSet(session, sourceToken, "seed", entryA);
+  mod.hodlEditKeyInputs();
+  assert.equal(entryB.wiped, true);
+  assert.equal(sessionGet(session, outgoingToken, "seed"), null);
+  assert.equal(entryA.wiped, false);
+  assert.equal(mod.hodlSecureKeyOf(source), null);
+  assert.equal(source.secureSource, true);
+  const lab = keys[0];
+  assert.equal(lab.isLab, true);
+  assert.equal(mod.hodlSecureKeyOf(lab), sourceToken);
+  assert.equal(sessionGet(session, sourceToken, "seed"), entryA);
+});
+
+test("the switch is refused while a Journal batch runs", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const session = createSecureSession();
+    const entry = seedEntry(12);
+    for (let i = 0; i < 12; i += 1) seedSet(entry, i, i);
+    const key = { id: 1, seedMethod: "words", fields: { seed: "" } };
+    let dialogCalls = 0, renderCalls = 0;
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => { dialogCalls++; return { open: async () => "clear" }; },
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => { renderCalls++; },
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlJournalKeyDerivation", "hodlSecureEntryBusy"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys([key]);
+    mod.__set.hodlSecureEntryOn(true);
+    mod.__set.hodlSecureEntryBusy(false);
+    mod.__set.hodlJournalKeyDerivation({});
+    const token = mod.hodlSecureKeyOf(key, true);
+    sessionSet(session, token, "seed", entry);
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.equal(dialogCalls, 0);
+    assert.equal(entry.wiped, false);
+    assert.equal(sessionGet(session, token, "seed"), entry);
+    assert.ok(renderCalls > 0);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("the switch is disabled while a Journal batch runs", async () => {
+  const previous = globalThis.document;
+  const doc = new MiniDocument();
+  globalThis.document = doc;
+  try {
+    const host = doc.createElement("div");
+    host.id = "secure-entry-host";
+    doc.body.append(host);
+    const mod = await loadAppFunctions(["hodlRenderSecureEntryControl"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryAvailable: () => true,
+        hodlSecureSeedActive: () => false,
+        hodlSecureEntryToggle: () => {},
+        hodlSecureEntryHasData: () => false,
+        hodlSecureKeyOf: () => null,
+        hodlT: (text) => text,
+      },
+      settable: ["hodlSecureEntryOn", "hodlJournalKeyDerivation", "hodlKeys", "hodlActiveKey"],
+    });
+    mod.__set.hodlSecureEntryOn(true);
+    mod.__set.hodlJournalKeyDerivation({});
+    mod.__set.hodlKeys([{}]);
+    mod.__set.hodlActiveKey(0);
+    mod.hodlRenderSecureEntryControl();
+    let checkbox = doc.getElementById("secure-entry-switch");
+    assert.ok(checkbox);
+    assert.equal(checkbox.disabled, true);
+    mod.__set.hodlJournalKeyDerivation(null);
+    mod.hodlRenderSecureEntryControl();
+    checkbox = doc.getElementById("secure-entry-switch");
+    assert.equal(checkbox.disabled, false);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("the switch notes a seed held as text and shows the picker once it is emptied", async () => {
+  const previous = globalThis.document;
+  const doc = new MiniDocument();
+  globalThis.document = doc;
+  try {
+    const host = doc.createElement("div");
+    host.id = "secure-entry-host";
+    doc.body.append(host);
+    let seedActive = true;
+    const session = createSecureSession();
+    const state = { fields: { seed: "abandon ability able about above absent absorb abstract absurd abuse access accident" } };
+    const mod = await loadAppFunctions(["hodlRenderSecureEntryControl", "hodlSecureKeyOf"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryAvailable: () => true,
+        hodlSecureSeedActive: () => seedActive,
+        hodlSecureEntryToggle: () => {},
+        hodlT: (text) => text,
+      },
+      settable: ["hodlSecureEntryOn", "hodlJournalKeyDerivation", "hodlKeys", "hodlActiveKey", "hodlSecureSession", "hodlSecureKeys"],
+    });
+    mod.__set.hodlSecureKeys(new WeakMap());
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys([state]);
+    mod.__set.hodlActiveKey(0);
+    mod.__set.hodlSecureEntryOn(true);
+    mod.__set.hodlJournalKeyDerivation(null);
+    mod.hodlRenderSecureEntryControl();
+    let note = doc.getElementById("secure-entry-text-backed");
+    assert.ok(note);
+    assert.equal(note.textContent, "These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.");
+    assert.equal(doc.getElementById("secure-entry-unsupported"), null);
+
+    state.fields.seed = "";
+    mod.hodlRenderSecureEntryControl();
+    assert.equal(doc.getElementById("secure-entry-text-backed"), null);
+
+    state.fields.seed = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+    const token = mod.hodlSecureKeyOf(state, true);
+    const entry = seedEntry(12);
+    for (let i = 0; i < 12; i += 1) seedSet(entry, i, i);
+    sessionSet(session, token, "seed", entry);
+    mod.hodlRenderSecureEntryControl();
+    assert.equal(doc.getElementById("secure-entry-text-backed"), null);
+
+    seedActive = false;
+    mod.hodlRenderSecureEntryControl();
+    assert.ok(doc.getElementById("secure-entry-unsupported"));
+    assert.equal(doc.getElementById("secure-entry-text-backed"), null);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("emptying the seed text field while secure entry is on redraws into the picker", () => {
+  const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
+  const formStart = app.indexOf("function hodlRenderKeyForm() {");
+  assert.ok(formStart > 0);
+  const form = app.slice(formStart, app.indexOf("\nfunction ", formStart + 1));
+  // The seed branch, not an earlier method's input handler.
+  const seed = form.slice(form.indexOf('if (hodlKeyMode === "seed")'));
+  // The words textarea's handler (the word-numbers one comes first).
+  const start = seed.lastIndexOf("input.oninput = (event) => {", seed.indexOf("hodlApplyFilteredInput(input, hodlFilterSeed);"));
+  assert.ok(start > 0);
+  const body = seed.slice(start, seed.indexOf("};", start) + 2);
+  assert.match(body, /if \(hodlSecureSeedActive\(\) && !input\.value\.trim\(\) && !hodlSecureEntryHasData\(hodlSecureKeyOf\(state\)\)\) \{/);
+  assert.match(body, /hodlSetMode\(hodlKeyMode\);/);
 });

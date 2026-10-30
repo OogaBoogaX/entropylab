@@ -6505,10 +6505,11 @@ function hodlRenderSecureEntryControl() {
     id: "secure-entry-switch",
     checked: on,
     describedBy: "",
+    attributes: hodlJournalKeyDerivation ? "disabled" : "",
     state: on ? hodlT("Secure entry: on") : hodlT("Secure entry"),
     hint: on ? hodlT("Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.") : hodlT("Off — standard text entry."),
     className: "secure-entry-bar",
-  }) + (on && !hodlSecureSeedActive() ? `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>` : "");
+  }) + (on ? (!hodlSecureSeedActive() ? `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>` : !hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey]) ? `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>` : "") : "");
   let checkbox = document.getElementById("secure-entry-switch");
   if (checkbox) checkbox.onchange = () => hodlSecureEntryToggle(checkbox.checked);
 }
@@ -7187,7 +7188,7 @@ function hodlRenderKeyForm() {
       update();
       return;
     }
-    if (hodlSecureSeedActive() && (hodlSecureEntryHasData(hodlSecureKeyOf(state)) || !String(state?.fields?.seed ?? "").trim())) {
+    if (hodlSecureSeedActive() && hodlSecureSeedPickerShown(state)) {
       // Secure entry: the picker holds the words as indices; no text field. A
       // seed that arrived as text while the switch was on (an import, a Journal
       // fill) keeps the text field, as hodlSecureSeedApplies decides.
@@ -7239,6 +7240,14 @@ function hodlRenderKeyForm() {
       hodlApplyFilteredInput(input, hodlFilterSeed);
       hodlAutocompleteSeedInput(input, event);
       update();
+      // Emptied while secure entry is on: the next words go to the picker.
+      let state = hodlKeys[hodlActiveKey];
+      if (hodlSecureSeedActive() && !input.value.trim() && !hodlSecureEntryHasData(hodlSecureKeyOf(state))) {
+        if (state) state.fields.seed = "";
+        hodlLastWordCache.clear();
+        hodlSetMode(hodlKeyMode);
+        hodlSeedPickerImport?.then(() => { try { hodlSeedPicker?.focus?.(); } catch {} });
+      }
     };
     input.onscroll = () => hodlSyncDiceHighlight(input);
     input.onfocus = update;
@@ -12426,7 +12435,7 @@ async function hodlSecureEntryDialog() {
   return hodlSecureEntryConfirm;
 }
 async function hodlSecureEntryToggle(wanted) {
-  if (hodlSecureEntryBusy) {
+  if (hodlSecureEntryBusy || hodlJournalKeyDerivation) {
     hodlRenderSecureEntryControl();
     return;
   }
@@ -12664,6 +12673,11 @@ function hodlSecureSeedApplies() {
   if (hodlSecureEntryHasData(hodlSecureKeyOf(state))) return true;
   let typed = document.getElementById("seed")?.value ?? state?.fields?.seed ?? "";
   return !String(typed).trim();
+}
+// The seed form shows the picker for a key holding secure words or with no
+// seed text; a seed that is already text keeps the text field.
+function hodlSecureSeedPickerShown(state) {
+  return hodlSecureEntryHasData(hodlSecureKeyOf(state)) || !String(state?.fields?.seed ?? "").trim();
 }
 // True when the key holds securely entered words, or was derived from words
 // held that way: a derived key keeps no copy of them (they stay with the
@@ -16054,6 +16068,10 @@ function hodlKeyManagerSyncDerivationUI() {
     control.disabled = deriving || !active || control.dataset.keymanagerAction === "archive" && hodlKeys.includes(active);
   }
   for (let control of document.querySelectorAll('#journal-keymanager-ignored-list [data-keymanager-action="restore"]')) control.disabled = deriving;
+  // The secure entry switch is refused during a batch (its turn-off would
+  // miss the parked editor); the switch row is drawn disabled the same way.
+  let secureSwitch = document.getElementById("secure-entry-switch");
+  if (secureSwitch) secureSwitch.disabled = busy;
 }
 function hodlKeyManagerFinishDerivation(transaction, wipeDraft = false) {
   if (hodlJournalKeyDerivation !== transaction) return;
@@ -16533,6 +16551,7 @@ function hodlCommitDerivedKey(action = "derive", decision = null) {
     }
     if (retainReviewedDraft) lab.result = null;
     else {
+      try { hodlSecureEntryDropKey(hodlSecureKeyOf(lab)); } catch {}
       hodlZeroKeyPassphrase(lab);
       hodlKeys[hodlActiveKey] = hodlNewLabState();
     }
@@ -16546,8 +16565,12 @@ function hodlCommitDerivedKey(action = "derive", decision = null) {
     if (hodlKeyWalletIdentity(previous.result) !== hodlKeyWalletIdentity(updated.result)) {
       hodlReleaseKeyConsumers(previous.id, { keepVanity: hodlVanityApplying });
     }
+    // The key being replaced may still hold words kept at turn-on (GLM):
+    // they go with it, as its text inputs would.
+    try { hodlSecureEntryDropKey(hodlSecureKeyOf(previous)); } catch {}
     hodlZeroKeyPassphrase(previous);
     hodlKeys[existing] = updated;
+    try { hodlSecureEntryDropKey(hodlSecureKeyOf(lab)); } catch {}
     hodlZeroKeyPassphrase(lab);
     hodlKeys[hodlActiveKey] = hodlNewLabState();
     hodlActiveKey = existing;
@@ -16559,6 +16582,7 @@ function hodlCommitDerivedKey(action = "derive", decision = null) {
       do derived.name = base + " (" + suffix++ + ")";
       while (hodlKeyNameTaken(derived.name, -1));
     }
+    try { hodlSecureEntryDropKey(hodlSecureKeyOf(lab)); } catch {}
     hodlZeroKeyPassphrase(lab);
     hodlKeys[hodlActiveKey] = hodlNewLabState();
     hodlKeys.push(derived);
@@ -16605,7 +16629,19 @@ function hodlEditKeyInputs() {
     return;
   }
   hodlCaptureKey();
-  hodlSelectKey(hodlFillLabFromKey(hodlKeys[hodlActiveKey]));
+  // The editor being replaced takes its secure words with it, as its text
+  // would go; a key's own secure words move to the new editor (no copy), so
+  // Edit Input opens them in the picker.
+  let outgoing = hodlKeys.find((state) => state.isLab);
+  try { hodlSecureEntryDropKey(hodlSecureKeyOf(outgoing)); } catch {}
+  let labIndex = hodlFillLabFromKey(source);
+  let token = hodlSecureKeyOf(source);
+  if (token != null) {
+    hodlSecureKeys.delete(source);
+    hodlSecureKeys.set(hodlKeys[labIndex], token);
+    source.secureSource = true;
+  }
+  hodlSelectKey(labIndex);
 }
 function hodlKeyHasResult(state = hodlKeys[hodlActiveKey]) {
   return Boolean(state && !state.isLab && state.result);
