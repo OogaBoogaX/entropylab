@@ -308,9 +308,8 @@ an explicit error before those pairs are allocated.
   salt and the BIP32 root xprv (what `chantools showrootkey` prints) sit
   behind a reveal toggle. Decoding only: the tab never creates seeds.
 - Completes checksums, recovers secrets, and derives shares for BIP-93
-  Codex32 **MS1** strings (a Codex32 tab held back from release navigation
-  while its UI is polished). Every result is checksum math and Lagrange
-  interpolation over exactly the strings supplied — deterministic, with no
+  Codex32 **MS1** strings in the Codex32 tab. Every result is checksum math
+  and Lagrange interpolation over exactly the strings supplied — deterministic, with no
   wallet generation, no seed splitting, and no entropy invented. CW1 and CX1
   strings are refused, and Derive refuses index `s`, which would reveal the
   secret.

@@ -197,6 +197,6 @@ test("the calculator does not generate entropy or accept other prefixes as tools
   const app = read("src/js/app.js");
   assert.match(app, /hodlInitCodex32\(\)/);
   assert.match(app, /getElementById\("codex32-card"\)\.hidden = id !== "codex32"/);
-  assert.doesNotMatch(app, /\["codex32",/);
+  assert.match(app, /\["codex32",/);
   assert.match(app, /getElementById\("codex32-shares"\)/);
 });

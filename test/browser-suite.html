@@ -244,6 +244,21 @@
 
   await wait(500);
 
+  await test("Codex32 workspace opens and closes from release navigation", () => {
+    const tab = document.querySelector('#workspace-tabs [data-workspace="codex32"]');
+    const card = document.getElementById("codex32-card");
+    const intro = document.getElementById("codex32-tool-intro");
+    assert(tab, "Codex32 tab is missing");
+    equal(tab.getAttribute("aria-controls"), "codex32-card");
+    assert(card.hidden && intro.hidden, "Codex32 starts hidden");
+    tab.click();
+    assert(!card.hidden && !intro.hidden, "Codex32 opens from its tab");
+    equal(tab.getAttribute("aria-selected"), "true");
+    document.querySelector('#workspace-tabs [data-workspace="calc"]').click();
+    assert(card.hidden && intro.hidden, "Codex32 closes when switching away");
+    equal(tab.getAttribute("aria-selected"), "false");
+  });
+
   await test("MS1 calculator rejects mistyped complete seeds and clears stale results", () => {
     const input = document.getElementById("codex32-shares");
     const index = document.getElementById("codex32-index");
@@ -1791,11 +1806,11 @@
     const strip = document.getElementById("workspace-tabs");
     const tabs = [...strip.querySelectorAll("[data-workspace]")];
     // Verify joined in every build on 2026-10-29 (owner).
-    assert(tabs.length === 10, `Expected ten tool tabs, found ${tabs.length}`);
+    assert(tabs.length === 11, `Expected eleven tool tabs, found ${tabs.length}`);
     // The visible label may be abbreviated; the accessible name never is.
     // Which tools exist and how they name themselves is the contract; where
     // they sit in the strip is a design decision that changes freely.
-    const names = ["BIP-85 Child", "Core Wallet", "Journal", "Keys", "Lightning", "Multi Signature", "Privacy", "Transactions", "Vanity Address", "Verify"];
+    const names = ["BIP-85 Child", "Codex32", "Core Wallet", "Journal", "Keys", "Lightning", "Multi Signature", "Privacy", "Transactions", "Vanity Address", "Verify"];
     equal(tabs.map((tab) => tab.getAttribute("aria-label")).sort().join("|"), names.join("|"), "every tool tab names itself in full");
     assert(!document.querySelector('#workspace [data-workspace="sp"] .silent-payments-icon'), "Silent Payments icon should not be in the workspace tab");
     // A mismatched end tag in the shell silently reparents every later card
