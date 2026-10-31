@@ -250,10 +250,23 @@ Every `<select>` is replaced at runtime by the shared custom dropdown
 
 ### Copying to the clipboard
 
-All copying goes through `copyText()` in `src/js/clipboard.js`; the icon
-confirmation is `showCopiedIcon()`. A secret is built at the moment of the
-click and handed straight to `copyText()`, never stored on the control. No
-other module writes the clipboard (a test guards this).
+Public values are copied to the system clipboard through `copyText()` in
+`src/js/clipboard.js`; the icon confirmation is `showCopiedIcon()`. No other
+module writes the system clipboard (a test guards this).
+
+Private values never go to the system clipboard. Their copy controls put the
+value into EntropyLab's own clipboard, `appClipboardPut()` in
+`src/js/app-clipboard.js`, which holds one value as bytes and zeroes it on the
+next copy and at End Session (pagehide). Their labels say "to
+EntropyLab's clipboard". A secret is built at the moment of the click and handed straight
+to the clipboard, never stored on the control.
+
+Each secret field gets a paste control from `src/js/app-paste.js`: a boxed
+icon button in a row right after the field (after its `label`, never inside
+it), named for the field it fills. It stays in place and is disabled while
+EntropyLab's clipboard is empty, so the layout never shifts. It fills the field
+from that clipboard, through the vault for passphrase fields, and never reads
+the system clipboard.
 
 Private readouts carry `data-private-value`, which disables text selection for
 that value and its descendants. A `data-private-field` wraps the value and its

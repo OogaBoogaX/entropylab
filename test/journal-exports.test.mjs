@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { copyText } from "../src/js/clipboard.js";
+import { appClipboardClear, appClipboardPut, appClipboardText } from "../src/js/app-clipboard.js";
 import { MiniDocument } from "./mini-dom.mjs";
 import { KEY_VAULT_MAX_KEYS, keyVaultIdentity, parseKeyVault, serializeKeyVault } from "../src/js/keymanager.js";
 import { JOURNAL_LOG_LIMIT, JOURNAL_LOG_MAX_BYTES, JOURNAL_MAX_FILE_LENGTH, JOURNAL_MIN_ITERATIONS, appendLog, createJournal, deriveJournalKeys, formatLog, formatLogField, logUsage, journalFromPlainText, mergeNotebookImport, openExport, parseNotebook, sealExport, serializeNotebook } from "../src/js/journal.js";
@@ -96,8 +97,7 @@ function activityHarness(options) {
 
 function debugLogHarness() {
   const ui = harness(), listeners = new Map(), copies = [], feedback = [], appended = [];
-  let resolveCopy, clearDecision;
-  const copyResult = new Promise((resolve) => { resolveCopy = resolve; });
+  let copyResult = true, clearDecision;
   const button = (id) => ({ id, disabled: false, dataset: {}, closest() { return this; }, matches: () => false });
   const output = { textContent: "", scrollTop: 0, scrollLeft: 0, scrollHeight: 100, clientHeight: 100 };
   const elements = new Map([
@@ -129,7 +129,7 @@ function debugLogHarness() {
     hodlInitTabDrag() {}, hodlRefreshJournalKeyPicker() {},
     hodlSyncJournalTool() { ui.context.hodlRenderJournalLog(); },
     hodlReadoutIsShown: () => true,
-    copyText(text) { copies.push(text); return copyResult; },
+    appClipboardPut(text) { copies.push(text); return copyResult; },
     hodlShowCopiedIcon() { feedback.push("copied"); },
     hodlClipboardIconMarkup: () => "", hodlCopiedIconMarkup: () => "",
     document: {
@@ -147,7 +147,7 @@ function debugLogHarness() {
     listeners.get("click")({ target });
     return target.onclick();
   };
-  return { ...ui, journal, output, elements, copies, feedback, appended, resolveCopy, click, clearDecision: () => clearDecision };
+  return { ...ui, journal, output, elements, copies, feedback, appended, click, clearDecision: () => clearDecision, setCopyResult: (value) => { copyResult = value; } };
 }
 
 test("Debug log ranges cannot render imported timestamp control characters", () => {
@@ -177,7 +177,6 @@ test("Debug log pages keep older events readable while Copy and Export capture a
   const entireLog = formatLog(ui.journal.log);
   const copying = ui.click("journal-log-copy");
   assert.deepEqual(ui.copies, [entireLog], "Copy must not be limited to the visible page");
-  ui.resolveCopy(true);
   await copying;
   const beforeExport = formatLog(ui.journal.log);
   const exporting = ui.click("journal-log-download");
@@ -249,7 +248,6 @@ test("discarded history is disclosed in the reader and in full copied and export
   const expectedCopy = formatLog(ui.journal.log, 37);
   const copying = ui.click("journal-log-copy");
   assert.deepEqual(ui.copies, [expectedCopy]);
-  ui.resolveCopy(true);
   await copying;
   const expectedExport = formatLog(ui.journal.log, 37);
   const exporting = ui.click("journal-log-download");
@@ -276,27 +274,21 @@ test("cancelling Export first prevents the pending debug log download and its co
   assert.ok(ui.journal.log.length > 1, "cancelling export must preserve the history");
 });
 
-for (const outcome of ["success", "failure", "stale"]) test(`Debug log Copy captures the displayed report and records its ${outcome} only after the clipboard settles`, async () => {
+for (const outcome of ["success", "failure", "stale"]) test(`Debug log Copy captures the displayed report and records its ${outcome}`, async () => {
   const ui = debugLogHarness(), visible = ui.output.textContent;
   const original = JSON.stringify(ui.journal.log);
-  const run = ui.click("journal-log-copy");
-  const pendingText = ui.output.textContent, pendingEvents = ui.appended.slice();
+  ui.setCopyResult(outcome !== "failure");
+  // A Journal that is no longer current (here, locked) copies nothing.
+  if (outcome === "stale") ui.context.hodlJournalUnlocked = () => false;
+  const copied = await ui.click("journal-log-copy");
+  assert.equal(copied, outcome === "success");
   if (outcome === "stale") {
-    ui.context.hodlJournalGeneration++;
-    ui.context.hodlJournal = { log: [] };
-  }
-  ui.resolveCopy(outcome !== "failure");
-  await run;
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(ui.copies, [visible], "Copy must capture exactly the report visible before its click");
-  assert.equal(pendingText, visible, "Copy must not change the report before the clipboard result");
-  assert.deepEqual(pendingEvents, []);
-  if (outcome === "stale") {
+    assert.deepEqual(ui.copies, []);
     assert.equal(JSON.stringify(ui.journal.log), original);
-    assert.deepEqual(ui.context.hodlJournal.log, []);
     assert.deepEqual(ui.appended, []);
     assert.deepEqual(ui.feedback, []);
   } else {
+    assert.deepEqual(ui.copies, [visible], "Copy must capture exactly the report visible before its click");
     const action = outcome === "success" ? "copy" : "copy-error";
     assert.deepEqual(ui.appended.map(({ tool, action, detail }) => [tool, action, detail]), [["journal", action, "session-log"]]);
     assert.deepEqual(ui.feedback, outcome === "success" ? ["copied"] : []);
@@ -333,16 +325,15 @@ for (const outcome of ["success", "failure", "stale"]) test(`Debug log Export ca
   } else assert.equal(ui.output.textContent, formatLog(ui.journal.log));
 });
 
-for (const action of ["copy", "export"]) for (const outcome of ["success", "failure"]) test(`Debug log Clear cancels pending ${action} ${outcome} without reviving its old report`, async () => {
+for (const outcome of ["success", "failure"]) test(`Debug log Clear cancels pending export ${outcome} without reviving its old report`, async () => {
   const ui = debugLogHarness();
   const oldLog = ui.journal.log, retainedEvent = oldLog[0];
-  const run = ui.click(action === "copy" ? "journal-log-copy" : "journal-log-download");
+  const run = ui.click("journal-log-download");
   ui.click("journal-log-clear");
   ui.clearDecision().onDiscard();
   const cleared = JSON.stringify(ui.journal.log);
   const clearedEffects = ui.effects.slice();
-  if (action === "copy") ui.resolveCopy(outcome === "success");
-  else if (outcome === "success") ui.resolve({ sealed: "old report" });
+  if (outcome === "success") ui.resolve({ sealed: "old report" });
   else ui.reject(new Error("old report failure"));
   await run;
   await new Promise((resolve) => setImmediate(resolve));
@@ -352,42 +343,35 @@ for (const action of ["copy", "export"]) for (const outcome of ["success", "fail
   assert.equal(JSON.stringify(ui.journal.log), cleared, "a completed request resurrected old-history events");
   assert.deepEqual(ui.downloads, [], "a cleared report must not be handed to the browser after encryption completes");
   assert.deepEqual(ui.effects, clearedEffects, "a cleared report failure must not surface in the current Journal");
-  assert.deepEqual(ui.feedback, ["dirty"], "clearing must prevent stale clipboard confirmation");
+  assert.deepEqual(ui.feedback, ["dirty"]);
   assert.equal(ui.journal.log.length, 1);
   assert.equal(ui.journal.log[0].action, "clear");
   assert.equal(ui.output.textContent, formatLog(ui.journal.log));
 });
 
-for (const clear of [false, true]) test(`Debug log ${clear ? "Clear prevents a rejected native copy from falling back to old text" : "copy retains the shared fallback while its source is current"}`, async () => {
+// Imported debug events can contain secrets: the log goes to EntropyLab's
+// clipboard and never reaches the system clipboard, even with the real
+// copyText in reach (GLM, #1347 round 2).
+test("Debug log Copy puts the report on EntropyLab's clipboard, never the system clipboard", async () => {
   const ui = debugLogHarness(), visible = ui.output.textContent;
   const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
   const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   const document = new MiniDocument(), submitted = [], fallbacks = [];
-  let reject;
-  const native = new Promise((_resolve, no) => { reject = no; });
-  document.execCommand = (command) => {
-    assert.equal(command, "copy");
-    fallbacks.push(document.querySelector("textarea[readonly]")?.value);
-    return true;
-  };
+  document.execCommand = (command) => { fallbacks.push(command); return true; };
   Object.defineProperty(globalThis, "document", { configurable: true, value: document });
-  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: (text) => { submitted.push(text); return native; } } } });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async (text) => { submitted.push(text); } } } });
   ui.context.copyText = copyText;
+  ui.context.appClipboardPut = appClipboardPut;
   try {
-    const pending = ui.click("journal-log-copy");
-    if (clear) {
-      ui.click("journal-log-clear");
-      ui.clearDecision().onDiscard();
-    }
-    reject(new Error("NotAllowedError"));
-    const copied = await pending;
-    assert.deepEqual(submitted, [visible], "the native write was already submitted before Clear");
-    assert.deepEqual(fallbacks, clear ? [] : [visible], "an invalidated source must never start a second clipboard write");
-    assert.equal(copied, !clear);
-    assert.equal(document.querySelector("textarea[readonly]"), null);
-    assert.deepEqual(ui.feedback, clear ? ["dirty"] : ["copied"]);
-    assert.equal(ui.journal.log.at(-1).action, clear ? "clear" : "copy");
+    appClipboardClear();
+    assert.equal(await ui.click("journal-log-copy"), true);
+    assert.deepEqual(submitted, []);
+    assert.deepEqual(fallbacks, []);
+    assert.equal(appClipboardText(), visible);
+    assert.deepEqual(ui.feedback, ["copied"]);
+    assert.equal(ui.journal.log.at(-1).action, "copy");
   } finally {
+    appClipboardClear();
     if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
     else delete globalThis.document;
     if (originalNavigator) Object.defineProperty(globalThis, "navigator", originalNavigator);
