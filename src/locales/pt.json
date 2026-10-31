@@ -2410,5 +2410,9 @@
   "Original file": "Arquivo original",
   "Bitcoin header": "Cabeçalho Bitcoin",
   "Expected initial digest": "Resumo inicial esperado",
-  "Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.": "Opcional. O arquivo original ou seu resumo esperado verifica se esta prova é para esse arquivo. Sem um ou outro, apenas o caminho da prova até o cabeçalho do bloco é verificado."
+  "Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.": "Opcional. O arquivo original ou seu resumo esperado verifica se esta prova é para esse arquivo. Sem um ou outro, apenas o caminho da prova até o cabeçalho do bloco é verificado.",
+  "Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.": "A entrada segura ainda está ativa: algumas entradas não puderam ser convertidas em texto. Tente novamente ou escolha Limpar entradas e desativar.",
+  "The word picker could not load. Turn Secure entry off to use standard text entry.": "O seletor de palavras não pôde ser carregado. Desative a entrada segura para usar a entrada de texto padrão.",
+  "Journal cannot back up or export keys whose words were cleared by Secure entry. Enter their words again and derive their wallets, or clear those keys, then try again.": "O Journal não pode fazer backup ou exportar chaves cujas palavras foram limpas pela entrada segura. Insira suas palavras novamente e derive suas carteiras, ou limpe essas chaves e tente novamente.",
+  "This key's words were cleared by Secure entry, so Journal cannot keep it. Enter its words again and derive its wallet first.": "As palavras desta chave foram limpas pela entrada segura, portanto o Journal não pode mantê-la. Insira suas palavras novamente e derive sua carteira primeiro."
 }
