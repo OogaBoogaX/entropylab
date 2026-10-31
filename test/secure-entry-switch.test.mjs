@@ -185,7 +185,7 @@ test("Keep empties the field on screen when the active key's words moved", async
   globalThis.document = { getElementById: (id) => id === "seed" ? field : null };
   try {
     const session = createSecureSession();
-    const keys = [{ id: 1, name: "Key Station", seedMethod: "words", targetWords: 12, fields: { seed: words }, globalSync: false }];
+    const keys = [{ id: 1, name: "Key Station", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: words }, globalSync: false }];
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
       stubs: {
         ...realSecureEntryStubs,
@@ -322,8 +322,8 @@ test("turning on with seed text keeps or clears the words", async () => {
     const phrase1 = "abandon ability able about above absent absorb abstract absurd abuse access accident";
     const phrase2 = "legal winner thank year wave sausage worth useful legal winner thank yellow";
     const keys = [
-      { id: 1, name: "Key 1", seedMethod: "words", targetWords: 12, fields: { seed: phrase1 } },
-      { id: 2, name: "Key 2", seedMethod: "words", targetWords: 12, fields: { seed: phrase2 } },
+      { id: 1, name: "Key 1", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase1 } },
+      { id: 2, name: "Key 2", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase2 } },
     ];
     let choice = "keep", lastOptions = null;
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn"], {
@@ -361,7 +361,7 @@ test("turning on with seed text keeps or clears the words", async () => {
       assert.deepEqual([...entry.indices], expected.map((word) => wordIndex.get(word)));
     }
 
-    const bad = [{ id: 3, name: "Bad", seedMethod: "words", targetWords: 12, fields: { seed: "abandon zzzz" } }];
+    const bad = [{ id: 3, name: "Bad", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: "abandon zzzz" } }];
     const badSession = createSecureSession();
     choice = null;
     mod.__set.hodlSecureSession(badSession);
@@ -384,7 +384,7 @@ test("turning on can clear or cancel without leaving a plan", async () => {
     const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
     let choice = "clear";
     const session = createSecureSession();
-    const keys = [{ id: 1, name: "Key 1", seedMethod: "words", targetWords: 12, fields: { seed: phrase } }];
+    const keys = [{ id: 1, name: "Key 1", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase } }];
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn"], {
       stubs: {
         ...realSecureEntryStubs,
@@ -412,7 +412,7 @@ test("turning on can clear or cancel without leaving a plan", async () => {
     assert.equal(mod.hodlSecureEntryOn, true);
 
     const cancelSession = createSecureSession();
-    const cancelKeys = [{ id: 2, name: "Key 2", seedMethod: "words", targetWords: 12, fields: { seed: phrase } }];
+    const cancelKeys = [{ id: 2, name: "Key 2", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase } }];
     choice = null;
     mod.__set.hodlSecureSession(cancelSession);
     mod.__set.hodlKeys(cancelKeys);
@@ -898,4 +898,276 @@ test("emptying the seed text field while secure entry is on redraws into the pic
   const body = seed.slice(start, seed.indexOf("};", start) + 2);
   assert.match(body, /if \(hodlSecureSeedActive\(\) && !input\.value\.trim\(\) && !hodlSecureEntryHasData\(hodlSecureKeyOf\(state\)\)\) \{/);
   assert.match(body, /hodlSetMode\(hodlKeyMode\);/);
+});
+
+test("a blocked Convert shows the convert-failed note and keeps the switch on", async () => {
+  const previous = globalThis.document;
+  const doc = new MiniDocument();
+  globalThis.document = doc;
+  try {
+    const host = doc.createElement("div");
+    host.id = "secure-entry-host";
+    doc.body.append(host);
+    const session = createSecureSession();
+    const key = { id: 1, name: "Key 1", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: "" } };
+    const entry = seedEntry(12);
+    for (let i = 0; i < 12; i += 1) seedSet(entry, i, i);
+    let choice = "convert";
+    let dialogCalls = 0;
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlRenderSecureEntryControl", "hodlSecureEntryOn"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryAvailable: () => true,
+        hodlSecureSeedActive: () => true,
+        hodlSecureSeedPickerShown: () => true,
+        hodlSwitchBarMarkup: () => "<switch>",
+        hodlT: (text) => text,
+        hodlSecureEntryDialog: async () => ({ open: async () => { dialogCalls += 1; return choice; } }),
+        hodlCaptureKey: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlSecureEntryHasData: () => true,
+        hodlSecureKeyOf: (state) => String(state.id),
+        hodlLooksExtendedKey: () => false,
+        hodlLastWordCache: { clear: () => {} },
+        planTurnOff: () => ({ ok: false, staged: [], blockers: [{ reason: "invalid" }], kind: "off", generation: 0 }),
+        discardPlan: () => {},
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey", "hodlSecureEntryBusy", "hodlJournalKeyDerivation"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys([key]);
+    mod.__set.hodlActiveKey(0);
+    mod.__set.hodlSecureEntryOn(true);
+    mod.__set.hodlSecureEntryBusy(false);
+    mod.__set.hodlJournalKeyDerivation(null);
+    sessionSet(session, "1", "seed", entry);
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.ok(doc.getElementById("secure-entry-convert-failed"));
+    assert.equal(dialogCalls, 1);
+
+    choice = null;
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.equal(doc.getElementById("secure-entry-convert-failed"), null);
+    assert.equal(dialogCalls, 2);
+
+    const clearSession = createSecureSession();
+    const clearKey = { id: 2, name: "Key 2", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: "" } };
+    const clearEntry = seedEntry(12);
+    for (let i = 0; i < 12; i += 1) seedSet(clearEntry, i, i);
+    sessionSet(clearSession, "2", "seed", clearEntry);
+    choice = "clear";
+    mod.__set.hodlSecureSession(clearSession);
+    mod.__set.hodlKeys([clearKey]);
+    mod.__set.hodlSecureEntryOn(true);
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal(mod.hodlSecureEntryOn, false);
+    assert.equal(doc.getElementById("secure-entry-convert-failed"), null);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("a Convert commit that throws without texts shows the convert-failed note", async () => {
+  const previous = globalThis.document;
+  const doc = new MiniDocument();
+  globalThis.document = doc;
+  try {
+    const host = doc.createElement("div");
+    host.id = "secure-entry-host";
+    doc.body.append(host);
+    const session = createSecureSession();
+    const key = { id: 1, name: "Key 1", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: "" } };
+    const entry = seedEntry(12);
+    for (let i = 0; i < 12; i += 1) seedSet(entry, i, i);
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlRenderSecureEntryControl", "hodlSecureEntryOn"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryAvailable: () => true,
+        hodlSecureSeedActive: () => true,
+        hodlSecureSeedPickerShown: () => true,
+        hodlSwitchBarMarkup: () => "<switch>",
+        hodlT: (text) => text,
+        hodlSecureEntryDialog: async () => ({ open: async () => "convert" }),
+        hodlCaptureKey: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlSecureEntryHasData: () => true,
+        hodlSecureKeyOf: (state) => String(state.id),
+        hodlLooksExtendedKey: () => false,
+        hodlLastWordCache: { clear: () => {} },
+        planTurnOff: () => ({ ok: true, staged: [], blockers: [], kind: "off", generation: 0 }),
+        discardPlan: () => {},
+        commitTurnOff: () => { throw new Error("commit failed"); },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey", "hodlSecureEntryBusy", "hodlJournalKeyDerivation"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys([key]);
+    mod.__set.hodlActiveKey(0);
+    mod.__set.hodlSecureEntryOn(true);
+    mod.__set.hodlSecureEntryBusy(false);
+    mod.__set.hodlJournalKeyDerivation(null);
+    sessionSet(session, "1", "seed", entry);
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.ok(doc.getElementById("secure-entry-convert-failed"));
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("the seed picker load failure shows a note and retries on the next render", async () => {
+  const previous = globalThis.document;
+  const doc = new MiniDocument();
+  globalThis.document = doc;
+  try {
+    const host = doc.createElement("div");
+    host.id = "seed-picker-host";
+    doc.body.append(host);
+    const mod = await loadAppFunctions(["hodlMountSeedPicker", "hodlSeedPicker", "hodlSeedPickerImport"], {
+      stubs: {
+        hodlSecureSeedActive: () => true,
+        hodlSecureSeedEntry: () => ({}),
+        hodlBip39Wordlist: wordlist,
+        seedSet: () => {},
+        seedUndo: () => {},
+        seedIndices: () => [],
+        hodlEntropyFromWordIndices: () => [],
+        hodlTText: (text) => text,
+        hodlSecureSeedChanged: () => {},
+        hodlT: (text) => text,
+      },
+      settable: ["hodlSeedPicker", "hodlSeedPickerImport"],
+    });
+    mod.__set.hodlSeedPicker(null);
+    mod.__set.hodlSeedPickerImport(Promise.resolve(null));
+    mod.hodlMountSeedPicker();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.ok(doc.getElementById("seed-picker-load-error"));
+    assert.equal(mod.hodlSeedPickerImport, null);
+
+    host.innerHTML = "";
+    mod.__set.hodlSeedPicker(null);
+    mod.__set.hodlSeedPickerImport(Promise.resolve({ mountSeedPicker: () => { throw new Error("mount failed"); } }));
+    mod.hodlMountSeedPicker();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.ok(doc.getElementById("seed-picker-load-error"));
+    assert.equal(mod.hodlSeedPicker, null);
+
+    host.innerHTML = "";
+    const mounted = { destroy: () => {} };
+    mod.__set.hodlSeedPicker(null);
+    mod.__set.hodlSeedPickerImport(Promise.resolve({ mountSeedPicker: () => mounted }));
+    mod.hodlMountSeedPicker();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(doc.getElementById("seed-picker-load-error"), null);
+    assert.equal(mod.hodlSeedPicker, mounted);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("turning on converts only Seed-mode keys, not old seed text in another mode", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const phrase1 = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+    const phrase2 = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+    const makeKeys = () => [
+      { id: 1, name: "Dice Key", mode: "dice", seedMethod: "words", targetWords: 12, fields: { seed: phrase1 } },
+      { id: 2, name: "Seed Key", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase2 } },
+    ];
+    let choice = "keep";
+    let lastOptions = null;
+    let dialogCalls = 0;
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async (options) => { dialogCalls += 1; lastOptions = options; return choice; } }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlSecureEntryHasData: () => false,
+        hodlSecureKeyOf: (state) => String(state.id),
+        hodlLooksExtendedKey: () => false,
+        hodlLastWordCache: { clear: () => {} },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey", "hodlSecureEntryBusy", "hodlJournalKeyDerivation"],
+    });
+
+    const keepSession = createSecureSession();
+    const keepKeys = makeKeys();
+    mod.__set.hodlSecureSession(keepSession);
+    mod.__set.hodlKeys(keepKeys);
+    mod.__set.hodlActiveKey(0);
+    mod.__set.hodlSecureEntryOn(false);
+    mod.__set.hodlSecureEntryBusy(false);
+    mod.__set.hodlJournalKeyDerivation(null);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(dialogCalls, 1);
+    assert.deepEqual(lastOptions.names, ["Seed Key"]);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.equal(keepKeys[0].fields.seed, phrase1);
+    assert.equal(sessionGet(keepSession, "1", "seed"), null);
+    assert.equal(keepKeys[1].fields.seed, "");
+    assert.ok(sessionGet(keepSession, "2", "seed"));
+
+    const clearSession = createSecureSession();
+    const clearKeys = makeKeys();
+    choice = "clear";
+    dialogCalls = 0;
+    lastOptions = null;
+    mod.__set.hodlSecureSession(clearSession);
+    mod.__set.hodlKeys(clearKeys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(dialogCalls, 1);
+    assert.deepEqual(lastOptions.names, ["Seed Key"]);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.equal(clearKeys[0].fields.seed, phrase1);
+    assert.equal(sessionGet(clearSession, "1", "seed"), null);
+    assert.equal(clearKeys[1].fields.seed, "");
+    assert.equal(sessionGet(clearSession, "2", "seed"), null);
+
+    const diceSession = createSecureSession();
+    const diceKeys = [{ id: 3, name: "Dice Only", mode: "dice", seedMethod: "words", targetWords: 12, fields: { seed: phrase1 } }];
+    choice = "keep";
+    dialogCalls = 0;
+    lastOptions = null;
+    mod.__set.hodlSecureSession(diceSession);
+    mod.__set.hodlKeys(diceKeys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(dialogCalls, 0);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.equal(diceKeys[0].fields.seed, phrase1);
+    assert.equal(diceSession.entries.size, 0);
+  } finally {
+    globalThis.document = previous;
+  }
 });
