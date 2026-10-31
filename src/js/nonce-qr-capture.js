@@ -306,19 +306,24 @@ export function initNonceQrCapture({ translate, onClear }) {
     paint();
     say("Camera stopped. Captured stages remain in memory.");
   };
+  // The capture goes even when stopping the camera throws: End Session and
+  // pagehide must not leave its stages behind (DeepSeek, #1311 review).
   const clear = () => {
-    pause();
-    transport.clear();
-    session.clear();
-    completedResult = null;
-    failureShown = false;
-    resultModal.hide({ restoreFocus: false });
-    scanProgress();
-    onClear();
-    paint();
-    say(
-      "Capture cleared from accessible memory (best effort). Nothing was automatically saved.",
-    );
+    try {
+      pause();
+    } finally {
+      transport.clear();
+      session.clear();
+      completedResult = null;
+      failureShown = false;
+      resultModal.hide({ restoreFocus: false });
+      scanProgress();
+      onClear();
+      paint();
+      say(
+        "Capture cleared from accessible memory (best effort). Nothing was automatically saved.",
+      );
+    }
   };
   clearButton.onclick = clear;
   el("nonce-qr-result-clear").onclick = () => {

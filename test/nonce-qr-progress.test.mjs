@@ -18,40 +18,45 @@ function element() {
     dispatchEvent() {}, focus() {}, getContext() { return { clearRect() {} }; },
   };
 }
+// Boots the capture with a stub camera and scans stage 2 in full.
+async function bootWithStage2(camera = {}) {
+  const elements = new Map();
+  const el = id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); };
+  const hooks = {};
+  const context = vm.createContext({
+    AexbCapture, UrCapture, Event,
+    document: { getElementById: el, createElement: element, addEventListener() {} },
+    addEventListener() {},
+    navigator: { mediaDevices: {
+      getUserMedia: async () => ({getTracks: () => [], getVideoTracks: () => []}),
+      enumerateDevices: async () => [],
+    } },
+    createQrFrameDecoder: () => ({stop() {}}),
+    createModal: () => ({show() {}, hide() {}}),
+    CameraCapture: class {
+      stop() { camera.stop?.(); }
+      async start(video, selected, callback, error) { hooks.receive = callback; hooks.onError = error; return true; }
+    },
+  });
+  vm.runInContext(source, context);
+  const capture = context.initNonceQrCapture({translate: key => key, onClear() {}});
+  await el("nonce-qr-access").onclick();
+  await el("nonce-qr-start").onclick();
+  for (const frame of demo.scenarios.success.messages.find(m => m.stage === 2).medium_ur_parts) hooks.receive(frame);
+  assert.equal(el("nonce-qr-stage-2").dataset.captured, "true");
+  return { el, capture, hooks };
+}
 for (const action of ["invalid", "stop", "camera-error"]) {
   test(`discarded assembly resets progress and keeps completed stages: ${action}`, async () => {
-    const elements = new Map();
-    const el = id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); };
-    let receive, onError;
-    const context = vm.createContext({
-      AexbCapture, UrCapture, Event,
-      document: { getElementById: el, createElement: element, addEventListener() {} },
-      addEventListener() {},
-      navigator: { mediaDevices: {
-        getUserMedia: async () => ({getTracks: () => [], getVideoTracks: () => []}),
-        enumerateDevices: async () => [],
-      } },
-      createQrFrameDecoder: () => ({stop() {}}),
-      createModal: () => ({show() {}, hide() {}}),
-      CameraCapture: class {
-        stop() {}
-        async start(video, selected, callback, error) { receive = callback; onError = error; return true; }
-      },
-    });
-    vm.runInContext(source, context);
-    context.initNonceQrCapture({translate: key => key, onClear() {}});
-    await el("nonce-qr-access").onclick();
+    const { el, hooks } = await bootWithStage2();
     await el("nonce-qr-start").onclick();
-    for (const frame of demo.scenarios.success.messages.find(m => m.stage === 2).medium_ur_parts) receive(frame);
-    assert.equal(el("nonce-qr-stage-2").dataset.captured, "true");
-    await el("nonce-qr-start").onclick();
-    receive(demo.scenarios.success.messages.find(m => m.stage === 3).medium_ur_parts[0]);
+    hooks.receive(demo.scenarios.success.messages.find(m => m.stage === 3).medium_ur_parts[0]);
     const bars = el("nonce-qr-bars");
     assert.equal(bars.getAttribute("aria-valuenow"), "1");
     assert.ok(bars.children.length > 1);
-    if (action === "invalid") receive("ur:bytes/adamadam");
+    if (action === "invalid") hooks.receive("ur:bytes/adamadam");
     else if (action === "stop") el("nonce-qr-stop").onclick();
-    else onError({code: "CAMERA_DISCONNECTED"});
+    else hooks.onError({code: "CAMERA_DISCONNECTED"});
     assert.equal(bars.getAttribute("aria-valuenow"), "0");
     assert.equal(bars.children.length, 0);
     assert.equal(el("nonce-qr-stage-2").dataset.captured, "true");
@@ -59,3 +64,12 @@ for (const action of ["invalid", "stop", "camera-error"]) {
     assert.equal(el("nonce-qr-stop").disabled, true);
   });
 }
+// End Session swallows a throwing clear(), so the stages must already be gone
+// when it throws (DeepSeek, #1311 review).
+test("Clear empties the capture even when stopping the camera throws", async () => {
+  const camera = {};
+  const { el, capture } = await bootWithStage2(camera);
+  camera.stop = () => { throw new Error("camera stop failed"); };
+  assert.throws(() => capture.clear(), /camera stop failed/);
+  assert.equal(el("nonce-qr-stage-2").dataset.captured, "false");
+});
