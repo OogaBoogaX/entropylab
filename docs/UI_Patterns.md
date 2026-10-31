@@ -257,7 +257,8 @@ module writes the system clipboard (a test guards this).
 Private values never go to the system clipboard. Their copy controls put the
 value into EntropyLab's own clipboard, `appClipboardPut()` in
 `src/js/app-clipboard.js`, which holds one value as bytes and zeroes it on the
-next copy and at End Session (pagehide). Their labels say "to
+next copy, whenever the page hides private values (`hodl:conceal`: tab hidden,
+window blur, print, idle) and at End Session (pagehide). Their labels say "to
 EntropyLab's clipboard". A secret is built at the moment of the click and handed straight
 to the clipboard, never stored on the control.
 

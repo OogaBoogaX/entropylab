@@ -56,8 +56,15 @@ export const appClipboardClear = () => {
 // what it saw held is still what is held.
 export const appClipboardGeneration = () => generation;
 
-export const initAppClipboard = (target = globalThis) => {
-  const onPageHide = () => appClipboardClear();
-  target.addEventListener("pagehide", onPageHide);
-  return () => target.removeEventListener("pagehide", onPageHide);
+// End Session (pagehide) clears it, and so does every time the page hides
+// private values ("hodl:conceal": tab hidden, window blur, print, idle), so a
+// paste control never brings back a value the page has just hidden (owner 10-31).
+export const initAppClipboard = (target = globalThis, doc = target.document) => {
+  const clear = () => appClipboardClear();
+  target.addEventListener("pagehide", clear);
+  doc?.addEventListener("hodl:conceal", clear);
+  return () => {
+    target.removeEventListener("pagehide", clear);
+    doc?.removeEventListener("hodl:conceal", clear);
+  };
 };

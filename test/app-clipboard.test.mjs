@@ -1,5 +1,6 @@
 // The app's own clipboard for private values: one value held as UTF-8 bytes,
-// never written to the system clipboard. End Session (pagehide) zeroes it.
+// never written to the system clipboard. End Session (pagehide) and every
+// conceal (hodl:conceal) zero it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { appClipboardPut, appClipboardHas, appClipboardText, appClipboardBytes, appClipboardClear, initAppClipboard } from "../src/js/app-clipboard.js";
@@ -67,23 +68,25 @@ test("each put and clear announces hodl:app-clipboard on document", () => withDo
   assert.deepEqual(events, ["hodl:app-clipboard", "hodl:app-clipboard", "hodl:app-clipboard"]);
 }));
 
-test("initAppClipboard clears on pagehide and its return removes the listener", () => withDocument(() => {
+test("initAppClipboard clears on pagehide and on every conceal, and its return removes both listeners", () => withDocument(() => {
   appClipboardClear();
   const listeners = new Map();
-  const target = {
+  const fake = () => ({
     addEventListener(type, listener) { listeners.set(type, listener); },
     removeEventListener(type, listener) { if (listeners.get(type) === listener) listeners.delete(type); },
-  };
-  const stop = initAppClipboard(target);
-  assert.equal(typeof listeners.get("pagehide"), "function");
-  appClipboardPut("secret");
-  listeners.get("pagehide")();
-  assert.equal(appClipboardHas(), false);
-  assert.equal(appClipboardText(), "");
+  });
+  const stop = initAppClipboard(fake(), fake());
+  for (const type of ["pagehide", "hodl:conceal"]) {
+    assert.equal(typeof listeners.get(type), "function", type);
+    appClipboardPut("secret");
+    listeners.get(type)();
+    assert.equal(appClipboardHas(), false, type);
+    assert.equal(appClipboardText(), "", type);
+  }
   appClipboardPut("secret");
   stop();
-  assert.equal(listeners.has("pagehide"), false);
-  assert.equal(appClipboardText(), "secret", "removing the listener leaves the store alone");
+  assert.equal(listeners.size, 0);
+  assert.equal(appClipboardText(), "secret", "removing the listeners leaves the store alone");
 }));
 
 test("a copied leading byte-order mark survives the round trip, and a lone surrogate is refused", () => {
