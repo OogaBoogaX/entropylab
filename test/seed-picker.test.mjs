@@ -301,7 +301,7 @@ test("a shown word leaves the DOM when review closes", () => {
   assert.ok(!markupOf(ctx.host).includes("zebra"));
 });
 
-test("review, undo and paste never overlap", () => {
+test("review and undo never overlap", () => {
   const ctx = setup();
   enterWord(ctx, "zebra");
   findById(ctx.host, "seed-picker-chips").childNodes[0].dispatchEvent({ type: "click" });
@@ -309,52 +309,17 @@ test("review, undo and paste never overlap", () => {
   assert.equal(review.hidden, false);
   // While a word is under review, nothing else can change the entry.
   assert.equal(findById(ctx.host, "seed-picker-undo").hidden, true);
-  assert.equal(findById(ctx.host, "seed-picker-paste-open").hidden, true);
-  // Opening paste (or undoing) first closes the review and drops a shown word.
+  // Undoing first closes the review and drops a shown word.
   const show = findById(ctx.host, "seed-picker-review-show");
   show.checked = true;
   show.dispatchEvent({ type: "change" });
-  findById(ctx.host, "seed-picker-paste-open").dispatchEvent({ type: "click" });
-  assert.equal(review.hidden, true);
-  assert.equal(show.checked, false);
-  assert.ok(!markupOf(ctx.host).includes("zebra"));
-  // Opening review closes paste and empties its field.
-  const textarea = findById(ctx.host, "seed-picker-paste-text");
-  textarea.value = "abandon";
-  findById(ctx.host, "seed-picker-chips").childNodes[0].dispatchEvent({ type: "click" });
-  assert.equal(findById(ctx.host, "seed-picker-paste").hidden, true);
-  assert.equal(textarea.value, "");
   findById(ctx.host, "seed-picker-undo").dispatchEvent({ type: "click" });
   assert.equal(ctx.entry.count, 0);
   assert.equal(review.hidden, true);
+  assert.equal(show.checked, false);
+  assert.ok(!markupOf(ctx.host).includes("zebra"));
 });
 
-test("paste replaces everything only when the phrase is valid", () => {
-  const ctx = setup();
-  enterWord(ctx, "abandon");
-  const before = Array.from(ctx.entry.indices);
-  findById(ctx.host, "seed-picker-paste-open").dispatchEvent({ type: "click" });
-  const textarea = findById(ctx.host, "seed-picker-paste-text");
-  textarea.value = "abandon ability able about above absent absorb abstract absurd abuse access";
-  findById(ctx.host, "seed-picker-paste-use").dispatchEvent({ type: "click" });
-  assert.equal(ctx.entry.count, 1);
-  assert.deepEqual(Array.from(ctx.entry.indices), before);
-  assert.equal(textarea.value, "");
-  assert.ok(!markupOf(ctx.host).includes("access"));
-
-  textarea.value = "abandon ability able about above absent absorb abstract absurd abuse access zzzz";
-  findById(ctx.host, "seed-picker-paste-use").dispatchEvent({ type: "click" });
-  assert.equal(ctx.entry.count, 1);
-  assert.deepEqual(Array.from(ctx.entry.indices), before);
-  assert.equal(textarea.value, "");
-
-  textarea.value = "abandon ability able about above absent absorb abstract absurd abuse access accident";
-  findById(ctx.host, "seed-picker-paste-use").dispatchEvent({ type: "click" });
-  assert.equal(ctx.entry.count, 12);
-  assert.equal(ctx.entry.indices[0], 0);
-  assert.equal(ctx.entry.indices[11], wordlist.indexOf("accident"));
-  assert.equal(textarea.value, "");
-});
 
 test("more than 24 matches shows no buttons", () => {
   const ctx = setup();
@@ -375,13 +340,9 @@ test("conceal turns Show off and clears the fields", () => {
   const field = findById(ctx.host, "seed-picker-prefix");
   field.value = "ab";
   field.dispatchEvent({ type: "input" });
-  findById(ctx.host, "seed-picker-paste-open").dispatchEvent({ type: "click" });
-  const textarea = findById(ctx.host, "seed-picker-paste-text");
-  textarea.value = "abandon";
   ctx.doc.dispatch("hodl:conceal");
   assert.equal(show.checked, false);
   assert.equal(field.value, "");
-  assert.equal(textarea.value, "");
   assert.equal(findById(ctx.host, "seed-picker-matches").childNodes.length, 0);
 });
 
@@ -394,6 +355,43 @@ test("destroy empties the host and leaves the entry intact", () => {
   assert.equal(ctx.entry.wiped, false);
 });
 
+test("the picker has no paste box", () => {
+  const ctx = setup();
+  const hasPasteId = (node) => {
+    if (node.id && node.id.startsWith("seed-picker-paste")) return true;
+    return node.childNodes.some(hasPasteId);
+  };
+  assert.equal(hasPasteId(ctx.host), false);
+});
+
+test("the picker's text fields refuse paste, copy, cut, drop and drag", () => {
+  const ctx = setup();
+  const prefix = findById(ctx.host, "seed-picker-prefix");
+  const replace = findById(ctx.host, "seed-picker-replace-prefix");
+  const clipboardEvent = (type) => {
+    let prevented = false;
+    return { type, cancelable: true, get defaultPrevented() { return prevented; }, preventDefault() { prevented = true; } };
+  };
+  for (const field of [prefix, replace]) {
+    for (const type of ["paste", "copy", "cut", "drop", "dragstart"]) {
+      const event = clipboardEvent(type);
+      field.dispatchEvent(event);
+      assert.equal(event.defaultPrevented, true, `${type} on ${field.id}`);
+    }
+  }
+  // A paste adds no word.
+  const before = ctx.entry.count;
+  prefix.dispatchEvent(clipboardEvent("paste"));
+  assert.equal(ctx.entry.count, before);
+});
+
+test("the note is help, not a warning", () => {
+  const ctx = setup();
+  const note = findById(ctx.host, "seed-picker-note");
+  assert.ok(note);
+  assert.equal(note.className.split(/\s+/).includes("edge-note"), false);
+});
+
 const assertWrapped = (ctx, id) => {
   const node = findById(ctx.host, id);
   assert.ok(node.textContent.startsWith("«") && node.textContent.endsWith("»"), `${id} is translated`);
@@ -403,9 +401,9 @@ test("every visible string goes through translate", () => {
   const calls = [];
   const ctx = setup({ translate: (text) => { calls.push(text); return `«${text}»`; } });
   assert.ok(calls.length > 0);
-  for (const id of ["seed-picker-help", "seed-picker-note", "seed-picker-progress", "seed-picker-undo", "seed-picker-paste-open"]) assertWrapped(ctx, id);
+  for (const id of ["seed-picker-help", "seed-picker-note", "seed-picker-progress", "seed-picker-undo"]) assertWrapped(ctx, id);
   // The strings that change with state: the per-word announcement, the
-  // checksum line, the review heading and the paste refusal.
+  // checksum line and the review heading.
   enterWord(ctx, "abandon");
   assertWrapped(ctx, "seed-picker-progress");
   assertWrapped(ctx, "seed-picker-position");
@@ -417,31 +415,6 @@ test("every visible string goes through translate", () => {
   findById(ctx.host, "seed-picker-chips").childNodes[0].dispatchEvent({ type: "click" });
   assertWrapped(ctx, "seed-picker-review-heading");
   findById(ctx.host, "seed-picker-review-cancel").dispatchEvent({ type: "click" });
-  findById(ctx.host, "seed-picker-paste-open").dispatchEvent({ type: "click" });
-  findById(ctx.host, "seed-picker-paste-text").value = "abandon";
-  findById(ctx.host, "seed-picker-paste-use").dispatchEvent({ type: "click" });
-  assertWrapped(ctx, "seed-picker-paste-error");
-});
-
-const VALID = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-
-test("a successful paste clears the prefix field and its matches", () => {
-  const ctx = setup();
-  const field = findById(ctx.host, "seed-picker-prefix");
-  field.value = "s";
-  field.dispatchEvent({ type: "input" });
-  assert.equal(findById(ctx.host, "seed-picker-matches").childNodes.length, 0);
-  assert.equal(findById(ctx.host, "seed-picker-narrow").hidden, false);
-  assert.ok(findById(ctx.host, "seed-picker-count").textContent.length > 0);
-  findById(ctx.host, "seed-picker-paste-open").dispatchEvent({ type: "click" });
-  const textarea = findById(ctx.host, "seed-picker-paste-text");
-  textarea.value = VALID;
-  findById(ctx.host, "seed-picker-paste-use").dispatchEvent({ type: "click" });
-  assert.equal(ctx.entry.count, 12);
-  assert.equal(field.value, "");
-  assert.equal(findById(ctx.host, "seed-picker-matches").childNodes.length, 0);
-  assert.equal(findById(ctx.host, "seed-picker-count").textContent, "");
-  assert.equal(findById(ctx.host, "seed-picker-narrow").hidden, true);
 });
 
 test("conceal and new replacement text disarm a staged word", () => {
@@ -484,25 +457,6 @@ test("the replacement field asks for more letters past 24 matches", () => {
   assert.equal(findById(ctx.host, "seed-picker-replace-narrow").hidden, true);
 });
 
-test("a paste that fails part way puts the previous words back", () => {
-  let pasting = false, calls = 0;
-  const flaky = (entry, position, index) => {
-    if (pasting && (calls += 1) === 6) throw new Error("refused");
-    return seedSet(entry, position, index);
-  };
-  const ctx = setup({ seedSet: flaky });
-  for (const word of ["zebra", "ability", "access"]) enterWord(ctx, word);
-  const before = Array.from(ctx.entry.indices), count = ctx.entry.count;
-  findById(ctx.host, "seed-picker-paste-open").dispatchEvent({ type: "click" });
-  const textarea = findById(ctx.host, "seed-picker-paste-text");
-  textarea.value = VALID;
-  pasting = true;
-  findById(ctx.host, "seed-picker-paste-use").dispatchEvent({ type: "click" });
-  pasting = false;
-  assert.equal(ctx.entry.count, count);
-  assert.deepEqual(Array.from(ctx.entry.indices), before);
-  assert.equal(textarea.value, "");
-});
 
 test("destroy drops the match buttons, whose text can be the word", () => {
   const ctx = setup();

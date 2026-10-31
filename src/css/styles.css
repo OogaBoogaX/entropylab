@@ -2646,7 +2646,7 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
 #seed-picker-host [hidden] { display: none; }
 #seed-picker-chips, #seed-picker-matches, #seed-picker-replace-matches { flex-wrap: wrap; gap: var(--space-control); }
 #seed-picker-chips .btn, #seed-picker-matches .btn, #seed-picker-replace-matches .btn { min-height: 44px; min-width: 44px; }
-#seed-picker-entry, #seed-picker-review, #seed-picker-paste { margin-top: var(--space-component); }
+#seed-picker-entry, #seed-picker-review { margin-top: var(--space-component); }
 /* A card's closing actions are the things to press, so their labels carry the
    weight. On the row rather than on .btn, which the tabs share: a tab reads as
    a place you are, not an action you take. */
