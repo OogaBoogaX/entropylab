@@ -12526,11 +12526,13 @@ async function hodlSecureEntryToggle(wanted) {
           commitTurnOn(hodlSecureSession, plan);
           plan = null;
           for (const state of states) {
-            // Global sync filled other fields from the same words: they go
-            // too, as at Clear, so the words are left only in Secure entry.
-            // A wallet made from a private key cannot be rebuilt from the
-            // words, so that key keeps its fields (K3.1, Kimi, Astra).
-            if (state.globalSync && state.result?.kind !== "single") {
+            // When the words were Global sync's source, every other field was
+            // computed from them: those copies go too, as at Clear, so the
+            // words are left only in Secure entry. Any other source (a hex
+            // key, dice, cards) can hold more than the words do, and a wallet
+            // made from a private key cannot be rebuilt from them, so those
+            // keys keep their fields (K3.1, Kimi, Astra).
+            if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource) && state.result?.kind !== "single") {
               hodlClearGlobalSyncCopies(state);
               state.lastWord = "";
             }

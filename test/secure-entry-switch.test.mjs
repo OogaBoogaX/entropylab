@@ -526,14 +526,14 @@ test("Clear empties the fields Global sync filled", async () => {
   }
 });
 
-test("Keep empties the fields Global sync filled, so the words stay only in Secure entry (owner 10-31)", async () => {
+test("Keep empties the fields Global sync filled from the words, so they stay only in Secure entry (owner 10-31)", async () => {
   const previous = globalThis.document;
   globalThis.document = { getElementById: () => null };
   try {
     const session = createSecureSession();
     const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
     const synced = {
-      id: 1, name: "Synced", mode: "seed", seedMethod: "words", targetWords: 12, globalSync: true, lastWord: "accident",
+      id: 1, name: "Synced", mode: "seed", seedMethod: "words", targetWords: 12, globalSync: true, globalSyncSource: "seed:words", lastWord: "accident",
       fields: {
         seed: phrase, seedNumbers: "1 2 3", hex: "abcd", bin: "1010",
         dplusDice: "dplus", directCards: "cards", bitboxDice: "bitbox",
@@ -587,7 +587,7 @@ test("Keep empties the fields Global sync filled, so the words stay only in Secu
   }
 });
 
-test("Keep leaves a key's other fields when its wallet cannot come from the words (K3.1, Kimi, Astra)", async () => {
+test("Keep leaves a key's other fields unless the words were their source and its wallet can come from them (K3.1, Kimi, Astra)", async () => {
   const previous = globalThis.document;
   globalThis.document = { getElementById: () => null };
   try {
@@ -599,11 +599,14 @@ test("Keep leaves a key's other fields when its wallet cannot come from the word
       ...extra,
     });
     // Derived from its private key, then switched to Seed mode.
-    const single = synced({ id: 1, name: "Single", result: { kind: "single" } });
+    const single = synced({ id: 1, name: "Single", globalSyncSource: "seed:words", result: { kind: "single" } });
+    // No wallet yet: a 256-bit hex key was the source, and 12 words hold only
+    // its first 128 bits, so emptying it would lose the rest (K3.1).
+    const hexKeySource = synced({ id: 4, name: "Hex key source", globalSyncSource: "key:hex-key", result: null });
     // Other modes keep their seed text as text (they are not listed at all).
     const keyMode = synced({ id: 2, name: "Key mode", mode: "key", result: { kind: "single" } });
     const hexMode = synced({ id: 3, name: "Hex mode", mode: "hex", result: { kind: "hd" } });
-    const keys = [single, keyMode, hexMode];
+    const keys = [single, keyMode, hexMode, hexKeySource];
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlClearGlobalSyncCopies"], {
       stubs: {
         ...realSecureEntryStubs,
@@ -628,12 +631,16 @@ test("Keep leaves a key's other fields when its wallet cannot come from the word
     mod.__set.hodlSecureEntryOn(false);
     await mod.hodlSecureEntryToggle(true);
     assert.equal(mod.hodlSecureEntryOn, true);
-    // The Seed-mode key's words move; its private key and entropy stay.
-    assert.ok(sessionGet(session, mod.hodlSecureKeyOf(single), "seed"));
-    assert.equal(single.fields.seed, "");
-    assert.equal(single.fields.hex, "abcd");
-    assert.equal(single.fields.privateKeys.wif, "wifvalue");
-    assert.equal(single.fields.privateKeys["hex-key"], "hexkeyvalue");
+    // The Seed-mode keys' words move; their private keys and entropy stay.
+    for (const key of [single, hexKeySource]) {
+      assert.ok(sessionGet(session, mod.hodlSecureKeyOf(key), "seed"), key.name);
+      assert.equal(key.fields.seed, "", key.name);
+      assert.equal(key.fields.hex, "abcd", key.name);
+      assert.equal(key.fields.bin, "1010", key.name);
+      assert.equal(key.fields.privateKeys.wif, "wifvalue", key.name);
+      assert.equal(key.fields.privateKeys["hex-key"], "hexkeyvalue", key.name);
+      assert.equal(key.lastWord, "accident", key.name);
+    }
     for (const key of [keyMode, hexMode]) {
       assert.equal(mod.hodlSecureKeyOf(key), null, key.name);
       assert.equal(key.fields.seed, phrase, key.name);
