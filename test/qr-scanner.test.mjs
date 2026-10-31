@@ -222,14 +222,19 @@ test("a two-code frame reports two-codes and keeps scanning", async () => {
   assert.equal(decoder.calls.length, 2);
 });
 
-test("the timeout stops the camera and start() resumes", async () => {
+test("the timeout stops the camera and start() resumes", async (t) => {
+  // Mocked setTimeout: a real 5 ms timer could fire before tick() under CPU
+  // load. tick() uses setImmediate, which stays real.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const { media, video, statuses, scanner } = build({ timeoutMs: 5 });
   scanner.start();
   const first = makeStream();
   media.pending[0].resolve(first);
   await tick();
   assert.deepEqual(statuses, ["scanning"]);
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  t.mock.timers.tick(4);
+  assert.deepEqual(statuses, ["scanning"]);
+  t.mock.timers.tick(1);
   assert.deepEqual(statuses, ["scanning", "timeout"]);
   assert.ok(first.tracks.every((track) => track.stopped));
   assert.equal(video.srcObject, null);
