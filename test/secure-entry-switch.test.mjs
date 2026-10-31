@@ -1700,3 +1700,71 @@ test("turning on converts only Seed-mode keys, not old seed text in another mode
     globalThis.document = previous;
   }
 });
+
+// Turn-off Clear marks a key whose words lived only in Secure entry, and only
+// once the wipe has happened: a wipe that throws leaves the words in place, so
+// no mark may claim they are gone (Kimi, #1343 follow-up).
+for (const throws of [false, true]) {
+  test(`turn-off Clear ${throws ? "that throws marks no key" : "marks the keys whose words it wiped"}`, async () => {
+    const previous = globalThis.document;
+    const doc = new MiniDocument();
+    globalThis.document = doc;
+    try {
+      const host = doc.createElement("div");
+      host.id = "secure-entry-host";
+      doc.body.append(host);
+      const session = createSecureSession();
+      const key = { id: 1, name: "Key 1", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: { kind: "hd" } };
+      const entry = seedEntry(12);
+      for (let i = 0; i < 12; i += 1) seedSet(entry, i, i);
+      let wiped = 0;
+      const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlRenderSecureEntryControl", "hodlSecureEntryOn"], {
+        stubs: {
+          ...realSecureEntryStubs,
+          hodlSecureEntryAvailable: () => true,
+          hodlSecureSeedActive: () => true,
+          hodlSecureSeedPickerShown: () => true,
+          hodlSwitchBarMarkup: () => "<switch>",
+          hodlT: (text) => text,
+          hodlSecureEntryDialog: async () => ({ open: async () => "clear" }),
+          hodlCaptureKey: () => {},
+          hodlSetMode: () => {},
+          hodlSyncKeyClearButton: () => {},
+          hodlSyncDeriveButton: () => {},
+          hodlQueueMasterFingerprintPreview: () => {},
+          hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+          hodlBip39WordIndex: wordIndex,
+          hodlBip39Wordlist: wordlist,
+          hodlKeyMode: "seed",
+          hodlSecureEntryHasData: () => wiped === 0,
+          hodlSecureKeyOf: (state) => String(state.id),
+          hodlLooksExtendedKey: () => false,
+          hodlLastWordCache: { clear: () => {} },
+          planTurnOff: () => ({ ok: true, staged: [], blockers: [], kind: "off", generation: 0 }),
+          discardPlan: () => {},
+          commitTurnOff: () => {
+            if (throws) throw new Error("wipe failed");
+            wiped += 1;
+          },
+        },
+        settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey", "hodlSecureEntryBusy", "hodlJournalKeyDerivation"],
+      });
+      mod.__set.hodlSecureSession(session);
+      mod.__set.hodlKeys([key]);
+      mod.__set.hodlActiveKey(0);
+      mod.__set.hodlSecureEntryOn(true);
+      mod.__set.hodlSecureEntryBusy(false);
+      mod.__set.hodlJournalKeyDerivation(null);
+      sessionSet(session, "1", "seed", entry);
+      try { await mod.hodlSecureEntryToggle(false); } catch {}
+      if (throws) {
+        assert.equal("secureCleared" in key, false, "a failed wipe left a mark");
+      } else {
+        assert.equal(wiped, 1);
+        assert.equal(key.secureCleared, true);
+      }
+    } finally {
+      globalThis.document = previous;
+    }
+  });
+}

@@ -574,6 +574,7 @@ test("a cleared key refuses backup, and held words win", async () => {
   mod.__set.hodlKeys([cleared]);
   const refusal = mod.hodlSecureEntryBackupRefusal();
   assert.ok(refusal instanceof Error);
+  const clearedText = tTextCalls.at(-1);
 
   const held = { id: 2 };
   const entry = seedEntry(12);
@@ -583,7 +584,11 @@ test("a cleared key refuses backup, and held words win", async () => {
   tTextCalls.length = 0;
   const heldRefusal = mod.hodlSecureEntryBackupRefusal();
   assert.ok(heldRefusal instanceof Error);
-  assert.equal(tTextCalls[0], "Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again.");
+  // Held words win: the refusal is the held-words one, not the cleared-key one
+  // (compared by identity, never by wording: AGENTS.md).
+  assert.equal(tTextCalls.length, 1);
+  assert.notEqual(tTextCalls[0], clearedText);
+  assert.equal(heldRefusal.message, tTextCalls[0]);
 });
 
 test("hodlSecureEntryHasData sees any securely entered word", async () => {

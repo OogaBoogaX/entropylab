@@ -12620,10 +12620,11 @@ async function hodlSecureEntryToggle(wanted) {
         } else if (choice === "clear") {
           // Clear wipes every secure entry: a key that keeps its wallet on screen but
           // held its words only there would back up with no words (as at turn-on Clear).
-          for (const state of hodlKeys) {
-            if (state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
-          }
+          // The keys are found before the wipe and marked only once it has happened:
+          // a wipe that throws leaves the words, and no mark saying they are gone (Kimi).
+          let cleared = hodlKeys.filter((state) => state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state)));
           commitTurnOff(hodlSecureSession, null, "clear");
+          for (const state of cleared) state.secureCleared = true;
         } else {
           if (plan) discardPlan(plan);
           plan = null;
