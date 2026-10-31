@@ -159,10 +159,13 @@ export function initNonceQrCapture({ translate, onClear }) {
       return frameDecoder.decode(frame.data, frame.width, frame.height);
     },
   });
+  // A camera that throws while stopping must not keep the preview, the busy
+  // flag or, through the callers' wipes after pause(), the capture (DeepSeek
+  // on #1311; GLM, DeepSeek and K3.1 on #1353). Late frames are refused below.
   const pause = () => {
     generation++;
     permissionPending = false;
-    camera.stop();
+    try { camera.stop(); } catch { /* Continue cleanup without logging data. */ }
     video.hidden = true;
     viewer.hidden = true;
     for (const track of accessStream?.getTracks() || []) track.stop();
@@ -272,8 +275,13 @@ export function initNonceQrCapture({ translate, onClear }) {
         throw Error("camera unavailable");
       video.hidden = false;
       viewer.hidden = false;
+      // A frame or error from a scan already stopped (Stop, Clear, conceal,
+      // pagehide) must not refill or touch the capture.
       if (
-        !(await camera.start(video, select.value, receive, (error) => {
+        !(await camera.start(video, select.value, (raw) => {
+          if (current === generation) receive(raw);
+        }, (error) => {
+          if (current !== generation) return;
           pause();
           transport.clear();
           scanProgress();
