@@ -2,6 +2,19 @@
 
 Guidelines for AI coding agents.
 
+## doggyballs PSBT QR planning branch
+
+For work on `psbt-qr-receive`, read [docs/PSBT_QR_PLAN.md](docs/PSBT_QR_PLAN.md)
+before claiming a task or editing implementation files. It records the current
+upstream baseline, existing components to reuse, exclusive file ownership,
+shared contracts, independent SeedSigner interoperability gates and appliance
+safeguards. The integration owner must reconcile newer upstream work before
+implementation; do not recreate the already-landed collector or scan panel.
+Publish only to the `fork` remote (`doggyballs/entropylab`). Do not open an
+upstream PR or deploy an appliance image without operator approval.
+
+## Upstream contribution rules
+
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. The short
   version: never generate entropy used for key material, no network egress, output stays a single
   self-contained `entropylab.html`.
