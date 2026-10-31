@@ -113,6 +113,11 @@ const CLEARING_PATHS = [
     },
   },
   {
+    ids: ["codex32-shares"],
+    why: "Codex32 MS1 shares and secrets typed by the user",
+    probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
+  },
+  {
     ids: ["journal-create-password", "journal-create-confirm", "journal-open-password", "journal-search", "journal-file"],
     why: "Journal: passwords and saved-record searches",
     probe: (id) => assert.ok(journalFields.includes(`"${id}"`), `#${id} missing from the journal field clear`),
@@ -289,6 +294,7 @@ const PUBLIC_FIELDS = {
   "vanity-prefix": "the desired address prefix — public output text, not key material",
   "vanity-start": "grind range setting",
   "vanity-workers": "worker-count setting",
+  "codex32-index": "target share index character, not key material",
 };
 
 test("the registry covers every known secret-bearing field", () => {
