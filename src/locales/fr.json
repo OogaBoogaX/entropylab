@@ -2410,5 +2410,9 @@
   "Original file": "Fichier d'origine",
   "Bitcoin header": "En-tête Bitcoin",
   "Expected initial digest": "Digest initial attendu",
-  "Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.": "Facultatif. Le fichier d'origine ou son digest attendu vérifie que cette preuve concerne ce fichier. Sans l'un ou l'autre, seul le chemin de la preuve vers l'en-tête du bloc est vérifié."
+  "Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.": "Facultatif. Le fichier d'origine ou son digest attendu vérifie que cette preuve concerne ce fichier. Sans l'un ou l'autre, seul le chemin de la preuve vers l'en-tête du bloc est vérifié.",
+  "Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.": "L'entrée sécurisée est toujours activée : certaines entrées n'ont pas pu être converties en texte. Réessayez, ou choisissez Effacer les entrées et désactiver.",
+  "The word picker could not load. Turn Secure entry off to use standard text entry.": "Le sélecteur de mots n'a pas pu être chargé. Désactivez l'entrée sécurisée pour utiliser la saisie de texte standard.",
+  "Journal cannot back up or export keys whose words were cleared by Secure entry. Enter their words again and derive their wallets, or clear those keys, then try again.": "Journal ne peut pas sauvegarder ou exporter les clés dont les mots ont été effacés par l'entrée sécurisée. Entrez à nouveau leurs mots et dérivez leurs portefeuilles, ou effacez ces clés, puis réessayez.",
+  "This key's words were cleared by Secure entry, so Journal cannot keep it. Enter its words again and derive its wallet first.": "Les mots de cette clé ont été effacés par l'entrée sécurisée, donc Journal ne peut pas la conserver. Entrez à nouveau ses mots et dérivez d'abord son portefeuille."
 }
