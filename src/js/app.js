@@ -12528,7 +12528,9 @@ async function hodlSecureEntryToggle(wanted) {
           for (const state of states) {
             // Global sync filled other fields from the same words: they go
             // too, as at Clear, so the words are left only in Secure entry.
-            if (state.globalSync) {
+            // A wallet made from a private key cannot be rebuilt from the
+            // words, so that key keeps its fields (K3.1, Kimi, Astra).
+            if (state.globalSync && state.result?.kind !== "single") {
               hodlClearGlobalSyncCopies(state);
               state.lastWord = "";
             }
@@ -16837,6 +16839,9 @@ function hodlFillLabFromKey(source) {
   let existing = labIndex >= 0 ? hodlKeys[labIndex] : hodlNewLabState();
   let lab = hodlCloneDerivedKey(source, existing);
   Object.assign(lab, { isLab: true, secureSource: false, editSourceId: hodlKeys.includes(source) ? source.id : null, name: "Key Station", result: null, importedKeyId: null, importedName: null, importedNetworkChoice: null, error: "", reveal: false, createdScript: "", createdPath: "" });
+  // The editor shows no wallet, so a cleared key's mark stays with the key:
+  // a copy here would keep refusing backups after that key is cleared.
+  delete lab.secureCleared;
   if (labIndex < 0) {
     hodlKeys.unshift(lab);
     labIndex = 0;
