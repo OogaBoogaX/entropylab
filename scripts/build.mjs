@@ -147,7 +147,7 @@ const jsMain = (await build({
   define: {
     __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false", __LN_WORKER_SOURCE__: JSON.stringify(await (await import("./ln-worker-source.mjs")).buildLnWorkerSource()),
     __QR_WORKER_SOURCE__: JSON.stringify(await (await import("./qr-worker-source.mjs")).buildQrWorkerSource()),
-    ...(preview ? { __OTS_WORKER_SOURCE__: JSON.stringify(await (await import("./ots-worker-source.mjs")).buildOtsWorkerSource()) } : {}),
+    __OTS_WORKER_SOURCE__: JSON.stringify(await (await import("./ots-worker-source.mjs")).buildOtsWorkerSource()),
     __ENTROPYLAB_PREVIEW__: preview ? "true" : "false",
   },
 })).outputFiles[0].text.split(siteLogoSpan).join(siteLogo)

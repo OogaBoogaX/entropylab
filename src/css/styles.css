@@ -2646,7 +2646,7 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
 #seed-picker-host [hidden] { display: none; }
 #seed-picker-chips, #seed-picker-matches, #seed-picker-replace-matches { flex-wrap: wrap; gap: var(--space-control); }
 #seed-picker-chips .btn, #seed-picker-matches .btn, #seed-picker-replace-matches .btn { min-height: 44px; min-width: 44px; }
-#seed-picker-entry, #seed-picker-review, #seed-picker-paste { margin-top: var(--space-component); }
+#seed-picker-entry, #seed-picker-review { margin-top: var(--space-component); }
 /* A card's closing actions are the things to press, so their labels carry the
    weight. On the row rather than on .btn, which the tabs share: a tab reads as
    a place you are, not an action you take. */
@@ -3165,6 +3165,8 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
 }
 .privacy-bar.is-revealed .privacy-bar-state { color: var(--danger-bright); }
 .privacy-bar.is-revealed input { accent-color: var(--danger-bright); }
+#secure-entry-host { margin-bottom: var(--space-component); }
+#secure-entry-host .field-note { margin-top: var(--space-control); }
 @media (prefers-reduced-motion: reduce) { .privacy-bar { transition: none; } }
 /* Narrow screens: drop the control labels so the bar stays one row. Each
    control keeps its own aria-label, so nothing is lost to assistive tech. */

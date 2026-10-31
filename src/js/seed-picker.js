@@ -6,9 +6,10 @@
 // Security contract: the picker never keeps a word string beyond the moment it
 // is shown, never speaks a word, zeroes every temporary index and entropy
 // buffer, and clears every field on conceal and destroy without ever wiping
-// the caller's entry. The one exception is an explicit paste: the pasted text
-// is a string, which the page cannot erase, and the note under the picker says
-// so. The caller destroys a picker before mounting another on the same entry.
+// the caller's entry. It takes no paste and lets nothing be copied, cut or
+// dragged out of it: its fields refuse all five, and the words it shows (match
+// buttons, the review word) are unselectable. The caller destroys a picker
+// before mounting another on the same entry.
 
 const CHIP_DOTS = "••••";
 const WORD_DOTS = "••••••";
@@ -25,9 +26,8 @@ const TEXT = {
   noMatch: "No matching word. Check the spelling or remove a letter.",
   narrow: "Type more letters to narrow the list.",
   undo: "Undo last word",
-  pasteOpen: "Paste a whole phrase…",
   reviewAll: "Review words one by one",
-  note: "Select a word number above to review or replace that word. Pasting creates a text copy in browser memory, and clearing this field does not clear your system clipboard.",
+  note: "Select a word number above to review or replace that word.",
   progress: "{count} of {total} words entered.",
   checksumOk: "Seed checksum passed. Review the word order before continuing.",
   checksumBad: "Seed checksum does not match. Check the words and their order.",
@@ -42,9 +42,6 @@ const TEXT = {
   replaced: "Word {n} replaced. Continue with word {next}.",
   prev: "Previous word",
   next: "Next word",
-  pasteLabel: "Paste the phrase",
-  pasteUse: "Use this phrase",
-  pasteFail: "This phrase does not have {total} words from the BIP39 English list. Nothing was changed.",
 };
 
 export function mountSeedPicker(host, {
@@ -57,7 +54,6 @@ export function mountSeedPicker(host, {
   translate = (text) => text,
   onChange = () => {},
   doc = document,
-  win = window,
 } = {}) {
   if (!entry || typeof entry !== "object" || entry.kind !== "seed") throw new Error("A seed picker needs a seed entry.");
   if (!Array.isArray(wordlist) || wordlist.length !== WORD_COUNT) throw new Error("A seed picker needs the 2048-word BIP39 list.");
@@ -109,7 +105,9 @@ export function mountSeedPicker(host, {
   prefixLabel.appendChild(prefixField);
   const countLine = make("p", { class: "field-note", id: "seed-picker-count", role: "status", "aria-live": "polite" });
   const narrowLine = make("p", { class: "field-note", id: "seed-picker-narrow", hidden: true, text: say(TEXT.narrow) });
-  const matches = make("div", { class: "row", id: "seed-picker-matches" });
+  // Match buttons show seed words: data-private-value makes them unselectable,
+  // as the review word is (K3.1).
+  const matches = make("div", { class: "row", id: "seed-picker-matches", "data-private-value": "" });
   entryArea.appendChild(prefixLabel);
   entryArea.appendChild(countLine);
   entryArea.appendChild(narrowLine);
@@ -131,7 +129,7 @@ export function mountSeedPicker(host, {
   replaceLabel.appendChild(replaceField);
   const replaceCount = make("p", { class: "field-note", id: "seed-picker-replace-count", role: "status", "aria-live": "polite" });
   const replaceNarrow = make("p", { class: "field-note", id: "seed-picker-replace-narrow", hidden: true, text: say(TEXT.narrow) });
-  const replaceMatches = make("div", { class: "row", id: "seed-picker-replace-matches" });
+  const replaceMatches = make("div", { class: "row", id: "seed-picker-replace-matches", "data-private-value": "" });
   const replaceButton = make("button", { type: "button", class: "btn primary", id: "seed-picker-replace", disabled: "", text: say(TEXT.replace) });
   const reviewCancel = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-cancel", text: say(TEXT.cancel) });
   const reviewPrev = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-prev", text: say(TEXT.prev) });
@@ -153,33 +151,15 @@ export function mountSeedPicker(host, {
 
   const actions = make("div", { class: "row tool-actions" });
   const undoButton = make("button", { type: "button", class: "btn secondary", id: "seed-picker-undo", text: say(TEXT.undo) });
-  const pasteOpen = make("button", { type: "button", class: "btn secondary", id: "seed-picker-paste-open", text: say(TEXT.pasteOpen) });
   const reviewAll = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-all", hidden: true, text: say(TEXT.reviewAll) });
   actions.appendChild(undoButton);
-  actions.appendChild(pasteOpen);
   actions.appendChild(reviewAll);
 
-  const paste = make("div", { id: "seed-picker-paste", hidden: true });
-  const pasteLabel = make("label", { class: "field", id: "seed-picker-paste-label" });
-  const pasteText = make("span", { id: "seed-picker-paste-text-label", text: say(TEXT.pasteLabel) });
-  const pasteField = make("textarea", { id: "seed-picker-paste-text", ...textAttributes("seed-picker-paste-error") });
-  pasteLabel.appendChild(pasteText);
-  pasteLabel.appendChild(pasteField);
-  const pasteError = make("p", { class: "field-note", id: "seed-picker-paste-error", hidden: true });
-  const pasteActions = make("div", { class: "row tool-actions" });
-  const pasteUse = make("button", { type: "button", class: "btn primary", id: "seed-picker-paste-use", text: say(TEXT.pasteUse) });
-  const pasteCancel = make("button", { type: "button", class: "btn secondary", id: "seed-picker-paste-cancel", text: say(TEXT.cancel) });
-  pasteActions.appendChild(pasteUse);
-  pasteActions.appendChild(pasteCancel);
-  paste.appendChild(pasteLabel);
-  paste.appendChild(pasteError);
-  paste.appendChild(pasteActions);
-
-  const note = make("p", { class: "field-note edge-note is-private", id: "seed-picker-note", text: say(TEXT.note) });
+  const note = make("p", { class: "field-note", id: "seed-picker-note", text: say(TEXT.note) });
   const progress = make("p", { class: "field-note", id: "seed-picker-progress", role: "status", "aria-live": "polite" });
   const caveat = make("p", { class: "field-note edge-note", id: "seed-picker-caveat", hidden: true, text: say(TEXT.caveat) });
 
-  host.replaceChildren(positionLine, helpLine, chips, entryArea, review, actions, paste, note, progress, caveat);
+  host.replaceChildren(positionLine, helpLine, chips, entryArea, review, actions, note, progress, caveat);
 
   let checksum = "none";
   let reviewing = false;
@@ -257,10 +237,9 @@ export function mountSeedPicker(host, {
     prefixField.hidden = done || reviewing;
     matches.hidden = done || reviewing;
     review.hidden = !reviewing;
-    // Review, Undo and Paste are exclusive: an edit under an open review
-    // would leave it showing a word that is no longer stored.
+    // Review and Undo are exclusive: an edit under an open review would
+    // leave it showing a word that is no longer stored.
     undoButton.hidden = entry.count === 0 || reviewing;
-    pasteOpen.hidden = reviewing;
     reviewAll.hidden = !done || reviewing;
     prefixText.textContent = say(TEXT.prefixLabel, { n: entry.count + 1 });
   };
@@ -400,7 +379,6 @@ export function mountSeedPicker(host, {
 
   const openReview = (position) => {
     if (destroyed || entry.wiped || entry.count === 0) return;
-    closePaste();
     reviewing = true;
     reviewPosition = Math.max(0, Math.min(entry.count - 1, position));
     showBox.checked = false;
@@ -482,83 +460,18 @@ export function mountSeedPicker(host, {
     if (found.length === 1) stageWord(found[0]);
   };
 
-  const openPaste = () => {
-    if (destroyed) return;
-    closeReview();
-    paste.hidden = false;
-    pasteError.hidden = true;
-    pasteError.textContent = "";
-    try { pasteField.focus(); } catch {}
+  // A word is typed or tapped, never pasted, and never leaves by the
+  // clipboard or a drag: the picker refuses all five on its text fields, and
+  // copy, cut and drag anywhere inside it.
+  const blockClipboard = (event) => {
+    event.preventDefault();
   };
-
-  const closePaste = () => {
-    pasteField.value = "";
-    pasteError.hidden = true;
-    pasteError.textContent = "";
-    paste.hidden = true;
-  };
-
-  const onPasteUse = () => {
-    if (destroyed) return;
-    const words = String(pasteField.value ?? "").trim().toLowerCase().split(/\s+/).filter((word) => word.length > 0);
-    let indices = null;
-    let ok = false;
-    try {
-      if (words.length === entry.length) {
-        indices = new Uint16Array(entry.length);
-        let valid = true;
-        for (let i = 0; i < words.length; i += 1) {
-          const index = wordlist.indexOf(words[i]);
-          if (index < 0) { valid = false; break; }
-          indices[i] = index;
-        }
-        if (valid) {
-          const before = seedIndices(entry);
-          try {
-            while (entry.count > 0) seedUndo(entry);
-            for (let i = 0; i < indices.length; i += 1) seedSet(entry, i, indices[i]);
-            ok = true;
-          } catch {
-            // Put the previous words back, so "Nothing was changed" holds.
-            try {
-              while (entry.count > 0) seedUndo(entry);
-              for (let i = 0; i < before.length; i += 1) seedSet(entry, i, before[i]);
-            } catch {}
-          } finally {
-            before.fill(0);
-          }
-        }
-      }
-    } catch {
-      ok = false;
-    } finally {
-      try { indices?.fill(0); } catch {}
-      pasteField.value = "";
-    }
-    if (!ok) {
-      pasteError.textContent = say(TEXT.pasteFail, { total: entry.length });
-      pasteError.hidden = false;
-      return;
-    }
-    pasteError.hidden = true;
-    pasteError.textContent = "";
-    paste.hidden = true;
-    render();
-    if (entry.count === entry.length) {
-      renderProgress();
-    } else {
-      progress.setAttribute("data-picker-state", "incomplete");
-      progress.textContent = say(TEXT.progress, { count: entry.count, total: entry.length });
-    }
-    notify();
-    focusPrefix();
-  };
+  const HOST_BLOCKED = ["copy", "cut", "dragstart"];
 
   const onConceal = () => {
     showBox.checked = false;
     renderReviewWord();
     prefixField.value = "";
-    pasteField.value = "";
     matches.replaceChildren();
     countLine.textContent = "";
     narrowLine.hidden = true;
@@ -574,11 +487,13 @@ export function mountSeedPicker(host, {
   prefixField.addEventListener("keydown", onPrefixKeydown);
   replaceField.addEventListener("input", onReplaceInput);
   replaceField.addEventListener("keydown", onReplaceKeydown);
+  for (const type of ["paste", "copy", "cut", "drop", "dragstart"]) {
+    prefixField.addEventListener(type, blockClipboard);
+    replaceField.addEventListener(type, blockClipboard);
+  }
+  for (const type of HOST_BLOCKED) host.addEventListener(type, blockClipboard);
   showBox.addEventListener("change", onShowToggle);
   undoButton.addEventListener("click", onUndo);
-  pasteOpen.addEventListener("click", openPaste);
-  pasteUse.addEventListener("click", onPasteUse);
-  pasteCancel.addEventListener("click", closePaste);
   reviewAll.addEventListener("click", () => openReview(0));
   reviewCancel.addEventListener("click", closeReview);
   reviewPrev.addEventListener("click", () => moveReview(-1));
@@ -594,6 +509,10 @@ export function mountSeedPicker(host, {
     destroyed = true;
     try { doc.removeEventListener("hodl:conceal", onConceal); } catch {}
     try { doc.removeEventListener("visibilitychange", onVisibility); } catch {}
+    // The host is the caller's and outlives the picker.
+    for (const type of HOST_BLOCKED) {
+      try { host.removeEventListener(type, blockClipboard); } catch {}
+    }
     showBox.checked = false;
     try { renderReviewWord(); } catch {}
     // A unique match button's text is the word itself.
@@ -602,7 +521,6 @@ export function mountSeedPicker(host, {
     stagedIndex = null;
     prefixField.value = "";
     replaceField.value = "";
-    pasteField.value = "";
     try { host.replaceChildren(); } catch {}
   };
 
