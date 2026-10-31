@@ -6513,7 +6513,7 @@ function hodlRenderSecureEntryControl() {
     state: on ? hodlT("Secure entry: on") : hodlT("Secure entry"),
     hint: on ? hodlT("Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.") : hodlT("Off — standard text entry."),
     className: "secure-entry-bar",
-  }) + (on ? (!hodlSecureSeedActive() ? `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>` : !hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey]) ? `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>` : "") : "");
+  }) + (on ? (!hodlSecureSeedActive() ? `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>` : !hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey]) ? `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>` : "") + (hodlSecureEntryConvertFailed ? `<p class="field-note edge-note is-private" id="secure-entry-convert-failed" role="alert">${hodlT("Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.")}</p>` : "") : "");
   let checkbox = document.getElementById("secure-entry-switch");
   if (checkbox) checkbox.onchange = () => hodlSecureEntryToggle(checkbox.checked);
 }
@@ -7537,14 +7537,28 @@ function hodlMountSeedPicker() {
   if (!host || !hodlSecureSeedActive()) return;
   if (!hodlSeedPickerImport) hodlSeedPickerImport = import("./seed-picker.js").catch(() => null);
   hodlSeedPickerImport.then((module) => {
-    if (!module || hodlSeedPicker || !host.isConnected || host.childNodes.length || !hodlSecureSeedActive()) return;
+    if (!module) {
+      hodlSeedPickerImport = null;
+      if (host.isConnected && host.childNodes.length === 0 && hodlSecureSeedActive()) {
+        host.innerHTML = `<p class="field-note edge-note is-private" id="seed-picker-load-error" role="alert">${hodlT("The word picker could not load. Turn Secure entry off to use standard text entry.")}</p>`;
+      }
+      return;
+    }
+    if (hodlSeedPicker || !host.isConnected || host.childNodes.length || !hodlSecureSeedActive()) return;
     let entry = hodlSecureSeedEntry(true);
     if (!entry) return;
-    hodlSeedPicker = module.mountSeedPicker(host, {
-      entry, wordlist: hodlBip39Wordlist, seedSet, seedUndo, seedIndices,
-      entropyFromWordIndices: hodlEntropyFromWordIndices, translate: hodlTText,
-      onChange: hodlSecureSeedChanged,
-    });
+    try {
+      hodlSeedPicker = module.mountSeedPicker(host, {
+        entry, wordlist: hodlBip39Wordlist, seedSet, seedUndo, seedIndices,
+        entropyFromWordIndices: hodlEntropyFromWordIndices, translate: hodlTText,
+        onChange: hodlSecureSeedChanged,
+      });
+    } catch {
+      if (host.isConnected && hodlSecureSeedActive()) {
+        host.innerHTML = "";
+        host.innerHTML = `<p class="field-note edge-note is-private" id="seed-picker-load-error" role="alert">${hodlT("The word picker could not load. Turn Secure entry off to use standard text entry.")}</p>`;
+      }
+    }
   }).catch(() => {});
 }
 function hodlSecureSeedChanged() {
@@ -12440,7 +12454,7 @@ var PREVIEW = typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREV
 // Secure entry (secure-entry.js): one session-wide switch, never persisted,
 // off on every load. Its entries live in hodlSecureSession, keyed by key id.
 var hodlSecureEntryOn = false, hodlSecureSession = createSecureSession();
-var hodlSecureEntryConfirm = null, hodlSecureEntryBusy = false;
+var hodlSecureEntryConfirm = null, hodlSecureEntryBusy = false, hodlSecureEntryConvertFailed = false;
 async function hodlSecureEntryDialog() {
   if (!hodlSecureEntryConfirm) hodlSecureEntryConfirm = (await import("./secure-entry-confirm.js")).initSecureEntryConfirm();
   return hodlSecureEntryConfirm;
@@ -12451,14 +12465,19 @@ async function hodlSecureEntryToggle(wanted) {
     return;
   }
   hodlSecureEntryBusy = true;
+  hodlSecureEntryConvertFailed = false;
   let before = hodlSecureEntryOn, plan = null, committed = false;
+  let convertChosen = false;
   try {
     hodlRenderSecureEntryControl();
     hodlCaptureKey();
     if (wanted && !hodlSecureEntryOn) {
       let keys = [], names = [], states = [];
       for (const state of hodlKeys) {
-        if (hodlNormalizeSeedMethod(state.seedMethod) !== "words") continue;
+        // A key in another mode keeps any old seed text as text: secure entry
+        // converts only what the Seed form shows. hodlCaptureKey() has already
+        // saved the active key's mode at the top of the toggle.
+        if (state.mode !== "seed" || hodlNormalizeSeedMethod(state.seedMethod) !== "words") continue;
         let phrase = String(state.fields?.seed ?? "").trim();
         // An extended key in the seed field is not words: it stays text.
         // A phrase longer than the key's length cannot be its words (the text
@@ -12549,6 +12568,7 @@ async function hodlSecureEntryToggle(wanted) {
         // Cancel create no text copy of the words. The dialog needs nothing
         // from the plan, and planning after it reads the session as it is now.
         let choice = await (await hodlSecureEntryDialog()).open({ mode: "off" });
+        if (choice === "convert") convertChosen = true;
         if (choice === "convert") plan = planTurnOff(hodlSecureSession, { seed: serializer });
         if (choice === "convert" && plan.ok) {
           let texts = [];
@@ -12570,6 +12590,7 @@ async function hodlSecureEntryToggle(wanted) {
         } else {
           if (plan) discardPlan(plan);
           plan = null;
+          hodlSecureEntryConvertFailed = convertChosen;
           hodlRenderSecureEntryControl();
           return;
         }
@@ -12586,6 +12607,7 @@ async function hodlSecureEntryToggle(wanted) {
   } catch (error) {
     if (plan) discardPlan(plan);
     if (!committed) hodlSecureEntryOn = before;
+    if (convertChosen && !committed) hodlSecureEntryConvertFailed = true;
     hodlRenderSecureEntryControl();
   } finally {
     hodlSecureEntryBusy = false;
@@ -12601,6 +12623,7 @@ function hodlSecureEntryAvailable() {
 // pagehide) both run it.
 function hodlSecureEntryEnd() {
   hodlSecureEntryOn = false;
+  hodlSecureEntryConvertFailed = false;
   try { sessionWipe(hodlSecureSession); } catch {}
   try { hodlRenderSecureEntryControl(); } catch {}
 }
