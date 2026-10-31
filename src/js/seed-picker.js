@@ -7,8 +7,9 @@
 // is shown, never speaks a word, zeroes every temporary index and entropy
 // buffer, and clears every field on conceal and destroy without ever wiping
 // the caller's entry. It takes no paste and lets nothing be copied, cut or
-// dragged out of its fields. The caller destroys a picker before mounting
-// another on the same entry.
+// dragged out of it: its fields refuse all five, and the words it shows (match
+// buttons, the review word) are unselectable. The caller destroys a picker
+// before mounting another on the same entry.
 
 const CHIP_DOTS = "••••";
 const WORD_DOTS = "••••••";
@@ -104,7 +105,9 @@ export function mountSeedPicker(host, {
   prefixLabel.appendChild(prefixField);
   const countLine = make("p", { class: "field-note", id: "seed-picker-count", role: "status", "aria-live": "polite" });
   const narrowLine = make("p", { class: "field-note", id: "seed-picker-narrow", hidden: true, text: say(TEXT.narrow) });
-  const matches = make("div", { class: "row", id: "seed-picker-matches" });
+  // Match buttons show seed words: data-private-value makes them unselectable,
+  // as the review word is (K3.1).
+  const matches = make("div", { class: "row", id: "seed-picker-matches", "data-private-value": "" });
   entryArea.appendChild(prefixLabel);
   entryArea.appendChild(countLine);
   entryArea.appendChild(narrowLine);
@@ -126,7 +129,7 @@ export function mountSeedPicker(host, {
   replaceLabel.appendChild(replaceField);
   const replaceCount = make("p", { class: "field-note", id: "seed-picker-replace-count", role: "status", "aria-live": "polite" });
   const replaceNarrow = make("p", { class: "field-note", id: "seed-picker-replace-narrow", hidden: true, text: say(TEXT.narrow) });
-  const replaceMatches = make("div", { class: "row", id: "seed-picker-replace-matches" });
+  const replaceMatches = make("div", { class: "row", id: "seed-picker-replace-matches", "data-private-value": "" });
   const replaceButton = make("button", { type: "button", class: "btn primary", id: "seed-picker-replace", disabled: "", text: say(TEXT.replace) });
   const reviewCancel = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-cancel", text: say(TEXT.cancel) });
   const reviewPrev = make("button", { type: "button", class: "btn secondary", id: "seed-picker-review-prev", text: say(TEXT.prev) });
@@ -458,10 +461,12 @@ export function mountSeedPicker(host, {
   };
 
   // A word is typed or tapped, never pasted, and never leaves by the
-  // clipboard or a drag: the picker refuses all five on its text fields.
+  // clipboard or a drag: the picker refuses all five on its text fields, and
+  // copy, cut and drag anywhere inside it.
   const blockClipboard = (event) => {
     event.preventDefault();
   };
+  const HOST_BLOCKED = ["copy", "cut", "dragstart"];
 
   const onConceal = () => {
     showBox.checked = false;
@@ -486,6 +491,7 @@ export function mountSeedPicker(host, {
     prefixField.addEventListener(type, blockClipboard);
     replaceField.addEventListener(type, blockClipboard);
   }
+  for (const type of HOST_BLOCKED) host.addEventListener(type, blockClipboard);
   showBox.addEventListener("change", onShowToggle);
   undoButton.addEventListener("click", onUndo);
   reviewAll.addEventListener("click", () => openReview(0));
@@ -503,6 +509,10 @@ export function mountSeedPicker(host, {
     destroyed = true;
     try { doc.removeEventListener("hodl:conceal", onConceal); } catch {}
     try { doc.removeEventListener("visibilitychange", onVisibility); } catch {}
+    // The host is the caller's and outlives the picker.
+    for (const type of HOST_BLOCKED) {
+      try { host.removeEventListener(type, blockClipboard); } catch {}
+    }
     showBox.checked = false;
     try { renderReviewWord(); } catch {}
     // A unique match button's text is the word itself.

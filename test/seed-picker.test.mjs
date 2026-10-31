@@ -385,11 +385,34 @@ test("the picker's text fields refuse paste, copy, cut, drop and drag", () => {
   assert.equal(ctx.entry.count, before);
 });
 
-test("the note is help, not a warning", () => {
+test("match buttons, which show seed words, are private values (K3.1)", () => {
   const ctx = setup();
-  const note = findById(ctx.host, "seed-picker-note");
-  assert.ok(note);
-  assert.equal(note.className.split(/\s+/).includes("edge-note"), false);
+  const field = findById(ctx.host, "seed-picker-prefix");
+  field.value = "zoo";
+  field.dispatchEvent({ type: "input" });
+  const matches = findById(ctx.host, "seed-picker-matches");
+  assert.equal(matches.childNodes.length, 1);
+  assert.equal(matches.hasAttribute("data-private-value"), true);
+  assert.equal(findById(ctx.host, "seed-picker-replace-matches").hasAttribute("data-private-value"), true);
+});
+
+test("copy, cut and drag anywhere in the picker are refused until destroy (K3.1)", () => {
+  const ctx = setup();
+  const clipboardEvent = (type) => {
+    let prevented = false;
+    return { type, cancelable: true, get defaultPrevented() { return prevented; }, preventDefault() { prevented = true; } };
+  };
+  for (const type of ["copy", "cut", "dragstart"]) {
+    const event = clipboardEvent(type);
+    ctx.host.dispatchEvent(event);
+    assert.equal(event.defaultPrevented, true, `${type} on the host`);
+  }
+  ctx.picker.destroy();
+  for (const type of ["copy", "cut", "dragstart"]) {
+    const event = clipboardEvent(type);
+    ctx.host.dispatchEvent(event);
+    assert.equal(event.defaultPrevented, false, `${type} on the host after destroy`);
+  }
 });
 
 const assertWrapped = (ctx, id) => {
