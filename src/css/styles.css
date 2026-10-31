@@ -564,7 +564,6 @@ textarea { display: block; min-height: 96px; letter-spacing: 0.08em; }
 .passphrase-field { margin-top: var(--space-component); font-size: var(--text-field); font-weight: 600; }
 .passphrase-keyboard-tools { display: flex; align-items: center; gap: var(--space-control); margin-top: var(--space-control); }
 .passphrase-keyboard-tools[hidden] { display: none; }
-[data-app-paste-row][hidden] { display: none; }
 .passphrase-keyboard-tools > .switch-row { flex: 1 1 auto; }
 .passphrase-bip39-options { display: grid; flex: 1 1 auto; gap: var(--space-control); }
 /* The same borderless switch the sync and calculations toggles use: these read

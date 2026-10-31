@@ -1,5 +1,5 @@
 // EntropyLab's paste control for its own clipboard: a button below each secret
-// field that writes the value copied within EntropyLab back into the field.
+// field that writes the value copied to EntropyLab's clipboard back into the field.
 // It never reads the system clipboard (no navigator.clipboard.readText, no
 // paste event): the value comes from app-clipboard.js alone.
 import { appClipboardHas } from "./app-clipboard.js";
@@ -12,7 +12,9 @@ export const APP_PASTE_TARGETS = [
 
 const byId = (root, id) => (typeof root?.getElementById === "function" ? root : document).getElementById(id);
 
-export const decorateAppPaste = (root = document, { pasteIcon = () => "", label = "Paste from EntropyLab" } = {}) => {
+// Each control is named for its field (several can share a screen) and stays
+// in place, disabled while nothing is copied, so the layout never jumps.
+export const decorateAppPaste = (root = document, { pasteIcon = () => "", labelFor = () => "Paste" } = {}) => {
   const doc = typeof root?.getElementById === "function" ? root : document;
   for (const id of APP_PASTE_TARGETS) {
     const field = byId(root, id);
@@ -25,18 +27,19 @@ export const decorateAppPaste = (root = document, { pasteIcon = () => "", label 
     button.setAttribute("class", "copy-button boxed-copy-button");
     button.setAttribute("data-app-paste", id);
     button.setAttribute("aria-controls", id);
+    const label = labelFor(id);
     button.setAttribute("aria-label", label);
     button.setAttribute("title", label);
     button.innerHTML = pasteIcon();
+    button.disabled = !appClipboardHas();
     row.appendChild(button);
-    row.hidden = !appClipboardHas();
     const anchor = field.closest("label") || field.closest(".dice-input-shell") || field;
     anchor.after(row);
   }
 };
 
 export const syncAppPaste = (doc = document) => {
-  for (const row of doc.querySelectorAll("[data-app-paste-row]")) row.hidden = !appClipboardHas();
+  for (const button of doc.querySelectorAll("button[data-app-paste]")) button.disabled = !appClipboardHas();
 };
 
 export const initAppPaste = ({ fill, doc = document } = {}) => {

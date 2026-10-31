@@ -113,3 +113,19 @@ test("copying anything to the system clipboard ends what was copied within Entro
     appClipboardClear();
   }
 });
+
+test("lone surrogates are refused even where String.prototype.isWellFormed is missing (GLM, MiniMax)", () => {
+  const high = String.fromCharCode(0xd83d), low = String.fromCharCode(0xde00);
+  const saved = Object.getOwnPropertyDescriptor(String.prototype, "isWellFormed");
+  delete String.prototype.isWellFormed;
+  try {
+    appClipboardClear();
+    for (const text of [`abc${high}`, `${high}abc`, `${low}abc`, `a${low}${high}b`]) assert.equal(appClipboardPut(text), false, JSON.stringify(text));
+    assert.equal(appClipboardHas(), false);
+    assert.equal(appClipboardPut(`pass${high}${low}word`), true, "a surrogate pair is well formed");
+    assert.equal(appClipboardText(), `pass${high}${low}word`);
+  } finally {
+    if (saved) Object.defineProperty(String.prototype, "isWellFormed", saved);
+    appClipboardClear();
+  }
+});

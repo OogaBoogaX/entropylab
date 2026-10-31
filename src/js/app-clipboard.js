@@ -9,11 +9,24 @@ const announce = () => {
   if (typeof document !== "undefined" && typeof document?.dispatchEvent === "function") document.dispatchEvent(new Event("hodl:app-clipboard"));
 };
 
+// A lone surrogate has no UTF-8 form (TextEncoder would swap in U+FFFD), so
+// such text is refused rather than held as a different value. Checked by hand:
+// older engines lack String.prototype.isWellFormed.
+const wellFormed = (text) => {
+  for (let i = 0; i < text.length; i += 1) {
+    const unit = text.charCodeAt(i);
+    if (unit >= 0xdc00 && unit <= 0xdfff) return false;
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      i += 1;
+    }
+  }
+  return true;
+};
+
 export const appClipboardPut = (text) => {
-  if (typeof text !== "string" || !text) return false;
-  // A lone surrogate has no UTF-8 form (TextEncoder would swap in U+FFFD):
-  // refuse the copy rather than hold a different value.
-  if (typeof text.isWellFormed === "function" && !text.isWellFormed()) return false;
+  if (typeof text !== "string" || !text || !wellFormed(text)) return false;
   if (held) held.fill(0);
   held = new TextEncoder().encode(text);
   announce();
@@ -26,7 +39,7 @@ export const appClipboardHas = () => held !== null;
 export const appClipboardText = () => (held ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(held) : "");
 
 // The live buffer. Callers must copy it, never keep it: the next put or clear
-// zeroes it in place (a vault passphrase field will copy it in a later part).
+// zeroes it in place (a vault passphrase field's paste copies it).
 export const appClipboardBytes = () => held;
 
 export const appClipboardClear = () => {

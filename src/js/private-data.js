@@ -34,7 +34,7 @@ export function initPrivateCopy({ copyIcon = () => "", copiedIcon = () => "", on
     complete?.(copied);
     if (!copied) return;
     if (!isReadoutShown(button) || !isReadoutShown(value)) return;
-    showCopiedIcon(button, { copyIcon: copyIcon(), copiedIcon: copiedIcon(), label: hodlTText(button.dataset.copyLabel || "Copy"), copiedLabel: hodlTText("Copied within EntropyLab") });
+    showCopiedIcon(button, { copyIcon: copyIcon(), copiedIcon: copiedIcon(), label: hodlTText(button.dataset.copyLabel || "Copy"), copiedLabel: hodlTText("Copied to EntropyLab's clipboard") });
   };
   document.addEventListener("click", onClick);
   return () => document.removeEventListener("click", onClick);
