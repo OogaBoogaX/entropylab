@@ -12624,14 +12624,6 @@ function hodlSecureEntryAvailable() {
 // pagehide) both run it.
 function hodlSecureEntryEnd() {
   hodlSecureEntryOn = false;
-  // A page restored from the back/forward cache keeps its key tabs: a key that
-  // shows its wallet but held its words only in the session would back up
-  // with no words once the session is wiped, so it is marked first (GLM).
-  try {
-    for (const state of hodlKeys) {
-      if (state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
-    }
-  } catch {}
   try { sessionWipe(hodlSecureSession); } catch {}
   try { hodlRenderSecureEntryControl(); } catch {}
 }
