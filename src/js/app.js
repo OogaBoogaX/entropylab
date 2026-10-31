@@ -154,8 +154,9 @@ import { publicFieldHtml as hodlPublicFieldMarkup, publicValueHtml as hodlPublic
 import { bip47AccountNode as hodlBip47AccountNode, bip47AccountPath as hodlBip47AccountPath, bip47NotificationAddress as hodlBip47NotificationAddress, decodePaymentCode as hodlBip47DecodePaymentCode, encodePaymentCode as hodlBip47EncodePaymentCode, Bip47Error as hodlBip47Error, bip47PairRows as hodlBip47PairRows, bip47ReceiveRow as hodlBip47ReceiveRow, bip47DecodeNotificationTx as hodlBip47DecodeNotificationTx, hexToBytes as hodlBip47HexToBytes } from "./bip47.js";
 import { bip47OwnHtml as hodlBip47OwnHtml, bip47ContactHtml as hodlBip47ContactHtml, bip47ErrorHtml as hodlBip47ErrorHtml, bip47RowsHtml as hodlBip47RowsHtml, bip47NotifyInputsHtml as hodlBip47NotifyInputsHtml, bip47NotifyHtml as hodlBip47NotifyHtml, bip47NotifyErrorHtml as hodlBip47NotifyErrorHtml } from "./bip47-ui.js";
 import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
+import { parsePrivateKeyBytes, KeyBytesError } from "./key-bytes.js";
 import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-session.js";
-import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedSet, seedIndices, seedUndo, planTurnOn, commitTurnOn, planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS as hodlSecureSupported } from "./secure-entry.js";
+import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn, planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS as hodlSecureSupported } from "./secure-entry.js";
 import { initTextServiceOptOuts, initTranslationWarning } from "./text-services.js";
 import { initSecurityLog } from "./security-log.js";
 import { initConcealOnLeave } from "./conceal-on-leave.js";
@@ -749,17 +750,20 @@ function hodlSingleKeyWallet(e, t, r, trimBrainWallet = false) {
     if (!/^[0-9a-fA-F]{64}$/.test(E)) throw hodlError("Enter a WIF key (5/K/L…), a 64-character hex private key, or a Casascius mini key (S…).");
     i = hodlHex.decode(E.toLowerCase()), n.push(hodlNote("Decoded a 32-byte hex private key."));
   }
+  return hodlSingleKeyWalletFromKey(i, c, n, o, s === null ? null : new TextEncoder().encode(s), source, compressed);
+}
+
+function hodlSingleKeyWalletFromKey(i, network, notes, warnings, minikey, source, compressed) {
   hodlAssertPrivateKey(i);
-  let f = hodlSecp256k1.getPublicKey(i, true), d = hodlSecp256k1.getPublicKey(i, false), l = addressFor("p2pkh", d, c), u = addressFor("p2pkh", f, c), p = addressFor("p2sh-p2wpkh", f, c), b = addressFor("p2wpkh", f, c), w = addressFor("p2tr", f, c);
+  let f = hodlSecp256k1.getPublicKey(i, true), d = hodlSecp256k1.getPublicKey(i, false), l = addressFor("p2pkh", d, network), u = addressFor("p2pkh", f, network), p = addressFor("p2sh-p2wpkh", f, network), b = addressFor("p2wpkh", f, network), w = addressFor("p2tr", f, network);
   // The result keeps its own copy of the key as bytes that can be zeroed,
   // never its WIFs or hex (hodlSingleWif, hodlSinglePrivateHex; #546 B2). The
   // derivation records it with its row keys, so one that never commits zeroes it.
   let privateKey = Uint8Array.from(i);
   hodlActiveDerivation?.rowKeys?.push(privateKey);
   // A typed mini key is kept as its bytes, recorded the same way.
-  let minikey = s === null ? null : new TextEncoder().encode(s);
   if (minikey) hodlActiveDerivation?.rowKeys?.push(minikey);
-  let wallet = { kind: "single", network: c, warnings: o, notes: n, privateKey, pubkeyCompressed: hodlHex.encode(f), pubkeyUncompressed: hodlHex.encode(d), p2pkhUncompressed: l, p2pkhCompressed: u, p2shP2wpkh: p, p2wpkh: b, p2tr: w, minikey, source, compressed };
+  let wallet = { kind: "single", network, warnings, notes, privateKey, pubkeyCompressed: hodlHex.encode(f), pubkeyUncompressed: hodlHex.encode(d), p2pkhUncompressed: l, p2pkhCompressed: u, p2shP2wpkh: p, p2wpkh: b, p2tr: w, minikey, source, compressed };
   i.fill(0); // the decoded private key bytes; the result keeps its own copy
   return wallet;
 }
@@ -6764,9 +6768,9 @@ function hodlUpdateSeedLengthControl() {
     hodlSeedLengthSelectEl.value = String(config.words);
     changed = true;
   }
-  // Locked while the key holds secure words, in any method: a length changed
-  // under Word numbers or another mode would no longer match the entry.
-  let locked = hodlSecureEntryOn && hodlSecureEntryHasData(hodlSecureKeyOf(hodlKeys[hodlActiveKey]));
+  // Locked while the key holds secure seed words: a length changed under Word
+  // numbers or another mode would no longer match the entry.
+  let locked = hodlSecureEntryOn && hodlSecureSeedHasWords(hodlSecureKeyOf(hodlKeys[hodlActiveKey]));
   let lockNote = locked ? " " + hodlTText("To change the length, undo or clear the words entered so far.") : "";
   for (const option of hodlSeedLengthSelectEl.options) {
     let disabled = locked && option.value !== String(config.words);
@@ -6810,8 +6814,8 @@ function hodlSetSeedLength(words) {
   let config = hodlSeedLengths[Number(words)];
   if (!config) return;
   // The lock is enforced here, not only in the dropdown: a key holding secure
-  // words keeps the length its entry was made for.
-  if (config.words !== hodlTargetWordCount && hodlSecureEntryOn && hodlSecureEntryHasData(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))) {
+  // seed words keeps the length its entry was made for.
+  if (config.words !== hodlTargetWordCount && hodlSecureEntryOn && hodlSecureSeedHasWords(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))) {
     hodlUpdateSeedLengthControl();
     return;
   }
@@ -7242,7 +7246,7 @@ function hodlRenderKeyForm() {
       update();
       // Emptied while secure entry is on: the next words go to the picker.
       let state = hodlKeys[hodlActiveKey];
-      if (hodlSecureSeedActive() && !input.value.trim() && !hodlSecureEntryHasData(hodlSecureKeyOf(state))) {
+      if (hodlSecureSeedActive() && !input.value.trim() && !hodlSecureSeedHasWords(hodlSecureKeyOf(state))) {
         if (state) state.fields.seed = "";
         hodlLastWordCache.clear();
         hodlSetMode(hodlKeyMode);
@@ -7727,6 +7731,7 @@ function hodlCanDeriveCurrentKey() {
       }
       return hodlValidateTargetMnemonic(value, hodlTargetWordCount).ok;
     }
+    if (hodlKeyMode === "key" && hodlSecureKeyApplies()) return hodlSecureKeyReady(derivationPlan?.network ?? hodlSelectedNetwork(document.getElementById("network")));
     if (hodlKeyMode === "key" && hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value, document.getElementById("key")?.value || "") === "brain") {
       if (!hodlBrainAcked()) return false;
       if (hodlBrainWalletOutput() === "hd") return hodlBrainLabEntropy(hodlBrainWalletText(document.getElementById("key")?.value)).ok;
@@ -8146,6 +8151,11 @@ async function hodlCalculateKey(progress, action = "derive", options = {}) {
           result = await hodlMnemonicWalletWithProgress(validation.words.join(" "), passphrase, chain, count, void 0, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
         }
       }
+    } else if (hodlKeyMode === "key" && hodlSecureKeyApplies()) {
+      // Secure entry: the key is bytes in the session, never text.
+      progress.setTotal(1);
+      result = hodlSecureKeyWallet(chain);
+      progress.step();
     } else {
       let value = document.getElementById("key").value, kind = hodlNormalizePrivateKeyKind(document.querySelector("input[name=kk]:checked")?.value, value);
       if (kind === "brain" && !hodlBrainAcked()) throw hodlError("Acknowledge the lab warning before deriving.");
@@ -12658,16 +12668,33 @@ function hodlSecureSeedReady() {
   indices.fill(0);
   return true;
 }
-// True when the key holds any securely entered word. Only seeds can be entered
-// securely so far; later methods extend this. A read that fails counts as
-// holding words, so the callers that guard against losing them stay closed.
-function hodlSecureEntryHasData(keyId) {
+// True when the key holds securely entered seed words (routing: the seed path,
+// the picker, the length lock). A read that fails counts as holding words, so
+// the callers that guard against losing them stay closed.
+function hodlSecureSeedHasWords(keyId) {
   if (keyId == null) return false;
   try {
     return (sessionGet(hodlSecureSession, keyId, "seed")?.count ?? 0) > 0;
   } catch {
     return true;
   }
+}
+
+// True when the key's private-key vault holds anything (routing: the key path).
+function hodlSecureKeyHasData(keyId) {
+  if (keyId == null) return false;
+  try {
+    return (sessionGet(hodlSecureSession, keyId, "key")?.vault?.length ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
+
+function hodlSecureEntryHasData(keyId) {
+  if (keyId == null) return false;
+  // Any method: the protective callers (backup, detach, turn-off, Review,
+  // secureSource) must see secure data of either kind.
+  return hodlSecureSeedHasWords(keyId) || hodlSecureKeyHasData(keyId);
 }
 // Secure entry decides a seed key's words only when they were entered with it:
 // a key holding secure words, or one with nothing typed yet. A seed that came
@@ -12676,14 +12703,132 @@ function hodlSecureEntryHasData(keyId) {
 function hodlSecureSeedApplies() {
   if (!hodlSecureSeedActive()) return false;
   let state = hodlKeys[hodlActiveKey];
-  if (hodlSecureEntryHasData(hodlSecureKeyOf(state))) return true;
+  if (hodlSecureSeedHasWords(hodlSecureKeyOf(state))) return true;
   let typed = document.getElementById("seed")?.value ?? state?.fields?.seed ?? "";
   return !String(typed).trim();
+}
+
+// The selected private-key kind, read from the picker only: never the key text.
+function hodlSecureKeyKind() {
+  return hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value);
+}
+
+// Secure entry covers private keys except brain wallets, which stay text.
+function hodlSecureKeyActive() {
+  return hodlSecureEntryOn && hodlSecureSupported.key === true && hodlKeyMode === "key" && hodlSecureKeyKind() !== "brain";
+}
+
+// The active key's vault entry, created on demand and never replaced.
+function hodlSecureKeyEntry(create = false) {
+  let state = hodlKeys[hodlActiveKey];
+  if (!hodlSecureKeyActive()) return null;
+  let key = hodlSecureKeyOf(state, create);
+  if (key == null) return null;
+  let entry = sessionGet(hodlSecureSession, key, "key");
+  if (create && !entry) {
+    entry = keyEntry();
+    sessionSet(hodlSecureSession, key, "key", entry);
+  }
+  return entry;
+}
+
+// Secure entry applies unless the key holds secure data or text is typed.
+function hodlSecureKeyApplies() {
+  if (!hodlSecureKeyActive()) return false;
+  let state = hodlKeys[hodlActiveKey];
+  if (hodlSecureKeyHasData(hodlSecureKeyOf(state))) return true;
+  // The vault field (P3b-2) is not #key, so #key here is only ever the
+  // standard text field.
+  let typed = document.getElementById("key")?.value ?? (state?.fields ? hodlPrivateKeyValues(state.fields)[hodlSecureKeyKind()] : "") ?? "";
+  return !String(typed).trim();
+}
+
+// The vault's private key, parsed from bytes and checked exactly as the text
+// path checks it. The caller owns and zeroes the returned arrays.
+function hodlSecureKeyParsed(network) {
+  let entry = hodlSecureKeyEntry();
+  if (!entry || !entry.vault || entry.vault.length === 0) throw hodlError("Enter a private key.");
+  let kind = hodlSecureKeyKind();
+  let bytes = entry.vault.bytes();
+  let parsed = null;
+  try {
+    try {
+      parsed = parsePrivateKeyBytes(bytes, { kind });
+    } catch (error) {
+      if (!(error instanceof KeyBytesError)) throw error;
+      if (error.code === "EMPTY") throw hodlError("Enter a private key.");
+      if (kind === "hex-key") throw hodlError("Enter exactly 64 hexadecimal characters (0–9 and a–f).");
+      if (kind === "minikey") {
+        // The shape half of hodlDecodeMiniPrivateKey, on the same bytes: the
+        // hash half is what parsePrivateKeyBytes already checked.
+        let start = 0, end = bytes.length;
+        const space = (byte) => byte === 0x20 || (byte >= 0x09 && byte <= 0x0d);
+        while (start < end && space(bytes[start])) start++;
+        while (end > start && space(bytes[end - 1])) end--;
+        const length = end - start;
+        let shape = length === 22 || length === 26 || length === 30;
+        if (shape && bytes[start] !== 0x53) shape = false;
+        if (shape) {
+          for (let i = start; i < end; i++) {
+            const byte = bytes[i];
+            if (!(byte >= 0x31 && byte <= 0x39 || byte >= 0x41 && byte <= 0x48 || byte >= 0x4a && byte <= 0x4e || byte >= 0x50 && byte <= 0x5a || byte >= 0x61 && byte <= 0x6b || byte >= 0x6d && byte <= 0x7a)) { shape = false; break; }
+          }
+        }
+        if (!shape) throw hodlError("Mini keys must start with S and contain 22, 26, or 30 Bitcoin Base58 characters.");
+        throw hodlError("Not a valid Casascius mini private key.");
+      }
+      throw hodlError("Enter a valid {network} WIF private key ({hint}).", { network, hint: hodlNetworkFamily(network) === "testnet" ? "9\u2026 or c\u2026" : "5\u2026, K\u2026, or L\u2026" });
+    }
+    // The kind must match what was parsed, as on the text path.
+    if (kind === "hex-key" && parsed.source !== "hex") throw hodlError("Enter exactly 64 hexadecimal characters (0–9 and a–f).");
+    if (kind === "wif" && parsed.source !== "wif") throw hodlError("Enter a valid {network} WIF private key ({hint}).", { network, hint: hodlNetworkFamily(network) === "testnet" ? "9\u2026 or c\u2026" : "5\u2026, K\u2026, or L\u2026" });
+    if (parsed.source === "wif" && parsed.network !== hodlNetworkFamily(network)) throw hodlError("This WIF is for {have}; Network is set to {want}.", { have: parsed.network, want: network });
+    hodlAssertPrivateKey(parsed.priv);
+    return parsed;
+  } catch (error) {
+    if (parsed) {
+      parsed.priv?.fill(0);
+      parsed.minikey?.fill(0);
+    }
+    throw error;
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+// True when the vault holds a private key the derive path accepts.
+function hodlSecureKeyReady(network) {
+  try {
+    let parsed = hodlSecureKeyParsed(network);
+    parsed.priv?.fill(0);
+    parsed.minikey?.fill(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The wallet for the vault's private key, built exactly as the text path
+// builds it. The wallet keeps its own copy of the key and mini-key bytes.
+function hodlSecureKeyWallet(network) {
+  let parsed = hodlSecureKeyParsed(network);
+  let notes = [], warnings = [];
+  if (parsed.source === "minikey") notes.push(hodlNote("Casascius mini private key decoded via SHA-256."));
+  else if (parsed.source === "wif") notes.push(hodlNote(parsed.compressed ? "Decoded a compressed WIF private key (starts with K or L on mainnet)." : "Decoded an uncompressed WIF private key (starts with 5 on mainnet)."));
+  else notes.push(hodlNote("Decoded a 32-byte hex private key."));
+  try {
+    return hodlSingleKeyWalletFromKey(parsed.priv, network, notes, warnings, parsed.minikey, parsed.source, parsed.compressed);
+  } catch (error) {
+    // A failure before the wallet takes its copies leaves both arrays here.
+    parsed.priv.fill(0);
+    parsed.minikey?.fill(0);
+    throw error;
+  }
 }
 // The seed form shows the picker for a key holding secure words or with no
 // seed text; a seed that is already text keeps the text field.
 function hodlSecureSeedPickerShown(state) {
-  return hodlSecureEntryHasData(hodlSecureKeyOf(state)) || !String(state?.fields?.seed ?? "").trim();
+  return hodlSecureSeedHasWords(hodlSecureKeyOf(state)) || !String(state?.fields?.seed ?? "").trim();
 }
 // True when the key holds securely entered words, or was derived from words
 // held that way: a derived key keeps no copy of them (they stay with the

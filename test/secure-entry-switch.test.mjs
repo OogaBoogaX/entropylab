@@ -261,7 +261,7 @@ test("turning on drops the last-word cache, and the length lock holds in hodlSet
   const committed = toggle.indexOf("hodlSecureEntryOn = true;");
   assert.ok(committed > 0 && toggle.indexOf("hodlLastWordCache.clear();", committed) > committed, "turning on clears the last-word cache");
   const setter = app.slice(app.indexOf("function hodlSetSeedLength("), app.indexOf("\nfunction ", app.indexOf("function hodlSetSeedLength(")));
-  const guard = setter.indexOf("hodlSecureEntryHasData(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))");
+  const guard = setter.indexOf("hodlSecureSeedHasWords(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))");
   assert.ok(guard > 0 && guard < setter.indexOf("hodlCaptureKey();"), "the setter refuses a new length before changing anything");
 });
 
@@ -580,7 +580,7 @@ test("the seed length locks while secure words are entered", async () => {
         hodlSeedConfig: () => ({ words: 24 }),
         hodlSeedLengthSelectEl: select,
         hodlSecureEntryOn: true,
-        hodlSecureEntryHasData: () => count > 0,
+        hodlSecureSeedHasWords: () => count > 0,
         hodlSecureKeyOf: () => "k1",
         hodlKeys: [{}],
         hodlActiveKey: 0,
@@ -897,6 +897,6 @@ test("emptying the seed text field while secure entry is on redraws into the pic
   const start = seed.lastIndexOf("input.oninput = (event) => {", seed.indexOf("hodlApplyFilteredInput(input, hodlFilterSeed);"));
   assert.ok(start > 0);
   const body = seed.slice(start, seed.indexOf("};", start) + 2);
-  assert.match(body, /if \(hodlSecureSeedActive\(\) && !input\.value\.trim\(\) && !hodlSecureEntryHasData\(hodlSecureKeyOf\(state\)\)\) \{/);
+  assert.match(body, /if \(hodlSecureSeedActive\(\) && !input\.value\.trim\(\) && !hodlSecureSeedHasWords\(hodlSecureKeyOf\(state\)\)\) \{/);
   assert.match(body, /hodlSetMode\(hodlKeyMode\);/);
 });
