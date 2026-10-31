@@ -1716,6 +1716,9 @@ for (const outcome of ["wiped", "wiped, then reported a partial wipe", "threw be
       doc.body.append(host);
       const session = createSecureSession();
       const key = { id: 1, name: "Key 1", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: { kind: "hd" } };
+      // A key with a wallet whose words never lived in Secure entry: the wipe
+      // removes nothing of it, so it must never be marked (MiniMax, #1348).
+      const typed = { id: 2, name: "Key 2", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: { kind: "hd" } };
       const entry = seedEntry(12);
       for (let i = 0; i < 12; i += 1) seedSet(entry, i, i);
       let wiped = 0;
@@ -1737,7 +1740,7 @@ for (const outcome of ["wiped", "wiped, then reported a partial wipe", "threw be
           hodlBip39WordIndex: wordIndex,
           hodlBip39Wordlist: wordlist,
           hodlKeyMode: "seed",
-          hodlSecureEntryHasData: () => wiped === 0,
+          hodlSecureEntryHasData: (token) => token === "1" && wiped === 0,
           hodlSecureKeyOf: (state) => String(state.id),
           hodlLooksExtendedKey: () => false,
           hodlLastWordCache: { clear: () => {} },
@@ -1752,7 +1755,7 @@ for (const outcome of ["wiped", "wiped, then reported a partial wipe", "threw be
         settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey", "hodlSecureEntryBusy", "hodlJournalKeyDerivation"],
       });
       mod.__set.hodlSecureSession(session);
-      mod.__set.hodlKeys([key]);
+      mod.__set.hodlKeys([key, typed]);
       mod.__set.hodlActiveKey(0);
       mod.__set.hodlSecureEntryOn(true);
       mod.__set.hodlSecureEntryBusy(false);
@@ -1765,6 +1768,7 @@ for (const outcome of ["wiped", "wiped, then reported a partial wipe", "threw be
         assert.equal(wiped, 1);
         assert.equal(key.secureCleared, true, "words the wipe removed must be marked, even when it then threw");
       }
+      assert.equal("secureCleared" in typed, false, "a key with no Secure entry words was marked");
     } finally {
       globalThis.document = previous;
     }
