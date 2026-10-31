@@ -71,6 +71,8 @@ test("hodlSecureEntryEnd turns the switch off and wipes the session", async () =
       hodlGlobalSyncCurrentBits: () => null,
       hodlApplyGlobalSync: () => { throw new Error("should not apply"); },
       hodlNewKeyState: () => ({}),
+      hodlSecureEntryHasData: () => false,
+      hodlSecureKeyOf: () => null,
     },
     settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey"],
   });
@@ -99,6 +101,8 @@ test("hodlSecureEntryEnd survives a throwing wipe", async () => {
       hodlGlobalSyncCurrentBits: () => null,
       hodlApplyGlobalSync: () => { throw new Error("should not apply"); },
       hodlNewKeyState: () => ({}),
+      hodlSecureEntryHasData: () => false,
+      hodlSecureKeyOf: () => null,
     },
     settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey"],
   });

@@ -684,6 +684,115 @@ test("turning off converts, clears or cancels, and makes texts only for Convert"
   }
 });
 
+test("ending secure entry (pagehide, back/forward restore) marks a committed key whose words were only secure (GLM)", async () => {
+  const words = "abandon ability able about above absent absorb abstract absurd abuse access accident".split(" ");
+  const session = createSecureSession();
+  const committed = { id: 1, name: "Committed", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: { masterFingerprint: "73c5da0a" } };
+  const editor = { id: 2, name: "Editor", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: null };
+  const plain = { id: 3, name: "Plain", seedMethod: "words", targetWords: 12, fields: { seed: words.join(" ") }, result: { masterFingerprint: "aaaaaaaa" } };
+  const mod = await loadAppFunctions(["hodlSecureEntryEnd", "hodlSecureKeyOf", "hodlSecureEntryOn"], {
+    stubs: { ...realSecureEntryStubs, hodlRenderSecureEntryControl: () => {} },
+    settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+  });
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys([committed, editor, plain]);
+  mod.__set.hodlSecureEntryOn(true);
+  for (const state of [committed, editor]) {
+    const entry = seedEntry(12);
+    for (let i = 0; i < words.length; i += 1) seedSet(entry, i, wordIndex.get(words[i]));
+    sessionSet(session, mod.hodlSecureKeyOf(state, true), "seed", entry);
+  }
+  mod.hodlSecureEntryEnd();
+  assert.equal(committed.secureCleared, true);
+  assert.equal("secureCleared" in editor, false);
+  assert.equal("secureCleared" in plain, false);
+  assert.equal(session.entries.size, 0);
+  assert.equal(mod.hodlSecureEntryOn, false);
+});
+
+test("turning off with Clear marks a committed key whose words were only secure", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const words = "abandon ability able about above absent absorb abstract absurd abuse access accident".split(" ");
+    const make = () => {
+      const session = createSecureSession();
+      const committed = { id: 1, name: "Committed", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: { masterFingerprint: "73c5da0a" } };
+      const editor = { id: 2, name: "Editor", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: null };
+      const entry = seedEntry(12), editorEntry = seedEntry(12);
+      for (let i = 0; i < words.length; i += 1) {
+        seedSet(entry, i, wordIndex.get(words[i]));
+        seedSet(editorEntry, i, wordIndex.get(words[i]));
+      }
+      return { session, keys: [committed, editor], committed, editor, entry, editorEntry };
+    };
+    let choice = "clear";
+    const tTextCalls = [];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlSecureEntryBackupRefusal"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => choice }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlTText: (text) => { tTextCalls.push(text); return text; },
+        hodlPrivateKeyValues: (fields) => fields.privateKeys,
+        hodlEntropyFormats: { hex: {}, bin: {} },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    const arm = (fixture) => {
+      mod.__set.hodlSecureSession(fixture.session);
+      mod.__set.hodlKeys(fixture.keys);
+      mod.__set.hodlSecureEntryOn(true);
+      sessionSet(fixture.session, mod.hodlSecureKeyOf(fixture.committed, true), "seed", fixture.entry);
+      sessionSet(fixture.session, mod.hodlSecureKeyOf(fixture.editor, true), "seed", fixture.editorEntry);
+    };
+
+    // Clear: the committed key keeps its wallet on screen but loses the only
+    // copy of its words, so it is marked and Journal refuses it.
+    const clear = make();
+    arm(clear);
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal(clear.committed.secureCleared, true);
+    assert.equal("secureCleared" in clear.editor, false);
+    assert.equal(clear.session.entries.size, 0);
+    assert.equal(mod.hodlSecureEntryOn, false);
+    const refusal = mod.hodlSecureEntryBackupRefusal();
+    assert.ok(refusal instanceof Error);
+    assert.ok(tTextCalls.some((text) => text.includes("cleared")));
+
+    // Convert writes the words back as text, so nothing is marked.
+    choice = "convert";
+    const convert = make();
+    arm(convert);
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal("secureCleared" in convert.committed, false);
+    assert.equal("secureCleared" in convert.editor, false);
+    assert.equal(convert.committed.fields.seed, words.join(" "));
+    assert.equal(convert.session.entries.size, 0);
+
+    // Cancel leaves the session and the keys as they were.
+    choice = null;
+    const cancel = make();
+    arm(cancel);
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal("secureCleared" in cancel.committed, false);
+    assert.equal("secureCleared" in cancel.editor, false);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.equal(cancel.session.entries.size, 2);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
 test("the seed form mounts the picker instead of a text field, and each render destroys the last one", () => {
   // hodlRenderKeyForm's closure is most of app.js (every method's branch), so
   // the slice harness cannot load it; this checks the seed branch's shape.

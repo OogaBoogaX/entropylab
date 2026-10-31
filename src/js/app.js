@@ -12576,6 +12576,11 @@ async function hodlSecureEntryToggle(wanted) {
             if (state) state.fields.seed = text;
           }
         } else if (choice === "clear") {
+          // Clear wipes every secure entry: a key that keeps its wallet on screen but
+          // held its words only there would back up with no words (as at turn-on Clear).
+          for (const state of hodlKeys) {
+            if (state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
+          }
           commitTurnOff(hodlSecureSession, null, "clear");
         } else {
           if (plan) discardPlan(plan);
@@ -12611,6 +12616,14 @@ function hodlSecureEntryAvailable() {
 // pagehide) both run it.
 function hodlSecureEntryEnd() {
   hodlSecureEntryOn = false;
+  // A page restored from the back/forward cache keeps its key tabs: a key that
+  // shows its wallet but held its words only in the session would back up
+  // with no words once the session is wiped, so it is marked first (GLM).
+  try {
+    for (const state of hodlKeys) {
+      if (state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
+    }
+  } catch {}
   try { sessionWipe(hodlSecureSession); } catch {}
   try { hodlRenderSecureEntryControl(); } catch {}
 }
