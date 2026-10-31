@@ -741,6 +741,33 @@ extension that ignores them, or one written to steal.
 - None of this protects a computer that is already compromised: malware or a
   malicious browser extension can read a secret as you type it.
 
+## Release signing keys
+
+Releases are verified with the detached signatures in `SHA256SUMS.asc`
+(instructions in that file's header). The v1.0.0 signers and their keys:
+
+| Signer | Key fingerprint | Status |
+| --- | --- | --- |
+| Portland.HODL | `3428 CBB5 4C36 9D8A F14E F600 C801 EE1D 5285 101E` | |
+| w-s-bitcoin | `542E CCA3 B5CB 74CE C957 29B3 92C2 1496 202E 3774` | |
+| timechainb | `63EF 760E E641 A585 16D5 4930 F0B7 D606 C6FD 9D52` | |
+| MrHodlX | `6443 4EE4 8A96 C38E 78B7 875F 4E7E 416E E17D 237C` | **revoked** (announced 2026-10-30) |
+
+**MrHodlX's key 64434EE4… is revoked.** It was kept on a computer later found
+to be compromised. Treat any signature from it as untrusted, including its
+block on v1.0.0. v1.0.0 remains verifiable with the other three signatures.
+Import [`keys/MrHodlX-64434EE4-revoked.asc`](keys/MrHodlX-64434EE4-revoked.asc)
+so GnuPG marks the key as revoked. Its revocation certificate was generated
+together with the key, so GnuPG shows the revocation dated 2026-09-29 with no
+reason given; it is a full revocation all the same, and GnuPG flags every
+signature made by the key.
+
+MrHodlX signs with an interim key until a hardware-backed key replaces it:
+`DB19 EF73 4874 43AA EAC2 6687 17AB DC5F 9867 B54F` (expires 2027-01-31;
+[`keys/MrHodlX-DB19EF73.asc`](keys/MrHodlX-DB19EF73.asc)). Before trusting any
+new key, confirm its fingerprint with the maintainers through more than one
+channel.
+
 ## Reporting a Vulnerability
 
 Please report suspected security issues privately through
