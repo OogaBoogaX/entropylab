@@ -101,7 +101,10 @@ test("turning on with no seed text commits without a dialog", async () => {
   try {
     let dialogCalls = 0;
     const session = createSecureSession();
-    const keys = [{ id: 1, seedMethod: "words", fields: { seed: "" }, globalSync: true, globalSyncBitCount: 5, globalSyncSource: "x" }];
+    // mode: "seed" puts this key in the turn-on loop. Without the loop's
+    // empty-text guard the key would be staged, the dialog would open and
+    // dialogCalls would be 1.
+    const keys = [{ id: 1, mode: "seed", seedMethod: "words", fields: { seed: "" }, globalSync: true, globalSyncBitCount: 5, globalSyncSource: "x" }];
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
       stubs: {
         ...realSecureEntryStubs,
@@ -146,7 +149,10 @@ test("an extended key in the seed field stays text and opens no dialog (MiniMax)
   try {
     let dialogCalls = 0;
     const session = createSecureSession();
-    const keys = [{ id: 1, seedMethod: "words", fields: { seed: xprv }, globalSync: false }];
+    // mode: "seed" puts this key in the turn-on loop. Without the
+    // extended-key guard the xprv would be staged as seed text: the dialog
+    // would open and the field would be cleared.
+    const keys = [{ id: 1, mode: "seed", seedMethod: "words", fields: { seed: xprv }, globalSync: false }];
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
       stubs: {
         ...realSecureEntryStubs,
@@ -225,7 +231,10 @@ test("a phrase longer than the key's length stays text and opens no dialog (Mini
     const session = createSecureSession();
     // 24 valid words, but this key's length is 12.
     const phrase = Array(23).fill("abandon").concat("art").join(" ");
-    const keys = [{ id: 1, seedMethod: "words", targetWords: 12, fields: { seed: phrase }, globalSync: false }];
+    // mode: "seed" puts this key in the turn-on loop. Without the word-count
+    // guard the 24-word phrase would be staged for a 12-word key: the dialog
+    // would open and the phrase would be cleared.
+    const keys = [{ id: 1, mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase }, globalSync: false }];
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
       stubs: {
         ...realSecureEntryStubs,
@@ -1085,6 +1094,50 @@ test("the seed picker load failure shows a note and retries on the next render",
   }
 });
 
+test("a mount that throws after writing into the host leaves only the load-error note", async () => {
+  const previous = globalThis.document;
+  const doc = new MiniDocument();
+  globalThis.document = doc;
+  try {
+    const host = doc.createElement("div");
+    host.id = "seed-picker-host";
+    doc.body.append(host);
+    const mod = await loadAppFunctions(["hodlMountSeedPicker", "hodlSeedPicker", "hodlSeedPickerImport"], {
+      stubs: {
+        hodlSecureSeedActive: () => true,
+        hodlSecureSeedEntry: () => ({}),
+        hodlBip39Wordlist: wordlist,
+        seedSet: () => {},
+        seedUndo: () => {},
+        seedIndices: () => [],
+        hodlEntropyFromWordIndices: () => [],
+        hodlTText: (text) => text,
+        hodlSecureSeedChanged: () => {},
+        hodlT: (text) => text,
+      },
+      settable: ["hodlSeedPicker", "hodlSeedPickerImport"],
+    });
+    mod.__set.hodlSeedPicker(null);
+    mod.__set.hodlSeedPickerImport(Promise.resolve({
+      mountSeedPicker: (target) => {
+        const half = doc.createElement("div");
+        half.id = "half-built-picker";
+        target.append(half);
+        throw new Error("mount failed after writing");
+      },
+    }));
+    mod.hodlMountSeedPicker();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(host.childNodes.length, 1);
+    assert.equal(host.childNodes[0].id, "seed-picker-load-error");
+    assert.equal(doc.getElementById("seed-picker-load-error"), host.childNodes[0]);
+    assert.equal(mod.hodlSeedPicker, null);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
 test("turning on converts only Seed-mode keys, not old seed text in another mode", async () => {
   const previous = globalThis.document;
   globalThis.document = { getElementById: () => null };
@@ -1098,11 +1151,15 @@ test("turning on converts only Seed-mode keys, not old seed text in another mode
     let choice = "keep";
     let lastOptions = null;
     let dialogCalls = 0;
+    // The real hodlCaptureKey marks the active key with the editor's mode
+    // (state.mode = hodlKeyMode); the last case relies on that, not on a
+    // mode written into the fixture.
+    let captureTarget = null;
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureEntryOn"], {
       stubs: {
         ...realSecureEntryStubs,
         hodlSecureEntryDialog: async () => ({ open: async (options) => { dialogCalls += 1; lastOptions = options; return choice; } }),
-        hodlCaptureKey: () => {},
+        hodlCaptureKey: () => { if (captureTarget) captureTarget.mode = "seed"; },
         hodlRenderSecureEntryControl: () => {},
         hodlSetMode: () => {},
         hodlSyncKeyClearButton: () => {},
@@ -1167,6 +1224,27 @@ test("turning on converts only Seed-mode keys, not old seed text in another mode
     assert.equal(mod.hodlSecureEntryOn, true);
     assert.equal(diceKeys[0].fields.seed, phrase1);
     assert.equal(diceSession.entries.size, 0);
+
+    // The Seed-mode key's mode comes from hodlCaptureKey (state.mode =
+    // hodlKeyMode), not from the fixture: the real function marks the active
+    // key before the turn-on loop reads it, so the key is still converted.
+    const capturedSession = createSecureSession();
+    const capturedKey = { id: 4, name: "Captured Seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase2 } };
+    captureTarget = capturedKey;
+    choice = "keep";
+    dialogCalls = 0;
+    lastOptions = null;
+    mod.__set.hodlSecureSession(capturedSession);
+    mod.__set.hodlKeys([capturedKey]);
+    mod.__set.hodlActiveKey(0);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(capturedKey.mode, "seed");
+    assert.equal(dialogCalls, 1);
+    assert.deepEqual(lastOptions.names, ["Captured Seed"]);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.equal(capturedKey.fields.seed, "");
+    assert.ok(sessionGet(capturedSession, "4", "seed"));
   } finally {
     globalThis.document = previous;
   }

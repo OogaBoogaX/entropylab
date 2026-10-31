@@ -7550,7 +7550,8 @@ function hodlMountSeedPicker() {
         onChange: hodlSecureSeedChanged,
       });
     } catch {
-      if (host.isConnected && host.childNodes.length === 0 && hodlSecureSeedActive()) {
+      if (host.isConnected && hodlSecureSeedActive()) {
+        host.innerHTML = "";
         host.innerHTML = `<p class="field-note edge-note is-private" id="seed-picker-load-error" role="alert">${hodlT("The word picker could not load. Turn Secure entry off to use standard text entry.")}</p>`;
       }
     }
