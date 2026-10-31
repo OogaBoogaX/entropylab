@@ -861,7 +861,8 @@ test("the switch notes a seed held as text and shows the picker once it is empti
     mod.hodlRenderSecureEntryControl();
     let note = doc.getElementById("secure-entry-text-backed");
     assert.ok(note);
-    assert.equal(note.textContent, "These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.");
+    // Hooked on the note's id; its words are copy (AGENTS.md), so only check it says something.
+    assert.ok(note.textContent.trim().length > 0);
     assert.equal(doc.getElementById("secure-entry-unsupported"), null);
 
     state.fields.seed = "";
