@@ -425,6 +425,25 @@ test("every visible string goes through translate", () => {
 
 const VALID = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
+test("a successful paste clears the prefix field and its matches", () => {
+  const ctx = setup();
+  const field = findById(ctx.host, "seed-picker-prefix");
+  field.value = "s";
+  field.dispatchEvent({ type: "input" });
+  assert.equal(findById(ctx.host, "seed-picker-matches").childNodes.length, 0);
+  assert.equal(findById(ctx.host, "seed-picker-narrow").hidden, false);
+  assert.ok(findById(ctx.host, "seed-picker-count").textContent.length > 0);
+  findById(ctx.host, "seed-picker-paste-open").dispatchEvent({ type: "click" });
+  const textarea = findById(ctx.host, "seed-picker-paste-text");
+  textarea.value = VALID;
+  findById(ctx.host, "seed-picker-paste-use").dispatchEvent({ type: "click" });
+  assert.equal(ctx.entry.count, 12);
+  assert.equal(field.value, "");
+  assert.equal(findById(ctx.host, "seed-picker-matches").childNodes.length, 0);
+  assert.equal(findById(ctx.host, "seed-picker-count").textContent, "");
+  assert.equal(findById(ctx.host, "seed-picker-narrow").hidden, true);
+});
+
 test("conceal and new replacement text disarm a staged word", () => {
   const ctx = setup();
   for (const word of ["zebra", "ability"]) enterWord(ctx, word);

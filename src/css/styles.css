@@ -3197,6 +3197,8 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
 }
 .privacy-bar.is-revealed .privacy-bar-state { color: var(--danger-bright); }
 .privacy-bar.is-revealed input { accent-color: var(--danger-bright); }
+#secure-entry-host { margin-bottom: var(--space-component); }
+#secure-entry-host .field-note { margin-top: var(--space-control); }
 @media (prefers-reduced-motion: reduce) { .privacy-bar { transition: none; } }
 /* Narrow screens: drop the control labels so the bar stays one row. Each
    control keeps its own aria-label, so nothing is lost to assistive tech. */

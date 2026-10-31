@@ -57,6 +57,7 @@ function createContext(sandbox) {
     // Secure entry stays off here; its wiring is covered in secure-entry-wiring.test.mjs.
     hodlSecureSeedActive: () => false, hodlSecureEntryHasData: () => false, hodlSecureEntryDropKey() {},
     hodlSecureSeedApplies: () => false, hodlSecureEntryBackupRefusal: () => null, hodlSecureKeyOf: () => null, hodlSecureEntryHeld: () => false,
+    hodlRenderSecureEntryControl() {}, hodlSeedPicker: null, hodlMountSeedPicker() {},
     // Session state hodlReleaseKeyConsumers reads; a key drop releases any
     // consumer bound to it (PSBT, BIP-85, Silent Payments, vanity).
     hodlPsbtSource: "", hodlBip85Source: "", hodlSpSource: "", hodlSpVerifyMatches: null,
@@ -1019,6 +1020,30 @@ test("pagehide and persisted pageshow end the PSBT session, reports included", (
   assert.deepEqual(errors.sort(), ["nonce", "psbt"], "session end left an error line");
   for (const id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-rbf-original", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"])
     assert.equal(elements.get(id).value, "", `session end left #${id} filled`);
+});
+
+test("End Session still wipes the key and fields when the camera capture fails to clear", () => {
+  const elements = new Map();
+  for (const id of ["psbt-out", "nonce-out"]) elements.set(id, { innerHTML: "<table>report</table>", dataset: {} });
+  for (const id of ["psbt-key", "psbt-pass", "psbt-text", "nonce-key", "nonce-pass", "nonce-text"]) elements.set(id, { value: "session material", dataset: {} });
+  let wiped = 0, history = 0;
+  const context = createContext({
+    document: { getElementById: id => elements.get(id) ?? null },
+    hodlPsbtWipeMem: () => { wiped += 1; }, hodlPsbtClearNonceHistory: () => { history += 1; },
+    hodlNonceQrCapture: { clear: () => { throw new Error("camera track would not stop"); } },
+    hodlPsbtRetireAuditUploads() {}, hodlPsbtRetireRbfUploads() {},
+    hodlPsbtLast: { rvalues: ["deadbeef"] }, hodlPsbtInspected: { psbt: "stamp" },
+    hodlPsbtSessionSpec: null,
+    hodlSetPsbtError() {}, hodlSetNonceError() {},
+    hodlPaintPsbtSession() {}, hodlRefreshStationKeyPickers() {}, hodlSyncPsbtControls() {},
+  });
+  vm.runInContext(`${functionSource("hodlNote")}\n${functionSource("hodlEndPsbtSession")}\nhodlEndPsbtSession();`, context);
+  assert.equal(wiped, 1, "a capture failure skipped the key wipe");
+  assert.equal(history, 1, "a capture failure skipped the nonce history clear");
+  assert.equal(context.hodlPsbtLast, null, "a capture failure left the parsed report state");
+  for (const id of ["psbt-key", "psbt-pass", "psbt-text", "nonce-key", "nonce-pass", "nonce-text"])
+    assert.equal(elements.get(id).value, "", `a capture failure left #${id} filled`);
+  assert.equal(elements.get("psbt-out").innerHTML, "", "a capture failure left the PSBT report rendered");
 });
 
 test("pagehide and persisted pageshow reset every multisig tab", () => {

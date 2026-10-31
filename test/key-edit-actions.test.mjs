@@ -23,6 +23,7 @@ function harness() {
     hodlReleaseKeyConsumers() {},
     // Secure entry stays off here; its wiring is covered in secure-entry-wiring.test.mjs.
     hodlSecureEntryHasData: () => false, hodlSecureKeyOf: () => null,
+    hodlRenderSecureEntryControl() {}, hodlSeedPicker: null, hodlMountSeedPicker() {},
     hodlSelectKey: index => { context.hodlActiveKey = index; },
     hodlSelectLab: () => { context.hodlActiveKey = 0; },
     hodlKeyManagerPending: [], hodlKeyManagerIgnored: [], hodlKeyManagerIds: new Set(), hodlKeyManagerActiveId: "",
