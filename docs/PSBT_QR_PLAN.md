@@ -47,6 +47,39 @@ Existing tests include `test/ur-fountain.test.mjs`, `psbt-qr-payload.test.mjs`, 
 - A disposable Bun invocation against this worktree imported `createPsbtQrReader` and the existing UR encoder, supplied the 1,117-byte fixture's six sequential fragments in reverse order, and recovered byte-identical bytes. This proves the newly landed reader runs; the encoder and reader are from the same project, so it is NOT an independent fountain oracle or a camera test.
 - No feature build, full suite, physical QR scan, or independent SeedSigner interchange was run when writing this plan.
 
+### PQR-01 upstream reconciliation (2026-10-31, integrator)
+
+Executed against the live remotes, not the plan's original fetch:
+
+- `origin/rock` tip = `f389371c` (the recorded base). **No upstream commits since
+  the base.** Frozen integration commit: `321c72b3` (plan-only). Wave A
+  worktrees branch from it.
+- `origin/scan-qr/pr2-fountain` is a **merged lineage, not a competitor**: it
+  landed in `rock` (PR #1273, merge `7e165809`) and is an ancestor of the base;
+  every commit the plan lists as "new work" (`3e12704a`, `4017841c`, `e8176979`,
+  `6b07a1d4`) is in the base files.
+- **No open upstream PR touches this scope.** The only related open PR is
+  #1336 (`hotpixelgroup:fix/qr-scanner-timeout-flake`), which edits
+  `test/qr-scanner.test.mjs` (PQR-04). Decision: do not block on it. PQR-04
+  re-checks its status immediately before touching scanner tests; if it lands on
+  `rock` first, rebase; otherwise keep the local changes and note it in the PR.
+- Base component verification (files on disk at the base):
+  - `createUrCollector` (`src/js/ur-fountain.js`) landed via `20044477` + the
+    fountain commits; `createPsbtQrReader` (`src/js/psbt-qr-payload.js`),
+    `mountPsbtScan` (`src/js/qr-psbt-scan.js`), `createQrScanner`
+    (`src/js/qr-scanner.js`) via `6b07a1d4` and earlier. All four exist at the
+    base.
+  - `mountPsbtScan` is **not wired into any entry point** (`app.js`,
+    `psbt-editor.js`, `src/shell.html`): PQR-05's job stands.
+  - `retireUrCollectors()` is exported but **not wired** into End Session /
+    pagehide (`endSession`'s `retireModules` is `[hodlRetireWasm,
+    hodlRetirePsbtWasm]`). PQR-05 wires it (§4E).
+  - Released consumers that must not break: `qr-key-scan.js` (preview-gated key
+    scan), `qr-scan.js` (generic scan + `retireQrDecoders` scrub reporting),
+    `aexb-capture.js` (released anti-exfil capture; imports `createUrCollector`
+    — the fountain collector is already release code).
+- Scope: **no change** from §3.
+
 ## 3. Scope and non-goals
 
 Required supported paths:
@@ -102,6 +135,121 @@ Existing defaults are evidence, not validated appliance budgets:
 
 Freeze numeric acceptance limits after measuring existing fixtures. A valid transaction can exceed the supported optical budget: reject it explicitly, never truncate. Track duplicate-only and malicious non-progress streams; no unbounded queue of frames, fragments or promises. Do not increase limits or remove caps to pass a benchmark. Keep default output QR framing unchanged unless interoperability demonstrates a real defect.
 
+### E. Frozen values (measured from the base, 2026-10-31)
+
+**Status contract** — collector status → reader status, as actually coded in
+`ur-fountain.js` / `psbt-qr-payload.js` (section 4A names the APIs; this fixes
+their semantics):
+
+| Reader status | Source | Recoverable? | Ownership / state policy |
+|---|---|---|---|
+| `complete` + `bytes` | collector full reassembly, CRC + padding OK; or static base64/hex with PSBT magic | Terminal (success) | `done = true`; collector killed, removed from the global `collectors` registry, buffers wiped; `bytes` is the returned copy |
+| `done` | collector `complete` | Terminal | every subsequent `receive` → `done`; only `reset()` recovers |
+| `partial` | collector `progress` or `duplicate` | Yes (stream continues) | session accumulates; `progress()` → `{received, total}` (null while unbound or done) |
+| `wrong-type` | collector: UR type not in `types` | Yes (stream continues) | bound session untouched; single part arriving mid-session → `mismatch` |
+| `mismatch` | collector: part `seqLen` ≠ bound `seqLen`, or collector-level `conflict` (same seqNum, different data) | Alive → continues; killed → **persists until `reset()`** | on kill: all buffers zeroed, removed from registry |
+| `too-large` | collector: messageLen > `maxMessageLen` / seqLen > `maxSeqLen`; or static decode over limit | Alive → continues; killed → persists until `reset()` | zeroed on kill |
+| `bad-part` | malformed part (seq / frag count / length), `legacy`, collector `invalid` (reassembled message fails CRC/padding → kill), or reader default catch-all | `invalid` → persists until `reset()`; otherwise stream continues | per-part data zeroed after integrate |
+| `bad-cbor` | reader: collector `complete` but `hodlCborUnwrapPsbt` failed | Reset required | reader auto-`collector.reset()`; message copy zeroed on unwrap |
+| `not-psbt` | static path: no PSBT magic | Per part; no collector state | static `bytes` zeroed on failure |
+
+- Only `complete` returns owned bytes. The caller owns them: zero them on write,
+  discard, or late arrival (`mountPsbtScan` does this; preserve it).
+- JS strings are not zeroable (decoded text, browser copies, worker retention) —
+  wipe claims are best-effort only; do not document otherwise.
+- The reader is stateful per instance (`done` flag): one reader per scan session;
+  `mountPsbtScan` resets on open and close — preserve that.
+
+**Target field list** (frozen; consistent with the existing three-panel PSBT
+design — no exclusions):
+
+| Entry point | Element | Notes |
+|---|---|---|
+| Inspector primary | `#psbt-text` (textarea, "PSBT v0 or raw transaction (base64 or hex)") | base64/hex/raw-tx paste unchanged; `ur:` paste → reader only (gate: `crypto-psbt`/`psbt`); never routes raw transactions through the PSBT-only gate |
+| Editor primary | `#psbted-text` (textarea, "PSBT v0 (base64 or hex)") | base64/hex unchanged; `ur:` → reader |
+| Editor comparison | `#psbted-compare-text` (textarea, "Other PSBT (base64 or hex)") | PSBT-only; comparison remains the existing read-only diff (`psbt-diff.js`) |
+
+- **Text-paste UR contract:** `ur:`-prefixed input goes through
+  `reader.reset(); reader.receive(text)` — the same bounded reader the camera path
+  uses; no divergent legacy decoder. Non-`ur:` text keeps the existing parse
+  paths (`psbtBytesFromText` in the Inspector; editor load/compare).
+- **`onLoad` contract:** write the field as base64, dispatch a bubbling
+  `InputEvent({ inputType: "insertFromPaste" })` so the existing parse flow sees
+  it, then invoke the passed `onLoad`. No duplicate parser, no automatic
+  approval.
+- **Replace confirmation:** emptiness is checked at completion (existing);
+  PQR-04 also re-checks at Replace click (gap §4F.1).
+- **Fixture location (PQR-02/03 agreement):** `test/fixtures/psbt-qr/` (new dir)
+  — `manifest.json` (per the §6 spec) plus generated `.ur`/`.b64` fixtures.
+  Independent oracles: `test/fixtures/bc-ur/reference-vectors.json` (BCR-2024-001,
+  license `test/fixtures/bc-ur/LICENSE`) for fountain fragment selection and
+  `test/fixtures/psbt/*.b64` public PSBTs. No network downloads in tests.
+
+**Preview policy** (measured mechanism; key-scan precedent in `app.js`):
+
+- `scripts/build.mjs` defines `__ENTROPYLAB_PREVIEW__` via esbuild `define` as
+  the bare boolean token `true`/`false`; esbuild dead-eliminates the falsy branch
+  (including dynamic imports) and inlines reachable dynamic modules into the
+  single iife. At the base, `npm run build` reproduces the committed release
+  artifact byte-for-byte: sha256 `778ab1c33002fd500807e0c3f7606f5970bc8ad3329e8d2239f3674288ba2ad1`
+  (8,265,590 bytes, v1.0.0).
+- Pattern to copy (key scan: `hodlKeyScanHostMarkup` / `hodlBindKeyScan` in
+  `app.js`):
+  1. Host div: `<!-- preview --> <div id="psbt-qr-host"></div> <!-- /preview -->`
+     inside `#psbt-card`, and `<div id="psbted-qr-host"></div>` likewise inside
+     `#psbted-card` (`src/shell.html`). Release builds strip the block; the
+     widget mounts into the host (replacing its children).
+  2. `app.js`: module vars + dynamic `import("./qr-psbt-scan.js")` under
+     `typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__`;
+     mount when the host exists and is empty; keep the reference;
+     `catch(() => {})`.
+  3. Teardown: in the End Session / pagehide wipe block (beside
+     `hodlKeyScan?.destroy()` / `hodlKeyScanModule?.retireQrDecoders()`):
+     destroy each PSBT scan widget, call `retireQrDecoders()` (module export)
+     and `retireUrCollectors()` (import from `ur-fountain.js`).
+- **Release gate (permanent test, PQR-08):** the post-integration release build
+  must be byte-identical (sha256) to the base release build above. Preview build:
+  assert the widget string ("Scan PSBT QR") is present in the built HTML. This
+  asserts build-artifact outcomes, not source-text regexes.
+
+**Resource policy** (measured defaults; unchanged unless PQR-04 measurement
+justifies it):
+
+| Boundary | Measured default |
+|---|---|
+| Message / reader size | 1,048,576 bytes (`maxBytes` / collector `maxMessageLen`) |
+| Fragment count | `maxSeqLen` = 1,000; `seenCap` = 4·seqLen+64; `mixedCap` = 2·seqLen+16 |
+| Collector work | 10,000,000 steps per received part (index + byte, cascades included); over-budget pending data zeroed and dropped |
+| Worker image | 4,194,304 pixels; side capped at 4096; file upload capped 10 MiB |
+| Camera session | one 60,000 ms timer per `start()` (never resets per partial frame); frame scale capped 1280×720 |
+| Static QR output | `PSBT_QR_STATIC_MAX_BYTES` = 800 (output side; unrelated to the input limit) |
+| Text paste (existing) | `psbtBytesFromText`: 7,000,000 compact chars / 5,000,000 decoded bytes (Inspector) |
+
+- Do not raise any bound to pass a fixture; over-budget data is explicitly
+  refused (`too-large`), never truncated.
+
+### F. Gaps to close (PQR-04/PQR-05; each with a test)
+
+1. **Replace click does not re-check the field.** Emptiness is checked when the
+   dialog opens; the Replace button writes `pending` unconditionally. A field edit
+   while the dialog is open would be overwritten by the stale scan. Re-check at
+   click: non-empty field → keep the dialog (re-prompt against current content);
+   never write a scan that no longer matches the field's state.
+2. **Partial results restart the one-shot scanner.** `restartCamera()` calls
+   `scanner.start()` → a full `getUserMedia` re-negotiation per partial result.
+   PQR-04 measures this on the real fixtures
+   (`test/fixtures/psbt/p2wpkh-1in-2out.b64`,
+   `test/fixtures/psbt/mixed-many-inputs.b64`) and decides: document the
+   restart, or add an explicit continuous-acquisition mode to `createQrScanner`
+   that preserves one-shot behaviour for the existing consumers
+   (`qr-key-scan.js`, `qr-scan.js` consumers, `aexb-capture.js`).
+   `retireQrDecoders` scrub reporting must stay correct either way.
+3. **`retireUrCollectors()` is not wired** into the End Session / pagehide
+   teardown (only `hodlRetireWasm` / `hodlRetirePsbtWasm` /
+   `retireQrDecoders` are called).
+4. `mountPsbtScan` is mounted by no code — PQR-06's browser scenarios are
+   blocked on PQR-05. The widget's own unit suite exists and must keep passing.
+
 ## 5. Multi-agent work packages
 
 One integration owner maintains this plan, shared contracts and final history. Agents claim an ID and owner in the ledger before editing. A file has one writer at a time. Use separate task worktrees/branches for independent agents; do not have multiple sessions commit the same worktree/index.
@@ -131,10 +279,10 @@ Parallel schedule:
 | ID | Owner | Status | Evidence / blocker |
 |---|---|---|---|
 | PQR-00 | Planning integrator | Complete | Base/worktree above; source-reader smoke above; documentation-only setup |
-| PQR-01 | Unassigned | Ready | Recheck moving upstream before feature work |
-| PQR-02 | Unassigned | Waiting for PQR-01 | Existing collector is not yet independently accepted |
-| PQR-03 | Unassigned | Waiting for PQR-01 | Reference revisions below; agree manifest format with PQR-02 |
-| PQR-04 | Unassigned | Waiting for PQR-01 | Existing panel restarts one-shot camera after partial results |
+| PQR-01 | Integrator (2026-10-31) | Complete | Upstream reconciled (no `rock` commits since base; `pr2-fountain` merged lineage); base freeze `321c72b3`; contracts frozen §4E/§4F; no scope change |
+| PQR-02 | Subagent (Wave A) | Assigned (2026-10-31) | Contract frozen §4E; exclusive files §5; fixture manifest location §4E (with PQR-03) |
+| PQR-03 | Subagent (Wave A) | Assigned (2026-10-31) | Manifest spec §6 + location §4E; oracle `test/fixtures/bc-ur/reference-vectors.json` |
+| PQR-04 | Subagent (Wave A) | Assigned (2026-10-31) | Gaps §4F.1/§4F.2; re-check upstream PR #1336 before touching scanner tests |
 | PQR-05 | Unassigned | Waiting for contracts / implementation | Shared entry points have one writer |
 | PQR-06 | Unassigned | Waiting for integrated candidate | No physical camera acceptance yet |
 | PQR-07 | Unassigned | Waiting for integrated candidate | Review is not an implementation owner |
