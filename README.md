@@ -786,8 +786,9 @@ is needed: Git for Windows already ships it. Copy
 `C:\Program Files\Git\mingw64\bin\` into any PATH directory as
 `libeay32.dll` and verification runs natively.
 
-EntropyLab itself never stamps, upgrades, or verifies `.ots` files and never
-talks to a calendar. The HTML stays air-gappable.
+EntropyLab itself never stamps or upgrades `.ots` files and never talks to a
+calendar. Its Verify tab checks a proof offline against a Bitcoin block header
+you supply. The HTML stays air-gappable.
 
 The CID is a self-describing name for the SHA-256, not a second hash. The
 calculator never talks to IPFS. To store or fetch the file on a **local**
