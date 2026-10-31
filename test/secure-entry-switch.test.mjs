@@ -386,6 +386,319 @@ test("turning on with seed text keeps or clears the words", async () => {
   }
 });
 
+test("Clear marks a committed key and refuses Journal backup", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const session = createSecureSession();
+    const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+    const committed = { id: 1, name: "Committed", isLab: false, mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase }, result: { masterFingerprint: "73c5da0a" } };
+    const editor = { id: 2, name: "Editor", isLab: true, mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase }, result: null };
+    const keys = [committed, editor];
+    const tTextCalls = [];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlSecureEntryBackupRefusal"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => "clear" }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlTText: (text) => { tTextCalls.push(text); return text; },
+        hodlPrivateKeyValues: (fields) => fields.privateKeys,
+        hodlEntropyFormats: { hex: {}, bin: {} },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys(keys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(committed.secureCleared, true);
+    assert.equal(committed.fields.seed, "");
+    assert.equal("secureCleared" in editor, false);
+    assert.equal(editor.fields.seed, "");
+    const refusal = mod.hodlSecureEntryBackupRefusal();
+    assert.ok(refusal instanceof Error);
+    assert.ok(tTextCalls.some((text) => text.includes("cleared")));
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("Keep leaves no secureCleared mark", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const session = createSecureSession();
+    const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+    const committed = { id: 1, name: "Committed", isLab: false, mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase }, result: { masterFingerprint: "73c5da0a" } };
+    const editor = { id: 2, name: "Editor", isLab: true, mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase }, result: null };
+    const keys = [committed, editor];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => "keep" }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlPrivateKeyValues: (fields) => fields.privateKeys,
+        hodlEntropyFormats: { hex: {}, bin: {} },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys(keys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    for (const key of keys) {
+      assert.equal("secureCleared" in key, false);
+      assert.equal(key.fields.seed, "");
+    }
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("Clear empties the fields Global sync filled", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const session = createSecureSession();
+    const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+    const synced = {
+      id: 1, name: "Synced", mode: "seed", seedMethod: "words", targetWords: 12, globalSync: true, lastWord: "accident",
+      fields: {
+        seed: phrase, seedNumbers: "1 2 3", hex: "abcd", bin: "1010",
+        dplusDice: "dplus", directCards: "cards", bitboxDice: "bitbox",
+        name: "Synced", privateKeys: { wif: "wifvalue", "hex-key": "hexkeyvalue" },
+      },
+    };
+    const unsynced = { id: 2, name: "Unsynced", mode: "seed", seedMethod: "words", targetWords: 12, globalSync: false, fields: { seed: phrase, hex: "beef" } };
+    const keys = [synced, unsynced];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlClearGlobalSyncCopies"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => "clear" }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlPrivateKeyValues: (fields) => fields.privateKeys,
+        hodlEntropyFormats: { hex: {}, bin: {} },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys(keys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    for (const field of ["hex", "bin", "seed", "seedNumbers", "dplusDice", "directCards", "bitboxDice"]) {
+      assert.equal(synced.fields[field], "", field);
+    }
+    assert.equal(synced.fields.privateKeys.wif, "");
+    assert.equal(synced.fields.privateKeys["hex-key"], "");
+    assert.equal(synced.fields.name, "Synced");
+    assert.equal(synced.lastWord, "");
+    assert.equal(unsynced.fields.hex, "beef");
+    assert.equal(unsynced.fields.seed, "");
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("Keep empties the fields Global sync filled from the words, so they stay only in Secure entry (owner 10-31)", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const session = createSecureSession();
+    const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+    const synced = {
+      id: 1, name: "Synced", mode: "seed", seedMethod: "words", targetWords: 12, globalSync: true, globalSyncSource: "seed:words", lastWord: "accident",
+      fields: {
+        seed: phrase, seedNumbers: "1 2 3", hex: "abcd", bin: "1010",
+        dplusDice: "dplus", directCards: "cards", bitboxDice: "bitbox",
+        name: "Synced", privateKeys: { wif: "wifvalue", "hex-key": "hexkeyvalue" },
+      },
+    };
+    const unsynced = { id: 2, name: "Unsynced", mode: "seed", seedMethod: "words", targetWords: 12, globalSync: false, lastWord: "kept", fields: { seed: phrase, hex: "beef" } };
+    const keys = [synced, unsynced];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlClearGlobalSyncCopies"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => "keep" }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlPrivateKeyValues: (fields) => fields.privateKeys,
+        hodlEntropyFormats: { hex: {}, bin: {} },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys(keys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    // Both keys' words moved into the session.
+    for (const key of keys) {
+      assert.ok(sessionGet(session, mod.hodlSecureKeyOf(key), "seed"), key.name);
+      assert.equal(key.fields.seed, "");
+      assert.equal("secureCleared" in key, false);
+    }
+    for (const field of ["hex", "bin", "seedNumbers", "dplusDice", "directCards", "bitboxDice"]) {
+      assert.equal(synced.fields[field], "", field);
+    }
+    assert.equal(synced.fields.privateKeys.wif, "");
+    assert.equal(synced.fields.privateKeys["hex-key"], "");
+    assert.equal(synced.fields.name, "Synced");
+    assert.equal(synced.lastWord, "");
+    // A key without Global sync keeps its other fields: they are its own input.
+    assert.equal(unsynced.fields.hex, "beef");
+    assert.equal(unsynced.lastWord, "kept");
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("Keep leaves a key's other fields unless the words were their source and its wallet can come from them (K3.1, Kimi, Astra)", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const session = createSecureSession();
+    const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+    const synced = (extra) => ({
+      mode: "seed", seedMethod: "words", targetWords: 12, globalSync: true, lastWord: "accident",
+      fields: { seed: phrase, hex: "abcd", bin: "1010", privateKeys: { wif: "wifvalue", "hex-key": "hexkeyvalue" } },
+      ...extra,
+    });
+    // Derived from its private key, then switched to Seed mode.
+    const single = synced({ id: 1, name: "Single", globalSyncSource: "seed:words", result: { kind: "single" } });
+    // No wallet yet: a 256-bit hex key was the source, and 12 words hold only
+    // its first 128 bits, so emptying it would lose the rest (K3.1).
+    const hexKeySource = synced({ id: 4, name: "Hex key source", globalSyncSource: "key:hex-key", result: null });
+    // Other modes keep their seed text as text (they are not listed at all).
+    const keyMode = synced({ id: 2, name: "Key mode", mode: "key", result: { kind: "single" } });
+    const hexMode = synced({ id: 3, name: "Hex mode", mode: "hex", result: { kind: "hd" } });
+    const keys = [single, keyMode, hexMode, hexKeySource];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlClearGlobalSyncCopies"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => "keep" }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlPrivateKeyValues: (fields) => fields.privateKeys,
+        hodlEntropyFormats: { hex: {}, bin: {} },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys(keys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    // The Seed-mode keys' words move; their private keys and entropy stay.
+    for (const key of [single, hexKeySource]) {
+      assert.ok(sessionGet(session, mod.hodlSecureKeyOf(key), "seed"), key.name);
+      assert.equal(key.fields.seed, "", key.name);
+      assert.equal(key.fields.hex, "abcd", key.name);
+      assert.equal(key.fields.bin, "1010", key.name);
+      assert.equal(key.fields.privateKeys.wif, "wifvalue", key.name);
+      assert.equal(key.fields.privateKeys["hex-key"], "hexkeyvalue", key.name);
+      assert.equal(key.lastWord, "accident", key.name);
+    }
+    for (const key of [keyMode, hexMode]) {
+      assert.equal(mod.hodlSecureKeyOf(key), null, key.name);
+      assert.equal(key.fields.seed, phrase, key.name);
+      assert.equal(key.fields.hex, "abcd", key.name);
+      assert.equal(key.fields.privateKeys.wif, "wifvalue", key.name);
+    }
+    for (const key of keys) assert.equal("secureCleared" in key, false, key.name);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("a successful derive removes the active key's secureCleared mark, after the result is in", () => {
+  // The only way a marked key becomes backup-ready again is deriving it from
+  // its words; hodlCalculateKey drops the mark once the derivation succeeded.
+  const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
+  const start = app.indexOf("async function hodlCalculateKey(");
+  assert.ok(start >= 0);
+  const fn = app.slice(start, app.indexOf("\n}\n", start));
+  const drop = fn.indexOf("delete hodlKeys[hodlActiveKey].secureCleared");
+  assert.ok(drop > 0, "hodlCalculateKey drops the mark");
+  assert.equal(fn.indexOf("delete hodlKeys[hodlActiveKey].secureCleared", drop + 1), -1, "once");
+  // Only after a skip decision has returned and the result is the wallet.
+  const committed = fn.indexOf("hodlWalletResult = result;");
+  assert.ok(committed > 0 && committed < drop);
+  assert.ok(fn.indexOf('if (decision?.kind === "skip") return false;') < drop);
+});
+
+test("hodlKeyManagerEntry drops the secureCleared mark", async () => {
+  const mod = await loadAppFunctions(["hodlKeyManagerEntry"], {
+    stubs: { hodlPassphraseText: (value) => value },
+  });
+  const state = { id: 1, isLab: false, secureCleared: true, fields: { seed: "" } };
+  const copy = mod.hodlKeyManagerEntry(state);
+  assert.equal("secureCleared" in copy, false);
+  assert.equal("isLab" in copy, false);
+});
+
+test("hodlCloneDerivedKey takes the mark from the source, not the existing key", async () => {
+  const session = createSecureSession();
+  const mod = await loadAppFunctions(["hodlCloneDerivedKey", "hodlSecureKeyOf"], {
+    stubs: {
+      ...realSecureEntryStubs,
+      hodlStoredPassphraseBytes: (value) => value,
+      hodlNewKeyState: () => ({ id: 9, fields: {} }),
+    },
+    settable: ["hodlSecureSession"],
+  });
+  mod.__set.hodlSecureSession(session);
+  const lab = { id: 0, isLab: true, mode: "seed", seedMethod: "words", fields: { seed: "" }, result: { masterFingerprint: "abcd1234" } };
+  const existing = { id: 2, fields: {}, secureCleared: true };
+  const clone1 = mod.hodlCloneDerivedKey(lab, existing);
+  assert.equal("secureCleared" in clone1, false);
+  const markedLab = { ...lab, secureCleared: true };
+  const clone2 = mod.hodlCloneDerivedKey(markedLab, existing);
+  assert.equal(clone2.secureCleared, true);
+});
+
 test("turning on can clear or cancel without leaving a plan", async () => {
   const previous = globalThis.document;
   globalThis.document = { getElementById: () => null };
@@ -518,6 +831,115 @@ test("turning off converts, clears or cancels, and makes texts only for Convert"
     assert.equal(sessionGet(cancel.session, owner, "seed"), cancel.entry);
     assert.equal(cancel.entry.count, 12);
     assert.deepEqual(calls, ["dialog"]);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("ending secure entry (pagehide, back/forward restore) marks a committed key whose words were only secure (GLM)", async () => {
+  const words = "abandon ability able about above absent absorb abstract absurd abuse access accident".split(" ");
+  const session = createSecureSession();
+  const committed = { id: 1, name: "Committed", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: { masterFingerprint: "73c5da0a" } };
+  const editor = { id: 2, name: "Editor", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: null };
+  const plain = { id: 3, name: "Plain", seedMethod: "words", targetWords: 12, fields: { seed: words.join(" ") }, result: { masterFingerprint: "aaaaaaaa" } };
+  const mod = await loadAppFunctions(["hodlSecureEntryEnd", "hodlSecureKeyOf", "hodlSecureEntryOn"], {
+    stubs: { ...realSecureEntryStubs, hodlRenderSecureEntryControl: () => {} },
+    settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+  });
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys([committed, editor, plain]);
+  mod.__set.hodlSecureEntryOn(true);
+  for (const state of [committed, editor]) {
+    const entry = seedEntry(12);
+    for (let i = 0; i < words.length; i += 1) seedSet(entry, i, wordIndex.get(words[i]));
+    sessionSet(session, mod.hodlSecureKeyOf(state, true), "seed", entry);
+  }
+  mod.hodlSecureEntryEnd();
+  assert.equal(committed.secureCleared, true);
+  assert.equal("secureCleared" in editor, false);
+  assert.equal("secureCleared" in plain, false);
+  assert.equal(session.entries.size, 0);
+  assert.equal(mod.hodlSecureEntryOn, false);
+});
+
+test("turning off with Clear marks a committed key whose words were only secure", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const words = "abandon ability able about above absent absorb abstract absurd abuse access accident".split(" ");
+    const make = () => {
+      const session = createSecureSession();
+      const committed = { id: 1, name: "Committed", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: { masterFingerprint: "73c5da0a" } };
+      const editor = { id: 2, name: "Editor", seedMethod: "words", targetWords: 12, fields: { seed: "" }, result: null };
+      const entry = seedEntry(12), editorEntry = seedEntry(12);
+      for (let i = 0; i < words.length; i += 1) {
+        seedSet(entry, i, wordIndex.get(words[i]));
+        seedSet(editorEntry, i, wordIndex.get(words[i]));
+      }
+      return { session, keys: [committed, editor], committed, editor, entry, editorEntry };
+    };
+    let choice = "clear";
+    const tTextCalls = [];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlSecureEntryBackupRefusal"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => choice }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlTText: (text) => { tTextCalls.push(text); return text; },
+        hodlPrivateKeyValues: (fields) => fields.privateKeys,
+        hodlEntropyFormats: { hex: {}, bin: {} },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    const arm = (fixture) => {
+      mod.__set.hodlSecureSession(fixture.session);
+      mod.__set.hodlKeys(fixture.keys);
+      mod.__set.hodlSecureEntryOn(true);
+      sessionSet(fixture.session, mod.hodlSecureKeyOf(fixture.committed, true), "seed", fixture.entry);
+      sessionSet(fixture.session, mod.hodlSecureKeyOf(fixture.editor, true), "seed", fixture.editorEntry);
+    };
+
+    // Clear: the committed key keeps its wallet on screen but loses the only
+    // copy of its words, so it is marked and Journal refuses it.
+    const clear = make();
+    arm(clear);
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal(clear.committed.secureCleared, true);
+    assert.equal("secureCleared" in clear.editor, false);
+    assert.equal(clear.session.entries.size, 0);
+    assert.equal(mod.hodlSecureEntryOn, false);
+    const refusal = mod.hodlSecureEntryBackupRefusal();
+    assert.ok(refusal instanceof Error);
+    assert.ok(tTextCalls.some((text) => text.includes("cleared")));
+
+    // Convert writes the words back as text, so nothing is marked.
+    choice = "convert";
+    const convert = make();
+    arm(convert);
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal("secureCleared" in convert.committed, false);
+    assert.equal("secureCleared" in convert.editor, false);
+    assert.equal(convert.committed.fields.seed, words.join(" "));
+    assert.equal(convert.session.entries.size, 0);
+
+    // Cancel leaves the session and the keys as they were.
+    choice = null;
+    const cancel = make();
+    arm(cancel);
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal("secureCleared" in cancel.committed, false);
+    assert.equal("secureCleared" in cancel.editor, false);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    assert.equal(cancel.session.entries.size, 2);
   } finally {
     globalThis.document = previous;
   }
@@ -757,6 +1179,34 @@ test("Edit Input moves a key's secure words into the editor", async () => {
   assert.equal(lab.isLab, true);
   assert.equal(mod.hodlSecureKeyOf(lab), sourceToken);
   assert.equal(sessionGet(session, sourceToken, "seed"), entryA);
+});
+
+test("Edit Input leaves a cleared key's mark on the key, not the editor (MiniMax)", async () => {
+  const session = createSecureSession();
+  const outgoing = { isLab: true, id: 1, fields: { seed: "" } };
+  const source = { id: 2, fields: { seed: "" }, secureSource: false, secureCleared: true, result: { kind: "hd" } };
+  const keys = [outgoing, source];
+  const mod = await loadAppFunctions(["hodlEditKeyInputs", "hodlFillLabFromKey", "hodlSecureKeyOf"], {
+    stubs: {
+      ...realSecureEntryStubs,
+      hodlCaptureKey: () => {},
+      hodlSelectKey: () => {},
+      hodlSelectLab: () => {},
+      hodlCloneDerivedKey: (from, existing) => ({ ...existing, ...from }),
+      hodlNewLabState: () => ({ isLab: true, fields: { seed: "" } }),
+    },
+    settable: ["hodlKeys", "hodlActiveKey", "hodlSecureSession", "hodlSecureKeys"],
+  });
+  mod.__set.hodlSecureKeys(new WeakMap());
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys(keys);
+  mod.__set.hodlActiveKey(1);
+  mod.hodlEditKeyInputs();
+  const lab = keys[0];
+  assert.equal(lab.isLab, true);
+  assert.equal(lab.result, null);
+  assert.equal("secureCleared" in lab, false);
+  assert.equal(source.secureCleared, true);
 });
 
 test("the switch is refused while a Journal batch runs", async () => {

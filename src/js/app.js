@@ -6439,6 +6439,19 @@ function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   state.globalSyncSourceBits = hodlGlobalSyncSourceBits();
   return true;
 }
+
+// The fields hodlApplyGlobalSync writes, emptied so Clear leaves no copy.
+function hodlClearGlobalSyncCopies(state) {
+  let fields = state.fields, privateKeys = hodlPrivateKeyValues(fields);
+  Object.keys(hodlEntropyFormats).forEach((format) => fields[format] = "");
+  fields.seed = "";
+  fields.seedNumbers = "";
+  fields.dplusDice = "";
+  fields.directCards = "";
+  fields.bitboxDice = "";
+  privateKeys["hex-key"] = "";
+  privateKeys.wif = "";
+}
 function hodlGlobalSyncFromCurrentInput() {
   if (hodlSecureEntryOn) { hodlRenderGlobalSyncControl(); return false; }
   let state = hodlKeys[hodlActiveKey];
@@ -8205,6 +8218,7 @@ async function hodlCalculateKey(progress, action = "derive", options = {}) {
     if (decision?.kind !== "reuse") hodlCommittedResults.add(result);
     hodlRevealPrivate = false;
     hodlSetSelectedScriptType(scriptType);
+    if (hodlKeys[hodlActiveKey]) delete hodlKeys[hodlActiveKey].secureCleared;
     hodlCaptureKey();
     let logDetail = hodlWalletResult?.masterFingerprint || hodlWalletResult?.kind || "key";
     hodlSnapshotKeySummary();
@@ -12511,11 +12525,29 @@ async function hodlSecureEntryToggle(wanted) {
         if (choice === "keep" && plan.ok) {
           commitTurnOn(hodlSecureSession, plan);
           plan = null;
-          for (const state of states) state.fields.seed = "";
+          for (const state of states) {
+            // When the words were Global sync's source, every other field was
+            // computed from them: those copies go too, as at Clear, so the
+            // words are left only in Secure entry. Any other source (a hex
+            // key, dice, cards) can hold more than the words do, and a wallet
+            // made from a private key cannot be rebuilt from them, so those
+            // keys keep their fields (K3.1, Kimi, Astra).
+            if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource) && state.result?.kind !== "single") {
+              hodlClearGlobalSyncCopies(state);
+              state.lastWord = "";
+            }
+            state.fields.seed = "";
+          }
         } else if (choice === "clear") {
           discardPlan(plan);
           plan = null;
-          for (const state of states) state.fields.seed = "";
+          for (const state of states) {
+            if (state.result) state.secureCleared = true;
+            if (state.globalSync) hodlClearGlobalSyncCopies(state);
+            state.fields.seed = "";
+            // The last-word helper's copy of the wiped words goes too (GLM).
+            state.lastWord = "";
+          }
           commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
         } else {
           discardPlan(plan);
@@ -12586,6 +12618,11 @@ async function hodlSecureEntryToggle(wanted) {
             if (state) state.fields.seed = text;
           }
         } else if (choice === "clear") {
+          // Clear wipes every secure entry: a key that keeps its wallet on screen but
+          // held its words only there would back up with no words (as at turn-on Clear).
+          for (const state of hodlKeys) {
+            if (state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
+          }
           commitTurnOff(hodlSecureSession, null, "clear");
         } else {
           if (plan) discardPlan(plan);
@@ -12624,6 +12661,14 @@ function hodlSecureEntryAvailable() {
 function hodlSecureEntryEnd() {
   hodlSecureEntryOn = false;
   hodlSecureEntryConvertFailed = false;
+  // A page restored from the back/forward cache keeps its key tabs: a key that
+  // shows its wallet but held its words only in the session would back up
+  // with no words once the session is wiped, so it is marked first (GLM).
+  try {
+    for (const state of hodlKeys) {
+      if (state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
+    }
+  } catch {}
   try { sessionWipe(hodlSecureSession); } catch {}
   try { hodlRenderSecureEntryControl(); } catch {}
 }
@@ -12862,8 +12907,9 @@ function hodlSecureEntryHeld(state) {
 // Journal cannot hold securely entered words yet (a later backup format will):
 // a backup taken now would keep such a key without its recovery words.
 function hodlSecureEntryBackupRefusal() {
-  if (!hodlKeys.some((state) => hodlSecureEntryHeld(state))) return null;
-  return new Error(hodlTText("Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again."));
+  if (hodlKeys.some((state) => hodlSecureEntryHeld(state))) return new Error(hodlTText("Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again."));
+  if (hodlKeys.some((state) => state?.secureCleared)) return new Error(hodlTText("Journal cannot back up or export keys whose words were cleared by Secure entry. Enter their words again and derive their wallets, or clear those keys, then try again."));
+  return null;
 }
 function hodlInitPsbt() {
   import("./nonce-qr-capture.js").then(async ({ initNonceQrCapture }) => {
@@ -15909,6 +15955,7 @@ function hodlKeyManagerEntry(state) {
   // the encrypted file, which is an export.
   if (ArrayBuffer.isView(state.fields?.pass) && copy.fields) copy.fields.pass = hodlPassphraseText(state.fields.pass);
   delete copy.isLab;
+  delete copy.secureCleared;
   copy.reveal = false;
   copy.error = "";
   delete copy.errorSpec;
@@ -16510,6 +16557,10 @@ function hodlKeyManagerDetachFromStation(state) {
     hodlKeyManagerStatus(hodlTText("This key has words entered with Secure entry, which Journal cannot keep yet. Turn Secure entry off or clear the key first."), true);
     return;
   }
+  if (state.secureCleared) {
+    hodlKeyManagerStatus(hodlTText("This key's words were cleared by Secure entry, so Journal cannot keep it. Enter its words again and derive its wallet first."), true);
+    return;
+  }
   hodlCaptureKey();
   let retainInputs = Boolean(state.result || hodlKeyManagerHasInputs(state));
   let capacityError = retainInputs && hodlKeyManagerCapacityError();
@@ -16605,6 +16656,7 @@ function hodlCloneDerivedKey(source, existing) {
     secureSource: Boolean(source.secureSource) || hodlSecureEntryHasData(hodlSecureKeyOf(source)),
     fields: { ...source.fields, ...(source.fields?.privateKeys ? { privateKeys: { ...source.fields.privateKeys } } : {}), pass: hodlStoredPassphraseBytes(source.fields?.pass) }
   });
+  if (source.secureCleared) state.secureCleared = true; else delete state.secureCleared;
   return state;
 }
 // The wallet a key tab belongs to: its network-independent master identity
@@ -16789,6 +16841,9 @@ function hodlFillLabFromKey(source) {
   let existing = labIndex >= 0 ? hodlKeys[labIndex] : hodlNewLabState();
   let lab = hodlCloneDerivedKey(source, existing);
   Object.assign(lab, { isLab: true, secureSource: false, editSourceId: hodlKeys.includes(source) ? source.id : null, name: "Key Station", result: null, importedKeyId: null, importedName: null, importedNetworkChoice: null, error: "", reveal: false, createdScript: "", createdPath: "" });
+  // The editor shows no wallet, so a cleared key's mark stays with the key:
+  // a copy here would keep refusing backups after that key is cleared.
+  delete lab.secureCleared;
   if (labIndex < 0) {
     hodlKeys.unshift(lab);
     labIndex = 0;
