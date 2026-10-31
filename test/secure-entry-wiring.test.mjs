@@ -575,6 +575,8 @@ test("a cleared key refuses backup, and held words win", async () => {
   const refusal = mod.hodlSecureEntryBackupRefusal();
   assert.ok(refusal instanceof Error);
   const clearedText = tTextCalls.at(-1);
+  // The cleared-key refusal must be localized, or the comparison below proves nothing (MiniMax).
+  assert.equal(typeof clearedText, "string");
 
   const held = { id: 2 };
   const entry = seedEntry(12);

@@ -1701,11 +1701,12 @@ test("turning on converts only Seed-mode keys, not old seed text in another mode
   }
 });
 
-// Turn-off Clear marks a key whose words lived only in Secure entry, and only
-// once the wipe has happened: a wipe that throws leaves the words in place, so
-// no mark may claim they are gone (Kimi, #1343 follow-up).
-for (const throws of [false, true]) {
-  test(`turn-off Clear ${throws ? "that throws marks no key" : "marks the keys whose words it wiped"}`, async () => {
+// Turn-off Clear marks a key whose words lived only in Secure entry by what the
+// wipe left: sessionWipe empties the session and then reports a partial wipe,
+// so that throw still marks the key (GLM, MiniMax), while a throw before any
+// wipe leaves the words and no mark (Kimi, #1343 follow-up).
+for (const outcome of ["wiped", "wiped, then reported a partial wipe", "threw before wiping"]) {
+  test(`turn-off Clear marks a key by what the wipe left (${outcome})`, async () => {
     const previous = globalThis.document;
     const doc = new MiniDocument();
     globalThis.document = doc;
@@ -1743,8 +1744,9 @@ for (const throws of [false, true]) {
           planTurnOff: () => ({ ok: true, staged: [], blockers: [], kind: "off", generation: 0 }),
           discardPlan: () => {},
           commitTurnOff: () => {
-            if (throws) throw new Error("wipe failed");
+            if (outcome === "threw before wiping") throw new Error("wipe failed");
             wiped += 1;
+            if (outcome !== "wiped") throw new Error("Some secure entries could not be wiped cleanly.");
           },
         },
         settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey", "hodlSecureEntryBusy", "hodlJournalKeyDerivation"],
@@ -1757,11 +1759,11 @@ for (const throws of [false, true]) {
       mod.__set.hodlJournalKeyDerivation(null);
       sessionSet(session, "1", "seed", entry);
       try { await mod.hodlSecureEntryToggle(false); } catch {}
-      if (throws) {
-        assert.equal("secureCleared" in key, false, "a failed wipe left a mark");
+      if (outcome === "threw before wiping") {
+        assert.equal("secureCleared" in key, false, "a wipe that removed nothing left a mark");
       } else {
         assert.equal(wiped, 1);
-        assert.equal(key.secureCleared, true);
+        assert.equal(key.secureCleared, true, "words the wipe removed must be marked, even when it then threw");
       }
     } finally {
       globalThis.document = previous;
