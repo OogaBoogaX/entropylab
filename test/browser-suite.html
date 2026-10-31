@@ -1790,11 +1790,12 @@
   await test("tool tabs answer the arrow keys and name themselves in full", async () => {
     const strip = document.getElementById("workspace-tabs");
     const tabs = [...strip.querySelectorAll("[data-workspace]")];
-    assert(tabs.length === 9, `Expected nine tool tabs, found ${tabs.length}`);
+    // Verify joined in every build on 2026-10-29 (owner).
+    assert(tabs.length === 10, `Expected ten tool tabs, found ${tabs.length}`);
     // The visible label may be abbreviated; the accessible name never is.
     // Which tools exist and how they name themselves is the contract; where
     // they sit in the strip is a design decision that changes freely.
-    const names = ["BIP-85 Child", "Core Wallet", "Journal", "Keys", "Lightning", "Multi Signature", "Privacy", "Transactions", "Vanity Address"];
+    const names = ["BIP-85 Child", "Core Wallet", "Journal", "Keys", "Lightning", "Multi Signature", "Privacy", "Transactions", "Vanity Address", "Verify"];
     equal(tabs.map((tab) => tab.getAttribute("aria-label")).sort().join("|"), names.join("|"), "every tool tab names itself in full");
     assert(!document.querySelector('#workspace [data-workspace="sp"] .silent-payments-icon'), "Silent Payments icon should not be in the workspace tab");
     // A mismatched end tag in the shell silently reparents every later card
@@ -1826,11 +1827,14 @@
         document.getElementById("bip85-tool-intro"),
         document.querySelector("#bip85-manager > .key-tab-strip"),
       );
-      // End jumps to the last tool. Journal begins with create/open choices;
-      // section navigation and whole-Journal actions appear after opening it.
+      // End jumps to the last tool: Verify, since its unhide (#1314).
       tabs[2].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
-      await until(() => !document.getElementById("journal-card").hidden, "End to reach the Journal tool");
+      await until(() => !document.getElementById("verify-card").hidden, "End to reach the last tool (Verify)");
       assert(document.activeElement === tabs[tabs.length - 1], "End should move focus to the last tab");
+      // Reached by name. Journal begins with create/open choices; section
+      // navigation and whole-Journal actions appear after opening it.
+      document.querySelector('#workspace [data-workspace="journal"]').click();
+      await until(() => !document.getElementById("journal-card").hidden, "the Journal tool");
       const journalTabs = [...document.querySelectorAll("#journal-tool-tabs [data-journal-tool]")];
       equal(journalTabs.map((tab) => tab.dataset.journalTool).join("|"), "notes|keymanager|session");
       const journalManager = document.getElementById("journal-manager");

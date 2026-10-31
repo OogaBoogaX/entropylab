@@ -18,20 +18,23 @@
 
 import { OTS_LIMITS } from "./ots-parser.js";
 import { createOtsVerifier } from "./ots-verify-client.js";
+import { t } from "./i18n.js";
 
 // ---- pure helpers --------------------------------------------------------
 
 export function parseHexInput(s) {
-  if (typeof s !== "string") throw new TypeError("hex input must be a string");
+  if (typeof s !== "string") throw new TypeError(t("hex input must be a string"));
   // Trim, then strip a single optional "0x"/"0X" prefix and any whitespace
   // (spaces, tabs, newlines, commas).
   const trimmed = s.trim().replace(/^0x/i, "").replace(/[\s,]+/g, "").toLowerCase();
-  if (trimmed.length === 0) throw new RangeError("hex input is empty");
+  if (trimmed.length === 0) throw new RangeError(t("hex input is empty"));
   if (trimmed.length % 2 !== 0) {
-    throw new RangeError(`hex input must have an even number of characters; got ${trimmed.length}`);
+    throw new RangeError(
+      t("hex input must have an even number of characters; got {n}", { n: trimmed.length }),
+    );
   }
   if (!/^[0-9a-f]*$/.test(trimmed)) {
-    throw new Error("hex input contains non-hex characters");
+    throw new Error(t("hex input contains non-hex characters"));
   }
   const out = new Uint8Array(trimmed.length / 2);
   for (let i = 0; i < out.length; i++) out[i] = parseInt(trimmed.slice(i * 2, i * 2 + 2), 16);
@@ -40,64 +43,73 @@ export function parseHexInput(s) {
 
 export function formatResult(out) {
   if (!out || typeof out !== "object") {
-    return { tone: "danger", headline: "Error", body: "No verification result." };
+    return { tone: "danger", headline: t("Error"), body: t("No verification result.") };
   }
   switch (out.result) {
     case "MATCHES_SUPPLIED_HEADER":
       return {
         tone: "success",
-        headline: "MATCHES SUPPLIED HEADER",
+        headline: t("MATCHES SUPPLIED HEADER"),
         body: [
-          "The OTS commitment path is cryptographically consistent with the Merkle root contained in the supplied 80-byte Bitcoin block header.",
+          t(
+            "The OTS commitment path is cryptographically consistent with the Merkle root contained in the supplied 80-byte Bitcoin block header.",
+          ),
           "",
-          "WARNING — Header supplied by user. Bitcoin chain membership and proof-of-work are not verified. The strongest result available from this offline mode is cryptographic consistency with the bytes you provided. A fabricated header would also pass.",
+          t(
+            "WARNING — Header supplied by user. Bitcoin chain membership and proof-of-work are not verified. The strongest result available from this offline mode is cryptographic consistency with the bytes you provided. A fabricated header would also pass.",
+          ),
           "",
-          "This does not establish that the supplied header was mined, satisfies Bitcoin proof-of-work, belongs to Bitcoin mainnet, is at the claimed height, or is part of the canonical/best chain.",
+          t(
+            "This does not establish that the supplied header was mined, satisfies Bitcoin proof-of-work, belongs to Bitcoin mainnet, is at the claimed height, or is part of the canonical/best chain.",
+          ),
         ].join("\n"),
       };
     case "INVALID": {
-      let body =
-        "At least one completed supported Bitcoin attestation was evaluated, but none matched the supplied header. This is a cryptographic inconsistency between the proof and the header you supplied.";
+      let body = t(
+        "At least one completed supported Bitcoin attestation was evaluated, but none matched the supplied header. This is a cryptographic inconsistency between the proof and the header you supplied.",
+      );
       const reason = out.reason;
       if (typeof reason === "string") {
-        if (reason.startsWith("parse:")) body = "This is not a valid OpenTimestamps proof file.";
-        else if (reason === "expected-digest") body = "The proof's file digest does not match the expected digest.";
-        else if (reason === "original-file") body = "The original file does not hash to the proof's file digest.";
-        else if (reason === "op-too-long") body = "The proof is invalid: an operation exceeds OpenTimestamps' 4096-byte limit.";
-        else if (reason === "header-mismatch") body = "No completed Bitcoin attestation in this proof matches the supplied header.";
-        body += `\n\nReason: ${reason}`;
+        if (reason.startsWith("parse:")) body = t("This is not a valid OpenTimestamps proof file.");
+        else if (reason === "expected-digest") body = t("The proof's file digest does not match the expected digest.");
+        else if (reason === "original-file") body = t("The original file does not hash to the proof's file digest.");
+        else if (reason === "op-too-long") body = t("The proof is invalid: an operation exceeds OpenTimestamps' 4096-byte limit.");
+        else if (reason === "header-mismatch") body = t("No completed Bitcoin attestation in this proof matches the supplied header.");
+        body += "\n\n" + t("Reason: {reason}", { reason });
       }
       return { tone: "danger", headline: "INVALID", body };
     }
     case "HEADER_REQUIRED":
       return {
         tone: "warning",
-        headline: "HEADER REQUIRED",
+        headline: t("HEADER REQUIRED"),
         body: [
-          "Bitcoin header required to evaluate this path.",
+          t("Bitcoin header required to evaluate this path."),
           "",
-          "This proof has a completed Bitcoin attestation. Supply the block header for one of the claimed heights to check it.",
+          t(
+            "This proof has a completed Bitcoin attestation. Supply the block header for one of the claimed heights to check it.",
+          ),
         ].join("\n"),
       };
     case "INCOMPLETE": {
       const limit =
         typeof out.limit === "string" ? out.limit : typeof out.reason === "string" ? out.reason : "";
-      const body =
-        "Verification incomplete: this proof exceeds EntropyLab's resource limits. This is not a verdict about the proof.";
-      return {
-        tone: "warning",
-        headline: "INCOMPLETE",
-        body: limit ? `${body}\n\nLimit hit: ${limit}` : body,
-      };
+      let body = t(
+        "Verification incomplete: this proof exceeds EntropyLab's resource limits. This is not a verdict about the proof.",
+      );
+      if (limit) body += "\n\n" + t("Limit hit: {limit}", { limit });
+      return { tone: "warning", headline: "INCOMPLETE", body };
     }
     case "PENDING":
       return {
         tone: "warning",
-        headline: "PENDING — NO COMPLETED BITCOIN ATTESTATION",
+        headline: t("PENDING — NO COMPLETED BITCOIN ATTESTATION"),
         body: [
-          "No completed Bitcoin attestation was checked. This verification does not establish Bitcoin anchoring.",
+          t(
+            "No completed Bitcoin attestation was checked. This verification does not establish Bitcoin anchoring.",
+          ),
           "",
-          "This is not an anchored or confirmed timestamp.",
+          t("This is not an anchored or confirmed timestamp."),
         ].join("\n"),
       };
     case "UNSUPPORTED":
@@ -105,10 +117,12 @@ export function formatResult(out) {
         tone: "neutral",
         headline: "UNSUPPORTED",
         body: [
-          "No path led to a verifiable verdict in v1 scope. The proof may rely on operation tags or attestation types outside v1 (keccak256, reverse, hexlify, litecoin, or unknown future types). Sibling paths with v1-supported operations were also evaluated.",
+          t(
+            "No path led to a verifiable verdict in v1 scope. The proof may rely on operation tags or attestation types outside v1 (keccak256, reverse, hexlify, litecoin, or unknown future types). Sibling paths with v1-supported operations were also evaluated.",
+          ),
           "",
-          "UNSUPPORTED — OTS operation not supported by this verifier.",
-          "UNSUPPORTED — attestation type not supported by this verifier.",
+          t("UNSUPPORTED — OTS operation not supported by this verifier."),
+          t("UNSUPPORTED — attestation type not supported by this verifier."),
         ].join("\n"),
       };
     default:
@@ -118,22 +132,19 @@ export function formatResult(out) {
 
 export function formatError(err) {
   if (err && err.name === "OtsBudgetError" && err.code) {
-    return { tone: "danger", headline: `Resource limit: ${err.code}`, body: err.message };
+    return { tone: "danger", headline: t("Resource limit: {code}", { code: err.code }), body: err.message };
   }
   if (err && err.name === "OtsParseError" && err.code) {
-    return { tone: "danger", headline: `Parse error: ${err.code}`, body: err.message };
+    return { tone: "danger", headline: t("Parse error: {code}", { code: err.code }), body: err.message };
   }
   if (err instanceof RangeError) {
-    return { tone: "danger", headline: "Input length error", body: err.message };
+    return { tone: "danger", headline: t("Input length error"), body: err.message };
   }
   if (err instanceof TypeError) {
-    return { tone: "danger", headline: "Input type error", body: err.message };
+    return { tone: "danger", headline: t("Input type error"), body: err.message };
   }
-  return {
-    tone: "danger",
-    headline: "Error",
-    body: err && err.message ? err.message : String(err),
-  };
+  const body = err && err.message ? err.message : String(err);
+  return { tone: "danger", headline: t("Error"), body };
 }
 
 const bytesToHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
@@ -190,8 +201,10 @@ function readOptionalHex(value, lengths, label) {
   if (typeof value !== "string" || value.trim() === "") return undefined;
   const bytes = parseHexInput(value);
   if (!lengths.includes(bytes.length)) {
-    const allowed = lengths.map((n) => `${n} bytes (${n * 2} hex chars)`).join(" or ");
-    throw new RangeError(`${label} must be exactly ${allowed}; got ${bytes.length} bytes`);
+    const allowed = lengths.map((n) => t("{n} bytes ({chars} hex chars)", { n, chars: n * 2 })).join(t(" or "));
+    throw new RangeError(
+      t("{label} must be exactly {allowed}; got {size} bytes", { label, allowed, size: bytes.length }),
+    );
   }
   return bytes;
 }
@@ -202,10 +215,12 @@ async function readFileBytes(input, limit, label) {
   if (!input || !input.files || input.files.length === 0) return undefined;
   const file = input.files[0];
   if (!file || typeof file.arrayBuffer !== "function") {
-    throw new TypeError("Selected file could not be read as bytes");
+    throw new TypeError(t("Selected file could not be read as bytes"));
   }
   if (typeof file.size === "number" && file.size > limit) {
-    throw new RangeError(`${label} is ${file.size} bytes, limit ${limit}`);
+    throw new RangeError(
+      t("{label} is {size} bytes, limit {limit}", { label, size: file.size, limit }),
+    );
   }
   return new Uint8Array(await file.arrayBuffer());
 }
@@ -215,7 +230,10 @@ async function readFileBytes(input, limit, label) {
 function parsePastedProof(value) {
   if (typeof value === "string" && value.length > 4 * OTS_LIMITS.MAX_PROOF_BYTES) {
     throw new RangeError(
-      `Proof file is ${Math.floor(value.length / 2)} bytes, limit ${OTS_LIMITS.MAX_PROOF_BYTES}`,
+      t("Proof file is {size} bytes, limit {limit}", {
+        size: Math.floor(value.length / 2),
+        limit: OTS_LIMITS.MAX_PROOF_BYTES,
+      }),
     );
   }
   return parseHexInput(value);
@@ -238,12 +256,14 @@ function collectClaims(out, headerBytes) {
     if (att && Number.isInteger(att.height)) heights.add(att.height);
   }
   for (const height of [...heights].sort((a, b) => a - b)) {
-    claims.push({ kind: "height", text: `OTS attestation claims height: ${height}` });
+    claims.push({ kind: "height", text: t("OTS attestation claims height: {height}", { height }) });
   }
   if (headerBytes && headerBytes.length === 80) {
     claims.push({
       kind: "header-time",
-      text: `Bitcoin header time (claim, not the time the file existed): ${headerTime(headerBytes)}`,
+      text: t("Bitcoin header time (claim, not the time the file existed): {time}", {
+        time: headerTime(headerBytes),
+      }),
     });
   }
   return claims;
@@ -262,14 +282,17 @@ function renderPathRow(doc, path) {
 
   const ops = doc.createElement("code");
   ops.setAttribute("data-ots-path-ops", "");
-  ops.textContent = path && path.opNames && path.opNames.length ? path.opNames.join(" → ") : "(no ops)";
+  ops.textContent = path && path.opNames && path.opNames.length ? path.opNames.join(" → ") : t("(no ops)");
   row.appendChild(ops);
 
   if (path && path.attestation) {
     const att = doc.createElement("span");
     att.setAttribute("data-ots-path-attestation", String(path.attestation.type));
     att.textContent = path.attestation.uriHex
-      ? `${path.attestation.type} URI ${String(path.attestation.uriHex).slice(0, 16)}…`
+      ? t("{type} URI {uri}…", {
+          type: path.attestation.type,
+          uri: String(path.attestation.uriHex).slice(0, 16),
+        })
       : String(path.attestation.type);
     row.appendChild(att);
   }
@@ -278,7 +301,7 @@ function renderPathRow(doc, path) {
     const hex = bytesToHex(path.finalDigest);
     const digest = doc.createElement("code");
     digest.setAttribute("data-ots-path-digest", "");
-    digest.textContent = hex.length > 16 ? `${hex.slice(0, 16)}…` : hex;
+    digest.textContent = hex.length > 16 ? t("{hex}…", { hex: hex.slice(0, 16) }) : hex;
     row.appendChild(digest);
   }
 
@@ -292,7 +315,7 @@ function renderPathRow(doc, path) {
   if (path && path.length !== undefined) {
     const len = doc.createElement("span");
     len.setAttribute("data-ots-path-length", "");
-    len.textContent = `${path.length}/${path.limit} bytes`;
+    len.textContent = t("{length}/{limit} bytes", { length: path.length, limit: path.limit });
     row.appendChild(len);
   }
 
@@ -384,7 +407,7 @@ export function renderOtsResult(doc, resultEl, out, options = {}) {
   if (options.originalFileProvided === false || originalUnchecked) {
     const p = doc.createElement("p");
     p.setAttribute("data-ots-original-file", "not-checked");
-    p.textContent = "Original file not checked";
+    p.textContent = t("Original file not checked");
     resultEl.appendChild(p);
   }
 
@@ -394,14 +417,14 @@ export function renderOtsResult(doc, resultEl, out, options = {}) {
     if (verdict !== "HEADER_REQUIRED") appendClaims(resultEl);
     const p = doc.createElement("p");
     p.setAttribute("data-ots-paths", "");
-    p.textContent = "No attestation paths in this proof.";
+    p.textContent = t("No attestation paths in this proof.");
     resultEl.appendChild(p);
   } else {
     const details = doc.createElement("details");
     details.setAttribute("class", "derivation-advanced");
     details.setAttribute("data-ots-paths", "");
     const summary = doc.createElement("summary");
-    summary.textContent = `Attestation paths (${paths.length})`;
+    summary.textContent = t("Attestation paths ({n})", { n: paths.length });
     details.appendChild(summary);
     // The rows sit in their own box: browsers put a <details> element's
     // contents in an internal box, so spacing set on <details> never reaches
@@ -557,13 +580,13 @@ export function initOtsVerifier(root, { createVerifier = createOtsVerifier } = {
     const run = ++runId;
     verifyBtn.disabled = true;
     try {
-      const fileBytes = await readFileBytes(proofFile, OTS_LIMITS.MAX_PROOF_BYTES, "Proof file");
+      const fileBytes = await readFileBytes(proofFile, OTS_LIMITS.MAX_PROOF_BYTES, t("Proof file"));
       if (run !== runId) return;
       const proofBytes = fileBytes || parsePastedProof(proofHex.value);
-      const originalFileBytes = await readFileBytes(originalFile, OTS_LIMITS.MAX_ORIGINAL_BYTES, "Original file");
+      const originalFileBytes = await readFileBytes(originalFile, OTS_LIMITS.MAX_ORIGINAL_BYTES, t("Original file"));
       if (run !== runId) return;
-      const headerBytes = readOptionalHex(headerHex.value, [80], "Bitcoin header");
-      const expectedBytes = readOptionalHex(expectedDigest.value, [32, 20], "Expected initial digest");
+      const headerBytes = readOptionalHex(headerHex.value, [80], t("Bitcoin header"));
+      const expectedBytes = readOptionalHex(expectedDigest.value, [32, 20], t("Expected initial digest"));
       const out = await verifier.verify({
         proofBytes,
         // The verifier transfers its inputs to the worker; the page keeps its

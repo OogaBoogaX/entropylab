@@ -867,6 +867,7 @@ async function vanityApplyHarness({ method, script, address = applyRecordedAddre
     // Secure entry stays off here; its wiring is covered in secure-entry-wiring.test.mjs.
     hodlSecureSeedActive: () => false, hodlSecureEntryHasData: () => false, hodlSecureEntryDropKey() {},
     hodlSecureSeedApplies: () => false, hodlSecureEntryBackupRefusal: () => null, hodlSecureKeyOf: () => null, hodlSecureEntryHeld: () => false,
+    hodlRenderSecureEntryControl() {}, hodlSeedPicker: null, hodlMountSeedPicker() {},
     hodlVanityMatches: [match], hodlVanityRun: run, hodlVanityApplying: false,
     hodlWorkspace: "vanity", hodlSpSource: "", hodlBip85Source: "", hodlPsbtSource: "", hodlOutEl: { innerHTML: "" },
     hodlScriptTypes: api.hodlScriptTypes, hodlScriptDefinition: api.hodlScriptDefinition,

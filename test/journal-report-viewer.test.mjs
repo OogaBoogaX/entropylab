@@ -9,7 +9,8 @@ import { initPrivateCopy } from "../src/js/private-data.js";
 import { initJournalReportViewer } from "../src/js/journal-report-viewer.js";
 
 const source = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
-const builder = source.match(/^function hodlPrivacyBarMarkup\([^]*?^}/m)[0];
+// The privacy bar is built by the shared switch-bar builder.
+const builder = [/^function hodlSwitchBarMarkup\([^]*?^}/m, /^function hodlPrivacyBarMarkup\([^]*?^}/m].map((pattern) => source.match(pattern)[0]).join("\n");
 const privacyMarkup = vm.runInNewContext(`${builder}; hodlPrivacyBarMarkup`, { hodlT: (text) => text });
 const PRIVATE_TEXT = "  imported recovery text <img src=x onerror=alert(1)>\nsecond line\t  ";
 

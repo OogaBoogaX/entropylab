@@ -7,9 +7,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
-import { createSecureSession, seedEntry, seedSet, seedIndices, keyEntry, sessionSet, sessionDeleteKey, sessionWipe, sessionGet } from "../src/js/secure-entry.js";
+import { createSecureSession, seedEntry, seedSet, seedIndices, keyEntry, sessionSet, sessionDeleteKey, sessionWipe, sessionGet, SUPPORTED_METHODS } from "../src/js/secure-entry.js";
 import { seedFromIndices, entropyFromWordIndices } from "../src/js/bip39.js";
 import { wordlist } from "../src/js/bip39-english.js";
+import { createBase58check, hex } from "@scure/base";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { base58checkDecode } from "../src/js/base58.js";
+import { sha256 as wasmSha256 } from "../src/js/hashes.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
@@ -22,6 +26,7 @@ const secureEntryStubs = {
   createSecureSession: () => ({ marker: "fresh" }),
   sessionWipe: () => {},
   sessionDeleteKey: () => {},
+  keyEntry,
   hodlSecureSupported: {},
 };
 
@@ -36,6 +41,7 @@ const realSecureEntryStubs = {
   sessionSet,
   seedEntry,
   seedIndices,
+  keyEntry,
   hodlSecureSupported: {},
 };
 
@@ -65,6 +71,7 @@ test("hodlSecureEntryEnd turns the switch off and wipes the session", async () =
       ...secureEntryStubs,
       sessionWipe: (s) => { wiped.push(s); },
       hodlRenderGlobalSyncControl: () => {},
+      hodlRenderSecureEntryControl: () => {},
       hodlGlobalSyncIsHashedMode: () => { hashedCalls++; return true; },
       hodlGlobalSyncCurrentValue: () => "",
       hodlGlobalSyncCurrentBits: () => null,
@@ -92,6 +99,7 @@ test("hodlSecureEntryEnd survives a throwing wipe", async () => {
       ...secureEntryStubs,
       sessionWipe: () => { throw new Error("wipe failed"); },
       hodlRenderGlobalSyncControl: () => {},
+      hodlRenderSecureEntryControl: () => {},
       hodlGlobalSyncIsHashedMode: () => { hashedCalls++; return true; },
       hodlGlobalSyncCurrentValue: () => "",
       hodlGlobalSyncCurrentBits: () => null,
@@ -719,4 +727,435 @@ test("discarding a key's inputs drops only that state's secure words", async () 
   mod.hodlKeyManagerDiscardInputs(draft);
   assert.equal(sessionGet(session, owner, "seed"), null);
   assert.equal(entry.indices[0], 0);
+});
+
+// Secure entry P3b-1: derive a private key from the key vault's bytes.
+const b58 = createBase58check(sha256);
+const wifOf = (key, network, compressed) => b58.encode(Uint8Array.from([network === "mainnet" ? 0x80 : 0xef, ...key, ...(compressed ? [1] : [])]));
+const WIKI_KEY = hex.decode("0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d");
+const WIKI_WIF = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ";
+const MINI = "S6c56bnXQiBjk9mqSYE7ykVQ7NzrRy";
+const changedWif = WIKI_WIF.slice(0, 10) + (WIKI_WIF[10] === "1" ? "2" : "1") + WIKI_WIF.slice(11);
+const changedMini = MINI.slice(0, 10) + (MINI[10] === "1" ? "2" : "1") + MINI.slice(11);
+const keyCorpus = [
+  WIKI_WIF,
+  wifOf(WIKI_KEY, "mainnet", true),
+  wifOf(WIKI_KEY, "testnet", true),
+  MINI,
+  hex.encode(WIKI_KEY),
+  hex.encode(WIKI_KEY).toUpperCase(),
+  "0x" + hex.encode(WIKI_KEY),
+  "  " + hex.encode(WIKI_KEY).slice(0, 32) + "\n" + hex.encode(WIKI_KEY).slice(32) + "  ",
+  changedWif,
+  WIKI_WIF.slice(0, -1),
+  b58.encode(Uint8Array.from([0x81, ...WIKI_KEY])),
+  b58.encode(Uint8Array.from([0x80, ...WIKI_KEY, 0x02])),
+  changedMini,
+  MINI.slice(0, 21),
+];
+const CURVE_ORDER_HEX = "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141";
+const CURVE_ORDER = BigInt("0x" + CURVE_ORDER_HEX);
+
+// The curve is stubbed: the range check is the published secp256k1 order and
+// the public keys are deterministic, so both paths feed the same bytes to the
+// same code. The real curve is exercised by the wallet tests.
+const secpStub = {
+  utils: {
+    isValidSecretKey: (key) => {
+      if (!(key instanceof Uint8Array) || key.length !== 32) return false;
+      let value = 0n;
+      for (const byte of key) value = (value << 8n) | BigInt(byte);
+      return value > 0n && value < CURVE_ORDER;
+    },
+  },
+  getPublicKey: (key, compressed) => {
+    const out = new Uint8Array(compressed ? 33 : 65);
+    out[0] = compressed ? 0x02 : 0x04;
+    out.set(key, 1);
+    if (!compressed) out.set(key, 33);
+    return out;
+  },
+};
+
+const hodlErrorStub = (key, vars) => Object.assign(new Error(key), { spec: vars === undefined ? { key } : { key, vars } });
+
+const keyDocument = () => {
+  const state = { kind: "wif", keyValue: null };
+  return {
+    state,
+    querySelector: (selector) => (selector === 'input[name="kk"]:checked' ? { value: state.kind } : null),
+    getElementById: (id) => (id === "key" ? (state.keyValue === null ? null : { value: state.keyValue }) : null),
+  };
+};
+
+const loadKeyApp = async (overrides = {}) => {
+  const doc = keyDocument();
+  const mod = await loadAppFunctions(
+    [
+      "hodlSecureKeyKind", "hodlSecureKeyActive", "hodlSecureKeyEntry", "hodlSecureKeyApplies",
+      "hodlSecureKeyParsed", "hodlSecureKeyReady", "hodlSecureKeyWallet",
+      "hodlSecureEntryHasData", "hodlSecureKeyOf",
+      "hodlSingleKeyWallet", "hodlAssertPrivateKeyKind",
+    ],
+    {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureSupported: { ...SUPPORTED_METHODS, key: true },
+        hodlKeyMode: "key",
+        document: doc,
+        hodlBase58Check: { decode: base58checkDecode },
+        hodlSha256: wasmSha256,
+        hodlHex: hex,
+        hodlSecp256k1: secpStub,
+        addressFor: (type, pubkey, network) => `${type}:${hex.encode(pubkey)}:${network}`,
+        hodlError: hodlErrorStub,
+        hodlActiveDerivation: null,
+        hodlBrainWalletPassphrase: (text) => text,
+        hodlBrainWalletPrivateKey: () => { throw new Error("brain path used"); },
+        ...overrides.stubs,
+      },
+      settable: ["hodlSecureEntryOn", "hodlKeys", "hodlActiveKey", "hodlSecureSession", ...(overrides.settable ?? [])],
+    }
+  );
+  return { mod, doc };
+};
+
+const prepareKey = (mod, state = { id: 1, fields: {} }) => {
+  const session = createSecureSession();
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys([state]);
+  mod.__set.hodlActiveKey(0);
+  mod.__set.hodlSecureEntryOn(true);
+  const owner = mod.hodlSecureKeyOf(state, true);
+  const entry = keyEntry();
+  sessionSet(session, owner, "key", entry);
+  return { session, state, owner, entry };
+};
+
+test("hodlSecureKeyWallet matches the text path for every accepted corpus input", async () => {
+  const { mod, doc } = await loadKeyApp();
+  const { session, owner } = prepareKey(mod);
+  let compared = 0;
+  for (const text of keyCorpus) {
+    for (const kind of ["wif", "hex-key", "minikey"]) {
+      doc.state.kind = kind;
+      for (const network of ["mainnet", "testnet"]) {
+        let textWallet;
+        try {
+          mod.hodlAssertPrivateKeyKind(text, network, kind);
+          textWallet = mod.hodlSingleKeyWallet(text, network, kind);
+        } catch {
+          continue;
+        }
+        const entry = keyEntry();
+        entry.vault.setText(text);
+        sessionSet(session, owner, "key", entry);
+        const vaultWallet = mod.hodlSecureKeyWallet(network);
+        const label = `${JSON.stringify(text)} (${kind}, ${network})`;
+        assert.deepEqual(vaultWallet.privateKey, textWallet.privateKey, label);
+        assert.deepEqual(vaultWallet.minikey, textWallet.minikey, label);
+        assert.equal(vaultWallet.pubkeyCompressed, textWallet.pubkeyCompressed, label);
+        assert.equal(vaultWallet.pubkeyUncompressed, textWallet.pubkeyUncompressed, label);
+        assert.equal(vaultWallet.p2pkhUncompressed, textWallet.p2pkhUncompressed, label);
+        assert.equal(vaultWallet.p2pkhCompressed, textWallet.p2pkhCompressed, label);
+        assert.equal(vaultWallet.p2shP2wpkh, textWallet.p2shP2wpkh, label);
+        assert.equal(vaultWallet.p2wpkh, textWallet.p2wpkh, label);
+        assert.equal(vaultWallet.p2tr, textWallet.p2tr, label);
+        assert.equal(vaultWallet.network, textWallet.network, label);
+        assert.equal(vaultWallet.source, textWallet.source, label);
+        assert.equal(vaultWallet.compressed, textWallet.compressed, label);
+        assert.deepEqual(vaultWallet.notes, textWallet.notes, label);
+        assert.deepEqual(vaultWallet.warnings, textWallet.warnings, label);
+        compared++;
+      }
+    }
+  }
+  assert.ok(compared > 0, "the corpus must exercise the accepted path");
+});
+
+test("hodlSecureKeyWallet refuses with the text path's message", async () => {
+  const { mod, doc } = await loadKeyApp();
+  const { session, owner } = prepareKey(mod);
+  const cases = [];
+  for (const text of keyCorpus) for (const kind of ["wif", "hex-key", "minikey"]) for (const network of ["mainnet", "testnet"]) cases.push({ text, kind, network });
+  cases.push(
+    { text: "", kind: "wif", network: "mainnet" },
+    { text: "   ", kind: "wif", network: "mainnet" },
+    { text: WIKI_WIF, kind: "hex-key", network: "mainnet" },
+    { text: MINI, kind: "wif", network: "mainnet" },
+    { text: wifOf(WIKI_KEY, "testnet", true), kind: "wif", network: "mainnet" },
+    { text: "0".repeat(64), kind: "hex-key", network: "mainnet" },
+    { text: CURVE_ORDER_HEX, kind: "hex-key", network: "mainnet" },
+  );
+  let compared = 0;
+  for (const { text, kind, network } of cases) {
+    doc.state.kind = kind;
+    let textError;
+    try {
+      mod.hodlAssertPrivateKeyKind(text, network, kind);
+      mod.hodlSingleKeyWallet(text, network, kind);
+    } catch (error) {
+      textError = error;
+    }
+    if (!textError) continue;
+    const entry = keyEntry();
+    entry.vault.setText(text);
+    sessionSet(session, owner, "key", entry);
+    let vaultError;
+    try {
+      mod.hodlSecureKeyWallet(network);
+    } catch (error) {
+      vaultError = error;
+    }
+    const label = `${JSON.stringify(text)} (${kind}, ${network})`;
+    assert.ok(vaultError, `the vault path must refuse ${label}`);
+    assert.equal(vaultError.message, textError.message, label);
+    assert.deepEqual(vaultError.spec, textError.spec, label);
+    compared++;
+  }
+  assert.ok(compared > 0, "the corpus must exercise the refused path");
+});
+
+test("hodlSecureKeyWallet zeroes every vault copy and keeps its own key", async () => {
+  const { mod, doc } = await loadKeyApp();
+  const { entry } = prepareKey(mod);
+  const recorded = [];
+  const original = entry.vault.bytes.bind(entry.vault);
+  entry.vault.bytes = () => { const bytes = original(); recorded.push(bytes); return bytes; };
+
+  doc.state.kind = "wif";
+  entry.vault.setText(WIKI_WIF);
+  const vaultLength = entry.vault.length;
+  assert.equal(vaultLength, WIKI_WIF.length);
+  const wallet = mod.hodlSecureKeyWallet("mainnet");
+  assert.equal(entry.vault.length, vaultLength, "the vault still holds the key");
+  assert.ok(recorded.length > 0);
+  for (const bytes of recorded) assert.deepEqual([...bytes], new Array(bytes.length).fill(0));
+  // The parsed key was zeroed by the wallet builder, so a non-zero key here is
+  // the wallet's own copy, not the parser's array.
+  assert.ok(wallet.privateKey.some((byte) => byte !== 0), "the wallet keeps its own copy");
+  assert.deepEqual([...wallet.privateKey], [...WIKI_KEY]);
+
+  recorded.length = 0;
+  entry.vault.setText(wifOf(WIKI_KEY, "testnet", true));
+  assert.throws(() => mod.hodlSecureKeyWallet("mainnet"));
+  assert.ok(recorded.length > 0);
+  for (const bytes of recorded) assert.deepEqual([...bytes], new Array(bytes.length).fill(0));
+});
+
+test("hodlSecureKeyActive needs the switch, the supported method and a non-brain kind", async () => {
+  const real = await loadKeyApp({ stubs: { hodlSecureSupported: SUPPORTED_METHODS } });
+  const session = createSecureSession();
+  real.mod.__set.hodlSecureSession(session);
+  real.mod.__set.hodlKeys([{ id: 1, fields: {} }]);
+  real.mod.__set.hodlActiveKey(0);
+  real.mod.__set.hodlSecureEntryOn(true);
+  real.doc.state.kind = "wif";
+  assert.equal(real.mod.hodlSecureKeyActive(), false, "SUPPORTED_METHODS.key is false");
+  assert.equal(real.mod.hodlSecureKeyEntry(true), null);
+  assert.equal(session.entries.size, 0);
+
+  const on = await loadKeyApp();
+  on.mod.__set.hodlSecureSession(createSecureSession());
+  on.mod.__set.hodlKeys([{ id: 1, fields: {} }]);
+  on.mod.__set.hodlActiveKey(0);
+  on.mod.__set.hodlSecureEntryOn(true);
+  on.doc.state.kind = "brain";
+  assert.equal(on.mod.hodlSecureKeyActive(), false, "brain wallets stay text");
+  on.doc.state.kind = "wif";
+  assert.equal(on.mod.hodlSecureKeyActive(), true);
+  on.mod.__set.hodlSecureEntryOn(false);
+  assert.equal(on.mod.hodlSecureKeyActive(), false, "the switch is off");
+});
+
+test("hodlSecureKeyApplies keeps text that arrived while the switch was on", async () => {
+  const session = createSecureSession();
+  const { mod, doc } = await loadKeyApp();
+  const key = { id: 1, fields: {} };
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys([key]);
+  mod.__set.hodlActiveKey(0);
+  mod.__set.hodlSecureEntryOn(true);
+  doc.state.kind = "wif";
+
+  // Nothing typed anywhere: the picker's key.
+  assert.equal(mod.hodlSecureKeyApplies(), true);
+
+  // Text stored for the selected kind keeps the text path.
+  key.fields.privateKeys = { wif: WIKI_WIF };
+  assert.equal(mod.hodlSecureKeyApplies(), false);
+
+  // The standard text field keeps it too.
+  key.fields.privateKeys = { wif: "" };
+  doc.state.keyValue = WIKI_WIF;
+  assert.equal(mod.hodlSecureKeyApplies(), false);
+  doc.state.keyValue = null;
+
+  // A character in the vault decides, whatever text is around.
+  const entry = keyEntry();
+  entry.vault.setText("5");
+  sessionSet(session, mod.hodlSecureKeyOf(key, true), "key", entry);
+  key.fields.privateKeys = { wif: WIKI_WIF };
+  assert.equal(mod.hodlSecureKeyApplies(), true);
+});
+
+test("hodlSecureEntryHasData sees a key vault with anything in it", async () => {
+  const session = createSecureSession();
+  const mod = await loadAppFunctions(["hodlSecureEntryHasData"], {
+    stubs: realSecureEntryStubs,
+    settable: ["hodlSecureSession"],
+  });
+  mod.__set.hodlSecureSession(session);
+  assert.equal(mod.hodlSecureEntryHasData(1), false);
+
+  const entry = keyEntry();
+  sessionSet(session, 1, "key", entry);
+  assert.equal(mod.hodlSecureEntryHasData(1), false);
+
+  entry.vault.setText("5");
+  assert.equal(mod.hodlSecureEntryHasData(1), true);
+
+  entry.vault.clear();
+  assert.equal(mod.hodlSecureEntryHasData(1), false);
+
+  const seed = seedEntry(12);
+  seedSet(seed, 0, 0);
+  sessionSet(session, 2, "seed", seed);
+  assert.equal(mod.hodlSecureEntryHasData(2), true);
+});
+
+test("a key vault does not make the seed method apply (Kimi K3.1)", async () => {
+  const session = createSecureSession();
+  const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+  const key = { id: 1, seedMethod: "words", targetWords: 12, fields: { seed: phrase } };
+  const mod = await loadAppFunctions(
+    ["hodlSecureSeedApplies", "hodlSecureSeedPickerShown", "hodlSecureEntryHasData", "hodlSecureEntryHeld", "hodlSecureKeyOf"],
+    {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureSupported: { ...SUPPORTED_METHODS, seed: true },
+        hodlKeyMode: "seed",
+        hodlSeedMethod: "words",
+        hodlTargetWordCount: 12,
+        document: { getElementById: () => null },
+      },
+      settable: ["hodlSecureEntryOn", "hodlKeys", "hodlActiveKey", "hodlSecureSession"],
+    }
+  );
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys([key]);
+  mod.__set.hodlActiveKey(0);
+  mod.__set.hodlSecureEntryOn(true);
+  const owner = mod.hodlSecureKeyOf(key, true);
+  const entry = keyEntry();
+  entry.vault.setText("5");
+  sessionSet(session, owner, "key", entry);
+
+  assert.equal(mod.hodlSecureSeedApplies(), false, "a key vault is not seed words");
+  assert.equal(mod.hodlSecureSeedPickerShown(key), false, "the text phrase keeps the text field");
+  assert.equal(mod.hodlSecureEntryHasData(owner), true, "the protective check still sees the vault");
+  assert.equal(mod.hodlSecureEntryHeld(key), true);
+});
+
+test("secure seed words do not make the key method apply (Kimi K3.1)", async () => {
+  const { mod, doc } = await loadKeyApp();
+  const session = createSecureSession();
+  const key = { id: 1, fields: {} };
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys([key]);
+  mod.__set.hodlActiveKey(0);
+  mod.__set.hodlSecureEntryOn(true);
+  doc.state.kind = "wif";
+  doc.state.keyValue = WIKI_WIF;
+  const seed = seedEntry(12);
+  seedSet(seed, 0, 0);
+  sessionSet(session, mod.hodlSecureKeyOf(key, true), "seed", seed);
+  assert.equal(mod.hodlSecureKeyApplies(), false, "seed words are not a key vault");
+});
+
+test("the method-specific checks see only their own method (Kimi K3)", async () => {
+  const session = createSecureSession();
+  const mod = await loadAppFunctions(["hodlSecureSeedHasWords", "hodlSecureKeyHasData"], {
+    stubs: realSecureEntryStubs,
+    settable: ["hodlSecureSession"],
+  });
+  mod.__set.hodlSecureSession(session);
+  assert.equal(mod.hodlSecureSeedHasWords(null), false);
+  assert.equal(mod.hodlSecureKeyHasData(null), false);
+
+  const seed = seedEntry(12);
+  const key = keyEntry();
+  sessionSet(session, 1, "seed", seed);
+  sessionSet(session, 2, "key", key);
+  assert.equal(mod.hodlSecureSeedHasWords(1), false, "an empty seed entry holds no words");
+  assert.equal(mod.hodlSecureKeyHasData(2), false, "an empty vault holds no bytes");
+  assert.equal(mod.hodlSecureKeyHasData(1), false, "a seed entry is not key data");
+  assert.equal(mod.hodlSecureSeedHasWords(2), false, "a key entry is not seed words");
+
+  seedSet(seed, 0, 0);
+  key.vault.setText("5");
+  assert.equal(mod.hodlSecureSeedHasWords(1), true);
+  assert.equal(mod.hodlSecureKeyHasData(2), true);
+  assert.equal(mod.hodlSecureKeyHasData(1), false);
+  assert.equal(mod.hodlSecureSeedHasWords(2), false);
+
+  const failing = await loadAppFunctions(["hodlSecureSeedHasWords", "hodlSecureKeyHasData"], {
+    stubs: { ...realSecureEntryStubs, sessionGet: () => { throw new Error("broken"); } },
+    settable: ["hodlSecureSession"],
+  });
+  failing.__set.hodlSecureSession({});
+  assert.equal(failing.hodlSecureSeedHasWords(1), true, "a failed read counts as holding words");
+  assert.equal(failing.hodlSecureKeyHasData(1), true, "a failed read counts as holding bytes");
+});
+
+test("the length lock ignores key-vault data and holds for seed words (MiniMax)", async () => {
+  const session = createSecureSession();
+  const state = { id: 1, fields: {} };
+  let captured = 0;
+  const mod = await loadAppFunctions(["hodlSetSeedLength", "hodlSecureKeyOf"], {
+    stubs: {
+      ...realSecureEntryStubs,
+      hodlSeedLengths: { 12: { words: 12 }, 24: { words: 24 } },
+      hodlDiceMethod: "coldcard",
+      hodlUpdateSeedLengthControl: () => {},
+      hodlCaptureKey: () => { captured++; },
+      hodlInvalidateActiveKeyOutput: () => {},
+      hodlRenderKeyForm: () => {},
+      hodlRestoreFormFields: () => {},
+      hodlQueueMasterFingerprintPreview: () => {},
+    },
+    settable: ["hodlSecureEntryOn", "hodlKeys", "hodlActiveKey", "hodlSecureSession", "hodlTargetWordCount"],
+  });
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys([state]);
+  mod.__set.hodlActiveKey(0);
+  mod.__set.hodlSecureEntryOn(true);
+  mod.__set.hodlTargetWordCount(24);
+  const owner = mod.hodlSecureKeyOf(state, true);
+
+  // Only key-vault data: the length may change.
+  const key = keyEntry();
+  key.vault.setText("5");
+  sessionSet(session, owner, "key", key);
+  mod.hodlSetSeedLength(12);
+  assert.equal(captured, 1, "a key vault does not lock the length");
+  assert.equal(state.targetWords, 12);
+
+  // Secure seed words: the length is refused.
+  const seed = seedEntry(12);
+  seedSet(seed, 0, 0);
+  sessionSet(session, owner, "seed", seed);
+  mod.hodlSetSeedLength(24);
+  assert.equal(captured, 1, "secure words lock the length");
+  assert.equal(state.targetWords, 12);
+});
+
+test("the key vault path never builds a string", async () => {
+  const { mod } = await loadKeyApp();
+  for (const name of ["hodlSecureKeyParsed", "hodlSecureKeyReady", "hodlSecureKeyWallet"]) {
+    const source = mod[name].toString();
+    for (const forbidden of ["vault.text(", "TextDecoder", "fromCharCode", "String("]) {
+      assert.equal(source.includes(forbidden), false, `${name} must not contain ${forbidden}`);
+    }
+  }
 });
