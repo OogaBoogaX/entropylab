@@ -508,6 +508,30 @@ material. Its security posture rests on the following model:
 - Material involving loss of funds (incorrect derivations, exfiltration of
   secret data, injected script execution in the generated HTML, unexpected
   network egress) is treated as a security issue.
+- The Android wrapper in `android/` embeds the pinned v1.0.0 release
+  `entropylab.html` (vendored bytes, SHA-256
+  `bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d`, matched
+  against that release's `SHA256SUMS.txt`) in a WebView. The PGP signatures
+  in `SHA256SUMS.asc` were verified against the release's `KEYS` file in the
+  recorded check (good signatures from the keys with fingerprints
+  `3428CBB54C369D8AF14EF600C801EE1D5285101E`,
+  `64434EE48A96C38E78B7875F4E7E416EE17D237C`,
+  `542ECCA3B5CB74CEC95729B392C21496202E3774`, and
+  `63EF760EE641A58516D54930F0B7D606C6FD9D52`). Its offline
+  guarantee is enforced by the platform: the manifest requests no permissions
+  (including `INTERNET`), the WebView blocks network loads and refuses any
+  load that is not the bundled asset, backups and device transfer are
+  excluded, and a SHA-256 pin check fails closed at build time and again
+  before the calculator opens. The wrapper adds the Android WebView
+  (Chromium) to the trusted computing base — a WebView or WebView-update
+  compromise is a risk the plain HTML path does not carry. It is a
+  debug-build-only artifact and has not been tested on a physical device.
+  Declared rotation/size/keyboard changes redraw the live WebView without
+  persisting its calculator session. Saved-state bundles contain no view or
+  calculator state. Genuine backgrounding still removes the task and kills
+  the process; destruction detaches and destroys the WebView. Process death
+  or unhandled recreation starts at the launch screen. Callback tests use
+  Android test doubles; real device lifecycle and erasure remain unproven.
 
 ### Preview-only QR observation
 
