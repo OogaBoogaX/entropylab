@@ -129,3 +129,34 @@ test("lone surrogates are refused even where String.prototype.isWellFormed is mi
     appClipboardClear();
   }
 });
+
+// A public copy still waiting on the browser must not end a private copy made
+// after it began (Astra, #1347 round 2).
+for (const native of [true, false]) test(`a pending public copy (${native ? "Clipboard API" : "refused, then fallback"}) keeps a private copy made after it began`, async () => {
+  const { copyText } = await import("../src/js/clipboard.js");
+  const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  let finish;
+  const pendingWrite = new Promise((resolve, reject) => { finish = native ? resolve : () => reject(new Error("NotAllowedError")); });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: { clipboard: { writeText: () => pendingWrite } } });
+  const field = { value: "", style: {}, setAttribute() {}, select() {}, remove() {} };
+  Object.defineProperty(globalThis, "document", { configurable: true, writable: true, value: { activeElement: null, createElement: () => field, execCommand: () => true } });
+  try {
+    appClipboardClear();
+    const pending = copyText("1BoatSLRHtKNngkdXEeobR76b53LETtpyT", { host: { append() {} } });
+    const phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    assert.equal(appClipboardPut(phrase), true);
+    finish();
+    assert.equal(await pending, true);
+    assert.equal(appClipboardText(), phrase);
+    // A public copy that begins after the private one still ends it.
+    finish = () => {};
+    Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: { clipboard: { writeText: async () => {} } } });
+    assert.equal(await copyText("bc1qpublic", { host: { append() {} } }), true);
+    assert.equal(appClipboardHas(), false);
+  } finally {
+    if (savedNavigator) Object.defineProperty(globalThis, "navigator", savedNavigator); else delete globalThis.navigator;
+    if (savedDocument) Object.defineProperty(globalThis, "document", savedDocument); else delete globalThis.document;
+    appClipboardClear();
+  }
+});
