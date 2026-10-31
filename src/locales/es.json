@@ -2410,5 +2410,9 @@
   "Original file": "Archivo original",
   "Bitcoin header": "Encabezado de Bitcoin",
   "Expected initial digest": "Resumen inicial esperado",
-  "Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.": "Opcional. El archivo original o su resumen esperado verifican que esta prueba sea para ese archivo. Sin ninguno de los dos, solo se verifica la ruta de la prueba hacia el encabezado del bloque."
+  "Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.": "Opcional. El archivo original o su resumen esperado verifican que esta prueba sea para ese archivo. Sin ninguno de los dos, solo se verifica la ruta de la prueba hacia el encabezado del bloque.",
+  "Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.": "La entrada segura todavía está activada: algunas entradas no se pudieron convertir a texto. Inténtalo de nuevo o elige Borrar entradas y desactivar.",
+  "The word picker could not load. Turn Secure entry off to use standard text entry.": "El selector de palabras no se pudo cargar. Desactiva la entrada segura para usar la entrada de texto estándar.",
+  "Journal cannot back up or export keys whose words were cleared by Secure entry. Enter their words again and derive their wallets, or clear those keys, then try again.": "Journal no puede hacer copias de seguridad ni exportar claves cuyas palabras fueron borradas por la entrada segura. Vuelve a introducir sus palabras y deriva sus billeteras, o borra esas claves, luego inténtalo de nuevo.",
+  "This key's words were cleared by Secure entry, so Journal cannot keep it. Enter its words again and derive its wallet first.": "Las palabras de esta clave fueron borradas por la entrada segura, por lo que Journal no puede conservarla. Vuelve a introducir sus palabras y deriva su billetera primero."
 }
