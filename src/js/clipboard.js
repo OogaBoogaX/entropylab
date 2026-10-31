@@ -12,6 +12,7 @@
 // body, outside a modal's trap and Escape handler, so focus then goes back
 // to whatever held it before the copy.
 import { t as hodlTText } from "./i18n.js";
+import { appClipboardClear, appClipboardHas } from "./app-clipboard.js";
 
 const fallbackCopy = (text, host) => {
   const focused = document.activeElement;
@@ -47,6 +48,8 @@ export const copyText = async (text, { host = document.body, isCurrent = () => t
     try {
       await writeText.call(navigator.clipboard, text);
       wroteClipboard = true;
+      // Copying something else ends what was copied within EntropyLab.
+      if (appClipboardHas()) appClipboardClear();
       return true;
     } catch {}
   }
@@ -54,7 +57,10 @@ export const copyText = async (text, { host = document.body, isCurrent = () => t
   // That request cannot be retracted, but it must not start a fresh fallback.
   if (!isCurrent()) return false;
   const copied = fallbackCopy(text, host);
-  if (copied) wroteClipboard = true;
+  if (copied) {
+    wroteClipboard = true;
+    if (appClipboardHas()) appClipboardClear();
+  }
   return copied;
 };
 

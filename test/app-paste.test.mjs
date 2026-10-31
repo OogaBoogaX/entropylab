@@ -166,7 +166,7 @@ const recordingApi = (record, { refuse = false } = {}) => ({
 });
 Object.assign(passApi, recordingApi(passApi));
 const fill = await loadAppFunctions(["hodlAppPasteInto"], { stubs: { hodlPassphraseVaultField: passApi, hodlStationPassphraseFields: stationFields } });
-const fakeField = (id) => ({ id, value: "", events: [], focused: false, dispatchEvent(event) { this.events.push(event); return true; }, focus() { this.focused = true; } });
+const fakeField = (id, tagName = "INPUT") => ({ id, tagName, value: "", events: [], focused: false, dispatchEvent(event) { this.events.push(event); return true; }, focus() { this.focused = true; } });
 const withInputEvent = async (body) => {
   const saved = Object.getOwnPropertyDescriptor(globalThis, "InputEvent");
   globalThis.InputEvent = class extends Event { constructor(type, init = {}) { super(type, init); this.inputType = init.inputType; } };
@@ -234,4 +234,19 @@ test("a vault passphrase field without its vault, a refused vault, or an empty a
   fill.hodlAppPasteInto(empty);
   assert.equal(empty.value, "");
   assert.deepEqual(empty.events, []);
+}));
+
+test("a single-line field takes line breaks as a typed paste would; a textarea keeps them", () => withInputEvent(() => {
+  appClipboardPut("correct\nhorse\r\nbattery\n");
+  const line = fakeField("ln-pass");
+  fill.hodlAppPasteInto(line);
+  assert.equal(line.value, "correct horse battery");
+  const area = fakeField("journal-phrase", "TEXTAREA");
+  fill.hodlAppPasteInto(area);
+  assert.equal(area.value, "correct\nhorse\r\nbattery\n");
+  passApi.calls.length = 0;
+  fill.hodlAppPasteInto(fakeField("pass"));
+  assert.deepEqual(passApi.calls[0].seen, encoded("correct horse battery"));
+  assert.ok(passApi.calls[0].bytes.every((byte) => byte === 0));
+  assert.equal(appClipboardText(), "correct\nhorse\r\nbattery\n", "the held value is unchanged");
 }));

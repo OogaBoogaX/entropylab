@@ -182,7 +182,7 @@ const isCompositionInputType = (type) => COMPOSITION_INPUT_TYPES.has(type ?? "")
 // so a passphrase pasted with its trailing newline derives the seed other
 // tools derive from it, and unmask() (whose value setter strips line breaks)
 // shows exactly what the vault holds.
-const singleLineText = (text) => text.replace(/[\r\n]+$/, "").replace(/\r\n|[\r\n]/g, " ");
+export const singleLineText = (text) => text.replace(/[\r\n]+$/, "").replace(/\r\n|[\r\n]/g, " ");
 
 export const bindVaultField = (field, vault, { active = () => true } = {}) => {
   let pending = null, composing = null, echoing = false;

@@ -370,21 +370,21 @@ for (const notebook of [true, false]) {
     const setText = (text) => { if (notebook) field.value = text; else field.textContent = text; };
     return { button, field, setText };
   }
-  test(`Journal ${area} copies current text without retaining it on the control`, withPage("works", async (document) => {
+  test(`Journal ${area} copies current text within EntropyLab without retaining it on the control`, withPage("works", async (document) => {
     const { button, field, setText } = journalPage(document);
     for (const phrase of [VECTORS[0][2], VECTORS[1][2]]) {
       const content = `first line\n  ${phrase}${notebook ? "" : "\n\n"}`;
       setText(content);
       await journal.hodlJournalCopyContent(button, field, notebook);
-      assert.equal(written.at(-1), content);
+      assert.equal(appClipboardText(), content);
       assert.deepEqual(leaks(button, phrase), [], "the control retains no payload during confirmation");
       mock.timers.tick(1600);
       assert.deepEqual(leaks(button, phrase), [], "the control retains no payload after confirmation");
       assert.equal(button.getAttribute("aria-label"), button.dataset.copyLabel);
     }
-    assert.equal(written.length, 2);
+    assert.deepEqual(written, [], "Journal text reached the system clipboard");
   }));
-  test(`Journal ${area} uses the shared clipboard fallback`, withPage("none", async (document) => {
+  test(`Journal ${area} never uses the system clipboard fallback`, withPage("none", async (document) => {
     const { button, field, setText } = journalPage(document);
     const content = `  ${VECTORS[0][2]}${notebook ? "" : "\n"}`;
     setText(content);
@@ -392,7 +392,8 @@ for (const notebook of [true, false]) {
     // rather than the notebook's editable textarea.
     document.execCommand = (command) => (executed.push([command, document.querySelector("textarea[readonly]")?.value]), true);
     await journal.hodlJournalCopyContent(button, field, notebook);
-    assert.deepEqual(executed, [["copy", content]]);
+    assert.deepEqual(executed, []);
+    assert.equal(appClipboardText(), content);
     assert.equal(document.querySelector("textarea[readonly]"), null);
     assert.deepEqual(leaks(button, VECTORS[0][2]), []);
   }));

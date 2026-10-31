@@ -155,7 +155,7 @@ import { decorateAppPaste, syncAppPaste, initAppPaste } from "./app-paste.js";
 import { publicFieldHtml as hodlPublicFieldMarkup, publicValueHtml as hodlPublicValueHtml } from "./public-data.js";
 import { bip47AccountNode as hodlBip47AccountNode, bip47AccountPath as hodlBip47AccountPath, bip47NotificationAddress as hodlBip47NotificationAddress, decodePaymentCode as hodlBip47DecodePaymentCode, encodePaymentCode as hodlBip47EncodePaymentCode, Bip47Error as hodlBip47Error, bip47PairRows as hodlBip47PairRows, bip47ReceiveRow as hodlBip47ReceiveRow, bip47DecodeNotificationTx as hodlBip47DecodeNotificationTx, hexToBytes as hodlBip47HexToBytes } from "./bip47.js";
 import { bip47OwnHtml as hodlBip47OwnHtml, bip47ContactHtml as hodlBip47ContactHtml, bip47ErrorHtml as hodlBip47ErrorHtml, bip47RowsHtml as hodlBip47RowsHtml, bip47NotifyInputsHtml as hodlBip47NotifyInputsHtml, bip47NotifyHtml as hodlBip47NotifyHtml, bip47NotifyErrorHtml as hodlBip47NotifyErrorHtml } from "./bip47-ui.js";
-import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
+import { PassphraseVault, bindVaultField, singleLineText as hodlSingleLineText } from "./passphrase-vault.js";
 import { parsePrivateKeyBytes, KeyBytesError } from "./key-bytes.js";
 import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-session.js";
 import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn, planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS as hodlSecureSupported } from "./secure-entry.js";
@@ -6565,8 +6565,12 @@ function hodlAppPasteInto(field) {
   // (ln-pass is a plain password field and takes the text path).
   let vaultIds = ["pass", "bip47-pass", "sp-pass", "psbt-pass", "nonce-pass"];
   let vault = field.id === "pass" ? hodlPassphraseVaultField : hodlStationPassphraseFields?.[field.id]?.api;
+  // A single-line field takes the paste as a typed paste would: trailing line
+  // breaks dropped, inner ones as spaces (the vault's own rule), so the same
+  // copied text is the same passphrase whichever way it arrives.
+  let singleLine = field.tagName !== "TEXTAREA", breaks = bytes.some((byte) => byte === 10 || byte === 13);
   if (vault) {
-    let copy = bytes.slice();
+    let copy = singleLine && breaks ? new TextEncoder().encode(hodlSingleLineText(appClipboardText())) : bytes.slice();
     try {
       vault.setBytes(copy, { notify: true });
     } catch {
@@ -6585,7 +6589,7 @@ function hodlAppPasteInto(field) {
     } catch {
       return;
     }
-    field.value = appClipboardText();
+    field.value = singleLine && breaks ? hodlSingleLineText(appClipboardText()) : appClipboardText();
     field.dispatchEvent(event);
   }
   field.focus();
@@ -18679,10 +18683,11 @@ function hodlJournalSyncCopyButton(field, button = document.getElementById("jour
 async function hodlJournalCopyContent(button, field, notebook = false, isCurrent = () => true) {
   if (!button || button.disabled || !hodlReadoutIsShown(button) || !hodlReadoutIsShown(field) || !isCurrent()) return false;
   if (notebook && !field.value.trim()) return false;
-  // Notes and imported debug events can contain secrets. Read them only for
-  // this click; the clipboard control never keeps a second payload copy.
+  // Notes and imported debug events can contain secrets, so they copy within
+  // EntropyLab, never to the system clipboard. Read them only for this click;
+  // the clipboard control never keeps a second payload copy.
   let text = notebook ? hodlJournalFormatNotebook(hodlJournalPageNotesText({ ...hodlJournalActivePage(), notesText: field.value })) : field.textContent;
-  let copied = await copyText(text, { isCurrent });
+  let copied = isCurrent() && appClipboardPut(text);
   if (copied && isCurrent() && hodlReadoutIsShown(button) && hodlReadoutIsShown(field)) hodlShowCopiedIcon(button, {
     copyIcon: hodlClipboardIconMarkup(),
     copiedIcon: hodlCopiedIconMarkup(),

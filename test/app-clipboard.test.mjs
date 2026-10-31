@@ -85,3 +85,31 @@ test("initAppClipboard clears on pagehide and its return removes the listener", 
   assert.equal(listeners.has("pagehide"), false);
   assert.equal(appClipboardText(), "secret", "removing the listener leaves the store alone");
 }));
+
+test("a copied leading byte-order mark survives the round trip, and a lone surrogate is refused", () => {
+  const bom = String.fromCharCode(0xfeff), lone = String.fromCharCode(0xd800);
+  appClipboardClear();
+  assert.equal(appClipboardPut(`${bom}TREZOR`), true);
+  assert.equal(appClipboardText(), `${bom}TREZOR`);
+  assert.equal(appClipboardPut(`abc${lone}`), false);
+  assert.equal(appClipboardText(), `${bom}TREZOR`, "a refused copy keeps the value held before it");
+  appClipboardClear();
+});
+
+test("copying anything to the system clipboard ends what was copied within EntropyLab", async () => {
+  const { copyText } = await import("../src/js/clipboard.js");
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const define = (value) => Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value });
+  try {
+    appClipboardPut("private value");
+    // A copy that never happened (its source is no longer current) ends nothing.
+    define({ clipboard: { writeText: async () => {} } });
+    assert.equal(await copyText("bc1qpublic", { host: null, isCurrent: () => false }), false);
+    assert.equal(appClipboardText(), "private value");
+    assert.equal(await copyText("bc1qpublic", { host: null }), true);
+    assert.equal(appClipboardHas(), false);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, "navigator", saved); else delete globalThis.navigator;
+    appClipboardClear();
+  }
+});

@@ -6,11 +6,14 @@
 let held = null;
 
 const announce = () => {
-  if (typeof document !== "undefined" && document) document.dispatchEvent(new Event("hodl:app-clipboard"));
+  if (typeof document !== "undefined" && typeof document?.dispatchEvent === "function") document.dispatchEvent(new Event("hodl:app-clipboard"));
 };
 
 export const appClipboardPut = (text) => {
   if (typeof text !== "string" || !text) return false;
+  // A lone surrogate has no UTF-8 form (TextEncoder would swap in U+FFFD):
+  // refuse the copy rather than hold a different value.
+  if (typeof text.isWellFormed === "function" && !text.isWellFormed()) return false;
   if (held) held.fill(0);
   held = new TextEncoder().encode(text);
   announce();
@@ -19,7 +22,8 @@ export const appClipboardPut = (text) => {
 
 export const appClipboardHas = () => held !== null;
 
-export const appClipboardText = () => (held ? new TextDecoder().decode(held) : "");
+// ignoreBOM keeps a leading U+FEFF that was copied (the default decoder drops it).
+export const appClipboardText = () => (held ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(held) : "");
 
 // The live buffer. Callers must copy it, never keep it: the next put or clear
 // zeroes it in place (a vault passphrase field will copy it in a later part).
