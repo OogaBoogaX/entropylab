@@ -517,6 +517,83 @@ test("Clear empties the fields Global sync filled", async () => {
   }
 });
 
+test("Keep empties the fields Global sync filled, so the words stay only in Secure entry (owner 10-31)", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    const session = createSecureSession();
+    const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
+    const synced = {
+      id: 1, name: "Synced", mode: "seed", seedMethod: "words", targetWords: 12, globalSync: true, lastWord: "accident",
+      fields: {
+        seed: phrase, seedNumbers: "1 2 3", hex: "abcd", bin: "1010",
+        dplusDice: "dplus", directCards: "cards", bitboxDice: "bitbox",
+        name: "Synced", privateKeys: { wif: "wifvalue", "hex-key": "hexkeyvalue" },
+      },
+    };
+    const unsynced = { id: 2, name: "Unsynced", mode: "seed", seedMethod: "words", targetWords: 12, globalSync: false, lastWord: "kept", fields: { seed: phrase, hex: "beef" } };
+    const keys = [synced, unsynced];
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlClearGlobalSyncCopies"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => "keep" }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "seed",
+        hodlPrivateKeyValues: (fields) => fields.privateKeys,
+        hodlEntropyFormats: { hex: {}, bin: {} },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys"],
+    });
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys(keys);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(mod.hodlSecureEntryOn, true);
+    // Both keys' words moved into the session.
+    for (const key of keys) {
+      assert.ok(sessionGet(session, mod.hodlSecureKeyOf(key), "seed"), key.name);
+      assert.equal(key.fields.seed, "");
+      assert.equal("secureCleared" in key, false);
+    }
+    for (const field of ["hex", "bin", "seedNumbers", "dplusDice", "directCards", "bitboxDice"]) {
+      assert.equal(synced.fields[field], "", field);
+    }
+    assert.equal(synced.fields.privateKeys.wif, "");
+    assert.equal(synced.fields.privateKeys["hex-key"], "");
+    assert.equal(synced.fields.name, "Synced");
+    assert.equal(synced.lastWord, "");
+    // A key without Global sync keeps its other fields: they are its own input.
+    assert.equal(unsynced.fields.hex, "beef");
+    assert.equal(unsynced.lastWord, "kept");
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("a successful derive removes the active key's secureCleared mark, after the result is in", () => {
+  // The only way a marked key becomes backup-ready again is deriving it from
+  // its words; hodlCalculateKey drops the mark once the derivation succeeded.
+  const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
+  const start = app.indexOf("async function hodlCalculateKey(");
+  assert.ok(start >= 0);
+  const fn = app.slice(start, app.indexOf("\n}\n", start));
+  const drop = fn.indexOf("delete hodlKeys[hodlActiveKey].secureCleared");
+  assert.ok(drop > 0, "hodlCalculateKey drops the mark");
+  assert.equal(fn.indexOf("delete hodlKeys[hodlActiveKey].secureCleared", drop + 1), -1, "once");
+  // Only after a skip decision has returned and the result is the wallet.
+  const committed = fn.indexOf("hodlWalletResult = result;");
+  assert.ok(committed > 0 && committed < drop);
+  assert.ok(fn.indexOf('if (decision?.kind === "skip") return false;') < drop);
+});
+
 test("hodlKeyManagerEntry drops the secureCleared mark", async () => {
   const mod = await loadAppFunctions(["hodlKeyManagerEntry"], {
     stubs: { hodlPassphraseText: (value) => value },

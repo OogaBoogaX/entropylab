@@ -12496,7 +12496,15 @@ async function hodlSecureEntryToggle(wanted) {
         if (choice === "keep" && plan.ok) {
           commitTurnOn(hodlSecureSession, plan);
           plan = null;
-          for (const state of states) state.fields.seed = "";
+          for (const state of states) {
+            // Global sync filled other fields from the same words: they go
+            // too, as at Clear, so the words are left only in Secure entry.
+            if (state.globalSync) {
+              hodlClearGlobalSyncCopies(state);
+              state.lastWord = "";
+            }
+            state.fields.seed = "";
+          }
         } else if (choice === "clear") {
           discardPlan(plan);
           plan = null;
@@ -12728,7 +12736,7 @@ function hodlSecureEntryHeld(state) {
 // a backup taken now would keep such a key without its recovery words.
 function hodlSecureEntryBackupRefusal() {
   if (hodlKeys.some((state) => hodlSecureEntryHeld(state))) return new Error(hodlTText("Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again."));
-  if (hodlKeys.some((state) => state?.secureCleared)) return new Error(hodlTText("Journal cannot back up or export keys whose words were cleared when Secure entry was turned on. Enter their words again and derive their wallets, or clear those keys, then try again."));
+  if (hodlKeys.some((state) => state?.secureCleared)) return new Error(hodlTText("Journal cannot back up or export keys whose words were cleared by Secure entry. Enter their words again and derive their wallets, or clear those keys, then try again."));
   return null;
 }
 function hodlInitPsbt() {
@@ -16378,7 +16386,7 @@ function hodlKeyManagerDetachFromStation(state) {
     return;
   }
   if (state.secureCleared) {
-    hodlKeyManagerStatus(hodlTText("This key's words were cleared when Secure entry was turned on, so Journal cannot keep it. Enter its words again and derive its wallet first."), true);
+    hodlKeyManagerStatus(hodlTText("This key's words were cleared by Secure entry, so Journal cannot keep it. Enter its words again and derive its wallet first."), true);
     return;
   }
   hodlCaptureKey();
