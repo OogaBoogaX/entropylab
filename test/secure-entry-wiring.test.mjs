@@ -552,6 +552,30 @@ test("both Journal backups refuse while a key holds secure words", async () => {
   assert.ok(failing.hodlSecureEntryBackupRefusal() instanceof Error);
 });
 
+test("a cleared key refuses backup, and held words win", async () => {
+  const session = createSecureSession();
+  const tTextCalls = [];
+  const mod = await loadAppFunctions(["hodlSecureEntryBackupRefusal", "hodlSecureKeyOf"], {
+    stubs: { ...realSecureEntryStubs, hodlTText: (text) => { tTextCalls.push(text); return text; } },
+    settable: ["hodlKeys", "hodlSecureSession"],
+  });
+  mod.__set.hodlSecureSession(session);
+  const cleared = { id: 1, secureCleared: true };
+  mod.__set.hodlKeys([cleared]);
+  const refusal = mod.hodlSecureEntryBackupRefusal();
+  assert.ok(refusal instanceof Error);
+
+  const held = { id: 2 };
+  const entry = seedEntry(12);
+  seedSet(entry, 0, 1);
+  sessionSet(session, mod.hodlSecureKeyOf(held, true), "seed", entry);
+  mod.__set.hodlKeys([cleared, held]);
+  tTextCalls.length = 0;
+  const heldRefusal = mod.hodlSecureEntryBackupRefusal();
+  assert.ok(heldRefusal instanceof Error);
+  assert.equal(tTextCalls[0], "Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again.");
+});
+
 test("hodlSecureEntryHasData sees any securely entered word", async () => {
   const session = createSecureSession();
   const mod = await loadAppFunctions(["hodlSecureEntryHasData"], {
@@ -637,6 +661,41 @@ test("detach refuses a key with securely entered words", async () => {
   assert.deepEqual(keys, [state]);
   assert.equal(sessionGet(session, owner, "seed"), entry);
   assert.equal(entry.count, 1);
+});
+
+test("detach refuses a key whose words were cleared", async () => {
+  const session = createSecureSession();
+  const state = { id: 1, number: 1, fields: {}, secureCleared: true };
+  const keys = [state];
+  const statusCalls = [];
+  let captureCalls = 0, releaseCalls = 0;
+  const mod = await loadAppFunctions(["hodlKeyManagerDetachFromStation", "hodlSecureKeyOf"], {
+    stubs: {
+      ...realSecureEntryStubs,
+      keyVaultIdentity: () => "identity",
+      hodlCaptureKey: () => { captureCalls++; },
+      hodlKeyManagerHasInputs: () => false,
+      hodlKeyManagerCapacityError: () => "",
+      hodlKeyManagerStatus: (...args) => { statusCalls.push(args); },
+      hodlReleaseKeyConsumers: () => { releaseCalls++; },
+      hodlKeyManagerPending: [],
+      hodlRenderKeyTabs: () => {},
+      hodlRestoreKey: () => {},
+      hodlJournalLog: () => {},
+      hodlElement: () => ({ children: [], focus() {} }),
+      hodlTText: (text) => text,
+    },
+    settable: ["hodlKeys", "hodlActiveKey", "hodlSecureSession"],
+  });
+  mod.__set.hodlSecureSession(session);
+  mod.__set.hodlKeys(keys);
+  mod.__set.hodlActiveKey(0);
+  mod.hodlKeyManagerDetachFromStation(state);
+  assert.equal(statusCalls.length, 1);
+  assert.equal(statusCalls[0][1], true);
+  assert.equal(captureCalls, 0);
+  assert.equal(releaseCalls, 0);
+  assert.deepEqual(keys, [state]);
 });
 
 test("a key derived from secure words is marked, and Journal refuses it", async () => {
