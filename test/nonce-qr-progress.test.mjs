@@ -46,16 +46,18 @@ async function bootWithStage2(camera = {}) {
   assert.equal(el("nonce-qr-stage-2").dataset.captured, "true");
   return { el, capture, hooks };
 }
-for (const action of ["invalid", "stop", "camera-error"]) {
+for (const action of ["invalid", "stop", "stop-throws", "camera-error"]) {
   test(`discarded assembly resets progress and keeps completed stages: ${action}`, async () => {
-    const { el, hooks } = await bootWithStage2();
+    const camera = {};
+    const { el, hooks } = await bootWithStage2(camera);
     await el("nonce-qr-start").onclick();
     hooks.receive(demo.scenarios.success.messages.find(m => m.stage === 3).medium_ur_parts[0]);
     const bars = el("nonce-qr-bars");
     assert.equal(bars.getAttribute("aria-valuenow"), "1");
     assert.ok(bars.children.length > 1);
+    if (action === "stop-throws") camera.stop = () => { throw new Error("camera stop failed"); };
     if (action === "invalid") hooks.receive("ur:bytes/adamadam");
-    else if (action === "stop") el("nonce-qr-stop").onclick();
+    else if (action.startsWith("stop")) el("nonce-qr-stop").onclick();
     else hooks.onError({code: "CAMERA_DISCONNECTED"});
     assert.equal(bars.getAttribute("aria-valuenow"), "0");
     assert.equal(bars.children.length, 0);
@@ -64,12 +66,19 @@ for (const action of ["invalid", "stop", "camera-error"]) {
     assert.equal(el("nonce-qr-stop").disabled, true);
   });
 }
-// End Session swallows a throwing clear(), so the stages must already be gone
-// when it throws (DeepSeek, #1311 review).
-test("Clear empties the capture even when stopping the camera throws", async () => {
+// End Session and pagehide clear the capture: a camera that throws while
+// stopping must not keep the stages, the preview or the busy flag, and a frame
+// still being decoded must not bring a stage back (DeepSeek on #1311; GLM,
+// DeepSeek and K3.1 on #1353).
+test("Clear empties the capture and ends the scan even when stopping the camera throws", async () => {
   const camera = {};
-  const { el, capture } = await bootWithStage2(camera);
+  const { el, capture, hooks } = await bootWithStage2(camera);
+  await el("nonce-qr-start").onclick();
   camera.stop = () => { throw new Error("camera stop failed"); };
-  assert.throws(() => capture.clear(), /camera stop failed/);
+  capture.clear();
+  assert.equal(el("nonce-qr-stage-2").dataset.captured, "false");
+  assert.equal(el("nonce-qr-video").hidden, true);
+  assert.equal(el("nonce-qr-stop").disabled, true);
+  for (const frame of demo.scenarios.success.messages.find(m => m.stage === 2).medium_ur_parts) hooks.receive(frame);
   assert.equal(el("nonce-qr-stage-2").dataset.captured, "false");
 });
