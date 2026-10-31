@@ -1,6 +1,9 @@
 // Private readouts share one deliberate copy action. The shown value is the
 // source of truth at click time; controls never retain the secret themselves.
-import { copyText, showCopiedIcon } from "./clipboard.js";
+// Private values copy into EntropyLab's own clipboard (app-clipboard.js),
+// never the system clipboard.
+import { showCopiedIcon } from "./clipboard.js";
+import { appClipboardPut } from "./app-clipboard.js";
 import { t as hodlTText, tAttr as hodlTAttr } from "./i18n.js";
 import { hodlEscapeAttribute } from "./i18n-sanitize.js";
 
@@ -27,11 +30,11 @@ export function initPrivateCopy({ copyIcon = () => "", copiedIcon = () => "", on
     const value = field?.querySelector("[data-private-value]");
     if (!isReadoutShown(value) || value.closest("[data-private-field]") !== field || !value.textContent) return;
     const complete = onCopyStart(button);
-    const copied = await copyText(value.textContent, { host: field });
+    const copied = appClipboardPut(value.textContent);
     complete?.(copied);
     if (!copied) return;
     if (!isReadoutShown(button) || !isReadoutShown(value)) return;
-    showCopiedIcon(button, { copyIcon: copyIcon(), copiedIcon: copiedIcon(), label: hodlTText(button.dataset.copyLabel || "Copy") });
+    showCopiedIcon(button, { copyIcon: copyIcon(), copiedIcon: copiedIcon(), label: hodlTText(button.dataset.copyLabel || "Copy"), copiedLabel: hodlTText("Copied within EntropyLab") });
   };
   document.addEventListener("click", onClick);
   return () => document.removeEventListener("click", onClick);

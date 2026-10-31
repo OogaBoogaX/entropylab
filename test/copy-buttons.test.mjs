@@ -31,6 +31,7 @@ import { deriveApplication, wipeBip85Result } from "../src/js/bip85.js";
 import { hodlApplyStaticI18n, hodlSetLocale, t as translate } from "../src/js/i18n.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
 import { MiniDocument, MiniElement, MiniNodeFilter } from "./mini-dom.mjs";
+import { appClipboardClear, appClipboardText } from "../src/js/app-clipboard.js";
 
 const inert = new Proxy(function () {}, { get: (target, key) => key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inert, apply: () => inert, construct: () => inert });
 Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert, window: inert });
@@ -72,6 +73,7 @@ const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigat
 const clipboard = (mode) => Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: mode === "none" ? {} : { clipboard: { writeText: (text) => mode === "denied" ? Promise.reject(new Error("denied")) : (written.push(text), Promise.resolve()) } } });
 function page(mode = "works") {
   written.length = executed.length = 0;
+  appClipboardClear();
   globalThis.document = new MiniDocument();
   // Record rerenders preserve focus only when the old control belongs to
   // that view. Model DOM ancestry and activeElement, including detached
@@ -224,28 +226,32 @@ for (const [name, words, target, text] of GRIDS) {
 }
 
 for (const [name, words, target, text] of COPYABLE) {
-  test(`${name}: a click copies exactly the phrase`, withPage("works", async (document) => {
+  test(`${name}: a click copies exactly the phrase into the app clipboard`, withPage("works", async (document) => {
     const { button, render } = seedPage(document);
     render(words, target);
     button.click();
     await settle();
-    assert.deepEqual(written, [text]);
+    assert.deepEqual(written, [], "a private copy reached the system clipboard");
+    assert.equal(appClipboardText(), text);
   }));
 
-  test(`${name}: the fallback copy path gets exactly the phrase too`, withPage("none", async (document) => {
+  test(`${name}: a page without the Clipboard API still copies into the app clipboard only`, withPage("none", async (document) => {
     const { button, render } = seedPage(document);
     render(words, target);
     button.click();
     await settle();
-    assert.deepEqual(executed, [["copy", text]]);
+    assert.deepEqual(executed, [], "a private copy used the system clipboard fallback");
+    assert.equal(appClipboardText(), text);
   }));
 
-  test(`${name}: a refused clipboard write falls back to the same text`, withPage("denied", async (document) => {
+  test(`${name}: a refused system clipboard does not affect the app clipboard`, withPage("denied", async (document) => {
     const { button, render } = seedPage(document);
     render(words, target);
     button.click();
     await settle();
-    assert.deepEqual(executed, [["copy", text]]);
+    assert.deepEqual(written, []);
+    assert.deepEqual(executed, []);
+    assert.equal(appClipboardText(), text);
   }));
 }
 
@@ -258,6 +264,7 @@ for (const [name, words, target] of NOT_COPYABLE) {
     await settle();
     assert.deepEqual(written, []);
     assert.deepEqual(executed, []);
+    assert.equal(appClipboardText(), "");
     assert.ok(!button.classList.contains("is-copied"));
   }));
 }
@@ -299,22 +306,28 @@ for (const [name, words] of NOT_COPYABLE) {
 
 test("a click copies the grid as it is now, not as it was when the button was first used", withPage("works", async (document) => {
   const { button, render } = seedPage(document);
+  const copies = [];
   render(TWELVE, 12);
   button.click();
   await settle();
+  copies.push(appClipboardText());
   mock.timers.tick(1600);
   render(VECTORS[1][2].split(" "), 12);
   button.click();
   await settle();
+  copies.push(appClipboardText());
   mock.timers.tick(1600);
   render(TWELVE.slice(0, 3), 12);
   button.click();
   await settle();
+  copies.push(appClipboardText());
   mock.timers.tick(1600);
   render(TWENTY_FOUR, 24);
   button.click();
   await settle();
-  assert.deepEqual(written, [TWELVE.join(" "), VECTORS[1][2], TWELVE.slice(0, 3).join(" "), TWENTY_FOUR.join(" ")]);
+  copies.push(appClipboardText());
+  assert.deepEqual(copies, [TWELVE.join(" "), VECTORS[1][2], TWELVE.slice(0, 3).join(" "), TWENTY_FOUR.join(" ")]);
+  assert.deepEqual(written, []);
 }));
 
 test("after the page's pagehide sweep the button copies nothing", withPage("works", async (document) => {
@@ -327,6 +340,7 @@ test("after the page's pagehide sweep the button copies nothing", withPage("work
   await settle();
   assert.deepEqual(written, []);
   assert.deepEqual(executed, []);
+  assert.equal(appClipboardText(), "");
   mock.timers.tick(1600);
   assert.deepEqual(leaks(button, TWELVE.join(" ")), []);
 }));
@@ -476,7 +490,8 @@ for (const [name, words, target] of TRANSLATABLE) {
       hodlSetLocale(locale, false);
       button.click();
       await settle();
-      assert.deepEqual(written, [words.join(" ")]);
+      assert.deepEqual(written, [], "a private copy reached the system clipboard");
+      assert.equal(appClipboardText(), words.join(" "));
       assert.deepEqual(shownWords(document, words.length), words);
       assert.deepEqual(leaks(button, words.join(" ")), []);
     }));
@@ -488,7 +503,8 @@ for (const [name, words, target] of TRANSLATABLE) {
       hodlApplyStaticI18n();
       button.click();
       await settle();
-      assert.deepEqual(written, [words.join(" ")]);
+      assert.deepEqual(written, [], "a private copy reached the system clipboard");
+      assert.equal(appClipboardText(), words.join(" "));
       assert.deepEqual(shownWords(document, words.length), words);
       assert.deepEqual(leaks(button, words.join(" ")), []);
     }));
@@ -539,6 +555,7 @@ test("BIP-85 refuses to copy a hidden child", withPage("works", async (document)
   button.click();
   await settle();
   assert.deepEqual(written, [], "a hidden child reached the clipboard");
+  assert.equal(appClipboardText(), "");
 }));
 
 test("BIP-85 renders no clipboard control for a concealed child", withPage("works", async (document) => {
@@ -553,6 +570,7 @@ test("BIP-85 refuses a detached control after switching children", withPage("wor
   button.click();
   await settle();
   assert.deepEqual(written, [], "a stale control copied the new child");
+  assert.equal(appClipboardText(), "");
 }));
 
 for (const [index, [name, , secret]] of CHILDREN.entries()) {
@@ -567,32 +585,37 @@ for (const [index, [name, , secret]] of CHILDREN.entries()) {
     assert.deepEqual(leaks(button, secret), [], "after the Copied note times out");
   }));
 
-  test(`BIP-85 ${name}: a click copies exactly the child`, withPage("works", async (document) => {
+  test(`BIP-85 ${name}: a click copies exactly the child into the app clipboard`, withPage("works", async (document) => {
     const { button } = bip85Page(document, index + 1);
     assert.equal(button.disabled, false);
     button.click();
     await settle();
-    assert.deepEqual(written, [secret]);
+    assert.deepEqual(written, [], "a private copy reached the system clipboard");
+    assert.equal(appClipboardText(), secret);
     assert.equal(button.disabled, false);
   }));
 
-  test(`BIP-85 ${name}: the fallback copy path gets exactly the child`, withPage("none", async (document) => {
+  test(`BIP-85 ${name}: a page without the Clipboard API still copies into the app clipboard only`, withPage("none", async (document) => {
     const { button } = bip85Page(document, index + 1);
     button.click();
     await settle();
-    assert.deepEqual(executed, [["copy", secret]]);
+    assert.deepEqual(executed, [], "a private copy used the system clipboard fallback");
+    assert.equal(appClipboardText(), secret);
   }));
 }
 
 test("BIP-85: a click copies the active child, whichever tab it is", withPage("works", async (document) => {
   const { show } = bip85Page(document, 1);
   // Forwards, backwards, and the same tab twice.
+  const copies = [];
   for (const index of [4, 2, 8, 1, 1, 6]) {
     show(index).click();
     await settle();
+    copies.push(appClipboardText());
     mock.timers.tick(1600);
   }
-  assert.deepEqual(written, [4, 2, 8, 1, 1, 6].map((index) => CHILDREN[index - 1][2]));
+  assert.deepEqual(copies, [4, 2, 8, 1, 1, 6].map((index) => CHILDREN[index - 1][2]));
+  assert.deepEqual(written, []);
 }));
 
 test("BIP-85: with no child on show there is no button to copy from", withPage("works", async (document) => {
@@ -614,4 +637,5 @@ test("after the page's pagehide sweep the BIP-85 button copies nothing", withPag
   await settle();
   assert.deepEqual(written, []);
   assert.deepEqual(executed, []);
+  assert.equal(appClipboardText(), "");
 }));

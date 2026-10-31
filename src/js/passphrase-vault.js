@@ -429,7 +429,9 @@ export const bindVaultField = (field, vault, { active = () => true } = {}) => {
       apply(start === end ? Math.max(0, start - 1) : start, end, "", "deleteContentBackward");
     },
     // Script-side: the field shows `bytes` (a stored passphrase), or nothing.
-    setBytes: (bytes) => {
+    // `notify` tells the page's listeners, as an edit would (a paste from
+    // EntropyLab's own clipboard); a stored passphrase being restored does not.
+    setBytes: (bytes, { notify = false } = {}) => {
       endComposition();
       try {
         vault.setBytes(bytes);
@@ -445,6 +447,7 @@ export const bindVaultField = (field, vault, { active = () => true } = {}) => {
         field.value = vault.text();
         vault.clear();
       }
+      if (notify) echo("insertFromPaste");
     },
     clear: () => {
       endComposition();
