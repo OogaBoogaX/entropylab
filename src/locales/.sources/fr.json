@@ -2433,5 +2433,12 @@
   "Scan PSBT QR": "ada300f644f1eab1d4b9daeec732d838fbd57c43e30ef717fc26a487ea7e2aea",
   "Replace": "95e154398a4bc0091aa4d6b607472ac5a89e41fbc84a3a49f823314d6de9eebc",
   "Keep": "183f00f483d3844e875d26eac74c676054383aef38ed5a8e4d1505ef21008585",
-  "{received} of {total} parts": "1fa1191baeb5ad5b0c118a3be01bbedaf90dc15da76d6273aba8983f2c7869ad"
+  "{received} of {total} parts": "1fa1191baeb5ad5b0c118a3be01bbedaf90dc15da76d6273aba8983f2c7869ad",
+  "Privacy signals": "dc4b7153d42aa51cc0e8504ca4a8b3c0d8ea083ec0bff5e0bc9c19412153bee1",
+  "Some inputs are finalized and others are not. This is the shape of a payjoin proposal, and also of a transaction still being signed by several people. Check every input amount and the fee before signing.": "e45068ea4fdea7dec996b9db29b25abd931137ac9ec6aa91be9faa7d8a355200",
+  "Inputs carry key paths from {count} different master keys. These paths are claims written into the file, not proof of who owns the coins.": "6d45f0807a62ba26605adaae843b047313be5e241620cbbd3c15926de35e45af",
+  "{count} outputs pay exactly {amount}. Equal outputs are a coinjoin pattern; they also occur in batched payments.": "380058a6a39a7dbc0ff33b203eddd3f9b1cda830071a88d369a8868ecc8e61d1",
+  "Some checks could not run: a raw transaction carries no key paths or signing state.": "c01fc6de06d70fdeb647d231e64b36fc040d9f58064a5c8e132a11cd600100b1",
+  "No payjoin or coinjoin pattern found in this transaction's structure; this does not rule either out.": "7a71005bc1c2a122be93940c9582b274c2b5f109f9d124e9b8115f4f50f5beac",
+  "{type} URI {uri}…": "0bbf6e68482d907faa15f317a2001d6935296272f4756791d11038d6d2dcbd8b"
 }
