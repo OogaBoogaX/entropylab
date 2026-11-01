@@ -200,11 +200,18 @@ test("review shows one chosen roll and moves without keeping a face", () => {
   assert.equal(show.checked, false);
   assert.equal(ctx.host.querySelectorAll("[data-secure-dice-face]").length, 0);
 
-  // Anything that is not an integer in 1..count is ignored: the position
-  // stays where it was, which the face still shows.
+  // Anything that is not an integer in 1..count names no roll: no face shows
+  // beside it, and leaving the field puts the current number back (round 2:
+  // Grok, Kimi, MiniMax, Astra).
   for (const bad of ["0", "5", "abc", "1.5", ""]) {
     position.value = bad;
     input(position);
+    show.checked = true;
+    change(show);
+    assert.equal(ctx.host.querySelectorAll("[data-secure-dice-face]").length, 0, `no face beside "${bad}"`);
+    assert.equal(show.checked, false);
+    change(position);
+    assert.equal(position.value, "2");
     show.checked = true;
     change(show);
     const face = ctx.host.querySelectorAll("[data-secure-dice-face]");
@@ -238,15 +245,17 @@ test("review shows one chosen roll and moves without keeping a face", () => {
 
 test("no transcript: the recorded sequence is never written as text", () => {
   const ctx = setup();
-  const buttons = ctx.host.querySelectorAll("[data-secure-roll]");
-  for (const button of buttons) click(button);
+  // 6 1 5 2 4 3: an order the pad's own face labels (1 to 6) cannot spell,
+  // looked for with any separators between the rolls (MiniMax).
+  const sequence = [6, 1, 5, 2, 4, 3];
+  for (const face of sequence) click(ctx.host.querySelector(`[data-secure-roll="${face}"]`));
   assert.equal(ctx.entry.count, 6);
-  const pad = find(ctx, "secure-dice-pad");
-  const rest = ctx.host.textContent.replace(pad.textContent, "");
-  assert.ok(!rest.includes("123456"));
+  const transcript = new RegExp(sequence.join("\\D{0,6}"));
+  assert.doesNotMatch(ctx.host.textContent, transcript);
   for (const element of [ctx.host, ...ctx.host.querySelectorAll("*")]) {
+    assert.doesNotMatch(String(element.value ?? ""), transcript, `value of ${element.id || element.tagName}`);
     for (const name of element.getAttributeNames()) {
-      assert.ok(!String(element.getAttribute(name)).includes("123456"), `${name} on ${element.id || element.tagName}`);
+      assert.doesNotMatch(String(element.getAttribute(name)), transcript, `${name} on ${element.id || element.tagName}`);
     }
   }
   assert.equal(ctx.calls.rollAt.length, 0);
@@ -313,4 +322,83 @@ test("destroy empties the host, drops its listeners and leaves the entry intact"
   assert.equal(ctx.entry.count, 2);
   assert.deepEqual(Array.from(ctx.entry.rolls), before);
   assert.equal(ctx.entry.wiped, false);
+});
+
+test("the face shown always belongs to the roll number in the field", () => {
+  const ctx = setup();
+  for (const face of [6, 5, 4, 1]) click(ctx.host.querySelector(`[data-secure-roll="${face}"]`));
+  click(find(ctx, "secure-dice-review-open"));
+  const position = find(ctx, "secure-dice-review-position");
+  const show = find(ctx, "secure-dice-review-show");
+  const shown = () => ctx.host.querySelector("[data-secure-dice-face]")?.textContent ?? null;
+  position.value = "2";
+  input(position);
+  show.checked = true;
+  change(show);
+  assert.equal(shown(), "5");
+  // Grok, Kimi, MiniMax: an out-of-range number hides the face.
+  position.value = "9";
+  input(position);
+  assert.equal(shown(), null);
+  assert.equal(show.checked, false);
+  show.checked = true;
+  change(show);
+  assert.equal(shown(), null, "no face beside a number that names no roll");
+  assert.equal(show.checked, false);
+  // Astra: another notation for 2 is not read as 2, and shows nothing.
+  position.value = "2e0";
+  input(position);
+  show.checked = true;
+  change(show);
+  assert.equal(shown(), null);
+  // Leaving the field puts the current roll number back.
+  change(position);
+  assert.equal(position.value, "2");
+  show.checked = true;
+  change(show);
+  assert.equal(shown(), "5");
+});
+
+test("a selection touching the pad is not copied while focus is elsewhere", () => {
+  const ctx = setup();
+  let touches = true;
+  ctx.doc.getSelection = () => ({ isCollapsed: false, containsNode: (node, partly) => touches && node === ctx.host && partly === true });
+  const event = (type) => {
+    let prevented = false;
+    return { type, get defaultPrevented() { return prevented; }, preventDefault() { prevented = true; } };
+  };
+  for (const type of ["copy", "cut"]) {
+    const outside = event(type);
+    ctx.doc.dispatchEvent(outside);
+    assert.equal(outside.defaultPrevented, true, `${type} of a selection over the pad`);
+  }
+  touches = false;
+  const elsewhere = event("copy");
+  ctx.doc.dispatchEvent(elsewhere);
+  assert.equal(elsewhere.defaultPrevented, false, "a selection elsewhere copies as usual");
+  touches = true;
+  ctx.pad.destroy();
+  const after = event("copy");
+  ctx.doc.dispatchEvent(after);
+  assert.equal(after.defaultPrevented, false, "destroy drops the document listener");
+});
+
+test("a malformed rolls entry is refused before anything is mounted", () => {
+  const doc = new MiniDocument();
+  const host = doc.createElement("div");
+  const listened = [];
+  const addEventListener = doc.addEventListener.bind(doc);
+  doc.addEventListener = (type, listener) => { listened.push(type); addEventListener(type, listener); };
+  assert.throws(() => mountSecureDicePad(host, { entry: { kind: "rolls", count: 0 }, rollsPush, rollsUndo, rollAt, doc }), /rolls entry/);
+  assert.equal(host.childNodes.length, 0, "nothing is mounted");
+  assert.deepEqual(listened, [], "no listener is left behind");
+});
+
+test("a full pad hands focus to a control that can take it", () => {
+  const ctx = setup({ capacity: 2 });
+  for (const face of [3, 4]) click(ctx.host.querySelector(`[data-secure-roll="${face}"]`));
+  let focused = null;
+  for (const id of ["secure-dice-undo", "secure-dice-review-open"]) find(ctx, id).focus = function () { focused = this.id; };
+  ctx.pad.focus();
+  assert.equal(focused, "secure-dice-undo");
 });

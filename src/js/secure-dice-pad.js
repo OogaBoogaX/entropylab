@@ -55,7 +55,7 @@ export function mountSecureDicePad(host, {
   onChange = () => {},
   doc = document,
 } = {}) {
-  if (!entry || typeof entry !== "object" || entry.kind !== "rolls") throw new Error("A dice pad needs a rolls entry.");
+  if (!entry || typeof entry !== "object" || entry.kind !== "rolls" || !(entry.rolls instanceof Uint8Array) || !Number.isInteger(entry.count)) throw new Error("A dice pad needs a rolls entry.");
   if (typeof rollsPush !== "function" || typeof rollsUndo !== "function" || typeof rollAt !== "function") throw new Error("A dice pad needs the rolls entry helpers.");
 
   // A translation may or may not fill {placeholders}; fill any it leaves.
@@ -165,7 +165,12 @@ export function mountSecureDicePad(host, {
 
   const renderFace = () => {
     faceContainer.replaceChildren();
-    if (!showBox.checked || entry.wiped || reviewPosition < 0 || reviewPosition >= entry.count) {
+    // A face is shown only for the roll the field names: a number still being
+    // typed, out of range or in another notation shows none (Grok, Kimi,
+    // MiniMax, Astra).
+    const named = String(positionInput.value ?? "").trim() === String(reviewPosition + 1);
+    if (!showBox.checked || !named || entry.wiped || reviewPosition < 0 || reviewPosition >= entry.count) {
+      if (showBox.checked && !named) showBox.checked = false;
       faceContainer.textContent = DOTS;
       return;
     }
@@ -282,13 +287,20 @@ export function mountSecureDicePad(host, {
 
   const onPositionInput = () => {
     if (!reviewing) return;
+    // Any edit hides the face first, so it never sits beside another number.
+    showBox.checked = false;
+    renderFace();
     const raw = String(positionInput.value ?? "").trim();
     if (!/^\d+$/.test(raw)) return;
     const n = Number(raw);
     if (!Number.isInteger(n) || n < 1 || n > entry.count) return;
     reviewPosition = n - 1;
-    showBox.checked = false;
     renderReview();
+  };
+
+  // Leaving the field with a number it cannot use puts the current one back.
+  const onPositionChange = () => {
+    if (reviewing) renderReview();
   };
 
   const onShowToggle = () => {
@@ -324,16 +336,27 @@ export function mountSecureDicePad(host, {
     event.preventDefault();
   };
   const HOST_BLOCKED = ["copy", "cut", "dragstart"];
+  // A copy goes to the focused element, which may be outside the pad while
+  // the selection covers a shown face: refuse any selection that touches it.
+  const blockSelection = (event) => {
+    try {
+      const selection = doc.getSelection?.();
+      if (selection && !selection.isCollapsed && selection.containsNode?.(host, true)) event.preventDefault();
+    } catch {}
+  };
+  const DOC_BLOCKED = ["copy", "cut"];
 
   pad.addEventListener("keydown", onPadKeydown);
   undoButton.addEventListener("click", onUndo);
   reviewOpen.addEventListener("click", openReview);
   showBox.addEventListener("change", onShowToggle);
   positionInput.addEventListener("input", onPositionInput);
+  positionInput.addEventListener("change", onPositionChange);
   reviewPrev.addEventListener("click", () => moveReview(-1));
   reviewNext.addEventListener("click", () => moveReview(1));
   reviewClose.addEventListener("click", closeReview);
   for (const type of HOST_BLOCKED) host.addEventListener(type, blockClipboard);
+  for (const type of DOC_BLOCKED) doc.addEventListener(type, blockSelection);
   doc.addEventListener("hodl:conceal", onConceal);
   doc.addEventListener("visibilitychange", onVisibility);
 
@@ -347,6 +370,9 @@ export function mountSecureDicePad(host, {
     for (const type of HOST_BLOCKED) {
       try { host.removeEventListener(type, blockClipboard); } catch {}
     }
+    for (const type of DOC_BLOCKED) {
+      try { doc.removeEventListener(type, blockSelection); } catch {}
+    }
     showBox.checked = false;
     try { faceContainer.replaceChildren(); } catch {}
     try { host.replaceChildren(); } catch {}
@@ -357,7 +383,9 @@ export function mountSecureDicePad(host, {
       try { reviewHeading.focus(); } catch {}
       return;
     }
-    const first = faceButtons.find((button) => !button.disabled) ?? faceButtons[0];
+    const first = faceButtons.find((button) => !button.disabled)
+      ?? [undoButton, reviewOpen].find((button) => !button.hidden)
+      ?? faceButtons[0];
     try { first.focus(); } catch {}
   };
 
