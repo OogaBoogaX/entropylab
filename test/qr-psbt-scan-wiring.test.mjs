@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { applyPreviewBlocks } from "../scripts/preview-blocks.mjs";
+import * as panelModule from "../src/js/qr-psbt-scan.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
@@ -35,42 +36,47 @@ const hostsDeclaration = app.match(/const hodlPsbtScanHosts = \[[\s\S]*?\];/)?.[
 const bindSource = appSlice("hodlBindPsbtScans");
 const destroySource = appSlice("hodlDestroyPsbtScans");
 
-// A context with the real host list and the real bind function, and a
-// document that answers only for the ids given. The flag is a getter, so a
-// read is visible; a release build defines no flag at all.
-function bindContext(ids, { defineFlag = true, flag = false, importPromise = null } = {}) {
-  const reads = { count: 0 };
+const resetSource = appSlice("hodlResetPsbtScans");
+
+// A context with the real host list and the real bind, destroy and reset
+// functions, and a document that answers only for the ids given.
+function bindContext(ids, { importPromise = null } = {}) {
   const elements = new Map(ids.map((id) => [id, { id, isConnected: true, childNodes: [], replaceChildren() { this.childNodes = []; } }]));
   const sandbox = {
     document: { getElementById: (id) => elements.get(id) ?? null },
-    hodlTText: (text) => text,
     hodlPsbtScans: [],
     hodlPsbtScanModule: null,
     // A pending import stands in for the real one, so a test controls when
     // the module arrives.
     hodlPsbtScanImport: importPromise,
   };
-  if (defineFlag) Object.defineProperty(sandbox, "__ENTROPYLAB_PREVIEW__", { get() { reads.count += 1; return flag; }, configurable: true });
   const context = vm.createContext(sandbox);
-  vm.runInContext(`var hodlPsbtScanEpoch = 0;\n${hostsDeclaration}\n${bindSource}\n${destroySource}`, context);
-  return { context, reads, elements };
+  vm.runInContext(`var hodlPsbtScanEpoch = 0;\n${hostsDeclaration}\n${bindSource}\n${destroySource}\n${resetSource}`, context);
+  return { context, elements };
 }
 
-test("hodlBindPsbtScans returns before reading the preview flag when no host exists", () => {
+// The panels ship in every build: the wiring reads no preview flag, and
+// without a host (the slice harness) it does nothing at all.
+test("hodlBindPsbtScans reads no preview flag and imports nothing when no host exists", () => {
   assert.ok(bindSource, "hodlBindPsbtScans is missing from app.js");
   assert.ok(hostsDeclaration, "hodlPsbtScanHosts is missing from app.js");
-  // The flag is read only through the typeof guard: a release build defines
-  // no constant, so a bare read throws.
-  assert.match(bindSource, /typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__/);
-  assert.doesNotMatch(bindSource.replace(/typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__/g, ""), /__ENTROPYLAB_PREVIEW__/, "the preview flag is read bare somewhere in the function");
+  assert.doesNotMatch(bindSource, /__ENTROPYLAB_PREVIEW__/, "the PSBT scan panels are not preview-gated any more");
   const none = bindContext([]);
   none.context.hodlBindPsbtScans();
-  assert.equal(none.reads.count, 0, "with no host the function must return before reading the flag");
+  assert.equal(none.context.hodlPsbtScanImport, null, "with no host nothing is imported");
   const some = bindContext(["psbt-scan-host", "psbt-text"]);
-  some.context.hodlBindPsbtScans();
-  assert.ok(some.reads.count > 0, "with a host the flag decides whether the module is imported");
-  const release = bindContext(["psbt-scan-host", "psbt-text"], { defineFlag: false });
-  assert.doesNotThrow(() => release.context.hodlBindPsbtScans(), "a bare read of the undefined flag would throw");
+  assert.doesNotThrow(() => some.context.hodlBindPsbtScans());
+  assert.notEqual(some.context.hodlPsbtScanImport, null, "with a host the module is imported");
+});
+
+// The export the wiring calls must exist on the real module: a renamed
+// export would otherwise throw inside the mount's try and leave an empty host
+// (MiniMax, #1357).
+test("the wiring calls an export the panel module really has", () => {
+  const name = bindSource.match(/module\.(\w+)\(host, \{ field \}\)/)?.[1];
+  assert.ok(name, "the wiring must mount through module.<export>(host, { field })");
+  assert.equal(typeof panelModule[name], "function", `qr-psbt-scan.js does not export ${name}`);
+  assert.equal(typeof panelModule.retireQrDecoders, "function", "End Session retires the decoders through the module");
 });
 
 test("the wiring imports the panel module once and mounts the three host/field pairs", () => {
@@ -78,7 +84,8 @@ test("the wiring imports the panel module once and mounts the three host/field p
   assert.ok(hostsDeclaration, "hodlPsbtScanHosts is missing from app.js");
   assert.equal((bindSource.match(/import\(/g) || []).length, 1, "the module is imported once, lazily");
   assert.match(bindSource, /import\("\.\/qr-psbt-scan\.js"\)/, "the panel module is ./qr-psbt-scan.js");
-  assert.match(bindSource, /mountPsbtScan\(host, \{[^}]*\bfield\b[^}]*translate: hodlTText/, "the panel is mounted on the host with the field and the page translator");
+  assert.match(bindSource, /mountPsbtScan\(host, \{ field \}\)/, "the panel is mounted on the host with the field; it translates its own strings");
+  assert.doesNotMatch(bindSource, /translate/, "no translator is passed: the module reads the page catalog itself");
   for (const [hostId, fieldId] of HOSTS) {
     assert.ok(hostsDeclaration.includes(`["${hostId}", "${fieldId}"]`), `${hostId} → ${fieldId} is not wired`);
   }
@@ -91,7 +98,7 @@ test("the wiring imports the panel module once and mounts the three host/field p
 test("a mount pending at teardown is dropped, and the next bind mounts anew", async () => {
   let resolveImport;
   const importPromise = new Promise((resolve) => { resolveImport = resolve; });
-  const { context, elements } = bindContext(["psbt-scan-host", "psbt-text"], { flag: true, importPromise });
+  const { context, elements } = bindContext(["psbt-scan-host", "psbt-text"], { importPromise });
   let mounted = 0;
   const module = { mountPsbtScan: (host) => { mounted += 1; host.childNodes.push("panel"); return { destroy() { host.childNodes = []; } }; } };
   context.hodlBindPsbtScans();
@@ -154,7 +161,7 @@ test("End Session and the language switch tear the panels down", () => {
   assert.match(apply.slice(bindAt), /^hodlBindPsbtScans\(\);[^\n]*\n\}$/, "the re-mount is the last thing the language switch does");
 });
 
-test("the shell holds one preview-gated host after each PSBT field", () => {
+test("the shell holds one host after each PSBT field, in every build", () => {
   const lines = shell.split("\n");
   for (const [hostId, fieldId] of HOSTS) {
     const index = lines.findIndex((line) => line.includes(`id="${hostId}"`));
@@ -162,18 +169,77 @@ test("the shell holds one preview-gated host after each PSBT field", () => {
     // The host is one empty div alone on its line; its class is styling, not
     // a hook (AGENTS.md: tests hook on ids and data-*, never classes).
     assert.match(lines[index].trim(), new RegExp(`^<div [^>]*\\bid="${hostId}"[^>]*></div>$`), `#${hostId} must be one empty div, alone on its line`);
-    assert.equal(lines[index - 1].trim(), "<!-- preview -->", `#${hostId} must sit inside a preview block`);
-    assert.equal(lines[index + 1].trim(), "<!-- /preview -->", `#${hostId} must close its preview block`);
     const fieldIndex = lines.findIndex((line) => line.includes(`id="${fieldId}"`));
     assert.ok(fieldIndex >= 0 && fieldIndex < index, `#${hostId} must follow #${fieldId}`);
-    assert.equal(lines[index - 2].trim(), "</label>", `#${hostId} must follow the field's closing label`);
+    assert.equal(lines[index - 1].trim(), "</label>", `#${hostId} must follow the field's closing label directly`);
   }
-  // The build's own transform: the release artifact drops the hosts, the
-  // preview build keeps them.
+  // The build's own transform: the release artifact ships the hosts, like
+  // the preview build.
   const release = applyPreviewBlocks(shell, false);
   const preview = applyPreviewBlocks(shell, true);
   for (const [hostId] of HOSTS) {
-    assert.ok(!release.includes(hostId), `the release build must not ship #${hostId}`);
-    assert.ok(preview.includes(hostId), `the preview build must keep #${hostId}`);
+    assert.ok(release.includes(`id="${hostId}"`), `the release build must ship #${hostId}`);
+    assert.ok(preview.includes(`id="${hostId}"`), `the preview build must keep #${hostId}`);
   }
+});
+
+// A tool's own Clear and leaving the Transactions workspace close an open
+// panel (its camera would otherwise keep streaming) and give the host a
+// fresh, closed one (GLM and MiniMax, #1357).
+test("Clear and leaving the Transactions workspace give every host a fresh, closed panel", async () => {
+  assert.ok(resetSource, "hodlResetPsbtScans is missing from app.js");
+  const destroyAt = resetSource.indexOf("hodlDestroyPsbtScans()"), bindAt = resetSource.indexOf("hodlBindPsbtScans()");
+  assert.ok(destroyAt >= 0 && bindAt > destroyAt, "a reset tears the panels down, then mounts them anew");
+  // Behaviour: a mounted panel is destroyed and a new one mounted.
+  let resolveImport;
+  const importPromise = new Promise((resolve) => { resolveImport = resolve; });
+  const { context, elements } = bindContext(["psbt-scan-host", "psbt-text"], { importPromise });
+  const destroyed = [];
+  let mounted = 0;
+  const module = { mountPsbtScan: (host) => { mounted += 1; const id = mounted; host.childNodes.push("panel"); return { destroy() { destroyed.push(id); host.childNodes = []; } }; } };
+  resolveImport(module);
+  context.hodlBindPsbtScans();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(mounted, 1);
+  context.hodlResetPsbtScans();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(destroyed, [1], "the open panel is destroyed");
+  assert.equal(mounted, 2, "a fresh panel is mounted on the host");
+  assert.equal(elements.get("psbt-scan-host").childNodes.length, 1, "the host holds the new panel only");
+  assert.equal(context.hodlPsbtScans.length, 1);
+  // Wiring: the three Clear buttons, at boot, after the first mount.
+  const boot = appSlice("hodlBoot");
+  assert.ok(boot, "hodlBoot is missing from app.js");
+  const wiring = boot.match(/for \(let id of \[([^\]]*)\]\) document\.getElementById\(id\)\?\.addEventListener\("click", hodlResetPsbtScans\);/);
+  assert.ok(wiring, "boot must give each PSBT tool's Clear a click listener that resets the panels");
+  assert.deepEqual(wiring[1].split(",").map((id) => id.trim().replace(/"/g, "")).sort(), ["nonce-wipe", "psbt-wipe", "psbted-wipe"], "the Inspector, Nonce Inspector and Editor Clear buttons");
+  assert.ok(boot.indexOf(wiring[0]) > boot.indexOf("hodlBindPsbtScans()"), "the listeners follow the first mount");
+  // Wiring: switching between the Inspector, Nonce Inspector and Editor tabs
+  // hides the card an open panel sits in, so it resets the panels first, and
+  // only on a real change (Kimi, GLM, MiniMax, round 1).
+  const tool = appSlice("hodlShowPsbtTool");
+  assert.ok(tool, "hodlShowPsbtTool is missing from app.js");
+  const toolReset = tool.indexOf('if (changed && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();');
+  assert.ok(toolReset >= 0, "switching PSBT tools must reset the panels when the tool changes");
+  assert.ok(toolReset < tool.indexOf("hodlSyncPsbtTool();"), "the reset runs before the cards are switched");
+  // Behaviour: a real switch resets once; re-selecting the shown tool does not.
+  let resets = 0;
+  const toolContext = vm.createContext({
+    hodlPsbtTool: "inspector",
+    hodlResetPsbtScans: () => { resets += 1; },
+    hodlSyncPsbtTool: () => {},
+    hodlJournalLog: () => {},
+    document: { querySelector: () => null },
+  });
+  vm.runInContext(tool, toolContext);
+  toolContext.hodlShowPsbtTool("inspector");
+  assert.equal(resets, 0, "re-selecting the shown tool keeps an open panel open");
+  toolContext.hodlShowPsbtTool("editor");
+  assert.equal(resets, 1, "switching to another tool closes the open panel");
+  // Wiring: leaving the Transactions workspace, before the workspace changes.
+  const show = appSlice("hodlShowWorkspace");
+  assert.ok(show, "hodlShowWorkspace is missing from app.js");
+  const leave = show.indexOf('if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();');
+  assert.ok(leave >= 0, "leaving the Transactions workspace must reset the panels (guarded, like the Privacy conceal, for the slice harness)");
+  assert.ok(leave < show.indexOf("hodlWorkspace = id;"), "the reset reads the workspace being left, so it runs before the switch");
 });

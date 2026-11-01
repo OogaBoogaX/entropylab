@@ -5,6 +5,16 @@ Release notes for EntropyLab. Each release is a single self-contained
 
 ## Unreleased
 
+- **Release signing: MrHodlX's key `64434EE4…237C` is revoked** (it was on a
+  computer later found compromised). Don't trust signatures from it,
+  including its v1.0.0 block; v1.0.0 stays verifiable with the other three
+  signatures. See [SECURITY.md → Release signing keys](SECURITY.md#release-signing-keys).
+- **Scan PSBT QR**: the PSBT Inspector, Nonce Inspector and PSBT Editor
+  fields gain a camera control that reads a PSBT from one static QR code or
+  an animated `ur:crypto-psbt` sequence. Only a payload that starts with the
+  PSBT magic is written to the field, after the whole code has arrived.
+  Clearing a tool, leaving the Transactions workspace, a language switch and
+  End Session close an open scanner and stop its camera.
 - **Passphrases starting with U+FEFF derive a different wallet than in
   v1.0.0** (audit C2-E): the BIP39 salt now hashes the leading U+FEFF the way
   the BIP39 reference does, and key-file export/import round-trips it
