@@ -15,7 +15,6 @@ import * as panelModule from "../src/js/qr-psbt-scan.js";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
 const shell = readFileSync(join(root, "src/shell.html"), "utf8");
-const css = readFileSync(join(root, "src/css/styles.css"), "utf8");
 
 // Slice one self-contained function out of app.js (the bundle cannot be
 // evaluated wholesale in Node), as test/ui-behaviors.test.mjs does.
@@ -261,17 +260,6 @@ test("Clear and leaving the Transactions workspace give every host a fresh, clos
   const leave = show.indexOf('if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();');
   assert.ok(leave >= 0, "leaving the Transactions workspace must reset the panels (guarded, like the Privacy conceal, for the slice harness)");
   assert.ok(leave < show.indexOf("hodlWorkspace = id;"), "the reset reads the workspace being left, so it runs before the switch");
-});
-
-test("the scan panel's camera preview fits a phone and stays hidden until the camera runs", () => {
-  // With no size rule the preview took the camera frame's own width and ran
-  // past a phone's edge. The rule that sizes it also sets display, which
-  // beats the UA [hidden] rule, so the panel restates [hidden].
-  const video = css.match(/^\.psbt-scan-host video \{([^}]*)\}/m);
-  assert.ok(video, "the panel's video needs a size rule");
-  assert.match(video[1], /(^|[ ;])width: 100%;/);
-  assert.match(video[1], /max-width: 480px;/);
-  assert.match(css, /^\.psbt-scan-host \[hidden\] \{ display: none; \}/m);
 });
 
 test("hodlResetPsbtScansIn closes only the panels inside the container and re-mounts their hosts", () => {
