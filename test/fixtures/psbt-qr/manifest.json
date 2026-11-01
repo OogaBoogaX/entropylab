@@ -1,0 +1,2286 @@
+{
+  "reference": {
+    "repository": "https://github.com/SeedSigner/SeedSigner",
+    "revision": "e0a80d4b33b8eb7fb1e9fd14a27b7cd11c7d2cd6",
+    "license": "MIT",
+    "transport_license": "BSD-2-Clause-Patent",
+    "specification": "BCR-2024-001",
+    "generator": "scripts/psbt-qr-generate.py",
+    "python": "3.12",
+    "generated_date": "2026-11-01",
+    "dependencies": {
+      "embit": "0.8.0",
+      "urtypes": "1.0.1",
+      "qrcode": "8.2",
+      "Pillow": "13.0.0"
+    }
+  },
+  "fixtures": [
+    {
+      "file": "p2wpkh-1in-2out-base64.txt",
+      "kind": "base64",
+      "density": null,
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 649,
+      "sha256": "604370ddb6e875a741ff40829b7b7aee0e11d125b282790f7fae782e24cd5546",
+      "parts": 1,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-hex.txt",
+      "kind": "hex",
+      "density": null,
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 973,
+      "sha256": "dce263052f0e2663a5072a04155049cc7137cd0cec1b2f98154df7ba100886e6",
+      "parts": 1,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-single-ur.txt",
+      "kind": "single-ur",
+      "density": null,
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 1002,
+      "sha256": "947c764490c193c7f18a16f5e94e2a8d38bbc9ff2aed07355df2ec3b0944c7e6",
+      "parts": 1,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-systematic-low.txt",
+      "kind": "systematic",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 3545,
+      "sha256": "a33ec1450df17c6afe9f3231d77c4efdc1901971e0e82e5531998c6aff517a78",
+      "parts": 45,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-fountain-only-low.txt",
+      "kind": "fountain-only",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 6750,
+      "sha256": "d1476d023b87e1e4293982e88285a804b8b1f85d69922ef33f45354c9541773a",
+      "parts": 84,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      },
+      "note": "Initial systematic frames skipped; malformed reference CRC frames deterministically dropped."
+    },
+    {
+      "file": "p2wpkh-1in-2out-reversed-low.txt",
+      "kind": "reversed",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 6750,
+      "sha256": "e99d516bc3b0d5e1a55f689a40ee69830a09fab4c6b4a120d5815d80615d24bd",
+      "parts": 84,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-dropped-low.txt",
+      "kind": "dropped",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 3468,
+      "sha256": "90bf7dcf38f40dd57428e595ca450cf74b8217a649a65b7c76eff27e57c3c837",
+      "parts": 44,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "partial"
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-duplicated-low.txt",
+      "kind": "duplicated",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 7090,
+      "sha256": "de892f95742a3909a2d4381f10e54a8a4951c27ed878da1c3823563e6e29e4e3",
+      "parts": 90,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-systematic-medium.txt",
+      "kind": "systematic",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 1929,
+      "sha256": "a1de76f2378f93d59dc0f76978891439b70c2d9ccda968cc5f18bc9b1a716400",
+      "parts": 17,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-fountain-only-medium.txt",
+      "kind": "fountain-only",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 2656,
+      "sha256": "d00492a4ae25446795745387fdec0a0d3b839e5e8c427414e82fe2736f7e9555",
+      "parts": 23,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      },
+      "note": "Initial systematic frames skipped; malformed reference CRC frames deterministically dropped."
+    },
+    {
+      "file": "p2wpkh-1in-2out-reversed-medium.txt",
+      "kind": "reversed",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 2656,
+      "sha256": "44366fe36ba3851d7cf0e1dc4e63c1efd77743c2f00fa1545e169563ce725401",
+      "parts": 23,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-dropped-medium.txt",
+      "kind": "dropped",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 1816,
+      "sha256": "3f1dbd4165a5892f4e7d01b422ac20f2a905cd5f7d0e3ffafd01d05becfbcc81",
+      "parts": 16,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "partial"
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-duplicated-medium.txt",
+      "kind": "duplicated",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 3858,
+      "sha256": "301cfcd9c3e7db4c04ee5b24da2b38bb627db8f24b881c35b52d99471e18bd2c",
+      "parts": 34,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-systematic-high.txt",
+      "kind": "systematic",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 1250,
+      "sha256": "54039ec1b697f2ad771fa73c4c6bd768ca5e047ad3ec9896a82dc9d8c3813219",
+      "parts": 5,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-fountain-only-high.txt",
+      "kind": "fountain-only",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 1251,
+      "sha256": "931e5dbe475d2d6217334ebc3eac434e2a017121f8917c9a8e9ab1847bfecc25",
+      "parts": 5,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      },
+      "note": "Initial systematic frames skipped; malformed reference CRC frames deterministically dropped."
+    },
+    {
+      "file": "p2wpkh-1in-2out-reversed-high.txt",
+      "kind": "reversed",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 1251,
+      "sha256": "47e90f29df07d322a800aa1b308ffd3350021eeb94538bf0b8a324f60e87be6e",
+      "parts": 5,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-dropped-high.txt",
+      "kind": "dropped",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 1000,
+      "sha256": "d9d2cf3c421e9f6bfebf48dc4efbe1be4d3ae98567785bc497a03969936b2f3b",
+      "parts": 4,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "partial"
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-duplicated-high.txt",
+      "kind": "duplicated",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2"
+      },
+      "bytes": 2500,
+      "sha256": "b4490c6c38f22779fb071fe9e867f2161edf5709aaff4986c6bbe5ddc5cac7a0",
+      "parts": 10,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "1400000",
+              "scriptPubKey": "001406afd46bcdfd22ef94ac122aa11f241244a37ecc"
+            },
+            {
+              "value": "100000",
+              "scriptPubKey": "00147dd65592d0ab2fe0d0257d571abf032cd9db93dc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-base64.txt",
+      "kind": "base64",
+      "density": null,
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 1493,
+      "sha256": "06f4c06694ef5ea8efa8fde06b47774bcc054421f4bd56ef26544289937a79a5",
+      "parts": 1,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-hex.txt",
+      "kind": "hex",
+      "density": null,
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 2235,
+      "sha256": "ba18ddcfdfd473099714f375b7f407611eb168d31272d160aab939a4cf5fa244",
+      "parts": 1,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-single-ur.txt",
+      "kind": "single-ur",
+      "density": null,
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 2264,
+      "sha256": "240743c1b924d7928a537a99208bc80c9ff129062bb2a7c10b7c063952de7a51",
+      "parts": 1,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-systematic-low.txt",
+      "kind": "systematic",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 8806,
+      "sha256": "87e2ad53e54dbda012b1a099adc8324da4afbb542fd7a59436bfe21185206dde",
+      "parts": 112,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-fountain-only-low.txt",
+      "kind": "fountain-only",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 17836,
+      "sha256": "9bec73e71d7a218a24a98145ee7b608b6c205e59600e9185e55c452dd269ba57",
+      "parts": 221,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      },
+      "note": "Initial systematic frames skipped; malformed reference CRC frames deterministically dropped."
+    },
+    {
+      "file": "mixed-many-inputs-reversed-low.txt",
+      "kind": "reversed",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 17836,
+      "sha256": "f0c4617af8a95335883efdf1f5ad64eafe57c613066f55296ee8dad2f35e8a33",
+      "parts": 221,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-dropped-low.txt",
+      "kind": "dropped",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 8730,
+      "sha256": "0a21ef805aba59ddaa738a490bfe8be0d9d4c97f65cb49ff99479c934869320d",
+      "parts": 111,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "partial"
+      }
+    },
+    {
+      "file": "mixed-many-inputs-duplicated-low.txt",
+      "kind": "duplicated",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 17612,
+      "sha256": "c6e29dbe2157d7b71879ed1d9903a9cce8c3c1096f503050d84469abda41573f",
+      "parts": 224,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-systematic-medium.txt",
+      "kind": "systematic",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 4505,
+      "sha256": "1fab13744ec8bea837f8a89b3e9d6eb60d89de7d2205ee5d1de49b73ce1a50c6",
+      "parts": 38,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-fountain-only-medium.txt",
+      "kind": "fountain-only",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 6360,
+      "sha256": "c4895f7364b5db7d550356d91cd69a90ebce25e7cd24b2e59bf5bebbf672bb45",
+      "parts": 53,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      },
+      "note": "Initial systematic frames skipped; malformed reference CRC frames deterministically dropped."
+    },
+    {
+      "file": "mixed-many-inputs-reversed-medium.txt",
+      "kind": "reversed",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 6360,
+      "sha256": "003d2cba350bbc2b1d73fa76a7e5723292e2150fe7d0162ffee216c595ace8a3",
+      "parts": 53,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-dropped-medium.txt",
+      "kind": "dropped",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 4388,
+      "sha256": "634f9c4f0ede1407308b57e5444215aeb89bdc57aeeafcd23f798781f42195fa",
+      "parts": 37,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "partial"
+      }
+    },
+    {
+      "file": "mixed-many-inputs-duplicated-medium.txt",
+      "kind": "duplicated",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 9010,
+      "sha256": "e7d703ccb0e5b418575bd65f3019fcb00e3d6a5a8960224f4c9084c0e2ac0a01",
+      "parts": 76,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-systematic-high.txt",
+      "kind": "systematic",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 2791,
+      "sha256": "a97eb0f3b7f03e4600d381abf6fe5b69c4107c51a351ede7e951dc5c3fec1f74",
+      "parts": 10,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-fountain-only-high.txt",
+      "kind": "fountain-only",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 3360,
+      "sha256": "c2d9dd83a42007fe13ff20ec9aa943995a1d236947e0df1ed71c9f1ac4e4aa98",
+      "parts": 12,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      },
+      "note": "Initial systematic frames skipped; malformed reference CRC frames deterministically dropped."
+    },
+    {
+      "file": "mixed-many-inputs-reversed-high.txt",
+      "kind": "reversed",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 3360,
+      "sha256": "8e3605453f7e0d20c519f06cda8d15463cd76bc62776ae82caf1ef838b30804f",
+      "parts": 12,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "mixed-many-inputs-dropped-high.txt",
+      "kind": "dropped",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 2512,
+      "sha256": "473fd5d42358e2b56c58272457784441096e85aa73cdf4c58ea68451412eca89",
+      "parts": 9,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "partial"
+      }
+    },
+    {
+      "file": "mixed-many-inputs-duplicated-high.txt",
+      "kind": "duplicated",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc"
+      },
+      "bytes": 5582,
+      "sha256": "45d2b351d3bff1f19e60032dacb5dc85b02b2c6be420d4261220a435b05b35b2",
+      "parts": 20,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 1117,
+        "sha256": "fa8de5e6733523335660f2e85864745a8611f6b58b40511b7ab350f096ac8198",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "475e2f5e27275bd033bcb0b9db9f8cb7f5732aa603b011a2a2a7620504198265",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "vout": 0,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "vout": 3,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "vout": 2,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "500000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "50000",
+              "scriptPubKey": "76a9147dd65592d0ab2fe0d0257d571abf032cd9db93dc88ac"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2tr-taproot-base64.txt",
+      "kind": "base64",
+      "density": null,
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 657,
+      "sha256": "11e69fec48e148a072205e3af1cbbe63e98dc7ec0b1bf853c2a8d9f4f08b7c38",
+      "parts": 1,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2tr-taproot-hex.txt",
+      "kind": "hex",
+      "density": null,
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 983,
+      "sha256": "4a584f1fdc5d6095a2897b3792aed785d24474bd44a8edf7687091c325372322",
+      "parts": 1,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2tr-taproot-single-ur.txt",
+      "kind": "single-ur",
+      "density": null,
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 1012,
+      "sha256": "c71f4698e4ec34e24b8fef3ec63e2692bde560144d839f10dd6c4d18588525c5",
+      "parts": 1,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2tr-taproot-systematic-low.txt",
+      "kind": "systematic",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 3543,
+      "sha256": "2bfcfcca7ca4b1fd09500b060d580aeea52b6942fde8d3539dc58a22a1c0f179",
+      "parts": 45,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "bad-part"
+      },
+      "note": "Pinned SeedSigner emits a short Bytewords CRC on this stream; malformed frames must be refused, never repaired by the receiver."
+    },
+    {
+      "file": "p2tr-taproot-invalid-reference-crc-0-low.txt",
+      "kind": "invalid-reference-crc-0",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 75,
+      "sha256": "1c8412d42f8af70f114b0515afc2363547a4a5e49b35cd2285abaf80f53f5309",
+      "parts": 1,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "bad-part"
+      },
+      "note": "Pinned SeedSigner emits a short Bytewords CRC on this stream; malformed frames must be refused, never repaired by the receiver."
+    },
+    {
+      "file": "p2tr-taproot-fountain-only-low.txt",
+      "kind": "fountain-only",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 7885,
+      "sha256": "ebd60929a8517520d657e1a0b7f84c368289768c762e265dc07e445ebb47af72",
+      "parts": 98,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      },
+      "note": "Initial systematic frames skipped; malformed reference CRC frames deterministically dropped."
+    },
+    {
+      "file": "p2tr-taproot-reversed-low.txt",
+      "kind": "reversed",
+      "density": "low",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 7885,
+      "sha256": "7553d3db7191cf7016b382a0db2594729ef13af2db11af89167f9524748f1de0",
+      "parts": 98,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2tr-taproot-systematic-medium.txt",
+      "kind": "systematic",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 1963,
+      "sha256": "079ece392c770cff2a6938ec053e4b16e75f46c4fcf270e585b14c79cd3c2e2d",
+      "parts": 17,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2tr-taproot-fountain-only-medium.txt",
+      "kind": "fountain-only",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 2820,
+      "sha256": "a81ea45c63c8fdd386cd2ad54d2cf8c3493395044a6e2a6ff0c3134e373c4f54",
+      "parts": 24,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      },
+      "note": "Initial systematic frames skipped; malformed reference CRC frames deterministically dropped."
+    },
+    {
+      "file": "p2tr-taproot-reversed-medium.txt",
+      "kind": "reversed",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 2820,
+      "sha256": "dad9594d5fbc536bcfb61b80a60a0d77668c398ed05d63b98a8ecc5bbcd3324d",
+      "parts": 24,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2tr-taproot-dropped-medium.txt",
+      "kind": "dropped",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 1848,
+      "sha256": "86de0eb0edb470ee6edbf3ec3c35058a60c658e8e0e102b21fb00b5328aee129",
+      "parts": 16,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "partial"
+      }
+    },
+    {
+      "file": "p2tr-taproot-duplicated-medium.txt",
+      "kind": "duplicated",
+      "density": "medium",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 3926,
+      "sha256": "f6166eca5371fa588a8a224d72f2ceec5a77ea42d4035b1201ca92648ece8951",
+      "parts": 34,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2tr-taproot-systematic-high.txt",
+      "kind": "systematic",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 1260,
+      "sha256": "a822d6e563fba633cbd0f820dd2d0a8443e5d5a96502322b1356a74bbc347dce",
+      "parts": 5,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2tr-taproot-fountain-only-high.txt",
+      "kind": "fountain-only",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 1514,
+      "sha256": "3da49d376871b555c46758eac39e99a989eb36239374a014331284db97d917c1",
+      "parts": 6,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      },
+      "note": "Initial systematic frames skipped; malformed reference CRC frames deterministically dropped."
+    },
+    {
+      "file": "p2tr-taproot-reversed-high.txt",
+      "kind": "reversed",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 1514,
+      "sha256": "51facd6c2ede1580aef088a5ba4cd9b71a757280d0c0fa1491f462392fcda147",
+      "parts": 6,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "p2tr-taproot-dropped-high.txt",
+      "kind": "dropped",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 1008,
+      "sha256": "9d03944ba09305f69ad5d24637c9dd6b4bd3144522d66342c4bdcc6441a9191a",
+      "parts": 4,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "partial"
+      }
+    },
+    {
+      "file": "p2tr-taproot-duplicated-high.txt",
+      "kind": "duplicated",
+      "density": "high",
+      "source": {
+        "path": "test/fixtures/psbt/p2tr-taproot.b64",
+        "bytes": 491,
+        "sha256": "28f801e5aae95f03537e0f21ff34d9bddf5c0c95a6559f39caf08abfd25f934c"
+      },
+      "bytes": 2520,
+      "sha256": "8ceb838ca1ba3ad7f180406dff0d8b11ec3123896f060600e61eaea40493a95a",
+      "parts": 10,
+      "direction": "reference-to-app",
+      "expected": {
+        "status": "complete",
+        "bytes": 491,
+        "sha256": "a15f0cd5bd15ae1b2f6aec2d578a623d37ff33c625b9d58cdea05ea483fbe77a",
+        "transaction": {
+          "version": 2,
+          "locktime": 0,
+          "inputs": [
+            {
+              "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+              "vout": 1,
+              "sequence": 4294967295
+            },
+            {
+              "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+              "vout": 0,
+              "sequence": 4294967295
+            }
+          ],
+          "outputs": [
+            {
+              "value": "900000",
+              "scriptPubKey": "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+            },
+            {
+              "value": "0",
+              "scriptPubKey": "6a12456e74726f70794c61622066697874757265"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

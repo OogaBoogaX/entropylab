@@ -1,3 +1,5 @@
+// Security contract: only complete PSBT-magic payloads are returned; killed
+// multipart sessions refuse every transport until an explicit reader reset.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createPsbtQrReader } from "../src/js/psbt-qr-payload.js";
@@ -182,4 +184,43 @@ test("three parts out of order complete and progress reports the counts", () => 
   const result = reader.receive(partUr(parts[1]));
   assert.equal(result.status, "complete");
   assert.deepEqual([...result.bytes], [...big]);
+});
+
+test("terminal multipart conflicts cannot be bypassed with a static PSBT", () => {
+  const reader = createPsbtQrReader();
+  const message = hodlCborBstr(new Uint8Array(80).fill(1));
+  const [part] = encodeParts(message, 30, 1);
+  assert.equal(reader.receive(partUr(part)).status, "partial");
+  const changed = { ...part, data: part.data.slice() };
+  changed.data[0] ^= 1;
+  assert.equal(reader.receive(partUr(changed)).status, "mismatch");
+  assert.equal(reader.receive(PSBT_BASE64).status, "mismatch");
+  assert.equal(reader.receive(singlePartUr(hodlCborBstr(PSBT))).status, "mismatch");
+  reader.reset();
+  const accepted = reader.receive(PSBT_BASE64);
+  assert.equal(accepted.status, "complete");
+  accepted.bytes.fill(0);
+});
+
+test("invalid reassembly persists across transport changes until reset", () => {
+  const reader = createPsbtQrReader();
+  const parts = encodeParts(hodlCborBstr(new Uint8Array(80)), 30, 3);
+  let result;
+  for (const part of parts) result = reader.receive(partUr({ ...part, checksum: part.checksum ^ 1 }));
+  assert.equal(result.status, "bad-part");
+  assert.equal(reader.receive(PSBT_HEX).status, "bad-part");
+  reader.reset();
+  const accepted = reader.receive(PSBT_HEX);
+  assert.equal(accepted.status, "complete");
+  accepted.bytes.fill(0);
+});
+
+test("bad CBOR resets automatically without spending other reader instances", () => {
+  const a = createPsbtQrReader(), b = createPsbtQrReader();
+  assert.equal(a.receive(singlePartUr(Uint8Array.of(0x61, 0x61))).status, "bad-cbor");
+  for (const reader of [a, b]) {
+    const accepted = reader.receive(PSBT_BASE64);
+    assert.equal(accepted.status, "complete");
+    accepted.bytes.fill(0);
+  }
 });

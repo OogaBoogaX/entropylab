@@ -50,10 +50,12 @@ export function createPsbtQrReader({ maxBytes = DEFAULT_MAX_BYTES } = {}) {
   const limit = Number.isInteger(maxBytes) && maxBytes > 0 ? maxBytes : DEFAULT_MAX_BYTES;
   const collector = createUrCollector({ types: ["crypto-psbt", "psbt"], maxMessageLen: limit });
   let done = false;
+  let terminal = null;
 
   const reset = () => {
     collector.reset();
     done = false;
+    terminal = null;
   };
 
   const accept = (bytes) => {
@@ -100,16 +102,20 @@ export function createPsbtQrReader({ maxBytes = DEFAULT_MAX_BYTES } = {}) {
         return { status: "partial" };
       case "wrong-type":
         return { status: "wrong-type" };
-      case "mismatch":
       case "conflict":
+        terminal = "mismatch";
+        return { status: terminal };
+      case "mismatch":
         return { status: "mismatch" };
       case "too-large":
         return { status: "too-large" };
       case "done":
         return { status: "done" };
+      case "invalid":
+        terminal = "bad-part";
+        return { status: terminal };
       case "bad-part":
       case "legacy":
-      case "invalid":
       default:
         return { status: "bad-part" };
     }
@@ -127,6 +133,7 @@ export function createPsbtQrReader({ maxBytes = DEFAULT_MAX_BYTES } = {}) {
   };
 
   const receive = (text) => {
+    if (terminal) return { status: terminal };
     if (done) return { status: "done" };
     if (typeof text !== "string") return { status: "not-psbt" };
     const trimmed = text.trim();

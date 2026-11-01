@@ -49,6 +49,10 @@ choose Keep to discard the scan. Loading transports bytes, not approval:
 use the existing Inspector, Editor load, or Compare action to parse and
 review the transaction. Physical camera/appliance qualification is separate
 from simulated-frame interoperability checks.
+The pinned SeedSigner reference has a known malformed-CRC emission for the
+Taproot fixture at LOW density; that frame is refused, not repaired. Exact-byte
+interchange results and regeneration instructions are recorded in
+[`test/fixtures/psbt-qr/README.md`](test/fixtures/psbt-qr/README.md).
 
 The crypto WASM module overwrites Rust heap allocations before releasing them,
 including dependency-owned descriptor keys and text. Resizing preserves the

@@ -52,7 +52,7 @@ Existing tests include `test/ur-fountain.test.mjs`, `psbt-qr-payload.test.mjs`, 
 Executed against the live remotes, not the plan's original fetch:
 
 - `origin/rock` tip = `f389371c` (the recorded base). **No upstream commits since
-  the base.** Frozen integration commit: `321c72b3` (plan-only). Wave A
+  the base.** Frozen integration commit: `29ef723c` (plan-only). Wave A
   worktrees branch from it.
 - `origin/scan-qr/pr2-fountain` is a **merged lineage, not a competitor**: it
   landed in `rock` (PR #1273, merge `7e165809`) and is an ancestor of the base;
@@ -282,14 +282,14 @@ Parallel schedule:
 | ID | Owner | Status | Evidence / blocker |
 |---|---|---|---|
 | PQR-00 | Planning integrator | Complete | Base/worktree above; source-reader smoke above; documentation-only setup |
-| PQR-01 | Integrator (2026-10-31) | Complete | Upstream reconciled (no `rock` commits since base; `pr2-fountain` merged lineage); base freeze `321c72b3`; contracts frozen §4E/§4F; no scope change |
-| PQR-02 | Subagent (Wave A) | Assigned (2026-10-31) | Contract frozen §4E; exclusive files §5; fixture manifest location §4E (with PQR-03) |
-| PQR-03 | Subagent (Wave A) | Assigned (2026-10-31) | Manifest spec §6 + location §4E; oracle `test/fixtures/bc-ur/reference-vectors.json` |
+| PQR-01 | Integrator (2026-10-31) | Complete | Upstream reconciled; base freeze `29ef723c`; contracts frozen §4E/§4F; release gate revised with operator agreement |
+| PQR-02 | AutonomousTern + Integrator | Implemented; final consolidated verification pending | Published vectors, 1000-fragment boundary, duplicate/non-progress bounds, terminal reader fix; independent exact-byte diff tool passes |
+| PQR-03 | CompactVulture + Integrator | Complete | 53 pinned reference cases plus manifest; offline integrity/acceptance tests pass; reproducibility checked |
 | PQR-04 | FinancialWildebeest | Integrated | `1ced6f6f`; continuous capture; 87 integration/consumer tests passed before final timeout cleanup regression |
 | PQR-05 | Integrator | Implemented and smoke-tested | Three preview hosts; Inspector UR full parser; bounded text/camera reader; navigation/global retirement |
-| PQR-06 | QrBrowserAcceptance | Optical smoke passed; broad suite environment fix in progress | 25 checks; real embedded worker/WASM; 41 optical frames; all 11 simulated streams ended |
+| PQR-06 | QrBrowserAcceptance | Optical smoke passed | 25 checks; real embedded worker/WASM; 41 optical frames; all 11 simulated streams ended; broad browser checks pass after accessible staging/clean-source stamp |
 | PQR-07 | QrSecurityReview | Reviewed; four root causes addressed | Static follow-up found no remaining findings in reviewed scope; exercised regression evidence below |
-| PQR-08 | Unassigned | Waiting for acceptance | No upstream PR authorization |
+| PQR-08 | Integrator | In progress | Documentation and CI registration complete; final consolidated verification pending; no upstream PR authorization |
 | PQR-HW | Unassigned | Research available; physical proof pending | See section 9; no purchase or deployment performed |
 
 ### Integration evidence and approved release gate
@@ -316,6 +316,29 @@ Parallel schedule:
   import graph changes. Require current-source reproducibility, artifact-level
   preview exclusion/inclusion, and release behavior regressions instead of
   manufacturing the old full-file hash. The historical hash remains recorded.
+- Reference corpus: `test/fixtures/psbt-qr/manifest.json`, 53 cases generated
+  from stable SeedSigner `e0a80d4b`. Complete cases require exact SHA-256 and
+  length of the reference's serialized PSBT plus independently recorded
+  transaction fields. This supersedes the exploratory tx-core-only comparison:
+  byte ordering can differ from the original file, but not from emitted bytes.
+- `/tmp/pyvenv/bin/python scripts/seed-signer-diff.py` passed 53
+  reference-to-app acceptance/rejection cases and six app-to-reference
+  exact-byte output checks. Public fixtures: native SegWit, mixed inputs and
+  Taproot; LOW/MEDIUM/HIGH densities; no runtime/reference dependency in npm tests.
+- Known external limitation: the pinned SeedSigner CRC encoder uses variable
+  width. Taproot LOW systematic part 2 has a short CRC and is strictly refused.
+  It remains a negative fixture, not a fabricated successful interchange.
+  Fountain-only valid-frame recovery is separately proven; raw camera animation
+  containing that malformed frame is not qualified.
+- New terminal-state regressions reproduced a real reader defect: conflict or
+  invalid reassembly could be bypassed by switching to static input. The reader
+  now latches `mismatch`/`bad-part` until explicit reset. Focused red-before-green
+  command: `node --test --test-name-pattern='terminal multipart|invalid reassembly|bad CBOR resets' test/psbt-qr-payload.test.mjs`.
+- Browser staging requires `TMPDIR=/home/agent/doggyballs/psbt-browser-tmp`
+  with this workstation's Snap Chromium: its private `/tmp` cannot read the
+  ordinary harness staging paths. Use `CHROME_BINARY=/usr/bin/chromium-browser`.
+  The committed build's provenance check must run against clean build inputs;
+  a deliberately dirty build correctly stamps `unknown`.
 
 
 ### Copy/paste agent assignment
