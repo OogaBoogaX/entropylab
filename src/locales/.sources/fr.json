@@ -2410,5 +2410,9 @@
   "Original file": "0ee08b321911d6c530954c2bb8c84b540ee9e12d3f57bccfbc9007e346d4b163",
   "Bitcoin header": "61790469fc4fc27843e32b84114a546bf76d4c641154e11488af722911784f19",
   "Expected initial digest": "8493c283dcb1a7a3e1ee1c53c84dfa553c099cabc839474022b08c3bf639d11c",
-  "Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.": "36fd293863a48951f87022ed25c5fbfdc24511dded43d2ceec0ea208a7bf79b1"
+  "Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.": "36fd293863a48951f87022ed25c5fbfdc24511dded43d2ceec0ea208a7bf79b1",
+  "Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.": "4b2e1a0e0c3b949d6660f6818476bf51feb42379f485bf9fd041d6766b903ec7",
+  "The word picker could not load. Turn Secure entry off to use standard text entry.": "39e8d3e9723955ff59dff2312829214a664ab6e2f049e91324c199ab77daeb81",
+  "Journal cannot back up or export keys whose words were cleared by Secure entry. Enter their words again and derive their wallets, or clear those keys, then try again.": "47fe919eb17b047a234bfa326775c135e0224967d5acb35b378ec0f7d07a9b6b",
+  "This key's words were cleared by Secure entry, so Journal cannot keep it. Enter its words again and derive its wallet first.": "55b27cc0a26fff41b8c6968aa59557a7f42971fbe046720a53ad8e1b9b15ea96"
 }
