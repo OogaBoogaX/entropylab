@@ -159,6 +159,7 @@ export function mountKeyScan(host, {
   let seedReview = null;
   let seedReviewHeading = null;
   let seedReviewWord = null;
+  let replaceNote = null;
   let seedReviewShow = null;
   let seedReviewPrev = null;
   let seedReviewNext = null;
@@ -230,6 +231,7 @@ export function mountKeyScan(host, {
     seedReview = null;
     seedReviewHeading = null;
     seedReviewWord = null;
+    replaceNote = null;
     seedReviewShow = null;
     seedReviewPrev = null;
     seedReviewNext = null;
@@ -348,8 +350,19 @@ export function mountKeyScan(host, {
     try { seedReviewHeading?.focus(); } catch {}
   };
 
+  // A check that fails counts as holding words: the note shows.
+  const keyHoldsWords = () => {
+    try { return replacesSeed() !== false; } catch { return true; }
+  };
+
   const onSeedContinue = () => {
     if (!seedIndicesBuffer) return;
+    // Words entered after the scan: show the note first; the next Continue
+    // replaces them (GLM, round 4).
+    if (replaceNote?.hidden && keyHoldsWords()) {
+      replaceNote.hidden = false;
+      return;
+    }
     let copy = null;
     try {
       copy = seedIndicesBuffer.slice(0, seedCount);
@@ -401,10 +414,10 @@ export function mountKeyScan(host, {
     actions.appendChild(discardButton);
     confirm.appendChild(confirmIntro);
     // Continue replaces the words the key already holds: say so before it.
-    // A check that fails shows the note rather than hiding it.
-    let replacing = true;
-    try { replacing = replacesSeed() !== false; } catch {}
-    if (replacing) confirm.appendChild(make("p", { class: "edge-note is-private", id: `${prefix}-confirm-replace`, text: say(SEED_REPLACE_NOTE) }));
+    // The note is always built and shown when the key holds words; Continue
+    // checks again, for words entered after the scan.
+    replaceNote = make("p", { class: "edge-note is-private", id: `${prefix}-confirm-replace`, hidden: !keyHoldsWords(), text: say(SEED_REPLACE_NOTE) });
+    confirm.appendChild(replaceNote);
     confirm.appendChild(seedReview);
     confirm.appendChild(actions);
     confirm.hidden = false;

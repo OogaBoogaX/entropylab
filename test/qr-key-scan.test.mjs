@@ -777,9 +777,35 @@ test("the seed confirmation says when Continue replaces the key's words", () => 
     assert.equal(findById(ctx.host, "seed-scan-confirm").hidden, false);
     return findById(ctx.host, "seed-scan-confirm-replace");
   };
-  assert.ok(noteFor(() => true), "a key holding words gets the note");
-  assert.equal(noteFor(() => false), null, "an empty key gets none");
-  assert.ok(noteFor(() => { throw new Error("state unavailable"); }), "a failing check shows the note");
+  assert.equal(noteFor(() => true).hidden, false, "a key holding words gets the note");
+  assert.equal(noteFor(() => false).hidden, true, "an empty key gets none");
+  assert.equal(noteFor(() => { throw new Error("state unavailable"); }).hidden, false, "a failing check shows the note");
+});
+
+test("words entered after the scan get the note at Continue, and the next Continue loads", () => {
+  // GLM, round 4: the note was decided when the QR was read.
+  let holds = false;
+  const calls = [];
+  const ctx = setup({
+    accept: "seed",
+    idPrefix: "seed-scan",
+    wordlist: bip39English,
+    replacesSeed: () => holds,
+    onSeed: (indices, count) => {
+      calls.push(count);
+      indices.fill(0);
+    },
+  });
+  openSeedPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  const note = findById(ctx.host, "seed-scan-confirm-replace");
+  assert.equal(note.hidden, true);
+  holds = true;
+  findById(ctx.host, "seed-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(calls.length, 0, "the first Continue only shows the note");
+  assert.equal(note.hidden, false);
+  findById(ctx.host, "seed-scan-continue").dispatchEvent({ type: "click" });
+  assert.deepEqual(calls, [12], "the next Continue loads the words");
 });
 
 test("the app tells the seed panel when the key already holds words", () => {

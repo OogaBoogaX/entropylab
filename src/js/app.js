@@ -7623,13 +7623,15 @@ function hodlSeedScanReplaces() {
 }
 function hodlSeedScanLoad(indices, count) {
   try {
-    if (!hodlSecureSeedActive()) return;
-    if (![12, 15, 18, 21, 24].includes(count)) return;
-    if (!(indices instanceof Uint16Array) || indices.length !== count) return;
+    // A load that cannot happen throws, so the panel says nothing was loaded
+    // instead of closing as if it had (MiniMax, round 4).
+    if (!hodlSecureSeedActive()) throw new Error("Secure entry is not active for seed words.");
+    if (![12, 15, 18, 21, 24].includes(count)) throw new Error("Unsupported word count.");
+    if (!(indices instanceof Uint16Array) || indices.length !== count) throw new Error("Bad indices.");
     let state = hodlKeys[hodlActiveKey];
-    if (!state) return;
+    if (!state) throw new Error("No active key.");
     let key = hodlSecureKeyOf(state, true);
-    if (key == null) return;
+    if (key == null) throw new Error("No secure key.");
     let entry = seedEntry(count);
     try {
       for (let i = 0; i < count; i += 1) {
@@ -7641,6 +7643,11 @@ function hodlSeedScanLoad(indices, count) {
       try { entry.indices.fill(0); } catch {}
       throw error;
     }
+    // Like any edit of the words: a derivation still running on the old words
+    // stops and what they showed is dropped, before the new words go in (GLM,
+    // MiniMax, round 4). The old result is kept to wipe below.
+    let previous = state.result;
+    hodlInvalidateLiveKeyResult();
     // sessionSet scrubs the entry it replaces, so the old words are zeroed
     // before the new entry is installed.
     try {
@@ -7658,9 +7665,6 @@ function hodlSeedScanLoad(indices, count) {
     hodlLastWordCache.clear();
     hodlTargetWordCount = count;
     state.targetWords = count;
-    let previous = state.result;
-    state.result = null;
-    state.reveal = false;
     state.error = "";
     state.errorSpec = null;
     hodlRenderKeyForm();

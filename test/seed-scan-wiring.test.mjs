@@ -76,6 +76,8 @@ test("hodlSeedScanLoad installs the scanned indices and empties the seed text", 
   const state = { fields: { seed: "old words" }, lastWord: "old", targetWords: 24, result: { kind: "seed" }, reveal: true, error: "bad", errorSpec: {} };
   const entry = { kind: "seed", length: 12, indices: new Uint16Array(12), count: 0, wiped: false, rev: 0 };
   let installed = null;
+  const order = [], wiped = [];
+  const previous = state.result;
   const stubs = {
     hodlSecureSeedActive: () => true,
     hodlKeys: [state],
@@ -91,8 +93,15 @@ test("hodlSeedScanLoad installs the scanned indices and empties the seed text", 
       target.count = Math.max(target.count, position + 1);
     },
     sessionSet: (session, key, method, value) => {
+      order.push("install");
       installed = { session, key, method, value };
     },
+    hodlInvalidateLiveKeyResult: () => {
+      order.push("invalidate");
+      state.result = null;
+      state.reveal = false;
+    },
+    hodlWipeUnsharedWalletRows: (result) => wiped.push(result),
     hodlRenderKeyForm: () => {},
     hodlRestoreFormFields: () => {},
     hodlUpdateSeedLengthControl: () => {},
@@ -114,4 +123,33 @@ test("hodlSeedScanLoad installs the scanned indices and empties the seed text", 
   assert.equal(state.reveal, false);
   assert.equal(state.error, "");
   assert.equal(state.errorSpec, null);
+  // GLM, MiniMax (round 4): a derivation on the old words stops before the
+  // new words go in; Kimi, MiniMax: the old wallet is wiped.
+  assert.deepEqual(order, ["invalidate", "install"]);
+  assert.deepEqual(wiped, [previous]);
+});
+
+test("hodlSeedScanLoad throws when it cannot load, so the panel says nothing was loaded", async () => {
+  let installed = false;
+  const stubs = {
+    hodlSecureSeedActive: () => false,
+    hodlKeys: [{ fields: { seed: "" } }],
+    hodlActiveKey: 0,
+    hodlSecureKeyOf: () => "k1",
+    hodlSecureSession: {},
+    seedEntry: () => { throw new Error("not reached"); },
+    seedSet: () => {},
+    sessionSet: () => { installed = true; },
+    hodlInvalidateLiveKeyResult: () => {},
+    hodlWipeUnsharedWalletRows: () => {},
+    hodlRenderKeyForm: () => {},
+    hodlRestoreFormFields: () => {},
+    hodlUpdateSeedLengthControl: () => {},
+    hodlSecureSeedChanged: () => {},
+  };
+  const { hodlSeedScanLoad } = await loadAppFunctions(["hodlSeedScanLoad"], { stubs });
+  const indices = new Uint16Array(12).fill(5);
+  assert.throws(() => hodlSeedScanLoad(indices, 12));
+  assert.equal(installed, false);
+  assert.ok(indices.every((index) => index === 0), "the caller's buffer is zeroed even then");
 });
