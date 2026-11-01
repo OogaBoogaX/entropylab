@@ -4,6 +4,25 @@
 // until the field is empty or the user chooses Replace, and a payload that is
 // not a PSBT is refused with nothing loaded.
 //
+// Shared capture: mounted panels form a module-level registry; opening a panel
+// stops every other panel's active scanner, resets its reader and shows it as
+// "stopped" (the panel itself is not destroyed), then starts its own capture.
+// Two panels therefore never hold two camera streams at once.
+//
+// Continuous acquisition: the panel's scanner is created with `continuous:
+// true`, so after each decode the stream stays open. The session is released
+// by scanner.stop() — on reader "complete" (the scan is finished) and on a
+// persistent reader error ("mismatch", "bad-part", "bad-cbor", "too-large",
+// "done"), after which the status is "stopped" and a new scan requires a
+// fresh open. Recoverable states ("wrong-type", "not-psbt") keep the stream
+// running for the next valid PSBT QR. A per-scan generation counter discards
+// any result that arrives after the scan session ended (late result to a
+// stopped, closed or destroyed panel).
+//
+// Replace re-check: the field is re-read at Replace click, not only when the
+// dialog opens; a non-empty field is never overwritten (the dialog re-prompts),
+// so a field edited while the dialog is open is not clobbered by a stale scan.
+//
 // Security contract: only bytes that start with the PSBT magic are ever
 // written to the field; every scanned buffer is zeroed as soon as it has been
 // written or discarded, and a pending scan is dropped on conceal, close and
@@ -34,6 +53,7 @@ const STATUS_TEXT = {
   confirm: "Replace the PSBT in the field?",
   loaded: "PSBT loaded from the camera ({n} bytes).",
   kept: "The scan was discarded; the field was not changed.",
+  "field-nonempty": "The field is non-empty and changed while this dialog was open; nothing was written. Empty the field to replace, or choose Keep to discard this scan.",
 };
 
 const toBase64 = (bytes) => {
@@ -44,6 +64,13 @@ const toBase64 = (bytes) => {
   }
   return btoa(binary);
 };
+
+// Module-level registry of mounted panels, keyed by a unique panel token.
+// Each entry exposes `stopByOther`, which stops the panel's active scanner,
+// resets its reader and shows it as "stopped" without destroying it. Only
+// panels that are currently holding a camera stream are affected.
+const activePanels = new Map();
+let panelToken = 0;
 
 export function mountPsbtScan(host, {
   field,
@@ -114,6 +141,31 @@ export function mountPsbtScan(host, {
   let destroyed = false;
   let cameraRunning = false;
   let pending = null;
+  // Holds the camera stream. True only while this panel's scanner is scanning.
+  let holding = false;
+  // Per-scan generation guard: currentGen is null when no acquisition session
+  // is live; results arriving with currentGen === null are discarded.
+  let scanGeneration = 0;
+  let currentGen = null;
+  const panelId = ++panelToken;
+
+  const beginSession = () => {
+    scanGeneration += 1;
+    currentGen = scanGeneration;
+    holding = true;
+  };
+
+  const releaseSession = () => {
+    holding = false;
+    currentGen = null;
+  };
+
+  // Release the camera after a terminal reader state. The scanner emits
+  // "stopped" (via onStatus); the required final status is "stopped".
+  const stopAfterPersistent = () => {
+    releaseSession();
+    try { scanner?.stop(); } catch {}
+  };
 
   const updateAcquisition = () => {
     const acquiring = open && !pending;
@@ -188,13 +240,16 @@ export function mountPsbtScan(host, {
   };
 
   const onComplete = (bytes) => {
+    // The scan session is over: release the camera and the generation guard
+    // so any late decode is scrubbed.
+    releaseSession();
+    try { scanner?.stop(); } catch {}
+    progressLine.hidden = true;
     if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
       try { bytes?.fill?.(0); } catch {}
       showStatus("error");
       return;
     }
-    try { scanner?.stop(); } catch {}
-    progressLine.hidden = true;
     if (String(field.value ?? "") !== "") {
       pending = bytes;
       confirm.hidden = false;
@@ -204,20 +259,11 @@ export function mountPsbtScan(host, {
     write(bytes);
   };
 
-  const restartCamera = () => {
-    if (destroyed || !open || pending) return;
-    if (!ensureScanner()) return;
-    try {
-      scanner.start();
-    } catch {
-      showStatus("error");
-    }
-  };
-
   const onResult = (payload) => {
-    // A result that arrives after the panel closed (or was destroyed) is
-    // scrubbed and ignored.
-    if (destroyed || !open) {
+    // A result that arrives after the panel closed/destroyed, or after the
+    // scan session ended (stop, complete, persistent error, another panel
+    // took the camera), is scrubbed and ignored.
+    if (destroyed || !open || currentGen === null) {
       try { payload?.fill?.(0); } catch {}
       return;
     }
@@ -252,13 +298,33 @@ export function mountPsbtScan(host, {
       return;
     }
     if (result.status === "partial") {
+      // continuous: the scanner keeps its stream and frame loop open, so no
+      // restart is needed between parts.
       updateProgress();
-      restartCamera();
       return;
     }
-    if (result.status === "done") return;
-    const code = result.status === "wrong-type" ? "not-psbt" : result.status === "bad-cbor" ? "bad-part" : result.status;
-    showStatus(code);
+    if (result.status === "done") {
+      stopAfterPersistent();
+      return;
+    }
+    // Terminal reader states: release the camera. A new scan needs a fresh
+    // open (continuous mode would otherwise keep the stream running).
+    if (result.status === "mismatch" || result.status === "bad-part" ||
+        result.status === "bad-cbor" || result.status === "too-large") {
+      const code = result.status === "bad-cbor" ? "bad-part" : result.status;
+      showStatus(code);
+      stopAfterPersistent();
+      return;
+    }
+    // Recoverable states: a static QR with no PSBT magic or a UR type we don't
+    // accept — keep scanning for a valid PSBT QR.
+    if (result.status === "wrong-type" || result.status === "not-psbt") {
+      showStatus("not-psbt");
+      return;
+    }
+    // Anything else is an unknown failure: release the camera.
+    showStatus("error");
+    stopAfterPersistent();
   };
 
   const onStatus = (code) => {
@@ -270,7 +336,10 @@ export function mountPsbtScan(host, {
     if (scanner) return true;
     try {
       if (!decoder) decoder = createDecoder({ wasmBytes: wasmBytes() });
-      scanner = createScanner({ decoder, video, canvas, onResult, onStatus });
+      scanner = createScanner({
+        decoder, video, canvas, onResult, onStatus,
+        continuous: true,
+      });
       return true;
     } catch {
       showStatus("error");
@@ -278,18 +347,39 @@ export function mountPsbtScan(host, {
     }
   };
 
+  const stopByOther = () => {
+    // Called (by the registry) when another panel opens: release this panel's
+    // active capture, reset its reader and show it as "stopped" without
+    // destroying it.
+    if (destroyed || !holding) return;
+    releaseSession();
+    try { scanner?.stop(); } catch {}
+    try { reader.reset(); } catch {}
+    dropPending();
+    cameraRunning = false;
+    updateAcquisition();
+    if (open) showStatus("stopped");
+  };
+
   const openPanel = () => {
     if (open || destroyed) return;
+    // Give this panel the camera: release every other panel's active capture
+    // so two widgets never hold two streams at once.
+    for (const [otherId, other] of activePanels) {
+      if (otherId !== panelId) other.stopByOther();
+    }
     open = true;
     panel.hidden = false;
     openButton.setAttribute("aria-expanded", "true");
     reader.reset();
     progressLine.hidden = true;
     if (!ensureScanner()) return;
+    beginSession();
     showStatus("scanning");
     try {
       scanner.start();
     } catch {
+      releaseSession();
       showStatus("error");
     }
   };
@@ -297,6 +387,7 @@ export function mountPsbtScan(host, {
   const closePanel = () => {
     if (!open) return;
     open = false;
+    releaseSession();
     try { scanner?.stop(); } catch {}
     panel.hidden = true;
     openButton.setAttribute("aria-expanded", "false");
@@ -309,6 +400,7 @@ export function mountPsbtScan(host, {
 
   const onVisibility = () => {
     if (doc.visibilityState !== "hidden") return;
+    releaseSession();
     try { scanner?.stop(); } catch {}
     dropPending();
     cameraRunning = false;
@@ -319,6 +411,7 @@ export function mountPsbtScan(host, {
   // The app's leave signal: the same teardown as a hidden page, without the
   // visibility test.
   const onConceal = () => {
+    releaseSession();
     try { scanner?.stop(); } catch {}
     dropPending();
     cameraRunning = false;
@@ -331,6 +424,7 @@ export function mountPsbtScan(host, {
     else openPanel();
   });
   stopButton.addEventListener("click", () => {
+    releaseSession();
     try { scanner?.stop(); } catch {}
   });
   closeButton.addEventListener("click", () => {
@@ -340,6 +434,15 @@ export function mountPsbtScan(host, {
   replaceButton.addEventListener("click", () => {
     const bytes = pending;
     if (!bytes) return;
+    // Re-check the field at confirmation time: emptiness was only verified
+    // when the dialog opened. A field edited while the dialog is open must
+    // not be clobbered by the (now stale) scan.
+    if (String(field.value ?? "") !== "") {
+      // Non-empty (and possibly newer) content: refuse to overwrite it and
+      // leave the dialog open so the user re-confirms against current state.
+      showStatus("field-nonempty");
+      return;
+    }
     write(bytes);
   });
   keepButton.addEventListener("click", () => {
@@ -355,6 +458,8 @@ export function mountPsbtScan(host, {
   const destroy = () => {
     if (destroyed) return;
     destroyed = true;
+    releaseSession();
+    activePanels.delete(panelId);
     try { scanner?.stop(); } catch {}
     try {
       const stopping = decoder?.stop();
@@ -368,6 +473,10 @@ export function mountPsbtScan(host, {
     try { doc.removeEventListener("hodl:conceal", onConceal); } catch {}
     try { host.replaceChildren(); } catch {}
   };
+
+  // Register this panel so its capture can be released when another panel
+  // opens.
+  activePanels.set(panelId, { stopByOther });
 
   updateAcquisition();
 

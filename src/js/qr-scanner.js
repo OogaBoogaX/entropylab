@@ -4,6 +4,14 @@
 // buffer is handed to the decoder, which zeroes it, and every ImageData is
 // zeroed as soon as it has been read.
 //
+// One-shot (default, `continuous: false`): the first successful decode
+// tears the session down before `onResult` fires, so the next scan is a fresh
+// `start()`. `continuous: true` keeps the stream and frame loop open after a
+// successful decode; only `stop()`, the per-session timeout, a malformed
+// reply, a decoder error or a later `start()` releases the session.
+// Either way the 60 s timer is armed once per `start()` and is never re-armed
+// by partial frames.
+//
 // Security contract: a frame is read only while a live session's generation
 // still matches, a stream that resolves after stop() or a later start() has
 // its tracks stopped and is dropped, and a decode reply that arrives after
@@ -60,6 +68,7 @@ export function createQrScanner({
   requestFrame = globalThis.requestAnimationFrame,
   onResult,
   onStatus,
+  continuous = false,
 } = {}) {
   let generation = 0;
   let active = null;
@@ -144,6 +153,17 @@ export function createQrScanner({
         wipe(payload);
         teardown();
         status("error", "DECODE_FAILED");
+        return;
+      }
+      if (continuous) {
+        // Keep the stream and frame loop open after a successful decode; only
+        // stop() (or the timeout / a later start / teardown) releases the session.
+        try {
+          onResult(payload);
+        } catch {
+          // The caller owns the payload now.
+        }
+        schedule(current);
         return;
       }
       teardown();

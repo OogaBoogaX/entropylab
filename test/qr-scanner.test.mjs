@@ -373,3 +373,79 @@ test("a decoder retired under a running scan reports an error", async () => {
   await tick();
   assert.deepEqual(statuses.slice(-1), ["error"], "the caller is not left on scanning");
 });
+
+test("a continuous scanner keeps the stream and frame loop running after a decode", async () => {
+  const { media, video, frames, decoder, results, statuses, scanner } = build({ continuous: true });
+  scanner.start();
+  const stream = makeStream();
+  media.pending[0].resolve(stream);
+  await tick();
+  assert.deepEqual(statuses, ["scanning"]);
+  frames.run();
+  const payload = new Uint8Array([1, 2, 3]);
+  decoder.pending[0].resolve({ code: 3, payload });
+  await tick();
+  assert.equal(results.length, 1, "the payload was handed out");
+  assert.ok(
+    !stream.tracks.every((track) => track.stopped),
+    "the stream is still open after a continuous decode",
+  );
+  // The frame loop kept running: another frame decodes.
+  frames.run();
+  assert.equal(decoder.calls.length, 2);
+  // stop() releases the still-open session.
+  scanner.stop();
+  assert.deepEqual(statuses.slice(-1), ["stopped"]);
+  assert.ok(stream.tracks.every((track) => track.stopped));
+  assert.equal(video.srcObject, null);
+});
+
+test("partial frames do not re-arm the per-session timeout", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { media, video, frames, decoder, statuses, scanner } = build({ timeoutMs: 5 });
+  scanner.start();
+  const first = makeStream();
+  media.pending[0].resolve(first);
+  await tick();
+  assert.deepEqual(statuses, ["scanning"]);
+  // Feed frames that decode to "no code"; the session keeps scanning and the
+  // timer must still fire on its original deadline, not later.
+  for (let i = 0; i < 3; i++) {
+    frames.run();
+    // Resolve the in-flight decode so the next frame can proceed.
+    decoder.pending.at(-1).resolve({ code: -1 });
+    await tick();
+  }
+  assert.equal(decoder.calls.length, 3, "each frame produced one decode");
+  t.mock.timers.tick(4);
+  assert.equal(statuses[statuses.length - 1], "scanning",
+    "still scanning one tick before the deadline");
+  t.mock.timers.tick(1);
+  assert.deepEqual(statuses.slice(-1), ["timeout"],
+    "the original deadline fired, not a re-armed one");
+  assert.ok(first.tracks.every((track) => track.stopped), "the stream is released");
+  assert.equal(video.srcObject, null);
+});
+
+test("a fast frame feed stays bounded and does not crash", async () => {
+  const { media, video, frames, decoder, results, scanner } = build({ timeoutMs: 60000 });
+  scanner.start();
+  const stream = makeStream();
+  media.pending[0].resolve(stream);
+  await tick();
+  // Feed a burst of frames while the first decode is still in flight; the
+  // one-decode-in-flight guard must bound the work.
+  for (let i = 0; i < 500; i++) {
+    frames.run();
+  }
+  assert.ok(results.length === 0, "no codes were decoded");
+  assert.equal(decoder.calls.length, 1, "only one decode went in flight");
+  assert.ok(frames.queue.length <= 2, "the frame-request queue stayed bounded");
+  // The in-flight decode resolves; the loop recovers and decodes the next.
+  decoder.pending.at(-1).resolve({ code: -1 });
+  await tick();
+  frames.run();
+  assert.equal(decoder.calls.length, 2, "a new decode started after the burst");
+  scanner.stop();
+  assert.equal(decoder.calls.length, 2, "no decode after stop()");
+});

@@ -1,3 +1,9 @@
+// Security contract exercised here: the camera path captures only frames and
+// never touches keys/WIF; every scanned buffer is zeroed on write or on
+// discard; and the scanner is released on every termination path (complete,
+// persistent reader error, stop, close, conceal, document hidden and destroy),
+// so late decode results to a stopped/closed/destroyed panel are wiped and
+// ignored. Two mounted panels never hold two camera streams at once.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mountPsbtScan } from "../src/js/qr-psbt-scan.js";
@@ -110,6 +116,11 @@ const setup = (options = {}) => {
     createScanner: (args) => {
       created.scanners += 1;
       created.scannerArgs = args;
+      // Mirror the real scanner: stop() on an active session emits "stopped".
+      scanner.stop = () => {
+        scanner.calls.stop += 1;
+        try { args.onStatus("stopped"); } catch {}
+      };
       return scanner;
     },
     wasmBytes: () => new Uint8Array([1, 2, 3]),
@@ -149,11 +160,28 @@ test("a non-empty field asks before replacing", () => {
   assert.equal(byId(ctx, "confirm").hidden, true);
 });
 
-test("Replace writes the scanned PSBT", () => {
+test("Replace re-checks the field and refuses to overwrite a non-empty one", () => {
   const ctx = setup();
   ctx.field.value = "old";
   openPanel(ctx);
   ctx.created.scannerArgs.onResult(bytesOf(PSBT_BASE64));
+  assert.equal(byId(ctx, "confirm").hidden, false);
+  byId(ctx, "replace").dispatchEvent({ type: "click" });
+  assert.equal(ctx.field.value, "old", "a pre-filled field is never clobbered");
+  assert.equal(ctx.events.length, 0, "nothing was written");
+  assert.equal(ctx.loads.count, 0, "nothing was loaded");
+  assert.equal(byId(ctx, "confirm").hidden, false, "the dialog re-prompts");
+  assert.equal(byId(ctx, "status").getAttribute("data-scan-state"), "field-nonempty");
+});
+
+test("Replace writes when the field is empty at click time", () => {
+  const ctx = setup();
+  ctx.field.value = "old";
+  openPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(PSBT_BASE64));
+  assert.equal(byId(ctx, "confirm").hidden, false);
+  // The user clears the field while the dialog is open, then replaces.
+  ctx.field.value = "";
   byId(ctx, "replace").dispatchEvent({ type: "click" });
   assert.equal(ctx.field.value, PSBT_BASE64);
   assert.equal(ctx.events.length, 1);
@@ -265,7 +293,10 @@ test("destroy removes both conceal listeners", () => {
   assert.equal(ctx.scanner.calls.stop, stops);
 });
 
-test("a partial part restarts the camera", () => {
+// In continuous mode a partial part must NOT re-open the camera (no full
+// getUserMedia re-negotiation); the stream and frame loop keep running, and the
+// reader keeps accumulating parts.
+test("a partial part keeps the camera running in continuous mode", () => {
   const ctx = setup();
   openPanel(ctx);
   const starts = ctx.scanner.calls.start;
@@ -274,7 +305,8 @@ test("a partial part restarts the camera", () => {
   const parts = encodeParts(hodlCborBstr(big), 30, 3);
   assert.equal(parts.length, 3);
   ctx.created.scannerArgs.onResult(bytesOf(partUr(parts[0])));
-  assert.equal(ctx.scanner.calls.start, starts + 1);
+  assert.equal(ctx.scanner.calls.start, starts, "no re-open between parts");
+  assert.equal(ctx.scanner.calls.stop, 0, "the stream is still running");
   assert.equal(byId(ctx, "progress").hidden, false);
 });
 
@@ -295,4 +327,137 @@ test("a part fed while a confirmation is pending changes nothing", () => {
   assert.equal(ctx.scanner.calls.start, starts);
   assert.equal(ctx.field.value, "old");
   assert.equal(byId(ctx, "confirm").hidden, false);
+});
+
+// --- shared capture (§4B): two panels never hold two camera streams ---
+
+test("opening a panel releases every other panel's active capture", () => {
+  const a = setup({ id: "a" });
+  const b = setup({ id: "b" });
+  openPanel(a);
+  assert.equal(a.scanner.calls.start, 1, "a begins its capture");
+  // b opens: it releases a's active stream and takes the camera.
+  openPanel(b);
+  assert.equal(a.scanner.calls.stop, 1, "b's open stopped a's scanner");
+  assert.equal(a.scanner.calls.start, 1, "a does not re-open");
+  assert.equal(byId(a, "status").getAttribute("data-scan-state"), "stopped");
+  // a is not destroyed: its panel stays mounted and its single scanner reused.
+  assert.ok(!a.panel.destroyed, "a is not destroyed");
+  assert.equal(a.created.scanners, 1, "a keeps its one scanner");
+  assert.equal(byId(a, "panel").hidden, false, "a's panel stays visible");
+
+  // b captures a full single-part stream and completes.
+  b.created.scannerArgs.onResult(bytesOf(PSBT_BASE64));
+  assert.equal(b.field.value, PSBT_BASE64);
+  assert.equal(b.loads.count, 1);
+  assert.equal(byId(b, "status").getAttribute("data-scan-state"), "loaded");
+
+  // a's late result is discarded: nothing written, nothing loaded, wiped.
+  const late = bytesOf(PSBT_BASE64);
+  a.created.scannerArgs.onResult(late);
+  assert.equal(a.field.value, "", "a's field is never overwritten");
+  assert.equal(a.events.length, 0);
+  assert.equal(a.loads.count, 0);
+  assert.ok(late.every((v) => v === 0), "a's late payload is zeroed");
+});
+
+test("re-opening a panel after it was stopped reuses its scanner", () => {
+  const a = setup({ id: "a" });
+  const b = setup({ id: "b" });
+  openPanel(a);            // a's scanner created and started
+  openPanel(b);            // stops a's capture
+  byId(a, "open").dispatchEvent({ type: "click" });  // close a
+  byId(a, "open").dispatchEvent({ type: "click" });  // open a again
+  assert.equal(a.created.scanners, 1, "no second scanner is created for a");
+  assert.equal(a.scanner.calls.start, 2, "the reused scanner started twice");
+});
+
+test("a panel stopped by another gets a fresh reader on re-open", () => {
+  const a = setup({ id: "a" });
+  const b = setup({ id: "b" });
+  const makeMsg = (seed) => {
+    const big = new Uint8Array(80);
+    big.set(PSBT);
+    big.fill(seed, PSBT.length, 80);
+    return big;
+  };
+  const m1 = encodeParts(hodlCborBstr(makeMsg(1)), 30, 3);
+  const m2 = encodeParts(hodlCborBstr(makeMsg(2)), 30, 3);
+  openPanel(a);
+  // a's reader binds to m1 (1 of 3 received).
+  a.created.scannerArgs.onResult(bytesOf(partUr(m1[0])));
+  assert.equal(byId(a, "progress").hidden, false, "a's reader bound to m1");
+  // b opens: a is stopped and its reader must reset.
+  openPanel(b);
+  assert.equal(byId(a, "status").getAttribute("data-scan-state"), "stopped");
+  // Re-open a; only a fresh reader lets a different complete scan finish.
+  byId(a, "open").dispatchEvent({ type: "click" });
+  byId(a, "open").dispatchEvent({ type: "click" });
+  a.created.scannerArgs.onResult(bytesOf(partUr(m2[0])));
+  a.created.scannerArgs.onResult(bytesOf(partUr(m2[1])));
+  a.created.scannerArgs.onResult(bytesOf(partUr(m2[2])));
+  assert.equal(
+    a.field.value,
+    Buffer.from(makeMsg(2)).toString("base64"),
+    "a completed a fresh scan of m2, not a stale m1 state",
+  );
+  assert.equal(a.loads.count, 1);
+});
+
+// --- lifecycle: session end discards late results and releases the stream ---
+
+test("a late result after completion is wiped and ignored", () => {
+  const ctx = setup();
+  openPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(PSBT_BASE64));
+  assert.equal(ctx.scanner.calls.stop, 1, "completion released the scanner");
+  assert.equal(ctx.scanner.calls.start, 1, "the stream was not re-opened");
+  // The panel stays open, but its session ended; a late decode must not
+  // be written even though the panel is still open.
+  const late = bytesOf(PSBT_BASE64);
+  ctx.created.scannerArgs.onResult(late);
+  assert.equal(ctx.events.length, 1, "only the original write fired");
+  assert.equal(ctx.loads.count, 1);
+  assert.ok(late.every((v) => v === 0), "the late payload is zeroed");
+});
+
+test("a persistent reader error stops the camera and shows stopped", () => {
+  const ctx = setup();
+  openPanel(ctx);
+  // A part advertising a messageLen beyond the 1 MiB reader limit is a
+  // terminal "too-large" refusal.
+  const tooLarge = {
+    seqNum: 1,
+    seqLen: 3,
+    messageLen: 2000000,
+    checksum: crc32Number(new Uint8Array(80)),
+    data: new Uint8Array(26),
+  };
+  ctx.created.scannerArgs.onResult(bytesOf(partUr(tooLarge)));
+  assert.equal(ctx.scanner.calls.stop, 1, "the stream was released");
+  assert.equal(byId(ctx, "status").getAttribute("data-scan-state"), "stopped");
+  assert.equal(ctx.field.value, "");
+});
+
+test("a mismatched reader state stops the camera", () => {
+  const ctx = setup();
+  openPanel(ctx);
+  const makeBig = (seed) => {
+    const big = new Uint8Array(80);
+    big.set(PSBT);
+    big.fill(seed, PSBT.length, 80);
+    return big;
+  };
+  // Two distinct 3-part messages; part 1 of each has seqNum=1, seqLen=3.
+  const partsA = encodeParts(hodlCborBstr(makeBig(1)), 30, 3);
+  const partsB = encodeParts(hodlCborBstr(makeBig(2)), 30, 3);
+  assert.equal(partsA.length, 3);
+  // part 1 of message A binds seqLen=3 (partial, 1 received).
+  ctx.created.scannerArgs.onResult(bytesOf(partUr(partsA[0])));
+  assert.equal(byId(ctx, "progress").hidden, false);
+  // part 1 of message B (same seqNum/seqLen, different data) -> collector
+  // conflict -> reader "mismatch" -> terminal.
+  ctx.created.scannerArgs.onResult(bytesOf(partUr(partsB[0])));
+  assert.equal(ctx.scanner.calls.stop, 1, "mismatch released the scanner");
+  assert.equal(byId(ctx, "status").getAttribute("data-scan-state"), "stopped");
 });
