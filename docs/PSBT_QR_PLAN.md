@@ -283,13 +283,13 @@ Parallel schedule:
 |---|---|---|---|
 | PQR-00 | Planning integrator | Complete | Base/worktree above; source-reader smoke above; documentation-only setup |
 | PQR-01 | Integrator (2026-10-31) | Complete | Upstream reconciled; base freeze `29ef723c`; contracts frozen §4E/§4F; release gate revised with operator agreement |
-| PQR-02 | AutonomousTern + Integrator | Implemented; final consolidated verification pending | Published vectors, 1000-fragment boundary, duplicate/non-progress bounds, terminal reader fix; independent exact-byte diff tool passes |
+| PQR-02 | AutonomousTern + Integrator | Complete | Published vectors, 1000-fragment boundary, duplicate/non-progress bounds, terminal reader fix; exact-byte independent diff tool passed |
 | PQR-03 | CompactVulture + Integrator | Complete | 53 pinned reference cases plus manifest; offline integrity/acceptance tests pass; reproducibility checked |
 | PQR-04 | FinancialWildebeest | Integrated | `1ced6f6f`; continuous capture; 87 integration/consumer tests passed before final timeout cleanup regression |
 | PQR-05 | Integrator | Implemented and smoke-tested | Three preview hosts; Inspector UR full parser; bounded text/camera reader; navigation/global retirement |
-| PQR-06 | QrBrowserAcceptance | Optical smoke passed | 25 checks; real embedded worker/WASM; 41 optical frames; all 11 simulated streams ended; broad browser checks pass after accessible staging/clean-source stamp |
-| PQR-07 | QrSecurityReview | Reviewed; four root causes addressed | Static follow-up found no remaining findings in reviewed scope; exercised regression evidence below |
-| PQR-08 | Integrator | In progress | Documentation and CI registration complete; final consolidated verification pending; no upstream PR authorization |
+| PQR-06 | QrBrowserAcceptance + Integrator | Complete (simulated optical) | Final 25 checks; real embedded worker/WASM; 39 optical frames; all 11 simulated streams ended; 151 Chromium integration checks passed |
+| PQR-07 | QrSecurityReview | Complete | Lifecycle and terminal-reader fixes reviewed; no remaining findings in inspected deltas; executed regressions below |
+| PQR-08 | Integrator | Complete | Documentation, CI registration, final verification and digests recorded below; no push, upstream PR or deployment |
 | PQR-HW | Unassigned | Research available; physical proof pending | See section 9; no purchase or deployment performed |
 
 ### Integration evidence and approved release gate
@@ -339,6 +339,75 @@ Parallel schedule:
   ordinary harness staging paths. Use `CHROME_BINARY=/usr/bin/chromium-browser`.
   The committed build's provenance check must run against clean build inputs;
   a deliberately dirty build correctly stamps `unknown`.
+
+### Final verification / PR-ready evidence
+
+Implementation commits:
+
+- `1ced6f6f`: delegated camera continuous acquisition and shared ownership.
+- `0bcaee63`: three preview entry points, bounded UR text integration,
+  navigation/cancellation cleanup and user/security documentation.
+- `cab50aa4`: pinned independent reference corpus, dev-only generation/diff
+  tooling, and terminal-reader transport-switch regression fix.
+
+Executed against the committed candidate:
+
+```sh
+TMPDIR=/home/agent/doggyballs/psbt-browser-tmp \
+CHROME_BINARY=/usr/bin/chromium-browser npm run build
+TMPDIR=/home/agent/doggyballs/psbt-browser-tmp \
+CHROME_BINARY=/usr/bin/chromium-browser npm test
+npm run verify
+npm run build -- --preview --out /tmp/psbt-qr-preview
+bun /tmp/pqr06-cdp-smoke.mjs
+/tmp/pyvenv/bin/python scripts/seed-signer-diff.py
+```
+
+- Full suite: **5,094 passed, zero failed, 23 skipped**. This includes all
+  **151 Chromium hosted/offline integration checks**, the default-suite
+  two-path reproducibility check, and artifact-level preview-host exclusion.
+  Firefox/Edge were unavailable; optional Bitcoin Core cases were skipped.
+- Final preview optical smoke: **25 passed**, including all three scan targets,
+  explicit parser actions, reverse multipart progress, one camera acquisition
+  per multipart session, cancellation/navigation, refusal and all tracks ended.
+  Only camera acquisition was simulated; the embedded worker/WASM decoded pixels.
+  No off-origin egress observed; same-origin manifest requests and data/blob
+  resources were observed. This is not a packet-capture or physical-air-gap claim.
+- Independent interchange: **53 reference-to-app cases** and **six exact-byte
+  app-to-reference checks** passed; 54 payload/manifest files regenerated
+  byte-identically. Reference Python dependencies are pinned in the manifest,
+  and reference tooling is not required for the offline Node suite.
+- Clean-source release SHA-256:
+  `3e1b76cbbc25576e778d8a910dc543036ec30db4b6f5d30cb0c7de03638d2c7f`
+  (8,265,605 bytes).
+- Preview SHA-256:
+  `3efa8323b11961f2f5056c1f93b80cc242d2b8f4a882a6ee2bc418b15baada53`
+  (8,292,327 bytes).
+- Snapshot two-path reproduction SHA-256:
+  `cdf881ac55ac592d474957b49b68f9618194abc6c7d24be4bc3c0f6ef70c365f`.
+  These staging copies correctly stamp `unknown`; this digest is not the
+  clean-source release digest above.
+- Fixture manifest SHA-256:
+  `85fedf88ecadd31b7f170956339ba4e70900ed6e22a6ac452364f317a172e35a`.
+
+PR summary: preview-only PSBT QR receive reuses the landed collector/reader and
+decoder rather than replacing them; preserves existing release and one-shot
+consumer behavior; adds continuous acquisition, shared camera ownership and
+consistent cancellation; routes supported UR text through the same bounded
+reader; and proves independent byte transport plus real-decoder optical smoke.
+The operator approved current-source reproducibility and preview exclusion in
+place of historical release byte identity. Known external malformed-CRC
+reference behavior is explicitly refused and documented, never papered over.
+
+Remaining qualification limits: no physical camera/SeedSigner display/appliance
+test, no appliance image or OS-permission changes, and no canonical Docker/Rust
+rebuild in this workstation environment. No Rust sources or generated WASM were
+changed. Publishing is not authorized by this evidence: push only to `fork` if
+requested; opening an upstream PR and deploying an image require operator approval.
+
+Review/implementation attribution: OpenAI GPT-6.1 (`openai-codex/gpt-6.1-sol`);
+delegated contributions retain their commit attribution.
+
 
 
 ### Copy/paste agent assignment
