@@ -1726,7 +1726,7 @@ test("changing the language outside Keys keeps the selected key's wallet", async
     });
     for (const name of ["hodlRenderKeyForm", "hodlRestoreFormFields", "hodlUpdateSeedLengthControl", "hodlUpdateAddressEstimate",
       "hodlUpdateCoinTypeHelp", "hodlUpdateDerivationPathPreview", "hodlUpdateMsigScriptDetection",
-      "hodlUpdateMsigAccount", "hodlShowMsig", "hodlRefreshKeyResult", "hodlRefreshPsbtLocale", "hodlRefreshVanityLocale", "hodlRefreshStationKeyPickers", "hodlReindexMsigKeys", "hodlRenderBip85Out", "hodlRefreshSpLocale", "hodlRenderKeyTabs", "hodlRenderMsigTabs", "hodlRenderStationTabs", "hodlPaintKeySummary", "hodlUpdateHardeningHelp", "hodlApplyTheme", "hodlRefreshWorkspaceErrors"])
+      "hodlUpdateMsigAccount", "hodlShowMsig", "hodlRefreshKeyResult", "hodlRefreshPsbtLocale", "hodlRefreshVanityLocale", "hodlRefreshStationKeyPickers", "hodlReindexMsigKeys", "hodlRenderBip85Out", "hodlRefreshSpLocale", "hodlDecorateAppPaste", "hodlRenderKeyTabs", "hodlRenderMsigTabs", "hodlRenderStationTabs", "hodlPaintKeySummary", "hodlUpdateHardeningHelp", "hodlApplyTheme", "hodlRefreshWorkspaceErrors"])
       context[name] = () => {};
     let logRefreshes = 0;
     context.hodlSecurityLog = { refresh: () => logRefreshes++ };

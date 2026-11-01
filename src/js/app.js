@@ -150,10 +150,12 @@ import {
 import { KEY_VAULT_MAX_KEYS as hodlKeyVaultMaxKeys, keyVaultIdentity, keyResultSetup as hodlKeyResultSetup, parseKeyVault, serializeKeyVault, setKeyVaultModes } from "./keymanager.js";
 import { clearClipboard as hodlClearClipboard, showCopiedIcon as hodlShowCopiedIcon, copyText } from "./clipboard.js";
 import { privateCopyButtonHtml as hodlPrivateCopyButtonHtml, initPrivateCopy as hodlInitPrivateCopy, isReadoutShown as hodlReadoutIsShown, renderAnnotatedPrivateText as hodlRenderAnnotatedPrivateText } from "./private-data.js";
+import { appClipboardBytes, appClipboardPut, appClipboardText, initAppClipboard } from "./app-clipboard.js";
+import { decorateAppPaste, syncAppPaste, initAppPaste } from "./app-paste.js";
 import { publicFieldHtml as hodlPublicFieldMarkup, publicValueHtml as hodlPublicValueHtml } from "./public-data.js";
 import { bip47AccountNode as hodlBip47AccountNode, bip47AccountPath as hodlBip47AccountPath, bip47NotificationAddress as hodlBip47NotificationAddress, decodePaymentCode as hodlBip47DecodePaymentCode, encodePaymentCode as hodlBip47EncodePaymentCode, Bip47Error as hodlBip47Error, bip47PairRows as hodlBip47PairRows, bip47ReceiveRow as hodlBip47ReceiveRow, bip47DecodeNotificationTx as hodlBip47DecodeNotificationTx, hexToBytes as hodlBip47HexToBytes } from "./bip47.js";
 import { bip47OwnHtml as hodlBip47OwnHtml, bip47ContactHtml as hodlBip47ContactHtml, bip47ErrorHtml as hodlBip47ErrorHtml, bip47RowsHtml as hodlBip47RowsHtml, bip47NotifyInputsHtml as hodlBip47NotifyInputsHtml, bip47NotifyHtml as hodlBip47NotifyHtml, bip47NotifyErrorHtml as hodlBip47NotifyErrorHtml } from "./bip47-ui.js";
-import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
+import { PassphraseVault, bindVaultField, singleLineText as hodlSingleLineText } from "./passphrase-vault.js";
 import { parsePrivateKeyBytes, KeyBytesError } from "./key-bytes.js";
 import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-session.js";
 import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn, planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS as hodlSecureSupported } from "./secure-entry.js";
@@ -780,6 +782,7 @@ if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entro
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabShowStoredPassphrase = (text) => { const bytes = new TextEncoder().encode(text); try { hodlShowStoredPassphrase(bytes); } finally { bytes.fill(0); } };
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabWasmMemory = () => [hodlWasm().memory.buffer, hodlPsbtLoaderHeap().buffer];
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabStationRoot = () => hodlStationSessionXprv();
+if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabAppClipboard = () => appClipboardText();
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabI18n = { sanitizeCatalogHtml: hodlSanitizeCatalogHtml, tHtml: hodlT, tAttr: hodlTAttr };
 function hodlJournalTestHooks() {
   return { openExport: (file) => hodlJournalOpenExport(file, hodlJournalKeys), passwordProtected: () => Boolean(hodlJournalKeys?.passwordProtected) };
@@ -1793,7 +1796,7 @@ function hodlAddressIndexHtml(index) {
 }
 function hodlAddressTableRows(rows, includeWif = false, rowOffset = 0) {
   return rows.map((row, offset) => {
-    let copyLabel = hodlTText("Copy WIF for address #{n}", { n: row.index });
+    let copyLabel = hodlTText("Copy WIF for address #{n} to EntropyLab's clipboard", { n: row.index });
     return `<tr aria-rowindex="${rowOffset + offset + 2}"><th scope="row">${hodlAddressIndexHtml(row.index)}</th><td>${hodlPublicInlineHtml(hodlDisplayDerivationPath(row.path), { clipboard: false, className: "" })}</td><td data-copy-group><button type="button" class="addr-text" data-copy-field data-public-value data-i18n-skip translate="no" title="${hodlTAttr("Copy")}">${hodlEscapeHtml(row.address)}</button>${hodlAddressQrButton(row.address, hodlT("Address #{n}", { n: row.index }))}<span class="copy-field-status is-icon-only" data-copy-status aria-live="polite"></span></td>${includeWif ? `<td data-private-field>${hodlPrivateValue(hodlRowWifCell(row), "mono table-private-field-value")}${hodlRevealPrivate && row.privateKey ? hodlPrivateCopyButton({ label: copyLabel }) : ""}</td>` : ""}</tr>`;
   }).join("");
 }
@@ -1915,11 +1918,11 @@ function hodlPrivateCopyButton(options = {}) {
 }
 // Private readouts share one label-row clipboard control. Only the shown
 // value carries data-private-value; concealed placeholders are never a source.
-function hodlPrivateFieldMarkup(labelHtml, valueHtml, { id = "", labelClass = "label", revealed = hodlRevealPrivate, copyId = "", copyAttribute = "data-private-copy", copyLabel = "Copy" } = {}) {
+function hodlPrivateFieldMarkup(labelHtml, valueHtml, { id = "", labelClass = "label", revealed = hodlRevealPrivate, copyId = "", copyAttribute = "data-private-copy", copyLabel = "Copy to EntropyLab's clipboard" } = {}) {
   return `<p class="private-field${revealed ? " is-revealed" : ""}" data-private-field${id ? ` id="${id}"` : ""}><span class="${labelClass} copy-field-label">${labelHtml}${revealed ? hodlPrivateCopyButton({ id: copyId, attribute: copyAttribute, label: copyLabel }) : ""}</span>${valueHtml}</p>`;
 }
 function hodlPrivateFieldHtml(label, value, vars, labelClass = "label", revealed = hodlRevealPrivate, copyId = "") {
-  let text = hodlTText(label, vars), labelHtml = hodlEscapeHtml(text), copyLabel = hodlTText("Copy {label}", { label: text });
+  let text = hodlTText(label, vars), labelHtml = hodlEscapeHtml(text), copyLabel = hodlTText("Copy {label} to EntropyLab's clipboard", { label: text });
   return hodlPrivateFieldMarkup(labelHtml, hodlPrivateValue(value, undefined, revealed), { labelClass, revealed, copyId, copyLabel });
 }
 // A private value held as key material, not text: hidden, it masks at its
@@ -3446,7 +3449,7 @@ function hodlSeedPhraseField(label, value) {
   let text = String(value ?? "\u2014"), shown = hodlRevealPrivate
     ? `<span class="secret private-field-value seed-phrase-value" data-private-value data-i18n-skip translate="no">${hodlSeedPhraseTokens(text)}</span>`
     : `<span class="secret private-field-value secret-placeholder seed-phrase-value"><span class="secret-placeholder-mask" aria-hidden="true">${hodlSeedPhraseTokens(text, true)}</span><span class="secret-placeholder-message" aria-hidden="true">************</span><span class="secret-placeholder-label">${hodlT("Private value hidden")}</span></span>`;
-  return hodlPrivateFieldMarkup(hodlEscapeHtml(label), shown, { copyLabel: hodlTText("Copy seed phrase") });
+  return hodlPrivateFieldMarkup(hodlEscapeHtml(label), shown, { copyLabel: hodlTText("Copy seed phrase to EntropyLab's clipboard") });
 }
 function hodlSeedQrDigits(mnemonic) {
   let words = String(mnemonic ?? "").trim().split(/\s+/).filter(Boolean);
@@ -6550,6 +6553,77 @@ function hodlSeedButtonPhrase(button) {
 function hodlClipboardIconMarkup() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`;
 }
+
+function hodlPasteIconMarkup() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path class="seed-copy-icon-board" d="M12 9v6m0 0-3-3m3 3 3-3"/></svg>`;
+}
+
+function hodlAppPasteInto(field) {
+  let bytes = appClipboardBytes();
+  if (!bytes) return;
+  // These passphrase fields keep their text in a vault, never in .value
+  // (ln-pass is a plain password field and takes the text path).
+  let vaultIds = ["pass", "bip47-pass", "sp-pass", "psbt-pass", "nonce-pass"];
+  let vault = field.id === "pass" ? hodlPassphraseVaultField : hodlStationPassphraseFields?.[field.id]?.api;
+  // A single-line field takes the paste as a typed paste would: trailing line
+  // breaks dropped, inner ones as spaces (the vault's own rule), so the same
+  // copied text is the same passphrase whichever way it arrives.
+  let singleLine = field.tagName !== "TEXTAREA", breaks = bytes.some((byte) => byte === 10 || byte === 13);
+  if (vault) {
+    let copy = singleLine && breaks ? new TextEncoder().encode(hodlSingleLineText(appClipboardText())) : bytes.slice();
+    try {
+      vault.setBytes(copy, { notify: true });
+    } catch {
+      // The vault refused the bytes and is left empty; nothing else to do.
+      return;
+    } finally {
+      copy.fill(0);
+    }
+  } else if (vaultIds.includes(field.id)) {
+    // A vault field whose vault is not bound must not take the text path.
+    return;
+  } else {
+    let event;
+    try {
+      event = new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" });
+    } catch {
+      return;
+    }
+    field.value = singleLine && breaks ? hodlSingleLineText(appClipboardText()) : appClipboardText();
+    field.dispatchEvent(event);
+  }
+  field.focus();
+}
+
+// The paste control's name says which field it fills: several can share a
+// screen, and a secret pasted into the wrong one is the mistake to prevent.
+function hodlAppPasteLabel(id) {
+  let field = {
+    "seed": () => hodlTText("seed phrase"),
+    "key": () => hodlTText("private key"),
+    "hex": () => hodlTText("hex entropy"),
+    "pass": () => hodlTText("Key Station passphrase"),
+    "bip85-key": () => hodlTText("Root xprv"),
+    "bip47-key": () => hodlTText("BIP-47 session key"),
+    "bip47-pass": () => hodlTText("BIP-47 passphrase"),
+    "sp-key": () => hodlTText("Silent Payments session key"),
+    "sp-pass": () => hodlTText("Silent Payments passphrase"),
+    "psbt-key": () => hodlTText("PSBT session key"),
+    "psbt-pass": () => hodlTText("PSBT passphrase"),
+    "nonce-key": () => hodlTText("nonce session key"),
+    "nonce-pass": () => hodlTText("nonce passphrase"),
+    "ln-seed": () => hodlTText("Lightning seed phrase"),
+    "ln-pass": () => hodlTText("Lightning passphrase"),
+    "core-add-text": () => hodlTText("output descriptor"),
+    "journal-input": () => hodlTText("raw rolls or input"),
+    "journal-phrase": () => hodlTText("BIP39 seed or passphrase"),
+  }[id];
+  return hodlTText("Paste into {field} from EntropyLab's clipboard", { field: field ? field() : id });
+}
+function hodlDecorateAppPaste() {
+  decorateAppPaste(document, { pasteIcon: hodlPasteIconMarkup, labelFor: hodlAppPasteLabel });
+  syncAppPaste(document);
+}
 function hodlSyncWarningIconMarkup() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="seed-copy-icon-board" d="M12 4 2.5 20h19L12 4Z"/><path class="seed-copy-icon-board" d="M12 10v4"/><path class="seed-copy-icon-board" d="M12 17.2v.1"/></svg>`;
 }
@@ -6629,21 +6703,21 @@ function hodlDerivedSeedRowMarkup() {
   return hodlSeedPhraseRowMarkup(hodlT("Derived seed phrase"));
 }
 function hodlSeedCopyRowMarkup(leading = "") {
-  return `<div class="seed-word-copy-row">${leading}<button type="button" class="copy-button boxed-copy-button" data-copy-seed-phrase disabled aria-label="${hodlTAttr("Copy seed phrase")}" title="${hodlTAttr("Copy seed phrase")}">${hodlClipboardIconMarkup()}</button></div>`;
+  return `<div class="seed-word-copy-row">${leading}<button type="button" class="copy-button boxed-copy-button" data-copy-seed-phrase disabled aria-label="${hodlTAttr("Copy seed phrase to EntropyLab's clipboard")}" title="${hodlTAttr("Copy seed phrase to EntropyLab's clipboard")}">${hodlClipboardIconMarkup()}</button></div>`;
 }
 function hodlShowSeedPhraseCopied(button) {
   if (!button) return;
   button.classList.add("is-copied");
   button.innerHTML = hodlCopiedIconMarkup();
-  button.setAttribute("aria-label", button.dataset.copiedLabel || hodlTText("Seed phrase copied"));
-  button.title = hodlTText("Copied");
+  button.setAttribute("aria-label", button.dataset.copiedLabel || hodlTText("Seed phrase copied to EntropyLab's clipboard"));
+  button.title = hodlTText("Copied to EntropyLab's clipboard");
   clearTimeout(button.hodlCopiedTimer);
   button.hodlCopiedTimer = setTimeout(() => {
     if (!button.isConnected) return;
     let phrase = hodlSeedButtonPhrase(button);
     button.classList.remove("is-copied");
     button.innerHTML = hodlClipboardIconMarkup();
-    let copyLabel = button.dataset.copyLabel || hodlT("Copy seed phrase");
+    let copyLabel = button.dataset.copyLabel || hodlT("Copy seed phrase to EntropyLab's clipboard");
     button.setAttribute("aria-label", phrase ? copyLabel : hodlTText("Seed phrase unavailable"));
     button.title = phrase ? copyLabel : hodlTText("Seed phrase unavailable");
   }, 1600);
@@ -6654,7 +6728,7 @@ function hodlCopySeedPhraseButton(button) {
   let done = () => {
     hodlShowSeedPhraseCopied(button);
   };
-  copyText(phrase).then((copied) => { if (copied) done(); });
+  if (appClipboardPut(phrase)) done();
 }
 function hodlRenderDiceWordGrid(container, words, targetWords = hodlTargetWordCount, provisional = false) {
   if (!container) return;
@@ -6686,8 +6760,8 @@ function hodlRenderDiceWordGrid(container, words, targetWords = hodlTargetWordCo
   if (copy) {
     copy.disabled = !phrase;
     if (!copy.classList.contains("is-copied")) {
-      copy.setAttribute("aria-label", phrase ? hodlTText("Copy seed phrase") : hodlTText("Seed phrase unavailable"));
-      copy.title = phrase ? hodlTText("Copy seed phrase") : hodlTText("Seed phrase unavailable");
+      copy.setAttribute("aria-label", phrase ? hodlTText("Copy seed phrase to EntropyLab's clipboard") : hodlTText("Seed phrase unavailable"));
+      copy.title = phrase ? hodlTText("Copy seed phrase to EntropyLab's clipboard") : hodlTText("Seed phrase unavailable");
     }
     if (!copy.hodlCopyBound) {
       copy.onclick = () => hodlCopySeedPhraseButton(copy);
@@ -7689,6 +7763,7 @@ function hodlBindKeyFields() {
     apply();
   }
   hodlBindKeyScan();
+  hodlDecorateAppPaste();
 }
 function hodlSelectedEntropy(targetWords = hodlTargetWordCount) {
   let format = hodlNormalizeEntropyFormat(hodlEntropyFormat), value = document.getElementById(format)?.value.trim() || "";
@@ -13297,9 +13372,9 @@ function hodlCopyBip85Child(button) {
   if (!phrase) return;
   let done = () => {
     if (!button.isConnected || !hodlBip85Reveal) return;
-    hodlShowCopiedIcon(button, { copyIcon: hodlClipboardIconMarkup(), copiedIcon: hodlCopiedIconMarkup() });
+    hodlShowCopiedIcon(button, { copyIcon: hodlClipboardIconMarkup(), copiedIcon: hodlCopiedIconMarkup(), copiedLabel: hodlTText("Copied to EntropyLab's clipboard") });
   };
-  copyText(phrase).then((copied) => { if (copied) done(); });
+  if (appClipboardPut(phrase)) done();
 }
 function hodlRenderBip85Out() {
   let box = document.getElementById("bip85-out");
@@ -18639,10 +18714,11 @@ function hodlJournalSyncCopyButton(field, button = document.getElementById("jour
 async function hodlJournalCopyContent(button, field, notebook = false, isCurrent = () => true) {
   if (!button || button.disabled || !hodlReadoutIsShown(button) || !hodlReadoutIsShown(field) || !isCurrent()) return false;
   if (notebook && !field.value.trim()) return false;
-  // Notes and imported debug events can contain secrets. Read them only for
-  // this click; the clipboard control never keeps a second payload copy.
+  // Notes and imported debug events can contain secrets, so they copy to
+  // EntropyLab's clipboard, never to the system clipboard. Read them only for this click;
+  // the clipboard control never keeps a second payload copy.
   let text = notebook ? hodlJournalFormatNotebook(hodlJournalPageNotesText({ ...hodlJournalActivePage(), notesText: field.value })) : field.textContent;
-  let copied = await copyText(text, { isCurrent });
+  let copied = isCurrent() && appClipboardPut(text);
   if (copied && isCurrent() && hodlReadoutIsShown(button) && hodlReadoutIsShown(field)) hodlShowCopiedIcon(button, {
     copyIcon: hodlClipboardIconMarkup(),
     copiedIcon: hodlCopiedIconMarkup(),
@@ -18656,8 +18732,10 @@ async function hodlJournalCopyLog() {
   let isCurrent = () => generation === hodlJournalGeneration && journal === hodlJournal && log === journal.log && hodlJournalUnlocked();
   let button = document.getElementById("journal-log-copy"), field = document.getElementById("journal-log-out");
   if (!isCurrent() || !button || button.disabled || !hodlReadoutIsShown(button) || !hodlReadoutIsShown(field)) return false;
+  // Imported debug events can contain secrets, so the log copies to
+  // EntropyLab's clipboard, never to the system clipboard.
   let text = hodlJournalFormatLog(log, journal.logDiscarded);
-  let copied = await copyText(text, { isCurrent });
+  let copied = isCurrent() && appClipboardPut(text);
   if (copied && isCurrent() && hodlReadoutIsShown(button)) hodlShowCopiedIcon(button, {
     copyIcon: hodlClipboardIconMarkup(), copiedIcon: hodlCopiedIconMarkup(),
     label: hodlTText(button.dataset.copyLabel || "Copy"),
@@ -21240,13 +21318,14 @@ function hodlVanityInputsReady() {
     return false;
   }
 }
-function hodlCopyVanityValue(button, value, label) {
+function hodlCopyVanityValue(button, value, label, { app = false } = {}) {
   if (!value || !button || button.disabled) return;
   let done = () => {
     button.classList.add("is-copied");
     button.innerHTML = hodlCopiedIconMarkup();
-    button.setAttribute("aria-label", hodlTText("Copied"));
-    button.title = hodlTText("Copied");
+    let copiedLabel = app ? hodlTText("Copied to EntropyLab's clipboard") : hodlTText("Copied");
+    button.setAttribute("aria-label", copiedLabel);
+    button.title = copiedLabel;
     clearTimeout(button.hodlCopiedTimer);
     button.hodlCopiedTimer = setTimeout(() => {
       if (!button.isConnected) return;
@@ -21256,7 +21335,11 @@ function hodlCopyVanityValue(button, value, label) {
       button.title = label;
     }, 1600);
   };
-  copyText(value).then((copied) => { if (copied) done(); });
+  if (app) {
+    if (appClipboardPut(value)) done();
+  } else {
+    copyText(value).then((copied) => { if (copied) done(); });
+  }
 }
 // The master fingerprint the key will carry once a match is applied: a new
 // passphrase is a new seed, so each passphrase-grind row is its own
@@ -21315,7 +21398,7 @@ function hodlRenderVanityOut() {
     let secret = hodlVanityReveal
       ? `<span class="mono vanity-pass-text table-private-field-value" data-private-value data-i18n-skip translate="no">${hodlEscapeHtml(match.passphrase)}</span>`
       : `<span class="mono vanity-pass-text" aria-hidden="true">${hodlEscapeHtml("•".repeat(12))}</span><span class="sr-only">${hodlT("Passphrase hidden — turn on the Private data switch above to reveal")}</span>`;
-    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, hodlTAttr("Copy passphrase"))}</span></td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
+    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, hodlTAttr("Copy passphrase to EntropyLab's clipboard"))}</span></td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
   }).join("");
   let overflow = hodlVanityFound > hodlVanityMatches.length ? `<p class="muted">${hodlT("Only the first {n} matches are listed; {total} found in total.", { n: hodlVanityMatches.length, total: hodlVanityFormatCount(hodlVanityFound) })}</p>` : "";
   // Plain text: the description below escapes it once, as a placeholder value.
@@ -21728,7 +21811,7 @@ function hodlInitVanity() {
     let secretButton = event.target.closest("[data-vanity-copy]");
     if (secretButton) {
       let match = hodlVanityMatches[Number(secretButton.dataset.vanityCopy)];
-      if (match && hodlVanityReveal && !secretButton.disabled) hodlCopyVanityValue(secretButton, match.passphrase, hodlTText("Copy passphrase"));
+      if (match && hodlVanityReveal && !secretButton.disabled) hodlCopyVanityValue(secretButton, match.passphrase, hodlTText("Copy passphrase to EntropyLab's clipboard"), { app: true });
       return;
     }
     let addressButton = event.target.closest("[data-vanity-copy-address], [data-vanity-copy-address-value]");
@@ -22444,6 +22527,8 @@ function hodlApplyLocale() {
   hodlRefreshVanityLocale();
   hodlRefreshStationKeyPickers();
   hodlJournalRenderVisual();
+  // The paste controls fill their field's name into their labels.
+  hodlDecorateAppPaste();
   // The co-signer titles and labels, the BIP-85 child and the Silent Payments
   // results fill values into their text, so they render again too.
   hodlReindexMsigKeys();
@@ -22489,6 +22574,9 @@ async function hodlBoot() {
   hodlInitSegmentedControls();
   initQrReferences({ copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup });
   hodlInitDescriptorCopy({ onCopyStart: hodlJournalCopyStart });
+  initAppClipboard();
+  initAppPaste({ fill: hodlAppPasteInto });
+  hodlDecorateAppPaste();
   hodlInitPrivateCopy({ copyIcon: hodlClipboardIconMarkup, copiedIcon: hodlCopiedIconMarkup, onCopyStart: hodlJournalCopyStart });
   hodlInitEndSession();
   hodlInitLocale(hodlApplyLocale);

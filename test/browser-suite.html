@@ -107,7 +107,8 @@
       equal(await copiedBy(value), null);
       assert(copy && !copy.disabled, "the shown private value has no available clipboard control");
       const labelText = copy.parentElement.textContent, box = copy.getBoundingClientRect();
-      equal(await copiedBy(copy), expected);
+      equal(await copiedBy(copy), null);
+      equal(window.__entropyLabAppClipboard(), expected);
       equal(copy.parentElement.textContent, labelText);
       // The green "Copied" tick is sized to be noticed at a glance, and the
       // control keeps its box so nothing beside it moves.
@@ -1058,7 +1059,8 @@
     assert(document.getElementById("cards-meta").textContent.includes("recommended cards"), "Card status lost its count line");
     equal([...document.querySelectorAll("#dice-words [data-word]")].filter((word) => word.textContent !== "—").length, 24);
     const cardCopy = document.querySelector('[data-copy-seed-phrase]');
-    assert(cardCopy && !cardCopy.disabled && (await copiedBy(cardCopy)).split(" ").length === 24, "Testing seed preview was not copyable");
+    assert(cardCopy && !cardCopy.disabled && (await copiedBy(cardCopy)) === null, "Testing seed preview reached the system clipboard");
+    assert(window.__entropyLabAppClipboard().split(" ").length === 24, "Testing seed preview was not copyable");
     assert(!dealt.hidden && dealt.textContent.includes("A"), "Show cards did not reveal the dealt card");
     unselectableReadout(dealt);
     equal(await copiedBy(dealt), null);
@@ -1207,7 +1209,8 @@
     await wait(0);
     const copy = document.querySelector('[data-copy-seed-phrase]');
     assert(copy && !copy.disabled, "Partial seed-word copy control remained disabled");
-    equal(await copiedBy(copy), "abandon");
+    equal(await copiedBy(copy), null);
+    equal(window.__entropyLabAppClipboard(), "abandon");
     assert(!("phrase" in copy.dataset), "the copy control kept the phrase in data-phrase");
     await privateReadout(document.querySelector('#entropy-words [data-word]'), "abandon", copy);
     const calculations = document.getElementById("show-number-base-calculations");
