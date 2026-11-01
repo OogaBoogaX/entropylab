@@ -22414,9 +22414,10 @@ function hodlInitSecretFieldAutoClear() {
     hodlKeyScan = null;
     try { hodlSeedPicker?.destroy(); } catch {}
     hodlSeedPicker = null;
-    try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
-    // The camera must be off and the decoder retired before the wipe goes on.
+    // The PSBT panels come down before any decoder is retired (their decoders
+    // live in the same registry as the Key Station's), then the registry goes.
     try { hodlDestroyPsbtScans(); } catch {}
+    try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
     try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
