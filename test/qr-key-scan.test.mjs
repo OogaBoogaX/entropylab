@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mountKeyScan, retireQrDecoders } from "../src/js/qr-key-scan.js";
 import { classifyQrPayload } from "../src/js/qr-payload.js";
+import { bip39English } from "../src/js/bip39.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
 
 // The published compressed mainnet WIF for private key 1.
@@ -201,6 +202,11 @@ const setup = (options = {}) => {
   const created = { decoders: 0, scanners: 0, decoderArgs: null, scannerArgs: null };
   const panel = mountKeyScan(host, {
     keyField,
+    accept: options.accept,
+    idPrefix: options.idPrefix,
+    beforeOpen: options.beforeOpen,
+    onSeed: options.onSeed,
+    wordlist: options.wordlist,
     translate: options.translate || ((text) => text),
     privateValue: (value, revealed) => (revealed ? value : "•".repeat(value.length)),
     beforeWrite: options.beforeWrite,
@@ -227,6 +233,8 @@ const openPanel = (ctx) => {
 };
 
 const stateOf = (ctx) => findById(ctx.host, "key-scan-status").getAttribute("data-scan-state");
+const stateOfSeed = (ctx) => findById(ctx.host, "seed-scan-status").getAttribute("data-scan-state");
+const openSeedPanel = (ctx) => findById(ctx.host, "seed-scan-open").dispatchEvent({ type: "click" });
 
 test("opening the panel starts one scanner and the button follows it", () => {
   const ctx = setup();
@@ -721,4 +729,144 @@ test("the app wires the scan panel behind the preview flag", () => {
   const retireAt = wipe.indexOf("hodlKeyScanModule?.retireQrDecoders()");
   const remountAt = wipe.indexOf("hodlBindKeyScan();");
   assert.ok(destroyAt >= 0 && retireAt > destroyAt && remountAt > retireAt, "the wipe does not re-mount the panel after retiring the decoders");
+});
+
+test("a Standard SeedQR in seed mode confirms, then Continue hands over the indices", () => {
+  const calls = [];
+  let captured = null;
+  const ctx = setup({
+    accept: "seed",
+    idPrefix: "seed-scan",
+    wordlist: bip39English,
+    classify: (bytes) => {
+      captured = classifyQrPayload(bytes);
+      return captured;
+    },
+    onSeed: (indices, count) => {
+      calls.push({ values: Array.from(indices), count });
+      indices.fill(0);
+    },
+  });
+  openSeedPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  assert.equal(stateOfSeed(ctx), "seed");
+  assert.equal(findById(ctx.host, "seed-scan-confirm").hidden, false);
+  // Copy is not pinned (AGENTS.md) except the approved safety phrase.
+  assert.match(markupOf(findById(ctx.host, "seed-scan-confirm-intro")), /cannot tell where a QR came from/);
+  // While the confirmation is pending, no acquisition control shows (Kimi,
+  // autofix review: seed mode kept them).
+  assert.equal(findById(ctx.host, "seed-scan-photo-open").hidden, true);
+  assert.equal(findById(ctx.host, "seed-scan-cancel").hidden, true);
+  assert.ok(captured.indices.every((index) => index === 0), "the classifier's indices were not zeroed");
+  findById(ctx.host, "seed-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].count, 12);
+  assert.deepEqual(calls[0].values, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3]);
+  assert.equal(findById(ctx.host, "seed-scan-panel").hidden, true);
+  assert.equal(markupOf(ctx.host).includes("abandon"), false);
+});
+
+test("Review words one by one shows one word at a time and turns the toggle off on a move", () => {
+  const ctx = setup({ accept: "seed", idPrefix: "seed-scan", wordlist: bip39English });
+  openSeedPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  findById(ctx.host, "seed-scan-review").dispatchEvent({ type: "click" });
+  const heading = findById(ctx.host, "seed-scan-review-heading");
+  const word = findById(ctx.host, "seed-scan-review-word");
+  const show = findById(ctx.host, "seed-scan-review-show");
+  const prev = findById(ctx.host, "seed-scan-review-prev");
+  const next = findById(ctx.host, "seed-scan-review-next");
+  assert.match(heading.textContent, /Word 1 of 12/);
+  assert.equal(show.getAttribute("aria-pressed"), "false");
+  assert.equal(markupOf(word).includes("abandon"), false);
+  assert.equal(prev.disabled, true);
+  assert.equal(next.disabled, false);
+  show.dispatchEvent({ type: "click" });
+  assert.equal(show.getAttribute("aria-pressed"), "true");
+  assert.ok(markupOf(word).includes("abandon"));
+  assert.equal(markupOf(word).includes("about"), false);
+  next.dispatchEvent({ type: "click" });
+  assert.equal(show.getAttribute("aria-pressed"), "false");
+  assert.equal(markupOf(word).includes("abandon"), false);
+  assert.match(heading.textContent, /Word 2 of 12/);
+  for (let i = 0; i < 10; i += 1) next.dispatchEvent({ type: "click" });
+  assert.match(heading.textContent, /Word 12 of 12/);
+  assert.equal(next.disabled, true);
+  assert.equal(prev.disabled, false);
+  show.dispatchEvent({ type: "click" });
+  assert.ok(markupOf(word).includes("about"));
+  assert.equal(markupOf(word).includes("abandon"), false);
+});
+
+test("seed mode refuses a WIF and an unknown payload without calling onSeed", () => {
+  let seeds = 0;
+  const ctx = setup({ accept: "seed", idPrefix: "seed-scan", wordlist: bip39English, onSeed: () => { seeds += 1; } });
+  openSeedPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  // The refusals are DRAFT copy: tests hook on the state, never the words.
+  assert.equal(stateOfSeed(ctx), "key");
+  assert.equal(seeds, 0);
+  ctx.created.scannerArgs.onResult(bytesOf("SECRETBYTES"));
+  assert.equal(stateOfSeed(ctx), "not-a-seed");
+  assert.equal(markupOf(ctx.host).includes("SECRETBYTES"), false);
+  assert.equal(seeds, 0);
+});
+
+test("beforeOpen can refuse the open, and open() skips it", async () => {
+  let calls = 0;
+  const ctx = setup({
+    accept: "seed",
+    idPrefix: "seed-scan",
+    wordlist: bip39English,
+    beforeOpen: async () => {
+      calls += 1;
+      return false;
+    },
+  });
+  findById(ctx.host, "seed-scan-open").dispatchEvent({ type: "click" });
+  await tick();
+  assert.equal(calls, 1);
+  assert.equal(findById(ctx.host, "seed-scan-panel").hidden, true);
+  assert.equal(ctx.created.scanners, 0);
+  ctx.panel.open();
+  assert.equal(findById(ctx.host, "seed-scan-panel").hidden, false);
+  assert.equal(calls, 1);
+  assert.equal(ctx.created.scanners, 1);
+});
+
+test("Discard and destroy zero the held seed indices", () => {
+  const originalFill = Uint16Array.prototype.fill;
+  const fills = [];
+  Uint16Array.prototype.fill = function (...args) {
+    fills.push({ array: this, before: Array.from(this), args });
+    return originalFill.apply(this, args);
+  };
+  try {
+    const discarded = setup({ accept: "seed", idPrefix: "seed-scan", wordlist: bip39English });
+    openSeedPanel(discarded);
+    discarded.created.scannerArgs.onResult(bytesOf(SEEDQR));
+    const beforeDiscard = fills.filter((call) => call.array.length === 12 && call.before[11] === 3 && call.args[0] === 0).length;
+    findById(discarded.host, "seed-scan-discard").dispatchEvent({ type: "click" });
+    const afterDiscard = fills.filter((call) => call.array.length === 12 && call.before[11] === 3 && call.args[0] === 0).length;
+    assert.ok(afterDiscard > beforeDiscard, "Discard did not zero the panel's copy");
+
+    const destroyed = setup({ accept: "seed", idPrefix: "seed-scan", wordlist: bip39English });
+    openSeedPanel(destroyed);
+    destroyed.created.scannerArgs.onResult(bytesOf(SEEDQR));
+    const beforeDestroy = fills.filter((call) => call.array.length === 12 && call.before[11] === 3 && call.args[0] === 0).length;
+    destroyed.panel.destroy();
+    const afterDestroy = fills.filter((call) => call.array.length === 12 && call.before[11] === 3 && call.args[0] === 0).length;
+    assert.ok(afterDestroy > beforeDestroy, "destroy() did not zero the panel's copy");
+  } finally {
+    Uint16Array.prototype.fill = originalFill;
+  }
+});
+
+test("seed mode uses seed-scan ids and WIF mode keeps key-scan ids", () => {
+  const seed = setup({ accept: "seed", idPrefix: "seed-scan", wordlist: bip39English });
+  assert.ok(findById(seed.host, "seed-scan-open"));
+  assert.equal(findById(seed.host, "key-scan-open"), null);
+  const wif = setup();
+  assert.ok(findById(wif.host, "key-scan-open"));
+  assert.equal(findById(wif.host, "seed-scan-open"), null);
 });

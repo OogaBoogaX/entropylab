@@ -6859,6 +6859,7 @@ function hodlSetSeedLength(words) {
 // The Key Station's scan panel is a preview-only extra: release builds define
 // no flag, so the host is never rendered and the module is never imported.
 var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null;
+var hodlSeedScan = null, hodlSeedScanOpenAfterMount = false;
 var hodlSeedPicker = null, hodlSeedPickerImport = null;
 // The three PSBT scan panels are the same preview-only extra: release builds
 // strip their hosts and never import the module.
@@ -6867,12 +6868,17 @@ const hodlPsbtScanHosts = [["psbt-scan-host", "psbt-text"], ["nonce-scan-host", 
 function hodlKeyScanHostMarkup() {
   return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
 }
+function hodlSeedScanHostMarkup() {
+  return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="seed-scan-host"></div>' : "";
+}
 function hodlRenderKeyForm() {
   // The form and its on-screen keyboards are replaced: the listeners they
   // added outside the form go with them (#546 B3).
   hodlReleaseFormListeners();
   try { hodlKeyScan?.destroy(); } catch {}
   hodlKeyScan = null;
+  try { hodlSeedScan?.destroy(); } catch {}
+  hodlSeedScan = null;
   try { hodlSeedPicker?.destroy(); } catch {}
   hodlSeedPicker = null;
   let config = hodlSeedConfig(), keyboardHost = document.getElementById("passphrase-keyboard-host"), toggleHost = document.getElementById("passphrase-keyboard-toggle-host");
@@ -7213,14 +7219,16 @@ function hodlRenderKeyForm() {
       // Secure entry: the picker holds the words as indices; no text field. A
       // seed that arrived as text while the switch was on (an import, a Journal
       // fill) keeps the text field, as hodlSecureSeedApplies decides.
-      hodlFormEl.innerHTML = `${choices}<div id="seed-picker-host"></div>`;
+      hodlFormEl.innerHTML = `${choices}<div id="seed-picker-host"></div>${hodlSeedScanHostMarkup()}`;
       bindMethodChoices({ value: "" });
       hodlMountSeedPicker();
+      hodlBindSeedScan();
       hodlBindKeyFields();
       hodlRenderPassphraseKeyboard();
       return;
     }
-    hodlFormEl.innerHTML = `${choices}<p class="label">${hodlT("Your {words}-word seed phrase", { words: config.words })}</p>${hodlSeedMetaRowMarkup("seed-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-autocomplete", hodlT("Autocomplete BIP39 words"), { checked: autocompleteEnabled })}${hodlSeedKeyboardToggleMarkup()}</div><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" translate="no" aria-hidden="true"></pre><textarea id="seed" placeholder="${hodlTAttr("Enter exactly {words} BIP39 words", { words: config.words })}" aria-describedby="seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>${hodlSeedKeyboardMarkup()}<div id="last-words" translate="no" class="row last-word-options"></div>`;
+    hodlFormEl.innerHTML = `${choices}<p class="label">${hodlT("Your {words}-word seed phrase", { words: config.words })}</p>${hodlSeedMetaRowMarkup("seed-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-autocomplete", hodlT("Autocomplete BIP39 words"), { checked: autocompleteEnabled })}${hodlSeedKeyboardToggleMarkup()}</div><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" translate="no" aria-hidden="true"></pre><textarea id="seed" placeholder="${hodlTAttr("Enter exactly {words} BIP39 words", { words: config.words })}" aria-describedby="seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>${hodlSeedKeyboardMarkup()}<div id="last-words" translate="no" class="row last-word-options"></div>${hodlSeedScanHostMarkup()}`;
+    hodlBindSeedScan();
     let input = document.getElementById("seed"), update = () => {
       let rawValue = input.value, value = rawValue.trim(), meta = hodlElement("#seed-meta"), picker = hodlElement("#last-words"), analysis = hodlRenderSeedInputState(input, config.words);
       if (hodlLooksExtendedKey(value)) {
@@ -7549,6 +7557,102 @@ function hodlBindKeyScan() {
     }).catch(() => {});
   }
 }
+function hodlBindSeedScan() {
+  // The slice harness loads this with no scan host: return before anything
+  // else, and never read the preview flag bare.
+  let host = document.getElementById("seed-scan-host");
+  if (!host) return;
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    if (!hodlKeyScanImport) {
+      hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
+        hodlKeyScanModule = module;
+        return module;
+      }).catch(() => null);
+    }
+    hodlKeyScanImport.then((module) => {
+      // An open request belongs to this mount only: a mount that bails (the
+      // host gone, a panel already there) drops it, so a later mount never
+      // opens the camera without a Scan press (Kimi, autofix review).
+      let openNow = hodlSeedScanOpenAfterMount;
+      hodlSeedScanOpenAfterMount = false;
+      if (!module || hodlSeedScan || !host.isConnected || host.childNodes.length) return;
+      try {
+        hodlSeedScan = module.mountKeyScan(host, {
+          accept: "seed",
+          idPrefix: "seed-scan",
+          translate: hodlTText,
+          wordlist: hodlBip39Wordlist,
+          privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
+          beforeOpen: hodlSeedScanBeforeOpen,
+          onSeed: hodlSeedScanLoad,
+        });
+      } catch {
+        return;
+      }
+      if (openNow) try { hodlSeedScan.open(); } catch {}
+    }).catch(() => {});
+  }
+}
+async function hodlSeedScanBeforeOpen() {
+  if (hodlSecureSeedActive()) return true;
+  if (hodlKeyMode === "seed" && hodlSeedMethod === "words" && !hodlSecureEntryOn) {
+    hodlSeedScanOpenAfterMount = true;
+    try {
+      await hodlSecureEntryToggle(true);
+    } catch {
+      hodlSeedScanOpenAfterMount = false;
+      return false;
+    }
+    if (hodlSecureEntryOn) return false;
+    hodlSeedScanOpenAfterMount = false;
+    return false;
+  }
+  return false;
+}
+function hodlSeedScanLoad(indices, count) {
+  try {
+    if (!hodlSecureSeedActive()) return;
+    if (![12, 15, 18, 21, 24].includes(count)) return;
+    if (!(indices instanceof Uint16Array) || indices.length !== count) return;
+    let state = hodlKeys[hodlActiveKey];
+    if (!state) return;
+    let key = hodlSecureKeyOf(state, true);
+    if (key == null) return;
+    let entry = seedEntry(count);
+    try {
+      for (let i = 0; i < count; i += 1) {
+        let index = indices[i];
+        if (!Number.isInteger(index) || index < 0 || index >= 2048) throw new Error("bad index");
+        seedSet(entry, i, index);
+      }
+    } catch (error) {
+      try { entry.indices.fill(0); } catch {}
+      throw error;
+    }
+    // sessionSet scrubs the entry it replaces, so the old words are zeroed
+    // before the new entry is installed.
+    try {
+      sessionSet(hodlSecureSession, key, "seed", entry);
+    } catch (error) {
+      try { entry.indices.fill(0); } catch {}
+      throw error;
+    }
+    state.fields.seed = "";
+    state.lastWord = "";
+    hodlTargetWordCount = count;
+    state.targetWords = count;
+    state.result = null;
+    state.reveal = false;
+    state.error = "";
+    state.errorSpec = null;
+    hodlRenderKeyForm();
+    hodlRestoreFormFields(state);
+    hodlUpdateSeedLengthControl();
+    hodlSecureSeedChanged();
+  } finally {
+    try { indices.fill(0); } catch {}
+  }
+}
 // A teardown bumps the epoch, so a mount still waiting on the import when the
 // panels were torn down (End Session, a language switch) mounts nothing.
 var hodlPsbtScanEpoch = 0;
@@ -7741,6 +7845,7 @@ function hodlBindKeyFields() {
     apply();
   }
   hodlBindKeyScan();
+  hodlBindSeedScan();
 }
 function hodlSelectedEntropy(targetWords = hodlTargetWordCount) {
   let format = hodlNormalizeEntropyFormat(hodlEntropyFormat), value = document.getElementById(format)?.value.trim() || "";
@@ -22427,10 +22532,16 @@ function hodlInitSecretFieldAutoClear() {
     // The PSBT panels come down before any decoder is retired (their decoders
     // live in the same registry as the Key Station's), then the registry goes.
     try { hodlDestroyPsbtScans(); } catch {}
+    // The seed scan panel shares the Key Station's decoders: it comes down
+    // before they are retired too.
+    try { hodlSeedScan?.destroy(); } catch {}
+    hodlSeedScan = null;
+    hodlSeedScanOpenAfterMount = false;
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
     try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
+    try { hodlBindSeedScan(); } catch {}
     // The PSBT hosts are static: give them fresh, closed panels too.
     try { hodlBindPsbtScans(); } catch {}
     try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
