@@ -747,6 +747,7 @@ words, pick one of the checksum words.</span></span>
 <summary>Check a fee bump (RBF) (optional)</summary>
 <p class="muted label-description">Paste the original transaction you broadcast, then Inspect the fee-bump PSBT above. EntropyLab checks that the bump only raises the fee: the same payments to the same addresses, with the extra fee taken from your change. Use your own copy of the original — the one you signed or saved — not the one your wallet or server shows you now. A malicious server can change that copy.</p>
 <label class="field">Original transaction you broadcast (raw hex or PSBT)<textarea id="psbt-rbf-original" placeholder="cHNidP8B… or 0200000001…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></label>
+<div class="psbt-scan-host" id="rbf-scan-host"></div>
 <div class="row tool-actions"><button class="btn secondary" id="psbt-rbf-upload" type="button">Upload original</button><input type="file" id="psbt-rbf-file" accept=".psbt,.txn,.txt,.hex" hidden></div>
 </details>
 <details class="derivation-advanced" id="psbt-audit-options">
@@ -755,6 +756,7 @@ words, pick one of the checksum words.</span></span>
         <label class="field">PSBT you sent (base64 or hex)
           <textarea id="psbt-audit-before" placeholder="cHNidP8B…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </label>
+        <div class="psbt-scan-host" id="audit-scan-host"></div>
         <div class="row tool-actions">
           <button class="btn secondary" id="psbt-audit-upload" type="button">Upload sent .psbt</button>
           <input type="file" id="psbt-audit-file" accept=".psbt,.txn,.txt,.hex" hidden>
@@ -807,6 +809,7 @@ words, pick one of the checksum words.</span></span>
         <label class="field">Other PSBT (base64 or hex)
           <textarea id="psbted-compare-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </label>
+        <div class="psbt-scan-host" id="psbted-compare-scan-host"></div>
         <p class="label" id="psbted-compare-result-label">PSBT comparison result</p>
         <div class="tool-result" role="region" aria-labelledby="psbted-compare-result-label">
           <p class="field-note tool-result-empty">Paste a second PSBT and click Compare to view the differences here.</p>

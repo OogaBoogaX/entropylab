@@ -6864,7 +6864,13 @@ var hodlSeedPicker = null, hodlSeedPickerImport = null;
 // The three PSBT scan panels are the same preview-only extra: release builds
 // strip their hosts and never import the module.
 var hodlPsbtScans = [], hodlPsbtScanModule = null, hodlPsbtScanImport = null;
-const hodlPsbtScanHosts = [["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"]];
+// Every PSBT field: the three tools' main fields, and the fee-bump original,
+// the PSBT sent to the signer and the Editor's comparison PSBT (owner 11-01:
+// scanners in every section that takes one).
+const hodlPsbtScanHosts = [
+  ["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"],
+  ["rbf-scan-host", "psbt-rbf-original"], ["audit-scan-host", "psbt-audit-before"], ["psbted-compare-scan-host", "psbted-compare-text"],
+];
 function hodlKeyScanHostMarkup() {
   return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
 }
@@ -7596,6 +7602,25 @@ function hodlDestroyPsbtScans() {
 // fresh, closed one.
 function hodlResetPsbtScans() {
   try { hodlDestroyPsbtScans(); } catch {}
+  try { hodlBindPsbtScans(); } catch {}
+}
+// A collapsed section, or Clear Comparison, closes only the panels inside it,
+// so a scan running on another field keeps its camera and its frames (Kimi,
+// MiniMax), and gives those hosts fresh, closed panels.
+function hodlResetPsbtScansIn(container) {
+  if (!container) return;
+  let kept = [];
+  for (let entry of hodlPsbtScans) {
+    let host = document.getElementById(entry.hostId);
+    if (!host || !container.contains(host)) {
+      kept.push(entry);
+      continue;
+    }
+    try { entry.panel?.destroy(); } catch {
+      try { host.replaceChildren(); } catch {}
+    }
+  }
+  hodlPsbtScans = kept;
   try { hodlBindPsbtScans(); } catch {}
 }
 function hodlMountSeedPicker() {
@@ -22596,6 +22621,12 @@ async function hodlBoot() {
   hodlBindPsbtScans();
   // Each PSBT tool's Clear closes its scan panel too.
   for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);
+  // Clear Comparison closes the comparison field's panel only.
+  document.getElementById("psbted-compare-clear")?.addEventListener("click", () => hodlResetPsbtScansIn(document.getElementById("psbted-compare")));
+  // The RBF and signer-audit hosts sit in collapsible sections: collapsing one
+  // hides its panel, so it closes that panel, or the camera would keep
+  // streaming out of sight (Kimi, GLM, DeepSeek).
+  for (let id of ["psbt-rbf-options", "psbt-audit-options"]) document.getElementById(id)?.addEventListener("toggle", (event) => { if (!event.currentTarget.open) hodlResetPsbtScansIn(event.currentTarget); });
   hodlInitLocale(hodlApplyLocale);
 }
 // Curve operations need the WebAssembly module instantiated first (async in
