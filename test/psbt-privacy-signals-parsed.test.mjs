@@ -26,6 +26,7 @@ test("BIP-174 key paths (type 6) are read from a parsed PSBT", () => {
 
 test("BIP-371 Taproot key paths (type 0x16) are read from a parsed PSBT", () => {
   const signals = signalsOf("p2tr-taproot");
+  assert.equal(signals.available, true);
   assert.equal(signals.masterKeys, 1);
   assert.equal(signals.originGroups, 1);
 });
@@ -33,14 +34,17 @@ test("BIP-371 Taproot key paths (type 0x16) are read from a parsed PSBT", () => 
 test("one finalized input among unfinalized ones reads as mixed finalization", () => {
   // Input 4 of mixed-many-inputs carries a final witness; inputs 0 to 3 do not.
   const signals = signalsOf("mixed-many-inputs");
+  assert.equal(signals.available, true);
   assert.equal(signals.mixedFinalization, true);
   assert.equal(signals.masterKeys, 1);
 });
 
 test("the parsed outputs carry amounts the equal-output check reads", () => {
-  // p2wpkh-1in-2out pays two different amounts: no equal-output group, and
-  // the amounts are bigints from the parser, not a fallback field.
+  // p2wpkh-1in-2out pays two different amounts, so it forms no group; the
+  // same parsed output given twice must form one, with the parser's amount
+  // (GLM, #1369: an empty result alone cannot catch a field mismatch).
   const psbt = hodlParsePsbt(fixture("p2wpkh-1in-2out"));
-  assert.ok(psbt.tx.outputs.every((output) => typeof output.amount === "bigint"));
   assert.deepEqual(psbtPrivacySignals({ inputs: psbt.inputs, outputs: psbt.tx.outputs }).equalOutputs, []);
+  const [first] = psbt.tx.outputs;
+  assert.deepEqual(psbtPrivacySignals({ inputs: psbt.inputs, outputs: [first, first] }).equalOutputs, [{ amount: 1400000n, count: 2 }]);
 });
