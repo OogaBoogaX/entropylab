@@ -2636,13 +2636,13 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
 /* The history controls close the section, so they sit a step further from the
    status line above them than the 16px rhythm inside it. */
 #nonce-history-options > .tool-actions { margin-top: var(--space-section); }
-/* The Key Station's Scan QR panel (preview builds only). `.btn` and the notes
+/* The Key Station's Scan QR panels, key and seed (preview builds only). `.btn` and the notes
    set their own display, so hidden parts need the attribute rule here. The
    camera frame shows only while frames are read, at most a phone's width. */
-#key-scan-host [hidden] { display: none; }
-#key-scan-video { display: block; width: 100%; max-width: 480px; margin-top: var(--space-component); border-radius: var(--radius-field); }
-#key-scan-confirm { margin-top: var(--space-section); }
-#key-scan-confirm .key-scan-value { margin-top: var(--space-control); }
+#key-scan-host [hidden], #seed-scan-host [hidden] { display: none; }
+#key-scan-video, #seed-scan-video { display: block; width: 100%; max-width: 480px; margin-top: var(--space-component); border-radius: var(--radius-field); }
+#key-scan-confirm, #seed-scan-confirm { margin-top: var(--space-section); }
+#key-scan-confirm .key-scan-value, #seed-scan-confirm .key-scan-value { margin-top: var(--space-control); }
 #seed-picker-host [hidden] { display: none; }
 #seed-picker-chips, #seed-picker-matches, #seed-picker-replace-matches { flex-wrap: wrap; gap: var(--space-control); }
 #seed-picker-chips .btn, #seed-picker-matches .btn, #seed-picker-replace-matches .btn { min-height: 44px; min-width: 44px; }

@@ -7647,6 +7647,7 @@ function hodlSeedScanLoad(indices, count) {
     hodlLastWordCache.clear();
     hodlTargetWordCount = count;
     state.targetWords = count;
+    let previous = state.result;
     state.result = null;
     state.reveal = false;
     state.error = "";
@@ -7655,6 +7656,9 @@ function hodlSeedScanLoad(indices, count) {
     hodlRestoreFormFields(state);
     hodlUpdateSeedLengthControl();
     hodlSecureSeedChanged();
+    // The wallet derived from the old words is wiped once nothing shows it,
+    // unless a key tab or the Key Manager still does (Kimi, round 2).
+    try { hodlWipeUnsharedWalletRows(previous); } catch {}
   } finally {
     try { indices.fill(0); } catch {}
   }
