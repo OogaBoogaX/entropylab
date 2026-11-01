@@ -954,3 +954,67 @@ test("chat(): thrown errors carry their class — status for an HTTP failure, ki
     globalThis.fetch = realFetch;
   }
 });
+
+test("missing or malformed audit verdicts never publish unaudited translations", async () => {
+  const outDir = tmp(), tree = await gappedRoot(4);
+  try {
+    const { missing } = await languageWorkload(tree, "es", 4);
+    const client = {
+      async chat(request) {
+        if (request.name === "translate") {
+          const keys = JSON.parse(request.messages[1].content).strings;
+          return { translations: keys.map((key) => ({ key, translation: `${key} [translated]` })) };
+        }
+        return { verdicts: [
+          { key: missing[0], ok: true, problem: "" },
+          { key: missing[1], ok: false, problem: "meaning changed" },
+          { key: missing[2], problem: "" },
+        ] };
+      },
+    };
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client, limit: 4, log: quiet });
+    const catalog = JSON.parse(readFileSync(join(outDir, "es.json"), "utf8"));
+    assert.equal(catalog[missing[0]], `${missing[0]} [translated]`);
+    for (const key of missing.slice(1)) {
+      assert.equal(catalog[key], undefined);
+      assert.ok(report.dropped.some((drop) => drop.key === key));
+    }
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
+
+test("a key with more than one audit verdict is dropped, whichever verdict came last", async () => {
+  const outDir = tmp(), tree = await gappedRoot(3);
+  try {
+    const { missing } = await languageWorkload(tree, "es", 3);
+    const client = {
+      async chat(request) {
+        if (request.name === "translate") {
+          const keys = JSON.parse(request.messages[1].content).strings;
+          return { translations: keys.map((key) => ({ key, translation: `${key} [translated]` })) };
+        }
+        // One key is audited both ways; another is passed twice. Neither
+        // answer is trusted: exactly one verdict, and it must pass.
+        return { verdicts: [
+          { key: missing[0], ok: true, problem: "" },
+          { key: missing[1], ok: false, problem: "meaning changed" },
+          { key: missing[1], ok: true, problem: "" },
+          { key: missing[2], ok: true, problem: "" },
+          { key: missing[2], ok: true, problem: "" },
+        ] };
+      },
+    };
+    const report = await translateLanguage({ root: tree, lang: "es", outDir, client, limit: 3, log: quiet });
+    const catalog = JSON.parse(readFileSync(join(outDir, "es.json"), "utf8"));
+    assert.equal(catalog[missing[0]], `${missing[0]} [translated]`);
+    for (const key of missing.slice(1)) {
+      assert.equal(catalog[key], undefined, `${key} was published on a repeated verdict`);
+      assert.ok(report.dropped.some((drop) => drop.key === key));
+    }
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+    rmSync(tree, { recursive: true, force: true });
+  }
+});
