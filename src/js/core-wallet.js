@@ -31,9 +31,63 @@ var hodlCoreWallet = (() => {
   ];
 
   const PRIVATE_KEY = /\b(?:[xyztuv]prv|[YZUV]prv)[1-9A-HJ-NP-Za-km-z]{90,}/;
-  // A WIF inside a key expression (pk(5…), wpkh(K…/L…), or 9…/c… on a test
-  // chain): 51 or 52 Base58 characters on their own.
-  const WIF_KEY = /\b[5KL9c][1-9A-HJ-NP-Za-km-z]{50,51}\b/;
+
+  // --- what the report may show before "Reveal private data" ----------------
+  // The file can come from anywhere, so the report shows a value from it with
+  // reveal off only when the reader can tell the value is public; everything
+  // else is private DOM until revealed (#1347). Fixed-width integers
+  // (versions, flags, times, indexes) stay public.
+
+  // A descriptor is public when it is built only from descriptor functions,
+  // numbers and path steps, 8-hex key origins, extended public keys and hex
+  // public keys (02/03 compressed, 04 uncompressed), plus an 8-character
+  // checksum. Anything else — an xprv, a WIF, a raw 32-byte hex key (an
+  // x-only key cannot be told from one), raw()/addr()/hash bodies, words —
+  // makes it private.
+  const DESCRIPTOR_FUNCTIONS = new Set([
+    "sh", "wsh", "pkh", "wpkh", "combo", "multi", "sortedmulti", "multi_a", "sortedmulti_a", "tr", "rawtr",
+    "pk", "pk_k", "pk_h", "older", "after", "andor", "and_v", "and_b", "and_n", "or_b", "or_c", "or_d", "or_i", "thresh",
+  ]);
+  const PUBLIC_DESCRIPTOR_TOKENS = [
+    /^\d{1,10}[hH]?$/, // a number or a path step
+    /^[0-9a-fA-F]{8}$/, // a key origin's fingerprint
+    /^[ascdjvnlut]{1,8}$/, // miniscript wrappers (v:, sdv:…)
+    /^(?:xpub|ypub|zpub|tpub|upub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{100,108}$/,
+    /^0[23][0-9a-fA-F]{64}$/,
+    /^04[0-9a-fA-F]{128}$/,
+  ];
+  const isDescriptorFunction = (name) => DESCRIPTOR_FUNCTIONS.has(name);
+  const descriptorIsPublic = (text) => {
+    if (typeof text !== "string") return false;
+    const hash = text.indexOf("#");
+    const body = hash < 0 ? text : text.slice(0, hash);
+    if (hash >= 0 && !/^[0-9a-z]{8}$/.test(text.slice(hash + 1))) return false;
+    if (!/^[A-Za-z0-9_()[\],/'*<>;:]*$/.test(body)) return false;
+    return (body.match(/[A-Za-z0-9_]+/g) ?? []).every((token) => DESCRIPTOR_FUNCTIONS.has(token) || PUBLIC_DESCRIPTOR_TOKENS.some((pattern) => pattern.test(token)));
+  };
+
+  // Record type names Bitcoin Core writes (walletdb.cpp DBKeys). Any other
+  // name is whatever the file put in the record key, so it is private.
+  const CORE_RECORD_NAMES = new Set([
+    "acentry", "activeexternalspk", "activeinternalspk", "bestblock", "bestblock_nomerkle", "ckey", "cscript",
+    "defaultkey", "destdata", "flags", "hdchain", "key", "keymeta", "lockedutxo", "minversion", "mkey", "name",
+    "orderposnext", "pool", "purpose", "settings", "tx", "version", "walletdescriptor", "walletdescriptorcache",
+    "walletdescriptorckey", "walletdescriptorcryptedkey", "walletdescriptorkey", "walletdescriptorlhcache",
+    "watchmeta", "watchs", "wkey",
+  ]);
+  const recordNamePublic = (name) => typeof name === "string" && CORE_RECORD_NAMES.has(name);
+  // How the verification lines name a record: never by a name the file chose.
+  const recordLabel = (name) => (recordNamePublic(name) ? name : "a record of unrecognized type");
+
+  // A block-locator hash is public when it is the network's genesis block or,
+  // off regtest, carries the leading zeros of proof of work (20 bits; every
+  // mainnet, testnet and signet block has more). A 32-byte secret passes that
+  // by chance one time in a million.
+  const locatorHashPublic = (network, hash) => {
+    const genesis = hodlWalletExport.NETWORKS[network]?.genesis;
+    if (!genesis || typeof hash !== "string") return false;
+    return hash === genesis || (network !== "regtest" && /^00000[0-9a-f]{59}$/.test(hash));
+  };
   const EXTENDED_PRV_GLOBAL = /((?:xprv|tprv|yprv|uprv|zprv|vprv)[1-9A-HJ-NP-Za-km-z]{90,})/g;
   const EXTENDED_PUB_GLOBAL = /((?:xpub|tpub|ypub|upub|zpub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{90,})/g;
 
@@ -392,8 +446,8 @@ var hodlCoreWallet = (() => {
     if (duplicates) checks.push(check("bad", "Record keys", `${duplicates} duplicate key(s) — Core would reject the database`));
 
     for (const record of doc.records) {
-      if (record.error) checks.push(check("bad", "Undecodable record", `${record.name ?? "(no name)"}: ${record.error}`));
-      if (record.orphan) checks.push(check("bad", "Orphan record", `${record.name} names a descriptor id that has no walletdescriptor record`));
+      if (record.error) checks.push(check("bad", "Undecodable record", `${record.name == null ? "(no name)" : recordLabel(record.name)}: ${record.error}`));
+      if (record.orphan) checks.push(check("bad", "Orphan record", `${recordLabel(record.name)} names a descriptor id that has no walletdescriptor record`));
     }
 
     const byId = new Map(doc.descriptors.map((entry) => [entry.id, entry]));
@@ -413,8 +467,7 @@ var hodlCoreWallet = (() => {
       // A descriptor that carries a key (a crafted file: Core writes the
       // public form) is named by its place in the report, never by its text,
       // because these lines show while the descriptor itself is redacted.
-      const secret = PRIVATE_KEY.test(entry.descriptor) || WIF_KEY.test(entry.descriptor);
-      const label = secret ? `#${index + 1}` : entry.descriptor.length > 24 ? `${entry.descriptor.slice(0, 21)}…` : entry.descriptor;
+      const label = !descriptorIsPublic(entry.descriptor) ? `#${index + 1}` : entry.descriptor.length > 24 ? `${entry.descriptor.slice(0, 21)}…` : entry.descriptor;
       const text = entry.descriptor;
       const hash = text.lastIndexOf("#");
       if (hash < 0) {
@@ -447,7 +500,7 @@ var hodlCoreWallet = (() => {
         checks.push(id === null
           ? check("bad", `Descriptor id`, `${label} id cannot be recomputed from its text`)
           : id === entry.id
-            ? check("ok", `Descriptor id`, `${label} id matches its recomputed DescriptorID`)
+            ? (entry.idVerified = true, check("ok", `Descriptor id`, `${label} id matches its recomputed DescriptorID`))
             : check("bad", `Descriptor id`, `${label} record key is not the DescriptorID Core would compute`));
       }
 
@@ -542,6 +595,8 @@ var hodlCoreWallet = (() => {
           } else if (!bytesEqual(hash, keyRecord.keyHash)) {
             checks.push(check("bad", `Private key record`, `${label} key record hash mismatch`));
           } else {
+            // The report shows a key record's pubkey as public only on this verdict.
+            keyRecord.verified = true;
             checks.push(check("ok", `Private key record`, `${label} private key matches its pubkey and record hash`));
           }
         } finally {
@@ -839,5 +894,9 @@ var hodlCoreWallet = (() => {
     flagNames,
     descriptorFunctions,
     bytesToHex,
+    descriptorIsPublic,
+    isDescriptorFunction,
+    recordNamePublic,
+    locatorHashPublic,
   };
 })();

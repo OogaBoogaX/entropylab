@@ -15,19 +15,14 @@ const escapeHtml = (text) =>
 
 const bytesToHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 
-// The same pattern core-wallet.js uses: every extended private key form,
-// including SLIP-132 and its uppercase variants.
-const PRIVATE_KEY = /\b(?:[xyztuv]prv|[YZUV]prv)[1-9A-HJ-NP-Za-km-z]{90,}/;
-// A WIF inside a key expression (pk(5…), wpkh(K…/L…), or 9…/c… on a test
-// chain): 51 or 52 Base58 characters on their own.
-const WIF_KEY = /\b[5KL9c][1-9A-HJ-NP-Za-km-z]{50,51}\b/;
 // Bitcoin Core writes a descriptor record in its public form (the keys sit in
 // walletdescriptorkey records), but the file shown here can come from
-// anywhere: a descriptor that carries a private key is shown as one, so its
-// copy stays within EntropyLab (#1347).
-export const descriptorHoldsSecret = (text) => PRIVATE_KEY.test(text) || WIF_KEY.test(text);
+// anywhere: a descriptor the reader cannot tell is public is shown as a
+// private one, so it is redacted until revealed and its copy stays within
+// EntropyLab (#1347). The rule is the reader's: fail closed.
+export const descriptorHoldsSecret = (text) => !hodlCoreWallet.descriptorIsPublic(text);
 // A redacted row says how long the value is. The UTF-8 copy made to count a
-// descriptor's bytes is zeroed as soon as it is counted.
+// text's bytes is zeroed as soon as it is counted.
 const utf8ByteCount = (text) => {
   const bytes = new TextEncoder().encode(text);
   const count = bytes.length;
@@ -93,6 +88,16 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
 
   // A report section opens on the hairline, a label with its count, and a
   // grey line saying what the section holds — the PSBT Inspector's shape.
+  // Every value taken from the file goes through this: shown as public only
+  // when the reader tells it is (verified, or a public form); otherwise
+  // private DOM, redacted until revealed and hidden again on conceal, its
+  // copy within EntropyLab.
+  const fileValueHtml = (text, { label, isPublic = false, bytes } = {}) => (isPublic
+    ? expandableHtml(text, { label })
+    : reveal.checked
+      ? expandableHtml(text, { label, privateValue: true })
+      : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: bytes ?? utf8ByteCount(text) })}</span>`);
+
   const sectionHeadHtml = (label, count, description) =>
     `<hr class="result-divider"><p class="label">${label}${count === undefined ? "" : ` <span class="label-value">(${escapeHtml(String(count))})</span>`}</p><p class="muted label-description">${description}</p>`;
 
@@ -130,10 +135,15 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
     if (doc.meta.flags !== undefined) push(tHtml("Wallet flags"), escapeHtml(hodlCoreWallet.flagNames(doc.meta.flags).join(", ") || t("none")));
     for (const [label, locator] of [[t("Best block"), doc.meta.bestBlock], [t("Best block (no merkle)"), doc.meta.bestBlockNoMerkle]]) {
       if (!locator) continue;
+      // A locator hash is public when it is a block hash on its face (the
+      // genesis block, or proof-of-work zeros off regtest).
+      const proven = locator.hashes.every((hash) => hodlCoreWallet.locatorHashPublic(doc.network, hash));
       const summary = locator.hashes.length
-        ? t("{count} hash(es), tip {hash}", { count: locator.hashes.length, hash: locator.hashes[0] })
+        ? proven
+          ? t("{count} hash(es), tip {hash}", { count: locator.hashes.length, hash: locator.hashes[0] })
+          : ""
         : t("empty locator");
-      push(escapeHtml(label), expandableHtml(locator.hashes.join(" "), { label: `${label} hashes` }) + `<br><span class="muted">${escapeHtml(summary)}</span>`);
+      push(escapeHtml(label), fileValueHtml(locator.hashes.join(" "), { label: `${label} hashes`, isPublic: proven, bytes: locator.hashes.length * 32 }) + (summary ? `<br><span class="muted">${escapeHtml(summary)}</span>` : ""));
     }
     push(tHtml("Records in main table"), escapeHtml(String(doc.rows.length)));
     if (added) push(tHtml("Added this session"), tHtml("{count} descriptor(s)", { count: added }));
@@ -142,7 +152,11 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
   };
 
   const descriptorHtml = (entry, index) => {
-    const functions = entry.functions.join(" → ") || t("unknown");
+    // The heading names the descriptor's functions only when each is one
+    // (a crafted descriptor can open with any word).
+    const functions = entry.functions.length && entry.functions.every((name) => hodlCoreWallet.isDescriptorFunction(name))
+      ? entry.functions.join(" → ")
+      : t("unknown");
     // Inactive descriptors have no pointer to say which chain they are, so
     // read the branch step in front of the wildcard; the key origin's own
     // path contains /1h/ steps too, hence the wildcard anchor.
@@ -153,11 +167,10 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
     const push = (field, valueHtml) => rows.push(`<tr><td>${field}</td><td>${valueHtml}</td></tr>`);
     // A descriptor that carries a key is private DOM like the key records:
     // redacted until revealed, and its copy stays within EntropyLab.
-    const secretDescriptor = descriptorHoldsSecret(entry.descriptor);
-    push(tHtml("Descriptor"), secretDescriptor && !reveal.checked
-      ? `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: utf8ByteCount(entry.descriptor) })}</span>`
-      : expandableHtml(entry.descriptor, { label: t("Descriptor {n}", { n: index + 1 }), privateValue: secretDescriptor }));
-    push(tHtml("Descriptor ID"), expandableHtml(entry.id, { label: t("Descriptor {n} id", { n: index + 1 }) }));
+    push(tHtml("Descriptor"), fileValueHtml(entry.descriptor, { label: t("Descriptor {n}", { n: index + 1 }), isPublic: !descriptorHoldsSecret(entry.descriptor) }));
+    // The id is 32 bytes from the record key: public once the verification
+    // recomputed it from the descriptor's text.
+    push(tHtml("Descriptor ID"), fileValueHtml(entry.id, { label: t("Descriptor {n} id", { n: index + 1 }), isPublic: entry.idVerified === true, bytes: 32 }));
     push(tHtml("Created"), entry.creationTime ? escapeHtml(createdText(entry.creationTime)) : tHtml("0 (epoch — a fresh wallet)"));
     push(tHtml("Next index"), escapeHtml(String(entry.nextIndex)));
     push(tHtml("Range"), escapeHtml(`${entry.rangeStart} … ${entry.rangeEnd}`));
@@ -173,18 +186,16 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
       // from a file that can come from anywhere, so it is private DOM.
       push(
         tHtml("Cache parent (provider {n})", { n: cache.keyExpIndex }),
-        cache.verified
-          ? expandableHtml(bytesToHex(cache.body), { label: t("Descriptor {n} cache parent", { n: index + 1 }) })
-          : reveal.checked
-            ? expandableHtml(bytesToHex(cache.body), { label: t("Descriptor {n} cache parent", { n: index + 1 }), privateValue: true })
-            : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: cache.body.length })}</span>`,
+        fileValueHtml(bytesToHex(cache.body), { label: t("Descriptor {n} cache parent", { n: index + 1 }), isPublic: cache.verified === true, bytes: cache.body.length }),
       );
     }
     entry.keys.forEach((keyRecord, keyIndex) => {
       push(tHtml("Private key {n}", { n: keyIndex + 1 }), reveal.checked
         ? expandableHtml(bytesToHex(keyRecord.der), { label: t("Descriptor {n} private key (DER)", { n: index + 1 }), privateValue: true })
         : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: keyRecord.der.length })}</span>`);
-      push(tHtml("Private key {n} pubkey", { n: keyIndex + 1 }), expandableHtml(bytesToHex(keyRecord.pubkey), { label: t("Descriptor {n} key pubkey", { n: index + 1 }) }));
+      // The pubkey is public once the verification derived it from the
+      // record's own private key (Astra, round 12).
+      push(tHtml("Private key {n} pubkey", { n: keyIndex + 1 }), fileValueHtml(bytesToHex(keyRecord.pubkey), { label: t("Descriptor {n} key pubkey", { n: index + 1 }), isPublic: keyRecord.verified === true, bytes: keyRecord.pubkey.length }));
     });
     return `<section class="card static-card" data-core-descriptor><p class="psbt-kv"><strong>${tHtml("Descriptor {n}", { n: index + 1 })}</strong><br>${escapeHtml(functions)} · ${escapeHtml(branch)}</p>
       <table class="psbted-pairs psbted-kv"><colgroup><col class="psbted-col-field"><col></colgroup><tbody>${rows.join("")}</tbody></table></section>`;
@@ -194,17 +205,17 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
     if (!doc.others.length) return "";
     const shown = doc.others.slice(0, OTHER_RECORD_RENDER_LIMIT);
     // What an undecoded record holds is unknown, and the file can come from
-    // anywhere: its key bytes and its value are private DOM like the key
-    // records, redacted until revealed and hidden again on conceal, and their
-    // copies stay within EntropyLab. Only the decoded type name is public.
-    const privateHex = (bytes, label) => (reveal.checked
-      ? expandableHtml(bytesToHex(bytes), { label, privateValue: true })
-      : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: bytes.length })}</span>`);
+    // anywhere: its key bytes and its value are private, and so is its type
+    // name unless it is one Bitcoin Core writes (Kimi, K3.1, round 12).
+    const privateHex = (bytes, label) => fileValueHtml(bytesToHex(bytes), { label, bytes: bytes.length });
     const rows = shown
       .map((record) => {
         const note = record.error ? `<span class="psbted-note-bad">${escapeHtml(record.error)}</span>` : "";
+        const name = record.name == null
+          ? tHtml("(unnamed)")
+          : hodlCoreWallet.recordNamePublic(record.name) ? escapeHtml(record.name) : fileValueHtml(record.name, { label: tHtml("Record") });
         return `<tr>
-          <td class="psbted-name">${record.name == null ? tHtml("(unnamed)") : escapeHtml(record.name)}${note ? `<br>${note}` : ""}</td>
+          <td class="psbted-name">${name}${note ? `<br>${note}` : ""}</td>
           <td class="psbted-hex">${privateHex(record.key, tHtml("Record key (hex)"))}</td>
           <td class="psbted-hex">${privateHex(record.value, tHtml("Record value (hex)"))}</td>
         </tr>`;
