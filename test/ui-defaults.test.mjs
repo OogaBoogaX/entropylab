@@ -1714,7 +1714,7 @@ test("virtual keypads never focus the field on touch so the mobile keyboard stay
 });
 
 test("workspace tabs ship every tool, with Lightning after Transactions", () => {
-  // The release tab list is unconditional: exactly ten entries, in order.
+  // The release tab list is unconditional: exactly eleven entries, in order.
   // Lightning joined after Transactions (owner, 2026-10-26); Verify last
   // (owner, 2026-10-29).
   const declaration = appSource.match(/^var hodlWorkspaceTabs = (\[.*\]);$/m);
@@ -1731,6 +1731,7 @@ test("workspace tabs ship every tool, with Lightning after Transactions", () => 
     ["ln", "Lightning", "LN", "Lightning"],
     ["core", "Core Wallet", "Core", "Core Wallet"],
     ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"],
+    ["codex32", "Codex32", "Codex32", "Codex32"],
     ["sp", "Privacy", "Privacy", "Privacy"],
     ["vanity", "Vanity Address", "Vanity", "Vanity"],
     ["journal", "Journal", "Journal", "Journal"],
@@ -1745,6 +1746,7 @@ test("workspace tabs ship every tool, with Lightning after Transactions", () => 
   // Release first paint and no-JS show the static strip: every release tool has its button there.
   assert.match(shell, /aria-controls="core-card"/);
   assert.match(shell, /aria-controls="ln-card"/);
+  assert.match(shell, /aria-controls="codex32-card"/);
   assert.doesNotMatch(shell, /held back/);
   for (const markup of [shell]) {
     assert.match(markup, /id="bip85-card"/);
@@ -2205,7 +2207,7 @@ test("each static tool tab points at a tab panel the shell has", () => {
   // Every release tool except the Journal, which the boot render adds; Verify
   // ships in release builds since the owner unhid it (2026-10-29).
   const releaseTabs = strip.replace(/<!-- preview -->[\s\S]*?<!-- \/preview -->/g, "").match(/<button[^>]*role="tab"[^>]*>/g) ?? [];
-  assert.equal(releaseTabs.length, 9, "the static strip carries the nine static release tools");
+  assert.equal(releaseTabs.length, 10, "the static strip carries the ten static release tools");
   for (const tab of tabs) {
     const ids = tab.match(/aria-controls="([^"]*)"/)?.[1].split(" ").filter(Boolean) ?? [];
     assert.ok(ids.length, `${tab} names no panel`);

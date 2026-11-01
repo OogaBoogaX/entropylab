@@ -51,6 +51,7 @@
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="ln-card" aria-label="Lightning"><span class="workspace-tab-full">Lightning</span><span class="workspace-tab-short">LN</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="core-card" aria-label="Core Wallet"><span class="workspace-tab-full">Core Wallet</span><span class="workspace-tab-short">Core</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="bip85-card" aria-label="BIP-85 Child" title="BIP-85 Child"><span class="workspace-tab-full">BIP-85</span><span class="workspace-tab-short">BIP-85</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="codex32-card" aria-label="Codex32"><span class="workspace-tab-full">Codex32</span><span class="workspace-tab-short">Codex32</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="sp-card bip47-card" aria-label="Privacy"><span class="workspace-tab-full">Privacy</span><span class="workspace-tab-short">Privacy</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="vanity-card" aria-label="Vanity Address" title="Vanity Address"><span class="workspace-tab-full">Vanity</span><span class="workspace-tab-short">Vanity</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="verify-card" aria-label="Verify"><span class="workspace-tab-full">Verify</span><span class="workspace-tab-short">Verify</span></button>
@@ -1028,6 +1029,28 @@ words, pick one of the checksum words.</span></span>
         <div id="ln-out" aria-live="polite"></div>
         <p class="muted">Seeds and derived keys remain in this page only and are never stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </div>
+    <div class="tool-intro edge-note is-info" id="codex32-tool-intro" hidden>
+        <h2>Codex32 MS1</h2>
+        <p class="muted tool-intro-note">BIP-93 master-seed strings only. You supply the shares. Checksum, recover, and derive are deterministic. This does not generate a wallet or split a seed. Nothing leaves this page.</p>
+      </div>
+      <section class="card no-print tool-card" id="codex32-card" role="tabpanel" hidden>
+        <label class="field">MS1 strings
+          <textarea id="codex32-shares" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="One MS1 string per line" aria-describedby="codex32-shares-help"></textarea>
+          <span class="field-note" id="codex32-shares-help">Calculate Checksum takes one header and payload, without a checksum. Recover and Derive take exactly the threshold number of valid MS1 strings. Other prefixes are rejected. Only 16-, 32-, and 64-byte seeds (128, 256, and 512 bits) are supported. A complete string with a failed checksum is rejected; characters are never substituted to repair it. A 61-character input is completed as a 32-byte header and payload, never read as a 24-byte string.</span>
+        </label>
+        <label class="field">New share index
+          <input id="codex32-index" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="1" aria-describedby="codex32-index-help">
+          <span class="field-note" id="codex32-index-help">One bech32 character, used only by Derive share. Not used for checksum or recovery. Index s is refused: deriving to it would reveal the secret.</span>
+        </label>
+        <div class="row tool-actions">
+          <button class="btn primary" id="codex32-checksum" type="button">Calculate Checksum</button>
+          <button class="btn secondary" id="codex32-recover" type="button">Recover secret</button>
+          <button class="btn secondary" id="codex32-derive" type="button">Derive share</button>
+          <button class="btn red" id="codex32-clear" type="button">Clear</button>
+        </div>
+        <p class="err" id="codex32-error" role="alert"></p>
+        <pre class="mono" id="codex32-out" aria-live="polite"></pre>
+      </section>
     <div class="tool-intro edge-note is-info" id="journal-tool-intro" hidden>
         <h2>Entropy Journal</h2>
         <p class="muted tool-intro-note">Keep notes, reusable key inputs, and session history together. Download a complete backup, including private key inputs and recovery material, to keep your work before closing this page. A password protects your files; without one, anyone with the file can open them.</p>
