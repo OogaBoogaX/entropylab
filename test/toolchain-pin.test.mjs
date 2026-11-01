@@ -256,6 +256,48 @@ test("the scheduled and release workflows' checkouts do not persist their tokens
   assert.doesNotMatch(release, /git push/, "release-assets.yml: no step may push with the checkout's credential");
 });
 
+// The calculator page holds seeds and passphrases. Without this, Android's
+// autofill framework (API 26+) may be offered the WebView's fields, so the
+// WebView and everything inside it must be excluded from autofill.
+test("the Android wrapper excludes the calculator WebView from autofill", () => {
+  const layout = read("android/app/src/main/res/layout/activity_main.xml");
+  const webview = layout.match(/<WebView[\s\S]*?\/>/)?.[0];
+  assert.ok(webview, "activity_main.xml declares the WebView");
+  assert.match(webview, /android:id="@\+id\/page"/);
+  assert.match(webview, /android:importantForAutofill="noExcludeDescendants"/, "the WebView must exclude itself and its descendants from autofill");
+});
+
+// The wrapper has no file chooser, download listener or print bridge, so file
+// import, blob downloads and print silently do nothing inside it. The README
+// must say so and point to the offline HTML, and the claim must stay true:
+// wiring any of those up has to update this note too.
+test("the Android README documents that file import, downloads and print are unavailable", () => {
+  const readme = read("android/README.md");
+  const section = readme.match(/^## Not available in the wrapper\n[\s\S]*?(?=^## )/m)?.[0];
+  assert.ok(section, "android/README.md has a 'Not available in the wrapper' section");
+  assert.match(section, /\*\*File import\.\*\*[^\n]*<input type="file">/);
+  assert.match(section, /\*\*Downloads\.\*\*[^\n]*wallet\.dat[^\n]*PSBT[^\n]*recovery-sheet/);
+  assert.match(section, /\*\*Print\.\*\*/);
+  assert.match(section, /use the offline HTML/);
+  const activity = read("android/app/src/main/java/online/entropylab/android/MainActivity.java");
+  assert.doesNotMatch(activity, /onShowFileChooser|setDownloadListener|addJavascriptInterface|PrintManager|createPrintDocumentAdapter/, "the wrapper now handles files, downloads or print; update android/README.md");
+});
+
+// The Android wrapper job runs ./gradlew and its jar after checkout, so the
+// checkout must not leave GITHUB_TOKEN in .git/config, and the committed
+// gradle-wrapper.jar (the program that enforces distributionSha256Sum) must be
+// validated against Gradle's published checksums before it runs.
+test("the Android wrapper workflow drops its token and validates the Gradle wrapper first", () => {
+  const workflow = read(".github/workflows/android-wrapper.yml");
+  const checkouts = workflow.split(/\n(?=      - uses: actions\/checkout@)/).slice(1).map((block) => block.split(/\n(?=      - )/)[0]);
+  assert.ok(checkouts.length > 0, "android-wrapper.yml has a checkout step");
+  for (const block of checkouts) assert.match(block, /persist-credentials: false/, "android-wrapper.yml: a checkout persists the job's token");
+  const validate = workflow.search(/uses: gradle\/actions\/wrapper-validation@[0-9a-f]{40}/);
+  const gradlew = workflow.indexOf("./gradlew");
+  assert.ok(validate > 0, "the Gradle wrapper-validation action is pinned to a commit SHA");
+  assert.ok(gradlew > validate, "wrapper validation runs before ./gradlew");
+});
+
 // The Bitcoin Core interop job downloads a real node to test the exported
 // wallets and descriptors against. That binary is a supply-chain input like
 // the dev image's downloads above: pinned by digest, verified with
