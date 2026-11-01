@@ -7561,7 +7561,11 @@ function hodlBindSeedScan() {
   // The slice harness loads this with no scan host: return before anything
   // else, and never read the preview flag bare.
   let host = document.getElementById("seed-scan-host");
-  if (!host) return;
+  // No host, no mount: an open request is dropped here too (GLM, round 1).
+  if (!host) {
+    hodlSeedScanOpenAfterMount = false;
+    return;
+  }
   if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
     if (!hodlKeyScanImport) {
       hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
@@ -7639,6 +7643,8 @@ function hodlSeedScanLoad(indices, count) {
     }
     state.fields.seed = "";
     state.lastWord = "";
+    // Typed partial phrases go with the typed words (GLM, round 1).
+    hodlLastWordCache.clear();
     hodlTargetWordCount = count;
     state.targetWords = count;
     state.result = null;

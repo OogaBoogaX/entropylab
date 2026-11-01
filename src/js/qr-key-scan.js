@@ -305,8 +305,10 @@ export function mountKeyScan(host, {
     } catch {
       shown = "";
     }
+    // The app's display markup, as for a WIF (Kimi: as text it showed the
+    // markup itself); the word comes from the BIP39 list, letters only.
     if (shown && typeof shown === "object" && typeof shown.nodeType === "number") seedReviewWord.appendChild(shown);
-    else seedReviewWord.textContent = String(shown ?? "");
+    else seedReviewWord.innerHTML = String(shown ?? "");
   };
 
   const renderSeedReview = () => {
@@ -629,8 +631,13 @@ export function mountKeyScan(host, {
   };
 
   const onConceal = () => {
+    // As for a WIF, a conceal hides the shown word and keeps the confirmation
+    // (Astra, GLM, Kimi, DeepSeek: clearing it left an open panel with every
+    // control hidden). Hiding the page still ends the panel (onVisibility).
     if (seedIndicesBuffer) {
-      clearConfirm();
+      reviewRevealed = false;
+      if (seedReviewShow) seedReviewShow.setAttribute("aria-pressed", "false");
+      renderSeedReview();
       return;
     }
     if (!text) return;

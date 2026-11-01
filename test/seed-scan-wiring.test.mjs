@@ -51,7 +51,7 @@ test("hodlBindSeedScan mounts a seed panel with the shared import", () => {
   // The open request is taken before any bail, so a mount that bails never
   // leaves it for a later one (Kimi, autofix review).
   const take = body.indexOf("let openNow = hodlSeedScanOpenAfterMount;");
-  const clear = body.indexOf("hodlSeedScanOpenAfterMount = false;");
+  const clear = body.indexOf("hodlSeedScanOpenAfterMount = false;", take);
   assert.ok(take >= 0 && take < clear && clear < body.indexOf("if (!module || hodlSeedScan"), "the flag is cleared before the bail");
   assert.match(body, /wordlist: hodlBip39Wordlist/);
   assert.match(body, /beforeOpen: hodlSeedScanBeforeOpen/);

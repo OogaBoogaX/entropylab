@@ -776,7 +776,9 @@ test("Review words one by one shows one word at a time and turns the toggle off 
   const show = findById(ctx.host, "seed-scan-review-show");
   const prev = findById(ctx.host, "seed-scan-review-prev");
   const next = findById(ctx.host, "seed-scan-review-next");
-  assert.match(heading.textContent, /Word 1 of 12/);
+  // Copy is not pinned (AGENTS.md; GLM, #1364): the heading is checked for
+  // presence, the position by the controls and the word shown.
+  assert.ok(heading.textContent.trim());
   assert.equal(show.getAttribute("aria-pressed"), "false");
   assert.equal(markupOf(word).includes("abandon"), false);
   assert.equal(prev.disabled, true);
@@ -788,9 +790,16 @@ test("Review words one by one shows one word at a time and turns the toggle off 
   next.dispatchEvent({ type: "click" });
   assert.equal(show.getAttribute("aria-pressed"), "false");
   assert.equal(markupOf(word).includes("abandon"), false);
-  assert.match(heading.textContent, /Word 2 of 12/);
+  // A conceal hides the shown word and keeps the confirmation, as for a WIF
+  // (Astra, GLM, Kimi, DeepSeek, #1364: clearing it left a dead panel).
+  show.dispatchEvent({ type: "click" });
+  assert.ok(markupOf(word).includes("abandon"));
+  ctx.doc.dispatch("hodl:conceal");
+  assert.equal(show.getAttribute("aria-pressed"), "false");
+  assert.equal(markupOf(word).includes("abandon"), false);
+  assert.equal(findById(ctx.host, "seed-scan-confirm").hidden, false);
+  assert.equal(findById(ctx.host, "seed-scan-continue").hidden, false);
   for (let i = 0; i < 10; i += 1) next.dispatchEvent({ type: "click" });
-  assert.match(heading.textContent, /Word 12 of 12/);
   assert.equal(next.disabled, true);
   assert.equal(prev.disabled, false);
   show.dispatchEvent({ type: "click" });
