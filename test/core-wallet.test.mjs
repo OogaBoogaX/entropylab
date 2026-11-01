@@ -929,18 +929,58 @@ test("a key-bearing descriptor is redacted until revealed and concealed again on
   assert.ok(!out.innerHTML.includes(xprv), "a key-bearing descriptor is shown after conceal");
 });
 
-// An undecoded record can hold anything (K3.1, round 9): its value is a
-// private value in the expand window; its key names the type and stays public.
-test("an undecoded record's value is a private value; its key is public", async (t) => {
-  const { elements, cleanup } = setupCoreWalletUi();
+// An undecoded record can hold anything (K3.1, round 9): its value is private
+// DOM like the key records, redacted until revealed and hidden again on
+// hodl:conceal (Astra, round 10), and a private value in the expand window;
+// its key names the type and stays public.
+test("an undecoded record's value is private DOM and a private value; its key is public", async (t) => {
+  const { elements, documentListeners, cleanup } = setupCoreWalletUi();
   t.after(cleanup);
   const wifHex = Buffer.from("L1aW4aubDFB7yfras2S1mN3bqg9nwySY8nkoLmJebSLD5BWv3ENZ").toString("hex");
-  const bytes = dbFromRecords([...REF_WATCH_ONLY_RECORDS, ["046e6f7465", wifHex]]); // a made-up "note" record
-  const file = elements["core-file"], out = elements["core-out"];
+  const entropyHex = "000102030405060708090a0b0c0d0e0f"; // short enough to be shown inline, were it shown
+  const bytes = dbFromRecords([...REF_WATCH_ONLY_RECORDS, ["046e6f7465", wifHex], ["0473656564", entropyHex]]); // made-up "note" and "seed" records
+  const file = elements["core-file"], out = elements["core-out"], reveal = elements["core-reveal"];
   file.files = [{ size: bytes.length, arrayBuffer: async () => bytes.slice().buffer }];
   file.listeners.change();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(elements["core-error"].textContent, "", "the file must load");
-  assert.ok(out.innerHTML.includes(`[private]${wifHex}[/private]`), "the record value must be a private value");
+  assert.ok(!out.innerHTML.includes(wifHex) && !out.innerHTML.includes(entropyHex), "an undecoded value is shown while nothing is revealed");
+  assert.ok(out.innerHTML.includes("046e6f7465") && out.innerHTML.includes("0473656564"), "the record keys must be shown while nothing is revealed");
+  reveal.checked = true;
+  reveal.listeners.change();
+  assert.ok(out.innerHTML.includes(`[private]${wifHex}[/private]`), "a revealed record value must be a private value");
+  assert.ok(out.innerHTML.includes(`[private]${entropyHex}[/private]`), "a short revealed record value must be a private value too");
   assert.ok(out.innerHTML.includes("046e6f7465") && !out.innerHTML.includes("[private]046e6f7465"), "the record key must stay public");
+  documentListeners["hodl:conceal"]();
+  assert.equal(reveal.checked, false, "conceal must turn reveal off");
+  assert.ok(!out.innerHTML.includes(wifHex) && !out.innerHTML.includes(entropyHex), "an undecoded value is shown after conceal");
+});
+
+// The redacted row counts a descriptor's bytes through a UTF-8 copy; that
+// copy is zeroed once counted (K3.1, round 10).
+test("counting a redacted descriptor's bytes leaves no unzeroed copy of it", async (t) => {
+  const { elements, cleanup } = setupCoreWalletUi();
+  t.after(cleanup);
+  const xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+  const records = REF_WATCH_ONLY_RECORDS.map(([key, value]) => [key, value]);
+  const row = records.find(([key]) => key.startsWith("1077616c6c657464657363726970746f72")); // "walletdescriptor"
+  const text = Buffer.from(row[1], "hex").toString("latin1");
+  row[1] = Buffer.from(text.replace(/tpub[1-9A-HJ-NP-Za-km-z]{107}/, xprv), "latin1").toString("hex");
+  const bytes = dbFromRecords(records);
+  // Every UTF-8 encoding made from here on is kept, to check it was zeroed.
+  const OriginalTextEncoder = globalThis.TextEncoder;
+  const encoded = [];
+  globalThis.TextEncoder = class extends OriginalTextEncoder {
+    encode(text) { const bytes = super.encode(text); encoded.push(bytes); return bytes; }
+  };
+  t.after(() => { globalThis.TextEncoder = OriginalTextEncoder; });
+  const file = elements["core-file"], out = elements["core-out"];
+  file.files = [{ size: bytes.length, arrayBuffer: async () => bytes.slice().buffer }];
+  file.listeners.change();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(elements["core-error"].textContent, "", "the crafted file must load");
+  assert.ok(!out.innerHTML.includes(xprv), "the key-bearing descriptor must be redacted");
+  const copies = encoded.filter((array) => array.length >= xprv.length);
+  assert.ok(copies.length > 0, "the redacted row counts the descriptor's bytes through a UTF-8 copy");
+  for (const copy of copies) assert.ok(copy.every((byte) => byte === 0), "a copy made to count the descriptor's bytes was not zeroed");
 });

@@ -429,7 +429,11 @@ var hodlCoreWallet = (() => {
         let id = null;
         try {
           const compatBody = hodlWalletExport.toCompatForm(body);
-          id = bytesToHex(deps.sha256(utf8(`${compatBody}#${deps.checksum(compatBody)}`)));
+          // The descriptor can carry a key (a crafted file): the UTF-8 copy
+          // hashed here is zeroed once hashed.
+          const idBytes = utf8(`${compatBody}#${deps.checksum(compatBody)}`);
+          id = bytesToHex(deps.sha256(idBytes));
+          idBytes.fill(0);
         } catch {
           id = null; // the descriptor has a character Core's charset lacks
         }

@@ -26,6 +26,14 @@ const WIF_KEY = /\b[5KL9c][1-9A-HJ-NP-Za-km-z]{50,51}\b/;
 // anywhere: a descriptor that carries a private key is shown as one, so its
 // copy stays within EntropyLab (#1347).
 export const descriptorHoldsSecret = (text) => PRIVATE_KEY.test(text) || WIF_KEY.test(text);
+// A redacted row says how long the value is. The UTF-8 copy made to count a
+// descriptor's bytes is zeroed as soon as it is counted.
+const utf8ByteCount = (text) => {
+  const bytes = new TextEncoder().encode(text);
+  const count = bytes.length;
+  bytes.fill(0);
+  return count;
+};
 
 // wallet.dat files of used wallets carry their transaction history; the cap
 // keeps a hostile or accidental multi-gigabyte file from stalling the tab.
@@ -147,7 +155,7 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
     // redacted until revealed, and its copy stays within EntropyLab.
     const secretDescriptor = descriptorHoldsSecret(entry.descriptor);
     push(tHtml("Descriptor"), secretDescriptor && !reveal.checked
-      ? `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: new TextEncoder().encode(entry.descriptor).length })}</span>`
+      ? `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: utf8ByteCount(entry.descriptor) })}</span>`
       : expandableHtml(entry.descriptor, { label: t("Descriptor {n}", { n: index + 1 }), privateValue: secretDescriptor }));
     push(tHtml("Descriptor ID"), expandableHtml(entry.id, { label: t("Descriptor {n} id", { n: index + 1 }) }));
     push(tHtml("Created"), entry.creationTime ? escapeHtml(createdText(entry.creationTime)) : tHtml("0 (epoch — a fresh wallet)"));
@@ -179,7 +187,8 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
     if (!doc.others.length) return "";
     const shown = doc.others.slice(0, OTHER_RECORD_RENDER_LIMIT);
     // What an undecoded record holds is unknown, and the file can come from
-    // anywhere: its value is a private value, so a copy stays within
+    // anywhere: its value is private DOM like the key records, redacted until
+    // revealed and hidden again on conceal, and its copy stays within
     // EntropyLab (the record's key names its type and stays public).
     const rows = shown
       .map((record) => {
@@ -187,7 +196,9 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
         return `<tr>
           <td class="psbted-name">${record.name == null ? tHtml("(unnamed)") : escapeHtml(record.name)}${note ? `<br>${note}` : ""}</td>
           <td class="psbted-hex">${expandableHtml(bytesToHex(record.key), { label: tHtml("Record key (hex)") })}</td>
-          <td class="psbted-hex">${expandableHtml(bytesToHex(record.value), { label: tHtml("Record value (hex)"), privateValue: true })}</td>
+          <td class="psbted-hex">${reveal.checked
+            ? expandableHtml(bytesToHex(record.value), { label: tHtml("Record value (hex)"), privateValue: true })
+            : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: record.value.length })}</span>`}</td>
         </tr>`;
       })
       .join("");
