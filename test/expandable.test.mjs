@@ -195,8 +195,6 @@ test("readonly values use a protected readout and copy without populating the ed
 test("a private cell copies to EntropyLab's clipboard only, and the copy control's label follows", async () => {
   await withExpandDialog(async ({ parts, open, copy, clipboard }) => {
     const der = "30".repeat(70);
-    parts["#exp-copy"].setAttribute("aria-label", "Copy");
-    parts["#exp-copy"].title = "Copy";
     try {
       appClipboardClear();
       open({ value: der, privateValue: true });
@@ -213,6 +211,43 @@ test("a private cell copies to EntropyLab's clipboard only, and the copy control
       assert.deepEqual(clipboard, ["ab".repeat(100)]);
     } finally {
       appClipboardClear();
+    }
+  });
+});
+
+// The control names itself at each opening, in the page's language of that
+// moment: a switch while the window is open cannot leave a stale label, and
+// no catalog sweep decides which kind of cell is open (data-i18n-skip).
+test("the copy control's labels follow the page language at each opening", async () => {
+  await withExpandDialog(async ({ parts, open }) => {
+    // The fake page has no static text to sweep: switch the catalog alone.
+    const setLocale = (code) => {
+      const page = globalThis.document;
+      Object.defineProperty(globalThis, "document", { value: undefined, configurable: true, writable: true });
+      try {
+        hodlSetLocale(code, false);
+      } finally {
+        Object.defineProperty(globalThis, "document", { value: page, configurable: true, writable: true });
+      }
+    };
+    try {
+      for (const locale of ["es", "de"]) {
+        setLocale(locale);
+        assert.notEqual(translate("Copy"), "Copy", `the ${locale} catalog has no "Copy"`);
+        open({ value: "ab".repeat(100) });
+        assert.equal(parts["#exp-copy"].getAttribute("aria-label"), translate("Copy"));
+        assert.equal(parts["#exp-copy"].title, translate("Copy"));
+        open({ value: "30".repeat(70), privateValue: true });
+        assert.equal(parts["#exp-copy"].getAttribute("aria-label"), translate("Copy to EntropyLab's clipboard"));
+        assert.equal(parts["#exp-copy"].title, translate("Copy to EntropyLab's clipboard"));
+        setLocale("en");
+        open({ value: "ab".repeat(100) });
+        assert.equal(parts["#exp-copy"].getAttribute("aria-label"), "Copy", "after a switch back the public label is the English one");
+      }
+      const module = readFileSync(new URL("../src/js/expandable.js", import.meta.url), "utf8");
+      assert.match(module, /id="exp-copy"[^>]*data-i18n-skip/, "the copy control must name itself, outside the catalog sweep");
+    } finally {
+      setLocale("en");
     }
   });
 });

@@ -112,8 +112,12 @@
       assert(copy && !copy.disabled, "the shown private value has no available clipboard control");
       const labelText = copy.parentElement.textContent, box = copy.getBoundingClientRect();
       if (systemCopy) {
+        // Something sits on EntropyLab's clipboard first, so the clearing a
+        // public copy does is a real check, not an empty one.
+        assert(window.__entropyLabAppClipboardPut("held before the public copy"), "EntropyLab's clipboard refused the seed value");
+        equal(window.__entropyLabAppClipboard(), "held before the public copy");
         equal(await copiedBy(copy), expected);
-        equal(window.__entropyLabAppClipboard(), "", "a public copy ends what EntropyLab's clipboard held");
+        await until(() => window.__entropyLabAppClipboard() === "", "a public copy ends what EntropyLab's clipboard held");
       } else {
         equal(await copiedBy(copy), null);
         equal(window.__entropyLabAppClipboard(), expected);

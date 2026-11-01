@@ -786,7 +786,7 @@ const loadCoreWalletUi = () => {
   const hodlCoreWallet = loadModule().core;
   const factory = new Function(
     "t", "tAttr", "tHtml", "expandableHtml", "initExpandable", "hodlCoreWallet",
-    `${source}\nreturn { initCoreWallet };`,
+    `${source}\nreturn { initCoreWallet, descriptorHoldsSecret };`,
   );
   return factory(t, tAttr, tHtml, expandableHtml, initExpandable, hodlCoreWallet);
 };
@@ -876,4 +876,23 @@ test("a failed verification refuses the import handler even if the button is cli
   assert.equal(imported.length, 0, "a failed document must not import");
   // Copy is asserted for presence only (AGENTS.md): the refusal shows a message.
   assert.ok(elements["core-error"].textContent.trim(), "a refused import shows a message");
+});
+
+// A descriptor record Core wrote is public (its keys sit in walletdescriptorkey
+// records), but the file can come from anywhere: a descriptor carrying an
+// extended private key or a WIF is shown as a private value, so the expand
+// window's copy stays within EntropyLab (#1347, K3.1 round 8).
+test("a descriptor that carries a private key is shown as a private value", () => {
+  const { descriptorHoldsSecret } = loadCoreWalletUi();
+  const xpub = "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz";
+  const xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+  const wif = "L1aW4aubDFB7yfras2S1mN3bqg9nwySY8nkoLmJebSLD5BWv3ENZ";
+  assert.equal(wif.length, 52);
+  assert.equal(descriptorHoldsSecret(`wpkh([d34db33f/84h/0h/0h]${xpub}/0/*)#abcdefgh`), false);
+  assert.equal(descriptorHoldsSecret(`pkh(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5)`), false);
+  assert.equal(descriptorHoldsSecret(`wpkh(${xprv}/84h/0h/0h/0/*)`), true);
+  assert.equal(descriptorHoldsSecret(`sh(wpkh(${wif}))`), true);
+  assert.equal(descriptorHoldsSecret(`pk(5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ)`), true, "an uncompressed-key WIF (51 characters)");
+  const ui = read("src/js/core-wallet-ui.js");
+  assert.match(ui, /expandableHtml\(entry\.descriptor, \{[^\n]*privateValue: descriptorHoldsSecret\(entry\.descriptor\) \}\)/, "the Descriptor cell must be private when its text holds a key");
 });

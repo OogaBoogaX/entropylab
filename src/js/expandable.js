@@ -1,6 +1,7 @@
 import { createModal } from "./modal.js";
 import { copyText, resetCopiedIcon, showCopiedIcon } from "./clipboard.js";
 import { appClipboardPut } from "./app-clipboard.js";
+import { t } from "./i18n.js";
 // Expandable cells: one standard truncation for long text in dense UI tables,
 // with a click-to-expand overlay window for viewing (and, when the cell is
 // editable, editing) the full value.
@@ -63,7 +64,7 @@ export const expandableHtml = (text, { label = "Full value", editAttrs = "", pri
     `<span data-private-value data-i18n-skip translate="no">${escapeHtml(preview)}</span> <span class="exp-len">${escapeHtml(expandSizeLabel(value))}</span></button>`;
 };
 
-export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon = () => "", translate = (text) => text } = {}) => {
+export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon = () => "" } = {}) => {
   if (document.getElementById("exp-overlay")) return;
   const modal = createModal({
     id: "exp-overlay",
@@ -72,7 +73,7 @@ export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon =
     onDismiss: () => close(),
     card: `
     <div class="modal-card exp-card" role="dialog" aria-modal="true" aria-labelledby="exp-title">
-      <p class="modal-title exp-title copy-field-label"><span id="exp-title"></span><button type="button" class="copy-button boxed-copy-button" id="exp-copy" aria-label="Copy" title="Copy"></button></p>
+      <p class="modal-title exp-title copy-field-label"><span id="exp-title"></span><button type="button" class="copy-button boxed-copy-button" id="exp-copy" aria-label="Copy" title="Copy" data-i18n-skip></button></p>
       <p class="exp-meta muted" id="exp-meta"></p>
       <pre id="exp-readout" data-private-value data-i18n-skip translate="no" hidden></pre>
       <textarea id="exp-text" spellcheck="false" autocomplete="off" autocapitalize="off" hidden></textarea>
@@ -88,22 +89,15 @@ export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon =
   const text = overlay.querySelector("#exp-text"), readout = overlay.querySelector("#exp-readout"), apply = overlay.querySelector("#exp-apply"), copyButton = overlay.querySelector("#exp-copy");
   copyButton.innerHTML = copyIcon();
   let cell = null;
-  // A private cell's copy control says where its copy goes; the public label
-  // is kept and put back for the next public cell.
-  let publicLabel = null;
+  // The copy control says where a copy goes, in the page's language at each
+  // opening: a private cell's copy stays within EntropyLab. The control names
+  // itself (data-i18n-skip), so a locale sweep never puts one cell's label on
+  // the other kind of cell.
   const isPrivate = () => Boolean(cell && "expPrivate" in cell.dataset);
-  const copyLabel = () => (isPrivate() ? translate("Copy to EntropyLab's clipboard") : copyButton.getAttribute("aria-label") || translate("Copy"));
+  const copyLabel = () => (isPrivate() ? t("Copy to EntropyLab's clipboard") : t("Copy"));
   const labelCopyControl = () => {
-    if (isPrivate()) {
-      if (publicLabel === null) publicLabel = { aria: copyButton.getAttribute("aria-label"), title: copyButton.title };
-      copyButton.setAttribute("aria-label", copyLabel());
-      copyButton.title = copyLabel();
-    } else if (publicLabel !== null) {
-      if (publicLabel.aria === null) copyButton.removeAttribute("aria-label");
-      else copyButton.setAttribute("aria-label", publicLabel.aria);
-      copyButton.title = publicLabel.title;
-      publicLabel = null;
-    }
+    copyButton.setAttribute("aria-label", copyLabel());
+    copyButton.title = copyLabel();
   };
 
   // A cell value can hold an entire previous transaction, or a pasted PSBT
@@ -170,7 +164,7 @@ export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon =
     if (isPrivate()) {
       // Private material never reaches the system clipboard (a Core wallet
       // private key is the one private value shown here).
-      if (appClipboardPut(value) && modal.isOpen()) showCopiedIcon(copyButton, { copyIcon: copyIcon(), copiedIcon: copiedIcon(), label: copyLabel(), copiedLabel: translate("Copied to EntropyLab's clipboard") });
+      if (appClipboardPut(value) && modal.isOpen()) showCopiedIcon(copyButton, { copyIcon: copyIcon(), copiedIcon: copiedIcon(), label: copyLabel(), copiedLabel: t("Copied to EntropyLab's clipboard") });
       return;
     }
     copyText(value, { host: overlay }).then((copied) => {

@@ -783,6 +783,7 @@ if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entro
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabWasmMemory = () => [hodlWasm().memory.buffer, hodlPsbtLoaderHeap().buffer];
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabStationRoot = () => hodlStationSessionXprv();
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabAppClipboard = () => appClipboardText();
+if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabAppClipboardPut = (text) => appClipboardPut(text);
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabI18n = { sanitizeCatalogHtml: hodlSanitizeCatalogHtml, tHtml: hodlT, tAttr: hodlTAttr };
 function hodlJournalTestHooks() {
   return { openExport: (file) => hodlJournalOpenExport(file, hodlJournalKeys), passwordProtected: () => Boolean(hodlJournalKeys?.passwordProtected) };

@@ -18,6 +18,14 @@ const bytesToHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "
 // The same pattern core-wallet.js uses: every extended private key form,
 // including SLIP-132 and its uppercase variants.
 const PRIVATE_KEY = /\b(?:[xyztuv]prv|[YZUV]prv)[1-9A-HJ-NP-Za-km-z]{90,}/;
+// A WIF inside a key expression (pk(5…), wpkh(K…/L…), or 9…/c… on a test
+// chain): 51 or 52 Base58 characters on their own.
+const WIF_KEY = /\b[5KL9c][1-9A-HJ-NP-Za-km-z]{50,51}\b/;
+// Bitcoin Core writes a descriptor record in its public form (the keys sit in
+// walletdescriptorkey records), but the file shown here can come from
+// anywhere: a descriptor that carries a private key is shown as one, so its
+// copy stays within EntropyLab (#1347).
+export const descriptorHoldsSecret = (text) => PRIVATE_KEY.test(text) || WIF_KEY.test(text);
 
 // wallet.dat files of used wallets carry their transaction history; the cap
 // keeps a hostile or accidental multi-gigabyte file from stalling the tab.
@@ -62,7 +70,7 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
 
   // The shared overlay's copy button takes the app's icon pair; without it
   // the button is present but blank.
-  initExpandable(copyIcon ? { copy: copyIcon, copied: copiedIcon, translate: t } : { translate: t });
+  initExpandable(copyIcon ? { copy: copyIcon, copied: copiedIcon } : {});
 
   const setError = (message) => {
     error.textContent = message || "";
@@ -135,7 +143,7 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
       : /\/1['hH]?\/\*\)/.test(entry.descriptor) ? t("change") : t("external");
     const rows = [];
     const push = (field, valueHtml) => rows.push(`<tr><td>${field}</td><td>${valueHtml}</td></tr>`);
-    push(tHtml("Descriptor"), expandableHtml(entry.descriptor, { label: t("Descriptor {n}", { n: index + 1 }) }));
+    push(tHtml("Descriptor"), expandableHtml(entry.descriptor, { label: t("Descriptor {n}", { n: index + 1 }), privateValue: descriptorHoldsSecret(entry.descriptor) }));
     push(tHtml("Descriptor ID"), expandableHtml(entry.id, { label: t("Descriptor {n} id", { n: index + 1 }) }));
     push(tHtml("Created"), entry.creationTime ? escapeHtml(createdText(entry.creationTime)) : tHtml("0 (epoch — a fresh wallet)"));
     push(tHtml("Next index"), escapeHtml(String(entry.nextIndex)));
@@ -366,7 +374,7 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
   const concealing = () => {
     // A pasted private descriptor can sit in the field before any wallet is
     // loaded or while nothing is revealed; clear it whenever it carries a key.
-    if (PRIVATE_KEY.test(addText.value)) {
+    if (descriptorHoldsSecret(addText.value)) {
       addText.value = "";
       syncAddGo();
     }
