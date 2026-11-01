@@ -2433,5 +2433,12 @@
   "Scan PSBT QR": "Escanear QR de PSBT",
   "Replace": "Reemplazar",
   "Keep": "Mantener",
-  "{received} of {total} parts": "{received} de {total} partes"
+  "{received} of {total} parts": "{received} de {total} partes",
+  "Privacy signals": "Señales de privacidad",
+  "Some inputs are finalized and others are not. This is the shape of a payjoin proposal, and also of a transaction still being signed by several people. Check every input amount and the fee before signing.": "Algunas entradas están finalizadas y otras no. Esta es la forma de una propuesta de payjoin, y también de una transacción que aún está siendo firmada por varias personas. Verifique cada monto de entrada y la tarifa antes de firmar.",
+  "Inputs carry key paths from {count} different master keys. These paths are claims written into the file, not proof of who owns the coins.": "Las entradas transportan rutas de clave de {count} claves maestras diferentes. Estas rutas son reclamaciones escritas en el archivo, no pruebas de quién es el propietario de las monedas.",
+  "{count} outputs pay exactly {amount}. Equal outputs are a coinjoin pattern; they also occur in batched payments.": "{count} salidas pagan exactamente {amount}. Las salidas iguales son un patrón de coinjoin; también ocurren en pagos por lotes.",
+  "Some checks could not run: a raw transaction carries no key paths or signing state.": "Algunas verificaciones no pudieron ejecutarse: una transacción en bruto no transporta rutas de clave ni estado de firma.",
+  "No payjoin or coinjoin pattern found in this transaction's structure; this does not rule either out.": "No se encontró ningún patrón de payjoin o coinjoin en la estructura de esta transacción; esto no descarta ninguno de los dos.",
+  "{type} URI {uri}…": "URI {type} {uri}…"
 }
