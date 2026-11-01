@@ -11613,7 +11613,7 @@ function hodlFinalized(entries) {
 // Structural privacy observations for the Inspector's result. Commentary
 // only: nothing here feeds a check, a verdict or the glance line.
 function hodlPrivacySignalsHtml(signals) {
-  if (!PREVIEW) return "";
+  if (!PREVIEW || !signals) return "";
   let html = ["<div data-privacy-signals><p class='label psbt-section-label'>" + hodlT("Privacy signals") + "</p>"];
   let any = false;
   if (signals.mixedFinalization) {
@@ -11621,7 +11621,7 @@ function hodlPrivacySignalsHtml(signals) {
     any = true;
   }
   if (signals.originGroups >= 2) {
-    html.push("<p class='edge-note is-muted' data-privacy-signal='origin-groups'>" + hodlT("Inputs carry key paths from {count} different master keys. These paths are claims written into the file, not proof of who owns the coins.", { count: signals.originGroups }) + "</p>");
+    html.push("<p class='edge-note is-muted' data-privacy-signal='origin-groups'>" + hodlT("Inputs carry key paths from {count} different master keys. These paths are claims written into the file, not proof of who owns the coins.", { count: signals.masterKeys }) + "</p>");
     any = true;
   }
   for (const group of signals.equalOutputs) {
@@ -15836,10 +15836,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   let overallLine = hodlPsbtOverallLine(checks);
   let answerBlock = "<section class='psbt-analysis-summary' data-psbt-answer data-psbt-analysis-overall='" + overallLine.state + "' aria-label='" + hodlTAttr("PSBT security analysis status") + "'><p class='label psbt-section-label'>" + hodlT("PSBT security analysis") + "</p>" + overallLine.html + glance + "</section>";
   html.unshift(answerBlock, hodlPsbtAnalysisSummary(checks));
-  // Commentary at the end of the result, never read by a check; a throw adds
+  // Commentary, last in the result and never read by a check; a throw adds
   // nothing.
-  if (view !== "nonce") try { html.push(hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: psbt.inputs, outputs: tx.outputs }))); } catch {}
-  return (view === "inspect" ? html : html.concat(nonceHtml)).join("");
+  let privacy = "";
+  try { privacy = hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: psbt.inputs, outputs: tx.outputs })); } catch {}
+  return (view === "inspect" ? html : html.concat(nonceHtml)).concat(privacy).join("");
 }
 // Same three views as hodlRenderPsbt. A raw transaction has no summary table,
 // so the Inspector carries the verdict lines themselves — the exact lines the
@@ -15961,9 +15962,12 @@ function hodlRenderRawTx(tx, nonceSourceTag = new Uint8Array(), nonceCheckedAt =
   let nonceVerdict = schnorrReused.length ? "reuse" : crossKey.length ? "cross-key" : possible.length ? "possible" : nonceIncomplete ? "incomplete" : "clean";
   if (view !== "inspect" && options?.record !== false) hodlPsbtRecordNonceInspection("transaction", rValues, nonceSourceTag, nonceVerdict, nonceCheckedAt);
   if (view === "nonce") return nonceHtml.join("");
-  try { html.push(hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: null, outputs: tx.outputs }))); } catch {}
-  if (view === "inspect") return html.concat(["<p class='label'>" + hodlT("Nonce analysis") + "</p>"], verdictHtml, ["<p class='muted'>" + hodlT("Open the Nonce Inspector for every r value and the per-signature detail.") + "</p>"]).join("");
-  return html.concat(nonceHtml).join("");
+  // Commentary, last in the result and never read by a check; a throw adds
+  // nothing.
+  let privacy = "";
+  try { privacy = hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: null, outputs: tx.outputs })); } catch {}
+  if (view === "inspect") return html.concat(["<p class='label'>" + hodlT("Nonce analysis") + "</p>"], verdictHtml, ["<p class='muted'>" + hodlT("Open the Nonce Inspector for every r value and the per-signature detail.") + "</p>"], privacy).join("");
+  return html.concat(nonceHtml, privacy).join("");
 }
 var hodlAccountId = "bip84",
   hodlNextKeyId = 1,

@@ -6,8 +6,6 @@ const INPUT_LIMIT = 10000;
 const OUTPUT_LIMIT = 10000;
 const MAX_EQUAL_GROUPS = 3;
 
-const noSignals = () => ({ available: false, mixedFinalization: false, originGroups: 0, equalOutputs: [] });
-
 // Exactly the rule of hodlFinalized in app.js: the consensus layer reads only
 // the exact one-byte key, so `07aa`/`08aa` lookalikes must not count.
 const isFinalized = (entries) =>
@@ -31,20 +29,27 @@ const fingerprintAt = (bytes, offset) => {
   return out;
 };
 
+// BIP-174 PSBT_IN_BIP32_DERIVATION (type 6): the key holds a 33- or 65-byte
+// public key; the value is a 4-byte fingerprint, then 32-bit path elements.
+// BIP-371 PSBT_IN_TAP_BIP32_DERIVATION (type 0x16): the key holds a 32-byte
+// x-only key; the value is a CompactSize leaf-hash count, the 32-byte hashes,
+// the 4-byte fingerprint, then 32-bit path elements. A record of any other
+// shape names no master key and is skipped (Astra, round 1).
 const fingerprintsOf = (entries) => {
   const found = [];
   if (!Array.isArray(entries)) return found;
   for (const entry of entries) {
-    if (!entry || !(entry.val instanceof Uint8Array)) continue;
+    if (!entry || !(entry.val instanceof Uint8Array) || !(entry.keydata instanceof Uint8Array)) continue;
     const val = entry.val;
     if (entry.type === 6) {
-      if (val.length < 4) continue;
+      if ((entry.keydata.length !== 33 && entry.keydata.length !== 65) || val.length < 4 || (val.length - 4) % 4 !== 0) continue;
       found.push(fingerprintAt(val, 0));
     } else if (entry.type === 0x16) {
+      if (entry.keydata.length !== 32) continue;
       const size = readCompactSize(val, 0);
       if (!size) continue;
       const offset = size.next + size.value * 32;
-      if (!Number.isSafeInteger(offset) || offset + 4 > val.length) continue;
+      if (!Number.isSafeInteger(offset) || offset + 4 > val.length || (val.length - offset - 4) % 4 !== 0) continue;
       found.push(fingerprintAt(val, offset));
     }
   }
@@ -78,7 +83,10 @@ const countOriginGroups = (inputs) => {
   inputs.forEach((_, index) => {
     if (carries[index]) roots.add(find(index));
   });
-  return roots.size;
+  // The groups decide whether there is a signal; the line names how many
+  // master keys the file claims (GLM, round 1: {A, B}, {A}, {C} is two groups
+  // but three keys).
+  return { groups: roots.size, keys: owner.size };
 };
 
 // The Inspector's tx.outputs carry `amount` as a bigint; a decimal `value`
@@ -108,12 +116,16 @@ const countEqualOutputs = (outputs) => {
   return groups.slice(0, MAX_EQUAL_GROUPS);
 };
 
+// Null past the bounds: then nothing is said at all, since a partial "nothing
+// found" or the raw-transaction line would misdescribe the file (Kimi, GLM,
+// round 1).
 export function psbtPrivacySignals({ inputs = null, outputs = [] } = {}) {
-  if (!Array.isArray(outputs) || outputs.length > OUTPUT_LIMIT) return noSignals();
-  if (inputs !== null && (!Array.isArray(inputs) || inputs.length > INPUT_LIMIT)) return noSignals();
+  if (!Array.isArray(outputs) || outputs.length > OUTPUT_LIMIT) return null;
+  if (inputs !== null && (!Array.isArray(inputs) || inputs.length > INPUT_LIMIT)) return null;
   const equalOutputs = countEqualOutputs(outputs);
-  if (inputs === null) return { available: false, mixedFinalization: false, originGroups: 0, equalOutputs };
+  if (inputs === null) return { available: false, mixedFinalization: false, originGroups: 0, masterKeys: 0, equalOutputs };
   const finalized = inputs.map(isFinalized);
   const mixedFinalization = finalized.some(Boolean) && finalized.some((value) => !value);
-  return { available: true, mixedFinalization, originGroups: countOriginGroups(inputs), equalOutputs };
+  const origins = countOriginGroups(inputs);
+  return { available: true, mixedFinalization, originGroups: origins.groups, masterKeys: origins.keys, equalOutputs };
 }

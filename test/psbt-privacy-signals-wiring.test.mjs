@@ -23,8 +23,13 @@ test("app.js imports the pure signals module", () => {
   assert.match(source, /import\s*\{[^}]*psbtPrivacySignals[^}]*\}\s*from\s*["']\.\/psbt-privacy-signals\.js["']/);
 });
 
-test("the privacy section is hidden unless the preview flag is on", () => {
-  assert.match(bodyOf("hodlPrivacySignalsHtml"), /if \(!PREVIEW\) return "";/);
+test("the privacy section is hidden unless the preview flag is on, and absent without signals", () => {
+  assert.match(bodyOf("hodlPrivacySignalsHtml"), /if \(!PREVIEW \|\| !signals\) return "";/);
+});
+
+test("the master-keys line counts master keys, not groups", () => {
+  assert.match(bodyOf("hodlPrivacySignalsHtml"), /if \(signals\.originGroups >= 2\)/);
+  assert.match(bodyOf("hodlPrivacySignalsHtml"), /\{ count: signals\.masterKeys \}/);
 });
 
 test("the section carries the approved data hooks", () => {
@@ -41,23 +46,21 @@ test("the section carries the approved data hooks", () => {
   }
 });
 
-test("both render functions push the section once, after the nonce view, inside a try", () => {
+// The call sits on one line inside its own try (GLM, round 1: an earlier try
+// elsewhere in the function proved nothing), after the nonce view returns,
+// and its result is only placed last in a return.
+test("both render functions compute the section once, in its own try, and place it last", () => {
   for (const name of ["hodlRenderPsbt", "hodlRenderRawTx"]) {
     const fn = bodyOf(name);
-    assert.equal(fn.split("hodlPrivacySignalsHtml").length - 1, 1, name + " calls it once");
-    const call = fn.indexOf("hodlPrivacySignalsHtml");
-    assert.ok(fn.includes("html.push(hodlPrivacySignalsHtml("), name + " pushes the result");
+    const lines = fn.split("\n");
+    const calls = lines.filter((line) => line.includes("hodlPrivacySignalsHtml"));
+    assert.equal(calls.length, 1, name + " computes it on one line");
+    assert.match(calls[0], /^\s*try \{ privacy = hodlPrivacySignalsHtml\(psbtPrivacySignals\(\{ inputs: [^}]*\}\)\); \} catch \{\}$/, name + " computes it inside its own try");
     const nonce = fn.indexOf('if (view === "nonce") return');
-    assert.ok(nonce >= 0 && nonce < call, name + " calls it after the nonce view returns");
-    assert.ok(fn.lastIndexOf("try {", call) >= 0, name + " wraps the call in try");
-    assert.ok(fn.indexOf("catch", call) > call, name + " catches a throw");
-  }
-});
-
-test("no other line reads the section result", () => {
-  for (const name of ["hodlRenderPsbt", "hodlRenderRawTx"]) {
-    const lines = bodyOf(name).split("\n").filter((line) => line.includes("hodlPrivacySignalsHtml"));
-    assert.equal(lines.length, 1, name + " mentions it on one line");
+    assert.ok(nonce >= 0 && nonce < fn.indexOf("hodlPrivacySignalsHtml"), name + " computes it after the nonce view returns");
+    const uses = lines.filter((line) => /\bprivacy\b/.test(line) && !line.includes("hodlPrivacySignalsHtml") && !/let privacy = "";/.test(line));
+    assert.ok(uses.length >= 1, name + " places it");
+    for (const line of uses) assert.match(line, /^\s*(if \(view === "inspect"\) )?return .*privacy\)\.join\(""\);$/, name + " only places it last in a return");
   }
 });
 
