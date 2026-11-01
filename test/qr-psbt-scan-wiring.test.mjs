@@ -214,6 +214,28 @@ test("Clear and leaving the Transactions workspace give every host a fresh, clos
   assert.ok(wiring, "boot must give each PSBT tool's Clear a click listener that resets the panels");
   assert.deepEqual(wiring[1].split(",").map((id) => id.trim().replace(/"/g, "")).sort(), ["nonce-wipe", "psbt-wipe", "psbted-wipe"], "the Inspector, Nonce Inspector and Editor Clear buttons");
   assert.ok(boot.indexOf(wiring[0]) > boot.indexOf("hodlBindPsbtScans()"), "the listeners follow the first mount");
+  // Wiring: switching between the Inspector, Nonce Inspector and Editor tabs
+  // hides the card an open panel sits in, so it resets the panels first, and
+  // only on a real change (Kimi, GLM, MiniMax, round 1).
+  const tool = appSlice("hodlShowPsbtTool");
+  assert.ok(tool, "hodlShowPsbtTool is missing from app.js");
+  const toolReset = tool.indexOf('if (changed && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();');
+  assert.ok(toolReset >= 0, "switching PSBT tools must reset the panels when the tool changes");
+  assert.ok(toolReset < tool.indexOf("hodlSyncPsbtTool();"), "the reset runs before the cards are switched");
+  // Behaviour: a real switch resets once; re-selecting the shown tool does not.
+  let resets = 0;
+  const toolContext = vm.createContext({
+    hodlPsbtTool: "inspector",
+    hodlResetPsbtScans: () => { resets += 1; },
+    hodlSyncPsbtTool: () => {},
+    hodlJournalLog: () => {},
+    document: { querySelector: () => null },
+  });
+  vm.runInContext(tool, toolContext);
+  toolContext.hodlShowPsbtTool("inspector");
+  assert.equal(resets, 0, "re-selecting the shown tool keeps an open panel open");
+  toolContext.hodlShowPsbtTool("editor");
+  assert.equal(resets, 1, "switching to another tool closes the open panel");
   // Wiring: leaving the Transactions workspace, before the workspace changes.
   const show = appSlice("hodlShowWorkspace");
   assert.ok(show, "hodlShowWorkspace is missing from app.js");

@@ -18536,6 +18536,9 @@ function hodlSyncPsbtTool() {
 }
 function hodlShowPsbtTool(id, focus = false) {
   let next = id === "editor" || id === "nonce" ? id : "inspector", changed = next !== hodlPsbtTool;
+  // Switching tools hides the card an open scan panel sits in: close it
+  // first, so its camera stops (Kimi, GLM, MiniMax on #1358).
+  if (changed && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
   hodlPsbtTool = next;
   hodlSyncPsbtTool();
   if (changed) hodlJournalLog("tool-tab", hodlPsbtTool, "psbt");
