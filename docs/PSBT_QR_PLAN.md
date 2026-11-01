@@ -473,6 +473,23 @@ same four-part completion changed from hidden-but-rendered `display: block`
 to `display: none`; completion and exact bytes were unchanged. Desktop
 (1280 px) and phone (390 px) captures were made in light and dark themes.
 
+Final verification on the committed sources:
+
+- `npm run build && npm test -- --test-concurrency=1 && npm run verify`
+  passed: 5,122 tests, 5,099 passed, zero failed/cancelled, 23 skipped. This
+  includes all 151 Chromium hosted/offline checks and the new optical scan
+  regression. Firefox/Edge are absent; optional Bitcoin Core checks remain
+  skipped.
+- Two builds from different staging paths were byte-identical.
+- The final shared-host-class version was also scanned directly in the built
+  preview: exact bytes recovered, capture stopped, and the stale counter had
+  no rendered box.
+- Local runs use `TMPDIR=/home/agent/doggyballs/psbt-browser-tmp` and
+  `CHROME_BINARY=/usr/bin/chromium-browser`. Parallel browser runs timed out
+  during navigation; the complete serial run passed without changing or
+  skipping tests. A native Chrome attempt additionally required the harness's
+  sandbox opt-out and did not resolve the parallel-navigation timeouts.
+
 
 
 
