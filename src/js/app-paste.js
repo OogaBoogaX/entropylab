@@ -14,11 +14,20 @@ const byId = (root, id) => (typeof root?.getElementById === "function" ? root : 
 
 // Each control is named for its field (several can share a screen) and stays
 // in place, disabled while nothing is copied, so the layout never jumps.
+// Decorating again names existing controls anew: their names fill in the
+// field's name, so no catalog sweep carries them across a language switch.
 export const decorateAppPaste = (root = document, { pasteIcon = () => "", labelFor = () => "Paste" } = {}) => {
   const doc = typeof root?.getElementById === "function" ? root : document;
   for (const id of APP_PASTE_TARGETS) {
     const field = byId(root, id);
-    if (!field || doc.querySelector(`[data-app-paste="${id}"]`)) continue;
+    if (!field) continue;
+    const existing = doc.querySelector(`[data-app-paste="${id}"]`);
+    if (existing) {
+      const label = labelFor(id);
+      existing.setAttribute("aria-label", label);
+      existing.setAttribute("title", label);
+      continue;
+    }
     const row = field.ownerDocument.createElement("div");
     row.setAttribute("class", "row");
     row.setAttribute("data-app-paste-row", "");

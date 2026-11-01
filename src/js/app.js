@@ -22521,6 +22521,8 @@ function hodlApplyLocale() {
   hodlRefreshVanityLocale();
   hodlRefreshStationKeyPickers();
   hodlJournalRenderVisual();
+  // The paste controls fill their field's name into their labels.
+  hodlDecorateAppPaste();
   // The co-signer titles and labels, the BIP-85 child and the Silent Payments
   // results fill values into their text, so they render again too.
   hodlReindexMsigKeys();

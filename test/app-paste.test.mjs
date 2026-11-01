@@ -63,6 +63,22 @@ test("decorateAppPaste adds one control per target field, right after its anchor
   assert.equal(doc.querySelector('[data-app-paste="not-a-target"]'), null);
 }));
 
+// hodlApplyLocale decorates again: the names fill in the field's name, so no
+// catalog sweep carries them across a language switch (GLM, #1347 r4).
+test("decorating again names the existing controls anew, without adding any", () => withDocument((doc) => {
+  doc.body.innerHTML = `<input id="ln-pass"><div class="dice-input-shell"><textarea id="seed"></textarea></div>`;
+  decorateAppPaste(doc, { pasteIcon: () => "", labelFor: (id) => `Paste into ${id}` });
+  const before = doc.querySelectorAll("[data-app-paste]");
+  decorateAppPaste(doc, { pasteIcon: () => "", labelFor: (id) => `Pegar en ${id}` });
+  const after = doc.querySelectorAll("[data-app-paste]");
+  assert.equal(after.length, 2);
+  for (const [index, button] of after.entries()) {
+    assert.equal(button, before[index], "the same control stays in place");
+    assert.equal(button.getAttribute("aria-label"), `Pegar en ${button.dataset.appPaste}`);
+    assert.equal(button.getAttribute("title"), `Pegar en ${button.dataset.appPaste}`);
+  }
+}));
+
 test("syncAppPaste enables or disables every control from the app clipboard", () => withDocument((doc) => {
   doc.body.innerHTML = `<input id="ln-pass"><input id="seed">`;
   decorateAppPaste(doc, { pasteIcon: () => "", labelFor: (id) => `Paste into ${id}` });
