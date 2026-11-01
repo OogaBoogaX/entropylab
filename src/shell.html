@@ -416,6 +416,7 @@ words, pick one of the checksum words.</span></span>
         <label class="field"><span class="muted label-value">Paste a wallet-exported multisig descriptor here — the quorum, script type, key order, and co-signer xpubs will be filled in below.</span>
           <textarea id="msig-descriptor" placeholder="wsh(sortedmulti(2,[fingerprint/48h/0h/0h/2h]Zpub…/0/*, …))" autocomplete="off" spellcheck="false" aria-describedby="msig-descriptor-help"></textarea>
         </label>
+        <div id="msig-descriptor-scan-host" class="text-scan-host" data-scan-field="msig-descriptor" data-scan-accept="descriptor"></div>
         <button class="btn secondary" id="msig-descriptor-import" type="button" disabled>Import Descriptor</button>
         <p class="field-note edge-note is-muted" id="msig-descriptor-help">Only accepts watch-only public keys; a descriptor carrying private keys will be refused.</p>
         <p class="hint" id="msig-descriptor-status" role="status" hidden></p>
@@ -571,6 +572,7 @@ words, pick one of the checksum words.</span></span>
         <label class="label" for="bip47-contact">Payment code</label>
         <p class="field-note">Decoding a payment code needs no private key.</p>
         <textarea id="bip47-contact" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <div id="bip47-contact-scan-host" class="text-scan-host" data-scan-field="bip47-contact" data-scan-accept="payment-code"></div>
         <div class="tool-actions">
           <button class="btn" id="bip47-decode" type="button">Decode</button>
         </div>
@@ -662,6 +664,7 @@ words, pick one of the checksum words.</span></span>
           <textarea id="sp-recipients" placeholder="sp1qqgste7k9hx0q…&#10;bitcoin:?sp=sp1qqgste7k9hx0q…&#10;sp1qqgste7k9hx0q… 2" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
           <span class="field-note">Paste the code or a BIP-321 URI. Names like you@domain are not resolved here — look the TXT up on an online machine and paste the URI.</span>
         </label>
+        <div id="sp-recipients-scan-host" class="text-scan-host" data-scan-field="sp-recipients" data-scan-accept="sp" data-scan-mode="append"></div>
         <label class="field">Inputs (BIP-352 vin JSON)
           <textarea id="sp-send-vins" placeholder='[{"txid":"…","vout":0,"scriptSig":"…","txinwitness":"","prevout":{"scriptPubKey":{"hex":"…"}},"path":"m/86&#39;/1&#39;/0&#39;/0/0"}]' spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
           <span class="field-note">Same shape as the published BIP-352 send vectors, minus the keys: each eligible input's key is derived from the loaded session key. An input outside the session's known addresses needs a "path" field ("m/…", optional "fingerprint"). P2TR / P2WPKH / P2SH-P2WPKH / P2PKH only.</span>
@@ -779,6 +782,7 @@ words, pick one of the checksum words.</span></span>
         <label class="field">Descriptor
           <textarea id="descriptor-reuse-text" placeholder="wsh(sortedmulti(2,[…]xpub…/&lt;0;1&gt;/*,…))" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </label>
+        <div id="descriptor-reuse-scan-host" class="text-scan-host" data-scan-field="descriptor-reuse-text" data-scan-accept="descriptor"></div>
         <div class="row tool-actions">
           <button class="btn secondary" id="descriptor-reuse-go" type="button">Check</button>
         </div>
@@ -924,6 +928,7 @@ words, pick one of the checksum words.</span></span>
           <span class="field-note">Ranged descriptors only, with a /* wildcard. A private (xprv) descriptor is stored neutered plus its key record, and only into a wallet that already holds private keys — or its watch-only form into an encrypted wallet, whose added key would otherwise sit unencrypted.</span>
           <textarea id="core-add-text" placeholder="wpkh([00000000/84'/0'/0']xpub…/0/*)" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </label>
+        <div id="core-add-scan-host" class="text-scan-host" data-scan-field="core-add-text" data-scan-accept="descriptor"></div>
         <div class="switch-row"><label class="switch-toggle"><input type="checkbox" id="core-add-active" aria-describedby="core-add-active-note"><span class="label">Set as the active descriptor for its type</span></label><p class="switch-note" id="core-add-active-note">New addresses of this type come from it. The descriptor it replaces stays in the wallet.</p></div>
         <div class="switch-row"><label class="switch-toggle"><input type="checkbox" id="core-add-internal" aria-describedby="core-add-internal-note"><span class="label">Change (internal) chain</span></label><p class="switch-note" id="core-add-internal-note">With the descriptor active, it becomes the change branch for its type rather than the receive branch.</p></div>
         <div class="row tool-actions">
@@ -984,6 +989,7 @@ words, pick one of the checksum words.</span></span>
     <h2 id="ln-inv-heading">Decode an invoice or offer (BOLT11 / BOLT12)</h2>
     <label class="field" for="ln-inv-input">Invoice or offer</label>
     <textarea id="ln-inv-input" class="field" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Paste a BOLT11 invoice or BOLT12 offer"></textarea>
+    <div id="ln-inv-scan-host" class="text-scan-host" data-scan-field="ln-inv-input" data-scan-accept="lightning"></div>
     <div class="row">
       <button type="button" class="btn primary" id="ln-inv-decode">Decode</button>
       <button type="button" class="btn" id="ln-inv-clear">Clear</button>

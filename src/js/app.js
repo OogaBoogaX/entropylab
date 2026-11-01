@@ -7598,6 +7598,58 @@ function hodlResetPsbtScans() {
   try { hodlDestroyPsbtScans(); } catch {}
   try { hodlBindPsbtScans(); } catch {}
 }
+
+// Public-text scan panels: every host that names its field (data-scan-field)
+// and what it reads (data-scan-accept). They ship in every build; no secret
+// field has a host.
+var hodlTextScans = [], hodlTextScanModule = null, hodlTextScanImport = null, hodlTextScanEpoch = 0;
+// Each tool's Clear closes the text scan panels in its card. The MultiSig
+// Clear re-renders its station, which resets them there.
+const hodlTextScanClears = [["ln-inv-clear", "ln-inv-card"], ["sp-wipe", "sp-card"], ["psbt-wipe", "psbt-card"], ["core-wipe", "core-card"]];
+function hodlBindTextScans() {
+  let hosts = typeof document.querySelectorAll === "function" ? [...document.querySelectorAll("[data-scan-field]")] : [];
+  if (!hosts.length) return;
+  if (!hodlTextScanImport) {
+    hodlTextScanImport = import("./qr-text-scan.js").then((module) => {
+      hodlTextScanModule = module;
+      return module;
+    }).catch(() => null);
+  }
+  let epoch = hodlTextScanEpoch;
+  hodlTextScanImport.then((module) => {
+    if (!module || epoch !== hodlTextScanEpoch) return;
+    for (let host of hosts) {
+      let field = document.getElementById(host.dataset.scanField);
+      if (!host.id || !field || !host.isConnected || host.childNodes.length) continue;
+      if (hodlTextScans.some((entry) => entry.host === host)) continue;
+      try {
+        hodlTextScans.push({ host, panel: module.mountTextScan(host, { field, accept: host.dataset.scanAccept, mode: host.dataset.scanMode || "replace" }) });
+      } catch {
+        try { host.replaceChildren(); } catch {}
+      }
+    }
+  }).catch(() => {});
+}
+// With a container id, only the panels inside it (and any whose host left the
+// page) come down; without one, all of them.
+function hodlDestroyTextScans(root = "") {
+  hodlTextScanEpoch++;
+  let container = root ? document.getElementById(root) : null, keep = [], gone = [];
+  for (let entry of hodlTextScans) {
+    let inside = !root || !entry.host.isConnected || Boolean(container?.contains(entry.host));
+    (inside ? gone : keep).push(entry);
+  }
+  hodlTextScans = keep;
+  for (let entry of gone) {
+    try { entry.panel?.destroy(); } catch {
+      try { entry.host.replaceChildren(); } catch {}
+    }
+  }
+}
+function hodlResetTextScans(root = "") {
+  try { hodlDestroyTextScans(root); } catch {}
+  try { hodlBindTextScans(); } catch {}
+}
 function hodlMountSeedPicker() {
   let host = document.getElementById("seed-picker-host");
   if (!host || !hodlSecureSeedActive()) return;
@@ -9344,6 +9396,11 @@ function hodlReindexMsigKeys() {
       title = row.querySelector(".msig-key-title"),
       fingerprint = row.querySelector(".msig-master-fingerprint");
     if (ta) ta.id = "msig-x-" + index;
+    let scanHost = row.querySelector("[data-scan-field]");
+    if (scanHost && ta) {
+      scanHost.id = "msig-scan-x-" + index;
+      scanHost.dataset.scanField = ta.id;
+    }
     if (title) {
       title.id = "msig-cosigner-" + index + "-label";
       title.textContent = hodlTText("Co-signer {n}", { n: index + 1 });
@@ -9357,7 +9414,8 @@ function hodlReindexMsigKeys() {
     fingerprint?.setAttribute("aria-label", hodlTText("Master fingerprint for co-signer {n}", { n: index + 1 }));
   });
   hodlSyncMsigKeyMoveButtons();
-  hodlUpdateMsigKeyPlaceholders()
+  hodlUpdateMsigKeyPlaceholders();
+  if (typeof hodlResetTextScans === "function") hodlResetTextScans("msig-keys");
 }
 
 function hodlMoveMsigKeyRow(row, offset) {
@@ -10554,6 +10612,7 @@ function hodlFillKeys(values, specs) {
   // A key that stays keeps its card's spec; a new key's origin pre-selects one.
   let previousSpecs = new Map([...box.querySelectorAll(".msig-key-row")].map((row) => [hodlMsigRowValue(row), hodlMsigRowSpec(row)]));
   box.classList.toggle("msig-keys-listed", listed);
+  if (typeof hodlDestroyTextScans === "function") hodlDestroyTextScans("msig-keys");
   box.innerHTML = "";
   for (let i = 0; i < n; i++) {
     let row = document.createElement("div");
@@ -10611,6 +10670,11 @@ function hodlFillKeys(values, specs) {
     chips.setAttribute("role", "group");
     chips.setAttribute("aria-label", hodlTText("Existing keys for co-signer {n}", { n: i + 1 }));
     lab.append(ta);
+    let scanHost = document.createElement("div");
+    scanHost.id = "msig-scan-x-" + i;
+    scanHost.dataset.scanField = ta.id;
+    scanHost.dataset.scanAccept = "xpub";
+    scanHost.className = "text-scan-host";
     let pathLabel = document.createElement("label");
     pathLabel.className = "field msig-full-path-field";
     pathLabel.textContent = hodlTText("Full derivation path");
@@ -10672,7 +10736,7 @@ function hodlFillKeys(values, specs) {
     keyStatus.dataset.msigKeyStatus = "";
     keyStatus.setAttribute("role", "status");
     keyStatus.hidden = true;
-    content.append(chips, keyStatus, lab, specLabel, originFields, advanced);
+    content.append(chips, keyStatus, lab, scanHost, specLabel, originFields, advanced);
     box.appendChild(row);
     hodlSyncMsigRowSpec(row, specs?.[i] || previousSpecs.get(ta.value.trim()) || hodlMsigSpecForValue(ta.value));
     specSelect.addEventListener("change", () => hodlApplyMsigRowSpec(row));
@@ -10726,6 +10790,7 @@ function hodlFillKeys(values, specs) {
   hodlUpdateMsigAccount();
   hodlSyncMsigDescriptorImport();
   hodlRefreshMsigSessionPickers();
+  if (typeof hodlBindTextScans === "function") hodlBindTextScans();
 }
 function hodlMultisigPrefixCompatible(parsed, kind, purpose) {
   if (kind === "p2tr" || purpose === 87) return parsed.family === "x";
@@ -18077,6 +18142,7 @@ function hodlCaptureMsig() {
 }
 function hodlRestoreMsig() {
   hodlSyncWorkspaceCounts();
+  if (typeof hodlResetTextScans === "function") hodlResetTextScans("msig-card");
   let state = hodlMsigs[hodlActiveMsig], panel = document.getElementById("msig-card");
   if (!state) {
     hodlWalletResult = null;
@@ -18355,6 +18421,7 @@ function hodlShowWorkspace(id) {
   if (hodlWorkspace === "sp" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
   // Leaving the Transactions workspace closes an open scan panel.
   if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
+  if (typeof hodlResetTextScans === "function") hodlResetTextScans();
   hodlWorkspace = id;
   [...hodlElement("#workspace-tabs").querySelectorAll("[data-workspace]")].forEach((button) => {
     let active = button.dataset.workspace === id;
@@ -18574,6 +18641,7 @@ function hodlShowPsbtTool(id, focus = false) {
   // Switching tools hides the card an open scan panel sits in: close it
   // first, so its camera stops (Kimi, GLM, MiniMax on #1358).
   if (changed && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
+  if (changed && typeof hodlResetTextScans === "function") hodlResetTextScans("psbt-card");
   hodlPsbtTool = next;
   hodlSyncPsbtTool();
   if (changed) hodlJournalLog("tool-tab", hodlPsbtTool, "psbt");
@@ -18628,6 +18696,7 @@ function hodlShowPrivacyTool(id, focus = false) {
   if (!document.getElementById("privacy-tool-tabs")) return;
   let next = hodlPrivacyTools.some(([tool]) => tool === id) ? id : "sp",
       changed = next !== hodlPrivacyTool;
+  if (changed && typeof hodlResetTextScans === "function") hodlResetTextScans();
   // A revealed spending key never outlives the station it was shown on.
   if (next !== "bip47" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
   hodlPrivacyTool = next;
@@ -22462,12 +22531,15 @@ function hodlInitSecretFieldAutoClear() {
     // The PSBT panels come down before any decoder is retired (their decoders
     // live in the same registry as the Key Station's), then the registry goes.
     try { hodlDestroyPsbtScans(); } catch {}
+    try { hodlDestroyTextScans(); } catch {}
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
     try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
+    try { hodlTextScanModule?.retireQrDecoders(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
     // The PSBT hosts are static: give them fresh, closed panels too.
     try { hodlBindPsbtScans(); } catch {}
+    try { hodlBindTextScans(); } catch {}
     try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
     try { hodlSecureEntryEnd(); } catch {}
     // The seed form showed the picker: redraw it as the standard field.
@@ -22559,6 +22631,8 @@ function hodlApplyLocale() {
   document.querySelectorAll("#msig-keys textarea").forEach((ta) => {
     if (ta.value) hodlCheckXpub(ta);
   });
+  try { hodlDestroyTextScans(); } catch {}
+  try { hodlBindTextScans(); } catch {}
   // These three hosts are static, so a language switch re-mounts the panels
   // to pick up the new strings (the Key Station's is re-rendered above).
   try { hodlDestroyPsbtScans(); } catch {}
@@ -22596,6 +22670,8 @@ async function hodlBoot() {
   hodlBindPsbtScans();
   // Each PSBT tool's Clear closes its scan panel too.
   for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);
+  hodlBindTextScans();
+  for (let [button, card] of hodlTextScanClears) document.getElementById(button)?.addEventListener("click", () => hodlResetTextScans(card));
   hodlInitLocale(hodlApplyLocale);
 }
 // Curve operations need the WebAssembly module instantiated first (async in
