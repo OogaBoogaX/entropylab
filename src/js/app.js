@@ -164,6 +164,7 @@ import { initConcealOnLeave } from "./conceal-on-leave.js";
 // One cap for every PSBT view: a crafted PSBT passes the load gates with more
 // elements than the DOM survives (red-team F7).
 import { PSBT_INSPECTOR_LIMIT, PSBT_RENDER_LIMIT, cappedHtml, renderBudget } from "./psbt-viz.js";
+import { psbtPrivacySignals } from "./psbt-privacy-signals.js";
 const hodlBip39Wordlist = Object.freeze(bip39English);
 function hodlNote(key, vars) {
   return vars == null ? { key } : { key, vars };
@@ -7555,30 +7556,28 @@ function hodlBindKeyScan() {
 var hodlPsbtScanEpoch = 0;
 function hodlBindPsbtScans() {
   // The slice harness loads this with no scan host: return before anything
-  // else, and never read the preview flag bare.
+  // else.
   let hosts = hodlPsbtScanHosts.map(([hostId, fieldId]) => [document.getElementById(hostId), document.getElementById(fieldId)]);
   if (!hosts.some(([host]) => host)) return;
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    if (!hodlPsbtScanImport) {
-      hodlPsbtScanImport = import("./qr-psbt-scan.js").then((module) => {
-        hodlPsbtScanModule = module;
-        return module;
-      }).catch(() => null);
-    }
-    let epoch = hodlPsbtScanEpoch;
-    hodlPsbtScanImport.then((module) => {
-      if (!module || epoch !== hodlPsbtScanEpoch) return;
-      for (let [host, field] of hosts) {
-        if (!host || !field || !host.isConnected || host.childNodes.length) continue;
-        if (hodlPsbtScans.some((entry) => entry.hostId === host.id)) continue;
-        try {
-          hodlPsbtScans.push({ hostId: host.id, panel: module.mountPsbtScan(host, { field, translate: hodlTText }) });
-        } catch {
-          try { host.replaceChildren(); } catch {}
-        }
-      }
-    }).catch(() => {});
+  if (!hodlPsbtScanImport) {
+    hodlPsbtScanImport = import("./qr-psbt-scan.js").then((module) => {
+      hodlPsbtScanModule = module;
+      return module;
+    }).catch(() => null);
   }
+  let epoch = hodlPsbtScanEpoch;
+  hodlPsbtScanImport.then((module) => {
+    if (!module || epoch !== hodlPsbtScanEpoch) return;
+    for (let [host, field] of hosts) {
+      if (!host || !field || !host.isConnected || host.childNodes.length) continue;
+      if (hodlPsbtScans.some((entry) => entry.hostId === host.id)) continue;
+      try {
+        hodlPsbtScans.push({ hostId: host.id, panel: module.mountPsbtScan(host, { field }) });
+      } catch {
+        try { host.replaceChildren(); } catch {}
+      }
+    }
+  }).catch(() => {});
 }
 function hodlDestroyPsbtScans() {
   hodlPsbtScanEpoch++;
@@ -7592,6 +7591,13 @@ function hodlDestroyPsbtScans() {
   }
   // The decoders are retired at End Session only: the registry is shared with
   // the nonce ceremony's frame decoder, which a language switch must not stop.
+}
+// A tool's own Clear, and leaving the Transactions workspace, close an open
+// scan panel (its camera would otherwise keep streaming) and give the host a
+// fresh, closed one.
+function hodlResetPsbtScans() {
+  try { hodlDestroyPsbtScans(); } catch {}
+  try { hodlBindPsbtScans(); } catch {}
 }
 function hodlMountSeedPicker() {
   let host = document.getElementById("seed-picker-host");
@@ -11604,6 +11610,32 @@ function hodlFinalized(entries) {
   // The consensus layer reads only the exact one-byte key; `07aa`/`08aa` are
   // lookalikes that must not read as progress.
   return entries.some((entry) => (entry.type === 7 || entry.type === 8) && entry.keydata.length === 0);
+}
+// Structural privacy observations for the Inspector's result. Commentary
+// only: nothing here feeds a check, a verdict or the glance line.
+function hodlPrivacySignalsHtml(signals) {
+  if (!PREVIEW || !signals) return "";
+  let html = ["<div data-privacy-signals><p class='label psbt-section-label'>" + hodlT("Privacy signals") + "</p>"];
+  let any = false;
+  if (signals.mixedFinalization) {
+    html.push("<p class='edge-note is-info' data-privacy-signal='proposal-shape'>" + hodlT("Some inputs are finalized and others are not. This is the shape of a payjoin proposal, and also of a transaction still being signed by several people. Check every input amount and the fee before signing.") + "</p>");
+    any = true;
+  }
+  if (signals.originGroups >= 2) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='origin-groups'>" + hodlT("Inputs carry key paths from {count} different master keys. These paths are claims written into the file, not proof of who owns the coins.", { count: signals.masterKeys }) + "</p>");
+    any = true;
+  }
+  for (const group of signals.equalOutputs) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='equal-outputs'>" + hodlT("{count} outputs pay exactly {amount}. Equal outputs are a coinjoin pattern; they also occur in batched payments.", { count: group.count, amount: hodlSats(group.amount) + " BTC" }) + "</p>");
+    any = true;
+  }
+  if (!signals.available) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='unavailable'>" + hodlT("Some checks could not run: a raw transaction carries no key paths or signing state.") + "</p>");
+  } else if (!any) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='none'>" + hodlT("No payjoin or coinjoin pattern found in this transaction's structure; this does not rule either out.") + "</p>");
+  }
+  html.push("</div>");
+  return html.join("");
 }
 // Finalized inputs carry ECDSA signatures in PSBT_IN_FINAL_SCRIPTSIG (0x07)
 // or PSBT_IN_FINAL_SCRIPTWITNESS (0x08) instead of partial-signature
@@ -15805,7 +15837,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   let overallLine = hodlPsbtOverallLine(checks);
   let answerBlock = "<section class='psbt-analysis-summary' data-psbt-answer data-psbt-analysis-overall='" + overallLine.state + "' aria-label='" + hodlTAttr("PSBT security analysis status") + "'><p class='label psbt-section-label'>" + hodlT("PSBT security analysis") + "</p>" + overallLine.html + glance + "</section>";
   html.unshift(answerBlock, hodlPsbtAnalysisSummary(checks));
-  return (view === "inspect" ? html : html.concat(nonceHtml)).join("");
+  // Commentary, last in the result and never read by a check; a throw adds
+  // nothing.
+  let privacy = "";
+  try { privacy = hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: psbt.inputs, outputs: tx.outputs })); } catch {}
+  return (view === "inspect" ? html : html.concat(nonceHtml)).concat(privacy).join("");
 }
 // Same three views as hodlRenderPsbt. A raw transaction has no summary table,
 // so the Inspector carries the verdict lines themselves — the exact lines the
@@ -15927,8 +15963,12 @@ function hodlRenderRawTx(tx, nonceSourceTag = new Uint8Array(), nonceCheckedAt =
   let nonceVerdict = schnorrReused.length ? "reuse" : crossKey.length ? "cross-key" : possible.length ? "possible" : nonceIncomplete ? "incomplete" : "clean";
   if (view !== "inspect" && options?.record !== false) hodlPsbtRecordNonceInspection("transaction", rValues, nonceSourceTag, nonceVerdict, nonceCheckedAt);
   if (view === "nonce") return nonceHtml.join("");
-  if (view === "inspect") return html.concat(["<p class='label'>" + hodlT("Nonce analysis") + "</p>"], verdictHtml, ["<p class='muted'>" + hodlT("Open the Nonce Inspector for every r value and the per-signature detail.") + "</p>"]).join("");
-  return html.concat(nonceHtml).join("");
+  // Commentary, last in the result and never read by a check; a throw adds
+  // nothing.
+  let privacy = "";
+  try { privacy = hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: null, outputs: tx.outputs })); } catch {}
+  if (view === "inspect") return html.concat(["<p class='label'>" + hodlT("Nonce analysis") + "</p>"], verdictHtml, ["<p class='muted'>" + hodlT("Open the Nonce Inspector for every r value and the per-signature detail.") + "</p>"], privacy).join("");
+  return html.concat(nonceHtml, privacy).join("");
 }
 var hodlAccountId = "bip84",
   hodlNextKeyId = 1,
@@ -18314,6 +18354,8 @@ function hodlShowWorkspace(id) {
   // invalidate the run, and lifecycle/session clearing own cancellation.
   // Leaving the Privacy workspace hides a revealed BIP-47 spending key.
   if (hodlWorkspace === "sp" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  // Leaving the Transactions workspace closes an open scan panel.
+  if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
   hodlWorkspace = id;
   [...hodlElement("#workspace-tabs").querySelectorAll("[data-workspace]")].forEach((button) => {
     let active = button.dataset.workspace === id;
@@ -18532,6 +18574,9 @@ function hodlSyncPsbtTool() {
 }
 function hodlShowPsbtTool(id, focus = false) {
   let next = id === "editor" || id === "nonce" ? id : "inspector", changed = next !== hodlPsbtTool;
+  // Switching tools hides the card an open scan panel sits in: close it
+  // first, so its camera stops (Kimi, GLM, MiniMax on #1358).
+  if (changed && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
   hodlPsbtTool = next;
   hodlSyncPsbtTool();
   if (changed) hodlJournalLog("tool-tab", hodlPsbtTool, "psbt");
@@ -22559,6 +22604,8 @@ async function hodlBoot() {
   hodlInitPrivateCopy({ copyIcon: hodlClipboardIconMarkup, copiedIcon: hodlCopiedIconMarkup, onCopyStart: hodlJournalCopyStart });
   hodlInitEndSession();
   hodlBindPsbtScans();
+  // Each PSBT tool's Clear closes its scan panel too.
+  for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);
   hodlInitLocale(hodlApplyLocale);
 }
 // Curve operations need the WebAssembly module instantiated first (async in
