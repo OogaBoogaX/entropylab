@@ -2636,10 +2636,9 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
 /* The history controls close the section, so they sit a step further from the
    status line above them than the 16px rhythm inside it. */
 #nonce-history-options > .tool-actions { margin-top: var(--space-section); }
-/* The Key Station's Scan QR panel (preview builds only). `.btn` and the notes
-   set their own display, so hidden parts need the attribute rule here. The
-   camera frame shows only while frames are read, at most a phone's width. */
-#key-scan-host [hidden] { display: none; }
+/* Scan QR panels (preview builds only). `.btn` and the notes set their own
+   display, so hidden parts need the attribute rule here. */
+:is(#key-scan-host, .qr-scan-host) [hidden] { display: none; }
 #key-scan-video { display: block; width: 100%; max-width: 480px; margin-top: var(--space-component); border-radius: var(--radius-field); }
 #key-scan-confirm { margin-top: var(--space-section); }
 #key-scan-confirm .key-scan-value { margin-top: var(--space-control); }

@@ -446,3 +446,97 @@ test("headless browsers run the hosted and offline suites", async (t) => {
     rmSync(staging.workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
   }
 });
+
+test("preview PSBT scan hides partial progress after four-part completion", { timeout: 180000 }, async (t) => {
+  const engine = engines.find((candidate) => candidate.kind === "chromium" && candidate.binary);
+  if (!engine) return t.skip("Chromium is required for the optical PSBT preview check");
+  const { createPipeClient, createPage, spawnBrowser, stopBrowser } = await import("../scripts/residue-audit.mjs");
+  const { hodlUrEncodePsbt } = await import("../src/js/psbt-ur.js");
+  const { encode } = await import("uqr");
+  const workDir = mkdtempSync(join(stagingBase(), "psbt-qr-browser-"));
+  const fixture = read("test/fixtures/psbt/multisig-2of3-p2wsh.b64").trim();
+  const bytes = Buffer.from(fixture, "base64");
+  const parts = hodlUrEncodePsbt(bytes, { maxBytes: Math.ceil((bytes.length + 5) / 4) });
+  assert.equal(parts.length, 4, "the public fixture must exercise four distinct parts");
+  const matrices = parts.map((part) => encode(part.toUpperCase(), { ecc: "L", border: 4 }).data);
+  let child, client, page;
+  const server = createServer((request, response) => {
+    if (request.url !== "/") { response.writeHead(404); response.end(); return; }
+    response.setHeader("Content-Type", "text/html");
+    response.end(readFileSync(join(workDir, appFile)));
+  });
+  try {
+    execFileSync(process.execPath, [join(root, "scripts/build.mjs"), "--preview", "--out", workDir], { stdio: "inherit" });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    const profile = join(workDir, "profile");
+    mkdirSync(profile);
+    child = spawnBrowser(engine, { profile, logPath: join(workDir, "browser.log") });
+    client = createPipeClient(child.stdio[3], child.stdio[4], { timeoutMs: 60000 });
+    page = await createPage(client, origin);
+    await page.waitFor("document.getElementById('beta-disclaimer-accept')");
+    await page.click("#beta-disclaimer-accept");
+    await page.evaluate(`(() => {
+      const proof = [...document.querySelectorAll('[id^="beta-disclaimer-proof-text-"]')].find((node) => !node.hidden);
+      const input = document.getElementById('beta-disclaimer-proof');
+      input.value = proof.id.split('-').pop();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await page.click("#beta-disclaimer-confirm");
+    await page.waitFor("!document.getElementById('beta-disclaimer')");
+    await page.evaluate(`document.querySelector('[role=tab][aria-label=Transactions]').click()`);
+    await page.click("#psbt-editor-tab");
+    await page.waitFor("document.getElementById('psbted-qr-host-open')");
+    await page.evaluate(`(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 720;
+      const ctx = canvas.getContext('2d');
+      const frames = ${JSON.stringify(matrices)};
+      window.__psbtProgressSmoke = { index: 0, streams: [], draw() {
+        ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 720, 720);
+        const matrix = frames[this.index], scale = Math.floor(680 / matrix.length);
+        const offset = Math.floor((720 - scale * matrix.length) / 2);
+        ctx.fillStyle = 'black';
+        matrix.forEach((row, y) => row.forEach((bit, x) => {
+          if (bit) ctx.fillRect(offset + x * scale, offset + y * scale, scale, scale);
+        }));
+      } };
+      __psbtProgressSmoke.draw();
+      __psbtProgressSmoke.timer = setInterval(() => __psbtProgressSmoke.draw(), 80);
+      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { value: async () => {
+        const stream = canvas.captureStream(10);
+        __psbtProgressSmoke.streams.push(stream);
+        return stream;
+      } });
+    })()`);
+    await page.click("#psbted-qr-host-open");
+    let previous = "";
+    for (let index = 0; index < 3; index++) {
+      await page.evaluate(`__psbtProgressSmoke.index = ${index}`);
+      await page.waitFor(`!document.getElementById('psbted-qr-host-progress').hidden &&
+        document.getElementById('psbted-qr-host-progress').textContent !== ${JSON.stringify(previous)}`);
+      previous = await page.evaluate("document.getElementById('psbted-qr-host-progress').textContent");
+      assert.equal(await page.evaluate("document.getElementById('psbted-text').value"), "");
+    }
+    await page.evaluate("__psbtProgressSmoke.index = 3");
+    await page.waitFor(`document.getElementById('psbted-text').value === ${JSON.stringify(fixture)}`);
+    assert.equal(await page.evaluate("document.getElementById('psbted-qr-host-status').dataset.scanState"), "loaded");
+    assert.equal(await page.evaluate("__psbtProgressSmoke.streams.every(s => s.getTracks().every(t => t.readyState === 'ended'))"), true);
+    assert.equal(await page.evaluate("document.getElementById('psbted-qr-host-progress').getClientRects().length"), 0,
+      "a completed scan must not render a stale partial counter");
+    for (const host of ["psbt-qr-host", "psbted-qr-host", "psbted-compare-qr-host"]) {
+      assert.equal(await page.evaluate(`(() => {
+        const root = document.getElementById(${JSON.stringify(host)});
+        return [...root.querySelectorAll('[hidden]')].every(node => getComputedStyle(node).display === 'none');
+      })()`), true, `${host} must honor its hidden controls and notes`);
+    }
+  } finally {
+    if (page) try {
+      await page.evaluate("if(window.__psbtProgressSmoke){clearInterval(__psbtProgressSmoke.timer);__psbtProgressSmoke.streams.forEach(s=>s.getTracks().forEach(t=>t.stop()))}");
+    } catch {}
+    await stopBrowser(child, client);
+    client?.dispose();
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  }
+});

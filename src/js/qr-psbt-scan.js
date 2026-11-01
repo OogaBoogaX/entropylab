@@ -101,6 +101,7 @@ export function mountPsbtScan(host, {
     return node;
   };
 
+  host.classList.add("qr-scan-host");
   // Ids are prefixed with the host's id so three panels can coexist.
   const prefix = String(host.id ?? "");
   const openRow = make("div", { class: "row tool-actions" });

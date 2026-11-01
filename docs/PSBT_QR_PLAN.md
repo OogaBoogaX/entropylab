@@ -447,6 +447,33 @@ This reproduces the lifecycle cause with a controlled acquisition boundary;
 the operator's native permission prompt and physical laptop webcam still need
 retesting. No native permission-dialog or physical-camera success is claimed.
 
+### Completed scan retained a visible partial counter
+
+The operator reported a four-frame multisig scan that populated the Editor but
+still displayed “3 of 4 parts.” A four-part optical regression in the built
+Editor reproduced the exact state: all original bytes recovered, status
+`loaded`, camera tracks ended, progress `hidden === true`, but computed
+`display: block` and a rendered progress line. The fourth frame had not been
+lost; the last partial count was leaking through the stylesheet.
+
+`.field-note` sets its own display, overriding the browser's default hidden
+rule. The existing scan hidden-state rule covered Key Station only. It now
+serves the Key Station and all three PSBT scan hosts in one shared rule;
+assembly and transaction parsing are unchanged.
+
+Permanent browser regression:
+`node --test --test-name-pattern='preview PSBT scan hides' test/browser.test.mjs`.
+It decodes four optical UR frames from the public multisig fixture using the
+real worker/WASM, refuses premature field population, requires exact final bytes
+and stopped camera tracks, then checks rendered progress and hidden controls.
+It failed before the CSS change with a rendered stale counter, and passed after.
+
+Before/after built previews were also exercised directly in Chromium. The
+same four-part completion changed from hidden-but-rendered `display: block`
+to `display: none`; completion and exact bytes were unchanged. Desktop
+(1280 px) and phone (390 px) captures were made in light and dark themes.
+
+
 
 
 
