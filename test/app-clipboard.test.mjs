@@ -68,24 +68,35 @@ test("each put and clear announces hodl:app-clipboard on document", () => withDo
   assert.deepEqual(events, ["hodl:app-clipboard", "hodl:app-clipboard", "hodl:app-clipboard"]);
 }));
 
-test("initAppClipboard clears on pagehide and on every conceal, and its return removes both listeners", () => withDocument(() => {
+// pagehide is the window's; conceal, copy and cut are the document's (the app
+// dispatches "hodl:conceal" on document; a native copy or cut fires there
+// too). Each fake keeps its own listeners, so a listener on the wrong object
+// fails here (Kimi, round 5).
+test("initAppClipboard clears on pagehide, on every conceal and on any copy or cut to the system clipboard, and its return removes every listener", () => withDocument(() => {
   appClipboardClear();
-  const listeners = new Map();
-  const fake = () => ({
-    addEventListener(type, listener) { listeners.set(type, listener); },
-    removeEventListener(type, listener) { if (listeners.get(type) === listener) listeners.delete(type); },
-  });
-  const stop = initAppClipboard(fake(), fake());
-  for (const type of ["pagehide", "hodl:conceal"]) {
-    assert.equal(typeof listeners.get(type), "function", type);
+  const fake = () => {
+    const listeners = new Map();
+    return {
+      listeners,
+      addEventListener(type, listener) { listeners.set(type, listener); },
+      removeEventListener(type, listener) { if (listeners.get(type) === listener) listeners.delete(type); },
+    };
+  };
+  const target = fake(), doc = fake();
+  const stop = initAppClipboard(target, doc);
+  const expected = [[target, "pagehide"], [doc, "hodl:conceal"], [doc, "copy"], [doc, "cut"]];
+  for (const [object, type] of expected) {
+    assert.equal(typeof object.listeners.get(type), "function", type);
     appClipboardPut("secret");
-    listeners.get(type)();
+    object.listeners.get(type)();
     assert.equal(appClipboardHas(), false, type);
     assert.equal(appClipboardText(), "", type);
   }
+  assert.equal(target.listeners.size, 1, "the window gets pagehide only");
+  assert.equal(doc.listeners.size, 3, "the document gets conceal, copy and cut");
   appClipboardPut("secret");
   stop();
-  assert.equal(listeners.size, 0);
+  assert.equal(target.listeners.size + doc.listeners.size, 0);
   assert.equal(appClipboardText(), "secret", "removing the listeners leaves the store alone");
 }));
 

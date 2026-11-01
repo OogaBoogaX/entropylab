@@ -59,12 +59,16 @@ export const appClipboardGeneration = () => generation;
 // End Session (pagehide) clears it, and so does every time the page hides
 // private values ("hodl:conceal": tab hidden, window blur, print, idle), so a
 // paste control never brings back a value the page has just hidden (owner 10-31).
+// So does any copy or cut to the system clipboard from the page (Ctrl+C on a
+// selection, not only the app's own copy controls): "cleared when you copy
+// something else" holds for every copy (Astra, K3.1).
+const DOC_EVENTS = ["hodl:conceal", "copy", "cut"];
 export const initAppClipboard = (target = globalThis, doc = target.document) => {
   const clear = () => appClipboardClear();
   target.addEventListener("pagehide", clear);
-  doc?.addEventListener("hodl:conceal", clear);
+  for (const type of DOC_EVENTS) doc?.addEventListener(type, clear);
   return () => {
     target.removeEventListener("pagehide", clear);
-    doc?.removeEventListener("hodl:conceal", clear);
+    for (const type of DOC_EVENTS) doc?.removeEventListener(type, clear);
   };
 };
