@@ -174,8 +174,13 @@ test("the shell holds one host after each PSBT field, in every build", () => {
     assert.match(lines[index].trim(), new RegExp(`^<div [^>]*\\bid="${hostId}"[^>]*></div>$`), `#${hostId} must be one empty div, alone on its line`);
     const fieldIndex = lines.findIndex((line) => line.includes(`id="${fieldId}"`));
     assert.ok(fieldIndex >= 0 && fieldIndex < index, `#${hostId} must follow #${fieldId}`);
-    // A one-line field label ends on the line before the host too.
-    assert.ok(lines[index - 1].trim().endsWith("</label>"), `#${hostId} must follow the field's closing label directly`);
+    // The host follows its own field's closing label directly: either the
+    // field and </label> close one line label on the line before (RBF), or
+    // the field's line is followed by a lone </label>.
+    const ownLabel = fieldIndex === index - 1
+      ? lines[index - 1].trim().endsWith("</textarea></label>")
+      : fieldIndex === index - 2 && lines[index - 1].trim() === "</label>";
+    assert.ok(ownLabel, `#${hostId} must follow #${fieldId}'s closing label directly`);
   }
   // The build's own transform: the release artifact ships the hosts, like
   // the preview build.
@@ -211,13 +216,20 @@ test("Clear and leaving the Transactions workspace give every host a fresh, clos
   assert.equal(mounted, 2, "a fresh panel is mounted on the host");
   assert.equal(elements.get("psbt-scan-host").childNodes.length, 1, "the host holds the new panel only");
   assert.equal(context.hodlPsbtScans.length, 1);
-  // Wiring: the three Clear buttons, at boot, after the first mount.
+  // Wiring: the three Clear buttons and Clear Comparison, at boot, after the
+  // first mount.
   const boot = appSlice("hodlBoot");
   assert.ok(boot, "hodlBoot is missing from app.js");
   const wiring = boot.match(/for \(let id of \[([^\]]*)\]\) document\.getElementById\(id\)\?\.addEventListener\("click", hodlResetPsbtScans\);/);
   assert.ok(wiring, "boot must give each PSBT tool's Clear a click listener that resets the panels");
-  assert.deepEqual(wiring[1].split(",").map((id) => id.trim().replace(/"/g, "")).sort(), ["nonce-wipe", "psbt-wipe", "psbted-wipe"], "the Inspector, Nonce Inspector and Editor Clear buttons");
+  assert.deepEqual(wiring[1].split(",").map((id) => id.trim().replace(/"/g, "")).sort(), ["nonce-wipe", "psbt-wipe", "psbted-compare-clear", "psbted-wipe"], "the Inspector, Nonce Inspector and Editor Clear buttons, and the Editor's Clear Comparison");
   assert.ok(boot.indexOf(wiring[0]) > boot.indexOf("hodlBindPsbtScans()"), "the listeners follow the first mount");
+  // Wiring: collapsing the RBF or signer-audit section, which hold scan hosts,
+  // closes the panels; opening one does not.
+  const toggle = boot.match(/for \(let id of \[([^\]]*)\]\) document\.getElementById\(id\)\?\.addEventListener\("toggle", \(event\) => \{ if \(!event\.currentTarget\.open\) hodlResetPsbtScans\(\); \}\);/);
+  assert.ok(toggle, "boot must reset the panels when a section holding a scan host is collapsed");
+  assert.deepEqual(toggle[1].split(",").map((id) => id.trim().replace(/"/g, "")).sort(), ["psbt-audit-options", "psbt-rbf-options"]);
+  assert.ok(boot.indexOf(toggle[0]) > boot.indexOf("hodlBindPsbtScans()"), "the toggle listeners follow the first mount");
   // Wiring: switching between the Inspector, Nonce Inspector and Editor tabs
   // hides the card an open panel sits in, so it resets the panels first, and
   // only on a real change (Kimi, GLM, MiniMax, round 1).

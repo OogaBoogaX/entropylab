@@ -22600,8 +22600,13 @@ async function hodlBoot() {
   hodlInitPrivateCopy({ copyIcon: hodlClipboardIconMarkup, copiedIcon: hodlCopiedIconMarkup, onCopyStart: hodlJournalCopyStart });
   hodlInitEndSession();
   hodlBindPsbtScans();
-  // Each PSBT tool's Clear closes its scan panel too.
-  for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);
+  // Each PSBT tool's Clear, and the Editor's Clear Comparison, closes its scan
+  // panel too.
+  for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe", "psbted-compare-clear"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);
+  // The RBF and signer-audit hosts sit in collapsible sections: collapsing one
+  // hides its panel, so it closes the scan too, or the camera would keep
+  // streaming out of sight (Kimi, GLM, DeepSeek).
+  for (let id of ["psbt-rbf-options", "psbt-audit-options"]) document.getElementById(id)?.addEventListener("toggle", (event) => { if (!event.currentTarget.open) hodlResetPsbtScans(); });
   hodlInitLocale(hodlApplyLocale);
 }
 // Curve operations need the WebAssembly module instantiated first (async in
