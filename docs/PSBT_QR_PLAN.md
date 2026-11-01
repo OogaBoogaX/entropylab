@@ -430,6 +430,19 @@ Chromium preview smoke with deferred acquisition and real canvas MediaStreams
 confirmed grant survival, live video attachment, active-blur cancellation,
 single-click retry, and print-time late-grant rejection.
 
+Committed fix: `9ead6a7a`. Final `npm run build`,
+`npm test -- --test-concurrency=2` and `npm run verify` passed with the
+workstation's accessible `TMPDIR` and explicit Chromium binary described above:
+**5,098 passed, zero failed, 23 skipped**, including 151 Chromium checks and
+two-path reproducibility. The unrestricted run had browser-driver
+`Page.navigate` startup timeouts; the bounded run was made after closing the
+separate smoke browser, without changing or weakening those tests.
+
+Fix-candidate release SHA-256:
+`758a0fae2700c2ed1f95fbbaa912bed97012027d1b2bb8cf004161c6a851012b`.
+Preview SHA-256:
+`deee534a69e1e4f27e84ce9adacf1fd70df415077ed508493c3d154dcb4328e1`.
+
 This reproduces the lifecycle cause with a controlled acquisition boundary;
 the operator's native permission prompt and physical laptop webcam still need
 retesting. No native permission-dialog or physical-camera success is claimed.
