@@ -7589,6 +7589,7 @@ function hodlBindSeedScan() {
           privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
           beforeOpen: hodlSeedScanBeforeOpen,
           onSeed: hodlSeedScanLoad,
+          replacesSeed: hodlSeedScanReplaces,
         });
       } catch {
         return;
@@ -7612,6 +7613,13 @@ async function hodlSeedScanBeforeOpen() {
     return false;
   }
   return false;
+}
+// True when Continue would replace words the active key already holds, typed
+// or held by Secure entry (DeepSeek red team, round 3).
+function hodlSeedScanReplaces() {
+  let state = hodlKeys[hodlActiveKey];
+  if (!state) return false;
+  return hodlSecureSeedHasWords(hodlSecureKeyOf(state)) || Boolean(String(state.fields?.seed ?? "").trim());
 }
 function hodlSeedScanLoad(indices, count) {
   try {
@@ -7643,6 +7651,9 @@ function hodlSeedScanLoad(indices, count) {
     }
     state.fields.seed = "";
     state.lastWord = "";
+    // The D++ final word belonged to the old length, as on a word-count
+    // change (Kimi, round 3).
+    state.dplusLastWord = "";
     // Typed partial phrases go with the typed words (GLM, round 1).
     hodlLastWordCache.clear();
     hodlTargetWordCount = count;

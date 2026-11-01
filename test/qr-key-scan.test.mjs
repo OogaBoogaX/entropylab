@@ -205,6 +205,7 @@ const setup = (options = {}) => {
     accept: options.accept,
     idPrefix: options.idPrefix,
     beforeOpen: options.beforeOpen,
+    replacesSeed: options.replacesSeed,
     onSeed: options.onSeed,
     wordlist: options.wordlist,
     translate: options.translate || ((text) => text),
@@ -764,6 +765,32 @@ test("a Standard SeedQR in seed mode confirms, then Continue hands over the indi
   assert.deepEqual(calls[0].values, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3]);
   assert.equal(findById(ctx.host, "seed-scan-panel").hidden, true);
   assert.equal(markupOf(ctx.host).includes("abandon"), false);
+});
+
+test("the seed confirmation says when Continue replaces the key's words", () => {
+  // DeepSeek red team, round 3: a key that already holds words loses them on
+  // Continue. The note shows only then, and a failing check shows it too.
+  const noteFor = (replacesSeed) => {
+    const ctx = setup({ accept: "seed", idPrefix: "seed-scan", wordlist: bip39English, replacesSeed, onSeed: (indices) => indices.fill(0) });
+    openSeedPanel(ctx);
+    ctx.created.scannerArgs.onResult(bytesOf(SEEDQR));
+    assert.equal(findById(ctx.host, "seed-scan-confirm").hidden, false);
+    return findById(ctx.host, "seed-scan-confirm-replace");
+  };
+  assert.ok(noteFor(() => true), "a key holding words gets the note");
+  assert.equal(noteFor(() => false), null, "an empty key gets none");
+  assert.ok(noteFor(() => { throw new Error("state unavailable"); }), "a failing check shows the note");
+});
+
+test("the app tells the seed panel when the key already holds words", () => {
+  const source = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
+  assert.match(source, /onSeed: hodlSeedScanLoad,\n\s*replacesSeed: hodlSeedScanReplaces,/);
+  const start = source.indexOf("function hodlSeedScanReplaces(");
+  const body = source.slice(start, source.indexOf("\nfunction ", start + 1));
+  assert.match(body, /hodlSecureSeedHasWords\(hodlSecureKeyOf\(state\)\)/, "secure words count");
+  assert.match(body, /state\.fields\?\.seed/, "typed words count");
+  const load = source.slice(source.indexOf("function hodlSeedScanLoad("), source.indexOf("\nfunction ", source.indexOf("function hodlSeedScanLoad(") + 1));
+  assert.match(load, /state\.dplusLastWord = "";/, "the D++ final word goes with the old length");
 });
 
 test("Review words one by one shows one word at a time and turns the toggle off on a move", () => {

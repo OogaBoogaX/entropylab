@@ -39,6 +39,8 @@ const NOT_A_KEY_REFUSAL = "This QR does not hold a WIF private key. Nothing was 
 const SEED_MODE_KEY_REFUSAL = "This QR contains a private key. Only seeds can be scanned here. Nothing was loaded.";
 // DRAFT (owner OK pending)
 const SEED_MODE_NOT_A_SEED_REFUSAL = "This QR does not hold a seed. Nothing was loaded.";
+// DRAFT (owner OK pending)
+const SEED_REPLACE_NOTE = "This key already holds a seed phrase. Continue replaces it.";
 const SEED_FORMAT_TEXT = {
   "standard-seedqr": "Standard SeedQR, {count} words",
   "compact-seedqr": "CompactSeedQR, {count} words",
@@ -64,6 +66,7 @@ export function mountKeyScan(host, {
   idPrefix = "key-scan",
   beforeOpen = () => true,
   onSeed = () => {},
+  replacesSeed = () => false,
   wordlist = null,
   translate = (text) => text,
   privateValue = () => "",
@@ -397,6 +400,11 @@ export function mountKeyScan(host, {
     actions.appendChild(continueButton);
     actions.appendChild(discardButton);
     confirm.appendChild(confirmIntro);
+    // Continue replaces the words the key already holds: say so before it.
+    // A check that fails shows the note rather than hiding it.
+    let replacing = true;
+    try { replacing = replacesSeed() !== false; } catch {}
+    if (replacing) confirm.appendChild(make("p", { class: "edge-note is-private", id: `${prefix}-confirm-replace`, text: say(SEED_REPLACE_NOTE) }));
     confirm.appendChild(seedReview);
     confirm.appendChild(actions);
     confirm.hidden = false;
