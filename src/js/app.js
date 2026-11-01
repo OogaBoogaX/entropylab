@@ -6864,7 +6864,13 @@ var hodlSeedPicker = null, hodlSeedPickerImport = null;
 // The three PSBT scan panels are the same preview-only extra: release builds
 // strip their hosts and never import the module.
 var hodlPsbtScans = [], hodlPsbtScanModule = null, hodlPsbtScanImport = null;
-const hodlPsbtScanHosts = [["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"]];
+// Every PSBT field: the three tools' main fields, and the fee-bump original,
+// the PSBT sent to the signer and the Editor's comparison PSBT (owner 11-01:
+// scanners in every section that takes one).
+const hodlPsbtScanHosts = [
+  ["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"],
+  ["rbf-scan-host", "psbt-rbf-original"], ["audit-scan-host", "psbt-audit-before"], ["psbted-compare-scan-host", "psbted-compare-text"],
+];
 function hodlKeyScanHostMarkup() {
   return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
 }

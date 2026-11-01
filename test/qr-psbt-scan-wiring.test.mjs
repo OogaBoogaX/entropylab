@@ -31,7 +31,10 @@ function appSlice(name) {
 
 // The three fields the owner asked for: PSBT Inspector, Nonce Inspector and
 // PSBT Editor.
-const HOSTS = [["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"]];
+const HOSTS = [
+  ["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"],
+  ["rbf-scan-host", "psbt-rbf-original"], ["audit-scan-host", "psbt-audit-before"], ["psbted-compare-scan-host", "psbted-compare-text"],
+];
 const hostsDeclaration = app.match(/const hodlPsbtScanHosts = \[[\s\S]*?\];/)?.[0] ?? "";
 const bindSource = appSlice("hodlBindPsbtScans");
 const destroySource = appSlice("hodlDestroyPsbtScans");
@@ -89,7 +92,7 @@ test("the wiring imports the panel module once and mounts the three host/field p
   for (const [hostId, fieldId] of HOSTS) {
     assert.ok(hostsDeclaration.includes(`["${hostId}", "${fieldId}"]`), `${hostId} → ${fieldId} is not wired`);
   }
-  assert.equal((hostsDeclaration.match(/\["/g) || []).length, HOSTS.length, "exactly the three PSBT fields are wired");
+  assert.equal((hostsDeclaration.match(/\["/g) || []).length, HOSTS.length, "exactly the PSBT fields are wired");
 });
 
 // A mount still waiting on the import when the panels are torn down (End
@@ -171,7 +174,8 @@ test("the shell holds one host after each PSBT field, in every build", () => {
     assert.match(lines[index].trim(), new RegExp(`^<div [^>]*\\bid="${hostId}"[^>]*></div>$`), `#${hostId} must be one empty div, alone on its line`);
     const fieldIndex = lines.findIndex((line) => line.includes(`id="${fieldId}"`));
     assert.ok(fieldIndex >= 0 && fieldIndex < index, `#${hostId} must follow #${fieldId}`);
-    assert.equal(lines[index - 1].trim(), "</label>", `#${hostId} must follow the field's closing label directly`);
+    // A one-line field label ends on the line before the host too.
+    assert.ok(lines[index - 1].trim().endsWith("</label>"), `#${hostId} must follow the field's closing label directly`);
   }
   // The build's own transform: the release artifact ships the hosts, like
   // the preview build.
