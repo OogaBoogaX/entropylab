@@ -1554,19 +1554,25 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
   // the PSBT as raw binary; a text export decodes through the paste rules.
   // The textarea mirrors the upload (as base64) so the loaded bytes and the
   // "edited PSBT" reload path stay visible.
+  let uploadGeneration = 0;
   const file = $("psbted-file");
   $("psbted-upload").onclick = () => file.click();
   file.addEventListener("change", () => {
     const chosen = file.files?.[0];
     file.value = ""; // picking the same file again must fire change again
     if (!chosen) return;
+    const generation = ++uploadGeneration;
     psbtWasmReady
       .then(async () => {
-        text.value = base64Encode(psbtBytesFromUpload(new Uint8Array(await chosen.arrayBuffer())));
+        if (generation !== uploadGeneration) return;
+        if (chosen.size > 5e6) throw new Error("This PSBT is too large to edit safely.");
+        const upload = new Uint8Array(await chosen.arrayBuffer());
+        if (generation !== uploadGeneration) return;
+        text.value = base64Encode(psbtBytesFromUpload(upload));
         syncActions();
         loadFromText();
       })
-      .catch((exception) => setError(exception.message || String(exception)));
+      .catch((exception) => { if (generation === uploadGeneration) setError(exception.message || String(exception)); });
   });
   // Semantic comparison against a second, pasted PSBT (engine: psbt-diff.js).
   // The compare section lives outside #psbted-out, so the editor's live
@@ -1580,6 +1586,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     setCompareError("");
   };
   $("psbted-wipe").onclick = () => {
+    uploadGeneration += 1;
     doc = null;
     addedPairs.clear();
     resultBytes = null;

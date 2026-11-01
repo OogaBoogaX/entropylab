@@ -473,6 +473,21 @@ test("pagehide and persisted pageshow empty the Nonce Inspector's key, passphras
   }
 });
 
+// A PSBT upload still being read when the page is hidden — signer audit, RBF
+// original or inspector file — must not write back into the fields the sweep
+// has just emptied: each loader's generation is retired with them.
+test("pagehide and persisted pageshow retire every pending PSBT upload", () => {
+  for (const [type, event] of [["pagehide", {}], ["pageshow", { persisted: true }]]) {
+    const { context, events } = raceHarness();
+    const retired = { audit: 0, rbf: 0, inspector: 0 };
+    context.hodlPsbtRetireAuditUploads = () => { retired.audit += 1; };
+    context.hodlPsbtRetireRbfUploads = () => { retired.rbf += 1; };
+    context.hodlPsbtRetireInspectorUploads = () => { retired.inspector += 1; };
+    events[type](event);
+    assert.deepEqual(retired, { audit: 1, rbf: 1, inspector: 1 }, `${type} left a pending PSBT upload live`);
+  }
+});
+
 test("BIP-85 parent and derived-child fields are explicitly cleared", () => {
   assert.match(lifecycle, /getElementById\("bip85-key"\)/);
   assert.match(lifecycle, /bip85Key\.value\s*=\s*""/);
@@ -1003,6 +1018,7 @@ test("pagehide and persisted pageshow end the PSBT session, reports included", (
     hodlNonceQrCapture: { clear: () => { retiredCapture += 1; } },
     hodlPsbtRetireAuditUploads: () => { retiredUploads += 1; },
     hodlPsbtRetireRbfUploads: () => { retiredRbfUploads += 1; },
+    hodlPsbtRetireInspectorUploads() {},
     hodlPsbtLast: { rvalues: ["deadbeef"] }, hodlPsbtInspected: { psbt: "stamp" },
     hodlPsbtSessionSpec: { key: "Session key" },
     hodlSetPsbtError: () => errors.push("psbt"), hodlSetNonceError: () => errors.push("nonce"),
@@ -1031,7 +1047,7 @@ test("End Session still wipes the key and fields when the camera capture fails t
     document: { getElementById: id => elements.get(id) ?? null },
     hodlPsbtWipeMem: () => { wiped += 1; }, hodlPsbtClearNonceHistory: () => { history += 1; },
     hodlNonceQrCapture: { clear: () => { throw new Error("camera track would not stop"); } },
-    hodlPsbtRetireAuditUploads() {}, hodlPsbtRetireRbfUploads() {},
+    hodlPsbtRetireAuditUploads() {}, hodlPsbtRetireRbfUploads() {}, hodlPsbtRetireInspectorUploads() {},
     hodlPsbtLast: { rvalues: ["deadbeef"] }, hodlPsbtInspected: { psbt: "stamp" },
     hodlPsbtSessionSpec: null,
     hodlSetPsbtError() {}, hodlSetNonceError() {},

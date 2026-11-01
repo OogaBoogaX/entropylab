@@ -12320,6 +12320,10 @@ function hodlSetNonceError(spec) {
 // Ending the session is one act wherever it starts: the shared key goes, and
 // so does everything either card holds.
 var hodlNonceQrCapture = null;
+var hodlPsbtInspectorUploadGeneration = 0;
+function hodlPsbtRetireInspectorUploads() {
+  hodlPsbtInspectorUploadGeneration += 1;
+}
 function hodlEndPsbtSession() {
   // A camera failure must not skip the wipe below.
   try { hodlNonceQrCapture?.clear(); } catch {}
@@ -12328,6 +12332,7 @@ function hodlEndPsbtSession() {
   try { hodlNonceHistoryConfirmDialog?.close(); } catch {}
   hodlPsbtRetireAuditUploads();
   hodlPsbtRetireRbfUploads();
+  hodlPsbtRetireInspectorUploads();
   hodlPsbtLast = null;
   hodlPsbtInspected = {};
   hodlPsbtSessionSpec = hodlNote("Accessible fields were cleared (best effort).");
@@ -12954,12 +12959,19 @@ function hodlInitPsbt() {
     const chosen = nonceFile.files?.[0];
     nonceFile.value = "";
     if (!chosen) return;
+    const generation = hodlPsbtInspectorUploadGeneration;
     (async () => {
       try {
-        const bytes = hodlPsbtInspectorBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
+        // Sized before it is read, like the editor's upload: the decoder's
+        // 5 MB bound must not be reached by first reading a far larger file.
+        if (chosen.size > 5e6) throw new Error("This file is too large to inspect safely.");
+        const upload = new Uint8Array(await chosen.arrayBuffer());
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
+        const bytes = hodlPsbtInspectorBytesFromUpload(upload);
         document.getElementById("nonce-text").value = hodlBytesToB64(bytes);
         hodlRunNonce();
       } catch (exception) {
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
         hodlSetNonceError({ raw: exception.message || String(exception) });
       }
       hodlSyncPsbtControls();
@@ -12974,12 +12986,17 @@ function hodlInitPsbt() {
     const chosen = file.files?.[0];
     file.value = "";
     if (!chosen) return;
+    const generation = hodlPsbtInspectorUploadGeneration;
     (async () => {
       try {
-        const bytes = hodlPsbtInspectorBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
+        if (chosen.size > 5e6) throw new Error("This file is too large to inspect safely.");
+        const upload = new Uint8Array(await chosen.arrayBuffer());
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
+        const bytes = hodlPsbtInspectorBytesFromUpload(upload);
         document.getElementById("psbt-text").value = hodlBytesToB64(bytes);
         hodlRunPsbt();
       } catch (exception) {
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
         hodlSetPsbtError({ raw: exception.message || String(exception) });
       }
       hodlSyncPsbtControls();
@@ -13694,6 +13711,9 @@ function hodlPsbtLoadRbfUpload(file) {
   let generation = ++hodlPsbtRbfUploadGeneration;
   (async () => {
     try {
+      // Sized before it is read: the decoder's 5 MB bound must not be
+      // reached by first reading a far larger file into memory.
+      if (file.size > 5e6) throw new Error("This PSBT is too large to edit safely.");
       let bytes = psbtBytesFromUpload(new Uint8Array(await file.arrayBuffer()));
       if (generation !== hodlPsbtRbfUploadGeneration) return;
       document.getElementById("psbt-rbf-original").value = hodlBytesToB64(bytes);
@@ -13861,6 +13881,7 @@ function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network) {
 async function hodlPsbtLoadAuditUpload(chosen) {
   const generation = ++hodlPsbtAuditUploadGeneration;
   try {
+    if (chosen.size > 5e6) throw new Error("This PSBT is too large to edit safely.");
     const bytes = psbtBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
     if (generation !== hodlPsbtAuditUploadGeneration) return;
     document.getElementById("psbt-audit-before").value = hodlBytesToB64(bytes);
@@ -22259,6 +22280,7 @@ function hodlInitSecretFieldAutoClear() {
     if (psbtAuditBefore) psbtAuditBefore.value = "";
     // A pending audit upload must not write it back once the read finishes.
     try { hodlPsbtRetireAuditUploads(); } catch {}
+    try { hodlPsbtRetireInspectorUploads(); } catch {}
     // The rendered audit holds change addresses and fingerprints derived
     // from the loaded key; retire it with the field it was computed from.
     try { hodlPsbtClearSignerAudit(); } catch {}
