@@ -762,7 +762,7 @@ together with the key, so GnuPG shows the revocation dated 2026-09-29 with no
 reason given; it is a full revocation all the same, and GnuPG flags every
 signature made by the key.
 
-MrHodlX signs with an interim key until a hardware-backed key replaces it:
+MrHodlX signs with an interim key:
 `DB19 EF73 4874 43AA EAC2 6687 17AB DC5F 9867 B54F` (expires 2027-01-31;
 [`keys/MrHodlX-DB19EF73.asc`](keys/MrHodlX-DB19EF73.asc)). Before trusting any
 new key, confirm its fingerprint with the maintainers through more than one
