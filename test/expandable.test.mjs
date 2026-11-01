@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { truncateText, expandSizeLabel, expandableHtml, initExpandable, EXPAND_LIMIT } from "../src/js/expandable.js";
+import { appClipboardText, appClipboardClear } from "../src/js/app-clipboard.js";
 import { hodlSetLocale, t as translate } from "../src/js/i18n.js";
 import { MiniDocument, MiniNodeFilter } from "./mini-dom.mjs";
 
@@ -50,6 +51,13 @@ test("long text renders a truncated cell carrying the full value", () => {
   assert.ok(html.includes(`${"cd".repeat(16)}…${"cd".repeat(8)}`), "preview is not head…tail");
   assert.ok(html.includes("300 hex chars (150 bytes)"), "size label missing");
   assert.ok(!html.includes("data-exp-edit"), "cell without edit attributes must not be editable");
+});
+
+test("a private cell is marked for the window's copy control; a public one is not", () => {
+  const long = "30".repeat(70);
+  assert.match(expandableHtml(long, { privateValue: true }), /data-exp-private=""/);
+  assert.doesNotMatch(expandableHtml(long), /data-exp-private/);
+  assert.doesNotMatch(expandableHtml("00ff", { privateValue: true }), /data-exp-private/, "a short value is a plain readout");
 });
 
 test("edit attributes mark the cell editable and pass through", () => {
@@ -145,8 +153,8 @@ const withExpandDialog = async (run) => {
     await run({
       copyButton: parts["#exp-copy"],
       parts, clipboard, overlay,
-      open: ({ value = "00ff", editable = false } = {}) => {
-        cell.dataset = { exp: value, ...(editable ? { expEdit: "" } : {}) };
+      open: ({ value = "00ff", editable = false, privateValue = false } = {}) => {
+        cell.dataset = { exp: value, ...(editable ? { expEdit: "" } : {}), ...(privateValue ? { expPrivate: "" } : {}) };
         documentListeners.click.forEach((fn) => fn({ target: { closest: () => cell } }));
       },
       close: () => parts["#exp-close"].fire("click"),
@@ -178,6 +186,34 @@ test("readonly values use a protected readout and copy without populating the ed
     close();
     assert.equal(parts["#exp-text"].value, "");
     assert.equal(parts["#exp-readout"].textContent, "");
+  });
+});
+
+// A Core wallet private key is shown through this window (core-wallet-ui);
+// its copy goes to EntropyLab's clipboard, never to the system clipboard, and
+// the copy control says so while it is open (#1347).
+test("a private cell copies to EntropyLab's clipboard only, and the copy control's label follows", async () => {
+  await withExpandDialog(async ({ parts, open, copy, clipboard }) => {
+    const der = "30".repeat(70);
+    parts["#exp-copy"].setAttribute("aria-label", "Copy");
+    parts["#exp-copy"].title = "Copy";
+    try {
+      appClipboardClear();
+      open({ value: der, privateValue: true });
+      assert.equal(parts["#exp-copy"].getAttribute("aria-label"), "Copy to EntropyLab's clipboard");
+      assert.equal(parts["#exp-copy"].title, "Copy to EntropyLab's clipboard");
+      await copy();
+      assert.deepEqual(clipboard, [], "a private value reached the system clipboard");
+      assert.equal(appClipboardText(), der);
+      // The next public cell gets the public label and the system clipboard back.
+      open({ value: "ab".repeat(100) });
+      assert.equal(parts["#exp-copy"].getAttribute("aria-label"), "Copy");
+      assert.equal(parts["#exp-copy"].title, "Copy");
+      await copy();
+      assert.deepEqual(clipboard, ["ab".repeat(100)]);
+    } finally {
+      appClipboardClear();
+    }
   });
 });
 

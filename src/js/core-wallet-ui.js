@@ -62,7 +62,7 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
 
   // The shared overlay's copy button takes the app's icon pair; without it
   // the button is present but blank.
-  initExpandable(copyIcon ? { copy: copyIcon, copied: copiedIcon } : {});
+  initExpandable(copyIcon ? { copy: copyIcon, copied: copiedIcon, translate: t } : { translate: t });
 
   const setError = (message) => {
     error.textContent = message || "";
@@ -154,7 +154,7 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
     }
     entry.keys.forEach((keyRecord, keyIndex) => {
       push(tHtml("Private key {n}", { n: keyIndex + 1 }), reveal.checked
-        ? expandableHtml(bytesToHex(keyRecord.der), { label: t("Descriptor {n} private key (DER)", { n: index + 1 }) })
+        ? expandableHtml(bytesToHex(keyRecord.der), { label: t("Descriptor {n} private key (DER)", { n: index + 1 }), privateValue: true })
         : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: keyRecord.der.length })}</span>`);
       push(tHtml("Private key {n} pubkey", { n: keyIndex + 1 }), expandableHtml(bytesToHex(keyRecord.pubkey), { label: t("Descriptor {n} key pubkey", { n: index + 1 }) }));
     });

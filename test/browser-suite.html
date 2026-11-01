@@ -91,7 +91,11 @@
       assert(getComputedStyle(node).userSelect === "none", "a key-material readout or its descendant is selectable");
     }
   };
-  const privateReadout = async (value, expected, copy = value?.closest("[data-private-field]")?.querySelector("[data-private-copy], [data-bip85-copy]")) => {
+  // A private readout copies within EntropyLab, never to the system clipboard.
+  // PSBTs are the exception (they have to reach other software): shown the
+  // same way, their copy control writes the system clipboard and leaves
+  // EntropyLab's clipboard alone (`systemCopy`).
+  const privateReadout = async (value, expected, copy = value?.closest("[data-private-field]")?.querySelector("[data-private-copy], [data-bip85-copy]"), { systemCopy = false } = {}) => {
     assert(value, "the private readout is missing");
     const opened = [];
     for (let node = value.parentElement; node; node = node.parentElement) {
@@ -107,8 +111,13 @@
       equal(await copiedBy(value), null);
       assert(copy && !copy.disabled, "the shown private value has no available clipboard control");
       const labelText = copy.parentElement.textContent, box = copy.getBoundingClientRect();
-      equal(await copiedBy(copy), null);
-      equal(window.__entropyLabAppClipboard(), expected);
+      if (systemCopy) {
+        equal(await copiedBy(copy), expected);
+        equal(window.__entropyLabAppClipboard(), "", "a public copy ends what EntropyLab's clipboard held");
+      } else {
+        equal(await copiedBy(copy), null);
+        equal(window.__entropyLabAppClipboard(), expected);
+      }
       equal(copy.parentElement.textContent, labelText);
       // The green "Copied" tick is sized to be noticed at a glance, and the
       // control keeps its box so nothing beside it moves.
@@ -3412,16 +3421,18 @@
     await wait(1100);
     equal(body.value, beforeTimestamp, "The pending clock must not recreate a deleted note");
     assert(!notesCopy.disabled && notesCopy.dataset.phrase === undefined);
+    // The notepad page copies within EntropyLab, never to the system clipboard.
     let copiedNote = null;
     const clipboardWrite = navigator.clipboard.writeText;
     navigator.clipboard.writeText = (value) => { copiedNote = value; return Promise.resolve(); };
     try {
       notesCopy.click();
-      await until(() => copiedNote !== null, "the notepad clipboard write");
+      await until(() => window.__entropyLabAppClipboard() === body.value, "the notepad copy within EntropyLab");
+      await wait(0);
     } finally {
       navigator.clipboard.writeText = clipboardWrite;
     }
-    equal(copiedNote, body.value);
+    equal(copiedNote, null, "the notepad page reached the system clipboard");
     document.getElementById("add-journal-page").click();
     pageTabs = [...pageTabsRoot.children];
     equal(pageTabs.length, 2, "plus should add a second notepad page");
@@ -3683,22 +3694,23 @@
     assert(logCopy, "The log must expose its clipboard control");
     document.getElementById("journal-log-latest").click();
     logOut.scrollTop = logOut.scrollHeight;
-    // A copy confirms only once the clipboard has taken the text (see the
-    // notepad copy above), so the clipboard is stood in for here too.
-    let copiedLog = null;
+    // The log copies within EntropyLab (imported events can hold secrets), so
+    // the system clipboard is stood in for to prove it stays untouched.
+    let copiedLog = null, systemLog = null;
     const logBeforeCopy = logOut.textContent;
     const logClipboardWrite = navigator.clipboard.writeText;
-    navigator.clipboard.writeText = (value) => { copiedLog = value; return Promise.resolve(); };
+    navigator.clipboard.writeText = (value) => { systemLog = value; return Promise.resolve(); };
     try {
       logCopy.click();
-      equal(logOut.textContent, logBeforeCopy, "the Debug log must not claim a copy outcome before the clipboard settles");
-      await until(() => copiedLog !== null, "the session-log clipboard write");
       await until(() => logOut.textContent !== logBeforeCopy, "the Debug log copy outcome");
+      copiedLog = window.__entropyLabAppClipboard();
+      await wait(0);
     } finally {
       navigator.clipboard.writeText = logClipboardWrite;
     }
+    equal(systemLog, null, "the Debug log reached the system clipboard");
     const logAfterCopy = logOut.textContent;
-    assert(/journal\tcopy  session-log$/.test(logAfterCopy), "the Debug log should record a successful copy after the clipboard settles");
+    assert(/journal\tcopy  session-log$/.test(logAfterCopy), "the Debug log should record a successful copy");
     assert(copiedLog.endsWith(logBeforeCopy), "Copy must include the complete latest page as it stood before the click, plus any earlier retained events");
     equal(logCopy.dataset.phrase, undefined, "the clipboard control must not retain activity text");
     const logClear = document.getElementById("journal-log-clear");
@@ -3770,12 +3782,16 @@
       const earlierPage = logOut.textContent;
       pagingTheme.click();
       equal(logOut.textContent, earlierPage, "New events must not move the earlier page being read");
-      let allHistory = null;
-      navigator.clipboard.writeText = async (text) => { allHistory = text; };
+      let allHistory = null, systemHistory = null;
+      navigator.clipboard.writeText = async (text) => { systemHistory = text; };
       try {
+        const before = window.__entropyLabAppClipboard();
         logCopy.click();
-        await until(() => allHistory !== null, "all retained debug events copied");
+        await until(() => window.__entropyLabAppClipboard() !== before, "all retained debug events copied within EntropyLab");
+        allHistory = window.__entropyLabAppClipboard();
+        await wait(0);
       } finally { navigator.clipboard.writeText = logClipboardWrite; }
+      equal(systemHistory, null, "the Debug log history reached the system clipboard");
       assert(allHistory.includes(logBeforeExport) && allHistory.includes(latestPage), "Copy from an earlier page must include all retained history");
     } finally {
       if (pagingTheme.dataset.themeMode !== pagingThemeMode) pagingTheme.click();
@@ -5756,7 +5772,7 @@
     assert(document.getElementById("psbted-result-hex").textContent.includes(longValue.slice(0, -2) + "cd"), "overlay edit did not reach the rebuilt PSBT");
     for (const encoding of ["b64", "hex"]) {
       const value = document.getElementById(`psbted-result-${encoding}`);
-      await privateReadout(value, value.textContent, document.getElementById(`psbted-copy-${encoding}`));
+      await privateReadout(value, value.textContent, document.getElementById(`psbted-copy-${encoding}`), { systemCopy: true });
     }
     // A long key truncates read-only and Escape closes the overlay. The table
     // re-rendered after each structural edit, so the add controls are fresh
@@ -5776,7 +5792,7 @@
     const readout = document.getElementById("exp-readout");
     equal(readout?.textContent, longKey);
     assert(document.getElementById("exp-text").hidden && !readout.isContentEditable && document.getElementById("exp-apply").hidden, "key cell opened editable");
-    await privateReadout(readout, longKey, document.getElementById("exp-copy"));
+    await privateReadout(readout, longKey, document.getElementById("exp-copy"), { systemCopy: true });
     document.getElementById("exp-copy").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     assert(overlay.hidden, "Escape did not close the overlay");
     // A closed overlay keeps none of the expanded value: the field can carry

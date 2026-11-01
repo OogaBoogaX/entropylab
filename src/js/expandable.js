@@ -1,5 +1,6 @@
 import { createModal } from "./modal.js";
 import { copyText, resetCopiedIcon, showCopiedIcon } from "./clipboard.js";
+import { appClipboardPut } from "./app-clipboard.js";
 // Expandable cells: one standard truncation for long text in dense UI tables,
 // with a click-to-expand overlay window for viewing (and, when the cell is
 // editable, editing) the full value.
@@ -48,17 +49,21 @@ export const expandSizeLabel = (text) => {
 // overlay title; `editAttrs` (extra attributes, e.g. data-kind/data-map/
 // data-pair) marks the cell editable — Apply then writes back through the
 // "expandable:apply" event on the button.
-export const expandableHtml = (text, { label = "Full value", editAttrs = "" } = {}) => {
+// privateValue marks a cell whose value is private material (a Core wallet
+// private key): the window's copy control then copies it to EntropyLab's
+// clipboard, never to the system clipboard.
+export const expandableHtml = (text, { label = "Full value", editAttrs = "", privateValue = false } = {}) => {
   const value = String(text ?? "");
   const { truncated, preview } = truncateText(value);
   if (!truncated) return `<span data-private-value data-i18n-skip translate="no">${escapeHtml(value)}</span>`;
   const edit = editAttrs ? ` data-exp-edit="" ${editAttrs}` : "";
-  return `<button type="button" class="exp-cell" data-exp="${escapeHtml(value)}" data-exp-label="${escapeHtml(label)}"${edit} ` +
+  const secret = privateValue ? ' data-exp-private=""' : "";
+  return `<button type="button" class="exp-cell" data-exp="${escapeHtml(value)}" data-exp-label="${escapeHtml(label)}"${edit}${secret} ` +
     `aria-label="${escapeHtml(label)}: truncated; activate to open the full ${value.length}-character value in an editor window">` +
     `<span data-private-value data-i18n-skip translate="no">${escapeHtml(preview)}</span> <span class="exp-len">${escapeHtml(expandSizeLabel(value))}</span></button>`;
 };
 
-export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon = () => "" } = {}) => {
+export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon = () => "", translate = (text) => text } = {}) => {
   if (document.getElementById("exp-overlay")) return;
   const modal = createModal({
     id: "exp-overlay",
@@ -83,6 +88,23 @@ export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon =
   const text = overlay.querySelector("#exp-text"), readout = overlay.querySelector("#exp-readout"), apply = overlay.querySelector("#exp-apply"), copyButton = overlay.querySelector("#exp-copy");
   copyButton.innerHTML = copyIcon();
   let cell = null;
+  // A private cell's copy control says where its copy goes; the public label
+  // is kept and put back for the next public cell.
+  let publicLabel = null;
+  const isPrivate = () => Boolean(cell && "expPrivate" in cell.dataset);
+  const copyLabel = () => (isPrivate() ? translate("Copy to EntropyLab's clipboard") : copyButton.getAttribute("aria-label") || translate("Copy"));
+  const labelCopyControl = () => {
+    if (isPrivate()) {
+      if (publicLabel === null) publicLabel = { aria: copyButton.getAttribute("aria-label"), title: copyButton.title };
+      copyButton.setAttribute("aria-label", copyLabel());
+      copyButton.title = copyLabel();
+    } else if (publicLabel !== null) {
+      if (publicLabel.aria === null) copyButton.removeAttribute("aria-label");
+      else copyButton.setAttribute("aria-label", publicLabel.aria);
+      copyButton.title = publicLabel.title;
+      publicLabel = null;
+    }
+  };
 
   // A cell value can hold an entire previous transaction, or a pasted PSBT
   // carrying an xprv in a proprietary field; once the dialog is out of scope
@@ -133,6 +155,7 @@ export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon =
     // A check left over from the last opening goes back to the copy icon
     // and its label.
     resetCopiedIcon(copyButton, { copyIcon: copyIcon() });
+    labelCopyControl();
     modal.show(editable ? text : copyButton, target);
   };
 
@@ -143,7 +166,14 @@ export const initExpandable = ({ copy: copyIcon = () => "", copied: copiedIcon =
   overlay.querySelector("#exp-close").addEventListener("click", close);
   copyButton.addEventListener("click", () => {
     if (!cell) return;
-    copyText(text.hidden ? readout.textContent : text.value, { host: overlay }).then((copied) => {
+    const value = text.hidden ? readout.textContent : text.value;
+    if (isPrivate()) {
+      // Private material never reaches the system clipboard (a Core wallet
+      // private key is the one private value shown here).
+      if (appClipboardPut(value) && modal.isOpen()) showCopiedIcon(copyButton, { copyIcon: copyIcon(), copiedIcon: copiedIcon(), label: copyLabel(), copiedLabel: translate("Copied to EntropyLab's clipboard") });
+      return;
+    }
+    copyText(value, { host: overlay }).then((copied) => {
       if (copied && modal.isOpen()) showCopiedIcon(copyButton, { copyIcon: copyIcon(), copiedIcon: copiedIcon() });
     });
   });
