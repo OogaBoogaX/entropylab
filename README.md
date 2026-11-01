@@ -215,7 +215,10 @@ an explicit error before those pairs are allocated.
   shown as an animated `ur:crypto-psbt` fragment sequence for air-gapped
   scanning, and an **Insane editing** switch lifts the consensus-layer checks
   for deliberately broken files while still listing their problems. The
-  editor never signs anything.
+  editor never signs anything. Its output-script builder can interpret input
+  as an address, raw script, or OP_RETURN text; check the resulting script
+  carefully. Even-length hex with a `0x` prefix or an a-f digit is treated as
+  raw script.
 - Verifies and extends Bitcoin Core descriptor wallets (Core Wallet tab):
   upload a SQLite `wallet.dat` (Bitcoin Core 23+; legacy Berkeley DB wallets
   are refused) and every record is decoded — client versions, wallet flags,

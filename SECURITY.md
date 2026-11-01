@@ -240,6 +240,10 @@ material. Its security posture rests on the following model:
   one wallet can have many child keys. A confirmed alert requires the same
   key/`r` pair with different verified message tags; otherwise the result is
   only a warning. The current implementation covers ECDSA, not Schnorr.
+- The PSBT editor's output-script builder interprets even-length hex with a
+  `0x` prefix or an a-f digit as a raw script. Not every mistyped address can
+  be distinguished from intended script or text; inspect the resulting output
+  before use.
 - OP_RETURN detection is a parser of output scripts. It does not create
   data-carrier outputs, assign protocol meaning, or contact an indexer.
 - The published `CID.txt` is CIDv1 (raw, sha2-256) of the release

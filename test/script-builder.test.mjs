@@ -138,3 +138,27 @@ test("long raw hex starting with 1, 2 or 3 stays a raw script", () => {
   // 60 characters is still address-shaped and errors rather than degrading.
   assert.throws(() => buildOutputScript("1" + "a".repeat(59)), /does not decode on mainnet/);
 });
+
+test("Base58 address typos with a forbidden character do not become outputs", () => {
+  const valid = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH";
+  assert.equal(buildOutputScript(valid).kind, "address");
+  for (const typo of ["0", "O", "I", "l"]) {
+    const input = valid.slice(0, -1) + typo;
+    assert.throws(() => buildOutputScript(input), /does not decode/);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn");
+  }
+  // More than one confusable, a punctuation typo, or a trailing paste
+  // artefact is still a mistyped address: intent follows the prefix and the
+  // shape of the token, not its alphabet. Explicit text mode still works.
+  for (const input of [valid.slice(0, -2) + "ll", valid.slice(0, -2) + "lO", valid.slice(0, -1) + "-", valid.slice(0, -1) + "_", valid.slice(0, -1) + "!", valid + ".", valid + ","]) {
+    assert.throws(() => buildOutputScript(input), /does not decode/, input);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn");
+  }
+  const testnet = "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn";
+  assert.equal(buildOutputScript(testnet, { network: "testnet" }).kind, "address");
+  for (const input of [testnet.slice(0, -2) + "0O", testnet + "."]) assert.throws(() => buildOutputScript(input, { network: "testnet" }), /does not decode on testnet/, input);
+  // Text keeps its intent: a short token, and anything carrying whitespace.
+  assert.equal(buildOutputScript("1hello").kind, "opreturn");
+  assert.equal(buildOutputScript("1 Dec 2026, proof of existence").kind, "opreturn");
+  assert.equal(buildOutputScript("1" + "a".repeat(32) + "0").kind, "raw");
+});
