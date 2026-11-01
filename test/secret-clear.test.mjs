@@ -2187,7 +2187,7 @@ test("Journal keep-existing and exact-reuse zero fresh seed material through the
 test("conceal retires pasted anti-exfil transcript, cache and disclosure",()=>{
  const field={value:'public-rho-marker'},section={open:true};
  const context=createContext({hodlKeys:[],hodlBip85Children:[],hodlSpAddresses:[],hodlSpVerifyMatches:null,hodlNonceLast:{transcript:'public-rho-marker'},
- document:{getElementById:id=>id==='psbt-ax-transcript'?field:id==='nonce-jade-options'?section:null,querySelectorAll:()=>[],dispatchEvent:()=>{}},Event:class{}});
+ document:{getElementById:id=>id==='psbt-ax-transcript'?field:id==='nonce-jade-options'?section:null,querySelectorAll:()=>[],dispatchEvent:()=>{}},Event:class{},CustomEvent:globalThis.CustomEvent});
  vm.runInContext(functionSource('hodlConcealPrivateValues'),context);
  context.hodlConcealPrivateValues();assert.equal(field.value,'');assert.equal(section.open,false);assert.equal(context.hodlNonceLast,null);
 });
@@ -2217,7 +2217,7 @@ for (const trigger of ["blur", "hidden", "idle", "beforeprint", "print-media", "
     };
     const context = createContext({ hodlKeys: [key], hodlBip85Children: [], hodlSpAddresses: [],
       hodlSpVerifyMatches: null, hodlNonceLast: cache, document: doc,
-      Event: class { constructor(type) { this.type = type; } } });
+      CustomEvent: globalThis.CustomEvent, Event: class { constructor(type) { this.type = type; } } });
     vm.runInContext(functionSource("hodlConcealPrivateValues"), context);
     initConcealOnLeave({ conceal: context.hodlConcealPrivateValues, idleMs: 300000, win, doc });
     if (trigger === "hidden") { doc.visibilityState = "hidden"; events.visibilitychange(); }

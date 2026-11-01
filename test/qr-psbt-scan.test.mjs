@@ -7,6 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mountPsbtScan } from "../src/js/qr-psbt-scan.js";
+import { createQrScanner } from "../src/js/qr-scanner.js";
 import { MiniDocument } from "./mini-dom.mjs";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
 import {
@@ -117,6 +118,7 @@ const setup = (options = {}) => {
     createScanner: (args) => {
       created.scanners += 1;
       created.scannerArgs = args;
+      if (options.createScanner) return options.createScanner(args);
       // Mirror the real scanner: stop() on an active session emits "stopped".
       scanner.stop = () => {
         scanner.calls.stop += 1;
@@ -367,8 +369,7 @@ test("re-opening a panel after it was stopped reuses its scanner", () => {
   const b = setup({ id: "b" });
   openPanel(a);            // a's scanner created and started
   openPanel(b);            // stops a's capture
-  byId(a, "open").dispatchEvent({ type: "click" });  // close a
-  byId(a, "open").dispatchEvent({ type: "click" });  // open a again
+  byId(a, "open").dispatchEvent({ type: "click" });  // restart a in one click
   assert.equal(a.created.scanners, 1, "no second scanner is created for a");
   assert.equal(a.scanner.calls.start, 2, "the reused scanner started twice");
 });
@@ -392,7 +393,6 @@ test("a panel stopped by another gets a fresh reader on re-open", () => {
   openPanel(b);
   assert.equal(byId(a, "status").getAttribute("data-scan-state"), "stopped");
   // Re-open a; only a fresh reader lets a different complete scan finish.
-  byId(a, "open").dispatchEvent({ type: "click" });
   byId(a, "open").dispatchEvent({ type: "click" });
   a.created.scannerArgs.onResult(bytesOf(partUr(m2[0])));
   a.created.scannerArgs.onResult(bytesOf(partUr(m2[1])));
@@ -524,4 +524,81 @@ test("camera timeout clears partial state and refuses late payloads", () => {
   assert.equal(ctx.field.value, "");
   assert.ok(late.every((byte) => byte === 0));
   ctx.panel.destroy();
+});
+
+test("a visible permission-prompt blur preserves the pending camera grant", async () => {
+  let grant;
+  const track = { stopped: false, stop() { this.stopped = true; } };
+  const stream = { getTracks: () => [track] };
+  let scannerArgs;
+  const ctx = setup({ createScanner(args) {
+    scannerArgs = args;
+    return createQrScanner({ ...args, isSecureContext: true,
+      mediaDevices: { getUserMedia: () => new Promise((resolve) => { grant = resolve; }) },
+      requestFrame: () => 1 });
+  } });
+  const key = { reveal: true };
+  const app = await loadAppFunctions(["hodlConcealPrivateValues"], { stubs: {
+    document: ctx.doc, hodlBip47Conceal: () => {},
+    hodlKeys: [key], hodlBip85Children: [], hodlSpAddresses: [], hodlSpVerifyMatches: null,
+  } });
+  openPanel(ctx);
+  app.hodlConcealPrivateValues({ reason: "blur" });
+  assert.equal(key.reveal, false, "the permission exception must not preserve revealed secrets");
+  grant(stream);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(track.stopped, false, "grant was cancelled by the browser prompt's blur");
+  assert.equal(scannerArgs.video.srcObject, stream);
+  ctx.doc.visibilityState = "hidden";
+  ctx.doc.dispatchEvent({ type: "visibilitychange" });
+  assert.equal(track.stopped, true, "an actually hidden page must release capture");
+  ctx.panel.destroy();
+});
+
+test("blur after capture starts still cancels the scan", () => {
+  const ctx = setup();
+  openPanel(ctx);
+  ctx.created.scannerArgs.onStatus("scanning");
+  ctx.doc.dispatchEvent({ type: "hodl:conceal", detail: { reason: "blur" } });
+  assert.equal(ctx.scanner.calls.stop, 1);
+  const late = bytesOf(PSBT_BASE64);
+  ctx.created.scannerArgs.onResult(late);
+  assert.equal(ctx.field.value, "");
+  assert.ok(late.every((byte) => byte === 0));
+  ctx.panel.destroy();
+});
+
+test("one Scan click restarts a stopped acquisition", () => {
+  const ctx = setup();
+  openPanel(ctx);
+  byId(ctx, "stop").dispatchEvent({ type: "click" });
+  const starts = ctx.scanner.calls.start;
+  openPanel(ctx);
+  assert.equal(ctx.scanner.calls.start, starts + 1);
+  assert.equal(byId(ctx, "panel").hidden, false);
+  ctx.panel.destroy();
+});
+
+test("hidden, print and explicit cancellation discard a pending camera grant", async () => {
+  for (const boundary of ["hidden", "print", "idle", "close", "destroy"]) {
+    let grant;
+    const track = { stopped: false, stop() { this.stopped = true; } };
+    const ctx = setup({ createScanner(args) {
+      return createQrScanner({ ...args, isSecureContext: true,
+        mediaDevices: { getUserMedia: () => new Promise((resolve) => { grant = resolve; }) },
+        requestFrame: () => 1 });
+    } });
+    openPanel(ctx);
+    if (boundary === "hidden") {
+      ctx.doc.visibilityState = "hidden";
+      ctx.doc.dispatchEvent({ type: "hodl:conceal", detail: { reason: "blur" } });
+    } else if (boundary === "close") byId(ctx, "close").dispatchEvent({ type: "click" });
+    else if (boundary === "destroy") ctx.panel.destroy();
+    else ctx.doc.dispatchEvent({ type: "hodl:conceal", detail: { reason: boundary } });
+    grant({ getTracks: () => [track] });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(track.stopped, true, `${boundary} must reject a late grant`);
+    assert.equal(ctx.field.value, "");
+    ctx.panel.destroy();
+  }
 });

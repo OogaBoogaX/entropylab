@@ -408,6 +408,33 @@ requested; opening an upstream PR and deploying an image require operator approv
 Review/implementation attribution: OpenAI GPT-6.1 (`openai-codex/gpt-6.1-sol`);
 delegated contributions retain their commit attribution.
 
+### Laptop permission-prompt regression
+
+The operator reported that accepting camera permission immediately stopped the
+camera, then required two Scan clicks to retry. Source tracing and a regression
+using the real camera controller reproduced cancellation of a deferred camera
+grant: plain window blur triggered global conceal, which stopped the request
+before it resolved. The panel remained open, so the next Scan click only closed it.
+
+The conceal signal now carries its reason. Only a pending acquisition on a
+still-visible page survives plain blur; all revealed values are still concealed.
+Active capture still stops on blur, and hidden/print/idle/close/destroy cancel
+pending grants. A stopped panel restarts on one Scan click. Existing one-shot
+camera consumers keep their previous behavior.
+
+Initial red:
+`node --test --test-name-pattern='permission-prompt blur|blur after capture|one Scan click' test/qr-psbt-scan.test.mjs`
+failed because the granted track was stopped and the retry did not restart.
+After the fix, 202 focused camera/privacy/lifecycle tests passed. A rebuilt
+Chromium preview smoke with deferred acquisition and real canvas MediaStreams
+confirmed grant survival, live video attachment, active-blur cancellation,
+single-click retry, and print-time late-grant rejection.
+
+This reproduces the lifecycle cause with a controlled acquisition boundary;
+the operator's native permission prompt and physical laptop webcam still need
+retesting. No native permission-dialog or physical-camera success is claimed.
+
+
 
 
 ### Copy/paste agent assignment

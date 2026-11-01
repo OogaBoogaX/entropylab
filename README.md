@@ -49,6 +49,12 @@ choose Keep to discard the scan. Loading transports bytes, not approval:
 use the existing Inspector, Editor load, or Compare action to parse and
 review the transaction. Physical camera/appliance qualification is separate
 from simulated-frame interoperability checks.
+
+Pending camera permission survives a permission prompt blurring the page while
+it remains visible. Switching away, cancelling, or hiding the page still cancels
+the request. Once capture has started, leaving focus stops it; click Scan again
+once to restart a stopped scan.
+
 The pinned SeedSigner reference has a known malformed-CRC emission for the
 Taproot fixture at LOW density; that frame is refused, not repaired. Exact-byte
 interchange results and regeneration instructions are recorded in

@@ -143,6 +143,7 @@ export function mountPsbtScan(host, {
   let pending = null;
   // Holds the camera stream. True only while this panel's scanner is scanning.
   let holding = false;
+  let awaitingCamera = false;
   // Per-scan generation guard: currentGen is null when no acquisition session
   // is live; results arriving with currentGen === null are discarded.
   let scanGeneration = 0;
@@ -153,11 +154,13 @@ export function mountPsbtScan(host, {
     scanGeneration += 1;
     currentGen = scanGeneration;
     holding = true;
+    awaitingCamera = true;
   };
 
   const releaseSession = () => {
     holding = false;
     currentGen = null;
+    awaitingCamera = false;
   };
 
   // Release the camera after a terminal reader state. The scanner emits
@@ -328,6 +331,7 @@ export function mountPsbtScan(host, {
 
   const onStatus = (code) => {
     if (destroyed || !open) return;
+    awaitingCamera = false;
     cameraRunning = code === "scanning" || code === "two-codes";
     if (!cameraRunning) {
       releaseSession();
@@ -409,9 +413,11 @@ export function mountPsbtScan(host, {
     onConceal();
   };
 
-  // The app's leave signal: the same teardown as a hidden page, without the
-  // visibility test.
-  const onConceal = () => {
+  // Browser permission prompts may blur a still-visible page. Preserve only
+  // that pending acquisition; actual capture and every other conceal reason
+  // still stop, and hidden-page/close/destroy always invalidate late grants.
+  const onConceal = (event) => {
+    if (event?.detail?.reason === "blur" && awaitingCamera && doc.visibilityState !== "hidden") return;
     releaseSession();
     try { scanner?.stop(); } catch {}
     dropPending();
@@ -423,8 +429,11 @@ export function mountPsbtScan(host, {
   };
 
   openButton.addEventListener("click", () => {
-    if (open) closePanel();
-    else openPanel();
+    if (open && (holding || pending)) closePanel();
+    else {
+      closePanel();
+      openPanel();
+    }
   });
   stopButton.addEventListener("click", () => {
     onConceal();

@@ -22224,7 +22224,7 @@ function hodlConcealPrivateValues(options) {
   // Body-level overlays (the expandable window, the address/PSBT QR) are
   // outside every wiped view and listen for this single conceal signal,
   // including the idle-timer path that fires no blur or print event.
-  document.dispatchEvent(new Event("hodl:conceal"));
+  document.dispatchEvent(new CustomEvent("hodl:conceal", { detail: { reason: options?.reason } }));
 }
 function hodlInitSecretFieldAutoClear() {
   let clearSecretFields = () => {

@@ -26,6 +26,11 @@ session timer, not a fresh permission request per fragment. Starting another
 PSBT panel stops the previous one. Closing, concealment, hidden-page
 transitions, pagehide and End Session release capture; pagehide and End
 Session additionally retire PSBT panels and active UR collectors.
+The sole blur exception is a still-pending camera acquisition on a visible
+page, so the browser's permission prompt cannot cancel its own grant. This
+does not preserve revealed secrets: the global conceal sweep still runs.
+Hidden-page, print, idle, explicit cancellation and session teardown cancel
+pending requests too; a stream granted after cancellation is stopped.
 
 Frame and payload buffers are erased on the controlled cleanup paths on a
 best-effort basis. JavaScript strings, browser/worker copies, camera-driver
