@@ -411,12 +411,25 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
   // A revealed key record is private DOM: leaving the page hides it again and
   // a pagehide drops the parsed wallet entirely, so neither a bfcache restore
   // nor a screen capture after leaving shows old key material.
+  // The field keeps a descriptor only when the reader vouches for it as the
+  // report does: a public form, under a checksum that matches when it has
+  // one (MiniMax, round 14).
+  const fieldHoldsSecret = (text) => {
+    if (descriptorHoldsSecret(text)) return true;
+    const hash = text.indexOf("#");
+    if (hash < 0) return false;
+    try {
+      return deps.checksum(text.slice(0, hash)) !== text.slice(hash + 1);
+    } catch {
+      return true;
+    }
+  };
   const concealing = () => {
     // A pasted private descriptor can sit in the field before any wallet is
     // loaded or while nothing is revealed; clear it unless the reader can
     // tell it is public (fail closed: an addr(), raw() or hash descriptor
     // goes too).
-    if (descriptorHoldsSecret(addText.value)) {
+    if (fieldHoldsSecret(addText.value)) {
       addText.value = "";
       syncAddGo();
     }

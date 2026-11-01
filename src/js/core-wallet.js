@@ -38,53 +38,167 @@ var hodlCoreWallet = (() => {
   // else is private DOM until revealed (#1347). Fixed-width integers
   // (versions, flags, times, indexes) stay public.
 
-  // A descriptor is public when it is built only from descriptor functions,
-  // numbers and path steps, 8-hex key origins, extended public keys and hex
-  // public keys (02/03 compressed, 04 uncompressed), plus an 8-character
-  // checksum. Anything else — an xprv, a WIF, a raw 32-byte hex key (an
-  // x-only key cannot be told from one), raw()/addr()/hash bodies, words —
-  // makes it private. Each token must also sit where the grammar puts it
-  // (GLM, round 13: eight "fingerprints" in a row carry 32 free bytes): a
-  // function before "(", a wrapper before ":", a fingerprint right after
-  // "[", a number argument between "(" or "," and "," or ")", a path step
-  // (below 2^31, as Core requires) after "/", "<" or ";", and a key first or
-  // after "(", ",", "{" or a key origin's "]" (a bare xpub pasted into the
-  // add field is public). Astra, round 13: digit-only chunks passed as
-  // numbers. Public forms still carry free bytes by nature (a path step, an
-  // xpub's chain code, a pubkey's x): the rule vouches that a value is in a
-  // form Core reads as public, not that a crafted file left those bytes
-  // alone.
-  const DESCRIPTOR_FUNCTIONS = new Set([
-    "sh", "wsh", "pkh", "wpkh", "combo", "multi", "sortedmulti", "multi_a", "sortedmulti_a", "tr", "rawtr",
-    "pk", "pk_k", "pk_h", "older", "after", "andor", "and_v", "and_b", "and_n", "or_b", "or_c", "or_d", "or_i", "thresh",
+  // A descriptor is public when the reader can read it with Core's grammar
+  // (descriptor.cpp, miniscript.h) and finds only public keys in it: each
+  // function where Core allows it, taking Core's arguments in Core's order —
+  // a key, a script, a threshold from 1 to its count, a lock time from 1 to
+  // 2^31 - 1 — plus an 8-character checksum. A key is an extended public key
+  // (a path only after one: steps below 2^31, one <a;b> multipath, a final
+  // wildcard) or a hex public key (02/03 compressed; 04 uncompressed only
+  // outside segwit), with an optional [8-hex fingerprint/steps] origin. An
+  // xprv, a WIF, a raw 32-byte hex key (an x-only key cannot be told from
+  // one), raw()/addr()/hash bodies, musig() or anything else makes it
+  // private. A bare key (an xpub with or without a path) is public too, as
+  // pasted into the add field. Rounds 13 and 14 read each token by its
+  // neighbours and reviewers kept finding chunks that passed (GLM:
+  // "fingerprints" in a row; Astra: digit chunks as numbers, then numbers
+  // where wpkh() takes a key), so the reader now follows the grammar itself.
+  // Public forms still carry free bytes by nature (a path step, an xpub's
+  // chain code, a pubkey's x): the rule vouches that a value is in a form
+  // Core reads as public, not that a crafted file left those bytes alone.
+  const ANYWHERE = ["top", "sh", "wsh", "tr"];
+  const MINISCRIPT = ["wsh", "tr"];
+  // Where each function may sit: at the top, in sh(), in wsh(), or in a tr()
+  // leaf (the last two also inside miniscript fragments).
+  const DESCRIPTOR_PLACES = new Map([
+    ["sh", ["top"]], ["wsh", ["top", "sh"]], ["wpkh", ["top", "sh"]], ["combo", ["top"]],
+    ["tr", ["top"]], ["rawtr", ["top"]], ["pk", ANYWHERE], ["pkh", ANYWHERE],
+    ["multi", ["top", "sh", "wsh"]], ["sortedmulti", ["top", "sh", "wsh"]], ["multi_a", ["tr"]], ["sortedmulti_a", ["tr"]],
+    ["pk_k", MINISCRIPT], ["pk_h", MINISCRIPT], ["older", MINISCRIPT], ["after", MINISCRIPT],
+    ["andor", MINISCRIPT], ["and_v", MINISCRIPT], ["and_b", MINISCRIPT], ["and_n", MINISCRIPT],
+    ["or_b", MINISCRIPT], ["or_c", MINISCRIPT], ["or_d", MINISCRIPT], ["or_i", MINISCRIPT], ["thresh", MINISCRIPT],
   ]);
-  const KEY_AFTER = "^(,{]";
-  const PUBLIC_DESCRIPTOR_TOKENS = [
-    { pattern: /^\d{1,10}$/, after: "(,", before: ",)" }, // a number argument: older(144), multi(2,…)
-    { pattern: /^\d{1,10}[hH]?$/, after: "/<;", pathStep: true }, // a path step
-    { pattern: /^[0-9a-fA-F]{8}$/, after: "[" }, // a key origin's fingerprint
-    { pattern: /^[ascdjvnlut]{1,8}$/, before: ":" }, // miniscript wrappers (v:, sdv:…)
-    { pattern: /^(?:xpub|ypub|zpub|tpub|upub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{100,108}$/, after: KEY_AFTER },
-    { pattern: /^0[23][0-9a-fA-F]{64}$/, after: KEY_AFTER },
-    { pattern: /^04[0-9a-fA-F]{128}$/, after: KEY_AFTER },
-  ];
-  const isDescriptorFunction = (name) => DESCRIPTOR_FUNCTIONS.has(name);
+  // Not miniscript fragments: never inside one, never after wrappers.
+  const OUTER_ONLY = new Set(["sortedmulti", "sortedmulti_a"]);
+  const FRAGMENT_PAIRS = new Set(["and_v", "and_b", "and_n", "or_b", "or_c", "or_d", "or_i"]);
+  const COUNTED_KEYS = new Set(["multi", "sortedmulti", "multi_a", "sortedmulti_a"]);
+  const NUMBER = /0|[1-9]\d{0,9}/y;
+  const PATH_STEP = /(?:0|[1-9]\d{0,9})[h']?/y;
+  const FINGERPRINT = /[0-9a-fA-F]{8}/y;
+  const EXTENDED_PUBLIC = /(?:xpub|ypub|zpub|tpub|upub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{100,108}/y;
+  const COMPRESSED_PUBLIC = /0[23][0-9a-fA-F]{64}/y;
+  const UNCOMPRESSED_PUBLIC = /04[0-9a-fA-F]{128}/y;
+  const WRAPPERS = /[asctdvjnlu]{1,8}:/y;
+  const CONSTANT = /[01](?=[,)}]|$)/y;
+  const FUNCTION_NAME = /[a-z_]+(?=\()/y;
+  const NOT_PUBLIC = Symbol("not public");
+
+  // Throws unless the whole body is a public descriptor or a bare key.
+  const readPublicDescriptor = (body) => {
+    let at = 0;
+    const fail = () => {
+      throw NOT_PUBLIC;
+    };
+    const take = (pattern) => {
+      pattern.lastIndex = at;
+      const match = pattern.exec(body);
+      if (match) at = pattern.lastIndex;
+      return match ? match[0] : null;
+    };
+    const need = (pattern) => take(pattern) ?? fail();
+    const skip = (char) => {
+      if (body[at] !== char) return false;
+      at += 1;
+      return true;
+    };
+    const expect = (char) => skip(char) || fail();
+    const step = () => {
+      if (Number.parseInt(need(PATH_STEP), 10) > 0x7fffffff) fail();
+    };
+    const key = (uncompressed) => {
+      if (skip("[")) {
+        need(FINGERPRINT);
+        while (skip("/")) step();
+        expect("]");
+      }
+      if (take(EXTENDED_PUBLIC) !== null) {
+        let multipath = false;
+        while (skip("/")) {
+          if (skip("*")) {
+            take(/[h']/y);
+            return;
+          }
+          if (skip("<")) {
+            if (multipath) fail();
+            multipath = true;
+            step();
+            do {
+              expect(";");
+              step();
+            } while (body[at] === ";");
+            expect(">");
+          } else {
+            step();
+          }
+        }
+        return;
+      }
+      if (uncompressed && take(UNCOMPRESSED_PUBLIC) !== null) return;
+      need(COMPRESSED_PUBLIC);
+    };
+    // A threshold, then its items: at least one, and no fewer than it.
+    const counted = (item) => {
+      const threshold = Number(need(NUMBER));
+      let count = 0;
+      while (skip(",")) {
+        item();
+        count += 1;
+      }
+      if (threshold < 1 || threshold > count) fail();
+    };
+    const script = (place, inner = false) => {
+      const miniscript = MINISCRIPT.includes(place);
+      if (miniscript && take(WRAPPERS) !== null) inner = true;
+      if (miniscript && take(CONSTANT) !== null) return;
+      const name = need(FUNCTION_NAME);
+      const places = DESCRIPTOR_PLACES.get(name);
+      if (!places || !places.includes(place) || (inner && OUTER_ONLY.has(name))) fail();
+      const uncompressed = (place === "top" || place === "sh") && name !== "wpkh";
+      expect("(");
+      if (name === "sh" || name === "wsh") script(name);
+      else if (name === "tr") {
+        key(false);
+        if (skip(",")) tree();
+      } else if (COUNTED_KEYS.has(name)) counted(() => key(uncompressed));
+      else if (name === "thresh") counted(() => script(place, true));
+      else if (name === "older" || name === "after") {
+        const time = Number(need(NUMBER));
+        if (time < 1 || time > 0x7fffffff) fail();
+      } else if (name === "andor" || FRAGMENT_PAIRS.has(name)) {
+        script(place, true);
+        expect(",");
+        script(place, true);
+        if (name === "andor") {
+          expect(",");
+          script(place, true);
+        }
+      } else key(uncompressed);
+      expect(")");
+    };
+    const tree = () => {
+      if (!skip("{")) return script("tr");
+      tree();
+      expect(",");
+      tree();
+      expect("}");
+    };
+    FUNCTION_NAME.lastIndex = 0;
+    if (FUNCTION_NAME.test(body)) script("top");
+    else key(true);
+    if (at !== body.length) fail();
+  };
+  const isDescriptorFunction = (name) => DESCRIPTOR_PLACES.has(name);
   const descriptorIsPublic = (text) => {
     if (typeof text !== "string") return false;
+    if (text === "") return true; // an empty field holds nothing
     const hash = text.indexOf("#");
-    const body = hash < 0 ? text : text.slice(0, hash);
     if (hash >= 0 && !/^[0-9a-z]{8}$/.test(text.slice(hash + 1))) return false;
-    if (!/^[A-Za-z0-9_()[\],/'*<>;:{}]*$/.test(body)) return false;
-    return [...body.matchAll(/[A-Za-z0-9_]+/g)].every(({ 0: token, index }) => {
-      // "^" stands for the body's start and "$" for its end.
-      const before = index === 0 ? "^" : body[index - 1];
-      const next = index + token.length === body.length ? "$" : body[index + token.length];
-      if (DESCRIPTOR_FUNCTIONS.has(token)) return next === "(";
-      return PUBLIC_DESCRIPTOR_TOKENS.some((kind) => kind.pattern.test(token)
-        && (!kind.after || kind.after.includes(before))
-        && (!kind.before || kind.before.includes(next))
-        && (!kind.pathStep || Number.parseInt(token, 10) <= 0x7fffffff));
-    });
+    try {
+      readPublicDescriptor(hash < 0 ? text : text.slice(0, hash));
+      return true;
+    } catch {
+      return false; // not Core's grammar with public keys, or nested too deep to read
+    }
   };
 
   // Record type names Bitcoin Core writes (walletdb.cpp DBKeys). Any other

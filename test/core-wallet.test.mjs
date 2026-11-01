@@ -854,6 +854,15 @@ test("hodl:conceal clears a pasted private descriptor but leaves a watch-only on
   addText.value = xpub;
   documentListeners["hodl:conceal"]();
   assert.equal(addText.value, xpub, "a watch-only xpub is harmless and stays");
+  // A checksum must match, as in the report (MiniMax, round 14).
+  const body = `wpkh(${xpub}/0/*)`;
+  const sum = coreDeps.checksum(body);
+  addText.value = `${body}#${sum}`;
+  documentListeners["hodl:conceal"]();
+  assert.equal(addText.value, `${body}#${sum}`, "a watch-only descriptor under its checksum stays");
+  addText.value = `${body}#${sum[0] === "q" ? "p" : "q"}${sum.slice(1)}`;
+  documentListeners["hodl:conceal"]();
+  assert.equal(addText.value, "", "a descriptor under a checksum that does not match must be cleared on conceal");
 });
 
 test("a failed verification refuses the import handler even if the button is clicked", async (t) => {
@@ -881,9 +890,9 @@ test("a failed verification refuses the import handler even if the button is cli
 
 // A descriptor record Core wrote is public (its keys sit in walletdescriptorkey
 // records), but the file can come from anywhere: a descriptor is public only
-// when it is built from descriptor functions, path steps, key origins,
-// extended public keys and hex public keys; anything else is private (#1347:
-// K3.1 rounds 8 and 12, Astra round 9). Fail closed.
+// when the reader can read it with Core's grammar and finds only public keys
+// in it; anything else is private (#1347: K3.1 rounds 8 and 12, Astra rounds
+// 9, 13 and 14, GLM round 13). Fail closed.
 test("a descriptor is public only in a public form; anything else is private", () => {
   const { descriptorHoldsSecret } = loadCoreWalletUi();
   const xpub = "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz";
@@ -929,6 +938,24 @@ test("a descriptor is public only in a public form; anything else is private", (
   assert.equal(descriptorHoldsSecret(`wpkh([12345678/84h/0h/0h]${xpub}/0/*)`), false, "an all-digit fingerprint");
   assert.equal(descriptorHoldsSecret(`tr(${xpub}/0/*,{pk(${pubkey}),pk([d34db33f/1]${xpub}/1/*)})`), false, "a script tree");
   assert.equal(descriptorHoldsSecret(`tr(${xpub}/0/*,{pk(${"11".repeat(32)}),pk(${pubkey})})`), true, "an x-only leaf key stays private");
+  // Each argument must be the kind Core's function takes (Astra, round 14).
+  assert.equal(descriptorHoldsSecret("wpkh(00010203,04050607,08090801,02030405,06070809,01020304,05060708,09010203)"), true, "numbers where wpkh() takes a key (Astra's repro)");
+  assert.equal(descriptorHoldsSecret(`multi(1,${pubkey},1234567890)`), true, "a number where multi() takes a key");
+  assert.equal(descriptorHoldsSecret(`multi(3,${pubkey},${pubkey})`), true, "a threshold above its count");
+  assert.equal(descriptorHoldsSecret(`multi(0,${pubkey})`), true, "a threshold of 0");
+  assert.equal(descriptorHoldsSecret(`wsh(and_v(v:pk(${pubkey}),older(2147483648)))`), true, "a lock time Core refuses (2^31)");
+  assert.equal(descriptorHoldsSecret(`wsh(and_v(v:pk(${pubkey}),older(0144)))`), true, "a number with a leading zero");
+  assert.equal(descriptorHoldsSecret("older(144)"), true, "a miniscript fragment outside wsh() or tr()");
+  assert.equal(descriptorHoldsSecret(`wpkh(${pubkey}/0)`), true, "a path after a hex key");
+  assert.equal(descriptorHoldsSecret("wpkh(/1/2/3)"), true, "path steps without a key");
+  assert.equal(descriptorHoldsSecret(`pkh(${xpub}/<0;1>/<2;3>)`), true, "two multipath steps");
+  assert.equal(descriptorHoldsSecret(`wpkh([d34db33f/84H]${xpub}/0/*)`), true, "a step marked H, which Core does not read");
+  assert.equal(descriptorHoldsSecret(`wsh(and_v(v:sortedmulti(1,${pubkey}),older(1)))`), true, "sortedmulti() inside a fragment");
+  assert.equal(descriptorHoldsSecret(`wpkh(04${"ab".repeat(64)})`), true, "an uncompressed key in segwit");
+  assert.equal(descriptorHoldsSecret(`tr(${xpub}/0/*,multi(1,${pubkey}))`), true, "multi() in a tr() leaf");
+  assert.equal(descriptorHoldsSecret(`wsh(${`and_v(v:pk(${pubkey}),`.repeat(50)}1${")".repeat(50)})`), false, "nested fragments");
+  assert.equal(descriptorHoldsSecret(`wsh(${"and_v(1,".repeat(100000)}1${")".repeat(100000)})`), true, "nesting too deep to read fails closed");
+  assert.equal(descriptorHoldsSecret(`pkh(${pubkey})${"00".repeat(32)}`), true, "bytes after the descriptor");
   const ui = read("src/js/core-wallet-ui.js");
   assert.match(ui, /export const descriptorHoldsSecret = \(text\) => !hodlCoreWallet\.descriptorIsPublic\(text\);/, "the report uses the reader's rule");
   assert.match(ui, /push\(tHtml\("Descriptor"\), fileValueHtml\(entry\.descriptor, \{[^\n]*isPublic: entry\.shownPublic === true \}\)\);/, "the Descriptor cell is public only when the verification vouched for it");
@@ -936,6 +963,50 @@ test("a descriptor is public only in a public form; anything else is private", (
   assert.match(ui, /privateHex\(record\.value, tHtml\("Record value \(hex\)"\)\)/);
   assert.match(ui, /privateHex\(record\.key, tHtml\("Record key \(hex\)"\)\)/);
   assert.match(ui, /const fileValueHtml = \(text, \{ label, isPublic = false, bytes \} = \{\}\) => \(isPublic\n\s*\? expandableHtml\(text, \{ label \}\)\n\s*: reveal\.checked\n\s*\? expandableHtml\(text, \{ label, privateValue: true \}\)/, "a value not vouched for is redacted until revealed and a private value when shown");
+});
+
+// An outside reference for the rule above: descriptors from Bitcoin Core's
+// own tests (src/test/descriptor_tests.cpp, read 2026-11-01). Its public forms
+// read as public, its forms with private keys as private, and the forms it
+// refuses to parse as private (DeepSeek red team, round 14: the rule's tests
+// should not only restate the rule).
+test("Bitcoin Core's descriptor test vectors read as Core reads them", () => {
+  const { descriptorHoldsSecret } = loadCoreWalletUi();
+  const publicForms = [
+    "combo([01234567]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL)",
+    "multi(1,03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd,04a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd5b8dec5235a0fa8722476c7709c02559e3aa73aa03918ba2d492eea75abea235)",
+    "pkh([deadbeef/1/2'/3/4']03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd)",
+    "rawtr([5a61ff8e/86h/1h/0h]xpub6DtZpc9PRL2B6pwoNGysmHAaBofDmWv5S6KQEKKGPKhf5fV62ywDtSziSApYVK3JnYY5KUSgiCwiXW5wtd8z7LNBxT9Mu5sEro8itdGfTeA/1/*)#vwgx7hj9",
+    "sh(wpkh(xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8/10/20/30/40/*'))",
+    "sh(wsh(thresh(2,ndv:after(1000),a:and_n(multi(1,xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL,xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0),n:older(2)))))",
+    "tr(xpub6CY33ZvKuS63kwDnpNCCo5YrrgkUXgdUKdCVhd4Dru5gCB3z8wGnqFiUP98Za5pYSYF5KmvBHTY3Ra8FAJGggzBjuHS69WzN8gscPupuZwK/<2;3>,l:pk(xpub6E9a95u27Qqa13XEz62FUgaFMWzHnHrb54dWfMHU7K9A33eDccvUkbu1sHYoByHAgJdR326rWqn9pGZgZHz1afDprW5gGwS4gUX8Ri6aGPZ))",
+    "wsh(or_d(pk([2557c640/48h/1h/0h/2h]xpub6ArU6mnJDxmynaVKLV8FiFDaA9bVUw6efLEqt99qGK6B4QVWiNjc21JNFKkXNjgT8NCUmpFpSSBrYFtWEAqGirbqT4J1bRFpWyAnYdzmZUm/<0;1>/*),and_v(v:pkh([00aabb22/48h/1h/0h/2h]xpub6ArU6mnJDxmyogzqia2fdnD3gWHvfDtZAHdmKx4ccJwUBZd3rpgQM9qgmPAn1mqT2yh81uvGGohMkg3fNLoXZzn7sRo4a1X3KnCAVot2yuS/<0;1>/*),older(2))))",
+    "wsh(thresh(1,pk(xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL),a:pkh(xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y/0)))",
+  ];
+  const privateForms = [
+    "pkh([deadbeef/1/2'/3/4']L4rK1yDtCWekvXuE6oXD9jCYfFNV2cWRpVuPLBcCU2z8TrisoyY1)",
+    "sh(wpkh(xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi/10/20/30/40/*'))",
+    "combo(5KYZdUEo39z3FPrtuX2QbbwGnNP5zTd7yyr2SC1j299sBCnWjss)",
+  ];
+  const unparsable = [
+    "pkh([deadbeef]/1/2'/3/4']03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd)",
+    "pkh(deadbeef/1/2h/3/4h]03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd)",
+    "pkh(xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB/2147483648)",
+    "pkh(xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB/<0;1>/<2;3>)",
+    "multi(0,03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd,04a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd5b8dec5235a0fa8722476c7709c02559e3aa73aa03918ba2d492eea75abea235)",
+    "multi(3,03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd,04a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd5b8dec5235a0fa8722476c7709c02559e3aa73aa03918ba2d492eea75abea235)",
+    "multi(a,03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd,04a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd5b8dec5235a0fa8722476c7709c02559e3aa73aa03918ba2d492eea75abea235)",
+    "sh(sh(pk(03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd)))",
+    "sh(combo(03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd))",
+    "sh(tr(03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd))",
+    "sh(wpkh(04a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd5b8dec5235a0fa8722476c7709c02559e3aa73aa03918ba2d492eea75abea235))",
+    "tr(03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd,multi(1,032707170c71d8f75e4ca4e3fce870b9409dcaf12b051d3bcadff74747fa7619c0))",
+    "multi_a(1,03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd)",
+    "combo([012345678]xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL)",
+  ];
+  for (const descriptor of publicForms) assert.equal(descriptorHoldsSecret(descriptor), false, descriptor);
+  for (const descriptor of privateForms) assert.equal(descriptorHoldsSecret(descriptor), true, descriptor);
+  for (const descriptor of unparsable) assert.equal(descriptorHoldsSecret(descriptor), true, descriptor);
 });
 
 // A descriptor that carries a key is private DOM like the key records
@@ -1079,11 +1150,16 @@ test("a record type name Core does not write is private, also in the verificatio
   const { core } = loadModule();
   const doc = parseRecords([...REF_WATCH_ONLY_RECORDS, [keyHex, "00"]]);
   const record = doc.records.find((candidate) => candidate.name === wif);
+  const badCount = (checks) => checks.filter((check) => check.tone === "bad").length;
+  const before = badCount(core.verifyWalletDoc(doc, coreDeps));
   record.orphan = true;
   record.error = "unexpected key tail";
-  const lines = core.verifyWalletDoc(doc, coreDeps).map((check) => `${check.label} ${check.detail}`).join("\n");
+  const checks = core.verifyWalletDoc(doc, coreDeps);
+  // Copy is not pinned (AGENTS.md; GLM, round 14): the record gets its two
+  // lines, and neither names it.
+  assert.equal(badCount(checks), before + 2, "the orphaned, undecodable record is reported");
+  const lines = checks.map((check) => `${check.label} ${check.detail}`).join("\n");
   assert.ok(!lines.includes(wif), "a verification line names a record by a made-up name");
-  assert.match(lines, /a record of unrecognized type/);
 });
 
 // The pubkey beside a private key record is public once the verification
@@ -1144,10 +1220,33 @@ test("a descriptor is public only under a checksum that matches", async (t) => {
   conceal();
   assert.ok(!out.innerHTML.includes(craftedDescriptor), "an unverified descriptor is shown after conceal");
   const { core } = loadModule();
-  const lines = core.verifyWalletDoc(parseRecords(crafted), coreDeps).map((check) => `${check.label} ${check.detail}`).join("\n");
-  const mismatches = lines.split("\n").filter((line) => line.includes("checksum mismatch"));
-  assert.equal(mismatches.length, 1);
-  assert.match(mismatches[0], /^Descriptor checksum #\d+ checksum mismatch$/, "a verification line names an unverified descriptor by its text");
+  const failed = core.verifyWalletDoc(parseRecords(crafted), coreDeps).filter((check) => check.tone === "bad");
+  // Copy is not pinned (AGENTS.md; GLM, round 14): one line fails, and it
+  // names the descriptor by its place.
+  assert.equal(failed.length, 1, "the checksum mismatch is reported");
+  const line = `${failed[0].label} ${failed[0].detail}`;
+  assert.match(line, /#\d+/, "the failed line names the descriptor by its place");
+  assert.ok(!line.includes(craftedDescriptor.slice(0, 21)), "a verification line names an unverified descriptor by its text");
+});
+
+// A descriptor Core's grammar does not read is private even under a checksum
+// that matches: Astra's round-14 repro, numbers where wpkh() takes a key.
+test("a descriptor Core does not read is private under a matching checksum", async (t) => {
+  const body = "wpkh(00010203,04050607,08090801,02030405,06070809,01020304,05060708,09010203)";
+  const descriptor = Buffer.from(`${body}#${coreDeps.checksum(body)}`);
+  const records = REF_WATCH_ONLY_RECORDS.map(([key, value]) => [key, value]);
+  const row = records.find(([key]) => key.startsWith("1077616c6c657464657363726970746f72")); // "walletdescriptor"
+  const old = Buffer.from(row[1], "hex");
+  assert.ok(old[0] < 253 && descriptor.length < 253, "one-byte CompactSize length prefixes");
+  row[1] = Buffer.concat([Buffer.from([descriptor.length]), descriptor, old.subarray(1 + old[0])]).toString("hex");
+  const { out, reveal, conceal } = await loadReport(t, records);
+  assert.equal(reveal.checked, false);
+  assert.ok(!out.innerHTML.includes(body), "a descriptor Core does not read is shown while nothing is revealed");
+  reveal.checked = true;
+  reveal.listeners.change();
+  assert.ok(out.innerHTML.includes(`[private]${body}#`), "a revealed unread descriptor must be a private value");
+  conceal();
+  assert.ok(!out.innerHTML.includes(body), "a descriptor Core does not read is shown after conceal");
 });
 
 // A block-locator hash is public when it is a block hash on its face: the
@@ -1229,7 +1328,9 @@ test("the verification lines never show a key-bearing descriptor's text", async 
   assert.equal(elements["core-error"].textContent, "", "the crafted file must load");
   assert.equal(reveal.checked, false);
   assert.ok(!out.innerHTML.includes(wif.slice(0, 16)), "a key-bearing descriptor's first characters are shown while nothing is revealed");
-  assert.ok(out.innerHTML.includes("checksum matches"), "the descriptor's checks are still listed");
+  // Copy is not pinned (AGENTS.md; GLM, round 14): every check is listed.
+  const listed = out.innerHTML.match(/<li data-tone="/g) ?? [];
+  assert.equal(listed.length, loadModule().core.verifyWalletDoc(parseRecords(records), coreDeps).length, "the descriptor's checks are still listed");
   assert.ok(out.innerHTML.includes("pkh([420c9ea3/44h/1h/0h"), "a public descriptor is still named by its text");
   reveal.checked = true;
   reveal.listeners.change();
