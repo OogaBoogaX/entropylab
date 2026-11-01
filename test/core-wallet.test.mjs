@@ -781,7 +781,8 @@ const loadCoreWalletUi = () => {
   const t = (text, params) => text.replace(/\{(\w+)\}/g, (_, key) => params?.[key] ?? `{${key}}`);
   const tAttr = t;
   const tHtml = t;
-  const expandableHtml = (text) => text;
+  // A private cell is marked, so a test can tell where its copy would go.
+  const expandableHtml = (text, options = {}) => (options.privateValue ? `[private]${text}[/private]` : text);
   const initExpandable = () => {};
   const hodlCoreWallet = loadModule().core;
   const factory = new Function(
@@ -894,5 +895,52 @@ test("a descriptor that carries a private key is shown as a private value", () =
   assert.equal(descriptorHoldsSecret(`sh(wpkh(${wif}))`), true);
   assert.equal(descriptorHoldsSecret(`pk(5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ)`), true, "an uncompressed-key WIF (51 characters)");
   const ui = read("src/js/core-wallet-ui.js");
-  assert.match(ui, /expandableHtml\(entry\.descriptor, \{[^\n]*privateValue: descriptorHoldsSecret\(entry\.descriptor\) \}\)/, "the Descriptor cell must be private when its text holds a key");
+  assert.match(ui, /const secretDescriptor = descriptorHoldsSecret\(entry\.descriptor\);/, "the Descriptor cell must decide by descriptorHoldsSecret");
+  assert.match(ui, /expandableHtml\(entry\.descriptor, \{[^\n]*privateValue: secretDescriptor \}\)/, "the Descriptor cell must be private when its text holds a key");
+  assert.match(ui, /label: tHtml\("Record value \(hex\)"\), privateValue: true \}\)/, "an undecoded record's value must be a private value");
+});
+
+// A descriptor that carries a key is private DOM like the key records
+// (Astra, round 9): redacted until revealed, hidden again on hodl:conceal,
+// and private in the expand window while shown.
+test("a key-bearing descriptor is redacted until revealed and concealed again on hodl:conceal", async (t) => {
+  const { elements, documentListeners, cleanup } = setupCoreWalletUi();
+  t.after(cleanup);
+  const xprv = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
+  const records = REF_WATCH_ONLY_RECORDS.map(([key, value]) => [key, value]);
+  const row = records.find(([key]) => key.startsWith("1077616c6c657464657363726970746f72")); // "walletdescriptor"
+  const text = Buffer.from(row[1], "hex").toString("latin1");
+  assert.match(text, /tpub[1-9A-HJ-NP-Za-km-z]{107}/);
+  const secret = text.replace(/tpub[1-9A-HJ-NP-Za-km-z]{107}/, xprv); // same length: the record's size prefix holds
+  row[1] = Buffer.from(secret, "latin1").toString("hex");
+  const bytes = dbFromRecords(records);
+  const file = elements["core-file"], out = elements["core-out"], reveal = elements["core-reveal"];
+  file.files = [{ size: bytes.length, arrayBuffer: async () => bytes.slice().buffer }];
+  file.listeners.change();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(elements["core-error"].textContent, "", "the crafted file must still load");
+  assert.ok(out.innerHTML.includes("[420c9ea3/44h/1h/0h]"), "the report did not render the watch-only descriptors");
+  assert.ok(!out.innerHTML.includes(xprv), "a key-bearing descriptor is shown while nothing is revealed");
+  reveal.checked = true;
+  reveal.listeners.change();
+  assert.ok(out.innerHTML.includes(`[private]pkh([420c9ea3/44h/1h/0h]${xprv}`), "a revealed key-bearing descriptor must be a private value");
+  documentListeners["hodl:conceal"]();
+  assert.equal(reveal.checked, false, "conceal must turn reveal off");
+  assert.ok(!out.innerHTML.includes(xprv), "a key-bearing descriptor is shown after conceal");
+});
+
+// An undecoded record can hold anything (K3.1, round 9): its value is a
+// private value in the expand window; its key names the type and stays public.
+test("an undecoded record's value is a private value; its key is public", async (t) => {
+  const { elements, cleanup } = setupCoreWalletUi();
+  t.after(cleanup);
+  const wifHex = Buffer.from("L1aW4aubDFB7yfras2S1mN3bqg9nwySY8nkoLmJebSLD5BWv3ENZ").toString("hex");
+  const bytes = dbFromRecords([...REF_WATCH_ONLY_RECORDS, ["046e6f7465", wifHex]]); // a made-up "note" record
+  const file = elements["core-file"], out = elements["core-out"];
+  file.files = [{ size: bytes.length, arrayBuffer: async () => bytes.slice().buffer }];
+  file.listeners.change();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(elements["core-error"].textContent, "", "the file must load");
+  assert.ok(out.innerHTML.includes(`[private]${wifHex}[/private]`), "the record value must be a private value");
+  assert.ok(out.innerHTML.includes("046e6f7465") && !out.innerHTML.includes("[private]046e6f7465"), "the record key must stay public");
 });

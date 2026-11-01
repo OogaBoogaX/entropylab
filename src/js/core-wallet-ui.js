@@ -143,7 +143,12 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
       : /\/1['hH]?\/\*\)/.test(entry.descriptor) ? t("change") : t("external");
     const rows = [];
     const push = (field, valueHtml) => rows.push(`<tr><td>${field}</td><td>${valueHtml}</td></tr>`);
-    push(tHtml("Descriptor"), expandableHtml(entry.descriptor, { label: t("Descriptor {n}", { n: index + 1 }), privateValue: descriptorHoldsSecret(entry.descriptor) }));
+    // A descriptor that carries a key is private DOM like the key records:
+    // redacted until revealed, and its copy stays within EntropyLab.
+    const secretDescriptor = descriptorHoldsSecret(entry.descriptor);
+    push(tHtml("Descriptor"), secretDescriptor && !reveal.checked
+      ? `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: new TextEncoder().encode(entry.descriptor).length })}</span>`
+      : expandableHtml(entry.descriptor, { label: t("Descriptor {n}", { n: index + 1 }), privateValue: secretDescriptor }));
     push(tHtml("Descriptor ID"), expandableHtml(entry.id, { label: t("Descriptor {n} id", { n: index + 1 }) }));
     push(tHtml("Created"), entry.creationTime ? escapeHtml(createdText(entry.creationTime)) : tHtml("0 (epoch — a fresh wallet)"));
     push(tHtml("Next index"), escapeHtml(String(entry.nextIndex)));
@@ -173,13 +178,16 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
   const otherRecordsHtml = () => {
     if (!doc.others.length) return "";
     const shown = doc.others.slice(0, OTHER_RECORD_RENDER_LIMIT);
+    // What an undecoded record holds is unknown, and the file can come from
+    // anywhere: its value is a private value, so a copy stays within
+    // EntropyLab (the record's key names its type and stays public).
     const rows = shown
       .map((record) => {
         const note = record.error ? `<span class="psbted-note-bad">${escapeHtml(record.error)}</span>` : "";
         return `<tr>
           <td class="psbted-name">${record.name == null ? tHtml("(unnamed)") : escapeHtml(record.name)}${note ? `<br>${note}` : ""}</td>
           <td class="psbted-hex">${expandableHtml(bytesToHex(record.key), { label: tHtml("Record key (hex)") })}</td>
-          <td class="psbted-hex">${expandableHtml(bytesToHex(record.value), { label: tHtml("Record value (hex)") })}</td>
+          <td class="psbted-hex">${expandableHtml(bytesToHex(record.value), { label: tHtml("Record value (hex)"), privateValue: true })}</td>
         </tr>`;
       })
       .join("");

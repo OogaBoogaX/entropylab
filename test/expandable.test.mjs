@@ -198,17 +198,26 @@ test("a private cell copies to EntropyLab's clipboard only, and the copy control
     try {
       appClipboardClear();
       open({ value: der, privateValue: true });
-      assert.equal(parts["#exp-copy"].getAttribute("aria-label"), "Copy to EntropyLab's clipboard");
-      assert.equal(parts["#exp-copy"].title, "Copy to EntropyLab's clipboard");
+      // Copy is asserted for presence and for its translation key, never
+      // verbatim (AGENTS.md): the private label is its own, and the title
+      // says the same.
+      const privateLabel = parts["#exp-copy"].getAttribute("aria-label");
+      assert.ok(privateLabel, "a private cell's copy control has no label");
+      assert.equal(parts["#exp-copy"].title, privateLabel);
       await copy();
       assert.deepEqual(clipboard, [], "a private value reached the system clipboard");
       assert.equal(appClipboardText(), der);
       // The next public cell gets the public label and the system clipboard back.
       open({ value: "ab".repeat(100) });
-      assert.equal(parts["#exp-copy"].getAttribute("aria-label"), "Copy");
-      assert.equal(parts["#exp-copy"].title, "Copy");
+      const publicLabel = parts["#exp-copy"].getAttribute("aria-label");
+      assert.ok(publicLabel && publicLabel !== privateLabel, "a public cell must not keep the private label");
+      assert.equal(parts["#exp-copy"].title, publicLabel);
       await copy();
       assert.deepEqual(clipboard, ["ab".repeat(100)]);
+      const module = readFileSync(new URL("../src/js/expandable.js", import.meta.url), "utf8");
+      assert.match(module, /t\("Copy to EntropyLab's clipboard"\)/, "the private label must be a translation key");
+      assert.match(module, /t\("Copied to EntropyLab's clipboard"\)/, "the private copied label must be a translation key");
+      assert.match(module, /t\("Copy"\)/, "the public label must be a translation key");
     } finally {
       appClipboardClear();
     }
@@ -231,18 +240,23 @@ test("the copy control's labels follow the page language at each opening", async
       }
     };
     try {
+      setLocale("en");
+      open({ value: "ab".repeat(100) });
+      const english = parts["#exp-copy"].getAttribute("aria-label");
+      assert.ok(english, "a public cell's copy control has no label");
       for (const locale of ["es", "de"]) {
         setLocale(locale);
-        assert.notEqual(translate("Copy"), "Copy", `the ${locale} catalog has no "Copy"`);
         open({ value: "ab".repeat(100) });
-        assert.equal(parts["#exp-copy"].getAttribute("aria-label"), translate("Copy"));
-        assert.equal(parts["#exp-copy"].title, translate("Copy"));
+        const localized = parts["#exp-copy"].getAttribute("aria-label");
+        assert.ok(localized && localized !== english, `the public label did not follow the ${locale} catalog`);
+        assert.equal(parts["#exp-copy"].title, localized);
         open({ value: "30".repeat(70), privateValue: true });
-        assert.equal(parts["#exp-copy"].getAttribute("aria-label"), translate("Copy to EntropyLab's clipboard"));
-        assert.equal(parts["#exp-copy"].title, translate("Copy to EntropyLab's clipboard"));
+        const privateLabel = parts["#exp-copy"].getAttribute("aria-label");
+        assert.ok(privateLabel && privateLabel !== localized, "a private cell must not carry the public label");
+        assert.equal(parts["#exp-copy"].title, privateLabel);
         setLocale("en");
         open({ value: "ab".repeat(100) });
-        assert.equal(parts["#exp-copy"].getAttribute("aria-label"), "Copy", "after a switch back the public label is the English one");
+        assert.equal(parts["#exp-copy"].getAttribute("aria-label"), english, "after a switch back the public label is the English one again");
       }
       const module = readFileSync(new URL("../src/js/expandable.js", import.meta.url), "utf8");
       assert.match(module, /id="exp-copy"[^>]*data-i18n-skip/, "the copy control must name itself, outside the catalog sweep");
