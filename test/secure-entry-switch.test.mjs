@@ -5,7 +5,7 @@ import { loadAppFunctions } from "./app-slice-harness.mjs";
 import { MiniDocument } from "./mini-dom.mjs";
 import {
   createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet,
-  seedEntry, seedSet, seedIndices, seedUndo, planTurnOn, commitTurnOn,
+  seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn,
   planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS,
 } from "../src/js/secure-entry.js";
 import { wordlist } from "../src/js/bip39-english.js";
@@ -21,6 +21,9 @@ const realSecureEntryStubs = {
   seedSet,
   seedIndices,
   seedUndo,
+  // The turn-on plan builds key entries too (P3b-2): stubbed with the real
+  // one so the slice does not pull in app.js's whole import line again.
+  keyEntry,
   planTurnOn,
   commitTurnOn,
   planTurnOff,
@@ -64,6 +67,7 @@ test("hodlRenderSecureEntryControl shows the switch only when available", async 
         ...realSecureEntryStubs,
         hodlSecureEntryAvailable: () => available,
         hodlSecureSeedActive: () => seedActive,
+        hodlSecureKeyActive: () => false,
         hodlSecureEntryToggle: () => {},
         hodlT: (text) => text,
       },
@@ -607,10 +611,11 @@ test("Keep leaves a key's other fields unless the words were their source and it
     const keyMode = synced({ id: 2, name: "Key mode", mode: "key", result: { kind: "single" } });
     const hexMode = synced({ id: 3, name: "Hex mode", mode: "hex", result: { kind: "hd" } });
     const keys = [single, keyMode, hexMode, hexKeySource];
+    let choice = "keep";
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlClearGlobalSyncCopies"], {
       stubs: {
         ...realSecureEntryStubs,
-        hodlSecureEntryDialog: async () => ({ open: async () => "keep" }),
+        hodlSecureEntryDialog: async () => ({ open: async () => choice }),
         hodlCaptureKey: () => {},
         hodlRenderSecureEntryControl: () => {},
         hodlSetMode: () => {},
@@ -641,13 +646,31 @@ test("Keep leaves a key's other fields unless the words were their source and it
       assert.equal(key.fields.privateKeys["hex-key"], "hexkeyvalue", key.name);
       assert.equal(key.lastWord, "accident", key.name);
     }
-    for (const key of [keyMode, hexMode]) {
-      assert.equal(mod.hodlSecureKeyOf(key), null, key.name);
-      assert.equal(key.fields.seed, phrase, key.name);
-      assert.equal(key.fields.hex, "abcd", key.name);
-      assert.equal(key.fields.privateKeys.wif, "wifvalue", key.name);
-    }
+    // P3b-2: a key in key mode with typed text is converted into its vault,
+    // so its typed private key is emptied on Keep and its other fields stay.
+    const keyModeEntry = sessionGet(session, mod.hodlSecureKeyOf(keyMode), "key");
+    assert.ok(keyModeEntry, "Key mode");
+    assert.equal(keyModeEntry.vault.text(), "wifvalue", "Key mode");
+    assert.equal(keyMode.fields.seed, phrase, "Key mode");
+    assert.equal(keyMode.fields.hex, "abcd", "Key mode");
+    assert.equal(keyMode.fields.privateKeys.wif, "", "Key mode");
+    // Hex mode keeps its seed text as text (it is not listed at all).
+    assert.equal(mod.hodlSecureKeyOf(hexMode), null, "Hex mode");
+    assert.equal(hexMode.fields.seed, phrase, "Hex mode");
+    assert.equal(hexMode.fields.hex, "abcd", "Hex mode");
+    assert.equal(hexMode.fields.privateKeys.wif, "wifvalue", "Hex mode");
     for (const key of keys) assert.equal("secureCleared" in key, false, key.name);
+
+    // Clear wipes the typed key too, and marks a key that had a wallet.
+    choice = "clear";
+    const clearSession = createSecureSession();
+    const clearKey = synced({ id: 5, name: "Key mode clear", mode: "key", result: { kind: "single" } });
+    mod.__set.hodlSecureSession(clearSession);
+    mod.__set.hodlKeys([clearKey]);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(clearKey.fields.privateKeys.wif, "", "Key mode clear");
+    assert.equal(clearKey.secureCleared, true, "Key mode clear");
   } finally {
     globalThis.document = previous;
   }
@@ -1266,6 +1289,7 @@ test("the switch is disabled while a Journal batch runs", async () => {
         ...realSecureEntryStubs,
         hodlSecureEntryAvailable: () => true,
         hodlSecureSeedActive: () => false,
+        hodlSecureKeyActive: () => false,
         hodlSecureEntryToggle: () => {},
         hodlSecureEntryHasData: () => false,
         hodlSecureKeyOf: () => null,
@@ -1306,6 +1330,7 @@ test("the switch notes a seed held as text and shows the picker once it is empti
         ...realSecureEntryStubs,
         hodlSecureEntryAvailable: () => true,
         hodlSecureSeedActive: () => seedActive,
+        hodlSecureKeyActive: () => false,
         hodlSecureEntryToggle: () => {},
         hodlT: (text) => text,
       },
@@ -1774,3 +1799,76 @@ for (const outcome of ["wiped", "wiped, then reported a partial wipe", "threw be
     }
   });
 }
+
+test("Convert after Keep writes the vault text back into privateKeys", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null, querySelector: () => null };
+  try {
+    const cases = [
+      ["wif", "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ"],
+      ["hex-key", "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d"],
+    ];
+    let choice = "keep";
+    let modeDraws = 0;
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn"], {
+      stubs: {
+        ...realSecureEntryStubs,
+        hodlSecureEntryDialog: async () => ({ open: async () => choice }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => { modeDraws += 1; },
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: wordIndex,
+        hodlBip39Wordlist: wordlist,
+        hodlKeyMode: "key",
+        hodlPrivateKeyValues: (fields) => fields.privateKeys,
+        hodlEntropyFormats: { hex: {}, bin: {} },
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey"],
+    });
+    for (const [kind, text] of cases) {
+      const session = createSecureSession();
+      const privateKeys = { wif: "", "hex-key": "", minikey: "" };
+      privateKeys[kind] = text;
+      const state = { id: 1, name: "Key", mode: "key", fields: { keyKind: kind, privateKeys } };
+      choice = "keep";
+      mod.__set.hodlSecureSession(session);
+      mod.__set.hodlKeys([state]);
+      mod.__set.hodlActiveKey(0);
+      mod.__set.hodlSecureEntryOn(false);
+      await mod.hodlSecureEntryToggle(true);
+      assert.equal(state.fields.privateKeys[kind], "", kind);
+      const entry = sessionGet(session, mod.hodlSecureKeyOf(state), "key");
+      assert.equal(entry.vault.text(), text, kind);
+      choice = "convert";
+      modeDraws = 0;
+      await mod.hodlSecureEntryToggle(false);
+      assert.equal(state.fields.privateKeys[kind], text, kind);
+      assert.equal(state.fields.wif, undefined, kind);
+      assert.equal(state.fields["hex-key"], undefined, kind);
+      assert.equal(mod.hodlSecureEntryOn, false, kind);
+      assert.equal(modeDraws, 1, kind);
+    }
+
+    const clearSession = createSecureSession();
+    const clearText = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ";
+    const clearState = { id: 2, name: "Clear", mode: "key", result: { kind: "single" }, fields: { keyKind: "wif", privateKeys: { wif: clearText, "hex-key": "", minikey: "" } } };
+    choice = "keep";
+    mod.__set.hodlSecureSession(clearSession);
+    mod.__set.hodlKeys([clearState]);
+    mod.__set.hodlActiveKey(0);
+    mod.__set.hodlSecureEntryOn(false);
+    await mod.hodlSecureEntryToggle(true);
+    choice = "clear";
+    modeDraws = 0;
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal(mod.hodlSecureEntryOn, false);
+    assert.equal(modeDraws, 1, "clear redraws the key form");
+    assert.equal(clearSession.entries.size, 0);
+  } finally {
+    globalThis.document = previous;
+  }
+});

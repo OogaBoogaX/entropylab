@@ -6527,7 +6527,7 @@ function hodlRenderSecureEntryControl() {
     state: on ? hodlT("Secure entry: on") : hodlT("Secure entry"),
     hint: on ? hodlT("Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.") : hodlT("Off — standard text entry."),
     className: "secure-entry-bar",
-  }) + (on ? (!hodlSecureSeedActive() ? `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>` : !hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey]) ? `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>` : "") + (hodlSecureEntryConvertFailed ? `<p class="field-note edge-note is-private" id="secure-entry-convert-failed" role="alert">${hodlT("Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.")}</p>` : "") : "");
+  }) + (on ? (hodlSecureKeyActive() ? "" : !hodlSecureSeedActive() ? `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>` : !hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey]) ? `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>` : "") + (hodlSecureEntryConvertFailed ? `<p class="field-note edge-note is-private" id="secure-entry-convert-failed" role="alert">${hodlT("Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.")}</p>` : "") : "");
   let checkbox = document.getElementById("secure-entry-switch");
   if (checkbox) checkbox.onchange = () => hodlSecureEntryToggle(checkbox.checked);
 }
@@ -7281,6 +7281,32 @@ function hodlRenderKeyForm() {
     hodlBindKeyFields();
     hodlRenderPassphraseKeyboard();
     update();
+    return;
+  }
+  hodlReleaseSecureKeyField();
+  if (hodlSecureKeyFormApplies(hodlKeys[hodlActiveKey])) {
+    // Secure entry: the private key is typed into a vault-bound masked field.
+    // This is its own template so the standard one below stays exactly as it
+    // was. The field is #secure-key, not #key: capture, global sync and the
+    // standard kind radios all read #key. Highlight, keyboard, scan and the
+    // brain trim only work on #key, so they stay on the standard template.
+    let secureKind = hodlNormalizePrivateKeyKind(hodlKeys[hodlActiveKey]?.fields?.keyKind);
+    let secureChecked = (value) => value === secureKind ? " checked" : "";
+    hodlFormEl.innerHTML = `
+    <p class="label">${hodlT("Private key format")}</p>
+    <div class="choice-grid">
+    <label class="choice"><input type="radio" name="kk" value="wif"${secureChecked("wif")} /><span><strong>${hodlT("WIF")}</strong><span class="desc">${hodlT("Bitcoin wallet import format (Base58Check).")}</span></span></label>
+    <label class="choice"><input type="radio" name="kk" value="hex-key"${secureChecked("hex-key")} /><span><strong>${hodlT("Private key hex")}</strong><span class="desc">${hodlT("Raw 32-byte private key as 64 hexadecimal characters.")}</span></span></label>
+    <label class="choice"><input type="radio" name="kk" value="minikey"${secureChecked("minikey")} /><span><strong>${hodlT("Mini key")}</strong><span class="desc">${hodlT("Casascius-style short key.")}</span></span></label>
+    <label class="choice"><input type="radio" name="kk" value="brain"${secureChecked("brain")} /><span><strong>${hodlT("Brain wallet")}</strong><span class="desc">${hodlT("Unsafe. SHA-256 of your text, as a single key pair or a 24-word seed.")}</span></span></label>
+    </div>
+    ${hodlBrainOutputMarkup(hodlKeys[hodlActiveKey]?.brainWalletOutput || "scalar")}
+    <div id="private-key-entry">
+    <p class="label" id="private-key-input-label">${hodlT("Private key or recovery passphrase")}</p>
+    ${hodlSeedMetaRowMarkup("private-key-meta", true, "")}
+    <div class="dice-input-shell private-key-input-shell"><input id="secure-key" type="text" placeholder="${hodlTAttr("5… / K… / L…")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-meta" autocomplete="off" spellcheck="false" autocapitalize="off" data-secure-key /></div><p class="field-note" id="secure-key-status" aria-live="polite"></p><button type="button" class="btn secondary" id="secure-key-reveal" aria-pressed="false">${hodlT("Show key")}</button></div>`;
+    hodlBindKeyFields();
+    hodlBindSecureKeyField();
     return;
   }
   hodlFormEl.innerHTML = `
@@ -8112,6 +8138,10 @@ function hodlInitMasterFingerprintPreview() {
     hodlInvalidateLiveKeyResult();
     hodlRenderGlobalSyncControl();
     hodlQueueMasterFingerprintPreview();
+    // P3b-2: the standard form's kind radios do not redraw the form. Leaving
+    // Brain wallet for a key kind whose key Secure entry holds draws the masked
+    // field, so the field on screen is the one derivation reads.
+    if (target.matches('input[name="kk"]') && !document.getElementById("secure-key") && hodlSecureKeyFormApplies(hodlKeys[hodlActiveKey])) hodlSetMode(hodlKeyMode);
   });
   panel.addEventListener("click", event => {
     let target = event.target instanceof Element ? event.target.closest("#modes .custom-select-option, #seed-length .custom-select-option, [data-d], [data-lw], [data-card-suit], [data-card-rank], [data-direct-card-rank], #card-undo") : null;
@@ -12548,6 +12578,9 @@ var PREVIEW = typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREV
 // off on every load. Its entries live in hodlSecureSession, keyed by key id.
 var hodlSecureEntryOn = false, hodlSecureSession = createSecureSession();
 var hodlSecureEntryConfirm = null, hodlSecureEntryBusy = false, hodlSecureEntryConvertFailed = false;
+// P3b-2: the masked private-key field's vault binding, and whether its
+// read-only readout is showing. Both are released with the key form.
+var hodlSecureKeyField = null, hodlSecureKeyRevealed = false;
 async function hodlSecureEntryDialog() {
   if (!hodlSecureEntryConfirm) hodlSecureEntryConfirm = (await import("./secure-entry-confirm.js")).initSecureEntryConfirm();
   return hodlSecureEntryConfirm;
@@ -12565,20 +12598,31 @@ async function hodlSecureEntryToggle(wanted) {
     hodlRenderSecureEntryControl();
     hodlCaptureKey();
     if (wanted && !hodlSecureEntryOn) {
-      let keys = [], names = [], states = [];
+      let keys = [], names = [], states = [], keyStates = [];
       for (const state of hodlKeys) {
         // A key in another mode keeps any old seed text as text: secure entry
         // converts only what the Seed form shows. hodlCaptureKey() has already
         // saved the active key's mode at the top of the toggle.
-        if (state.mode !== "seed" || hodlNormalizeSeedMethod(state.seedMethod) !== "words") continue;
-        let phrase = String(state.fields?.seed ?? "").trim();
-        // An extended key in the seed field is not words: it stays text.
-        // A phrase longer than the key's length cannot be its words (the text
-        // path refuses it too): it stays text, with nothing to clear.
-        if (!phrase || hodlLooksExtendedKey(phrase) || phrase.split(/\s+/).length > (Number(state.targetWords) || 24)) continue;
-        keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { seed: { phrase: state.fields.seed, length: Number(state.targetWords) || 24 } } });
-        names.push(state.name);
-        states.push(state);
+        if (state.mode === "seed" && hodlNormalizeSeedMethod(state.seedMethod) === "words") {
+          let phrase = String(state.fields?.seed ?? "").trim();
+          // An extended key in the seed field is not words: it stays text.
+          // A phrase longer than the key's length cannot be its words (the text
+          // path refuses it too): it stays text, with nothing to clear.
+          if (!phrase || hodlLooksExtendedKey(phrase) || phrase.split(/\s+/).length > (Number(state.targetWords) || 24)) continue;
+          keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { seed: { phrase: state.fields.seed, length: Number(state.targetWords) || 24 } } });
+          names.push(state.name);
+          states.push(state);
+          continue;
+        }
+        // P3b-2: a key in key mode holds its private key as text until the
+        // switch converts it. Brain wallets stay text.
+        if (state.mode === "key") {
+          let typed = hodlSecureKeyTyped(state);
+          if (!typed) continue;
+          keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { key: { text: typed.text } } });
+          names.push(state.name);
+          keyStates.push({ state, kind: typed.kind });
+        }
       }
       const converter = ({ phrase, length }) => {
         let words = String(phrase).trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -12596,10 +12640,25 @@ async function hodlSecureEntryToggle(wanted) {
           throw error;
         }
       };
+      // P3b-2: a typed private key moves into its vault as UTF-8 bytes. The
+      // temporary bytes are zeroed once the vault has its copy.
+      const keyConverter = ({ text }) => {
+        let entry = keyEntry();
+        let bytes = new TextEncoder().encode(String(text));
+        try {
+          entry.vault.setBytes(bytes);
+          return entry;
+        } catch (error) {
+          entry.vault.clear();
+          throw error;
+        } finally {
+          bytes.fill(0);
+        }
+      };
       if (keys.length === 0) {
         commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
       } else {
-        plan = planTurnOn(hodlSecureSession, keys, { seed: converter });
+        plan = planTurnOn(hodlSecureSession, keys, { seed: converter, key: keyConverter });
         let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok });
         if (choice === "keep" && plan.ok) {
           commitTurnOn(hodlSecureSession, plan);
@@ -12617,6 +12676,7 @@ async function hodlSecureEntryToggle(wanted) {
             }
             state.fields.seed = "";
           }
+          for (const { state, kind } of keyStates) hodlPrivateKeyValues(state.fields)[kind] = "";
         } else if (choice === "clear") {
           discardPlan(plan);
           plan = null;
@@ -12626,6 +12686,10 @@ async function hodlSecureEntryToggle(wanted) {
             state.fields.seed = "";
             // The last-word helper's copy of the wiped words goes too (GLM).
             state.lastWord = "";
+          }
+          for (const { state, kind } of keyStates) {
+            if (state.result) state.secureCleared = true;
+            hodlPrivateKeyValues(state.fields)[kind] = "";
           }
           commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
         } else {
@@ -12653,6 +12717,15 @@ async function hodlSecureEntryToggle(wanted) {
         let highlight = document.getElementById("seed-highlight");
         if (highlight) highlight.textContent = "";
       }
+      if (keyStates.some((item) => item.state === hodlKeys[hodlActiveKey])) {
+        let keyField = document.getElementById("key");
+        if (keyField) {
+          keyField.value = "";
+          delete keyField.dataset.previousValue;
+        }
+        let keyHighlight = document.getElementById("private-key-highlight");
+        if (keyHighlight) keyHighlight.textContent = "";
+      }
       for (const state of hodlKeys) {
         state.globalSync = false;
         state.globalSyncBitCount = 0;
@@ -12675,12 +12748,15 @@ async function hodlSecureEntryToggle(wanted) {
             indices.fill(0);
           }
         };
+        // P3b-2: a key's text is the vault's own text, built once for the
+        // Convert the user chose.
+        const keySerializer = (entry) => entry.vault.text();
         // The texts are made only once the user chooses Convert: Clear and
         // Cancel create no text copy of the words. The dialog needs nothing
         // from the plan, and planning after it reads the session as it is now.
         let choice = await (await hodlSecureEntryDialog()).open({ mode: "off" });
         if (choice === "convert") convertChosen = true;
-        if (choice === "convert") plan = planTurnOff(hodlSecureSession, { seed: serializer });
+        if (choice === "convert") plan = planTurnOff(hodlSecureSession, { seed: serializer, key: keySerializer });
         if (choice === "convert" && plan.ok) {
           let texts = [];
           try {
@@ -12692,9 +12768,16 @@ async function hodlSecureEntryToggle(wanted) {
             plan = null;
           }
           for (const { keyId, method, text } of texts) {
-            if (method !== "seed") continue;
             let state = hodlKeys.find((candidate) => hodlSecureKeyOf(candidate) === keyId);
-            if (state) state.fields.seed = text;
+            if (!state) continue;
+            if (method === "seed") state.fields.seed = text;
+            // P3b-2: the key goes back into privateKeys. The stored kind wins
+            // when it is a key kind; otherwise the text is detected.
+            else if (method === "key") {
+              let kind = hodlNormalizePrivateKeyKind(state.fields.keyKind);
+              if (kind !== "wif" && kind !== "hex-key" && kind !== "minikey") kind = hodlDetectPrivateKeyKind(text) || "wif";
+              hodlPrivateKeyValues(state.fields)[kind] = text;
+            }
           }
         } else if (choice === "clear") {
           // Clear wipes every secure entry: a key that keeps its wallet on screen but
@@ -12896,6 +12979,184 @@ function hodlSecureKeyApplies() {
   return !String(typed).trim();
 }
 
+// P3b-2: which key form to draw. Render runs before the kind radios are
+// restored, so this reads the key's own kind, not the radio on screen.
+function hodlSecureKeyFormApplies(state) {
+  if (!hodlSecureEntryOn || hodlSecureSupported.key !== true || hodlKeyMode !== "key") return false;
+  let kind = hodlNormalizePrivateKeyKind(state?.fields?.keyKind);
+  if (kind === "brain") return false;
+  if (hodlSecureKeyHasData(hodlSecureKeyOf(state))) return true;
+  let typed = state?.fields ? hodlPrivateKeyValues(state.fields)[kind] : "";
+  return !String(typed ?? "").trim();
+}
+
+// P3b-2: the code-point lengths at which a private key of this kind is
+// complete (WIF 51 or 52, hex 64, mini key 22, 26 or 30).
+function hodlSecureKeyLengths(kind) {
+  if (kind === "hex-key") return [64];
+  if (kind === "minikey") return [22, 26, 30];
+  return [51, 52];
+}
+
+// P3b-2: the kind and text of a key's typed private key, or null when it has
+// none. Only the key's own kind counts. Brain wallets stay text.
+function hodlSecureKeyTyped(state) {
+  if (!state?.fields) return null;
+  let kind = hodlNormalizePrivateKeyKind(state.fields.keyKind);
+  if (kind === "brain") return null;
+  let values = hodlPrivateKeyValues(state.fields);
+  let text = values?.[kind];
+  if (!String(text ?? "").trim()) return null;
+  return { text, kind };
+}
+
+// P3b-2: the status line under the masked private-key field. It never flashes
+// an error while the key is still being typed: below a complete length it
+// shows only the count. The bytes it parses are zeroed in a finally.
+function hodlSecureKeyStatus() {
+  let line = document.getElementById("secure-key-status");
+  if (!line) return;
+  let entry = hodlSecureKeyEntry();
+  let kind = hodlSecureKeyKind();
+  let count = entry ? entry.vault.length : 0;
+  line.className = "field-note";
+  if (count === 0) {
+    line.textContent = "";
+    return;
+  }
+  let lengths = hodlSecureKeyLengths(kind);
+  if (!lengths.includes(count) && count < Math.max(...lengths)) {
+    line.textContent = hodlT("{count} characters", { count }); // DRAFT (owner OK pending)
+    return;
+  }
+  let network = hodlSelectedNetwork(document.getElementById("network"));
+  let bytes = entry.vault.bytes(), parsed = null;
+  try {
+    try {
+      parsed = parsePrivateKeyBytes(bytes, { kind });
+    } catch (error) {
+      if (!(error instanceof KeyBytesError)) throw error;
+      line.className = "field-note edge-note is-private";
+      line.textContent = hodlSecureKeyRefusal(error, kind, network, bytes).message;
+      return;
+    }
+    if (kind === "hex-key") {
+      line.textContent = hodlT("Valid private-key value · Hex has no checksum to detect typing mistakes."); // DRAFT (owner OK pending)
+    } else if (kind === "minikey") {
+      line.textContent = hodlT("Mini key check passed"); // DRAFT (owner OK pending)
+    } else {
+      line.textContent = parsed.compressed
+        ? hodlT("WIF checksum passed · {network} · Compressed public key", { network: parsed.network }) // DRAFT (owner OK pending)
+        : hodlT("WIF checksum passed · {network} · Uncompressed public key", { network: parsed.network }); // DRAFT (owner OK pending)
+    }
+  } finally {
+    bytes.fill(0);
+    if (parsed) {
+      parsed.priv?.fill(0);
+      parsed.minikey?.fill(0);
+    }
+  }
+}
+
+// P3b-2: show or hide the read-only readout of the vault's key. The text is
+// built only when asked for; the vault keeps its copy. Never unmask().
+function hodlSecureKeyShowReadout(show) {
+  let existing = document.querySelector("[data-secure-key-readout]");
+  if (existing) existing.remove();
+  hodlSecureKeyRevealed = false;
+  let status = document.getElementById("secure-key-status");
+  if (!show || !status) return;
+  let entry = hodlSecureKeyEntry();
+  if (!entry || entry.vault.length === 0) return;
+  let readout = document.createElement("div");
+  readout.setAttribute("data-secure-key-readout", "");
+  readout.innerHTML = hodlPrivateValue(entry.vault.text(), true);
+  status.parentNode.insertBefore(readout, status.nextSibling);
+  hodlSecureKeyRevealed = true;
+}
+
+// P3b-2: hide the readout and put the reveal button back to "Show key".
+function hodlSecureKeyConceal() {
+  hodlSecureKeyShowReadout(false);
+  let reveal = document.getElementById("secure-key-reveal");
+  if (reveal) {
+    reveal.setAttribute("aria-pressed", "false");
+    reveal.textContent = hodlT("Show key");
+  }
+}
+
+// P3b-2: bind the masked private-key field to the key's vault. The field
+// shows only mask dots; the text lives in the vault, never in state.fields.
+function hodlBindSecureKeyField() {
+  let field = document.getElementById("secure-key");
+  let entry = hodlSecureKeyEntry(true);
+  if (!field || !entry) return;
+  hodlSecureKeyField = bindVaultField(field, entry.vault, { active: hodlSecureKeyActive });
+  field.addEventListener("input", () => {
+    // Any edit hides the readout: it would otherwise show stale text.
+    hodlSecureKeyConceal();
+    hodlSecureKeyStatus();
+    hodlSyncDeriveButton();
+    hodlSyncKeyClearButton();
+  });
+  let reveal = document.getElementById("secure-key-reveal");
+  if (reveal) reveal.onclick = () => {
+    let show = !hodlSecureKeyRevealed;
+    hodlSecureKeyShowReadout(show);
+    reveal.setAttribute("aria-pressed", show ? "true" : "false");
+    reveal.textContent = show ? hodlT("Hide key") : hodlT("Show key");
+  };
+  for (const radio of document.querySelectorAll('input[name="kk"]')) {
+    // Assignment, so a second bind cannot stack a listener on the same radio.
+    radio.onchange = () => {
+      hodlSecureKeyConceal();
+      let fields = hodlKeys[hodlActiveKey]?.fields;
+      if (fields) fields.keyKind = hodlNormalizePrivateKeyKind(radio.value, "");
+      hodlSetMode(hodlKeyMode);
+    };
+  }
+  document.removeEventListener("hodl:conceal", hodlSecureKeyConceal);
+  document.addEventListener("hodl:conceal", hodlSecureKeyConceal);
+  hodlSecureKeyStatus();
+}
+
+// P3b-2: release the masked key field's binding and readout. Called before the
+// key form is rendered again and at End Session.
+function hodlReleaseSecureKeyField() {
+  document.removeEventListener("hodl:conceal", hodlSecureKeyConceal);
+  hodlSecureKeyField = null;
+  hodlSecureKeyRevealed = false;
+  let readout = document.querySelector("[data-secure-key-readout]");
+  if (readout) readout.remove();
+}
+
+// P3b-2: the refusal hodlSecureKeyParsed gives for a KeyBytesError. The status
+// line under the masked field reuses it, so both say the same thing.
+function hodlSecureKeyRefusal(error, kind, network, bytes) {
+  if (error.code === "EMPTY") return hodlError("Enter a private key.");
+  if (kind === "hex-key") return hodlError("Enter exactly 64 hexadecimal characters (0–9 and a–f).");
+  if (kind === "minikey") {
+    // The shape half of hodlDecodeMiniPrivateKey, on the same bytes: the
+    // hash half is what parsePrivateKeyBytes already checked.
+    let start = 0, end = bytes.length;
+    const space = (byte) => byte === 0x20 || (byte >= 0x09 && byte <= 0x0d);
+    while (start < end && space(bytes[start])) start++;
+    while (end > start && space(bytes[end - 1])) end--;
+    const length = end - start;
+    let shape = length === 22 || length === 26 || length === 30;
+    if (shape && bytes[start] !== 0x53) shape = false;
+    if (shape) {
+      for (let i = start; i < end; i++) {
+        const byte = bytes[i];
+        if (!(byte >= 0x31 && byte <= 0x39 || byte >= 0x41 && byte <= 0x48 || byte >= 0x4a && byte <= 0x4e || byte >= 0x50 && byte <= 0x5a || byte >= 0x61 && byte <= 0x6b || byte >= 0x6d && byte <= 0x7a)) { shape = false; break; }
+      }
+    }
+    if (!shape) return hodlError("Mini keys must start with S and contain 22, 26, or 30 Bitcoin Base58 characters.");
+    return hodlError("Not a valid Casascius mini private key.");
+  }
+  return hodlError("Enter a valid {network} WIF private key ({hint}).", { network, hint: hodlNetworkFamily(network) === "testnet" ? "9\u2026 or c\u2026" : "5\u2026, K\u2026, or L\u2026" });
+}
+
 // The vault's private key, parsed from bytes and checked exactly as the text
 // path checks it. The caller owns and zeroes the returned arrays.
 function hodlSecureKeyParsed(network) {
@@ -12909,28 +13170,7 @@ function hodlSecureKeyParsed(network) {
       parsed = parsePrivateKeyBytes(bytes, { kind });
     } catch (error) {
       if (!(error instanceof KeyBytesError)) throw error;
-      if (error.code === "EMPTY") throw hodlError("Enter a private key.");
-      if (kind === "hex-key") throw hodlError("Enter exactly 64 hexadecimal characters (0–9 and a–f).");
-      if (kind === "minikey") {
-        // The shape half of hodlDecodeMiniPrivateKey, on the same bytes: the
-        // hash half is what parsePrivateKeyBytes already checked.
-        let start = 0, end = bytes.length;
-        const space = (byte) => byte === 0x20 || (byte >= 0x09 && byte <= 0x0d);
-        while (start < end && space(bytes[start])) start++;
-        while (end > start && space(bytes[end - 1])) end--;
-        const length = end - start;
-        let shape = length === 22 || length === 26 || length === 30;
-        if (shape && bytes[start] !== 0x53) shape = false;
-        if (shape) {
-          for (let i = start; i < end; i++) {
-            const byte = bytes[i];
-            if (!(byte >= 0x31 && byte <= 0x39 || byte >= 0x41 && byte <= 0x48 || byte >= 0x4a && byte <= 0x4e || byte >= 0x50 && byte <= 0x5a || byte >= 0x61 && byte <= 0x6b || byte >= 0x6d && byte <= 0x7a)) { shape = false; break; }
-          }
-        }
-        if (!shape) throw hodlError("Mini keys must start with S and contain 22, 26, or 30 Bitcoin Base58 characters.");
-        throw hodlError("Not a valid Casascius mini private key.");
-      }
-      throw hodlError("Enter a valid {network} WIF private key ({hint}).", { network, hint: hodlNetworkFamily(network) === "testnet" ? "9\u2026 or c\u2026" : "5\u2026, K\u2026, or L\u2026" });
+      throw hodlSecureKeyRefusal(error, kind, network, bytes);
     }
     // The kind must match what was parsed, as on the text path.
     if (kind === "hex-key" && parsed.source !== "hex") throw hodlError("Enter exactly 64 hexadecimal characters (0–9 and a–f).");
@@ -22472,6 +22712,9 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlSecureEntryEnd(); } catch {}
     // The seed form showed the picker: redraw it as the standard field.
     try { if (document.getElementById("seed-picker-host")) hodlSetMode(hodlKeyMode); } catch {}
+    try { hodlReleaseSecureKeyField(); } catch {}
+    // The masked key field showed the vault: redraw it as the standard field.
+    try { if (document.querySelector("[data-secure-key]")) hodlSetMode(hodlKeyMode); } catch {}
     hodlSyncWorkspaceCounts();
   };
   addEventListener("pagehide", clearSecretFields);
