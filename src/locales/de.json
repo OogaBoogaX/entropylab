@@ -2411,5 +2411,9 @@
   "Original file": "Originaldatei",
   "Bitcoin header": "Bitcoin-Header",
   "Expected initial digest": "Erwarteter Anfangs-Digest",
-  "Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.": "Optional. Die Originaldatei oder ihr erwarteter Digest prüft, ob dieser Nachweis für diese Datei bestimmt ist. Ohne eines von beiden wird nur der Pfad des Nachweises zum Block-Header geprüft."
+  "Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.": "Optional. Die Originaldatei oder ihr erwarteter Digest prüft, ob dieser Nachweis für diese Datei bestimmt ist. Ohne eines von beiden wird nur der Pfad des Nachweises zum Block-Header geprüft.",
+  "Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.": "Sichere Eingabe ist noch aktiviert: Einige Einträge konnten nicht in Text umgewandelt werden. Versuchen Sie es erneut oder wählen Sie \"Einträge löschen und deaktivieren\".",
+  "The word picker could not load. Turn Secure entry off to use standard text entry.": "Der Wortauswähler konnte nicht geladen werden. Deaktivieren Sie die sichere Eingabe, um die Standard-Texteingabe zu verwenden.",
+  "Journal cannot back up or export keys whose words were cleared by Secure entry. Enter their words again and derive their wallets, or clear those keys, then try again.": "Das Journal kann keine Schlüssel sichern oder exportieren, deren Wörter durch die sichere Eingabe gelöscht wurden. Geben Sie ihre Wörter erneut ein und leiten Sie ihre Wallets ab, oder löschen Sie diese Schlüssel und versuchen Sie es dann erneut.",
+  "This key's words were cleared by Secure entry, so Journal cannot keep it. Enter its words again and derive its wallet first.": "Die Wörter dieses Schlüssels wurden durch die sichere Eingabe gelöscht, daher kann das Journal ihn nicht behalten. Geben Sie seine Wörter erneut ein und leiten Sie zuerst sein Wallet ab."
 }

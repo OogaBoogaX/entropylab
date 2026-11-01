@@ -6440,6 +6440,19 @@ function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   state.globalSyncSourceBits = hodlGlobalSyncSourceBits();
   return true;
 }
+
+// The fields hodlApplyGlobalSync writes, emptied so Clear leaves no copy.
+function hodlClearGlobalSyncCopies(state) {
+  let fields = state.fields, privateKeys = hodlPrivateKeyValues(fields);
+  Object.keys(hodlEntropyFormats).forEach((format) => fields[format] = "");
+  fields.seed = "";
+  fields.seedNumbers = "";
+  fields.dplusDice = "";
+  fields.directCards = "";
+  fields.bitboxDice = "";
+  privateKeys["hex-key"] = "";
+  privateKeys.wif = "";
+}
 function hodlGlobalSyncFromCurrentInput() {
   if (hodlSecureEntryOn) { hodlRenderGlobalSyncControl(); return false; }
   let state = hodlKeys[hodlActiveKey];
@@ -6514,7 +6527,7 @@ function hodlRenderSecureEntryControl() {
     state: on ? hodlT("Secure entry: on") : hodlT("Secure entry"),
     hint: on ? hodlT("Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.") : hodlT("Off — standard text entry."),
     className: "secure-entry-bar",
-  }) + (on ? (!hodlSecureSeedActive() ? `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>` : !hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey]) ? `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>` : "") : "");
+  }) + (on ? (!hodlSecureSeedActive() ? `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>` : !hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey]) ? `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>` : "") + (hodlSecureEntryConvertFailed ? `<p class="field-note edge-note is-private" id="secure-entry-convert-failed" role="alert">${hodlT("Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.")}</p>` : "") : "");
   let checkbox = document.getElementById("secure-entry-switch");
   if (checkbox) checkbox.onchange = () => hodlSecureEntryToggle(checkbox.checked);
 }
@@ -6848,6 +6861,10 @@ function hodlSetSeedLength(words) {
 // no flag, so the host is never rendered and the module is never imported.
 var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null;
 var hodlSeedPicker = null, hodlSeedPickerImport = null;
+// The three PSBT scan panels are the same preview-only extra: release builds
+// strip their hosts and never import the module.
+var hodlPsbtScans = [], hodlPsbtScanModule = null, hodlPsbtScanImport = null;
+const hodlPsbtScanHosts = [["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"]];
 function hodlKeyScanHostMarkup() {
   return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
 }
@@ -7533,19 +7550,76 @@ function hodlBindKeyScan() {
     }).catch(() => {});
   }
 }
+// A teardown bumps the epoch, so a mount still waiting on the import when the
+// panels were torn down (End Session, a language switch) mounts nothing.
+var hodlPsbtScanEpoch = 0;
+function hodlBindPsbtScans() {
+  // The slice harness loads this with no scan host: return before anything
+  // else, and never read the preview flag bare.
+  let hosts = hodlPsbtScanHosts.map(([hostId, fieldId]) => [document.getElementById(hostId), document.getElementById(fieldId)]);
+  if (!hosts.some(([host]) => host)) return;
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    if (!hodlPsbtScanImport) {
+      hodlPsbtScanImport = import("./qr-psbt-scan.js").then((module) => {
+        hodlPsbtScanModule = module;
+        return module;
+      }).catch(() => null);
+    }
+    let epoch = hodlPsbtScanEpoch;
+    hodlPsbtScanImport.then((module) => {
+      if (!module || epoch !== hodlPsbtScanEpoch) return;
+      for (let [host, field] of hosts) {
+        if (!host || !field || !host.isConnected || host.childNodes.length) continue;
+        if (hodlPsbtScans.some((entry) => entry.hostId === host.id)) continue;
+        try {
+          hodlPsbtScans.push({ hostId: host.id, panel: module.mountPsbtScan(host, { field, translate: hodlTText }) });
+        } catch {
+          try { host.replaceChildren(); } catch {}
+        }
+      }
+    }).catch(() => {});
+  }
+}
+function hodlDestroyPsbtScans() {
+  hodlPsbtScanEpoch++;
+  let scans = hodlPsbtScans;
+  hodlPsbtScans = [];
+  for (let entry of scans) {
+    try { entry.panel?.destroy(); } catch {
+      // A panel that would not come down must not leave its markup behind.
+      try { document.getElementById(entry.hostId)?.replaceChildren(); } catch {}
+    }
+  }
+  // The decoders are retired at End Session only: the registry is shared with
+  // the nonce ceremony's frame decoder, which a language switch must not stop.
+}
 function hodlMountSeedPicker() {
   let host = document.getElementById("seed-picker-host");
   if (!host || !hodlSecureSeedActive()) return;
   if (!hodlSeedPickerImport) hodlSeedPickerImport = import("./seed-picker.js").catch(() => null);
   hodlSeedPickerImport.then((module) => {
-    if (!module || hodlSeedPicker || !host.isConnected || host.childNodes.length || !hodlSecureSeedActive()) return;
+    if (!module) {
+      hodlSeedPickerImport = null;
+      if (host.isConnected && host.childNodes.length === 0 && hodlSecureSeedActive()) {
+        host.innerHTML = `<p class="field-note edge-note is-private" id="seed-picker-load-error" role="alert">${hodlT("The word picker could not load. Turn Secure entry off to use standard text entry.")}</p>`;
+      }
+      return;
+    }
+    if (hodlSeedPicker || !host.isConnected || host.childNodes.length || !hodlSecureSeedActive()) return;
     let entry = hodlSecureSeedEntry(true);
     if (!entry) return;
-    hodlSeedPicker = module.mountSeedPicker(host, {
-      entry, wordlist: hodlBip39Wordlist, seedSet, seedUndo, seedIndices,
-      entropyFromWordIndices: hodlEntropyFromWordIndices, translate: hodlTText,
-      onChange: hodlSecureSeedChanged,
-    });
+    try {
+      hodlSeedPicker = module.mountSeedPicker(host, {
+        entry, wordlist: hodlBip39Wordlist, seedSet, seedUndo, seedIndices,
+        entropyFromWordIndices: hodlEntropyFromWordIndices, translate: hodlTText,
+        onChange: hodlSecureSeedChanged,
+      });
+    } catch {
+      if (host.isConnected && hodlSecureSeedActive()) {
+        host.innerHTML = "";
+        host.innerHTML = `<p class="field-note edge-note is-private" id="seed-picker-load-error" role="alert">${hodlT("The word picker could not load. Turn Secure entry off to use standard text entry.")}</p>`;
+      }
+    }
   }).catch(() => {});
 }
 function hodlSecureSeedChanged() {
@@ -8192,6 +8266,7 @@ async function hodlCalculateKey(progress, action = "derive", options = {}) {
     if (decision?.kind !== "reuse") hodlCommittedResults.add(result);
     hodlRevealPrivate = false;
     hodlSetSelectedScriptType(scriptType);
+    if (hodlKeys[hodlActiveKey]) delete hodlKeys[hodlActiveKey].secureCleared;
     hodlCaptureKey();
     let logDetail = hodlWalletResult?.masterFingerprint || hodlWalletResult?.kind || "key";
     hodlSnapshotKeySummary();
@@ -12441,7 +12516,7 @@ var PREVIEW = typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREV
 // Secure entry (secure-entry.js): one session-wide switch, never persisted,
 // off on every load. Its entries live in hodlSecureSession, keyed by key id.
 var hodlSecureEntryOn = false, hodlSecureSession = createSecureSession();
-var hodlSecureEntryConfirm = null, hodlSecureEntryBusy = false;
+var hodlSecureEntryConfirm = null, hodlSecureEntryBusy = false, hodlSecureEntryConvertFailed = false;
 async function hodlSecureEntryDialog() {
   if (!hodlSecureEntryConfirm) hodlSecureEntryConfirm = (await import("./secure-entry-confirm.js")).initSecureEntryConfirm();
   return hodlSecureEntryConfirm;
@@ -12452,14 +12527,19 @@ async function hodlSecureEntryToggle(wanted) {
     return;
   }
   hodlSecureEntryBusy = true;
+  hodlSecureEntryConvertFailed = false;
   let before = hodlSecureEntryOn, plan = null, committed = false;
+  let convertChosen = false;
   try {
     hodlRenderSecureEntryControl();
     hodlCaptureKey();
     if (wanted && !hodlSecureEntryOn) {
       let keys = [], names = [], states = [];
       for (const state of hodlKeys) {
-        if (hodlNormalizeSeedMethod(state.seedMethod) !== "words") continue;
+        // A key in another mode keeps any old seed text as text: secure entry
+        // converts only what the Seed form shows. hodlCaptureKey() has already
+        // saved the active key's mode at the top of the toggle.
+        if (state.mode !== "seed" || hodlNormalizeSeedMethod(state.seedMethod) !== "words") continue;
         let phrase = String(state.fields?.seed ?? "").trim();
         // An extended key in the seed field is not words: it stays text.
         // A phrase longer than the key's length cannot be its words (the text
@@ -12493,11 +12573,29 @@ async function hodlSecureEntryToggle(wanted) {
         if (choice === "keep" && plan.ok) {
           commitTurnOn(hodlSecureSession, plan);
           plan = null;
-          for (const state of states) state.fields.seed = "";
+          for (const state of states) {
+            // When the words were Global sync's source, every other field was
+            // computed from them: those copies go too, as at Clear, so the
+            // words are left only in Secure entry. Any other source (a hex
+            // key, dice, cards) can hold more than the words do, and a wallet
+            // made from a private key cannot be rebuilt from them, so those
+            // keys keep their fields (K3.1, Kimi, Astra).
+            if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource) && state.result?.kind !== "single") {
+              hodlClearGlobalSyncCopies(state);
+              state.lastWord = "";
+            }
+            state.fields.seed = "";
+          }
         } else if (choice === "clear") {
           discardPlan(plan);
           plan = null;
-          for (const state of states) state.fields.seed = "";
+          for (const state of states) {
+            if (state.result) state.secureCleared = true;
+            if (state.globalSync) hodlClearGlobalSyncCopies(state);
+            state.fields.seed = "";
+            // The last-word helper's copy of the wiped words goes too (GLM).
+            state.lastWord = "";
+          }
           commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
         } else {
           discardPlan(plan);
@@ -12550,6 +12648,7 @@ async function hodlSecureEntryToggle(wanted) {
         // Cancel create no text copy of the words. The dialog needs nothing
         // from the plan, and planning after it reads the session as it is now.
         let choice = await (await hodlSecureEntryDialog()).open({ mode: "off" });
+        if (choice === "convert") convertChosen = true;
         if (choice === "convert") plan = planTurnOff(hodlSecureSession, { seed: serializer });
         if (choice === "convert" && plan.ok) {
           let texts = [];
@@ -12567,10 +12666,22 @@ async function hodlSecureEntryToggle(wanted) {
             if (state) state.fields.seed = text;
           }
         } else if (choice === "clear") {
-          commitTurnOff(hodlSecureSession, null, "clear");
+          // Clear wipes every secure entry: a key that keeps its wallet on screen but
+          // held its words only there would back up with no words (as at turn-on Clear).
+          // The keys are found before the wipe and marked by what it left, even when
+          // it throws: sessionWipe empties the session before it reports a partial
+          // wipe, so those words are gone (GLM, MiniMax), while a throw that wiped
+          // nothing leaves the words and no mark (Kimi).
+          let cleared = hodlKeys.filter((state) => state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state)));
+          try {
+            commitTurnOff(hodlSecureSession, null, "clear");
+          } finally {
+            for (const state of cleared) if (!hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
+          }
         } else {
           if (plan) discardPlan(plan);
           plan = null;
+          hodlSecureEntryConvertFailed = convertChosen;
           hodlRenderSecureEntryControl();
           return;
         }
@@ -12587,6 +12698,7 @@ async function hodlSecureEntryToggle(wanted) {
   } catch (error) {
     if (plan) discardPlan(plan);
     if (!committed) hodlSecureEntryOn = before;
+    if (convertChosen && !committed) hodlSecureEntryConvertFailed = true;
     hodlRenderSecureEntryControl();
   } finally {
     hodlSecureEntryBusy = false;
@@ -12602,6 +12714,15 @@ function hodlSecureEntryAvailable() {
 // pagehide) both run it.
 function hodlSecureEntryEnd() {
   hodlSecureEntryOn = false;
+  hodlSecureEntryConvertFailed = false;
+  // A page restored from the back/forward cache keeps its key tabs: a key that
+  // shows its wallet but held its words only in the session would back up
+  // with no words once the session is wiped, so it is marked first (GLM).
+  try {
+    for (const state of hodlKeys) {
+      if (state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
+    }
+  } catch {}
   try { sessionWipe(hodlSecureSession); } catch {}
   try { hodlRenderSecureEntryControl(); } catch {}
 }
@@ -12840,8 +12961,9 @@ function hodlSecureEntryHeld(state) {
 // Journal cannot hold securely entered words yet (a later backup format will):
 // a backup taken now would keep such a key without its recovery words.
 function hodlSecureEntryBackupRefusal() {
-  if (!hodlKeys.some((state) => hodlSecureEntryHeld(state))) return null;
-  return new Error(hodlTText("Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again."));
+  if (hodlKeys.some((state) => hodlSecureEntryHeld(state))) return new Error(hodlTText("Journal cannot back up words entered with Secure entry yet. Turn Secure entry off and convert them to text, or clear those keys, then try again."));
+  if (hodlKeys.some((state) => state?.secureCleared)) return new Error(hodlTText("Journal cannot back up or export keys whose words were cleared by Secure entry. Enter their words again and derive their wallets, or clear those keys, then try again."));
+  return null;
 }
 function hodlInitPsbt() {
   import("./nonce-qr-capture.js").then(async ({ initNonceQrCapture }) => {
@@ -15887,6 +16009,7 @@ function hodlKeyManagerEntry(state) {
   // the encrypted file, which is an export.
   if (ArrayBuffer.isView(state.fields?.pass) && copy.fields) copy.fields.pass = hodlPassphraseText(state.fields.pass);
   delete copy.isLab;
+  delete copy.secureCleared;
   copy.reveal = false;
   copy.error = "";
   delete copy.errorSpec;
@@ -16488,6 +16611,10 @@ function hodlKeyManagerDetachFromStation(state) {
     hodlKeyManagerStatus(hodlTText("This key has words entered with Secure entry, which Journal cannot keep yet. Turn Secure entry off or clear the key first."), true);
     return;
   }
+  if (state.secureCleared) {
+    hodlKeyManagerStatus(hodlTText("This key's words were cleared by Secure entry, so Journal cannot keep it. Enter its words again and derive its wallet first."), true);
+    return;
+  }
   hodlCaptureKey();
   let retainInputs = Boolean(state.result || hodlKeyManagerHasInputs(state));
   let capacityError = retainInputs && hodlKeyManagerCapacityError();
@@ -16583,6 +16710,7 @@ function hodlCloneDerivedKey(source, existing) {
     secureSource: Boolean(source.secureSource) || hodlSecureEntryHasData(hodlSecureKeyOf(source)),
     fields: { ...source.fields, ...(source.fields?.privateKeys ? { privateKeys: { ...source.fields.privateKeys } } : {}), pass: hodlStoredPassphraseBytes(source.fields?.pass) }
   });
+  if (source.secureCleared) state.secureCleared = true; else delete state.secureCleared;
   return state;
 }
 // The wallet a key tab belongs to: its network-independent master identity
@@ -16767,6 +16895,9 @@ function hodlFillLabFromKey(source) {
   let existing = labIndex >= 0 ? hodlKeys[labIndex] : hodlNewLabState();
   let lab = hodlCloneDerivedKey(source, existing);
   Object.assign(lab, { isLab: true, secureSource: false, editSourceId: hodlKeys.includes(source) ? source.id : null, name: "Key Station", result: null, importedKeyId: null, importedName: null, importedNetworkChoice: null, error: "", reveal: false, createdScript: "", createdPath: "" });
+  // The editor shows no wallet, so a cleared key's mark stays with the key:
+  // a copy here would keep refusing backups after that key is cleared.
+  delete lab.secureCleared;
   if (labIndex < 0) {
     hodlKeys.unshift(lab);
     labIndex = 0;
@@ -22284,9 +22415,15 @@ function hodlInitSecretFieldAutoClear() {
     hodlKeyScan = null;
     try { hodlSeedPicker?.destroy(); } catch {}
     hodlSeedPicker = null;
+    // The PSBT panels come down before any decoder is retired (their decoders
+    // live in the same registry as the Key Station's), then the registry goes.
+    try { hodlDestroyPsbtScans(); } catch {}
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
+    try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
+    // The PSBT hosts are static: give them fresh, closed panels too.
+    try { hodlBindPsbtScans(); } catch {}
     try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
     try { hodlSecureEntryEnd(); } catch {}
     // The seed form showed the picker: redraw it as the standard field.
@@ -22380,6 +22517,10 @@ function hodlApplyLocale() {
   document.querySelectorAll("#msig-keys textarea").forEach((ta) => {
     if (ta.value) hodlCheckXpub(ta);
   });
+  // These three hosts are static, so a language switch re-mounts the panels
+  // to pick up the new strings (the Key Station's is re-rendered above).
+  try { hodlDestroyPsbtScans(); } catch {}
+  try { hodlBindPsbtScans(); } catch {}
 }
 async function hodlBoot() {
   hodlInitPassphraseVault();
@@ -22418,6 +22559,7 @@ async function hodlBoot() {
       else document.querySelector(`#workspace-tabs [data-workspace="${tool}"]`)?.focus();
     },
   });
+  hodlBindPsbtScans();
   hodlInitLocale(hodlApplyLocale);
 }
 // Curve operations need the WebAssembly module instantiated first (async in
