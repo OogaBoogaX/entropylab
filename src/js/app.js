@@ -92,6 +92,7 @@ import {
 } from "./bip388-policy.js";
 import { initQrReferences } from "./qr-references.js";
 import { addressQrButtonHtml as hodlAddressQrButton, initAddressQr as hodlInitAddressQr, watchOnlyQrButtonHtml as hodlWatchOnlyQrButton } from "./address-qr.js";
+import { initFeatureGuide } from "./feature-guide.js";
 import { initLowEntropyConfirm } from "./low-entropy-confirm.js";
 import { initFingerprintCollisionConfirm } from "./fingerprint-collision-confirm.js";
 import { initJournalClearConfirm } from "./journal-clear-confirm.js";
@@ -22502,7 +22503,9 @@ function hodlInitFooterBuild() {
 // for the full page load: the footer markup and the LifeHash module are both
 // guaranteed by then. The page is self-contained, so load follows parse.
 addEventListener("load", hodlInitFooterBuild);
+var hodlFeatureGuide = null;
 function hodlApplyLocale() {
+  hodlFeatureGuide?.refresh();
   document.querySelectorAll("#workspace-tabs [data-workspace]").forEach((button) => {
     let entry = hodlWorkspaceTabs.find(([id]) => id === button.dataset.workspace);
     if (!entry) return;
@@ -22593,6 +22596,14 @@ async function hodlBoot() {
   hodlInitDescriptorCopy({ onCopyStart: hodlJournalCopyStart });
   hodlInitPrivateCopy({ copyIcon: hodlClipboardIconMarkup, copiedIcon: hodlCopiedIconMarkup, onCopyStart: hodlJournalCopyStart });
   hodlInitEndSession();
+  hodlFeatureGuide = initFeatureGuide({
+    t: hodlTText, availableTools: ["calc", "msig", "psbt", "bip85", "sp", "vanity"],
+    onOpenTool: (tool, lesson) => {
+      hodlShowWorkspace(tool);
+      if (tool === "psbt") hodlShowPsbtTool({ inspect: "inspector", edit: "editor", nonce: "nonce" }[lesson] || "inspector", true);
+      else document.querySelector(`#workspace-tabs [data-workspace="${tool}"]`)?.focus();
+    },
+  });
   hodlBindPsbtScans();
   // Each PSBT tool's Clear closes its scan panel too.
   for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);

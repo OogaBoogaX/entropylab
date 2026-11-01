@@ -643,6 +643,58 @@ through the [computer hardening checklist](docs/Computer_Hardening_Checklist.md)
 
 To build the HTML file yourself, see [Building from source](#building-from-source).
 
+### Testing an unmerged pull request
+
+The `entropylab.html` committed on a feature branch is inherited from `rock`;
+it does not contain that pull request's unmerged changes. The public website
+also follows `rock`. For a PR retest, open its **Checks**, follow the
+**EntropyLab CI/CD** run for the current head commit, and wait for it to pass.
+Download **entropylab-candidate** and **entropylab-sha256sums** from that run's
+Artifacts section (GitHub sign-in required). Extract both, check the HTML
+against that run's `SHA256SUMS.txt`, and record the run URL, PR head, footer
+source commit and HTML digest with the results. The footer identifies the
+last commit that changed a build input, so it can predate a docs-only head.
+PR candidates are for practice testing without wallet secrets; release
+attestation and publication happen separately after merge. Alternatively,
+build the PR's checked-out sources locally. Do not commit generated HTML.
+
+### Feature guide
+
+Choose **Basics**, immediately after the newcomer introduction above the tool
+tabs, to start the eight-step beginner lesson as the first lesson of the
+**Understand wallets** route, so its finish offers the next lesson. **Guide** opens the
+contents and individual feature lessons. **Explain this tool** in each covered tool's
+introduction opens its lesson directly. Every step explains the feature,
+what to check, and its limits. No wallet secrets are needed. Optional goal-based
+routes group lessons with summaries; **Understand wallets** is the beginner route and Browse all lessons keeps direct access. Expandable diagrams
+and ungraded quick checks live only inside Guide and never block progress. Each check appears once, after its lesson concepts. First-use basics terms have expandable explanations.
+
+Back, Contents, Close, and replay are always available. Closing retains your
+place for this page session; **Continue learning** resumes an unfinished lesson. After a route lesson finishes, an explicit **Continue route** action opens the next lesson. Finish screens also link to other feature lessons, without opening tools. Reloading or
+leaving the page resets progress. Completing a lesson never removes Guide.
+The lessons are bundled in the downloaded HTML and work without network or
+browser storage. New lesson translations fall back to English until the
+translation workflow fills them.
+
+The first Basics step keeps download verification in a collapsed **Before real
+funds: verify your download** section, which explains checksums and build
+provenance and has a tappable **Verifying the download (online README)** link. Only choosing it opens GitHub in a new tab; it requires a connection, so
+read those instructions before transferring the verified file offline. The
+bundled lesson remains available without following that link.
+
+The second startup warning initially focuses its heading, not the numeric
+input, so an editing keyboard is not requested before the warning is read.
+On short screens the warning text scrolls while the reading challenge and
+confirmation controls remain available. The two acknowledgements and correct
+typed digit are still required; the warning text is not reduced or removed.
+
+Reading lessons does not derive, reveal, import, or change wallet material.
+**Open this tool** explicitly leaves the guide and uses normal tool
+navigation, which can change displayed results and runs Vanity's usual
+benchmark on entry. The guide explains limitations; it does not certify a
+wallet, transaction, or computer safe. Lightning and Journal lessons remain
+outside this Guide's current scope; both tabs are released.
+
 ### Anti-exfil QR observer
 
 Unexpected proof-verifier exceptions produce a STOP result and completion clears
@@ -688,11 +740,23 @@ result or STOP. Sparrow’s own checks and broadcast decision remain necessary.
 
 ### iPhone home-screen app
 
+Opening a downloaded HTML file through a phone's file viewer is a different
+route from loading the HTTPS site in Safari. If that route reports a failed
+**Secure browser context** check, EntropyLab will not run there. Do not bypass
+the check. The HTTPS site can be used for practice without wallet secrets;
+passing there does not establish that a downloaded file or an offline iPhone
+setup works. Exact behavior needs the iOS/browser version and file-opening
+route to be tested; no universal iPhone downloaded-file support is promised.
+
 On iPhone, open [entropylab.online](https://entropylab.online) in Safari, then
 choose **Share → Add to Home Screen → Open as Web App → Add**. Keep the page
 open until its first load completes. The hosted app stores the self-contained
 calculator in a versioned browser cache so the Home Screen app can reopen when
 the phone has no network connection.
+
+Check that this separate Home Screen route actually reopens while disconnected
+on the device and version being used; a saved shortcut alone is not evidence
+of offline availability.
 
 Before entering any seed phrase, private key, or other secret wallet material,
 disconnect every network available to the phone, reopen EntropyLab from the
