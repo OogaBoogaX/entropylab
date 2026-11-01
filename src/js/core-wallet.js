@@ -31,6 +31,9 @@ var hodlCoreWallet = (() => {
   ];
 
   const PRIVATE_KEY = /\b(?:[xyztuv]prv|[YZUV]prv)[1-9A-HJ-NP-Za-km-z]{90,}/;
+  // A WIF inside a key expression (pk(5…), wpkh(K…/L…), or 9…/c… on a test
+  // chain): 51 or 52 Base58 characters on their own.
+  const WIF_KEY = /\b[5KL9c][1-9A-HJ-NP-Za-km-z]{50,51}\b/;
   const EXTENDED_PRV_GLOBAL = /((?:xprv|tprv|yprv|uprv|zprv|vprv)[1-9A-HJ-NP-Za-km-z]{90,})/g;
   const EXTENDED_PUB_GLOBAL = /((?:xpub|tpub|ypub|upub|zpub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{90,})/g;
 
@@ -406,8 +409,12 @@ var hodlCoreWallet = (() => {
       checks.push(check("bad", "Active scriptPubKey", `${active.internal ? "internal" : "external"} type ${active.type} points at a missing descriptor`));
     }
 
-    for (const entry of doc.descriptors) {
-      const label = entry.descriptor.length > 24 ? `${entry.descriptor.slice(0, 21)}…` : entry.descriptor;
+    for (const [index, entry] of doc.descriptors.entries()) {
+      // A descriptor that carries a key (a crafted file: Core writes the
+      // public form) is named by its place in the report, never by its text,
+      // because these lines show while the descriptor itself is redacted.
+      const secret = PRIVATE_KEY.test(entry.descriptor) || WIF_KEY.test(entry.descriptor);
+      const label = secret ? `#${index + 1}` : entry.descriptor.length > 24 ? `${entry.descriptor.slice(0, 21)}…` : entry.descriptor;
       const text = entry.descriptor;
       const hash = text.lastIndexOf("#");
       if (hash < 0) {
@@ -504,6 +511,8 @@ var hodlCoreWallet = (() => {
         } else if (expected && !bytesEqual(cache.body, expected)) {
           checks.push(check("bad", `Descriptor cache`, `${label} cache ${keyExpIndex} is not the descriptor's wildcard parent — Core would watch the wrong subtree`));
         } else if (expected) {
+          // The report shows a cache body as public only on this verdict.
+          cache.verified = true;
           checks.push(check("ok", `Descriptor cache`, `${label} cache ${keyExpIndex} matches the recomputed wildcard parent`));
         } else {
           checks.push(check("warn", `Descriptor cache`, `${label} cache ${keyExpIndex} is present but its descriptor shape is outside what this tool re-derives`));

@@ -168,9 +168,16 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
         : `<span class="muted">${tHtml("not the active descriptor for its type")}</span>`,
     );
     for (const cache of entry.caches) {
+      // A cache parent the verification recomputed from the descriptor's own
+      // public key is public by that check; any other body is unknown bytes
+      // from a file that can come from anywhere, so it is private DOM.
       push(
         tHtml("Cache parent (provider {n})", { n: cache.keyExpIndex }),
-        expandableHtml(bytesToHex(cache.body), { label: t("Descriptor {n} cache parent", { n: index + 1 }) }),
+        cache.verified
+          ? expandableHtml(bytesToHex(cache.body), { label: t("Descriptor {n} cache parent", { n: index + 1 }) })
+          : reveal.checked
+            ? expandableHtml(bytesToHex(cache.body), { label: t("Descriptor {n} cache parent", { n: index + 1 }), privateValue: true })
+            : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: cache.body.length })}</span>`,
       );
     }
     entry.keys.forEach((keyRecord, keyIndex) => {
@@ -187,18 +194,19 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
     if (!doc.others.length) return "";
     const shown = doc.others.slice(0, OTHER_RECORD_RENDER_LIMIT);
     // What an undecoded record holds is unknown, and the file can come from
-    // anywhere: its value is private DOM like the key records, redacted until
-    // revealed and hidden again on conceal, and its copy stays within
-    // EntropyLab (the record's key names its type and stays public).
+    // anywhere: its key bytes and its value are private DOM like the key
+    // records, redacted until revealed and hidden again on conceal, and their
+    // copies stay within EntropyLab. Only the decoded type name is public.
+    const privateHex = (bytes, label) => (reveal.checked
+      ? expandableHtml(bytesToHex(bytes), { label, privateValue: true })
+      : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: bytes.length })}</span>`);
     const rows = shown
       .map((record) => {
         const note = record.error ? `<span class="psbted-note-bad">${escapeHtml(record.error)}</span>` : "";
         return `<tr>
           <td class="psbted-name">${record.name == null ? tHtml("(unnamed)") : escapeHtml(record.name)}${note ? `<br>${note}` : ""}</td>
-          <td class="psbted-hex">${expandableHtml(bytesToHex(record.key), { label: tHtml("Record key (hex)") })}</td>
-          <td class="psbted-hex">${reveal.checked
-            ? expandableHtml(bytesToHex(record.value), { label: tHtml("Record value (hex)"), privateValue: true })
-            : `<span class="muted">${tHtml("present — {bytes} bytes, redacted", { bytes: record.value.length })}</span>`}</td>
+          <td class="psbted-hex">${privateHex(record.key, tHtml("Record key (hex)"))}</td>
+          <td class="psbted-hex">${privateHex(record.value, tHtml("Record value (hex)"))}</td>
         </tr>`;
       })
       .join("");
