@@ -527,6 +527,32 @@ test("a later RBF-original pick wins over an earlier read that finishes last", a
   assert.equal(elements["psbt-rbf-original"].value, Buffer.from([0x70, 0x73, 0x62, 0x74, 0xff, 0xbb]).toString("base64"), "the stale read does not overwrite the newer pick");
 });
 
+test("an oversized RBF-original file is refused before it is read", async () => {
+  const elements = { "psbt-rbf-original": { value: "" } };
+  const errors = [];
+  const context = vm.createContext({
+    hodlPsbtRbfUploadGeneration: 0,
+    document: { getElementById: (id) => elements[id] || null },
+    hodlBytesToB64: (bytes) => Buffer.from(bytes).toString("base64"),
+    hodlSetPsbtError: (spec) => { errors.push(spec); },
+    psbtBytesFromUpload: realPsbtBytesFromUpload,
+    hodlPsbtClearRbfVerdict: () => {},
+    Uint8Array,
+  });
+  vm.runInContext(extract("hodlPsbtLoadRbfUpload"), context);
+  let reads = 0;
+  context.hodlPsbtLoadRbfUpload({ size: 5e6 + 1, arrayBuffer: async () => { reads++; return new ArrayBuffer(0); } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(reads, 0, "an oversized file must not be read into memory");
+  assert.equal(errors.length, 1, "the refusal is shown");
+  assert.equal(elements["psbt-rbf-original"].value, "");
+  const bytes = Uint8Array.of(0x70, 0x73, 0x62, 0x74, 0xff, 0x00);
+  context.hodlPsbtLoadRbfUpload({ size: 5e6, arrayBuffer: async () => { reads++; return bytes.buffer; } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(reads, 1, "a file at the limit is read");
+  assert.equal(elements["psbt-rbf-original"].value, Buffer.from(bytes).toString("base64"));
+});
+
 test("editing the RBF original retires the rendered verdict", () => {
   let removed = 0;
   const verdict = { remove: () => { removed += 1; } };
