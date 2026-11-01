@@ -5,6 +5,13 @@ Release notes for EntropyLab. Each release is a single self-contained
 
 ## Unreleased
 
+- **Scan PSBT QR**: the PSBT Inspector, Nonce Inspector and PSBT Editor
+  fields gain a camera control that reads a PSBT from one static QR code or
+  an animated `ur:crypto-psbt` sequence. Only a payload that starts with the
+  PSBT magic is written to the field, after the whole code has arrived.
+  Clearing a tool, leaving the Transactions workspace, a language switch and
+  End Session close an open scanner and stop its camera.
+
 - **Passphrases starting with U+FEFF derive a different wallet than in
   v1.0.0** (audit C2-E): the BIP39 salt now hashes the leading U+FEFF the way
   the BIP39 reference does, and key-file export/import round-trips it

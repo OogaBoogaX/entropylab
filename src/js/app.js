@@ -7554,30 +7554,28 @@ function hodlBindKeyScan() {
 var hodlPsbtScanEpoch = 0;
 function hodlBindPsbtScans() {
   // The slice harness loads this with no scan host: return before anything
-  // else, and never read the preview flag bare.
+  // else.
   let hosts = hodlPsbtScanHosts.map(([hostId, fieldId]) => [document.getElementById(hostId), document.getElementById(fieldId)]);
   if (!hosts.some(([host]) => host)) return;
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    if (!hodlPsbtScanImport) {
-      hodlPsbtScanImport = import("./qr-psbt-scan.js").then((module) => {
-        hodlPsbtScanModule = module;
-        return module;
-      }).catch(() => null);
-    }
-    let epoch = hodlPsbtScanEpoch;
-    hodlPsbtScanImport.then((module) => {
-      if (!module || epoch !== hodlPsbtScanEpoch) return;
-      for (let [host, field] of hosts) {
-        if (!host || !field || !host.isConnected || host.childNodes.length) continue;
-        if (hodlPsbtScans.some((entry) => entry.hostId === host.id)) continue;
-        try {
-          hodlPsbtScans.push({ hostId: host.id, panel: module.mountPsbtScan(host, { field, translate: hodlTText }) });
-        } catch {
-          try { host.replaceChildren(); } catch {}
-        }
-      }
-    }).catch(() => {});
+  if (!hodlPsbtScanImport) {
+    hodlPsbtScanImport = import("./qr-psbt-scan.js").then((module) => {
+      hodlPsbtScanModule = module;
+      return module;
+    }).catch(() => null);
   }
+  let epoch = hodlPsbtScanEpoch;
+  hodlPsbtScanImport.then((module) => {
+    if (!module || epoch !== hodlPsbtScanEpoch) return;
+    for (let [host, field] of hosts) {
+      if (!host || !field || !host.isConnected || host.childNodes.length) continue;
+      if (hodlPsbtScans.some((entry) => entry.hostId === host.id)) continue;
+      try {
+        hodlPsbtScans.push({ hostId: host.id, panel: module.mountPsbtScan(host, { field }) });
+      } catch {
+        try { host.replaceChildren(); } catch {}
+      }
+    }
+  }).catch(() => {});
 }
 function hodlDestroyPsbtScans() {
   hodlPsbtScanEpoch++;
@@ -7591,6 +7589,13 @@ function hodlDestroyPsbtScans() {
   }
   // The decoders are retired at End Session only: the registry is shared with
   // the nonce ceremony's frame decoder, which a language switch must not stop.
+}
+// A tool's own Clear, and leaving the Transactions workspace, close an open
+// scan panel (its camera would otherwise keep streaming) and give the host a
+// fresh, closed one.
+function hodlResetPsbtScans() {
+  try { hodlDestroyPsbtScans(); } catch {}
+  try { hodlBindPsbtScans(); } catch {}
 }
 function hodlMountSeedPicker() {
   let host = document.getElementById("seed-picker-host");
@@ -18313,6 +18318,8 @@ function hodlShowWorkspace(id) {
   // invalidate the run, and lifecycle/session clearing own cancellation.
   // Leaving the Privacy workspace hides a revealed BIP-47 spending key.
   if (hodlWorkspace === "sp" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  // Leaving the Transactions workspace closes an open scan panel.
+  if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
   hodlWorkspace = id;
   [...hodlElement("#workspace-tabs").querySelectorAll("[data-workspace]")].forEach((button) => {
     let active = button.dataset.workspace === id;
@@ -22549,6 +22556,8 @@ async function hodlBoot() {
   hodlInitPrivateCopy({ copyIcon: hodlClipboardIconMarkup, copiedIcon: hodlCopiedIconMarkup, onCopyStart: hodlJournalCopyStart });
   hodlInitEndSession();
   hodlBindPsbtScans();
+  // Each PSBT tool's Clear closes its scan panel too.
+  for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);
   hodlInitLocale(hodlApplyLocale);
 }
 // Curve operations need the WebAssembly module instantiated first (async in
