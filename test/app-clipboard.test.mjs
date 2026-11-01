@@ -174,3 +174,42 @@ for (const native of [true, false]) test(`a pending public copy (${native ? "Cli
     appClipboardClear();
   }
 });
+
+// The app's own fallback copy fires a real copy event; it must not clear a
+// private copy made while the public copy was pending, which the generation
+// check keeps (Kimi, Astra, GLM, #1347 round 6). A plain copy event still clears.
+test("the fallback copy's own copy event does not defeat the generation check", async () => {
+  const { copyText } = await import("../src/js/clipboard.js");
+  const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const doc = new EventTarget();
+  doc.activeElement = null;
+  doc.createElement = () => ({ value: "", style: {}, setAttribute() {}, select() {}, remove() {} });
+  doc.execCommand = () => { doc.dispatchEvent(new Event("copy")); return true; };
+  let reject;
+  Object.defineProperty(globalThis, "document", { configurable: true, writable: true, value: doc });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: { clipboard: { writeText: () => new Promise((_, r) => { reject = r; }) } } });
+  const stop = initAppClipboard(new EventTarget(), doc);
+  try {
+    appClipboardClear();
+    const pending = copyText("1BoatSLRHtKNngkdXEeobR76b53LETtpyT", { host: { append() {} } });
+    const phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    assert.equal(appClipboardPut(phrase), true);
+    reject(new Error("NotAllowedError"));
+    assert.equal(await pending, true);
+    assert.equal(appClipboardText(), phrase, "the newer private copy survives the app's own fallback copy");
+    // A copy that is not the app's own (a selection and Ctrl+C) still clears.
+    doc.dispatchEvent(new Event("copy"));
+    assert.equal(appClipboardHas(), false);
+    // And the app's own copy, with nothing pending, ends what it finds.
+    Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: { clipboard: { writeText: async () => {} } } });
+    appClipboardPut(phrase);
+    assert.equal(await copyText("bc1qpublic", { host: { append() {} } }), true);
+    assert.equal(appClipboardHas(), false);
+  } finally {
+    stop();
+    if (savedNavigator) Object.defineProperty(globalThis, "navigator", savedNavigator); else delete globalThis.navigator;
+    if (savedDocument) Object.defineProperty(globalThis, "document", savedDocument); else delete globalThis.document;
+    appClipboardClear();
+  }
+});

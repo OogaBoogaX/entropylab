@@ -12,7 +12,7 @@
 // body, outside a modal's trap and Escape handler, so focus then goes back
 // to whatever held it before the copy.
 import { t as hodlTText } from "./i18n.js";
-import { appClipboardClear, appClipboardGeneration, appClipboardHas } from "./app-clipboard.js";
+import { appClipboardClear, appClipboardGeneration, appClipboardHas, appClipboardOwnCopy } from "./app-clipboard.js";
 
 const fallbackCopy = (text, host) => {
   const focused = document.activeElement;
@@ -24,7 +24,9 @@ const fallbackCopy = (text, host) => {
   host.append(field);
   field.select();
   try {
-    return document.execCommand("copy") === true;
+    // The copy event this fires is the app's own: the generation check
+    // below decides what it ends, not the app clipboard's copy listener.
+    return appClipboardOwnCopy(() => document.execCommand("copy")) === true;
   } catch {
     return false;
   } finally {

@@ -63,8 +63,18 @@ export const appClipboardGeneration = () => generation;
 // selection, not only the app's own copy controls): "cleared when you copy
 // something else" holds for every copy (Astra, K3.1).
 const DOC_EVENTS = ["hodl:conceal", "copy", "cut"];
+// The app's own fallback copy (execCommand) fires a copy event too; it runs
+// through here so copyText's generation check decides, not the listener.
+let ownCopies = 0;
+export const appClipboardOwnCopy = (copy) => {
+  ownCopies += 1;
+  try { return copy(); } finally { ownCopies -= 1; }
+};
 export const initAppClipboard = (target = globalThis, doc = target.document) => {
-  const clear = () => appClipboardClear();
+  const clear = (event) => {
+    if (ownCopies && event && event.type !== "hodl:conceal") return;
+    appClipboardClear();
+  };
   target.addEventListener("pagehide", clear);
   for (const type of DOC_EVENTS) doc?.addEventListener(type, clear);
   return () => {
