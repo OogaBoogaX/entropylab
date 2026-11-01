@@ -1,4 +1,4 @@
-// The PSBT scan panel (preview builds only). It owns the panel's DOM, one
+// The PSBT scan panel. It owns the panel's DOM, one
 // decoder, one camera scanner and one payload reader; the PSBT field belongs
 // to the caller. A scan is only ever offered to the field: nothing is written
 // until the field is empty or the user chooses Replace, and a payload that is
@@ -9,6 +9,7 @@
 // written or discarded, and a pending scan is dropped on conceal, close and
 // destroy().
 
+import { t } from "./i18n.js";
 import { createQrDecoder, retireQrDecoders } from "./qr-scan.js";
 import { createQrScanner } from "./qr-scanner.js";
 import { createPsbtQrReader } from "./psbt-qr-payload.js";
@@ -18,22 +19,24 @@ export { retireQrDecoders };
 
 const defaultWasmBytes = () => Uint8Array.from(atob(QR_WASM_B64), (character) => character.charCodeAt(0));
 
+// Each status is a thunk: the string is looked up when it is shown, so a
+// language switch is honoured, and the catalog sweep still sees the literal.
 const STATUS_TEXT = {
-  scanning: "Point the camera at the PSBT QR code.",
-  "two-codes": "Two different QR codes are in view, so the scan was refused. Show one code only and try again.",
-  timeout: "No QR code was found, so the camera stopped.",
-  stopped: "The camera is off.",
-  unsupported: "This browser cannot open the camera here.",
-  denied: "Camera access was blocked. Check this browser's camera permissions.",
-  "no-camera": "No camera was found.",
-  error: "The scan failed. Nothing was loaded.",
-  "not-psbt": "This QR is not a PSBT.",
-  mismatch: "Parts from two different QR codes; start again.",
-  "too-large": "This QR is too large to load.",
-  "bad-part": "This QR could not be read as a PSBT.",
-  confirm: "Replace the PSBT in the field?",
-  loaded: "PSBT loaded from the camera ({n} bytes).",
-  kept: "The scan was discarded; the field was not changed.",
+  scanning: () => t("Point the camera at the PSBT QR code."),
+  "two-codes": () => t("Two different QR codes are in view, so the scan was refused. Show one code only and try again."),
+  timeout: () => t("No QR code was found, so the camera stopped."),
+  stopped: () => t("The camera is off."),
+  unsupported: () => t("This browser cannot open the camera here."),
+  denied: () => t("Camera access was blocked. Check this browser's camera permissions."),
+  "no-camera": () => t("No camera was found."),
+  error: () => t("The scan failed. Nothing was loaded."),
+  "not-psbt": () => t("This QR is not a PSBT."),
+  mismatch: () => t("Parts from two different QR codes; start again."),
+  "too-large": () => t("This QR is too large to load."),
+  "bad-part": () => t("This QR could not be read as a PSBT."),
+  confirm: () => t("Replace the PSBT in the field?"),
+  loaded: (vars) => t("PSBT loaded from the camera ({n} bytes).", vars),
+  kept: () => t("The scan was discarded; the field was not changed."),
 };
 
 const toBase64 = (bytes) => {
@@ -47,7 +50,6 @@ const toBase64 = (bytes) => {
 
 export function mountPsbtScan(host, {
   field,
-  translate = (text) => text,
   onLoad = () => {},
   createDecoder = createQrDecoder,
   createScanner = createQrScanner,
@@ -55,13 +57,6 @@ export function mountPsbtScan(host, {
   doc = document,
   win = window,
 } = {}) {
-  // A translation may or may not fill {placeholders}; fill any it leaves.
-  const say = (text, vars) => {
-    const translated = String(translate(text, vars) ?? "");
-    if (!vars) return translated;
-    return translated.replace(/\{(\w+)\}/g, (match, name) => (Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match));
-  };
-
   const make = (tag, props) => {
     const node = doc.createElement(tag);
     if (props) for (const name of Object.keys(props)) {
@@ -77,20 +72,20 @@ export function mountPsbtScan(host, {
   // Ids are prefixed with the host's id so three panels can coexist.
   const prefix = String(host.id ?? "");
   const openRow = make("div", { class: "row tool-actions" });
-  const openButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-open`, "aria-expanded": "false", "aria-controls": `${prefix}-panel`, text: say("Scan PSBT QR") });
+  const openButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-open`, "aria-expanded": "false", "aria-controls": `${prefix}-panel`, text: t("Scan PSBT QR") });
   const panel = make("div", { id: `${prefix}-panel`, hidden: true });
   const statusLine = make("p", { class: "field-note", id: `${prefix}-status`, role: "status", "aria-live": "polite" });
   const progressLine = make("p", { class: "field-note", id: `${prefix}-progress`, "aria-live": "polite", hidden: true });
   const video = make("video", { id: `${prefix}-video`, playsinline: "", muted: "", "aria-hidden": "true", hidden: true });
   const canvas = make("canvas", { id: `${prefix}-canvas`, hidden: true });
   const controls = make("div", { class: "row tool-actions" });
-  const stopButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-stop`, hidden: true, text: say("Stop camera") });
-  const closeButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-close`, text: say("Close") });
+  const stopButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-stop`, hidden: true, text: t("Stop camera") });
+  const closeButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-close`, text: t("Close") });
   const confirm = make("div", { id: `${prefix}-confirm`, hidden: true });
-  const confirmText = make("p", { class: "field-note", id: `${prefix}-confirm-text`, text: say(STATUS_TEXT.confirm) });
+  const confirmText = make("p", { class: "field-note", id: `${prefix}-confirm-text`, text: STATUS_TEXT.confirm() });
   const confirmActions = make("div", { class: "row tool-actions" });
-  const replaceButton = make("button", { type: "button", class: "btn primary", id: `${prefix}-replace`, text: say("Replace") });
-  const keepButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-keep`, text: say("Keep") });
+  const replaceButton = make("button", { type: "button", class: "btn primary", id: `${prefix}-replace`, text: t("Replace") });
+  const keepButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-keep`, text: t("Keep") });
 
   confirmActions.appendChild(replaceButton);
   confirmActions.appendChild(keepButton);
@@ -124,7 +119,7 @@ export function mountPsbtScan(host, {
   const showStatus = (code, vars) => {
     const key = Object.prototype.hasOwnProperty.call(STATUS_TEXT, code) ? code : "error";
     statusLine.setAttribute("data-scan-state", key);
-    statusLine.textContent = say(STATUS_TEXT[key], vars);
+    statusLine.textContent = STATUS_TEXT[key](vars);
     cameraRunning = key === "scanning" || key === "two-codes";
     updateAcquisition();
   };
@@ -137,7 +132,7 @@ export function mountPsbtScan(host, {
       return;
     }
     progressLine.hidden = false;
-    progressLine.textContent = say("{received} of {total} parts", { received: progress.received, total: progress.total });
+    progressLine.textContent = t("{received} of {total} parts", { received: progress.received, total: progress.total });
   };
 
   const dropPending = () => {
