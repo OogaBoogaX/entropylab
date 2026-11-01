@@ -8118,6 +8118,14 @@ function hodlInitMasterFingerprintPreview() {
   if (!panel || !pass) return;
   panel.addEventListener("input", (event) => {
     let id = event.target?.id;
+    // The masked key field: the shown wallet and fingerprint no longer match
+    // its key (Grok, GLM, MiniMax). Its text is in the vault, so Global sync
+    // has nothing to read.
+    if (id === "secure-key") {
+      hodlInvalidateLiveKeyResult();
+      hodlQueueMasterFingerprintPreview();
+      return;
+    }
     if (!["pass", "dice", "hex", "bin", "base4", "base8", "base32", "base64", "seed", "seed-numbers", "cards", "direct-cards", "brain-lab", "key"].includes(id)) return;
     if (id === "pass") {
       let state = hodlKeys[hodlActiveKey];
@@ -12676,7 +12684,12 @@ async function hodlSecureEntryToggle(wanted) {
             }
             state.fields.seed = "";
           }
-          for (const { state, kind } of keyStates) hodlPrivateKeyValues(state.fields)[kind] = "";
+          for (const { state, kind } of keyStates) {
+            // Global sync copies computed from this key go with it, as for
+            // words above (GLM, round 1).
+            if (state.globalSync && state.globalSyncSource === `key:${kind}`) hodlClearGlobalSyncCopies(state);
+            hodlPrivateKeyValues(state.fields)[kind] = "";
+          }
         } else if (choice === "clear") {
           discardPlan(plan);
           plan = null;
@@ -12689,6 +12702,7 @@ async function hodlSecureEntryToggle(wanted) {
           }
           for (const { state, kind } of keyStates) {
             if (state.result) state.secureCleared = true;
+            if (state.globalSync) hodlClearGlobalSyncCopies(state);
             hodlPrivateKeyValues(state.fields)[kind] = "";
           }
           commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
@@ -13029,17 +13043,18 @@ function hodlSecureKeyStatus() {
     line.textContent = hodlT("{count} characters", { count }); // DRAFT (owner OK pending)
     return;
   }
+  // At a complete length the line says what Derive would: the same parse and
+  // the same kind, network and range checks (MiniMax, round 1).
   let network = hodlSelectedNetwork(document.getElementById("network"));
-  let bytes = entry.vault.bytes(), parsed = null;
+  let parsed = null;
   try {
-    try {
-      parsed = parsePrivateKeyBytes(bytes, { kind });
-    } catch (error) {
-      if (!(error instanceof KeyBytesError)) throw error;
-      line.className = "field-note edge-note is-private";
-      line.textContent = hodlSecureKeyRefusal(error, kind, network, bytes).message;
-      return;
-    }
+    parsed = hodlSecureKeyParsed(network);
+  } catch (error) {
+    line.className = "field-note edge-note is-private";
+    line.textContent = String(error?.message ?? "");
+    return;
+  }
+  try {
     if (kind === "hex-key") {
       line.textContent = hodlT("Valid private-key value · Hex has no checksum to detect typing mistakes."); // DRAFT (owner OK pending)
     } else if (kind === "minikey") {
@@ -13050,11 +13065,8 @@ function hodlSecureKeyStatus() {
         : hodlT("WIF checksum passed · {network} · Uncompressed public key", { network: parsed.network }); // DRAFT (owner OK pending)
     }
   } finally {
-    bytes.fill(0);
-    if (parsed) {
-      parsed.priv?.fill(0);
-      parsed.minikey?.fill(0);
-    }
+    parsed.priv?.fill(0);
+    parsed.minikey?.fill(0);
   }
 }
 
@@ -13070,7 +13082,7 @@ function hodlSecureKeyShowReadout(show) {
   if (!entry || entry.vault.length === 0) return;
   let readout = document.createElement("div");
   readout.setAttribute("data-secure-key-readout", "");
-  readout.innerHTML = hodlPrivateValue(entry.vault.text(), true);
+  readout.innerHTML = hodlPrivateValue(entry.vault.text(), "mono private-field-value", true);
   status.parentNode.insertBefore(readout, status.nextSibling);
   hodlSecureKeyRevealed = true;
 }
@@ -13092,19 +13104,21 @@ function hodlBindSecureKeyField() {
   let entry = hodlSecureKeyEntry(true);
   if (!field || !entry) return;
   hodlSecureKeyField = bindVaultField(field, entry.vault, { active: hodlSecureKeyActive });
+  const lockKinds = () => hodlSecureKeyLockKinds(document.querySelectorAll('input[name="kk"]'), hodlSecureKeyKind(), entry.vault.length > 0);
   field.addEventListener("input", () => {
     // Any edit hides the readout: it would otherwise show stale text.
     hodlSecureKeyConceal();
     hodlSecureKeyStatus();
+    lockKinds();
     hodlSyncDeriveButton();
     hodlSyncKeyClearButton();
   });
   let reveal = document.getElementById("secure-key-reveal");
   if (reveal) reveal.onclick = () => {
-    let show = !hodlSecureKeyRevealed;
-    hodlSecureKeyShowReadout(show);
-    reveal.setAttribute("aria-pressed", show ? "true" : "false");
-    reveal.textContent = show ? hodlT("Hide key") : hodlT("Show key");
+    hodlSecureKeyShowReadout(!hodlSecureKeyRevealed);
+    // The button follows what is shown: an empty vault shows nothing (Grok).
+    reveal.setAttribute("aria-pressed", hodlSecureKeyRevealed ? "true" : "false");
+    reveal.textContent = hodlSecureKeyRevealed ? hodlT("Hide key") : hodlT("Show key");
   };
   for (const radio of document.querySelectorAll('input[name="kk"]')) {
     // Assignment, so a second bind cannot stack a listener on the same radio.
@@ -13118,6 +13132,15 @@ function hodlBindSecureKeyField() {
   document.removeEventListener("hodl:conceal", hodlSecureKeyConceal);
   document.addEventListener("hodl:conceal", hodlSecureKeyConceal);
   hodlSecureKeyStatus();
+  lockKinds();
+}
+
+// P3b-2: while the vault holds a key, the format it was typed as is fixed:
+// the other format radios are disabled until the field is emptied. One vault
+// serves the key, so a format change would read its text as another format
+// and Convert would file it under the wrong one (Astra, Grok, Kimi, GLM).
+function hodlSecureKeyLockKinds(radios, kind, locked) {
+  for (const radio of radios) radio.disabled = Boolean(locked) && radio.value !== kind;
 }
 
 // P3b-2: release the masked key field's binding and readout. Called before the
