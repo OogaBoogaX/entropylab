@@ -38,19 +38,22 @@ const destroySource = appSlice("hodlDestroyPsbtScans");
 // A context with the real host list and the real bind function, and a
 // document that answers only for the ids given. The flag is a getter, so a
 // read is visible; a release build defines no flag at all.
-function bindContext(ids, { defineFlag = true } = {}) {
+function bindContext(ids, { defineFlag = true, flag = false, importPromise = null } = {}) {
   const reads = { count: 0 };
+  const elements = new Map(ids.map((id) => [id, { id, isConnected: true, childNodes: [], replaceChildren() { this.childNodes = []; } }]));
   const sandbox = {
-    document: { getElementById: (id) => (ids.includes(id) ? { id, isConnected: true, childNodes: [] } : null) },
+    document: { getElementById: (id) => elements.get(id) ?? null },
     hodlTText: (text) => text,
     hodlPsbtScans: [],
     hodlPsbtScanModule: null,
-    hodlPsbtScanImport: null,
+    // A pending import stands in for the real one, so a test controls when
+    // the module arrives.
+    hodlPsbtScanImport: importPromise,
   };
-  if (defineFlag) Object.defineProperty(sandbox, "__ENTROPYLAB_PREVIEW__", { get() { reads.count += 1; return false; }, configurable: true });
+  if (defineFlag) Object.defineProperty(sandbox, "__ENTROPYLAB_PREVIEW__", { get() { reads.count += 1; return flag; }, configurable: true });
   const context = vm.createContext(sandbox);
-  vm.runInContext(`${hostsDeclaration}\n${bindSource}`, context);
-  return { context, reads };
+  vm.runInContext(`var hodlPsbtScanEpoch = 0;\n${hostsDeclaration}\n${bindSource}\n${destroySource}`, context);
+  return { context, reads, elements };
 }
 
 test("hodlBindPsbtScans returns before reading the preview flag when no host exists", () => {
@@ -82,20 +85,46 @@ test("the wiring imports the panel module once and mounts the three host/field p
   assert.equal((hostsDeclaration.match(/\["/g) || []).length, HOSTS.length, "exactly the three PSBT fields are wired");
 });
 
-test("hodlDestroyPsbtScans destroys every panel, retires the decoders and is idempotent", () => {
+// A mount still waiting on the import when the panels are torn down (End
+// Session, a language switch) must mount nothing: the next bind mounts anew
+// (DeepSeek red team, #1357).
+test("a mount pending at teardown is dropped, and the next bind mounts anew", async () => {
+  let resolveImport;
+  const importPromise = new Promise((resolve) => { resolveImport = resolve; });
+  const { context, elements } = bindContext(["psbt-scan-host", "psbt-text"], { flag: true, importPromise });
+  let mounted = 0;
+  const module = { mountPsbtScan: (host) => { mounted += 1; host.childNodes.push("panel"); return { destroy() { host.childNodes = []; } }; } };
+  context.hodlBindPsbtScans();
+  context.hodlDestroyPsbtScans();
+  resolveImport(module);
+  await importPromise;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(mounted, 0, "the mount that was pending at teardown must be dropped");
+  assert.equal(elements.get("psbt-scan-host").childNodes.length, 0, "the host stays empty after the teardown");
+  context.hodlBindPsbtScans();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(mounted, 1, "a bind after the teardown mounts the panel");
+  assert.equal(context.hodlPsbtScans.length, 1);
+});
+
+test("hodlDestroyPsbtScans destroys every panel, leaves the shared decoders alone and is idempotent", () => {
   assert.ok(destroySource, "hodlDestroyPsbtScans is missing from app.js");
   const destroyed = [];
   let retired = 0;
+  const nonceHost = { id: "nonce-scan-host", childNodes: ["panel"], replaceChildren() { this.childNodes = []; } };
   const context = vm.createContext({
+    document: { getElementById: (id) => (id === "nonce-scan-host" ? nonceHost : null) },
     hodlPsbtScans: [
       { hostId: "psbt-scan-host", panel: { destroy: () => destroyed.push("psbt") } },
       { hostId: "nonce-scan-host", panel: { destroy: () => { destroyed.push("nonce"); throw new Error("the camera would not stop"); } } },
     ],
     hodlPsbtScanModule: { retireQrDecoders: () => { retired += 1; } },
   });
-  vm.runInContext(destroySource, context);
+  vm.runInContext(`var hodlPsbtScanEpoch = 0;\n${destroySource}`, context);
   assert.doesNotThrow(() => context.hodlDestroyPsbtScans(), "one panel's failure must not escape the teardown");
   assert.deepEqual(destroyed, ["psbt", "nonce"], "every panel is destroyed, even after one throws");
+  assert.equal(nonceHost.childNodes.length, 0, "a panel that would not come down leaves no markup behind");
+  assert.equal(context.hodlPsbtScanEpoch, 1, "a teardown bumps the epoch, so a pending mount is dropped");
   assert.equal(context.hodlPsbtScans.length, 0, "the mounted list is emptied");
   assert.equal(retired, 0, "the shared decoders are left alone: the nonce ceremony's frame decoder uses the same registry");
   assert.doesNotThrow(() => context.hodlDestroyPsbtScans(), "a second teardown must not throw");
@@ -130,7 +159,9 @@ test("the shell holds one preview-gated host after each PSBT field", () => {
   for (const [hostId, fieldId] of HOSTS) {
     const index = lines.findIndex((line) => line.includes(`id="${hostId}"`));
     assert.ok(index > 0, `#${hostId} is missing from the shell`);
-    assert.equal(lines[index].trim(), `<div class="psbt-scan-host" id="${hostId}"></div>`, `#${hostId} must be the only markup on its line`);
+    // The host is one empty div alone on its line; its class is styling, not
+    // a hook (AGENTS.md: tests hook on ids and data-*, never classes).
+    assert.match(lines[index].trim(), new RegExp(`^<div [^>]*\\bid="${hostId}"[^>]*></div>$`), `#${hostId} must be one empty div, alone on its line`);
     assert.equal(lines[index - 1].trim(), "<!-- preview -->", `#${hostId} must sit inside a preview block`);
     assert.equal(lines[index + 1].trim(), "<!-- /preview -->", `#${hostId} must close its preview block`);
     const fieldIndex = lines.findIndex((line) => line.includes(`id="${fieldId}"`));

@@ -7549,6 +7549,9 @@ function hodlBindKeyScan() {
     }).catch(() => {});
   }
 }
+// A teardown bumps the epoch, so a mount still waiting on the import when the
+// panels were torn down (End Session, a language switch) mounts nothing.
+var hodlPsbtScanEpoch = 0;
 function hodlBindPsbtScans() {
   // The slice harness loads this with no scan host: return before anything
   // else, and never read the preview flag bare.
@@ -7561,8 +7564,9 @@ function hodlBindPsbtScans() {
         return module;
       }).catch(() => null);
     }
+    let epoch = hodlPsbtScanEpoch;
     hodlPsbtScanImport.then((module) => {
-      if (!module) return;
+      if (!module || epoch !== hodlPsbtScanEpoch) return;
       for (let [host, field] of hosts) {
         if (!host || !field || !host.isConnected || host.childNodes.length) continue;
         if (hodlPsbtScans.some((entry) => entry.hostId === host.id)) continue;
@@ -7576,9 +7580,15 @@ function hodlBindPsbtScans() {
   }
 }
 function hodlDestroyPsbtScans() {
+  hodlPsbtScanEpoch++;
   let scans = hodlPsbtScans;
   hodlPsbtScans = [];
-  for (let entry of scans) try { entry.panel?.destroy(); } catch {}
+  for (let entry of scans) {
+    try { entry.panel?.destroy(); } catch {
+      // A panel that would not come down must not leave its markup behind.
+      try { document.getElementById(entry.hostId)?.replaceChildren(); } catch {}
+    }
+  }
   // The decoders are retired at End Session only: the registry is shared with
   // the nonce ceremony's frame decoder, which a language switch must not stop.
 }
