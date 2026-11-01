@@ -15,6 +15,7 @@ import * as panelModule from "../src/js/qr-psbt-scan.js";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const app = readFileSync(join(root, "src/js/app.js"), "utf8");
 const shell = readFileSync(join(root, "src/shell.html"), "utf8");
+const css = readFileSync(join(root, "src/css/styles.css"), "utf8");
 
 // Slice one self-contained function out of app.js (the bundle cannot be
 // evaluated wholesale in Node), as test/ui-behaviors.test.mjs does.
@@ -216,18 +217,20 @@ test("Clear and leaving the Transactions workspace give every host a fresh, clos
   assert.equal(mounted, 2, "a fresh panel is mounted on the host");
   assert.equal(elements.get("psbt-scan-host").childNodes.length, 1, "the host holds the new panel only");
   assert.equal(context.hodlPsbtScans.length, 1);
-  // Wiring: the three Clear buttons and Clear Comparison, at boot, after the
-  // first mount.
+  // Wiring: the three Clear buttons, at boot, after the first mount.
   const boot = appSlice("hodlBoot");
   assert.ok(boot, "hodlBoot is missing from app.js");
   const wiring = boot.match(/for \(let id of \[([^\]]*)\]\) document\.getElementById\(id\)\?\.addEventListener\("click", hodlResetPsbtScans\);/);
   assert.ok(wiring, "boot must give each PSBT tool's Clear a click listener that resets the panels");
-  assert.deepEqual(wiring[1].split(",").map((id) => id.trim().replace(/"/g, "")).sort(), ["nonce-wipe", "psbt-wipe", "psbted-compare-clear", "psbted-wipe"], "the Inspector, Nonce Inspector and Editor Clear buttons, and the Editor's Clear Comparison");
+  assert.deepEqual(wiring[1].split(",").map((id) => id.trim().replace(/"/g, "")).sort(), ["nonce-wipe", "psbt-wipe", "psbted-wipe"], "the Inspector, Nonce Inspector and Editor Clear buttons");
   assert.ok(boot.indexOf(wiring[0]) > boot.indexOf("hodlBindPsbtScans()"), "the listeners follow the first mount");
+  // Wiring: Clear Comparison closes the comparison's panel only.
+  const compare = boot.indexOf('document.getElementById("psbted-compare-clear")?.addEventListener("click", () => hodlResetPsbtScansIn(document.getElementById("psbted-compare")));');
+  assert.ok(compare > boot.indexOf("hodlBindPsbtScans()"), "boot must close the comparison's panel on Clear Comparison, after the first mount");
   // Wiring: collapsing the RBF or signer-audit section, which hold scan hosts,
-  // closes the panels; opening one does not.
-  const toggle = boot.match(/for \(let id of \[([^\]]*)\]\) document\.getElementById\(id\)\?\.addEventListener\("toggle", \(event\) => \{ if \(!event\.currentTarget\.open\) hodlResetPsbtScans\(\); \}\);/);
-  assert.ok(toggle, "boot must reset the panels when a section holding a scan host is collapsed");
+  // closes the panels inside it; opening one does not.
+  const toggle = boot.match(/for \(let id of \[([^\]]*)\]\) document\.getElementById\(id\)\?\.addEventListener\("toggle", \(event\) => \{ if \(!event\.currentTarget\.open\) hodlResetPsbtScansIn\(event\.currentTarget\); \}\);/);
+  assert.ok(toggle, "boot must close the panels inside a section holding a scan host when it is collapsed");
   assert.deepEqual(toggle[1].split(",").map((id) => id.trim().replace(/"/g, "")).sort(), ["psbt-audit-options", "psbt-rbf-options"]);
   assert.ok(boot.indexOf(toggle[0]) > boot.indexOf("hodlBindPsbtScans()"), "the toggle listeners follow the first mount");
   // Wiring: switching between the Inspector, Nonce Inspector and Editor tabs
@@ -258,4 +261,46 @@ test("Clear and leaving the Transactions workspace give every host a fresh, clos
   const leave = show.indexOf('if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();');
   assert.ok(leave >= 0, "leaving the Transactions workspace must reset the panels (guarded, like the Privacy conceal, for the slice harness)");
   assert.ok(leave < show.indexOf("hodlWorkspace = id;"), "the reset reads the workspace being left, so it runs before the switch");
+});
+
+test("the scan panel's camera preview fits a phone and stays hidden until the camera runs", () => {
+  // With no size rule the preview took the camera frame's own width and ran
+  // past a phone's edge. The rule that sizes it also sets display, which
+  // beats the UA [hidden] rule, so the panel restates [hidden].
+  const video = css.match(/^\.psbt-scan-host video \{([^}]*)\}/m);
+  assert.ok(video, "the panel's video needs a size rule");
+  assert.match(video[1], /(^|[ ;])width: 100%;/);
+  assert.match(video[1], /max-width: 480px;/);
+  assert.match(css, /^\.psbt-scan-host \[hidden\] \{ display: none; \}/m);
+});
+
+test("hodlResetPsbtScansIn closes only the panels inside the container and re-mounts their hosts", () => {
+  const source = appSlice("hodlResetPsbtScansIn");
+  assert.ok(source, "hodlResetPsbtScansIn is missing from app.js");
+  const destroyed = [];
+  let binds = 0;
+  const host = (id, inside) => ({ id, inside, childNodes: ["panel"], replaceChildren() { this.childNodes = []; } });
+  const hosts = new Map([
+    ["psbt-scan-host", host("psbt-scan-host", false)],
+    ["rbf-scan-host", host("rbf-scan-host", true)],
+    ["audit-scan-host", host("audit-scan-host", true)],
+  ]);
+  const section = { contains: (node) => Boolean(node?.inside) };
+  const context = vm.createContext({
+    document: { getElementById: (id) => hosts.get(id) ?? null },
+    hodlPsbtScans: [
+      { hostId: "psbt-scan-host", panel: { destroy: () => destroyed.push("psbt") } },
+      { hostId: "rbf-scan-host", panel: { destroy: () => destroyed.push("rbf") } },
+      { hostId: "audit-scan-host", panel: { destroy: () => { destroyed.push("audit"); throw new Error("the camera would not stop"); } } },
+    ],
+    hodlBindPsbtScans: () => { binds += 1; },
+  });
+  vm.runInContext(source, context);
+  assert.doesNotThrow(() => context.hodlResetPsbtScansIn(section), "one panel's failure must not escape");
+  assert.deepEqual(destroyed, ["rbf", "audit"], "only the panels inside the section are closed");
+  assert.deepEqual([...context.hodlPsbtScans].map((entry) => entry.hostId), ["psbt-scan-host"], "a scan on another field keeps running");
+  assert.equal(hosts.get("audit-scan-host").childNodes.length, 0, "a panel that would not come down leaves no markup behind");
+  assert.equal(binds, 1, "the emptied hosts get fresh, closed panels");
+  assert.doesNotThrow(() => context.hodlResetPsbtScansIn(null), "no container: nothing to do");
+  assert.equal(binds, 1);
 });
