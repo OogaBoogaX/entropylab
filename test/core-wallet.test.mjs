@@ -910,9 +910,28 @@ test("a descriptor is public only in a public form; anything else is private", (
   assert.equal(descriptorHoldsSecret(`wsh(sha256(${"11".repeat(32)}))`), true, "a hash body is 32 raw bytes");
   assert.equal(descriptorHoldsSecret(`pkh(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5)#${wif}`), true, "a checksum suffix is 8 characters");
   assert.equal(descriptorHoldsSecret(""), false, "an empty field holds nothing");
+  // Each token must sit where the grammar puts it (GLM, round 13).
+  const pubkey = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5";
+  assert.equal(descriptorHoldsSecret("deadbeef/".repeat(7) + "deadbeef"), true, "8-hex chunks are not fingerprints (GLM's repro)");
+  assert.equal(descriptorHoldsSecret(`wpkh(${"deadbeef/".repeat(7)}deadbeef)`), true, "a fingerprint sits right after [");
+  assert.equal(descriptorHoldsSecret(`wpkh([d34db33f/deadbeef/cafebabe]${xpub}/0/*)`), true, "a second fingerprint in a key origin");
+  assert.equal(descriptorHoldsSecret(`wsh(and_v(v,pk(${pubkey})))`), true, "a wrapper sits before :");
+  assert.equal(descriptorHoldsSecret(`wpkh(pk,${pubkey})`), true, "a function sits before (");
+  assert.equal(descriptorHoldsSecret(`wpkh(${pubkey}/${pubkey})`), true, "a key sits after (, ',', { or ]");
+  assert.equal(descriptorHoldsSecret("144"), true, "a number sits inside a function");
+  assert.equal(descriptorHoldsSecret("wpkh(00010203/04050607/08090a0b/0c0d0e0f)"), true, "Astra's segmented entropy (round 13)");
+  assert.equal(descriptorHoldsSecret("wpkh(00010203/04050607/08090801/02030405)"), true, "digit-only chunks are not a number argument");
+  assert.equal(descriptorHoldsSecret(`wpkh([d34db33f/2147483648]${xpub}/0/*)`), true, "a path step Core refuses (2^31)");
+  assert.equal(descriptorHoldsSecret(`wpkh([d34db33f/2147483647h]${xpub}/0/*)`), false, "the largest path step");
+  assert.equal(descriptorHoldsSecret(`wsh(or_i(0,and_v(v:pk(${pubkey}),after(1234567))))`), false, "number arguments");
+  assert.equal(descriptorHoldsSecret(xpub), false, "a bare xpub");
+  assert.equal(descriptorHoldsSecret(`${xpub}/0/*`), false, "a bare xpub with a path");
+  assert.equal(descriptorHoldsSecret(`wpkh([12345678/84h/0h/0h]${xpub}/0/*)`), false, "an all-digit fingerprint");
+  assert.equal(descriptorHoldsSecret(`tr(${xpub}/0/*,{pk(${pubkey}),pk([d34db33f/1]${xpub}/1/*)})`), false, "a script tree");
+  assert.equal(descriptorHoldsSecret(`tr(${xpub}/0/*,{pk(${"11".repeat(32)}),pk(${pubkey})})`), true, "an x-only leaf key stays private");
   const ui = read("src/js/core-wallet-ui.js");
   assert.match(ui, /export const descriptorHoldsSecret = \(text\) => !hodlCoreWallet\.descriptorIsPublic\(text\);/, "the report uses the reader's rule");
-  assert.match(ui, /push\(tHtml\("Descriptor"\), fileValueHtml\(entry\.descriptor, \{[^\n]*isPublic: !descriptorHoldsSecret\(entry\.descriptor\) \}\)\);/, "the Descriptor cell is public only in a public form");
+  assert.match(ui, /push\(tHtml\("Descriptor"\), fileValueHtml\(entry\.descriptor, \{[^\n]*isPublic: entry\.shownPublic === true \}\)\);/, "the Descriptor cell is public only when the verification vouched for it");
   assert.match(ui, /const privateHex = \(bytes, label\) => fileValueHtml\(bytesToHex\(bytes\), \{ label, bytes: bytes\.length \}\);/, "an undecoded record's bytes are never public");
   assert.match(ui, /privateHex\(record\.value, tHtml\("Record value \(hex\)"\)\)/);
   assert.match(ui, /privateHex\(record\.key, tHtml\("Record key \(hex\)"\)\)/);
@@ -1104,6 +1123,33 @@ test("a descriptor id is public only when it is the recomputed DescriptorID", as
   assert.ok(out.innerHTML.includes(`[private]${secret}[/private]`), "a revealed unverified id must be a private value");
 });
 
+// A descriptor's checksum suffix is eight free characters unless it matches:
+// the report shows a descriptor with reveal off only when it does (DeepSeek
+// red team, round 13), and the verification lines then name it by place.
+test("a descriptor is public only under a checksum that matches", async (t) => {
+  const genuine = REF_WATCH_ONLY_RECORDS.map(([key, value]) => [key, value]);
+  const row = genuine.find(([key]) => key.startsWith("1077616c6c657464657363726970746f72")); // "walletdescriptor"
+  const descriptor = Buffer.from(row[1], "hex").toString("latin1").match(/[a-z]+\([\x21-\x7e]*#[0-9a-z]{8}/)[0];
+  const shown = await loadReport(t, genuine);
+  assert.ok(shown.out.innerHTML.includes(descriptor) && !shown.out.innerHTML.includes(`[private]${descriptor}`), "a genuine descriptor is public while nothing is revealed");
+  const sum = descriptor.slice(-8);
+  const craftedDescriptor = descriptor.slice(0, -8) + (sum[0] === "q" ? "p" : "q") + sum.slice(1);
+  const crafted = REF_WATCH_ONLY_RECORDS.map(([key, value]) => [key, key === row[0] ? value.replace(Buffer.from(descriptor).toString("hex"), Buffer.from(craftedDescriptor).toString("hex")) : value]);
+  assert.notEqual(crafted.find(([key]) => key === row[0])[1], row[1]);
+  const { out, reveal, conceal } = await loadReport(t, crafted);
+  assert.ok(!out.innerHTML.includes(craftedDescriptor), "a descriptor whose checksum does not match is shown while nothing is revealed");
+  reveal.checked = true;
+  reveal.listeners.change();
+  assert.ok(out.innerHTML.includes(`[private]${craftedDescriptor}[/private]`), "a revealed unverified descriptor must be a private value");
+  conceal();
+  assert.ok(!out.innerHTML.includes(craftedDescriptor), "an unverified descriptor is shown after conceal");
+  const { core } = loadModule();
+  const lines = core.verifyWalletDoc(parseRecords(crafted), coreDeps).map((check) => `${check.label} ${check.detail}`).join("\n");
+  const mismatches = lines.split("\n").filter((line) => line.includes("checksum mismatch"));
+  assert.equal(mismatches.length, 1);
+  assert.match(mismatches[0], /^Descriptor checksum #\d+ checksum mismatch$/, "a verification line names an unverified descriptor by its text");
+});
+
 // A block-locator hash is public when it is a block hash on its face: the
 // genesis block, or proof-of-work zeros off regtest.
 test("block-locator hashes are public only when they are block hashes on their face", async (t) => {
@@ -1113,6 +1159,11 @@ test("block-locator hashes are public only when they are block hashes on their f
   assert.equal(core.locatorHashPublic("regtest", "11".repeat(32)), false, "regtest has no proof of work to read");
   assert.equal(core.locatorHashPublic("mainnet", "00000000000000000002a7c4c1e48d76c5a37902165a270156b7a8d72728a054"), true, "a mainnet block");
   assert.equal(core.locatorHashPublic("mainnet", "11".repeat(32)), false, "32 bytes without proof of work");
+  assert.equal(core.locatorHashPublic("mainnet", "00000001" + "ff".repeat(28)), false, "above mainnet's proof-of-work limit (Astra, round 13: 20 zero bits passed)");
+  assert.equal(core.locatorHashPublic("testnet", "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943"), true, "testnet's genesis");
+  assert.equal(core.locatorHashPublic("signet", "00000377ae" + "00".repeat(27)), true, "signet's limit itself");
+  assert.equal(core.locatorHashPublic("signet", "00000377af" + "00".repeat(27)), false, "above signet's limit");
+  assert.equal(core.locatorHashPublic("mainnet", "00000000000000000002A7C4C1E48D76C5A37902165A270156B7A8D72728A054"), false, "only lowercase hex, as the reader writes it");
   assert.equal(core.locatorHashPublic(null, regtestGenesis), false, "an unknown network vouches for nothing");
   const secret = "11".repeat(32);
   const locator = (hash) => `00000000${"01"}${Buffer.from(hash, "hex").reverse().toString("hex")}`; // version 0, one hash

@@ -43,18 +43,30 @@ var hodlCoreWallet = (() => {
   // public keys (02/03 compressed, 04 uncompressed), plus an 8-character
   // checksum. Anything else — an xprv, a WIF, a raw 32-byte hex key (an
   // x-only key cannot be told from one), raw()/addr()/hash bodies, words —
-  // makes it private.
+  // makes it private. Each token must also sit where the grammar puts it
+  // (GLM, round 13: eight "fingerprints" in a row carry 32 free bytes): a
+  // function before "(", a wrapper before ":", a fingerprint right after
+  // "[", a number argument between "(" or "," and "," or ")", a path step
+  // (below 2^31, as Core requires) after "/", "<" or ";", and a key first or
+  // after "(", ",", "{" or a key origin's "]" (a bare xpub pasted into the
+  // add field is public). Astra, round 13: digit-only chunks passed as
+  // numbers. Public forms still carry free bytes by nature (a path step, an
+  // xpub's chain code, a pubkey's x): the rule vouches that a value is in a
+  // form Core reads as public, not that a crafted file left those bytes
+  // alone.
   const DESCRIPTOR_FUNCTIONS = new Set([
     "sh", "wsh", "pkh", "wpkh", "combo", "multi", "sortedmulti", "multi_a", "sortedmulti_a", "tr", "rawtr",
     "pk", "pk_k", "pk_h", "older", "after", "andor", "and_v", "and_b", "and_n", "or_b", "or_c", "or_d", "or_i", "thresh",
   ]);
+  const KEY_AFTER = "^(,{]";
   const PUBLIC_DESCRIPTOR_TOKENS = [
-    /^\d{1,10}[hH]?$/, // a number or a path step
-    /^[0-9a-fA-F]{8}$/, // a key origin's fingerprint
-    /^[ascdjvnlut]{1,8}$/, // miniscript wrappers (v:, sdv:…)
-    /^(?:xpub|ypub|zpub|tpub|upub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{100,108}$/,
-    /^0[23][0-9a-fA-F]{64}$/,
-    /^04[0-9a-fA-F]{128}$/,
+    { pattern: /^\d{1,10}$/, after: "(,", before: ",)" }, // a number argument: older(144), multi(2,…)
+    { pattern: /^\d{1,10}[hH]?$/, after: "/<;", pathStep: true }, // a path step
+    { pattern: /^[0-9a-fA-F]{8}$/, after: "[" }, // a key origin's fingerprint
+    { pattern: /^[ascdjvnlut]{1,8}$/, before: ":" }, // miniscript wrappers (v:, sdv:…)
+    { pattern: /^(?:xpub|ypub|zpub|tpub|upub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{100,108}$/, after: KEY_AFTER },
+    { pattern: /^0[23][0-9a-fA-F]{64}$/, after: KEY_AFTER },
+    { pattern: /^04[0-9a-fA-F]{128}$/, after: KEY_AFTER },
   ];
   const isDescriptorFunction = (name) => DESCRIPTOR_FUNCTIONS.has(name);
   const descriptorIsPublic = (text) => {
@@ -62,8 +74,17 @@ var hodlCoreWallet = (() => {
     const hash = text.indexOf("#");
     const body = hash < 0 ? text : text.slice(0, hash);
     if (hash >= 0 && !/^[0-9a-z]{8}$/.test(text.slice(hash + 1))) return false;
-    if (!/^[A-Za-z0-9_()[\],/'*<>;:]*$/.test(body)) return false;
-    return (body.match(/[A-Za-z0-9_]+/g) ?? []).every((token) => DESCRIPTOR_FUNCTIONS.has(token) || PUBLIC_DESCRIPTOR_TOKENS.some((pattern) => pattern.test(token)));
+    if (!/^[A-Za-z0-9_()[\],/'*<>;:{}]*$/.test(body)) return false;
+    return [...body.matchAll(/[A-Za-z0-9_]+/g)].every(({ 0: token, index }) => {
+      // "^" stands for the body's start and "$" for its end.
+      const before = index === 0 ? "^" : body[index - 1];
+      const next = index + token.length === body.length ? "$" : body[index + token.length];
+      if (DESCRIPTOR_FUNCTIONS.has(token)) return next === "(";
+      return PUBLIC_DESCRIPTOR_TOKENS.some((kind) => kind.pattern.test(token)
+        && (!kind.after || kind.after.includes(before))
+        && (!kind.before || kind.before.includes(next))
+        && (!kind.pathStep || Number.parseInt(token, 10) <= 0x7fffffff));
+    });
   };
 
   // Record type names Bitcoin Core writes (walletdb.cpp DBKeys). Any other
@@ -80,13 +101,20 @@ var hodlCoreWallet = (() => {
   const recordLabel = (name) => (recordNamePublic(name) ? name : "a record of unrecognized type");
 
   // A block-locator hash is public when it is the network's genesis block or,
-  // off regtest, carries the leading zeros of proof of work (20 bits; every
-  // mainnet, testnet and signet block has more). A 32-byte secret passes that
-  // by chance one time in a million.
+  // off regtest, meets the network's proof-of-work limit (Core's powLimit:
+  // 32 zero bits on mainnet and testnet, 00000377ae… on signet). A 32-byte
+  // secret meets the mainnet limit by chance about one time in four billion
+  // (Astra, round 13: the old 20-bit rule passed one in a million); regtest
+  // has no limit to read.
+  const POW_LIMITS = {
+    mainnet: "00000000ffff0000000000000000000000000000000000000000000000000000",
+    testnet: "00000000ffff0000000000000000000000000000000000000000000000000000",
+    signet: "00000377ae000000000000000000000000000000000000000000000000000000",
+  };
   const locatorHashPublic = (network, hash) => {
     const genesis = hodlWalletExport.NETWORKS[network]?.genesis;
-    if (!genesis || typeof hash !== "string") return false;
-    return hash === genesis || (network !== "regtest" && /^00000[0-9a-f]{59}$/.test(hash));
+    if (!genesis || typeof hash !== "string" || !/^[0-9a-f]{64}$/.test(hash)) return false;
+    return hash === genesis || (Object.hasOwn(POW_LIMITS, network) && hash <= POW_LIMITS[network]);
   };
   const EXTENDED_PRV_GLOBAL = /((?:xprv|tprv|yprv|uprv|zprv|vprv)[1-9A-HJ-NP-Za-km-z]{90,})/g;
   const EXTENDED_PUB_GLOBAL = /((?:xpub|tpub|ypub|upub|zpub|vpub|Ypub|Zpub|Upub|Vpub)[1-9A-HJ-NP-Za-km-z]{90,})/g;
@@ -464,22 +492,27 @@ var hodlCoreWallet = (() => {
     }
 
     for (const [index, entry] of doc.descriptors.entries()) {
-      // A descriptor that carries a key (a crafted file: Core writes the
-      // public form) is named by its place in the report, never by its text,
-      // because these lines show while the descriptor itself is redacted.
-      const label = !descriptorIsPublic(entry.descriptor) ? `#${index + 1}` : entry.descriptor.length > 24 ? `${entry.descriptor.slice(0, 21)}…` : entry.descriptor;
       const text = entry.descriptor;
       const hash = text.lastIndexOf("#");
+      let checksumOk = false;
+      if (hash >= 0) {
+        try {
+          checksumOk = deps.checksum(text.slice(0, hash)) === text.slice(hash + 1);
+        } catch {
+          checksumOk = false;
+        }
+      }
+      // The report shows a descriptor with reveal off only in a public form
+      // under a checksum that matches (Core writes one; a free suffix could
+      // carry eight characters of anything, DeepSeek round 13). Any other
+      // descriptor is named by its place in the report, never by its text,
+      // because these lines show while the descriptor itself is redacted.
+      if (checksumOk && descriptorIsPublic(text)) entry.shownPublic = true;
+      const label = entry.shownPublic !== true ? `#${index + 1}` : text.length > 24 ? `${text.slice(0, 21)}…` : text;
       if (hash < 0) {
         checks.push(check("bad", `Descriptor ${label}`, "no checksum suffix"));
       } else {
         const body = text.slice(0, hash);
-        let checksumOk = false;
-        try {
-          checksumOk = deps.checksum(body) === text.slice(hash + 1);
-        } catch {
-          checksumOk = false;
-        }
         checks.push(checksumOk
           ? check("ok", `Descriptor checksum`, `${label} checksum matches`)
           : check("bad", `Descriptor checksum`, `${label} checksum mismatch`));

@@ -165,9 +165,11 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
       : /\/1['hH]?\/\*\)/.test(entry.descriptor) ? t("change") : t("external");
     const rows = [];
     const push = (field, valueHtml) => rows.push(`<tr><td>${field}</td><td>${valueHtml}</td></tr>`);
-    // A descriptor that carries a key is private DOM like the key records:
-    // redacted until revealed, and its copy stays within EntropyLab.
-    push(tHtml("Descriptor"), fileValueHtml(entry.descriptor, { label: t("Descriptor {n}", { n: index + 1 }), isPublic: !descriptorHoldsSecret(entry.descriptor) }));
+    // A descriptor is public only in a public form under a checksum that
+    // matches (the verification sets shownPublic); any other is private DOM
+    // like the key records: redacted until revealed, and its copy stays
+    // within EntropyLab.
+    push(tHtml("Descriptor"), fileValueHtml(entry.descriptor, { label: t("Descriptor {n}", { n: index + 1 }), isPublic: entry.shownPublic === true }));
     // The id is 32 bytes from the record key: public once the verification
     // recomputed it from the descriptor's text.
     push(tHtml("Descriptor ID"), fileValueHtml(entry.id, { label: t("Descriptor {n} id", { n: index + 1 }), isPublic: entry.idVerified === true, bytes: 32 }));
@@ -411,7 +413,9 @@ export const initCoreWallet = ({ deps, onImportIntoStation, copyIcon, copiedIcon
   // nor a screen capture after leaving shows old key material.
   const concealing = () => {
     // A pasted private descriptor can sit in the field before any wallet is
-    // loaded or while nothing is revealed; clear it whenever it carries a key.
+    // loaded or while nothing is revealed; clear it unless the reader can
+    // tell it is public (fail closed: an addr(), raw() or hash descriptor
+    // goes too).
     if (descriptorHoldsSecret(addText.value)) {
       addText.value = "";
       syncAddGo();
