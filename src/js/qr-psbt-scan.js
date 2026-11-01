@@ -177,7 +177,6 @@ export function mountPsbtScan(host, {
     const key = Object.prototype.hasOwnProperty.call(STATUS_TEXT, code) ? code : "error";
     statusLine.setAttribute("data-scan-state", key);
     statusLine.textContent = say(STATUS_TEXT[key], vars);
-    cameraRunning = key === "scanning" || key === "two-codes";
     updateAcquisition();
   };
 
@@ -329,6 +328,12 @@ export function mountPsbtScan(host, {
 
   const onStatus = (code) => {
     if (destroyed || !open) return;
+    cameraRunning = code === "scanning" || code === "two-codes";
+    if (!cameraRunning) {
+      releaseSession();
+      reader.reset();
+      progressLine.hidden = true;
+    }
     showStatus(code);
   };
 
@@ -375,6 +380,7 @@ export function mountPsbtScan(host, {
     progressLine.hidden = true;
     if (!ensureScanner()) return;
     beginSession();
+    cameraRunning = true;
     showStatus("scanning");
     try {
       scanner.start();
@@ -400,12 +406,7 @@ export function mountPsbtScan(host, {
 
   const onVisibility = () => {
     if (doc.visibilityState !== "hidden") return;
-    releaseSession();
-    try { scanner?.stop(); } catch {}
-    dropPending();
-    cameraRunning = false;
-    updateAcquisition();
-    if (open) showStatus("stopped");
+    onConceal();
   };
 
   // The app's leave signal: the same teardown as a hidden page, without the
@@ -414,6 +415,8 @@ export function mountPsbtScan(host, {
     releaseSession();
     try { scanner?.stop(); } catch {}
     dropPending();
+    reader.reset();
+    progressLine.hidden = true;
     cameraRunning = false;
     updateAcquisition();
     if (open) showStatus("stopped");
@@ -424,8 +427,7 @@ export function mountPsbtScan(host, {
     else openPanel();
   });
   stopButton.addEventListener("click", () => {
-    releaseSession();
-    try { scanner?.stop(); } catch {}
+    onConceal();
   });
   closeButton.addEventListener("click", () => {
     closePanel();
@@ -480,5 +482,5 @@ export function mountPsbtScan(host, {
 
   updateAcquisition();
 
-  return { destroy };
+  return { destroy, close: closePanel };
 }

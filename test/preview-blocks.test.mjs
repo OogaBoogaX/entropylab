@@ -118,4 +118,7 @@ test("the committed release artifact carries no preview residue", () => {
   // same artifact-level pin in validate.test.mjs).
   const artifact = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../entropylab.html"), "utf8");
   assert.doesNotMatch(artifact, /<!-- \/?preview -->|__ENTROPYLAB_PREVIEW__/);
+  for (const id of ["psbt-qr-host", "psbted-qr-host", "psbted-compare-qr-host"]) {
+    assert.equal(artifact.includes(id), false, `preview PSBT scan entry ${id} leaked into release`);
+  }
 });

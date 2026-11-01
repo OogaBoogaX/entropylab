@@ -14,6 +14,26 @@ always use the latest version, available from the
 
 ## Security Considerations
 
+Preview PSBT QR capture is transport only: the reader checks PSBT magic,
+message integrity and resource limits, not transaction validity or sender
+identity. The existing PSBT parsers remain authoritative. Only complete
+payloads are offered to Inspector, Editor or comparison fields; scanning
+does not sign, broadcast, import keys or navigate to scanned URLs.
+
+The PSBT reader caps messages at 1 MiB and multipart sequences at 1,000
+fragments. Continuous capture uses one camera stream and one 60-second
+session timer, not a fresh permission request per fragment. Starting another
+PSBT panel stops the previous one. Closing, concealment, hidden-page
+transitions, pagehide and End Session release capture; pagehide and End
+Session additionally retire PSBT panels and active UR collectors.
+
+Frame and payload buffers are erased on the controlled cleanup paths on a
+best-effort basis. JavaScript strings, browser/worker copies, camera-driver
+buffers and operating-system copies cannot be reliably erased by the page.
+PSBTs can contain sensitive metadata, including proprietary fields. Do not
+record a real scan or treat a checksum as authentication. Browser simulated
+frames do not qualify a physical camera, SeedSigner display or appliance.
+
 The offline AEXB verifier validates canonical message fields and slot-set
 constraints on supplied objects, including objects changed after decoding.
 Successful signature verification checks the supplied hashes and transcript;

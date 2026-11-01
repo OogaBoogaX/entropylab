@@ -8,6 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mountPsbtScan } from "../src/js/qr-psbt-scan.js";
 import { MiniDocument } from "./mini-dom.mjs";
+import { loadAppFunctions } from "./app-slice-harness.mjs";
 import {
   hodlCrc32,
   hodlBytewordsEncode,
@@ -460,4 +461,67 @@ test("a mismatched reader state stops the camera", () => {
   ctx.created.scannerArgs.onResult(bytesOf(partUr(partsB[0])));
   assert.equal(ctx.scanner.calls.stop, 1, "mismatch released the scanner");
   assert.equal(byId(ctx, "status").getAttribute("data-scan-state"), "stopped");
+});
+
+test("recoverable QR refusal preserves live camera controls", () => {
+  const ctx = setup();
+  openPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf("https://example.invalid/"));
+  assert.equal(byId(ctx, "stop").hidden, false);
+  assert.equal(byId(ctx, "video").hidden, false);
+  assert.equal(ctx.scanner.calls.stop, 0);
+  ctx.panel.destroy();
+});
+
+test("cancellation clears incomplete multipart progress", () => {
+  for (const boundary of ["stop", "hidden", "conceal"]) {
+    const ctx = setup();
+    const big = new Uint8Array(80);
+    big.set(PSBT);
+    const parts = encodeParts(hodlCborBstr(big), 30, 3);
+    openPanel(ctx);
+    ctx.created.scannerArgs.onResult(bytesOf(partUr(parts[0])));
+    assert.equal(byId(ctx, "progress").hidden, false);
+    if (boundary === "stop") byId(ctx, "stop").dispatchEvent({ type: "click" });
+    else if (boundary === "hidden") {
+      ctx.doc.visibilityState = "hidden";
+      ctx.doc.dispatchEvent({ type: "visibilitychange" });
+    } else ctx.doc.dispatchEvent({ type: "hodl:conceal" });
+    assert.equal(byId(ctx, "progress").hidden, true, boundary);
+    ctx.panel.destroy();
+  }
+});
+
+test("changing PSBT tools cancels capture before a late result can fill the old field", async () => {
+  const ctx = setup();
+  openPanel(ctx);
+  const app = await loadAppFunctions(["hodlShowPsbtTool"], { stubs: {
+    __ENTROPYLAB_PREVIEW__: true,
+    hodlPsbtScans: [ctx.panel],
+    hodlSyncPsbtTool: () => {},
+    hodlJournalLog: () => {},
+  } });
+  app.hodlShowPsbtTool("editor");
+  const late = bytesOf(PSBT_BASE64);
+  ctx.created.scannerArgs.onResult(late);
+  assert.equal(ctx.field.value, "");
+  assert.equal(byId(ctx, "panel").hidden, true);
+  assert.ok(late.every((byte) => byte === 0));
+  ctx.panel.destroy();
+});
+
+test("camera timeout clears partial state and refuses late payloads", () => {
+  const ctx = setup();
+  const big = new Uint8Array(80);
+  big.set(PSBT);
+  const parts = encodeParts(hodlCborBstr(big), 30, 3);
+  openPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(partUr(parts[0])));
+  ctx.created.scannerArgs.onStatus("timeout");
+  assert.equal(byId(ctx, "progress").hidden, true);
+  const late = bytesOf(PSBT_BASE64);
+  ctx.created.scannerArgs.onResult(late);
+  assert.equal(ctx.field.value, "");
+  assert.ok(late.every((byte) => byte === 0));
+  ctx.panel.destroy();
 });

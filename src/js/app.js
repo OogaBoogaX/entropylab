@@ -58,6 +58,7 @@ import { wordlist as bip39English } from "./bip39-english.js";
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
 import { initPsbtEditor, psbtBytesFromText as hodlPsbtBytesFromText, psbtBytesFromUpload, psbtQrPlan as hodlPsbtQrPlan } from "./psbt-editor.js";
 import { watchOnlyQrFrames as hodlWatchOnlyQrFrames } from "./psbt-ur.js";
+import { retireUrCollectors } from "./ur-fountain.js";
 import { initCoreWallet } from "./core-wallet-ui.js";
 import { initDescriptorReuseCheck } from "./descriptor-reuse-ui.js";
 import { initOtsVerifier } from "./ots-verifier-ui.js";
@@ -7521,6 +7522,33 @@ function hodlKeyScanSelectWif() {
   radio.checked = true;
   radio.dispatchEvent(new Event("change", { bubbles: true }));
 }
+var hodlPsbtScans = [], hodlPsbtScanModule = null, hodlPsbtScanImport = null;
+function hodlBindPsbtScans() {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    if (!hodlPsbtScanImport) hodlPsbtScanImport = import("./qr-psbt-scan.js").then((module) => {
+      hodlPsbtScanModule = module;
+      return module;
+    }).catch(() => null);
+    hodlPsbtScanImport.then((module) => {
+      if (!module) return;
+      for (const [hostId, fieldId] of [
+        ["psbt-qr-host", "psbt-text"],
+        ["psbted-qr-host", "psbted-text"],
+        ["psbted-compare-qr-host", "psbted-compare-text"],
+      ]) {
+        const host = document.getElementById(hostId), field = document.getElementById(fieldId);
+        if (!host?.isConnected || !field || host.childNodes.length) continue;
+        hodlPsbtScans.push(module.mountPsbtScan(host, { field, translate: hodlTText }));
+      }
+    }).catch(() => {});
+  }
+}
+function hodlRetirePsbtScans() {
+  for (const panel of hodlPsbtScans) try { panel.destroy(); } catch {}
+  hodlPsbtScans = [];
+  try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
+  retireUrCollectors();
+}
 function hodlBindKeyScan() {
   // The slice harness loads this with no scan host: return before anything
   // else, and never read the preview flag bare.
@@ -11296,6 +11324,7 @@ function hodlPsbtBytes(raw) {
   let value = raw.trim(), compact = value.replace(/\s/g, "");
   if (!value) throw new Error("Paste a PSBT v0 or a raw Bitcoin transaction.");
   if (compact.length > 7e6) throw new Error("This file is too large to inspect safely.");
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ && /^ur:/i.test(value)) return hodlPsbtBytesFromText(value);
   let bytes;
   if (/^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0 && compact.length >= 10) bytes = hodlHex.decode(compact.toLowerCase());
   else try {
@@ -12274,6 +12303,8 @@ function hodlSyncPsbtControls() {
   let value = (id) => String(document.getElementById(id)?.value || "").trim();
   let decodes = (text) => {
     if (!text) return false;
+    // UR assembly belongs to Inspect/Download, not the card's input handler.
+    if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ && /^ur:/i.test(text)) return true;
     try {
       hodlPsbtBytes(text);
       return true;
@@ -18259,6 +18290,9 @@ function hodlDeleteActiveMsig() {
 function hodlShowWorkspace(id) {
   if (id !== "journal" && hodlJournalKeyDerivation) hodlKeyManagerCancelDerivation();
   if (id === hodlWorkspace) return;
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ && hodlWorkspace === "psbt") {
+    for (const panel of hodlPsbtScans) panel.close();
+  }
   let preservedTop = window.scrollY, preservedLeft = window.scrollX;
   if (hodlWorkspace === "calc") hodlCaptureKey();
   else if (hodlWorkspace === "msig") hodlCaptureMsig();
@@ -18482,6 +18516,9 @@ function hodlSyncPsbtTool() {
 }
 function hodlShowPsbtTool(id, focus = false) {
   let next = id === "editor" || id === "nonce" ? id : "inspector", changed = next !== hodlPsbtTool;
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ && changed) {
+    for (const panel of hodlPsbtScans) panel.close();
+  }
   hodlPsbtTool = next;
   hodlSyncPsbtTool();
   if (changed) hodlJournalLog("tool-tab", hodlPsbtTool, "psbt");
@@ -21828,6 +21865,7 @@ function hodlInitWorkspace() {
   hodlInitMsig();
   hodlInitPsbt();
   initPsbtEditor({ networkDefault: () => hodlInspectorNetwork(), copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup, journalLog: hodlJournalLog });
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) hodlBindPsbtScans();
   initCoreWallet({ deps: hodlWalletDatDeps(), onImportIntoStation: hodlCoreImportIntoStation, copiedIcon: hodlCopiedIconMarkup, copyIcon: hodlClipboardIconMarkup });
   // The descriptor key-reuse check (#164, released 2026-10-26).
   initDescriptorReuseCheck(document, { onChange: hodlSyncPsbtControls });
@@ -22144,7 +22182,10 @@ function hodlInitTheme() {
 // wrote, and asks the browser to close the tab.
 function hodlInitEndSession() {
   let button = document.getElementById("end-session");
-  let confirm = initEndSessionConfirm(() => hodlEndSession({ retireModules: [hodlRetireWasm, hodlRetirePsbtWasm], clearClipboard: hodlClearClipboard }));
+  let confirm = initEndSessionConfirm(() => {
+    if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) hodlRetirePsbtScans();
+    return hodlEndSession({ retireModules: [hodlRetireWasm, hodlRetirePsbtWasm], clearClipboard: hodlClearClipboard });
+  });
   if (button && confirm) button.addEventListener("click", () => confirm.open(button));
 }
 // Leaving the page hides every revealed private value (conceal-on-leave.js
@@ -22368,6 +22409,10 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlSeedPicker?.destroy(); } catch {}
     hodlSeedPicker = null;
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
+    if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+      hodlRetirePsbtScans();
+      hodlBindPsbtScans();
+    }
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
     try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}

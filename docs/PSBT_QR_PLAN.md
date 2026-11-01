@@ -207,10 +207,13 @@ design — no exclusions):
      `hodlKeyScan?.destroy()` / `hodlKeyScanModule?.retireQrDecoders()`):
      destroy each PSBT scan widget, call `retireQrDecoders()` (module export)
      and `retireUrCollectors()` (import from `ur-fountain.js`).
-- **Release gate (permanent test, PQR-08):** the post-integration release build
-  must be byte-identical (sha256) to the base release build above. Preview build:
-  assert the widget string ("Scan PSBT QR") is present in the built HTML. This
-  asserts build-artifact outcomes, not source-text regexes.
+- **Release gate (operator-approved revision):** require byte-identical rebuilds
+  of the current source tree, absence of all three PSBT scan hosts in the release
+  artifact, and unchanged release base64/hex/raw-transaction behavior. The
+  historical base hash above is provenance evidence, not the candidate's required
+  hash: source stamps and esbuild identifier allocation change with source inputs.
+  Preserve truthful stamping; do not normalize an artifact and call it byte-identical.
+  Preview acceptance must exercise all three mounted entry points.
 
 **Resource policy** (measured defaults; unchanged unless PQR-04 measurement
 justifies it):
@@ -282,12 +285,38 @@ Parallel schedule:
 | PQR-01 | Integrator (2026-10-31) | Complete | Upstream reconciled (no `rock` commits since base; `pr2-fountain` merged lineage); base freeze `321c72b3`; contracts frozen §4E/§4F; no scope change |
 | PQR-02 | Subagent (Wave A) | Assigned (2026-10-31) | Contract frozen §4E; exclusive files §5; fixture manifest location §4E (with PQR-03) |
 | PQR-03 | Subagent (Wave A) | Assigned (2026-10-31) | Manifest spec §6 + location §4E; oracle `test/fixtures/bc-ur/reference-vectors.json` |
-| PQR-04 | Subagent (Wave A) | Assigned (2026-10-31) | Gaps §4F.1/§4F.2; re-check upstream PR #1336 before touching scanner tests |
-| PQR-05 | Unassigned | Waiting for contracts / implementation | Shared entry points have one writer |
-| PQR-06 | Unassigned | Waiting for integrated candidate | No physical camera acceptance yet |
-| PQR-07 | Unassigned | Waiting for integrated candidate | Review is not an implementation owner |
+| PQR-04 | FinancialWildebeest | Integrated | `1ced6f6f`; continuous capture; 87 integration/consumer tests passed before final timeout cleanup regression |
+| PQR-05 | Integrator | Implemented and smoke-tested | Three preview hosts; Inspector UR full parser; bounded text/camera reader; navigation/global retirement |
+| PQR-06 | QrBrowserAcceptance | Optical smoke passed; broad suite environment fix in progress | 25 checks; real embedded worker/WASM; 41 optical frames; all 11 simulated streams ended |
+| PQR-07 | QrSecurityReview | Reviewed; four root causes addressed | Static follow-up found no remaining findings in reviewed scope; exercised regression evidence below |
 | PQR-08 | Unassigned | Waiting for acceptance | No upstream PR authorization |
 | PQR-HW | Unassigned | Research available; physical proof pending | See section 9; no purchase or deployment performed |
+
+### Integration evidence and approved release gate
+
+- PQR-04 camera acquisition measurement: six parts required six starts before
+  continuous mode; after it, one start and no between-part reopens (agent report).
+- Integrator exercised preview multipart text through the real Inspector parser:
+  public 486-byte fixture displayed one signed input, two outputs, and a
+  23,456-sat fee. No key was loaded. Three PSBT scan hosts mounted in Chromium.
+- `test/psbt-qr-text.test.mjs` initially rejected the complete UR as invalid
+  base64/hex; the bounded-reader integration accepts the original public bytes.
+  Incomplete and wrong-type UR remain rejected; raw-transaction hex is unchanged.
+- Review identified hidden-context capture, recoverable refusals hiding Stop,
+  cancelled multipart state retention, and full reassembly on every Inspector
+  input. Fixed by closing on navigation, separating acquisition/status state,
+  resetting on cancellation, and cheap readiness checks. Focused lifecycle
+  tests failed before those fixes and passed after. Navigation and readiness
+  regressions were also exercised with their guards temporarily removed,
+  then restored (late write and ten repeated assemblies respectively).
+- **Operator-approved gate revision:** the operator selected “Reproducible,
+  preview-gated release” after the historical hash conflict was explained.
+  `build-commit.mjs` deliberately stamps changed sources with a new commit
+  (dirty builds use `unknown`); esbuild also renames identifiers when the
+  import graph changes. Require current-source reproducibility, artifact-level
+  preview exclusion/inclusion, and release behavior regressions instead of
+  manufacturing the old full-file hash. The historical hash remains recorded.
+
 
 ### Copy/paste agent assignment
 

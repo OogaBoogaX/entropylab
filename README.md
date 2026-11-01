@@ -32,6 +32,24 @@ import from restoring cleared secrets. Clearing the journal also invalidates
 pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
 
+Preview builds add **Scan PSBT QR** beside Inspector, Editor, and Editor
+comparison inputs. Static base64/hex PSBTs and `ur:crypto-psbt` single-part,
+systematic, and fountain frames use the same bounded payload reader as UR
+text paste. Existing base64/hex and Inspector raw-transaction input are
+unchanged. Build a preview with
+`npm run build -- --preview --out /tmp/entropylab-preview`; default builds do
+not expose these controls.
+
+Camera access requires browser permission and a supported secure context;
+offline `file://` camera support depends on the browser. One PSBT panel owns
+capture at a time, with a 60-second session timeout. Close and Stop release
+the camera. A scan fills an empty field or offers a pending result; if the
+field is non-empty at confirmation, clear it before choosing Replace, or
+choose Keep to discard the scan. Loading transports bytes, not approval:
+use the existing Inspector, Editor load, or Compare action to parse and
+review the transaction. Physical camera/appliance qualification is separate
+from simulated-frame interoperability checks.
+
 The crypto WASM module overwrites Rust heap allocations before releasing them,
 including dependency-owned descriptor keys and text. Resizing preserves the
 live bytes and erases the old allocation. This does not erase live objects,
