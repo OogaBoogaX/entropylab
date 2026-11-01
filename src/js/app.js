@@ -6860,6 +6860,10 @@ function hodlSetSeedLength(words) {
 // no flag, so the host is never rendered and the module is never imported.
 var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null;
 var hodlSeedPicker = null, hodlSeedPickerImport = null;
+// The three PSBT scan panels are the same preview-only extra: release builds
+// strip their hosts and never import the module.
+var hodlPsbtScans = [], hodlPsbtScanModule = null, hodlPsbtScanImport = null;
+const hodlPsbtScanHosts = [["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"]];
 function hodlKeyScanHostMarkup() {
   return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
 }
@@ -7544,6 +7548,49 @@ function hodlBindKeyScan() {
       });
     }).catch(() => {});
   }
+}
+// A teardown bumps the epoch, so a mount still waiting on the import when the
+// panels were torn down (End Session, a language switch) mounts nothing.
+var hodlPsbtScanEpoch = 0;
+function hodlBindPsbtScans() {
+  // The slice harness loads this with no scan host: return before anything
+  // else, and never read the preview flag bare.
+  let hosts = hodlPsbtScanHosts.map(([hostId, fieldId]) => [document.getElementById(hostId), document.getElementById(fieldId)]);
+  if (!hosts.some(([host]) => host)) return;
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    if (!hodlPsbtScanImport) {
+      hodlPsbtScanImport = import("./qr-psbt-scan.js").then((module) => {
+        hodlPsbtScanModule = module;
+        return module;
+      }).catch(() => null);
+    }
+    let epoch = hodlPsbtScanEpoch;
+    hodlPsbtScanImport.then((module) => {
+      if (!module || epoch !== hodlPsbtScanEpoch) return;
+      for (let [host, field] of hosts) {
+        if (!host || !field || !host.isConnected || host.childNodes.length) continue;
+        if (hodlPsbtScans.some((entry) => entry.hostId === host.id)) continue;
+        try {
+          hodlPsbtScans.push({ hostId: host.id, panel: module.mountPsbtScan(host, { field, translate: hodlTText }) });
+        } catch {
+          try { host.replaceChildren(); } catch {}
+        }
+      }
+    }).catch(() => {});
+  }
+}
+function hodlDestroyPsbtScans() {
+  hodlPsbtScanEpoch++;
+  let scans = hodlPsbtScans;
+  hodlPsbtScans = [];
+  for (let entry of scans) {
+    try { entry.panel?.destroy(); } catch {
+      // A panel that would not come down must not leave its markup behind.
+      try { document.getElementById(entry.hostId)?.replaceChildren(); } catch {}
+    }
+  }
+  // The decoders are retired at End Session only: the registry is shared with
+  // the nonce ceremony's frame decoder, which a language switch must not stop.
 }
 function hodlMountSeedPicker() {
   let host = document.getElementById("seed-picker-host");
@@ -22367,9 +22414,15 @@ function hodlInitSecretFieldAutoClear() {
     hodlKeyScan = null;
     try { hodlSeedPicker?.destroy(); } catch {}
     hodlSeedPicker = null;
+    // The PSBT panels come down before any decoder is retired (their decoders
+    // live in the same registry as the Key Station's), then the registry goes.
+    try { hodlDestroyPsbtScans(); } catch {}
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
+    try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
+    // The PSBT hosts are static: give them fresh, closed panels too.
+    try { hodlBindPsbtScans(); } catch {}
     try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
     try { hodlSecureEntryEnd(); } catch {}
     // The seed form showed the picker: redraw it as the standard field.
@@ -22461,6 +22514,10 @@ function hodlApplyLocale() {
   document.querySelectorAll("#msig-keys textarea").forEach((ta) => {
     if (ta.value) hodlCheckXpub(ta);
   });
+  // These three hosts are static, so a language switch re-mounts the panels
+  // to pick up the new strings (the Key Station's is re-rendered above).
+  try { hodlDestroyPsbtScans(); } catch {}
+  try { hodlBindPsbtScans(); } catch {}
 }
 async function hodlBoot() {
   hodlInitPassphraseVault();
@@ -22491,6 +22548,7 @@ async function hodlBoot() {
   hodlInitDescriptorCopy({ onCopyStart: hodlJournalCopyStart });
   hodlInitPrivateCopy({ copyIcon: hodlClipboardIconMarkup, copiedIcon: hodlCopiedIconMarkup, onCopyStart: hodlJournalCopyStart });
   hodlInitEndSession();
+  hodlBindPsbtScans();
   hodlInitLocale(hodlApplyLocale);
 }
 // Curve operations need the WebAssembly module instantiated first (async in
