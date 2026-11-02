@@ -7703,7 +7703,9 @@ function hodlBindSeedScan() {
       } catch {
         return;
       }
-      if (openNow) try { hodlSeedScan.open(); } catch {}
+      // Not for a page hidden while Secure entry was turning on: the camera
+      // would start out of sight (K3.1, #1364 round 6).
+      if (openNow && document.visibilityState !== "hidden") try { hodlSeedScan.open(); } catch {}
     }).catch(() => {});
   }
 }
