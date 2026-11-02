@@ -165,3 +165,9 @@ test("round 3: the status follows the network, an empty vault converts to nothin
   const secure = form.slice(form.indexOf("hodlBindSecureKeyField();"));
   assert.ok(secure.indexOf("hodlRenderPassphraseKeyboard();") >= 0 && secure.indexOf("hodlRenderPassphraseKeyboard();") < secure.indexOf("return;"), "the masked branch redraws the keyboard host like every other branch");
 });
+
+test("round 4: an emptied private-key field goes back to the masked field", () => {
+  const bind = block("hodlBindKeyFields");
+  const apply = bind.slice(bind.indexOf("let apply = (event) => {"), bind.indexOf("let change = (event) => {"));
+  assert.match(apply, /if \(!key\.value && state && hodlSecureKeyFormApplies\(state\)\) hodlSetMode\(hodlKeyMode\);/);
+});

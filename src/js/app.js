@@ -7716,6 +7716,10 @@ function hodlBindKeyFields() {
       hodlUpdatePrivateKeyInputPresentation();
       hodlRenderPrivateKeyInputState(key);
       hodlUpdatePrivateKeyKeyboardKeys(key);
+      // Emptied while Secure entry is on: the next key goes to the masked
+      // field, as the seed field's next words go to the picker (Grok, Kimi,
+      // round 3).
+      if (!key.value && state && hodlSecureKeyFormApplies(state)) hodlSetMode(hodlKeyMode);
     };
     let change = (event) => {
       if (!event.currentTarget.checked) return;
