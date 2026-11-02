@@ -1360,6 +1360,17 @@ test("an xpub-shaped token that does not decode as an extended public key is pri
   assert.equal(core.descriptorIsPublic(`wpkh(${xpub}/0/*)`, b58checkDecode), true);
 });
 
+// K3.1, GLM (#1347 round 16): rawtr() is a Taproot output key, which Core never
+// takes uncompressed; only a top-level or sh() script may hold one.
+test("descriptorIsPublic refuses an uncompressed key in rawtr()", () => {
+  const { core } = loadModule();
+  const uncompressed = "04" + "ab".repeat(64), compressed = "02" + "ab".repeat(32);
+  assert.equal(core.descriptorIsPublic(`rawtr(${uncompressed})`), false);
+  assert.equal(core.descriptorIsPublic(`rawtr(${compressed})`), true);
+  assert.equal(core.descriptorIsPublic(`pk(${uncompressed})`), true);
+  assert.equal(core.descriptorIsPublic(`wpkh(${uncompressed})`), false);
+});
+
 // K3.1 (round 15): the DescriptorID input (the whole descriptor, which a
 // crafted file can make key-bearing) was zeroed only when hashing succeeded.
 test("the descriptor id's UTF-8 copy is zeroed even when hashing throws", (t) => {
