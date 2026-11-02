@@ -7679,6 +7679,58 @@ function hodlResetPsbtScans() {
   try { hodlDestroyPsbtScans(); } catch {}
   try { hodlBindPsbtScans(); } catch {}
 }
+
+// Public-text scan panels: every host that names its field (data-scan-field)
+// and what it reads (data-scan-accept). They ship in every build; no secret
+// field has a host.
+var hodlTextScans = [], hodlTextScanModule = null, hodlTextScanImport = null, hodlTextScanEpoch = 0;
+// Each tool's Clear closes the text scan panels in its card. The MultiSig
+// Clear re-renders its station, which resets them there.
+const hodlTextScanClears = [["ln-inv-clear", "ln-inv-card"], ["ln-wipe", "ln-card"], ["sp-wipe", "sp-card"], ["psbt-wipe", "psbt-card"], ["core-wipe", "core-card"]];
+function hodlBindTextScans() {
+  let hosts = typeof document.querySelectorAll === "function" ? [...document.querySelectorAll("[data-scan-field]")] : [];
+  if (!hosts.length) return;
+  if (!hodlTextScanImport) {
+    hodlTextScanImport = import("./qr-text-scan.js").then((module) => {
+      hodlTextScanModule = module;
+      return module;
+    }).catch(() => null);
+  }
+  let epoch = hodlTextScanEpoch;
+  hodlTextScanImport.then((module) => {
+    if (!module || epoch !== hodlTextScanEpoch) return;
+    for (let host of hosts) {
+      let field = document.getElementById(host.dataset.scanField);
+      if (!host.id || !field || !host.isConnected || host.childNodes.length) continue;
+      if (hodlTextScans.some((entry) => entry.host === host)) continue;
+      try {
+        hodlTextScans.push({ host, panel: module.mountTextScan(host, { field, accept: host.dataset.scanAccept, mode: host.dataset.scanMode || "replace" }) });
+      } catch {
+        try { host.replaceChildren(); } catch {}
+      }
+    }
+  }).catch(() => {});
+}
+// With a container id, only the panels inside it (and any whose host left the
+// page) come down; without one, all of them.
+function hodlDestroyTextScans(root = "") {
+  hodlTextScanEpoch++;
+  let container = root ? document.getElementById(root) : null, keep = [], gone = [];
+  for (let entry of hodlTextScans) {
+    let inside = !root || !entry.host.isConnected || Boolean(container?.contains(entry.host));
+    (inside ? gone : keep).push(entry);
+  }
+  hodlTextScans = keep;
+  for (let entry of gone) {
+    try { entry.panel?.destroy(); } catch {
+      try { entry.host.replaceChildren(); } catch {}
+    }
+  }
+}
+function hodlResetTextScans(root = "") {
+  try { hodlDestroyTextScans(root); } catch {}
+  try { hodlBindTextScans(); } catch {}
+}
 // A collapsed section, or Clear Comparison, closes only the panels inside it,
 // so a scan running on another field keeps its camera and its frames (Kimi,
 // MiniMax), and gives those hosts fresh, closed panels.
@@ -22732,6 +22784,8 @@ async function hodlBoot() {
   hodlBindPsbtScans();
   // Each PSBT tool's Clear closes its scan panel too.
   for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);
+  hodlBindTextScans();
+  for (let [button, card] of hodlTextScanClears) document.getElementById(button)?.addEventListener("click", () => hodlResetTextScans(card));
   // Clear Comparison closes the comparison field's panel only.
   document.getElementById("psbted-compare-clear")?.addEventListener("click", () => hodlResetPsbtScansIn(document.getElementById("psbted-compare")));
   // The RBF and signer-audit hosts sit in collapsible sections: collapsing one
