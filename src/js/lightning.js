@@ -802,6 +802,8 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
   if (decode) decode.onclick = hodlRunLnInv;
   const clear = document.getElementById("ln-inv-clear");
   if (clear) clear.onclick = () => hodlLnInvWipeMem();
+  const invInput = document.getElementById("ln-inv-input");
+  if (invInput && typeof invInput.addEventListener === "function") invInput.addEventListener("input", hodlLnInvReset);
   // The page's network setting is not the LND coin-type select: re-render
   // the invoice card when the page announces a change, so its warning
   // matches the new page network.

@@ -10,7 +10,8 @@ Release notes for EntropyLab. Each release is a single self-contained
   including its v1.0.0 block; v1.0.0 stays verifiable with the other three
   signatures. See [SECURITY.md → Release signing keys](SECURITY.md#release-signing-keys).
 - **Scan PSBT QR**: the PSBT Inspector, Nonce Inspector and PSBT Editor
-  fields gain a camera control that reads a PSBT from one static QR code or
+  fields, the fee-bump check's original, the PSBT sent to the signer and the
+  Editor's comparison PSBT gain a camera control that reads a PSBT from one static QR code or
   an animated `ur:crypto-psbt` sequence. Only a payload that starts with the
   PSBT magic is written to the field, after the whole code has arrived.
   Clearing a tool, leaving the Transactions workspace, a language switch and
