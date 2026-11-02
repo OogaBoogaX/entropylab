@@ -148,3 +148,28 @@ test("an invalid open leaves an open dialog alone", async () => {
     assert.equal(await second, "clear");
   });
 });
+
+test("otherFormats shows the note in mode on only", async () => {
+  await withDialog(async ({ dialog, document, opener, el }) => {
+    const decision = dialog.open({ mode: "on", names: ["Key 1"], canKeep: true, otherFormats: true, opener });
+    assert.equal(el("other-formats").hidden, false);
+    assert.equal(el("other-formats").textContent, "Only the format on screen is kept. Other formats saved in this slot will be cleared.");
+    el("cancel").click();
+    await decision;
+    assert.equal(el("other-formats").hidden, true);
+    assert.equal(el("other-formats").textContent, "");
+  });
+});
+
+test("otherFormats is hidden without the option and in mode off", async () => {
+  await withDialog(async ({ dialog, document, opener, el }) => {
+    let decision = dialog.open({ mode: "on", names: ["Key 1"], canKeep: true, opener });
+    assert.equal(el("other-formats").hidden, true);
+    el("cancel").click();
+    await decision;
+    decision = dialog.open({ mode: "off", otherFormats: true, opener });
+    assert.equal(el("other-formats").hidden, true);
+    el("cancel").click();
+    await decision;
+  });
+});

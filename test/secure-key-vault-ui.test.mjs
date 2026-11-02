@@ -11,7 +11,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { SUPPORTED_METHODS, isSupported } from "../src/js/secure-entry.js";
+import {
+  SUPPORTED_METHODS, isSupported, createSecureSession, sessionWipe, sessionDeleteKey,
+  sessionGet, sessionSet, seedEntry, seedSet, seedIndices, seedUndo, keyEntry,
+  planTurnOn, commitTurnOn, planTurnOff, commitTurnOff, discardPlan,
+  rollsEntry, rollsPush, rollsUndo, rollAt, rollsCopy,
+} from "../src/js/secure-entry.js";
+import { MiniDocument } from "./mini-dom.mjs";
+import { loadAppFunctions } from "./app-slice-harness.mjs";
 
 const source = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
 
@@ -192,4 +199,143 @@ test("round 7: with the masked field on screen, Derive reads only its vault", ()
   const masked = applies.indexOf('if (document.getElementById("secure-key")) return true;');
   const text = applies.indexOf('document.getElementById("key")');
   assert.ok(masked >= 0 && masked < text, "the masked field is checked before any text key");
+});
+
+test("Keep empties every private-key format of a key", () => {
+  const toggle = block("hodlSecureEntryToggle");
+  const keep = toggle.slice(toggle.indexOf('if (choice === "keep" && plan.ok) {'), toggle.indexOf('} else if (choice === "clear") {'));
+  const keyLoop = keep.slice(keep.indexOf("for (const { state } of keyStates) {"), keep.indexOf("for (const { state, method } of diceStates)"));
+  assert.ok(keyLoop.length > 0, "the Keep branch walks the key states");
+  assert.match(keyLoop, /let values = hodlPrivateKeyValues\(state\.fields\);/);
+  assert.match(keyLoop, /for \(const format of \["wif", "hex-key", "minikey", "brain"\]\) values\[format\] = "";/);
+});
+
+test("the toggle passes otherFormats exactly when another slot holds text", async () => {
+  const previous = globalThis.document;
+  globalThis.document = { getElementById: () => null, querySelector: () => null };
+  try {
+    let lastOptions = null;
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn"], {
+      stubs: {
+        createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet,
+        seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn,
+        planTurnOff, commitTurnOff, discardPlan, rollsEntry, rollsPush, rollsUndo, rollAt, rollsCopy,
+        hodlSecureSupported: SUPPORTED_METHODS,
+        hodlSecureEntryDialog: async () => ({ open: async (options) => { lastOptions = options; return "keep"; } }),
+        hodlCaptureKey: () => {},
+        hodlRenderSecureEntryControl: () => {},
+        hodlSetMode: () => {},
+        hodlSyncKeyClearButton: () => {},
+        hodlSyncDeriveButton: () => {},
+        hodlQueueMasterFingerprintPreview: () => {},
+        hodlNormalizeSeedMethod: (value) => value === "numbers" ? "numbers" : "words",
+        hodlBip39WordIndex: new Map(),
+        hodlBip39Wordlist: [],
+        hodlKeyMode: "key",
+        hodlPrivateKeyValues: (fields) => fields.privateKeys,
+        hodlEntropyFormats: { hex: {}, bin: {} },
+        hodlLastWordCache: { clear() {} },
+        hodlLooksExtendedKey: () => false,
+      },
+      settable: ["hodlSecureEntryOn", "hodlSecureSession", "hodlKeys", "hodlActiveKey"],
+    });
+    const wif = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ";
+    const hexKey = "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d";
+    const run = async (privateKeys) => {
+      lastOptions = null;
+      const state = { id: 1, name: "Key", mode: "key", fields: { keyKind: "wif", privateKeys } };
+      mod.__set.hodlSecureSession(createSecureSession());
+      mod.__set.hodlKeys([state]);
+      mod.__set.hodlActiveKey(0);
+      mod.__set.hodlSecureEntryOn(false);
+      await mod.hodlSecureEntryToggle(true);
+      return { state, options: lastOptions };
+    };
+    const only = await run({ wif, "hex-key": "", minikey: "", brain: "" });
+    assert.equal(only.options.otherFormats, false, "only the format on screen holds text");
+    assert.equal(only.state.fields.privateKeys.wif, "", "Keep empties the kept slot");
+    const other = await run({ wif, "hex-key": hexKey, minikey: "", brain: "" });
+    assert.equal(other.options.otherFormats, true, "another slot holds text");
+    for (const format of ["wif", "hex-key", "minikey", "brain"]) assert.equal(other.state.fields.privateKeys[format], "", format);
+  } finally {
+    globalThis.document = previous;
+  }
+});
+
+test("B2: a key held as text shows the text-backed note", () => {
+  const control = block("hodlRenderSecureEntryControl");
+  assert.match(control, /id="secure-entry-key-text-backed"/);
+  assert.ok(control.includes("This private key came in as text, so it uses standard text entry. Clear the field to enter it securely."));
+  const keyBranch = control.indexOf("hodlSecureKeyActive()");
+  assert.ok(keyBranch >= 0 && control.indexOf("hodlSecureKeyFormApplies(hodlKeys[hodlActiveKey])") > keyBranch);
+});
+
+test("B3: the format hint names only the three key formats, never brain", () => {
+  const hint = block("hodlSecureKeyFormatHint");
+  for (const text of [
+    "This looks like a WIF key.",
+    "This looks like a hex key.",
+    "This looks like a mini key.",
+    "Switch to WIF",
+    "Switch to hex",
+    "Switch to mini key",
+  ]) assert.ok(hint.includes(text), text);
+  assert.doesNotMatch(hint, /hodlT\([^)]*brain/i);
+  assert.match(hint, /finally\s*\{\s*bytes\.fill\(0\);\s*\}/);
+  for (const forbidden of ["String.fromCharCode", "TextDecoder", "`"]) assert.equal(hint.includes(forbidden), false, forbidden);
+});
+
+test("B3: a complete hex key in a WIF vault shows the hint and switches on click", async () => {
+  const previous = globalThis.document;
+  const doc = new MiniDocument();
+  globalThis.document = doc;
+  try {
+    doc.body.innerHTML = '<input type="radio" name="kk" value="wif" checked /><p id="secure-key-status"></p>';
+    const hexKey = "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d";
+    const wif = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ";
+    const modeCalls = [];
+    const mod = await loadAppFunctions(["hodlSecureKeyStatus", "hodlSecureKeyOf"], {
+      stubs: {
+        createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet,
+        seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn,
+        planTurnOff, commitTurnOff, discardPlan, rollsEntry, rollsPush, rollsUndo, rollAt, rollsCopy,
+        hodlSecureSupported: SUPPORTED_METHODS,
+        hodlKeyMode: "key",
+        hodlSelectedNetwork: () => "mainnet",
+        hodlT: (text) => text,
+        hodlSetMode: (mode) => { modeCalls.push(mode); },
+        hodlAssertPrivateKey: () => {},
+        hodlSecureKeyRefusal: () => new Error("refused"),
+        hodlError: (key, vars) => Object.assign(new Error(key), { spec: { key, vars } }),
+        hodlNetworkFamily: (value) => value === "mainnet" ? "mainnet" : "testnet",
+      },
+      settable: ["hodlSecureEntryOn", "hodlKeys", "hodlActiveKey", "hodlSecureSession", "hodlSecureKeys"],
+    });
+    mod.__set.hodlSecureKeys(new WeakMap());
+    const session = createSecureSession();
+    mod.__set.hodlSecureSession(session);
+    const state = { id: 1, fields: { keyKind: "wif", privateKeys: { wif: "", "hex-key": "", minikey: "", brain: "" } } };
+    mod.__set.hodlKeys([state]);
+    mod.__set.hodlActiveKey(0);
+    mod.__set.hodlSecureEntryOn(true);
+    const entry = keyEntry();
+    entry.vault.setText(hexKey);
+    sessionSet(session, mod.hodlSecureKeyOf(state, true), "key", entry);
+    mod.hodlSecureKeyStatus();
+    const hint = doc.getElementById("secure-key-format-hint");
+    const button = doc.getElementById("secure-key-format-switch");
+    assert.ok(hint, "the hint is shown");
+    assert.equal(hint.textContent, "This looks like a hex key.");
+    assert.ok(button, "the switch button is shown");
+    assert.equal(button.textContent, "Switch to hex");
+    button.click();
+    assert.equal(state.fields.keyKind, "hex-key");
+    assert.deepEqual(modeCalls, ["key"]);
+    entry.vault.setText(wif);
+    mod.hodlSecureKeyStatus();
+    assert.equal(doc.getElementById("secure-key-format-hint"), null);
+    assert.equal(doc.getElementById("secure-key-format-switch"), null);
+  } finally {
+    globalThis.document = previous;
+  }
 });
