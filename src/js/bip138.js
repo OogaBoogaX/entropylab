@@ -12,6 +12,8 @@ export const BIP138_CHACHA20_POLY1305 = 1;
 export const BIP138_NUMS_XONLY = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 export const BIP138_TEXT_PREFIX = "QklQMTM4";
 export const BIP138_MAX_FILE_BYTES = 1048576;
+// The Base64 of the largest file: four characters for every three bytes.
+const MAX_TEXT_CHARS = Math.ceil(BIP138_MAX_FILE_BYTES / 3) * 4;
 
 const MAGIC = Uint8Array.of(0x42, 0x49, 0x50, 0x31, 0x33, 0x38);
 const textEncoder = new TextEncoder();
@@ -667,15 +669,19 @@ export function bip138CreateDescriptorBackup(descriptor) {
 export function bip138OpenDescriptorBackup(bytes, key) {
   const parsed = bip138ParseBackup(bytes);
   const payload = bip138DecryptBackup(parsed, key);
+  let items = [];
   try {
-    let items;
     try {
       items = bip138DecodePayload(payload);
     } catch {
       fail("damaged");
     }
-    const item = items.find((entry) => entry.type === 1 && entry.bip === 380);
-    if (!item) fail("unsupported-content");
+    // One descriptor per backup: a second one (a change branch kept as its
+    // own item, say) would be dropped without a word, so the backup is
+    // refused instead (Astra, round 1).
+    const found = items.filter((entry) => entry.type === 1 && entry.bip === 380);
+    if (found.length !== 1) fail("unsupported-content");
+    const item = found[0];
     let text;
     try {
       text = textDecoder.decode(item.content);
@@ -704,6 +710,8 @@ export function bip138OpenDescriptorBackup(bytes, key) {
     return { descriptor: result };
   } finally {
     payload.fill(0);
+    // Each item holds its own copy of the plaintext (K3.1, round 1).
+    for (const entry of items) entry.content.fill(0);
   }
 }
 
@@ -736,6 +744,9 @@ export function bip138KeyFromXpubText(text) {
   }
   const slash = value.indexOf("/");
   if (slash >= 0) value = value.slice(0, slash);
+  // A raw private key is still one inside an origin or before a path
+  // (K3.1, round 1).
+  if (/^[0-9a-fA-F]{64}$/.test(value)) return { status: "private-key" };
   if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(value)) return { status: "invalid" };
   let payload;
   try {
@@ -761,7 +772,12 @@ export function bip138LooksLikeText(text) {
 }
 
 export function bip138BytesFromText(text) {
-  const compact = String(text ?? "").replace(/\s+/g, "");
+  // A pasted backup gets the file limit too, checked before anything is
+  // copied or decoded (K3.1, round 1); line breaks may double its length.
+  const source = String(text ?? "");
+  if (source.length > 2 * MAX_TEXT_CHARS) fail("too-large");
+  const compact = source.replace(/\s+/g, "");
+  if (compact.length > MAX_TEXT_CHARS) fail("too-large");
   if (!compact || compact.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) fail("base64");
   let binary;
   try {
@@ -769,6 +785,7 @@ export function bip138BytesFromText(text) {
   } catch {
     fail("base64");
   }
+  if (binary.length > BIP138_MAX_FILE_BYTES) fail("too-large");
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   if (bytes.length < 6) fail("magic");

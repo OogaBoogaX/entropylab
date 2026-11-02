@@ -217,7 +217,7 @@ test("a pasted backup opens into the descriptor field", async () => {
     xpub.dispatchEvent(new Event("input"));
     assert.equal(xpub.value, "");
     assert.equal(status.getAttribute("data-bip138-status"), "prompt");
-    assert.ok(!status.textContent.includes("xprv"));
+    assert.ok(!status.textContent.includes(XPRV));
     assert.equal(field.value, base64);
     let inputs = 0;
     field.addEventListener("input", () => { inputs++; });

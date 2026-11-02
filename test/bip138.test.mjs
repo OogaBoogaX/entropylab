@@ -278,6 +278,12 @@ test("open refuses content it cannot use", () => {
   assert.equal(code(() => bip138.bip138OpenDescriptorBackup(changeBytes, keyA)), "unsupported-content");
   const badUtf8 = build([{ contentType: Uint8Array.of(1, 1, 0x7c), content: Uint8Array.of(0xff, 0xfe) }]);
   assert.equal(code(() => bip138.bip138OpenDescriptorBackup(badUtf8, keyA)), "damaged");
+  // Astra (round 1): two descriptor items would lose one, so they are
+  // refused; a descriptor next to other content still opens.
+  const branches = [0, 1].map((branch) => ({ contentType: Uint8Array.of(1, 1, 0x7c), content: utf8(`wsh(sortedmulti(2,${XPUB_A}/${branch}/*,${XPUB_B}/${branch}/*))`) }));
+  assert.equal(code(() => bip138.bip138OpenDescriptorBackup(build(branches), keyA)), "unsupported-content");
+  const withNote = build([{ contentType: Uint8Array.of(1, 1, 0x7c), content: utf8(DESC) }, { contentType: bip138.bip138EncodeContentType({ type: 3, params: new Uint8Array() }), content: utf8("note") }]);
+  assert.equal(bip138.bip138OpenDescriptorBackup(withNote, keyA).descriptor, DESC);
 });
 
 test("keyFromXpubText reads an xpub root and refuses private material", () => {
@@ -287,7 +293,9 @@ test("keyFromXpubText reads an xpub root and refuses private material", () => {
   const withOrigin = bip138.bip138KeyFromXpubText(`[6738736c/48'/0'/0'/2']${XPUB_A}/<0;1>/*`);
   assert.equal(withOrigin.status, "ok");
   assert.equal(hex(withOrigin.key), "6f155ae2153b09bb4e1383756723c0879e80d0f32767c7e4875d5de2fb9a400d");
-  for (const text of [XPRV, WIF, "abandon ".repeat(11) + "about", "0".repeat(63) + "1"]) {
+  // K3.1 (round 1): a raw private key inside an origin or before a path.
+  const raw = "0".repeat(63) + "1";
+  for (const text of [XPRV, WIF, "abandon ".repeat(11) + "about", raw, `[00000000]${raw}`, `${raw}/0/*`, `[6738736c/48'/0'/0'/2']${raw}/<0;1>/*`]) {
     assert.equal(bip138.bip138KeyFromXpubText(text).status, "private-key");
   }
   assert.equal(bip138.bip138KeyFromXpubText("").status, "invalid");
@@ -315,6 +323,11 @@ test("text and file inputs", () => {
   assert.equal(code(() => bip138.bip138BytesFromFile(utf8("hello"))), "magic");
   assert.equal(code(() => bip138.bip138BytesFromFile(utf8("QklQMTM4AQ"))), "base64");
   assert.equal(code(() => bip138.bip138BytesFromFile(new Uint8Array(1048577))), "too-large");
+  // K3.1 (round 1): a pasted backup gets the same limit before decoding.
+  const limit = Math.ceil(bip138.BIP138_MAX_FILE_BYTES / 3) * 4;
+  assert.equal(code(() => bip138.bip138BytesFromText("QklQMTM4" + "A".repeat(limit))), "too-large");
+  assert.equal(code(() => bip138.bip138BytesFromText("QklQMTM4" + "A".repeat(limit - 12) + "AAA=")), "too-large");
+  assert.equal(code(() => bip138.bip138BytesFromText(" ".repeat(2 * limit) + "QklQMTM4")), "too-large");
 });
 
 test("secret buckets follow the doubling sequence", () => {
@@ -326,6 +339,13 @@ test("secret buckets follow the doubling sequence", () => {
   assert.equal(bip138.bip138SecretBucket(255), 255);
   assert.throws(() => bip138.bip138SecretBucket(0), bip138.Bip138Error);
   assert.throws(() => bip138.bip138SecretBucket(256), bip138.Bip138Error);
+});
+
+test("open wipes every decoded item, not only the payload", () => {
+  // K3.1 (round 1): each item's content is its own plaintext copy.
+  const source = readFileSync(new URL("../src/js/bip138.js", import.meta.url), "utf8");
+  const open = source.slice(source.indexOf("export function bip138OpenDescriptorBackup("), source.indexOf("export function bip138DescriptorNamesKey("));
+  assert.match(open, /finally \{\s*payload\.fill\(0\);[\s\S]*for \(const entry of items\) entry\.content\.fill\(0\);\s*\}/);
 });
 
 test("the module never draws randomness and touches no DOM", () => {
