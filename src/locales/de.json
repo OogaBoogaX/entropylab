@@ -2481,5 +2481,22 @@
   "Refused: this backup contains private keys. Nothing was imported.": "Abgelehnt: Dieses Backup enthält private Schlüssel. Nichts wurde importiert.",
   "This backup looks incomplete or damaged. Try another copy. Nothing was imported.": "Dieses Backup sieht unvollständig oder beschädigt aus. Versuchen Sie eine andere Kopie. Nichts wurde importiert.",
   "Open encrypted backup": "Verschlüsseltes Backup öffnen",
-  "One of this wallet's xpubs": "Eines der xpubs dieses Wallets"
+  "One of this wallet's xpubs": "Eines der xpubs dieses Wallets",
+  "Two different QR codes are in view, so the scan was refused. Nothing was loaded. Show one code only and try again.": "Zwei verschiedene QR-Codes sind sichtbar, daher wurde der Scan abgelehnt. Nichts wurde geladen. Zeigen Sie nur einen Code an und versuchen Sie es erneut.",
+  "Replace the text in this field with the scanned result?": "Soll der Text in diesem Feld durch das gescannte Ergebnis ersetzt werden?",
+  "Loaded from the camera.": "Von der Kamera geladen.",
+  "Added from the camera as a new recipient line.": "Von der Kamera als neue Empfängerzeile hinzugefügt.",
+  "This recipient is already in the list. Nothing was added.": "Dieser Empfänger ist bereits in der Liste. Nichts wurde hinzugefügt.",
+  "This QR contains a private key or seed. Only public data can be scanned here. Nothing was loaded.": "Dieser QR enthält einen privaten Schlüssel oder Seed. Hier können nur öffentliche Daten gescannt werden. Nichts wurde geladen.",
+  "This QR format cannot be read here. Nothing was loaded. Enter the text in the field instead.": "Dieses QR-Format kann hier nicht gelesen werden. Nichts wurde geladen. Geben Sie stattdessen den Text in das Feld ein.",
+  "Scan invoice or offer QR": "Rechnungs- oder Angebots-QR scannen",
+  "Scan recipient QR": "Empfänger-QR scannen",
+  "Scan payment code QR": "Zahlungscode-QR scannen",
+  "Scan descriptor QR": "Deskriptor-QR scannen",
+  "Scan xpub QR": "xpub-QR scannen",
+  "This QR is not a Lightning invoice or offer. Nothing was loaded.": "Dieser QR ist keine Lightning-Rechnung oder -Angebot. Nichts wurde geladen.",
+  "This QR is not a silent payment address. Nothing was loaded.": "Dieser QR ist keine Silent Payments-Adresse. Nichts wurde geladen.",
+  "This QR is not a BIP-47 payment code. Nothing was loaded.": "Dieser QR ist kein BIP-47-Zahlungscode. Nichts wurde geladen.",
+  "This QR is not an output descriptor. Nothing was loaded.": "Dieser QR ist kein Output Descriptor. Nichts wurde geladen.",
+  "This QR is not an xpub. Nothing was loaded.": "Dieser QR ist kein xpub. Nichts wurde geladen."
 }
