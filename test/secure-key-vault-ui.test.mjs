@@ -170,7 +170,9 @@ test("round 3: the status follows the network, an empty vault converts to nothin
 test("round 4: an emptied private-key field goes back to the masked field", () => {
   const bind = block("hodlBindKeyFields");
   const apply = bind.slice(bind.indexOf("let apply = (event) => {"), bind.indexOf("let change = (event) => {"));
-  assert.match(apply, /if \(!key\.value && state && hodlSecureKeyFormApplies\(state\)\) \{\s*hodlSetMode\(hodlKeyMode\);[\s\S]*?document\.getElementById\("secure-key"\)\?\.focus\(/);
+  // Grok (round 5): only the user's own input event redraws, never the
+  // apply() at bind time.
+  assert.match(apply, /if \(event\?\.type === "input" && !key\.value && state && hodlSecureKeyFormApplies\(state\)\) \{\s*hodlSetMode\(hodlKeyMode\);[\s\S]*?document\.getElementById\("secure-key"\)\?\.focus\(/);
 });
 
 test("round 5: Clear empties every private-key format of a key, Keep only the one it vaults", () => {
@@ -178,5 +180,6 @@ test("round 5: Clear empties every private-key format of a key, Keep only the on
   const clear = toggle.slice(toggle.indexOf('} else if (choice === "clear") {'));
   const keyLoop = clear.slice(clear.indexOf("for (const { state } of keyStates) {"), clear.indexOf("commitTurnOn("));
   assert.ok(keyLoop.length > 0, "the Clear branch walks the key states");
-  assert.match(keyLoop, /for \(const format of \["wif", "hex-key", "minikey"\]\) values\[format\] = "";/);
+  // K3.1 (round 5): the brain-wallet text goes too.
+  assert.match(keyLoop, /for \(const format of \["wif", "hex-key", "minikey", "brain"\]\) values\[format\] = "";/);
 });

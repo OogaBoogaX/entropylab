@@ -7718,8 +7718,10 @@ function hodlBindKeyFields() {
       hodlUpdatePrivateKeyKeyboardKeys(key);
       // Emptied while Secure entry is on: the next key goes to the masked
       // field, as the seed field's next words go to the picker (Grok, Kimi,
-      // round 3).
-      if (!key.value && state && hodlSecureKeyFormApplies(state)) {
+      // round 3). Only the user's own edit counts: the apply() at bind time
+      // runs before the stored kind's radio is restored, and a kind change
+      // has its own redraw (Grok, round 5).
+      if (event?.type === "input" && !key.value && state && hodlSecureKeyFormApplies(state)) {
         hodlSetMode(hodlKeyMode);
         // The next keystroke goes to the masked field, not to the field the
         // redraw removed (DeepSeek, round 4).
@@ -12713,10 +12715,11 @@ async function hodlSecureEntryToggle(wanted) {
           for (const { state } of keyStates) {
             if (state.result) state.secureCleared = true;
             if (state.globalSync) hodlClearGlobalSyncCopies(state);
-            // Clear empties every private-key format the key holds, not only
-            // the one on screen: each is the same kind of secret (Grok, round 4).
+            // Clear empties every private-key slot the key holds, not only the
+            // one on screen, the brain-wallet text included: each is a secret
+            // (Grok, round 4; K3.1, round 5).
             let values = hodlPrivateKeyValues(state.fields);
-            for (const format of ["wif", "hex-key", "minikey"]) values[format] = "";
+            for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
           }
           commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
         } else {
