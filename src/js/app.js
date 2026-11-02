@@ -8813,7 +8813,7 @@ function hodlSyncMsigDescriptorImport(fromFields = false) {
   let button = document.getElementById("msig-descriptor-import"), field = document.getElementById("msig-descriptor"), status = document.getElementById("msig-descriptor-status");
   if (!button) return;
   let occupied = hodlReadMsigXpubs().some((value) => String(value).trim()), empty = !String(field?.value ?? "").trim();
-  button.disabled = occupied || empty;
+  button.disabled = occupied || empty || (typeof hodlMsigBip138Pending === "function" && hodlMsigBip138Pending());
   button.setAttribute("aria-disabled", String(button.disabled));
   if (!status) return;
   if (fromFields) delete status.dataset.result;
@@ -10909,6 +10909,7 @@ function hodlResetMsigForm() {
   // MS Station starts on the import panel: a fresh station and a cleared one
   // both open it, since pasting a descriptor is the usual way in.
   if (descriptorPanel) descriptorPanel.open = true;
+  if (typeof hodlMsigBip138Reset === "function") hodlMsigBip138Reset();
   hodlSyncMsigDescriptorImport();
 }
 function hodlInitMsig() {
@@ -11014,6 +11015,7 @@ function hodlInitMsig() {
     hodlSyncMsigDescriptorImport();
     hodlSyncMsigClearButton(true);
   });
+  if (typeof hodlInitMsigBip138Open === "function") hodlInitMsigBip138Open();
 }
 // The multisig script type is a button group, not a field to read: the choice
 // lives here and the pressed segment reports it. "mixed" is a state the
@@ -11248,11 +11250,218 @@ function hodlShowMsig() {
       ${hodlMsigCoreImportDescriptorsMarkup()}
       ${hodlMsigPolicySheetMarkup()}
       ${hodlMsigBip388Markup()}
+      ${typeof hodlMsigBip138HostMarkup === "function" ? hodlMsigBip138HostMarkup() : ""}
     </section>`;
   hodlBindAddressVirtualization(hodlAddressBranchVirtualConfigs(branches, false, "msig"));
   hodlWatchMsigGroups();
   hodlBindAddressMatch();
   hodlBindMsigCoreImportDescriptors();
+  if (typeof hodlMountMsigBip138Backup === "function") hodlMountMsigBip138Backup();
+}
+// BIP-138 encrypted backups of the multisig descriptor, preview builds only:
+// release builds strip the open controls from the shell, render no backup
+// host and never import the module.
+var hodlBip138Import = null, hodlMsigBip138Backup = null, hodlMsigBip138Open = null, hodlMsigBip138Epoch = 0, hodlMsigBip138OpenEpoch = 0;
+function hodlLoadBip138() {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    if (!hodlBip138Import) hodlBip138Import = import("./bip138.js").catch(() => null);
+    return hodlBip138Import;
+  }
+  return Promise.resolve(null);
+}
+function hodlMsigBip138HostMarkup() {
+  if (!(typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__)) return "";
+  if (!hodlWalletResult || hodlWalletResult.kind !== "msig" || !hodlWalletResult.walletDescriptor) return "";
+  return '<div id="msig-bip138-host"></div>';
+}
+function hodlMsigBip138ReasonText(reason) {
+  if (reason === "literal") return hodlTText("it is a single public key, not an xpub");
+  if (reason === "nums") return hodlTText("it is a publicly known fixed key");
+  return hodlTText("its xpub becomes visible on the blockchain when coins are spent");
+}
+// One line per co-signer key that cannot open the backup (the Taproot
+// internal key is no co-signer and gets none), then the two downloads, shown
+// only for a backup that was opened again and matched.
+function hodlMsigBip138Markup(view) {
+  let lines = (view?.exclusions || []).filter((entry) => !entry.internal && Number.isSafeInteger(entry.index)).map((entry) => `<p class="edge-note is-private" data-bip138-excluded="${entry.index + 1}">${hodlT("Key {n} can't open this backup: {reason}. Whoever has only that key will need another cosigner's xpub, or a plain copy of the descriptor.", { n: String(entry.index + 1), reason: hodlMsigBip138ReasonText(entry.reason) })}</p>`).join("");
+  let actions = view?.ready
+    ? `<div class="row tool-actions"><button class="btn secondary" id="msig-bip138-download" type="button">${hodlT("Download encrypted backup")}</button><button class="btn secondary" id="msig-bip138-download-text" type="button">${hodlT("Download as text")}</button></div>`
+    : `<p class="edge-note is-private" data-bip138-none>${hodlT("Can't make this backup: none of this wallet's keys can open one. Keep a plain copy of the descriptor instead.")}</p>`;
+  return `<details class="wallet-advanced no-print" id="msig-bip138" data-bip138-backup><summary>${hodlT("Encrypted backup")}</summary><p class="edge-note is-info">${hodlT("Encrypts this wallet's watch-only details so a copy on a USB drive, in email or in cloud storage doesn't show strangers your addresses or keys. Anyone with one of this wallet's xpubs can open it. It is not a seed backup and cannot spend coins.")}</p><p class="edge-note is-muted">${hodlT("BIP-138 is a draft standard and may change; keep a plain copy of the descriptor too.")}</p>${lines}${actions}</details>`;
+}
+function hodlMountMsigBip138Backup() {
+  let host = document.getElementById("msig-bip138-host"), result = hodlWalletResult, epoch = ++hodlMsigBip138Epoch;
+  hodlMsigBip138Backup = null;
+  if (!host || !result || result.kind !== "msig" || !result.walletDescriptor) return;
+  hodlLoadBip138().then((module) => {
+    if (!module || epoch !== hodlMsigBip138Epoch || hodlWalletResult !== result || !host.isConnected) return;
+    let built = null;
+    try {
+      built = module.bip138CreateDescriptorBackup(result.walletDescriptor);
+    } catch {
+      return;
+    }
+    let ready = built?.status === "ok" && built.bytes instanceof Uint8Array;
+    hodlMsigBip138Backup = ready ? { result, bytes: built.bytes, module } : null;
+    host.innerHTML = hodlMsigBip138Markup({ exclusions: built?.exclusions || [], ready });
+    document.getElementById("msig-bip138-download")?.addEventListener("click", () => hodlDownloadMsigBip138(false));
+    document.getElementById("msig-bip138-download-text")?.addEventListener("click", () => hodlDownloadMsigBip138(true));
+  }).catch(() => {});
+}
+function hodlDownloadMsigBip138(asText) {
+  let backup = hodlMsigBip138Backup;
+  if (!backup || backup.result !== hodlWalletResult) return;
+  let blob = asText ? new Blob([backup.module.bip138ToBase64(backup.bytes)], { type: "text/plain" }) : new Blob([backup.bytes.slice()], { type: "application/octet-stream" });
+  let url = URL.createObjectURL(blob), link = document.createElement("a");
+  link.href = url;
+  link.download = asText ? "wallet-backup.txt" : "wallet-backup.bip138";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1e3);
+}
+function hodlMsigBip138LooksLikeText(value) {
+  return String(value ?? "").replace(/\s+/g, "").startsWith("QklQMTM4");
+}
+// A pasted backup is ciphertext, not a descriptor: the import button stays
+// off until the backup has been opened into one.
+function hodlMsigBip138Pending() {
+  if (!document.getElementById("msig-backup-open")) return false;
+  return hodlMsigBip138LooksLikeText(document.getElementById("msig-descriptor")?.value);
+}
+function hodlMsigBip138StatusText(code) {
+  if (code === "prompt") return hodlTText("Enter one of this wallet's xpubs to open the backup. Never enter a seed or private key.");
+  if (code === "not-backup") return hodlTText("This isn't a BIP-138 backup. Choose a .bip138 file or its text version. Nothing was imported.");
+  if (code === "unsupported") return hodlTText("This backup uses a BIP-138 version EntropyLab doesn't support yet. Nothing was imported.");
+  if (code === "wrong-key") return hodlTText("Couldn't open this backup. The xpub may not be one of this wallet's keys, or the file may be damaged or changed. Nothing was imported.");
+  if (code === "private-key") return hodlTText("Refused: this backup contains private keys. Nothing was imported.");
+  return hodlTText("This backup looks incomplete or damaged. Try another copy. Nothing was imported.");
+}
+function hodlMsigBip138StatusCode(errorCode) {
+  if (errorCode === "magic" || errorCode === "too-large") return "not-backup";
+  if (errorCode === "unsupported-version" || errorCode === "unsupported-encryption" || errorCode === "unsupported-content") return "unsupported";
+  if (errorCode === "wrong-key" || errorCode === "private-key") return errorCode;
+  return "damaged";
+}
+// The status line carries its state in data-bip138-status for tests.
+function hodlMsigBip138Status(code) {
+  let status = document.getElementById("msig-backup-status");
+  if (!status) return;
+  let text = code ? hodlMsigBip138StatusText(code) : "";
+  status.textContent = text;
+  status.setAttribute("data-bip138-status", code || "");
+  status.hidden = !text;
+}
+function hodlMsigBip138Drop() {
+  hodlMsigBip138Open = null;
+  hodlMsigBip138OpenEpoch++;
+  let field = document.getElementById("msig-backup-xpub"), row = document.getElementById("msig-backup-xpub-row");
+  if (field) field.value = "";
+  if (row) row.hidden = true;
+}
+function hodlMsigBip138Hold(module, bytes, source) {
+  hodlMsigBip138Drop();
+  try {
+    module.bip138ParseBackup(bytes);
+  } catch (error) {
+    hodlMsigBip138Status(hodlMsigBip138StatusCode(error?.code));
+    return;
+  }
+  hodlMsigBip138Open = { module, bytes, source };
+  let row = document.getElementById("msig-backup-xpub-row");
+  if (row) row.hidden = false;
+  hodlMsigBip138Status("prompt");
+}
+function hodlMsigBip138CheckText() {
+  let field = document.getElementById("msig-descriptor");
+  if (!field || !document.getElementById("msig-backup-open")) return;
+  let text = field.value;
+  if (!hodlMsigBip138LooksLikeText(text)) {
+    if (hodlMsigBip138Open?.source === "text") {
+      hodlMsigBip138Drop();
+      hodlMsigBip138Status("");
+    }
+    return;
+  }
+  let epoch = ++hodlMsigBip138OpenEpoch;
+  hodlLoadBip138().then((module) => {
+    if (!module || epoch !== hodlMsigBip138OpenEpoch || field.value !== text) return;
+    let bytes = null;
+    try {
+      bytes = module.bip138BytesFromText(text);
+    } catch {
+      hodlMsigBip138Drop();
+      hodlMsigBip138Status("damaged");
+      return;
+    }
+    hodlMsigBip138Hold(module, bytes, "text");
+  }).catch(() => {});
+}
+function hodlMsigBip138TryOpen() {
+  let field = document.getElementById("msig-backup-xpub"), held = hodlMsigBip138Open;
+  if (!field || !held) return;
+  let parsed = held.module.bip138KeyFromXpubText(field.value);
+  if (parsed.status === "private-key") field.value = "";
+  if (parsed.status !== "ok") {
+    hodlMsigBip138Status("prompt");
+    return;
+  }
+  let opened = null;
+  try {
+    opened = held.module.bip138OpenDescriptorBackup(held.bytes, parsed.key);
+  } catch (error) {
+    let code = hodlMsigBip138StatusCode(error?.code);
+    if (code !== "wrong-key") hodlMsigBip138Drop();
+    hodlMsigBip138Status(code);
+    return;
+  } finally {
+    parsed.key.fill(0);
+  }
+  hodlMsigBip138Drop();
+  hodlMsigBip138Status("");
+  let descriptor = document.getElementById("msig-descriptor");
+  if (!descriptor) return;
+  descriptor.value = opened.descriptor;
+  descriptor.dispatchEvent(new Event("input", { bubbles: true }));
+}
+function hodlInitMsigBip138Open() {
+  let open = document.getElementById("msig-backup-open"), file = document.getElementById("msig-backup-file"), xpub = document.getElementById("msig-backup-xpub"), descriptor = document.getElementById("msig-descriptor");
+  if (!open || !file || !xpub || !descriptor) return;
+  open.addEventListener("click", () => file.click());
+  file.addEventListener("change", () => {
+    const chosen = file.files?.[0];
+    file.value = "";
+    if (!chosen) return;
+    hodlMsigBip138Drop();
+    hodlMsigBip138Status("");
+    let epoch = hodlMsigBip138OpenEpoch;
+    if (!(chosen.size <= 1048576)) {
+      hodlMsigBip138Status("not-backup");
+      return;
+    }
+    Promise.all([hodlLoadBip138(), chosen.arrayBuffer()]).then(([module, buffer]) => {
+      if (!module || epoch !== hodlMsigBip138OpenEpoch) return;
+      let raw = new Uint8Array(buffer), bytes = null;
+      try {
+        bytes = module.bip138BytesFromFile(raw);
+      } catch (error) {
+        hodlMsigBip138Status(hodlMsigBip138StatusCode(error?.code));
+        return;
+      } finally {
+        raw.fill(0);
+      }
+      hodlMsigBip138Hold(module, bytes, "file");
+    }).catch(() => {});
+  });
+  descriptor.addEventListener("input", hodlMsigBip138CheckText);
+  xpub.addEventListener("input", hodlMsigBip138TryOpen);
+}
+function hodlMsigBip138Reset() {
+  hodlMsigBip138Backup = null;
+  hodlMsigBip138Epoch++;
+  hodlMsigBip138Drop();
+  hodlMsigBip138Status("");
+  let file = document.getElementById("msig-backup-file");
+  if (file) file.value = "";
+  hodlMsigBip138CheckText();
 }
 // hodlPsbtLast and hodlNonceLast hold each inspector's last run (what was
 // parsed, and the network and transcript it was read with) so a language
@@ -18114,6 +18323,7 @@ function hodlRestoreMsig() {
   hodlUpdateAddressEstimate("msig-");
   let descriptor = document.getElementById("msig-descriptor"), descriptorStatus = document.getElementById("msig-descriptor-status");
   if (descriptor) descriptor.value = state.fields.descriptor || "";
+  if (typeof hodlMsigBip138Reset === "function") hodlMsigBip138Reset();
   if (descriptorStatus) {
     delete descriptorStatus.dataset.result;
     descriptorStatus.textContent = "";
