@@ -168,6 +168,11 @@ an explicit error before those pairs are allocated.
   Session and pagehide clear field/cache. Clearing is best-effort; browser/OS
   copies are outside reliable erasure. A successful transcript check does not
   establish that host randomness stayed secret.
+  PSBT camera scans keep one stream across animated parts. A visible blur
+  while a permission prompt is pending does not cancel the request, but a
+  grant starts capture only when the page is visible and focused. Active
+  blur, tab hide, print, idle, cancellation, another PSBT scanner and teardown
+  stop capture and discard pending scan data.
   A **Scan PSBT QR** control under the PSBT Inspector, Nonce Inspector and
   PSBT Editor fields (and the fee-bump original, the PSBT sent to the signer
   and the Editor's comparison PSBT) reads a PSBT shown as a QR code with the device camera:
