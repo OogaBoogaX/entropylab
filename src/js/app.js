@@ -6943,6 +6943,7 @@ function hodlSetSeedLength(words) {
 // The Key Station's scan panel is a preview-only extra: release builds define
 // no flag, so the host is never rendered and the module is never imported.
 var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null;
+var hodlSeedScan = null, hodlSeedScanOpenAfterMount = false;
 var hodlSeedPicker = null, hodlSeedPickerImport = null;
 var hodlSecureDicePad = null, hodlSecureDicePadImport = null;
 // The three PSBT scan panels are the same preview-only extra: release builds
@@ -6958,12 +6959,17 @@ const hodlPsbtScanHosts = [
 function hodlKeyScanHostMarkup() {
   return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
 }
+function hodlSeedScanHostMarkup() {
+  return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="seed-scan-host"></div>' : "";
+}
 function hodlRenderKeyForm() {
   // The form and its on-screen keyboards are replaced: the listeners they
   // added outside the form go with them (#546 B3).
   hodlReleaseFormListeners();
   try { hodlKeyScan?.destroy(); } catch {}
   hodlKeyScan = null;
+  try { hodlSeedScan?.destroy(); } catch {}
+  hodlSeedScan = null;
   try { hodlSeedPicker?.destroy(); } catch {}
   hodlSeedPicker = null;
   try { hodlSecureDicePad?.destroy(); } catch {}
@@ -7300,14 +7306,16 @@ function hodlRenderKeyForm() {
       // Secure entry: the picker holds the words as indices; no text field. A
       // seed that arrived as text while the switch was on (an import, a Journal
       // fill) keeps the text field, as hodlSecureSeedApplies decides.
-      hodlFormEl.innerHTML = `${choices}<div id="seed-picker-host"></div>`;
+      hodlFormEl.innerHTML = `${choices}<div id="seed-picker-host"></div>${hodlSeedScanHostMarkup()}`;
       bindMethodChoices({ value: "" });
       hodlMountSeedPicker();
+      hodlBindSeedScan();
       hodlBindKeyFields();
       hodlRenderPassphraseKeyboard();
       return;
     }
-    hodlFormEl.innerHTML = `${choices}<p class="label">${hodlT("Your {words}-word seed phrase", { words: config.words })}</p>${hodlSeedMetaRowMarkup("seed-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-autocomplete", hodlT("Autocomplete BIP39 words"), { checked: autocompleteEnabled })}${hodlSeedKeyboardToggleMarkup()}</div><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" translate="no" aria-hidden="true"></pre><textarea id="seed" placeholder="${hodlTAttr("Enter exactly {words} BIP39 words", { words: config.words })}" aria-describedby="seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>${hodlSeedKeyboardMarkup()}<div id="last-words" translate="no" class="row last-word-options"></div>`;
+    hodlFormEl.innerHTML = `${choices}<p class="label">${hodlT("Your {words}-word seed phrase", { words: config.words })}</p>${hodlSeedMetaRowMarkup("seed-meta", true)}<div class="passphrase-keyboard-tools">${hodlSwitchRowMarkup("seed-autocomplete", hodlT("Autocomplete BIP39 words"), { checked: autocompleteEnabled })}${hodlSeedKeyboardToggleMarkup()}</div><div class="dice-input-shell seed-input-shell"><pre class="dice-input-highlight" id="seed-highlight" translate="no" aria-hidden="true"></pre><textarea id="seed" placeholder="${hodlTAttr("Enter exactly {words} BIP39 words", { words: config.words })}" aria-describedby="seed-meta" autocomplete="off" spellcheck="false" autocapitalize="off"></textarea></div>${hodlSeedKeyboardMarkup()}<div id="last-words" translate="no" class="row last-word-options"></div>${hodlSeedScanHostMarkup()}`;
+    hodlBindSeedScan();
     let input = document.getElementById("seed"), update = () => {
       let rawValue = input.value, value = rawValue.trim(), meta = hodlElement("#seed-meta"), picker = hodlElement("#last-words"), analysis = hodlRenderSeedInputState(input, config.words);
       if (hodlLooksExtendedKey(value)) {
@@ -7663,6 +7671,136 @@ function hodlBindKeyScan() {
     }).catch(() => {});
   }
 }
+function hodlBindSeedScan() {
+  // The slice harness loads this with no scan host: return before anything
+  // else, and never read the preview flag bare.
+  let host = document.getElementById("seed-scan-host");
+  // No host, no mount: an open request is dropped here too (GLM, round 1).
+  if (!host) {
+    hodlSeedScanOpenAfterMount = false;
+    return;
+  }
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    if (!hodlKeyScanImport) {
+      hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
+        hodlKeyScanModule = module;
+        return module;
+      }).catch(() => null);
+    }
+    hodlKeyScanImport.then((module) => {
+      // An open request belongs to this mount only: a mount that bails (the
+      // host gone, a panel already there) drops it, so a later mount never
+      // opens the camera without a Scan press (Kimi, autofix review).
+      let openNow = hodlSeedScanOpenAfterMount;
+      hodlSeedScanOpenAfterMount = false;
+      if (!module || hodlSeedScan || !host.isConnected || host.childNodes.length) return;
+      try {
+        hodlSeedScan = module.mountKeyScan(host, {
+          accept: "seed",
+          idPrefix: "seed-scan",
+          translate: hodlTText,
+          wordlist: hodlBip39Wordlist,
+          privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
+          beforeOpen: hodlSeedScanBeforeOpen,
+          onSeed: hodlSeedScanLoad,
+          replacesSeed: hodlSeedScanReplaces,
+        });
+      } catch {
+        return;
+      }
+      // Not for a page hidden while Secure entry was turning on: the camera
+      // would start out of sight (K3.1, #1364 round 6).
+      if (openNow && document.visibilityState !== "hidden") try { hodlSeedScan.open(); } catch {}
+    }).catch(() => {});
+  }
+}
+async function hodlSeedScanBeforeOpen() {
+  if (hodlSecureSeedActive()) return true;
+  if (hodlKeyMode === "seed" && hodlSeedMethod === "words" && !hodlSecureEntryOn) {
+    hodlSeedScanOpenAfterMount = true;
+    try {
+      await hodlSecureEntryToggle(true);
+    } catch {
+      hodlSeedScanOpenAfterMount = false;
+      return false;
+    }
+    if (hodlSecureEntryOn) return false;
+    hodlSeedScanOpenAfterMount = false;
+    return false;
+  }
+  return false;
+}
+// True when Continue would replace words the active key already holds, typed
+// or held by Secure entry (DeepSeek red team, round 3).
+function hodlSeedScanReplaces() {
+  let state = hodlKeys[hodlActiveKey];
+  if (!state) return false;
+  return hodlSecureSeedHasWords(hodlSecureKeyOf(state)) || Boolean(String(state.fields?.seed ?? "").trim()) || Boolean(String(state.fields?.seedNumbers ?? "").trim());
+}
+function hodlSeedScanLoad(indices, count) {
+  try {
+    // A load that cannot happen throws, so the panel says nothing was loaded
+    // instead of closing as if it had (MiniMax, round 4).
+    if (!hodlSecureSeedActive()) throw new Error("Secure entry is not active for seed words.");
+    if (![12, 15, 18, 21, 24].includes(count)) throw new Error("Unsupported word count.");
+    if (!(indices instanceof Uint16Array) || indices.length !== count) throw new Error("Bad indices.");
+    let state = hodlKeys[hodlActiveKey];
+    if (!state) throw new Error("No active key.");
+    let key = hodlSecureKeyOf(state, true);
+    if (key == null) throw new Error("No secure key.");
+    let entry = seedEntry(count);
+    try {
+      for (let i = 0; i < count; i += 1) {
+        let index = indices[i];
+        if (!Number.isInteger(index) || index < 0 || index >= 2048) throw new Error("bad index");
+        seedSet(entry, i, index);
+      }
+    } catch (error) {
+      try { entry.indices.fill(0); } catch {}
+      throw error;
+    }
+    // Like any edit of the words: a derivation still running on the old words
+    // stops and what they showed is dropped, before the new words go in (GLM,
+    // MiniMax, round 4). The old result is kept to wipe below.
+    let previous = state.result;
+    hodlInvalidateLiveKeyResult();
+    // sessionSet scrubs the entry it replaces, so the old words are zeroed
+    // before the new entry is installed.
+    try {
+      sessionSet(hodlSecureSession, key, "seed", entry);
+    } catch (error) {
+      try { entry.indices.fill(0); } catch {}
+      throw error;
+    }
+    state.fields.seed = "";
+    // The same seed typed as word numbers goes too: Continue replaces the
+    // key's seed, whichever way it was entered (Kimi, round 5).
+    state.fields.seedNumbers = "";
+    state.lastWord = "";
+    // The D++ final word belonged to the old length, as on a word-count
+    // change (Kimi, round 3).
+    state.dplusLastWord = "";
+    // Typed partial phrases go with the typed words (GLM, round 1).
+    hodlLastWordCache.clear();
+    hodlTargetWordCount = count;
+    state.targetWords = count;
+    state.error = "";
+    state.errorSpec = null;
+    // The words are installed: a redraw that fails from here on must not make
+    // the panel say nothing was loaded (GLM, round 5).
+    try {
+      hodlRenderKeyForm();
+      hodlRestoreFormFields(state);
+      hodlUpdateSeedLengthControl();
+      hodlSecureSeedChanged();
+    } catch {}
+    // The wallet derived from the old words is wiped once nothing shows it,
+    // unless a key tab or the Key Manager still does (Kimi, round 2).
+    try { hodlWipeUnsharedWalletRows(previous); } catch {}
+  } finally {
+    try { indices.fill(0); } catch {}
+  }
+}
 // A teardown bumps the epoch, so a mount still waiting on the import when the
 // panels were torn down (End Session, a language switch) mounts nothing.
 var hodlPsbtScanEpoch = 0;
@@ -7937,6 +8075,7 @@ function hodlBindKeyFields() {
     apply();
   }
   hodlBindKeyScan();
+  hodlBindSeedScan();
   hodlDecorateAppPaste();
 }
 function hodlSelectedEntropy(targetWords = hodlTargetWordCount) {
@@ -11612,10 +11751,12 @@ function hodlMsigBip138CheckText() {
   if (!field || !document.getElementById("msig-backup-open")) return;
   let text = field.value;
   if (!hodlMsigBip138LooksLikeText(text)) {
-    if (hodlMsigBip138Open?.source === "text") {
-      hodlMsigBip138Drop();
-      hodlMsigBip138Status("");
-    }
+    // An edit drops a held backup whatever its source, and cancels a file
+    // still being read: opening either later would replace what was typed
+    // (K3.1, MiniMax, #1374 round 2).
+    let held = hodlMsigBip138Open;
+    hodlMsigBip138Drop();
+    if (held) hodlMsigBip138Status("");
     return;
   }
   let epoch = ++hodlMsigBip138OpenEpoch;
@@ -23475,12 +23616,18 @@ function hodlInitSecretFieldAutoClear() {
     // The PSBT panels come down before any decoder is retired (their decoders
     // live in the same registry as the Key Station's), then the registry goes.
     try { hodlDestroyPsbtScans(); } catch {}
+    // The seed scan panel shares the Key Station's decoders: it comes down
+    // before they are retired too.
+    try { hodlSeedScan?.destroy(); } catch {}
+    hodlSeedScan = null;
+    hodlSeedScanOpenAfterMount = false;
     try { hodlDestroyTextScans(); } catch {}
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
     try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
     try { hodlTextScanModule?.retireQrDecoders(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
+    try { hodlBindSeedScan(); } catch {}
     // The PSBT hosts are static: give them fresh, closed panels too.
     try { hodlBindPsbtScans(); } catch {}
     try { hodlBindTextScans(); } catch {}

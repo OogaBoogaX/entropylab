@@ -2498,5 +2498,10 @@
   "This QR is not a silent payment address. Nothing was loaded.": "Este QR não é um endereço de Silent Payment. Nada foi carregado.",
   "This QR is not a BIP-47 payment code. Nothing was loaded.": "Este QR não é um código de pagamento BIP-47. Nada foi carregado.",
   "This QR is not an output descriptor. Nothing was loaded.": "Este QR não é um descritor de saída. Nada foi carregado.",
-  "This QR is not an xpub. Nothing was loaded.": "Este QR não é um xpub. Nada foi carregado."
+  "This QR is not an xpub. Nothing was loaded.": "Este QR não é um xpub. Nada foi carregado.",
+  "{count} characters": "{count} caracteres",
+  "Valid private-key value · Hex has no checksum to detect typing mistakes.": "Valor de chave privada válido · Hex não tem checksum para detectar erros de digitação.",
+  "Mini key check passed": "Verificação de mini chave passou",
+  "WIF checksum passed · {network} · Compressed public key": "Checksum WIF passou · {network} · Chave pública comprimida",
+  "WIF checksum passed · {network} · Uncompressed public key": "Checksum WIF passou · {network} · Chave pública não comprimida"
 }

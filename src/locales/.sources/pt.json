@@ -2498,5 +2498,10 @@
   "This QR is not a silent payment address. Nothing was loaded.": "8f61c00c256344ba0e1f7d31224deae7d92e70723ae1d52744cad07237229497",
   "This QR is not a BIP-47 payment code. Nothing was loaded.": "4c87266e85e928acebce4b5c446942c9865c92f2f5dd2e9f7912e3360b063a6a",
   "This QR is not an output descriptor. Nothing was loaded.": "0d3e667d7fad7be2239160f61f03b0ac492a9eb4d9b97b76c96997fb740b3ec2",
-  "This QR is not an xpub. Nothing was loaded.": "84bdb7606ca602ffa82580a1ba9430f3b1b3bce38af49d70ca6133a4891b1d55"
+  "This QR is not an xpub. Nothing was loaded.": "84bdb7606ca602ffa82580a1ba9430f3b1b3bce38af49d70ca6133a4891b1d55",
+  "{count} characters": "27764e6ed6287797748d36d24389c9019e8275ac729ce61025ee6e2c52d066e2",
+  "Valid private-key value · Hex has no checksum to detect typing mistakes.": "fd57ad615641944927a4300725c0f15f6a0cffe282e28cc921d84c41de6a711b",
+  "Mini key check passed": "2e4b4f3a908e3e9cab85fb08fb492c886e0268e1cc4109db99689baa1b70fb73",
+  "WIF checksum passed · {network} · Compressed public key": "c452b70e08b078b76fd4654904de5aae6f0127d0b1e2c7b5c09454607b82008f",
+  "WIF checksum passed · {network} · Uncompressed public key": "1d45c90c6f5ae44ea4ba73f6ccf9e09227e19933a94a9719c8dcc4112bca1362"
 }
