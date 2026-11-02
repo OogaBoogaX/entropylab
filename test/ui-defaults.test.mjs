@@ -2522,7 +2522,7 @@ test("the vanity grinder is a workspace tab that ships collapsed and never auto-
   // rather than a DOM attribute so a wipe cannot leave a copyable secret.
   assert.match(appSource, /hodlVanityReveal = false/);
   assert.match(appSource, /hodlPrivacyBarMarkup\(\{ id: "vanity-reveal"/);
-  assert.match(appSource, /copyMarkup\("data-vanity-copy", index, hodlTAttr\("Copy passphrase"\)\)/);
+  assert.match(appSource, /copyMarkup\("data-vanity-copy", index, hodlTAttr\("Copy passphrase to EntropyLab's clipboard"\)\)/);
   assert.match(appSource, /\$\{attribute\}="\$\{index\}"/);
   const vanityController = appSource.slice(appSource.indexOf("// ── Vanity grinder"), appSource.indexOf("function hodlInitWorkspace()"));
   assert.doesNotMatch(vanityController, /data-phrase/);
