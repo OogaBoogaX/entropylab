@@ -932,3 +932,22 @@ test("seed mode uses seed-scan ids and WIF mode keeps key-scan ids", () => {
   assert.ok(findById(wif.host, "key-scan-open"));
   assert.equal(findById(wif.host, "seed-scan-open"), null);
 });
+
+test("a Scan press waiting on beforeOpen does not open once the page is hidden", async () => {
+  // K3.1 (#1364 round 6): a pending beforeOpen could start the camera after
+  // the page was hidden.
+  let release;
+  const ctx = setup({
+    accept: "seed",
+    idPrefix: "seed-scan",
+    wordlist: bip39English,
+    beforeOpen: () => new Promise((resolve) => { release = resolve; }),
+  });
+  findById(ctx.host, "seed-scan-open").dispatchEvent({ type: "click" });
+  ctx.doc.visibilityState = "hidden";
+  ctx.doc.dispatch("visibilitychange");
+  release(true);
+  await tick();
+  assert.equal(findById(ctx.host, "seed-scan-panel").hidden, true);
+  assert.equal(ctx.created.scanners, 0);
+});
