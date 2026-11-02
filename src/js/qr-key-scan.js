@@ -36,13 +36,9 @@ const CONFIRM_TEMPLATE = "{format}. Scanning cannot tell where a QR came from. I
 const PHOTO_NOTE = "A photo of this QR is a copy of the secret. The camera app, photo library, cloud sync or thumbnails may keep it. Prefer the live camera. If you use a photo, delete it, including from the recently deleted folder or trash. Other copies may remain.";
 const SEED_REFUSAL = "This QR contains a seed. Only WIF private keys can be scanned here. Nothing was loaded.";
 const NOT_A_KEY_REFUSAL = "This QR does not hold a WIF private key. Nothing was loaded.";
-// DRAFT (owner OK pending)
 const SEED_MODE_KEY_REFUSAL = "This QR contains a private key. Only seeds can be scanned here. Nothing was loaded.";
-// DRAFT (owner OK pending)
 const SEED_MODE_NOT_A_SEED_REFUSAL = "This QR does not hold a seed. Nothing was loaded.";
-// DRAFT (owner OK pending)
 const SEED_REPLACE_NOTE = "This key already holds a seed phrase. Continue replaces it.";
-// DRAFT (owner OK pending)
 const KEY_REPLACE_NOTE = "This key already holds a private key. Continue replaces it.";
 const SEED_FORMAT_TEXT = {
   "standard-seedqr": "Standard SeedQR, {count} words",
