@@ -153,3 +153,16 @@ test("hodlSeedScanLoad throws when it cannot load, so the panel says nothing was
   assert.equal(installed, false);
   assert.ok(indices.every((index) => index === 0), "the caller's buffer is zeroed even then");
 });
+
+test("a scan replaces a seed typed as word numbers too, and a failed redraw does not undo a load", () => {
+  // Kimi (round 5): the replace note and the load ignored the Numbers field.
+  const replaces = functionBody("hodlSeedScanReplaces");
+  assert.match(replaces, /state\.fields\?\.seedNumbers/);
+  const load = functionBody("hodlSeedScanLoad");
+  assert.match(load, /state\.fields\.seedNumbers = "";/);
+  // GLM (round 5): after sessionSet the redraw is guarded, so a throw there
+  // cannot reach the panel's "nothing was loaded".
+  const installed = load.indexOf("sessionSet(hodlSecureSession, key, \"seed\", entry);");
+  const guarded = load.indexOf("try {\n      hodlRenderKeyForm();");
+  assert.ok(installed > 0 && guarded > installed, "the redraw after the install is inside a try");
+});

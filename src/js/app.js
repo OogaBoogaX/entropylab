@@ -7619,7 +7619,7 @@ async function hodlSeedScanBeforeOpen() {
 function hodlSeedScanReplaces() {
   let state = hodlKeys[hodlActiveKey];
   if (!state) return false;
-  return hodlSecureSeedHasWords(hodlSecureKeyOf(state)) || Boolean(String(state.fields?.seed ?? "").trim());
+  return hodlSecureSeedHasWords(hodlSecureKeyOf(state)) || Boolean(String(state.fields?.seed ?? "").trim()) || Boolean(String(state.fields?.seedNumbers ?? "").trim());
 }
 function hodlSeedScanLoad(indices, count) {
   try {
@@ -7657,6 +7657,9 @@ function hodlSeedScanLoad(indices, count) {
       throw error;
     }
     state.fields.seed = "";
+    // The same seed typed as word numbers goes too: Continue replaces the
+    // key's seed, whichever way it was entered (Kimi, round 5).
+    state.fields.seedNumbers = "";
     state.lastWord = "";
     // The D++ final word belonged to the old length, as on a word-count
     // change (Kimi, round 3).
@@ -7667,10 +7670,14 @@ function hodlSeedScanLoad(indices, count) {
     state.targetWords = count;
     state.error = "";
     state.errorSpec = null;
-    hodlRenderKeyForm();
-    hodlRestoreFormFields(state);
-    hodlUpdateSeedLengthControl();
-    hodlSecureSeedChanged();
+    // The words are installed: a redraw that fails from here on must not make
+    // the panel say nothing was loaded (GLM, round 5).
+    try {
+      hodlRenderKeyForm();
+      hodlRestoreFormFields(state);
+      hodlUpdateSeedLengthControl();
+      hodlSecureSeedChanged();
+    } catch {}
     // The wallet derived from the old words is wiped once nothing shows it,
     // unless a key tab or the Key Manager still does (Kimi, round 2).
     try { hodlWipeUnsharedWalletRows(previous); } catch {}
