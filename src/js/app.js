@@ -7877,7 +7877,6 @@ function hodlBindKeyFields() {
     apply();
   }
   hodlBindKeyScan();
-  hodlBindSeedScan();
 }
 function hodlSelectedEntropy(targetWords = hodlTargetWordCount) {
   let format = hodlNormalizeEntropyFormat(hodlEntropyFormat), value = document.getElementById(format)?.value.trim() || "";
@@ -22564,11 +22563,6 @@ function hodlInitSecretFieldAutoClear() {
     // The PSBT panels come down before any decoder is retired (their decoders
     // live in the same registry as the Key Station's), then the registry goes.
     try { hodlDestroyPsbtScans(); } catch {}
-    // The seed scan panel shares the Key Station's decoders: it comes down
-    // before they are retired too.
-    try { hodlSeedScan?.destroy(); } catch {}
-    hodlSeedScan = null;
-    hodlSeedScanOpenAfterMount = false;
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
     try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
