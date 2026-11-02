@@ -27,7 +27,8 @@ test("SUPPORTED_METHODS.key is true, so the key method is supported", () => {
   assert.equal(SUPPORTED_METHODS.key, true);
   assert.equal(isSupported("key"), true);
   assert.equal(SUPPORTED_METHODS.seed, true);
-  assert.equal(SUPPORTED_METHODS.rolls, false);
+  // P4b: dice rolls are supported too.
+  assert.equal(SUPPORTED_METHODS.rolls, true);
   assert.equal(SUPPORTED_METHODS.cards, false);
 });
 

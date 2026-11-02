@@ -175,17 +175,21 @@ test("secure dice routing follows the switch, the method and the pad on screen",
   globalThis.document = doc;
   const supported = { seed: true, key: true, rolls: true, cards: false };
   try {
-    const mod = await loadAppFunctions(["hodlSecureDiceActive", "hodlSecureDiceApplies", "hodlSecureEntryHasData", "hodlSecureKeyOf", "hodlSecureDiceEntry"], {
-      stubs: { ...secureEntryStubs, hodlSecureSupported: supported, document: doc },
-      settable: ["hodlSecureEntryOn", "hodlKeyMode", "hodlDiceMethod", "hodlKeys", "hodlActiveKey", "hodlSecureSession", "hodlSecureKeys"],
+    // hodlKeyMode is a stub, one load per mode: as a settable name it would
+    // pull in the page's mode select, which needs #modes.
+    const load = (keyMode) => loadAppFunctions(["hodlSecureDiceActive", "hodlSecureDiceApplies", "hodlSecureEntryHasData", "hodlSecureKeyOf", "hodlSecureDiceEntry"], {
+      stubs: { ...secureEntryStubs, hodlSecureSupported: supported, document: doc, hodlKeyMode: keyMode },
+      settable: ["hodlSecureEntryOn", "hodlDiceMethod", "hodlKeys", "hodlActiveKey", "hodlSecureSession"],
     });
+    const seedMode = await load("seed");
+    seedMode.__set.hodlSecureEntryOn(true);
+    assert.equal(seedMode.hodlSecureDiceActive(), false, "another method");
+    const mod = await load("dice");
     const session = createSecureSession();
     const state = { id: 1, fields: { dice: "" } };
-    mod.__set.hodlSecureKeys(new WeakMap());
     mod.__set.hodlSecureSession(session);
     mod.__set.hodlKeys([state]);
     mod.__set.hodlActiveKey(0);
-    mod.__set.hodlKeyMode("dice");
     mod.__set.hodlDiceMethod("coldcard");
     mod.__set.hodlSecureEntryOn(false);
     assert.equal(mod.hodlSecureDiceActive(), false);
@@ -225,7 +229,7 @@ test("turning Secure entry on and off keeps, clears and converts dice beside key
   try {
     let choice = "keep", lastOptions = null;
     const wif = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ";
-    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlClearGlobalSyncCopies"], {
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlSecureSession", "hodlClearGlobalSyncCopies"], {
       stubs: {
         ...secureEntryStubs,
         hodlSecureEntryDialog: async () => ({ open: async (options) => { lastOptions = options; return choice; } }),
@@ -342,7 +346,9 @@ test("turning Secure entry on and off keeps, clears and converts dice beside key
       const entry = rollsEntry(method, 400);
       for (const face of [1, 2, 3, 4, 5, 6]) rollsPush(entry, face);
       mod.__set.hodlSecureSession(session);
-      mod.__set.hodlKeys([state]);
+      // A cards key that never had secure entry has no id: Convert still
+      // runs (Claude, review).
+      mod.__set.hodlKeys([state, { id: 10, name: "Cards", mode: "cards", fields: { cards: "" } }]);
       mod.__set.hodlSecureEntryOn(true);
       sessionSet(session, mod.hodlSecureKeyOf(state, true), "rolls", entry);
       choice = "convert";

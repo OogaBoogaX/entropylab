@@ -13225,7 +13225,11 @@ async function hodlSecureEntryToggle(wanted) {
         let choice = await (await hodlSecureEntryDialog()).open({ mode: "off" });
         if (choice === "convert") convertChosen = true;
         if (choice === "convert") {
-          for (const state of hodlKeys) rollsMethodByKey.set(hodlSecureKeyOf(state), sessionGet(hodlSecureSession, hodlSecureKeyOf(state), "rolls")?.method);
+          // A key that never had secure entry has no id to look up.
+          for (const state of hodlKeys) {
+            let keyId = hodlSecureKeyOf(state);
+            if (keyId != null) rollsMethodByKey.set(keyId, sessionGet(hodlSecureSession, keyId, "rolls")?.method);
+          }
           plan = planTurnOff(hodlSecureSession, { seed: serializer, key: keySerializer, rolls: hodlSecureDiceRollsText });
         }
         if (choice === "convert" && plan.ok) {
