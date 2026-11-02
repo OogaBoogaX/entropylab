@@ -2503,5 +2503,11 @@
   "Valid private-key value · Hex has no checksum to detect typing mistakes.": "Gültiger privater Schlüsselwert · Hexadezimal hat keine Prüfsumme, um Tippfehler zu erkennen.",
   "Mini key check passed": "Mini-Schlüsselprüfung bestanden",
   "WIF checksum passed · {network} · Compressed public key": "WIF-Prüfsumme bestanden · {network} · Komprimierter öffentlicher Schlüssel",
-  "WIF checksum passed · {network} · Uncompressed public key": "WIF-Prüfsumme bestanden · {network} · Unkomprimierter öffentlicher Schlüssel"
+  "WIF checksum passed · {network} · Uncompressed public key": "WIF-Prüfsumme bestanden · {network} · Unkomprimierter öffentlicher Schlüssel",
+  "These rolls came in as text, so this key uses standard text entry. Clear the field to enter rolls securely.": "Diese Würfe kamen als Text an, daher verwendet dieser Schlüssel die Standard-Texteingabe. Löschen Sie das Feld, um Würfe sicher einzugeben.",
+  "The dice pad could not load. Turn Secure entry off to use standard text entry.": "Das Würfel-Pad konnte nicht geladen werden. Schalten Sie die sichere Eingabe aus, um die Standard-Texteingabe zu verwenden.",
+  "To change the method, undo or clear the rolls entered so far.": "Um die Methode zu ändern, machen Sie die bisher eingegebenen Würfe rückgängig oder löschen Sie sie.",
+  "{n} rolls are recommended for a {words}-word seed: about {bits} bits from a fair die. Fewer rolls make a weaker seed. The count cannot tell you whether your die is fair.": "{n} Würfe werden für einen {words}-Wort-Seed empfohlen: etwa {bits} Bits von einem fairen Würfel. Weniger Würfe ergeben einen schwächeren Seed. Die Anzahl kann Ihnen nicht sagen, ob Ihr Würfel fair ist.",
+  "Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.": "Ihre Würfe werden nicht auf der Seite aufgelistet. Sie bleiben im Speicher für Ableitung, Rückgängigmachen und Einzelwurf-Überprüfung. Die Überprüfung eines Wurfs zeigt einen von Ihnen gewählten Wurf mit seiner Position an.",
+  "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Würfeln Sie mit einem physischen sechsseitigen Würfel. Geben Sie sein Ergebnis einmal ein, entweder über eine Schaltfläche oder die Tasten 1–6."
 }
