@@ -50,6 +50,7 @@ function harness() {
     hodlSecureSeedActive: () => false, hodlSecureEntryHasData: () => false, hodlSecureEntryDropKey() {},
     hodlSecureSeedApplies: () => false, hodlSecureEntryBackupRefusal: () => null, hodlSecureKeyOf: () => null, hodlSecureEntryHeld: () => false,
     hodlRenderSecureEntryControl() {}, hodlSeedPicker: null, hodlMountSeedPicker() {},
+    hodlSecureDiceActive: () => false, hodlSecureDiceApplies: () => false, hodlSecureDicePad: null, hodlMountSecureDicePad() {},
     hodlShowWorkspace: workspace => { c.hodlWorkspace = workspace; },
     hodlCaptureKey: () => { c.hodlKeys[c.hodlActiveKey].result = c.hodlWalletResult; },
     hodlKeyManagerDeriveInputs: async states => { derived.push(states); return false; },
