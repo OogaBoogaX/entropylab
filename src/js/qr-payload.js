@@ -7,8 +7,8 @@
 // checksum and version byte hold, and anything else is reported as "unknown"
 // with its length alone — the bytes are never echoed, repaired or guessed at.
 
-import { base58checkDecode } from "./base58.js";
 import { bip39English, entropyFromWordIndices, indicesFromEntropy } from "./bip39.js";
+import { parsePrivateKeyBytes } from "./key-bytes.js";
 
 const STANDARD_LENGTHS = new Set([48, 96]);
 const COMPACT_LENGTHS = new Set([16, 32]);
@@ -114,27 +114,18 @@ const classifyCompact = (bytes) => {
 const classifyWif = (bytes) => {
   if (!WIF_LENGTHS.has(bytes.length)) return null;
   if (!allBytes(bytes, isBase58)) return null;
-  let text = "";
-  for (let i = 0; i < bytes.length; i += 1) text += String.fromCharCode(bytes[i]);
-  let decoded = null;
+  const copy = bytes.slice();
+  let parsed = null;
   try {
-    decoded = base58checkDecode(text);
+    parsed = parsePrivateKeyBytes(copy, { kind: "wif" });
+    if (!parsed || parsed.source !== "wif") return null;
+    return { format: "wif", network: parsed.network, compressed: parsed.compressed, bytes: bytes.slice() };
   } catch {
     return null;
-  }
-  try {
-    if (!(decoded instanceof Uint8Array)) return null;
-    if (decoded.length !== 33 && decoded.length !== 34) return null;
-    const version = decoded[0];
-    if (version !== 0x80 && version !== 0xef) return null;
-    let compressed = false;
-    if (decoded.length === 34) {
-      if (decoded[33] !== 0x01) return null;
-      compressed = true;
-    }
-    return { format: "wif", network: version === 0x80 ? "mainnet" : "testnet", compressed, text };
   } finally {
-    wipe(decoded);
+    try { parsed?.priv?.fill(0); } catch {}
+    try { parsed?.minikey?.fill(0); } catch {}
+    try { copy.fill(0); } catch {}
   }
 };
 

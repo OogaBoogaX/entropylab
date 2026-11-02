@@ -194,23 +194,21 @@ const setup = (options = {}) => {
   const doc = makeDocument();
   const host = doc.createElement("div");
   host.id = "key-scan-host";
-  const keyField = doc.createElement("textarea");
-  const events = [];
-  keyField.addEventListener("input", (event) => events.push(event));
+  const keys = [];
   const decoder = makeDecoder();
   const scanner = makeScanner(options.reply);
   const created = { decoders: 0, scanners: 0, decoderArgs: null, scannerArgs: null };
   const panel = mountKeyScan(host, {
-    keyField,
     accept: options.accept,
     idPrefix: options.idPrefix,
     beforeOpen: options.beforeOpen,
     replacesSeed: options.replacesSeed,
     onSeed: options.onSeed,
+    onKey: options.onKey || ((bytes) => { keys.push({ bytes, seen: Array.from(bytes) }); }),
+    replacesKey: options.replacesKey,
     wordlist: options.wordlist,
     translate: options.translate || ((text) => text),
     privateValue: (value, revealed) => (revealed ? value : "•".repeat(value.length)),
-    beforeWrite: options.beforeWrite,
     createDecoder: (args) => {
       created.decoders += 1;
       created.decoderArgs = args;
@@ -226,7 +224,7 @@ const setup = (options = {}) => {
     doc,
     win: { InputEvent: FakeInputEvent },
   });
-  return { doc, host, keyField, events, decoder, scanner, created, panel };
+  return { doc, host, keys, decoder, scanner, created, panel };
 };
 
 const openPanel = (ctx) => {
@@ -266,60 +264,124 @@ test("a WIF scan is concealed until Show key and its bytes are zeroed", () => {
   assert.equal(findById(ctx.host, "key-scan-confirm").hidden, false);
   assert.match(markupOf(findById(ctx.host, "key-scan-confirm-intro")), /cannot tell where a QR came from/);
   assert.equal(markupOf(ctx.host).includes(WIF), false, "the key was in the DOM while concealed");
-  assert.equal(ctx.keyField.value, "");
   findById(ctx.host, "key-scan-reveal").dispatchEvent({ type: "click" });
   assert.ok(markupOf(ctx.host).includes(WIF), "Show key did not reveal the key");
 });
 
-test("Continue fills the key field with one paste-like input event", () => {
+test("Continue hands the scanned WIF to onKey as bytes", () => {
   const ctx = setup();
   openPanel(ctx);
   ctx.created.scannerArgs.onResult(bytesOf(WIF));
   findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
-  assert.equal(ctx.keyField.value, WIF);
-  assert.equal(ctx.events.length, 1);
-  assert.equal(ctx.events[0].type, "input");
-  assert.equal(ctx.events[0].bubbles, true);
-  assert.equal(ctx.events[0].inputType, "insertFromPaste");
+  assert.equal(ctx.keys.length, 1);
+  assert.deepEqual(ctx.keys[0].seen, Array.from(bytesOf(WIF)));
+  assert.equal(findById(ctx.host, "key-scan-panel").hidden, true);
   assert.equal(markupOf(ctx.host).includes(WIF), false, "the key stayed in the DOM");
 });
 
-test("beforeWrite runs before the field is written", () => {
-  const seen = [];
-  let ctx = null;
-  ctx = setup({ beforeWrite: () => seen.push(ctx.keyField.value) });
-  ctx.keyField.value = "old";
+test("Continue zeroes the held bytes and the copy it hands over", () => {
+  let held = null;
+  const ctx = setup({
+    classify: (bytes) => {
+      const result = classifyQrPayload(bytes);
+      held = result.bytes;
+      return result;
+    },
+  });
   openPanel(ctx);
   ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  assert.ok(held.some((byte) => byte !== 0));
   findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
-  assert.deepEqual(seen, ["old"]);
-  assert.equal(ctx.keyField.value, WIF);
-  assert.equal(ctx.events.length, 1);
-  assert.equal(ctx.events[0].inputType, "insertFromPaste");
+  assert.ok(held.every((byte) => byte === 0), "the held bytes were not zeroed");
+  assert.ok(ctx.keys[0].bytes.every((byte) => byte === 0), "the copy passed to onKey was not zeroed");
 });
 
-test("a throwing beforeWrite leaves the field and the confirmation alone", () => {
-  const ctx = setup({ beforeWrite: () => { throw new Error("no WIF radio"); } });
-  ctx.keyField.value = "old";
+test("a throwing onKey leaves nothing loaded and shows the refusal", () => {
+  const ctx = setup({ onKey: () => { throw new Error("no key handler"); } });
   openPanel(ctx);
   ctx.created.scannerArgs.onResult(bytesOf(WIF));
   findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
-  assert.equal(ctx.keyField.value, "old");
-  assert.equal(ctx.events.length, 0);
-  assert.equal(findById(ctx.host, "key-scan-confirm").hidden, false);
   assert.equal(stateOf(ctx), "error");
-  findById(ctx.host, "key-scan-discard").dispatchEvent({ type: "click" });
   assert.equal(findById(ctx.host, "key-scan-confirm").hidden, true);
+  assert.equal(markupOf(ctx.host).includes(WIF), false);
 });
 
-test("Discard scan leaves the key field untouched", () => {
+test("the key confirmation says when Continue replaces the key's key", () => {
+  const noteFor = (replacesKey) => {
+    const ctx = setup({ replacesKey });
+    openPanel(ctx);
+    ctx.created.scannerArgs.onResult(bytesOf(WIF));
+    return findById(ctx.host, "key-scan-confirm-replace");
+  };
+  assert.equal(noteFor(() => true).hidden, false, "a key holding a key gets the note");
+  assert.equal(noteFor(() => false).hidden, true, "an empty key gets none");
+  assert.equal(noteFor(() => { throw new Error("state unavailable"); }).hidden, false, "a failing check shows the note");
+});
+
+test("a key entered after the scan gets the note at Continue, and the next Continue loads", () => {
+  let holds = false;
+  const ctx = setup({ replacesKey: () => holds });
+  openPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  const note = findById(ctx.host, "key-scan-confirm-replace");
+  assert.equal(note.hidden, true);
+  holds = true;
+  findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(ctx.keys.length, 0, "the first Continue only shows the note");
+  assert.equal(note.hidden, false);
+  findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(ctx.keys.length, 1, "the next Continue loads the key");
+});
+
+test("Discard scan drops the pending key", () => {
   const ctx = setup();
   openPanel(ctx);
   ctx.created.scannerArgs.onResult(bytesOf(WIF));
   findById(ctx.host, "key-scan-discard").dispatchEvent({ type: "click" });
-  assert.equal(ctx.keyField.value, "");
-  assert.equal(ctx.events.length, 0);
+  assert.equal(ctx.keys.length, 0);
   assert.equal(markupOf(ctx.host).includes(WIF), false);
+});
+
+test("Discard, cancel, close, hide and destroy zero the held bytes", () => {
+  const cases = [
+    ["discard", (ctx) => findById(ctx.host, "key-scan-discard").dispatchEvent({ type: "click" })],
+    ["cancel", (ctx) => findById(ctx.host, "key-scan-cancel").dispatchEvent({ type: "click" })],
+    ["close", (ctx) => findById(ctx.host, "key-scan-open").dispatchEvent({ type: "click" })],
+    ["hide", (ctx) => { ctx.doc.visibilityState = "hidden"; ctx.doc.dispatch("visibilitychange"); }],
+    ["destroy", (ctx) => ctx.panel.destroy()],
+  ];
+  for (const [name, act] of cases) {
+    let held = null;
+    const ctx = setup({
+      classify: (bytes) => {
+        const result = classifyQrPayload(bytes);
+        held = result.bytes;
+        return result;
+      },
+    });
+    openPanel(ctx);
+    ctx.created.scannerArgs.onResult(bytesOf(WIF));
+    assert.ok(held && held.some((byte) => byte !== 0), `${name}: the panel holds the key`);
+    act(ctx);
+    assert.ok(held.every((byte) => byte === 0), `${name} left the held bytes`);
+  }
+});
+
+test("a new result zeroes the key it replaces", () => {
+  const held = [];
+  const ctx = setup({
+    classify: (bytes) => {
+      const result = classifyQrPayload(bytes);
+      held.push(result.bytes);
+      return result;
+    },
+  });
+  openPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  assert.equal(held.length, 2);
+  assert.ok(held[0].every((byte) => byte === 0), "the replaced key was not zeroed");
+  assert.ok(held[1].some((byte) => byte !== 0));
 });
 
 test("a seed QR is refused and its indices are zeroed", () => {
@@ -336,7 +398,6 @@ test("a seed QR is refused and its indices are zeroed", () => {
   assert.ok(captured.indices.every((index) => index === 0), "the seed indices were not zeroed");
   assert.equal(stateOf(ctx), "seed");
   assert.match(markupOf(ctx.host), /Nothing was loaded/);
-  assert.equal(ctx.keyField.value, "");
   assert.equal(findById(ctx.host, "key-scan-resume").hidden, false, "Resume is offered to scan again");
 });
 
@@ -347,7 +408,6 @@ test("bytes that are not a key are refused without being echoed", () => {
   assert.equal(stateOf(ctx), "not-a-key");
   assert.match(markupOf(ctx.host), /Nothing was loaded/);
   assert.equal(markupOf(ctx.host).includes("SECRETBYTES"), false);
-  assert.equal(ctx.keyField.value, "");
 });
 
 test("two codes are refused while the scan goes on", () => {
@@ -668,41 +728,7 @@ test("every visible string goes through translate", () => {
   }
 });
 
-test("hodlKeyScanSelectWif checks the WIF radio and fires one change", async () => {
-  const { hodlKeyScanSelectWif } = await loadAppFunctions(["hodlKeyScanSelectWif"]);
-  const realDocument = globalThis.document;
-  const makeRadio = (checked) => {
-    const events = [];
-    return {
-      checked,
-      events,
-      dispatchEvent(event) {
-        events.push(event);
-        return true;
-      },
-    };
-  };
-  try {
-    const unchecked = makeRadio(false);
-    globalThis.document = { querySelector: () => unchecked };
-    hodlKeyScanSelectWif();
-    assert.equal(unchecked.checked, true);
-    assert.equal(unchecked.events.length, 1);
-    assert.equal(unchecked.events[0].type, "change");
-    assert.equal(unchecked.events[0].bubbles, true);
 
-    const checked = makeRadio(true);
-    globalThis.document = { querySelector: () => checked };
-    hodlKeyScanSelectWif();
-    assert.equal(checked.checked, true);
-    assert.equal(checked.events.length, 0);
-
-    globalThis.document = { querySelector: () => null };
-    assert.throws(() => hodlKeyScanSelectWif(), /WIF key type is missing/);
-  } finally {
-    globalThis.document = realDocument;
-  }
-});
 
 test("the app wires the scan panel behind the preview flag", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
@@ -716,8 +742,8 @@ test("the app wires the scan panel behind the preview flag", () => {
   const body = app.slice(start, app.indexOf("\n}\n", start));
   assert.match(body, /if \(typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__\) \{/);
   assert.ok(body.indexOf('import("./qr-key-scan.js")') > body.indexOf("typeof __ENTROPYLAB_PREVIEW__"), "the import is outside the preview guard");
-  // A scan is written as a WIF whatever key type is selected (#1291 gate).
-  assert.match(body, /beforeWrite: hodlKeyScanSelectWif,/);
+  // The scan hands the key to the app as bytes, never to a text field.
+  assert.match(body, /onKey: hodlKeyScanLoad,/);
   // The wipes drop the panel and retire its decoder.
   const wipeStart = app.indexOf("let clearSecretFields = () => {");
   assert.ok(wipeStart >= 0, "clearSecretFields is missing");
