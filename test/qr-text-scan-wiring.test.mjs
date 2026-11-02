@@ -78,7 +78,7 @@ test("bind reads no preview flag and mounts through the real export", () => {
   assert.match(bind, /module\.mountTextScan\(host, \{ field, accept: host\.dataset\.scanAccept, mode: host\.dataset\.scanMode \|\| "replace" \}\)/);
   assert.equal(typeof panelModule.mountTextScan, "function");
   assert.equal(typeof panelModule.retireQrDecoders, "function");
-  assert.match(app, /const hodlTextScanClears = \[\["ln-inv-clear", "ln-inv-card"\], \["sp-wipe", "sp-card"\], \["psbt-wipe", "psbt-card"\], \["core-wipe", "core-card"\]\];/);
+  assert.match(app, /const hodlTextScanClears = \[\["ln-inv-clear", "ln-inv-card"\], \["ln-wipe", "ln-card"\], \["sp-wipe", "sp-card"\], \["psbt-wipe", "psbt-card"\], \["core-wipe", "core-card"\]\];/);
 });
 
 function bindContext(specs, { importPromise = null, containers = [] } = {}) {

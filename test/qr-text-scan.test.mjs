@@ -187,21 +187,30 @@ testPanel("an xprv is refused and an xpub is loaded", (make) => {
 testPanel("silent-payment append adds a line and refuses a duplicate", (make) => {
   const ctx = make({ id: "sp-scan", accept: "sp", mode: "append" });
   openPanel(ctx);
+  const starts = ctx.scanner.calls.start;
   ctx.created.scannerArgs.onResult(bytesOf(SP));
   assert.equal(ctx.field.value, SP);
   assert.equal(stateOf(ctx), "added");
   assert.equal(byId(ctx, "confirm").hidden, true);
   assert.equal(ctx.events.length, 1);
+  assert.equal(ctx.scanner.calls.start, starts + 1);
+  assert.equal(byId(ctx, "video").hidden, false);
+  assert.equal(byId(ctx, "stop").hidden, false);
   ctx.created.scannerArgs.onResult(bytesOf(SP2));
   assert.equal(ctx.field.value, `${SP}\n${SP2}`);
   assert.equal(stateOf(ctx), "added");
   assert.equal(byId(ctx, "confirm").hidden, true);
   assert.equal(ctx.events.length, 2);
+  assert.equal(ctx.scanner.calls.start, starts + 2);
+  assert.equal(byId(ctx, "video").hidden, false);
   ctx.created.scannerArgs.onResult(bytesOf(SP));
   assert.equal(stateOf(ctx), "already-listed");
   assert.equal(ctx.field.value, `${SP}\n${SP2}`);
   assert.equal(ctx.events.length, 2);
   assert.equal(byId(ctx, "confirm").hidden, true);
+  assert.equal(ctx.scanner.calls.start, starts + 3);
+  assert.equal(byId(ctx, "video").hidden, false);
+  assert.equal(byId(ctx, "stop").hidden, false);
 });
 
 testPanel("a multi-part descriptor shows progress and then loads", (make) => {

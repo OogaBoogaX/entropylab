@@ -7605,7 +7605,7 @@ function hodlResetPsbtScans() {
 var hodlTextScans = [], hodlTextScanModule = null, hodlTextScanImport = null, hodlTextScanEpoch = 0;
 // Each tool's Clear closes the text scan panels in its card. The MultiSig
 // Clear re-renders its station, which resets them there.
-const hodlTextScanClears = [["ln-inv-clear", "ln-inv-card"], ["sp-wipe", "sp-card"], ["psbt-wipe", "psbt-card"], ["core-wipe", "core-card"]];
+const hodlTextScanClears = [["ln-inv-clear", "ln-inv-card"], ["ln-wipe", "ln-card"], ["sp-wipe", "sp-card"], ["psbt-wipe", "psbt-card"], ["core-wipe", "core-card"]];
 function hodlBindTextScans() {
   let hosts = typeof document.querySelectorAll === "function" ? [...document.querySelectorAll("[data-scan-field]")] : [];
   if (!hosts.length) return;

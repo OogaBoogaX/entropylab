@@ -24,6 +24,8 @@ const XPUB = "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESF
 const XPRV = "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi";
 const WIF = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
 const PHRASE = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const SPANISH = "ábaco ábaco ábaco ábaco ábaco ábaco ábaco ábaco ábaco ábaco ábaco abierto";
+const JAPANESE = "あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あいこくしん　あおぞら";
 const TPUB = "tpubDCHZAX9rt6AMCqXFKo8DTQj3moR5fEozbLupqHq6GrA9s44DdnPSpuNv3fZPR8nAK7mGQFpdGSSF1Ky6Rqjb29JYzaDU998qiv99SWG1pAM";
 const PUB = `pkh([420c9ea3/44h/1h/0h]${TPUB}/0/*)#789zdhaw`;
 const SH = "sh(wpkh([420c9ea3/49h/1h/0h]tpubDDTTbFgNrTB1UiUHbejR8qpxwxtvwyK4xndVC96RTCfp8jxUT2af1j5QkrTECzV65YRSs5MG3nLu6VvbebxFhaaagieAwTeSmAoMpdjvRUX/0/*))#m7wuf0tf";
@@ -44,7 +46,8 @@ test("lightning text keeps a BOLT11 invoice and a BOLT12 offer", () => {
   assert.deepEqual(classifyLightningText(`bitcoin:${ADDRESS}?amount=0.001&lightning=${BOLT11}`), { status: "ok", text: BOLT11 });
   assert.deepEqual(classifyLightningText(`BITCOIN:${ADDRESS}?amount=0.001&LIGHTNING=${BOLT11}`), { status: "ok", text: BOLT11 });
   assert.deepEqual(classifyLightningText(`bitcoin:?lno=${OFFER}`), { status: "ok", text: OFFER });
-  for (const bad of [SP, `bitcoin:${ADDRESS}`, "lnurl1dp68gurn8ghj7um9wfmx", "you@example.com", BOLT11.slice(0, 20) + " " + BOLT11.slice(20)]) {
+  assert.deepEqual(classifyLightningText(`bitcoin:?lightning=${BOLT11}`), { status: "ok", text: BOLT11 });
+  for (const bad of [SP, `bitcoin:${ADDRESS}`, "lnurl1dp68gurn8ghj7um9wfmx", "you@example.com", BOLT11.slice(0, 20) + " " + BOLT11.slice(20), `bitcoin:?lightning=${BOLT11}&req-somethingnew=1`]) {
     assertRefused(classifyLightningText(bad), "wrong-kind");
   }
   assertRefused(classifyLightningText("lnbc" + "q".repeat(TEXT_SCAN_MAX_CHARS)), "too-large");
@@ -52,7 +55,7 @@ test("lightning text keeps a BOLT11 invoice and a BOLT12 offer", () => {
 
 test("a scanned secret is refused for lightning, recipients and payment codes", () => {
   for (const classify of [classifyLightningText, classifySpText, classifyPaymentCodeText]) {
-    for (const secret of [WIF, XPRV, PHRASE]) assertRefused(classify(secret), "private-key");
+    for (const secret of [WIF, XPRV, PHRASE, SPANISH, JAPANESE]) assertRefused(classify(secret), "private-key");
   }
 });
 
@@ -96,12 +99,14 @@ test("descriptor text accepts public descriptors and refuses a key", () => {
 
 test("xpub text accepts one public key and refuses a private key or a second key", () => {
   const origin = `[d34db33f/48h/0h/0h/2h]${XPUB}`;
-  for (const text of [XPUB, origin, `${origin}/0/*`, `wpkh([d34db33f/84h/0h/0h]${XPUB}/0/*)`, `[420c9ea3/44h/1h/0h]${TPUB}`]) {
+  const hardened = `[d34db33f/48'/0'/0'/2']${XPUB}`;
+  for (const text of [XPUB, origin, `${origin}/0/*`, `[420c9ea3/44h/1h/0h]${TPUB}`, hardened, `${origin}/<0;1>/*`]) {
     assert.deepEqual(classifyXpubText(text), { status: "ok", text });
   }
   assertRefused(classifyXpubText(XPRV), "private-key");
   assertRefused(classifyXpubText(WIF), "private-key");
-  for (const bad of [`multi(1,${XPUB},${XPUB})`, `{"xpub":"${XPUB}"}`, ALICE, ADDRESS]) {
+  const broken = `${XPUB.slice(0, -1)}9`;
+  for (const bad of [`multi(1,${XPUB},${XPUB})`, `{"xpub":"${XPUB}"}`, ALICE, ADDRESS, `wpkh([d34db33f/84h/0h/0h]${XPUB}/0/*)`, broken]) {
     assertRefused(classifyXpubText(bad), "wrong-kind");
   }
 });

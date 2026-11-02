@@ -243,11 +243,14 @@ export function mountTextScan(host, {
         showStatus("error");
         return;
       }
-      if (result.status === "already-listed") {
-        showStatus("already-listed");
-        return;
-      }
-      write(result.value, "added");
+      if (result.status === "already-listed") showStatus("already-listed");
+      else write(result.value, "added");
+      // The next recipient is another code. A failed write stays stopped.
+      if (statusLine.getAttribute("data-scan-state") === "error") return;
+      restartCamera();
+      if (statusLine.getAttribute("data-scan-state") === "error") return;
+      cameraRunning = true;
+      updateAcquisition();
       return;
     }
     if (String(field.value ?? "") !== "") {
