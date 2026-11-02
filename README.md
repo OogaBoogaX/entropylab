@@ -133,6 +133,18 @@ an explicit error before those pairs are allocated.
   code is the text itself; a longer one is shown as an animated `ur:bytes`
   sequence, in the same fixed-rate UR parts the PSBT editor uses for
   `ur:crypto-psbt`. An extended private key never gets a code.
+- Encrypted multisig backup (BIP-138), in MultiSig's downloads and its
+  import panel. An encrypted backup is a scrambled copy of your multisig
+  wallet's descriptor: the recipe that turns your keys into addresses. A
+  multisig wallet can't be recovered without it, even with all the seeds, so
+  it's worth keeping spare copies. The encrypted copy can sit on a USB drive,
+  in email or in cloud storage without showing strangers your addresses or
+  keys. Anyone who holds one of the wallet's xpubs can open it, including
+  every cosigner and any app or service you shared an xpub with. It is not a
+  seed backup: it holds no private keys, can't spend anything, and won't help
+  if your seeds are lost. BIP-138 is still a draft standard, so keep a plain
+  copy of the descriptor somewhere you trust as well, and check that a saved
+  copy opens.
 - Inspects PSBT v0 transactions (paste, or upload a binary .psbt / hex or
   base64 text export; the loaded bytes download as .psbt or .txn), reports
   PSBT-provided amounts and fees, checks
