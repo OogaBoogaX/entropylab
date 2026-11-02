@@ -19,6 +19,7 @@ import { MiniDocument } from "./mini-dom.mjs";
 import * as endSessionModule from "../src/js/end-session.js";
 import { endSession, renderSessionEnded } from "../src/js/end-session.js";
 import { hodlLocaleStorageKey } from "../src/js/i18n.js";
+import { appClipboardClear, appClipboardHas, appClipboardPut, initAppClipboard } from "../src/js/app-clipboard.js";
 
 const SECRET = "legal winner thank year wave sausage worth useful legal winner thank yellow";
 
@@ -64,6 +65,27 @@ test("End session wipes, retires, clears, replaces the page and closes, in that 
   assert.equal(doc.getElementById("seed"), null);
   assert.ok(!doc.body.textContent.includes("legal winner"), "the ended screen must hold nothing of the session");
   assert.ok(doc.querySelector("[data-session-ended]"), "the ended screen is missing");
+});
+
+// End session's pagehide goes to the window EntropyLab's clipboard listens on,
+// so the last private value copied there does not outlive the session (GLM,
+// #1347 round 3). A real EventTarget, so the event has to reach the listener.
+test("End session empties EntropyLab's clipboard", async () => {
+  const { doc } = fakePage();
+  const win = new EventTarget();
+  win.PageTransitionEvent = class extends Event {
+    constructor(type, init) { super(type); this.persisted = init?.persisted; }
+  };
+  win.close = () => {};
+  const stop = initAppClipboard(win, null);
+  try {
+    appClipboardPut(SECRET);
+    await endSession({ win, doc });
+    assert.equal(appClipboardHas(), false, "a copied seed phrase outlived End session");
+  } finally {
+    stop();
+    appClipboardClear();
+  }
 });
 
 test("a clipboard the browser refuses to clear does not stop the session ending", async () => {

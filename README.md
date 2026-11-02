@@ -169,7 +169,8 @@ an explicit error before those pairs are allocated.
   copies are outside reliable erasure. A successful transcript check does not
   establish that host randomness stayed secret.
   A **Scan PSBT QR** control under the PSBT Inspector, Nonce Inspector and
-  PSBT Editor fields reads a PSBT shown as a QR code with the device camera:
+  PSBT Editor fields (and the fee-bump original, the PSBT sent to the signer
+  and the Editor's comparison PSBT) reads a PSBT shown as a QR code with the device camera:
   one static code (base64 or hex) or an animated `ur:crypto-psbt` sequence.
   Nothing is written to the field until the whole PSBT has arrived and it
   starts with the PSBT magic; a QR that holds anything else is refused, and
