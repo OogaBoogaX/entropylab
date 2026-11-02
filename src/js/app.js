@@ -11936,6 +11936,7 @@ function hodlPsbtBytes(raw) {
   let value = raw.trim(), compact = value.replace(/\s/g, "");
   if (!value) throw new Error("Paste a PSBT v0 or a raw Bitcoin transaction.");
   if (compact.length > 7e6) throw new Error("This file is too large to inspect safely.");
+  if (/^(?:ur:|B\$)/i.test(value)) return hodlPsbtBytesFromText(value);
   let bytes;
   if (/^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0 && compact.length >= 10) bytes = hodlHex.decode(compact.toLowerCase());
   else try {
@@ -12940,6 +12941,8 @@ function hodlSyncPsbtControls() {
   let value = (id) => String(document.getElementById(id)?.value || "").trim();
   let decodes = (text) => {
     if (!text) return false;
+    // Assemble QR transports on Inspect/Download, not on every input event.
+    if (/^(?:ur:|B\$)/i.test(text)) return true;
     try {
       hodlPsbtBytes(text);
       return true;

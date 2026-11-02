@@ -16,6 +16,11 @@ Release notes for EntropyLab. Each release is a single self-contained
   PSBT magic is written to the field, after the whole code has arrived.
   Clearing a tool, leaving the Transactions workspace, a language switch and
   End Session close an open scanner and stop its camera.
+- **PSBT QR transports**: add PSBT-only BBQr (`H`, `2`, `Z`) to the existing
+  reader and accept complete pasted UR/BBQr transfers in the Editor and
+  PSBT Inspector. Bound compressed and decoded data, reject mixed transfers
+  and all pasted parts after completion, and retain independent SeedSigner
+  and Coinkite interoperability vectors. Camera lifecycle changes are separate.
 - **Passphrases starting with U+FEFF derive a different wallet than in
   v1.0.0** (audit C2-E): the BIP39 salt now hashes the leading U+FEFF the way
   the BIP39 reference does, and key-file export/import round-trips it
