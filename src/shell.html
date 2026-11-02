@@ -416,7 +416,6 @@ words, pick one of the checksum words.</span></span>
         <label class="field"><span class="muted label-value">Paste a wallet-exported multisig descriptor here — the quorum, script type, key order, and co-signer xpubs will be filled in below.</span>
           <textarea id="msig-descriptor" placeholder="wsh(sortedmulti(2,[fingerprint/48h/0h/0h/2h]Zpub…/0/*, …))" autocomplete="off" spellcheck="false" aria-describedby="msig-descriptor-help"></textarea>
         </label>
-        <div id="msig-descriptor-scan-host" class="text-scan-host" data-scan-field="msig-descriptor" data-scan-accept="descriptor"></div>
         <button class="btn secondary" id="msig-descriptor-import" type="button" disabled>Import Descriptor</button>
         <p class="field-note edge-note is-muted" id="msig-descriptor-help">Only accepts watch-only public keys; a descriptor carrying private keys will be refused.</p>
         <p class="hint" id="msig-descriptor-status" role="status" hidden></p>
