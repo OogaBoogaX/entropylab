@@ -88,3 +88,23 @@ test("SeedQR digits for 24 words are 96 numeric characters", () => {
   assert.match(digits, /^\d+$/);
   assert.equal(digits.slice(0, 4), "0000");
 });
+
+// Every test vector in the SeedQR specification (SeedSigner docs/seed_qr,
+// copied into test/fixtures/seedqr/spec-vectors.json): the app's digits and
+// CompactSeedQR bytes match the published digit streams and bitstreams. The
+// entropy comes from @scure/bip39, not from the app.
+test("SeedQR digits and CompactSeedQR bytes match every specification test vector", async () => {
+  const { mnemonicToEntropy } = await import("@scure/bip39");
+  const spec = JSON.parse(read("test/fixtures/seedqr/spec-vectors.json"));
+  const hodlCompactSeedQrBytes = new Function("hodlHex", `${loadSlice("hodlCompactSeedQrBytes")}; return hodlCompactSeedQrBytes;`)({
+    decode: (value) => Array.from(value.match(/../g), (pair) => Number.parseInt(pair, 16)),
+  });
+  const mnemonics = new Map(spec.vectors.map((vector) => [vector.words, vector]));
+  assert.equal(mnemonics.size, 10);
+  for (const vector of mnemonics.values()) {
+    assert.equal(hodlSeedQrDigits(vector.words), vector.digits, vector.name);
+    if (!vector.compactHex) continue;
+    const entropyHex = Array.from(mnemonicToEntropy(vector.words, hodlBip39Wordlist), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    assert.deepEqual(hodlCompactSeedQrBytes(entropyHex), Array.from(vector.compactHex.match(/../g), (pair) => Number.parseInt(pair, 16)), vector.name);
+  }
+});
