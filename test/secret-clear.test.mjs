@@ -63,7 +63,7 @@ function createContext(sandbox) {
     // consumer bound to it (PSBT, BIP-85, Silent Payments, vanity).
     hodlPsbtSource: "", hodlBip85Source: "", hodlSpSource: "", hodlSpVerifyMatches: null,
     hodlSpSendLast: null, hodlSpNote: "", hodlVanitySource: "", hodlVanityApplying: false,
-    TextEncoder, TextDecoder, ...sandbox,
+    TextEncoder, TextDecoder, CustomEvent, ...sandbox,
   });
   for (const name of passphraseHelpers) vm.runInContext(functionSource(name), context);
   return context;
