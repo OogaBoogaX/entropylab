@@ -357,6 +357,24 @@ test("turning Secure entry on and off keeps, clears and converts dice beside key
       assert.equal(method === "coldcard" ? state.fields.colemanDice : state.fields.dice, "", method);
       assert.equal(mod.hodlSecureEntryOn, false, method);
     }
+
+    // Gemini (#1395): an empty pad entry must not blank rolls kept as text.
+    // A second key holds rolls, so turning off asks and Convert runs.
+    const session = createSecureSession();
+    const textBacked = { id: 11, name: "Typed", mode: "dice", diceMethod: "coldcard", fields: { dice: "6543", colemanDice: "" } };
+    const held = { id: 12, name: "Held", mode: "dice", diceMethod: "coldcard", fields: { dice: "", colemanDice: "" } };
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys([textBacked, held]);
+    mod.__set.hodlSecureEntryOn(true);
+    sessionSet(session, mod.hodlSecureKeyOf(textBacked, true), "rolls", rollsEntry("coldcard", 400));
+    const heldRolls = rollsEntry("coldcard", 400);
+    for (const face of [1, 2]) rollsPush(heldRolls, face);
+    sessionSet(session, mod.hodlSecureKeyOf(held, true), "rolls", heldRolls);
+    choice = "convert";
+    await mod.hodlSecureEntryToggle(false);
+    assert.equal(held.fields.dice, "12");
+    assert.equal(textBacked.fields.dice, "6543");
+    assert.equal(mod.hodlSecureEntryOn, false);
   } finally {
     globalThis.document = previous;
   }

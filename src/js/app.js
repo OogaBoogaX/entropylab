@@ -6527,7 +6527,6 @@ function hodlRenderSecureEntryControl() {
     if (hodlSecureSeedActive()) {
       if (!hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey])) methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>`;
     } else if (hodlSecureDiceActive()) {
-      // DRAFT (owner OK pending)
       if (!hodlSecureDicePadShown(hodlKeys[hodlActiveKey])) methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-dice-text-backed">${hodlT("These rolls came in as text, so this key uses standard text entry. Clear the field to enter rolls securely.")}</p>`;
     } else methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>`;
   }
@@ -13255,7 +13254,12 @@ async function hodlSecureEntryToggle(wanted) {
               let kind = hodlNormalizePrivateKeyKind(state.fields.keyKind);
               if (kind !== "wif" && kind !== "hex-key" && kind !== "minikey") kind = hodlDetectPrivateKeyKind(text) || "wif";
               hodlPrivateKeyValues(state.fields)[kind] = text;
-            } else if (method === "rolls") state.fields[hodlDiceFieldName(rollsMethodByKey.get(keyId) ?? state.diceMethod ?? "coldcard")] = text;
+            } else if (method === "rolls") {
+              // An empty pad holds nothing to convert: it must not blank rolls
+              // kept as text in that field, as for keys above (Gemini, #1395).
+              if (!text) continue;
+              state.fields[hodlDiceFieldName(rollsMethodByKey.get(keyId) ?? state.diceMethod ?? "coldcard")] = text;
+            }
           }
         } else if (choice === "clear") {
           // Clear wipes every secure entry: a key that keeps its wallet on screen but
@@ -13649,7 +13653,6 @@ function hodlMountSecureDicePad() {
     if (!module) {
       hodlSecureDicePadImport = null;
       if (host.isConnected && host.childNodes.length === 0 && hodlSecureDiceActive()) {
-        // DRAFT (owner OK pending)
         host.innerHTML = `<p class="field-note edge-note is-private" id="secure-dice-load-error" role="alert">${hodlT("The dice pad could not load. Turn Secure entry off to use standard text entry.")}</p>`;
       }
       return;
@@ -13665,7 +13668,6 @@ function hodlMountSecureDicePad() {
     } catch {
       if (host.isConnected && hodlSecureDiceActive()) {
         host.innerHTML = "";
-        // DRAFT (owner OK pending)
         host.innerHTML = `<p class="field-note edge-note is-private" id="secure-dice-load-error" role="alert">${hodlT("The dice pad could not load. Turn Secure entry off to use standard text entry.")}</p>`;
       }
     }
@@ -13680,12 +13682,9 @@ function hodlRenderSecureDiceForm(config) {
     if (state) state.diceMethod = existing.method;
   }
   hodlSecureDiceEntry(true);
-  // DRAFT (owner OK pending)
   let lockNote = hodlT("To change the method, undo or clear the rolls entered so far.");
-  // DRAFT (owner OK pending)
-  let recommendation = hodlT("{n} rolls are recommended for a {words}-word seed: about {bits} bits from a fair die. Fewer rolls still derive a seed, with less randomness than recommended. The count does not show whether your die is fair.", { n: config.hashRolls, words: config.words, bits: hodlDiceEntropyBits(config.hashRolls).toFixed(1) });
-  // DRAFT (owner OK pending)
-  let transcript = hodlT("No displayed transcript. Your rolls stay in memory for derivation, Undo and single-roll review, and are never listed on the page. “Review one roll” shows a single roll you choose, with its position.");
+  let recommendation = hodlT("{n} rolls are recommended for a {words}-word seed: about {bits} bits from a fair die. Fewer rolls make a weaker seed. The count cannot tell you whether your die is fair.", { n: config.hashRolls, words: config.words, bits: hodlDiceEntropyBits(config.hashRolls).toFixed(1) });
+  let transcript = hodlT("Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.");
   hodlFormEl.innerHTML = `<p class="label">${hodlT("Dice roll options")}</p>${hodlDiceMethodChoicesMarkup(config)}
       <p class="field-note" id="secure-dice-lock-note" hidden>${lockNote}</p>
       <p class="label" id="dice-label">${hodlT("Dice rolls (D6)")}</p>
