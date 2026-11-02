@@ -1,13 +1,14 @@
 // The PSBT QR payload reader (preview builds only). Pure: no DOM, no camera,
 // no user-facing strings (status codes only). It accepts either one static QR
-// holding the whole PSBT (base64 or hex) or an animated UR (crypto-psbt or
-// psbt) whose CBOR byte string wraps the PSBT.
+// holding the whole PSBT (base64 or hex), animated UR (crypto-psbt or psbt),
+// or BBQr PSBT frames (hex, Base32, or compressed Base32).
 //
 // Security contract: only bytes that start with the PSBT magic are ever
 // returned as complete; every other text is refused with a status code, and
 // the collector's message copy is zeroed as soon as it has been unwrapped.
 
 import { createUrCollector } from "./ur-fountain.js";
+import { createBbqrCollector } from "./psbt-bbqr.js";
 import { hodlCborUnwrapPsbt } from "./psbt-ur.js";
 import { isPsbtMagic } from "./tx.js";
 
@@ -49,13 +50,22 @@ const unwrapCborBytes = (message) => {
 export function createPsbtQrReader({ maxBytes = DEFAULT_MAX_BYTES } = {}) {
   const limit = Number.isInteger(maxBytes) && maxBytes > 0 ? maxBytes : DEFAULT_MAX_BYTES;
   const collector = createUrCollector({ types: ["crypto-psbt", "psbt"], maxMessageLen: limit });
+  const bbqr = createBbqrCollector({ maxBytes: limit });
   let done = false;
   let terminal = null;
 
   const reset = () => {
     collector.reset();
+    bbqr.reset();
     done = false;
     terminal = null;
+  };
+
+  const mixed = () => {
+    collector.reset();
+    bbqr.reset();
+    terminal = "mismatch";
+    return { status: terminal };
   };
 
   const accept = (bytes) => {
@@ -67,6 +77,12 @@ export function createPsbtQrReader({ maxBytes = DEFAULT_MAX_BYTES } = {}) {
       try { bytes.fill(0); } catch {}
       return { status: "too-large" };
     }
+    if (bbqr.progress()) {
+      bytes.fill(0);
+      return mixed();
+    }
+    collector.reset();
+    bbqr.reset();
     done = true;
     return { status: "complete", bytes };
   };
@@ -121,6 +137,21 @@ export function createPsbtQrReader({ maxBytes = DEFAULT_MAX_BYTES } = {}) {
     }
   };
 
+  const receiveBbqr = (text) => {
+    if (collector.state().seqLen !== null) return mixed();
+    const result = bbqr.receive(text);
+    if (result.status === "complete") {
+      const accepted = accept(result.bytes);
+      if (accepted.status !== "complete") bbqr.reset();
+      return accepted;
+    }
+    if (["mismatch", "bad-part", "too-large"].includes(result.status)) {
+      terminal = result.status;
+      bbqr.reset();
+    }
+    return result;
+  };
+
   const receiveStatic = (text) => {
     const base64 = decodeBase64(text);
     if (base64) {
@@ -137,12 +168,15 @@ export function createPsbtQrReader({ maxBytes = DEFAULT_MAX_BYTES } = {}) {
     if (done) return { status: "done" };
     if (typeof text !== "string") return { status: "not-psbt" };
     const trimmed = text.trim();
-    if (/^ur:/i.test(trimmed)) return receiveUr(trimmed);
+    if (trimmed.startsWith("B$")) return receiveBbqr(trimmed);
+    if (/^ur:/i.test(trimmed)) return bbqr.progress() ? mixed() : receiveUr(trimmed);
     return receiveStatic(trimmed);
   };
 
   const progress = () => {
-    if (done) return null;
+    if (done || terminal) return null;
+    const bbqProgress = bbqr.progress();
+    if (bbqProgress) return bbqProgress;
     const state = collector.state();
     if (!state || state.seqLen == null) return null;
     return { received: state.received, total: state.seqLen };

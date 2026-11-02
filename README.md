@@ -33,12 +33,20 @@ pending notebook and Key Manager imports. See [SECURITY.md](SECURITY.md) for
 the limits of browser-memory cleanup.
 
 Preview builds add **Scan PSBT QR** beside Inspector, Editor, and Editor
-comparison inputs. Static base64/hex PSBTs and `ur:crypto-psbt` single-part,
-systematic, and fountain frames use the same bounded payload reader as UR
-text paste. Existing base64/hex and Inspector raw-transaction input are
-unchanged. Build a preview with
+comparison inputs. Static base64/hex PSBTs, `ur:crypto-psbt` single-part,
+systematic and fountain frames, and **BBQr PSBTs** use the same bounded payload
+reader as QR text paste. BBQr accepts hex (`H`), Base32 (`2`), and compressed
+Base32 (`Z`), including out-of-order and repeated parts. Paste multiple frames
+on separate lines. Existing base64/hex and Inspector raw-transaction input
+are unchanged; QR export still uses UR, not BBQr. Build a preview with
 `npm run build -- --preview --out /tmp/entropylab-preview`; default builds do
 not expose these controls.
+
+BBQr receive accepts PSBT file type `P` only, with at most 1,000 parts and
+1 MiB each for assembled data and decompressed output. All distinct parts
+are required; BBQr is numbered multipart, not a fountain code. It has no
+whole-message checksum or transfer ID, so do not mix two animations with
+matching headers. Restart the scan when changing the sending transaction.
 
 Camera access requires browser permission and a supported secure context;
 offline `file://` camera support depends on the browser. One PSBT panel owns

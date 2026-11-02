@@ -30,7 +30,34 @@ test("release text handling does not enable preview UR transport", () => {
   assert.throws(() => psbtBytesFromText(hodlUrEncodePsbt(expected)[0]));
 });
 
-test("Inspector readiness does not replay untrusted UR fragments on each input", async () => {
+for (const encoding of ["h", "2", "z"]) {
+  test(`preview text accepts independent BBQr ${encoding} in Editor and Inspector`, async () => {
+    globalThis.__ENTROPYLAB_PREVIEW__ = true;
+    try {
+      const app = await loadAppFunctions(["hodlPsbtBytes"], { stubs: {
+        __ENTROPYLAB_PREVIEW__: true,
+        hodlPsbtBytesFromText: psbtBytesFromText,
+      } });
+      for (const mode of ["single", "multipart"]) {
+        const parts = readFileSync(new URL(`./fixtures/psbt-qr/bbqr/p2wpkh-1in-2out-${encoding}-${mode}.txt`, import.meta.url), "utf8").trim().split("\n");
+        const text = parts.toReversed().join("\n");
+        assert.deepEqual(psbtBytesFromText(text), expected);
+        assert.deepEqual(app.hodlPsbtBytes(text), expected);
+        if (parts.length > 1) assert.throws(() => psbtBytesFromText(parts[0]), /partial/);
+        assert.throws(() => psbtBytesFromText(parts[0].slice(0, 3) + "T" + parts[0].slice(4)), /wrong-type/);
+      }
+    } finally {
+      delete globalThis.__ENTROPYLAB_PREVIEW__;
+    }
+  });
+}
+
+test("release text handling does not enable BBQr", () => {
+  const text = readFileSync(new URL("./fixtures/psbt-qr/bbqr/p2wpkh-1in-2out-z-single.txt", import.meta.url), "utf8").trim();
+  assert.throws(() => psbtBytesFromText(text));
+});
+
+test("Inspector readiness does not replay untrusted QR fragments on each input", async () => {
   const fields = { "psbt-text": { value: "ur:crypto-psbt/1-1000/invalid" } };
   let assemblies = 0;
   const enabled = {};
@@ -45,7 +72,10 @@ test("Inspector readiness does not replay untrusted UR fragments on each input",
     hodlPsbtSessionSpec: { key: "No session key. Inspect-only mode." },
     hodlPsbtNonceHistory: [],
   } });
-  for (let i = 0; i < 10; i++) app.hodlSyncPsbtControls();
-  assert.equal(assemblies, 0);
-  assert.equal(enabled["psbt-go"], true);
+  for (const value of ["ur:crypto-psbt/1-1000/invalid", "B$ZP0200INVALID"]) {
+    fields["psbt-text"].value = value;
+    for (let i = 0; i < 10; i++) app.hodlSyncPsbtControls();
+    assert.equal(assemblies, 0);
+    assert.equal(enabled["psbt-go"], true);
+  }
 });

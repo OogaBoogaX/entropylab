@@ -89,8 +89,9 @@ Required supported paths:
 3. Text-pasted supported UR input must use the same bounded reader, rather than a divergent legacy decoder path. Preserve existing base64/hex and Inspector raw-transaction behavior. Do not route ordinary raw transactions through a PSBT-only gate.
 4. Explicit scan progress, cancel, restart, permission-denied/no-camera/timeout behavior, and field-replacement confirmation. Scanning transports data; it does not approve, sign or broadcast a transaction.
 5. A self-contained offline preview HTML, no runtime downloads, no remote decoder, no storage-backed camera frames or scan history.
+6. Operator-approved extension (2026-11-02): BBQr PSBT receive (`P`, `H`/`2`/`Z`) through the same three scan hosts and bounded QR text reader. QR export remains unchanged.
 
-Out of scope: new signing capability or consensus rules; seed/key/WIF import through the PSBT scanner; SeedQR/CompactSeedQR; BBQR, Specter multipart and legacy UR compatibility unless separately agreed; generic image-upload UI; keyboard work; USB storage; entropy generation; unrelated UI redesign; enabling unreleased features in the default release; automatic appliance deployment.
+Out of scope: new signing capability or consensus rules; seed/key/WIF import through the PSBT scanner; SeedQR/CompactSeedQR; BBQr export or non-PSBT types; Specter multipart and legacy UR compatibility unless separately agreed; generic image-upload UI; keyboard work; USB storage; entropy generation; unrelated UI redesign; enabling unreleased features in the default release; automatic appliance deployment.
 
 ## 4. Shared contracts to freeze before parallel edits
 
@@ -489,6 +490,75 @@ Final verification on the committed sources:
   during navigation; the complete serial run passed without changing or
   skipping tests. A native Chrome attempt additionally required the harness's
   sandbox opt-out and did not resolve the parallel-navigation timeouts.
+
+### BBQr PSBT receive (operator-approved, 2026-11-02)
+
+Upstream was refreshed before implementation: `origin/rock` is now
+`5bfd59f5`. Its newer scan wiring/presentation commits do not change the
+shared PSBT payload reader, UR collector or camera controller, and contain
+no BBQr transport. This addition retains the tested fork baseline and its
+preview boundary; it neither recreates nor merges the newer UI wiring.
+
+Security contract: accept only complete, bounded BBQr PSBT transfers; refuse
+malformed framing/encodings, conflicting parts, unsupported file types and
+oversized decompressed output. Full transaction parsing remains the existing
+Inspector/Editor responsibility.
+
+- `psbt-bbqr.js` collects type `P`, encodings `H`, `2`, `Z`; permits out-of-order
+  and duplicate frames, and counts distinct parts. Nonfinal lengths must match;
+  the final part may be shorter and arrive first.
+- Existing limits remain 1 MiB and 1,000 parts. BBQr also caps individual frames
+  at 4,296 characters, applies the byte budget independently to compressed and
+  decompressed data, and checks minimum possible transfer size before retaining
+  fragments.
+- `qr-deflate.js` is a dependency-free synchronous RFC1951 decoder restricted
+  to BBQr's 1,024-byte window. It accepts stored/fixed/dynamic blocks and rejects
+  invalid trees/references, truncated data and trailing streams. Output bounds
+  precede writes. No new production dependency, WASM artifact or asynchronous
+  reader contract was introduced.
+- Conflicts, malformed frames and size failures are terminal until reset.
+  Wrong types are recoverable on an unbound reader. A bound BBQr transfer cannot
+  be displaced by UR/static PSBTs; protocol mixing clears state and requires
+  reset. Reset/completion wipe owned mutable buffers best-effort.
+- BBQr has no whole-message checksum or transfer ID. Same-header/same-length
+  fragments from different transfers cannot always be distinguished. This
+  limitation is explicitly tested and documented, not repaired with a private
+  wire-format extension or presented as authenticated transport.
+- Camera receive and whitespace-separated text paste share the existing
+  `createPsbtQrReader` API. Inspector readiness does not decompress/reassemble
+  fragments on every input. Release text/raw-transaction handling is unchanged.
+
+Independent reference: Coinkite BBQr
+`8dc7ef07d0d520763cc0001a885ca8d29ac8719a`. The hash-pinned public-domain
+reference sources, 24 H/2/Z single/multipart streams (v0, v2, multisig,
+mixed-input PSBTs), rejection vectors and provenance manifest live in
+`test/fixtures/psbt-qr/bbqr/`. Reproduce offline with
+`python3 scripts/psbt-bbqr-reference.py`; tests do not run Python or fetch.
+
+Initial red evidence, before the corresponding production changes:
+
+- `node --test test/qr-deflate.test.mjs test/psbt-bbqr-lifecycle.test.mjs`:
+  missing new inflater module; unsupported BBQr returned `not-psbt` instead of
+  partial assembly/session isolation.
+- `node --test --test-name-pattern='independent BBQr p2wpkh-1in-2out-h-single' test/psbt-bbqr.test.mjs`:
+  `not-psbt` instead of the independently expected complete PSBT.
+- `node --test test/psbt-qr-text.test.mjs`: BBQr rejected as base64/hex;
+  readiness attempted ten assemblies rather than zero.
+
+After implementation, the decoder, BBQr corpus/lifecycle, legacy payload,
+SeedSigner corpus, text-import and widget suites passed together: 203 tests.
+The offline reference generator was rerun and all 76 corpus/rejection checks
+passed. A disposable differential run also checked 240 deterministic
+windowBits10 zlib streams and 960 mutations; all 853 accepted mutations matched
+independent zlib output, and exact output-limit boundaries held.
+
+Built preview optical proof used actual QR pixels, canvas camera streams,
+and the embedded decoder worker/WASM: eight reverse-order H frames into
+Inspector, seven reverse-order Base32 frames into Editor, and four reverse-order
+compressed frames into comparison. All recovered the exact public PSBT bytes,
+did not populate early, stopped tracks, and hid completed progress. Loading
+the Editor and running Compare reported semantically identical PSBTs without
+parse errors. This is not physical Coldcard/camera/appliance qualification.
 
 
 

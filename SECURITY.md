@@ -15,8 +15,8 @@ always use the latest version, available from the
 ## Security Considerations
 
 Preview PSBT QR capture is transport only: the reader checks PSBT magic,
-message integrity and resource limits, not transaction validity or sender
-identity. The existing PSBT parsers remain authoritative. Only complete
+framing and resource limits (plus UR message integrity), not transaction
+validity or sender identity. The existing PSBT parsers remain authoritative. Only complete
 payloads are offered to Inspector, Editor or comparison fields; scanning
 does not sign, broadcast, import keys or navigate to scanned URLs.
 
@@ -31,6 +31,19 @@ page, so the browser's permission prompt cannot cancel its own grant. This
 does not preserve revealed secrets: the global conceal sweep still runs.
 Hidden-page, print, idle, explicit cancellation and session teardown cancel
 pending requests too; a stream granted after cancellation is stopped.
+
+BBQr receive supports PSBT type `P` in hex, canonical unpadded Base32, and
+raw-DEFLATE-compressed Base32. Both compressed input and expanded output are
+bounded by the 1 MiB budget; the decoder enforces the protocol's 1,024-byte
+back-reference window, rejects malformed/truncated/trailing streams, and checks
+the output limit before writing. Each frame is capped at 4,296 characters.
+The dependency-free synchronous DEFLATE decoder is additional JavaScript audit
+surface; it performs no runtime downloads or native browser decompression.
+Conflicting duplicates and inconsistent headers require reset. BBQr has no
+whole-message checksum or transfer identity: same-header, same-length fragments
+from different transfers can form an undetectable mixture. PSBT parsing is not
+a substitute for that missing integrity check; never treat a completed scan as
+authentication or approval.
 
 Frame and payload buffers are erased on the controlled cleanup paths on a
 best-effort basis. JavaScript strings, browser/worker copies, camera-driver

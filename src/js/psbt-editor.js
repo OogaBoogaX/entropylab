@@ -47,7 +47,7 @@ export const psbtBytesFromText = (raw) => {
   const value = String(raw ?? "").trim(), compact = value.replace(/\s/g, "");
   if (!value) throw new Error("Paste a PSBT (v0 or v2).");
   if (compact.length > 7e6) throw new Error("This PSBT is too large to edit safely.");
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ && /^ur:/i.test(value)) {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ && /^(?:ur:|B\$)/i.test(value)) {
     const reader = createPsbtQrReader();
     let bytes = null;
     try {
