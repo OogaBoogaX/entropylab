@@ -359,18 +359,29 @@ test("the face shown always belongs to the roll number in the field", () => {
   assert.equal(shown(), "5");
 });
 
-test("a selection touching the pad is not copied while focus is elsewhere", () => {
+test("a selection touching a shown face is not copied or dragged, wherever it starts", () => {
   const ctx = setup();
+  for (const face of [3, 5]) click(ctx.host.querySelector(`[data-secure-roll="${face}"]`));
   let touches = true;
-  ctx.doc.getSelection = () => ({ isCollapsed: false, containsNode: (node, partly) => touches && node === ctx.host && partly === true });
+  ctx.doc.getSelection = () => ({ isCollapsed: false, containsNode: (node, partly) => touches && partly === true && node?.hasAttribute?.("data-secure-dice-face") });
   const event = (type) => {
     let prevented = false;
     return { type, get defaultPrevented() { return prevented; }, preventDefault() { prevented = true; } };
   };
-  for (const type of ["copy", "cut"]) {
+  // No face shown: nothing secret on the pad, so a page-wide copy works
+  // (MiniMax, round 2: Ctrl+A then Ctrl+C copied nothing).
+  const quiet = event("copy");
+  ctx.doc.dispatchEvent(quiet);
+  assert.equal(quiet.defaultPrevented, false, "no face shown: copy as usual");
+  click(find(ctx, "secure-dice-review-open"));
+  const show = find(ctx, "secure-dice-review-show");
+  show.checked = true;
+  change(show);
+  assert.ok(ctx.host.querySelector("[data-secure-dice-face]"), "a face is shown");
+  for (const type of ["copy", "cut", "dragstart"]) {
     const outside = event(type);
     ctx.doc.dispatchEvent(outside);
-    assert.equal(outside.defaultPrevented, true, `${type} of a selection over the pad`);
+    assert.equal(outside.defaultPrevented, true, `${type} of a selection over the shown face`);
   }
   touches = false;
   const elsewhere = event("copy");
@@ -380,7 +391,19 @@ test("a selection touching the pad is not copied while focus is elsewhere", () =
   ctx.pad.destroy();
   const after = event("copy");
   ctx.doc.dispatchEvent(after);
-  assert.equal(after.defaultPrevented, false, "destroy drops the document listener");
+  assert.equal(after.defaultPrevented, false, "destroy drops the document listeners");
+});
+
+test("the roll number takes no paste or drop", () => {
+  const ctx = setup();
+  click(ctx.host.querySelector('[data-secure-roll="2"]'));
+  click(find(ctx, "secure-dice-review-open"));
+  const position = find(ctx, "secure-dice-review-position");
+  for (const type of ["paste", "drop"]) {
+    let prevented = false;
+    position.dispatchEvent({ type, target: position, preventDefault() { prevented = true; } });
+    assert.equal(prevented, true, `${type} is refused`);
+  }
 });
 
 test("a malformed rolls entry is refused before anything is mounted", () => {

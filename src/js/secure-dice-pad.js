@@ -336,15 +336,21 @@ export function mountSecureDicePad(host, {
     event.preventDefault();
   };
   const HOST_BLOCKED = ["copy", "cut", "dragstart"];
-  // A copy goes to the focused element, which may be outside the pad while
-  // the selection covers a shown face: refuse any selection that touches it.
+  // A copy or a drag goes to where it started, which may be outside the pad
+  // while the selection covers a shown face: refuse a selection that touches
+  // the face. Only a shown face is secret, so a page-wide copy (Ctrl+A) still
+  // works while none is shown (GLM, Grok, Kimi, MiniMax, round 2).
   const blockSelection = (event) => {
     try {
+      const face = faceContainer.querySelector?.("[data-secure-dice-face]");
+      if (!face) return;
       const selection = doc.getSelection?.();
-      if (selection && !selection.isCollapsed && selection.containsNode?.(host, true)) event.preventDefault();
+      if (selection && !selection.isCollapsed && selection.containsNode?.(face, true)) event.preventDefault();
     } catch {}
   };
-  const DOC_BLOCKED = ["copy", "cut"];
+  const DOC_BLOCKED = ["copy", "cut", "dragstart"];
+  // The roll number takes no paste or drop either (Kimi, round 2).
+  const blockInput = (event) => event.preventDefault();
 
   pad.addEventListener("keydown", onPadKeydown);
   undoButton.addEventListener("click", onUndo);
@@ -352,6 +358,8 @@ export function mountSecureDicePad(host, {
   showBox.addEventListener("change", onShowToggle);
   positionInput.addEventListener("input", onPositionInput);
   positionInput.addEventListener("change", onPositionChange);
+  positionInput.addEventListener("paste", blockInput);
+  positionInput.addEventListener("drop", blockInput);
   reviewPrev.addEventListener("click", () => moveReview(-1));
   reviewNext.addEventListener("click", () => moveReview(1));
   reviewClose.addEventListener("click", closeReview);
