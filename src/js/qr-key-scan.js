@@ -669,6 +669,9 @@ export function mountKeyScan(host, {
   const onVisibility = () => {
     if (doc.visibilityState !== "hidden") return;
     op += 1;
+    // A Scan press still waiting on beforeOpen never opens the camera once
+    // the page has been hidden (K3.1, #1364 round 6).
+    openRequest += 1;
     if (text || seedIndicesBuffer) {
       endPanel();
       return;

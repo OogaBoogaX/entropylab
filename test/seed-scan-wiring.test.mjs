@@ -166,3 +166,10 @@ test("a scan replaces a seed typed as word numbers too, and a failed redraw does
   const guarded = load.indexOf("try {\n      hodlRenderKeyForm();");
   assert.ok(installed > 0 && guarded > installed, "the redraw after the install is inside a try");
 });
+
+test("an open request is dropped for a hidden page", () => {
+  // K3.1 (#1364 round 6): the mount after Secure entry turns on must not
+  // start the camera out of sight.
+  const body = functionBody("hodlBindSeedScan");
+  assert.match(body, /if \(openNow && document\.visibilityState !== "hidden"\) try \{ hodlSeedScan\.open\(\); \} catch \{\}/);
+});
