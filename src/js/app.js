@@ -7307,6 +7307,7 @@ function hodlRenderKeyForm() {
     <div class="dice-input-shell private-key-input-shell"><input id="secure-key" type="text" placeholder="${hodlTAttr("5… / K… / L…")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-meta" autocomplete="off" spellcheck="false" autocapitalize="off" data-secure-key /></div><p class="field-note" id="secure-key-status" aria-live="polite"></p><button type="button" class="btn secondary" id="secure-key-reveal" aria-pressed="false">${hodlT("Show key")}</button></div>`;
     hodlBindKeyFields();
     hodlBindSecureKeyField();
+    hodlRenderPassphraseKeyboard();
     return;
   }
   hodlFormEl.innerHTML = `
@@ -12588,7 +12589,7 @@ var hodlSecureEntryOn = false, hodlSecureSession = createSecureSession();
 var hodlSecureEntryConfirm = null, hodlSecureEntryBusy = false, hodlSecureEntryConvertFailed = false;
 // P3b-2: the masked private-key field's vault binding, and whether its
 // read-only readout is showing. Both are released with the key form.
-var hodlSecureKeyField = null, hodlSecureKeyRevealed = false;
+var hodlSecureKeyField = null, hodlSecureKeyRevealed = false, hodlSecureKeyNetworkWatch = null;
 async function hodlSecureEntryDialog() {
   if (!hodlSecureEntryConfirm) hodlSecureEntryConfirm = (await import("./secure-entry-confirm.js")).initSecureEntryConfirm();
   return hodlSecureEntryConfirm;
@@ -12788,6 +12789,9 @@ async function hodlSecureEntryToggle(wanted) {
             // P3b-2: the key goes back into privateKeys. The stored kind wins
             // when it is a key kind; otherwise the text is detected.
             else if (method === "key") {
+              // An empty vault holds nothing to convert: it must not blank a
+              // key kept as text in that slot (Astra, round 2).
+              if (!text) continue;
               let kind = hodlNormalizePrivateKeyKind(state.fields.keyKind);
               if (kind !== "wif" && kind !== "hex-key" && kind !== "minikey") kind = hodlDetectPrivateKeyKind(text) || "wif";
               hodlPrivateKeyValues(state.fields)[kind] = text;
@@ -13131,6 +13135,17 @@ function hodlBindSecureKeyField() {
   }
   document.removeEventListener("hodl:conceal", hodlSecureKeyConceal);
   document.addEventListener("hodl:conceal", hodlSecureKeyConceal);
+  // The status line runs Derive's checks, the network included: a change of
+  // network re-runs it, so it never keeps a pass Derive would refuse (Grok,
+  // GLM, MiniMax, round 2).
+  let network = document.getElementById("network");
+  if (hodlSecureKeyNetworkWatch) {
+    network?.removeEventListener("change", hodlSecureKeyNetworkWatch);
+    document.removeEventListener("hodl:network-default", hodlSecureKeyNetworkWatch);
+  }
+  hodlSecureKeyNetworkWatch = hodlSecureKeyStatus;
+  network?.addEventListener("change", hodlSecureKeyNetworkWatch);
+  document.addEventListener("hodl:network-default", hodlSecureKeyNetworkWatch);
   hodlSecureKeyStatus();
   lockKinds();
 }
@@ -13147,6 +13162,11 @@ function hodlSecureKeyLockKinds(radios, kind, locked) {
 // key form is rendered again and at End Session.
 function hodlReleaseSecureKeyField() {
   document.removeEventListener("hodl:conceal", hodlSecureKeyConceal);
+  if (hodlSecureKeyNetworkWatch) {
+    document.removeEventListener("hodl:network-default", hodlSecureKeyNetworkWatch);
+    document.getElementById("network")?.removeEventListener("change", hodlSecureKeyNetworkWatch);
+    hodlSecureKeyNetworkWatch = null;
+  }
   hodlSecureKeyField = null;
   hodlSecureKeyRevealed = false;
   let readout = document.querySelector("[data-secure-key-readout]");

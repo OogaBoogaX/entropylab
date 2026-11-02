@@ -148,3 +148,20 @@ test("turning Secure entry on clears Global sync copies made from a typed key", 
   const keyLoop = clear.slice(clear.indexOf("for (const { state, kind } of keyStates)"));
   assert.match(keyLoop.slice(0, keyLoop.indexOf("hodlPrivateKeyValues")), /if \(state\.globalSync\) hodlClearGlobalSyncCopies\(state\);/, "Clear: every copy");
 });
+
+test("round 3: the status follows the network, an empty vault converts to nothing, the keyboard host is redrawn", () => {
+  const bind = block("hodlBindSecureKeyField");
+  assert.match(bind, /hodlSecureKeyNetworkWatch = hodlSecureKeyStatus;/);
+  assert.match(bind, /network\?\.addEventListener\("change", hodlSecureKeyNetworkWatch\)/);
+  assert.match(bind, /addEventListener\("hodl:network-default", hodlSecureKeyNetworkWatch\)/);
+  const release = block("hodlReleaseSecureKeyField");
+  assert.match(release, /removeEventListener\("hodl:network-default", hodlSecureKeyNetworkWatch\)/);
+  assert.match(release, /removeEventListener\("change", hodlSecureKeyNetworkWatch\)/);
+  assert.doesNotMatch(release, /hodlSecureKeyStatus/, "release names no status function (slice harness)");
+  const toggle = block("hodlSecureEntryToggle");
+  const keyBranch = toggle.slice(toggle.indexOf('else if (method === "key") {'));
+  assert.ok(keyBranch.indexOf("if (!text) continue;") >= 0 && keyBranch.indexOf("if (!text) continue;") < keyBranch.indexOf("hodlPrivateKeyValues(state.fields)[kind] = text"), "an empty vault is skipped before anything is written");
+  const form = block("hodlRenderKeyForm");
+  const secure = form.slice(form.indexOf("hodlBindSecureKeyField();"));
+  assert.ok(secure.indexOf("hodlRenderPassphraseKeyboard();") >= 0 && secure.indexOf("hodlRenderPassphraseKeyboard();") < secure.indexOf("return;"), "the masked branch redraws the keyboard host like every other branch");
+});
