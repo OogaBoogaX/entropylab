@@ -12179,7 +12179,7 @@ function hodlFinalized(entries) {
 // Structural privacy observations for the Inspector's result. Commentary
 // only: nothing here feeds a check, a verdict or the glance line.
 function hodlPrivacySignalsHtml(signals) {
-  if (!PREVIEW || !signals) return "";
+  if (!signals) return "";
   let html = ["<div data-privacy-signals><p class='label psbt-section-label'>" + hodlT("Privacy signals") + "</p>"];
   let any = false;
   if (signals.mixedFinalization) {

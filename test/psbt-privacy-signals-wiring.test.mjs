@@ -23,8 +23,10 @@ test("app.js imports the pure signals module", () => {
   assert.match(source, /import\s*\{[^}]*psbtPrivacySignals[^}]*\}\s*from\s*["']\.\/psbt-privacy-signals\.js["']/);
 });
 
-test("the privacy section is hidden unless the preview flag is on, and absent without signals", () => {
-  assert.match(bodyOf("hodlPrivacySignalsHtml"), /if \(!PREVIEW \|\| !signals\) return "";/);
+test("the privacy section ships in every build, and is absent without signals", () => {
+  // Unhidden 11-02 (owner): no preview flag gates it any more.
+  assert.match(bodyOf("hodlPrivacySignalsHtml"), /if \(!signals\) return "";/);
+  assert.doesNotMatch(bodyOf("hodlPrivacySignalsHtml"), /PREVIEW/);
 });
 
 test("the master-keys line counts master keys, not groups", () => {
