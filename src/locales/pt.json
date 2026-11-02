@@ -2509,5 +2509,6 @@
   "To change the method, undo or clear the rolls entered so far.": "Para mudar o método, desfaça ou limpe os lançamentos inseridos até agora.",
   "{n} rolls are recommended for a {words}-word seed: about {bits} bits from a fair die. Fewer rolls make a weaker seed. The count cannot tell you whether your die is fair.": "{n} lançamentos são recomendados para uma semente de {words} palavras: cerca de {bits} bits de um dado justo. Menos lançamentos tornam uma semente mais fraca. A contagem não pode dizer se o seu dado é justo.",
   "Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.": "Seus lançamentos não estão listados na página. Eles permanecem na memória para derivação, Desfazer e revisão de lançamento único. Revisar um lançamento mostra um lançamento que você escolhe, com sua posição.",
-  "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Lance um dado físico de seis lados. Insira seu resultado uma vez, usando um botão ou as teclas 1–6."
+  "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Lance um dado físico de seis lados. Insira seu resultado uma vez, usando um botão ou as teclas 1–6.",
+  "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "O campo PSBT mudou enquanto a confirmação estava aberta. Revise-o e, em seguida, escolha Substituir novamente ou Manter."
 }
