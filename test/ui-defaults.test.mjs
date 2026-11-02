@@ -2312,7 +2312,7 @@ test("every MS Station co-signer keeps its key and full path visible with synchr
   assert.match(appSource, /originFields\.append\(fingerprintLabel, pathLabel\)/);
   assert.match(appSource, /pathComponents\.className = "derivation-advanced-fields msig-path-components"/);
   assert.match(appSource, /advanced\.append\(advancedSummary, pathComponents\)/);
-  assert.match(appSource, /content\.append\(chips, keyStatus, lab, specLabel, originFields, advanced\)/);
+  assert.match(appSource, /content\.append\(chips, keyStatus, lab, scanHost, specLabel, originFields, advanced\)/);
   assert.match(appSource, /hodlCreateMsigSessionKeyButton\(option, "msig-session-key"/);
   assert.match(appSource, /function hodlPickMsigSessionKey\(option, row\) \{/);
   assert.match(appSource, /ta\.value = deselect \? "" : value/);

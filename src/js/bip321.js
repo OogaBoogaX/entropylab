@@ -16,7 +16,7 @@ function decodeComponent(raw, what) {
   }
 }
 
-function parseQuery(query) {
+export function parseQuery(query) {
   if (!query) return [];
   return String(query).split("&").filter(Boolean).map((part) => {
     const eq = part.indexOf("=");
