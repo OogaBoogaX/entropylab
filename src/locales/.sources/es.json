@@ -2481,5 +2481,22 @@
   "Refused: this backup contains private keys. Nothing was imported.": "981bb93e2fa36cf16c0a6ed411ee6f2d563ce08df4a33b5db1b2df0486dc6550",
   "This backup looks incomplete or damaged. Try another copy. Nothing was imported.": "f39553931438a0109d612f84690469f84f363154a1c4c77ceb5c3f292c36d118",
   "Open encrypted backup": "6875b339eb6e204266202b8aa50cb2538aea8a6481e066193db8203e08705902",
-  "One of this wallet's xpubs": "89a0762f0199aacd19f4d277f80dfc2a075c601ee21708766e551adce3b225cb"
+  "One of this wallet's xpubs": "89a0762f0199aacd19f4d277f80dfc2a075c601ee21708766e551adce3b225cb",
+  "Two different QR codes are in view, so the scan was refused. Nothing was loaded. Show one code only and try again.": "7e7a74d0177f9b1ed61820482068e44fb7559cb1c9371cf797bb866c057b9887",
+  "Replace the text in this field with the scanned result?": "47af91610adaee867aa9ad47efde39dbac43878a25bec721222d42fe72b90a46",
+  "Loaded from the camera.": "058530f5e5e7fb598ccc7feffdfd5340f3ec4bd08d01b200833702f5f3d044e8",
+  "Added from the camera as a new recipient line.": "317a5bfed63294f16e630caa75f3106ed51bac526372dde43ebfd0f23980c117",
+  "This recipient is already in the list. Nothing was added.": "559e194d221cc18855afae4c006ae015a5833b7625ffb3db8d2bda2a9974da7c",
+  "This QR contains a private key or seed. Only public data can be scanned here. Nothing was loaded.": "2bde6e4df46fbc102c9b81ae65e22a0236365924bb6cffab982d2c6e4377acca",
+  "This QR format cannot be read here. Nothing was loaded. Enter the text in the field instead.": "e8eaf79906d29e328dfedea11205b62452c6ecc6b677aa979308de83c7eb5bc6",
+  "Scan invoice or offer QR": "8a629eb38233b2780ce7938c5454af916d155d55752f25434e57331b9aa6223c",
+  "Scan recipient QR": "5cdfb731ede568543b702377736f48503e9eb0856528ad3eb9ce8c3bb0ffdcc8",
+  "Scan payment code QR": "007d709123db13b1a194fa0dddae73a2fd64d69cda5834cce5f13520d20f9f61",
+  "Scan descriptor QR": "ddda7f102bc11b3ce081b536f25354d932489063779462a830a11857e03e9243",
+  "Scan xpub QR": "ff6579fa6d420c6b0708822e781e0f5303613a55a50b743d147f05d877cd5a5c",
+  "This QR is not a Lightning invoice or offer. Nothing was loaded.": "58570d6155a900fcb511c7dc5ce52fffe2d179f1d91ceb45e634f86266664796",
+  "This QR is not a silent payment address. Nothing was loaded.": "8f61c00c256344ba0e1f7d31224deae7d92e70723ae1d52744cad07237229497",
+  "This QR is not a BIP-47 payment code. Nothing was loaded.": "4c87266e85e928acebce4b5c446942c9865c92f2f5dd2e9f7912e3360b063a6a",
+  "This QR is not an output descriptor. Nothing was loaded.": "0d3e667d7fad7be2239160f61f03b0ac492a9eb4d9b97b76c96997fb740b3ec2",
+  "This QR is not an xpub. Nothing was loaded.": "84bdb7606ca602ffa82580a1ba9430f3b1b3bce38af49d70ca6133a4891b1d55"
 }
