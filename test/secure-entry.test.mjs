@@ -566,15 +566,17 @@ test("a key entry can be planned and committed", () => {
   assert.equal(installed.vault.length, 0);
 });
 
-test("SUPPORTED_METHODS is frozen and seed and key are supported", () => {
+test("SUPPORTED_METHODS is frozen and seed, key and rolls are supported", () => {
   assert.ok(Object.isFrozen(SUPPORTED_METHODS));
   assert.deepEqual(Object.keys(SUPPORTED_METHODS).sort(), ["cards", "key", "rolls", "seed"]);
   assert.equal(SUPPORTED_METHODS.seed, true);
   assert.equal(SUPPORTED_METHODS.key, true);
-  for (const method of ["rolls", "cards"]) assert.equal(SUPPORTED_METHODS[method], false);
+  assert.equal(SUPPORTED_METHODS.rolls, true);
+  assert.equal(SUPPORTED_METHODS.cards, false);
   assert.equal(isSupported("seed"), true);
   assert.equal(isSupported("key"), true);
-  for (const method of ["rolls", "cards", "hex", "base10", "toString", "", null, undefined]) {
+  assert.equal(isSupported("rolls"), true);
+  for (const method of ["cards", "hex", "base10", "toString", "", null, undefined]) {
     assert.equal(isSupported(method), false);
   }
 });
