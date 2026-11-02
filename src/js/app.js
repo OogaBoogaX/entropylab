@@ -165,6 +165,7 @@ import { initConcealOnLeave } from "./conceal-on-leave.js";
 // One cap for every PSBT view: a crafted PSBT passes the load gates with more
 // elements than the DOM survives (red-team F7).
 import { PSBT_INSPECTOR_LIMIT, PSBT_RENDER_LIMIT, cappedHtml, renderBudget } from "./psbt-viz.js";
+import { psbtPrivacySignals } from "./psbt-privacy-signals.js";
 const hodlBip39Wordlist = Object.freeze(bip39English);
 function hodlNote(key, vars) {
   return vars == null ? { key } : { key, vars };
@@ -6935,6 +6936,16 @@ function hodlSetSeedLength(words) {
 // no flag, so the host is never rendered and the module is never imported.
 var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null;
 var hodlSeedPicker = null, hodlSeedPickerImport = null;
+// The three PSBT scan panels are the same preview-only extra: release builds
+// strip their hosts and never import the module.
+var hodlPsbtScans = [], hodlPsbtScanModule = null, hodlPsbtScanImport = null;
+// Every PSBT field: the three tools' main fields, and the fee-bump original,
+// the PSBT sent to the signer and the Editor's comparison PSBT (owner 11-01:
+// scanners in every section that takes one).
+const hodlPsbtScanHosts = [
+  ["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"],
+  ["rbf-scan-host", "psbt-rbf-original"], ["audit-scan-host", "psbt-audit-before"], ["psbted-compare-scan-host", "psbted-compare-text"],
+];
 function hodlKeyScanHostMarkup() {
   return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
 }
@@ -7619,6 +7630,73 @@ function hodlBindKeyScan() {
       });
     }).catch(() => {});
   }
+}
+// A teardown bumps the epoch, so a mount still waiting on the import when the
+// panels were torn down (End Session, a language switch) mounts nothing.
+var hodlPsbtScanEpoch = 0;
+function hodlBindPsbtScans() {
+  // The slice harness loads this with no scan host: return before anything
+  // else.
+  let hosts = hodlPsbtScanHosts.map(([hostId, fieldId]) => [document.getElementById(hostId), document.getElementById(fieldId)]);
+  if (!hosts.some(([host]) => host)) return;
+  if (!hodlPsbtScanImport) {
+    hodlPsbtScanImport = import("./qr-psbt-scan.js").then((module) => {
+      hodlPsbtScanModule = module;
+      return module;
+    }).catch(() => null);
+  }
+  let epoch = hodlPsbtScanEpoch;
+  hodlPsbtScanImport.then((module) => {
+    if (!module || epoch !== hodlPsbtScanEpoch) return;
+    for (let [host, field] of hosts) {
+      if (!host || !field || !host.isConnected || host.childNodes.length) continue;
+      if (hodlPsbtScans.some((entry) => entry.hostId === host.id)) continue;
+      try {
+        hodlPsbtScans.push({ hostId: host.id, panel: module.mountPsbtScan(host, { field }) });
+      } catch {
+        try { host.replaceChildren(); } catch {}
+      }
+    }
+  }).catch(() => {});
+}
+function hodlDestroyPsbtScans() {
+  hodlPsbtScanEpoch++;
+  let scans = hodlPsbtScans;
+  hodlPsbtScans = [];
+  for (let entry of scans) {
+    try { entry.panel?.destroy(); } catch {
+      // A panel that would not come down must not leave its markup behind.
+      try { document.getElementById(entry.hostId)?.replaceChildren(); } catch {}
+    }
+  }
+  // The decoders are retired at End Session only: the registry is shared with
+  // the nonce ceremony's frame decoder, which a language switch must not stop.
+}
+// A tool's own Clear, and leaving the Transactions workspace, close an open
+// scan panel (its camera would otherwise keep streaming) and give the host a
+// fresh, closed one.
+function hodlResetPsbtScans() {
+  try { hodlDestroyPsbtScans(); } catch {}
+  try { hodlBindPsbtScans(); } catch {}
+}
+// A collapsed section, or Clear Comparison, closes only the panels inside it,
+// so a scan running on another field keeps its camera and its frames (Kimi,
+// MiniMax), and gives those hosts fresh, closed panels.
+function hodlResetPsbtScansIn(container) {
+  if (!container) return;
+  let kept = [];
+  for (let entry of hodlPsbtScans) {
+    let host = document.getElementById(entry.hostId);
+    if (!host || !container.contains(host)) {
+      kept.push(entry);
+      continue;
+    }
+    try { entry.panel?.destroy(); } catch {
+      try { host.replaceChildren(); } catch {}
+    }
+  }
+  hodlPsbtScans = kept;
+  try { hodlBindPsbtScans(); } catch {}
 }
 function hodlMountSeedPicker() {
   let host = document.getElementById("seed-picker-host");
@@ -11633,6 +11711,32 @@ function hodlFinalized(entries) {
   // lookalikes that must not read as progress.
   return entries.some((entry) => (entry.type === 7 || entry.type === 8) && entry.keydata.length === 0);
 }
+// Structural privacy observations for the Inspector's result. Commentary
+// only: nothing here feeds a check, a verdict or the glance line.
+function hodlPrivacySignalsHtml(signals) {
+  if (!PREVIEW || !signals) return "";
+  let html = ["<div data-privacy-signals><p class='label psbt-section-label'>" + hodlT("Privacy signals") + "</p>"];
+  let any = false;
+  if (signals.mixedFinalization) {
+    html.push("<p class='edge-note is-info' data-privacy-signal='proposal-shape'>" + hodlT("Some inputs are finalized and others are not. This is the shape of a payjoin proposal, and also of a transaction still being signed by several people. Check every input amount and the fee before signing.") + "</p>");
+    any = true;
+  }
+  if (signals.originGroups >= 2) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='origin-groups'>" + hodlT("Inputs carry key paths from {count} different master keys. These paths are claims written into the file, not proof of who owns the coins.", { count: signals.masterKeys }) + "</p>");
+    any = true;
+  }
+  for (const group of signals.equalOutputs) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='equal-outputs'>" + hodlT("{count} outputs pay exactly {amount}. Equal outputs are a coinjoin pattern; they also occur in batched payments.", { count: group.count, amount: hodlSats(group.amount) + " BTC" }) + "</p>");
+    any = true;
+  }
+  if (!signals.available) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='unavailable'>" + hodlT("Some checks could not run: a raw transaction carries no key paths or signing state.") + "</p>");
+  } else if (!any) {
+    html.push("<p class='edge-note is-muted' data-privacy-signal='none'>" + hodlT("No payjoin or coinjoin pattern found in this transaction's structure; this does not rule either out.") + "</p>");
+  }
+  html.push("</div>");
+  return html.join("");
+}
 // Finalized inputs carry ECDSA signatures in PSBT_IN_FINAL_SCRIPTSIG (0x07)
 // or PSBT_IN_FINAL_SCRIPTWITNESS (0x08) instead of partial-signature
 // records. Both are decoded with strict size and item-count bounds so
@@ -12696,10 +12800,16 @@ async function hodlSecureEntryToggle(wanted) {
         } else if (choice === "clear") {
           // Clear wipes every secure entry: a key that keeps its wallet on screen but
           // held its words only there would back up with no words (as at turn-on Clear).
-          for (const state of hodlKeys) {
-            if (state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
+          // The keys are found before the wipe and marked by what it left, even when
+          // it throws: sessionWipe empties the session before it reports a partial
+          // wipe, so those words are gone (GLM, MiniMax), while a throw that wiped
+          // nothing leaves the words and no mark (Kimi).
+          let cleared = hodlKeys.filter((state) => state?.result && hodlSecureEntryHasData(hodlSecureKeyOf(state)));
+          try {
+            commitTurnOff(hodlSecureSession, null, "clear");
+          } finally {
+            for (const state of cleared) if (!hodlSecureEntryHasData(hodlSecureKeyOf(state))) state.secureCleared = true;
           }
-          commitTurnOff(hodlSecureSession, null, "clear");
         } else {
           if (plan) discardPlan(plan);
           plan = null;
@@ -15827,7 +15937,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   let overallLine = hodlPsbtOverallLine(checks);
   let answerBlock = "<section class='psbt-analysis-summary' data-psbt-answer data-psbt-analysis-overall='" + overallLine.state + "' aria-label='" + hodlTAttr("PSBT security analysis status") + "'><p class='label psbt-section-label'>" + hodlT("PSBT security analysis") + "</p>" + overallLine.html + glance + "</section>";
   html.unshift(answerBlock, hodlPsbtAnalysisSummary(checks));
-  return (view === "inspect" ? html : html.concat(nonceHtml)).join("");
+  // Commentary, last in the result and never read by a check; a throw adds
+  // nothing.
+  let privacy = "";
+  try { privacy = hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: psbt.inputs, outputs: tx.outputs })); } catch {}
+  return (view === "inspect" ? html : html.concat(nonceHtml)).concat(privacy).join("");
 }
 // Same three views as hodlRenderPsbt. A raw transaction has no summary table,
 // so the Inspector carries the verdict lines themselves — the exact lines the
@@ -15949,8 +16063,12 @@ function hodlRenderRawTx(tx, nonceSourceTag = new Uint8Array(), nonceCheckedAt =
   let nonceVerdict = schnorrReused.length ? "reuse" : crossKey.length ? "cross-key" : possible.length ? "possible" : nonceIncomplete ? "incomplete" : "clean";
   if (view !== "inspect" && options?.record !== false) hodlPsbtRecordNonceInspection("transaction", rValues, nonceSourceTag, nonceVerdict, nonceCheckedAt);
   if (view === "nonce") return nonceHtml.join("");
-  if (view === "inspect") return html.concat(["<p class='label'>" + hodlT("Nonce analysis") + "</p>"], verdictHtml, ["<p class='muted'>" + hodlT("Open the Nonce Inspector for every r value and the per-signature detail.") + "</p>"]).join("");
-  return html.concat(nonceHtml).join("");
+  // Commentary, last in the result and never read by a check; a throw adds
+  // nothing.
+  let privacy = "";
+  try { privacy = hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: null, outputs: tx.outputs })); } catch {}
+  if (view === "inspect") return html.concat(["<p class='label'>" + hodlT("Nonce analysis") + "</p>"], verdictHtml, ["<p class='muted'>" + hodlT("Open the Nonce Inspector for every r value and the per-signature detail.") + "</p>"], privacy).join("");
+  return html.concat(nonceHtml, privacy).join("");
 }
 var hodlAccountId = "bip84",
   hodlNextKeyId = 1,
@@ -18336,6 +18454,8 @@ function hodlShowWorkspace(id) {
   // invalidate the run, and lifecycle/session clearing own cancellation.
   // Leaving the Privacy workspace hides a revealed BIP-47 spending key.
   if (hodlWorkspace === "sp" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
+  // Leaving the Transactions workspace closes an open scan panel.
+  if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
   hodlWorkspace = id;
   [...hodlElement("#workspace-tabs").querySelectorAll("[data-workspace]")].forEach((button) => {
     let active = button.dataset.workspace === id;
@@ -18552,6 +18672,9 @@ function hodlSyncPsbtTool() {
 }
 function hodlShowPsbtTool(id, focus = false) {
   let next = id === "editor" || id === "nonce" ? id : "inspector", changed = next !== hodlPsbtTool;
+  // Switching tools hides the card an open scan panel sits in: close it
+  // first, so its camera stops (Kimi, GLM, MiniMax on #1358).
+  if (changed && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
   hodlPsbtTool = next;
   hodlSyncPsbtTool();
   if (changed) hodlJournalLog("tool-tab", hodlPsbtTool, "psbt");
@@ -22445,9 +22568,15 @@ function hodlInitSecretFieldAutoClear() {
     hodlKeyScan = null;
     try { hodlSeedPicker?.destroy(); } catch {}
     hodlSeedPicker = null;
+    // The PSBT panels come down before any decoder is retired (their decoders
+    // live in the same registry as the Key Station's), then the registry goes.
+    try { hodlDestroyPsbtScans(); } catch {}
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
+    try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
+    // The PSBT hosts are static: give them fresh, closed panels too.
+    try { hodlBindPsbtScans(); } catch {}
     try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
     try { hodlSecureEntryEnd(); } catch {}
     // The seed form showed the picker: redraw it as the standard field.
@@ -22541,6 +22670,10 @@ function hodlApplyLocale() {
   document.querySelectorAll("#msig-keys textarea").forEach((ta) => {
     if (ta.value) hodlCheckXpub(ta);
   });
+  // These three hosts are static, so a language switch re-mounts the panels
+  // to pick up the new strings (the Key Station's is re-rendered above).
+  try { hodlDestroyPsbtScans(); } catch {}
+  try { hodlBindPsbtScans(); } catch {}
 }
 async function hodlBoot() {
   hodlInitPassphraseVault();
@@ -22574,6 +22707,15 @@ async function hodlBoot() {
   hodlDecorateAppPaste();
   hodlInitPrivateCopy({ copyIcon: hodlClipboardIconMarkup, copiedIcon: hodlCopiedIconMarkup, onCopyStart: hodlJournalCopyStart });
   hodlInitEndSession();
+  hodlBindPsbtScans();
+  // Each PSBT tool's Clear closes its scan panel too.
+  for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);
+  // Clear Comparison closes the comparison field's panel only.
+  document.getElementById("psbted-compare-clear")?.addEventListener("click", () => hodlResetPsbtScansIn(document.getElementById("psbted-compare")));
+  // The RBF and signer-audit hosts sit in collapsible sections: collapsing one
+  // hides its panel, so it closes that panel, or the camera would keep
+  // streaming out of sight (Kimi, GLM, DeepSeek).
+  for (let id of ["psbt-rbf-options", "psbt-audit-options"]) document.getElementById(id)?.addEventListener("toggle", (event) => { if (!event.currentTarget.open) hodlResetPsbtScansIn(event.currentTarget); });
   hodlInitLocale(hodlApplyLocale);
 }
 // Curve operations need the WebAssembly module instantiated first (async in

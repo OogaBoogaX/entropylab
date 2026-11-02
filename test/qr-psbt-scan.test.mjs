@@ -2,6 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mountPsbtScan } from "../src/js/qr-psbt-scan.js";
 import { MiniDocument } from "./mini-dom.mjs";
+import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { collectSources } from "../scripts/i18n-sources.mjs";
+
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const SOURCE = readFileSync(new URL("../src/js/qr-psbt-scan.js", import.meta.url), "utf8");
 import {
   hodlCrc32,
   hodlBytewordsEncode,
@@ -99,7 +106,6 @@ const setup = (options = {}) => {
   const loads = { count: 0 };
   const panel = mountPsbtScan(host, {
     field,
-    translate: options.translate || ((text) => text),
     onLoad: () => {
       loads.count += 1;
     },
@@ -191,15 +197,27 @@ test("two panels with different host ids do not share ids", () => {
   assert.equal(b.host.querySelector("#psbt-a-open"), null);
 });
 
-test("every visible string goes through translate", () => {
-  const ctx = setup({ translate: (text) => "⟦" + text + "⟧" });
-  const wrapped = (suffix) => {
-    const text = byId(ctx, suffix).textContent;
-    return text.startsWith("⟦") && text.endsWith("⟧");
-  };
-  for (const suffix of ["open", "stop", "close", "replace", "keep", "confirm-text"]) {
-    assert.ok(wrapped(suffix), `${suffix} was not translated`);
-  }
+// The panel ships in every build, so its text goes through t() from
+// ./i18n.js like every other module's, as literals the catalog sweep sees
+// (copy is content, not contract: the tests hook on the structure, never on
+// the wording).
+test("every visible string is a t() literal the catalog sweep collects", async () => {
+  assert.match(SOURCE, /import \{ t \} from "\.\/i18n\.js";/, "the panel must translate through the page catalog");
+  assert.doesNotMatch(SOURCE, /\btranslate\b/, "no translator option: the module reads the catalog itself");
+  // Each status is a thunk around a t() literal, looked up when it is shown.
+  const statusBlock = SOURCE.match(/const STATUS_TEXT = \{\n([\s\S]*?)\n\};/)?.[1];
+  assert.ok(statusBlock, "STATUS_TEXT is missing");
+  const statusLines = statusBlock.split("\n");
+  assert.ok(statusLines.length >= 10);
+  for (const line of statusLines) assert.match(line, /^  (?:"[\w-]+"|\w+): \((?:vars)?\) => t\("[^"]+"(?:, vars)?\),$/, `not a t() literal thunk: ${line.trim()}`);
+  // The controls' text and the progress line are t() literals too.
+  for (const literal of SOURCE.matchAll(/text: ([^,}]+)/g)) assert.match(literal[1].trim(), /^(?:t\("[^"]+"\)|STATUS_TEXT\.\w+\(\))$/, `control text is not translated: ${literal[1]}`);
+  assert.match(SOURCE, /progressLine\.textContent = t\("[^"]+", \{/);
+  assert.match(SOURCE, /statusLine\.textContent = STATUS_TEXT\[key\]\(vars\);/);
+  // The sweep that feeds the translation run sees them.
+  const sources = await collectSources(ROOT);
+  for (const line of statusLines) assert.ok(sources.has(line.match(/t\("([^"]+)"/)[1]), `the catalog sweep misses: ${line.trim()}`);
+  for (const literal of SOURCE.matchAll(/\bt\("([^"]+)"/g)) assert.ok(sources.has(literal[1]), `the catalog sweep misses: ${literal[1]}`);
 });
 
 test("the progress line is announced politely", () => {
