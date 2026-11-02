@@ -54,6 +54,9 @@ const DECLARED = new Set([
   "hodlCompareSchnorrNonces", "hodlParseSchnorr", "hodlTapKeySigs", "hodlTapScriptPathSigs", "hodlTapScriptSigs", "hodlTapSighashProblems", "hodlTapWitnessShape",
   "inspectPsbtInscriptions", "describeEnvelope", "parseOpReturn", "describeOpReturn",
   "hodlPublicValueHtml", "PSBT_RENDER_LIMIT", "hodlRenderAnnotatedPrivateText", "hodlJournalSnapshotPrivateSpans",
+  // The signer availability report (preview only) is stubbed out: this suite
+  // pins OP_CODESEPARATOR handling, and the report's own suites cover it.
+  "hodlSignerReportSection",
   // Harness seams from the prelude below (no browser chrome; controllable session).
   "document", "hodlNetworkDefault", "hodlNetworkChoice", "hodlPsbtPriv", "hodlPsbtHd", "hodlPsbtRecordNonceInspection",
 ]);
@@ -127,6 +130,7 @@ const hodlNetworkChoice = "mainnet";
 var hodlPsbtPriv = null, hodlPsbtHd = null;
 const hodlPsbtRecordNonceInspection = () => {};
 const hodlPrivateCopyButtonHtml = () => "";
+const hodlSignerReportSection = () => "";
 ${DECLARED_VARS.map((name) => `var ${name};`).join("\n")}
 export function hodlTestSetPriv(key) { hodlPsbtPriv = key; }
 ${closure(["hodlParsePsbt", "hodlRenderPsbt"])}
