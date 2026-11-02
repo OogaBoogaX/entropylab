@@ -256,7 +256,15 @@ export function mountKeyScan(host, {
   const updateConfirm = () => {
     if (!keyBytes || !confirmValue || !revealButton) return;
     let shown = "";
-    if (revealed) {
+    if (!revealed) {
+      // Concealed: the mask, one dot per character, with no key string built
+      // (GLM, #1405).
+      try {
+        shown = privateValue("•".repeat(keyBytes.length), false);
+      } catch {
+        shown = "";
+      }
+    } else {
       // The key as text exists only for this render: it is never stored.
       let text = "";
       try {

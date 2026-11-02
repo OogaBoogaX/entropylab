@@ -7711,7 +7711,6 @@ function hodlKeyScanLoad(bytes) {
   if (!document.getElementById("secure-key")) throw new Error("The masked key field is not on screen.");
   if (!(bytes instanceof Uint8Array)) throw new Error("Bad key bytes.");
   for (const byte of bytes) if (byte >= 0x80) throw new Error("The key is not ASCII.");
-  state.fields.keyKind = "wif";
   let entry = hodlSecureKeyEntry(true);
   if (!entry) throw new Error("No secure key.");
   hodlInvalidateLiveKeyResult();
@@ -7721,6 +7720,9 @@ function hodlKeyScanLoad(bytes) {
     try { entry.vault.clear(); } catch {}
     throw error;
   }
+  // The format changes only once the vault holds the scanned key: a failed
+  // load leaves it as it was (MiniMax, DeepSeek, #1405).
+  state.fields.keyKind = "wif";
   let values = hodlPrivateKeyValues(state.fields);
   for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
   hodlSetMode(hodlKeyMode);
