@@ -416,6 +416,7 @@ words, pick one of the checksum words.</span></span>
         <label class="field"><span class="muted label-value">Paste a wallet-exported multisig descriptor here — the quorum, script type, key order, and co-signer xpubs will be filled in below.</span>
           <textarea id="msig-descriptor" placeholder="wsh(sortedmulti(2,[fingerprint/48h/0h/0h/2h]Zpub…/0/*, …))" autocomplete="off" spellcheck="false" aria-describedby="msig-descriptor-help"></textarea>
         </label>
+        <div id="msig-descriptor-scan-host" class="text-scan-host" data-scan-field="msig-descriptor" data-scan-accept="descriptor"></div>
         <!-- preview -->
         <button class="btn secondary" id="msig-backup-open" type="button">Open encrypted backup</button>
         <input type="file" id="msig-backup-file" accept=".bip138,.txt" hidden>
