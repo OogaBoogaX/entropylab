@@ -2481,5 +2481,22 @@
   "Refused: this backup contains private keys. Nothing was imported.": "Recusado: este backup contém chaves privadas. Nada foi importado.",
   "This backup looks incomplete or damaged. Try another copy. Nothing was imported.": "Este backup parece incompleto ou danificado. Tente outra cópia. Nada foi importado.",
   "Open encrypted backup": "Abrir backup criptografado",
-  "One of this wallet's xpubs": "Um dos xpubs desta carteira"
+  "One of this wallet's xpubs": "Um dos xpubs desta carteira",
+  "Two different QR codes are in view, so the scan was refused. Nothing was loaded. Show one code only and try again.": "Dois códigos QR diferentes estão em exibição, então a varredura foi recusada. Nada foi carregado. Mostre apenas um código e tente novamente.",
+  "Replace the text in this field with the scanned result?": "Substituir o texto neste campo pelo resultado escaneado?",
+  "Loaded from the camera.": "Carregado da câmera.",
+  "Added from the camera as a new recipient line.": "Adicionado da câmera como uma nova linha de destinatário.",
+  "This recipient is already in the list. Nothing was added.": "Este destinatário já está na lista. Nada foi adicionado.",
+  "This QR contains a private key or seed. Only public data can be scanned here. Nothing was loaded.": "Este QR contém uma chave privada ou semente. Apenas dados públicos podem ser escaneados aqui. Nada foi carregado.",
+  "This QR format cannot be read here. Nothing was loaded. Enter the text in the field instead.": "Este formato de QR não pode ser lido aqui. Nada foi carregado. Digite o texto no campo em vez disso.",
+  "Scan invoice or offer QR": "Escanear QR de fatura ou oferta",
+  "Scan recipient QR": "Escanear QR de destinatário",
+  "Scan payment code QR": "Escanear QR de código de pagamento",
+  "Scan descriptor QR": "Escanear QR de descritor",
+  "Scan xpub QR": "Escanear QR de xpub",
+  "This QR is not a Lightning invoice or offer. Nothing was loaded.": "Este QR não é uma fatura ou oferta Lightning. Nada foi carregado.",
+  "This QR is not a silent payment address. Nothing was loaded.": "Este QR não é um endereço de Silent Payment. Nada foi carregado.",
+  "This QR is not a BIP-47 payment code. Nothing was loaded.": "Este QR não é um código de pagamento BIP-47. Nada foi carregado.",
+  "This QR is not an output descriptor. Nothing was loaded.": "Este QR não é um descritor de saída. Nada foi carregado.",
+  "This QR is not an xpub. Nothing was loaded.": "Este QR não é um xpub. Nada foi carregado."
 }
