@@ -316,3 +316,53 @@ test("reset drops a held backup", async () => {
     else globalThis.__ENTROPYLAB_PREVIEW__ = saved.preview;
   }
 });
+
+test("an edit to the descriptor drops a backup held from a file", async () => {
+  // K3.1 and MiniMax (#1374 round 2): a backup held from a file outlived an
+  // edit to the descriptor, so entering an xpub replaced what was typed.
+  const saved = { document: globalThis.document, preview: globalThis.__ENTROPYLAB_PREVIEW__ };
+  try {
+    globalThis.__ENTROPYLAB_PREVIEW__ = true;
+    globalThis.document = new MiniDocument();
+    globalThis.document.body.innerHTML = applyPreviewBlocks(shell, true);
+    const slice = await loadAppFunctions(["hodlInitMsigBip138Open"], { stubs: { hodlLoadBip138: () => Promise.resolve(bip138) } });
+    slice.hodlInitMsigBip138Open();
+    const built = bip138.bip138CreateDescriptorBackup(DESC);
+    const file = globalThis.document.getElementById("msig-backup-file");
+    const row = globalThis.document.getElementById("msig-backup-xpub-row");
+    const status = globalThis.document.getElementById("msig-backup-status");
+    const field = globalThis.document.getElementById("msig-descriptor");
+    const xpub = globalThis.document.getElementById("msig-backup-xpub");
+    const choose = (read) => {
+      file.value = "C:\\fakepath\\x";
+      Object.defineProperty(file, "files", { value: [{ size: built.bytes.length, arrayBuffer: read }], configurable: true });
+      file.dispatchEvent(new Event("change"));
+    };
+    choose(async () => built.bytes.buffer.slice(0));
+    await tick();
+    assert.equal(row.hidden, false);
+    field.value = "wsh(multi(1,";
+    field.dispatchEvent(new Event("input"));
+    assert.equal(row.hidden, true);
+    assert.equal(status.getAttribute("data-bip138-status"), "");
+    xpub.value = `[6738736c/48'/0'/0'/2']${XPUB_A}/<0;1>/*`;
+    xpub.dispatchEvent(new Event("input"));
+    assert.equal(field.value, "wsh(multi(1,");
+
+    // A file still being read when the field is edited is not held either.
+    let release;
+    choose(() => new Promise((resolve) => { release = resolve; }));
+    field.value = "wsh(multi(2,";
+    field.dispatchEvent(new Event("input"));
+    release(built.bytes.buffer.slice(0));
+    await tick();
+    assert.equal(row.hidden, true);
+    xpub.value = `[6738736c/48'/0'/0'/2']${XPUB_A}/<0;1>/*`;
+    xpub.dispatchEvent(new Event("input"));
+    assert.equal(field.value, "wsh(multi(2,");
+  } finally {
+    globalThis.document = saved.document;
+    if (saved.preview === undefined) delete globalThis.__ENTROPYLAB_PREVIEW__;
+    else globalThis.__ENTROPYLAB_PREVIEW__ = saved.preview;
+  }
+});
