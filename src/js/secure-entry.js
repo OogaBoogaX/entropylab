@@ -123,7 +123,7 @@ const assertEntry = (entry, method) => {
 // P1b reads through isSupported(); seeds are supported from P2b, so preview
 // builds offer secure seed entry. Planning recognises the kinds themselves: a
 // method not listed here (a "hex" number base, say) is never plannable.
-export const SUPPORTED_METHODS = Object.freeze({ seed: true, key: false, rolls: false, cards: false });
+export const SUPPORTED_METHODS = Object.freeze({ seed: true, key: true, rolls: false, cards: false });
 
 export const isSupported = (method) => typeof method === "string"
   && Object.prototype.hasOwnProperty.call(SUPPORTED_METHODS, method)

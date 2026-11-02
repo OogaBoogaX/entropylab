@@ -863,6 +863,7 @@ const loadKeyApp = async (overrides = {}) => {
   const mod = await loadAppFunctions(
     [
       "hodlSecureKeyKind", "hodlSecureKeyActive", "hodlSecureKeyEntry", "hodlSecureKeyApplies",
+      "hodlSecureKeyFormApplies", "hodlSecureKeyTyped",
       "hodlSecureKeyParsed", "hodlSecureKeyReady", "hodlSecureKeyWallet",
       "hodlSecureEntryHasData", "hodlSecureKeyOf",
       "hodlSingleKeyWallet", "hodlAssertPrivateKeyKind",
@@ -1014,16 +1015,24 @@ test("hodlSecureKeyWallet zeroes every vault copy and keeps its own key", async 
 });
 
 test("hodlSecureKeyActive needs the switch, the supported method and a non-brain kind", async () => {
-  const real = await loadKeyApp({ stubs: { hodlSecureSupported: SUPPORTED_METHODS } });
+  const off = await loadKeyApp({ stubs: { hodlSecureSupported: { ...SUPPORTED_METHODS, key: false } } });
   const session = createSecureSession();
-  real.mod.__set.hodlSecureSession(session);
+  off.mod.__set.hodlSecureSession(session);
+  off.mod.__set.hodlKeys([{ id: 1, fields: {} }]);
+  off.mod.__set.hodlActiveKey(0);
+  off.mod.__set.hodlSecureEntryOn(true);
+  off.doc.state.kind = "wif";
+  assert.equal(off.mod.hodlSecureKeyActive(), false, "the key method is not supported");
+  assert.equal(off.mod.hodlSecureKeyEntry(true), null);
+  assert.equal(session.entries.size, 0);
+
+  const real = await loadKeyApp({ stubs: { hodlSecureSupported: SUPPORTED_METHODS } });
+  real.mod.__set.hodlSecureSession(createSecureSession());
   real.mod.__set.hodlKeys([{ id: 1, fields: {} }]);
   real.mod.__set.hodlActiveKey(0);
   real.mod.__set.hodlSecureEntryOn(true);
   real.doc.state.kind = "wif";
-  assert.equal(real.mod.hodlSecureKeyActive(), false, "SUPPORTED_METHODS.key is false");
-  assert.equal(real.mod.hodlSecureKeyEntry(true), null);
-  assert.equal(session.entries.size, 0);
+  assert.equal(real.mod.hodlSecureKeyActive(), true, "SUPPORTED_METHODS.key is true");
 
   const on = await loadKeyApp();
   on.mod.__set.hodlSecureSession(createSecureSession());
@@ -1228,4 +1237,80 @@ test("the key vault path never builds a string", async () => {
       assert.equal(source.includes(forbidden), false, `${name} must not contain ${forbidden}`);
     }
   }
+});
+
+test("hodlSecureKeyTyped reads only the key's own kind", async () => {
+  const { mod } = await loadKeyApp();
+  const hexKey = "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d";
+  assert.equal(mod.hodlSecureKeyTyped({ fields: { keyKind: "brain", privateKeys: { wif: WIKI_WIF, brain: "correct horse" } } }), null);
+  assert.equal(mod.hodlSecureKeyTyped({ fields: { keyKind: "wif", privateKeys: { wif: "   ", "hex-key": hexKey } } }), null);
+  assert.deepEqual(
+    mod.hodlSecureKeyTyped({ fields: { keyKind: "hex-key", privateKeys: { wif: WIKI_WIF, "hex-key": hexKey } } }),
+    { text: hexKey, kind: "hex-key" },
+  );
+});
+
+test("hodlSecureKeyFormApplies follows the key's kind, typed text and vault", async () => {
+  const { mod } = await loadKeyApp();
+  const use = (state, vault = "") => {
+    const session = createSecureSession();
+    mod.__set.hodlSecureSession(session);
+    mod.__set.hodlKeys([state]);
+    mod.__set.hodlActiveKey(0);
+    mod.__set.hodlSecureEntryOn(true);
+    if (vault) {
+      const entry = keyEntry();
+      entry.vault.setText(vault);
+      sessionSet(session, mod.hodlSecureKeyOf(state, true), "key", entry);
+    }
+    return state;
+  };
+  assert.equal(mod.hodlSecureKeyFormApplies(use({ id: 1, fields: { keyKind: "brain", privateKeys: { wif: "", brain: "" } } })), false);
+  assert.equal(mod.hodlSecureKeyFormApplies(use({ id: 2, fields: { keyKind: "wif", privateKeys: { wif: WIKI_WIF } } })), false);
+  assert.equal(mod.hodlSecureKeyFormApplies(use({ id: 3, fields: { keyKind: "wif", privateKeys: { wif: "" } } })), true);
+  assert.equal(mod.hodlSecureKeyFormApplies(use({ id: 4, fields: { keyKind: "wif", privateKeys: { wif: WIKI_WIF } } }, "5")), true);
+});
+
+test("hodlCaptureKey ignores a masked field that is not #key", async () => {
+  const before = { wif: WIKI_WIF, "hex-key": "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d" };
+  const privateKeys = { ...before };
+  const state = { id: 1, fields: { keyKind: "wif", privateKeys } };
+  const secureKey = { id: "secure-key", value: "••••••", dataset: {} };
+  const mod = await loadAppFunctions(["hodlCaptureKey"], {
+    stubs: {
+      document: {
+        getElementById: (id) => id === "secure-key" ? secureKey : null,
+        querySelector: () => null,
+      },
+      hodlKeyMode: "key",
+      hodlDiceMethod: "coldcard",
+      hodlCardMethod: "direct",
+      hodlSeedMethod: "words",
+      hodlSeedZeroIndexed: false,
+      hodlCardColemanSymbols: false,
+      hodlEntropyFormat: "hex",
+      hodlTargetWordCount: 12,
+      hodlDiceCoinPositions: [],
+      hodlPickedLastWord: "",
+      hodlWalletResult: null,
+      hodlRevealPrivate: false,
+      hodlKeyErrorSpec: null,
+      hodlSelectedScriptType: () => "p2wpkh",
+      hodlFormatErrorSpec: () => "",
+      hodlStorePassphrase: () => {},
+      hodlBrainWalletOutput: () => "scalar",
+      hodlReadHardening: () => ({ purpose: true, coinType: true, account: true, branch: false, address: false }),
+      hodlSelectedNetwork: () => "mainnet",
+      hodlDiceFieldName: () => "dice",
+      hodlPrivateKeyValues: (fields) => fields.privateKeys,
+      hodlNormalizePrivateKeyKind: (kind) => kind || "wif",
+    },
+    settable: ["hodlKeys", "hodlActiveKey"],
+  });
+  mod.__set.hodlKeys([state]);
+  mod.__set.hodlActiveKey(0);
+  mod.hodlCaptureKey();
+  assert.deepEqual(state.fields.privateKeys, before);
+  assert.equal(state.fields.wif, undefined);
+  assert.equal(secureKey.value, "••••••");
 });
