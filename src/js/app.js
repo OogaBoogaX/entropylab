@@ -150,10 +150,12 @@ import {
 import { KEY_VAULT_MAX_KEYS as hodlKeyVaultMaxKeys, keyVaultIdentity, keyResultSetup as hodlKeyResultSetup, parseKeyVault, serializeKeyVault, setKeyVaultModes } from "./keymanager.js";
 import { clearClipboard as hodlClearClipboard, showCopiedIcon as hodlShowCopiedIcon, copyText } from "./clipboard.js";
 import { privateCopyButtonHtml as hodlPrivateCopyButtonHtml, initPrivateCopy as hodlInitPrivateCopy, isReadoutShown as hodlReadoutIsShown, renderAnnotatedPrivateText as hodlRenderAnnotatedPrivateText } from "./private-data.js";
+import { appClipboardBytes, appClipboardPut, appClipboardText, initAppClipboard } from "./app-clipboard.js";
+import { decorateAppPaste, syncAppPaste, initAppPaste } from "./app-paste.js";
 import { publicFieldHtml as hodlPublicFieldMarkup, publicValueHtml as hodlPublicValueHtml } from "./public-data.js";
 import { bip47AccountNode as hodlBip47AccountNode, bip47AccountPath as hodlBip47AccountPath, bip47NotificationAddress as hodlBip47NotificationAddress, decodePaymentCode as hodlBip47DecodePaymentCode, encodePaymentCode as hodlBip47EncodePaymentCode, Bip47Error as hodlBip47Error, bip47PairRows as hodlBip47PairRows, bip47ReceiveRow as hodlBip47ReceiveRow, bip47DecodeNotificationTx as hodlBip47DecodeNotificationTx, hexToBytes as hodlBip47HexToBytes } from "./bip47.js";
 import { bip47OwnHtml as hodlBip47OwnHtml, bip47ContactHtml as hodlBip47ContactHtml, bip47ErrorHtml as hodlBip47ErrorHtml, bip47RowsHtml as hodlBip47RowsHtml, bip47NotifyInputsHtml as hodlBip47NotifyInputsHtml, bip47NotifyHtml as hodlBip47NotifyHtml, bip47NotifyErrorHtml as hodlBip47NotifyErrorHtml } from "./bip47-ui.js";
-import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
+import { PassphraseVault, bindVaultField, singleLineText as hodlSingleLineText } from "./passphrase-vault.js";
 import { parsePrivateKeyBytes, KeyBytesError } from "./key-bytes.js";
 import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-session.js";
 import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn, planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS as hodlSecureSupported } from "./secure-entry.js";
@@ -781,6 +783,8 @@ if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entro
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabShowStoredPassphrase = (text) => { const bytes = new TextEncoder().encode(text); try { hodlShowStoredPassphrase(bytes); } finally { bytes.fill(0); } };
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabWasmMemory = () => [hodlWasm().memory.buffer, hodlPsbtLoaderHeap().buffer];
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabStationRoot = () => hodlStationSessionXprv();
+if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabAppClipboard = () => appClipboardText();
+if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabAppClipboardPut = (text) => appClipboardPut(text);
 if (__ENTROPYLAB_TEST_HOOKS__ && globalThis.__entropyLabTest) globalThis.__entropyLabI18n = { sanitizeCatalogHtml: hodlSanitizeCatalogHtml, tHtml: hodlT, tAttr: hodlTAttr };
 function hodlJournalTestHooks() {
   return { openExport: (file) => hodlJournalOpenExport(file, hodlJournalKeys), passwordProtected: () => Boolean(hodlJournalKeys?.passwordProtected) };
@@ -1794,7 +1798,7 @@ function hodlAddressIndexHtml(index) {
 }
 function hodlAddressTableRows(rows, includeWif = false, rowOffset = 0) {
   return rows.map((row, offset) => {
-    let copyLabel = hodlTText("Copy WIF for address #{n}", { n: row.index });
+    let copyLabel = hodlTText("Copy WIF for address #{n} to EntropyLab's clipboard", { n: row.index });
     return `<tr aria-rowindex="${rowOffset + offset + 2}"><th scope="row">${hodlAddressIndexHtml(row.index)}</th><td>${hodlPublicInlineHtml(hodlDisplayDerivationPath(row.path), { clipboard: false, className: "" })}</td><td data-copy-group><button type="button" class="addr-text" data-copy-field data-public-value data-i18n-skip translate="no" title="${hodlTAttr("Copy")}">${hodlEscapeHtml(row.address)}</button>${hodlAddressQrButton(row.address, hodlT("Address #{n}", { n: row.index }))}<span class="copy-field-status is-icon-only" data-copy-status aria-live="polite"></span></td>${includeWif ? `<td data-private-field>${hodlPrivateValue(hodlRowWifCell(row), "mono table-private-field-value")}${hodlRevealPrivate && row.privateKey ? hodlPrivateCopyButton({ label: copyLabel }) : ""}</td>` : ""}</tr>`;
   }).join("");
 }
@@ -1916,11 +1920,11 @@ function hodlPrivateCopyButton(options = {}) {
 }
 // Private readouts share one label-row clipboard control. Only the shown
 // value carries data-private-value; concealed placeholders are never a source.
-function hodlPrivateFieldMarkup(labelHtml, valueHtml, { id = "", labelClass = "label", revealed = hodlRevealPrivate, copyId = "", copyAttribute = "data-private-copy", copyLabel = "Copy" } = {}) {
+function hodlPrivateFieldMarkup(labelHtml, valueHtml, { id = "", labelClass = "label", revealed = hodlRevealPrivate, copyId = "", copyAttribute = "data-private-copy", copyLabel = "Copy to EntropyLab's clipboard" } = {}) {
   return `<p class="private-field${revealed ? " is-revealed" : ""}" data-private-field${id ? ` id="${id}"` : ""}><span class="${labelClass} copy-field-label">${labelHtml}${revealed ? hodlPrivateCopyButton({ id: copyId, attribute: copyAttribute, label: copyLabel }) : ""}</span>${valueHtml}</p>`;
 }
 function hodlPrivateFieldHtml(label, value, vars, labelClass = "label", revealed = hodlRevealPrivate, copyId = "") {
-  let text = hodlTText(label, vars), labelHtml = hodlEscapeHtml(text), copyLabel = hodlTText("Copy {label}", { label: text });
+  let text = hodlTText(label, vars), labelHtml = hodlEscapeHtml(text), copyLabel = hodlTText("Copy {label} to EntropyLab's clipboard", { label: text });
   return hodlPrivateFieldMarkup(labelHtml, hodlPrivateValue(value, undefined, revealed), { labelClass, revealed, copyId, copyLabel });
 }
 // A private value held as key material, not text: hidden, it masks at its
@@ -3447,7 +3451,7 @@ function hodlSeedPhraseField(label, value) {
   let text = String(value ?? "\u2014"), shown = hodlRevealPrivate
     ? `<span class="secret private-field-value seed-phrase-value" data-private-value data-i18n-skip translate="no">${hodlSeedPhraseTokens(text)}</span>`
     : `<span class="secret private-field-value secret-placeholder seed-phrase-value"><span class="secret-placeholder-mask" aria-hidden="true">${hodlSeedPhraseTokens(text, true)}</span><span class="secret-placeholder-message" aria-hidden="true">************</span><span class="secret-placeholder-label">${hodlT("Private value hidden")}</span></span>`;
-  return hodlPrivateFieldMarkup(hodlEscapeHtml(label), shown, { copyLabel: hodlTText("Copy seed phrase") });
+  return hodlPrivateFieldMarkup(hodlEscapeHtml(label), shown, { copyLabel: hodlTText("Copy seed phrase to EntropyLab's clipboard") });
 }
 function hodlSeedQrDigits(mnemonic) {
   let words = String(mnemonic ?? "").trim().split(/\s+/).filter(Boolean);
@@ -6551,6 +6555,77 @@ function hodlSeedButtonPhrase(button) {
 function hodlClipboardIconMarkup() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`;
 }
+
+function hodlPasteIconMarkup() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path class="seed-copy-icon-board" d="M12 9v6m0 0-3-3m3 3 3-3"/></svg>`;
+}
+
+function hodlAppPasteInto(field) {
+  let bytes = appClipboardBytes();
+  if (!bytes) return;
+  // These passphrase fields keep their text in a vault, never in .value
+  // (ln-pass is a plain password field and takes the text path).
+  let vaultIds = ["pass", "bip47-pass", "sp-pass", "psbt-pass", "nonce-pass"];
+  let vault = field.id === "pass" ? hodlPassphraseVaultField : hodlStationPassphraseFields?.[field.id]?.api;
+  // A single-line field takes the paste as a typed paste would: trailing line
+  // breaks dropped, inner ones as spaces (the vault's own rule), so the same
+  // copied text is the same passphrase whichever way it arrives.
+  let singleLine = field.tagName !== "TEXTAREA", breaks = bytes.some((byte) => byte === 10 || byte === 13);
+  if (vault) {
+    let copy = singleLine && breaks ? new TextEncoder().encode(hodlSingleLineText(appClipboardText())) : bytes.slice();
+    try {
+      vault.setBytes(copy, { notify: true });
+    } catch {
+      // The vault refused the bytes and is left empty; nothing else to do.
+      return;
+    } finally {
+      copy.fill(0);
+    }
+  } else if (vaultIds.includes(field.id)) {
+    // A vault field whose vault is not bound must not take the text path.
+    return;
+  } else {
+    let event;
+    try {
+      event = new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" });
+    } catch {
+      return;
+    }
+    field.value = singleLine && breaks ? hodlSingleLineText(appClipboardText()) : appClipboardText();
+    field.dispatchEvent(event);
+  }
+  field.focus();
+}
+
+// The paste control's name says which field it fills: several can share a
+// screen, and a secret pasted into the wrong one is the mistake to prevent.
+function hodlAppPasteLabel(id) {
+  let field = {
+    "seed": () => hodlTText("seed phrase"),
+    "key": () => hodlTText("private key"),
+    "hex": () => hodlTText("hex entropy"),
+    "pass": () => hodlTText("Key Station passphrase"),
+    "bip85-key": () => hodlTText("Root xprv"),
+    "bip47-key": () => hodlTText("BIP-47 session key"),
+    "bip47-pass": () => hodlTText("BIP-47 passphrase"),
+    "sp-key": () => hodlTText("Silent Payments session key"),
+    "sp-pass": () => hodlTText("Silent Payments passphrase"),
+    "psbt-key": () => hodlTText("PSBT session key"),
+    "psbt-pass": () => hodlTText("PSBT passphrase"),
+    "nonce-key": () => hodlTText("nonce session key"),
+    "nonce-pass": () => hodlTText("nonce passphrase"),
+    "ln-seed": () => hodlTText("Lightning seed phrase"),
+    "ln-pass": () => hodlTText("Lightning passphrase"),
+    "core-add-text": () => hodlTText("output descriptor"),
+    "journal-input": () => hodlTText("raw rolls or input"),
+    "journal-phrase": () => hodlTText("BIP39 seed or passphrase"),
+  }[id];
+  return hodlTText("Paste into {field} from EntropyLab's clipboard", { field: field ? field() : id });
+}
+function hodlDecorateAppPaste() {
+  decorateAppPaste(document, { pasteIcon: hodlPasteIconMarkup, labelFor: hodlAppPasteLabel });
+  syncAppPaste(document);
+}
 function hodlSyncWarningIconMarkup() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="seed-copy-icon-board" d="M12 4 2.5 20h19L12 4Z"/><path class="seed-copy-icon-board" d="M12 10v4"/><path class="seed-copy-icon-board" d="M12 17.2v.1"/></svg>`;
 }
@@ -6630,21 +6705,21 @@ function hodlDerivedSeedRowMarkup() {
   return hodlSeedPhraseRowMarkup(hodlT("Derived seed phrase"));
 }
 function hodlSeedCopyRowMarkup(leading = "") {
-  return `<div class="seed-word-copy-row">${leading}<button type="button" class="copy-button boxed-copy-button" data-copy-seed-phrase disabled aria-label="${hodlTAttr("Copy seed phrase")}" title="${hodlTAttr("Copy seed phrase")}">${hodlClipboardIconMarkup()}</button></div>`;
+  return `<div class="seed-word-copy-row">${leading}<button type="button" class="copy-button boxed-copy-button" data-copy-seed-phrase disabled aria-label="${hodlTAttr("Copy seed phrase to EntropyLab's clipboard")}" title="${hodlTAttr("Copy seed phrase to EntropyLab's clipboard")}">${hodlClipboardIconMarkup()}</button></div>`;
 }
 function hodlShowSeedPhraseCopied(button) {
   if (!button) return;
   button.classList.add("is-copied");
   button.innerHTML = hodlCopiedIconMarkup();
-  button.setAttribute("aria-label", button.dataset.copiedLabel || hodlTText("Seed phrase copied"));
-  button.title = hodlTText("Copied");
+  button.setAttribute("aria-label", button.dataset.copiedLabel || hodlTText("Seed phrase copied to EntropyLab's clipboard"));
+  button.title = hodlTText("Copied to EntropyLab's clipboard");
   clearTimeout(button.hodlCopiedTimer);
   button.hodlCopiedTimer = setTimeout(() => {
     if (!button.isConnected) return;
     let phrase = hodlSeedButtonPhrase(button);
     button.classList.remove("is-copied");
     button.innerHTML = hodlClipboardIconMarkup();
-    let copyLabel = button.dataset.copyLabel || hodlT("Copy seed phrase");
+    let copyLabel = button.dataset.copyLabel || hodlT("Copy seed phrase to EntropyLab's clipboard");
     button.setAttribute("aria-label", phrase ? copyLabel : hodlTText("Seed phrase unavailable"));
     button.title = phrase ? copyLabel : hodlTText("Seed phrase unavailable");
   }, 1600);
@@ -6655,7 +6730,7 @@ function hodlCopySeedPhraseButton(button) {
   let done = () => {
     hodlShowSeedPhraseCopied(button);
   };
-  copyText(phrase).then((copied) => { if (copied) done(); });
+  if (appClipboardPut(phrase)) done();
 }
 function hodlRenderDiceWordGrid(container, words, targetWords = hodlTargetWordCount, provisional = false) {
   if (!container) return;
@@ -6687,8 +6762,8 @@ function hodlRenderDiceWordGrid(container, words, targetWords = hodlTargetWordCo
   if (copy) {
     copy.disabled = !phrase;
     if (!copy.classList.contains("is-copied")) {
-      copy.setAttribute("aria-label", phrase ? hodlTText("Copy seed phrase") : hodlTText("Seed phrase unavailable"));
-      copy.title = phrase ? hodlTText("Copy seed phrase") : hodlTText("Seed phrase unavailable");
+      copy.setAttribute("aria-label", phrase ? hodlTText("Copy seed phrase to EntropyLab's clipboard") : hodlTText("Seed phrase unavailable"));
+      copy.title = phrase ? hodlTText("Copy seed phrase to EntropyLab's clipboard") : hodlTText("Seed phrase unavailable");
     }
     if (!copy.hodlCopyBound) {
       copy.onclick = () => hodlCopySeedPhraseButton(copy);
@@ -6864,7 +6939,13 @@ var hodlSeedPicker = null, hodlSeedPickerImport = null;
 // The three PSBT scan panels are the same preview-only extra: release builds
 // strip their hosts and never import the module.
 var hodlPsbtScans = [], hodlPsbtScanModule = null, hodlPsbtScanImport = null;
-const hodlPsbtScanHosts = [["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"]];
+// Every PSBT field: the three tools' main fields, and the fee-bump original,
+// the PSBT sent to the signer and the Editor's comparison PSBT (owner 11-01:
+// scanners in every section that takes one).
+const hodlPsbtScanHosts = [
+  ["psbt-scan-host", "psbt-text"], ["nonce-scan-host", "nonce-text"], ["psbted-scan-host", "psbted-text"],
+  ["rbf-scan-host", "psbt-rbf-original"], ["audit-scan-host", "psbt-audit-before"], ["psbted-compare-scan-host", "psbted-compare-text"],
+];
 function hodlKeyScanHostMarkup() {
   return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
 }
@@ -7625,6 +7706,77 @@ function hodlResetPsbtScans() {
   try { hodlDestroyPsbtScans(); } catch {}
   try { hodlBindPsbtScans(); } catch {}
 }
+
+// Public-text scan panels: every host that names its field (data-scan-field)
+// and what it reads (data-scan-accept). They ship in every build; no secret
+// field has a host.
+var hodlTextScans = [], hodlTextScanModule = null, hodlTextScanImport = null, hodlTextScanEpoch = 0;
+// Each tool's Clear closes the text scan panels in its card. The MultiSig
+// Clear re-renders its station, which resets them there.
+const hodlTextScanClears = [["ln-inv-clear", "ln-inv-card"], ["ln-wipe", "ln-card"], ["sp-wipe", "sp-card"], ["psbt-wipe", "psbt-card"], ["core-wipe", "core-card"]];
+function hodlBindTextScans() {
+  let hosts = typeof document.querySelectorAll === "function" ? [...document.querySelectorAll("[data-scan-field]")] : [];
+  if (!hosts.length) return;
+  if (!hodlTextScanImport) {
+    hodlTextScanImport = import("./qr-text-scan.js").then((module) => {
+      hodlTextScanModule = module;
+      return module;
+    }).catch(() => null);
+  }
+  let epoch = hodlTextScanEpoch;
+  hodlTextScanImport.then((module) => {
+    if (!module || epoch !== hodlTextScanEpoch) return;
+    for (let host of hosts) {
+      let field = document.getElementById(host.dataset.scanField);
+      if (!host.id || !field || !host.isConnected || host.childNodes.length) continue;
+      if (hodlTextScans.some((entry) => entry.host === host)) continue;
+      try {
+        hodlTextScans.push({ host, panel: module.mountTextScan(host, { field, accept: host.dataset.scanAccept, mode: host.dataset.scanMode || "replace" }) });
+      } catch {
+        try { host.replaceChildren(); } catch {}
+      }
+    }
+  }).catch(() => {});
+}
+// With a container id, only the panels inside it (and any whose host left the
+// page) come down; without one, all of them.
+function hodlDestroyTextScans(root = "") {
+  hodlTextScanEpoch++;
+  let container = root ? document.getElementById(root) : null, keep = [], gone = [];
+  for (let entry of hodlTextScans) {
+    let inside = !root || !entry.host.isConnected || Boolean(container?.contains(entry.host));
+    (inside ? gone : keep).push(entry);
+  }
+  hodlTextScans = keep;
+  for (let entry of gone) {
+    try { entry.panel?.destroy(); } catch {
+      try { entry.host.replaceChildren(); } catch {}
+    }
+  }
+}
+function hodlResetTextScans(root = "") {
+  try { hodlDestroyTextScans(root); } catch {}
+  try { hodlBindTextScans(); } catch {}
+}
+// A collapsed section, or Clear Comparison, closes only the panels inside it,
+// so a scan running on another field keeps its camera and its frames (Kimi,
+// MiniMax), and gives those hosts fresh, closed panels.
+function hodlResetPsbtScansIn(container) {
+  if (!container) return;
+  let kept = [];
+  for (let entry of hodlPsbtScans) {
+    let host = document.getElementById(entry.hostId);
+    if (!host || !container.contains(host)) {
+      kept.push(entry);
+      continue;
+    }
+    try { entry.panel?.destroy(); } catch {
+      try { host.replaceChildren(); } catch {}
+    }
+  }
+  hodlPsbtScans = kept;
+  try { hodlBindPsbtScans(); } catch {}
+}
 function hodlMountSeedPicker() {
   let host = document.getElementById("seed-picker-host");
   if (!host || !hodlSecureSeedActive()) return;
@@ -7780,6 +7932,7 @@ function hodlBindKeyFields() {
     apply();
   }
   hodlBindKeyScan();
+  hodlDecorateAppPaste();
 }
 function hodlSelectedEntropy(targetWords = hodlTargetWordCount) {
   let format = hodlNormalizeEntropyFormat(hodlEntropyFormat), value = document.getElementById(format)?.value.trim() || "";
@@ -8863,7 +9016,7 @@ function hodlSyncMsigDescriptorImport(fromFields = false) {
   let button = document.getElementById("msig-descriptor-import"), field = document.getElementById("msig-descriptor"), status = document.getElementById("msig-descriptor-status");
   if (!button) return;
   let occupied = hodlReadMsigXpubs().some((value) => String(value).trim()), empty = !String(field?.value ?? "").trim();
-  button.disabled = occupied || empty;
+  button.disabled = occupied || empty || (typeof hodlMsigBip138Pending === "function" && hodlMsigBip138Pending());
   button.setAttribute("aria-disabled", String(button.disabled));
   if (!status) return;
   if (fromFields) delete status.dataset.result;
@@ -9394,6 +9547,11 @@ function hodlReindexMsigKeys() {
       title = row.querySelector(".msig-key-title"),
       fingerprint = row.querySelector(".msig-master-fingerprint");
     if (ta) ta.id = "msig-x-" + index;
+    let scanHost = row.querySelector("[data-scan-field]");
+    if (scanHost && ta) {
+      scanHost.id = "msig-scan-x-" + index;
+      scanHost.dataset.scanField = ta.id;
+    }
     if (title) {
       title.id = "msig-cosigner-" + index + "-label";
       title.textContent = hodlTText("Co-signer {n}", { n: index + 1 });
@@ -9407,7 +9565,8 @@ function hodlReindexMsigKeys() {
     fingerprint?.setAttribute("aria-label", hodlTText("Master fingerprint for co-signer {n}", { n: index + 1 }));
   });
   hodlSyncMsigKeyMoveButtons();
-  hodlUpdateMsigKeyPlaceholders()
+  hodlUpdateMsigKeyPlaceholders();
+  if (typeof hodlResetTextScans === "function") hodlResetTextScans("msig-keys");
 }
 
 function hodlMoveMsigKeyRow(row, offset) {
@@ -10604,6 +10763,7 @@ function hodlFillKeys(values, specs) {
   // A key that stays keeps its card's spec; a new key's origin pre-selects one.
   let previousSpecs = new Map([...box.querySelectorAll(".msig-key-row")].map((row) => [hodlMsigRowValue(row), hodlMsigRowSpec(row)]));
   box.classList.toggle("msig-keys-listed", listed);
+  if (typeof hodlDestroyTextScans === "function") hodlDestroyTextScans("msig-keys");
   box.innerHTML = "";
   for (let i = 0; i < n; i++) {
     let row = document.createElement("div");
@@ -10661,6 +10821,11 @@ function hodlFillKeys(values, specs) {
     chips.setAttribute("role", "group");
     chips.setAttribute("aria-label", hodlTText("Existing keys for co-signer {n}", { n: i + 1 }));
     lab.append(ta);
+    let scanHost = document.createElement("div");
+    scanHost.id = "msig-scan-x-" + i;
+    scanHost.dataset.scanField = ta.id;
+    scanHost.dataset.scanAccept = "xpub";
+    scanHost.className = "text-scan-host";
     let pathLabel = document.createElement("label");
     pathLabel.className = "field msig-full-path-field";
     pathLabel.textContent = hodlTText("Full derivation path");
@@ -10722,7 +10887,7 @@ function hodlFillKeys(values, specs) {
     keyStatus.dataset.msigKeyStatus = "";
     keyStatus.setAttribute("role", "status");
     keyStatus.hidden = true;
-    content.append(chips, keyStatus, lab, specLabel, originFields, advanced);
+    content.append(chips, keyStatus, lab, scanHost, specLabel, originFields, advanced);
     box.appendChild(row);
     hodlSyncMsigRowSpec(row, specs?.[i] || previousSpecs.get(ta.value.trim()) || hodlMsigSpecForValue(ta.value));
     specSelect.addEventListener("change", () => hodlApplyMsigRowSpec(row));
@@ -10776,6 +10941,7 @@ function hodlFillKeys(values, specs) {
   hodlUpdateMsigAccount();
   hodlSyncMsigDescriptorImport();
   hodlRefreshMsigSessionPickers();
+  if (typeof hodlBindTextScans === "function") hodlBindTextScans();
 }
 function hodlMultisigPrefixCompatible(parsed, kind, purpose) {
   if (kind === "p2tr" || purpose === 87) return parsed.family === "x";
@@ -10959,6 +11125,7 @@ function hodlResetMsigForm() {
   // MS Station starts on the import panel: a fresh station and a cleared one
   // both open it, since pasting a descriptor is the usual way in.
   if (descriptorPanel) descriptorPanel.open = true;
+  if (typeof hodlMsigBip138Reset === "function") hodlMsigBip138Reset();
   hodlSyncMsigDescriptorImport();
 }
 function hodlInitMsig() {
@@ -11064,6 +11231,7 @@ function hodlInitMsig() {
     hodlSyncMsigDescriptorImport();
     hodlSyncMsigClearButton(true);
   });
+  if (typeof hodlInitMsigBip138Open === "function") hodlInitMsigBip138Open();
 }
 // The multisig script type is a button group, not a field to read: the choice
 // lives here and the pressed segment reports it. "mixed" is a state the
@@ -11298,11 +11466,218 @@ function hodlShowMsig() {
       ${hodlMsigCoreImportDescriptorsMarkup()}
       ${hodlMsigPolicySheetMarkup()}
       ${hodlMsigBip388Markup()}
+      ${typeof hodlMsigBip138HostMarkup === "function" ? hodlMsigBip138HostMarkup() : ""}
     </section>`;
   hodlBindAddressVirtualization(hodlAddressBranchVirtualConfigs(branches, false, "msig"));
   hodlWatchMsigGroups();
   hodlBindAddressMatch();
   hodlBindMsigCoreImportDescriptors();
+  if (typeof hodlMountMsigBip138Backup === "function") hodlMountMsigBip138Backup();
+}
+// BIP-138 encrypted backups of the multisig descriptor, preview builds only:
+// release builds strip the open controls from the shell, render no backup
+// host and never import the module.
+var hodlBip138Import = null, hodlMsigBip138Backup = null, hodlMsigBip138Open = null, hodlMsigBip138Epoch = 0, hodlMsigBip138OpenEpoch = 0;
+function hodlLoadBip138() {
+  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
+    if (!hodlBip138Import) hodlBip138Import = import("./bip138.js").catch(() => null);
+    return hodlBip138Import;
+  }
+  return Promise.resolve(null);
+}
+function hodlMsigBip138HostMarkup() {
+  if (!(typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__)) return "";
+  if (!hodlWalletResult || hodlWalletResult.kind !== "msig" || !hodlWalletResult.walletDescriptor) return "";
+  return '<div id="msig-bip138-host"></div>';
+}
+function hodlMsigBip138ReasonText(reason) {
+  if (reason === "literal") return hodlTText("it is a single public key, not an xpub");
+  if (reason === "nums") return hodlTText("it is a publicly known fixed key");
+  return hodlTText("its xpub becomes visible on the blockchain when coins are spent");
+}
+// One line per co-signer key that cannot open the backup (the Taproot
+// internal key is no co-signer and gets none), then the two downloads, shown
+// only for a backup that was opened again and matched.
+function hodlMsigBip138Markup(view) {
+  let lines = (view?.exclusions || []).filter((entry) => !entry.internal && Number.isSafeInteger(entry.index)).map((entry) => `<p class="edge-note is-private" data-bip138-excluded="${entry.index + 1}">${hodlT("Key {n} can't open this backup: {reason}. Whoever has only that key will need another cosigner's xpub, or a plain copy of the descriptor.", { n: String(entry.index + 1), reason: hodlMsigBip138ReasonText(entry.reason) })}</p>`).join("");
+  let actions = view?.ready
+    ? `<div class="row tool-actions"><button class="btn secondary" id="msig-bip138-download" type="button">${hodlT("Download encrypted backup")}</button><button class="btn secondary" id="msig-bip138-download-text" type="button">${hodlT("Download as text")}</button></div>`
+    : `<p class="edge-note is-private" data-bip138-none>${hodlT("Can't make this backup: none of this wallet's keys can open one. Keep a plain copy of the descriptor instead.")}</p>`;
+  return `<details class="wallet-advanced no-print" id="msig-bip138" data-bip138-backup><summary>${hodlT("Encrypted backup")}</summary><p class="edge-note is-info">${hodlT("Encrypts this wallet's watch-only details so a copy on a USB drive, in email or in cloud storage doesn't show strangers your addresses or keys. Anyone with one of this wallet's xpubs can open it. It is not a seed backup and cannot spend coins.")}</p><p class="edge-note is-muted">${hodlT("BIP-138 is a draft standard and may change; keep a plain copy of the descriptor too.")}</p>${lines}${actions}</details>`;
+}
+function hodlMountMsigBip138Backup() {
+  let host = document.getElementById("msig-bip138-host"), result = hodlWalletResult, epoch = ++hodlMsigBip138Epoch;
+  hodlMsigBip138Backup = null;
+  if (!host || !result || result.kind !== "msig" || !result.walletDescriptor) return;
+  hodlLoadBip138().then((module) => {
+    if (!module || epoch !== hodlMsigBip138Epoch || hodlWalletResult !== result || !host.isConnected) return;
+    let built = null;
+    try {
+      built = module.bip138CreateDescriptorBackup(result.walletDescriptor);
+    } catch {
+      return;
+    }
+    let ready = built?.status === "ok" && built.bytes instanceof Uint8Array;
+    hodlMsigBip138Backup = ready ? { result, bytes: built.bytes, module } : null;
+    host.innerHTML = hodlMsigBip138Markup({ exclusions: built?.exclusions || [], ready });
+    document.getElementById("msig-bip138-download")?.addEventListener("click", () => hodlDownloadMsigBip138(false));
+    document.getElementById("msig-bip138-download-text")?.addEventListener("click", () => hodlDownloadMsigBip138(true));
+  }).catch(() => {});
+}
+function hodlDownloadMsigBip138(asText) {
+  let backup = hodlMsigBip138Backup;
+  if (!backup || backup.result !== hodlWalletResult) return;
+  let blob = asText ? new Blob([backup.module.bip138ToBase64(backup.bytes)], { type: "text/plain" }) : new Blob([backup.bytes.slice()], { type: "application/octet-stream" });
+  let url = URL.createObjectURL(blob), link = document.createElement("a");
+  link.href = url;
+  link.download = asText ? "wallet-backup.txt" : "wallet-backup.bip138";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1e3);
+}
+function hodlMsigBip138LooksLikeText(value) {
+  return String(value ?? "").replace(/\s+/g, "").startsWith("QklQMTM4");
+}
+// A pasted backup is ciphertext, not a descriptor: the import button stays
+// off until the backup has been opened into one.
+function hodlMsigBip138Pending() {
+  if (!document.getElementById("msig-backup-open")) return false;
+  return hodlMsigBip138LooksLikeText(document.getElementById("msig-descriptor")?.value);
+}
+function hodlMsigBip138StatusText(code) {
+  if (code === "prompt") return hodlTText("Enter one of this wallet's xpubs to open the backup. Never enter a seed or private key.");
+  if (code === "not-backup") return hodlTText("This isn't a BIP-138 backup. Choose a .bip138 file or its text version. Nothing was imported.");
+  if (code === "unsupported") return hodlTText("This backup uses a BIP-138 version EntropyLab doesn't support yet. Nothing was imported.");
+  if (code === "wrong-key") return hodlTText("Couldn't open this backup. The xpub may not be one of this wallet's keys, or the file may be damaged or changed. Nothing was imported.");
+  if (code === "private-key") return hodlTText("Refused: this backup contains private keys. Nothing was imported.");
+  return hodlTText("This backup looks incomplete or damaged. Try another copy. Nothing was imported.");
+}
+function hodlMsigBip138StatusCode(errorCode) {
+  if (errorCode === "magic" || errorCode === "too-large") return "not-backup";
+  if (errorCode === "unsupported-version" || errorCode === "unsupported-encryption" || errorCode === "unsupported-content") return "unsupported";
+  if (errorCode === "wrong-key" || errorCode === "private-key") return errorCode;
+  return "damaged";
+}
+// The status line carries its state in data-bip138-status for tests.
+function hodlMsigBip138Status(code) {
+  let status = document.getElementById("msig-backup-status");
+  if (!status) return;
+  let text = code ? hodlMsigBip138StatusText(code) : "";
+  status.textContent = text;
+  status.setAttribute("data-bip138-status", code || "");
+  status.hidden = !text;
+}
+function hodlMsigBip138Drop() {
+  hodlMsigBip138Open = null;
+  hodlMsigBip138OpenEpoch++;
+  let field = document.getElementById("msig-backup-xpub"), row = document.getElementById("msig-backup-xpub-row");
+  if (field) field.value = "";
+  if (row) row.hidden = true;
+}
+function hodlMsigBip138Hold(module, bytes, source) {
+  hodlMsigBip138Drop();
+  try {
+    module.bip138ParseBackup(bytes);
+  } catch (error) {
+    hodlMsigBip138Status(hodlMsigBip138StatusCode(error?.code));
+    return;
+  }
+  hodlMsigBip138Open = { module, bytes, source };
+  let row = document.getElementById("msig-backup-xpub-row");
+  if (row) row.hidden = false;
+  hodlMsigBip138Status("prompt");
+}
+function hodlMsigBip138CheckText() {
+  let field = document.getElementById("msig-descriptor");
+  if (!field || !document.getElementById("msig-backup-open")) return;
+  let text = field.value;
+  if (!hodlMsigBip138LooksLikeText(text)) {
+    if (hodlMsigBip138Open?.source === "text") {
+      hodlMsigBip138Drop();
+      hodlMsigBip138Status("");
+    }
+    return;
+  }
+  let epoch = ++hodlMsigBip138OpenEpoch;
+  hodlLoadBip138().then((module) => {
+    if (!module || epoch !== hodlMsigBip138OpenEpoch || field.value !== text) return;
+    let bytes = null;
+    try {
+      bytes = module.bip138BytesFromText(text);
+    } catch {
+      hodlMsigBip138Drop();
+      hodlMsigBip138Status("damaged");
+      return;
+    }
+    hodlMsigBip138Hold(module, bytes, "text");
+  }).catch(() => {});
+}
+function hodlMsigBip138TryOpen() {
+  let field = document.getElementById("msig-backup-xpub"), held = hodlMsigBip138Open;
+  if (!field || !held) return;
+  let parsed = held.module.bip138KeyFromXpubText(field.value);
+  if (parsed.status === "private-key") field.value = "";
+  if (parsed.status !== "ok") {
+    hodlMsigBip138Status("prompt");
+    return;
+  }
+  let opened = null;
+  try {
+    opened = held.module.bip138OpenDescriptorBackup(held.bytes, parsed.key);
+  } catch (error) {
+    let code = hodlMsigBip138StatusCode(error?.code);
+    if (code !== "wrong-key") hodlMsigBip138Drop();
+    hodlMsigBip138Status(code);
+    return;
+  } finally {
+    parsed.key.fill(0);
+  }
+  hodlMsigBip138Drop();
+  hodlMsigBip138Status("");
+  let descriptor = document.getElementById("msig-descriptor");
+  if (!descriptor) return;
+  descriptor.value = opened.descriptor;
+  descriptor.dispatchEvent(new Event("input", { bubbles: true }));
+}
+function hodlInitMsigBip138Open() {
+  let open = document.getElementById("msig-backup-open"), file = document.getElementById("msig-backup-file"), xpub = document.getElementById("msig-backup-xpub"), descriptor = document.getElementById("msig-descriptor");
+  if (!open || !file || !xpub || !descriptor) return;
+  open.addEventListener("click", () => file.click());
+  file.addEventListener("change", () => {
+    const chosen = file.files?.[0];
+    file.value = "";
+    if (!chosen) return;
+    hodlMsigBip138Drop();
+    hodlMsigBip138Status("");
+    let epoch = hodlMsigBip138OpenEpoch;
+    if (!(chosen.size <= 1048576)) {
+      hodlMsigBip138Status("not-backup");
+      return;
+    }
+    Promise.all([hodlLoadBip138(), chosen.arrayBuffer()]).then(([module, buffer]) => {
+      if (!module || epoch !== hodlMsigBip138OpenEpoch) return;
+      let raw = new Uint8Array(buffer), bytes = null;
+      try {
+        bytes = module.bip138BytesFromFile(raw);
+      } catch (error) {
+        hodlMsigBip138Status(hodlMsigBip138StatusCode(error?.code));
+        return;
+      } finally {
+        raw.fill(0);
+      }
+      hodlMsigBip138Hold(module, bytes, "file");
+    }).catch(() => {});
+  });
+  descriptor.addEventListener("input", hodlMsigBip138CheckText);
+  xpub.addEventListener("input", hodlMsigBip138TryOpen);
+}
+function hodlMsigBip138Reset() {
+  hodlMsigBip138Backup = null;
+  hodlMsigBip138Epoch++;
+  hodlMsigBip138Drop();
+  hodlMsigBip138Status("");
+  let file = document.getElementById("msig-backup-file");
+  if (file) file.value = "";
+  hodlMsigBip138CheckText();
 }
 // hodlPsbtLast and hodlNonceLast hold each inspector's last run (what was
 // parsed, and the network and transcript it was read with) so a language
@@ -13678,9 +14053,9 @@ function hodlCopyBip85Child(button) {
   if (!phrase) return;
   let done = () => {
     if (!button.isConnected || !hodlBip85Reveal) return;
-    hodlShowCopiedIcon(button, { copyIcon: hodlClipboardIconMarkup(), copiedIcon: hodlCopiedIconMarkup() });
+    hodlShowCopiedIcon(button, { copyIcon: hodlClipboardIconMarkup(), copiedIcon: hodlCopiedIconMarkup(), copiedLabel: hodlTText("Copied to EntropyLab's clipboard") });
   };
-  copyText(phrase).then((copied) => { if (copied) done(); });
+  if (appClipboardPut(phrase)) done();
 }
 function hodlRenderBip85Out() {
   let box = document.getElementById("bip85-out");
@@ -18379,6 +18754,7 @@ function hodlCaptureMsig() {
 }
 function hodlRestoreMsig() {
   hodlSyncWorkspaceCounts();
+  if (typeof hodlResetTextScans === "function") hodlResetTextScans("msig-card");
   let state = hodlMsigs[hodlActiveMsig], panel = document.getElementById("msig-card");
   if (!state) {
     hodlWalletResult = null;
@@ -18416,6 +18792,7 @@ function hodlRestoreMsig() {
   hodlUpdateAddressEstimate("msig-");
   let descriptor = document.getElementById("msig-descriptor"), descriptorStatus = document.getElementById("msig-descriptor-status");
   if (descriptor) descriptor.value = state.fields.descriptor || "";
+  if (typeof hodlMsigBip138Reset === "function") hodlMsigBip138Reset();
   if (descriptorStatus) {
     delete descriptorStatus.dataset.result;
     descriptorStatus.textContent = "";
@@ -18657,6 +19034,7 @@ function hodlShowWorkspace(id) {
   if (hodlWorkspace === "sp" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
   // Leaving the Transactions workspace closes an open scan panel.
   if (hodlWorkspace === "psbt" && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
+  if (typeof hodlResetTextScans === "function") hodlResetTextScans();
   hodlWorkspace = id;
   [...hodlElement("#workspace-tabs").querySelectorAll("[data-workspace]")].forEach((button) => {
     let active = button.dataset.workspace === id;
@@ -18876,6 +19254,7 @@ function hodlShowPsbtTool(id, focus = false) {
   // Switching tools hides the card an open scan panel sits in: close it
   // first, so its camera stops (Kimi, GLM, MiniMax on #1358).
   if (changed && typeof hodlResetPsbtScans === "function") hodlResetPsbtScans();
+  if (changed && typeof hodlResetTextScans === "function") hodlResetTextScans("psbt-card");
   hodlPsbtTool = next;
   hodlSyncPsbtTool();
   if (changed) hodlJournalLog("tool-tab", hodlPsbtTool, "psbt");
@@ -18930,6 +19309,7 @@ function hodlShowPrivacyTool(id, focus = false) {
   if (!document.getElementById("privacy-tool-tabs")) return;
   let next = hodlPrivacyTools.some(([tool]) => tool === id) ? id : "sp",
       changed = next !== hodlPrivacyTool;
+  if (changed && typeof hodlResetTextScans === "function") hodlResetTextScans();
   // A revealed spending key never outlives the station it was shown on.
   if (next !== "bip47" && typeof hodlBip47Conceal === "function") hodlBip47Conceal();
   hodlPrivacyTool = next;
@@ -19033,10 +19413,11 @@ function hodlJournalSyncCopyButton(field, button = document.getElementById("jour
 async function hodlJournalCopyContent(button, field, notebook = false, isCurrent = () => true) {
   if (!button || button.disabled || !hodlReadoutIsShown(button) || !hodlReadoutIsShown(field) || !isCurrent()) return false;
   if (notebook && !field.value.trim()) return false;
-  // Notes and imported debug events can contain secrets. Read them only for
-  // this click; the clipboard control never keeps a second payload copy.
+  // Notes and imported debug events can contain secrets, so they copy to
+  // EntropyLab's clipboard, never to the system clipboard. Read them only for this click;
+  // the clipboard control never keeps a second payload copy.
   let text = notebook ? hodlJournalFormatNotebook(hodlJournalPageNotesText({ ...hodlJournalActivePage(), notesText: field.value })) : field.textContent;
-  let copied = await copyText(text, { isCurrent });
+  let copied = isCurrent() && appClipboardPut(text);
   if (copied && isCurrent() && hodlReadoutIsShown(button) && hodlReadoutIsShown(field)) hodlShowCopiedIcon(button, {
     copyIcon: hodlClipboardIconMarkup(),
     copiedIcon: hodlCopiedIconMarkup(),
@@ -19050,8 +19431,10 @@ async function hodlJournalCopyLog() {
   let isCurrent = () => generation === hodlJournalGeneration && journal === hodlJournal && log === journal.log && hodlJournalUnlocked();
   let button = document.getElementById("journal-log-copy"), field = document.getElementById("journal-log-out");
   if (!isCurrent() || !button || button.disabled || !hodlReadoutIsShown(button) || !hodlReadoutIsShown(field)) return false;
+  // Imported debug events can contain secrets, so the log copies to
+  // EntropyLab's clipboard, never to the system clipboard.
   let text = hodlJournalFormatLog(log, journal.logDiscarded);
-  let copied = await copyText(text, { isCurrent });
+  let copied = isCurrent() && appClipboardPut(text);
   if (copied && isCurrent() && hodlReadoutIsShown(button)) hodlShowCopiedIcon(button, {
     copyIcon: hodlClipboardIconMarkup(), copiedIcon: hodlCopiedIconMarkup(),
     label: hodlTText(button.dataset.copyLabel || "Copy"),
@@ -21634,13 +22017,14 @@ function hodlVanityInputsReady() {
     return false;
   }
 }
-function hodlCopyVanityValue(button, value, label) {
+function hodlCopyVanityValue(button, value, label, { app = false } = {}) {
   if (!value || !button || button.disabled) return;
   let done = () => {
     button.classList.add("is-copied");
     button.innerHTML = hodlCopiedIconMarkup();
-    button.setAttribute("aria-label", hodlTText("Copied"));
-    button.title = hodlTText("Copied");
+    let copiedLabel = app ? hodlTText("Copied to EntropyLab's clipboard") : hodlTText("Copied");
+    button.setAttribute("aria-label", copiedLabel);
+    button.title = copiedLabel;
     clearTimeout(button.hodlCopiedTimer);
     button.hodlCopiedTimer = setTimeout(() => {
       if (!button.isConnected) return;
@@ -21650,7 +22034,11 @@ function hodlCopyVanityValue(button, value, label) {
       button.title = label;
     }, 1600);
   };
-  copyText(value).then((copied) => { if (copied) done(); });
+  if (app) {
+    if (appClipboardPut(value)) done();
+  } else {
+    copyText(value).then((copied) => { if (copied) done(); });
+  }
 }
 // The master fingerprint the key will carry once a match is applied: a new
 // passphrase is a new seed, so each passphrase-grind row is its own
@@ -21709,7 +22097,7 @@ function hodlRenderVanityOut() {
     let secret = hodlVanityReveal
       ? `<span class="mono vanity-pass-text table-private-field-value" data-private-value data-i18n-skip translate="no">${hodlEscapeHtml(match.passphrase)}</span>`
       : `<span class="mono vanity-pass-text" aria-hidden="true">${hodlEscapeHtml("•".repeat(12))}</span><span class="sr-only">${hodlT("Passphrase hidden — turn on the Private data switch above to reveal")}</span>`;
-    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, hodlTAttr("Copy passphrase"))}</span></td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
+    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, hodlTAttr("Copy passphrase to EntropyLab's clipboard"))}</span></td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
   }).join("");
   let overflow = hodlVanityFound > hodlVanityMatches.length ? `<p class="muted">${hodlT("Only the first {n} matches are listed; {total} found in total.", { n: hodlVanityMatches.length, total: hodlVanityFormatCount(hodlVanityFound) })}</p>` : "";
   // Plain text: the description below escapes it once, as a placeholder value.
@@ -22122,7 +22510,7 @@ function hodlInitVanity() {
     let secretButton = event.target.closest("[data-vanity-copy]");
     if (secretButton) {
       let match = hodlVanityMatches[Number(secretButton.dataset.vanityCopy)];
-      if (match && hodlVanityReveal && !secretButton.disabled) hodlCopyVanityValue(secretButton, match.passphrase, hodlTText("Copy passphrase"));
+      if (match && hodlVanityReveal && !secretButton.disabled) hodlCopyVanityValue(secretButton, match.passphrase, hodlTText("Copy passphrase to EntropyLab's clipboard"), { app: true });
       return;
     }
     let addressButton = event.target.closest("[data-vanity-copy-address], [data-vanity-copy-address-value]");
@@ -22764,12 +23152,15 @@ function hodlInitSecretFieldAutoClear() {
     // The PSBT panels come down before any decoder is retired (their decoders
     // live in the same registry as the Key Station's), then the registry goes.
     try { hodlDestroyPsbtScans(); } catch {}
+    try { hodlDestroyTextScans(); } catch {}
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
     try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}
+    try { hodlTextScanModule?.retireQrDecoders(); } catch {}
     // The form outlives the wipe: give it a fresh, closed panel.
     try { hodlBindKeyScan(); } catch {}
     // The PSBT hosts are static: give them fresh, closed panels too.
     try { hodlBindPsbtScans(); } catch {}
+    try { hodlBindTextScans(); } catch {}
     try { hodlSecureEntryConfirm?.close({ restoreFocus: false }); } catch {}
     try { hodlSecureEntryEnd(); } catch {}
     // The seed form showed the picker: redraw it as the standard field.
@@ -22847,6 +23238,8 @@ function hodlApplyLocale() {
   hodlRefreshVanityLocale();
   hodlRefreshStationKeyPickers();
   hodlJournalRenderVisual();
+  // The paste controls fill their field's name into their labels.
+  hodlDecorateAppPaste();
   // The co-signer titles and labels, the BIP-85 child and the Silent Payments
   // results fill values into their text, so they render again too.
   hodlReindexMsigKeys();
@@ -22864,6 +23257,8 @@ function hodlApplyLocale() {
   document.querySelectorAll("#msig-keys textarea").forEach((ta) => {
     if (ta.value) hodlCheckXpub(ta);
   });
+  try { hodlDestroyTextScans(); } catch {}
+  try { hodlBindTextScans(); } catch {}
   // These three hosts are static, so a language switch re-mounts the panels
   // to pick up the new strings (the Key Station's is re-rendered above).
   try { hodlDestroyPsbtScans(); } catch {}
@@ -22896,11 +23291,22 @@ async function hodlBoot() {
   hodlInitSegmentedControls();
   initQrReferences({ copy: hodlClipboardIconMarkup, copied: hodlCopiedIconMarkup });
   hodlInitDescriptorCopy({ onCopyStart: hodlJournalCopyStart });
+  initAppClipboard();
+  initAppPaste({ fill: hodlAppPasteInto });
+  hodlDecorateAppPaste();
   hodlInitPrivateCopy({ copyIcon: hodlClipboardIconMarkup, copiedIcon: hodlCopiedIconMarkup, onCopyStart: hodlJournalCopyStart });
   hodlInitEndSession();
   hodlBindPsbtScans();
   // Each PSBT tool's Clear closes its scan panel too.
   for (let id of ["psbt-wipe", "nonce-wipe", "psbted-wipe"]) document.getElementById(id)?.addEventListener("click", hodlResetPsbtScans);
+  hodlBindTextScans();
+  for (let [button, card] of hodlTextScanClears) document.getElementById(button)?.addEventListener("click", () => hodlResetTextScans(card));
+  // Clear Comparison closes the comparison field's panel only.
+  document.getElementById("psbted-compare-clear")?.addEventListener("click", () => hodlResetPsbtScansIn(document.getElementById("psbted-compare")));
+  // The RBF and signer-audit hosts sit in collapsible sections: collapsing one
+  // hides its panel, so it closes that panel, or the camera would keep
+  // streaming out of sight (Kimi, GLM, DeepSeek).
+  for (let id of ["psbt-rbf-options", "psbt-audit-options"]) document.getElementById(id)?.addEventListener("toggle", (event) => { if (!event.currentTarget.open) hodlResetPsbtScansIn(event.currentTarget); });
   hodlInitLocale(hodlApplyLocale);
 }
 // Curve operations need the WebAssembly module instantiated first (async in

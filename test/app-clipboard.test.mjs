@@ -1,0 +1,215 @@
+// The app's own clipboard for private values: one value held as UTF-8 bytes,
+// never written to the system clipboard. End Session (pagehide) and every
+// conceal (hodl:conceal) zero it.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { appClipboardPut, appClipboardHas, appClipboardText, appClipboardBytes, appClipboardClear, initAppClipboard } from "../src/js/app-clipboard.js";
+
+const withDocument = (body) => {
+  const events = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "document");
+  Object.defineProperty(globalThis, "document", { configurable: true, value: { dispatchEvent: (event) => events.push(event.type) } });
+  try { return body(events); }
+  finally {
+    appClipboardClear();
+    if (previous) Object.defineProperty(globalThis, "document", previous);
+    else delete globalThis.document;
+  }
+};
+
+test("put, has and text round-trip the exact value, including non-ASCII text", () => withDocument(() => {
+  appClipboardClear();
+  assert.equal(appClipboardHas(), false);
+  assert.equal(appClipboardText(), "");
+  assert.equal(appClipboardPut("abandon ability"), true);
+  assert.equal(appClipboardHas(), true);
+  assert.equal(appClipboardText(), "abandon ability");
+  assert.equal(appClipboardPut("  pássphrase ✓  "), true);
+  assert.equal(appClipboardText(), "  pássphrase ✓  ");
+}));
+
+test("a second put zeroes the first value's bytes", () => withDocument(() => {
+  appClipboardClear();
+  appClipboardPut("first secret");
+  const first = appClipboardBytes();
+  assert.ok(first instanceof Uint8Array);
+  assert.ok(first.length > 0);
+  appClipboardPut("second secret");
+  assert.ok(first.every((byte) => byte === 0), "the previous buffer is zeroed in place");
+  assert.equal(appClipboardText(), "second secret");
+}));
+
+test("clear zeroes the held bytes and empties the store", () => withDocument(() => {
+  appClipboardClear();
+  appClipboardPut("secret");
+  const held = appClipboardBytes();
+  appClipboardClear();
+  assert.ok(held.every((byte) => byte === 0));
+  assert.equal(appClipboardHas(), false);
+  assert.equal(appClipboardText(), "");
+  assert.equal(appClipboardBytes(), null);
+}));
+
+test("put refuses an empty or non-string value and keeps the current one", () => withDocument(() => {
+  appClipboardClear();
+  appClipboardPut("kept");
+  for (const value of ["", null, undefined, 42, {}, ["kept"]]) {
+    assert.equal(appClipboardPut(value), false);
+    assert.equal(appClipboardText(), "kept");
+  }
+}));
+
+test("each put and clear announces hodl:app-clipboard on document", () => withDocument((events) => {
+  appClipboardClear();
+  events.length = 0;
+  appClipboardPut("one");
+  appClipboardPut("two");
+  appClipboardClear();
+  assert.deepEqual(events, ["hodl:app-clipboard", "hodl:app-clipboard", "hodl:app-clipboard"]);
+}));
+
+// pagehide is the window's; conceal, copy and cut are the document's (the app
+// dispatches "hodl:conceal" on document; a native copy or cut fires there
+// too). Each fake keeps its own listeners, so a listener on the wrong object
+// fails here (Kimi, round 5).
+test("initAppClipboard clears on pagehide, on every conceal and on any copy or cut to the system clipboard, and its return removes every listener", () => withDocument(() => {
+  appClipboardClear();
+  const fake = () => {
+    const listeners = new Map();
+    return {
+      listeners,
+      addEventListener(type, listener) { listeners.set(type, listener); },
+      removeEventListener(type, listener) { if (listeners.get(type) === listener) listeners.delete(type); },
+    };
+  };
+  const target = fake(), doc = fake();
+  const stop = initAppClipboard(target, doc);
+  const expected = [[target, "pagehide"], [doc, "hodl:conceal"], [doc, "copy"], [doc, "cut"]];
+  for (const [object, type] of expected) {
+    assert.equal(typeof object.listeners.get(type), "function", type);
+    appClipboardPut("secret");
+    object.listeners.get(type)();
+    assert.equal(appClipboardHas(), false, type);
+    assert.equal(appClipboardText(), "", type);
+  }
+  assert.equal(target.listeners.size, 1, "the window gets pagehide only");
+  assert.equal(doc.listeners.size, 3, "the document gets conceal, copy and cut");
+  appClipboardPut("secret");
+  stop();
+  assert.equal(target.listeners.size + doc.listeners.size, 0);
+  assert.equal(appClipboardText(), "secret", "removing the listeners leaves the store alone");
+}));
+
+test("a copied leading byte-order mark survives the round trip, and a lone surrogate is refused", () => {
+  const bom = String.fromCharCode(0xfeff), lone = String.fromCharCode(0xd800);
+  appClipboardClear();
+  assert.equal(appClipboardPut(`${bom}TREZOR`), true);
+  assert.equal(appClipboardText(), `${bom}TREZOR`);
+  assert.equal(appClipboardPut(`abc${lone}`), false);
+  assert.equal(appClipboardText(), `${bom}TREZOR`, "a refused copy keeps the value held before it");
+  appClipboardClear();
+});
+
+test("copying anything to the system clipboard ends what was copied within EntropyLab", async () => {
+  const { copyText } = await import("../src/js/clipboard.js");
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const define = (value) => Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value });
+  try {
+    appClipboardPut("private value");
+    // A copy that never happened (its source is no longer current) ends nothing.
+    define({ clipboard: { writeText: async () => {} } });
+    assert.equal(await copyText("bc1qpublic", { host: null, isCurrent: () => false }), false);
+    assert.equal(appClipboardText(), "private value");
+    assert.equal(await copyText("bc1qpublic", { host: null }), true);
+    assert.equal(appClipboardHas(), false);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, "navigator", saved); else delete globalThis.navigator;
+    appClipboardClear();
+  }
+});
+
+test("lone surrogates are refused even where String.prototype.isWellFormed is missing (GLM, MiniMax)", () => {
+  const high = String.fromCharCode(0xd83d), low = String.fromCharCode(0xde00);
+  const saved = Object.getOwnPropertyDescriptor(String.prototype, "isWellFormed");
+  delete String.prototype.isWellFormed;
+  try {
+    appClipboardClear();
+    for (const text of [`abc${high}`, `${high}abc`, `${low}abc`, `a${low}${high}b`]) assert.equal(appClipboardPut(text), false, JSON.stringify(text));
+    assert.equal(appClipboardHas(), false);
+    assert.equal(appClipboardPut(`pass${high}${low}word`), true, "a surrogate pair is well formed");
+    assert.equal(appClipboardText(), `pass${high}${low}word`);
+  } finally {
+    if (saved) Object.defineProperty(String.prototype, "isWellFormed", saved);
+    appClipboardClear();
+  }
+});
+
+// A public copy still waiting on the browser must not end a private copy made
+// after it began (Astra, #1347 round 2).
+for (const native of [true, false]) test(`a pending public copy (${native ? "Clipboard API" : "refused, then fallback"}) keeps a private copy made after it began`, async () => {
+  const { copyText } = await import("../src/js/clipboard.js");
+  const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  let finish;
+  const pendingWrite = new Promise((resolve, reject) => { finish = native ? resolve : () => reject(new Error("NotAllowedError")); });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: { clipboard: { writeText: () => pendingWrite } } });
+  const field = { value: "", style: {}, setAttribute() {}, select() {}, remove() {} };
+  Object.defineProperty(globalThis, "document", { configurable: true, writable: true, value: { activeElement: null, createElement: () => field, execCommand: () => true } });
+  try {
+    appClipboardClear();
+    const pending = copyText("1BoatSLRHtKNngkdXEeobR76b53LETtpyT", { host: { append() {} } });
+    const phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    assert.equal(appClipboardPut(phrase), true);
+    finish();
+    assert.equal(await pending, true);
+    assert.equal(appClipboardText(), phrase);
+    // A public copy that begins after the private one still ends it.
+    finish = () => {};
+    Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: { clipboard: { writeText: async () => {} } } });
+    assert.equal(await copyText("bc1qpublic", { host: { append() {} } }), true);
+    assert.equal(appClipboardHas(), false);
+  } finally {
+    if (savedNavigator) Object.defineProperty(globalThis, "navigator", savedNavigator); else delete globalThis.navigator;
+    if (savedDocument) Object.defineProperty(globalThis, "document", savedDocument); else delete globalThis.document;
+    appClipboardClear();
+  }
+});
+
+// The app's own fallback copy fires a real copy event; it must not clear a
+// private copy made while the public copy was pending, which the generation
+// check keeps (Kimi, Astra, GLM, #1347 round 6). A plain copy event still clears.
+test("the fallback copy's own copy event does not defeat the generation check", async () => {
+  const { copyText } = await import("../src/js/clipboard.js");
+  const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const doc = new EventTarget();
+  doc.activeElement = null;
+  doc.createElement = () => ({ value: "", style: {}, setAttribute() {}, select() {}, remove() {} });
+  doc.execCommand = () => { doc.dispatchEvent(new Event("copy")); return true; };
+  let reject;
+  Object.defineProperty(globalThis, "document", { configurable: true, writable: true, value: doc });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: { clipboard: { writeText: () => new Promise((_, r) => { reject = r; }) } } });
+  const stop = initAppClipboard(new EventTarget(), doc);
+  try {
+    appClipboardClear();
+    const pending = copyText("1BoatSLRHtKNngkdXEeobR76b53LETtpyT", { host: { append() {} } });
+    const phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    assert.equal(appClipboardPut(phrase), true);
+    reject(new Error("NotAllowedError"));
+    assert.equal(await pending, true);
+    assert.equal(appClipboardText(), phrase, "the newer private copy survives the app's own fallback copy");
+    // A copy that is not the app's own (a selection and Ctrl+C) still clears.
+    doc.dispatchEvent(new Event("copy"));
+    assert.equal(appClipboardHas(), false);
+    // And the app's own copy, with nothing pending, ends what it finds.
+    Object.defineProperty(globalThis, "navigator", { configurable: true, writable: true, value: { clipboard: { writeText: async () => {} } } });
+    appClipboardPut(phrase);
+    assert.equal(await copyText("bc1qpublic", { host: { append() {} } }), true);
+    assert.equal(appClipboardHas(), false);
+  } finally {
+    stop();
+    if (savedNavigator) Object.defineProperty(globalThis, "navigator", savedNavigator); else delete globalThis.navigator;
+    if (savedDocument) Object.defineProperty(globalThis, "document", savedDocument); else delete globalThis.document;
+    appClipboardClear();
+  }
+});

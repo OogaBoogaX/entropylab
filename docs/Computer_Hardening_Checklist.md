@@ -32,9 +32,12 @@ additional exposures.
       file, crash dumps and browser files are then encrypted at rest. Windows:
       Device encryption or BitLocker. macOS: FileVault. Linux: LUKS, chosen
       at install.
-- [ ] **Use a private window** (Chrome Incognito, Edge InPrivate, Firefox
-      Private Window). It writes no session-restore files, and extensions are
-      off in it unless you allowed them.
+- [ ] **Use a private window in a browser profile with no extensions**
+      (Chrome Incognito, Edge InPrivate, Firefox Private Window). Make a new
+      profile used only for EntropyLab, with sync off, and open its extensions
+      page to confirm it is empty: an extension can read and change the page,
+      including what you type. A private window also writes no session-restore
+      files.
 - [ ] **Press End session when you are done.** It is in the header. It wipes
       the page and asks the browser to close the tab. If the tab stays open,
       close it yourself to let the browser release the tab's resources,
