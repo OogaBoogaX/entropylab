@@ -57,4 +57,9 @@ jobs:
             echo "::error title=Stale OpenTimestamps proof::entropylab.html.ots stamps ${STAMPED:-no sha256 digest}, but entropylab.html is $ACTUAL."
             exit 1
           fi
+          # A release is never a development build (#1406).
+          if grep -q 'class="page-footer-build">v[^ <]*-dev ' entropylab.html; then
+            echo "::error title=Development version::entropylab.html says it is a -dev build; a release must carry its release version."
+            exit 1
+          fi
           echo "SHA256SUMS.txt, CID.txt and entropylab.html.ots all describe $ACTUAL."

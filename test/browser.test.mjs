@@ -409,7 +409,7 @@ const runEngine = (engine, staging, port) => async () => {
 };
 
 test("headless browsers run the hosted and offline suites", async (t) => {
-  assert.match(appVersion, /^\d+(\.\d+)*$/, `invalid application version in package.json: ${appVersion}`);
+  assert.match(appVersion, /^\d+(\.\d+)*(-dev)?$/, `invalid application version in package.json: ${appVersion}`);
   assert.ok(existsSync(appSource), `compiled ${appFile} is missing (run 'npm run build')`);
   const present = engines.filter((engine) => engine.binary);
   assert.ok(
