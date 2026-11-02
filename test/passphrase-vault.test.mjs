@@ -1016,3 +1016,29 @@ test("bytes() returns a fresh array the caller owns: wiping it never touches the
   assert.equal(hex(vault.bytes()), expected);
   assert.equal(vault.text(), text);
 });
+
+// A paste from EntropyLab's own clipboard tells the page's listeners, as an
+// edit would; restoring a stored passphrase stays silent. In plain mode the
+// announcement comes after the text is in the field.
+test("setBytes announces one input event only when asked to notify", (t) => {
+  // Node has no InputEvent; the vault uses it when the browser has it.
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "InputEvent");
+  globalThis.InputEvent = class extends Event { constructor(type, init = {}) { super(type, init); this.inputType = init.inputType; } };
+  t.after(() => { if (saved) Object.defineProperty(globalThis, "InputEvent", saved); else delete globalThis.InputEvent; });
+  for (const active of [() => true, () => false]) {
+    const { field, vault, api } = bound(active);
+    api.setBytes(new TextEncoder().encode("restored"));
+    assert.deepEqual(field.events, [], "a restored passphrase is not announced");
+    let seen = null;
+    field.addEventListener("input", (event) => { seen = { inputType: event.inputType, value: field.value }; });
+    api.setBytes(new TextEncoder().encode("pasted"), { notify: true });
+    assert.deepEqual(field.events, ["input"]);
+    assert.equal(seen.inputType, "insertFromPaste");
+    if (active()) {
+      assert.equal(vault.text(), "pasted");
+      masked(field, vault);
+    } else {
+      assert.equal(seen.value, "pasted", "the listener sees the text already in the field");
+    }
+  }
+});

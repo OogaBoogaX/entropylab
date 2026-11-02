@@ -187,8 +187,8 @@ const CLEARING_PATHS = [
   {
     // File inputs hold no content once consumed, but the reset is what lets
     // "pick the same file again" work AND keeps the fake path off screen.
-    ids: ["psbt-file", "psbt-audit-file", "psbt-rbf-file", "nonce-file", "psbt-nonce-history-file", "journal-notes-file", "journal-keymanager-file"],
-    why: "file pickers for PSBT / nonce / journal / vault uploads (reset on consume)",
+    ids: ["psbt-file", "psbt-audit-file", "psbt-rbf-file", "nonce-file", "psbt-nonce-history-file", "journal-notes-file", "journal-keymanager-file", "msig-backup-file"],
+    why: "file pickers for PSBT / nonce / journal / vault / encrypted multisig backup uploads (reset on consume)",
     probe: (id) => assert.match(around(app, `getElementById("${id}")`), /value = ""/, `#${id} must be reset on consume`),
   },
   {
@@ -256,6 +256,7 @@ const PUBLIC_FIELDS = {
   "msig-address-range": "derivation setting",
   "msig-address-start": "derivation setting",
   "msig-address-start-harden": "derivation setting",
+  "msig-backup-xpub": "one of the multisig's xpubs, typed only to open an encrypted backup; text that looks like a private key or seed is emptied at once",
   "msig-branch-range": "derivation setting",
   "msig-branch-start": "derivation setting",
   "msig-branch-start-harden": "derivation setting",
