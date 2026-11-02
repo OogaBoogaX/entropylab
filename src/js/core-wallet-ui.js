@@ -9,6 +9,7 @@
 // between psbt-wasm.js and psbt-editor.js.
 import { t, tAttr, tHtml } from "./i18n.js";
 import { expandableHtml, initExpandable } from "./expandable.js";
+import { base58checkDecode } from "./base58.js";
 
 const escapeHtml = (text) =>
   String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -20,7 +21,7 @@ const bytesToHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "
 // anywhere: a descriptor the reader cannot tell is public is shown as a
 // private one, so it is redacted until revealed and its copy stays within
 // EntropyLab (#1347). The rule is the reader's: fail closed.
-export const descriptorHoldsSecret = (text) => !hodlCoreWallet.descriptorIsPublic(text);
+export const descriptorHoldsSecret = (text) => !hodlCoreWallet.descriptorIsPublic(text, base58checkDecode);
 // A redacted row says how long the value is. The UTF-8 copy made to count a
 // text's bytes is zeroed as soon as it is counted.
 const utf8ByteCount = (text) => {

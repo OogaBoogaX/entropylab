@@ -786,10 +786,10 @@ const loadCoreWalletUi = () => {
   const initExpandable = () => {};
   const hodlCoreWallet = loadModule().core;
   const factory = new Function(
-    "t", "tAttr", "tHtml", "expandableHtml", "initExpandable", "hodlCoreWallet",
+    "t", "tAttr", "tHtml", "expandableHtml", "initExpandable", "hodlCoreWallet", "base58checkDecode",
     `${source}\nreturn { initCoreWallet, descriptorHoldsSecret };`,
   );
-  return factory(t, tAttr, tHtml, expandableHtml, initExpandable, hodlCoreWallet);
+  return factory(t, tAttr, tHtml, expandableHtml, initExpandable, hodlCoreWallet, b58checkDecode);
 };
 
 const makeFakeElement = (id) => ({
@@ -905,7 +905,9 @@ test("a descriptor is public only in a public form; anything else is private", (
   assert.equal(descriptorHoldsSecret(`sh(wpkh(${wif}))`), true);
   assert.equal(descriptorHoldsSecret(`pk(5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ)`), true, "an uncompressed-key WIF (51 characters)");
   // Public forms Core writes or imports.
-  const tpub = "tpubD6NzVbkrYhZ4XgiXtGrdW5XDAPFCL9h7we1vwNCpn8tGbBcgfVYjXyhWo4E1xkh56hjod1RhGjxbaTLV3X4FyWuejifB9jusQ46QzG87VKY";
+  // A valid tpub (the old fixture failed its own Base58Check checksum, which
+  // the reader now requires; K3.1, round 15).
+  const tpub = "tpubD6NzVbkrYhZ4XgiXtGrdW5XDAPFCL9h7we1vwNCpn8tGbBcgfVYjXyhWo4E1xkh56hjod1RhGjxbaTLV3X4FyWuejifB9jusQ46QzG87VKp";
   assert.equal(descriptorHoldsSecret(`tr([d34db33f/86h/1h/0h]${tpub}/<0;1>/*)#abcdefgh`), false, "a multipath tpub descriptor");
   assert.equal(descriptorHoldsSecret(`wsh(sortedmulti(2,[d34db33f/48h/0h/0h/2h]${xpub}/0/*,02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5))`), false, "a multisig");
   assert.equal(descriptorHoldsSecret("wsh(and_v(v:pk(02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5),older(144)))"), false, "a miniscript policy");
@@ -957,7 +959,7 @@ test("a descriptor is public only in a public form; anything else is private", (
   assert.equal(descriptorHoldsSecret(`wsh(${"and_v(1,".repeat(100000)}1${")".repeat(100000)})`), true, "nesting too deep to read fails closed");
   assert.equal(descriptorHoldsSecret(`pkh(${pubkey})${"00".repeat(32)}`), true, "bytes after the descriptor");
   const ui = read("src/js/core-wallet-ui.js");
-  assert.match(ui, /export const descriptorHoldsSecret = \(text\) => !hodlCoreWallet\.descriptorIsPublic\(text\);/, "the report uses the reader's rule");
+  assert.match(ui, /export const descriptorHoldsSecret = \(text\) => !hodlCoreWallet\.descriptorIsPublic\(text, base58checkDecode\);/, "the report uses the reader's rule");
   assert.match(ui, /push\(tHtml\("Descriptor"\), fileValueHtml\(entry\.descriptor, \{[^\n]*isPublic: entry\.shownPublic === true \}\)\);/, "the Descriptor cell is public only when the verification vouched for it");
   assert.match(ui, /const privateHex = \(bytes, label\) => fileValueHtml\(bytesToHex\(bytes\), \{ label, bytes: bytes\.length \}\);/, "an undecoded record's bytes are never public");
   assert.match(ui, /privateHex\(record\.value, tHtml\("Record value \(hex\)"\)\)/);
@@ -1337,4 +1339,54 @@ test("the verification lines never show a key-bearing descriptor's text", async 
   assert.ok(out.innerHTML.includes(`[private]${body}#`), "the revealed descriptor is a private value");
   documentListeners["hodl:conceal"]();
   assert.ok(!out.innerHTML.includes(wif.slice(0, 16)), "a key-bearing descriptor's first characters are shown after conceal");
+});
+
+// K3.1 (round 15): an "xpub" followed by the right number of Base58
+// characters had the shape of an extended public key without being one; two
+// WIFs after "xpub" read as public and showed unredacted. An extended key now
+// counts as public only when it decodes as one.
+test("an xpub-shaped token that does not decode as an extended public key is private", () => {
+  const { descriptorHoldsSecret } = loadCoreWalletUi();
+  const a = "L1aW4aubDFB7yfras2S1mN3bqg9nwySY8nkoLmJebSLD5BWv3ENZ";
+  const b = "Kzyv4uF39d4Jrw2W7UryTHwZr1zQVNk4dAFyqE6BuMrMh1Za7uhp";
+  assert.equal(descriptorHoldsSecret(`wpkh(xpub${a}${b})`), true, "K3.1's repro: two WIFs after xpub");
+  assert.equal(descriptorHoldsSecret(`xpub${a}${b}`), true, "the bare value too (the Core add field)");
+  const xpub = "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz";
+  assert.equal(descriptorHoldsSecret(`wpkh(${xpub}/0/*)`), false, "a real xpub stays public");
+  const flipped = xpub.slice(0, 60) + (xpub[60] === "a" ? "b" : "a") + xpub.slice(61);
+  assert.equal(descriptorHoldsSecret(`wpkh(${flipped}/0/*)`), true, "one changed character fails the checksum");
+  const { core } = loadModule();
+  assert.equal(core.descriptorIsPublic(`wpkh(${xpub}/0/*)`), false, "without a decoder no extended key is vouched for");
+  assert.equal(core.descriptorIsPublic(`wpkh(${xpub}/0/*)`, b58checkDecode), true);
+});
+
+// K3.1 (round 15): the DescriptorID input (the whole descriptor, which a
+// crafted file can make key-bearing) was zeroed only when hashing succeeded.
+test("the descriptor id's UTF-8 copy is zeroed even when hashing throws", (t) => {
+  const wif = "L1aW4aubDFB7yfras2S1mN3bqg9nwySY8nkoLmJebSLD5BWv3ENZ";
+  const body = `wpkh(${wif})`;
+  const idText = `${body}#${coreDeps.checksum(body)}`;
+  const descriptor = Buffer.from(idText);
+  const records = REF_WATCH_ONLY_RECORDS.map(([key, value]) => [key, value]);
+  const row = records.find(([key]) => key.startsWith("1077616c6c657464657363726970746f72")); // "walletdescriptor"
+  const old = Buffer.from(row[1], "hex");
+  assert.ok(old[0] < 253 && descriptor.length < 253, "one-byte CompactSize length prefixes");
+  row[1] = Buffer.concat([Buffer.from([descriptor.length]), descriptor, old.subarray(1 + old[0])]).toString("hex");
+  const doc = parseHex(records);
+  const OriginalTextEncoder = globalThis.TextEncoder;
+  const encoded = [];
+  globalThis.TextEncoder = class extends OriginalTextEncoder {
+    encode(text) { const bytes = super.encode(text); encoded.push({ text, bytes }); return bytes; }
+  };
+  t.after(() => { globalThis.TextEncoder = OriginalTextEncoder; });
+  const failing = { ...coreDeps, sha256: (input) => {
+    if (Buffer.from(input).toString("latin1").includes(wif)) throw new Error("hash failure");
+    return coreDeps.sha256(input);
+  } };
+  const { core } = loadModule();
+  core.verifyWalletDoc(doc, failing);
+  globalThis.TextEncoder = OriginalTextEncoder;
+  const copies = encoded.filter((entry) => entry.text === idText);
+  assert.ok(copies.length > 0, "the descriptor id is hashed from a UTF-8 copy");
+  for (const { bytes } of copies) assert.ok(bytes.every((byte) => byte === 0), "the copy was not zeroed after the hash threw");
 });

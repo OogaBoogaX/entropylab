@@ -82,9 +82,29 @@ var hodlCoreWallet = (() => {
   const CONSTANT = /[01](?=[,)}]|$)/y;
   const FUNCTION_NAME = /[a-z_]+(?=\()/y;
   const NOT_PUBLIC = Symbol("not public");
+  // An extended key is public only when it decodes as one: Base58Check with a
+  // valid checksum, 78 bytes, a public version (xpub, ypub, zpub, tpub, upub,
+  // vpub, Ypub, Zpub, Upub, Vpub) and a compressed-key prefix. Two WIFs after
+  // "xpub" have the shape but not the checksum (K3.1, round 15). Without a
+  // decoder no extended key is vouched for.
+  const PUBLIC_VERSIONS = new Set([0x0488b21e, 0x049d7cb2, 0x04b24746, 0x043587cf, 0x044a5262, 0x045f1cf6, 0x0295b43f, 0x02aa7ed3, 0x024289ef, 0x02575483]);
+  const extendedKeyIsPublic = (text, decode) => {
+    if (typeof decode !== "function") return false;
+    let raw = null;
+    try {
+      raw = decode(text);
+      if (!(raw instanceof Uint8Array) || raw.length !== 78) return false;
+      const version = ((raw[0] << 24) | (raw[1] << 16) | (raw[2] << 8) | raw[3]) >>> 0;
+      return PUBLIC_VERSIONS.has(version) && (raw[45] === 0x02 || raw[45] === 0x03);
+    } catch {
+      return false;
+    } finally {
+      try { raw?.fill(0); } catch {}
+    }
+  };
 
   // Throws unless the whole body is a public descriptor or a bare key.
-  const readPublicDescriptor = (body) => {
+  const readPublicDescriptor = (body, decode) => {
     let at = 0;
     const fail = () => {
       throw NOT_PUBLIC;
@@ -111,7 +131,9 @@ var hodlCoreWallet = (() => {
         while (skip("/")) step();
         expect("]");
       }
-      if (take(EXTENDED_PUBLIC) !== null) {
+      const extended = take(EXTENDED_PUBLIC);
+      if (extended !== null) {
+        if (!extendedKeyIsPublic(extended, decode)) fail();
         let multipath = false;
         while (skip("/")) {
           if (skip("*")) {
@@ -188,13 +210,15 @@ var hodlCoreWallet = (() => {
     if (at !== body.length) fail();
   };
   const isDescriptorFunction = (name) => DESCRIPTOR_PLACES.has(name);
-  const descriptorIsPublic = (text) => {
+  // decode: a Base58Check decoder that verifies the checksum (the app's
+  // base58checkDecode); without one, no extended key counts as public.
+  const descriptorIsPublic = (text, decode) => {
     if (typeof text !== "string") return false;
     if (text === "") return true; // an empty field holds nothing
     const hash = text.indexOf("#");
     if (hash >= 0 && !/^[0-9a-z]{8}$/.test(text.slice(hash + 1))) return false;
     try {
-      readPublicDescriptor(hash < 0 ? text : text.slice(0, hash));
+      readPublicDescriptor(hash < 0 ? text : text.slice(0, hash), decode);
       return true;
     } catch {
       return false; // not Core's grammar with public keys, or nested too deep to read
@@ -621,7 +645,7 @@ var hodlCoreWallet = (() => {
       // carry eight characters of anything, DeepSeek round 13). Any other
       // descriptor is named by its place in the report, never by its text,
       // because these lines show while the descriptor itself is redacted.
-      if (checksumOk && descriptorIsPublic(text)) entry.shownPublic = true;
+      if (checksumOk && descriptorIsPublic(text, deps.base58Decode)) entry.shownPublic = true;
       const label = entry.shownPublic !== true ? `#${index + 1}` : text.length > 24 ? `${text.slice(0, 21)}…` : text;
       if (hash < 0) {
         checks.push(check("bad", `Descriptor ${label}`, "no checksum suffix"));
@@ -639,8 +663,12 @@ var hodlCoreWallet = (() => {
           // The descriptor can carry a key (a crafted file): the UTF-8 copy
           // hashed here is zeroed once hashed.
           const idBytes = utf8(`${compatBody}#${deps.checksum(compatBody)}`);
-          id = bytesToHex(deps.sha256(idBytes));
-          idBytes.fill(0);
+          // Zeroed on every exit, a hash that throws included (K3.1, round 15).
+          try {
+            id = bytesToHex(deps.sha256(idBytes));
+          } finally {
+            idBytes.fill(0);
+          }
         } catch {
           id = null; // the descriptor has a character Core's charset lacks
         }
