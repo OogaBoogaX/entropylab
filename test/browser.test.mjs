@@ -446,3 +446,132 @@ test("headless browsers run the hosted and offline suites", async (t) => {
     rmSync(staging.workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
   }
 });
+
+test("released PSBT scan refuses an unfocused grant and collects after focus returns", { timeout: 180000 }, async (t) => {
+  const engine = engines.find((candidate) => candidate.kind === "chromium" && candidate.binary);
+  if (!engine) return t.skip("Chromium is required for the optical PSBT receive check");
+  const { createPipeClient, createPage, spawnBrowser, stopBrowser } = await import("../scripts/residue-audit.mjs");
+  const { hodlUrEncodePsbt } = await import("../src/js/psbt-ur.js");
+  const { encode } = await import("uqr");
+  const fixture = read("test/fixtures/psbt/multisig-2of3-p2wsh.b64").trim();
+  const bytes = Buffer.from(fixture, "base64");
+  const parts = hodlUrEncodePsbt(bytes, { maxBytes: Math.ceil((bytes.length + 5) / 4) });
+  assert.equal(parts.length, 4);
+  const matrices = parts.map(part => encode(part.toUpperCase(), { ecc: "L", border: 4 }).data);
+  const workDir = mkdtempSync(join(stagingBase(), "psbt-camera-browser-"));
+  let child, client, page;
+  const server = createServer((request, response) => {
+    if (request.url !== "/") { response.writeHead(404); response.end(); return; }
+    response.setHeader("Content-Type", "text/html");
+    response.end(readFileSync(join(workDir, appFile)));
+  });
+  try {
+    execFileSync(process.execPath, [join(root, "scripts/build.mjs"), "--out", workDir], { stdio: "inherit" });
+    await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    const profile = join(workDir, "profile");
+    mkdirSync(profile);
+    child = spawnBrowser(engine, { profile, logPath: join(workDir, "browser.log") });
+    client = createPipeClient(child.stdio[3], child.stdio[4], { timeoutMs: 60000 });
+    page = await createPage(client, origin);
+    await page.waitFor("document.getElementById('beta-disclaimer-accept')");
+    const { targetInfos } = await client.send("Target.getTargets");
+    const scanTarget = targetInfos.find(target => target.url.startsWith(origin));
+    assert.ok(scanTarget, "the released app has a browser target");
+    await client.send("Target.activateTarget", { targetId: scanTarget.targetId });
+    await page.waitFor("document.hasFocus()");
+    await page.click("#beta-disclaimer-accept");
+    await page.evaluate(`(() => {
+      const proof = [...document.querySelectorAll('[id^="beta-disclaimer-proof-text-"]')].find(node => !node.hidden);
+      const input = document.getElementById('beta-disclaimer-proof');
+      input.value = proof.id.split('-').pop();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await page.click("#beta-disclaimer-confirm");
+    await page.waitFor("!document.getElementById('beta-disclaimer')");
+    await page.evaluate(`document.querySelector('[role=tab][aria-label=Transactions]').click()`);
+    await page.click("#psbt-editor-tab");
+    await page.waitFor("document.getElementById('psbted-scan-host-open')");
+    await page.evaluate(`(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 720;
+      const ctx = canvas.getContext('2d');
+      window.__cameraProof = { index: 0, frames: ${JSON.stringify(matrices)}, calls: 0, streams: [], draw() {
+        ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 720, 720);
+        const matrix = this.frames[this.index], scale = Math.floor(680 / matrix.length);
+        const offset = Math.floor((720 - scale * matrix.length) / 2);
+        ctx.fillStyle = 'black';
+        for (let y = 0; y < matrix.length; y++) for (let x = 0; x < matrix.length; x++)
+          if (matrix[y][x]) ctx.fillRect(offset + x * scale, offset + y * scale, scale, scale);
+      } };
+      __cameraProof.draw();
+      __cameraProof.timer = setInterval(() => __cameraProof.draw(), 80);
+      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { configurable: true, value: () => {
+        __cameraProof.calls++;
+        const stream = canvas.captureStream(10);
+        __cameraProof.streams.push(stream);
+        return new Promise(resolve => { __cameraProof.grant = () => resolve(stream); });
+      } });
+    })()`);
+    await page.evaluate(`document.getElementById('psbted-text').addEventListener('input', () => {
+      __cameraProof.inputEvents = (__cameraProof.inputEvents || 0) + 1;
+    })`);
+    const leaveVisiblePage = async () => {
+      // Protocol-created targets can be separate, simultaneously focused
+      // windows. Open a real tab; emulate visibility, never hasFocus().
+      await page.evaluate(`Object.defineProperties(document, {
+        visibilityState: { configurable: true, get: () => "visible" },
+        hidden: { configurable: true, get: () => false },
+      })`);
+      assert.equal(await page.evaluate(`Boolean(__cameraProof.focusTab = window.open("about:blank", "_blank"))`), true);
+      await page.waitFor("!document.hasFocus() && document.visibilityState === 'visible'");
+    };
+    const returnToPage = async () => {
+      await page.evaluate("__cameraProof.focusTab.close(); delete __cameraProof.focusTab");
+      await client.send("Target.activateTarget", { targetId: scanTarget.targetId });
+      await page.waitFor("document.hasFocus()");
+      await page.evaluate("delete document.visibilityState; delete document.hidden");
+    };
+    await page.click("#psbted-scan-host-open");
+    await page.waitFor("window.__cameraProof.calls === 1");
+    await leaveVisiblePage();
+    assert.equal(await page.evaluate("document.getElementById('psbted-scan-host-status').getAttribute('data-scan-state')"),
+      "scanning", "a visible permission-prompt blur must leave the request pending");
+    await page.evaluate("__cameraProof.grant()");
+    await page.waitFor("__cameraProof.streams.every(s => s.getTracks().every(t => t.readyState === 'ended'))");
+    assert.equal(await page.evaluate("document.getElementById('psbted-scan-host-status').getAttribute('data-scan-state')"),
+      "stopped", "a grant arriving while the real document remains unfocused must stop");
+    assert.equal(await page.evaluate("document.getElementById('psbted-text').value"), "");
+    assert.equal(await page.evaluate("__cameraProof.inputEvents || 0"), 0, "the refused grant must not write the field");
+    assert.equal(await page.evaluate("document.getElementById('psbted-scan-host-stop').getClientRects().length"), 0);
+    await returnToPage();
+    await page.click("#psbted-scan-host-open");
+    await page.waitFor("__cameraProof.calls === 2");
+    await leaveVisiblePage();
+    await returnToPage();
+    assert.equal(await page.evaluate("document.getElementById('psbted-scan-host-status').getAttribute('data-scan-state')"),
+      "scanning", "focus returning before the permission grant preserves the request");
+    let previousProgress = await page.evaluate("document.getElementById('psbted-scan-host-progress').textContent");
+    await page.evaluate("__cameraProof.grant()");
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(`__cameraProof.index = ${i}`);
+      await page.waitFor(`document.getElementById('psbted-scan-host-progress').textContent !== ${JSON.stringify(previousProgress)}`);
+      previousProgress = await page.evaluate("document.getElementById('psbted-scan-host-progress').textContent");
+      assert.equal(await page.evaluate("document.getElementById('psbted-text').value"), "",
+        "an incomplete transfer must not populate the field");
+    }
+    await page.evaluate("__cameraProof.index = 3");
+    await page.waitFor("document.getElementById('psbted-scan-host-status').getAttribute('data-scan-state') === 'loaded'");
+    assert.equal(await page.evaluate("document.getElementById('psbted-text').value"), fixture);
+    assert.equal(await page.evaluate("__cameraProof.calls"), 2, "one refused request, then one uninterrupted multipart capture");
+    assert.equal(await page.evaluate("__cameraProof.inputEvents"), 1, "only the completed focused transfer writes the field");
+    assert.equal(await page.evaluate("__cameraProof.streams.every(s => s.getTracks().every(t => t.readyState === 'ended'))"), true);
+    assert.equal(await page.evaluate("document.getElementById('psbted-scan-host-progress').getClientRects().length"), 0);
+  } finally {
+    if (page) await page.evaluate("clearInterval(window.__cameraProof?.timer);window.__cameraProof?.streams.forEach(s=>s.getTracks().forEach(t=>t.stop()))").catch(() => {});
+    if (child) await stopBrowser(child, client);
+    client?.dispose();
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+    rmSync(workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  }
+});

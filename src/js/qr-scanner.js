@@ -4,6 +4,10 @@
 // buffer is handed to the decoder, which zeroes it, and every ImageData is
 // zeroed as soon as it has been read.
 //
+// The default is one-shot: a successful decode stops capture before onResult.
+// Opt-in continuous capture keeps one stream and one deadline across results;
+// stop(), timeout, decode failure or a later start() still ends that session.
+//
 // Security contract: a frame is read only while a live session's generation
 // still matches, a stream that resolves after stop() or a later start() has
 // its tracks stopped and is dropped, and a decode reply that arrives after
@@ -60,6 +64,7 @@ export function createQrScanner({
   requestFrame = globalThis.requestAnimationFrame,
   onResult,
   onStatus,
+  continuous = false,
 } = {}) {
   let generation = 0;
   let active = null;
@@ -146,12 +151,13 @@ export function createQrScanner({
         status("error", "DECODE_FAILED");
         return;
       }
-      teardown();
+      if (!continuous) teardown();
       try {
         onResult?.(payload);
       } catch {
         // The caller owns the payload now.
       }
+      if (continuous) schedule(current);
       return;
     }
     // No other reply carries a scan: any payload that came with one is wiped.
@@ -296,6 +302,8 @@ export function createQrScanner({
           // A detached video cannot show the stream; the tracks still stop.
         }
         status("scanning");
+        // Activation may synchronously stop or replace this session.
+        if (!current.live || current.gen !== generation) return;
         current.timer = setTimeout(() => {
           current.timer = null;
           if (!current.live || current.gen !== generation) return;

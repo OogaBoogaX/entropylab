@@ -598,6 +598,25 @@ Clearing remains best-effort.
 Coverage counts/indexes retained in the result are transaction metadata, not
 cryptographic secrets; Clear Capture retires that result too.
 
+### Released PSBT camera lifecycle
+
+PSBT scanning opts into continuous acquisition on the existing camera
+controller. Other consumers retain its one-shot default. A capture owns one
+stream and one deadline across parts, with at most one decode in flight and
+one queued frame. Opening another PSBT scanner releases its predecessor.
+Stop, Close, conceal, tool/workspace teardown and completion invalidate the
+capture before external callbacks; late grants and decoded payloads cannot
+write a field. An existing field still requires explicit replacement.
+
+A visible window blur while camera permission is pending preserves only
+that pending request. At activation the document must be visible and report
+`hasFocus() === true`; an unavailable or throwing focus API fails closed.
+Active blur, tab hide, print, idle and explicit cancellation still stop
+capture. The ordinary private-value conceal sweep is not bypassed by the
+permission-prompt exception. Supersession and destruction leave the capture
+stopped, and activation callbacks that stop it cannot allocate a stale timer.
+Browser/OS copies and camera buffers remain outside reliable erasure.
+
 ## What the page can and cannot erase
 
 EntropyLab overwrites the secrets it holds once you are done with them, on a
