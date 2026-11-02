@@ -166,6 +166,7 @@ import { initConcealOnLeave } from "./conceal-on-leave.js";
 // elements than the DOM survives (red-team F7).
 import { PSBT_INSPECTOR_LIMIT, PSBT_RENDER_LIMIT, cappedHtml, renderBudget } from "./psbt-viz.js";
 import { psbtPrivacySignals } from "./psbt-privacy-signals.js";
+import { psbtSignerReport, SIGNER_REPORT_ROW_LIMIT } from "./psbt-signer-report.js";
 const hodlBip39Wordlist = Object.freeze(bip39English);
 function hodlNote(key, vars) {
   return vars == null ? { key } : { key, vars };
@@ -12194,6 +12195,155 @@ function hodlFinalized(entries) {
 }
 // Structural privacy observations for the Inspector's result. Commentary
 // only: nothing here feeds a check, a verdict or the glance line.
+// The signer availability report's inputs: each input's parsed entries and
+// the previous output it spends. Stricter than the render on purpose: a
+// disagreeing or unreadable claim is a conflict, never a guess.
+function hodlSignerReportInputs(psbt) {
+  return psbt.inputs.map((entries, index) => {
+    let witnessUtxo = null, nonWitnessUtxo = null, failed = false;
+    try { witnessUtxo = hodlWitUtxo(entries); } catch { failed = true; }
+    try { nonWitnessUtxo = hodlNonWitUtxo(entries, psbt.tx.inputs[index]); } catch { failed = true; }
+    if (failed) return { entries, prevout: null, prevoutConflict: true };
+    if (witnessUtxo && nonWitnessUtxo) {
+      if (witnessUtxo.amount === nonWitnessUtxo.amount && hodlEq(witnessUtxo.script, nonWitnessUtxo.script)) {
+        return { entries, prevout: nonWitnessUtxo, prevoutConflict: false };
+      }
+      return { entries, prevout: null, prevoutConflict: true };
+    }
+    return { entries, prevout: witnessUtxo || nonWitnessUtxo, prevoutConflict: false };
+  });
+}
+
+// The report's signature check: BIP-143 SIGHASH_ALL only, with its own
+// budget. Anything it cannot check comes back null, never a verdict.
+function hodlSignerReportVerifier(psbt, inputs) {
+  const budget = { remaining: 256 };
+  return (index, pubkey, signature) => {
+    const input = inputs[index];
+    if (!input || !input.prevout) return null;
+    if (!(signature instanceof Uint8Array) || signature.length < 9) return null;
+    if (signature[signature.length - 1] !== 1) return null;
+    let scriptCode;
+    try { scriptCode = hodlInputScriptCode(input.entries, input.prevout); } catch { return null; }
+    if (!scriptCode) return null;
+    try { if (hodlScriptHasCodeSeparator(scriptCode)) return null; } catch { return null; }
+    if (budget.remaining <= 0) return null;
+    budget.remaining -= 1;
+    const der = signature.slice(0, -1);
+    if (hodlSigParts(der) === null) return false;
+    let digest;
+    try { digest = hodlBip143(psbt.tx, index, scriptCode, input.prevout.amount, 1); } catch { return null; }
+    if (!digest) return null;
+    try {
+      return hodlSecp256k1.verify(der, digest, pubkey, { prehash: false, format: "der", lowS: false }) === true;
+    } catch {
+      return false;
+    }
+  };
+}
+
+// Fills the caller's array in place, so its finally can wipe whatever was
+// added before a throw. A source never carries private bytes, a WIF, hex or
+// an xprv: every node is the report's own copy (or public).
+function hodlSignerReportSources(sources) {
+  const keys = [...hodlKeys.filter((state) => !state.isLab && state.result), ...hodlBip85Children.map(hodlBip85SessionKeyState).filter(Boolean)];
+  for (const state of keys) {
+    try {
+      const result = state.result;
+      if (!result) continue;
+      const id = String(state.id);
+      const label = result.masterFingerprint || state.name || "Key " + state.number;
+      if (result.kind === "hd" && hodlResultHasSeed(result)) {
+        sources.push({ id, label, private: true, node: hodlSeedSessionRoot(result, state.fields?.pass || "") });
+      } else if (result.kind === "hd" && hodlResultHasRoot(result)) {
+        sources.push({ id, label, private: true, node: hodlResultRootNode(result) });
+      } else if (result.kind === "hd" && hodlResultHasImportedPrivate(result)) {
+        const node = hodlCopyPrivateNode(result.accounts?.[0]?.privateNode);
+        if (node) sources.push({ id, label, private: true, node });
+      } else if (result.importedPublicKey && result.accounts?.[0]?.genericPublic) {
+        sources.push({ id, label, private: false, node: hodlParseExtendedKey(result.accounts[0].genericPublic).node });
+      } else if (result.rootXpub && !result.rootNode) {
+        sources.push({ id, label, private: false, node: hodlParseExtendedKey(result.rootXpub).node });
+      } else if (result.kind === "single" && hodlResultHasSingleKey(result)) {
+        let priv = hodlSinglePrivateKey(result);
+        try {
+          sources.push({ id, label, private: true, pubkeys: [hodlSecp256k1.getPublicKey(priv, true), hodlSecp256k1.getPublicKey(priv, false)] });
+        } finally {
+          priv.fill(0);
+        }
+      }
+    } catch {}
+  }
+  return sources;
+}
+
+function hodlSignerReportReasonText(reason) {
+  if (reason === "no-prevout" || reason === "prevout-conflict") return hodlTText("the previous output is missing or its claims disagree");
+  if (reason === "no-script" || reason === "script-mismatch") return hodlTText("the redeem or witness script is missing or does not match");
+  if (reason === "unchecked-signatures") return hodlTText("signatures in the file could not be checked");
+  if (reason === "budget") return hodlTText("the derivation limit was reached");
+  return "";
+}
+
+function hodlSignerReportHtml(report) {
+  if (!report) return "";
+  const keysText = (list) => list.map((entry) => (entry.path ? entry.label + " (" + entry.path + ")" : entry.label)).join(", ");
+  let html = ["<div data-signer-report><p class='label psbt-section-label'>" + hodlT("Signer availability") + "</p>"]; // DRAFT (owner OK pending)
+  html.push("<p class='edge-note is-info' data-signer-report-intro>" + hodlT("Read only. Nothing is signed. Loaded Key Station keys are matched to each input by public key.") + "</p>"); // DRAFT (owner OK pending)
+  html.push("<p class='edge-note is-muted' data-signer-report-summary>" + hodlT("Inputs: {total}. Ready with loaded keys: {ready}. Already signed or finalized: {done}. Not found within the searched paths: {short}. Cannot determine: {unknown}.", { total: report.summary.total, ready: report.summary.ready, done: report.summary.done, short: report.summary.short, unknown: report.summary.unknown }) + "</p>"); // DRAFT (owner OK pending)
+  for (const row of report.inputs.slice(0, SIGNER_REPORT_ROW_LIMIT)) {
+    let attrs = " data-signer-report-input='" + row.index + "' data-signer-report-state='" + row.state + "'";
+    if (row.state === "ready" && row.all) attrs += " data-signer-report-all";
+    const single = row.script === "p2pkh" || row.script === "p2wpkh" || row.script === "p2sh-p2wpkh";
+    let status;
+    if (row.state === "ready") {
+      if (single) status = hodlT("Signer available: {keys}.", { keys: keysText(row.signers) }); // DRAFT (owner OK pending)
+      else if (row.all) status = hodlT("{m} of {count} needed. All signers available: {keys}.", { m: row.m, count: row.n, keys: keysText(row.signers) }); // DRAFT (owner OK pending)
+      else status = hodlT("{m} of {count} needed. Quorum available: {keys}.", { m: row.m, count: row.n, keys: keysText(row.signers) }); // DRAFT (owner OK pending)
+    } else if (row.state === "signed") {
+      status = hodlT("Already has the signatures it needs."); // DRAFT (owner OK pending)
+    } else if (row.state === "finalized") {
+      status = hodlT("Finalized input data present");
+    } else if (row.state === "short") {
+      if (single) status = hodlT("No loaded private key found within the searched paths."); // DRAFT (owner OK pending)
+      else status = hodlT("{m} of {count} needed. Found {have} within the searched paths.", { m: row.m, count: row.n, have: row.signed + row.canAdd }); // DRAFT (owner OK pending)
+    } else if (row.state === "unknown") {
+      status = hodlT("Cannot determine: {reason}.", { reason: hodlSignerReportReasonText(row.reason) }); // DRAFT (owner OK pending)
+    } else {
+      status = hodlT("Not covered by this report yet."); // DRAFT (owner OK pending)
+    }
+    const lines = [];
+    if (row.state === "ready" || row.state === "signed" || row.state === "short") {
+      if (row.state === "short" && row.canAdd > 0) lines.push(hodlT("Can sign: {keys}.", { keys: keysText(row.signers) })); // DRAFT (owner OK pending)
+      if (row.watchOnly > 0) lines.push(hodlT("Watch-only match, no private key loaded: {keys}.", { keys: keysText(row.watchers) })); // DRAFT (owner OK pending)
+      if (row.signed > 0 || row.unchecked > 0 || row.invalid > 0) lines.push(hodlT("Signatures in the file: {valid} valid, {unchecked} not checked, {invalid} not valid.", { valid: row.signed, unchecked: row.unchecked, invalid: row.invalid })); // DRAFT (owner OK pending)
+    }
+    let line = "<p class='edge-note is-muted'" + attrs + "><strong>" + hodlT("input {n}", { n: row.index }) + "</strong> · " + status;
+    for (const extra of lines) line += "<br>" + extra;
+    html.push(line + "</p>");
+  }
+  if (report.inputs.length > SIGNER_REPORT_ROW_LIMIT) {
+    html.push("<p class='edge-note is-muted' data-signer-report-more>" + hodlT("{count} more inputs are counted above but not listed.", { count: report.inputs.length - SIGNER_REPORT_ROW_LIMIT }) + "</p>"); // DRAFT (owner OK pending)
+  }
+  html.push("<p class='edge-note is-muted' data-signer-report-searched>" + hodlT("When the file's key paths do not match, these were also searched: {paths}, receive and change, indexes 0 to {last}.", { paths: report.searched.paths.join(", "), last: report.searched.gap - 1 }) + "</p>"); // DRAFT (owner OK pending)
+  html.push("</div>");
+  return html.join("");
+}
+
+// Preview builds only: a release build returns before reading any key.
+function hodlSignerReportSection(psbt, network) {
+  if (!PREVIEW) return "";
+  let sources = [];
+  try {
+    hodlSignerReportSources(sources);
+    if (!sources.length) return "";
+    let inputs = hodlSignerReportInputs(psbt);
+    return hodlSignerReportHtml(psbtSignerReport({ inputs, sources, network, verify: hodlSignerReportVerifier(psbt, inputs) }));
+  } finally {
+    for (let source of sources) try { source.node?.wipePrivateData(); } catch {}
+  }
+}
+
 function hodlPrivacySignalsHtml(signals) {
   if (!signals) return "";
   let html = ["<div data-privacy-signals><p class='label psbt-section-label'>" + hodlT("Privacy signals") + "</p>"];
@@ -16970,11 +17120,14 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   let overallLine = hodlPsbtOverallLine(checks);
   let answerBlock = "<section class='psbt-analysis-summary' data-psbt-answer data-psbt-analysis-overall='" + overallLine.state + "' aria-label='" + hodlTAttr("PSBT security analysis status") + "'><p class='label psbt-section-label'>" + hodlT("PSBT security analysis") + "</p>" + overallLine.html + glance + "</section>";
   html.unshift(answerBlock, hodlPsbtAnalysisSummary(checks));
+  // The signer availability report (preview builds only). Read only: no check reads it, and a throw adds nothing.
+  let signerReport = "";
+  try { signerReport = hodlSignerReportSection(psbt, network); } catch {}
   // Commentary, last in the result and never read by a check; a throw adds
   // nothing.
   let privacy = "";
   try { privacy = hodlPrivacySignalsHtml(psbtPrivacySignals({ inputs: psbt.inputs, outputs: tx.outputs })); } catch {}
-  return (view === "inspect" ? html : html.concat(nonceHtml)).concat(privacy).join("");
+  return (view === "inspect" ? html : html.concat(nonceHtml)).concat(signerReport, privacy).join("");
 }
 // Same three views as hodlRenderPsbt. A raw transaction has no summary table,
 // so the Inspector carries the verdict lines themselves — the exact lines the
