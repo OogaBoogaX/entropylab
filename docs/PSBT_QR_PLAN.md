@@ -560,6 +560,21 @@ did not populate early, stopped tracks, and hid completed progress. Loading
 the Editor and running Compare reported semantically identical PSBTs without
 parse errors. This is not physical Coldcard/camera/appliance qualification.
 
+Final committed-source verification:
+
+- `npm run build && npm test -- --test-concurrency=1 && npm run verify` passed:
+  5,222 tests, 5,199 passed, zero failed/cancelled, 23 skipped, including all
+  151 hosted/offline Chromium checks and the existing optical UR regression.
+  Firefox/Edge are absent; optional Bitcoin Core checks remain skipped.
+- The first full run's only failure was the CI completeness guard: three new
+  test files needed registration in `test:ci`. They are now registered; the
+  guard and full suite pass without weakening or skipping tests.
+- Two builds from different staging paths were byte-identical. The default
+  artifact passes existing preview-exclusion checks and does not contain the
+  BBQr inflater diagnostic; the rebuilt preview does.
+- Final preview:
+  `npm run build -- --preview --out /tmp/entropylab-bbqr-preview`.
+
 
 
 
