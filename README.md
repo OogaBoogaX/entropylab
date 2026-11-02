@@ -183,10 +183,15 @@ an explicit error before those pairs are allocated.
   A **Scan PSBT QR** control under the PSBT Inspector, Nonce Inspector and
   PSBT Editor fields (and the fee-bump original, the PSBT sent to the signer
   and the Editor's comparison PSBT) reads a PSBT shown as a QR code with the device camera:
-  one static code (base64 or hex) or an animated `ur:crypto-psbt` sequence.
+  one static code (base64 or hex), an animated `ur:crypto-psbt` sequence, or
+  PSBT BBQr (`H`, `2` and `Z` encodings).
   Nothing is written to the field until the whole PSBT has arrived and it
   starts with the PSBT magic; a QR that holds anything else is refused, and
   a field that already has a PSBT asks before it is replaced.
+  The Editor and PSBT Inspector also accept pasted UR/BBQr frames separated
+  by whitespace. A paste must contain exactly one complete transfer: any
+  frame after completion is refused, including a duplicate. An in-progress
+  UR or BBQr transfer cannot be replaced by another transport without reset.
 - Accepts a fully signed raw Bitcoin transaction (hex or base64) in the same
   inspector: outputs, extracted ECDSA nonces, and inscription-envelope hints.
   Fee and RFC 6979 cannot be checked without previous outputs.

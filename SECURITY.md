@@ -509,6 +509,32 @@ material. Its security posture rests on the following model:
   secret data, injected script execution in the generated HTML, unexpected
   network egress) is treated as a security issue.
 
+### Released PSBT QR transport
+
+The existing PSBT reader accepts static base64/hex, UR and PSBT-only BBQr
+(`H`, `2`, `Z`). It reuses the existing QR pixel decoder and UR collector;
+there is no second camera stack or new runtime dependency. The bounded,
+synchronous raw-DEFLATE decoder for BBQr `Z` limits history to the format's
+1024-byte window. Compressed input and decoded PSBTs are each capped at
+1 MiB, with at most 1000 parts and a separate QR-text limit per frame.
+Wrong types, conflicting parts, malformed compression and over-budget input
+are refused. A valid static PSBT cannot replace a partial UR/BBQr transfer;
+that mismatch stays terminal until reset. Pasted transfers refuse every
+token after completion, even an identical duplicate.
+
+QR transfer can avoid mounting shared removable media or connecting a USB
+data device to an offline machine. It still feeds untrusted data through
+the browser and decoders: it is not protection against a compromised host
+or parser vulnerabilities. Payloads are never evaluated as code or rendered
+as HTML, and transport completion is not transaction approval.
+
+BBQr has neither an end-to-end checksum nor a transfer ID. Same-header,
+same-length fragments from different transfers cannot always be detected.
+PSBT magic and a successful parse do not authenticate the source. The
+receiving tool's PSBT-version and transaction checks still apply. Independent,
+hash-pinned SeedSigner and Coinkite corpora and their development-only
+regeneration commands are documented in `test/fixtures/psbt-qr/README.md`.
+
 ### Preview-only QR observation
 
 The local QR prototype accepts bounded, checksum-validated AEXT UR messages for
