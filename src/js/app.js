@@ -11634,19 +11634,14 @@ function hodlShowMsig() {
   hodlBindMsigCoreImportDescriptors();
   if (typeof hodlMountMsigBip138Backup === "function") hodlMountMsigBip138Backup();
 }
-// BIP-138 encrypted backups of the multisig descriptor, preview builds only:
-// release builds strip the open controls from the shell, render no backup
-// host and never import the module.
+// BIP-138 encrypted backups of the multisig descriptor. The module (and its
+// cipher) is imported on first use, not at load.
 var hodlBip138Import = null, hodlMsigBip138Backup = null, hodlMsigBip138Open = null, hodlMsigBip138Epoch = 0, hodlMsigBip138OpenEpoch = 0;
 function hodlLoadBip138() {
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    if (!hodlBip138Import) hodlBip138Import = import("./bip138.js").catch(() => null);
-    return hodlBip138Import;
-  }
-  return Promise.resolve(null);
+  if (!hodlBip138Import) hodlBip138Import = import("./bip138.js").catch(() => null);
+  return hodlBip138Import;
 }
 function hodlMsigBip138HostMarkup() {
-  if (!(typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__)) return "";
   if (!hodlWalletResult || hodlWalletResult.kind !== "msig" || !hodlWalletResult.walletDescriptor) return "";
   return '<div id="msig-bip138-host"></div>';
 }
