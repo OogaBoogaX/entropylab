@@ -2510,5 +2510,6 @@
   "Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.": "Seus lançamentos não estão listados na página. Eles permanecem na memória para derivação, Desfazer e revisão de lançamento único. Revisar um lançamento mostra um lançamento que você escolhe, com sua posição.",
   "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Lance um dado físico de seis lados. Insira seu resultado uma vez, usando um botão ou as teclas 1–6.",
   "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "O campo PSBT mudou enquanto a confirmação estava aberta. Revise-o e, em seguida, escolha Substituir novamente ou Manter.",
-  "PSBT (base64 or hex)": "PSBT (base64 ou hex)"
+  "PSBT (base64 or hex)": "PSBT (base64 ou hex)",
+  "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "Algumas carteiras de hardware não conseguem restaurar uma passphrase com mais de 50 caracteres. Verifique a sua antes de confiar nela."
 }
