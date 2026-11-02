@@ -7719,7 +7719,12 @@ function hodlBindKeyFields() {
       // Emptied while Secure entry is on: the next key goes to the masked
       // field, as the seed field's next words go to the picker (Grok, Kimi,
       // round 3).
-      if (!key.value && state && hodlSecureKeyFormApplies(state)) hodlSetMode(hodlKeyMode);
+      if (!key.value && state && hodlSecureKeyFormApplies(state)) {
+        hodlSetMode(hodlKeyMode);
+        // The next keystroke goes to the masked field, not to the field the
+        // redraw removed (DeepSeek, round 4).
+        document.getElementById("secure-key")?.focus({ preventScroll: true });
+      }
     };
     let change = (event) => {
       if (!event.currentTarget.checked) return;
@@ -12705,10 +12710,13 @@ async function hodlSecureEntryToggle(wanted) {
             // The last-word helper's copy of the wiped words goes too (GLM).
             state.lastWord = "";
           }
-          for (const { state, kind } of keyStates) {
+          for (const { state } of keyStates) {
             if (state.result) state.secureCleared = true;
             if (state.globalSync) hodlClearGlobalSyncCopies(state);
-            hodlPrivateKeyValues(state.fields)[kind] = "";
+            // Clear empties every private-key format the key holds, not only
+            // the one on screen: each is the same kind of secret (Grok, round 4).
+            let values = hodlPrivateKeyValues(state.fields);
+            for (const format of ["wif", "hex-key", "minikey"]) values[format] = "";
           }
           commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
         } else {

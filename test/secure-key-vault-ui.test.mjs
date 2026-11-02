@@ -145,7 +145,8 @@ test("turning Secure entry on clears Global sync copies made from a typed key", 
   const toggle = block("hodlSecureEntryToggle");
   assert.match(toggle, /if \(state\.globalSync && state\.globalSyncSource === `key:\$\{kind\}`\) hodlClearGlobalSyncCopies\(state\);/, "Keep: copies computed from the key");
   const clear = toggle.slice(toggle.indexOf('} else if (choice === "clear") {'));
-  const keyLoop = clear.slice(clear.indexOf("for (const { state, kind } of keyStates)"));
+  const keyLoop = clear.slice(clear.indexOf("for (const { state } of keyStates)"));
+  assert.ok(keyLoop.startsWith("for (const { state } of keyStates)"), "the Clear branch walks the key states");
   assert.match(keyLoop.slice(0, keyLoop.indexOf("hodlPrivateKeyValues")), /if \(state\.globalSync\) hodlClearGlobalSyncCopies\(state\);/, "Clear: every copy");
 });
 
@@ -169,5 +170,13 @@ test("round 3: the status follows the network, an empty vault converts to nothin
 test("round 4: an emptied private-key field goes back to the masked field", () => {
   const bind = block("hodlBindKeyFields");
   const apply = bind.slice(bind.indexOf("let apply = (event) => {"), bind.indexOf("let change = (event) => {"));
-  assert.match(apply, /if \(!key\.value && state && hodlSecureKeyFormApplies\(state\)\) hodlSetMode\(hodlKeyMode\);/);
+  assert.match(apply, /if \(!key\.value && state && hodlSecureKeyFormApplies\(state\)\) \{\s*hodlSetMode\(hodlKeyMode\);[\s\S]*?document\.getElementById\("secure-key"\)\?\.focus\(/);
+});
+
+test("round 5: Clear empties every private-key format of a key, Keep only the one it vaults", () => {
+  const toggle = block("hodlSecureEntryToggle");
+  const clear = toggle.slice(toggle.indexOf('} else if (choice === "clear") {'));
+  const keyLoop = clear.slice(clear.indexOf("for (const { state } of keyStates) {"), clear.indexOf("commitTurnOn("));
+  assert.ok(keyLoop.length > 0, "the Clear branch walks the key states");
+  assert.match(keyLoop, /for \(const format of \["wif", "hex-key", "minikey"\]\) values\[format\] = "";/);
 });
