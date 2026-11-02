@@ -13888,7 +13888,8 @@ function hodlSecureKeyTyped(state) {
 
 // P3b-2: the status line under the masked private-key field. It never flashes
 // an error while the key is still being typed: below a complete length it
-// shows only the count. The bytes it parses are zeroed in a finally.
+// shows only the count, and the wrong-format hint when the text is already a
+// complete key of a shorter format. The bytes it parses are zeroed in a finally.
 function hodlSecureKeyClearFormatHint() {
   document.getElementById("secure-key-format-hint")?.remove();
   document.getElementById("secure-key-format-switch")?.remove();
@@ -13966,6 +13967,10 @@ function hodlSecureKeyStatus() {
   let lengths = hodlSecureKeyLengths(kind);
   if (!lengths.includes(count) && count < Math.max(...lengths)) {
     line.textContent = hodlT("{count} characters", { count }); // DRAFT (owner OK pending)
+    // A complete key of another format can be shorter than this one (a WIF
+    // under hex, a mini key under WIF or hex), so offer the switch here too
+    // (Kimi K3, Grok, GLM and MiniMax, round 1).
+    hodlSecureKeyFormatHint(entry, kind);
     return;
   }
   // At a complete length the line says what Derive would: the same parse and

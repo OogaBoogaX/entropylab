@@ -153,7 +153,7 @@ test("otherFormats shows the note in mode on only", async () => {
   await withDialog(async ({ dialog, document, opener, el }) => {
     const decision = dialog.open({ mode: "on", names: ["Key 1"], canKeep: true, otherFormats: true, opener });
     assert.equal(el("other-formats").hidden, false);
-    assert.equal(el("other-formats").textContent, "Only the format on screen is kept. Other formats saved in this slot will be cleared.");
+    assert.ok(el("other-formats").textContent.trim(), "the note says something (its words are copy, AGENTS.md)");
     el("cancel").click();
     await decision;
     assert.equal(el("other-formats").hidden, true);
