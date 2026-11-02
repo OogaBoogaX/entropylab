@@ -24,6 +24,7 @@ import { psbtOutputNotesHtml, psbtVizHtml, PSBT_RENDER_LIMIT, renderBudget } fro
 import { parseOpReturn } from "./opreturn.js";
 import { buildOutputScript } from "./script-builder.js";
 import { hodlUrEncodePsbt } from "./psbt-ur.js";
+import { createPsbtQrReader } from "./psbt-qr-payload.js";
 
 const hexToBytes = (hex) => {
   if (!/^(?:[0-9a-f]{2})*$/i.test(hex)) throw new Error("Invalid hexadecimal input.");
@@ -41,11 +42,33 @@ const base64Encode = (bytes) => {
 };
 
 // Accepts base64 or hex with the same rules and bounds as the PSBT / Nonce
-// inspector (5 MB decoded, 7 MB of base64 text).
+// inspector (5 MB decoded, 7 MB of base64 text), or complete UR/BBQr PSBT
+// sequences under the QR reader's independent 1 MiB receive budget.
 export const psbtBytesFromText = (raw) => {
   const value = String(raw ?? "").trim(), compact = value.replace(/\s/g, "");
   if (!value) throw new Error("Paste a PSBT (v0 or v2).");
   if (compact.length > 7e6) throw new Error("This PSBT is too large to edit safely.");
+  if (/^(?:ur:|B\$)/i.test(value)) {
+    const reader = createPsbtQrReader();
+    let bytes = null;
+    try {
+      reader.reset();
+      for (const part of value.split(/\s+/)) {
+        const result = reader.receive(part);
+        if (result.status === "complete") bytes = result.bytes;
+        else if (result.status !== "partial") {
+          throw new Error(`PSBT QR input refused (${result.status}).`);
+        }
+      }
+      if (!bytes) throw new Error("PSBT QR input refused (partial).");
+      const accepted = bytes;
+      bytes = null;
+      return accepted;
+    } finally {
+      bytes?.fill(0);
+      reader.reset();
+    }
+  }
   let bytes;
   if (/^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0 && compact.length >= 10) bytes = hexToBytes(compact.toLowerCase());
   else {

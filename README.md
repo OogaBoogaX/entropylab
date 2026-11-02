@@ -133,6 +133,18 @@ an explicit error before those pairs are allocated.
   code is the text itself; a longer one is shown as an animated `ur:bytes`
   sequence, in the same fixed-rate UR parts the PSBT editor uses for
   `ur:crypto-psbt`. An extended private key never gets a code.
+- Encrypted multisig backup (BIP-138), in MultiSig's downloads and its
+  import panel. An encrypted backup is a scrambled copy of your multisig
+  wallet's descriptor: the recipe that turns your keys into addresses. A
+  multisig wallet can't be recovered without it, even with all the seeds, so
+  it's worth keeping spare copies. The encrypted copy can sit on a USB drive,
+  in email or in cloud storage without showing strangers your addresses or
+  keys. Anyone who holds one of the wallet's xpubs can open it, including
+  every cosigner and any app or service you shared an xpub with. It is not a
+  seed backup: it holds no private keys, can't spend anything, and won't help
+  if your seeds are lost. BIP-138 is still a draft standard, so keep a plain
+  copy of the descriptor somewhere you trust as well, and check that a saved
+  copy opens.
 - Inspects PSBT v0 transactions (paste, or upload a binary .psbt / hex or
   base64 text export; the loaded bytes download as .psbt or .txn), reports
   PSBT-provided amounts and fees, checks
@@ -176,10 +188,15 @@ an explicit error before those pairs are allocated.
   A **Scan PSBT QR** control under the PSBT Inspector, Nonce Inspector and
   PSBT Editor fields (and the fee-bump original, the PSBT sent to the signer
   and the Editor's comparison PSBT) reads a PSBT shown as a QR code with the device camera:
-  one static code (base64 or hex) or an animated `ur:crypto-psbt` sequence.
+  one static code (base64 or hex), an animated `ur:crypto-psbt` sequence, or
+  PSBT BBQr (`H`, `2` and `Z` encodings).
   Nothing is written to the field until the whole PSBT has arrived and it
   starts with the PSBT magic; a QR that holds anything else is refused, and
   a field that already has a PSBT asks before it is replaced.
+  The Editor and PSBT Inspector also accept pasted UR/BBQr frames separated
+  by whitespace. A paste must contain exactly one complete transfer: any
+  frame after completion is refused, including a duplicate. An in-progress
+  UR or BBQr transfer cannot be replaced by another transport without reset.
 - Accepts a fully signed raw Bitcoin transaction (hex or base64) in the same
   inspector: outputs, extracted ECDSA nonces, and inscription-envelope hints.
   Fee and RFC 6979 cannot be checked without previous outputs.

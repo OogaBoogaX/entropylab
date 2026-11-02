@@ -11634,19 +11634,14 @@ function hodlShowMsig() {
   hodlBindMsigCoreImportDescriptors();
   if (typeof hodlMountMsigBip138Backup === "function") hodlMountMsigBip138Backup();
 }
-// BIP-138 encrypted backups of the multisig descriptor, preview builds only:
-// release builds strip the open controls from the shell, render no backup
-// host and never import the module.
+// BIP-138 encrypted backups of the multisig descriptor. The module (and its
+// cipher) is imported on first use, not at load.
 var hodlBip138Import = null, hodlMsigBip138Backup = null, hodlMsigBip138Open = null, hodlMsigBip138Epoch = 0, hodlMsigBip138OpenEpoch = 0;
 function hodlLoadBip138() {
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    if (!hodlBip138Import) hodlBip138Import = import("./bip138.js").catch(() => null);
-    return hodlBip138Import;
-  }
-  return Promise.resolve(null);
+  if (!hodlBip138Import) hodlBip138Import = import("./bip138.js").catch(() => null);
+  return hodlBip138Import;
 }
 function hodlMsigBip138HostMarkup() {
-  if (!(typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__)) return "";
   if (!hodlWalletResult || hodlWalletResult.kind !== "msig" || !hodlWalletResult.walletDescriptor) return "";
   return '<div id="msig-bip138-host"></div>';
 }
@@ -11936,6 +11931,7 @@ function hodlPsbtBytes(raw) {
   let value = raw.trim(), compact = value.replace(/\s/g, "");
   if (!value) throw new Error("Paste a PSBT v0 or a raw Bitcoin transaction.");
   if (compact.length > 7e6) throw new Error("This file is too large to inspect safely.");
+  if (/^(?:ur:|B\$)/i.test(value)) return hodlPsbtBytesFromText(value);
   let bytes;
   if (/^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0 && compact.length >= 10) bytes = hodlHex.decode(compact.toLowerCase());
   else try {
@@ -12200,7 +12196,7 @@ function hodlFinalized(entries) {
 // Structural privacy observations for the Inspector's result. Commentary
 // only: nothing here feeds a check, a verdict or the glance line.
 function hodlPrivacySignalsHtml(signals) {
-  if (!PREVIEW || !signals) return "";
+  if (!signals) return "";
   let html = ["<div data-privacy-signals><p class='label psbt-section-label'>" + hodlT("Privacy signals") + "</p>"];
   let any = false;
   if (signals.mixedFinalization) {
@@ -12940,6 +12936,8 @@ function hodlSyncPsbtControls() {
   let value = (id) => String(document.getElementById(id)?.value || "").trim();
   let decodes = (text) => {
     if (!text) return false;
+    // Assemble QR transports on Inspect/Download, not on every input event.
+    if (/^(?:ur:|B\$)/i.test(text)) return true;
     try {
       hodlPsbtBytes(text);
       return true;
