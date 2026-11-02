@@ -175,7 +175,9 @@ var hodlCoreWallet = (() => {
       const name = need(FUNCTION_NAME);
       const places = DESCRIPTOR_PLACES.get(name);
       if (!places || !places.includes(place) || (inner && OUTER_ONLY.has(name))) fail();
-      const uncompressed = (place === "top" || place === "sh") && name !== "wpkh";
+      // Core permits an uncompressed key only in a top-level or sh() script;
+      // wpkh() and rawtr() never take one (K3.1, GLM, #1347 round 16).
+      const uncompressed = (place === "top" || place === "sh") && name !== "wpkh" && name !== "rawtr";
       expect("(");
       if (name === "sh" || name === "wsh") script(name);
       else if (name === "tr") {
