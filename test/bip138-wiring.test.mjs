@@ -130,7 +130,8 @@ test("the export downloads a backup that opens with a recipient key", async () =
   const saved = { document: globalThis.document, createObjectURL: URL.createObjectURL, revokeObjectURL: URL.revokeObjectURL, preview: globalThis.__ENTROPYLAB_PREVIEW__ };
   const blobs = [], links = [];
   try {
-    globalThis.__ENTROPYLAB_PREVIEW__ = true;
+    // Release build: the flag is absent (unhidden 11-02, #1398).
+    delete globalThis.__ENTROPYLAB_PREVIEW__;
     globalThis.document = new MiniDocument();
     globalThis.document.body.innerHTML = '<div id="msig-bip138-host"></div>';
     URL.createObjectURL = (blob) => { blobs.push(blob); return "blob:test"; };
@@ -168,7 +169,8 @@ test("the export downloads a backup that opens with a recipient key", async () =
 test("a descriptor with private keys shows nothing", async () => {
   const saved = { document: globalThis.document, preview: globalThis.__ENTROPYLAB_PREVIEW__ };
   try {
-    globalThis.__ENTROPYLAB_PREVIEW__ = true;
+    // Release build: the flag is absent (unhidden 11-02, #1398).
+    delete globalThis.__ENTROPYLAB_PREVIEW__;
     globalThis.document = new MiniDocument();
     globalThis.document.body.innerHTML = '<div id="msig-bip138-host"></div>';
     const slice = await loadAppFunctions(["hodlMountMsigBip138Backup"], { stubs: { hodlLoadBip138: () => Promise.resolve(bip138) }, settable: ["hodlWalletResult"] });
@@ -193,9 +195,10 @@ test("a descriptor with private keys shows nothing", async () => {
 test("a pasted backup opens into the descriptor field", async () => {
   const saved = { document: globalThis.document, preview: globalThis.__ENTROPYLAB_PREVIEW__ };
   try {
-    globalThis.__ENTROPYLAB_PREVIEW__ = true;
+    // Release build: the flag is absent (unhidden 11-02, #1398).
+    delete globalThis.__ENTROPYLAB_PREVIEW__;
     globalThis.document = new MiniDocument();
-    globalThis.document.body.innerHTML = applyPreviewBlocks(shell, true);
+    globalThis.document.body.innerHTML = applyPreviewBlocks(shell, false);
     const slice = await loadAppFunctions(["hodlInitMsigBip138Open", "hodlMsigBip138Pending", "hodlMsigBip138Reset"], { stubs: { hodlLoadBip138: () => Promise.resolve(bip138) } });
     slice.hodlInitMsigBip138Open();
     const built = bip138.bip138CreateDescriptorBackup(DESC);
@@ -241,9 +244,10 @@ test("a pasted backup opens into the descriptor field", async () => {
 test("a chosen file is read, validated and the picker reset", async () => {
   const saved = { document: globalThis.document, preview: globalThis.__ENTROPYLAB_PREVIEW__ };
   try {
-    globalThis.__ENTROPYLAB_PREVIEW__ = true;
+    // Release build: the flag is absent (unhidden 11-02, #1398).
+    delete globalThis.__ENTROPYLAB_PREVIEW__;
     globalThis.document = new MiniDocument();
-    globalThis.document.body.innerHTML = applyPreviewBlocks(shell, true);
+    globalThis.document.body.innerHTML = applyPreviewBlocks(shell, false);
     const slice = await loadAppFunctions(["hodlInitMsigBip138Open"], { stubs: { hodlLoadBip138: () => Promise.resolve(bip138) } });
     slice.hodlInitMsigBip138Open();
     const built = bip138.bip138CreateDescriptorBackup(DESC);
@@ -291,9 +295,10 @@ test("a chosen file is read, validated and the picker reset", async () => {
 test("reset drops a held backup", async () => {
   const saved = { document: globalThis.document, preview: globalThis.__ENTROPYLAB_PREVIEW__ };
   try {
-    globalThis.__ENTROPYLAB_PREVIEW__ = true;
+    // Release build: the flag is absent (unhidden 11-02, #1398).
+    delete globalThis.__ENTROPYLAB_PREVIEW__;
     globalThis.document = new MiniDocument();
-    globalThis.document.body.innerHTML = applyPreviewBlocks(shell, true);
+    globalThis.document.body.innerHTML = applyPreviewBlocks(shell, false);
     const slice = await loadAppFunctions(["hodlInitMsigBip138Open", "hodlMsigBip138Reset"], { stubs: { hodlLoadBip138: () => Promise.resolve(bip138) } });
     slice.hodlInitMsigBip138Open();
     const built = bip138.bip138CreateDescriptorBackup(DESC);
@@ -324,9 +329,10 @@ test("an edit to the descriptor drops a backup held from a file", async () => {
   // edit to the descriptor, so entering an xpub replaced what was typed.
   const saved = { document: globalThis.document, preview: globalThis.__ENTROPYLAB_PREVIEW__ };
   try {
-    globalThis.__ENTROPYLAB_PREVIEW__ = true;
+    // Release build: the flag is absent (unhidden 11-02, #1398).
+    delete globalThis.__ENTROPYLAB_PREVIEW__;
     globalThis.document = new MiniDocument();
-    globalThis.document.body.innerHTML = applyPreviewBlocks(shell, true);
+    globalThis.document.body.innerHTML = applyPreviewBlocks(shell, false);
     const slice = await loadAppFunctions(["hodlInitMsigBip138Open"], { stubs: { hodlLoadBip138: () => Promise.resolve(bip138) } });
     slice.hodlInitMsigBip138Open();
     const built = bip138.bip138CreateDescriptorBackup(DESC);
