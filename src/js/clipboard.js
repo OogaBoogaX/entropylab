@@ -12,6 +12,7 @@
 // body, outside a modal's trap and Escape handler, so focus then goes back
 // to whatever held it before the copy.
 import { t as hodlTText } from "./i18n.js";
+import { appClipboardClear, appClipboardGeneration, appClipboardHas, appClipboardOwnCopy } from "./app-clipboard.js";
 
 const fallbackCopy = (text, host) => {
   const focused = document.activeElement;
@@ -23,7 +24,9 @@ const fallbackCopy = (text, host) => {
   host.append(field);
   field.select();
   try {
-    return document.execCommand("copy") === true;
+    // The copy event this fires is the app's own: the generation check
+    // below decides what it ends, not the app clipboard's copy listener.
+    return appClipboardOwnCopy(() => document.execCommand("copy")) === true;
   } catch {
     return false;
   } finally {
@@ -42,11 +45,19 @@ let wroteClipboard = false;
 
 export const copyText = async (text, { host = document.body, isCurrent = () => true } = {}) => {
   if (!text || !isCurrent()) return false;
+  // Copying something else ends what is on EntropyLab's clipboard, but only
+  // what was there when this copy began: a private copy made while the
+  // browser decided this one is newer, and stays.
+  const generation = appClipboardGeneration();
+  const endAppClipboard = () => {
+    if (appClipboardHas() && appClipboardGeneration() === generation) appClipboardClear();
+  };
   const writeText = navigator.clipboard?.writeText;
   if (typeof writeText === "function") {
     try {
       await writeText.call(navigator.clipboard, text);
       wroteClipboard = true;
+      endAppClipboard();
       return true;
     } catch {}
   }
@@ -54,7 +65,10 @@ export const copyText = async (text, { host = document.body, isCurrent = () => t
   // That request cannot be retracted, but it must not start a fresh fallback.
   if (!isCurrent()) return false;
   const copied = fallbackCopy(text, host);
-  if (copied) wroteClipboard = true;
+  if (copied) {
+    wroteClipboard = true;
+    endAppClipboard();
+  }
   return copied;
 };
 
