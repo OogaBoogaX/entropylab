@@ -12698,8 +12698,9 @@ async function hodlSecureEntryToggle(wanted) {
           }
           for (const { state, kind } of keyStates) {
             // Global sync copies computed from this key go with it, as for
-            // words above (GLM, round 1).
-            if (state.globalSync && state.globalSyncSource === `key:${kind}`) hodlClearGlobalSyncCopies(state);
+            // words above (GLM, round 1). A private-key source in another
+            // format is this same key, so its copies go too (K3.1, round 6).
+            if (state.globalSync && String(state.globalSyncSource || "").startsWith("key:")) hodlClearGlobalSyncCopies(state);
             hodlPrivateKeyValues(state.fields)[kind] = "";
           }
         } else if (choice === "clear") {
@@ -13006,6 +13007,9 @@ function hodlSecureKeyApplies() {
   if (!hodlSecureKeyActive()) return false;
   let state = hodlKeys[hodlActiveKey];
   if (hodlSecureKeyHasData(hodlSecureKeyOf(state))) return true;
+  // The masked field on screen is what Derive reads: emptied, it derives
+  // nothing, never a text key stored behind it (K3.1, round 6).
+  if (document.getElementById("secure-key")) return true;
   // The vault field (P3b-2) is not #key, so #key here is only ever the
   // standard text field.
   let typed = document.getElementById("key")?.value ?? (state?.fields ? hodlPrivateKeyValues(state.fields)[hodlSecureKeyKind()] : "") ?? "";

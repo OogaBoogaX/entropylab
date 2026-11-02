@@ -143,7 +143,7 @@ test("Show key reveals whatever the page-wide reveal setting is, and the button 
 
 test("turning Secure entry on clears Global sync copies made from a typed key", () => {
   const toggle = block("hodlSecureEntryToggle");
-  assert.match(toggle, /if \(state\.globalSync && state\.globalSyncSource === `key:\$\{kind\}`\) hodlClearGlobalSyncCopies\(state\);/, "Keep: copies computed from the key");
+  assert.match(toggle, /if \(state\.globalSync && String\(state\.globalSyncSource \|\| ""\)\.startsWith\("key:"\)\) hodlClearGlobalSyncCopies\(state\);/, "Keep: copies computed from the key, whichever format was the source");
   const clear = toggle.slice(toggle.indexOf('} else if (choice === "clear") {'));
   const keyLoop = clear.slice(clear.indexOf("for (const { state } of keyStates)"));
   assert.ok(keyLoop.startsWith("for (const { state } of keyStates)"), "the Clear branch walks the key states");
@@ -182,4 +182,13 @@ test("round 5: Clear empties every private-key format of a key, Keep only the on
   assert.ok(keyLoop.length > 0, "the Clear branch walks the key states");
   // K3.1 (round 5): the brain-wallet text goes too.
   assert.match(keyLoop, /for \(const format of \["wif", "hex-key", "minikey", "brain"\]\) values\[format\] = "";/);
+});
+
+test("round 7: with the masked field on screen, Derive reads only its vault", () => {
+  // K3.1 (round 6): an emptied masked field fell back to a text key stored
+  // behind it.
+  const applies = block("hodlSecureKeyApplies");
+  const masked = applies.indexOf('if (document.getElementById("secure-key")) return true;');
+  const text = applies.indexOf('document.getElementById("key")');
+  assert.ok(masked >= 0 && masked < text, "the masked field is checked before any text key");
 });
