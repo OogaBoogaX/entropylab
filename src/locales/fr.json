@@ -132,7 +132,6 @@
   "Brain wallet": "Portefeuille cérébral",
   "Unsafe. SHA-256 of your text, as a single key pair or a 24-word seed.": "Dangereux. SHA-256 de votre texte, comme paire de clés ou graine de 24 mots.",
   "Private key or recovery passphrase": "Clé privée ou passphrase de récupération",
-  "PSBT v0 (base64 or hex)": "PSBT v0 (base64 ou hexadécimal)",
   "Address network": "Réseau des adresses",
   "Leave blank for inspect-only mode": "Laissez vide pour le mode inspection uniquement",
   "Bitcoin mainnet": "Bitcoin mainnet",
@@ -2509,5 +2508,7 @@
   "To change the method, undo or clear the rolls entered so far.": "Pour changer de méthode, annulez ou effacez les lancers saisis jusqu'à présent.",
   "{n} rolls are recommended for a {words}-word seed: about {bits} bits from a fair die. Fewer rolls make a weaker seed. The count cannot tell you whether your die is fair.": "{n} lancers sont recommandés pour une phrase secrète de {words} mots : environ {bits} bits provenant d'un dé équitable. Moins de lancers rendent la phrase secrète plus faible. Le décompte ne peut pas vous dire si votre dé est équitable.",
   "Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.": "Vos lancers ne sont pas listés sur la page. Ils restent en mémoire pour la dérivation, l'annulation et la révision d'un seul lancer. La révision d'un lancer montre un lancer que vous choisissez, avec sa position.",
-  "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Lancez un dé physique à six faces. Entrez son résultat une fois, en utilisant un bouton ou les touches 1-6."
+  "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Lancez un dé physique à six faces. Entrez son résultat une fois, en utilisant un bouton ou les touches 1-6.",
+  "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "Le champ PSBT a changé pendant que la confirmation était ouverte. Revoyez-le, puis choisissez Remplacer à nouveau ou Conserver.",
+  "PSBT (base64 or hex)": "PSBT (base64 ou hex)"
 }
