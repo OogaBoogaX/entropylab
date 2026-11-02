@@ -11730,10 +11730,12 @@ function hodlMsigBip138CheckText() {
   if (!field || !document.getElementById("msig-backup-open")) return;
   let text = field.value;
   if (!hodlMsigBip138LooksLikeText(text)) {
-    if (hodlMsigBip138Open?.source === "text") {
-      hodlMsigBip138Drop();
-      hodlMsigBip138Status("");
-    }
+    // An edit drops a held backup whatever its source, and cancels a file
+    // still being read: opening either later would replace what was typed
+    // (K3.1, MiniMax, #1374 round 2).
+    let held = hodlMsigBip138Open;
+    hodlMsigBip138Drop();
+    if (held) hodlMsigBip138Status("");
     return;
   }
   let epoch = ++hodlMsigBip138OpenEpoch;
