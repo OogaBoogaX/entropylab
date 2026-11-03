@@ -162,3 +162,28 @@ test("Base58 address typos with a forbidden character do not become outputs", ()
   assert.equal(buildOutputScript("1 Dec 2026, proof of existence").kind, "opreturn");
   assert.equal(buildOutputScript("1" + "a".repeat(32) + "0").kind, "raw");
 });
+
+// Audit M7, first character: a confusable or any other typo in the leading
+// character takes the token out of every prefix class, so the shape alone
+// must carry the intent. A whitespace-free run of letters and digits the
+// length of an address is a mistyped address, never OP_RETURN text.
+test("a typo in the first character of an address is still a mistyped address", () => {
+  const mainnet = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH";
+  for (const first of ["l", "I", "0", "O", "x"]) {
+    const input = first + mainnet.slice(1);
+    assert.throws(() => buildOutputScript(input), /does not decode on mainnet/, input);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn", input);
+  }
+  const testnet = "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn";
+  assert.throws(() => buildOutputScript("M" + testnet.slice(1), { network: "testnet" }), /does not decode on testnet/);
+  // bech32 with a mistyped human-readable part: P2WPKH (42) and P2TR (62).
+  assert.throws(() => buildOutputScript("vc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"), /does not decode on mainnet/);
+  assert.throws(() => buildOutputScript("xc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"), /does not decode on mainnet/);
+  // Digits only at address length is refused rather than silently text.
+  assert.throws(() => buildOutputScript("4" + "7".repeat(33)), /does not decode on mainnet/);
+  // Text keeps its intent below address length and when it carries
+  // punctuation; raw script keeps its reading behind a 0x prefix.
+  assert.equal(buildOutputScript("x" + "a".repeat(23)).kind, "opreturn");
+  assert.equal(buildOutputScript("https://example.com/proof-of-existence").kind, "opreturn");
+  assert.equal(buildOutputScript("0x" + "a".repeat(30)).kind, "raw");
+});
