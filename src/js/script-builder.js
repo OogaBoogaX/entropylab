@@ -82,18 +82,23 @@ export const assembleScriptAsm = (text) => {
 // become OP_RETURN text or a raw script (audit M7). The Base58 arms are
 // capped at 60 body characters, just past the longest real Base58Check
 // address, so long raw hex without a 0x prefix still falls through to the
-// raw-script path. A whitespace-free token of that shape with characters
-// outside the alphabet — a confusable 0/O/I/l, a stray punctuation mark — is
-// a mistyped address, not text. A typo in the first character leaves every
-// prefix class, so the last arm reads the shape alone: a run of 25 to 64
-// letters and digits (Base58 plus its confusables) is a mistyped address.
-// The one exception throughout is raw-script hex — 0x-prefixed, or
+// raw-script path. Two shape arms catch the typos the alphabet arms miss: a
+// 1/2/3/m/n-prefixed token of address length with characters outside the
+// alphabet — a confusable 0/O/I/l, a stray punctuation mark — and, because
+// a typo in the first character leaves every prefix class, any
+// whitespace-free token of 25 to 64 characters that is letters and digits
+// apart from at most two symbols (a stray character in the first position,
+// quotes or brackets left by a paste). A URL or e-mail separator (/, : or
+// @) keeps either shape as text, as does a third symbol in the prefix-free
+// one. The one exception throughout is raw-script hex — 0x-prefixed, or
 // even-length with an a-f digit — which a mistyped address cannot be in
 // practice, and which the raw-script path takes.
+const symbolCount = (text) => (text.match(/[^0-9A-Za-z]/g) ?? []).length;
+const addressShaped = (text) =>
+  (/^[123mn]\S{20,60}$/.test(text) || (/^\S{25,64}$/.test(text) && symbolCount(text) <= 2)) && !/[/:@]/.test(text);
 const looksLikeAddress = (text) =>
   /^(?:bc1|tb1|bcrt1)/i.test(text) || /^[123mn][1-9A-HJ-NP-Za-km-z]{20,60}$/.test(text) ||
-  ((/^[123mn]\S{20,60}$/.test(text) || /^[0-9A-Za-z]{25,64}$/.test(text)) &&
-    !/^0x/i.test(text) && !(isHex(text) && /[a-f]/i.test(text)));
+  (addressShaped(text) && !/^0x/i.test(text) && !(isHex(text) && /[a-f]/i.test(text)));
 
 const scriptFromAddress = (text, network) => {
   const params = network === "regtest" ? BTC_REGTEST : network === "testnet" ? BTC_TESTNET : BTC_MAINNET;

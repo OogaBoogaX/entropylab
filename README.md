@@ -246,11 +246,12 @@ an explicit error before those pairs are allocated.
   for deliberately broken files while still listing their problems. The
   editor never signs anything. Its output-script builder can interpret input
   as an address, raw script, or OP_RETURN text; check the resulting script
-  carefully. In auto mode a whitespace-free run of 25 to 64 letters and
-  digits is read as an address and refused unless it decodes, so a mistyped
-  address never becomes OP_RETURN text. Bare hex is a raw script only when
-  it is even-length, contains an a-f digit and does not read as a Base58
-  address; a `0x` prefix always marks raw script.
+  carefully. In auto mode a whitespace-free token of 25 to 64 characters
+  with at most two symbols, and no `/`, `:` or `@`, is read as an address
+  and refused unless it decodes, so a mistyped address never becomes
+  OP_RETURN text. Bare hex is a raw script only when it is even-length,
+  contains an a-f digit and does not read as a Base58 address; a `0x`
+  prefix always marks raw script.
   The Editor's input label is version-neutral; the decoded report identifies
   the submitted PSBT version. The separate PSBT Inspector and Nonce Inspector
   retain their v0-only input labels and parsing limits.

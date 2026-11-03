@@ -187,3 +187,21 @@ test("a typo in the first character of an address is still a mistyped address", 
   assert.equal(buildOutputScript("https://example.com/proof-of-existence").kind, "opreturn");
   assert.equal(buildOutputScript("0x" + "a".repeat(30)).kind, "raw");
 });
+
+// Audit M7, symbols: a stray symbol in the first position, or quotes and
+// brackets around the token from a chat or spreadsheet paste, must not turn
+// a mistyped address into text. Up to two symbols keep the address reading;
+// a URL or e-mail separator (/, : or @), or a third symbol, keeps text.
+test("a mistyped address wrapped in or starting with a symbol is still a mistyped address", () => {
+  const mainnet = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH";
+  const bech32 = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+  for (const input of ["!" + mainnet.slice(1), "\"" + mainnet, "\"" + mainnet + "\"", "“" + mainnet + "”", "(" + mainnet + ")", "<" + mainnet + ">", "'" + bech32 + "'", "!" + bech32.slice(1)]) {
+    assert.throws(() => buildOutputScript(input), /does not decode on mainnet/, input);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn", input);
+  }
+  assert.throws(() => buildOutputScript("[mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn]", { network: "testnet" }), /does not decode on testnet/);
+  // URLs, e-mail addresses and hyphenated phrases keep their text intent.
+  for (const input of ["https://example.com/proof-of-existence", "mailto:someone@example.com", "entropylab-proof-of-existence", "entropylab-reproducible-build-2026-11-03"]) {
+    assert.equal(buildOutputScript(input).kind, "opreturn", input);
+  }
+});
