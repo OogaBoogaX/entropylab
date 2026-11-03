@@ -286,5 +286,5 @@ test("the Bitcoin Core interop job verifies the pinned bitcoind download before 
   // The job gates a merge exactly like the other behavioral test gates.
   const needsOf = (name) => workflowJob(workflow, name).match(/^    needs: \[([^\]]+)\]$/m)?.[1] ?? "";
   assert.ok(needsOf("artifact").split(", ").includes("test-bitcoind"), "the artifact job must need the interop job");
-  assert.ok(needsOf("deploy").split(", ").includes("test-bitcoind"), "the deploy job must need the interop job");
+  assert.ok(needsOf("preview").split(", ").includes("test-bitcoind"), "the preview deploy must need the interop job");
 });

@@ -29,6 +29,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          # full history: the footer's commit is checked against the tag's
+          fetch-depth: 0
           persist-credentials: false
       - name: Install OpenTimestamps client
         run: |
@@ -63,3 +65,35 @@ jobs:
             exit 1
           fi
           echo "SHA256SUMS.txt, CID.txt and entropylab.html.ots all describe $ACTUAL."
+      - name: Check the footer names this release
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/release"
+          # The footer must name this release (#1406): its version is the
+          # tag's, and its short commit is in the tag's history. The footer
+          # stamps the last commit that changed a build input, which is the
+          # tag's commit or an ancestor of it.
+          # One parser for this check and pages-release.yml's, pinned to the
+          # real footer markup by test/release-footer.test.mjs.
+          if ! FOOTER=$(node "$GITHUB_WORKSPACE/scripts/release-footer.mjs" entropylab.html); then
+            echo "::error title=Footer::entropylab.html carries no readable build footer."
+            exit 1
+          fi
+          VERSION=${FOOTER% *}
+          SHORT=${FOOTER#* }
+          if [ "$VERSION" != "${TAG#v}" ]; then
+            echo "::error title=Footer version::the footer says v$VERSION, but the release tag is $TAG."
+            exit 1
+          fi
+          TAG_COMMIT=$(git -C "$GITHUB_WORKSPACE" rev-parse "$TAG^{commit}")
+          if ! FOOTER_COMMIT=$(git -C "$GITHUB_WORKSPACE" rev-parse --verify --quiet "${SHORT}^{commit}"); then
+            echo "::error title=Footer commit::the footer's commit $SHORT is not a commit in this repository."
+            exit 1
+          fi
+          if ! git -C "$GITHUB_WORKSPACE" merge-base --is-ancestor "$FOOTER_COMMIT" "$TAG_COMMIT"; then
+            echo "::error title=Footer commit::the footer's commit $SHORT is not in the history of $TAG."
+            exit 1
+          fi
+          echo "The footer names $TAG (v$VERSION, commit $SHORT)."
