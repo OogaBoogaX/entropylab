@@ -5,6 +5,10 @@ Release notes for EntropyLab. Each release is a single self-contained
 
 ## Unreleased
 
+- **Development builds say so**: `rock` (and so the live site) now carries
+  version `1.1.0-dev`, so its footer reads `v1.1.0-dev · commit …` instead of
+  the signed release's `v1.0.0` (#1406). A published release whose page
+  still says `-dev` fails the release-assets check.
 - **Release signing: MrHodlX's key `64434EE4…237C` is revoked** (it was on a
   computer later found compromised). Don't trust signatures from it,
   including its v1.0.0 block; v1.0.0 stays verifiable with the other three

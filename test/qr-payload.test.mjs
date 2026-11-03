@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { classifyQrPayload } from "../src/js/qr-payload.js";
 import { bip39English } from "../src/js/bip39.js";
 
@@ -151,7 +152,9 @@ test("a compressed mainnet WIF is classified", () => {
   assert.equal(result.format, "wif");
   assert.equal(result.network, "mainnet");
   assert.equal(result.compressed, true);
-  assert.equal(result.text, text);
+  assert.equal("text" in result, false, "the classifier must not build a string");
+  assert.deepEqual(Array.from(result.bytes), Array.from(bytesOf(text)));
+  result.bytes.fill(0);
 });
 
 test("an uncompressed mainnet WIF is classified", () => {
@@ -160,6 +163,8 @@ test("an uncompressed mainnet WIF is classified", () => {
   assert.equal(result.format, "wif");
   assert.equal(result.network, "mainnet");
   assert.equal(result.compressed, false);
+  assert.deepEqual(Array.from(result.bytes), Array.from(bytesOf(text)));
+  result.bytes.fill(0);
 });
 
 test("a testnet WIF is classified", () => {
@@ -168,12 +173,48 @@ test("a testnet WIF is classified", () => {
   assert.equal(result.format, "wif");
   assert.equal(result.network, "testnet");
   assert.equal(result.compressed, true);
+  assert.deepEqual(Array.from(result.bytes), Array.from(bytesOf(text)));
+  result.bytes.fill(0);
 });
 
 test("a WIF with a corrupted checksum is unknown", () => {
   const text = wifFor(KEY_ONE);
   const corrupted = text.slice(0, 10) + (text[10] === "a" ? "b" : "a") + text.slice(11);
   assert.equal(classifyQrPayload(bytesOf(corrupted)).format, "unknown");
+});
+
+test("a WIF result carries the payload bytes, never text", () => {
+  const text = wifFor(KEY_ONE);
+  const payload = bytesOf(text);
+  const result = classifyQrPayload(payload);
+  assert.equal(result.format, "wif");
+  assert.equal("text" in result, false, "the classifier must not build a string");
+  assert.ok(result.bytes instanceof Uint8Array);
+  assert.deepEqual(Array.from(result.bytes), Array.from(payload));
+  assert.notEqual(result.bytes, payload, "the caller owns a fresh copy");
+  // The caller zeroes its own payload; the result's copy is independent.
+  payload.fill(0);
+  assert.deepEqual(Array.from(result.bytes), Array.from(bytesOf(text)));
+  result.bytes.fill(0);
+});
+
+test("a mini key or a hex key is not classified as a WIF", () => {
+  const mini = "S6c56bnXQiBjk9mqSYE7ykVQ7NzrRy";
+  assert.notEqual(classifyQrPayload(bytesOf(mini)).format, "wif");
+  const hexKey = "0c28fca386c7a227600b2fe50b7cae11ec86d3bf1fbe471be89827e19d72aa1d";
+  assert.notEqual(classifyQrPayload(bytesOf(hexKey)).format, "wif");
+});
+
+test("classifyWif never builds a string", () => {
+  const source = readFileSync(new URL("../src/js/qr-payload.js", import.meta.url), "utf8");
+  const start = source.indexOf("const classifyWif = (bytes) => {");
+  assert.ok(start >= 0, "classifyWif is defined");
+  const end = source.indexOf("\n};", start);
+  assert.ok(end > start, "classifyWif has an end");
+  const body = source.slice(start, end);
+  for (const forbidden of ["fromCharCode", "TextDecoder", "join(", "`"]) {
+    assert.equal(body.includes(forbidden), false, `classifyWif must not contain ${forbidden}`);
+  }
 });
 
 test("a 12-word phrase is classified as words", () => {
