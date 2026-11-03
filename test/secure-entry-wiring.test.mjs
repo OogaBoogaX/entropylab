@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
-import { createSecureSession, seedEntry, seedSet, seedIndices, keyEntry, sessionSet, sessionDeleteKey, sessionWipe, sessionGet, SUPPORTED_METHODS } from "../src/js/secure-entry.js";
+import { createSecureSession, seedEntry, seedSet, seedIndices, keyEntry, sessionSet, sessionDeleteKey, sessionWipe, sessionGet, SUPPORTED_METHODS, rollsEntry, rollsPush, rollsUndo, rollAt, rollsCopy } from "../src/js/secure-entry.js";
 import { seedFromIndices, entropyFromWordIndices } from "../src/js/bip39.js";
 import { wordlist } from "../src/js/bip39-english.js";
 import { createBase58check, hex } from "@scure/base";
@@ -42,6 +42,11 @@ const realSecureEntryStubs = {
   seedEntry,
   seedIndices,
   keyEntry,
+  rollsEntry,
+  rollsPush,
+  rollsUndo,
+  rollAt,
+  rollsCopy,
   hodlSecureSupported: {},
 };
 
@@ -466,6 +471,8 @@ test("hodlFingerprintSource uses secure indices and never reads the text field",
       hodlBitBoxRolls: () => { throw new Error("dice path used"); },
       hodlAnalyzeDiceInput: () => { throw new Error("dice path used"); },
       hodlDiceEntropy: () => { throw new Error("dice path used"); },
+      hodlSecureDiceApplies: () => false,
+      hodlSecureDiceEntropy: () => ({ ok: false }),
       hodlSelectedCardsEntropy: () => { throw new Error("cards path used"); },
       hodlSelectedEntropy: () => { throw new Error("hex path used"); },
       hodlSelectedSeedInput: () => { selectedCalls++; throw new Error("text path used"); },

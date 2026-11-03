@@ -52,7 +52,7 @@ import { HDKey as hodlHDKey } from "./hdkey.js";
 // The unified anti-exfil reader (preview builds) and the AEXB-v1 verifier.
 import { readAntiExfil } from "./anti-exfil.js";
 import { aexbVerify } from "./aexb.js";
-import { entropyToMnemonic as hodlEntropyToMnemonic, mnemonicToEntropy as hodlMnemonicToEntropy, mnemonicToSeedSync as hodlMnemonicToSeed, seedFromEntropy as hodlSeedFromEntropy, seedFromIndices as hodlSeedFromIndices, entropyFromWordIndices as hodlEntropyFromWordIndices, validateMnemonic as hodlIsValidMnemonic } from "./bip39.js";
+import { entropyToMnemonic as hodlEntropyToMnemonic, mnemonicToEntropy as hodlMnemonicToEntropy, mnemonicToSeedSync as hodlMnemonicToSeed, seedFromEntropy as hodlSeedFromEntropy, seedFromIndices as hodlSeedFromIndices, entropyFromWordIndices as hodlEntropyFromWordIndices, validateMnemonic as hodlIsValidMnemonic, indicesFromEntropy as hodlIndicesFromEntropy } from "./bip39.js";
 import { wordlist as bip39English } from "./bip39-english.js";
 // The PSBT editor (its own workspace tab) drives the rust-bitcoin WASM
 // bindings in psbt-wasm.js; heavy lifting lives in psbt-editor.js.
@@ -158,7 +158,7 @@ import { bip47OwnHtml as hodlBip47OwnHtml, bip47ContactHtml as hodlBip47ContactH
 import { PassphraseVault, bindVaultField, singleLineText as hodlSingleLineText } from "./passphrase-vault.js";
 import { parsePrivateKeyBytes, KeyBytesError } from "./key-bytes.js";
 import { endSession as hodlEndSession, initEndSessionConfirm } from "./end-session.js";
-import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn, planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS as hodlSecureSupported } from "./secure-entry.js";
+import { createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet, seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn, planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS as hodlSecureSupported, rollsEntry, rollsPush, rollsUndo, rollAt, rollsCopy } from "./secure-entry.js";
 import { initTextServiceOptOuts, initTranslationWarning } from "./text-services.js";
 import { initSecurityLog } from "./security-log.js";
 import { initConcealOnLeave } from "./conceal-on-leave.js";
@@ -3969,7 +3969,7 @@ function hodlSetDiceFairnessOpen(open) {
 function hodlRenderDiceFairness(value, method, targetWords = hodlTargetWordCount) {
   let panel = document.getElementById("dice-fairness");
   if (!panel) return;
-  let reports = hodlDiceFairnessReports(value, method, targetWords), markup = hodlDiceFairnessMarkup(reports), open = hodlDiceFairnessIsOpen();
+  let reports = hodlSecureDiceApplies() ? hodlSecureDiceFairnessReportsOf(hodlSecureDiceEntry()) : hodlDiceFairnessReports(value, method, targetWords), markup = hodlDiceFairnessMarkup(reports), open = hodlDiceFairnessIsOpen();
   // There is nothing to analyse until rolls arrive, so the control comes and
   // goes with the analysis rather than offering to open an empty panel. The
   // panel goes with it, or clearing the rolls would strand it open with no
@@ -5101,6 +5101,15 @@ function hodlRenderPassphraseInputState(input, enabled = hodlPassphraseBip39Enab
         status.className = "field-note passphrase-bip39-status";
         status.hidden = true;
       }
+    }
+  }
+  // A passphrase longer than 50 code points may not restore on some hardware
+  // wallets. The note is static shell text; show it only when it applies.
+  if (input.id === "pass") {
+    let lengthNote = document.getElementById("passphrase-length-note");
+    if (lengthNote) {
+      let length = hodlPassphraseVaultActive() ? hodlPassphraseVault.length : [...input.value].length;
+      lengthNote.hidden = input.disabled || !(length > 50);
     }
   }
   return analysis;
@@ -6522,7 +6531,15 @@ function hodlRenderSecureEntryControl() {
     return;
   }
   host.hidden = false;
-  let on = hodlSecureEntryOn;
+  let on = hodlSecureEntryOn, methodNote = "";
+  if (on && !hodlSecureKeyActive()) {
+    if (hodlSecureSeedActive()) {
+      if (!hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey])) methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>`;
+    } else if (hodlSecureDiceActive()) {
+      if (!hodlSecureDicePadShown(hodlKeys[hodlActiveKey])) methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-dice-text-backed">${hodlT("These rolls came in as text, so this key uses standard text entry. Clear the field to enter rolls securely.")}</p>`;
+    } else methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>`;
+  }
+  let convertNote = on && hodlSecureEntryConvertFailed ? `<p class="field-note edge-note is-private" id="secure-entry-convert-failed" role="alert">${hodlT("Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.")}</p>` : "";
   host.innerHTML = hodlSwitchBarMarkup({
     id: "secure-entry-switch",
     checked: on,
@@ -6531,7 +6548,7 @@ function hodlRenderSecureEntryControl() {
     state: on ? hodlT("Secure entry: on") : hodlT("Secure entry"),
     hint: on ? hodlT("Limits copies of secrets during entry. Words are entered one at a time; private keys and dice rolls are hidden by default. Secrets still exist in memory. Applies to all keys in this session.") : hodlT("Off — standard text entry."),
     className: "secure-entry-bar",
-  }) + (on ? (hodlSecureKeyActive() ? "" : !hodlSecureSeedActive() ? `<p class="field-note edge-note is-muted" id="secure-entry-unsupported">${hodlT("Secure entry is not available for this method yet. This method uses standard text entry.")}</p>` : !hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey]) ? `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>` : "") + (hodlSecureEntryConvertFailed ? `<p class="field-note edge-note is-private" id="secure-entry-convert-failed" role="alert">${hodlT("Secure entry is still on: some entries could not be converted to text. Try again, or choose Clear entries and turn off.")}</p>` : "") : "");
+  }) + methodNote + convertNote;
   let checkbox = document.getElementById("secure-entry-switch");
   if (checkbox) checkbox.onchange = () => hodlSecureEntryToggle(checkbox.checked);
 }
@@ -6937,6 +6954,7 @@ function hodlSetSeedLength(words) {
 var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null, hodlKeyScanOpenAfterMount = false;
 var hodlSeedScan = null, hodlSeedScanOpenAfterMount = false;
 var hodlSeedPicker = null, hodlSeedPickerImport = null;
+var hodlSecureDicePad = null, hodlSecureDicePadImport = null;
 // The three PSBT scan panels are the same preview-only extra: release builds
 // strip their hosts and never import the module.
 var hodlPsbtScans = [], hodlPsbtScanModule = null, hodlPsbtScanImport = null;
@@ -6963,6 +6981,8 @@ function hodlRenderKeyForm() {
   hodlSeedScan = null;
   try { hodlSeedPicker?.destroy(); } catch {}
   hodlSeedPicker = null;
+  try { hodlSecureDicePad?.destroy(); } catch {}
+  hodlSecureDicePad = null;
   let config = hodlSeedConfig(), keyboardHost = document.getElementById("passphrase-keyboard-host"), toggleHost = document.getElementById("passphrase-keyboard-toggle-host");
   if (keyboardHost) {
     keyboardHost.hidden = true;
@@ -6977,27 +6997,14 @@ function hodlRenderKeyForm() {
   hodlRenderSecureEntryControl();
 
   if (hodlKeyMode === "dice") {
+    if (hodlSecureDiceActive() && hodlSecureDicePadShown(hodlKeys[hodlActiveKey])) { hodlRenderSecureDiceForm(config); return; }
     let dplusFaces = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"],
       dplusPad = dplusFaces.map(face => `<button type="button" data-d="${face}" aria-label="${hodlTAttr("Hexadecimal D16 result {face}", { face })}">${face}</button>`).join("");
     let diceLabel = hodlDiceMethod === "dplus" ? hodlT("D++ rolls (each word D8 and two D16 hexadice; then {final} for checksum)", { final: hodlDPlusFinalPhrase(config.words) }) : hodlDiceMethod === "bitbox" ? hodlT("Dice rolls (each word five D6 and a sixth D6 as a coin flip)") : hodlT("Dice rolls (D6)");
     let dicePlaceholder = hodlDiceMethod === "dplus" ? "100 2AF…" : hodlDiceMethod === "bitbox" ? "111111 222224\u2026" : "415263415263\u2026";
     let dicePad = hodlDiceMethod === "dplus" ? `<div class="dice-input-pad dplus">${dplusPad}</div>` : `<div class="dice-input-pad faces-1-6">${[1,2,3,4,5,6].map(face=>`<button type="button" data-d="${face}">${face}</button>`).join("")}</div>`;
     hodlFormEl.innerHTML = `
-      <p class="label">${hodlT("Dice roll options")}</p>
-      <div class="choice-grid">
-      <label class="choice"><input type="radio" name="dm" value="coldcard" ${hodlDiceMethod === "coldcard" ? "checked" : ""} />
-        <span><strong>${hodlT("Base 10 [1-6] / Hashed rolls")}</strong><span class="desc">${hodlT("SHA-256 of the original dice digit string, matching the method used by COLDCARD and SeedSigner. The first {bits} bits become the selected {words}-word seed; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
-      </label>
-      <label class="choice"><input type="radio" name="dm" value="coleman" ${hodlDiceMethod === "coleman" ? "checked" : ""} />
-        <span><strong>${hodlT("Base 6 [0-5] / Hashed rolls")}</strong><span class="desc">${hodlT("Convert each 6 to 0 and SHA-256 the complete mapped digit string, matching the method used by Keystone. Use the first {bits} bits; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
-      </label>
-      <label class="choice"><input type="radio" name="dm" value="bitbox" ${hodlDiceMethod === "bitbox" ? "checked" : ""} />
-        <span><strong>${hodlT("BitBox diceware / Direct word selection")}</strong><span class="desc">${hodlT("Use five dice showing 1–4, then a coin (or 6th die: 1–3 heads, 4–6 tails). Build {partialWords} lookup-table words, then choose 1 of {candidates} valid final checksum words.", { partialWords: config.partialWords, candidates: config.candidates })}</span></span>
-      </label>
-      <label class="choice"><input type="radio" name="dm" value="dplus" ${hodlDiceMethod==="dplus"?"checked":""} />
-        <span><strong>${hodlT("D++ / Direct word selection")}</strong><span class="desc">${hodlT("Roll one D8 labeled 1–8 and two hexadecimal D16 dice labeled 0–F for each of the first {partialWords} words, then {final} to select the valid checksum final word.", { partialWords: config.partialWords, final: hodlDPlusFinalDescription(config.words) })}</span></span>
-      </label>
-      </div>
+      <p class="label">${hodlT("Dice roll options")}</p>${hodlDiceMethodChoicesMarkup(config)}
       <p class="label" id="dice-label">${diceLabel}</p>
       ${hodlSeedMetaRowMarkup("dice-meta", true)}
       <div class="dice-input-shell"><pre class="dice-input-highlight" id="dice-highlight" translate="no" aria-hidden="true"></pre><textarea id="dice" placeholder="${dicePlaceholder}" aria-describedby="dice-meta"></textarea></div>
@@ -7024,6 +7031,13 @@ function hodlRenderKeyForm() {
       else delete input.hodlDiceBeforeInput;
       hodlSanitizeDiceInput(input);
       hodlUpdateDice();
+      if (!input.hodlRestoring && hodlSecureDiceActive() && !input.value.trim() && !hodlSecureDiceHasRolls(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))) {
+        let state = hodlKeys[hodlActiveKey];
+        if (state) state.fields[hodlDiceFieldName()] = "";
+        delete input.dataset.previousValue;
+        hodlSetMode(hodlKeyMode);
+        hodlSecureDicePadImport?.then(() => { try { hodlSecureDicePad?.focus?.(); } catch {} });
+      }
     };
     input.onscroll = () => hodlSyncDiceHighlight(input);
     hodlFormEl.querySelectorAll("input[name=dm]").forEach(radio => {
@@ -8164,6 +8178,7 @@ function hodlCanDeriveCurrentKey() {
       }
     } else hodlReadCoinType(document.getElementById("network"));
     if (hodlKeyMode === "dice") {
+      if (hodlSecureDiceApplies()) return hodlSecureDiceReady();
       let input = document.getElementById("dice");
       if (!input) return false;
       let analysis = hodlAnalyzeDiceInput(input.value, hodlDiceMethod, hodlTargetWordCount);
@@ -8242,7 +8257,7 @@ function hodlLowEntropyWarningFor(mode, method, value, targetWords) {
 }
 function hodlLowEntropyWarning() {
   try {
-    if (hodlKeyMode === "dice") return hodlLowEntropyWarningFor("dice", hodlDiceMethod, document.getElementById("dice")?.value ?? "", hodlTargetWordCount);
+    if (hodlKeyMode === "dice") return hodlSecureDiceApplies() ? hodlSecureDiceLowEntropyWarning(hodlSecureDiceEntry()?.count ?? 0, hodlTargetWordCount) : hodlLowEntropyWarningFor("dice", hodlDiceMethod, document.getElementById("dice")?.value ?? "", hodlTargetWordCount);
     if (hodlKeyMode === "cards") return hodlLowEntropyWarningFor("cards", hodlCardMethod, document.getElementById(hodlCardMethod === "direct" ? "direct-cards" : "cards")?.value ?? "", hodlTargetWordCount);
 
   } catch {
@@ -8293,6 +8308,10 @@ var hodlMasterFingerprintTimer = 0, hodlMasterFingerprintRevision = 0;
 function hodlFingerprintSource() {
   try {
     if (hodlKeyMode === "dice") {
+      if (hodlSecureDiceApplies()) {
+        let entropy = hodlSecureDiceEntropy(hodlTargetWordCount);
+        return entropy.ok ? { entropy: entropy.bytes } : null;
+      }
       let input = document.getElementById("dice");
       if (!input) return null;
       if (hodlDiceMethod === "dplus") {
@@ -8568,7 +8587,18 @@ async function hodlCalculateKey(progress, action = "derive", options = {}) {
       if (passphraseAnalysis.invalidRanges.length || passphraseAnalysis.incomplete || passphraseAnalysis.trailingSeparator) throw hodlError("Correct the highlighted BIP39-word passphrase inconsistencies before deriving.");
     }
     if (hodlKeyMode === "dice") {
-      if (hodlDiceMethod === "dplus") {
+      if (hodlSecureDiceApplies()) {
+        // Secure entry: the rolls are faces in the session, never text.
+        let entropy = hodlSecureDiceEntropy(hodlTargetWordCount);
+        hodlThrowIfFailed(entropy);
+        let indices;
+        try {
+          indices = hodlIndicesFromEntropy(entropy.bytes);
+        } finally {
+          entropy.bytes.fill(0);
+        }
+        result = await hodlMnemonicWalletWithProgress({ indices }, passphrase, chain, count, { notes: entropy.notes, warnings: entropy.warnings }, account, addressStart, progress, purpose, coinType, hardening, branchStart, branchRange, derivationPlan);
+      } else if (hodlDiceMethod === "dplus") {
         let parsed = hodlDPlusRolls(document.getElementById("dice").value, hodlTargetWordCount);
         if (parsed.firstInvalid) {
           let invalid = parsed.firstInvalid,
@@ -11675,19 +11705,14 @@ function hodlShowMsig() {
   hodlBindMsigCoreImportDescriptors();
   if (typeof hodlMountMsigBip138Backup === "function") hodlMountMsigBip138Backup();
 }
-// BIP-138 encrypted backups of the multisig descriptor, preview builds only:
-// release builds strip the open controls from the shell, render no backup
-// host and never import the module.
+// BIP-138 encrypted backups of the multisig descriptor. The module (and its
+// cipher) is imported on first use, not at load.
 var hodlBip138Import = null, hodlMsigBip138Backup = null, hodlMsigBip138Open = null, hodlMsigBip138Epoch = 0, hodlMsigBip138OpenEpoch = 0;
 function hodlLoadBip138() {
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    if (!hodlBip138Import) hodlBip138Import = import("./bip138.js").catch(() => null);
-    return hodlBip138Import;
-  }
-  return Promise.resolve(null);
+  if (!hodlBip138Import) hodlBip138Import = import("./bip138.js").catch(() => null);
+  return hodlBip138Import;
 }
 function hodlMsigBip138HostMarkup() {
-  if (!(typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__)) return "";
   if (!hodlWalletResult || hodlWalletResult.kind !== "msig" || !hodlWalletResult.walletDescriptor) return "";
   return '<div id="msig-bip138-host"></div>';
 }
@@ -11977,6 +12002,7 @@ function hodlPsbtBytes(raw) {
   let value = raw.trim(), compact = value.replace(/\s/g, "");
   if (!value) throw new Error("Paste a PSBT v0 or a raw Bitcoin transaction.");
   if (compact.length > 7e6) throw new Error("This file is too large to inspect safely.");
+  if (/^(?:ur:|B\$)/i.test(value)) return hodlPsbtBytesFromText(value);
   let bytes;
   if (/^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0 && compact.length >= 10) bytes = hodlHex.decode(compact.toLowerCase());
   else try {
@@ -12241,7 +12267,7 @@ function hodlFinalized(entries) {
 // Structural privacy observations for the Inspector's result. Commentary
 // only: nothing here feeds a check, a verdict or the glance line.
 function hodlPrivacySignalsHtml(signals) {
-  if (!PREVIEW || !signals) return "";
+  if (!signals) return "";
   let html = ["<div data-privacy-signals><p class='label psbt-section-label'>" + hodlT("Privacy signals") + "</p>"];
   let any = false;
   if (signals.mixedFinalization) {
@@ -12981,6 +13007,8 @@ function hodlSyncPsbtControls() {
   let value = (id) => String(document.getElementById(id)?.value || "").trim();
   let decodes = (text) => {
     if (!text) return false;
+    // Assemble QR transports on Inspect/Download, not on every input event.
+    if (/^(?:ur:|B\$)/i.test(text)) return true;
     try {
       hodlPsbtBytes(text);
       return true;
@@ -13027,6 +13055,10 @@ function hodlSetNonceError(spec) {
 // Ending the session is one act wherever it starts: the shared key goes, and
 // so does everything either card holds.
 var hodlNonceQrCapture = null;
+var hodlPsbtInspectorUploadGeneration = 0;
+function hodlPsbtRetireInspectorUploads() {
+  hodlPsbtInspectorUploadGeneration += 1;
+}
 function hodlEndPsbtSession() {
   // A camera failure must not skip the wipe below.
   try { hodlNonceQrCapture?.clear(); } catch {}
@@ -13035,6 +13067,7 @@ function hodlEndPsbtSession() {
   try { hodlNonceHistoryConfirmDialog?.close(); } catch {}
   hodlPsbtRetireAuditUploads();
   hodlPsbtRetireRbfUploads();
+  hodlPsbtRetireInspectorUploads();
   hodlPsbtLast = null;
   hodlPsbtInspected = {};
   hodlPsbtSessionSpec = hodlNote("Accessible fields were cleared (best effort).");
@@ -13192,11 +13225,12 @@ async function hodlSecureEntryToggle(wanted) {
   hodlSecureEntryConvertFailed = false;
   let before = hodlSecureEntryOn, plan = null, committed = false;
   let convertChosen = false;
+  let rollsMethodByKey = new Map();
   try {
     hodlRenderSecureEntryControl();
     hodlCaptureKey();
     if (wanted && !hodlSecureEntryOn) {
-      let keys = [], names = [], states = [], keyStates = [];
+      let keys = [], names = [], states = [], keyStates = [], diceStates = [];
       for (const state of hodlKeys) {
         // A key in another mode keeps any old seed text as text: secure entry
         // converts only what the Seed form shows. hodlCaptureKey() has already
@@ -13220,6 +13254,17 @@ async function hodlSecureEntryToggle(wanted) {
           keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { key: { text: typed.text } } });
           names.push(state.name);
           keyStates.push({ state, kind: typed.kind });
+        }
+        if (state.mode === "dice" && hodlSecureSupported.rolls === true) {
+          let method = state.diceMethod ?? "coldcard";
+          if (method === "coldcard" || method === "coleman") {
+            let text = hodlStoredDiceValue(state.fields, method);
+            if (String(text ?? "").trim()) {
+              keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { rolls: { text, method } } });
+              names.push(state.name);
+              diceStates.push({ state, method });
+            }
+          }
         }
       }
       const converter = ({ phrase, length }) => {
@@ -13256,7 +13301,7 @@ async function hodlSecureEntryToggle(wanted) {
       if (keys.length === 0) {
         commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
       } else {
-        plan = planTurnOn(hodlSecureSession, keys, { seed: converter, key: keyConverter });
+        plan = planTurnOn(hodlSecureSession, keys, { seed: converter, key: keyConverter, rolls: ({ text, method }) => hodlSecureDiceEntryFromText(text, method) });
         let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok });
         if (choice === "keep" && plan.ok) {
           commitTurnOn(hodlSecureSession, plan);
@@ -13281,6 +13326,15 @@ async function hodlSecureEntryToggle(wanted) {
             if (state.globalSync && String(state.globalSyncSource || "").startsWith("key:")) hodlClearGlobalSyncCopies(state);
             hodlPrivateKeyValues(state.fields)[kind] = "";
           }
+          for (const { state, method } of diceStates) {
+            let legacyColeman = method === "coleman" && !Object.prototype.hasOwnProperty.call(state.fields || {}, "colemanDice");
+            state.fields[hodlDiceFieldName(method)] = "";
+            if (legacyColeman) state.fields.dice = "";
+            if (state.globalSync && state.globalSyncSource === "dice:" + method) {
+              hodlClearGlobalSyncCopies(state);
+              state.lastWord = "";
+            }
+          }
         } else if (choice === "clear") {
           discardPlan(plan);
           plan = null;
@@ -13299,6 +13353,13 @@ async function hodlSecureEntryToggle(wanted) {
             // (Grok, round 4; K3.1, round 5).
             let values = hodlPrivateKeyValues(state.fields);
             for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
+          }
+          for (const { state, method } of diceStates) {
+            if (state.result) state.secureCleared = true;
+            if (state.globalSync) hodlClearGlobalSyncCopies(state);
+            let legacyColeman = method === "coleman" && !Object.prototype.hasOwnProperty.call(state.fields || {}, "colemanDice");
+            state.fields[hodlDiceFieldName(method)] = "";
+            if (legacyColeman) state.fields.dice = "";
           }
           commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
         } else {
@@ -13335,6 +13396,18 @@ async function hodlSecureEntryToggle(wanted) {
         let keyHighlight = document.getElementById("private-key-highlight");
         if (keyHighlight) keyHighlight.textContent = "";
       }
+      if (diceStates.some((item) => item.state === hodlKeys[hodlActiveKey])) {
+        let diceField = document.getElementById("dice");
+        if (diceField) {
+          diceField.value = "";
+          delete diceField.dataset.previousValue;
+          delete diceField.hodlDiceBeforeInput;
+        }
+        for (let id of ["dice-highlight", "dice-words", "last-words", "dice-fairness", "dice-meta"]) {
+          let panel = document.getElementById(id);
+          if (panel) panel.textContent = "";
+        }
+      }
       for (const state of hodlKeys) {
         state.globalSync = false;
         state.globalSyncBitCount = 0;
@@ -13365,7 +13438,14 @@ async function hodlSecureEntryToggle(wanted) {
         // from the plan, and planning after it reads the session as it is now.
         let choice = await (await hodlSecureEntryDialog()).open({ mode: "off" });
         if (choice === "convert") convertChosen = true;
-        if (choice === "convert") plan = planTurnOff(hodlSecureSession, { seed: serializer, key: keySerializer });
+        if (choice === "convert") {
+          // A key that never had secure entry has no id to look up.
+          for (const state of hodlKeys) {
+            let keyId = hodlSecureKeyOf(state);
+            if (keyId != null) rollsMethodByKey.set(keyId, sessionGet(hodlSecureSession, keyId, "rolls")?.method);
+          }
+          plan = planTurnOff(hodlSecureSession, { seed: serializer, key: keySerializer, rolls: hodlSecureDiceRollsText });
+        }
         if (choice === "convert" && plan.ok) {
           let texts = [];
           try {
@@ -13389,6 +13469,11 @@ async function hodlSecureEntryToggle(wanted) {
               let kind = hodlNormalizePrivateKeyKind(state.fields.keyKind);
               if (kind !== "wif" && kind !== "hex-key" && kind !== "minikey") kind = hodlDetectPrivateKeyKind(text) || "wif";
               hodlPrivateKeyValues(state.fields)[kind] = text;
+            } else if (method === "rolls") {
+              // An empty pad holds nothing to convert: it must not blank rolls
+              // kept as text in that field, as for keys above (Gemini, #1395).
+              if (!text) continue;
+              state.fields[hodlDiceFieldName(rollsMethodByKey.get(keyId) ?? state.diceMethod ?? "coldcard")] = text;
             }
           }
         } else if (choice === "clear") {
@@ -13542,7 +13627,7 @@ function hodlSecureEntryHasData(keyId) {
   if (keyId == null) return false;
   // Any method: the protective callers (backup, detach, turn-off, Review,
   // secureSource) must see secure data of either kind.
-  return hodlSecureSeedHasWords(keyId) || hodlSecureKeyHasData(keyId);
+  return hodlSecureSeedHasWords(keyId) || hodlSecureKeyHasData(keyId) || hodlSecureDiceHasRolls(keyId);
 }
 // Secure entry decides a seed key's words only when they were entered with it:
 // a key holding secure words, or one with nothing typed yet. A seed that came
@@ -13603,6 +13688,254 @@ function hodlSecureKeyFormApplies(state) {
   if (hodlSecureKeyHasData(hodlSecureKeyOf(state))) return true;
   let typed = state?.fields ? hodlPrivateKeyValues(state.fields)[kind] : "";
   return !String(typed ?? "").trim();
+}
+
+var hodlSecureDiceCapacity = 400;
+
+function hodlSecureDiceActive() {
+  return hodlSecureEntryOn && hodlSecureSupported.rolls === true && hodlKeyMode === "dice" && (hodlDiceMethod === "coldcard" || hodlDiceMethod === "coleman");
+}
+
+function hodlSecureDiceHasRolls(keyId) {
+  if (keyId == null) return false;
+  try {
+    return (sessionGet(hodlSecureSession, keyId, "rolls")?.count ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
+
+function hodlSecureDiceEntry(create = false) {
+  if (!hodlSecureDiceActive()) return null;
+  let state = hodlKeys[hodlActiveKey];
+  let key = hodlSecureKeyOf(state, create);
+  if (key == null) return null;
+  let entry = sessionGet(hodlSecureSession, key, "rolls");
+  if (create && (!entry || entry.count === 0 && entry.method !== hodlDiceMethod)) {
+    entry = rollsEntry(hodlDiceMethod, hodlSecureDiceCapacity);
+    sessionSet(hodlSecureSession, key, "rolls", entry);
+  }
+  return entry;
+}
+
+function hodlSecureDicePadShown(state) {
+  return hodlSecureDiceHasRolls(hodlSecureKeyOf(state)) || !String(hodlStoredDiceValue(state?.fields) ?? "").trim();
+}
+
+function hodlSecureDiceApplies() {
+  if (!hodlSecureDiceActive()) return false;
+  let state = hodlKeys[hodlActiveKey];
+  if (hodlSecureDiceHasRolls(hodlSecureKeyOf(state))) return true;
+  if (document.getElementById("secure-dice-host")) return true;
+  let typed = document.getElementById("dice")?.value ?? hodlStoredDiceValue(state?.fields);
+  return !String(typed ?? "").trim();
+}
+
+function hodlSecureDiceEntryFromText(text, method) {
+  let entry = rollsEntry(method, hodlSecureDiceCapacity);
+  try {
+    let found = 0, value = String(text ?? "");
+    for (let i = 0; i < value.length; i++) {
+      let code = value.charCodeAt(i);
+      if (code >= 0x31 && code <= 0x36) {
+        rollsPush(entry, code - 0x30);
+        found += 1;
+      } else if (/\s|,|;|\|/.test(value[i])) continue;
+      else throw new Error("bad roll");
+    }
+    if (!found) throw new Error("no rolls");
+    return entry;
+  } catch (error) {
+    try { entry.rolls.fill(0); } catch {}
+    throw error;
+  }
+}
+
+function hodlSecureDiceRollsText(entry) {
+  let bytes = new Uint8Array(entry.count);
+  try {
+    for (let i = 0; i < entry.count; i++) bytes[i] = 0x30 + rollAt(entry, i);
+    return new TextDecoder().decode(bytes);
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+function hodlSecureDiceEntropyOf(entry, targetWords = hodlTargetWordCount) {
+  let config = hodlSeedConfig(targetWords), notes = [], warnings = [];
+  if (!entry || entry.count === 0 || (entry.method !== "coldcard" && entry.method !== "coleman")) return { ok: false, error: hodlNote("Enter at least one dice roll (faces 1–6)."), notes, warnings };
+  let count = entry.count, sourceBits = hodlDiceEntropyBits(count);
+  notes.push(hodlNote("{n} rolls of a fair six-sided die ≈ {bits} bits.", { n: count, bits: sourceBits.toFixed(1) }));
+  if (count < config.hashRolls) warnings.push(hodlNote("Only {have} of {need} recommended fair-die rolls were entered. The {words}-word phrase is deterministic, but its security cannot exceed the approximately {bits} bits supplied. Use only for testing until the recommendation is met.", { have: count, need: config.hashRolls, words: config.words, bits: sourceBits.toFixed(1) }));
+  else if (count > config.hashRolls) notes.push(hodlNote("All {n} rolls, including {extra} beyond the recommendation, are included in the hash.", { n: count, extra: count - config.hashRolls }));
+  let input = new Uint8Array(count), digest = null, bytes;
+  try {
+    for (let i = 0; i < count; i++) {
+      let face = rollAt(entry, i);
+      input[i] = entry.method === "coleman" && face === 6 ? 0x30 : 0x30 + face;
+    }
+    digest = hodlSha256(input);
+    bytes = digest.slice(0, config.bytes);
+  } finally {
+    input.fill(0);
+    if (digest) digest.fill(0);
+  }
+  if (entry.method === "coleman") notes.push(hodlNote("Hashed rolls / Base 6 [0-5]: convert every 6 to 0, SHA-256 hash the complete mapped digit string, then use the first {bits} bits for the selected {words}-word seed. This matches the method used by Keystone.", { bits: config.bits, words: config.words }));
+  else notes.push(hodlNote("Hashed rolls / Base 10 [1-6]: SHA-256 hash the complete original dice digit string, then use the first {bits} bits for the selected {words}-word seed. This matches COLDCARD and SeedSigner.", { bits: config.bits, words: config.words }));
+  return { ok: true, bytes, bits: config.bits, sourceBits, method: entry.method === "coleman" ? "ian-coleman-dice-sha256" : "coldcard-sha256", notes, warnings };
+}
+
+function hodlSecureDiceEntropy(targetWords = hodlTargetWordCount) {
+  return hodlSecureDiceEntropyOf(hodlSecureDiceEntry(), targetWords);
+}
+
+function hodlSecureDiceReady() {
+  let entropy = hodlSecureDiceEntropy();
+  let ok = Boolean(entropy?.ok);
+  try { entropy?.bytes?.fill(0); } catch {}
+  return ok;
+}
+
+function hodlSecureDiceLowEntropyWarning(count, targetWords = hodlTargetWordCount) {
+  let config = hodlSeedConfig(targetWords);
+  if (count && count < config.hashRolls) return { bits: hodlDiceEntropyBits(count).toFixed(1), recommended: config.bits, words: config.words, detail: hodlNote("{have} of {n} recommended rolls", { have: count, n: config.hashRolls }) };
+  return null;
+}
+
+function hodlSecureDiceFairnessReportsOf(entry) {
+  if (!entry || entry.count < hodlDiceMinimumRolls(6)) return [];
+  let faces = rollsCopy(entry);
+  try {
+    return [hodlDiceFairnessAssess(faces, ["1", "2", "3", "4", "5", "6"], "D6")];
+  } finally {
+    faces.fill(0);
+  }
+}
+
+function hodlDiceMethodChoicesMarkup(config) {
+  return `
+      <div class="choice-grid">
+      <label class="choice"><input type="radio" name="dm" value="coldcard" ${hodlDiceMethod === "coldcard" ? "checked" : ""} />
+        <span><strong>${hodlT("Base 10 [1-6] / Hashed rolls")}</strong><span class="desc">${hodlT("SHA-256 of the original dice digit string, matching the method used by COLDCARD and SeedSigner. The first {bits} bits become the selected {words}-word seed; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
+      </label>
+      <label class="choice"><input type="radio" name="dm" value="coleman" ${hodlDiceMethod === "coleman" ? "checked" : ""} />
+        <span><strong>${hodlT("Base 6 [0-5] / Hashed rolls")}</strong><span class="desc">${hodlT("Convert each 6 to 0 and SHA-256 the complete mapped digit string, matching the method used by Keystone. Use the first {bits} bits; {hashRolls} rolls are recommended, and every entered roll is included.", { bits: config.bits, words: config.words, hashRolls: config.hashRolls })}</span></span>
+      </label>
+      <label class="choice"><input type="radio" name="dm" value="bitbox" ${hodlDiceMethod === "bitbox" ? "checked" : ""} />
+        <span><strong>${hodlT("BitBox diceware / Direct word selection")}</strong><span class="desc">${hodlT("Use five dice showing 1–4, then a coin (or 6th die: 1–3 heads, 4–6 tails). Build {partialWords} lookup-table words, then choose 1 of {candidates} valid final checksum words.", { partialWords: config.partialWords, candidates: config.candidates })}</span></span>
+      </label>
+      <label class="choice"><input type="radio" name="dm" value="dplus" ${hodlDiceMethod==="dplus"?"checked":""} />
+        <span><strong>${hodlT("D++ / Direct word selection")}</strong><span class="desc">${hodlT("Roll one D8 labeled 1–8 and two hexadecimal D16 dice labeled 0–F for each of the first {partialWords} words, then {final} to select the valid checksum final word.", { partialWords: config.partialWords, final: hodlDPlusFinalDescription(config.words) })}</span></span>
+      </label>
+      </div>`;
+}
+
+function hodlSyncSecureDiceLock() {
+  let entry = hodlSecureDiceEntry(), locked = Boolean(entry && entry.count > 0);
+  document.querySelectorAll("input[name=dm]").forEach((radio) => {
+    radio.disabled = locked ? radio.value !== entry.method : false;
+  });
+  let note = document.getElementById("secure-dice-lock-note");
+  if (note) note.hidden = !locked;
+}
+
+function hodlRenderSecureDiceMeta() {
+  let meta = document.getElementById("dice-meta");
+  if (!meta) return;
+  let count = hodlSecureDiceEntry()?.count ?? 0, config = hodlSeedConfig(), missing = Math.max(0, config.hashRolls - count), metaBitsValue = hodlDiceEntropyBits(count);
+  hodlRenderMeta("dice-meta", [
+    [missing ? hodlTText("{have} of {n} recommended rolls", { have: hodlMetaToken, n: config.hashRolls }) : hodlTText("{have} rolls", { have: hodlMetaToken }), hodlMetaValue(String(count), !missing)],
+    [hodlTText("{bits} bits estimated", { bits: hodlMetaToken }), hodlMetaValue(metaBitsValue.toFixed(1), metaBitsValue >= config.bits)],
+  ]);
+}
+
+function hodlSecureDiceChanged() {
+  hodlInvalidateLiveKeyResult();
+  hodlSetWorkspaceError("key", null);
+  hodlRenderSecureDiceMeta();
+  hodlSyncSecureDiceLock();
+  hodlRenderDiceFairness("", hodlDiceMethod, hodlSeedConfig().words);
+  hodlSyncKeyClearButton();
+  hodlSyncDeriveButton();
+  hodlQueueMasterFingerprintPreview();
+}
+
+function hodlMountSecureDicePad() {
+  let host = document.getElementById("secure-dice-host");
+  if (!host || !hodlSecureDiceActive()) return;
+  if (!hodlSecureDicePadImport) hodlSecureDicePadImport = import("./secure-dice-pad.js").catch(() => null);
+  hodlSecureDicePadImport.then((module) => {
+    if (!module) {
+      hodlSecureDicePadImport = null;
+      if (host.isConnected && host.childNodes.length === 0 && hodlSecureDiceActive()) {
+        host.innerHTML = `<p class="field-note edge-note is-private" id="secure-dice-load-error" role="alert">${hodlT("The dice pad could not load. Turn Secure entry off to use standard text entry.")}</p>`;
+      }
+      return;
+    }
+    if (hodlSecureDicePad || !host.isConnected || host.childNodes.length || !hodlSecureDiceActive()) return;
+    let entry = hodlSecureDiceEntry(true);
+    if (!entry) return;
+    try {
+      hodlSecureDicePad = module.mountSecureDicePad(host, {
+        entry, rollsPush, rollsUndo, rollAt, labelledBy: "dice-label", translate: hodlTText,
+        onChange: hodlSecureDiceChanged,
+      });
+    } catch {
+      if (host.isConnected && hodlSecureDiceActive()) {
+        host.innerHTML = "";
+        host.innerHTML = `<p class="field-note edge-note is-private" id="secure-dice-load-error" role="alert">${hodlT("The dice pad could not load. Turn Secure entry off to use standard text entry.")}</p>`;
+      }
+    }
+  }).catch(() => {});
+}
+
+function hodlRenderSecureDiceForm(config) {
+  let state = hodlKeys[hodlActiveKey];
+  let existingKey = hodlSecureKeyOf(state), existing = existingKey == null ? null : sessionGet(hodlSecureSession, existingKey, "rolls");
+  if (existing && existing.count > 0 && (existing.method === "coldcard" || existing.method === "coleman") && existing.method !== hodlDiceMethod) {
+    hodlDiceMethod = existing.method;
+    if (state) state.diceMethod = existing.method;
+  }
+  hodlSecureDiceEntry(true);
+  let lockNote = hodlT("To change the method, undo or clear the rolls entered so far.");
+  let recommendation = hodlT("{n} rolls are recommended for a {words}-word seed: about {bits} bits from a fair die. Fewer rolls make a weaker seed. The count cannot tell you whether your die is fair.", { n: config.hashRolls, words: config.words, bits: hodlDiceEntropyBits(config.hashRolls).toFixed(1) });
+  let transcript = hodlT("Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.");
+  hodlFormEl.innerHTML = `<p class="label">${hodlT("Dice roll options")}</p>${hodlDiceMethodChoicesMarkup(config)}
+      <p class="field-note" id="secure-dice-lock-note" hidden>${lockNote}</p>
+      <p class="label" id="dice-label">${hodlT("Dice rolls (D6)")}</p>
+      <p class="label-description" id="secure-dice-help">${hodlT("Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.")}</p>
+      ${hodlSeedMetaRowMarkup("dice-meta")}
+      <div id="secure-dice-host" data-secure-dice></div>
+      <p class="field-note" id="secure-dice-recommendation">${recommendation}</p>
+      <p class="field-note" id="secure-dice-transcript-note">${transcript}</p>
+      ${hodlDiceFairnessControlsMarkup(hodlDiceMethod, state?.showDiceFairness)}`;
+  let fairnessToggle = document.getElementById("dice-fairness-toggle");
+  if (fairnessToggle) fairnessToggle.onclick = () => hodlSetDiceFairnessOpen(!hodlDiceFairnessIsOpen());
+  hodlFormEl.querySelectorAll("input[name=dm]").forEach((radio) => {
+    radio.onchange = () => {
+      if (hodlSecureDiceHasRolls(hodlSecureKeyOf(hodlKeys[hodlActiveKey]))) {
+        let method = hodlSecureDiceEntry()?.method;
+        hodlFormEl.querySelectorAll("input[name=dm]").forEach((item) => { item.checked = item.value === method; });
+        return;
+      }
+      let previousMethod = hodlDiceMethod, nextState = hodlKeys[hodlActiveKey];
+      hodlDiceMethod = radio.value;
+      hodlDiceCoinPositions = nextState && hodlDiceMethod === "bitbox" ? hodlNormalizeDiceCoinPositions(nextState.diceCoinPositions) : [];
+      hodlManualCalculationsOpen = false;
+      if (nextState) {
+        nextState.diceMethod = hodlDiceMethod;
+        hodlPickedLastWord = hodlDiceMethod === "dplus" ? nextState.dplusLastWord || "" : hodlDiceMethod === "bitbox" ? nextState.lastWord || "" : "";
+      } else hodlPickedLastWord = previousMethod === hodlDiceMethod ? hodlPickedLastWord : "";
+      hodlSetMode(hodlKeyMode);
+      hodlQueueMasterFingerprintPreview(0);
+    };
+  });
+  hodlSyncSecureDiceLock();
+  hodlRenderSecureDiceMeta();
+  hodlRenderDiceFairness("", hodlDiceMethod, config.words);
+  hodlMountSecureDicePad();
+  hodlBindKeyFields();
+  hodlRenderPassphraseKeyboard();
 }
 
 // P3b-2: the code-point lengths at which a private key of this kind is
@@ -13913,12 +14246,19 @@ function hodlInitPsbt() {
     const chosen = nonceFile.files?.[0];
     nonceFile.value = "";
     if (!chosen) return;
+    const generation = hodlPsbtInspectorUploadGeneration;
     (async () => {
       try {
-        const bytes = hodlPsbtInspectorBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
+        // Sized before it is read, like the editor's upload: the decoder's
+        // 5 MB bound must not be reached by first reading a far larger file.
+        if (chosen.size > 5e6) throw new Error("This file is too large to inspect safely.");
+        const upload = new Uint8Array(await chosen.arrayBuffer());
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
+        const bytes = hodlPsbtInspectorBytesFromUpload(upload);
         document.getElementById("nonce-text").value = hodlBytesToB64(bytes);
         hodlRunNonce();
       } catch (exception) {
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
         hodlSetNonceError({ raw: exception.message || String(exception) });
       }
       hodlSyncPsbtControls();
@@ -13933,12 +14273,17 @@ function hodlInitPsbt() {
     const chosen = file.files?.[0];
     file.value = "";
     if (!chosen) return;
+    const generation = hodlPsbtInspectorUploadGeneration;
     (async () => {
       try {
-        const bytes = hodlPsbtInspectorBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
+        if (chosen.size > 5e6) throw new Error("This file is too large to inspect safely.");
+        const upload = new Uint8Array(await chosen.arrayBuffer());
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
+        const bytes = hodlPsbtInspectorBytesFromUpload(upload);
         document.getElementById("psbt-text").value = hodlBytesToB64(bytes);
         hodlRunPsbt();
       } catch (exception) {
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
         hodlSetPsbtError({ raw: exception.message || String(exception) });
       }
       hodlSyncPsbtControls();
@@ -14653,6 +14998,9 @@ function hodlPsbtLoadRbfUpload(file) {
   let generation = ++hodlPsbtRbfUploadGeneration;
   (async () => {
     try {
+      // Sized before it is read: the decoder's 5 MB bound must not be
+      // reached by first reading a far larger file into memory.
+      if (file.size > 5e6) throw new Error("This PSBT is too large to edit safely.");
       let bytes = psbtBytesFromUpload(new Uint8Array(await file.arrayBuffer()));
       if (generation !== hodlPsbtRbfUploadGeneration) return;
       document.getElementById("psbt-rbf-original").value = hodlBytesToB64(bytes);
@@ -14820,6 +15168,7 @@ function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network) {
 async function hodlPsbtLoadAuditUpload(chosen) {
   const generation = ++hodlPsbtAuditUploadGeneration;
   try {
+    if (chosen.size > 5e6) throw new Error("This PSBT is too large to edit safely.");
     const bytes = psbtBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
     if (generation !== hodlPsbtAuditUploadGeneration) return;
     document.getElementById("psbt-audit-before").value = hodlBytesToB64(bytes);
@@ -22300,7 +22649,14 @@ function hodlRenderVanityOut() {
     let secret = hodlVanityReveal
       ? `<span class="mono vanity-pass-text table-private-field-value" data-private-value data-i18n-skip translate="no">${hodlEscapeHtml(match.passphrase)}</span>`
       : `<span class="mono vanity-pass-text" aria-hidden="true">${hodlEscapeHtml("•".repeat(12))}</span><span class="sr-only">${hodlT("Passphrase hidden — turn on the Private data switch above to reveal")}</span>`;
-    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, hodlTAttr("Copy passphrase to EntropyLab's clipboard"))}</span></td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
+    // A found passphrase longer than 50 code points may not restore on some
+    // hardware wallets; the note sits under the passphrase it describes. Only
+    // while passphrases show: masked, the note would leak a length the mask
+    // hides (audit A35-3; GLM, MiniMax, DeepSeek and the red team, round 1).
+    let lengthNote = hodlVanityReveal && Array.from(match.passphrase ?? "").length > 50
+      ? `<p class="field-note edge-note is-private">${hodlT("Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.")}</p>`
+      : "";
+    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, hodlTAttr("Copy passphrase to EntropyLab's clipboard"))}</span>${lengthNote}</td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
   }).join("");
   let overflow = hodlVanityFound > hodlVanityMatches.length ? `<p class="muted">${hodlT("Only the first {n} matches are listed; {total} found in total.", { n: hodlVanityMatches.length, total: hodlVanityFormatCount(hodlVanityFound) })}</p>` : "";
   // Plain text: the description below escapes it once, as a placeholder value.
@@ -23168,7 +23524,7 @@ function hodlConcealPrivateValues(options) {
   // Body-level overlays (the expandable window, the address/PSBT QR) are
   // outside every wiped view and listen for this single conceal signal,
   // including the idle-timer path that fires no blur or print event.
-  document.dispatchEvent(new Event("hodl:conceal"));
+  document.dispatchEvent(new CustomEvent("hodl:conceal", { detail: { reason: options?.reason } }));
 }
 function hodlInitSecretFieldAutoClear() {
   let clearSecretFields = () => {
@@ -23244,6 +23600,7 @@ function hodlInitSecretFieldAutoClear() {
     if (psbtAuditBefore) psbtAuditBefore.value = "";
     // A pending audit upload must not write it back once the read finishes.
     try { hodlPsbtRetireAuditUploads(); } catch {}
+    try { hodlPsbtRetireInspectorUploads(); } catch {}
     // The rendered audit holds change addresses and fingerprints derived
     // from the loaded key; retire it with the field it was computed from.
     try { hodlPsbtClearSignerAudit(); } catch {}
@@ -23352,6 +23709,8 @@ function hodlInitSecretFieldAutoClear() {
     hodlKeyScan = null;
     try { hodlSeedPicker?.destroy(); } catch {}
     hodlSeedPicker = null;
+    try { hodlSecureDicePad?.destroy(); } catch {}
+    hodlSecureDicePad = null;
     // The PSBT panels come down before any decoder is retired (their decoders
     // live in the same registry as the Key Station's), then the registry goes.
     try { hodlDestroyPsbtScans(); } catch {}
@@ -23378,6 +23737,7 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlReleaseSecureKeyField(); } catch {}
     // The masked key field showed the vault: redraw it as the standard field.
     try { if (document.querySelector("[data-secure-key]")) hodlSetMode(hodlKeyMode); } catch {}
+    try { if (document.getElementById("secure-dice-host")) hodlSetMode(hodlKeyMode); } catch {}
     hodlSyncWorkspaceCounts();
   };
   addEventListener("pagehide", clearSecretFields);

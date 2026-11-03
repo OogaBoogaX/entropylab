@@ -254,7 +254,9 @@
   };
   const currentVersion = document.querySelector('meta[name="application-version"]')?.content;
   const currentFile = "entropylab.html";
-  const versionHeader = `ENTROPYLAB ${currentVersion?.toUpperCase()}`;
+  // Only the leading "v" is upper-cased: a -dev version keeps its suffix as
+  // the export writes it ("ENTROPYLAB V1.1.0-dev", #1406).
+  const versionHeader = `ENTROPYLAB ${currentVersion?.replace(/^v/, "V")}`;
 
   await wait(500);
 

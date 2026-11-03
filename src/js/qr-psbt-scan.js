@@ -8,6 +8,11 @@
 // written to the field; every scanned buffer is zeroed as soon as it has been
 // written or discarded, and a pending scan is dropped on conceal, close and
 // destroy().
+// Continuous capture belongs to at most one mounted panel. Ending capture
+// invalidates its generation before stopping the scanner, so late results and
+// statuses cannot revive it. A visible permission-prompt blur may leave a
+// pending request alive only if focus returns before activation; active capture
+// still stops on every conceal.
 
 import { t } from "./i18n.js";
 import { createQrDecoder, retireQrDecoders } from "./qr-scan.js";
@@ -18,6 +23,8 @@ import { QR_WASM_B64 } from "./qr-wasm-b64.js";
 export { retireQrDecoders };
 
 const defaultWasmBytes = () => Uint8Array.from(atob(QR_WASM_B64), (character) => character.charCodeAt(0));
+
+let activeCapture = null;
 
 // Each status is a thunk: the string is looked up when it is shown, so a
 // language switch is honoured, and the catalog sweep still sees the literal.
@@ -35,6 +42,7 @@ const STATUS_TEXT = {
   "too-large": () => t("This QR is too large to load."),
   "bad-part": () => t("This QR could not be read as a PSBT."),
   confirm: () => t("Replace the PSBT in the field?"),
+  "field-changed": () => t("The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep."),
   loaded: (vars) => t("PSBT loaded from the camera ({n} bytes).", vars),
   kept: () => t("The scan was discarded; the field was not changed."),
 };
@@ -109,6 +117,10 @@ export function mountPsbtScan(host, {
   let destroyed = false;
   let cameraRunning = false;
   let pending = null;
+  let pendingField = null;
+  let scanGeneration = 0;
+  let liveGeneration = null;
+  let awaitingCamera = false;
 
   const updateAcquisition = () => {
     const acquiring = open && !pending;
@@ -120,7 +132,7 @@ export function mountPsbtScan(host, {
     const key = Object.prototype.hasOwnProperty.call(STATUS_TEXT, code) ? code : "error";
     statusLine.setAttribute("data-scan-state", key);
     statusLine.textContent = STATUS_TEXT[key](vars);
-    cameraRunning = key === "scanning" || key === "two-codes";
+    // Recoverable payload refusals change the message, not the live camera.
     updateAcquisition();
   };
 
@@ -138,8 +150,31 @@ export function mountPsbtScan(host, {
   const dropPending = () => {
     const bytes = pending;
     pending = null;
+    pendingField = null;
     confirm.hidden = true;
     try { bytes?.fill?.(0); } catch {}
+  };
+
+  const clearReader = () => {
+    reader.reset();
+    progressLine.hidden = true;
+    progressLine.textContent = "";
+  };
+
+  const releaseSession = () => {
+    liveGeneration = null;
+    awaitingCamera = false;
+    cameraRunning = false;
+    if (activeCapture === stopByOther) activeCapture = null;
+    clearReader();
+    updateAcquisition();
+  };
+
+  const stopAcquisition = (code) => {
+    releaseSession();
+    // Invalidate first: stop() may synchronously emit a status.
+    try { scanner?.stop(); } catch {}
+    if (code && open && !destroyed) showStatus(code);
   };
 
   const write = (bytes) => {
@@ -159,6 +194,7 @@ export function mountPsbtScan(host, {
     if (text == null || !event) {
       try { bytes.fill(0); } catch {}
       pending = null;
+      pendingField = null;
       confirm.hidden = true;
       showStatus("error");
       return;
@@ -170,12 +206,14 @@ export function mountPsbtScan(host, {
     } catch {
       try { bytes.fill(0); } catch {}
       pending = null;
+      pendingField = null;
       confirm.hidden = true;
       showStatus("error");
       return;
     }
     try { bytes.fill(0); } catch {}
     pending = null;
+    pendingField = null;
     confirm.hidden = true;
     try { onLoad?.(); } catch {}
     progressLine.hidden = true;
@@ -183,15 +221,16 @@ export function mountPsbtScan(host, {
   };
 
   const onComplete = (bytes) => {
+    stopAcquisition();
     if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
       try { bytes?.fill?.(0); } catch {}
       showStatus("error");
       return;
     }
-    try { scanner?.stop(); } catch {}
     progressLine.hidden = true;
     if (String(field.value ?? "") !== "") {
       pending = bytes;
+      pendingField = String(field.value ?? "");
       confirm.hidden = false;
       showStatus("confirm");
       return;
@@ -199,25 +238,15 @@ export function mountPsbtScan(host, {
     write(bytes);
   };
 
-  const restartCamera = () => {
-    if (destroyed || !open || pending) return;
-    if (!ensureScanner()) return;
-    try {
-      scanner.start();
-    } catch {
-      showStatus("error");
-    }
-  };
-
   const onResult = (payload) => {
-    // A result that arrives after the panel closed (or was destroyed) is
-    // scrubbed and ignored.
-    if (destroyed || !open) {
+    // Closed, stopped, completed and superseded captures never accept a frame.
+    const generation = liveGeneration;
+    if (destroyed || !open || generation === null || pending) {
       try { payload?.fill?.(0); } catch {}
       return;
     }
     if (!(payload instanceof Uint8Array)) {
-      showStatus("error");
+      stopAcquisition("error");
       return;
     }
     let text = null;
@@ -239,7 +268,11 @@ export function mountPsbtScan(host, {
       result = null;
     }
     if (!result || typeof result !== "object") {
-      showStatus("error");
+      stopAcquisition("error");
+      return;
+    }
+    if (generation !== liveGeneration) {
+      try { result.bytes?.fill?.(0); } catch {}
       return;
     }
     if (result.status === "complete") {
@@ -248,16 +281,30 @@ export function mountPsbtScan(host, {
     }
     if (result.status === "partial") {
       updateProgress();
-      restartCamera();
+      // The same stream and deadline serve every part.
       return;
     }
-    if (result.status === "done") return;
-    const code = result.status === "wrong-type" ? "not-psbt" : result.status === "bad-cbor" ? "bad-part" : result.status;
-    showStatus(code);
+    if (result.status === "wrong-type" || result.status === "not-psbt") {
+      showStatus("not-psbt");
+      return;
+    }
+    const code = result.status === "bad-cbor" ? "bad-part" : result.status === "done" ? "stopped" : result.status;
+    stopAcquisition(code);
   };
 
   const onStatus = (code) => {
-    if (destroyed || !open) return;
+    if (destroyed || !open || liveGeneration === null) return;
+    if (code === "scanning") {
+      let focused = false;
+      try { focused = doc.visibilityState === "visible" && doc.hasFocus() === true; } catch {}
+      if (!focused) {
+        stopAcquisition("stopped");
+        return;
+      }
+    }
+    awaitingCamera = false;
+    if (code === "scanning" || code === "two-codes") cameraRunning = true;
+    else releaseSession();
     showStatus(code);
   };
 
@@ -265,7 +312,7 @@ export function mountPsbtScan(host, {
     if (scanner) return true;
     try {
       if (!decoder) decoder = createDecoder({ wasmBytes: wasmBytes() });
-      scanner = createScanner({ decoder, video, canvas, onResult, onStatus });
+      scanner = createScanner({ decoder, video, canvas, onResult, onStatus, continuous: true });
       return true;
     } catch {
       showStatus("error");
@@ -273,60 +320,63 @@ export function mountPsbtScan(host, {
     }
   };
 
+  const stopByOther = () => {
+    if (destroyed || liveGeneration === null) return;
+    stopAcquisition("stopped");
+  };
+
   const openPanel = () => {
-    if (open || destroyed) return;
+    if (destroyed || liveGeneration !== null || pending) return;
+    // A new capture releases even an unresolved permission request elsewhere.
+    activeCapture?.();
     open = true;
     panel.hidden = false;
     openButton.setAttribute("aria-expanded", "true");
-    reader.reset();
-    progressLine.hidden = true;
+    clearReader();
     if (!ensureScanner()) return;
+    scanGeneration += 1;
+    liveGeneration = scanGeneration;
+    activeCapture = stopByOther;
+    awaitingCamera = true;
+    cameraRunning = true;
     showStatus("scanning");
     try {
       scanner.start();
     } catch {
-      showStatus("error");
+      stopAcquisition("error");
     }
   };
 
   const closePanel = () => {
     if (!open) return;
     open = false;
-    try { scanner?.stop(); } catch {}
+    stopAcquisition();
     panel.hidden = true;
     openButton.setAttribute("aria-expanded", "false");
     dropPending();
-    progressLine.hidden = true;
-    reader.reset();
-    cameraRunning = false;
     updateAcquisition();
   };
 
   const onVisibility = () => {
     if (doc.visibilityState !== "hidden") return;
-    try { scanner?.stop(); } catch {}
-    dropPending();
-    cameraRunning = false;
-    updateAcquisition();
-    if (open) showStatus("stopped");
+    onConceal();
   };
 
-  // The app's leave signal: the same teardown as a hidden page, without the
-  // visibility test.
-  const onConceal = () => {
-    try { scanner?.stop(); } catch {}
+  // A permission prompt can blur a still-visible page before getUserMedia
+  // settles. This exception never covers an active stream or a hidden page.
+  const onConceal = (event) => {
+    if (event?.detail?.reason === "blur" && awaitingCamera && doc.visibilityState === "visible") return;
+    stopAcquisition("stopped");
     dropPending();
-    cameraRunning = false;
     updateAcquisition();
-    if (open) showStatus("stopped");
   };
 
   openButton.addEventListener("click", () => {
-    if (open) closePanel();
+    if (open && (liveGeneration !== null || pending)) closePanel();
     else openPanel();
   });
   stopButton.addEventListener("click", () => {
-    try { scanner?.stop(); } catch {}
+    onConceal();
   });
   closeButton.addEventListener("click", () => {
     closePanel();
@@ -335,13 +385,18 @@ export function mountPsbtScan(host, {
   replaceButton.addEventListener("click", () => {
     const bytes = pending;
     if (!bytes) return;
+    const currentField = String(field.value ?? "");
+    if (currentField !== "" && currentField !== pendingField) {
+      // A prior confirmation does not authorize overwriting a newer edit.
+      // Re-prompt against the current value; another explicit click may replace.
+      pendingField = currentField;
+      showStatus("field-changed");
+      return;
+    }
     write(bytes);
   });
   keepButton.addEventListener("click", () => {
-    const bytes = pending;
-    pending = null;
-    confirm.hidden = true;
-    try { bytes?.fill?.(0); } catch {}
+    dropPending();
     showStatus("kept");
   });
   doc.addEventListener("visibilitychange", onVisibility);
@@ -350,6 +405,10 @@ export function mountPsbtScan(host, {
   const destroy = () => {
     if (destroyed) return;
     destroyed = true;
+    // Invalidate before any external stop callback, but also retire the visible
+    // status before removing the panel so retained nodes never claim capture.
+    releaseSession();
+    if (open) showStatus("stopped");
     try { scanner?.stop(); } catch {}
     try {
       const stopping = decoder?.stop();

@@ -179,6 +179,7 @@ function importHarness() {
     hodlSecureSeedActive: () => false, hodlSecureEntryHasData: () => false, hodlSecureEntryDropKey() {},
     hodlSecureSeedApplies: () => false, hodlSecureEntryBackupRefusal: () => null, hodlSecureKeyOf: () => null, hodlSecureEntryHeld: () => false,
     hodlRenderSecureEntryControl() {}, hodlSeedPicker: null, hodlMountSeedPicker() {},
+    hodlSecureDiceActive: () => false, hodlSecureDiceApplies: () => false, hodlSecureDicePad: null, hodlMountSecureDicePad() {},
   };
   for (const name of ["hodlNewKeyState", "hodlNewLabState", "hodlKeyManagerImportedState",
     "hodlKeyManagerStates", "hodlKeyManagerUseInStation", "hodlKeyManagerDetachFromStation", "hodlKeyManagerSyncReviewedContext",

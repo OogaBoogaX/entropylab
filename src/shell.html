@@ -126,6 +126,7 @@ words, pick one of the checksum words.</span></span>
         <label for="pass">Passphrase (optional)</label>
         <div class="passphrase-keyboard-tools" id="passphrase-keyboard-toggle-host" hidden></div>
         <div class="dice-input-shell passphrase-input-shell"><pre class="dice-input-highlight" id="passphrase-highlight" translate="no" aria-hidden="true"></pre><input id="pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none" aria-describedby="passphrase-bip39-status"></div>
+        <p class="field-note edge-note is-private" id="passphrase-length-note" hidden>Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.</p>
         <p class="field-note passphrase-bip39-status" id="passphrase-bip39-status" aria-live="polite" hidden></p>
       </div>
       <div class="passphrase-keyboard-host" id="passphrase-keyboard-host" hidden></div>
@@ -417,14 +418,12 @@ words, pick one of the checksum words.</span></span>
           <textarea id="msig-descriptor" placeholder="wsh(sortedmulti(2,[fingerprint/48h/0h/0h/2h]Zpub…/0/*, …))" autocomplete="off" spellcheck="false" aria-describedby="msig-descriptor-help"></textarea>
         </label>
         <div id="msig-descriptor-scan-host" class="text-scan-host" data-scan-field="msig-descriptor" data-scan-accept="descriptor"></div>
-        <!-- preview -->
         <button class="btn secondary" id="msig-backup-open" type="button">Open encrypted backup</button>
         <input type="file" id="msig-backup-file" accept=".bip138,.txt" hidden>
         <div id="msig-backup-xpub-row" hidden>
           <label class="field">One of this wallet's xpubs<input id="msig-backup-xpub" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="msig-backup-status"></label>
         </div>
         <p class="edge-note is-private" id="msig-backup-status" role="status" hidden></p>
-        <!-- /preview -->
         <button class="btn secondary" id="msig-descriptor-import" type="button" disabled>Import Descriptor</button>
         <p class="field-note edge-note is-muted" id="msig-descriptor-help">Only accepts watch-only public keys; a descriptor carrying private keys will be refused.</p>
         <p class="hint" id="msig-descriptor-status" role="status" hidden></p>
@@ -801,7 +800,7 @@ words, pick one of the checksum words.</span></span>
       </details>
     </div>
       <div class="card no-print tool-card" id="psbted-card" role="tabpanel" hidden>
-      <label class="field">PSBT v0 (base64 or hex)
+      <label class="field">PSBT (base64 or hex)
         <textarea id="psbted-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </label>
       <div class="psbt-scan-host" id="psbted-scan-host"></div>

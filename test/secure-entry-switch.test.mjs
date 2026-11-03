@@ -7,6 +7,7 @@ import {
   createSecureSession, sessionWipe, sessionDeleteKey, sessionGet, sessionSet,
   seedEntry, seedSet, seedIndices, seedUndo, keyEntry, planTurnOn, commitTurnOn,
   planTurnOff, commitTurnOff, discardPlan, SUPPORTED_METHODS,
+  rollsEntry, rollsPush, rollsUndo, rollAt, rollsCopy,
 } from "../src/js/secure-entry.js";
 import { wordlist } from "../src/js/bip39-english.js";
 
@@ -29,6 +30,11 @@ const realSecureEntryStubs = {
   planTurnOff,
   commitTurnOff,
   discardPlan,
+  rollsEntry,
+  rollsPush,
+  rollsUndo,
+  rollAt,
+  rollsCopy,
   hodlSecureSupported: SUPPORTED_METHODS,
 };
 
@@ -61,13 +67,15 @@ test("hodlRenderSecureEntryControl shows the switch only when available", async 
     const host = doc.createElement("div");
     host.id = "secure-entry-host";
     doc.body.append(host);
-    let available = false, seedActive = false;
+    let available = false, seedActive = false, diceActive = false;
     const mod = await loadAppFunctions(["hodlRenderSecureEntryControl"], {
       stubs: {
         ...realSecureEntryStubs,
         hodlSecureEntryAvailable: () => available,
         hodlSecureSeedActive: () => seedActive,
         hodlSecureKeyActive: () => false,
+        hodlSecureDiceActive: () => diceActive,
+        hodlSecureDicePadShown: () => true,
         hodlSecureEntryToggle: () => {},
         hodlT: (text) => text,
       },
@@ -92,6 +100,11 @@ test("hodlRenderSecureEntryControl shows the switch only when available", async 
     assert.ok(doc.getElementById("secure-entry-unsupported"));
 
     seedActive = true;
+    mod.hodlRenderSecureEntryControl();
+    assert.equal(doc.getElementById("secure-entry-unsupported"), null);
+
+    seedActive = false;
+    diceActive = true;
     mod.hodlRenderSecureEntryControl();
     assert.equal(doc.getElementById("secure-entry-unsupported"), null);
   } finally {
@@ -1290,6 +1303,8 @@ test("the switch is disabled while a Journal batch runs", async () => {
         hodlSecureEntryAvailable: () => true,
         hodlSecureSeedActive: () => false,
         hodlSecureKeyActive: () => false,
+        hodlSecureDiceActive: () => false,
+        hodlSecureDicePadShown: () => true,
         hodlSecureEntryToggle: () => {},
         hodlSecureEntryHasData: () => false,
         hodlSecureKeyOf: () => null,
@@ -1331,6 +1346,8 @@ test("the switch notes a seed held as text and shows the picker once it is empti
         hodlSecureEntryAvailable: () => true,
         hodlSecureSeedActive: () => seedActive,
         hodlSecureKeyActive: () => false,
+        hodlSecureDiceActive: () => false,
+        hodlSecureDicePadShown: () => true,
         hodlSecureEntryToggle: () => {},
         hodlT: (text) => text,
       },
