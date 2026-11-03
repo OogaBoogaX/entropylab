@@ -24,6 +24,7 @@ import { psbtOutputNotesHtml, psbtVizHtml, PSBT_RENDER_LIMIT, renderBudget } fro
 import { parseOpReturn } from "./opreturn.js";
 import { buildOutputScript } from "./script-builder.js";
 import { hodlUrEncodePsbt } from "./psbt-ur.js";
+import { createPsbtQrReader } from "./psbt-qr-payload.js";
 
 const hexToBytes = (hex) => {
   if (!/^(?:[0-9a-f]{2})*$/i.test(hex)) throw new Error("Invalid hexadecimal input.");
@@ -41,11 +42,33 @@ const base64Encode = (bytes) => {
 };
 
 // Accepts base64 or hex with the same rules and bounds as the PSBT / Nonce
-// inspector (5 MB decoded, 7 MB of base64 text).
+// inspector (5 MB decoded, 7 MB of base64 text), or complete UR/BBQr PSBT
+// sequences under the QR reader's independent 1 MiB receive budget.
 export const psbtBytesFromText = (raw) => {
   const value = String(raw ?? "").trim(), compact = value.replace(/\s/g, "");
   if (!value) throw new Error("Paste a PSBT (v0 or v2).");
   if (compact.length > 7e6) throw new Error("This PSBT is too large to edit safely.");
+  if (/^(?:ur:|B\$)/i.test(value)) {
+    const reader = createPsbtQrReader();
+    let bytes = null;
+    try {
+      reader.reset();
+      for (const part of value.split(/\s+/)) {
+        const result = reader.receive(part);
+        if (result.status === "complete") bytes = result.bytes;
+        else if (result.status !== "partial") {
+          throw new Error(`PSBT QR input refused (${result.status}).`);
+        }
+      }
+      if (!bytes) throw new Error("PSBT QR input refused (partial).");
+      const accepted = bytes;
+      bytes = null;
+      return accepted;
+    } finally {
+      bytes?.fill(0);
+      reader.reset();
+    }
+  }
   let bytes;
   if (/^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0 && compact.length >= 10) bytes = hexToBytes(compact.toLowerCase());
   else {
@@ -1554,19 +1577,25 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
   // the PSBT as raw binary; a text export decodes through the paste rules.
   // The textarea mirrors the upload (as base64) so the loaded bytes and the
   // "edited PSBT" reload path stay visible.
+  let uploadGeneration = 0;
   const file = $("psbted-file");
   $("psbted-upload").onclick = () => file.click();
   file.addEventListener("change", () => {
     const chosen = file.files?.[0];
     file.value = ""; // picking the same file again must fire change again
     if (!chosen) return;
+    const generation = ++uploadGeneration;
     psbtWasmReady
       .then(async () => {
-        text.value = base64Encode(psbtBytesFromUpload(new Uint8Array(await chosen.arrayBuffer())));
+        if (generation !== uploadGeneration) return;
+        if (chosen.size > 5e6) throw new Error("This PSBT is too large to edit safely.");
+        const upload = new Uint8Array(await chosen.arrayBuffer());
+        if (generation !== uploadGeneration) return;
+        text.value = base64Encode(psbtBytesFromUpload(upload));
         syncActions();
         loadFromText();
       })
-      .catch((exception) => setError(exception.message || String(exception)));
+      .catch((exception) => { if (generation === uploadGeneration) setError(exception.message || String(exception)); });
   });
   // Semantic comparison against a second, pasted PSBT (engine: psbt-diff.js).
   // The compare section lives outside #psbted-out, so the editor's live
@@ -1580,6 +1609,7 @@ export const initPsbtEditor = ({ networkDefault = () => "mainnet", copiedIcon = 
     setCompareError("");
   };
   $("psbted-wipe").onclick = () => {
+    uploadGeneration += 1;
     doc = null;
     addedPairs.clear();
     resultBytes = null;
