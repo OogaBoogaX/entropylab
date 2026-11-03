@@ -248,8 +248,11 @@ an explicit error before those pairs are allocated.
   as an address, raw script, or OP_RETURN text; check the resulting script
   carefully. In auto mode a whitespace-free token of 25 to 64 characters
   with at most two symbols, and no `/`, `:` or `@`, is read as an address
-  and refused unless it decodes, so a mistyped address never becomes
-  OP_RETURN text. Bare hex is a raw script only when it is even-length,
+  and refused unless it decodes; a token starting with 1, 2, 3, m or n is
+  read as an address from 21 characters. A mistyped address of that shape
+  errors instead of becoming OP_RETURN text; one that is shorter, carries
+  three or more symbols, a `/`, `:` or `@`, or an inserted space still
+  reads as text. Bare hex is a raw script only when it is even-length,
   contains an a-f digit and does not read as a Base58 address; a `0x`
   prefix always marks raw script.
   The Editor's input label is version-neutral; the decoded report identifies

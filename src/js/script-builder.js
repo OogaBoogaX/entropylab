@@ -5,14 +5,22 @@
 //     network) — decoded and re-encoded as its scriptPubKey;
 //   - script ASM ("OP_DUP OP_HASH160 0x0011… OP_EQUALVERIFY OP_CHECKSIG"),
 //     assembled with minimal data-push encoding;
-//   - raw script hex (0x-prefixed, or containing an a-f digit) — passed
-//     through untouched;
+//   - raw script hex (0x-prefixed, or even-length with an a-f digit) —
+//     passed through untouched;
 //   - anything else in auto mode becomes the UTF-8 payload of an OP_RETURN
 //     output; explicit modes force OP_RETURN text or hex regardless.
 //
-// The ambiguous cases are deliberate: an address-shaped string that fails to
-// decode is an error (never silently an OP_RETURN), and digit-only hex needs
-// the 0x prefix to count as raw script — otherwise it is text.
+// The ambiguous cases are deliberate. In auto mode a token is read as an
+// address when it starts with a bech32 HRP (bc1, tb1 or bcrt1), or starts
+// with 1, 2, 3, m or n and is 21 to 61 whitespace-free characters, or is
+// any whitespace-free token of 25 to 64 characters with at most two
+// symbols; a /, : or @ keeps either shape arm as text. A token of that
+// shape that does not decode is an error, never silently an OP_RETURN,
+// while a mistyped address outside it (shorter, three or more symbols, an
+// inserted space) still reads as text. Bare hex that reads as a Base58
+// address is an address; other even-length hex with an a-f digit is raw
+// script, and digit-only hex needs the 0x prefix — otherwise it is text.
+// The arms are spelled out above looksLikeAddress.
 import { Address as BtcAddress, NETWORK as BTC_MAINNET, TEST_NETWORK as BTC_TESTNET, OutScript, OP } from "@scure/btc-signer";
 import { hex as hexCoder } from "./coders.js";
 import { buildOpReturnScript, encodeDataPush } from "./opreturn.js";
