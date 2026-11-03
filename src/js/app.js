@@ -13927,10 +13927,10 @@ function hodlSecureKeyFormatHint(entry, kind) {
     bytes.fill(0);
   }
   if (!found) return;
-  // Literal hodlT calls, so the translation sweep finds every string.
-  const label = found === "wif" ? { hint: hodlT("This looks like a WIF key."), button: hodlT("Switch to WIF") }
-    : found === "hex-key" ? { hint: hodlT("This looks like a hex key."), button: hodlT("Switch to hex") }
-    : found === "minikey" ? { hint: hodlT("This looks like a mini key."), button: hodlT("Switch to mini key") }
+  // Literal hodlTText calls (textContent below), so the translation sweep finds every string.
+  const label = found === "wif" ? { hint: hodlTText("This looks like a WIF key."), button: hodlTText("Switch to WIF") }
+    : found === "hex-key" ? { hint: hodlTText("This looks like a hex key."), button: hodlTText("Switch to hex") }
+    : found === "minikey" ? { hint: hodlTText("This looks like a mini key."), button: hodlTText("Switch to mini key") }
     : null;
   if (!label) return;
   let line = document.getElementById("secure-key-status");

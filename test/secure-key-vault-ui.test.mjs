@@ -272,11 +272,14 @@ test("B2: a key held as text shows the text-backed note", () => {
 
 test("B3: the format hint names only the three key formats, never brain", () => {
   const hint = block("hodlSecureKeyFormatHint");
-  // A hint and a button for each of WIF, hex and mini key, as literal hodlT
-  // calls; the words themselves are copy (AGENTS.md).
-  assert.equal(hint.match(/hodlT\("/g)?.length, 6);
+  // A hint and a button for each of WIF, hex and mini key, as literal
+  // hodlTText calls: both are set as textContent, so hodlT's HTML-escaped
+  // catalog would show an apostrophe as "&#39;" (AGENTS.md I6). The words
+  // themselves are copy (AGENTS.md).
+  assert.equal(hint.match(/hodlTText\("/g)?.length, 6);
+  assert.doesNotMatch(hint, /hodlT\("/);
   for (const found of ['"wif"', '"hex-key"', '"minikey"']) assert.ok(hint.includes(`found === ${found} ?`), found);
-  assert.doesNotMatch(hint, /hodlT\([^)]*brain/i);
+  assert.doesNotMatch(hint, /hodlTText\([^)]*brain/i);
   assert.match(hint, /finally\s*\{\s*bytes\.fill\(0\);\s*\}/);
   for (const forbidden of ["String.fromCharCode", "TextDecoder", "`"]) assert.equal(hint.includes(forbidden), false, forbidden);
 });
@@ -299,6 +302,7 @@ test("B3: a complete hex key in a WIF vault shows the hint and switches on click
         hodlKeyMode: "key",
         hodlSelectedNetwork: () => "mainnet",
         hodlT: (text) => text,
+        hodlTText: (text) => text,
         hodlSetMode: (mode) => { modeCalls.push(mode); },
         hodlAssertPrivateKey: () => {},
         hodlSecureKeyRefusal: () => new Error("refused"),
@@ -353,6 +357,7 @@ test("B3: a complete key shorter than the selected format shows the hint too", a
         hodlKeyMode: "key",
         hodlSelectedNetwork: () => "mainnet",
         hodlT: (text) => text,
+        hodlTText: (text) => text,
         hodlSetMode: () => {},
         hodlAssertPrivateKey: () => {},
         hodlSecureKeyRefusal: () => new Error("refused"),
