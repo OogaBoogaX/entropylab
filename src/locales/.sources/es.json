@@ -132,7 +132,6 @@
   "Brain wallet": "137c6c1ede3e895023f92bd12e3d7029164ad89ef95eebf0b6c295093d4bb57e",
   "Unsafe. SHA-256 of your text, as a single key pair or a 24-word seed.": "97d80d77e012555c3dafd37a3709b0d1c06ab2c2aa3c1fd56102dba4b6032d2d",
   "Private key or recovery passphrase": "43afa698826a6bf3b0956baf43efd2a899185de5a280dcd14e9380bdc972872c",
-  "PSBT v0 (base64 or hex)": "4d77cc0b4cd4bf7910e141feb222301f42267413be592a85bf0a89e772600af8",
   "Address network": "0f94f94394b690fa5af62173c20b83f56dce88c63b332a56f3064fad755bc8ee",
   "Leave blank for inspect-only mode": "3b5f9c1575db2ec35aa8a1068b8255a4c4b474d2a3a59ea0a2097c359edcc17f",
   "Bitcoin mainnet": "cf4799ee4c9f9409cd3baa26cfe9639103cf7890e71c2c30a1fab4c2c04d88e8",
@@ -948,7 +947,6 @@
   "aezeed · LND cipher seed": "1ef9f27a4e6b5398101042de41dd2b1d2e37044964271809a1c5a2e5f60ca46b",
   "BIP-39 · LDK (ldk-node)": "e47db1f9b05a42e5a80f65df1a0feb46af571d561343b1e93e0788cf9944d9ca",
   "LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.": "69595ecbbaad06f6c786a7903192861f42dbd07f7bf63abb6e1a383960fb0b0c",
-  "Selects the coin type in the LND identity path (0' mainnet, 1' testnet/signet/regtest). Changing it clears any derived result — re-derive after switching.": "3db66883000d81f834791488dd59046a34c40786095a01d78cab2220f9d4ba80",
   "ability liquid travel stem barely …": "1f53f58f5539b472ae42528892aa92cf716f2c430d29c02df3dea2c3ad67a37c",
   "The 24-word cipher seed LND printed at wallet creation.": "2435dea13f5f0c61c5d01d9e73706fa675d4c95d136059ff6f1818cfe9e8b209",
   "aezeed detects a wrong passphrase; BIP-39 cannot and simply derives a different wallet.": "25e9565c113f8bc05316d5b778ceafcb435779807cd108d35d8a71d2c0052dd2",
@@ -2509,5 +2507,9 @@
   "To change the method, undo or clear the rolls entered so far.": "6b4d3cb304401246d83e540b28d93fdd8d49b624394049d8e40567dd260b3c92",
   "{n} rolls are recommended for a {words}-word seed: about {bits} bits from a fair die. Fewer rolls make a weaker seed. The count cannot tell you whether your die is fair.": "c845861fe0426f7e0b8a5ffbd6341244a15571d03f9637ecee6c6cb5c82cd74b",
   "Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.": "f514c2baf2125effdaeb4c77e90238e82a7ee8ed304b6d807f779faa52bcdd32",
-  "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "7b9173386ae740a34af7d7c89543d0e0b3d75864950073b38cca985cec88bcf6"
+  "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "7b9173386ae740a34af7d7c89543d0e0b3d75864950073b38cca985cec88bcf6",
+  "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "48753d7c8810740800cd8aa5efbfffbb518453e5a205d23e730a542c1a2d4baf",
+  "PSBT (base64 or hex)": "ce3582710dba349845dbb93e0d0594b182f30d79efab85451d71660363480868",
+  "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "6bc4d1fc721e528da5654886768f7fcf0a98b76dfbef961efe46d23e53c6ef77",
+  "Change it in the network menu at the bottom of the page.": "bd07845cbe1dfb6f575fdd9c4f6542284e1ec8ba352f7ba042c5c5467dcaebde"
 }

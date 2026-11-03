@@ -44,7 +44,8 @@ if (preview && outDir === root) {
 const read = (path) => readFileSync(join(SRC, path), "utf8");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
-if (!/^\d+(?:\.\d+)*$/.test(version)) {
+// Rock builds carry "-dev" (#1406); a release tag never does.
+if (!/^\d+(?:\.\d+)*(?:-dev)?$/.test(version)) {
   throw new Error(`Invalid version in package.json: ${version}`);
 }
 
