@@ -153,17 +153,23 @@ test("a format or page network change wipes the derived result but not the invoi
   assert.match(handler[1], /hodlLnSyncFormat\(\)/, "the change still syncs the network field");
   assert.match(handler[1], /hodlLnInvRender\(\)/, "the change re-renders the invoice card");
   // And the behaviour: a page network change wipes a derived result exactly
-  // as the old dropdown's change did.
-  const page = lnPage();
+  // as the old dropdown's change did; the same network announced again (at
+  // startup, or by a Journal key load) does not (red team, round 1).
+  let network = "mainnet";
+  const page = lnPage(() => network);
   try {
+    const idle = page.getElementById("ln-session").textContent;
     page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
     lnDerive(page);
     assert.ok(page.getElementById("ln-out").innerHTML.includes('id="ln-node-pubkey"'), "setup: the derive rendered a result");
     page.dispatchEvent(new Event("hodl:network-default"));
+    assert.ok(page.getElementById("ln-out").innerHTML.includes('id="ln-node-pubkey"'), "the same network announced again wiped the derived key");
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
     assert.equal(page.getElementById("ln-out").innerHTML, "", "the page network change left the derived result on screen");
-    // The status line is not left blank (Kimi K3, round 1): the page also
-    // announces its network once at startup, after this module starts.
-    assert.ok(page.getElementById("ln-session").textContent.trim(), "the status line was left empty after the wipe");
+    // The status line goes back to exactly what it said at startup (Kimi K3,
+    // round 1), not merely to something else.
+    assert.equal(page.getElementById("ln-session").textContent, idle, "the status line did not return to its startup text after the wipe");
   } finally {
     hodlLnWipeMem();
     delete globalThis.document;
@@ -845,6 +851,7 @@ test("the hsm_secret read status is cleared by every path that drops the file", 
   let network = "mainnet";
   const page = lnPage(() => network);
   try {
+    const idle = page.getElementById("ln-session").textContent;
     hodlLnWipeMem();
     page.getElementById("ln-format").value = "cln-hsm";
     const fileInput = page.getElementById("ln-hsm-file");
@@ -855,9 +862,9 @@ test("the hsm_secret read status is cleared by every path that drops the file", 
     // A format change drops the file and its status.
     page.getElementById("ln-format").value = "bip39";
     page.getElementById("ln-format").dispatchEvent(new Event("change"));
-    // The line then says no key is derived (the wipe restores it), so check
-    // the file's status is gone rather than the line being empty.
-    assert.notEqual(page.getElementById("ln-session").textContent, loadedStatus, "the format change left the hsm_secret status on screen");
+    // The line goes back to exactly its startup text: the file's status is
+    // gone, and nothing else is left behind (red team, round 1).
+    assert.equal(page.getElementById("ln-session").textContent, idle, "the format change left the hsm_secret status on screen");
     // Load again, then a network change.
     page.getElementById("ln-format").value = "cln-hsm";
     page.getElementById("ln-format").dispatchEvent(new Event("change"));
@@ -866,7 +873,7 @@ test("the hsm_secret read status is cleared by every path that drops the file", 
     assert.ok(page.getElementById("ln-session").textContent.length > 0, "the file load did not report its status");
     network = "testnet";
     page.dispatchEvent(new Event("hodl:network-default"));
-    assert.notEqual(page.getElementById("ln-session").textContent, loadedStatus, "the page network change left the hsm_secret status on screen");
+    assert.equal(page.getElementById("ln-session").textContent, idle, "the page network change left the hsm_secret status on screen");
     // Load again, then Clear.
     page.getElementById("ln-format").value = "cln-hsm";
     page.getElementById("ln-format").dispatchEvent(new Event("change"));

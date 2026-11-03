@@ -523,6 +523,22 @@ function hodlLnSettingsChanged() {
   if (session) session.textContent = t("No node key derived. Enter a seed phrase and derive.");
 }
 
+// The page announces its network at startup and on other occasions (a Journal
+// key load re-applies its network) as well as on a real change. Only a real
+// change wipes a derived key, as the old Network select only fired on change
+// (red team, round 1); a repeat just keeps the line and the invoice card current.
+let hodlLnAppliedNetwork = null;
+function hodlLnPageNetworkAnnounced() {
+  const network = lnInvPageNetwork();
+  if (network === hodlLnAppliedNetwork) {
+    hodlLnInvRender();
+    hodlLnSyncNetworkNote();
+    return;
+  }
+  hodlLnAppliedNetwork = network;
+  hodlLnSettingsChanged();
+}
+
 
 // Reads the chosen hsm_secret and hands its bytes to the key worker, which
 // refuses every non-type-2 shape with the same keyed errors and, for a
@@ -850,8 +866,11 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
   // before the #ln-go guard: a page with only the invoice card still follows
   // the network.
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
-    document.addEventListener("hodl:network-default", hodlLnSettingsChanged);
+    document.addEventListener("hodl:network-default", hodlLnPageNetworkAnnounced);
   }
+  // Before the #ln-go guard, so an invoice-only page starts from its own
+  // network too, never one left over from an earlier start.
+  hodlLnAppliedNetwork = lnInvPageNetwork();
   const go = document.getElementById("ln-go");
   if (!go) return;
   // The shell owns the CLN controls (#ln-hsm-upload / #ln-hsm-file); the
