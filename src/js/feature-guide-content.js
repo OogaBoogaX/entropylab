@@ -24,15 +24,29 @@ export function featureGuideLessons(hodlTText = (text) => text) {
     "keys-methods": "input", "keys-labs": "input", "settings-phrase": "recovery", "settings-path": "keys", "results-recognize": "addresses", "results-edit": "keys",
     "exports-public": "addresses", "exports-core": "recovery", "exports-transfer": "recovery", "bip85-recipe": "recovery", "bip85-use": "recovery",
   };
-  const step = (id, title, body, check, limit, example = "", term = null) => ({ id, title, body, check, limit, example, term: term ?? glossary[id], diagramStage: stages[id] });
+  const topics = {
+    "basics-ready": [
+      hodlTText("Keys: inputs, wallet settings, and addresses."),
+      hodlTText("MultiSig: shared control between independent keys."),
+      hodlTText("Transactions (Txns on narrow screens): inspect or edit PSBT files."),
+      hodlTText("Lightning: invoices, offers, and node keys."),
+      hodlTText("Core Wallet: check a Bitcoin Core wallet file."),
+      hodlTText("BIP-85: child recovery material."),
+      hodlTText("Privacy: Silent Payments addresses."),
+      hodlTText("Vanity: address-prefix searches."),
+      hodlTText("Journal: notes, key inputs, and session history."),
+      hodlTText("Verify: check an OpenTimestamps proof against a block header you supply."),
+    ],
+  };
+  const step = (id, title, body, check, limit, example = "", term = null) => ({ id, title, body, check, limit, example, term: term ?? glossary[id], diagramStage: stages[id], topics: topics[id] });
   return [
     { id: "basics", title: hodlTText("Start with the basics"), summary: hodlTText("Eight steps from your own randomness to checks and backups."), steps: [
       step("basics-safety", hodlTText("First, make a safe place to learn"),
-        hodlTText("Learn with practice material only, never real recovery secrets. EntropyLab is experimental, its startup warning is for advanced users only, and this guide explains concepts, not readiness to secure funds."),
+        hodlTText("Use practice material only, never real recovery secrets. EntropyLab is experimental and warns that it is for advanced users only. Start here to learn the concepts; this guide does not establish readiness to secure funds."),
         hodlTText("Keep your seed phrase and private keys put away. This tour needs neither."),
         hodlTText("An Offline label is a browser signal, not proof of an air gap. This app cannot protect a compromised computer, clipboard history, screenshots, or a printer.")),
       step("basics-family", hodlTText("Your wallet is a family of keys"),
-        hodlTText("Bitcoin lives on a shared transaction record. A wallet holds spending secrets. A seed phrase writes down recovery material that can lead to many private keys and addresses."),
+        hodlTText("Bitcoin lives on a shared transaction record. A wallet tracks keys and addresses; a spending wallet also holds secrets. A seed phrase is recovery material for a family of keys."),
         hodlTText("Separate the destination you share to receive from the secret you protect to spend."),
         hodlTText("EntropyLab does not hold bitcoin, check your balance, sign transactions, or send them to the network."),
         hodlTText("An address is a payment destination. A private key is permission to spend. Knowing the destination does not give you permission.")),
@@ -42,7 +56,7 @@ export function featureGuideLessons(hodlTText = (text) => text) {
         hodlTText("Hashing cannot add unpredictability. A short transcript can produce a long phrase while still being weak. A dice fairness panel cannot certify that your input is secure."),
         hodlTText("A blender changes ingredients without creating more. Hashing is similar: different-looking output, but weak input stays weak.")),
       step("basics-recipe", hodlTText("Keep the whole recipe"),
-        hodlTText("Derivation calculates keys or addresses from existing material. A path selects a branch of the wallet family. Network and address type matter too. Receive addresses accept payments; change addresses take the leftover part."),
+        hodlTText("Derivation calculates keys and addresses from material you supply. The derivation path selects a branch of that family. Together with the passphrase, network, and address type, it determines which wallet you see."),
         hodlTText("Compare or restore with the same seed, passphrase, path, network, and address type."),
         hodlTText("A different BIP39 passphrase usually makes a different valid wallet, without a wrong-password error. The network picker changes formats and checks; it does not connect anywhere."),
         hodlTText("A path is like a shelf location: one building, many books. Another shelf gives you a different book.")),
@@ -60,7 +74,7 @@ export function featureGuideLessons(hodlTText = (text) => text) {
         hodlTText("Ask: could I recover if this computer and every open tab disappeared? Save what you need deliberately and protect any secret copies."),
         hodlTText("A watch-only sheet is not a spending backup. Unsaved session work can be lost. Clearing the page cannot guarantee removal of copies held by the browser or operating system.")),
       step("basics-ready", hodlTText("Choose your next small adventure"),
-        hodlTText("Choose Keys for inputs and addresses; MultiSig for shared control; Transactions (Txns on narrow screens) for PSBT files; Lightning for invoices, offers, and node keys; Core Wallet to check a Bitcoin Core wallet file; BIP-85 for child recovery material; Privacy for Silent Payments addresses; Vanity for address-prefix searches; Journal for notes, key inputs, and session history; or Verify to check an OpenTimestamps proof against a block header you supply."),
+        hodlTText("Finish this lesson to continue into Keys, or return to Contents to choose another route. Expand the tool overview if you have a particular task in mind."),
         hodlTText("Explain which information is secret, why watch-only cannot spend, and why Offline does not prove safety."),
         hodlTText("Finishing records reading, not wallet, device, or transaction safety."),
         hodlTText("Seed phrases and private keys are secrets. Watch-only holds public information. A browser cannot prove isolation. Guide stays available for another look.")),

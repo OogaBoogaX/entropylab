@@ -1330,13 +1330,16 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
   font-size: var(--text-base); overflow-wrap: anywhere;
 }
 .feature-guide-card > .row { justify-content: space-between; flex: 0 0 auto; }
+.feature-guide-card > .row:first-child { flex-wrap: nowrap; align-items: flex-start; }
 /* Compact navigation keeps the reading area available in a narrow dialog. */
 .feature-guide-card > .modal-actions .btn { padding: var(--inset-button-tight); }
-.feature-guide-card .modal-title { margin: 0; }
+.feature-guide-card .modal-title { margin: 0; flex: 1; min-width: 0; }
 .feature-guide-card > .field-note { margin: var(--space-control) 0 0; }
 .feature-guide-card > .field-note[hidden] { display: none; }
 .guide-content { margin-top: var(--space-section); min-height: 0; overflow-y: auto; }
 .guide-content p { margin: 0; line-height: 1.6; }
+.guide-content ul { padding-left: var(--indent-list); line-height: 1.6; }
+.guide-content ul > li + li { margin-top: var(--space-control); }
 /* Labels reset first, so the shared rhythm below still separates a label that follows a block. */
 .guide-content .label { margin: 0 0 var(--space-control); }
 .feature-guide-card .guide-content > * + *, .feature-guide-card .guide-step > * + * { margin-top: var(--space-component); }
@@ -1347,7 +1350,7 @@ td { border-top: 1px solid var(--border); padding: var(--inset-cell); vertical-a
 .guide-chain { display: flex; flex-wrap: wrap; gap: var(--space-control); padding-left: var(--indent-list); }
 .guide-chain li { padding: var(--inset-chip); margin-right: var(--space-component); }
 .guide-chain [aria-current] { color: var(--accent); font-weight: bold; border-bottom: 1px solid var(--accent); }
-#guide-check > * + *, #guide-story > * + *, #guide-browse > * + *, #guide-verify > * + * { margin-top: var(--space-component); }
+#guide-check > * + *, #guide-story > * + *, #guide-browse > * + *, #guide-finish-browse > * + *, #guide-tool-overview > * + *, #guide-verify > * + * { margin-top: var(--space-component); }
 .modal-title { margin: 0 0 var(--space-section); font-weight: 600; font-size: var(--text-heading-small); overflow-wrap: anywhere; }
 @media (max-width: 520px) { .modal-card { padding: var(--inset-card); } }
 /* The gate alone fades in, and wears the danger frame its warning calls for. */

@@ -163,6 +163,7 @@ test("catalog covers released workspaces with complete steps, unique IDs, and ex
       }
       if (step.example) strings.push(step.example);
       if (step.term) strings.push(...step.term);
+      if (step.topics) strings.push(...step.topics);
     }
   }
   assert.equal(new Set(stepIds).size, stepIds.length);
@@ -364,6 +365,50 @@ test("step 1 keeps download verification in a closed disclosure with its fixed l
   assert.equal(disclosure.firstElementChild?.tagName, "SUMMARY");
 }));
 
+test("the dialog names the current lesson while its step heading keeps focus", () => withPage(({ guide, doc, click, opener }) => {
+  guide.open("keys", opener);
+  const dialog = doc.getElementById("feature-guide-dialog");
+  const title = doc.getElementById(dialog.getAttribute("aria-labelledby"));
+  assert.equal(title.textContent, featureGuideLessons().find(item => item.id === "keys").title);
+  click("#guide-next");
+  assert.equal(doc.activeElement, doc.getElementById("guide-focus"));
+  assert.equal(doc.getElementById("guide-title"), title);
+}));
+
+test("finish recommendations stay behind an optional disclosure and reach every other lesson", () => withPage(({ guide, doc, click, opener, opened }) => {
+  guide.open("basics", opener);
+  while (doc.getElementById("guide-next")) click("#guide-next");
+  const links = doc.getElementById("guide-finish-lessons");
+  const disclosure = links.closest("details");
+  assert.ok(disclosure);
+  assert.equal(disclosure.hasAttribute("open"), false);
+  const ids = links.querySelectorAll("[data-guide-lesson]").map(node => node.dataset.guideLesson).sort();
+  assert.deepEqual(ids, featureGuideLessons().map(item => item.id).filter(id => id !== "basics" && id !== "keys").sort());
+  disclosure.open = true;
+  click("#guide-finish-session");
+  assert.equal(doc.getElementById("guide-step").dataset.guideStep, "session-controls");
+  assert.deepEqual(opened, []);
+}));
+
+test("optional diagrams follow the lesson's explanation rather than preceding its heading", () => withPage(({ guide, doc, opener }) => {
+  guide.open("keys", opener);
+  const story = doc.getElementById("guide-story");
+  assert.equal(story.parentElement, doc.getElementById("guide-step"));
+  assert.notEqual(story, story.parentElement.firstElementChild);
+  assert.equal(story.hasAttribute("open"), false);
+}));
+
+test("the final basics step keeps the tool overview optional without hiding the check", () => withPage(({ guide, doc, click, opener }) => {
+  guide.open("basics", opener);
+  for (let i = 1; i < featureGuideLessons()[0].steps.length; i++) click("#guide-next");
+  const topics = doc.getElementById("guide-topics");
+  const overview = topics.closest("details");
+  assert.equal(overview.id, "guide-tool-overview");
+  assert.equal(overview.hasAttribute("open"), false);
+  assert.equal(topics.children.length, featureGuideLessons()[0].steps.at(-1).topics.length);
+  assert.equal(doc.getElementById("guide-check").closest("#guide-tool-overview"), null);
+}));
+
 // Contract with the workspace tab strip (app.js builds it from
 // hodlWorkspaceTabs): the basics tour's tool list names every released tab by
 // the label the strip shows, so a renamed or added tab cannot leave the guide
@@ -376,6 +421,6 @@ test("basics tour names every released workspace tab by its shown label", () => 
   assert.ok(tabs.length > 0);
   const ready = featureGuideLessons()[0].steps.find(step => step.id === "basics-ready");
   for (const [id, label, , wide = label] of tabs) {
-    assert.ok(ready.body.includes(wide), `basics-ready omits the ${id} tab label "${wide}"`);
+    assert.ok(ready.topics.some(topic => topic.includes(wide)), `basics-ready omits the ${id} tab label "${wide}"`);
   }
 });

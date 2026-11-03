@@ -415,8 +415,7 @@
       assert(feedback.top >= box.top - 1 && feedback.bottom <= box.bottom + 1, "answer feedback is clipped");
       equal(document.activeElement, document.getElementById("guide-feedback"));
       document.getElementById("guide-next").click();
-      const a = document.getElementById("guide-restart").getBoundingClientRect();
-      const b = document.getElementById("guide-route-next").getBoundingClientRect();
+      const [a, b] = Array.from(document.getElementById("guide-finish-actions").children, node => node.getBoundingClientRect());
       const gap = b.top >= a.bottom ? b.top - a.bottom : b.left - a.right;
       const rhythm = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-control"));
       assert(gap >= rhythm - 1, "finish buttons touch");
@@ -425,6 +424,7 @@
       const component = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-component"));
       assert(below >= component - 1, `finish actions touch the lesson list (${below}px)`);
       assert(content.scrollWidth <= content.clientWidth, "narrow guide overflows horizontally");
+      document.getElementById("guide-finish-browse").open = true;
       document.getElementById("guide-finish-inspect").click();
       equal(document.getElementById("guide-step").dataset.guideStep, "inspect-worksheet");
     } finally {

@@ -70,7 +70,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       status.setAttribute("aria-live", "polite");
       card.append(header, status);
     }
-    document.getElementById("guide-title").textContent = hodlTText("EntropyLab guide");
+    document.getElementById("guide-title").textContent = view.mode === "contents" ? hodlTText("EntropyLab guide") : lesson.title;
     document.getElementById("guide-close").textContent = hodlTText("Close");
     let progress = "";
     const content = element("div", "", "guide-content", "guide-content");
@@ -105,45 +105,54 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
       footer.append(button(hodlTText("Contents"), "contents", "guide-contents"));
       // Whole-sentence keys so translators can reorder every part.
       const place = { step: view.index + 1, total: lesson.steps.length, lesson: lesson.title, route: route?.title, lessonNumber: route?.lessons.indexOf(view.lessonId) + 1, lessonTotal: route?.lessons.length };
-      if (route) progress = view.mode === "complete" ? hodlTText("{route} · Lesson {lessonNumber} of {lessonTotal} · Lesson finished · {lesson}", place) : hodlTText("{route} · Lesson {lessonNumber} of {lessonTotal} · Step {step} of {total} · {lesson}", place);
-      else progress = view.mode === "complete" ? hodlTText("Lesson finished · {lesson}", place) : hodlTText("Step {step} of {total} · {lesson}", place);
+      if (route) progress = view.mode === "complete" ? hodlTText("{route} · Lesson {lessonNumber} of {lessonTotal} · Lesson finished", place) : hodlTText("{route} · Lesson {lessonNumber} of {lessonTotal} · Step {step} of {total}", place);
+      else progress = view.mode === "complete" ? hodlTText("Lesson finished") : hodlTText("Step {step} of {total}", place);
       const currentStep = lesson.steps[view.index];
+      let story;
       if (currentStep?.diagramStage) {
-        const story = element("details", "", "", "guide-story");
+        story = element("details", "", "", "guide-story");
         story.append(element("summary", hodlTText("See how the pieces fit")));
         const chain = element("ol", "", "guide-chain");
         const labels = [hodlTText("Your input"), hodlTText("Recovery material"), hodlTText("Keys"), hodlTText("Addresses")];
         const stages = ["input", "recovery", "keys", "addresses"];
         labels.forEach((label, index) => { const node = element("li", label); node.dataset.guideStage = stages[index]; if (stages[index] === currentStep.diagramStage) node.setAttribute("aria-current", "step"); chain.append(node); });
         story.append(chain, element("p", hodlTText("Your input follows a deterministic recipe into recovery material, keys, and addresses. Settings affect the recipe. This diagram calculates nothing."), "field-note"));
-        content.append(story);
       }
       if (view.mode === "complete") {
         content.dataset.guideComplete = lesson.id;
         focus = element("h3", hodlTText("A little clearer, one lesson at a time"));
         content.append(focus, element("p", hodlTText("You can revisit this lesson whenever you like. Reading a lesson does not certify a wallet, device, or transaction safe.")));
         const finishActions = element("div", "", "row", "guide-finish-actions");
-        finishActions.append(button(hodlTText("Read this lesson again"), "restart", "guide-restart"));
         const nextId = nextRouteLesson(view);
         if (nextId) {
           const next = button(hodlTText("Continue route: {lesson}", { lesson: lessons.find(item => item.id === nextId).title }), "route-next", "guide-route-next", nextId);
           next.className = "btn primary";
           finishActions.append(next);
         }
+        finishActions.append(button(hodlTText("Read this lesson again"), "restart", "guide-restart"));
         content.append(finishActions);
-        content.append(element("h4", hodlTText("Choose another lesson"), "label"));
+        const browse = element("details", "", "", "guide-finish-browse");
+        browse.append(element("summary", hodlTText("Choose another lesson")));
         const links = element("div", "", "guide-lessons", "guide-finish-lessons");
-        for (const id of ["keys", "multisig", "inspect", "bip85", "silent", "vanity"].filter(id => id !== lesson.id && id !== nextId)) {
-          const item = lessons.find(item => item.id === id);
-          links.append(button(item.title, "choose", `guide-finish-${id}`, id));
+        for (const item of lessons.filter(item => item.id !== lesson.id && item.id !== nextId)) {
+          links.append(button(item.title, "choose", `guide-finish-${item.id}`, item.id));
         }
-        content.append(links);
+        browse.append(links);
+        content.append(browse);
       } else {
         const step = lesson.steps[view.index];
         const body = element("section", "", "guide-step", "guide-step");
         body.dataset.guideStep = step.id;
         focus = element("h3", step.title);
         body.append(focus, element("p", step.body));
+        if (step.topics) {
+          const overview = element("details", "", "", "guide-tool-overview");
+          overview.append(element("summary", hodlTText("Tool overview")));
+          const topics = element("ul", "", "", "guide-topics");
+          for (const topic of step.topics) topics.append(element("li", topic));
+          overview.append(topics);
+          body.append(overview);
+        }
         if (step.id === "basics-safety") {
           // A deliberate external navigation, never a runtime request or translated URL.
           const link = element("a", hodlTText("Verifying the download (online README)"), "", "guide-download-verification");
@@ -167,6 +176,7 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
           details.append(element("summary", hodlTText("Explain this word: {word}", { word: step.term[0] })), element("p", step.term[1]));
           body.append(details);
         }
+        if (story) body.append(story);
         content.append(body);
       }
       const quiz = featureGuideCheck(currentStep?.id, hodlTText);
