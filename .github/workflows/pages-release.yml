@@ -41,11 +41,13 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
           persist-credentials: false
-      # The signer list and the revocation certificate are trust policy, not
-      # release content: read them from the default branch, which requires
-      # review, so a release cannot ship its own list of trusted keys. The
-      # release's KEYS file only supplies public keys; a key counts only if
-      # its primary fingerprint is on this list.
+      # Trust policy: the signer list (.github/release-signers.txt) and the
+      # signers' public keys (keys/*.asc) are read at the release's tag, and
+      # must be byte-identical to the default branch's reviewed copy, so
+      # whoever can create a tag or upload release assets cannot choose the
+      # keys. The release's KEYS asset is a convenience download only and is
+      # never imported: v4 fingerprints are SHA-1, so a fingerprint match on
+      # uploaded key material is not enough.
       - name: Check out the trust policy from the default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -60,7 +62,7 @@ jobs:
           set -euo pipefail
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/release"
           cd "$RUNNER_TEMP/release"
-          for asset in entropylab.html SHA256SUMS.txt SHA256SUMS.asc KEYS entropylab.html.ots; do
+          for asset in entropylab.html SHA256SUMS.txt SHA256SUMS.asc entropylab.html.ots; do
             if [ ! -f "$asset" ]; then
               echo "::error title=Missing release asset::the release does not carry $asset"
               exit 1
@@ -87,9 +89,29 @@ jobs:
           mkdir -p "$GNUPGHOME"
           chmod 700 "$GNUPGHOME"
           cd "$RUNNER_TEMP/release"
-          gpg --batch --quiet --import KEYS
-          gpg --batch --quiet --import "$GITHUB_WORKSPACE/trust/keys/MrHodlX-64434EE4-revoked.asc"
-          SIGNERS="$GITHUB_WORKSPACE/trust/.github/release-signers.txt"
+          TAGTREE="$GITHUB_WORKSPACE"
+          REVIEWED="$GITHUB_WORKSPACE/trust"
+          # The tag's trust policy must be the default branch's reviewed copy.
+          if ! cmp -s "$TAGTREE/.github/release-signers.txt" "$REVIEWED/.github/release-signers.txt"; then
+            echo "::error title=Trust policy::the tag's .github/release-signers.txt differs from the default branch's"
+            exit 1
+          fi
+          if ! diff -r -q "$TAGTREE/keys" "$REVIEWED/keys" > /dev/null; then
+            echo "::error title=Trust policy::the tag's keys/ differs from the default branch's"
+            exit 1
+          fi
+          SIGNERS="$TAGTREE/.github/release-signers.txt"
+          # Public keys come only from the committed keys/ directory. The
+          # release's KEYS asset is never imported.
+          shopt -s nullglob
+          KEYFILES=("$TAGTREE"/keys/*.asc)
+          if [ "${#KEYFILES[@]}" -eq 0 ]; then
+            echo "::error title=Signer keys::keys/ holds no public keys"
+            exit 1
+          fi
+          for keyfile in "${KEYFILES[@]}"; do
+            gpg --batch --quiet --import "$keyfile"
+          done
           MIN=$(sed -n 's/^min-signers \([0-9][0-9]*\)$/\1/p' "$SIGNERS" | head -1)
           if [ -z "$MIN" ]; then
             echo "::error title=Signer list::.github/release-signers.txt has no min-signers line"
@@ -98,6 +120,17 @@ jobs:
           awk '$3 == "active" { print $1 }' "$SIGNERS" > "$RUNNER_TEMP/active.txt"
           awk '$3 == "revoked" { print $1 }' "$SIGNERS" > "$RUNNER_TEMP/revoked.txt"
           cat "$RUNNER_TEMP/active.txt" "$RUNNER_TEMP/revoked.txt" > "$RUNNER_TEMP/known.txt"
+          # Every active signer must have a committed key: fail closed and name it.
+          gpg --batch --with-colons --fingerprint --list-keys 2>/dev/null \
+            | awk -F: '$1 == "pub" { want = 1; next } $1 == "sub" { want = 0; next } $1 == "fpr" && want { print $10; want = 0 }' \
+            > "$RUNNER_TEMP/committed.txt"
+          while read -r fpr name state; do
+            [ "$state" = "active" ] || continue
+            if ! grep -qxF "$fpr" "$RUNNER_TEMP/committed.txt"; then
+              echo "::error title=Signer keys::active signer $name ($fpr) has no committed key file under keys/"
+              exit 1
+            fi
+          done < <(grep -E '^[0-9A-F]{40} ' "$SIGNERS")
           STATUS="$RUNNER_TEMP/gpg-status.txt"
           gpg --status-fd 1 --verify SHA256SUMS.asc SHA256SUMS.txt > "$STATUS" 2>/dev/null || true
           if grep -Eq '^\[GNUPG:\] (BADSIG|ERRSIG) ' "$STATUS"; then

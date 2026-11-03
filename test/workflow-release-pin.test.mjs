@@ -100,7 +100,9 @@ test("a revoked or expired key, or an expired signature, never counts toward min
   const verify = jobBlock(pagesRelease, "verify");
   assert.ok(verify.includes('$2 == "REVKEYSIG" || $2 == "EXPKEYSIG" || $2 == "EXPSIG"'), "gpg's revoked-key, expired-key and expired-signature results are excluded");
   assert.ok(verify.includes(`$2 == "r" || $2 == "e"`), "a pub record that gpg marks revoked or expired is excluded");
-  assert.match(verify, /\$GITHUB_WORKSPACE\/trust\/\.github\/release-signers\.txt/, "the signer list comes from the default branch, not the release");
+  assert.ok(verify.includes('REVIEWED="$GITHUB_WORKSPACE/trust"'), "the default branch's reviewed copy is checked out");
+  assert.ok(verify.includes('cmp -s "$TAGTREE/.github/release-signers.txt" "$REVIEWED/.github/release-signers.txt"'), "the tag's signer list must equal the reviewed one");
+  assert.doesNotMatch(verify, /--import\s+"?KEYS/, "the release's KEYS asset is never imported");
 });
 
 test("pages-release.yml serialises production deploys", () => {
