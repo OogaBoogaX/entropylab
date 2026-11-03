@@ -1,14 +1,15 @@
 // The Key Station's "Scan QR" panel (preview builds only). It owns the panel's
 // DOM, one decoder and one camera scanner; the private-key field belongs to
-// the caller. A scan is only ever offered to the field: nothing is written
+// the caller. A scan is only ever offered to the caller: nothing is loaded
 // until Continue, and a seed or an unknown payload is refused with nothing
 // loaded.
 //
 // Security contract: only a payload the classifier reports as a WIF private
-// key is ever shown or offered to the field; every payload buffer and every
-// seed index buffer is zeroed as soon as it has been classified; the WIF text
-// lives in a closure (never in the DOM while concealed) and is dropped on
-// Continue, Discard, conceal-on-leave and destroy().
+// key is ever shown or offered to the caller; every payload buffer and every
+// seed index buffer is zeroed as soon as it has been classified; the WIF
+// lives as bytes in a closure (never as a string, and never in the DOM while
+// concealed) and is dropped on Continue, Discard, conceal-on-leave and
+// destroy().
 
 import { createQrDecoder, retireQrDecoders } from "./qr-scan.js";
 import { createQrScanner } from "./qr-scanner.js";
@@ -35,12 +36,10 @@ const CONFIRM_TEMPLATE = "{format}. Scanning cannot tell where a QR came from. I
 const PHOTO_NOTE = "A photo of this QR is a copy of the secret. The camera app, photo library, cloud sync or thumbnails may keep it. Prefer the live camera. If you use a photo, delete it, including from the recently deleted folder or trash. Other copies may remain.";
 const SEED_REFUSAL = "This QR contains a seed. Only WIF private keys can be scanned here. Nothing was loaded.";
 const NOT_A_KEY_REFUSAL = "This QR does not hold a WIF private key. Nothing was loaded.";
-// DRAFT (owner OK pending)
 const SEED_MODE_KEY_REFUSAL = "This QR contains a private key. Only seeds can be scanned here. Nothing was loaded.";
-// DRAFT (owner OK pending)
 const SEED_MODE_NOT_A_SEED_REFUSAL = "This QR does not hold a seed. Nothing was loaded.";
-// DRAFT (owner OK pending)
 const SEED_REPLACE_NOTE = "This key already holds a seed phrase. Continue replaces it.";
+const KEY_REPLACE_NOTE = "This key already holds a private key. Continue replaces it.";
 const SEED_FORMAT_TEXT = {
   "standard-seedqr": "Standard SeedQR, {count} words",
   "compact-seedqr": "CompactSeedQR, {count} words",
@@ -61,16 +60,16 @@ const PHOTO_ERROR_STATE = {
 };
 
 export function mountKeyScan(host, {
-  keyField,
   accept = "wif",
   idPrefix = "key-scan",
   beforeOpen = () => true,
   onSeed = () => {},
   replacesSeed = () => false,
+  onKey = () => { throw new Error("no key handler"); },
+  replacesKey = () => false,
   wordlist = null,
   translate = (text) => text,
   privateValue = () => "",
-  beforeWrite = () => {},
   createDecoder = createQrDecoder,
   createScanner = createQrScanner,
   classify = classifyQrPayload,
@@ -138,7 +137,7 @@ export function mountKeyScan(host, {
 
   let decoder = null;
   let scanner = null;
-  let text = null;
+  let keyBytes = null;
   let revealed = false;
   let open = false;
   let destroyed = false;
@@ -177,7 +176,7 @@ export function mountKeyScan(host, {
   // camera has stopped, can be started again, and the browser can open it.
   // While a confirmation is pending every acquisition control is hidden.
   const updateAcquisition = () => {
-    const confirming = !!text || !!seedIndicesBuffer;
+    const confirming = !!keyBytes || !!seedIndicesBuffer;
     const acquiring = open && !confirming;
     const stopWasFocused = doc.activeElement === stopButton;
     const resumeWasFocused = doc.activeElement === resumeButton;
@@ -235,7 +234,10 @@ export function mountKeyScan(host, {
     seedReviewShow = null;
     seedReviewPrev = null;
     seedReviewNext = null;
-    text = null;
+    if (keyBytes) {
+      try { keyBytes.fill(0); } catch {}
+    }
+    keyBytes = null;
     revealed = false;
     confirmIntro = null;
     confirmValue = null;
@@ -248,12 +250,27 @@ export function mountKeyScan(host, {
   // conceal event only rewrite the value and the button's text, so the
   // focused button is never replaced.
   const updateConfirm = () => {
-    if (!text || !confirmValue || !revealButton) return;
+    if (!keyBytes || !confirmValue || !revealButton) return;
     let shown = "";
-    try {
-      shown = privateValue(text, revealed);
-    } catch {
-      shown = "";
+    if (!revealed) {
+      // Concealed: the mask, one dot per character, with no key string built
+      // (GLM, #1405).
+      try {
+        shown = privateValue("•".repeat(keyBytes.length), false);
+      } catch {
+        shown = "";
+      }
+    } else {
+      // The key as text exists only for this render: it is never stored.
+      let text = "";
+      try {
+        for (let i = 0; i < keyBytes.length; i += 1) text += String.fromCharCode(keyBytes[i]);
+        shown = privateValue(text, true);
+      } catch {
+        shown = "";
+      } finally {
+        text = "";
+      }
     }
     // The classifier only reports a WIF whose bytes are all base58, so the
     // app's own display markup cannot carry anything but the key and its
@@ -272,7 +289,7 @@ export function mountKeyScan(host, {
     confirmValue = make("div", { class: "key-scan-value" });
     revealButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-reveal` });
     revealButton.addEventListener("click", () => {
-      if (!text) return;
+      if (!keyBytes) return;
       revealed = !revealed;
       updateConfirm();
     });
@@ -286,6 +303,9 @@ export function mountKeyScan(host, {
     actions.appendChild(discardButton);
     confirm.appendChild(confirmIntro);
     confirm.appendChild(confirmValue);
+    // Continue replaces the key the key already holds: say so before it.
+    replaceNote = make("p", { class: "edge-note is-private", id: `${prefix}-confirm-replace`, hidden: !keyHoldsKey(), text: say(KEY_REPLACE_NOTE) });
+    confirm.appendChild(replaceNote);
     confirm.appendChild(actions);
     confirm.hidden = false;
     updateConfirm();
@@ -353,6 +373,11 @@ export function mountKeyScan(host, {
   // A check that fails counts as holding words: the note shows.
   const keyHoldsWords = () => {
     try { return replacesSeed() !== false; } catch { return true; }
+  };
+
+  // A check that fails counts as holding a key: the note shows.
+  const keyHoldsKey = () => {
+    try { return replacesKey() !== false; } catch { return true; }
   };
 
   const onSeedContinue = () => {
@@ -448,36 +473,25 @@ export function mountKeyScan(host, {
   };
 
   const onContinue = () => {
-    const value = text;
-    if (value == null) return;
-    let event = null;
-    try {
-      const InputEventCtor = (win && win.InputEvent) || globalThis.InputEvent;
-      event = new InputEventCtor("input", { bubbles: true, inputType: "insertFromPaste" });
-    } catch {
-      event = null;
-    }
-    // Without the paste-like event the field would hold an unvalidated key.
-    if (!event) {
-      showStatus("error");
+    if (!keyBytes) return;
+    // A key entered after the scan: show the note first; the next Continue
+    // replaces it.
+    if (replaceNote?.hidden && keyHoldsKey()) {
+      replaceNote.hidden = false;
       return;
     }
-    // The caller may need to put the field in the right mode first: a WIF
-    // written into Brain wallet mode would be hashed as a passphrase. A
-    // refusal there leaves the field and the confirmation untouched.
+    let copy = null;
     try {
-      beforeWrite();
+      copy = keyBytes.slice();
+      onKey(copy);
     } catch {
+      clearConfirm();
       showStatus("error");
       return;
+    } finally {
+      try { copy?.fill(0); } catch {}
     }
-    try {
-      keyField.value = value;
-      keyField.dispatchEvent(event);
-    } catch {
-      showStatus("error");
-      return;
-    }
+    try { keyBytes.fill(0); } catch {}
     endPanel();
   };
 
@@ -508,7 +522,7 @@ export function mountKeyScan(host, {
     if (!result || typeof result !== "object") result = { format: "unknown" };
     if (accept === "seed") {
       if (result.format === "wif") {
-        try { result.text = ""; } catch {}
+        try { result.bytes?.fill?.(0); } catch {}
         setStatus("key", say(SEED_MODE_KEY_REFUSAL));
         return;
       }
@@ -560,8 +574,8 @@ export function mountKeyScan(host, {
       setStatus("not-a-seed", say(SEED_MODE_NOT_A_SEED_REFUSAL));
       return;
     }
-    if (result.format === "wif" && typeof result.text === "string" && result.text) {
-      text = result.text;
+    if (result.format === "wif" && result.bytes instanceof Uint8Array && result.bytes.length) {
+      keyBytes = result.bytes;
       revealed = false;
       buildConfirm();
       statusLine.setAttribute("data-scan-state", "wif");
@@ -578,6 +592,9 @@ export function mountKeyScan(host, {
     }
     if (result.indices && typeof result.indices.fill === "function") {
       try { result.indices.fill(0); } catch {}
+    }
+    if (result.bytes && typeof result.bytes.fill === "function") {
+      try { result.bytes.fill(0); } catch {}
     }
     if (result.format === "standard-seedqr" || result.format === "compact-seedqr" || result.format === "words") {
       setStatus("seed", say(SEED_REFUSAL));
@@ -661,7 +678,7 @@ export function mountKeyScan(host, {
       renderSeedReview();
       return;
     }
-    if (!text) return;
+    if (!keyBytes) return;
     revealed = false;
     updateConfirm();
   };
@@ -672,7 +689,7 @@ export function mountKeyScan(host, {
     // A Scan press still waiting on beforeOpen never opens the camera once
     // the page has been hidden (K3.1, #1364 round 6).
     openRequest += 1;
-    if (text || seedIndicesBuffer) {
+    if (keyBytes || seedIndicesBuffer) {
       endPanel();
       return;
     }
