@@ -15,6 +15,7 @@ export const initSecureEntryConfirm = () => {
         <p id="secure-entry-confirm-message"></p>
         <ul id="secure-entry-confirm-names" data-i18n-skip translate="no" hidden></ul>
         <p class="edge-note is-private" id="secure-entry-confirm-cannot-keep" hidden></p>
+        <p class="field-note edge-note is-private" id="secure-entry-confirm-other-formats" hidden></p>
         <div class="row tool-actions">
           <button class="btn primary" id="secure-entry-confirm-primary" type="button"></button>
           <button class="btn red" id="secure-entry-confirm-secondary" type="button"></button>
@@ -25,12 +26,13 @@ export const initSecureEntryConfirm = () => {
     onDismiss: () => settle(null),
   });
   const find = (id) => modal.overlay.querySelector(`#secure-entry-confirm-${id}`);
-  const title = find("title"), message = find("message"), names = find("names"), cannotKeep = find("cannot-keep");
+  const title = find("title"), message = find("message"), names = find("names"), cannotKeep = find("cannot-keep"), otherFormats = find("other-formats");
   const primary = find("primary"), secondary = find("secondary"), cancel = find("cancel");
   let pending = null, primaryChoice = null, secondaryChoice = null, opener = null;
 
   const clearText = () => {
-    for (const field of [title, message, cannotKeep, primary, secondary, cancel]) field.textContent = "";
+    for (const field of [title, message, cannotKeep, otherFormats, primary, secondary, cancel]) field.textContent = "";
+    otherFormats.hidden = true;
     names.replaceChildren();
   };
   const settle = (choice, options) => {
@@ -56,6 +58,11 @@ export const initSecureEntryConfirm = () => {
     opener = from;
     names.hidden = !on;
     cannotKeep.hidden = !on || options.canKeep !== false;
+    // The note describes Keep, so it shows only when Keep is offered: with
+    // canKeep false the one choice is Clear, which empties every format.
+    const showOtherFormats = on && options.otherFormats === true && options.canKeep !== false;
+    otherFormats.hidden = !showOtherFormats;
+    if (showOtherFormats) otherFormats.textContent = t("Only the format on screen is kept. Other formats saved in this slot will be cleared.");
     primary.hidden = on && options.canKeep === false;
     cancel.textContent = t("Cancel");
     if (on) {
