@@ -317,7 +317,7 @@ const WIF_PREFIXES = "5KL9c";
 const HEX_KEY = /(?<![0-9A-Fa-f])[0-9A-Fa-f]{64}(?![0-9A-Fa-f])/g;
 const NUMS_POINT = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
-function watchOnlyTextHasPrivateKey(value) {
+export function watchOnlyTextHasPrivateKey(value) {
   for (const [token] of value.matchAll(BASE58_RUN)) {
     if (token.length >= 94 && EXTENDED_PRIVATE_PREFIX.test(token)) return true;
     if ((token.length === 51 || token.length === 52) && WIF_PREFIXES.includes(token[0])) return true;

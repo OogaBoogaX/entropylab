@@ -777,7 +777,9 @@ test("copying a restarted clock uses its visible preview without changing the ra
   h.context.hodlJournalTickNoteClock(h.field);
   Object.assign(h.context, {
     hodlReadoutIsShown: () => true, hodlJournalFormatNotebook: formatNotebook,
-    copyText: async (text) => { copied.push(text); return true; },
+    // The Notes copy control copies within EntropyLab, never to the system clipboard.
+    appClipboardPut: (text) => { copied.push(text); return true; },
+    copyText: async () => { throw new Error("Notes reached the system clipboard"); },
     hodlShowCopiedIcon() {}, hodlClipboardIconMarkup: () => "", hodlCopiedIconMarkup: () => "",
   });
   runInNewContext(sourceFunction("hodlJournalCopyContent"), h.context);
