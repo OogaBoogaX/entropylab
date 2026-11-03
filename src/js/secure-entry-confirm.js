@@ -58,8 +58,11 @@ export const initSecureEntryConfirm = () => {
     opener = from;
     names.hidden = !on;
     cannotKeep.hidden = !on || options.canKeep !== false;
-    otherFormats.hidden = !on || options.otherFormats !== true;
-    if (on && options.otherFormats === true) otherFormats.textContent = t("Only the format on screen is kept. Other formats saved in this slot will be cleared.");
+    // The note describes Keep, so it shows only when Keep is offered: with
+    // canKeep false the one choice is Clear, which empties every format.
+    const showOtherFormats = on && options.otherFormats === true && options.canKeep !== false;
+    otherFormats.hidden = !showOtherFormats;
+    if (showOtherFormats) otherFormats.textContent = t("Only the format on screen is kept. Other formats saved in this slot will be cleared.");
     primary.hidden = on && options.canKeep === false;
     cancel.textContent = t("Cancel");
     if (on) {

@@ -173,3 +173,14 @@ test("otherFormats is hidden without the option and in mode off", async () => {
     await decision;
   });
 });
+
+test("otherFormats stays hidden when Keep is not offered", async () => {
+  await withDialog(async ({ dialog, opener, el }) => {
+    const decision = dialog.open({ mode: "on", names: ["Key 1"], canKeep: false, otherFormats: true, opener });
+    assert.equal(el("primary").hidden, true);
+    assert.equal(el("other-formats").hidden, true);
+    assert.equal(el("other-formats").textContent, "");
+    el("cancel").click();
+    await decision;
+  });
+});
