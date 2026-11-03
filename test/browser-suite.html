@@ -4187,11 +4187,16 @@
         assert(value && value.textContent, `${id} is missing after reveal`);
         await privateReadout(value, value.textContent);
       }
-      // A page network change wipes even a revealed result; re-deriving
+      // The same network announced again keeps the key (a startup or Journal
+      // re-announcement is not a change); a real page network change wipes
+      // even a revealed result, and switching back and re-deriving
       // reproduces the mainnet key.
       document.dispatchEvent(new CustomEvent("hodl:network-default"));
+      assert(document.getElementById("ln-node-pubkey"), "the same network announced again wiped the key");
+      document.querySelector('#network-picker-menu [data-network="testnet"]').click();
       assert(!document.getElementById("ln-node-pubkey"), "a page network change wipes the revealed result");
       assert(!document.getElementById("ln-entropy"), "the revealed entropy is gone with it");
+      document.querySelector('#network-picker-menu [data-network="mainnet"]').click();
       document.getElementById("ln-go").click();
       await until(() => document.getElementById("ln-node-pubkey"), "re-derive after the network change");
       equal(document.getElementById("ln-node-pubkey").textContent, LND_PUBKEY, "mainnet node pubkey again");
