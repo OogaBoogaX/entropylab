@@ -564,6 +564,27 @@ test("an audit upload that finishes after the session ends writes nothing back, 
   assert.equal(cleared, 1, "only the uninterrupted upload retired a verdict");
 });
 
+test("an oversized audit file is refused before it is read", async () => {
+  const field = { value: "" };
+  const errors = [];
+  const app = await loadAppFunctions(["hodlPsbtLoadAuditUpload", "hodlPsbtRetireAuditUploads"], { stubs: {
+    document: { getElementById: (id) => (id === "psbt-audit-before" ? field : null) },
+    psbtBytesFromUpload: (bytes) => bytes,
+    hodlBytesToB64: () => "SENT-B64",
+    hodlPsbtClearSignerAudit: () => {},
+    hodlSetPsbtError: (spec) => { errors.push(spec); },
+    hodlSyncPsbtControls: () => {},
+  } });
+  let reads = 0;
+  await app.hodlPsbtLoadAuditUpload({ size: 5e6 + 1, arrayBuffer: async () => { reads++; return new ArrayBuffer(0); } });
+  assert.equal(reads, 0, "an oversized file must not be read into memory");
+  assert.equal(errors.length, 1, "the refusal is shown");
+  assert.equal(field.value, "");
+  await app.hodlPsbtLoadAuditUpload({ size: 5e6, arrayBuffer: async () => { reads++; return new ArrayBuffer(4); } });
+  assert.equal(reads, 1, "a file at the limit is read");
+  assert.equal(field.value, "SENT-B64");
+});
+
 test("Show more's full repaint keeps the audit; an edit after a repaint retires the cached one too", async () => {
   // Wicked's recheck: a full Show-more repaint dropped the audit from the
   // page while its report stayed cached, so an edit could not retire it and a

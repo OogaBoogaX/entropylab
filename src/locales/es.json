@@ -132,7 +132,6 @@
   "Brain wallet": "Billetera cerebral",
   "Unsafe. SHA-256 of your text, as a single key pair or a 24-word seed.": "Inseguro. SHA-256 de tu texto, como un par de claves o una semilla de 24 palabras.",
   "Private key or recovery passphrase": "Clave privada o frase de contraseña de recuperación",
-  "PSBT v0 (base64 or hex)": "PSBT v0 (base64 o hex)",
   "Address network": "Red de direcciones",
   "Leave blank for inspect-only mode": "Déjalo en blanco para el modo solo inspección",
   "Bitcoin mainnet": "Bitcoin mainnet",
@@ -2509,5 +2508,8 @@
   "To change the method, undo or clear the rolls entered so far.": "Para cambiar el método, deshace o borra las tiradas introducidas hasta ahora.",
   "{n} rolls are recommended for a {words}-word seed: about {bits} bits from a fair die. Fewer rolls make a weaker seed. The count cannot tell you whether your die is fair.": "{n} tiradas son recomendadas para una semilla de {words} palabras: alrededor de {bits} bits de un dado justo. Menos tiradas hacen una semilla más débil. El conteo no puede decirte si tu dado es justo.",
   "Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.": "Tus tiradas no están listadas en la página. Permanecen en memoria para derivación, deshacer y revisión de tirada única. Revisar una tirada muestra una tirada que elijas, con su posición.",
-  "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Tira un dado físico de seis caras. Introduce su resultado una vez, usando un botón o las teclas 1-6."
+  "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Tira un dado físico de seis caras. Introduce su resultado una vez, usando un botón o las teclas 1-6.",
+  "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "El campo PSBT cambió mientras la confirmación estaba abierta. Revísalo, luego elige Reemplazar de nuevo o Mantener.",
+  "PSBT (base64 or hex)": "PSBT (base64 o hex)",
+  "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "Algunas billeteras de hardware no pueden restaurar una frase de contraseña de más de 50 caracteres. Verifique la suya antes de depender de ella."
 }

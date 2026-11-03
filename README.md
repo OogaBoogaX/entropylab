@@ -6,7 +6,10 @@ private keys into wallet recovery information without intentionally sending
 sensitive data to a server. The whole application is one HTML file, and its
 markup passes the W3C HTML validator with zero errors.
 
-Current version: **v1.0.0**
+Current version: **v1.1.0-dev**
+
+That is the development line on `rock`, which the website follows. The latest
+signed release is [v1.0.0](https://github.com/OogaBoogaX/entropylab/releases/tag/v1.0.0).
 
 Official website: [entropylab.online](https://entropylab.online)
 
@@ -180,13 +183,23 @@ an explicit error before those pairs are allocated.
   Session and pagehide clear field/cache. Clearing is best-effort; browser/OS
   copies are outside reliable erasure. A successful transcript check does not
   establish that host randomness stayed secret.
+  PSBT camera scans keep one stream across animated parts. A visible blur
+  while a permission prompt is pending does not cancel the request, but a
+  grant starts capture only when the page is visible and focused. Active
+  blur, tab hide, print, idle, cancellation, another PSBT scanner and teardown
+  stop capture and discard pending scan data.
   A **Scan PSBT QR** control under the PSBT Inspector, Nonce Inspector and
   PSBT Editor fields (and the fee-bump original, the PSBT sent to the signer
   and the Editor's comparison PSBT) reads a PSBT shown as a QR code with the device camera:
-  one static code (base64 or hex) or an animated `ur:crypto-psbt` sequence.
+  one static code (base64 or hex), an animated `ur:crypto-psbt` sequence, or
+  PSBT BBQr (`H`, `2` and `Z` encodings).
   Nothing is written to the field until the whole PSBT has arrived and it
   starts with the PSBT magic; a QR that holds anything else is refused, and
   a field that already has a PSBT asks before it is replaced.
+  The Editor and PSBT Inspector also accept pasted UR/BBQr frames separated
+  by whitespace. A paste must contain exactly one complete transfer: any
+  frame after completion is refused, including a duplicate. An in-progress
+  UR or BBQr transfer cannot be replaced by another transport without reset.
 - Accepts a fully signed raw Bitcoin transaction (hex or base64) in the same
   inspector: outputs, extracted ECDSA nonces, and inscription-envelope hints.
   Fee and RFC 6979 cannot be checked without previous outputs.
@@ -235,6 +248,9 @@ an explicit error before those pairs are allocated.
   scanning, and an **Insane editing** switch lifts the consensus-layer checks
   for deliberately broken files while still listing their problems. The
   editor never signs anything.
+  The Editor's input label is version-neutral; the decoded report identifies
+  the submitted PSBT version. The separate PSBT Inspector and Nonce Inspector
+  retain their v0-only input labels and parsing limits.
 - Verifies and extends Bitcoin Core descriptor wallets (Core Wallet tab):
   upload a SQLite `wallet.dat` (Bitcoin Core 23+; legacy Berkeley DB wallets
   are refused) and every record is decoded — client versions, wallet flags,

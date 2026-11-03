@@ -63,7 +63,7 @@ function createContext(sandbox) {
     // consumer bound to it (PSBT, BIP-85, Silent Payments, vanity).
     hodlPsbtSource: "", hodlBip85Source: "", hodlSpSource: "", hodlSpVerifyMatches: null,
     hodlSpSendLast: null, hodlSpNote: "", hodlVanitySource: "", hodlVanityApplying: false,
-    TextEncoder, TextDecoder, ...sandbox,
+    TextEncoder, TextDecoder, CustomEvent, ...sandbox,
   });
   for (const name of passphraseHelpers) vm.runInContext(functionSource(name), context);
   return context;
@@ -471,6 +471,21 @@ test("pagehide and persisted pageshow empty the Nonce Inspector's key, passphras
     for (const id of ids) fields.set(id, { value: "xprv9s21ZrQH143K secret material", dataset: {} });
     events[type](event);
     for (const id of ids) assert.equal(fields.get(id).value, "", `${type} left #${id} filled`);
+  }
+});
+
+// A PSBT upload still being read when the page is hidden — signer audit, RBF
+// original or inspector file — must not write back into the fields the sweep
+// has just emptied: each loader's generation is retired with them.
+test("pagehide and persisted pageshow retire every pending PSBT upload", () => {
+  for (const [type, event] of [["pagehide", {}], ["pageshow", { persisted: true }]]) {
+    const { context, events } = raceHarness();
+    const retired = { audit: 0, rbf: 0, inspector: 0 };
+    context.hodlPsbtRetireAuditUploads = () => { retired.audit += 1; };
+    context.hodlPsbtRetireRbfUploads = () => { retired.rbf += 1; };
+    context.hodlPsbtRetireInspectorUploads = () => { retired.inspector += 1; };
+    events[type](event);
+    assert.deepEqual(retired, { audit: 1, rbf: 1, inspector: 1 }, `${type} left a pending PSBT upload live`);
   }
 });
 
@@ -1004,6 +1019,7 @@ test("pagehide and persisted pageshow end the PSBT session, reports included", (
     hodlNonceQrCapture: { clear: () => { retiredCapture += 1; } },
     hodlPsbtRetireAuditUploads: () => { retiredUploads += 1; },
     hodlPsbtRetireRbfUploads: () => { retiredRbfUploads += 1; },
+    hodlPsbtRetireInspectorUploads() {},
     hodlPsbtLast: { rvalues: ["deadbeef"] }, hodlPsbtInspected: { psbt: "stamp" },
     hodlPsbtSessionSpec: { key: "Session key" },
     hodlSetPsbtError: () => errors.push("psbt"), hodlSetNonceError: () => errors.push("nonce"),
@@ -1032,7 +1048,7 @@ test("End Session still wipes the key and fields when the camera capture fails t
     document: { getElementById: id => elements.get(id) ?? null },
     hodlPsbtWipeMem: () => { wiped += 1; }, hodlPsbtClearNonceHistory: () => { history += 1; },
     hodlNonceQrCapture: { clear: () => { throw new Error("camera track would not stop"); } },
-    hodlPsbtRetireAuditUploads() {}, hodlPsbtRetireRbfUploads() {},
+    hodlPsbtRetireAuditUploads() {}, hodlPsbtRetireRbfUploads() {}, hodlPsbtRetireInspectorUploads() {},
     hodlPsbtLast: { rvalues: ["deadbeef"] }, hodlPsbtInspected: { psbt: "stamp" },
     hodlPsbtSessionSpec: null,
     hodlSetPsbtError() {}, hodlSetNonceError() {},

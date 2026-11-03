@@ -5103,6 +5103,15 @@ function hodlRenderPassphraseInputState(input, enabled = hodlPassphraseBip39Enab
       }
     }
   }
+  // A passphrase longer than 50 code points may not restore on some hardware
+  // wallets. The note is static shell text; show it only when it applies.
+  if (input.id === "pass") {
+    let lengthNote = document.getElementById("passphrase-length-note");
+    if (lengthNote) {
+      let length = hodlPassphraseVaultActive() ? hodlPassphraseVault.length : [...input.value].length;
+      lengthNote.hidden = input.disabled || !(length > 50);
+    }
+  }
   return analysis;
 }
 function hodlRenderSeedNumberInputState(input, targetWords = hodlTargetWordCount, zeroIndexed = hodlSeedZeroIndexed) {
@@ -6942,7 +6951,7 @@ function hodlSetSeedLength(words) {
 }
 // The Key Station's scan panel is a preview-only extra: release builds define
 // no flag, so the host is never rendered and the module is never imported.
-var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null;
+var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null, hodlKeyScanOpenAfterMount = false;
 var hodlSeedScan = null, hodlSeedScanOpenAfterMount = false;
 var hodlSeedPicker = null, hodlSeedPickerImport = null;
 var hodlSecureDicePad = null, hodlSecureDicePadImport = null;
@@ -7398,9 +7407,10 @@ function hodlRenderKeyForm() {
     <div id="private-key-entry">
     <p class="label" id="private-key-input-label">${hodlT("Private key or recovery passphrase")}</p>
     ${hodlSeedMetaRowMarkup("private-key-meta", true, "")}
-    <div class="dice-input-shell private-key-input-shell"><input id="secure-key" type="text" placeholder="${hodlTAttr("5… / K… / L…")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-meta" autocomplete="off" spellcheck="false" autocapitalize="off" data-secure-key /></div><p class="field-note" id="secure-key-status" aria-live="polite"></p><button type="button" class="btn secondary" id="secure-key-reveal" aria-pressed="false">${hodlT("Show key")}</button></div>`;
+    <div class="dice-input-shell private-key-input-shell"><input id="secure-key" type="text" placeholder="${hodlTAttr("5… / K… / L…")}" aria-labelledby="private-key-input-label" aria-describedby="private-key-meta" autocomplete="off" spellcheck="false" autocapitalize="off" data-secure-key /></div><p class="field-note" id="secure-key-status" aria-live="polite"></p><button type="button" class="btn secondary" id="secure-key-reveal" aria-pressed="false">${hodlT("Show key")}</button>${hodlKeyScanHostMarkup()}</div>`;
     hodlBindKeyFields();
     hodlBindSecureKeyField();
+    hodlBindKeyScan();
     hodlRenderPassphraseKeyboard();
     return;
   }
@@ -7640,19 +7650,16 @@ function hodlRenderPrivateKeyInputState(input) {
 // A scan only ever delivers a WIF (the classifier checked it), so the field
 // takes it as one whatever key type is selected: in Brain wallet mode the
 // text would otherwise be hashed as a passphrase (#1291 gate).
-function hodlKeyScanSelectWif() {
-  let radio = document.querySelector('input[name="kk"][value="wif"]');
-  if (!radio) throw new Error("The WIF key type is missing.");
-  if (radio.checked) return;
-  radio.checked = true;
-  radio.dispatchEvent(new Event("change", { bubbles: true }));
-}
+
 function hodlBindKeyScan() {
   // The slice harness loads this with no scan host: return before anything
   // else, and never read the preview flag bare.
   let host = document.getElementById("key-scan-host");
-  let key = document.getElementById("key");
-  if (!host || !key) return;
+  // No host, no mount: an open request is dropped here too.
+  if (!host) {
+    hodlKeyScanOpenAfterMount = false;
+    return;
+  }
   if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
     if (!hodlKeyScanImport) {
       hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
@@ -7661,15 +7668,79 @@ function hodlBindKeyScan() {
       }).catch(() => null);
     }
     hodlKeyScanImport.then((module) => {
+      // An open request belongs to this mount only: a mount that bails (the
+      // host gone, a panel already there) drops it, so a later mount never
+      // opens the camera without a Scan press.
+      let openNow = hodlKeyScanOpenAfterMount;
+      hodlKeyScanOpenAfterMount = false;
       if (!module || hodlKeyScan || !host.isConnected || host.childNodes.length) return;
-      hodlKeyScan = module.mountKeyScan(host, {
-        keyField: key,
-        translate: hodlTText,
-        beforeWrite: hodlKeyScanSelectWif,
-        privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
-      });
+      try {
+        hodlKeyScan = module.mountKeyScan(host, {
+          accept: "wif",
+          translate: hodlTText,
+          privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
+          beforeOpen: hodlKeyScanBeforeOpen,
+          onKey: hodlKeyScanLoad,
+          replacesKey: hodlKeyScanReplaces,
+        });
+      } catch {
+        return;
+      }
+      // Not for a page hidden while Secure entry was turning on: the camera
+      // would start out of sight.
+      if (openNow && document.visibilityState !== "hidden") try { hodlKeyScan.open(); } catch {}
     }).catch(() => {});
   }
+}
+
+async function hodlKeyScanBeforeOpen() {
+  if (document.getElementById("secure-key")) return true;
+  if (hodlKeyMode === "key" && !hodlSecureEntryOn) {
+    hodlKeyScanOpenAfterMount = true;
+    try {
+      await hodlSecureEntryToggle(true);
+    } catch {
+      hodlKeyScanOpenAfterMount = false;
+      return false;
+    }
+    if (hodlSecureEntryOn) return false;
+    hodlKeyScanOpenAfterMount = false;
+    return false;
+  }
+  return false;
+}
+
+function hodlKeyScanReplaces() {
+  let state = hodlKeys[hodlActiveKey];
+  if (!state) return false;
+  return hodlSecureKeyHasData(hodlSecureKeyOf(state));
+}
+
+function hodlKeyScanLoad(bytes) {
+  // A load that cannot happen throws, so the panel says nothing was loaded
+  // instead of closing as if it had.
+  if (!hodlSecureKeyActive()) throw new Error("Secure entry is not active for a private key.");
+  let state = hodlKeys[hodlActiveKey];
+  if (!state) throw new Error("No active key.");
+  if (!document.getElementById("secure-key")) throw new Error("The masked key field is not on screen.");
+  if (!(bytes instanceof Uint8Array)) throw new Error("Bad key bytes.");
+  for (const byte of bytes) if (byte >= 0x80) throw new Error("The key is not ASCII.");
+  let entry = hodlSecureKeyEntry(true);
+  if (!entry) throw new Error("No secure key.");
+  hodlInvalidateLiveKeyResult();
+  try {
+    entry.vault.setBytes(bytes);
+  } catch (error) {
+    try { entry.vault.clear(); } catch {}
+    throw error;
+  }
+  // The format changes only once the vault holds the scanned key: a failed
+  // load leaves it as it was (MiniMax, DeepSeek, #1405).
+  state.fields.keyKind = "wif";
+  let values = hodlPrivateKeyValues(state.fields);
+  for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
+  hodlSetMode(hodlKeyMode);
+  hodlQueueMasterFingerprintPreview(0);
 }
 function hodlBindSeedScan() {
   // The slice harness loads this with no scan host: return before anything
@@ -11931,6 +12002,7 @@ function hodlPsbtBytes(raw) {
   let value = raw.trim(), compact = value.replace(/\s/g, "");
   if (!value) throw new Error("Paste a PSBT v0 or a raw Bitcoin transaction.");
   if (compact.length > 7e6) throw new Error("This file is too large to inspect safely.");
+  if (/^(?:ur:|B\$)/i.test(value)) return hodlPsbtBytesFromText(value);
   let bytes;
   if (/^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0 && compact.length >= 10) bytes = hodlHex.decode(compact.toLowerCase());
   else try {
@@ -12935,6 +13007,8 @@ function hodlSyncPsbtControls() {
   let value = (id) => String(document.getElementById(id)?.value || "").trim();
   let decodes = (text) => {
     if (!text) return false;
+    // Assemble QR transports on Inspect/Download, not on every input event.
+    if (/^(?:ur:|B\$)/i.test(text)) return true;
     try {
       hodlPsbtBytes(text);
       return true;
@@ -12981,6 +13055,10 @@ function hodlSetNonceError(spec) {
 // Ending the session is one act wherever it starts: the shared key goes, and
 // so does everything either card holds.
 var hodlNonceQrCapture = null;
+var hodlPsbtInspectorUploadGeneration = 0;
+function hodlPsbtRetireInspectorUploads() {
+  hodlPsbtInspectorUploadGeneration += 1;
+}
 function hodlEndPsbtSession() {
   // A camera failure must not skip the wipe below.
   try { hodlNonceQrCapture?.clear(); } catch {}
@@ -12989,6 +13067,7 @@ function hodlEndPsbtSession() {
   try { hodlNonceHistoryConfirmDialog?.close(); } catch {}
   hodlPsbtRetireAuditUploads();
   hodlPsbtRetireRbfUploads();
+  hodlPsbtRetireInspectorUploads();
   hodlPsbtLast = null;
   hodlPsbtInspected = {};
   hodlPsbtSessionSpec = hodlNote("Accessible fields were cleared (best effort).");
@@ -14167,12 +14246,19 @@ function hodlInitPsbt() {
     const chosen = nonceFile.files?.[0];
     nonceFile.value = "";
     if (!chosen) return;
+    const generation = hodlPsbtInspectorUploadGeneration;
     (async () => {
       try {
-        const bytes = hodlPsbtInspectorBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
+        // Sized before it is read, like the editor's upload: the decoder's
+        // 5 MB bound must not be reached by first reading a far larger file.
+        if (chosen.size > 5e6) throw new Error("This file is too large to inspect safely.");
+        const upload = new Uint8Array(await chosen.arrayBuffer());
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
+        const bytes = hodlPsbtInspectorBytesFromUpload(upload);
         document.getElementById("nonce-text").value = hodlBytesToB64(bytes);
         hodlRunNonce();
       } catch (exception) {
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
         hodlSetNonceError({ raw: exception.message || String(exception) });
       }
       hodlSyncPsbtControls();
@@ -14187,12 +14273,17 @@ function hodlInitPsbt() {
     const chosen = file.files?.[0];
     file.value = "";
     if (!chosen) return;
+    const generation = hodlPsbtInspectorUploadGeneration;
     (async () => {
       try {
-        const bytes = hodlPsbtInspectorBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
+        if (chosen.size > 5e6) throw new Error("This file is too large to inspect safely.");
+        const upload = new Uint8Array(await chosen.arrayBuffer());
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
+        const bytes = hodlPsbtInspectorBytesFromUpload(upload);
         document.getElementById("psbt-text").value = hodlBytesToB64(bytes);
         hodlRunPsbt();
       } catch (exception) {
+        if (generation !== hodlPsbtInspectorUploadGeneration) return;
         hodlSetPsbtError({ raw: exception.message || String(exception) });
       }
       hodlSyncPsbtControls();
@@ -14907,6 +14998,9 @@ function hodlPsbtLoadRbfUpload(file) {
   let generation = ++hodlPsbtRbfUploadGeneration;
   (async () => {
     try {
+      // Sized before it is read: the decoder's 5 MB bound must not be
+      // reached by first reading a far larger file into memory.
+      if (file.size > 5e6) throw new Error("This PSBT is too large to edit safely.");
       let bytes = psbtBytesFromUpload(new Uint8Array(await file.arrayBuffer()));
       if (generation !== hodlPsbtRbfUploadGeneration) return;
       document.getElementById("psbt-rbf-original").value = hodlBytesToB64(bytes);
@@ -15074,6 +15168,7 @@ function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network) {
 async function hodlPsbtLoadAuditUpload(chosen) {
   const generation = ++hodlPsbtAuditUploadGeneration;
   try {
+    if (chosen.size > 5e6) throw new Error("This PSBT is too large to edit safely.");
     const bytes = psbtBytesFromUpload(new Uint8Array(await chosen.arrayBuffer()));
     if (generation !== hodlPsbtAuditUploadGeneration) return;
     document.getElementById("psbt-audit-before").value = hodlBytesToB64(bytes);
@@ -22554,7 +22649,14 @@ function hodlRenderVanityOut() {
     let secret = hodlVanityReveal
       ? `<span class="mono vanity-pass-text table-private-field-value" data-private-value data-i18n-skip translate="no">${hodlEscapeHtml(match.passphrase)}</span>`
       : `<span class="mono vanity-pass-text" aria-hidden="true">${hodlEscapeHtml("•".repeat(12))}</span><span class="sr-only">${hodlT("Passphrase hidden — turn on the Private data switch above to reveal")}</span>`;
-    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, hodlTAttr("Copy passphrase to EntropyLab's clipboard"))}</span></td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
+    // A found passphrase longer than 50 code points may not restore on some
+    // hardware wallets; the note sits under the passphrase it describes. Only
+    // while passphrases show: masked, the note would leak a length the mask
+    // hides (audit A35-3; GLM, MiniMax, DeepSeek and the red team, round 1).
+    let lengthNote = hodlVanityReveal && Array.from(match.passphrase ?? "").length > 50
+      ? `<p class="field-note edge-note is-private">${hodlT("Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.")}</p>`
+      : "";
+    return `<tr><th scope="row">${index + 1}</th><td class="mono">${match.counter.toString()}</td><td><span class="vanity-secret">${secret}${copyMarkup("data-vanity-copy", index, hodlTAttr("Copy passphrase to EntropyLab's clipboard"))}</span>${lengthNote}</td>${address}${keyCell(match)}<td class="vanity-apply-cell">${applyMarkup(match, index)}</td></tr>`;
   }).join("");
   let overflow = hodlVanityFound > hodlVanityMatches.length ? `<p class="muted">${hodlT("Only the first {n} matches are listed; {total} found in total.", { n: hodlVanityMatches.length, total: hodlVanityFormatCount(hodlVanityFound) })}</p>` : "";
   // Plain text: the description below escapes it once, as a placeholder value.
@@ -23422,7 +23524,7 @@ function hodlConcealPrivateValues(options) {
   // Body-level overlays (the expandable window, the address/PSBT QR) are
   // outside every wiped view and listen for this single conceal signal,
   // including the idle-timer path that fires no blur or print event.
-  document.dispatchEvent(new Event("hodl:conceal"));
+  document.dispatchEvent(new CustomEvent("hodl:conceal", { detail: { reason: options?.reason } }));
 }
 function hodlInitSecretFieldAutoClear() {
   let clearSecretFields = () => {
@@ -23498,6 +23600,7 @@ function hodlInitSecretFieldAutoClear() {
     if (psbtAuditBefore) psbtAuditBefore.value = "";
     // A pending audit upload must not write it back once the read finishes.
     try { hodlPsbtRetireAuditUploads(); } catch {}
+    try { hodlPsbtRetireInspectorUploads(); } catch {}
     // The rendered audit holds change addresses and fingerprints derived
     // from the loaded key; retire it with the field it was computed from.
     try { hodlPsbtClearSignerAudit(); } catch {}
@@ -23616,6 +23719,7 @@ function hodlInitSecretFieldAutoClear() {
     try { hodlSeedScan?.destroy(); } catch {}
     hodlSeedScan = null;
     hodlSeedScanOpenAfterMount = false;
+    hodlKeyScanOpenAfterMount = false;
     try { hodlDestroyTextScans(); } catch {}
     try { hodlKeyScanModule?.retireQrDecoders(); } catch {}
     try { hodlPsbtScanModule?.retireQrDecoders(); } catch {}

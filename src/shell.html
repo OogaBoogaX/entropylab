@@ -126,6 +126,7 @@ words, pick one of the checksum words.</span></span>
         <label for="pass">Passphrase (optional)</label>
         <div class="passphrase-keyboard-tools" id="passphrase-keyboard-toggle-host" hidden></div>
         <div class="dice-input-shell passphrase-input-shell"><pre class="dice-input-highlight" id="passphrase-highlight" translate="no" aria-hidden="true"></pre><input id="pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none" aria-describedby="passphrase-bip39-status"></div>
+        <p class="field-note edge-note is-private" id="passphrase-length-note" hidden>Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.</p>
         <p class="field-note passphrase-bip39-status" id="passphrase-bip39-status" aria-live="polite" hidden></p>
       </div>
       <div class="passphrase-keyboard-host" id="passphrase-keyboard-host" hidden></div>
@@ -799,7 +800,7 @@ words, pick one of the checksum words.</span></span>
       </details>
     </div>
       <div class="card no-print tool-card" id="psbted-card" role="tabpanel" hidden>
-      <label class="field">PSBT v0 (base64 or hex)
+      <label class="field">PSBT (base64 or hex)
         <textarea id="psbted-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </label>
       <div class="psbt-scan-host" id="psbted-scan-host"></div>
