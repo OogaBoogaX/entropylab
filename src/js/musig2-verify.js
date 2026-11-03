@@ -12,10 +12,14 @@
 // signatures, BIP-328 derivation, script leaves or script trees (an output
 // committing to a tree it cannot hash is "not-checked", never "mismatch"), or
 // whether the participants are the people the user expects, and a "verified"
-// key aggregation says nothing about who holds the keys. One known divergence,
-// fail-closed: an intermediate KeyAgg sum at infinity (the facade cannot hold
-// the point) errors where BIP-327 fails only on the final sum; reaching it
-// would need a hash collision on the coefficients.
+// key aggregation says nothing about who holds the keys. Two known divergences,
+// both fail-closed: an intermediate KeyAgg sum at infinity (the facade cannot
+// hold the point) errors where BIP-327 fails only on the final sum, and KeyAgg
+// skips a zero coefficient (it contributes nothing) where BIP-327 would
+// multiply by it; both give the same final Q and need a hash collision to
+// reach. The commitmentReason codes are "witness-utxo", "internal-key",
+// "merkle-root", "duplicate-field", "script-conflict", "not-taproot",
+// "script-tree" and "indirect", alongside the key-aggregation reasons.
 //
 // Curve arithmetic goes through the libsecp256k1 WASM facade
 // (./secp256k1.js), hashes through ./bip352.js's taggedHash, and the
@@ -201,7 +205,6 @@ const PSBT_OUT_TAP_INTERNAL_KEY = "05";
 const PSBT_OUT_SCRIPT = "04";
 const PSBT_IN_TAP_LEAF_SCRIPT = "15";
 const PSBT_OUT_TAP_TREE = "06";
-const MUSIG2_KEY_HEX_LENGTH = 68; // 0x1a || 33-byte aggregate key
 
 const pairValue = (item) => {
   if (typeof item.value === "string") return item.value;
@@ -258,14 +261,17 @@ const findPairs = (pairs, type, keyHexLength) => pairs.filter((pair) => {
 
 const findPair = (pairs, type, keyHexLength) => findPairs(pairs, type, keyHexLength)[0] ?? null;
 
+// A single-instance 32-byte field: `present` tells a malformed value apart
+// from an absent one, so a present-but-unparseable field is never read as
+// absent.
 const optionalKey = (pairs, type) => {
   const pair = findPair(pairs, type, 2);
-  if (!pair) return null;
+  if (!pair) return { present: false, value: null };
   try {
     const bytes = hexToBytes(pair.value);
-    return bytes.length === 32 ? bytes : null;
+    return { present: true, value: bytes.length === 32 ? bytes : null };
   } catch {
-    return null;
+    return { present: true, value: null };
   }
 };
 
@@ -299,6 +305,8 @@ const txOutputs = (doc) => {
   const tx = doc && doc.tx;
   if (!tx || typeof tx !== "object") return [];
   if (Array.isArray(tx.outputs)) return tx.outputs;
+  // rust-bitcoin's Transaction serializes its outputs as `output` (singular).
+  if (Array.isArray(tx.output)) return tx.output;
   if (Array.isArray(tx.vout)) return tx.vout;
   return [];
 };
@@ -316,7 +324,7 @@ const scriptHexOf = (output) => {
 // treeUnknown: the output commits to a script tree this stage cannot hash (an
 // output's TAP_TREE, or an input's leaf scripts with no merkle-root field), so
 // an internal-key match is "not-checked" rather than a false "mismatch".
-const evidenceRecord = (where, aggregateHex, participantsHex, scriptPubKey, internalKey, merkleRoot, treeUnknown = false) => {
+const evidenceRecord = (where, aggregateHex, participantsHex, scriptPubKey, internalKey, merkleRoot, treeUnknown = false, commitmentIssue = null) => {
   const record = {
     where,
     aggregate: String(aggregateHex).toLowerCase(),
@@ -375,8 +383,12 @@ const evidenceRecord = (where, aggregateHex, participantsHex, scriptPubKey, inte
   const taproot = scriptPubKey && scriptPubKey.length === 34 && scriptPubKey[0] === 0x51 && scriptPubKey[1] === 0x20
     ? scriptPubKey
     : null;
-  if (!taproot) {
+  if (commitmentIssue) {
+    record.commitment = commitmentIssue.state;
+    record.commitmentReason = commitmentIssue.reason;
+  } else if (!taproot) {
     record.commitment = "missing";
+    if (scriptPubKey) record.commitmentReason = "not-taproot";
   } else if (!aggregate) {
     record.commitment = "not-checked";
   } else {
@@ -397,6 +409,7 @@ const evidenceRecord = (where, aggregateHex, participantsHex, scriptPubKey, inte
       record.commitment = "verified-output";
     } else {
       record.commitment = "not-checked";
+      record.commitmentReason = "indirect";
     }
   }
   return record;
@@ -404,71 +417,116 @@ const evidenceRecord = (where, aggregateHex, participantsHex, scriptPubKey, inte
 
 // One record per MuSig2 participant field: BIP-373 allows one per aggregate
 // key, and a second (or a repeated) entry must never be skipped silently.
-const inputEvidence = (index, input) => {
-  const pairs = mapPairs(input);
-  const fields = findPairs(pairs, PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS, MUSIG2_KEY_HEX_LENGTH);
-  if (!fields.length) return [];
+// The commitment inputs of one input map, with a malformed singleton field
+// reported as such rather than read as absent.
+const inputCommitment = (pairs) => {
+  const result = { scriptPubKey: null, internalKey: null, merkleRoot: null, treeUnknown: false, commitmentIssue: null };
+  // BIP-174 forbids duplicate keys; a repeated singleton field is malformed.
+  if ([PSBT_IN_WITNESS_UTXO, PSBT_IN_TAP_INTERNAL_KEY, PSBT_IN_TAP_MERKLE_ROOT]
+    .some((type) => findPairs(pairs, type, 2).length > 1)) {
+    result.commitmentIssue = { state: "malformed", reason: "duplicate-field" };
+    return result;
+  }
   const witnessUtxo = findPair(pairs, PSBT_IN_WITNESS_UTXO, 2);
-  let scriptPubKey = null;
   if (witnessUtxo) {
     if (typeof witnessUtxo.value === "string") {
       try {
-        scriptPubKey = txOutScript(witnessUtxo.value);
+        result.scriptPubKey = txOutScript(witnessUtxo.value);
       } catch {
-        scriptPubKey = null;
+        result.scriptPubKey = null;
       }
     }
     // Some inspect documents carry the decoded TxOut instead of its raw
     // serialization; read the scriptPubKey from it rather than guessing.
     const decoded = witnessUtxo.decoded && witnessUtxo.decoded.scriptPubKey;
     const decodedHex = typeof decoded === "string" ? decoded : decoded && typeof decoded.hex === "string" ? decoded.hex : null;
-    if (!scriptPubKey && decodedHex !== null) {
+    if (!result.scriptPubKey && decodedHex !== null) {
       try {
-        scriptPubKey = hexToBytes(decodedHex);
+        result.scriptPubKey = hexToBytes(decodedHex);
       } catch {
-        scriptPubKey = null;
+        result.scriptPubKey = null;
       }
     }
+    if (!result.scriptPubKey) result.commitmentIssue = { state: "malformed", reason: "witness-utxo" };
   }
-  const merkleRoot = optionalKey(pairs, PSBT_IN_TAP_MERKLE_ROOT);
-  const treeUnknown = !merkleRoot && findPairs(pairs, PSBT_IN_TAP_LEAF_SCRIPT).length > 0;
+  const internal = optionalKey(pairs, PSBT_IN_TAP_INTERNAL_KEY);
+  result.internalKey = internal.value;
+  if (internal.present && !internal.value && !result.commitmentIssue) {
+    result.commitmentIssue = { state: "malformed", reason: "internal-key" };
+  }
+  const merkle = optionalKey(pairs, PSBT_IN_TAP_MERKLE_ROOT);
+  result.merkleRoot = merkle.value;
+  if (merkle.present && !merkle.value && !result.commitmentIssue) {
+    result.commitmentIssue = { state: "malformed", reason: "merkle-root" };
+  }
+  result.treeUnknown = !result.merkleRoot && findPairs(pairs, PSBT_IN_TAP_LEAF_SCRIPT).length > 0;
+  return result;
+};
+
+const inputEvidence = (index, input) => {
+  const pairs = mapPairs(input);
+  const fields = findPairs(pairs, PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS);
+  if (!fields.length) return [];
+  const commitment = inputCommitment(pairs);
   return fields.map((pair) => evidenceRecord(
     { scope: "input", index },
     pair.key.slice(2),
     pair.value,
-    scriptPubKey,
-    optionalKey(pairs, PSBT_IN_TAP_INTERNAL_KEY),
-    merkleRoot,
-    treeUnknown,
+    commitment.scriptPubKey,
+    commitment.internalKey,
+    commitment.merkleRoot,
+    commitment.treeUnknown,
+    commitment.commitmentIssue,
   ));
+};
+
+const outputCommitment = (pairs, index, doc) => {
+  const result = { scriptPubKey: null, internalKey: null, merkleRoot: null, treeUnknown: false, commitmentIssue: null };
+  if ([PSBT_OUT_SCRIPT, PSBT_OUT_TAP_INTERNAL_KEY].some((type) => findPairs(pairs, type, 2).length > 1)) {
+    result.commitmentIssue = { state: "malformed", reason: "duplicate-field" };
+    return result;
+  }
+  const txOutput = txOutputs(doc)[index];
+  const fromTx = txOutput ? scriptHexOf(txOutput) : null;
+  const fromPair = findPair(pairs, PSBT_OUT_SCRIPT, 2);
+  // Two present scripts that disagree are a mismatch, not a choice of one.
+  if (fromTx !== null && fromPair && typeof fromPair.value === "string"
+    && fromTx.toLowerCase() !== fromPair.value.toLowerCase()) {
+    result.commitmentIssue = { state: "mismatch", reason: "script-conflict" };
+    return result;
+  }
+  const hex = fromTx ?? (fromPair ? fromPair.value : null);
+  if (hex !== null) {
+    try {
+      result.scriptPubKey = hexToBytes(hex);
+    } catch {
+      result.scriptPubKey = null;
+    }
+  }
+  const internal = optionalKey(pairs, PSBT_OUT_TAP_INTERNAL_KEY);
+  result.internalKey = internal.value;
+  if (internal.present && !internal.value && !result.commitmentIssue) {
+    result.commitmentIssue = { state: "malformed", reason: "internal-key" };
+  }
+  // An output's script tree is not hashed at this stage (no merkle root).
+  result.treeUnknown = findPairs(pairs, PSBT_OUT_TAP_TREE, 2).length > 0;
+  return result;
 };
 
 const outputEvidence = (index, output, doc) => {
   const pairs = mapPairs(output);
-  const fields = findPairs(pairs, PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS, MUSIG2_KEY_HEX_LENGTH);
+  const fields = findPairs(pairs, PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS);
   if (!fields.length) return [];
-  const txOutput = txOutputs(doc)[index];
-  const fromTx = txOutput ? scriptHexOf(txOutput) : null;
-  const fromPair = findPair(pairs, PSBT_OUT_SCRIPT, 2);
-  const hex = fromTx ?? (fromPair ? fromPair.value : null);
-  let scriptPubKey = null;
-  if (hex !== null) {
-    try {
-      scriptPubKey = hexToBytes(hex);
-    } catch {
-      scriptPubKey = null;
-    }
-  }
-  // An output's script tree is not hashed at this stage (no merkle root).
-  const treeUnknown = findPairs(pairs, PSBT_OUT_TAP_TREE, 2).length > 0;
+  const commitment = outputCommitment(pairs, index, doc);
   return fields.map((pair) => evidenceRecord(
     { scope: "output", index },
     pair.key.slice(2),
     pair.value,
-    scriptPubKey,
-    optionalKey(pairs, PSBT_OUT_TAP_INTERNAL_KEY),
+    commitment.scriptPubKey,
+    commitment.internalKey,
     null,
-    treeUnknown,
+    commitment.treeUnknown,
+    commitment.commitmentIssue,
   ));
 };
 
