@@ -2511,5 +2511,13 @@
   "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "Le champ PSBT a changé pendant que la confirmation était ouverte. Revoyez-le, puis choisissez Remplacer à nouveau ou Conserver.",
   "PSBT (base64 or hex)": "PSBT (base64 ou hex)",
   "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "Certains portefeuilles matériels ne peuvent pas restaurer une passphrase de plus de 50 caractères. Vérifiez le vôtre avant de vous y fier.",
-  "Change it in the network menu at the bottom of the page.": "Modifiez-le dans le menu réseau en bas de la page."
+  "Change it in the network menu at the bottom of the page.": "Modifiez-le dans le menu réseau en bas de la page.",
+  "This private key came in as text, so it uses standard text entry. Clear the field to enter it securely.": "Cette clé privée est arrivée sous forme de texte, elle utilise donc une saisie de texte standard. Effacez le champ pour la saisir en toute sécurité.",
+  "This looks like a WIF key.": "Ceci ressemble à une clé WIF.",
+  "Switch to WIF": "Passer à WIF",
+  "This looks like a hex key.": "Ceci ressemble à une clé hexadécimale.",
+  "Switch to hex": "Passer à l'hexadécimal",
+  "This looks like a mini key.": "Ceci ressemble à une mini clé.",
+  "Switch to mini key": "Passer à la mini clé",
+  "Only the format on screen is kept. Other formats saved in this slot will be cleared.": "Seul le format affiché à l'écran est conservé. Les autres formats enregistrés dans cet emplacement seront effacés."
 }
