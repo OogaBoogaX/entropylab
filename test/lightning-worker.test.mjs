@@ -324,7 +324,7 @@ function lnPage(network = "mainnet") {
   const page = new MiniDocument();
   globalThis.document = page;
   page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed · LND cipher seed</option><option value="bip39">BIP-39 · LDK (ldk-node)</option><option value="cln-hsm">Core Lightning hsm_secret</option></select>'
-    + '<div id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>'
+    + '<label id="ln-network-field">Network<output id="ln-network-value"></output><span id="ln-network-note"></span></label>'
     + '<button class="btn secondary" id="ln-hsm-upload" type="button">Choose hsm_secret</button><input type="file" id="ln-hsm-file" hidden>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'

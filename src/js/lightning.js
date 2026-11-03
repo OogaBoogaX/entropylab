@@ -489,16 +489,19 @@ function hodlLnSyncFormat() {
   }
 }
 
-// The read-only line that replaced the Network select: the key follows the
-// page network, so the line names it and says where to change it. The names
-// are the footer menu's, each a literal t() so the translation sweep finds
-// them.
+// The read-only Network field that replaced the select: the key follows the
+// page network, so the field shows it and its note says where to change it.
+// The value comes from lnInvPageNetwork, the same source as the coin type
+// the key is derived with, so the two cannot disagree. The names are the
+// footer menu's, each a literal t() so the translation sweep finds them.
 function hodlLnSyncNetworkNote() {
+  const value = document.getElementById("ln-network-value");
   const note = document.getElementById("ln-network-note");
-  if (!note) return;
+  if (!value && !note) return;
   const network = lnInvPageNetwork();
   const name = network === "mainnet" ? t("Bitcoin") : network === "testnet" ? t("Testnet") : network === "signet" ? t("Signet") : t("Regtest");
-  note.textContent = t("Network: {network}. Change it in the network menu at the bottom of the page.", { network: name });
+  if (value) value.textContent = name;
+  if (note) note.textContent = t("Change it in the network menu at the bottom of the page.");
 }
 
 // A format or page network change: a stale result next to a flipped setting

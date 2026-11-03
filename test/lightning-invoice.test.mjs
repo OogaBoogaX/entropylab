@@ -117,7 +117,7 @@ function invPage(network = "mainnet", qrSvg = () => "") {
   // hodlInitLn wires the format/network change handlers and the derive path
   // that the invoice-survival tests exercise.
   page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed · LND cipher seed</option><option value="bip39">BIP-39 · LDK (ldk-node)</option></select>'
-    + '<div id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>'
+    + '<label id="ln-network-field">Network<output id="ln-network-value"></output><span id="ln-network-note"></span></label>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'

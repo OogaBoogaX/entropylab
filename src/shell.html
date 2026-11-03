@@ -1018,7 +1018,10 @@ words, pick one of the checksum words.</span></span>
             </select>
             <span class="field-note" id="ln-format-help">LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.</span>
           </label>
-          <div class="field" id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>
+          <label class="field" id="ln-network-field">Network
+            <output id="ln-network-value" aria-describedby="ln-network-note"></output>
+            <span class="field-note" id="ln-network-note"></span>
+          </label>
         </div>
         <label class="field">Seed phrase
           <textarea id="ln-seed" placeholder="ability liquid travel stem barely …" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="ln-seed-help"></textarea>

@@ -116,7 +116,7 @@ const appSource = read("src/js/app.js");
 
 test("the Lightning card ships in the shell with its controls", () => {
   assert.match(shell, /<div[^>]*id="ln-card"[^>]*role="tabpanel"[^>]*hidden>/);
-  for (const id of ["ln-format", "ln-network-field", "ln-network-note", "ln-seed", "ln-pass", "ln-go", "ln-wipe", "ln-session", "ln-error", "ln-out"]) {
+  for (const id of ["ln-format", "ln-network-field", "ln-network-value", "ln-network-note", "ln-seed", "ln-pass", "ln-go", "ln-wipe", "ln-session", "ln-error", "ln-out"]) {
     assert.ok(shell.includes(`id="${id}"`), `${id} is missing from the shell`);
   }
   assert.match(shell, /id="ln-tool-intro"/);
@@ -126,7 +126,8 @@ test("the shell has no second network select", () => {
   // The node key follows the page network: a second Network dropdown could
   // disagree with the footer and derive a key for the wrong chain.
   assert.ok(!shell.includes('id="ln-network"'), "the shell still carries the Lightning network select");
-  assert.ok(shell.includes('id="ln-network-note"'), "the shell is missing the read-only network note");
+  assert.ok(shell.includes('id="ln-network-value"'), "the shell is missing the read-only network value");
+  assert.ok(shell.includes('id="ln-network-note"'), "the shell is missing the network note");
 });
 
 test("the workspace switcher retains the held-back Lightning implementation", () => {
@@ -197,7 +198,7 @@ function lnPage(network = "mainnet") {
   // never runs. The network is the page's (the footer menu), injected the
   // way app.js injects it; the tool has no network select of its own.
   page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed · LND cipher seed</option><option value="bip39">BIP-39 · LDK (ldk-node)</option><option value="cln-hsm">Core Lightning hsm_secret</option></select>'
-    + '<div id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>'
+    + '<label id="ln-network-field">Network<output id="ln-network-value"></output><span id="ln-network-note"></span></label>'
     + '<button class="btn secondary" id="ln-hsm-upload" type="button">Choose hsm_secret</button><input type="file" id="ln-hsm-file" hidden>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
@@ -302,7 +303,7 @@ test("the aezeed path renders its reveal switch on a page without the CLN contro
   const page = new MiniDocument();
   globalThis.document = page;
   page.body.innerHTML = '<select id="ln-format"></select>'
-    + '<div id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>'
+    + '<label id="ln-network-field">Network<output id="ln-network-value"></output><span id="ln-network-note"></span></label>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
@@ -380,18 +381,22 @@ test("the aezeed derive follows the page network's coin type and CLN network nam
   }
 });
 
-test("the network note names the page network and follows it", () => {
+test("the network value names the page network and follows it", () => {
   let network = "mainnet";
   const page = lnPage(() => network);
   try {
+    const value = page.getElementById("ln-network-value");
     const note = page.getElementById("ln-network-note");
+    assert.ok(value, "#ln-network-value is missing");
     assert.ok(note, "#ln-network-note is missing");
-    const initial = note.textContent;
-    assert.ok(initial.length > 0, "the network note is empty after init");
+    const initial = value.textContent;
+    assert.ok(initial.length > 0, "the network value is empty after init");
+    assert.ok(note.textContent.length > 0, "the network note is empty after init");
     network = "testnet";
     page.dispatchEvent(new Event("hodl:network-default"));
+    assert.ok(value.textContent.length > 0, "the network value is empty after a page network change");
+    assert.notEqual(value.textContent, initial, "the network value did not follow the page network");
     assert.ok(note.textContent.length > 0, "the network note is empty after a page network change");
-    assert.notEqual(note.textContent, initial, "the network note did not follow the page network");
   } finally {
     delete globalThis.document;
   }
@@ -892,7 +897,7 @@ test("a derive on a page without #ln-session does not throw", () => {
   const page = new MiniDocument();
   globalThis.document = page;
   page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed</option></select>'
-    + '<div id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>'
+    + '<label id="ln-network-field">Network<output id="ln-network-value"></output><span id="ln-network-note"></span></label>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-error"></p><div id="ln-out"></div>'
