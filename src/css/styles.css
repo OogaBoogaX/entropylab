@@ -655,6 +655,9 @@ h3.label { font-family: inherit; letter-spacing: inherit; }
 /* The part of a label that changes with a selection, set in regular weight so
    the fixed title still reads as the title. */
 .label-value { font-weight: 400; }
+/* A read-only value in place of a field's control: on its own line under the
+   label, at a control's distance, in regular weight. */
+label.field > output { display: block; margin-top: var(--space-control); font-weight: 400; }
 .choice {
   display: flex;
   align-items: flex-start;

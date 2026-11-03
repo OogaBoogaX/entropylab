@@ -86,7 +86,7 @@ for (const file of requiredFiles) {
 }
 
 test("package.json declares a valid version and the expected scripts", () => {
-  assert.match(appVersion, /^\d+(\.\d+)*$/, `invalid version: ${appVersion}`);
+  assert.match(appVersion, /^\d+(\.\d+)*(-dev)?$/, `invalid version: ${appVersion}`);
   for (const script of ["build", "clean", "test", "verify", "ci"]) {
     assert.equal(typeof pkg.scripts?.[script], "string", `package.json is missing the "${script}" script`);
   }

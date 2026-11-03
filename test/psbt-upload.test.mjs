@@ -6,6 +6,7 @@
 // text export never needs re-encoding by hand. Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import vm from "node:vm";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,7 +70,7 @@ test("both markups carry the upload control, and the editor wires it", () => {
   }
   assert.match(editor, /getElementById\("psbted-file"\)|\$\("psbted-file"\)/);
   assert.match(editor, /getElementById\("psbted-upload"\)|\$\("psbted-upload"\)/);
-  assert.match(editor, /psbtBytesFromUpload\(new Uint8Array\(await chosen\.arrayBuffer\(\)\)\)/);
+  assert.match(editor, /psbtBytesFromUpload\(upload\)/);
 });
 
 test("the PSBT / Nonce inspector also uploads and downloads the file", () => {
@@ -82,7 +83,7 @@ test("the PSBT / Nonce inspector also uploads and downloads the file", () => {
   assert.match(app, /getElementById\("psbt-upload"\)/);
   assert.match(app, /getElementById\("psbt-file"\)/);
   assert.match(app, /getElementById\("psbt-download"\)/);
-  assert.match(app, /hodlPsbtInspectorBytesFromUpload\(new Uint8Array\(await chosen\.arrayBuffer\(\)\)\)/);
+  assert.match(app, /hodlPsbtInspectorBytesFromUpload\(upload\)/);
   assert.match(app, /hodlBytesToB64\(bytes\)/);
   assert.match(app, /"inspected\.psbt"/);
   assert.match(app, /"inspected\.txn"/);
@@ -96,4 +97,168 @@ test("the result panel offers a binary .psbt download", () => {
   assert.match(editor, /id="psbted-download"/);
   assert.match(editor, /new Blob\(\[resultBytes\]/);
   assert.match(editor, /link\.download = "edited\.psbt"/);
+});
+
+test("editor rejects an oversized selected file before reading it", async () => {
+  const { initPsbtEditor } = await import("../src/js/psbt-editor.js");
+  const elements = new Map();
+  const element = (id) => {
+    if (!elements.has(id)) elements.set(id, {
+      value: "", textContent: "", innerHTML: "", dataset: {}, files: [],
+      addEventListener(type, fn) { this[`on${type}`] = fn; },
+      setAttribute() {}, querySelectorAll() { return []; },
+    });
+    return elements.get(id);
+  };
+  const previousDocument = globalThis.document, previousWindow = globalThis.window;
+  globalThis.window = { addEventListener() {} };
+  globalThis.document = { getElementById: element, addEventListener() {}, dispatchEvent() {} };
+  try {
+    initPsbtEditor();
+    let reads = 0;
+    element("psbted-file").files = [{ size: 5e6 + 1, arrayBuffer: async () => { reads++; return new ArrayBuffer(0); } }];
+    element("psbted-file").onchange();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(reads, 0, "oversized file must not be read");
+    assert.ok(element("psbted-error").textContent);
+    element("psbted-file").files = [{ size: 5e6, arrayBuffer: async () => { reads++; return fixtureBytes.buffer; } }];
+    element("psbted-file").onchange();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(reads, 1, "a file at the limit must be read");
+    assert.equal(element("psbted-text").value, fixtureB64);
+  } finally { globalThis.document = previousDocument; globalThis.window = previousWindow; }
+});
+
+// The inspector's own file handlers and session end, run against a small DOM.
+// The counters are what the tests read: inspections run and errors shown.
+const inspectorHarness = () => {
+  const source = read("src/js/app.js");
+  const handlers = source.slice(source.indexOf('  const nonceFile = document.getElementById("nonce-file");'), source.indexOf('  // The sent PSBT for the signer audit'));
+  const end = source.slice(source.indexOf("function hodlEndPsbtSession()"), source.indexOf("\n// The Nonce Inspector", source.indexOf("function hodlEndPsbtSession()")));
+  const retire = source.match(/function hodlPsbtRetireInspectorUploads\(\) \{[^}]*\}/)?.[0] || "";
+  const elements = new Map();
+  const get = (id) => {
+    if (!elements.has(id)) elements.set(id, { value: "", innerHTML: "", files: [], addEventListener(type, fn) { this[`on${type}`] = fn; } });
+    return elements.get(id);
+  };
+  const counters = { errors: 0, runs: 0 };
+  const ctx = vm.createContext({
+    document: { getElementById: get }, Uint8Array,
+    hodlPsbtInspectorBytesFromUpload: (bytes) => bytes,
+    hodlBytesToB64: (bytes) => Buffer.from(bytes).toString("base64"),
+    hodlRunPsbt: () => counters.runs++, hodlRunNonce: () => counters.runs++,
+    hodlSetPsbtError: (e) => { if (e) counters.errors++; }, hodlSetNonceError: (e) => { if (e) counters.errors++; },
+    hodlSyncPsbtControls() {}, hodlPsbtWipeMem() {}, hodlPsbtClearNonceHistory() {},
+    hodlPsbtRetireAuditUploads() {}, hodlPsbtRetireRbfUploads() {},
+    hodlPsbtInspectorUploadGeneration: 0, hodlNonceQrCapture: null, hodlNonceHistoryConfirmDialog: null,
+    hodlNote: () => ({}), hodlClearStationPassphrase() {}, hodlPaintPsbtSession() {}, hodlRefreshStationKeyPickers() {},
+  });
+  vm.runInContext(`${retire}\n${handlers}\n${end}`, ctx);
+  return { ctx, get, counters };
+};
+
+test("pending inspector imports cannot restore a cleared session", async () => {
+  for (const prefix of ["psbt", "nonce"]) {
+    for (const reject of [false, true]) {
+      const { ctx, get, counters } = inspectorHarness();
+      let resolve, rejectRead;
+      get(`${prefix}-file`).files = [{ arrayBuffer: async () => Uint8Array.of(4, 5).buffer }];
+      get(`${prefix}-file`).onchange();
+      await new Promise((done) => setTimeout(done, 0));
+      assert.equal(get(`${prefix}-text`).value, "BAU=");
+      assert.equal(counters.runs, 1);
+      ctx.hodlEndPsbtSession();
+      counters.runs = 0;
+      get(`${prefix}-file`).files = [{ arrayBuffer: () => new Promise((yes, no) => { resolve = yes; rejectRead = no; }) }];
+      get(`${prefix}-file`).onchange();
+      ctx.hodlEndPsbtSession();
+      if (reject) rejectRead(new Error("synthetic read failure")); else resolve(Uint8Array.of(1, 2, 3).buffer);
+      await new Promise((done) => setTimeout(done, 0));
+      assert.equal(get(`${prefix}-text`).value, "", `${prefix}: stale import restored data`);
+      assert.equal(counters.runs, 0, `${prefix}: stale import ran inspection`);
+      assert.equal(counters.errors, 0, `${prefix}: stale import showed an error`);
+    }
+  }
+});
+
+test("inspector rejects an oversized selected file before reading it", async () => {
+  for (const prefix of ["psbt", "nonce"]) {
+    const { get, counters } = inspectorHarness();
+    let reads = 0;
+    get(`${prefix}-file`).files = [{ size: 5e6 + 1, arrayBuffer: async () => { reads++; return new ArrayBuffer(0); } }];
+    get(`${prefix}-file`).onchange();
+    await new Promise((done) => setTimeout(done, 0));
+    assert.equal(reads, 0, `${prefix}: oversized file must not be read`);
+    assert.equal(counters.errors, 1, `${prefix}: oversized file showed no error`);
+    assert.equal(counters.runs, 0, `${prefix}: oversized file ran inspection`);
+    get(`${prefix}-file`).files = [{ size: 5e6, arrayBuffer: async () => { reads++; return Uint8Array.of(4, 5).buffer; } }];
+    get(`${prefix}-file`).onchange();
+    await new Promise((done) => setTimeout(done, 0));
+    assert.equal(reads, 1, `${prefix}: a file at the limit must be read`);
+    assert.equal(get(`${prefix}-text`).value, "BAU=");
+    assert.equal(counters.runs, 1);
+  }
+});
+
+test("editor Clear retires a pending file read and its error", async () => {
+  const { initPsbtEditor } = await import("../src/js/psbt-editor.js");
+  for (const reject of [false, true]) {
+    const elements = new Map();
+    const element = (id) => {
+      if (!elements.has(id)) elements.set(id, { value: "", textContent: "", innerHTML: "", dataset: {}, files: [],
+        addEventListener(type, fn) { this[`on${type}`] = fn; }, setAttribute() {}, querySelectorAll() { return []; } });
+      return elements.get(id);
+    };
+    const previousDocument = globalThis.document, previousWindow = globalThis.window;
+    globalThis.document = { getElementById: element, addEventListener() {}, dispatchEvent() {} };
+    globalThis.window = { addEventListener() {} };
+    try {
+      initPsbtEditor();
+      let resolve, rejectRead;
+      element("psbted-file").files = [{ size: 6, arrayBuffer: () => new Promise((yes, no) => { resolve = yes; rejectRead = no; }) }];
+      element("psbted-file").onchange();
+      await new Promise((done) => setTimeout(done, 0));
+      element("psbted-wipe").onclick();
+      if (reject) rejectRead(new Error("synthetic read failure"));
+      else resolve(Uint8Array.of(0x70, 0x73, 0x62, 0x74, 0xff, 0).buffer);
+      await new Promise((done) => setTimeout(done, 0));
+      assert.equal(element("psbted-text").value, "");
+      assert.equal(element("psbted-error").textContent, "");
+    } finally { globalThis.document = previousDocument; globalThis.window = previousWindow; }
+  }
+});
+
+test("editor Clear before WASM readiness prevents the retired file read", async () => {
+  let ready;
+  globalThis.__psbtTestReady = new Promise((resolve) => { ready = resolve; });
+  let editor = read("src/js/psbt-editor.js");
+  const fakeWasm = 'export const psbtWasmReady = globalThis.__psbtTestReady; export const psbtInspectDoc = () => ({}); export const psbtBuildBytes = () => new Uint8Array();';
+  editor = editor.replace('"./psbt-wasm.js"', JSON.stringify(`data:text/javascript,${encodeURIComponent(fakeWasm)}`));
+  editor = editor.replace(/from "\.\/([\w.-]+)"/g, (_, path) => `from ${JSON.stringify(new URL(`../src/js/${path}`, import.meta.url).href)}`);
+  const { initPsbtEditor } = await import(`data:text/javascript;base64,${Buffer.from(editor).toString("base64")}`);
+  const elements = new Map();
+  const element = (id) => {
+    if (!elements.has(id)) elements.set(id, { value: "", textContent: "", innerHTML: "", dataset: {}, files: [],
+      addEventListener(type, fn) { this[`on${type}`] = fn; }, setAttribute() {}, querySelectorAll() { return []; } });
+    return elements.get(id);
+  };
+  const previousDocument = globalThis.document, previousWindow = globalThis.window;
+  globalThis.document = { getElementById: element, addEventListener() {}, dispatchEvent() {} };
+  globalThis.window = { addEventListener() {} };
+  try {
+    initPsbtEditor();
+    let reads = 0;
+    element("psbted-file").files = [{ size: 6, arrayBuffer: async () => { reads++; return new ArrayBuffer(6); } }];
+    element("psbted-file").onchange();
+    element("psbted-wipe").onclick();
+    ready();
+    await new Promise((done) => setTimeout(done, 0));
+    assert.equal(reads, 0);
+    assert.equal(element("psbted-text").value, "");
+    assert.equal(element("psbted-error").textContent, "");
+  } finally {
+    globalThis.document = previousDocument;
+    globalThis.window = previousWindow;
+    delete globalThis.__psbtTestReady;
+  }
 });
