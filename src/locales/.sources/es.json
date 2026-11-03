@@ -947,7 +947,6 @@
   "aezeed · LND cipher seed": "1ef9f27a4e6b5398101042de41dd2b1d2e37044964271809a1c5a2e5f60ca46b",
   "BIP-39 · LDK (ldk-node)": "e47db1f9b05a42e5a80f65df1a0feb46af571d561343b1e93e0788cf9944d9ca",
   "LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.": "69595ecbbaad06f6c786a7903192861f42dbd07f7bf63abb6e1a383960fb0b0c",
-  "Selects the coin type in the LND identity path (0' mainnet, 1' testnet/signet/regtest). Changing it clears any derived result — re-derive after switching.": "3db66883000d81f834791488dd59046a34c40786095a01d78cab2220f9d4ba80",
   "ability liquid travel stem barely …": "1f53f58f5539b472ae42528892aa92cf716f2c430d29c02df3dea2c3ad67a37c",
   "The 24-word cipher seed LND printed at wallet creation.": "2435dea13f5f0c61c5d01d9e73706fa675d4c95d136059ff6f1818cfe9e8b209",
   "aezeed detects a wrong passphrase; BIP-39 cannot and simply derives a different wallet.": "25e9565c113f8bc05316d5b778ceafcb435779807cd108d35d8a71d2c0052dd2",
@@ -2510,5 +2509,15 @@
   "Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.": "f514c2baf2125effdaeb4c77e90238e82a7ee8ed304b6d807f779faa52bcdd32",
   "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "7b9173386ae740a34af7d7c89543d0e0b3d75864950073b38cca985cec88bcf6",
   "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "48753d7c8810740800cd8aa5efbfffbb518453e5a205d23e730a542c1a2d4baf",
-  "PSBT (base64 or hex)": "ce3582710dba349845dbb93e0d0594b182f30d79efab85451d71660363480868"
+  "PSBT (base64 or hex)": "ce3582710dba349845dbb93e0d0594b182f30d79efab85451d71660363480868",
+  "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "6bc4d1fc721e528da5654886768f7fcf0a98b76dfbef961efe46d23e53c6ef77",
+  "Change it in the network menu at the bottom of the page.": "bd07845cbe1dfb6f575fdd9c4f6542284e1ec8ba352f7ba042c5c5467dcaebde",
+  "This private key came in as text, so it uses standard text entry. Clear the field to enter it securely.": "568e91e2f7d190be3b17e5493a5956d755780fc523c6af05744ea8ebb1e388ac",
+  "This looks like a WIF key.": "ccbc50d4a6e695db382f91a40225b2f1abb800165c9df1845495f97d0b54ea28",
+  "Switch to WIF": "744baa773dc44e8b270d122a3e462f0311758bc842d31fd963cd191b11176407",
+  "This looks like a hex key.": "84ddede05aa4e3fd3dbf41450d61e4b2096741bcccaacab3fee47478d4501f7a",
+  "Switch to hex": "0cd0e431d3301713218241359360d674f5c2ef4dafaa264eda6a41d0f2bbb211",
+  "This looks like a mini key.": "5c15ed9c9fb2db9f5d0ba0402a8d68f4c01a1759b15d8440903b804deda5ef5f",
+  "Switch to mini key": "1919f41433a3dea7856f984f0c68f249c61bc7b0620f94a43eed350ae61b977a",
+  "Only the format on screen is kept. Other formats saved in this slot will be cleared.": "94ffa82e5d2cc9edac6d36eeb065acddd32a058250416890c15875e9db8acae0"
 }

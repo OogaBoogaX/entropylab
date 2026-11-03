@@ -955,7 +955,6 @@
   "aezeed · LND cipher seed": "aezeed · Graine chiffrée LND",
   "BIP-39 · LDK (ldk-node)": "BIP-39 · LDK (ldk-node)",
   "LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.": "LND imprime une graine chiffrée aezeed ; ldk-node utilise une phrase BIP-39. Les deux utilisent la même liste de mots anglais.",
-  "Selects the coin type in the LND identity path (0' mainnet, 1' testnet/signet/regtest). Changing it clears any derived result — re-derive after switching.": "Sélectionne le type de coin dans le chemin d'identité LND (0' mainnet, 1' testnet/signet/regtest). Le changer efface tout résultat dérivé — redériver après avoir changé.",
   "ability liquid travel stem barely …": "ability liquid travel stem barely …",
   "The 24-word cipher seed LND printed at wallet creation.": "La graine chiffrée de 24 mots que LND a imprimée lors de la création du portefeuille.",
   "aezeed detects a wrong passphrase; BIP-39 cannot and simply derives a different wallet.": "aezeed détecte un mauvais mot de passe ; BIP-39 ne le peut pas et dérive simplement un portefeuille différent.",
@@ -2510,5 +2509,7 @@
   "Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.": "Vos lancers ne sont pas listés sur la page. Ils restent en mémoire pour la dérivation, l'annulation et la révision d'un seul lancer. La révision d'un lancer montre un lancer que vous choisissez, avec sa position.",
   "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Lancez un dé physique à six faces. Entrez son résultat une fois, en utilisant un bouton ou les touches 1-6.",
   "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "Le champ PSBT a changé pendant que la confirmation était ouverte. Revoyez-le, puis choisissez Remplacer à nouveau ou Conserver.",
-  "PSBT (base64 or hex)": "PSBT (base64 ou hex)"
+  "PSBT (base64 or hex)": "PSBT (base64 ou hex)",
+  "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "Certains portefeuilles matériels ne peuvent pas restaurer une passphrase de plus de 50 caractères. Vérifiez le vôtre avant de vous y fier.",
+  "Change it in the network menu at the bottom of the page.": "Modifiez-le dans le menu réseau en bas de la page."
 }

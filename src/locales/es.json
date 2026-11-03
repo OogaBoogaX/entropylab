@@ -947,7 +947,6 @@
   "aezeed · LND cipher seed": "aezeed · Semilla cifrada LND",
   "BIP-39 · LDK (ldk-node)": "BIP-39 · LDK (ldk-node)",
   "LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.": "LND imprime una semilla cifrada aezeed; ldk-node usa una frase BIP-39. Ambos usan la misma lista de palabras en inglés.",
-  "Selects the coin type in the LND identity path (0' mainnet, 1' testnet/signet/regtest). Changing it clears any derived result — re-derive after switching.": "Selecciona el tipo de moneda en la ruta de identidad LND (0' mainnet, 1' testnet/signet/regtest). Cambiarla borra cualquier resultado derivado; vuelve a derivar después de cambiar.",
   "ability liquid travel stem barely …": "ability liquid travel stem barely …",
   "The 24-word cipher seed LND printed at wallet creation.": "La semilla cifrada de 24 palabras que LND imprimió al crear la billetera.",
   "aezeed detects a wrong passphrase; BIP-39 cannot and simply derives a different wallet.": "aezeed detecta una frase de contraseña incorrecta; BIP-39 no puede y simplemente deriva una billetera diferente.",
@@ -2510,5 +2509,15 @@
   "Your rolls are not listed on the page. They stay in memory for derivation, Undo and single-roll review. Review one roll shows one roll you choose, with its position.": "Tus tiradas no están listadas en la página. Permanecen en memoria para derivación, deshacer y revisión de tirada única. Revisar una tirada muestra una tirada que elijas, con su posición.",
   "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Tira un dado físico de seis caras. Introduce su resultado una vez, usando un botón o las teclas 1-6.",
   "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "El campo PSBT cambió mientras la confirmación estaba abierta. Revísalo, luego elige Reemplazar de nuevo o Mantener.",
-  "PSBT (base64 or hex)": "PSBT (base64 o hex)"
+  "PSBT (base64 or hex)": "PSBT (base64 o hex)",
+  "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "Algunas billeteras de hardware no pueden restaurar una frase de contraseña de más de 50 caracteres. Verifique la suya antes de depender de ella.",
+  "Change it in the network menu at the bottom of the page.": "Cámbialo en el menú de red en la parte inferior de la página.",
+  "This private key came in as text, so it uses standard text entry. Clear the field to enter it securely.": "Esta clave privada entró como texto, por lo que utiliza la entrada de texto estándar. Borra el campo para introducirla de forma segura.",
+  "This looks like a WIF key.": "Esto parece una clave WIF.",
+  "Switch to WIF": "Cambiar a WIF",
+  "This looks like a hex key.": "Esto parece una clave hexadecimal.",
+  "Switch to hex": "Cambiar a hexadecimal",
+  "This looks like a mini key.": "Esto parece una mini clave.",
+  "Switch to mini key": "Cambiar a mini clave",
+  "Only the format on screen is kept. Other formats saved in this slot will be cleared.": "Solo se conserva el formato en pantalla. Otros formatos guardados en esta ranura se borrarán."
 }
