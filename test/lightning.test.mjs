@@ -116,10 +116,17 @@ const appSource = read("src/js/app.js");
 
 test("the Lightning card ships in the shell with its controls", () => {
   assert.match(shell, /<div[^>]*id="ln-card"[^>]*role="tabpanel"[^>]*hidden>/);
-  for (const id of ["ln-format", "ln-network", "ln-seed", "ln-pass", "ln-go", "ln-wipe", "ln-session", "ln-error", "ln-out"]) {
+  for (const id of ["ln-format", "ln-network-field", "ln-network-note", "ln-seed", "ln-pass", "ln-go", "ln-wipe", "ln-session", "ln-error", "ln-out"]) {
     assert.ok(shell.includes(`id="${id}"`), `${id} is missing from the shell`);
   }
   assert.match(shell, /id="ln-tool-intro"/);
+});
+
+test("the shell has no second network select", () => {
+  // The node key follows the page network: a second Network dropdown could
+  // disagree with the footer and derive a key for the wrong chain.
+  assert.ok(!shell.includes('id="ln-network"'), "the shell still carries the Lightning network select");
+  assert.ok(shell.includes('id="ln-network-note"'), "the shell is missing the read-only network note");
 });
 
 test("the workspace switcher retains the held-back Lightning implementation", () => {
@@ -132,18 +139,35 @@ test("the workspace switcher retains the held-back Lightning implementation", ()
   assert.match(appSource, /hodlInitLn\(\{ journalLog: hodlJournalLog, copyIcon: hodlClipboardIconMarkup, qrSvg: hodlQrSvg, pageNetwork: \(\) => hodlInspectorNetwork\(\) \}\)/);
 });
 
-test("a format or network change wipes the derived result but not the invoice", () => {
-  // A stale mainnet pubkey next to a flipped "Testnet" select is how a
-  // correct seed looks wrong: the change handler wipes and re-renders. The
-  // invoice card is not key material and must survive.
+test("a format or page network change wipes the derived result but not the invoice", () => {
+  // A stale mainnet pubkey next to a flipped setting is how a correct seed
+  // looks wrong: the shared change handler wipes and re-renders. The invoice
+  // card is not key material and must survive, so the handler calls the
+  // key-side wipe, never the full one.
   const lnSource = read("src/js/lightning.js");
-  const listener = lnSource.match(/for \(const id of \["ln-format", "ln-network"\]\) \{\s*document\.getElementById\(id\)\?\.addEventListener\("change", \(\) => \{([\s\S]*?)\}\);\s*\}/);
-  assert.ok(listener, "the change listener exists");
-  assert.match(listener[1], /hodlLnKeyWipeMem\(\)/, "the change wipes the derived key result");
-  assert.doesNotMatch(listener[1], /hodlLnWipeMem\(\)/, "the change must not wipe the invoice card");
-  assert.match(listener[1], /hodlLnRender\(\)/, "the change re-renders the empty state");
-  assert.match(listener[1], /hodlLnSyncFormat\(\)/, "the change still syncs the network field");
-  assert.match(listener[1], /hodlLnInvRender\(\)/, "the change re-renders the invoice card");
+  const handler = lnSource.match(/function hodlLnSettingsChanged\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(handler, "the shared change handler exists");
+  assert.match(handler[1], /hodlLnKeyWipeMem\(\)/, "the change wipes the derived key result");
+  assert.doesNotMatch(handler[1], /hodlLnWipeMem\(\)/, "the change must not wipe the invoice card");
+  assert.match(handler[1], /hodlLnRender\(\)/, "the change re-renders the empty state");
+  assert.match(handler[1], /hodlLnSyncFormat\(\)/, "the change still syncs the network field");
+  assert.match(handler[1], /hodlLnInvRender\(\)/, "the change re-renders the invoice card");
+  // And the behaviour: a page network change wipes a derived result exactly
+  // as the old dropdown's change did.
+  const page = lnPage();
+  try {
+    page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+    lnDerive(page);
+    assert.ok(page.getElementById("ln-out").innerHTML.includes('id="ln-node-pubkey"'), "setup: the derive rendered a result");
+    page.dispatchEvent(new Event("hodl:network-default"));
+    assert.equal(page.getElementById("ln-out").innerHTML, "", "the page network change left the derived result on screen");
+    // The status line is not left blank (Kimi K3, round 1): the page also
+    // announces its network once at startup, after this module starts.
+    assert.ok(page.getElementById("ln-session").textContent.trim(), "the status line was left empty after the wipe");
+  } finally {
+    hodlLnWipeMem();
+    delete globalThis.document;
+  }
 });
 
 // ── Tool behaviour through the real wiring (mini DOM) ───────────────────────
@@ -158,21 +182,22 @@ const BIP39_VECTOR_WORDS = "abandon abandon abandon abandon abandon abandon aban
 
 // The tool wired over a mini DOM: the fixture carries the ids hodlInitLn
 // touches, and the derive runs through the real Derive button handler.
-function lnPage() {
+function lnPage(network = "mainnet") {
   const page = new MiniDocument();
   globalThis.document = page;
   // The selects carry the shell's options (shell.html #ln-card): a <select>
   // only holds a set value that matches one of its options, so without them
   // the fixture cannot switch the tool off aezeed and the BIP-39/LDK path
-  // never runs.
+  // never runs. The network is the page's (the footer menu), injected the
+  // way app.js injects it; the tool has no network select of its own.
   page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed · LND cipher seed</option><option value="bip39">BIP-39 · LDK (ldk-node)</option><option value="cln-hsm">Core Lightning hsm_secret</option></select>'
-    + '<div id="ln-network-field"><select id="ln-network"><option value="mainnet" selected>Mainnet</option><option value="testnet">Testnet</option></select></div>'
+    + '<div id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>'
     + '<button class="btn secondary" id="ln-hsm-upload" type="button">Choose hsm_secret</button><input type="file" id="ln-hsm-file" hidden>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
     + '<span id="ln-seed-help"></span>';
-  hodlInitLn({ journalLog() {}, copyIcon: () => "" });
+  hodlInitLn({ journalLog() {}, copyIcon: () => "", pageNetwork: typeof network === "function" ? network : () => network });
   return page;
 }
 
@@ -217,6 +242,23 @@ const detachingFactory = () => {
 
 // The same handler, but its replies wait for flush(): the test decides when
 // an in-flight answer lands.
+// The same handler, but every message the page posts is kept: the derive's
+// coin type and network name are what the page sends, not what it renders.
+const recordedWorkers = [];
+const recordingFactory = () => {
+  const worker = { onmessage: null, onerror: null, terminated: false, posted: [] };
+  const handle = createLnKeyHandler((message) => worker.onmessage?.({ data: message }));
+  worker.postMessage = (data) => {
+    worker.posted.push(data);
+    if (!worker.terminated) handle(data);
+  };
+  worker.terminate = () => {
+    worker.terminated = true;
+  };
+  recordedWorkers.push(worker);
+  return { worker, url: null };
+};
+
 const queuedWorkers = [];
 const queuedFactory = () => {
   const worker = { onmessage: null, onerror: null, terminated: false, queue: [] };
@@ -254,7 +296,7 @@ test("the aezeed path renders its reveal switch on a page without the CLN contro
   const page = new MiniDocument();
   globalThis.document = page;
   page.body.innerHTML = '<select id="ln-format"></select>'
-    + '<div id="ln-network-field"><select id="ln-network"><option value="mainnet" selected>Mainnet</option><option value="testnet">Testnet</option></select></div>'
+    + '<div id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
@@ -292,6 +334,58 @@ test("the tool derives the LDK node key through its real wiring", () => {
     lnDerive(page);
     assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
     assert.ok(page.getElementById("ln-out").innerHTML.includes(ldkExpected(BIP39_VECTOR_WORDS, "").nodePubKey), "the derived node pubkey is not on screen");
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("the aezeed derive follows the page network's coin type and CLN network name", () => {
+  // LND's identity path is m/1017'/coinType'/6'/0/0 (lnd/keychain/
+  // derivation.go): 0' on mainnet, 1' on every test network. CLN has only
+  // mainnet and testnet parameters, so signet and regtest take testnet's.
+  hodlLnSetWorkerFactory(recordingFactory);
+  try {
+    for (const [network, coinType, name] of [
+      ["mainnet", 0, "bitcoin"],
+      ["testnet", 1, "testnet"],
+      ["signet", 1, "testnet"],
+      ["regtest", 1, "testnet"],
+    ]) {
+      const page = lnPage(network);
+      try {
+        // The module keeps its worker across tests: wipe first so the derive
+        // spawns through the recording factory instead of reusing one.
+        hodlLnWipeMem();
+        page.getElementById("ln-seed").value = AEZEED_VECTOR_WORDS;
+        lnDerive(page);
+        const worker = recordedWorkers.at(-1);
+        assert.ok(worker, `${network}: the derive spawned no worker`);
+        const derive = worker.posted.find((message) => message.type === "derive");
+        assert.ok(derive, `${network}: no derive was posted`);
+        assert.equal(derive.coinType, coinType, `${network}: the LND coin type`);
+        assert.equal(derive.network, name, `${network}: the CLN network name`);
+      } finally {
+        hodlLnWipeMem();
+        delete globalThis.document;
+      }
+    }
+  } finally {
+    hodlLnSetWorkerFactory(standInFactory);
+  }
+});
+
+test("the network note names the page network and follows it", () => {
+  let network = "mainnet";
+  const page = lnPage(() => network);
+  try {
+    const note = page.getElementById("ln-network-note");
+    assert.ok(note, "#ln-network-note is missing");
+    const initial = note.textContent;
+    assert.ok(initial.length > 0, "the network note is empty after init");
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
+    assert.ok(note.textContent.length > 0, "the network note is empty after a page network change");
+    assert.notEqual(note.textContent, initial, "the network note did not follow the page network");
   } finally {
     delete globalThis.document;
   }
@@ -748,7 +842,8 @@ test("a failing load's keyed refusal is not overwritten by a racing derive", asy
 });
 
 test("the hsm_secret read status is cleared by every path that drops the file", async () => {
-  const page = lnPage();
+  let network = "mainnet";
+  const page = lnPage(() => network);
   try {
     hodlLnWipeMem();
     page.getElementById("ln-format").value = "cln-hsm";
@@ -760,16 +855,18 @@ test("the hsm_secret read status is cleared by every path that drops the file", 
     // A format change drops the file and its status.
     page.getElementById("ln-format").value = "bip39";
     page.getElementById("ln-format").dispatchEvent(new Event("change"));
-    assert.equal(page.getElementById("ln-session").textContent, "", "the format change left the hsm_secret status on screen");
+    // The line then says no key is derived (the wipe restores it), so check
+    // the file's status is gone rather than the line being empty.
+    assert.notEqual(page.getElementById("ln-session").textContent, loadedStatus, "the format change left the hsm_secret status on screen");
     // Load again, then a network change.
     page.getElementById("ln-format").value = "cln-hsm";
     page.getElementById("ln-format").dispatchEvent(new Event("change"));
     fileInput.files = [{ arrayBuffer: async () => clnType2File(CLN_ABANDON).buffer }];
     await fileInput.onchange();
     assert.ok(page.getElementById("ln-session").textContent.length > 0, "the file load did not report its status");
-    page.getElementById("ln-network").value = "testnet";
-    page.getElementById("ln-network").dispatchEvent(new Event("change"));
-    assert.equal(page.getElementById("ln-session").textContent, "", "the network change left the hsm_secret status on screen");
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
+    assert.notEqual(page.getElementById("ln-session").textContent, loadedStatus, "the page network change left the hsm_secret status on screen");
     // Load again, then Clear.
     page.getElementById("ln-format").value = "cln-hsm";
     page.getElementById("ln-format").dispatchEvent(new Event("change"));
@@ -788,7 +885,7 @@ test("a derive on a page without #ln-session does not throw", () => {
   const page = new MiniDocument();
   globalThis.document = page;
   page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed</option></select>'
-    + '<div id="ln-network-field"><select id="ln-network"><option value="mainnet" selected>Mainnet</option></select></div>'
+    + '<div id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-error"></p><div id="ln-out"></div>'
@@ -945,10 +1042,12 @@ test("the network field shows for aezeed and cln-hsm, not bip39", () => {
 });
 
 test("the CLN network field selects the test-network address prefix and key version", () => {
-  const page = lnPage();
+  let network = "mainnet";
+  const page = lnPage(() => network);
   try {
     page.getElementById("ln-format").value = "cln-hsm";
-    page.getElementById("ln-network").value = "testnet";
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
     page.getElementById("ln-seed").value = CLN_ABANDON;
     lnDerive(page);
     assert.equal(page.getElementById("ln-error").textContent, "", "the derive reported an error");
@@ -962,8 +1061,8 @@ test("the CLN network field selects the test-network address prefix and key vers
     reveal.dispatchEvent(new Event("change"));
     assert.match(page.getElementById("ln-out").innerHTML, /id="ln-root-xprv"[^>]*>tprv/, "the testnet account xprv does not use tprv");
     // Mainnet: the same seed, the other version bytes.
-    page.getElementById("ln-network").value = "mainnet";
-    page.getElementById("ln-network").dispatchEvent(new Event("change"));
+    network = "mainnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
     page.getElementById("ln-seed").value = CLN_ABANDON;
     lnDerive(page);
     html = page.getElementById("ln-out").innerHTML;

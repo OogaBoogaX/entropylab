@@ -117,7 +117,7 @@ function invPage(network = "mainnet", qrSvg = () => "") {
   // hodlInitLn wires the format/network change handlers and the derive path
   // that the invoice-survival tests exercise.
   page.body.innerHTML = '<select id="ln-format"><option value="aezeed" selected>aezeed · LND cipher seed</option><option value="bip39">BIP-39 · LDK (ldk-node)</option></select>'
-    + '<div id="ln-network-field"><select id="ln-network"><option value="mainnet" selected>Mainnet</option><option value="testnet">Testnet</option></select></div>'
+    + '<div id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
@@ -469,16 +469,16 @@ test("a decoded invoice survives a format change", () => {
 
 test("a decoded invoice survives a network change and is re-rendered", () => {
   let qrCalls = 0;
-  const page = invPage("mainnet", () => {
+  let network = "mainnet";
+  const page = invPage(() => network, () => {
     qrCalls++;
     return '<svg id="qr-test"></svg>';
   });
   try {
     decode(page, COFFEE);
     assert.equal(qrCalls, 1, "the QR is rendered once on decode");
-    const network = page.getElementById("ln-network");
-    network.value = "testnet";
-    network.dispatchEvent({ type: "change" });
+    network = "testnet";
+    page.dispatchEvent(new Event("hodl:network-default"));
     assert.ok(page.getElementById("ln-inv-out").innerHTML.includes(COFFEE_PAYMENT_HASH), "the invoice survives a network change");
     assert.equal(qrCalls, 2, "the invoice card is re-rendered after the network change");
   } finally {

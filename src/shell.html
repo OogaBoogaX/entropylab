@@ -1018,13 +1018,7 @@ words, pick one of the checksum words.</span></span>
             </select>
             <span class="field-note" id="ln-format-help">LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.</span>
           </label>
-          <label class="field" id="ln-network-field">Network
-            <select id="ln-network" aria-describedby="ln-network-help">
-              <option value="mainnet" selected>Mainnet</option>
-              <option value="testnet">Testnet</option>
-            </select>
-            <span class="field-note" id="ln-network-help">Selects the coin type in the LND identity path (0' mainnet, 1' testnet/signet/regtest). Changing it clears any derived result — re-derive after switching.</span>
-          </label>
+          <div class="field" id="ln-network-field"><p class="field-note" id="ln-network-note"></p></div>
         </div>
         <label class="field">Seed phrase
           <textarea id="ln-seed" placeholder="ability liquid travel stem barely …" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="ln-seed-help"></textarea>

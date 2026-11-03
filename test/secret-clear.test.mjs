@@ -789,7 +789,7 @@ function lnToolPage() {
   const page = new MiniDocument();
   globalThis.document = page;
   page.body.innerHTML = '<select id="ln-format"></select>'
-    + '<div id="ln-network-field"><select id="ln-network"></select></div>'
+    + '<div id="ln-network-field"><p id="ln-network-note"></p></div>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'

@@ -21,8 +21,8 @@
 // key worker (ln-worker.js): the worker holds the decoded entropy, salt,
 // seeds, xprvs and a loaded hsm_secret's words; this page holds the public
 // result, and the secret text only while the user reveals it. Clear, a
-// format or network change, End Session and page hide ask the worker to
-// scrub its secrets and overwrite its WebAssembly memory, then terminate
+// format or page network change, End Session and page hide ask the worker
+// to scrub its secrets and overwrite its WebAssembly memory, then terminate
 // it, so its whole heap goes with it.
 //
 // Deterministic transformations of user input only: nothing here generates
@@ -143,7 +143,7 @@ const hodlLnClearResult = () => {
 
 // The key side: terminate the worker, so its whole heap and WebAssembly
 // memory — every copy the derivation made — is released at once, and clear
-// the result. A format, network or coin-type change calls this; the pasted
+// the result. A format or page network change calls this; the pasted
 // invoice survives it.
 export function hodlLnKeyWipeMem() {
   hodlLnRun += 1;
@@ -171,8 +171,13 @@ const hodlLnFormat = () => {
   if (value === "cln-hsm") return "cln-hsm";
   return "aezeed";
 };
-const hodlLnCoinType = () => (document.getElementById("ln-network")?.value === "testnet" ? 1 : 0);
-const hodlLnNetworkName = () => (document.getElementById("ln-network")?.value === "testnet" ? "testnet" : "bitcoin");
+// The key follows the page network (the footer menu), the same setting the
+// invoice decoder compares against: one network per page, never two that can
+// disagree. LND's coin type is 0' on mainnet and 1' on every test network;
+// CLN has only mainnet and testnet parameters, so signet and regtest take
+// testnet's, as the old Testnet option did.
+const hodlLnCoinType = () => (lnInvPageNetwork() === "mainnet" ? 0 : 1);
+const hodlLnNetworkName = () => (lnInvPageNetwork() === "mainnet" ? "bitcoin" : "testnet");
 
 const hodlLnNormalize = (text) => String(text || "").trim().toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
 
@@ -484,6 +489,40 @@ function hodlLnSyncFormat() {
   }
 }
 
+// The read-only line that replaced the Network select: the key follows the
+// page network, so the line names it and says where to change it. The names
+// are the footer menu's, each a literal t() so the translation sweep finds
+// them.
+function hodlLnSyncNetworkNote() {
+  const note = document.getElementById("ln-network-note");
+  if (!note) return;
+  const network = lnInvPageNetwork();
+  const name = network === "mainnet" ? t("Bitcoin") : network === "testnet" ? t("Testnet") : network === "signet" ? t("Signet") : t("Regtest");
+  note.textContent = t("Network: {network}. Change it in the network menu at the bottom of the page.", { network: name });
+}
+
+// A format or page network change: a stale result next to a flipped setting
+// is how a correct seed looks wrong (a mainnet pubkey beside "Testnet"), so
+// wipe and re-render. The invoice card is not key material: it survives, and
+// is re-rendered so its network warning matches the page. The key side
+// includes a held hsm_secret file's words, so the file input goes too. One
+// function for both paths, so the format select and the page network cannot
+// drift apart.
+function hodlLnSettingsChanged() {
+  hodlLnKeyWipeMem();
+  const file = document.getElementById("ln-hsm-file");
+  if (file) file.value = "";
+  hodlLnRender();
+  hodlLnSyncFormat();
+  hodlLnInvRender();
+  hodlLnSyncNetworkNote();
+  // The wipe empties the status line; with no key left, say so again, as at
+  // startup (the page announces its network once after this module starts:
+  // Kimi K3, round 1).
+  const session = document.getElementById("ln-session");
+  if (session) session.textContent = t("No node key derived. Enter a seed phrase and derive.");
+}
+
 
 // Reads the chosen hsm_secret and hands its bytes to the key worker, which
 // refuses every non-type-2 shape with the same keyed errors and, for a
@@ -577,10 +616,10 @@ const lnInvChainName = (hash) => {
   return hash;
 };
 
-// The page's network, injected by app.js (hodlInspectorNetwork). The LND
-// coin-type select is a derivation setting, not the page network: reading it
-// here made a signet or regtest page look like mainnet, and a signet or
-// regtest invoice look like a mismatch.
+// The page's network, injected by app.js (hodlInspectorNetwork). It is the
+// one network setting on the page: the node key's coin type and CLN
+// parameters follow it too, so a signet or regtest page never looks like
+// mainnet and the two tools on this tab cannot disagree.
 let hodlLnInvPageNetwork = () => "mainnet";
 
 const LN_INV_NETWORKS = ["mainnet", "testnet", "signet", "regtest"];
@@ -804,11 +843,14 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
   if (clear) clear.onclick = () => hodlLnInvWipeMem();
   const invInput = document.getElementById("ln-inv-input");
   if (invInput && typeof invInput.addEventListener === "function") invInput.addEventListener("input", hodlLnInvReset);
-  // The page's network setting is not the LND coin-type select: re-render
-  // the invoice card when the page announces a change, so its warning
-  // matches the new page network.
+  // The page announces its network after every change (and once at startup).
+  // The node key follows it, so a change does what the old Network select's
+  // change did — wipe the key side and re-render — and the invoice card is
+  // re-rendered so its warning matches the new page network. Registered
+  // before the #ln-go guard: a page with only the invoice card still follows
+  // the network.
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
-    document.addEventListener("hodl:network-default", () => hodlLnInvRender());
+    document.addEventListener("hodl:network-default", hodlLnSettingsChanged);
   }
   const go = document.getElementById("ln-go");
   if (!go) return;
@@ -862,23 +904,11 @@ export function hodlInitLn({ journalLog, copyIcon = () => "", qrSvg = () => "", 
     const session = document.getElementById("ln-session");
     if (session) session.textContent = t("Accessible fields were cleared (best effort).");
   };
-  for (const id of ["ln-format", "ln-network"]) {
-    document.getElementById(id)?.addEventListener("change", () => {
-      // A stale result next to a flipped select is how a correct seed looks
-      // wrong (a mainnet pubkey beside "Testnet"): wipe and re-render on any
-      // format or network change. The invoice card is not key material: it
-      // survives, and is re-rendered so its network warning matches the page.
-      // The key side includes a held hsm_secret file's words, so the file
-      // input goes too.
-      hodlLnKeyWipeMem();
-      const file = document.getElementById("ln-hsm-file");
-      if (file) file.value = "";
-      hodlLnRender();
-      hodlLnSyncFormat();
-      hodlLnInvRender();
-    });
+  for (const id of ["ln-format"]) {
+    document.getElementById(id)?.addEventListener("change", hodlLnSettingsChanged);
   }
   const session = document.getElementById("ln-session");
   if (session) session.textContent = t("No node key derived. Enter a seed phrase and derive.");
   hodlLnSyncFormat();
+  hodlLnSyncNetworkNote();
 }
