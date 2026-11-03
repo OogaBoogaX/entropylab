@@ -254,7 +254,9 @@
   };
   const currentVersion = document.querySelector('meta[name="application-version"]')?.content;
   const currentFile = "entropylab.html";
-  const versionHeader = `ENTROPYLAB ${currentVersion?.toUpperCase()}`;
+  // Only the leading "v" is upper-cased: a -dev version keeps its suffix as
+  // the export writes it ("ENTROPYLAB V1.1.0-dev", #1406).
+  const versionHeader = `ENTROPYLAB ${currentVersion?.replace(/^v/, "V")}`;
 
   await wait(500);
 
@@ -4187,17 +4189,18 @@
         assert(value && value.textContent, `${id} is missing after reveal`);
         await privateReadout(value, value.textContent);
       }
-      // Changing the network select wipes even a revealed result; switching
-      // back and re-deriving reproduces the mainnet key.
-      const network = document.getElementById("ln-network");
-      network.value = "testnet";
-      network.dispatchEvent(new Event("change", { bubbles: true }));
-      assert(!document.getElementById("ln-node-pubkey"), "a network change wipes the revealed result");
+      // The same network announced again keeps the key (a startup or Journal
+      // re-announcement is not a change); a real page network change wipes
+      // even a revealed result, and switching back and re-deriving
+      // reproduces the mainnet key.
+      document.dispatchEvent(new CustomEvent("hodl:network-default"));
+      assert(document.getElementById("ln-node-pubkey"), "the same network announced again wiped the key");
+      document.querySelector('#network-picker-menu [data-network="testnet"]').click();
+      assert(!document.getElementById("ln-node-pubkey"), "a page network change wipes the revealed result");
       assert(!document.getElementById("ln-entropy"), "the revealed entropy is gone with it");
-      network.value = "mainnet";
-      network.dispatchEvent(new Event("change", { bubbles: true }));
+      document.querySelector('#network-picker-menu [data-network="mainnet"]').click();
       document.getElementById("ln-go").click();
-      await until(() => document.getElementById("ln-node-pubkey"), "re-derive after switching back");
+      await until(() => document.getElementById("ln-node-pubkey"), "re-derive after the network change");
       equal(document.getElementById("ln-node-pubkey").textContent, LND_PUBKEY, "mainnet node pubkey again");
       // A wrong passphrase is a named failure, not a different wallet.
       document.getElementById("ln-pass").value = "wrong";

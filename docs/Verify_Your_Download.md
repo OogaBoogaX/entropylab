@@ -13,7 +13,9 @@ itself.
   [GitHub Releases](https://github.com/OogaBoogaX/entropylab/releases) page.
   Download `entropylab.html`, `SHA256SUMS.txt`, `SHA256SUMS.asc`, `KEYS` and
   `entropylab.html.ots` into one folder.
-- **The live site** (`entropylab.online`) changes with every update. Each
+- **The live site** (`entropylab.online`) changes with every update, and its
+  footer shows a `-dev` version (for example `v1.1.0-dev`), so it never
+  passes for a signed release. Each
   build has a checksum, a GitHub attestation and a Bitcoin timestamp (steps
   1, 3 and 4), but no release signatures. Its `SHA256SUMS.txt` and
   `entropylab.html.ots` are next to `entropylab.html` in the

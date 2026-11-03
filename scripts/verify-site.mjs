@@ -23,7 +23,8 @@ const repoDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const pkg = JSON.parse(readFileSync(join(repoDir, "package.json"), "utf8"));
 const version = pkg.version;
 
-if (!/^\d+(?:\.\d+)*$/.test(version)) {
+// Rock builds carry "-dev" (#1406); a release tag never does.
+if (!/^\d+(?:\.\d+)*(?:-dev)?$/.test(version)) {
   fail(`Invalid version in package.json: ${version}`);
 }
 const appFile = "entropylab.html";
