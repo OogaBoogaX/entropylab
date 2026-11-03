@@ -1085,8 +1085,11 @@ jobs:
 
   preview:
     name: Preview · deploy rock to preview.entropylab.online
-    if: github.ref == 'refs/heads/rock' && github.event_name == 'push'
-    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce, test-bitcoind]
+    # After the artifact job, and only when it was not superseded: a run for
+    # an older rock commit that finishes late must not replace a newer
+    # preview (the same rule the timestamp job follows).
+    if: github.ref == 'refs/heads/rock' && github.event_name == 'push' && needs.artifact.outputs.superseded != 'true'
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce, test-bitcoind, artifact]
     runs-on: ubuntu-latest
     environment: release
     timeout-minutes: 10
@@ -1121,6 +1124,8 @@ jobs:
             exit 0
           fi
           KEY="$RUNNER_TEMP/preview_deploy_key"
+          # The key file never outlives this step, whatever happens below.
+          trap 'rm -f "$KEY"' EXIT
           (umask 077; printf '%s\n' "$PREVIEW_DEPLOY_KEY" > "$KEY")
           chmod 600 "$KEY"
           KNOWN_HOSTS="$RUNNER_TEMP/preview_known_hosts"

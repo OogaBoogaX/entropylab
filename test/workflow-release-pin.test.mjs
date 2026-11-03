@@ -33,17 +33,46 @@ test("only pages-release.yml deploys GitHub Pages", () => {
   }
 });
 
-test("pages-release.yml runs only on a published release", () => {
+// A `release` trigger runs the workflow file from the release's tag, so
+// whoever can create a tag would choose the deploy logic. workflow_run and
+// workflow_dispatch from rock run the default branch's reviewed copy, and the
+// github-pages environment admits only rock.
+test("pages-release.yml runs only the default branch's copy of itself", () => {
   const on = pagesRelease.match(/^on:\n([\s\S]*?)^\S/m)?.[1] ?? "";
-  assert.match(on, /^ {2}release:\n {4}types: \[published\]$/m, "the only trigger is a published release");
-  assert.doesNotMatch(on, /^ {2}(push|pull_request|pull_request_target|workflow_dispatch|schedule):/m, "no other trigger may deploy production");
+  assert.match(on, /^ {2}workflow_run:\n {4}workflows: \[Release assets\]\n {4}types: \[completed\]$/m, "it follows a finished Release assets run");
+  assert.match(on, /^ {2}workflow_dispatch:$/m, "a maintainer can run it from rock");
+  assert.doesNotMatch(on, /^ {2}(release|push|pull_request|pull_request_target|schedule):/m, "no trigger runs a tag's or a branch's copy of the deploy");
+  assert.doesNotMatch(pagesRelease, /github\.event\.release\b|release\.tag_name/, "nothing reads release-event context");
+  assert.ok(
+    pagesRelease.includes("github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'release' && github.event.workflow_run.conclusion == 'success')"),
+    "a workflow_run deploys only after a passing Release assets run for a published release",
+  );
+  for (const job of ["verify", "ots"]) {
+    assert.match(jobBlock(pagesRelease, job), /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/, `${job} checks out the default branch, never the tag`);
+  }
 });
 
-test("pages-release.yml refuses prereleases and drafts", () => {
-  assert.ok(
-    pagesRelease.includes("github.event.release.prerelease == false && github.event.release.draft == false"),
-    "the job condition must exclude prereleases and drafts",
-  );
+test("pages-release.yml deploys only the latest published, non-prerelease vMAJOR.MINOR.PATCH release", () => {
+  const resolve = steps(jobBlock(pagesRelease, "verify")).find((step) => step.startsWith("name: Resolve the release"));
+  assert.ok(resolve, "the release is resolved first");
+  assert.ok(resolve.includes("grep -Eqx 'v[0-9]+\\.[0-9]+\\.[0-9]+'"), "a -dev or otherwise suffixed tag is refused");
+  assert.ok(resolve.includes('--jq \'"\\(.draft) \\(.prerelease)"\''), "the release's draft and prerelease flags are read from the API");
+  assert.ok(resolve.includes('[ "$STATE" != "false false" ]'), "a draft or prerelease is refused");
+  assert.ok(resolve.includes('releases/latest" --jq .tag_name'), "the latest release is read");
+  assert.ok(resolve.includes('[ "$LATEST" != "$TAG" ]'), "production never moves back to an older release");
+  assert.ok(resolve.includes('[ "$TAG_COMMIT" != "$RUN_SHA" ]'), "the tag must still be the commit Release assets checked");
+  assert.doesNotMatch(resolve.split("run: |")[1] ?? "", /\$\{\{/, "the script interpolates no expression: the tag reaches it only through env");
+});
+
+test("production serves only the signed HTML and files from the commit it names", () => {
+  const build = steps(jobBlock(pagesRelease, "verify")).find((step) => step.startsWith("name: Build the site"));
+  assert.ok(build, "the site is assembled in one step");
+  assert.ok(build.includes('git -C "$GITHUB_WORKSPACE" archive "$FOOTER_COMMIT" robots.txt sitemap.xml llms.txt manifest.webmanifest assets src/service-worker.js'), "the other files come from the footer's commit");
+  assert.ok(build.includes('"$STATIC/src/service-worker.js"'), "the worker source comes from the same commit");
+  assert.doesNotMatch(build, /^ *cp (robots\.txt|-r assets)/m, "nothing is copied from the checkout's working tree");
+  const footer = steps(jobBlock(pagesRelease, "verify")).find((step) => step.startsWith("name: Check the footer names this release"));
+  assert.ok(footer.includes('node "$GITHUB_WORKSPACE/scripts/release-footer.mjs" entropylab.html'), "the footer is read by the default branch's parser");
+  assert.ok(footer.includes('echo "FOOTER_COMMIT=$FOOTER_COMMIT" >> "$GITHUB_ENV"'), "the footer's commit is handed to the build");
 });
 
 test("pages-release.yml never builds the app and reads no repository secret", () => {
@@ -100,8 +129,9 @@ test("a revoked or expired key, or an expired signature, never counts toward min
   const verify = jobBlock(pagesRelease, "verify");
   assert.ok(verify.includes('$2 == "REVKEYSIG" || $2 == "EXPKEYSIG" || $2 == "EXPSIG"'), "gpg's revoked-key, expired-key and expired-signature results are excluded");
   assert.ok(verify.includes(`$2 == "r" || $2 == "e"`), "a pub record that gpg marks revoked or expired is excluded");
-  assert.ok(verify.includes('REVIEWED="$GITHUB_WORKSPACE/trust"'), "the default branch's reviewed copy is checked out");
-  assert.ok(verify.includes('cmp -s "$TAGTREE/.github/release-signers.txt" "$REVIEWED/.github/release-signers.txt"'), "the tag's signer list must equal the reviewed one");
+  assert.ok(verify.includes('SIGNERS="$GITHUB_WORKSPACE/.github/release-signers.txt"'), "the signer list is the default branch's");
+  assert.ok(verify.includes('KEYFILES=("$GITHUB_WORKSPACE"/keys/*.asc)'), "the keys are the default branch's committed ones");
+  assert.doesNotMatch(verify, /TAGTREE|path: trust/, "no tag tree is read for the trust policy");
   assert.doesNotMatch(verify, /--import\s+"?KEYS/, "the release's KEYS asset is never imported");
 });
 
@@ -145,7 +175,9 @@ test("release-signers.txt matches the signer list in SECURITY.md", () => {
 test("the preview job publishes rock to the preview repository only", () => {
   const job = jobBlock(cicd, "preview");
   assert.ok(job, "ci-cd.yml has a preview job");
-  assert.match(job, /^ {4}if: github\.ref == 'refs\/heads\/rock' && github\.event_name == 'push'$/m, "push to rock only");
+  assert.match(job, /^ {4}if: github\.ref == 'refs\/heads\/rock' && github\.event_name == 'push' && needs\.artifact\.outputs\.superseded != 'true'$/m, "push to rock only, and never a superseded build");
+  assert.match(job, /^ {4}needs: \[[^\]]*\bartifact\]$/m, "it waits for the artifact job's superseded check");
+  assert.ok(job.includes(`trap 'rm -f "$KEY"' EXIT`), "the deploy key file is removed when the step ends");
   assert.match(job, /^ {4}environment: release$/m, "it reads a secret, so it runs in the release environment");
   assert.match(job, /^ {4}concurrency:\n {6}group: pages-preview$/m, "its own concurrency group");
   const secrets = [...job.matchAll(/secrets\.([A-Z0-9_]+)/g)].map(([, name]) => name);

@@ -77,6 +77,9 @@ test("both workflows' footer steps accept the release's own footer and refuse an
     git(workspace, "commit", "-qm", "release");
     git(workspace, "tag", "v9.9.9");
     const tagged = git(workspace, "rev-parse", "--short=7", "HEAD");
+    // pages-release.yml's resolve step hands the footer step the tag's commit
+    // through GITHUB_ENV; release-assets.yml resolves it in the step itself.
+    const tagCommit = git(workspace, "rev-parse", "v9.9.9^{commit}");
     git(workspace, "checkout", "-qb", "elsewhere");
     writeFileSync(join(workspace, "other.txt"), "not in the tag's history\n");
     git(workspace, "add", "-A");
@@ -93,11 +96,16 @@ test("both workflows' footer steps accept the release's own footer and refuse an
         const runnerTemp = join(temp, `${name}-${path.split("/").pop()}`);
         mkdirSync(join(runnerTemp, "release"), { recursive: true });
         writeFileSync(join(runnerTemp, "release/entropylab.html"), html);
-        const result = spawnSync("bash", ["-c", script], { cwd: runnerTemp, env: { ...process.env, RUNNER_TEMP: runnerTemp, GITHUB_WORKSPACE: workspace, TAG: "v9.9.9" }, encoding: "utf8" });
-        return { status: result.status, log: `${result.stdout}${result.stderr}` };
+        const githubEnv = join(runnerTemp, "github-env");
+        writeFileSync(githubEnv, "");
+        const result = spawnSync("bash", ["-c", script], { cwd: runnerTemp, env: { ...process.env, RUNNER_TEMP: runnerTemp, GITHUB_WORKSPACE: workspace, TAG: "v9.9.9", TAG_COMMIT: tagCommit, GITHUB_ENV: githubEnv }, encoding: "utf8" });
+        return { status: result.status, log: `${result.stdout}${result.stderr}`, env: readFileSync(githubEnv, "utf8") };
       };
       const good = run("good", footerHtml("9.9.9", tagged));
       assert.equal(good.status, 0, `${path}: ${good.log}`);
+      if (path.endsWith("pages-release.yml")) {
+        assert.match(good.env, new RegExp(`^FOOTER_COMMIT=${tagCommit}$`, "m"), "the footer's commit is handed to the build step");
+      }
       const wrongVersion = run("version", footerHtml("9.9.8", tagged));
       assert.notEqual(wrongVersion.status, 0, `${path}: another version must fail`);
       assert.match(wrongVersion.log, /title=Footer version::/);

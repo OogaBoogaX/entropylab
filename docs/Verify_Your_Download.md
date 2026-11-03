@@ -13,9 +13,11 @@ itself.
   [GitHub Releases](https://github.com/OogaBoogaX/entropylab/releases) page.
   Download `entropylab.html`, `SHA256SUMS.txt`, `SHA256SUMS.asc`, `KEYS` and
   `entropylab.html.ots` into one folder.
-- **The live site** (`entropylab.online`) is the latest signed release. It
-  changes only when a new release is published, and its footer shows that
-  release's version. Check it like a release: steps 1 to 4 below.
+- **The live site** (`entropylab.online`) is the latest signed release, from
+  v1.1.0 on. It changes only when a new release is published, and its footer
+  shows that release's version. Until v1.1.0 is published it still shows the
+  last build from `rock`, whose footer says `-dev`. Check it like a release:
+  steps 1 to 4 below.
 - **The preview site** (`preview.entropylab.online`) is built from `rock` on
   every merge and carries a `-dev` version (for example `v1.1.0-dev`). It has
   no release signatures: it is unreviewed development software, not for real

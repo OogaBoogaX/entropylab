@@ -3,6 +3,15 @@
 # The preview site (preview.entropylab.online) is built from rock by the
 # `preview` job in ci-cd.yml.
 #
+# This workflow always runs the default branch's reviewed copy of itself. A
+# `release` trigger would run the workflow file from the release's tag, so
+# whoever can create a tag would choose the deploy logic itself. A
+# workflow_run (after Release assets passes for a published release) and a
+# workflow_dispatch from rock both run the reviewed copy, and the github-pages
+# environment admits only rock, so a workflow defined in a tag or a side
+# branch cannot deploy production. Production serves only the signed release
+# HTML and files from the commit that signed HTML names in its footer.
+#
 # Every check below runs before the deploy and fails the job, so a release
 # whose assets, signatures, timestamp or footer disagree never reaches
 # production. The verify job checks the assets and builds the Pages artifact,
@@ -16,8 +25,15 @@
 name: Pages release
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: [Release assets]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to deploy (vMAJOR.MINOR.PATCH)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -29,35 +45,61 @@ concurrency:
 jobs:
   verify:
     name: Verify · signed release assets
-    if: github.event.release.prerelease == false && github.event.release.draft == false
+    # A Release assets run that a published release started and that passed,
+    # or a maintainer's dispatch. Either way the release is resolved and
+    # checked again below.
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'release' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
+      tag: ${{ steps.release.outputs.tag }}
       html-sha256: ${{ steps.checksums.outputs.html-sha256 }}
     steps:
-      - name: Check out the release tag
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ github.event.release.tag_name }}
-          fetch-depth: 0
-          persist-credentials: false
-      # Trust policy: the signer list (.github/release-signers.txt) and the
-      # signers' public keys (keys/*.asc) are read at the release's tag, and
-      # must be byte-identical to the default branch's reviewed copy, so
-      # whoever can create a tag or upload release assets cannot choose the
-      # keys. The release's KEYS asset is a convenience download only and is
-      # never imported: v4 fingerprints are SHA-1, so a fingerprint match on
-      # uploaded key material is not enough.
-      - name: Check out the trust policy from the default branch
+      - name: Check out the default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.repository.default_branch }}
-          path: trust
+          fetch-depth: 0
           persist-credentials: false
+      - name: Resolve the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then TAG=$INPUT_TAG; else TAG=$RUN_TAG; fi
+          # A release tag is vMAJOR.MINOR.PATCH: never a -dev or other suffix.
+          if ! printf '%s' "$TAG" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error title=Release tag::the run names no vMAJOR.MINOR.PATCH release tag"
+            exit 1
+          fi
+          STATE=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '"\(.draft) \(.prerelease)"')
+          if [ "$STATE" != "false false" ]; then
+            echo "::error title=Release::$TAG is not a published, non-prerelease release"
+            exit 1
+          fi
+          # Production never moves back: only the repository's latest release
+          # deploys, so re-running an old release cannot roll the site back.
+          LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [ "$LATEST" != "$TAG" ]; then
+            echo "::error title=Not the latest release::$TAG is not the latest release ($LATEST)"
+            exit 1
+          fi
+          git fetch --no-tags --quiet origin "+refs/tags/$TAG:refs/tags/$TAG"
+          TAG_COMMIT=$(git rev-parse "refs/tags/$TAG^{commit}")
+          if [ "$GITHUB_EVENT_NAME" = workflow_run ] && [ "$TAG_COMMIT" != "$RUN_SHA" ]; then
+            echo "::error title=Release tag::the Release assets run checked $RUN_SHA, but $TAG is $TAG_COMMIT"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "TAG_COMMIT=$TAG_COMMIT" >> "$GITHUB_ENV"
       - name: Download the release assets
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/release"
@@ -89,22 +131,16 @@ jobs:
           mkdir -p "$GNUPGHOME"
           chmod 700 "$GNUPGHOME"
           cd "$RUNNER_TEMP/release"
-          TAGTREE="$GITHUB_WORKSPACE"
-          REVIEWED="$GITHUB_WORKSPACE/trust"
-          # The tag's trust policy must be the default branch's reviewed copy.
-          if ! cmp -s "$TAGTREE/.github/release-signers.txt" "$REVIEWED/.github/release-signers.txt"; then
-            echo "::error title=Trust policy::the tag's .github/release-signers.txt differs from the default branch's"
-            exit 1
-          fi
-          if ! diff -r -q "$TAGTREE/keys" "$REVIEWED/keys" > /dev/null; then
-            echo "::error title=Trust policy::the tag's keys/ differs from the default branch's"
-            exit 1
-          fi
-          SIGNERS="$TAGTREE/.github/release-signers.txt"
+          # The signer list and the signers' public keys come from this
+          # checkout: the default branch's reviewed tree, never the release's
+          # tag (whoever can create a tag would choose them) and never the
+          # release's KEYS asset (v4 fingerprints are SHA-1, so a fingerprint
+          # match on uploaded key material is not enough).
+          SIGNERS="$GITHUB_WORKSPACE/.github/release-signers.txt"
           # Public keys come only from the committed keys/ directory. The
           # release's KEYS asset is never imported.
           shopt -s nullglob
-          KEYFILES=("$TAGTREE"/keys/*.asc)
+          KEYFILES=("$GITHUB_WORKSPACE"/keys/*.asc)
           if [ "${#KEYFILES[@]}" -eq 0 ]; then
             echo "::error title=Signer keys::keys/ holds no public keys"
             exit 1
@@ -147,8 +183,10 @@ jobs:
           # A good signature from a revoked or expired key (REVKEYSIG,
           # EXPKEYSIG), or an expired signature (EXPSIG), is not counted.
           awk '$2 == "REVKEYSIG" || $2 == "EXPKEYSIG" || $2 == "EXPSIG" { print $3 }' "$STATUS" > "$RUNNER_TEMP/revkeysigs.txt"
-          # Field 10 of VALIDSIG is the primary-key fingerprint; some signers
-          # use subkeys, so the primary is what identifies a signer.
+          # VALIDSIG's last argument (awk field 12, after "[GNUPG:]" and
+          # "VALIDSIG") is the primary-key fingerprint; field 3 is the key that
+          # signed, a subkey for signers who sign with one. The primary is what
+          # identifies a signer (pinned by test/release-signatures.test.mjs).
           awk '$2 == "VALIDSIG" { print $3, ($12 == "" ? $3 : $12) }' "$STATUS" > "$RUNNER_TEMP/validsigs.txt"
           : > "$RUNNER_TEMP/counted.txt"
           while read -r signing primary; do
@@ -177,13 +215,12 @@ jobs:
             echo "Good signature from ${name:-$fpr} ($fpr)"
           done
       - name: Check the footer names this release
-        env:
-          TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/release"
-          # One parser for this check and release-assets.yml's, pinned to the
-          # real footer markup by test/release-footer.test.mjs.
+          # The default branch's parser (one parser for this check and
+          # release-assets.yml's, pinned to the real footer markup by
+          # test/release-footer.test.mjs), never the tag's copy.
           if ! FOOTER=$(node "$GITHUB_WORKSPACE/scripts/release-footer.mjs" entropylab.html); then
             echo "::error title=Footer::entropylab.html carries no readable build footer"
             exit 1
@@ -197,7 +234,6 @@ jobs:
           # The footer stamps the last commit that changed a build input, which
           # is the tag's commit or an ancestor of it (the artifact commit only
           # rewrites generated files). Require it to be in the tag's history.
-          TAG_COMMIT=$(git -C "$GITHUB_WORKSPACE" rev-parse "$TAG^{commit}")
           if ! FOOTER_COMMIT=$(git -C "$GITHUB_WORKSPACE" rev-parse --verify --quiet "${SHORT}^{commit}"); then
             echo "::error title=Footer commit::the footer's commit $SHORT is not a commit in this repository"
             exit 1
@@ -206,29 +242,38 @@ jobs:
             echo "::error title=Footer commit::the footer's commit $SHORT is not in the history of $TAG"
             exit 1
           fi
+          # The signed HTML names this commit, so its tree is what the signers
+          # released: the site's other files come from it, not from a tag.
+          echo "FOOTER_COMMIT=$FOOTER_COMMIT" >> "$GITHUB_ENV"
       - name: Build the site
         run: |
           set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
-          mkdir _site
-          cp robots.txt sitemap.xml llms.txt manifest.webmanifest _site/
-          cp -r assets _site/assets
-          touch _site/.nojekyll
+          STATIC="$RUNNER_TEMP/static"
+          mkdir -p "$STATIC"
+          # Every file besides the page comes from the commit the signed HTML
+          # names, never from the default branch's or a tag's working tree.
+          git -C "$GITHUB_WORKSPACE" archive "$FOOTER_COMMIT" robots.txt sitemap.xml llms.txt manifest.webmanifest assets src/service-worker.js \
+            | tar -x -C "$STATIC"
+          SITE="$GITHUB_WORKSPACE/_site"
+          mkdir "$SITE"
+          cp "$STATIC/robots.txt" "$STATIC/sitemap.xml" "$STATIC/llms.txt" "$STATIC/manifest.webmanifest" "$SITE/"
+          cp -r "$STATIC/assets" "$SITE/assets"
+          touch "$SITE/.nojekyll"
           # The page and its index are the verified release bytes, never a
           # rebuild.
-          cp "$RUNNER_TEMP/release/entropylab.html" _site/entropylab.html
-          cp "$RUNNER_TEMP/release/entropylab.html" _site/index.html
+          cp "$RUNNER_TEMP/release/entropylab.html" "$SITE/entropylab.html"
+          cp "$RUNNER_TEMP/release/entropylab.html" "$SITE/index.html"
           # service-worker.js is generated, not committed or released. Take the
-          # version the verified HTML embeds and substitute it into the tag's
-          # worker source.
-          VERSIONS=$(grep -o 'service-worker\.js?v=[0-9a-f]\{16\}' _site/entropylab.html | sed 's/.*v=//' | sort -u)
+          # version the verified HTML embeds and substitute it into the worker
+          # source from the same commit.
+          VERSIONS=$(grep -o 'service-worker\.js?v=[0-9a-f]\{16\}' "$SITE/entropylab.html" | sed 's/.*v=//' | sort -u)
           COUNT=$(printf '%s\n' "$VERSIONS" | grep -c . || true)
           if [ "$COUNT" != 1 ]; then
             echo "::error title=Service worker version::entropylab.html embeds $COUNT distinct service-worker versions, expected exactly one"
             exit 1
           fi
-          sed "s/{{PWA_VERSION}}/$VERSIONS/g" src/service-worker.js > _site/service-worker.js
-          if grep -q '{{' _site/service-worker.js; then
+          sed "s/{{PWA_VERSION}}/$VERSIONS/g" "$STATIC/src/service-worker.js" > "$SITE/service-worker.js"
+          if grep -q '{{' "$SITE/service-worker.js"; then
             echo "::error title=Service worker::the generated worker still carries an unsubstituted {{ token"
             exit 1
           fi
@@ -244,19 +289,18 @@ jobs:
   ots:
     name: Verify · OpenTimestamps proof
     needs: [verify]
-    if: github.event.release.prerelease == false && github.event.release.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check out the release tag
+      - name: Check out the default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Download the proof
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ needs.verify.outputs.tag }}
         run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/release" --pattern entropylab.html.ots
       - name: Install OpenTimestamps client
         run: |
@@ -284,7 +328,6 @@ jobs:
   deploy:
     name: Deploy · GitHub Pages
     needs: [verify, ots]
-    if: github.event.release.prerelease == false && github.event.release.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
