@@ -1,0 +1,412 @@
+{
+  "reference": {
+    "repository": "https://github.com/coinkite/BBQr",
+    "revision": "8dc7ef07d0d520763cc0001a885ca8d29ac8719a",
+    "specification": "https://github.com/coinkite/BBQr/blob/8dc7ef07d0d520763cc0001a885ca8d29ac8719a/BBQr.md",
+    "license": "Public domain; upstream UNLICENSE.md retained as reference/LICENSE",
+    "sources": [
+      {
+        "file": "reference/utils.py",
+        "upstream": "python/bbqr/utils.py",
+        "sha256": "98ee24c30254f1e87080984a73a105b893b2aa6b1587a979d812c49cf34881e9"
+      },
+      {
+        "file": "reference/join.py",
+        "upstream": "python/bbqr/join.py",
+        "sha256": "6a9c98770633ee4b52b31e26fca38bf286ba3f0e12b71157fc4a4916c1670a1d"
+      },
+      {
+        "file": "reference/consts.py",
+        "upstream": "python/bbqr/consts.py",
+        "sha256": "600147b178c25ff8a8a133d05c9324770fd6f4c7de4ec43c16743df2c27b1f46"
+      },
+      {
+        "file": "reference/LICENSE",
+        "upstream": "UNLICENSE.md",
+        "sha256": "8d4e9b4aa336afd26a386bc2ad8c3da4f8ebb8f7e9685c09bdba6b4e75894dad"
+      }
+    ],
+    "apis": [
+      "encode_data",
+      "int2base36",
+      "join_qrs"
+    ],
+    "framing": "8-character B$ header; explicit character widths divisible by upstream split_mod; no pyqrcode dependency",
+    "compression": "Coinkite encode_data uses zlib.compressobj(wbits=-10), default level; compress entire message before splitting"
+  },
+  "generator": {
+    "file": "scripts/psbt-bbqr-reference.py",
+    "sha256": "59be734b0973e04cecef39be3f466d7ad9cabe0d69c09f7c39fdd1159b8c57a4",
+    "zlib": "1.3"
+  },
+  "limitations": [
+    "BBQr has no whole-message checksum or session identity: same-header same-length cross-transfer mixing cannot always be detected. PSBT magic is not full PSBT validation or sender authentication."
+  ],
+  "fixtures": [
+    {
+      "file": "p2wpkh-1in-2out-h-single.txt",
+      "bytes": 981,
+      "sha256": "6855e78f89e824c4fee9ba8b989b6efa859a08b5ba3df77a050f75f7fac8c288",
+      "encoding": "H",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "fileSha256": "604370ddb6e875a741ff40829b7b7aee0e11d125b282790f7fae782e24cd5546",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "provenance": "PSBT v0, existing public fixture"
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-h-multipart.txt",
+      "bytes": 1044,
+      "sha256": "6feaa88fad825ba85321408dd1e5ec1f29d43936e69b4da9dfc0dfca53ebe3d4",
+      "encoding": "H",
+      "mode": "multipart",
+      "parts": 8,
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "fileSha256": "604370ddb6e875a741ff40829b7b7aee0e11d125b282790f7fae782e24cd5546",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "provenance": "PSBT v0, existing public fixture"
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-2-single.txt",
+      "bytes": 787,
+      "sha256": "3c1c0c8cd8004d411bf6f08e406512c5c9ad69b12159dca040e038c14e548c6f",
+      "encoding": "2",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "fileSha256": "604370ddb6e875a741ff40829b7b7aee0e11d125b282790f7fae782e24cd5546",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "provenance": "PSBT v0, existing public fixture"
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-2-multipart.txt",
+      "bytes": 841,
+      "sha256": "466a619e4dd79f13207a50a7e1fda11870015c7c5feb5ccabe6c439e438faf05",
+      "encoding": "2",
+      "mode": "multipart",
+      "parts": 7,
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "fileSha256": "604370ddb6e875a741ff40829b7b7aee0e11d125b282790f7fae782e24cd5546",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "provenance": "PSBT v0, existing public fixture"
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-z-single.txt",
+      "bytes": 405,
+      "sha256": "123817560e59532a86c2197d6df9353eb7745dd618084fe74b5a29c282b83646",
+      "encoding": "Z",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "fileSha256": "604370ddb6e875a741ff40829b7b7aee0e11d125b282790f7fae782e24cd5546",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "provenance": "PSBT v0, existing public fixture"
+      }
+    },
+    {
+      "file": "p2wpkh-1in-2out-z-multipart.txt",
+      "bytes": 432,
+      "sha256": "d05ed7b408548a246ec33749865bf5bf3d0a8b7a5b00c7037aa86f4b180a15ba",
+      "encoding": "Z",
+      "mode": "multipart",
+      "parts": 4,
+      "source": {
+        "path": "test/fixtures/psbt/p2wpkh-1in-2out.b64",
+        "fileSha256": "604370ddb6e875a741ff40829b7b7aee0e11d125b282790f7fae782e24cd5546",
+        "bytes": 486,
+        "sha256": "d8c3168a6f344719b70b86a7df0da8ac70b4d5222d95ec0005e840170e7e75a2",
+        "provenance": "PSBT v0, existing public fixture"
+      }
+    },
+    {
+      "file": "multisig-2of3-p2wsh-h-single.txt",
+      "bytes": 1801,
+      "sha256": "f57a13c7b7c3a988a3b4502afc78e675c7d2b1a5fa690a006e1f3896f826706f",
+      "encoding": "H",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt/multisig-2of3-p2wsh.b64",
+        "fileSha256": "491c9f0be1fbe0d28f3633ba9aeb08a3d6822bf578de98262b82c1189c45c704",
+        "bytes": 896,
+        "sha256": "9b6a742a9c830ea09f36d87314b035a65fcb038e8396db57197c804b230d9911",
+        "provenance": "PSBT v0 multisig, existing public fixture"
+      }
+    },
+    {
+      "file": "multisig-2of3-p2wsh-h-multipart.txt",
+      "bytes": 1918,
+      "sha256": "786fdcea96a56541471906e23078f992ac670c94346baa8bfdf0c17f854cb6a4",
+      "encoding": "H",
+      "mode": "multipart",
+      "parts": 14,
+      "source": {
+        "path": "test/fixtures/psbt/multisig-2of3-p2wsh.b64",
+        "fileSha256": "491c9f0be1fbe0d28f3633ba9aeb08a3d6822bf578de98262b82c1189c45c704",
+        "bytes": 896,
+        "sha256": "9b6a742a9c830ea09f36d87314b035a65fcb038e8396db57197c804b230d9911",
+        "provenance": "PSBT v0 multisig, existing public fixture"
+      }
+    },
+    {
+      "file": "multisig-2of3-p2wsh-2-single.txt",
+      "bytes": 1443,
+      "sha256": "b3759b09ee242ead8a03c9b4376933f19794c38b683c089ce4f88e12f578ecf1",
+      "encoding": "2",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt/multisig-2of3-p2wsh.b64",
+        "fileSha256": "491c9f0be1fbe0d28f3633ba9aeb08a3d6822bf578de98262b82c1189c45c704",
+        "bytes": 896,
+        "sha256": "9b6a742a9c830ea09f36d87314b035a65fcb038e8396db57197c804b230d9911",
+        "provenance": "PSBT v0 multisig, existing public fixture"
+      }
+    },
+    {
+      "file": "multisig-2of3-p2wsh-2-multipart.txt",
+      "bytes": 1542,
+      "sha256": "7082ffed1d70ccedf00c3f2c460c8b56560b75e1e22454209a4fce5e9c8c28ea",
+      "encoding": "2",
+      "mode": "multipart",
+      "parts": 12,
+      "source": {
+        "path": "test/fixtures/psbt/multisig-2of3-p2wsh.b64",
+        "fileSha256": "491c9f0be1fbe0d28f3633ba9aeb08a3d6822bf578de98262b82c1189c45c704",
+        "bytes": 896,
+        "sha256": "9b6a742a9c830ea09f36d87314b035a65fcb038e8396db57197c804b230d9911",
+        "provenance": "PSBT v0 multisig, existing public fixture"
+      }
+    },
+    {
+      "file": "multisig-2of3-p2wsh-z-single.txt",
+      "bytes": 497,
+      "sha256": "370c3454edf82df0ea462e7982dca634fb7d3f3778cda4beb8bbbbefb43d5a23",
+      "encoding": "Z",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt/multisig-2of3-p2wsh.b64",
+        "fileSha256": "491c9f0be1fbe0d28f3633ba9aeb08a3d6822bf578de98262b82c1189c45c704",
+        "bytes": 896,
+        "sha256": "9b6a742a9c830ea09f36d87314b035a65fcb038e8396db57197c804b230d9911",
+        "provenance": "PSBT v0 multisig, existing public fixture"
+      }
+    },
+    {
+      "file": "multisig-2of3-p2wsh-z-multipart.txt",
+      "bytes": 524,
+      "sha256": "deec2f3e1122680090a98d0d7302e37872615e09d7e5981298f5a3eef3b6b728",
+      "encoding": "Z",
+      "mode": "multipart",
+      "parts": 4,
+      "source": {
+        "path": "test/fixtures/psbt/multisig-2of3-p2wsh.b64",
+        "fileSha256": "491c9f0be1fbe0d28f3633ba9aeb08a3d6822bf578de98262b82c1189c45c704",
+        "bytes": 896,
+        "sha256": "9b6a742a9c830ea09f36d87314b035a65fcb038e8396db57197c804b230d9911",
+        "provenance": "PSBT v0 multisig, existing public fixture"
+      }
+    },
+    {
+      "file": "mixed-many-inputs-h-single.txt",
+      "bytes": 2243,
+      "sha256": "ab06b4026c83cbde46833a78128fffdb7292855905e5868a7c4549498c0fff1f",
+      "encoding": "H",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "fileSha256": "06f4c06694ef5ea8efa8fde06b47774bcc054421f4bd56ef26544289937a79a5",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc",
+        "provenance": "PSBT v0, existing public fixture; output crosses the 1024-byte DEFLATE window"
+      }
+    },
+    {
+      "file": "mixed-many-inputs-h-multipart.txt",
+      "bytes": 2396,
+      "sha256": "34b35864c5d46c5762532697107065d3978e64d1e8a7cef6b9c602224926ac7f",
+      "encoding": "H",
+      "mode": "multipart",
+      "parts": 18,
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "fileSha256": "06f4c06694ef5ea8efa8fde06b47774bcc054421f4bd56ef26544289937a79a5",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc",
+        "provenance": "PSBT v0, existing public fixture; output crosses the 1024-byte DEFLATE window"
+      }
+    },
+    {
+      "file": "mixed-many-inputs-2-single.txt",
+      "bytes": 1797,
+      "sha256": "b780c5b74efde9dd903e8fd8f2a0476e82996da4c91b33ba1db7282c6162a85c",
+      "encoding": "2",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "fileSha256": "06f4c06694ef5ea8efa8fde06b47774bcc054421f4bd56ef26544289937a79a5",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc",
+        "provenance": "PSBT v0, existing public fixture; output crosses the 1024-byte DEFLATE window"
+      }
+    },
+    {
+      "file": "mixed-many-inputs-2-multipart.txt",
+      "bytes": 1914,
+      "sha256": "c07077aed05f5d1488166d5a2633dcb955f574b9322c7d4d5d33f30a3b6626f3",
+      "encoding": "2",
+      "mode": "multipart",
+      "parts": 14,
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "fileSha256": "06f4c06694ef5ea8efa8fde06b47774bcc054421f4bd56ef26544289937a79a5",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc",
+        "provenance": "PSBT v0, existing public fixture; output crosses the 1024-byte DEFLATE window"
+      }
+    },
+    {
+      "file": "mixed-many-inputs-z-single.txt",
+      "bytes": 843,
+      "sha256": "49a8f02691746d84e1d160da3f135d5a600b59a8df45b45646ed093f01ee2ae6",
+      "encoding": "Z",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "fileSha256": "06f4c06694ef5ea8efa8fde06b47774bcc054421f4bd56ef26544289937a79a5",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc",
+        "provenance": "PSBT v0, existing public fixture; output crosses the 1024-byte DEFLATE window"
+      }
+    },
+    {
+      "file": "mixed-many-inputs-z-multipart.txt",
+      "bytes": 897,
+      "sha256": "c02c1f275496afc1b8a9a744aee62dfd7468a6cdc8e3f10697b24d90e9e1f3b4",
+      "encoding": "Z",
+      "mode": "multipart",
+      "parts": 7,
+      "source": {
+        "path": "test/fixtures/psbt/mixed-many-inputs.b64",
+        "fileSha256": "06f4c06694ef5ea8efa8fde06b47774bcc054421f4bd56ef26544289937a79a5",
+        "bytes": 1117,
+        "sha256": "8dd7448c5119328ffbfb7ee9e4beaa64d9d1b6582d61e683d2d780ab594858cc",
+        "provenance": "PSBT v0, existing public fixture; output crosses the 1024-byte DEFLATE window"
+      }
+    },
+    {
+      "file": "bip370-minimal-h-single.txt",
+      "bytes": 299,
+      "sha256": "71903f44cdf48024292da346e25fca2495ddc2b590c2864d36cfebf3c967a9bf",
+      "encoding": "H",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt-qr/bbqr/bip370-minimal.b64",
+        "fileSha256": "c518dee41bfe5b278e2bc433cc9ddd005a68d65be7cbb0f3e444d95259f96488",
+        "bytes": 145,
+        "sha256": "eadcaa4b78f52e1be8ee499c956df26f976aa793e02f62e361cbbe5f53cf9c92",
+        "provenance": "https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki#test-vectors"
+      }
+    },
+    {
+      "file": "bip370-minimal-h-multipart.txt",
+      "bytes": 317,
+      "sha256": "468ef3b64eadba9f16d0aa568cdc025fdb1ba8da305c1eda9baa2be0ecd9db86",
+      "encoding": "H",
+      "mode": "multipart",
+      "parts": 3,
+      "source": {
+        "path": "test/fixtures/psbt-qr/bbqr/bip370-minimal.b64",
+        "fileSha256": "c518dee41bfe5b278e2bc433cc9ddd005a68d65be7cbb0f3e444d95259f96488",
+        "bytes": 145,
+        "sha256": "eadcaa4b78f52e1be8ee499c956df26f976aa793e02f62e361cbbe5f53cf9c92",
+        "provenance": "https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki#test-vectors"
+      }
+    },
+    {
+      "file": "bip370-minimal-2-single.txt",
+      "bytes": 241,
+      "sha256": "626d8e095f98ff8837a2725ffaf364a8d364b7d31dff70e7af878b99df1b96ec",
+      "encoding": "2",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt-qr/bbqr/bip370-minimal.b64",
+        "fileSha256": "c518dee41bfe5b278e2bc433cc9ddd005a68d65be7cbb0f3e444d95259f96488",
+        "bytes": 145,
+        "sha256": "eadcaa4b78f52e1be8ee499c956df26f976aa793e02f62e361cbbe5f53cf9c92",
+        "provenance": "https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki#test-vectors"
+      }
+    },
+    {
+      "file": "bip370-minimal-2-multipart.txt",
+      "bytes": 250,
+      "sha256": "8c80dad165f8216bdc65608a20a0bcb67e9de467e9044a0eb904008598f95627",
+      "encoding": "2",
+      "mode": "multipart",
+      "parts": 2,
+      "source": {
+        "path": "test/fixtures/psbt-qr/bbqr/bip370-minimal.b64",
+        "fileSha256": "c518dee41bfe5b278e2bc433cc9ddd005a68d65be7cbb0f3e444d95259f96488",
+        "bytes": 145,
+        "sha256": "eadcaa4b78f52e1be8ee499c956df26f976aa793e02f62e361cbbe5f53cf9c92",
+        "provenance": "https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki#test-vectors"
+      }
+    },
+    {
+      "file": "bip370-minimal-z-single.txt",
+      "bytes": 221,
+      "sha256": "75c7631520e6f35010a9ae3d93d944a9ba84651d347436bdee1784df8f4de507",
+      "encoding": "Z",
+      "mode": "single",
+      "parts": 1,
+      "source": {
+        "path": "test/fixtures/psbt-qr/bbqr/bip370-minimal.b64",
+        "fileSha256": "c518dee41bfe5b278e2bc433cc9ddd005a68d65be7cbb0f3e444d95259f96488",
+        "bytes": 145,
+        "sha256": "eadcaa4b78f52e1be8ee499c956df26f976aa793e02f62e361cbbe5f53cf9c92",
+        "provenance": "https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki#test-vectors"
+      }
+    },
+    {
+      "file": "bip370-minimal-z-multipart.txt",
+      "bytes": 230,
+      "sha256": "b99fa488d462fc6d26f269cd4989952734a9c3058b4deabafda40daf448ef9f8",
+      "encoding": "Z",
+      "mode": "multipart",
+      "parts": 2,
+      "source": {
+        "path": "test/fixtures/psbt-qr/bbqr/bip370-minimal.b64",
+        "fileSha256": "c518dee41bfe5b278e2bc433cc9ddd005a68d65be7cbb0f3e444d95259f96488",
+        "bytes": 145,
+        "sha256": "eadcaa4b78f52e1be8ee499c956df26f976aa793e02f62e361cbbe5f53cf9c92",
+        "provenance": "https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki#test-vectors"
+      }
+    }
+  ],
+  "rejections": {
+    "file": "compressed-rejections.json",
+    "bytes": 5899,
+    "sha256": "32b2270f18bc1f21967c6b32626cf2b3363e743201b1d9d80a2e481c73cb8c32"
+  }
+}

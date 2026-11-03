@@ -509,6 +509,32 @@ material. Its security posture rests on the following model:
   secret data, injected script execution in the generated HTML, unexpected
   network egress) is treated as a security issue.
 
+### Released PSBT QR transport
+
+The existing PSBT reader accepts static base64/hex, UR and PSBT-only BBQr
+(`H`, `2`, `Z`). It reuses the existing QR pixel decoder and UR collector;
+there is no second camera stack or new runtime dependency. The bounded,
+synchronous raw-DEFLATE decoder for BBQr `Z` limits history to the format's
+1024-byte window. Compressed input and decoded PSBTs are each capped at
+1 MiB, with at most 1000 parts and a separate QR-text limit per frame.
+Wrong types, conflicting parts, malformed compression and over-budget input
+are refused. A valid static PSBT cannot replace a partial UR/BBQr transfer;
+that mismatch stays terminal until reset. Pasted transfers refuse every
+token after completion, even an identical duplicate.
+
+QR transfer can avoid mounting shared removable media or connecting a USB
+data device to an offline machine. It still feeds untrusted data through
+the browser and decoders: it is not protection against a compromised host
+or parser vulnerabilities. Payloads are never evaluated as code or rendered
+as HTML, and transport completion is not transaction approval.
+
+BBQr has neither an end-to-end checksum nor a transfer ID. Same-header,
+same-length fragments from different transfers cannot always be detected.
+PSBT magic and a successful parse do not authenticate the source. The
+receiving tool's PSBT-version and transaction checks still apply. Independent,
+hash-pinned SeedSigner and Coinkite corpora and their development-only
+regeneration commands are documented in `test/fixtures/psbt-qr/README.md`.
+
 ### Preview-only QR observation
 
 The local QR prototype accepts bounded, checksum-validated AEXT UR messages for
@@ -571,6 +597,25 @@ captured messages remain in memory until Clear Capture, End Session or page exit
 Clearing remains best-effort.
 Coverage counts/indexes retained in the result are transaction metadata, not
 cryptographic secrets; Clear Capture retires that result too.
+
+### Released PSBT camera lifecycle
+
+PSBT scanning opts into continuous acquisition on the existing camera
+controller. Other consumers retain its one-shot default. A capture owns one
+stream and one deadline across parts, with at most one decode in flight and
+one queued frame. Opening another PSBT scanner releases its predecessor.
+Stop, Close, conceal, tool/workspace teardown and completion invalidate the
+capture before external callbacks; late grants and decoded payloads cannot
+write a field. An existing field still requires explicit replacement.
+
+A visible window blur while camera permission is pending preserves only
+that pending request. At activation the document must be visible and report
+`hasFocus() === true`; an unavailable or throwing focus API fails closed.
+Active blur, tab hide, print, idle and explicit cancellation still stop
+capture. The ordinary private-value conceal sweep is not bypassed by the
+permission-prompt exception. Supersession and destruction leave the capture
+stopped, and activation callbacks that stop it cannot allocate a stale timer.
+Browser/OS copies and camera buffers remain outside reliable erasure.
 
 ## What the page can and cannot erase
 
@@ -740,6 +785,33 @@ extension that ignores them, or one written to steal.
   a short power-off.
 - None of this protects a computer that is already compromised: malware or a
   malicious browser extension can read a secret as you type it.
+
+## Release signing keys
+
+Releases are verified with the detached signatures in `SHA256SUMS.asc`
+(instructions in that file's header). The v1.0.0 signers and their keys:
+
+| Signer | Key fingerprint | Status |
+| --- | --- | --- |
+| Portland.HODL | `3428 CBB5 4C36 9D8A F14E F600 C801 EE1D 5285 101E` | |
+| w-s-bitcoin | `542E CCA3 B5CB 74CE C957 29B3 92C2 1496 202E 3774` | |
+| timechainb | `63EF 760E E641 A585 16D5 4930 F0B7 D606 C6FD 9D52` | |
+| MrHodlX | `6443 4EE4 8A96 C38E 78B7 875F 4E7E 416E E17D 237C` | **revoked** (announced 2026-10-30) |
+
+**MrHodlX's key 64434EE4… is revoked.** It was kept on a computer later found
+to be compromised. Treat any signature from it as untrusted, including its
+block on v1.0.0. v1.0.0 remains verifiable with the other three signatures.
+Import [`keys/MrHodlX-64434EE4-revoked.asc`](keys/MrHodlX-64434EE4-revoked.asc)
+so GnuPG marks the key as revoked. Its revocation certificate was generated
+together with the key, so GnuPG shows the revocation dated 2026-09-29 with no
+reason given; it is a full revocation all the same, and GnuPG flags every
+signature made by the key.
+
+MrHodlX signs with an interim key:
+`DB19 EF73 4874 43AA EAC2 6687 17AB DC5F 9867 B54F` (expires 2027-01-31;
+[`keys/MrHodlX-DB19EF73.asc`](keys/MrHodlX-DB19EF73.asc)). Before trusting any
+new key, confirm its fingerprint with the maintainers through more than one
+channel.
 
 ## Reporting a Vulnerability
 

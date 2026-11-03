@@ -58,11 +58,12 @@ function createContext(sandbox) {
     hodlSecureSeedActive: () => false, hodlSecureEntryHasData: () => false, hodlSecureEntryDropKey() {},
     hodlSecureSeedApplies: () => false, hodlSecureEntryBackupRefusal: () => null, hodlSecureKeyOf: () => null, hodlSecureEntryHeld: () => false,
     hodlRenderSecureEntryControl() {}, hodlSeedPicker: null, hodlMountSeedPicker() {},
+    hodlSecureDiceActive: () => false, hodlSecureDiceApplies: () => false, hodlSecureDicePad: null, hodlMountSecureDicePad() {},
     // Session state hodlReleaseKeyConsumers reads; a key drop releases any
     // consumer bound to it (PSBT, BIP-85, Silent Payments, vanity).
     hodlPsbtSource: "", hodlBip85Source: "", hodlSpSource: "", hodlSpVerifyMatches: null,
     hodlSpSendLast: null, hodlSpNote: "", hodlVanitySource: "", hodlVanityApplying: false,
-    TextEncoder, TextDecoder, ...sandbox,
+    TextEncoder, TextDecoder, CustomEvent, ...sandbox,
   });
   for (const name of passphraseHelpers) vm.runInContext(functionSource(name), context);
   return context;
@@ -1742,7 +1743,7 @@ test("changing the language outside Keys keeps the selected key's wallet", async
     });
     for (const name of ["hodlRenderKeyForm", "hodlRestoreFormFields", "hodlUpdateSeedLengthControl", "hodlUpdateAddressEstimate",
       "hodlUpdateCoinTypeHelp", "hodlUpdateDerivationPathPreview", "hodlUpdateMsigScriptDetection",
-      "hodlUpdateMsigAccount", "hodlShowMsig", "hodlRefreshKeyResult", "hodlRefreshPsbtLocale", "hodlRefreshVanityLocale", "hodlRefreshStationKeyPickers", "hodlReindexMsigKeys", "hodlRenderBip85Out", "hodlRefreshSpLocale", "hodlRenderKeyTabs", "hodlRenderMsigTabs", "hodlRenderStationTabs", "hodlPaintKeySummary", "hodlUpdateHardeningHelp", "hodlApplyTheme", "hodlRefreshWorkspaceErrors"])
+      "hodlUpdateMsigAccount", "hodlShowMsig", "hodlRefreshKeyResult", "hodlRefreshPsbtLocale", "hodlRefreshVanityLocale", "hodlRefreshStationKeyPickers", "hodlReindexMsigKeys", "hodlRenderBip85Out", "hodlRefreshSpLocale", "hodlDecorateAppPaste", "hodlRenderKeyTabs", "hodlRenderMsigTabs", "hodlRenderStationTabs", "hodlPaintKeySummary", "hodlUpdateHardeningHelp", "hodlApplyTheme", "hodlRefreshWorkspaceErrors"])
       context[name] = () => {};
     let logRefreshes = 0;
     context.hodlSecurityLog = { refresh: () => logRefreshes++ };
