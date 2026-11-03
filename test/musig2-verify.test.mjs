@@ -118,6 +118,27 @@ test("applyTweak matches the BIP-327 tweak vectors", () => {
   }
 });
 
+// BIP-341 wallet test vectors, scriptPubKey section:
+// https://github.com/bitcoin/bips/blob/21bfd24d6e397a7d3d169e86be9f6b54f6c8cce0/bip-0341/wallet-test-vectors.json
+test("taprootOutputKey matches the BIP-341 wallet test vectors", () => {
+  const vectors = [
+    ["187791b6f712a8ea41c8ecdd0ee77fab3e85263b37e1ec18a3651926b3a6cf27", "5b75adecf53548f3ec6ad7d78383bf84cc57b55a3127c72b9a2481752dd88b21", "147c9c57132f6e7ecddba9800bb0c4449251c92a1e60371ee77557b6620f3ea3"],
+    ["93478e9488f956df2396be2ce6c5cced75f900dfa18e7dabd2428aae78451820", "c525714a7f49c28aedbbba78c005931a81c234b2f6c99a73e4d06082adc8bf2b", "e4d810fd50586274face62b8a807eb9719cef49c04177cc6b76a9a4251d5450e"],
+    ["ee4fe085983462a184015d1f782d6a5f8b9c2b60130aff050ce221ecf3786592", "6c2dc106ab816b73f9d07e3cd1ef2c8c1256f519748e0813e4edd2405d277bef", "712447206d7a5238acc7ff53fbe94a3b64539ad291c7cdbc490b7577e4b17df5"],
+    ["f9f400803e683727b14f463836e1e78e1c64417638aa066919291a225f0e8dd8", "ab179431c28d3b68fb798957faf5497d69c883c6fb1e1cd9f81483d87bac90cc", "77e30a5522dd9f894c3f8b8bd4c4b2cf82ca7da8a3ea6a239655c39c050ab220"],
+    ["e0dfe2300b0dd746a3f8674dfd4525623639042569d829c7f0eed9602d263e6f", "ccbd66c6f7e8fdab47b3a486f59d28262be857f30d4773f2d5ea47f7761ce0e2", "91b64d5324723a985170e4dc5a0f84c041804f2cd12660fa5dec09fc21783605"],
+    ["55adf4e8967fbd2e29f20ac896e60c3b0f1d5b0efa9d34941b5958c7b0a0312d", "2f6b2c5397b6d68ca18e09a3f05161668ffe93a988582d55c6f07bd5b3329def", "75169f4001aa68f15bbed28b218df1d0a62cbbcf1188c6665110c293c907b831"],
+  ];
+  for (const [internal, root, expected] of vectors) {
+    assert.equal(bytesToHex(taprootOutputKey(hexToBytes(internal), hexToBytes(root))), expected, `internal ${internal}`);
+  }
+  // No merkle root: the key-path-only tweak.
+  assert.equal(
+    bytesToHex(taprootOutputKey(hexToBytes("d6889cb081036e0faefa3a35157ad71086b123b2b144b649798b494c300a961d"), null)),
+    "53a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343",
+  );
+});
+
 // ── BIP-373 PSBT vectors ───────────────────────────────────────────────────
 const PSBT_MAGIC = /^70736274ff/i;
 
@@ -200,15 +221,24 @@ test("malformed MuSig2 participant fields are reported, never verified", () => {
   const psbtOf = (name) => malformed.find(({ label }) => label === name)?.psbt;
   const outputCaseRepeated = psbtOf("PSBT with an x-only output participant pubkey")
     === psbtOf("PSBT with x-only aggregate pubkey in output participant pubkeys keydata");
+  // Vectors rust-bitcoin's parser refuses outright. None observed at this
+  // version (BIP-373 fields are kept as unknown pairs); add a label here only
+  // if the run shows a refusal, and the test then asserts it throws.
+  const expectedRefused = [];
+  let reached = 0;
   for (const { label, psbt } of malformed) {
     assert.ok(psbt, `${label}: base64 decodes to a PSBT`);
-    let doc = null;
+    if (expectedRefused.includes(label)) {
+      assert.throws(() => psbtInspectDoc(hexToBytes(psbt)), `${label}: refused by the parser`);
+      continue;
+    }
+    let doc;
     try {
       doc = psbtInspectDoc(hexToBytes(psbt));
-    } catch {
-      // The parser refuses the bytes; that is fail-closed too.
+    } catch (error) {
+      assert.fail(`${label}: psbtInspectDoc refused the vector (${error.message}); list it in expectedRefused if rust-bitcoin really refuses it`);
     }
-    if (!doc) continue;
+    reached += 1;
     const records = musig2PsbtEvidence(doc);
     assert.ok(records.length > 0, `${label}: expected MuSig2 evidence`);
     assert.ok(records.every((record) => record.keyAgg !== "verified"), `${label}: nothing verifies`);
@@ -217,6 +247,7 @@ test("malformed MuSig2 participant fields are reported, never verified", () => {
     const reason = xonlyAggregate ? "aggregate-length" : "participants-length";
     assert.ok(records.some((record) => record.keyAgg === "malformed" && record.reason === reason), `${label}: ${reason}`);
   }
+  assert.equal(reached, malformed.length - expectedRefused.length, "every non-refused vector reached musig2PsbtEvidence");
 });
 
 test("an x-only participant in an output field is malformed, never verified", () => {
@@ -238,17 +269,27 @@ test("nonce and partial-signature vectors do not throw in M1", () => {
   // M1 does not judge nonces or partial signatures; it only must not crash.
   const later = psbtCases().filter(({ validity }) => validity === "invalid").slice(4);
   assert.equal(later.length, 6, "fixture: six nonce/partial-signature invalid vectors");
+  // Vectors rust-bitcoin's parser refuses outright. None observed at this
+  // version (BIP-373 fields are kept as unknown pairs); add a label here only
+  // if the run shows a refusal, and the test then asserts it throws.
+  const expectedRefused = [];
+  let reached = 0;
   for (const { label, psbt } of later) {
     assert.ok(psbt, `${label}: base64 decodes to a PSBT`);
-    let doc = null;
+    if (expectedRefused.includes(label)) {
+      assert.throws(() => psbtInspectDoc(hexToBytes(psbt)), `${label}: refused by the parser`);
+      continue;
+    }
+    let doc;
     try {
       doc = psbtInspectDoc(hexToBytes(psbt));
-    } catch {
-      // The parser refuses the file; that is fail-closed too.
+    } catch (error) {
+      assert.fail(`${label}: psbtInspectDoc refused the vector (${error.message}); list it in expectedRefused if rust-bitcoin really refuses it`);
     }
-    if (!doc) continue;
+    reached += 1;
     assert.doesNotThrow(() => musig2PsbtEvidence(doc), `${label}: evidence does not throw`);
   }
+  assert.equal(reached, later.length - expectedRefused.length, "every non-refused vector reached musig2PsbtEvidence");
 });
 
 // The MuSig2 field is keylen 0x22, key 0x1a || 33 bytes, then the value.
@@ -460,6 +501,33 @@ test("an output with a script tree is not-checked, not a mismatch", () => {
   assert.equal(withoutTree.commitment, "mismatch");
 });
 
+test("a MuSig2 internal key with a merkle root commits to the tweaked output key", () => {
+  const vectors = fixture("bip373-vectors.json");
+  const aggregate = vectors.aggregatePubkey;
+  const participants = vectors.participants.join("");
+  const internal = hexToBytes(aggregate).slice(1);
+  const root = new Uint8Array(32).fill(0x42);
+  const outputKey = taprootOutputKey(internal, root);
+  const witnessUtxo = "0000000000000000" + "22" + "5120" + bytesToHex(outputKey);
+  const doc = (merkleRoot) => ({
+    inputs: [[
+      { key: "1a" + aggregate, value: participants },
+      { key: "17", value: bytesToHex(internal) },
+      { key: "18", value: bytesToHex(merkleRoot) },
+      { key: "01", value: witnessUtxo },
+    ]],
+    outputs: [],
+    tx: { outputs: [] },
+  });
+  const [record] = musig2PsbtEvidence(doc(root));
+  assert.equal(record.keyAgg, "verified");
+  assert.equal(record.commitment, "verified-internal");
+  const flipped = root.slice();
+  flipped[0] ^= 0x01;
+  const [changed] = musig2PsbtEvidence(doc(flipped));
+  assert.equal(changed.commitment, "mismatch");
+});
+
 test("a 1-byte witness UTXO is malformed, not absent", () => {
   const vectors = fixture("bip373-vectors.json");
   const aggregate = vectors.aggregatePubkey;
@@ -533,6 +601,23 @@ test("an output whose tx script and PSBT_OUT_SCRIPT differ is a mismatch", () =>
   assert.equal(record.commitmentReason, "script-conflict");
 });
 
+test("a non-hex PSBT_OUT_SCRIPT is malformed, not missing", () => {
+  const vectors = fixture("bip373-vectors.json");
+  const aggregate = vectors.aggregatePubkey;
+  const participants = vectors.participants.join("");
+  const doc = {
+    inputs: [],
+    outputs: [[
+      { key: "08" + aggregate, value: participants },
+      { key: "04", value: "zz" },
+    ]],
+    tx: { outputs: [] },
+  };
+  const [record] = musig2PsbtEvidence(doc);
+  assert.equal(record.commitment, "malformed");
+  assert.equal(record.commitmentReason, "output-script");
+});
+
 test("a P2WPKH script is missing, not taproot", () => {
   const vectors = fixture("bip373-vectors.json");
   const aggregate = vectors.aggregatePubkey;
@@ -548,6 +633,65 @@ test("a P2WPKH script is missing, not taproot", () => {
   const [record] = musig2PsbtEvidence(doc);
   assert.equal(record.commitment, "missing");
   assert.equal(record.commitmentReason, "not-taproot");
+});
+
+test("a field with more than 100 participant keys is malformed, not aggregated", () => {
+  const vectors = fixture("bip373-vectors.json");
+  const aggregate = vectors.aggregatePubkey;
+  // 101 valid compressed keys: the generator times 1..101.
+  const keys = [];
+  for (let i = 1; i <= 101; i++) {
+    keys.push(bytesToHex(secp256k1.Point.BASE.multiply(BigInt(i)).toBytes(true)));
+  }
+  const doc = {
+    inputs: [[{ key: "1a" + aggregate, value: keys.join("") }]],
+    outputs: [],
+    tx: { outputs: [] },
+  };
+  let records;
+  assert.doesNotThrow(() => { records = musig2PsbtEvidence(doc); });
+  assert.equal(records.length, 1);
+  assert.equal(records[0].keyAgg, "malformed");
+  assert.equal(records[0].reason, "participants-too-many");
+});
+
+test("a document that aggregates more than 1000 participant keys budgets the later fields", () => {
+  const vectors = fixture("bip373-vectors.json");
+  const aggregate = vectors.aggregatePubkey;
+  const keys = [];
+  for (let i = 1; i <= 100; i++) {
+    keys.push(bytesToHex(secp256k1.Point.BASE.multiply(BigInt(i)).toBytes(true)));
+  }
+  const participants = keys.join("");
+  // 11 fields of 100 keys each: 1100 keys total. The aggregate is deliberately
+  // malformed so the test exercises the budget, not the (expensive) cross-check.
+  const inputs = [];
+  for (let i = 0; i < 11; i++) inputs.push([{ key: "1a" + "00", value: participants }]);
+  const records = musig2PsbtEvidence({ inputs, outputs: [], tx: { outputs: [] } });
+  assert.equal(records.length, 11);
+  for (let i = 0; i < 10; i++) {
+    assert.notEqual(records[i].reason, "budget", `field ${i} is within budget`);
+  }
+  assert.equal(records[10].keyAgg, "malformed");
+  assert.equal(records[10].reason, "budget");
+});
+
+test("a nested hex-keyed object inside an input map yields no record", () => {
+  const vectors = fixture("bip373-vectors.json");
+  const aggregate = vectors.aggregatePubkey;
+  const other = vectors.participants[0];
+  const participants = vectors.participants.join("");
+  const doc = {
+    inputs: [[
+      { key: "1a" + aggregate, value: participants },
+      { nested: { ["1a" + other]: participants } },
+    ]],
+    outputs: [],
+    tx: { outputs: [] },
+  };
+  const records = musig2PsbtEvidence(doc);
+  assert.equal(records.length, 1, "only the real field yields a record");
+  assert.equal(records[0].aggregate, lower(aggregate));
 });
 
 // The cross-check compares the whole 33-byte key, parity included.

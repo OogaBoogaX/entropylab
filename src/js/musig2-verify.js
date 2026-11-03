@@ -7,19 +7,24 @@
 // BIP-327 (cross-checked against an independent implementation) and, where a
 // Taproot scriptPubKey is present, when that key really commits to it under
 // BIP-341; everything else is reported as mismatch, malformed, not-checked or
-// missing. Every participant field gets its own record, so a second or
-// repeated entry is never skipped. It does not check nonces, partial
-// signatures, BIP-328 derivation, script leaves or script trees (an output
-// committing to a tree it cannot hash is "not-checked", never "mismatch"), or
-// whether the participants are the people the user expects, and a "verified"
-// key aggregation says nothing about who holds the keys. Two known divergences,
-// both fail-closed: an intermediate KeyAgg sum at infinity (the facade cannot
-// hold the point) errors where BIP-327 fails only on the final sum, and KeyAgg
-// skips a zero coefficient (it contributes nothing) where BIP-327 would
-// multiply by it; both give the same final Q and need a hash collision to
-// reach. The commitmentReason codes are "witness-utxo", "internal-key",
-// "merkle-root", "duplicate-field", "script-conflict", "not-taproot",
-// "script-tree" and "indirect", alongside the key-aggregation reasons.
+// missing. "verified" means the aggregate is the BIP-327 KeyAgg of the listed
+// participant keys (and, for the commitment, that the output commits to it);
+// it does not mean the listed keys are the expected cosigners, so the UI must
+// show the participants and match the user's own key. Every participant field
+// gets its own record, so a second or repeated entry is never skipped. It does
+// not check nonces, partial signatures, BIP-328 derivation, script leaves or
+// script trees (an output committing to a tree it cannot hash is "not-checked",
+// never "mismatch"), or whether the participants are the people the user
+// expects, and a "verified" key aggregation says nothing about who holds the
+// keys. Two known divergences, both fail-closed: an intermediate KeyAgg sum at
+// infinity (the facade cannot hold the point) errors where BIP-327 fails only
+// on the final sum, and KeyAgg skips a zero coefficient (it contributes
+// nothing) where BIP-327 would multiply by it; both give the same final Q and
+// need a hash collision to reach. The commitmentReason codes are
+// "witness-utxo", "output-script", "internal-key", "merkle-root",
+// "duplicate-field", "script-conflict", "not-taproot", "script-tree" and
+// "indirect"; the key-aggregation reasons include "participants-too-many" and
+// "budget".
 //
 // Curve arithmetic goes through the libsecp256k1 WASM facade
 // (./secp256k1.js), hashes through ./bip352.js's taggedHash, and the
@@ -205,6 +210,9 @@ const PSBT_OUT_TAP_INTERNAL_KEY = "05";
 const PSBT_OUT_SCRIPT = "04";
 const PSBT_IN_TAP_LEAF_SCRIPT = "15";
 const PSBT_OUT_TAP_TREE = "06";
+// BIP-373 participant-key budgets: a hostile PSBT must not hang the page.
+const MAX_PARTICIPANTS_PER_FIELD = 100;
+const MAX_PARTICIPANTS_PER_DOCUMENT = 1000;
 
 const pairValue = (item) => {
   if (typeof item.value === "string") return item.value;
@@ -246,9 +254,12 @@ const mapPairs = (map, depth = 0) => {
       pairs.push(...mapPairs(value, depth + 1));
     }
   }
-  if (!pairs.length) {
+  // The hex-keyed fallback applies only to the map itself (depth 0), and only
+  // to even-length hex keys of at least 2 characters with hex-string values.
+  if (depth === 0 && !pairs.length) {
     for (const [name, value] of Object.entries(map)) {
-      if (/^[0-9a-f]+$/i.test(name) && typeof value === "string" && HEX.test(value)) pairs.push({ key: name, value });
+      if (name.length >= 2 && name.length % 2 === 0 && /^[0-9a-f]+$/i.test(name)
+        && typeof value === "string" && HEX.test(value)) pairs.push({ key: name, value });
     }
   }
   return pairs;
@@ -324,7 +335,7 @@ const scriptHexOf = (output) => {
 // treeUnknown: the output commits to a script tree this stage cannot hash (an
 // output's TAP_TREE, or an input's leaf scripts with no merkle-root field), so
 // an internal-key match is "not-checked" rather than a false "mismatch".
-const evidenceRecord = (where, aggregateHex, participantsHex, scriptPubKey, internalKey, merkleRoot, treeUnknown = false, commitmentIssue = null) => {
+const evidenceRecord = (where, aggregateHex, participantsHex, scriptPubKey, internalKey, merkleRoot, treeUnknown = false, commitmentIssue = null, budget = null) => {
   const record = {
     where,
     aggregate: String(aggregateHex).toLowerCase(),
@@ -359,7 +370,18 @@ const evidenceRecord = (where, aggregateHex, participantsHex, scriptPubKey, inte
       for (let i = 0; i < participants.length; i += 33) keys.push(participants.slice(i, i + 33));
     }
   }
+  // A hostile PSBT must not hang the page: refuse an oversized field, and
+  // stop aggregating once the document budget is spent.
+  if (keys && keys.length > MAX_PARTICIPANTS_PER_FIELD) {
+    reason = "participants-too-many";
+    keys = null;
+  }
+  if (keys && budget && budget.aggregated + keys.length > MAX_PARTICIPANTS_PER_DOCUMENT) {
+    reason = "budget";
+    keys = null;
+  }
   if (keys) {
+    if (budget) budget.aggregated += keys.length;
     const ordered = keySort(keys);
     record.sorted = keys.every((key, i) => equalBytes(key, ordered[i]));
     if (aggregate) {
@@ -463,7 +485,7 @@ const inputCommitment = (pairs) => {
   return result;
 };
 
-const inputEvidence = (index, input) => {
+const inputEvidence = (index, input, budget) => {
   const pairs = mapPairs(input);
   const fields = findPairs(pairs, PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS);
   if (!fields.length) return [];
@@ -477,6 +499,7 @@ const inputEvidence = (index, input) => {
     commitment.merkleRoot,
     commitment.treeUnknown,
     commitment.commitmentIssue,
+    budget,
   ));
 };
 
@@ -500,7 +523,9 @@ const outputCommitment = (pairs, index, doc) => {
     try {
       result.scriptPubKey = hexToBytes(hex);
     } catch {
+      // A present but unparseable script is malformed, not missing.
       result.scriptPubKey = null;
+      result.commitmentIssue = { state: "malformed", reason: "output-script" };
     }
   }
   const internal = optionalKey(pairs, PSBT_OUT_TAP_INTERNAL_KEY);
@@ -513,7 +538,7 @@ const outputCommitment = (pairs, index, doc) => {
   return result;
 };
 
-const outputEvidence = (index, output, doc) => {
+const outputEvidence = (index, output, doc, budget) => {
   const pairs = mapPairs(output);
   const fields = findPairs(pairs, PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS);
   if (!fields.length) return [];
@@ -527,6 +552,7 @@ const outputEvidence = (index, output, doc) => {
     null,
     commitment.treeUnknown,
     commitment.commitmentIssue,
+    budget,
   ));
 };
 
@@ -534,9 +560,10 @@ const outputEvidence = (index, output, doc) => {
 export function musig2PsbtEvidence(doc) {
   if (!doc || typeof doc !== "object") throw new Error("A PSBT inspect document is required.");
   const records = [];
+  const budget = { aggregated: 0 };
   const inputs = Array.isArray(doc.inputs) ? doc.inputs : [];
   const outputs = Array.isArray(doc.outputs) ? doc.outputs : [];
-  for (const [index, input] of inputs.entries()) records.push(...inputEvidence(index, input));
-  for (const [index, output] of outputs.entries()) records.push(...outputEvidence(index, output, doc));
+  for (const [index, input] of inputs.entries()) records.push(...inputEvidence(index, input, budget));
+  for (const [index, output] of outputs.entries()) records.push(...outputEvidence(index, output, doc, budget));
   return records;
 }
