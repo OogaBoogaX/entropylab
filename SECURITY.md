@@ -240,6 +240,18 @@ material. Its security posture rests on the following model:
   one wallet can have many child keys. A confirmed alert requires the same
   key/`r` pair with different verified message tags; otherwise the result is
   only a warning. The current implementation covers ECDSA, not Schnorr.
+- In auto mode the PSBT editor's output-script builder reads a
+  whitespace-free token of 25 to 64 characters with at most two symbols, and
+  no `/`, `:` or `@`, as an address and refuses it unless it decodes; a
+  token starting with 1, 2, 3, m or n is read as an address from 21
+  characters. A mistyped address of that shape errors instead of becoming
+  OP_RETURN text. Bare hex counts as a raw script only when it is
+  even-length, contains an a-f digit and does not read as a Base58 address;
+  a `0x` prefix always marks raw script. Text that carries whitespace, a URL
+  or e-mail separator, or three or more symbols is never read as an address,
+  and neither is a token shorter than those floors, so a mistyped address
+  outside the shape still becomes text; inspect the resulting output before
+  use.
 - OP_RETURN detection is a parser of output scripts. It does not create
   data-carrier outputs, assign protocol meaning, or contact an indexer.
 - The published `CID.txt` is CIDv1 (raw, sha2-256) of the release

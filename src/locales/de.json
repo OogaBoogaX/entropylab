@@ -953,7 +953,6 @@
   "aezeed · LND cipher seed": "aezeed · LND-Cipher-Seed",
   "BIP-39 · LDK (ldk-node)": "BIP-39 · LDK (ldk-node)",
   "LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.": "LND gibt einen aezeed-Cipher-Seed aus; ldk-node verwendet eine BIP-39-Phrase. Beide verwenden dieselbe englische Wortliste.",
-  "Selects the coin type in the LND identity path (0' mainnet, 1' testnet/signet/regtest). Changing it clears any derived result — re-derive after switching.": "Wählt den Coin-Typ im LND-Identitätspfad (0' Mainnet, 1' Testnet/Signet/Regtest). Eine Änderung löscht jedes abgeleitete Ergebnis – leiten Sie nach dem Wechsel neu ab.",
   "ability liquid travel stem barely …": "ability liquid travel stem barely …",
   "The 24-word cipher seed LND printed at wallet creation.": "Der 24-Wort-Cipher-Seed, den LND bei der Wallet-Erstellung ausgegeben hat.",
   "aezeed detects a wrong passphrase; BIP-39 cannot and simply derives a different wallet.": "aezeed erkennt eine falsche Passphrase; BIP-39 kann dies nicht und leitet einfach eine andere Wallet ab.",
@@ -2511,5 +2510,14 @@
   "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Würfeln Sie mit einem physischen sechsseitigen Würfel. Geben Sie sein Ergebnis einmal ein, entweder über eine Schaltfläche oder die Tasten 1–6.",
   "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "Das PSBT-Feld hat sich geändert, während die Bestätigung geöffnet war. Überprüfen Sie es und wählen Sie dann erneut Ersetzen oder Beibehalten.",
   "PSBT (base64 or hex)": "PSBT (base64 oder hex)",
-  "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "Einige Hardware-Wallets können eine Passphrase mit mehr als 50 Zeichen nicht wiederherstellen. Überprüfen Sie Ihre, bevor Sie sich darauf verlassen."
+  "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "Einige Hardware-Wallets können eine Passphrase mit mehr als 50 Zeichen nicht wiederherstellen. Überprüfen Sie Ihre, bevor Sie sich darauf verlassen.",
+  "Change it in the network menu at the bottom of the page.": "Ändern Sie dies im Netzwerkmenü unten auf der Seite.",
+  "This private key came in as text, so it uses standard text entry. Clear the field to enter it securely.": "Dieser private Schlüssel wurde als Text eingegeben und verwendet daher die Standard-Texteingabe. Löschen Sie das Feld, um ihn sicher einzugeben.",
+  "This looks like a WIF key.": "Das sieht wie ein WIF-Schlüssel aus.",
+  "Switch to WIF": "Zu WIF wechseln",
+  "This looks like a hex key.": "Das sieht wie ein Hex-Schlüssel aus.",
+  "Switch to hex": "Zu Hex wechseln",
+  "This looks like a mini key.": "Das sieht wie ein Mini-Schlüssel aus.",
+  "Switch to mini key": "Zu Mini-Schlüssel wechseln",
+  "Only the format on screen is kept. Other formats saved in this slot will be cleared.": "Nur das Format auf dem Bildschirm wird beibehalten. Andere Formate, die in diesem Slot gespeichert sind, werden gelöscht."
 }

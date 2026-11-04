@@ -6532,7 +6532,9 @@ function hodlRenderSecureEntryControl() {
   }
   host.hidden = false;
   let on = hodlSecureEntryOn, methodNote = "";
-  if (on && !hodlSecureKeyActive()) {
+  if (on && hodlSecureKeyActive()) {
+    if (!hodlSecureKeyFormApplies(hodlKeys[hodlActiveKey])) methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-key-text-backed">${hodlT("This private key came in as text, so it uses standard text entry. Clear the field to enter it securely.")}</p>`;
+  } else if (on) {
     if (hodlSecureSeedActive()) {
       if (!hodlSecureSeedPickerShown(hodlKeys[hodlActiveKey])) methodNote = `<p class="field-note edge-note is-muted" id="secure-entry-text-backed">${hodlT("These words came in as text, so this key uses standard text entry. Clear the field to enter words securely.")}</p>`;
     } else if (hodlSecureDiceActive()) {
@@ -13253,7 +13255,9 @@ async function hodlSecureEntryToggle(wanted) {
           if (!typed) continue;
           keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { key: { text: typed.text } } });
           names.push(state.name);
-          keyStates.push({ state, kind: typed.kind });
+          let values = hodlPrivateKeyValues(state.fields);
+          let otherFormats = ["wif", "hex-key", "minikey", "brain"].some((format) => format !== typed.kind && String(values[format] ?? "").trim());
+          keyStates.push({ state, kind: typed.kind, otherFormats });
         }
         if (state.mode === "dice" && hodlSecureSupported.rolls === true) {
           let method = state.diceMethod ?? "coldcard";
@@ -13302,7 +13306,7 @@ async function hodlSecureEntryToggle(wanted) {
         commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
       } else {
         plan = planTurnOn(hodlSecureSession, keys, { seed: converter, key: keyConverter, rolls: ({ text, method }) => hodlSecureDiceEntryFromText(text, method) });
-        let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok });
+        let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok, otherFormats: keyStates.some((item) => item.otherFormats) });
         if (choice === "keep" && plan.ok) {
           commitTurnOn(hodlSecureSession, plan);
           plan = null;
@@ -13319,12 +13323,15 @@ async function hodlSecureEntryToggle(wanted) {
             }
             state.fields.seed = "";
           }
-          for (const { state, kind } of keyStates) {
+          for (const { state } of keyStates) {
             // Global sync copies computed from this key go with it, as for
             // words above (GLM, round 1). A private-key source in another
             // format is this same key, so its copies go too (K3.1, round 6).
             if (state.globalSync && String(state.globalSyncSource || "").startsWith("key:")) hodlClearGlobalSyncCopies(state);
-            hodlPrivateKeyValues(state.fields)[kind] = "";
+            // Keep empties every private-key slot the key holds, not only the
+            // one on screen: the others are hidden plain text (B1).
+            let values = hodlPrivateKeyValues(state.fields);
+            for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
           }
           for (const { state, method } of diceStates) {
             let legacyColeman = method === "coleman" && !Object.prototype.hasOwnProperty.call(state.fields || {}, "colemanDice");
@@ -13960,7 +13967,70 @@ function hodlSecureKeyTyped(state) {
 
 // P3b-2: the status line under the masked private-key field. It never flashes
 // an error while the key is still being typed: below a complete length it
-// shows only the count. The bytes it parses are zeroed in a finally.
+// shows only the count, and the wrong-format hint when the text is already a
+// complete key of a shorter format. The bytes it parses are zeroed in a finally.
+function hodlSecureKeyClearFormatHint() {
+  document.getElementById("secure-key-format-hint")?.remove();
+  document.getElementById("secure-key-format-switch")?.remove();
+}
+
+function hodlSecureKeyFormatHint(entry, kind) {
+  if (!entry || kind === "brain") return;
+  let bytes = entry.vault.bytes();
+  let found = null;
+  try {
+    let parsed = null;
+    try {
+      parsed = parsePrivateKeyBytes(bytes, { kind: "wif" });
+      if (parsed.source === "wif" && kind !== "wif") found = "wif";
+      else if (parsed.source === "hex" && kind !== "hex-key") found = "hex-key";
+    } catch {
+      // not a WIF or hex key
+    } finally {
+      parsed?.priv?.fill(0);
+      parsed?.minikey?.fill(0);
+    }
+    if (!found) {
+      parsed = null;
+      try {
+        parsed = parsePrivateKeyBytes(bytes, { kind: "minikey" });
+        if (parsed.source === "minikey" && kind !== "minikey") found = "minikey";
+      } catch {
+        // not a mini key
+      } finally {
+        parsed?.priv?.fill(0);
+        parsed?.minikey?.fill(0);
+      }
+    }
+  } finally {
+    bytes.fill(0);
+  }
+  if (!found) return;
+  // Literal hodlTText calls (textContent below), so the translation sweep finds every string.
+  const label = found === "wif" ? { hint: hodlTText("This looks like a WIF key."), button: hodlTText("Switch to WIF") }
+    : found === "hex-key" ? { hint: hodlTText("This looks like a hex key."), button: hodlTText("Switch to hex") }
+    : found === "minikey" ? { hint: hodlTText("This looks like a mini key."), button: hodlTText("Switch to mini key") }
+    : null;
+  if (!label) return;
+  let line = document.getElementById("secure-key-status");
+  if (!line) return;
+  const note = document.createElement("p");
+  note.className = "field-note";
+  note.id = "secure-key-format-hint";
+  note.textContent = label.hint;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "btn secondary";
+  button.id = "secure-key-format-switch";
+  button.textContent = label.button;
+  button.onclick = () => {
+    let state = hodlKeys[hodlActiveKey];
+    if (state?.fields) state.fields.keyKind = found;
+    hodlSetMode(hodlKeyMode);
+  };
+  line.after(note, button);
+}
+
 function hodlSecureKeyStatus() {
   let line = document.getElementById("secure-key-status");
   if (!line) return;
@@ -13968,6 +14038,7 @@ function hodlSecureKeyStatus() {
   let kind = hodlSecureKeyKind();
   let count = entry ? entry.vault.length : 0;
   line.className = "field-note";
+  hodlSecureKeyClearFormatHint();
   if (count === 0) {
     line.textContent = "";
     return;
@@ -13975,6 +14046,10 @@ function hodlSecureKeyStatus() {
   let lengths = hodlSecureKeyLengths(kind);
   if (!lengths.includes(count) && count < Math.max(...lengths)) {
     line.textContent = hodlT("{count} characters", { count }); // DRAFT (owner OK pending)
+    // A complete key of another format can be shorter than this one (a WIF
+    // under hex, a mini key under WIF or hex), so offer the switch here too
+    // (Kimi K3, Grok, GLM and MiniMax, round 1).
+    hodlSecureKeyFormatHint(entry, kind);
     return;
   }
   // At a complete length the line says what Derive would: the same parse and
@@ -13986,6 +14061,7 @@ function hodlSecureKeyStatus() {
   } catch (error) {
     line.className = "field-note edge-note is-private";
     line.textContent = String(error?.message ?? "");
+    hodlSecureKeyFormatHint(entry, kind);
     return;
   }
   try {

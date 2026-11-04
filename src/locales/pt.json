@@ -954,7 +954,6 @@
   "aezeed · LND cipher seed": "aezeed · Seed cifrada LND",
   "BIP-39 · LDK (ldk-node)": "BIP-39 · LDK (ldk-node)",
   "LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.": "LND imprime uma seed cifrada aezeed; ldk-node usa uma frase BIP-39. Ambos usam a mesma lista de palavras em inglês.",
-  "Selects the coin type in the LND identity path (0' mainnet, 1' testnet/signet/regtest). Changing it clears any derived result — re-derive after switching.": "Seleciona o tipo de moeda no caminho de identidade LND (0' mainnet, 1' testnet/signet/regtest). Alterá-lo limpa qualquer resultado derivado — rededive após a troca.",
   "ability liquid travel stem barely …": "ability liquid travel stem barely …",
   "The 24-word cipher seed LND printed at wallet creation.": "A seed cifrada de 24 palavras que o LND imprimiu na criação da carteira.",
   "aezeed detects a wrong passphrase; BIP-39 cannot and simply derives a different wallet.": "aezeed detecta uma passphrase incorreta; BIP-39 não consegue e simplesmente deriva uma carteira diferente.",
@@ -2511,5 +2510,14 @@
   "Roll a physical six-sided die. Enter its result once, using a button or the keys 1–6.": "Lance um dado físico de seis lados. Insira seu resultado uma vez, usando um botão ou as teclas 1–6.",
   "The PSBT field changed while confirmation was open. Review it, then choose Replace again or Keep.": "O campo PSBT mudou enquanto a confirmação estava aberta. Revise-o e, em seguida, escolha Substituir novamente ou Manter.",
   "PSBT (base64 or hex)": "PSBT (base64 ou hex)",
-  "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "Algumas carteiras de hardware não conseguem restaurar uma passphrase com mais de 50 caracteres. Verifique a sua antes de confiar nela."
+  "Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.": "Algumas carteiras de hardware não conseguem restaurar uma passphrase com mais de 50 caracteres. Verifique a sua antes de confiar nela.",
+  "Change it in the network menu at the bottom of the page.": "Mude isso no menu de rede na parte inferior da página.",
+  "This private key came in as text, so it uses standard text entry. Clear the field to enter it securely.": "Esta chave privada veio como texto, então usa entrada de texto padrão. Limpe o campo para inseri-la com segurança.",
+  "This looks like a WIF key.": "Isto parece uma chave WIF.",
+  "Switch to WIF": "Mudar para WIF",
+  "This looks like a hex key.": "Isto parece uma chave hex.",
+  "Switch to hex": "Mudar para hex",
+  "This looks like a mini key.": "Isto parece uma mini chave.",
+  "Switch to mini key": "Mudar para mini chave",
+  "Only the format on screen is kept. Other formats saved in this slot will be cleared.": "Apenas o formato na tela é mantido. Outros formatos salvos neste slot serão limpos."
 }
