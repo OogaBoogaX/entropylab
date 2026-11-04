@@ -49,7 +49,9 @@ export function initFeatureGuide({ t: hodlTText, availableTools, onOpenTool, win
     modal = createModal({
       id: "feature-guide-overlay", className: "feature-guide-overlay",
       card: '<section class="modal-card feature-guide-card" id="feature-guide-dialog" role="dialog" aria-modal="true" aria-labelledby="guide-title"></section>',
-      focusables: () => [...modal.overlay.querySelectorAll("button, summary, a[href]")].filter((node) => !node.disabled && !node.closest("[hidden]") && (node.tagName === "SUMMARY" || !node.closest("details") || node.closest("details").open)),
+      // Keep a programmatically focused heading or answer in its DOM position
+      // for the next Tab, without adding either to ordinary keyboard traversal.
+      focusables: () => [...modal.overlay.querySelectorAll("button, summary, a[href], #guide-focus, #guide-feedback")].filter((node) => !node.disabled && !node.closest("[hidden]") && (!["guide-focus", "guide-feedback"].includes(node.id) || node === document.activeElement) && (node.tagName === "SUMMARY" || !node.closest("details") || node.closest("details").open)),
       onDismiss: close,
     });
     // Every word is rendered through a text sink, including catalog values.

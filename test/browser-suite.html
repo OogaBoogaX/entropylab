@@ -326,6 +326,13 @@
       equal(verification.target, "_blank");
       assert(verification.relList.contains("noopener") && verification.relList.contains("noreferrer"), "external documentation must not get opener/referrer access");
       const basicsClose = document.getElementById("guide-close");
+      const heading = document.getElementById("guide-focus");
+      equal(document.activeElement, heading);
+      heading.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+      equal(document.activeElement, verification.closest("details").querySelector("summary"), "Tab from the lesson heading must continue into the lesson");
+      heading.focus();
+      heading.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+      equal(document.activeElement, basicsClose, "Shift+Tab from the heading must reach the preceding control");
       basicsClose.focus();
       basicsClose.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
       // The verification detail is collapsed: its summary takes focus, the link only once opened.
@@ -354,6 +361,14 @@
       document.getElementById("guide-answer-1").click();
       equal(document.getElementById("guide-feedback").dataset.guideCorrect, "true");
       equal(document.activeElement, document.getElementById("guide-feedback"));
+      const feedback = document.getElementById("guide-feedback");
+      feedback.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+      equal(document.activeElement, document.getElementById("guide-contents"), "Tab from feedback must continue to the following control");
+      feedback.focus();
+      feedback.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+      equal(document.activeElement, document.getElementById("guide-answer-1"), "Shift+Tab from feedback must return to the preceding answer");
+      document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+      equal(document.activeElement, document.getElementById("guide-contents"), "ordinary traversal must skip feedback");
       document.getElementById("guide-next").click();
       document.getElementById("guide-close").click(); entry.click();
       assert(!document.getElementById("guide-resume"), "completed lesson resumes its finish screen");

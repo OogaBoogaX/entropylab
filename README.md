@@ -707,6 +707,7 @@ introduction opens its lesson directly. Every step explains the feature,
 what to check, and its limits. No wallet secrets are needed. Optional goal-based
 routes group lessons with summaries; **Understand wallets** is the beginner route and Browse all lessons keeps direct access. Expandable diagrams
 and ungraded quick checks live only inside Guide and never block progress. Each check appears once, after its lesson concepts. First-use basics terms have expandable explanations. The dialog names the current lesson, with its step and route progress underneath. Optional diagrams follow the explanation. The final Basics step keeps a list of tool purposes inside an optional **Tool overview**.
+After a lesson heading or answer feedback receives focus, Tab and Shift+Tab continue to the neighboring controls. Those reading positions do not add stops to ordinary Tab navigation.
 
 Back, Contents, Close, and replay are always available. Closing retains your
 place for this page session; **Continue learning** resumes an unfinished lesson. After a route lesson finishes, an explicit **Continue route** action opens the next lesson. That continuation is shown before replay; **Choose another lesson** expands links to all other lessons, without opening tools. Reloading or

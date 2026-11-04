@@ -375,6 +375,46 @@ test("the dialog names the current lesson while its step heading keeps focus", (
   assert.equal(doc.getElementById("guide-title"), title);
 }));
 
+test("Tab continues beside the focused guide heading without making headings ordinary tab stops", () => withPage(({ guide, doc, click, opener }) => {
+  const tab = (shiftKey = false) => doc.getElementById("feature-guide-overlay").dispatchEvent({ type: "keydown", key: "Tab", shiftKey, preventDefault() {} });
+  const checkHeading = (next) => {
+    const heading = doc.getElementById("guide-focus");
+    assert.equal(doc.activeElement, heading);
+    tab();
+    assert.equal(doc.activeElement, next);
+    heading.focus();
+    tab(true);
+    assert.equal(doc.activeElement, doc.getElementById("guide-close"));
+    tab();
+    assert.equal(doc.activeElement, next, "normal traversal must skip the heading");
+  };
+  guide.open(null, opener);
+  checkHeading(doc.getElementById("guide-route-wallet"));
+  guide.open("basics", opener);
+  checkHeading(doc.getElementById("guide-verify").querySelector("summary"));
+  while (doc.getElementById("guide-next")) click("#guide-next");
+  checkHeading(doc.getElementById("guide-route-next"));
+}));
+
+test("Tab continues from focused quiz feedback in either direction and otherwise skips it", () => withPage(({ guide, doc, click, opener }) => {
+  const tab = (shiftKey = false) => doc.getElementById("feature-guide-overlay").dispatchEvent({ type: "keydown", key: "Tab", shiftKey, preventDefault() {} });
+  guide.open("basics", opener);
+  while (!doc.getElementById("guide-check")) click("#guide-next");
+  doc.getElementById("guide-check").open = true;
+  click("#guide-answer-1");
+  const feedback = doc.getElementById("guide-feedback");
+  assert.equal(doc.activeElement, feedback);
+  tab();
+  assert.equal(doc.activeElement, doc.getElementById("guide-contents"));
+  feedback.focus();
+  tab(true);
+  assert.equal(doc.activeElement, doc.getElementById("guide-answer-1"));
+  tab();
+  assert.equal(doc.activeElement, doc.getElementById("guide-contents"), "normal traversal must skip feedback");
+  tab(true);
+  assert.equal(doc.activeElement, doc.getElementById("guide-answer-1"));
+}));
+
 test("finish recommendations stay behind an optional disclosure and reach every other lesson", () => withPage(({ guide, doc, click, opener, opened }) => {
   guide.open("basics", opener);
   while (doc.getElementById("guide-next")) click("#guide-next");
