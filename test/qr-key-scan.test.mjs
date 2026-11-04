@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { mountKeyScan, retireQrDecoders } from "../src/js/qr-key-scan.js";
 import { classifyQrPayload } from "../src/js/qr-payload.js";
 import { bip39English } from "../src/js/bip39.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
+import { collectSources } from "../scripts/i18n-sources.mjs";
+
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const SOURCE = readFileSync(new URL("../src/js/qr-key-scan.js", import.meta.url), "utf8");
 
 // The published compressed mainnet WIF for private key 1.
 const WIF = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
@@ -208,7 +214,6 @@ const setup = (options = {}) => {
     replacesKey: options.replacesKey,
     afterLoad: options.afterLoad,
     wordlist: options.wordlist,
-    translate: options.translate || ((text) => text),
     privateValue: (value, revealed) => (revealed ? value : "•".repeat(value.length)),
     createDecoder: (args) => {
       created.decoders += 1;
@@ -711,22 +716,86 @@ test("a denied camera explains the browser permission and the photo fallback", (
   assert.equal(findById(ctx.host, "key-scan-photo-open").hidden, false);
 });
 
-test("every visible string goes through translate", () => {
-  const ctx = setup({ translate: (text) => "⟦" + text + "⟧" });
-  const wrapped = (id) => {
-    const text = findById(ctx.host, id).textContent;
-    return text.startsWith("⟦") && text.endsWith("⟧");
+// The panel's text goes through t() from ./i18n.js like every other
+// module's, as literals the catalog sweep sees (copy is content, not
+// contract: the tests hook on the structure, never on the wording).
+const LITERALS = [...SOURCE.matchAll(/\bt\("((?:[^"\\]|\\.)+)"/g)].map((match) => JSON.parse(`"${match[1]}"`));
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const LITERAL_PATTERNS = LITERALS.map((literal) => new RegExp(`^${escapeRegExp(literal).replace(/\\\{\w+\\\}/g, ".+")}$`));
+
+test("every visible string is a t() literal the catalog sweep collects", async () => {
+  assert.match(SOURCE, /import \{ t \} from "\.\/i18n\.js";/, "the panel must translate through the page catalog");
+  assert.doesNotMatch(SOURCE, /\btranslate\b/, "no translator option: the module reads the catalog itself");
+  // Each table entry and each message is a thunk around a t() literal,
+  // looked up when it is shown.
+  for (const table of ["STATUS_TEXT", "SEED_FORMAT_TEXT", "PHOTO_ERROR_TEXT"]) {
+    const block = SOURCE.match(new RegExp(`const ${table} = \\{\\n([\\s\\S]*?)\\n\\};`))?.[1];
+    assert.ok(block, `${table} is missing`);
+    for (const line of block.split("\n")) assert.match(line, /^  (?:"[\w-]+"|\w+): \((?:vars)?\) => t\("[^"]+"(?:, vars)?\),$/, `not a t() literal thunk: ${line.trim()}`);
+  }
+  const messages = [...SOURCE.matchAll(/^const [A-Z_]+ = \(.*$/gm)].map((match) => match[0]);
+  assert.ok(messages.length >= 9);
+  for (const line of messages) assert.match(line, /^const [A-Z_]+ = \((?:vars)?\) => t\("[^"]+"(?:, vars)?\);$/, `not a t() literal thunk: ${line}`);
+  // The only string constant left is the mask, which is not copy, and no
+  // bare literal reaches the page.
+  assert.deepEqual([...SOURCE.matchAll(/^const (\w+) = "/gm)].map((match) => match[1]), ["WORD_DOTS"]);
+  assert.doesNotMatch(SOURCE, /(?:textContent = |text: |"aria-label": |setStatus\([^,]+, )"[^"]/, "a bare literal reaches the page");
+  // The sweep that feeds the translation run sees them.
+  const sources = await collectSources(ROOT);
+  assert.ok(LITERALS.length >= 30);
+  for (const literal of LITERALS) assert.ok(sources.has(literal), `the catalog sweep misses: ${literal}`);
+  // What the panel shows, in either mode and through its states, is one of
+  // them. The seed review word is a mask or a word, never copy.
+  const showsCatalogText = (ctx, state) => {
+    for (const node of flatten(ctx.host)) {
+      if (node.childNodes.length || !node._text || /-review-word$/.test(node.id)) continue;
+      assert.ok(LITERAL_PATTERNS.some((pattern) => pattern.test(node._text)), `${state}: ${node.id || node.tagName} shows text that is not a t() literal: ${node._text}`);
+    }
   };
-  for (const id of ["key-scan-open", "key-scan-stop", "key-scan-resume", "key-scan-photo-open", "key-scan-cancel", "key-scan-photo-note"]) {
-    assert.ok(wrapped(id), `${id} was not translated`);
+  const key = setup();
+  showsCatalogText(key, "mounted");
+  openPanel(key);
+  showsCatalogText(key, "scanning");
+  for (const code of ["two-codes", "timeout", "stopped", "unsupported", "denied", "no-camera", "error"]) {
+    key.created.scannerArgs.onStatus(code);
+    showsCatalogText(key, code);
   }
-  openPanel(ctx);
-  assert.ok(wrapped("key-scan-status"), "the status line was not translated");
-  ctx.created.scannerArgs.onResult(bytesOf(WIF));
-  assert.ok(wrapped("key-scan-status"), "the WIF status was not translated");
-  for (const id of ["key-scan-confirm-intro", "key-scan-reveal", "key-scan-continue", "key-scan-discard"]) {
-    assert.ok(wrapped(id), `${id} was not translated`);
+  key.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  showsCatalogText(key, "seed refused");
+  key.created.scannerArgs.onResult(bytesOf("not a key"));
+  showsCatalogText(key, "not a key");
+  key.created.scannerArgs.onResult(bytesOf(WIF));
+  showsCatalogText(key, "wif");
+  findById(key.host, "key-scan-reveal").dispatchEvent({ type: "click" });
+  showsCatalogText(key, "wif shown");
+  key.panel.destroy();
+  for (const reply of [
+    async () => { throw Object.assign(new Error("x"), { code: "TOO_LARGE" }); },
+    async () => { throw Object.assign(new Error("x"), { code: "UNSUPPORTED_TYPE" }); },
+    async () => { throw Object.assign(new Error("x"), { code: "UNREADABLE" }); },
+    async () => ({ code: -1, payload: null }),
+    async () => ({ code: -3, payload: null }),
+  ]) {
+    const photo = setup({ reply });
+    openPanel(photo);
+    const input = findById(photo.host, "key-scan-photo");
+    input.files = [{ size: 10, type: "image/png" }];
+    input.dispatchEvent({ type: "change" });
+    await tick();
+    showsCatalogText(photo, `photo ${stateOf(photo)}`);
+    photo.panel.destroy();
   }
+  const seed = setup({ accept: "seed", idPrefix: "seed-scan", wordlist: bip39English, replacesSeed: () => true });
+  openSeedPanel(seed);
+  seed.created.scannerArgs.onResult(bytesOf(WIF));
+  showsCatalogText(seed, "key refused");
+  seed.created.scannerArgs.onResult(bytesOf("not a seed"));
+  showsCatalogText(seed, "not a seed");
+  seed.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  showsCatalogText(seed, "seed");
+  findById(seed.host, "seed-scan-review").dispatchEvent({ type: "click" });
+  showsCatalogText(seed, "seed review");
+  seed.panel.destroy();
 });
 
 

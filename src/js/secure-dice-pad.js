@@ -10,39 +10,43 @@
 // be copied, cut or dragged out of it. The caller destroys a pad before
 // mounting another on the same entry.
 
+import { t } from "./i18n.js";
+
 const DOTS = "•";
 
+// Each string is a thunk: it is looked up when it is shown, so a language
+// switch is honoured, and the catalog sweep still sees the literal.
 const TEXT = {
   // APPROVED
-  record: "Record roll: {n}",
+  record: (vars) => t("Record roll: {n}", vars),
   // APPROVED
-  recorded: "{count} rolls recorded · Next: roll {next}",
+  recorded: (vars) => t("{count} rolls recorded · Next: roll {next}", vars),
   // DRAFT (owner OK pending)
-  recordedOne: "{count} roll recorded · Next: roll {next}",
+  recordedOne: (vars) => t("{count} roll recorded · Next: roll {next}", vars),
   // DRAFT (owner OK pending)
-  full: "{count} rolls recorded. Secure entry holds up to {max} rolls.",
+  full: (vars) => t("{count} rolls recorded. Secure entry holds up to {max} rolls.", vars),
   // APPROVED
-  undo: "Undo last roll",
+  undo: () => t("Undo last roll"),
   // APPROVED
-  undone: "Last roll removed. {count} rolls recorded.",
+  undone: (vars) => t("Last roll removed. {count} rolls recorded.", vars),
   // DRAFT (owner OK pending)
-  undoneOne: "Last roll removed. {count} roll recorded.",
+  undoneOne: (vars) => t("Last roll removed. {count} roll recorded.", vars),
   // APPROVED
-  review: "Review one roll…",
+  review: () => t("Review one roll…"),
   // DRAFT (owner OK pending)
-  reviewHeading: "Roll {n} of {total}",
+  reviewHeading: (vars) => t("Roll {n} of {total}", vars),
   // DRAFT (owner OK pending)
-  positionLabel: "Roll number",
+  positionLabel: () => t("Roll number"),
   // DRAFT (owner OK pending)
-  showRoll: "Show this roll",
+  showRoll: () => t("Show this roll"),
   // DRAFT (owner OK pending)
-  reviewNote: "Only this roll is shown, and only while “Show this roll” is on.",
+  reviewNote: () => t("Only this roll is shown, and only while “Show this roll” is on."),
   // DRAFT (owner OK pending)
-  prev: "Previous roll",
+  prev: () => t("Previous roll"),
   // DRAFT (owner OK pending)
-  next: "Next roll",
+  next: () => t("Next roll"),
   // DRAFT (owner OK pending)
-  close: "Close review",
+  close: () => t("Close review"),
 };
 
 export function mountSecureDicePad(host, {
@@ -51,19 +55,11 @@ export function mountSecureDicePad(host, {
   rollsUndo,
   rollAt,
   labelledBy = "",
-  translate = (text) => text,
   onChange = () => {},
   doc = document,
 } = {}) {
   if (!entry || typeof entry !== "object" || entry.kind !== "rolls" || !(entry.rolls instanceof Uint8Array) || !Number.isInteger(entry.count)) throw new Error("A dice pad needs a rolls entry.");
   if (typeof rollsPush !== "function" || typeof rollsUndo !== "function" || typeof rollAt !== "function") throw new Error("A dice pad needs the rolls entry helpers.");
-
-  // A translation may or may not fill {placeholders}; fill any it leaves.
-  const say = (text, vars) => {
-    const translated = String(translate(text, vars) ?? "");
-    if (!vars) return translated;
-    return translated.replace(/\{(\w+)\}/g, (match, name) => (Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match));
-  };
 
   const make = (tag, props) => {
     const node = doc.createElement(tag);
@@ -85,7 +81,7 @@ export function mountSecureDicePad(host, {
     const button = make("button", {
       type: "button",
       "data-secure-roll": String(face),
-      "aria-label": say(TEXT.record, { n: face }),
+      "aria-label": TEXT.record({ n: face }),
       text: String(face),
     });
     button.addEventListener("click", () => record(face));
@@ -96,15 +92,15 @@ export function mountSecureDicePad(host, {
   const status = make("p", { class: "field-note", id: "secure-dice-status", role: "status", "aria-live": "polite" });
 
   const actions = make("div", { class: "row tool-actions" });
-  const undoButton = make("button", { type: "button", class: "btn secondary", id: "secure-dice-undo", hidden: true, text: say(TEXT.undo) });
-  const reviewOpen = make("button", { type: "button", class: "btn secondary", id: "secure-dice-review-open", hidden: true, text: say(TEXT.review) });
+  const undoButton = make("button", { type: "button", class: "btn secondary", id: "secure-dice-undo", hidden: true, text: TEXT.undo() });
+  const reviewOpen = make("button", { type: "button", class: "btn secondary", id: "secure-dice-review-open", hidden: true, text: TEXT.review() });
   actions.appendChild(undoButton);
   actions.appendChild(reviewOpen);
 
   const review = make("div", { id: "secure-dice-review", hidden: true });
   const reviewHeading = make("p", { class: "label", id: "secure-dice-review-heading", tabindex: "-1" });
   const positionLabel = make("label", { class: "field" });
-  const positionText = make("span", { text: say(TEXT.positionLabel) });
+  const positionText = make("span", { text: TEXT.positionLabel() });
   const positionInput = make("input", {
     type: "number",
     id: "secure-dice-review-position",
@@ -119,14 +115,14 @@ export function mountSecureDicePad(host, {
   const faceContainer = make("div", { id: "secure-dice-review-face", text: DOTS });
   const showLabel = make("label", { class: "field" });
   const showBox = make("input", { type: "checkbox", id: "secure-dice-review-show" });
-  const showText = make("span", { text: say(TEXT.showRoll) });
+  const showText = make("span", { text: TEXT.showRoll() });
   showLabel.appendChild(showBox);
   showLabel.appendChild(showText);
-  const reviewNote = make("p", { class: "field-note", text: say(TEXT.reviewNote) });
+  const reviewNote = make("p", { class: "field-note", text: TEXT.reviewNote() });
   const reviewActions = make("div", { class: "row tool-actions" });
-  const reviewPrev = make("button", { type: "button", class: "btn secondary", id: "secure-dice-review-prev", text: say(TEXT.prev) });
-  const reviewNext = make("button", { type: "button", class: "btn secondary", id: "secure-dice-review-next", text: say(TEXT.next) });
-  const reviewClose = make("button", { type: "button", class: "btn secondary", id: "secure-dice-review-close", text: say(TEXT.close) });
+  const reviewPrev = make("button", { type: "button", class: "btn secondary", id: "secure-dice-review-prev", text: TEXT.prev() });
+  const reviewNext = make("button", { type: "button", class: "btn secondary", id: "secure-dice-review-next", text: TEXT.next() });
+  const reviewClose = make("button", { type: "button", class: "btn secondary", id: "secure-dice-review-close", text: TEXT.close() });
   reviewActions.appendChild(reviewPrev);
   reviewActions.appendChild(reviewNext);
   reviewActions.appendChild(reviewClose);
@@ -155,11 +151,11 @@ export function mountSecureDicePad(host, {
     status.setAttribute("data-roll-count", String(entry.count));
     status.setAttribute("data-roll-state", full ? "full" : "open");
     if (full) {
-      status.textContent = say(TEXT.full, { count: entry.count, max: entry.rolls.length });
+      status.textContent = TEXT.full({ count: entry.count, max: entry.rolls.length });
     } else if (lastAction === "undone") {
-      status.textContent = say(entry.count === 1 ? TEXT.undoneOne : TEXT.undone, { count: entry.count });
+      status.textContent = (entry.count === 1 ? TEXT.undoneOne : TEXT.undone)({ count: entry.count });
     } else {
-      status.textContent = say(entry.count === 1 ? TEXT.recordedOne : TEXT.recorded, { count: entry.count, next: entry.count + 1 });
+      status.textContent = (entry.count === 1 ? TEXT.recordedOne : TEXT.recorded)({ count: entry.count, next: entry.count + 1 });
     }
   };
 
@@ -198,7 +194,7 @@ export function mountSecureDicePad(host, {
 
   const renderReview = () => {
     if (!reviewing) return;
-    reviewHeading.textContent = say(TEXT.reviewHeading, { n: reviewPosition + 1, total: entry.count });
+    reviewHeading.textContent = TEXT.reviewHeading({ n: reviewPosition + 1, total: entry.count });
     positionInput.setAttribute("max", String(entry.count));
     positionInput.value = String(reviewPosition + 1);
     reviewPrev.disabled = reviewPosition <= 0;

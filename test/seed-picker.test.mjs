@@ -1,9 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { mountSeedPicker } from "../src/js/seed-picker.js";
 import { seedEntry, seedSet, seedUndo, seedIndices, wipeEntry } from "../src/js/secure-entry.js";
 import { entropyFromWordIndices } from "../src/js/bip39.js";
 import { wordlist } from "../src/js/bip39-english.js";
+import { collectSources } from "../scripts/i18n-sources.mjs";
+
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const SOURCE = readFileSync(new URL("../src/js/seed-picker.js", import.meta.url), "utf8");
 
 class FakeElement {
   constructor(doc, tag) {
@@ -153,7 +160,6 @@ const setup = (options = {}) => {
     seedUndo,
     seedIndices,
     entropyFromWordIndices,
-    translate: options.translate || ((text) => text),
     onChange: (state) => changes.push(state),
     doc,
     win: {},
@@ -415,29 +421,63 @@ test("copy, cut and drag anywhere in the picker are refused until destroy (K3.1)
   }
 });
 
-const assertWrapped = (ctx, id) => {
-  const node = findById(ctx.host, id);
-  assert.ok(node.textContent.startsWith("«") && node.textContent.endsWith("»"), `${id} is translated`);
+// The picker's text goes through t() from ./i18n.js like every other
+// module's, as literals the catalog sweep sees (copy is content, not
+// contract: the tests hook on the structure, never on the wording).
+const LITERALS = [...SOURCE.matchAll(/\bt\("((?:[^"\\]|\\.)+)"/g)].map((match) => JSON.parse(`"${match[1]}"`));
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const LITERAL_PATTERNS = LITERALS.map((literal) => new RegExp(`^${escapeRegExp(literal).replace(/\\\{\w+\\\}/g, ".+")}$`));
+const assertCatalogText = (text, where) => {
+  assert.ok(LITERAL_PATTERNS.some((pattern) => pattern.test(text)), `${where} shows text that is not a t() literal: ${text}`);
 };
 
-test("every visible string goes through translate", () => {
-  const calls = [];
-  const ctx = setup({ translate: (text) => { calls.push(text); return `«${text}»`; } });
-  assert.ok(calls.length > 0);
-  for (const id of ["seed-picker-help", "seed-picker-note", "seed-picker-progress", "seed-picker-undo"]) assertWrapped(ctx, id);
+test("every visible string is a t() literal the catalog sweep collects", async () => {
+  assert.match(SOURCE, /import \{ t \} from "\.\/i18n\.js";/, "the picker must translate through the page catalog");
+  // The only "translate" left is the attribute that keeps seed words as typed.
+  assert.doesNotMatch(SOURCE, /\btranslate\b(?!: "no")/, "no translator option: the module reads the catalog itself");
+  // Each string is a thunk around a t() literal, looked up when it is shown.
+  const textBlock = SOURCE.match(/const TEXT = \{\n([\s\S]*?)\n\};/)?.[1];
+  assert.ok(textBlock, "TEXT is missing");
+  const textLines = textBlock.split("\n");
+  assert.ok(textLines.length >= 20);
+  for (const line of textLines) assert.match(line, /^  \w+: \((?:vars)?\) => t\("(?:[^"\\]|\\.)+"(?:, vars)?\),$/, `not a t() literal thunk: ${line.trim()}`);
+  for (const use of SOURCE.matchAll(/\bTEXT\.\w+(.)/g)) assert.equal(use[1], "(", `not looked up when shown: ${use[0]}`);
+  assert.doesNotMatch(SOURCE, /(?:textContent = |text: |"aria-label": )"[^"]/, "a bare literal reaches the page");
+  // The sweep that feeds the translation run sees them.
+  const sources = await collectSources(ROOT);
+  assert.ok(LITERALS.length >= textLines.length);
+  for (const literal of LITERALS) assert.ok(sources.has(literal), `the catalog sweep misses: ${literal}`);
+  // What the picker shows, as it moves through its states, is one of them.
+  const ctx = setup();
+  const shows = (id) => assertCatalogText(findById(ctx.host, id).textContent, id);
+  for (const id of ["seed-picker-position", "seed-picker-help", "seed-picker-prefix-text", "seed-picker-narrow", "seed-picker-undo", "seed-picker-review-all", "seed-picker-note", "seed-picker-progress", "seed-picker-caveat"]) shows(id);
+  const prefix = findById(ctx.host, "seed-picker-prefix");
+  for (const typed of ["a", "aba", "xyz"]) {
+    prefix.value = typed;
+    prefix.dispatchEvent({ type: "input" });
+    shows("seed-picker-count");
+  }
   // The strings that change with state: the per-word announcement, the
-  // checksum line and the review heading.
+  // chips, the checksum line and the review.
   enterWord(ctx, "abandon");
-  assertWrapped(ctx, "seed-picker-progress");
-  assertWrapped(ctx, "seed-picker-position");
+  shows("seed-picker-progress");
+  shows("seed-picker-position");
+  assertCatalogText(findById(ctx.host, "seed-picker-chips").childNodes[0].getAttribute("aria-label"), "a word chip");
   for (let i = 1; i < 11; i += 1) enterWord(ctx, "abandon");
   enterWord(ctx, "about");
   assert.equal(findById(ctx.host, "seed-picker-progress").getAttribute("data-picker-state"), "checksum-ok");
-  assertWrapped(ctx, "seed-picker-progress");
-  assertWrapped(ctx, "seed-picker-caveat");
+  shows("seed-picker-progress");
+  shows("seed-picker-position");
   findById(ctx.host, "seed-picker-chips").childNodes[0].dispatchEvent({ type: "click" });
-  assertWrapped(ctx, "seed-picker-review-heading");
+  for (const id of ["seed-picker-review-heading", "seed-picker-review-show-text", "seed-picker-review-note", "seed-picker-replace-text", "seed-picker-replace-narrow", "seed-picker-replace", "seed-picker-review-cancel", "seed-picker-review-prev", "seed-picker-review-next"]) shows(id);
+  const replaceField = findById(ctx.host, "seed-picker-replace-prefix");
+  replaceField.value = "zoo";
+  replaceField.dispatchEvent({ type: "input" });
+  findById(ctx.host, "seed-picker-replace-matches").childNodes[0].dispatchEvent({ type: "click" });
+  findById(ctx.host, "seed-picker-replace").dispatchEvent({ type: "click" });
+  shows("seed-picker-progress");
   findById(ctx.host, "seed-picker-review-cancel").dispatchEvent({ type: "click" });
+  ctx.picker.destroy();
 });
 
 test("conceal and new replacement text disarm a staged word", () => {

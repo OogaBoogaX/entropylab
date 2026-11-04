@@ -7681,7 +7681,6 @@ function hodlBindKeyScan() {
       try {
         hodlKeyScan = module.mountKeyScan(host, {
           accept: "wif",
-          translate: hodlTText,
           privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
           beforeOpen: hodlKeyScanBeforeOpen,
           onKey: hodlKeyScanLoad,
@@ -7780,7 +7779,6 @@ function hodlBindSeedScan() {
         hodlSeedScan = module.mountKeyScan(host, {
           accept: "seed",
           idPrefix: "seed-scan",
-          translate: hodlTText,
           wordlist: hodlBip39Wordlist,
           privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
           beforeOpen: hodlSeedScanBeforeOpen,
@@ -8041,7 +8039,7 @@ function hodlMountSeedPicker() {
     try {
       hodlSeedPicker = module.mountSeedPicker(host, {
         entry, wordlist: hodlBip39Wordlist, seedSet, seedUndo, seedIndices,
-        entropyFromWordIndices: hodlEntropyFromWordIndices, translate: hodlTText,
+        entropyFromWordIndices: hodlEntropyFromWordIndices,
         onChange: hodlSecureSeedChanged,
       });
       // A scanned seed asked for focus before this mount finished.
@@ -13945,7 +13943,7 @@ function hodlMountSecureDicePad() {
     if (!entry) return;
     try {
       hodlSecureDicePad = module.mountSecureDicePad(host, {
-        entry, rollsPush, rollsUndo, rollAt, labelledBy: "dice-label", translate: hodlTText,
+        entry, rollsPush, rollsUndo, rollAt, labelledBy: "dice-label",
         onChange: hodlSecureDiceChanged,
       });
     } catch {
