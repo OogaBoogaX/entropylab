@@ -20,8 +20,13 @@ const functionBody = (name) => {
   throw new Error(`${name} has no end`);
 };
 
-test("the seed scan host is preview-gated", () => {
-  assert.match(app, /function hodlSeedScanHostMarkup\(\) \{\s*return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ \? '<div id="seed-scan-host"><\/div>' : "";\s*\}/);
+// The seed scan ships with Secure entry (owner 11-04): its host renders in
+// every build and the bind reads no preview flag.
+test("the seed scan host ships in every build", () => {
+  assert.match(app, /function hodlSeedScanHostMarkup\(\) \{\s*return '<div id="seed-scan-host"><\/div>';\s*\}/);
+  const start = app.indexOf("function hodlBindSeedScan()");
+  assert.ok(start >= 0, "hodlBindSeedScan is missing");
+  assert.doesNotMatch(app.slice(start, app.indexOf("\n}\n", start)), /__ENTROPYLAB_PREVIEW__/);
 });
 
 test("the words branch renders the seed scan host in both forms", () => {

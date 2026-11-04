@@ -50,21 +50,21 @@ const realSecureEntryStubs = {
   hodlSecureSupported: {},
 };
 
-test("hodlSecureEntryAvailable is false without preview or a supported method", async () => {
-  const off = await loadAppFunctions(["hodlSecureEntryAvailable"], {
-    stubs: { ...secureEntryStubs, PREVIEW: false, hodlSecureSupported: { seed: false, key: false } },
-  });
-  assert.equal(off.hodlSecureEntryAvailable(), false);
+// Secure entry ships (owner 11-04): the switch is offered in release builds
+// too, whenever a method can be entered securely.
+test("hodlSecureEntryAvailable follows the supported methods in every build", async () => {
+  for (const PREVIEW of [false, true]) {
+    const noMethods = await loadAppFunctions(["hodlSecureEntryAvailable"], {
+      stubs: { ...secureEntryStubs, PREVIEW, hodlSecureSupported: { seed: false, key: false } },
+    });
+    assert.equal(noMethods.hodlSecureEntryAvailable(), false, `PREVIEW ${PREVIEW}, no method`);
 
-  const noMethods = await loadAppFunctions(["hodlSecureEntryAvailable"], {
-    stubs: { ...secureEntryStubs, PREVIEW: true, hodlSecureSupported: { seed: false, key: false } },
-  });
-  assert.equal(noMethods.hodlSecureEntryAvailable(), false);
-
-  const oneMethod = await loadAppFunctions(["hodlSecureEntryAvailable"], {
-    stubs: { ...secureEntryStubs, PREVIEW: true, hodlSecureSupported: { seed: true, key: false } },
-  });
-  assert.equal(oneMethod.hodlSecureEntryAvailable(), true);
+    const oneMethod = await loadAppFunctions(["hodlSecureEntryAvailable"], {
+      stubs: { ...secureEntryStubs, PREVIEW, hodlSecureSupported: { seed: true, key: false } },
+    });
+    assert.equal(oneMethod.hodlSecureEntryAvailable(), true, `PREVIEW ${PREVIEW}, one method`);
+  }
+  assert.doesNotMatch(app.slice(app.indexOf("function hodlSecureEntryAvailable("), app.indexOf("\n}\n", app.indexOf("function hodlSecureEntryAvailable("))), /PREVIEW/);
 });
 
 test("hodlSecureEntryEnd turns the switch off and wipes the session", async () => {

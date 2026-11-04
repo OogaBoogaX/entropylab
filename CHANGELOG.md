@@ -5,6 +5,17 @@ Release notes for EntropyLab. Each release is a single self-contained
 
 ## Unreleased
 
+- **Secure entry, Scan SeedQR and Scan QR (private key) ship in Key
+  Station**: they were preview-only until now.
+  - **Secure entry** is an optional switch, off on every load. It limits
+    copies of secrets during entry: seed words go through a one-at-a-time
+    word picker, a private key into a masked field, and hashed dice rolls
+    onto a pad, never as page text.
+  - **The scans** read a SeedQR, CompactSeedQR, BIP39 words or a WIF from the
+    camera or a photo straight into Secure entry, after a confirmation that
+    names the format.
+  - Built in #1313, #1364, #1372, #1395 and #1405; fixed before shipping in
+    #1439, #1441 and #1442.
 - **Development builds say so**: `rock` (and so the live site) now carries
   version `1.1.0-dev`, so its footer reads `v1.1.0-dev · commit …` instead of
   the signed release's `v1.0.0` (#1406). A published release whose page

@@ -6969,10 +6969,10 @@ const hodlPsbtScanHosts = [
   ["rbf-scan-host", "psbt-rbf-original"], ["audit-scan-host", "psbt-audit-before"], ["psbted-compare-scan-host", "psbted-compare-text"],
 ];
 function hodlKeyScanHostMarkup() {
-  return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
+  return '<div id="key-scan-host"></div>';
 }
 function hodlSeedScanHostMarkup() {
-  return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="seed-scan-host"></div>' : "";
+  return '<div id="seed-scan-host"></div>';
 }
 function hodlRenderKeyForm() {
   // The form and its on-screen keyboards are replaced: the listeners they
@@ -7657,44 +7657,42 @@ function hodlRenderPrivateKeyInputState(input) {
 
 function hodlBindKeyScan() {
   // The slice harness loads this with no scan host: return before anything
-  // else, and never read the preview flag bare.
+  // else. Every build ships the scan (Secure entry unhide, owner 11-04).
   let host = document.getElementById("key-scan-host");
   // No host, no mount: an open request is dropped here too.
   if (!host) {
     hodlKeyScanOpenAfterMount = false;
     return;
   }
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    if (!hodlKeyScanImport) {
-      hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
-        hodlKeyScanModule = module;
-        return module;
-      }).catch(() => null);
-    }
-    hodlKeyScanImport.then((module) => {
-      // An open request belongs to this mount only: a mount that bails (the
-      // host gone, a panel already there) drops it, so a later mount never
-      // opens the camera without a Scan press.
-      let openNow = hodlKeyScanOpenAfterMount;
-      hodlKeyScanOpenAfterMount = false;
-      if (!module || hodlKeyScan || !host.isConnected || host.childNodes.length) return;
-      try {
-        hodlKeyScan = module.mountKeyScan(host, {
-          accept: "wif",
-          privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
-          beforeOpen: hodlKeyScanBeforeOpen,
-          onKey: hodlKeyScanLoad,
-          replacesKey: hodlKeyScanReplaces,
-          afterLoad: () => { try { document.getElementById("secure-key")?.focus(); } catch {} },
-        });
-      } catch {
-        return;
-      }
-      // Not for a page hidden while Secure entry was turning on: the camera
-      // would start out of sight.
-      if (openNow && document.visibilityState !== "hidden") try { hodlKeyScan.open(); } catch {}
-    }).catch(() => {});
+  if (!hodlKeyScanImport) {
+    hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
+      hodlKeyScanModule = module;
+      return module;
+    }).catch(() => null);
   }
+  hodlKeyScanImport.then((module) => {
+    // An open request belongs to this mount only: a mount that bails (the
+    // host gone, a panel already there) drops it, so a later mount never
+    // opens the camera without a Scan press.
+    let openNow = hodlKeyScanOpenAfterMount;
+    hodlKeyScanOpenAfterMount = false;
+    if (!module || hodlKeyScan || !host.isConnected || host.childNodes.length) return;
+    try {
+      hodlKeyScan = module.mountKeyScan(host, {
+        accept: "wif",
+        privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
+        beforeOpen: hodlKeyScanBeforeOpen,
+        onKey: hodlKeyScanLoad,
+        replacesKey: hodlKeyScanReplaces,
+        afterLoad: () => { try { document.getElementById("secure-key")?.focus(); } catch {} },
+      });
+    } catch {
+      return;
+    }
+    // Not for a page hidden while Secure entry was turning on: the camera
+    // would start out of sight.
+    if (openNow && document.visibilityState !== "hidden") try { hodlKeyScan.open(); } catch {}
+  }).catch(() => {});
 }
 
 async function hodlKeyScanBeforeOpen() {
@@ -7759,46 +7757,44 @@ function hodlKeyScanLoad(bytes) {
 }
 function hodlBindSeedScan() {
   // The slice harness loads this with no scan host: return before anything
-  // else, and never read the preview flag bare.
+  // else. Every build ships the scan (Secure entry unhide, owner 11-04).
   let host = document.getElementById("seed-scan-host");
   // No host, no mount: an open request is dropped here too (GLM, round 1).
   if (!host) {
     hodlSeedScanOpenAfterMount = false;
     return;
   }
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    if (!hodlKeyScanImport) {
-      hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
-        hodlKeyScanModule = module;
-        return module;
-      }).catch(() => null);
-    }
-    hodlKeyScanImport.then((module) => {
-      // An open request belongs to this mount only: a mount that bails (the
-      // host gone, a panel already there) drops it, so a later mount never
-      // opens the camera without a Scan press (Kimi, autofix review).
-      let openNow = hodlSeedScanOpenAfterMount;
-      hodlSeedScanOpenAfterMount = false;
-      if (!module || hodlSeedScan || !host.isConnected || host.childNodes.length) return;
-      try {
-        hodlSeedScan = module.mountKeyScan(host, {
-          accept: "seed",
-          idPrefix: "seed-scan",
-          wordlist: hodlBip39Wordlist,
-          privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
-          beforeOpen: hodlSeedScanBeforeOpen,
-          onSeed: hodlSeedScanLoad,
-          replacesSeed: hodlSeedScanReplaces,
-          afterLoad: hodlSeedScanAfterLoad,
-        });
-      } catch {
-        return;
-      }
-      // Not for a page hidden while Secure entry was turning on: the camera
-      // would start out of sight (K3.1, #1364 round 6).
-      if (openNow && document.visibilityState !== "hidden") try { hodlSeedScan.open(); } catch {}
-    }).catch(() => {});
+  if (!hodlKeyScanImport) {
+    hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
+      hodlKeyScanModule = module;
+      return module;
+    }).catch(() => null);
   }
+  hodlKeyScanImport.then((module) => {
+    // An open request belongs to this mount only: a mount that bails (the
+    // host gone, a panel already there) drops it, so a later mount never
+    // opens the camera without a Scan press (Kimi, autofix review).
+    let openNow = hodlSeedScanOpenAfterMount;
+    hodlSeedScanOpenAfterMount = false;
+    if (!module || hodlSeedScan || !host.isConnected || host.childNodes.length) return;
+    try {
+      hodlSeedScan = module.mountKeyScan(host, {
+        accept: "seed",
+        idPrefix: "seed-scan",
+        wordlist: hodlBip39Wordlist,
+        privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
+        beforeOpen: hodlSeedScanBeforeOpen,
+        onSeed: hodlSeedScanLoad,
+        replacesSeed: hodlSeedScanReplaces,
+        afterLoad: hodlSeedScanAfterLoad,
+      });
+    } catch {
+      return;
+    }
+    // Not for a page hidden while Secure entry was turning on: the camera
+    // would start out of sight (K3.1, #1364 round 6).
+    if (openNow && document.visibilityState !== "hidden") try { hodlSeedScan.open(); } catch {}
+  }).catch(() => {});
 }
 async function hodlSeedScanBeforeOpen() {
   if (hodlSecureSeedActive()) return true;
@@ -13584,10 +13580,10 @@ async function hodlSecureEntryToggle(wanted) {
     hodlSecureEntryBusy = false;
   }
 }
-// Offered only in preview builds and only once a method can be entered
-// securely; seeds are supported from P2b, so preview builds show the switch.
+// Offered in every build once a method can be entered securely (Secure
+// entry unhide, owner 11-04: "Shouldn't that be a main feature by now?").
 function hodlSecureEntryAvailable() {
-  return Boolean(PREVIEW) && Object.values(hodlSecureSupported).some(Boolean);
+  return Object.values(hodlSecureSupported).some(Boolean);
 }
 // Ends secure entry for the session: the switch goes off and every entry and
 // pending plan is wiped. Leaving the page and End Session (which dispatches
@@ -14109,7 +14105,7 @@ function hodlSecureKeyStatus() {
   }
   let lengths = hodlSecureKeyLengths(kind);
   if (!lengths.includes(count) && count < Math.max(...lengths)) {
-    line.textContent = hodlT("{count} characters", { count }); // DRAFT (owner OK pending)
+    line.textContent = hodlT("{count} characters", { count });
     // A complete key of another format can be shorter than this one (a WIF
     // under hex, a mini key under WIF or hex), so offer the switch here too
     // (Kimi K3, Grok, GLM and MiniMax, round 1).
@@ -14130,13 +14126,13 @@ function hodlSecureKeyStatus() {
   }
   try {
     if (kind === "hex-key") {
-      line.textContent = hodlT("Valid private-key value · Hex has no checksum to detect typing mistakes."); // DRAFT (owner OK pending)
+      line.textContent = hodlT("Valid private-key value · Hex has no checksum to detect typing mistakes.");
     } else if (kind === "minikey") {
-      line.textContent = hodlT("Mini key check passed"); // DRAFT (owner OK pending)
+      line.textContent = hodlT("Mini key check passed");
     } else {
       line.textContent = parsed.compressed
-        ? hodlT("WIF checksum passed · {network} · Compressed public key", { network: parsed.network }) // DRAFT (owner OK pending)
-        : hodlT("WIF checksum passed · {network} · Uncompressed public key", { network: parsed.network }); // DRAFT (owner OK pending)
+        ? hodlT("WIF checksum passed · {network} · Compressed public key", { network: parsed.network })
+        : hodlT("WIF checksum passed · {network} · Uncompressed public key", { network: parsed.network });
     }
   } finally {
     parsed.priv?.fill(0);

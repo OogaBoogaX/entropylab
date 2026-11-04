@@ -21,31 +21,31 @@ const TEXT = {
   record: (vars) => t("Record roll: {n}", vars),
   // APPROVED
   recorded: (vars) => t("{count} rolls recorded · Next: roll {next}", vars),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   recordedOne: (vars) => t("{count} roll recorded · Next: roll {next}", vars),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   full: (vars) => t("{count} rolls recorded. Secure entry holds up to {max} rolls.", vars),
   // APPROVED
   undo: () => t("Undo last roll"),
   // APPROVED
   undone: (vars) => t("Last roll removed. {count} rolls recorded.", vars),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   undoneOne: (vars) => t("Last roll removed. {count} roll recorded.", vars),
   // APPROVED
   review: () => t("Review one roll…"),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   reviewHeading: (vars) => t("Roll {n} of {total}", vars),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   positionLabel: () => t("Roll number"),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   showRoll: () => t("Show this roll"),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   reviewNote: () => t("Only this roll is shown, and only while “Show this roll” is on."),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   prev: () => t("Previous roll"),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   next: () => t("Next roll"),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   close: () => t("Close review"),
 };
 

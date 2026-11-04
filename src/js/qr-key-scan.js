@@ -42,6 +42,7 @@ const NOT_A_KEY_REFUSAL = () => t("This QR does not hold a WIF private key. Noth
 const SEED_MODE_KEY_REFUSAL = () => t("This QR contains a private key. Only seeds can be scanned here. Nothing was loaded.");
 const SEED_MODE_NOT_A_SEED_REFUSAL = () => t("This QR does not hold a seed. Nothing was loaded.");
 const SEED_REPLACE_NOTE = () => t("This key already holds a seed phrase. Continue replaces it.");
+// APPROVED (owner 11-04)
 const KEY_REPLACE_NOTE = () => t("This key already holds a private key. Continue replaces it.");
 const SEED_FORMAT_TEXT = {
   "standard-seedqr": (vars) => t("Standard SeedQR, {count} words", vars),
