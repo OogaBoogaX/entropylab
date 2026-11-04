@@ -53,6 +53,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       tag: ${{ steps.release.outputs.tag }}
+      tag-commit: ${{ steps.release.outputs.tag-commit }}
       html-sha256: ${{ steps.checksums.outputs.html-sha256 }}
     steps:
       - name: Check out the default branch
@@ -95,6 +96,7 @@ jobs:
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tag-commit=$TAG_COMMIT" >> "$GITHUB_OUTPUT"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "TAG_COMMIT=$TAG_COMMIT" >> "$GITHUB_ENV"
       - name: Download the release assets
@@ -331,12 +333,49 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # The deploy can start well after verify: the ots job runs in between,
+      # and the github-pages environment may wait for required reviewers. So
+      # the release is checked again at the last moment: production deploys
+      # only a release that is still published, still latest and still the
+      # commit verify checked.
+      - name: Check the release again
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.tag }}
+          TAG_COMMIT: ${{ needs.verify.outputs.tag-commit }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$TAG" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error title=Release tag::the deploy names no vMAJOR.MINOR.PATCH release tag"
+            exit 1
+          fi
+          if ! printf '%s' "$TAG_COMMIT" | grep -Eqx '[0-9a-f]{40}'; then
+            echo "::error title=Release tag::the verify job passed no 40-hex tag commit"
+            exit 1
+          fi
+          # A deleted release makes gh api fail, which stops the job.
+          STATE=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '"\(.draft) \(.prerelease)"')
+          if [ "$STATE" != "false false" ]; then
+            echo "::error title=Release::$TAG is no longer a published, non-prerelease release"
+            exit 1
+          fi
+          LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [ "$LATEST" != "$TAG" ]; then
+            echo "::error title=Not the latest release::$TAG is no longer the latest release ($LATEST)"
+            exit 1
+          fi
+          SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
+          if [ "$SHA" != "$TAG_COMMIT" ]; then
+            echo "::error title=Release tag::$TAG now points at $SHA, but the verified commit is $TAG_COMMIT"
+            exit 1
+          fi
       - name: Deploy the verified artifact
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

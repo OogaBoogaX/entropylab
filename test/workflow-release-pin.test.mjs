@@ -98,11 +98,19 @@ test("every check runs before the Pages artifact is uploaded, and the deploy is 
     assert.ok(at >= 0, `the ${label} step exists`);
     assert.ok(at < upload, `the ${label} check runs before the artifact is uploaded`);
   }
+  assert.match(verify, /^ {6}tag-commit: \$\{\{ steps\.release\.outputs\.tag-commit \}\}$/m, "verify passes on the commit the tag resolved to");
   const deploy = jobBlock(pagesRelease, "deploy");
   assert.match(deploy, /^ {4}needs: \[verify, ots\]$/m, "the deploy waits for the asset checks and the timestamp check");
+  assert.match(deploy, /^ {6}contents: read$/m, "the deploy job may read the release API");
   const deploySteps = steps(deploy);
-  assert.equal(deploySteps.length, 1, "the deploy job runs one step");
-  assert.match(deploySteps[0], /actions\/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346/, "the deploy is the pinned deploy-pages action");
+  assert.equal(deploySteps.length, 2, "the deploy job rechecks the release, then deploys");
+  const recheck = deploySteps[0];
+  assert.ok(recheck.startsWith("name: Check the release again"), "the release is checked again at the last moment");
+  for (const needle of ["releases/tags/$TAG", "releases/latest", "commits/$TAG", "needs.verify.outputs.tag-commit"]) {
+    assert.ok(recheck.includes(needle), `the recheck reads ${needle}`);
+  }
+  assert.doesNotMatch(recheck, /^\s*uses:/m, "the recheck runs no action");
+  assert.match(deploySteps[1], /actions\/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346/, "the deploy is the pinned deploy-pages action");
   assert.ok(
     pagesRelease.indexOf("actions/deploy-pages@") > pagesRelease.indexOf("actions/upload-pages-artifact@"),
     "the deploy comes after the upload",
