@@ -67,6 +67,7 @@ export function mountKeyScan(host, {
   replacesSeed = () => false,
   onKey = () => { throw new Error("no key handler"); },
   replacesKey = () => false,
+  afterLoad = () => {},
   wordlist = null,
   translate = (text) => text,
   privateValue = () => "",
@@ -401,6 +402,7 @@ export function mountKeyScan(host, {
       try { seedIndicesBuffer.fill(0); } catch {}
     }
     endPanel();
+    try { afterLoad(); } catch {}
   };
 
   const buildSeedConfirm = () => {
@@ -493,6 +495,7 @@ export function mountKeyScan(host, {
     }
     try { keyBytes.fill(0); } catch {}
     endPanel();
+    try { afterLoad(); } catch {}
   };
 
   const onDiscard = () => endPanel();

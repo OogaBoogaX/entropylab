@@ -206,6 +206,7 @@ const setup = (options = {}) => {
     onSeed: options.onSeed,
     onKey: options.onKey || ((bytes) => { keys.push({ bytes, seen: Array.from(bytes) }); }),
     replacesKey: options.replacesKey,
+    afterLoad: options.afterLoad,
     wordlist: options.wordlist,
     translate: options.translate || ((text) => text),
     privateValue: (value, revealed) => (revealed ? value : "•".repeat(value.length)),
@@ -976,4 +977,71 @@ test("a Scan press waiting on beforeOpen does not open once the page is hidden",
   await tick();
   assert.equal(findById(ctx.host, "seed-scan-panel").hidden, true);
   assert.equal(ctx.created.scanners, 0);
+});
+
+test("afterLoad runs once after a successful key Continue, with the panel closed", () => {
+  let calls = 0, hiddenAtCall = null;
+  let ctx;
+  ctx = setup({ afterLoad: () => { calls += 1; hiddenAtCall = findById(ctx.host, "key-scan-panel").hidden; } });
+  openPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(WIF));
+  findById(ctx.host, "key-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(calls, 1);
+  assert.equal(hiddenAtCall, true);
+});
+
+test("afterLoad runs once after a successful seed Continue, with the panel closed", () => {
+  let calls = 0, hiddenAtCall = null;
+  let ctx;
+  ctx = setup({
+    accept: "seed",
+    idPrefix: "seed-scan",
+    wordlist: bip39English,
+    onSeed: (indices) => indices.fill(0),
+    afterLoad: () => { calls += 1; hiddenAtCall = findById(ctx.host, "seed-scan-panel").hidden; },
+  });
+  openSeedPanel(ctx);
+  ctx.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  findById(ctx.host, "seed-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(calls, 1);
+  assert.equal(hiddenAtCall, true);
+});
+
+test("afterLoad never runs after a refused load", () => {
+  let calls = 0;
+  const key = setup({ afterLoad: () => { calls += 1; }, onKey: () => { throw new Error("no key handler"); } });
+  openPanel(key);
+  key.created.scannerArgs.onResult(bytesOf(WIF));
+  findById(key.host, "key-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(calls, 0);
+  const seed = setup({
+    accept: "seed",
+    idPrefix: "seed-scan",
+    wordlist: bip39English,
+    onSeed: () => { throw new Error("no seed handler"); },
+    afterLoad: () => { calls += 1; },
+  });
+  openSeedPanel(seed);
+  seed.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  findById(seed.host, "seed-scan-continue").dispatchEvent({ type: "click" });
+  assert.equal(calls, 0);
+});
+
+test("a throwing afterLoad does not break the panel", () => {
+  const key = setup({ afterLoad: () => { throw new Error("focus failed"); } });
+  openPanel(key);
+  key.created.scannerArgs.onResult(bytesOf(WIF));
+  assert.doesNotThrow(() => findById(key.host, "key-scan-continue").dispatchEvent({ type: "click" }));
+  assert.equal(findById(key.host, "key-scan-panel").hidden, true);
+  const seed = setup({
+    accept: "seed",
+    idPrefix: "seed-scan",
+    wordlist: bip39English,
+    onSeed: (indices) => indices.fill(0),
+    afterLoad: () => { throw new Error("focus failed"); },
+  });
+  openSeedPanel(seed);
+  seed.created.scannerArgs.onResult(bytesOf(SEEDQR));
+  assert.doesNotThrow(() => findById(seed.host, "seed-scan-continue").dispatchEvent({ type: "click" }));
+  assert.equal(findById(seed.host, "seed-scan-panel").hidden, true);
 });

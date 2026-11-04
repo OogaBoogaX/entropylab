@@ -112,3 +112,9 @@ test("hodlKeyScanLoad throws, changing nothing, when it cannot load", async () =
   assert.equal(ascii.state.fields.keyKind, "hex-key");
   assert.equal(ascii.session.entries.size, 0);
 });
+
+test("the key scan focuses the masked key field after a load", () => {
+  const body = functionBody("hodlBindKeyScan");
+  assert.match(body, /afterLoad:/);
+  assert.match(body, /getElementById\("secure-key"\)\?\.focus\(\)/);
+});

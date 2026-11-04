@@ -56,6 +56,7 @@ test("hodlBindSeedScan mounts a seed panel with the shared import", () => {
   assert.match(body, /wordlist: hodlBip39Wordlist/);
   assert.match(body, /beforeOpen: hodlSeedScanBeforeOpen/);
   assert.match(body, /onSeed: hodlSeedScanLoad/);
+  assert.match(body, /afterLoad: hodlSeedScanAfterLoad,/);
   assert.match(body, /import\("\.\/qr-key-scan\.js"\)/);
 });
 
@@ -73,10 +74,10 @@ test("hodlSeedScanLoad zeroes the caller's indices in a finally", () => {
 });
 
 test("hodlSeedScanLoad installs the scanned indices and empties the seed text", async () => {
-  const state = { fields: { seed: "old words" }, lastWord: "old", targetWords: 24, result: { kind: "seed" }, reveal: true, error: "bad", errorSpec: {} };
+  const state = { fields: { seed: "old words" }, lastWord: "old", targetWords: 24, result: { kind: "seed" }, reveal: true, error: "bad", errorSpec: {}, globalSync: true, globalSyncSource: "seed:words" };
   const entry = { kind: "seed", length: 12, indices: new Uint16Array(12), count: 0, wiped: false, rev: 0 };
   let installed = null;
-  const order = [], wiped = [];
+  const order = [], wiped = [], cleared = [];
   const previous = state.result;
   const stubs = {
     hodlSecureSeedActive: () => true,
@@ -101,6 +102,7 @@ test("hodlSeedScanLoad installs the scanned indices and empties the seed text", 
       state.result = null;
       state.reveal = false;
     },
+    hodlClearGlobalSyncCopies: (target) => cleared.push(target),
     hodlWipeUnsharedWalletRows: (result) => wiped.push(result),
     hodlRenderKeyForm: () => {},
     hodlRestoreFormFields: () => {},
@@ -127,6 +129,7 @@ test("hodlSeedScanLoad installs the scanned indices and empties the seed text", 
   // new words go in; Kimi, MiniMax: the old wallet is wiped.
   assert.deepEqual(order, ["invalidate", "install"]);
   assert.deepEqual(wiped, [previous]);
+  assert.deepEqual(cleared, [state]);
 });
 
 test("hodlSeedScanLoad throws when it cannot load, so the panel says nothing was loaded", async () => {
@@ -172,4 +175,17 @@ test("an open request is dropped for a hidden page", () => {
   // start the camera out of sight.
   const body = functionBody("hodlBindSeedScan");
   assert.match(body, /if \(openNow && document\.visibilityState !== "hidden"\) try \{ hodlSeedScan\.open\(\); \} catch \{\}/);
+});
+
+// Continue redraws the form, and the new picker mounts only once its import
+// resolves, so a focus call made right after the load would find no picker and
+// leave focus on the page body (Claude, checking the autofix round).
+test("a scanned seed's focus goes to the picker, after its mount when needed", () => {
+  const after = functionBody("hodlSeedScanAfterLoad");
+  assert.match(after, /if \(hodlSeedPicker\) \{\s*try \{ hodlSeedPicker\.focus\(\); \} catch \{\}\s*return;\s*\}\s*hodlSeedPickerFocusOnMount = true;/);
+  const mount = functionBody("hodlMountSeedPicker");
+  assert.match(mount, /if \(hodlSeedPickerFocusOnMount\) \{\s*hodlSeedPickerFocusOnMount = false;\s*try \{ hodlSeedPicker\.focus\(\); \} catch \{\}\s*\}/);
+  assert.ok(mount.indexOf("hodlSeedPickerFocusOnMount") > mount.indexOf("module.mountSeedPicker("), "the mount focuses only once the picker exists");
+  // A redraw drops a request left from an earlier load.
+  assert.match(functionBody("hodlRenderKeyForm"), /hodlSeedPicker = null;\s*hodlSeedPickerFocusOnMount = false;/);
 });
