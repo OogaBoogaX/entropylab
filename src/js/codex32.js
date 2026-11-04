@@ -31,8 +31,9 @@ const BECH32_INV = [
 ];
 // Support 128-, 256-, and 512-bit seeds only. Their complete and checksum-free
 // lengths are disjoint, so a failed checksum on a supported complete string
-// cannot become a longer payload. 61 characters is still a 32-byte
-// header+payload, so a mistyped 24-byte string completes (see the guard below).
+// cannot become a longer payload. Completion also requires the user's seed
+// size: 61 characters alone cannot distinguish a mistyped 24-byte complete
+// string from a 32-byte header and payload.
 const COMPLETE_CHECKSUM = new Map([[48, 13], [74, 13], [127, 15]]);
 const INCOMPLETE_CHECKSUM = new Map([[35, 13], [61, 13], [112, 15]]);
 const SEED_LENGTHS = new Set([16, 32, 64]);
@@ -147,7 +148,7 @@ export function parseCodex32(input) {
 // already has a valid checksum is returned unchanged. A failed checksum on a
 // length that is not a bare header+payload is rejected; characters are never
 // substituted to hunt for a nearby valid string.
-export function completeCodex32Checksum(input) {
+export function completeCodex32Checksum(input, seedBytes) {
   const text = canonicalize(input);
   if (COMPLETE_CHECKSUM.has(text.length)) {
     const values = dataValues(text);
@@ -162,6 +163,10 @@ export function completeCodex32Checksum(input) {
   const checksumLength = INCOMPLETE_CHECKSUM.get(text.length);
   if (!checksumLength) throw new Error("That is not an MS1 header and payload, or a complete MS1 string.");
   const values = dataValues(text);
+  if (!SEED_LENGTHS.has(seedBytes)) throw new Error("Choose the expected seed size: 16, 32, or 64 bytes.");
+  if (text.length !== 9 + Math.ceil(seedBytes * 8 / 5)) {
+    throw new Error("MS1 header and payload length does not match the selected seed size.");
+  }
   const completed = encodeData(values);
   if (completed.slice(0, text.length) !== text) throw new Error("Checksum completion changed the payload.");
   return completed;
@@ -257,11 +262,20 @@ function clearResult() {
   if (error) error.textContent = "";
 }
 
+function resetSeedSize() {
+  const size = field("codex32-size");
+  if (size) {
+    size.value = "";
+    size.dispatchEvent(new Event("entropylab:sync-select", { bubbles: true }));
+  }
+}
+
 export function hodlCodex32Wipe() {
   const shares = field("codex32-shares");
   const index = field("codex32-index");
   if (shares) shares.value = "";
   if (index) index.value = "";
+  resetSeedSize();
   clearResult();
 }
 
@@ -281,11 +295,17 @@ export function hodlInitCodex32() {
   const shares = field("codex32-shares");
   if (!shares || shares.dataset.codex32Ready) return;
   shares.dataset.codex32Ready = "1";
+  shares.addEventListener("input", () => {
+    resetSeedSize();
+    clearResult();
+  });
+  field("codex32-index")?.addEventListener("input", clearResult);
+  field("codex32-size")?.addEventListener("change", clearResult);
   field("codex32-checksum")?.addEventListener("click", () => {
     try {
       const lines = shares.value.split(/\n/).map((line) => line.trim()).filter(Boolean);
       if (lines.length !== 1) throw new Error("Calculate Checksum takes one header and payload.");
-      const completed = completeCodex32Checksum(lines[0]);
+      const completed = completeCodex32Checksum(lines[0], Number(field("codex32-size")?.value));
       const parsed = parseCodex32(completed);
       show(parsed.masterSeedHex ? completed + "\n" + parsed.masterSeedHex : completed);
     } catch (error) {

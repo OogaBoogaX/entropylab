@@ -519,9 +519,14 @@ material. Its security posture rests on the following model:
   checksum-free string lengths disjoint: a mistyped complete 16-, 32- or
   64-byte string is refused instead of being completed into a different
   seed, and a failed checksum is never repaired by substituting characters.
-  A 61-character input is read as a 32-byte header and payload, so a valid
-  24-byte string is refused, but a mistyped one can still complete into a
-  different 32-byte seed. Derive
+  Completing a missing checksum requires the user to choose the expected
+  seed size from their source records; a missing or mismatched size is
+  refused. A 61-character input is ambiguous between a complete 24-byte
+  string and a 32-byte header and payload. Valid 24-byte strings are refused;
+  a mistyped one can still complete into a different seed if the user
+  incorrectly chooses 32 bytes. The size must not be guessed from the input
+  length. Editing the strings, expected size or target index clears the
+  previous result and error. Derive
   refuses index `s`, which would reveal the secret; CW1 and CX1 strings are
   refused. Shares typed in, the recovered secret and its master seed are
   shown in the page and cleared with the other secret fields on page hide

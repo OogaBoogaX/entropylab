@@ -358,7 +358,10 @@ an explicit error before those pairs are allocated.
   interpolation over exactly the strings supplied — deterministic, with no
   wallet generation, no seed splitting, and no entropy invented. CW1 and CX1
   strings are refused, and Derive refuses index `s`, which would reveal the
-  secret.
+  secret. Completing a missing checksum requires the expected seed size
+  recorded with the source material (16, 32 or 64 bytes); the calculator
+  never infers it from a checksum-free string's length. Editing the strings,
+  expected size or target share index clears the previous result.
 - A session **Journal** has three working areas: **Notes**, **Keys**, and
   **Session**. Notes opens first; Keys holds recoverable key inputs, and
   Session shows the current report first, saved historical snapshots in their

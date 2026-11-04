@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   completeCodex32Checksum,
   deriveCodex32Share,
+  hodlInitCodex32,
   parseCodex32,
   recoverCodex32Secret,
 } from "../src/js/codex32.js";
@@ -72,10 +73,64 @@ test("mistyped complete 128-bit seeds never become longer valid seeds", () => {
 });
 
 test("Calculate Checksum appends the BIP-93 checksum and leaves a valid string unchanged", () => {
-  assert.equal(completeCodex32Checksum(v1.slice(0, -13)), v1);
-  assert.equal(completeCodex32Checksum(v4.slice(0, -13)), v4);
-  assert.equal(completeCodex32Checksum(v5.slice(0, -15)).toLowerCase(), v5.toLowerCase());
+  assert.equal(completeCodex32Checksum(v1.slice(0, -13), 16), v1);
+  assert.equal(completeCodex32Checksum(v4.slice(0, -13), 32), v4);
+  assert.equal(completeCodex32Checksum(v5.slice(0, -15), 64).toLowerCase(), v5.toLowerCase());
   assert.equal(completeCodex32Checksum(v1.toUpperCase()), v1);
+});
+
+test("checksum completion requires the user's supported seed size instead of inferring ambiguous input", () => {
+  const unsupported24 = "ms10seedsyqsjygeyy5nzw2pf9g4jctfw9ucrzv3nxs6nvdau84gz0632s0xs";
+  const typo = unsupported24.slice(0, -1) + "q";
+  assert.equal(typo.length, 61);
+  assert.throws(() => completeCodex32Checksum(typo), /seed size/i);
+  assert.throws(() => completeCodex32Checksum(typo, 24), /seed size/i);
+  assert.throws(() => completeCodex32Checksum(typo, 16), /length/i);
+  assert.throws(() => completeCodex32Checksum(unsupported24, 32), /supported/i);
+  for (const [complete, width, size] of [[v1, 13, 16], [v4, 13, 32], [v5.toLowerCase(), 15, 64]]) {
+    const payload = complete.slice(0, -width);
+    assert.throws(() => completeCodex32Checksum(payload), /seed size/i);
+    assert.equal(completeCodex32Checksum(payload, size), complete);
+    assert.throws(() => completeCodex32Checksum(payload, size === 16 ? 32 : 16), /length/i);
+  }
+});
+
+test("editing checksum inputs, shares, or the target immediately retires the previous result", (t) => {
+  const previous = globalThis.document;
+  const nodes = new Map(["shares", "index", "size", "out", "error", "checksum", "recover", "derive", "clear"].map((name) => [
+    "codex32-" + name,
+    Object.assign(new EventTarget(), { value: "", textContent: "", dataset: {} }),
+  ]));
+  const field = (name) => nodes.get("codex32-" + name);
+  const click = (name) => field(name).dispatchEvent(new Event("click"));
+  let sizeSyncs = 0;
+  field("size").addEventListener("entropylab:sync-select", () => { sizeSyncs++; });
+  globalThis.document = { getElementById: (id) => nodes.get(id) };
+  t.after(() => { globalThis.document = previous; });
+  hodlInitCodex32();
+  for (const [name, event] of [["shares", "input"], ["index", "input"], ["size", "change"]]) {
+    field("shares").value = shareA + "\n" + shareC;
+    field("size").value = "32";
+    click("recover");
+    assert.equal(field("out").textContent, secret2 + "\nd1808e096b35b209ca12132b264662a5");
+    field("error").textContent = "earlier validation error";
+    field(name).value = name === "shares" ? "" : name === "size" ? "32" : "d";
+    field(name).dispatchEvent(new Event(event));
+    assert.equal(field("out").textContent, "", name);
+    assert.equal(field("error").textContent, "", name);
+    if (name === "shares") assert.equal(field("size").value, "", "a new payload needs a new explicit size choice");
+  }
+  field("shares").value = v4.slice(0, -13);
+  field("size").value = "";
+  click("checksum");
+  assert.equal(field("out").textContent, "");
+  assert.match(field("error").textContent, /seed size/i);
+  field("size").value = "32";
+  click("checksum");
+  assert.equal(field("out").textContent, v4 + "\nffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100");
+  click("clear");
+  assert.equal(field("size").value, "");
+  assert.equal(sizeSyncs, 2, "input edits and Clear refresh the shared size picker");
 });
 
 test("Calculate Checksum does not substitute a character to repair a bad payload", () => {
@@ -183,7 +238,7 @@ test("rejected MS1 inputs fail closed", () => {
   assert.throws(() => deriveCodex32Share([shareA, shareC], "b"), /bech32/);
   assert.throws(() => deriveCodex32Share([shareA, shareC], "s"), /recovers the secret/);
   assert.throws(() => deriveCodex32Share([shareA, shareC], "S"), /recovers the secret/);
-  const other = completeCodex32Checksum("ms12casha" + "x".repeat(26));
+  const other = completeCodex32Checksum("ms12casha" + "x".repeat(26), 16);
   assert.throws(() => recoverCodex32Secret([shareA, other]), /identifier/);
   assert.throws(() => parseCodex32(""), /Enter an MS1/);
 });

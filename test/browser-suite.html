@@ -263,10 +263,12 @@
   await test("MS1 calculator rejects mistyped complete seeds and clears stale results", () => {
     const input = document.getElementById("codex32-shares");
     const index = document.getElementById("codex32-index");
+    const size = document.getElementById("codex32-size");
     const out = document.getElementById("codex32-out");
     const error = document.getElementById("codex32-error");
     const valid = "ms10testsxxxxxxxxxxxxxxxxxxxxxxxxxx4nzvca9cmczlw";
     input.value = valid.slice(0, -13);
+    size.value = "16";
     document.getElementById("codex32-checksum").click();
     equal(out.textContent, valid + "\n318c6318c6318c6318c6318c6318c631");
     input.value = "ms10testsxxxxxxxxxxxqxxxxxxxxxxxxxx4nzvca9cmczlw";
@@ -279,12 +281,24 @@
     index.value = "d";
     document.getElementById("codex32-derive").click();
     equal(out.textContent, "ms12namedll4f8jlh4e5vdvuldlfxu2jhdnlsm97xvenrxeg");
+    index.value = "e";
+    index.dispatchEvent(new Event("input", { bubbles: true }));
+    equal(out.textContent, ""); equal(error.textContent, "");
+    index.value = "d";
+    document.getElementById("codex32-derive").click();
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    equal(out.textContent, ""); equal(error.textContent, "");
+    document.getElementById("codex32-recover").click();
+    size.value = "32";
+    size.dispatchEvent(new Event("change", { bubbles: true }));
+    equal(out.textContent, ""); equal(error.textContent, "");
     index.value = "s";
     document.getElementById("codex32-derive").click();
     equal(out.textContent, "");
     assert(error.textContent.length > 0, "derive-to-secret must fail");
     document.getElementById("codex32-clear").click();
     equal(input.value, ""); equal(index.value, "");
+    equal(size.value, "");
     equal(out.textContent, ""); equal(error.textContent, "");
   });
 
