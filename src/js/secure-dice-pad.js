@@ -1,7 +1,6 @@
 // Secure entry: the strict dice pad (P4a). It owns the pad's DOM and writes
-// the caller's rolls entry only through rollsPush and rollsUndo. Part B wires
-// it into the Key Station behind the preview flag and the Secure entry switch;
-// app.js does not import it yet.
+// the caller's rolls entry only through rollsPush and rollsUndo. app.js mounts
+// it in the Key Station's dice form while Secure entry is on.
 //
 // Security contract: the pad never keeps a roll beyond the one the user asks
 // to see, never reads the whole sequence, never puts more than one face in the

@@ -1,4 +1,5 @@
-// The Key Station's "Scan QR" panel (preview builds only). It owns the panel's
+// The Key Station's "Scan QR" panel (every build since the Secure entry
+// unhide, owner 11-04). It owns the panel's
 // DOM, one decoder and one camera scanner; the private-key field belongs to
 // the caller. A scan is only ever offered to the caller: nothing is loaded
 // until Continue, and a seed or an unknown payload is refused with nothing
