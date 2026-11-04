@@ -7743,6 +7743,12 @@ function hodlKeyScanLoad(bytes) {
   state.fields.keyKind = "wif";
   let values = hodlPrivateKeyValues(state.fields);
   for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
+  // Global sync copies computed from the old key go with it, as at turn-on
+  // Keep and in the seed scan (MiniMax, #1439 gate). The key is installed, so
+  // a throw here must not make the panel say nothing was loaded.
+  if (state.globalSync && String(state.globalSyncSource || "").startsWith("key:")) {
+    try { hodlClearGlobalSyncCopies(state); } catch {}
+  }
   hodlSetMode(hodlKeyMode);
   hodlQueueMasterFingerprintPreview(0);
 }
@@ -7863,12 +7869,13 @@ function hodlSeedScanLoad(indices, count) {
     // key's seed, whichever way it was entered (Kimi, round 5).
     state.fields.seedNumbers = "";
     // Global sync copies computed from the old words go with them: the scan
-    // replaced those words, so every copy of them is stale. (Turn-on Keep's
-    // "single" exception keeps a private-key wallet's fields; the result is
-    // already invalidated here, and nothing it showed survives a new seed.)
+    // replaced those words, so every copy of them is stale. A wallet made
+    // from a private key keeps its fields, as at turn-on Keep: the words
+    // cannot rebuild it. The result was invalidated above, so the check reads
+    // the one kept to wipe (GLM, MiniMax, red team, #1439 gate r2).
     // The words are installed, so a throw here must not make the panel say
     // nothing was loaded (Kimi, #1439 gate).
-    if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource)) {
+    if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource) && previous?.kind !== "single") {
       try { hodlClearGlobalSyncCopies(state); } catch {}
     }
     state.lastWord = "";
@@ -13336,7 +13343,10 @@ async function hodlSecureEntryToggle(wanted) {
         commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
       } else {
         plan = planTurnOn(hodlSecureSession, keys, { seed: converter, key: keyConverter, rolls: ({ text, method }) => hodlSecureDiceEntryFromText(text, method) });
-        let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok, otherFormats: keyStates.some((item) => item.otherFormats) || diceStates.some((item) => item.otherFormats) });
+        // A seed held as words can also hold word numbers (each switch of the
+        // seed format saves both): Keep empties them too, so the note shows.
+        let seedOtherFormats = states.some((state) => String(state.fields?.seedNumbers ?? "").trim());
+        let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok, otherFormats: seedOtherFormats || keyStates.some((item) => item.otherFormats) || diceStates.some((item) => item.otherFormats) });
         if (choice === "keep" && plan.ok) {
           commitTurnOn(hodlSecureSession, plan);
           plan = null;
@@ -13352,6 +13362,9 @@ async function hodlSecureEntryToggle(wanted) {
               state.lastWord = "";
             }
             state.fields.seed = "";
+            // The same seed saved as word numbers is hidden plain text too
+            // (B1): a switch of the seed format saves both (GLM, #1439 gate).
+            state.fields.seedNumbers = "";
           }
           for (const { state } of keyStates) {
             // Global sync copies computed from this key go with it, as for
@@ -13389,6 +13402,7 @@ async function hodlSecureEntryToggle(wanted) {
             if (state.result) state.secureCleared = true;
             if (state.globalSync) hodlClearGlobalSyncCopies(state);
             state.fields.seed = "";
+            state.fields.seedNumbers = "";
             // The last-word helper's copy of the wiped words goes too (GLM).
             state.lastWord = "";
           }

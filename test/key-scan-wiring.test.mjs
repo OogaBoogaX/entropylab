@@ -94,6 +94,29 @@ test("hodlKeyScanLoad puts the WIF's code points in the key's vault", async () =
   bytes.fill(0);
 });
 
+// Global sync copies made from the old key go with it, as at turn-on Keep and
+// in the seed scan; a throw there must not reach the panel, since the key is
+// already installed (MiniMax, #1439 gate r2).
+test("the key scan clears Global sync copies of the old key, guarded", async () => {
+  const cleared = [];
+  const { mod, session, state, modes } = await loadKeyScan({
+    stubs: { hodlClearGlobalSyncCopies: (target) => { cleared.push(target.globalSyncSource); throw new Error("boom"); } },
+  });
+  const wif = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
+  const bytes = Uint8Array.from(wif, (character) => character.charCodeAt(0));
+  state.globalSync = true;
+  state.globalSyncSource = "key:hex-key";
+  mod.hodlKeyScanLoad(bytes);
+  assert.deepEqual(cleared, ["key:hex-key"]);
+  assert.equal(sessionGet(session, mod.hodlSecureKeyOf(state), "key").vault.text(), wif);
+  assert.deepEqual(modes, ["key"]);
+  // Copies made from another source are not this key's: they stay.
+  state.globalSyncSource = "seed:words";
+  mod.hodlKeyScanLoad(bytes);
+  assert.deepEqual(cleared, ["key:hex-key"]);
+  bytes.fill(0);
+});
+
 test("hodlKeyScanLoad throws, changing nothing, when it cannot load", async () => {
   const wif = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
   const bytes = () => Uint8Array.from(wif, (character) => character.charCodeAt(0));

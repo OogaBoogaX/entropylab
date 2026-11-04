@@ -191,11 +191,15 @@ test("a scanned seed's focus goes to the picker, after its mount when needed", (
 });
 
 // The words are installed before the copies are cleared, so a throw there must
-// not reach the panel as "nothing was loaded" (Kimi, #1439 gate), and no
-// result-kind guard may sit on it: the result was invalidated just before, and
-// a new seed leaves no copy of the old words worth keeping.
+// not reach the panel as "nothing was loaded" (Kimi, #1439 gate). A wallet made
+// from a private key keeps its fields, as at turn-on Keep; the live result is
+// invalidated first, so the check reads the result kept from before it
+// (GLM, MiniMax, red team, #1439 gate r2).
 test("the seed scan clears Global sync copies of the old words, guarded", () => {
   const body = functionBody("hodlSeedScanLoad");
-  assert.match(body, /if \(state\.globalSync && \["seed:words", "seed:numbers"\]\.includes\(state\.globalSyncSource\)\) \{\s*try \{ hodlClearGlobalSyncCopies\(state\); \} catch \{\}\s*\}/);
-  assert.doesNotMatch(body, /globalSyncSource\)[^\n]*result\?\.kind/);
+  assert.match(body, /if \(state\.globalSync && \["seed:words", "seed:numbers"\]\.includes\(state\.globalSyncSource\) && previous\?\.kind !== "single"\) \{\s*try \{ hodlClearGlobalSyncCopies\(state\); \} catch \{\}\s*\}/);
+  const kept = body.indexOf("let previous = state.result;");
+  assert.ok(kept >= 0 && kept < body.indexOf("hodlInvalidateLiveKeyResult()"), "the result is read before it is invalidated");
+  assert.ok(body.indexOf("hodlInvalidateLiveKeyResult()") < body.indexOf("previous?.kind"));
+  assert.doesNotMatch(body, /globalSyncSource\)[^\n]*state\.result\?\.kind/);
 });
