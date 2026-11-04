@@ -378,8 +378,12 @@ test("turning Secure entry on and off keeps, clears and converts dice beside key
 
     // Keep and Clear empty every dice field, not only the kept method's.
     for (const action of ["keep", "clear"]) {
-      const fields = { dice: "123456", colemanDice: "654321", bitboxDice: "111111", dplusDice: "222222" };
-      const state = { id: 20, name: action, mode: "dice", diceMethod: "coldcard", fields };
+      // privateKeys is there as hodlPrivateKeyValues makes it in the app; the
+      // stub here only returns it.
+      const fields = { dice: "123456", colemanDice: "654321", bitboxDice: "111111", dplusDice: "222222", seed: "copied words", hex: "abcd", privateKeys: { wif: "synced wif", "hex-key": "synced hex" } };
+      // Global sync last ran from another dice method: its copies are made
+      // from text this Keep empties, so they go too (#1439 red team).
+      const state = { id: 20, name: action, mode: "dice", diceMethod: "coldcard", fields, globalSync: true, globalSyncSource: "dice:coleman", diceCoinPositions: [1, 0, 1], dplusLastWord: "abandon", lastWord: "zoo" };
       const session = createSecureSession();
       mod.__set.hodlSecureSession(session);
       mod.__set.hodlKeys([state]);
@@ -390,6 +394,26 @@ test("turning Secure entry on and off keeps, clears and converts dice beside key
       await mod.hodlSecureEntryToggle(true);
       assert.equal(lastOptions.otherFormats, true, action);
       for (const name of ["dice", "colemanDice", "bitboxDice", "dplusDice"]) assert.equal(state.fields[name], "", `${action} ${name}`);
+      assert.equal(state.fields.seed, "", `${action}: a Global sync copy from another dice method survived`);
+      assert.equal(state.fields.hex, "", `${action} hex copy`);
+      assert.deepEqual(state.fields.privateKeys, { wif: "", "hex-key": "" }, `${action} private-key copies`);
+      assert.deepEqual(state.diceCoinPositions, [], `${action} coin positions`);
+      assert.equal(state.dplusLastWord, "", `${action} D++ last word`);
+      assert.equal(state.lastWord, "", `${action} last word`);
+    }
+
+    // lastWord is BitBox's pick only when BitBox rolls were there: Keep
+    // without them leaves it, as it leaves the Global sync copies above.
+    for (const [bitboxDice, expected] of [["", "seedword"], ["111111", ""]]) {
+      const state = { id: 22, name: "Pick", mode: "dice", diceMethod: "coldcard", fields: { dice: "123456", bitboxDice }, lastWord: "seedword" };
+      mod.__set.hodlSecureSession(createSecureSession());
+      mod.__set.hodlKeys([state]);
+      mod.__set.hodlActiveKey(0);
+      mod.__set.hodlSecureEntryOn(false);
+      choice = "keep";
+      await mod.hodlSecureEntryToggle(true);
+      assert.equal(state.fields.bitboxDice, "");
+      assert.equal(state.lastWord, expected, `bitboxDice ${JSON.stringify(bitboxDice)}`);
     }
 
     // More than 400 typed rolls is keepable, and hashes like the text path.

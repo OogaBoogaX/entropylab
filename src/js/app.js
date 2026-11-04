@@ -7862,10 +7862,14 @@ function hodlSeedScanLoad(indices, count) {
     // The same seed typed as word numbers goes too: Continue replaces the
     // key's seed, whichever way it was entered (Kimi, round 5).
     state.fields.seedNumbers = "";
-    // Global sync copies computed from the old words go with them, as at
-    // turn-on Keep: the words are left only in Secure entry.
-    if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource) && state.result?.kind !== "single") {
-      hodlClearGlobalSyncCopies(state);
+    // Global sync copies computed from the old words go with them: the scan
+    // replaced those words, so every copy of them is stale. (Turn-on Keep's
+    // "single" exception keeps a private-key wallet's fields; the result is
+    // already invalidated here, and nothing it showed survives a new seed.)
+    // The words are installed, so a throw here must not make the panel say
+    // nothing was loaded (Kimi, #1439 gate).
+    if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource)) {
+      try { hodlClearGlobalSyncCopies(state); } catch {}
     }
     state.lastWord = "";
     // The D++ final word belonged to the old length, as on a word-count
@@ -13361,9 +13365,19 @@ async function hodlSecureEntryToggle(wanted) {
           }
           for (const { state, method } of diceStates) {
             // Keep empties every dice text field the key holds, not only the
-            // one on screen: the others are hidden plain text (B1).
+            // one on screen: the others are hidden plain text (B1). The BitBox
+            // coin positions and the D++/BitBox picked last words are parts of
+            // those transcripts, so they go too (Kimi, #1439 gate). lastWord is
+            // BitBox's pick only when BitBox rolls were there; otherwise it can
+            // belong to the key's other inputs, and Keep leaves it.
+            let bitboxWord = method === "bitbox" || Boolean(String(state.fields?.bitboxDice ?? "").trim());
             for (const name of ["dice", "colemanDice", "bitboxDice", "dplusDice"]) state.fields[name] = "";
-            if (state.globalSync && state.globalSyncSource === "dice:" + method) {
+            state.diceCoinPositions = [];
+            state.dplusLastWord = "";
+            if (bitboxWord) state.lastWord = "";
+            // Every dice field was just emptied, so Global sync copies made from
+            // any of them go, not only from the kept method's (#1439 red team).
+            if (state.globalSync && String(state.globalSyncSource || "").startsWith("dice:")) {
               hodlClearGlobalSyncCopies(state);
               state.lastWord = "";
             }
@@ -13391,8 +13405,12 @@ async function hodlSecureEntryToggle(wanted) {
             if (state.result) state.secureCleared = true;
             if (state.globalSync) hodlClearGlobalSyncCopies(state);
             // Clear empties every dice text field the key holds, not only the
-            // one on screen: each is a secret.
+            // one on screen: each is a secret, as are the coin positions and
+            // picked last words that belong to them.
             for (const name of ["dice", "colemanDice", "bitboxDice", "dplusDice"]) state.fields[name] = "";
+            state.diceCoinPositions = [];
+            state.dplusLastWord = "";
+            state.lastWord = "";
           }
           commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
         } else {

@@ -28,7 +28,9 @@ const fail = (code, message) => { throw new SecureEntryError(code, message); };
 
 const SEED_LENGTHS = new Set([12, 15, 18, 21, 24]);
 const MAX_WORD_INDEX = 2048;
-const MAX_CAPACITY = 4096;
+const MAX_CAPACITY = 400;
+// Typed dice transcripts can be long; Keep sizes the rolls entry to fit them.
+const MAX_ROLLS = 4096;
 
 const isInteger = (value) => typeof value === "number" && Number.isInteger(value);
 
@@ -167,7 +169,7 @@ export const keyEntry = () => ({ kind: "key", vault: new PassphraseVault(), wipe
 
 export const rollsEntry = (method, capacity) => {
   if (typeof method !== "string" || method.length === 0) fail("BAD_METHOD", "A rolls entry needs a method tag.");
-  if (!isInteger(capacity) || capacity < 1 || capacity > MAX_CAPACITY) fail("BAD_CAPACITY", "Capacity is 1..4096.");
+  if (!isInteger(capacity) || capacity < 1 || capacity > MAX_ROLLS) fail("BAD_CAPACITY", "Capacity is 1..4096.");
   return { kind: "rolls", method, rolls: new Uint8Array(capacity), count: 0, wiped: false, rev: 0 };
 };
 
@@ -203,7 +205,7 @@ export const rollsCopy = (entry) => {
 
 export const cardsEntry = (method, capacity) => {
   if (typeof method !== "string" || method.length === 0) fail("BAD_METHOD", "A cards entry needs a method tag.");
-  if (!isInteger(capacity) || capacity < 1 || capacity > MAX_CAPACITY) fail("BAD_CAPACITY", "Capacity is 1..4096.");
+  if (!isInteger(capacity) || capacity < 1 || capacity > MAX_CAPACITY) fail("BAD_CAPACITY", "Capacity is 1..400.");
   return { kind: "cards", method, cards: new Uint8Array(capacity), count: 0, wiped: false, rev: 0 };
 };
 

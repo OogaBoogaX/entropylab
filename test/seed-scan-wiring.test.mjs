@@ -189,3 +189,13 @@ test("a scanned seed's focus goes to the picker, after its mount when needed", (
   // A redraw drops a request left from an earlier load.
   assert.match(functionBody("hodlRenderKeyForm"), /hodlSeedPicker = null;\s*hodlSeedPickerFocusOnMount = false;/);
 });
+
+// The words are installed before the copies are cleared, so a throw there must
+// not reach the panel as "nothing was loaded" (Kimi, #1439 gate), and no
+// result-kind guard may sit on it: the result was invalidated just before, and
+// a new seed leaves no copy of the old words worth keeping.
+test("the seed scan clears Global sync copies of the old words, guarded", () => {
+  const body = functionBody("hodlSeedScanLoad");
+  assert.match(body, /if \(state\.globalSync && \["seed:words", "seed:numbers"\]\.includes\(state\.globalSyncSource\)\) \{\s*try \{ hodlClearGlobalSyncCopies\(state\); \} catch \{\}\s*\}/);
+  assert.doesNotMatch(body, /globalSyncSource\)[^\n]*result\?\.kind/);
+});
