@@ -13,14 +13,20 @@ itself.
   [GitHub Releases](https://github.com/OogaBoogaX/entropylab/releases) page.
   Download `entropylab.html`, `SHA256SUMS.txt`, `SHA256SUMS.asc`, `KEYS` and
   `entropylab.html.ots` into one folder.
-- **The live site** (`entropylab.online`) changes with every update, and its
-  footer shows a `-dev` version (for example `v1.1.0-dev`), so it never
-  passes for a signed release. Each
-  build has a checksum, a GitHub attestation and a Bitcoin timestamp (steps
-  1, 3 and 4), but no release signatures. Its `SHA256SUMS.txt` and
+- **The live site** (`entropylab.online`) is the latest signed release, from
+  v1.1.0 on. It changes only when a new release is published, and its footer
+  shows that release's version. Until v1.1.0 is published it still shows the
+  last build from `rock`, whose footer says `-dev`. Check it like a release:
+  steps 1 to 4 below.
+- **The preview site** (`preview.entropylab.online`) is built from `rock` on
+  every merge and carries a `-dev` version (for example `v1.1.0-dev`). It has
+  no release signatures: it is unreviewed development software, not for real
+  funds. If you check it at all, use the `rock` checksum, attestation and
+  timestamp (steps 1, 3 and 4). Its `SHA256SUMS.txt` and
   `entropylab.html.ots` are next to `entropylab.html` in the
-  [`rock` branch](https://github.com/OogaBoogaX/entropylab/tree/rock). Each
-  update replaces all three, so download them at the same time as the page.
+  [`rock` branch](https://github.com/OogaBoogaX/entropylab/tree/rock), and
+  each update replaces all three, so download them at the same time as the
+  page.
 
 ## Step 1: check the checksum
 
@@ -105,9 +111,14 @@ matches this list:
 | Signer | Primary key fingerprint |
 | --- | --- |
 | Portland.HODL (russeree) | `3428 CBB5 4C36 9D8A F14E  F600 C801 EE1D 5285 101E` |
-| MrHodlX | `6443 4EE4 8A96 C38E 78B7  875F 4E7E 416E E17D 237C` |
+| MrHodlX | `DB19 EF73 4874 43AA EAC2  6687 17AB DC5F 9867 B54F` |
+| MrHodlX (revoked) | `6443 4EE4 8A96 C38E 78B7  875F 4E7E 416E E17D 237C` |
 | w-s-bitcoin | `542E CCA3 B5CB 74CE C957  29B3 92C2 1496 202E 3774` |
 | timechainb | `63EF 760E E641 A585 16D5  4930 F0B7 D606 C6FD 9D52` |
+
+MrHodlX's old key `6443 4EE4 …` is revoked: treat any signature from it as
+untrusted, including its block on v1.0.0. MrHodlX now signs with the interim
+key above.
 
 Portland.HODL and w-s-bitcoin sign with subkeys (`C0AF3AD083D6B40A` and
 `EFBB6C556124B3DE`). GPG shows the subkey and its primary fingerprint, and the

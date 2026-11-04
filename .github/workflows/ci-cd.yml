@@ -121,19 +121,10 @@ jobs:
             src/js/qr-wasm-b64.js
           if-no-files-found: error
           retention-days: 7
-      - name: Prepare static site
-        run: |
-          mkdir _site
-          cp entropylab.html robots.txt sitemap.xml llms.txt _site/
-          cp manifest.webmanifest service-worker.js _site/
-          cp entropylab.html _site/index.html
-          cp -r assets _site/assets
-          touch _site/.nojekyll
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: _site
-          retention-days: 7
+      # No Pages artifact here: production is deployed only by
+      # pages-release.yml from a published, signed release (#1406), and the
+      # preview job below builds its own _site from this candidate. A merge to
+      # rock must never change entropylab.online.
 
   # Keyless Sigstore attestation of the exact tested wallet HTML. This is a
   # separate push-only job: a pull request must never run PR-controlled code
@@ -1086,26 +1077,78 @@ jobs:
           FILES=$(git diff --name-only "origin/$PR_BASE"...HEAD | tr '\n' ' ')
           node scripts/i18n-gate.mjs --author "$PR_AUTHOR" --app-slug "$APP_SLUG" --base "$PR_BASE" --head "$PR_HEAD" --files $FILES
 
-  # ── Deploy: gated on a good build, a clean verify, and the reproduction ──
+  # ── Preview: publish rock to the -dev preview site (issue #1406) ─────────
+  # Production (entropylab.online) is deployed only by pages-release.yml from
+  # a published, signed release. This job publishes the tested rock candidate
+  # to preview.entropylab.online, which carries a -dev version and no release
+  # signatures. It skips with a notice until PREVIEW_DEPLOY_KEY is set.
 
-  deploy:
-    name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/rock' && github.event_name != 'pull_request'
-    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce, test-bitcoind]
+  preview:
+    name: Preview · deploy rock to preview.entropylab.online
+    # After the artifact job, and only when it was not superseded: a run for
+    # an older rock commit that finishes late must not replace a newer
+    # preview (the same rule the timestamp job follows).
+    if: github.ref == 'refs/heads/rock' && github.event_name == 'push' && needs.artifact.outputs.superseded != 'true'
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce, test-bitcoind, artifact]
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages-preview
+      cancel-in-progress: false
     steps:
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - name: Deploy tested artifact
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Download the tested candidate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: entropylab-candidate
+      - name: Verify the candidate digest
+        run: echo "${{ needs.build.outputs.sha256 }}  entropylab.html" | sha256sum -c -
+      - name: Prepare the preview site
+        run: |
+          mkdir _site
+          cp entropylab.html robots.txt sitemap.xml llms.txt _site/
+          cp manifest.webmanifest service-worker.js _site/
+          cp entropylab.html _site/index.html
+          cp -r assets _site/assets
+          touch _site/.nojekyll
+      - name: Deploy to the preview repository
+        env:
+          PREVIEW_DEPLOY_KEY: ${{ secrets.PREVIEW_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PREVIEW_DEPLOY_KEY" ]; then
+            echo "::notice title=Preview not deployed::PREVIEW_DEPLOY_KEY is not set"
+            exit 0
+          fi
+          KEY="$RUNNER_TEMP/preview_deploy_key"
+          # The key file never outlives this step, whatever happens below.
+          trap 'rm -f "$KEY"' EXIT
+          (umask 077; printf '%s\n' "$PREVIEW_DEPLOY_KEY" > "$KEY")
+          chmod 600 "$KEY"
+          KNOWN_HOSTS="$RUNNER_TEMP/preview_known_hosts"
+          cat > "$KNOWN_HOSTS" <<'HOSTKEYS'
+          github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+          github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+          github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+          HOSTKEYS
+          chmod 600 "$KNOWN_HOSTS"
+          export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN_HOSTS"
+          git clone --branch main --depth 1 git@github.com:OogaBoogaX/entropylab-preview.git "$RUNNER_TEMP/preview"
+          cd "$RUNNER_TEMP/preview"
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name CNAME -exec rm -rf {} +
+          cp -R "$GITHUB_WORKSPACE/_site/." .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Preview is unchanged; nothing to push."
+            exit 0
+          fi
+          git commit -m "Deploy rock ${GITHUB_SHA}"
+          git push origin HEAD:main
 
   # ── Docker: build and push the dev container image ────────────────────────
 

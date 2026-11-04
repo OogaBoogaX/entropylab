@@ -249,6 +249,11 @@ test("the scheduled and release workflows' checkouts do not persist their tokens
     assert.ok(blocks.length > 0, `${path} has checkout steps`);
     for (const block of blocks) assert.match(block, /persist-credentials: false/, `${path}: a checkout persists the job's token`);
   }
+  // pages-release.yml names its steps, so its checkouts are found step by step.
+  const pagesCheckouts = read(".github/workflows/pages-release.yml").split(/\n(?=      - )/)
+    .filter((step) => /^\s+uses: actions\/checkout@/m.test(step));
+  assert.ok(pagesCheckouts.length >= 2, "pages-release.yml has its checkout steps");
+  for (const step of pagesCheckouts) assert.match(step, /persist-credentials: false/, "pages-release.yml: a checkout persists the job's token");
   // Dropping the persisted credential only stays safe while release-assets
   // authenticates its one gh call through env and pushes nothing itself.
   const release = read(".github/workflows/release-assets.yml");
@@ -286,5 +291,5 @@ test("the Bitcoin Core interop job verifies the pinned bitcoind download before 
   // The job gates a merge exactly like the other behavioral test gates.
   const needsOf = (name) => workflowJob(workflow, name).match(/^    needs: \[([^\]]+)\]$/m)?.[1] ?? "";
   assert.ok(needsOf("artifact").split(", ").includes("test-bitcoind"), "the artifact job must need the interop job");
-  assert.ok(needsOf("deploy").split(", ").includes("test-bitcoind"), "the deploy job must need the interop job");
+  assert.ok(needsOf("preview").split(", ").includes("test-bitcoind"), "the preview deploy must need the interop job");
 });
