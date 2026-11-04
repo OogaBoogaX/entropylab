@@ -19,6 +19,7 @@ import { KEY_VAULT_MAX_KEYS, keyVaultIdentity } from "../src/js/keymanager.js";
 import { hodlInitLn } from "../src/js/lightning.js";
 import { initLowEntropyConfirm } from "../src/js/low-entropy-confirm.js";
 import { initFingerprintCollisionConfirm } from "../src/js/fingerprint-collision-confirm.js";
+import { initConcealOnLeave } from "../src/js/conceal-on-leave.js";
 
 // The helpers that zero address-row key bytes (#546 B2). The lifecycle
 // harness loads whichever of them app.js defines, so a source without them
@@ -53,11 +54,16 @@ function createContext(sandbox) {
     hodlLowEntropyConfirm: null, hodlFingerprintCollisionConfirm: null,
     hodlKeyManagerCancelDerivation() {},
     hodlSyncWorkspaceCounts() {},
+    // Secure entry stays off here; its wiring is covered in secure-entry-wiring.test.mjs.
+    hodlSecureSeedActive: () => false, hodlSecureEntryHasData: () => false, hodlSecureEntryDropKey() {},
+    hodlSecureSeedApplies: () => false, hodlSecureEntryBackupRefusal: () => null, hodlSecureKeyOf: () => null, hodlSecureEntryHeld: () => false,
+    hodlRenderSecureEntryControl() {}, hodlSeedPicker: null, hodlMountSeedPicker() {},
+    hodlSecureDiceActive: () => false, hodlSecureDiceApplies: () => false, hodlSecureDicePad: null, hodlMountSecureDicePad() {},
     // Session state hodlReleaseKeyConsumers reads; a key drop releases any
     // consumer bound to it (PSBT, BIP-85, Silent Payments, vanity).
     hodlPsbtSource: "", hodlBip85Source: "", hodlSpSource: "", hodlSpVerifyMatches: null,
     hodlSpSendLast: null, hodlSpNote: "", hodlVanitySource: "", hodlVanityApplying: false,
-    TextEncoder, TextDecoder, ...sandbox,
+    TextEncoder, TextDecoder, CustomEvent, ...sandbox,
   });
   for (const name of passphraseHelpers) vm.runInContext(functionSource(name), context);
   return context;
@@ -468,6 +474,21 @@ test("pagehide and persisted pageshow empty the Nonce Inspector's key, passphras
   }
 });
 
+// A PSBT upload still being read when the page is hidden — signer audit, RBF
+// original or inspector file — must not write back into the fields the sweep
+// has just emptied: each loader's generation is retired with them.
+test("pagehide and persisted pageshow retire every pending PSBT upload", () => {
+  for (const [type, event] of [["pagehide", {}], ["pageshow", { persisted: true }]]) {
+    const { context, events } = raceHarness();
+    const retired = { audit: 0, rbf: 0, inspector: 0 };
+    context.hodlPsbtRetireAuditUploads = () => { retired.audit += 1; };
+    context.hodlPsbtRetireRbfUploads = () => { retired.rbf += 1; };
+    context.hodlPsbtRetireInspectorUploads = () => { retired.inspector += 1; };
+    events[type](event);
+    assert.deepEqual(retired, { audit: 1, rbf: 1, inspector: 1 }, `${type} left a pending PSBT upload live`);
+  }
+});
+
 test("BIP-85 parent and derived-child fields are explicitly cleared", () => {
   assert.match(lifecycle, /getElementById\("bip85-key"\)/);
   assert.match(lifecycle, /bip85Key\.value\s*=\s*""/);
@@ -783,7 +804,7 @@ function lnToolPage() {
   const page = new MiniDocument();
   globalThis.document = page;
   page.body.innerHTML = '<select id="ln-format"></select>'
-    + '<div id="ln-network-field"><select id="ln-network"></select></div>'
+    + '<div id="ln-network-field"><p id="ln-network-note"></p></div>'
     + '<textarea id="ln-seed"></textarea><input id="ln-pass" type="password">'
     + '<button id="ln-go" type="button"></button><button id="ln-wipe" type="button"></button>'
     + '<p id="ln-session"></p><p id="ln-error"></p><div id="ln-out"></div>'
@@ -991,12 +1012,14 @@ test("pagehide and persisted pageshow end the PSBT session, reports included", (
   for (const id of ["psbt-out", "nonce-out"]) elements.set(id, { innerHTML: "<table>report</table>", dataset: {} });
   for (const id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-rbf-original", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"]) elements.set(id, { value: "session material", dataset: {} });
   const errors = [];
-  let retiredUploads = 0, retiredRbfUploads = 0;
+  let retiredUploads = 0, retiredRbfUploads = 0, retiredCapture = 0;
   const context = createContext({
     document: { getElementById: id => elements.get(id) ?? null },
     hodlPsbtWipeMem() {}, hodlPsbtClearNonceHistory() {},
+    hodlNonceQrCapture: { clear: () => { retiredCapture += 1; } },
     hodlPsbtRetireAuditUploads: () => { retiredUploads += 1; },
     hodlPsbtRetireRbfUploads: () => { retiredRbfUploads += 1; },
+    hodlPsbtRetireInspectorUploads() {},
     hodlPsbtLast: { rvalues: ["deadbeef"] }, hodlPsbtInspected: { psbt: "stamp" },
     hodlPsbtSessionSpec: { key: "Session key" },
     hodlSetPsbtError: () => errors.push("psbt"), hodlSetNonceError: () => errors.push("nonce"),
@@ -1004,6 +1027,7 @@ test("pagehide and persisted pageshow end the PSBT session, reports included", (
   });
   vm.runInContext(`${functionSource("hodlNote")}\n${functionSource("hodlEndPsbtSession")}\nhodlEndPsbtSession();`, context);
   assert.equal(context.hodlPsbtLast, null, "session end left the parsed report state");
+  assert.equal(retiredCapture, 1, "session end retires the camera transcript");
   assert.equal(retiredUploads, 1, "session end retires a pending signer-audit upload");
   assert.equal(retiredRbfUploads, 1, "session end retires a pending RBF-original upload");
   // (vm realms: assert.keys rather than deepEqual against a home-realm {}.)
@@ -1013,6 +1037,30 @@ test("pagehide and persisted pageshow end the PSBT session, reports included", (
   assert.deepEqual(errors.sort(), ["nonce", "psbt"], "session end left an error line");
   for (const id of ["psbt-key", "psbt-pass", "psbt-text", "psbt-rbf-original", "psbt-ax-transcript", "nonce-key", "nonce-pass", "nonce-text"])
     assert.equal(elements.get(id).value, "", `session end left #${id} filled`);
+});
+
+test("End Session still wipes the key and fields when the camera capture fails to clear", () => {
+  const elements = new Map();
+  for (const id of ["psbt-out", "nonce-out"]) elements.set(id, { innerHTML: "<table>report</table>", dataset: {} });
+  for (const id of ["psbt-key", "psbt-pass", "psbt-text", "nonce-key", "nonce-pass", "nonce-text"]) elements.set(id, { value: "session material", dataset: {} });
+  let wiped = 0, history = 0;
+  const context = createContext({
+    document: { getElementById: id => elements.get(id) ?? null },
+    hodlPsbtWipeMem: () => { wiped += 1; }, hodlPsbtClearNonceHistory: () => { history += 1; },
+    hodlNonceQrCapture: { clear: () => { throw new Error("camera track would not stop"); } },
+    hodlPsbtRetireAuditUploads() {}, hodlPsbtRetireRbfUploads() {}, hodlPsbtRetireInspectorUploads() {},
+    hodlPsbtLast: { rvalues: ["deadbeef"] }, hodlPsbtInspected: { psbt: "stamp" },
+    hodlPsbtSessionSpec: null,
+    hodlSetPsbtError() {}, hodlSetNonceError() {},
+    hodlPaintPsbtSession() {}, hodlRefreshStationKeyPickers() {}, hodlSyncPsbtControls() {},
+  });
+  vm.runInContext(`${functionSource("hodlNote")}\n${functionSource("hodlEndPsbtSession")}\nhodlEndPsbtSession();`, context);
+  assert.equal(wiped, 1, "a capture failure skipped the key wipe");
+  assert.equal(history, 1, "a capture failure skipped the nonce history clear");
+  assert.equal(context.hodlPsbtLast, null, "a capture failure left the parsed report state");
+  for (const id of ["psbt-key", "psbt-pass", "psbt-text", "nonce-key", "nonce-pass", "nonce-text"])
+    assert.equal(elements.get(id).value, "", `a capture failure left #${id} filled`);
+  assert.equal(elements.get("psbt-out").innerHTML, "", "a capture failure left the PSBT report rendered");
 });
 
 test("pagehide and persisted pageshow reset every multisig tab", () => {
@@ -1695,7 +1743,7 @@ test("changing the language outside Keys keeps the selected key's wallet", async
     });
     for (const name of ["hodlRenderKeyForm", "hodlRestoreFormFields", "hodlUpdateSeedLengthControl", "hodlUpdateAddressEstimate",
       "hodlUpdateCoinTypeHelp", "hodlUpdateDerivationPathPreview", "hodlUpdateMsigScriptDetection",
-      "hodlUpdateMsigAccount", "hodlShowMsig", "hodlRefreshKeyResult", "hodlRefreshPsbtLocale", "hodlRefreshVanityLocale", "hodlRefreshStationKeyPickers", "hodlReindexMsigKeys", "hodlRenderBip85Out", "hodlRefreshSpLocale", "hodlRenderKeyTabs", "hodlRenderMsigTabs", "hodlRenderStationTabs", "hodlPaintKeySummary", "hodlUpdateHardeningHelp", "hodlApplyTheme", "hodlRefreshWorkspaceErrors"])
+      "hodlUpdateMsigAccount", "hodlShowMsig", "hodlRefreshKeyResult", "hodlRefreshPsbtLocale", "hodlRefreshVanityLocale", "hodlRefreshStationKeyPickers", "hodlReindexMsigKeys", "hodlRenderBip85Out", "hodlRefreshSpLocale", "hodlDecorateAppPaste", "hodlRenderKeyTabs", "hodlRenderMsigTabs", "hodlRenderStationTabs", "hodlPaintKeySummary", "hodlUpdateHardeningHelp", "hodlApplyTheme", "hodlRefreshWorkspaceErrors"])
       context[name] = () => {};
     let logRefreshes = 0;
     context.hodlSecurityLog = { refresh: () => logRefreshes++ };
@@ -2152,3 +2200,52 @@ test("Journal keep-existing and exact-reuse zero fresh seed material through the
     assert.equal(context.hodlKeys.filter(state => !state.isLab).length, 1);
   }
 });
+
+test("conceal retires pasted anti-exfil transcript, cache and disclosure",()=>{
+ const field={value:'public-rho-marker'},section={open:true};
+ const context=createContext({hodlKeys:[],hodlBip85Children:[],hodlSpAddresses:[],hodlSpVerifyMatches:null,hodlNonceLast:{transcript:'public-rho-marker'},
+ document:{getElementById:id=>id==='psbt-ax-transcript'?field:id==='nonce-jade-options'?section:null,querySelectorAll:()=>[],dispatchEvent:()=>{}},Event:class{}});
+ vm.runInContext(functionSource('hodlConcealPrivateValues'),context);
+ context.hodlConcealPrivateValues();assert.equal(field.value,'');assert.equal(section.open,false);assert.equal(context.hodlNonceLast,null);
+});
+
+// #1261 maintainer contract: copying between windows must preserve the pasted
+// transcript on plain blur; hidden/idle/print still retire it. Every trigger
+// must continue masking other secrets, clearing result panes and pausing capture.
+for (const trigger of ["blur", "hidden", "idle", "beforeprint", "print-media", "legacy-print-media"]) {
+  test(`anti-exfil transcript lifecycle through conceal-on-leave: ${trigger}`, () => {
+    const field = { value: "public-rho-marker" }, section = { open: true };
+    const result = { textContent: "public-inspection-marker" };
+    const cache = { transcript: "public-rho-marker" }, key = { reveal: true };
+    const events = {}, signals = [];
+    let idle, printChange;
+    const doc = {
+      visibilityState: "visible",
+      getElementById: id => id === "psbt-ax-transcript" ? field : id === "nonce-jade-options" ? section : id === "nonce-out" ? result : null,
+      querySelectorAll: () => [], dispatchEvent: event => signals.push(event.type),
+      addEventListener: (name, fn) => { events[name] = fn; },
+    };
+    const win = {
+      addEventListener: (name, fn) => { events[name] = fn; },
+      setTimeout: fn => { idle = fn; return 1; }, clearTimeout() {},
+      matchMedia: () => trigger === "legacy-print-media"
+        ? { addListener: fn => { printChange = fn; } }
+        : { addEventListener: (_name, fn) => { printChange = fn; } },
+    };
+    const context = createContext({ hodlKeys: [key], hodlBip85Children: [], hodlSpAddresses: [],
+      hodlSpVerifyMatches: null, hodlNonceLast: cache, document: doc,
+      Event: class { constructor(type) { this.type = type; } } });
+    vm.runInContext(functionSource("hodlConcealPrivateValues"), context);
+    initConcealOnLeave({ conceal: context.hodlConcealPrivateValues, idleMs: 300000, win, doc });
+    if (trigger === "hidden") { doc.visibilityState = "hidden"; events.visibilitychange(); }
+    else if (trigger === "idle") idle();
+    else if (trigger.endsWith("print-media")) printChange({ matches: true });
+    else events[trigger]({ type: trigger });
+    assert.equal(field.value, trigger === "blur" ? "public-rho-marker" : "", "pasted transcript lifecycle");
+    assert.equal(section.open, trigger === "blur", "transcript disclosure lifecycle");
+    assert.equal(context.hodlNonceLast, trigger === "blur" ? cache : null, "inspection cache lifecycle");
+    assert.equal(key.reveal, false, "other secrets must still be concealed on blur");
+    assert.equal(result.textContent, "", "visible inspection result must still clear on blur");
+    assert.deepEqual(signals, ["hodl:conceal"], "camera/overlay conceal signal must still fire on blur");
+  });
+}

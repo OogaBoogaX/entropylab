@@ -613,27 +613,22 @@ test("ots-verifier-ui.js never assigns HTML to the page", () => {
 
 // ---- release build --------------------------------------------------------
 
-test("release shell drops preview-only OTS markup", () => {
+test("release shell ships the OTS markup (owner, 2026-10-29)", () => {
   const shell = readFileSync(join(rootDir, "..", "src", "shell.html"), "utf8");
-  // The build's own stripper (review on the tests round, Muse).
+  // The build's own stripper: the Verify workspace is no longer a preview block.
   const release = applyPreviewBlocks(shell, false);
-  assert.ok(!release.includes('id="verify-card"'), "release shell must not contain #verify-card");
-  assert.ok(
-    !release.includes('aria-controls="verify-card"'),
-    "release shell must not reference #verify-card",
-  );
-  assert.ok(!release.includes('id="ots-station"'), "release shell must not contain #ots-station");
+  assert.ok(release.includes('id="verify-card"'), "release shell contains #verify-card");
+  assert.ok(release.includes('aria-controls="verify-card"'), "release shell has the Verify tab");
+  assert.ok(release.includes('id="ots-station"'), "release shell contains #ots-station");
 });
 
-// Review on the tests round (Muse): a backwards scan could credit an earlier,
-// unrelated if (PREVIEW). Every call must carry its own guard on its line.
-test("release app.js does not call initOtsVerifier outside an if (PREVIEW) guard", () => {
+// Every build initializes the verifier (owner, 2026-10-29): no call may sit
+// behind the preview flag.
+test("app.js initializes the OTS verifier in every build", () => {
   const app = readFileSync(join(rootDir, "..", "src", "js", "app.js"), "utf8");
   const calls = app.split("\n").filter((line) => /initOtsVerifier\s*\(/.test(line));
-  assert.ok(calls.length > 0, "app.js calls initOtsVerifier");
-  for (const line of calls) {
-    assert.match(line, /^\s*if\s*\(\s*PREVIEW\s*\)\s*initOtsVerifier\s*\(\s*document\s*\)\s*;\s*$/, line);
-  }
+  assert.equal(calls.length, 1, "app.js calls initOtsVerifier once");
+  assert.match(calls[0], /^\s*initOtsVerifier\s*\(\s*document\s*\)\s*;\s*$/, calls[0]);
 });
 
 // Review on 19d228b2 (Kimi K3): the verifier transfers its inputs, which

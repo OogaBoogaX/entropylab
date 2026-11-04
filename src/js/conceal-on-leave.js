@@ -3,34 +3,34 @@
 // screen share broadcasts, and what iOS saves to disk as the app-switcher
 // picture. Leaving is any of: the window loses focus, the page is hidden, or
 // nobody has pressed a key, clicked, touched or scrolled for `idleMs`.
-// `conceal` does the hiding; it must be safe to call when nothing is shown.
+// `conceal({ reason })` does the hiding; it must be safe when nothing is shown.
 const ACTIVITY = ["pointerdown", "keydown", "wheel", "touchstart"];
 
 export function initConcealOnLeave({ conceal, idleMs, win = window, doc = document }) {
   let timer = 0;
   const arm = () => {
     win.clearTimeout(timer);
-    timer = win.setTimeout(conceal, idleMs);
+    timer = win.setTimeout(() => conceal({ reason: "idle" }), idleMs);
   };
-  win.addEventListener("blur", conceal);
+  win.addEventListener("blur", () => conceal({ reason: "blur" }));
   // Printing renders the live DOM in the preview: whatever is revealed on
   // screen would land on paper (or in a PDF) unless it is concealed first
   // (audit L5). beforeprint fires synchronously before the preview renders,
   // including for the page's own window.print() calls.
-  win.addEventListener("beforeprint", conceal);
+  win.addEventListener("beforeprint", () => conceal({ reason: "print" }));
   // A browser without `beforeprint` still exposes the print media query;
   // entering print mode conceals before the preview renders, the same
   // belt-and-braces the event path gives modern engines.
   if (typeof win.matchMedia === "function") {
     const print = win.matchMedia("print");
     const onPrint = (event) => {
-      if (event.matches) conceal();
+      if (event.matches) conceal({ reason: "print" });
     };
     if (print && typeof print.addEventListener === "function") print.addEventListener("change", onPrint);
     else if (print && typeof print.addListener === "function") print.addListener(onPrint);
   }
   doc.addEventListener("visibilitychange", () => {
-    if (doc.visibilityState === "hidden") conceal();
+    if (doc.visibilityState === "hidden") conceal({ reason: "hidden" });
   });
   for (const type of ACTIVITY) doc.addEventListener(type, arm, { capture: true, passive: true });
   arm();

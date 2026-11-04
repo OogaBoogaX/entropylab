@@ -7,8 +7,8 @@
 //
 //   psbtInspectDoc(bytes) -> structured document describing the unsigned
 //     transaction, every key-value pair of every map (typed decode for known
-//     BIP-174/BIP-371 keys, raw hex for unknown ones), totals and fee, and
-//     rust-bitcoin's own parse verdict.
+//     BIP-174/BIP-371 keys, raw hex for unknown ones), totals and fee,
+//     rust-bitcoin's own parse verdict, and single-file payjoin signals.
 //   psbtBuildBytes(doc)   -> PSBT bytes, after rust-bitcoin's
 //     Psbt::deserialize has accepted the rebuilt file.
 //

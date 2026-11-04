@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { truncateText, expandSizeLabel, expandableHtml, initExpandable, EXPAND_LIMIT } from "../src/js/expandable.js";
+import { appClipboardText, appClipboardClear } from "../src/js/app-clipboard.js";
 import { hodlSetLocale, t as translate } from "../src/js/i18n.js";
 import { MiniDocument, MiniNodeFilter } from "./mini-dom.mjs";
 
@@ -50,6 +51,13 @@ test("long text renders a truncated cell carrying the full value", () => {
   assert.ok(html.includes(`${"cd".repeat(16)}…${"cd".repeat(8)}`), "preview is not head…tail");
   assert.ok(html.includes("300 hex chars (150 bytes)"), "size label missing");
   assert.ok(!html.includes("data-exp-edit"), "cell without edit attributes must not be editable");
+});
+
+test("a private cell is marked for the window's copy control; a public one is not", () => {
+  const long = "30".repeat(70);
+  assert.match(expandableHtml(long, { privateValue: true }), /data-exp-private=""/);
+  assert.doesNotMatch(expandableHtml(long), /data-exp-private/);
+  assert.doesNotMatch(expandableHtml("00ff", { privateValue: true }), /data-exp-private/, "a short value is a plain readout");
 });
 
 test("edit attributes mark the cell editable and pass through", () => {
@@ -145,8 +153,8 @@ const withExpandDialog = async (run) => {
     await run({
       copyButton: parts["#exp-copy"],
       parts, clipboard, overlay,
-      open: ({ value = "00ff", editable = false } = {}) => {
-        cell.dataset = { exp: value, ...(editable ? { expEdit: "" } : {}) };
+      open: ({ value = "00ff", editable = false, privateValue = false } = {}) => {
+        cell.dataset = { exp: value, ...(editable ? { expEdit: "" } : {}), ...(privateValue ? { expPrivate: "" } : {}) };
         documentListeners.click.forEach((fn) => fn({ target: { closest: () => cell } }));
       },
       close: () => parts["#exp-close"].fire("click"),
@@ -178,6 +186,83 @@ test("readonly values use a protected readout and copy without populating the ed
     close();
     assert.equal(parts["#exp-text"].value, "");
     assert.equal(parts["#exp-readout"].textContent, "");
+  });
+});
+
+// A Core wallet private key is shown through this window (core-wallet-ui);
+// its copy goes to EntropyLab's clipboard, never to the system clipboard, and
+// the copy control says so while it is open (#1347).
+test("a private cell copies to EntropyLab's clipboard only, and the copy control's label follows", async () => {
+  await withExpandDialog(async ({ parts, open, copy, clipboard }) => {
+    const der = "30".repeat(70);
+    try {
+      appClipboardClear();
+      open({ value: der, privateValue: true });
+      // Copy is asserted for presence and for its translation key, never
+      // verbatim (AGENTS.md): the private label is its own, and the title
+      // says the same.
+      const privateLabel = parts["#exp-copy"].getAttribute("aria-label");
+      assert.ok(privateLabel, "a private cell's copy control has no label");
+      assert.equal(parts["#exp-copy"].title, privateLabel);
+      await copy();
+      assert.deepEqual(clipboard, [], "a private value reached the system clipboard");
+      assert.equal(appClipboardText(), der);
+      // The next public cell gets the public label and the system clipboard back.
+      open({ value: "ab".repeat(100) });
+      const publicLabel = parts["#exp-copy"].getAttribute("aria-label");
+      assert.ok(publicLabel && publicLabel !== privateLabel, "a public cell must not keep the private label");
+      assert.equal(parts["#exp-copy"].title, publicLabel);
+      await copy();
+      assert.deepEqual(clipboard, ["ab".repeat(100)]);
+      const module = readFileSync(new URL("../src/js/expandable.js", import.meta.url), "utf8");
+      assert.match(module, /t\("Copy to EntropyLab's clipboard"\)/, "the private label must be a translation key");
+      assert.match(module, /t\("Copied to EntropyLab's clipboard"\)/, "the private copied label must be a translation key");
+      assert.match(module, /t\("Copy"\)/, "the public label must be a translation key");
+    } finally {
+      appClipboardClear();
+    }
+  });
+});
+
+// The control names itself at each opening, in the page's language of that
+// moment: a switch while the window is open cannot leave a stale label, and
+// no catalog sweep decides which kind of cell is open (data-i18n-skip).
+test("the copy control's labels follow the page language at each opening", async () => {
+  await withExpandDialog(async ({ parts, open }) => {
+    // The fake page has no static text to sweep: switch the catalog alone.
+    const setLocale = (code) => {
+      const page = globalThis.document;
+      Object.defineProperty(globalThis, "document", { value: undefined, configurable: true, writable: true });
+      try {
+        hodlSetLocale(code, false);
+      } finally {
+        Object.defineProperty(globalThis, "document", { value: page, configurable: true, writable: true });
+      }
+    };
+    try {
+      setLocale("en");
+      open({ value: "ab".repeat(100) });
+      const english = parts["#exp-copy"].getAttribute("aria-label");
+      assert.ok(english, "a public cell's copy control has no label");
+      for (const locale of ["es", "de"]) {
+        setLocale(locale);
+        open({ value: "ab".repeat(100) });
+        const localized = parts["#exp-copy"].getAttribute("aria-label");
+        assert.ok(localized && localized !== english, `the public label did not follow the ${locale} catalog`);
+        assert.equal(parts["#exp-copy"].title, localized);
+        open({ value: "30".repeat(70), privateValue: true });
+        const privateLabel = parts["#exp-copy"].getAttribute("aria-label");
+        assert.ok(privateLabel && privateLabel !== localized, "a private cell must not carry the public label");
+        assert.equal(parts["#exp-copy"].title, privateLabel);
+        setLocale("en");
+        open({ value: "ab".repeat(100) });
+        assert.equal(parts["#exp-copy"].getAttribute("aria-label"), english, "after a switch back the public label is the English one again");
+      }
+      const module = readFileSync(new URL("../src/js/expandable.js", import.meta.url), "utf8");
+      assert.match(module, /id="exp-copy"[^>]*data-i18n-skip/, "the copy control must name itself, outside the catalog sweep");
+    } finally {
+      setLocale("en");
+    }
   });
 });
 

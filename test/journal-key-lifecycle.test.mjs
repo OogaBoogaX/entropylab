@@ -46,6 +46,11 @@ function harness() {
     hodlTText: (text, vars = {}) => text.replace(/\{(\w+)\}/g, (_, key) => String(vars[key] ?? "")),
     hodlKeyManagerStatus: (...args) => events.push(["status", ...args]), hodlJournalLog: (...args) => events.push(["log", ...args]),
     hodlRenderKeyTabs() {}, hodlRestoreKey() {}, hodlInvalidateDerivation() {}, hodlDisposeDroppedWallets() {}, hodlReleaseKeyConsumers() {}, hodlWipeUnsharedWalletRows() {},
+    // Secure entry stays off here; its wiring is covered in secure-entry-wiring.test.mjs.
+    hodlSecureSeedActive: () => false, hodlSecureEntryHasData: () => false, hodlSecureEntryDropKey() {},
+    hodlSecureSeedApplies: () => false, hodlSecureEntryBackupRefusal: () => null, hodlSecureKeyOf: () => null, hodlSecureEntryHeld: () => false,
+    hodlRenderSecureEntryControl() {}, hodlSeedPicker: null, hodlMountSeedPicker() {},
+    hodlSecureDiceActive: () => false, hodlSecureDiceApplies: () => false, hodlSecureDicePad: null, hodlMountSecureDicePad() {},
     hodlShowWorkspace: workspace => { c.hodlWorkspace = workspace; },
     hodlCaptureKey: () => { c.hodlKeys[c.hodlActiveKey].result = c.hodlWalletResult; },
     hodlKeyManagerDeriveInputs: async states => { derived.push(states); return false; },

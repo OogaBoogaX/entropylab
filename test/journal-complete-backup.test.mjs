@@ -85,6 +85,8 @@ function sectionHarness() {
     hodlJournalBackupRevision: 0, hodlJournalDirty: false,
     hodlJournalKeys: {}, hodlJournalDoc: { entries: [] },
     hodlWorkspace: "calc", hodlActiveDerivation: null, hodlJournalKeyDerivation: null,
+    // No key holds Secure entry words here; secure-entry-wiring.test.mjs covers the refusal.
+    hodlSecureEntryBackupRefusal: () => null,
     hodlMsigs: [], hodlBip85Children: [], hodlSpKeys: null, hodlCaptureKey() {},
     hodlJournalFinishNoteDrag() {}, hodlJournalMergeLogHistory: mergeLogHistory, hodlJournalCombineSnapshots: combineSnapshots,
     hodlKeys: [], hodlKeyManagerPending: [], hodlKeyManagerIgnored: [],

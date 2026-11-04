@@ -91,7 +91,11 @@
       assert(getComputedStyle(node).userSelect === "none", "a key-material readout or its descendant is selectable");
     }
   };
-  const privateReadout = async (value, expected, copy = value?.closest("[data-private-field]")?.querySelector("[data-private-copy], [data-bip85-copy]")) => {
+  // A private readout copies within EntropyLab, never to the system clipboard.
+  // PSBTs are the exception (they have to reach other software): shown the
+  // same way, their copy control writes the system clipboard and leaves
+  // EntropyLab's clipboard alone (`systemCopy`).
+  const privateReadout = async (value, expected, copy = value?.closest("[data-private-field]")?.querySelector("[data-private-copy], [data-bip85-copy]"), { systemCopy = false } = {}) => {
     assert(value, "the private readout is missing");
     const opened = [];
     for (let node = value.parentElement; node; node = node.parentElement) {
@@ -107,7 +111,17 @@
       equal(await copiedBy(value), null);
       assert(copy && !copy.disabled, "the shown private value has no available clipboard control");
       const labelText = copy.parentElement.textContent, box = copy.getBoundingClientRect();
-      equal(await copiedBy(copy), expected);
+      if (systemCopy) {
+        // Something sits on EntropyLab's clipboard first, so the clearing a
+        // public copy does is a real check, not an empty one.
+        assert(window.__entropyLabAppClipboardPut("held before the public copy"), "EntropyLab's clipboard refused the seed value");
+        equal(window.__entropyLabAppClipboard(), "held before the public copy");
+        equal(await copiedBy(copy), expected);
+        await until(() => window.__entropyLabAppClipboard() === "", "a public copy ends what EntropyLab's clipboard held");
+      } else {
+        equal(await copiedBy(copy), null);
+        equal(window.__entropyLabAppClipboard(), expected);
+      }
       equal(copy.parentElement.textContent, labelText);
       // The green "Copied" tick is sized to be noticed at a glance, and the
       // control keeps its box so nothing beside it moves.
@@ -240,7 +254,9 @@
   };
   const currentVersion = document.querySelector('meta[name="application-version"]')?.content;
   const currentFile = "entropylab.html";
-  const versionHeader = `ENTROPYLAB ${currentVersion?.toUpperCase()}`;
+  // Only the leading "v" is upper-cased: a -dev version keeps its suffix as
+  // the export writes it ("ENTROPYLAB V1.1.0-dev", #1406).
+  const versionHeader = `ENTROPYLAB ${currentVersion?.replace(/^v/, "V")}`;
 
   await wait(500);
 
@@ -1058,7 +1074,8 @@
     assert(document.getElementById("cards-meta").textContent.includes("recommended cards"), "Card status lost its count line");
     equal([...document.querySelectorAll("#dice-words [data-word]")].filter((word) => word.textContent !== "—").length, 24);
     const cardCopy = document.querySelector('[data-copy-seed-phrase]');
-    assert(cardCopy && !cardCopy.disabled && (await copiedBy(cardCopy)).split(" ").length === 24, "Testing seed preview was not copyable");
+    assert(cardCopy && !cardCopy.disabled && (await copiedBy(cardCopy)) === null, "Testing seed preview reached the system clipboard");
+    assert(window.__entropyLabAppClipboard().split(" ").length === 24, "Testing seed preview was not copyable");
     assert(!dealt.hidden && dealt.textContent.includes("A"), "Show cards did not reveal the dealt card");
     unselectableReadout(dealt);
     equal(await copiedBy(dealt), null);
@@ -1207,7 +1224,8 @@
     await wait(0);
     const copy = document.querySelector('[data-copy-seed-phrase]');
     assert(copy && !copy.disabled, "Partial seed-word copy control remained disabled");
-    equal(await copiedBy(copy), "abandon");
+    equal(await copiedBy(copy), null);
+    equal(window.__entropyLabAppClipboard(), "abandon");
     assert(!("phrase" in copy.dataset), "the copy control kept the phrase in data-phrase");
     await privateReadout(document.querySelector('#entropy-words [data-word]'), "abandon", copy);
     const calculations = document.getElementById("show-number-base-calculations");
@@ -1762,11 +1780,12 @@
   await test("tool tabs answer the arrow keys and name themselves in full", async () => {
     const strip = document.getElementById("workspace-tabs");
     const tabs = [...strip.querySelectorAll("[data-workspace]")];
-    assert(tabs.length === 9, `Expected nine tool tabs, found ${tabs.length}`);
+    // Verify joined in every build on 2026-10-29 (owner).
+    assert(tabs.length === 10, `Expected ten tool tabs, found ${tabs.length}`);
     // The visible label may be abbreviated; the accessible name never is.
     // Which tools exist and how they name themselves is the contract; where
     // they sit in the strip is a design decision that changes freely.
-    const names = ["BIP-85 Child", "Core Wallet", "Journal", "Keys", "Lightning", "Multi Signature", "Privacy", "Transactions", "Vanity Address"];
+    const names = ["BIP-85 Child", "Core Wallet", "Journal", "Keys", "Lightning", "Multi Signature", "Privacy", "Transactions", "Vanity Address", "Verify"];
     equal(tabs.map((tab) => tab.getAttribute("aria-label")).sort().join("|"), names.join("|"), "every tool tab names itself in full");
     assert(!document.querySelector('#workspace [data-workspace="sp"] .silent-payments-icon'), "Silent Payments icon should not be in the workspace tab");
     // A mismatched end tag in the shell silently reparents every later card
@@ -1798,11 +1817,14 @@
         document.getElementById("bip85-tool-intro"),
         document.querySelector("#bip85-manager > .key-tab-strip"),
       );
-      // End jumps to the last tool. Journal begins with create/open choices;
-      // section navigation and whole-Journal actions appear after opening it.
+      // End jumps to the last tool: Verify, since its unhide (#1314).
       tabs[2].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
-      await until(() => !document.getElementById("journal-card").hidden, "End to reach the Journal tool");
+      await until(() => !document.getElementById("verify-card").hidden, "End to reach the last tool (Verify)");
       assert(document.activeElement === tabs[tabs.length - 1], "End should move focus to the last tab");
+      // Reached by name. Journal begins with create/open choices; section
+      // navigation and whole-Journal actions appear after opening it.
+      document.querySelector('#workspace [data-workspace="journal"]').click();
+      await until(() => !document.getElementById("journal-card").hidden, "the Journal tool");
       const journalTabs = [...document.querySelectorAll("#journal-tool-tabs [data-journal-tool]")];
       equal(journalTabs.map((tab) => tab.dataset.journalTool).join("|"), "notes|keymanager|session");
       const journalManager = document.getElementById("journal-manager");
@@ -3405,16 +3427,18 @@
     await wait(1100);
     equal(body.value, beforeTimestamp, "The pending clock must not recreate a deleted note");
     assert(!notesCopy.disabled && notesCopy.dataset.phrase === undefined);
+    // The notepad page copies within EntropyLab, never to the system clipboard.
     let copiedNote = null;
     const clipboardWrite = navigator.clipboard.writeText;
     navigator.clipboard.writeText = (value) => { copiedNote = value; return Promise.resolve(); };
     try {
       notesCopy.click();
-      await until(() => copiedNote !== null, "the notepad clipboard write");
+      await until(() => window.__entropyLabAppClipboard() === body.value, "the notepad copy within EntropyLab");
+      await wait(0);
     } finally {
       navigator.clipboard.writeText = clipboardWrite;
     }
-    equal(copiedNote, body.value);
+    equal(copiedNote, null, "the notepad page reached the system clipboard");
     document.getElementById("add-journal-page").click();
     pageTabs = [...pageTabsRoot.children];
     equal(pageTabs.length, 2, "plus should add a second notepad page");
@@ -3676,22 +3700,23 @@
     assert(logCopy, "The log must expose its clipboard control");
     document.getElementById("journal-log-latest").click();
     logOut.scrollTop = logOut.scrollHeight;
-    // A copy confirms only once the clipboard has taken the text (see the
-    // notepad copy above), so the clipboard is stood in for here too.
-    let copiedLog = null;
+    // The log copies within EntropyLab (imported events can hold secrets), so
+    // the system clipboard is stood in for to prove it stays untouched.
+    let copiedLog = null, systemLog = null;
     const logBeforeCopy = logOut.textContent;
     const logClipboardWrite = navigator.clipboard.writeText;
-    navigator.clipboard.writeText = (value) => { copiedLog = value; return Promise.resolve(); };
+    navigator.clipboard.writeText = (value) => { systemLog = value; return Promise.resolve(); };
     try {
       logCopy.click();
-      equal(logOut.textContent, logBeforeCopy, "the Debug log must not claim a copy outcome before the clipboard settles");
-      await until(() => copiedLog !== null, "the session-log clipboard write");
       await until(() => logOut.textContent !== logBeforeCopy, "the Debug log copy outcome");
+      copiedLog = window.__entropyLabAppClipboard();
+      await wait(0);
     } finally {
       navigator.clipboard.writeText = logClipboardWrite;
     }
+    equal(systemLog, null, "the Debug log reached the system clipboard");
     const logAfterCopy = logOut.textContent;
-    assert(/journal\tcopy  session-log$/.test(logAfterCopy), "the Debug log should record a successful copy after the clipboard settles");
+    assert(/journal\tcopy  session-log$/.test(logAfterCopy), "the Debug log should record a successful copy");
     assert(copiedLog.endsWith(logBeforeCopy), "Copy must include the complete latest page as it stood before the click, plus any earlier retained events");
     equal(logCopy.dataset.phrase, undefined, "the clipboard control must not retain activity text");
     const logClear = document.getElementById("journal-log-clear");
@@ -3763,12 +3788,16 @@
       const earlierPage = logOut.textContent;
       pagingTheme.click();
       equal(logOut.textContent, earlierPage, "New events must not move the earlier page being read");
-      let allHistory = null;
-      navigator.clipboard.writeText = async (text) => { allHistory = text; };
+      let allHistory = null, systemHistory = null;
+      navigator.clipboard.writeText = async (text) => { systemHistory = text; };
       try {
+        const before = window.__entropyLabAppClipboard();
         logCopy.click();
-        await until(() => allHistory !== null, "all retained debug events copied");
+        await until(() => window.__entropyLabAppClipboard() !== before, "all retained debug events copied within EntropyLab");
+        allHistory = window.__entropyLabAppClipboard();
+        await wait(0);
       } finally { navigator.clipboard.writeText = logClipboardWrite; }
+      equal(systemHistory, null, "the Debug log history reached the system clipboard");
       assert(allHistory.includes(logBeforeExport) && allHistory.includes(latestPage), "Copy from an earlier page must include all retained history");
     } finally {
       if (pagingTheme.dataset.themeMode !== pagingThemeMode) pagingTheme.click();
@@ -4160,17 +4189,18 @@
         assert(value && value.textContent, `${id} is missing after reveal`);
         await privateReadout(value, value.textContent);
       }
-      // Changing the network select wipes even a revealed result; switching
-      // back and re-deriving reproduces the mainnet key.
-      const network = document.getElementById("ln-network");
-      network.value = "testnet";
-      network.dispatchEvent(new Event("change", { bubbles: true }));
-      assert(!document.getElementById("ln-node-pubkey"), "a network change wipes the revealed result");
+      // The same network announced again keeps the key (a startup or Journal
+      // re-announcement is not a change); a real page network change wipes
+      // even a revealed result, and switching back and re-deriving
+      // reproduces the mainnet key.
+      document.dispatchEvent(new CustomEvent("hodl:network-default"));
+      assert(document.getElementById("ln-node-pubkey"), "the same network announced again wiped the key");
+      document.querySelector('#network-picker-menu [data-network="testnet"]').click();
+      assert(!document.getElementById("ln-node-pubkey"), "a page network change wipes the revealed result");
       assert(!document.getElementById("ln-entropy"), "the revealed entropy is gone with it");
-      network.value = "mainnet";
-      network.dispatchEvent(new Event("change", { bubbles: true }));
+      document.querySelector('#network-picker-menu [data-network="mainnet"]').click();
       document.getElementById("ln-go").click();
-      await until(() => document.getElementById("ln-node-pubkey"), "re-derive after switching back");
+      await until(() => document.getElementById("ln-node-pubkey"), "re-derive after the network change");
       equal(document.getElementById("ln-node-pubkey").textContent, LND_PUBKEY, "mainnet node pubkey again");
       // A wrong passphrase is a named failure, not a different wallet.
       document.getElementById("ln-pass").value = "wrong";
@@ -5318,28 +5348,41 @@
     assert(!historyDownload.disabled && !historyClear.disabled, "inspected nonce was not added to history");
     state.lastBlob = null;
     state.downloadName = "";
+    // Downloads are encrypted: the passphrase dialog takes it twice (audit item 2).
+    const historyPass = "browser suite nonce history passphrase";
     historyDownload.click();
-    const historyBlob = await until(() => state.downloadName === "entropylab-nonce-history.json" && state.lastBlob, "nonce history download");
+    const historyPassField = await until(() => {
+      const field = document.getElementById("nonce-history-confirm-passphrase");
+      return field && !field.closest("[hidden]") ? field : null;
+    }, "nonce history passphrase dialog");
+    input(historyPassField, historyPass);
+    input(document.getElementById("nonce-history-confirm-repeat"), historyPass);
+    document.getElementById("nonce-history-confirm-primary").click();
+    const historyBlob = await until(() => state.downloadName === "entropylab-nonce-history.json" && state.lastBlob, "nonce history download", 30000);
     const historyText = await historyBlob.text();
     const historyJson = JSON.parse(historyText);
-    equal(historyJson.format, "entropylab-nonce-history", "nonce history format marker missing");
-    equal(historyJson.version, 1, "nonce history version missing");
-    equal(historyJson.records.length, 1, "nonce history should contain the one inspected ECDSA value");
-    const historyRecord = historyJson.records[0];
-    equal(Object.keys(historyRecord).sort().join("|"), "checkedAt|keyTag|masterFingerprint|messageTag|r|verified", "nonce history exported unexpected metadata");
+    equal(historyJson.format, "entropylab-nonce-history-encrypted", "nonce history download is not the encrypted format");
+    equal(Object.keys(historyJson).sort().join("|"), "cipher|ciphertext|format|iterations|iv|kdf|version", "encrypted nonce history carries unexpected fields");
     const displayedR = nonceOut.match(/r values:\s*([0-9a-f]{64})/)?.[1];
-    assert(displayedR && historyRecord.r === displayedR, "nonce history did not export the inspected raw r value");
-    assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(historyRecord.checkedAt), "nonce history did not export the check time");
-    assert(historyRecord.masterFingerprint === null || /^[0-9a-f]{8}$/.test(historyRecord.masterFingerprint), "nonce history master fingerprint field is invalid");
+    assert(displayedR && !historyText.includes(displayedR), "the encrypted nonce history shows the raw r value");
     assert(!historyText.includes(vector), "nonce history retained the PSBT payload");
     historyClear.click();
     assert(historyDownload.disabled && historyClear.disabled, "cleared nonce history remained available");
+    // The record fields themselves are pinned by test/nonce-history.test.mjs;
+    // here the encrypted file must come back through the import dialog.
     Object.defineProperty(historyInput, "files", {
       configurable: true,
       value: [new File([historyText], "entropylab-nonce-history.json", { type: "application/json" })],
     });
     historyInput.dispatchEvent(new Event("change", { bubbles: true }));
-    await until(() => historyStatus.textContent.includes("Loaded 1 nonce history record"), "nonce history upload");
+    const importPassField = await until(() => {
+      const field = document.getElementById("nonce-history-confirm-passphrase");
+      // Open again, in import mode: the repeat field is hidden.
+      return field && !field.closest("[hidden]") && document.getElementById("nonce-history-confirm-repeat").hidden ? field : null;
+    }, "nonce history import dialog");
+    input(importPassField, historyPass);
+    document.getElementById("nonce-history-confirm-primary").click();
+    await until(() => historyStatus.textContent.includes("Loaded 1 nonce history record"), "nonce history upload", 30000);
     assert(!historyDownload.disabled && !historyClear.disabled, "uploaded nonce history did not restore its controls");
     // Change the finalized signature's SIGHASH_ALL suffix to SIGHASH_NONE.
     // The report remains incomplete for unverified prevouts, but the real
@@ -5736,7 +5779,7 @@
     assert(document.getElementById("psbted-result-hex").textContent.includes(longValue.slice(0, -2) + "cd"), "overlay edit did not reach the rebuilt PSBT");
     for (const encoding of ["b64", "hex"]) {
       const value = document.getElementById(`psbted-result-${encoding}`);
-      await privateReadout(value, value.textContent, document.getElementById(`psbted-copy-${encoding}`));
+      await privateReadout(value, value.textContent, document.getElementById(`psbted-copy-${encoding}`), { systemCopy: true });
     }
     // A long key truncates read-only and Escape closes the overlay. The table
     // re-rendered after each structural edit, so the add controls are fresh
@@ -5756,7 +5799,7 @@
     const readout = document.getElementById("exp-readout");
     equal(readout?.textContent, longKey);
     assert(document.getElementById("exp-text").hidden && !readout.isContentEditable && document.getElementById("exp-apply").hidden, "key cell opened editable");
-    await privateReadout(readout, longKey, document.getElementById("exp-copy"));
+    await privateReadout(readout, longKey, document.getElementById("exp-copy"), { systemCopy: true });
     document.getElementById("exp-copy").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     assert(overlay.hidden, "Escape did not close the overlay");
     // A closed overlay keeps none of the expanded value: the field can carry
