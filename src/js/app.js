@@ -7752,10 +7752,11 @@ function hodlKeyScanLoad(bytes) {
   }
   // The key is installed: a redraw that fails from here on must not make the
   // panel say nothing was loaded, as in the seed scan (Kimi, #1439 gate r3).
-  try {
-    hodlSetMode(hodlKeyMode);
-    hodlQueueMasterFingerprintPreview(0);
-  } catch {}
+  // Each step has its own guard, so the fingerprint preview is queued even
+  // when the form redraw fails: the fingerprint on screen follows the key in
+  // the vault (DeepSeek, MiniMax, #1441 gate).
+  try { hodlSetMode(hodlKeyMode); } catch {}
+  try { hodlQueueMasterFingerprintPreview(0); } catch {}
 }
 function hodlBindSeedScan() {
   // The slice harness loads this with no scan host: return before anything

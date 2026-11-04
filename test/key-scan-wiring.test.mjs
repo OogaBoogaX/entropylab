@@ -118,22 +118,29 @@ test("the key scan clears Global sync copies of the old key, guarded", async () 
 });
 
 // Once the vault holds the scanned key, a redraw that throws must not reach the
-// panel as "nothing was loaded", as in the seed scan (Kimi, #1439 gate r3).
+// panel as "nothing was loaded", as in the seed scan (Kimi, #1439 gate r3), and
+// a failed form redraw must not skip the fingerprint preview, so the fingerprint
+// on screen follows the new key (DeepSeek, MiniMax, #1441 gate).
 test("a redraw that throws after the key scan loads still reports the load", async () => {
-  const { mod, session, state } = await loadKeyScan({
-    stubs: {
-      hodlSetMode: () => { throw new Error("redraw failed"); },
-      hodlQueueMasterFingerprintPreview: () => { throw new Error("preview failed"); },
-    },
-  });
   const wif = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
-  const bytes = Uint8Array.from(wif, (character) => character.charCodeAt(0));
-  assert.doesNotThrow(() => mod.hodlKeyScanLoad(bytes));
-  assert.equal(sessionGet(session, mod.hodlSecureKeyOf(state), "key").vault.text(), wif);
-  assert.equal(state.fields.keyKind, "wif");
-  bytes.fill(0);
-  const body = functionBody("hodlKeyScanLoad");
-  assert.match(body, /try \{\s*hodlSetMode\(hodlKeyMode\);\s*hodlQueueMasterFingerprintPreview\(0\);\s*\} catch \{\}/);
+  const bytes = () => Uint8Array.from(wif, (character) => character.charCodeAt(0));
+
+  // The form redraw fails: the load still stands and the preview is queued.
+  const redraw = await loadKeyScan({ stubs: { hodlSetMode: () => { throw new Error("redraw failed"); } } });
+  const first = bytes();
+  assert.doesNotThrow(() => redraw.mod.hodlKeyScanLoad(first));
+  assert.equal(sessionGet(redraw.session, redraw.mod.hodlSecureKeyOf(redraw.state), "key").vault.text(), wif);
+  assert.equal(redraw.state.fields.keyKind, "wif");
+  assert.deepEqual(redraw.previews, [0]);
+  first.fill(0);
+
+  // The preview fails: the load still stands and the form was redrawn.
+  const preview = await loadKeyScan({ stubs: { hodlQueueMasterFingerprintPreview: () => { throw new Error("preview failed"); } } });
+  const second = bytes();
+  assert.doesNotThrow(() => preview.mod.hodlKeyScanLoad(second));
+  assert.equal(sessionGet(preview.session, preview.mod.hodlSecureKeyOf(preview.state), "key").vault.text(), wif);
+  assert.deepEqual(preview.modes, ["key"]);
+  second.fill(0);
 });
 
 test("hodlKeyScanLoad throws, changing nothing, when it cannot load", async () => {
