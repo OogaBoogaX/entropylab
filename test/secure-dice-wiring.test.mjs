@@ -42,14 +42,14 @@ function rollsText(count) {
 }
 
 function entryFromDigits(digits, method) {
-  const entry = rollsEntry(method, 400);
+  const entry = rollsEntry(method, Math.max(400, digits.length));
   for (const face of digits) rollsPush(entry, Number(face));
   return entry;
 }
 
 const SIZES = [12, 15, 18, 21, 24];
 const METHODS = ["coldcard", "coleman"];
-const COUNTS = [1, 49, 50, 99, 100, 101, 400];
+const COUNTS = [1, 49, 50, 99, 100, 101, 400, 401, 1000];
 
 test("hodlSecureDiceEntropyOf matches the text path and Node SHA-256", async () => {
   const mod = await loadAppFunctions(["hodlSecureDiceEntropyOf", "hodlDiceEntropy"], {
@@ -126,10 +126,10 @@ test("the dice converter and serializer round-trip faces and zero their buffers"
   }
   assert.equal(fills.length, 1);
   assert.ok(fills[0].every((byte) => byte === 0));
-  for (const bad of ["12a", "", ",", "1".repeat(401)]) {
+  for (const bad of ["12a", "", ",", "1".repeat(4097)]) {
     made.length = 0;
     assert.throws(() => mod.hodlSecureDiceEntryFromText(bad, "coldcard"), bad);
-    assert.ok(made[0].rolls.every((byte) => byte === 0), bad);
+    assert.equal(made.length, 0, bad);
   }
 });
 
@@ -229,7 +229,7 @@ test("turning Secure entry on and off keeps, clears and converts dice beside key
   try {
     let choice = "keep", lastOptions = null;
     const wif = "5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ";
-    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlSecureSession", "hodlClearGlobalSyncCopies"], {
+    const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn", "hodlSecureSession", "hodlClearGlobalSyncCopies", "hodlSecureDiceEntropyOf", "hodlDiceEntropy"], {
       stubs: {
         ...secureEntryStubs,
         hodlSecureEntryDialog: async () => ({ open: async (options) => { lastOptions = options; return choice; } }),
@@ -375,6 +375,82 @@ test("turning Secure entry on and off keeps, clears and converts dice beside key
     assert.equal(held.fields.dice, "12");
     assert.equal(textBacked.fields.dice, "6543");
     assert.equal(mod.hodlSecureEntryOn, false);
+
+    // Keep and Clear empty every dice field, not only the kept method's.
+    for (const action of ["keep", "clear"]) {
+      // privateKeys is there as hodlPrivateKeyValues makes it in the app; the
+      // stub here only returns it.
+      const fields = { dice: "123456", colemanDice: "654321", bitboxDice: "111111", dplusDice: "222222", seed: "copied words", hex: "abcd", privateKeys: { wif: "synced wif", "hex-key": "synced hex" } };
+      // Global sync last ran from another dice method: its copies are made
+      // from text this Keep empties, so they go too (#1439 red team).
+      const state = { id: 20, name: action, mode: "dice", diceMethod: "coldcard", fields, globalSync: true, globalSyncSource: "dice:coleman", diceCoinPositions: [1, 0, 1], dplusLastWord: "abandon", lastWord: "zoo" };
+      const session = createSecureSession();
+      mod.__set.hodlSecureSession(session);
+      mod.__set.hodlKeys([state]);
+      mod.__set.hodlActiveKey(0);
+      mod.__set.hodlSecureEntryOn(false);
+      choice = action;
+      lastOptions = null;
+      await mod.hodlSecureEntryToggle(true);
+      assert.equal(lastOptions.otherFormats, true, action);
+      for (const name of ["dice", "colemanDice", "bitboxDice", "dplusDice"]) assert.equal(state.fields[name], "", `${action} ${name}`);
+      assert.equal(state.fields.seed, "", `${action}: a Global sync copy from another dice method survived`);
+      assert.equal(state.fields.hex, "", `${action} hex copy`);
+      assert.deepEqual(state.fields.privateKeys, { wif: "", "hex-key": "" }, `${action} private-key copies`);
+      assert.deepEqual(state.diceCoinPositions, [], `${action} coin positions`);
+      assert.equal(state.dplusLastWord, "", `${action} D++ last word`);
+      assert.equal(state.lastWord, "", `${action} last word`);
+    }
+
+    // lastWord is BitBox's pick only when BitBox rolls were there: Keep
+    // without them leaves it, as it leaves the Global sync copies above.
+    for (const [bitboxDice, expected] of [["", "seedword"], ["111111", ""]]) {
+      const state = { id: 22, name: "Pick", mode: "dice", diceMethod: "coldcard", fields: { dice: "123456", bitboxDice }, lastWord: "seedword" };
+      mod.__set.hodlSecureSession(createSecureSession());
+      mod.__set.hodlKeys([state]);
+      mod.__set.hodlActiveKey(0);
+      mod.__set.hodlSecureEntryOn(false);
+      choice = "keep";
+      await mod.hodlSecureEntryToggle(true);
+      assert.equal(state.fields.bitboxDice, "");
+      assert.equal(state.lastWord, expected, `bitboxDice ${JSON.stringify(bitboxDice)}`);
+    }
+
+    // More than 400 typed rolls is keepable, and hashes like the text path.
+    for (const count of [401, 1000]) {
+      const text = rollsText(count);
+      const state = { id: 21, name: "Many", mode: "dice", diceMethod: "coldcard", fields: { dice: text } };
+      const session = createSecureSession();
+      mod.__set.hodlSecureSession(session);
+      mod.__set.hodlKeys([state]);
+      mod.__set.hodlActiveKey(0);
+      mod.__set.hodlSecureEntryOn(false);
+      choice = "keep";
+      lastOptions = null;
+      await mod.hodlSecureEntryToggle(true);
+      assert.equal(lastOptions.canKeep, true, `${count} rolls`);
+      const entry = sessionGet(session, mod.hodlSecureKeyOf(state), "rolls");
+      assert.equal(entry.count, count);
+      const secure = mod.hodlSecureDiceEntropyOf(entry, 24);
+      const textPath = mod.hodlDiceEntropy(text, "coldcard", 24);
+      assert.deepEqual(secure.bytes, textPath.bytes, `${count} rolls hash`);
+      assert.equal(state.fields.dice, "");
+    }
+
+    // More than 4096 typed rolls is not keepable.
+    const tooMany = rollsText(4097);
+    const tooManyState = { id: 22, name: "Too many", mode: "dice", diceMethod: "coldcard", fields: { dice: tooMany } };
+    const tooManySession = createSecureSession();
+    mod.__set.hodlSecureSession(tooManySession);
+    mod.__set.hodlKeys([tooManyState]);
+    mod.__set.hodlActiveKey(0);
+    mod.__set.hodlSecureEntryOn(false);
+    choice = "keep";
+    lastOptions = null;
+    await mod.hodlSecureEntryToggle(true);
+    assert.equal(lastOptions.canKeep, false);
+    assert.equal(tooManyState.fields.dice, tooMany);
+    assert.equal(tooManySession.entries.size, 0);
   } finally {
     globalThis.document = previous;
   }

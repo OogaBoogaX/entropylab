@@ -6956,7 +6956,7 @@ function hodlSetSeedLength(words) {
 // no flag, so the host is never rendered and the module is never imported.
 var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null, hodlKeyScanOpenAfterMount = false;
 var hodlSeedScan = null, hodlSeedScanOpenAfterMount = false;
-var hodlSeedPicker = null, hodlSeedPickerImport = null;
+var hodlSeedPicker = null, hodlSeedPickerImport = null, hodlSeedPickerFocusOnMount = false;
 var hodlSecureDicePad = null, hodlSecureDicePadImport = null;
 // The three PSBT scan panels are the same preview-only extra: release builds
 // strip their hosts and never import the module.
@@ -6984,6 +6984,7 @@ function hodlRenderKeyForm() {
   hodlSeedScan = null;
   try { hodlSeedPicker?.destroy(); } catch {}
   hodlSeedPicker = null;
+  hodlSeedPickerFocusOnMount = false;
   try { hodlSecureDicePad?.destroy(); } catch {}
   hodlSecureDicePad = null;
   let config = hodlSeedConfig(), keyboardHost = document.getElementById("passphrase-keyboard-host"), toggleHost = document.getElementById("passphrase-keyboard-toggle-host");
@@ -7685,6 +7686,7 @@ function hodlBindKeyScan() {
           beforeOpen: hodlKeyScanBeforeOpen,
           onKey: hodlKeyScanLoad,
           replacesKey: hodlKeyScanReplaces,
+          afterLoad: () => { try { document.getElementById("secure-key")?.focus(); } catch {} },
         });
       } catch {
         return;
@@ -7742,6 +7744,12 @@ function hodlKeyScanLoad(bytes) {
   state.fields.keyKind = "wif";
   let values = hodlPrivateKeyValues(state.fields);
   for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
+  // Global sync copies computed from the old key go with it, as at turn-on
+  // Keep and in the seed scan (MiniMax, #1439 gate). The key is installed, so
+  // a throw here must not make the panel say nothing was loaded.
+  if (state.globalSync && String(state.globalSyncSource || "").startsWith("key:")) {
+    try { hodlClearGlobalSyncCopies(state); } catch {}
+  }
   hodlSetMode(hodlKeyMode);
   hodlQueueMasterFingerprintPreview(0);
 }
@@ -7778,6 +7786,7 @@ function hodlBindSeedScan() {
           beforeOpen: hodlSeedScanBeforeOpen,
           onSeed: hodlSeedScanLoad,
           replacesSeed: hodlSeedScanReplaces,
+          afterLoad: hodlSeedScanAfterLoad,
         });
       } catch {
         return;
@@ -7810,6 +7819,16 @@ function hodlSeedScanReplaces() {
   let state = hodlKeys[hodlActiveKey];
   if (!state) return false;
   return hodlSecureSeedHasWords(hodlSecureKeyOf(state)) || Boolean(String(state.fields?.seed ?? "").trim()) || Boolean(String(state.fields?.seedNumbers ?? "").trim());
+}
+// After a scanned seed loads, focus moves to the word picker instead of falling
+// to the page. The load redraws the form and the new picker mounts once its
+// import resolves, so when it is not there yet the mount takes the focus.
+function hodlSeedScanAfterLoad() {
+  if (hodlSeedPicker) {
+    try { hodlSeedPicker.focus(); } catch {}
+    return;
+  }
+  hodlSeedPickerFocusOnMount = true;
 }
 function hodlSeedScanLoad(indices, count) {
   try {
@@ -7850,6 +7869,16 @@ function hodlSeedScanLoad(indices, count) {
     // The same seed typed as word numbers goes too: Continue replaces the
     // key's seed, whichever way it was entered (Kimi, round 5).
     state.fields.seedNumbers = "";
+    // Global sync copies computed from the old words go with them: the scan
+    // replaced those words, so every copy of them is stale. A wallet made
+    // from a private key keeps its fields, as at turn-on Keep: the words
+    // cannot rebuild it. The result was invalidated above, so the check reads
+    // the one kept to wipe (GLM, MiniMax, red team, #1439 gate r2).
+    // The words are installed, so a throw here must not make the panel say
+    // nothing was loaded (Kimi, #1439 gate).
+    if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource) && previous?.kind !== "single") {
+      try { hodlClearGlobalSyncCopies(state); } catch {}
+    }
     state.lastWord = "";
     // The D++ final word belonged to the old length, as on a word-count
     // change (Kimi, round 3).
@@ -8015,6 +8044,11 @@ function hodlMountSeedPicker() {
         entropyFromWordIndices: hodlEntropyFromWordIndices, translate: hodlTText,
         onChange: hodlSecureSeedChanged,
       });
+      // A scanned seed asked for focus before this mount finished.
+      if (hodlSeedPickerFocusOnMount) {
+        hodlSeedPickerFocusOnMount = false;
+        try { hodlSeedPicker.focus(); } catch {}
+      }
     } catch {
       if (host.isConnected && hodlSecureSeedActive()) {
         host.innerHTML = "";
@@ -13267,7 +13301,10 @@ async function hodlSecureEntryToggle(wanted) {
             if (String(text ?? "").trim()) {
               keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { rolls: { text, method } } });
               names.push(state.name);
-              diceStates.push({ state, method });
+              let keptField = hodlDiceFieldName(method);
+              if (method === "coleman" && !Object.prototype.hasOwnProperty.call(state.fields || {}, "colemanDice")) keptField = "dice";
+              let otherFormats = ["dice", "colemanDice", "bitboxDice", "dplusDice"].some((name) => name !== keptField && String(state.fields?.[name] ?? "").trim());
+              diceStates.push({ state, method, otherFormats });
             }
           }
         }
@@ -13307,7 +13344,10 @@ async function hodlSecureEntryToggle(wanted) {
         commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
       } else {
         plan = planTurnOn(hodlSecureSession, keys, { seed: converter, key: keyConverter, rolls: ({ text, method }) => hodlSecureDiceEntryFromText(text, method) });
-        let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok, otherFormats: keyStates.some((item) => item.otherFormats) });
+        // A seed held as words can also hold word numbers (each switch of the
+        // seed format saves both): Keep empties them too, so the note shows.
+        let seedOtherFormats = states.some((state) => String(state.fields?.seedNumbers ?? "").trim());
+        let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok, otherFormats: seedOtherFormats || keyStates.some((item) => item.otherFormats) || diceStates.some((item) => item.otherFormats) });
         if (choice === "keep" && plan.ok) {
           commitTurnOn(hodlSecureSession, plan);
           plan = null;
@@ -13323,6 +13363,9 @@ async function hodlSecureEntryToggle(wanted) {
               state.lastWord = "";
             }
             state.fields.seed = "";
+            // The same seed saved as word numbers is hidden plain text too
+            // (B1): a switch of the seed format saves both (GLM, #1439 gate).
+            state.fields.seedNumbers = "";
           }
           for (const { state } of keyStates) {
             // Global sync copies computed from this key go with it, as for
@@ -13335,10 +13378,20 @@ async function hodlSecureEntryToggle(wanted) {
             for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
           }
           for (const { state, method } of diceStates) {
-            let legacyColeman = method === "coleman" && !Object.prototype.hasOwnProperty.call(state.fields || {}, "colemanDice");
-            state.fields[hodlDiceFieldName(method)] = "";
-            if (legacyColeman) state.fields.dice = "";
-            if (state.globalSync && state.globalSyncSource === "dice:" + method) {
+            // Keep empties every dice text field the key holds, not only the
+            // one on screen: the others are hidden plain text (B1). The BitBox
+            // coin positions and the D++/BitBox picked last words are parts of
+            // those transcripts, so they go too (Kimi, #1439 gate). lastWord is
+            // BitBox's pick only when BitBox rolls were there; otherwise it can
+            // belong to the key's other inputs, and Keep leaves it.
+            let bitboxWord = method === "bitbox" || Boolean(String(state.fields?.bitboxDice ?? "").trim());
+            for (const name of ["dice", "colemanDice", "bitboxDice", "dplusDice"]) state.fields[name] = "";
+            state.diceCoinPositions = [];
+            state.dplusLastWord = "";
+            if (bitboxWord) state.lastWord = "";
+            // Every dice field was just emptied, so Global sync copies made from
+            // any of them go, not only from the kept method's (#1439 red team).
+            if (state.globalSync && String(state.globalSyncSource || "").startsWith("dice:")) {
               hodlClearGlobalSyncCopies(state);
               state.lastWord = "";
             }
@@ -13350,6 +13403,7 @@ async function hodlSecureEntryToggle(wanted) {
             if (state.result) state.secureCleared = true;
             if (state.globalSync) hodlClearGlobalSyncCopies(state);
             state.fields.seed = "";
+            state.fields.seedNumbers = "";
             // The last-word helper's copy of the wiped words goes too (GLM).
             state.lastWord = "";
           }
@@ -13362,12 +13416,16 @@ async function hodlSecureEntryToggle(wanted) {
             let values = hodlPrivateKeyValues(state.fields);
             for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
           }
-          for (const { state, method } of diceStates) {
+          for (const { state } of diceStates) {
             if (state.result) state.secureCleared = true;
             if (state.globalSync) hodlClearGlobalSyncCopies(state);
-            let legacyColeman = method === "coleman" && !Object.prototype.hasOwnProperty.call(state.fields || {}, "colemanDice");
-            state.fields[hodlDiceFieldName(method)] = "";
-            if (legacyColeman) state.fields.dice = "";
+            // Clear empties every dice text field the key holds, not only the
+            // one on screen: each is a secret, as are the coin positions and
+            // picked last words that belong to them.
+            for (const name of ["dice", "colemanDice", "bitboxDice", "dplusDice"]) state.fields[name] = "";
+            state.diceCoinPositions = [];
+            state.dplusLastWord = "";
+            state.lastWord = "";
           }
           commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
         } else {
@@ -13740,18 +13798,20 @@ function hodlSecureDiceApplies() {
 }
 
 function hodlSecureDiceEntryFromText(text, method) {
-  let entry = rollsEntry(method, hodlSecureDiceCapacity);
+  let value = String(text ?? ""), found = 0;
+  for (let i = 0; i < value.length; i++) {
+    let code = value.charCodeAt(i);
+    if (code >= 0x31 && code <= 0x36) found += 1;
+    else if (/\s|,|;|\|/.test(value[i])) continue;
+    else throw new Error("bad roll");
+  }
+  if (!found) throw new Error("no rolls");
+  let entry = rollsEntry(method, Math.max(hodlSecureDiceCapacity, found));
   try {
-    let found = 0, value = String(text ?? "");
     for (let i = 0; i < value.length; i++) {
       let code = value.charCodeAt(i);
-      if (code >= 0x31 && code <= 0x36) {
-        rollsPush(entry, code - 0x30);
-        found += 1;
-      } else if (/\s|,|;|\|/.test(value[i])) continue;
-      else throw new Error("bad roll");
+      if (code >= 0x31 && code <= 0x36) rollsPush(entry, code - 0x30);
     }
-    if (!found) throw new Error("no rolls");
     return entry;
   } catch (error) {
     try { entry.rolls.fill(0); } catch {}
