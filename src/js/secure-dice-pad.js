@@ -1,7 +1,6 @@
 // Secure entry: the strict dice pad (P4a). It owns the pad's DOM and writes
-// the caller's rolls entry only through rollsPush and rollsUndo. Part B wires
-// it into the Key Station behind the preview flag and the Secure entry switch;
-// app.js does not import it yet.
+// the caller's rolls entry only through rollsPush and rollsUndo. app.js mounts
+// it in the Key Station's dice form while Secure entry is on.
 //
 // Security contract: the pad never keeps a roll beyond the one the user asks
 // to see, never reads the whole sequence, never puts more than one face in the
@@ -21,31 +20,31 @@ const TEXT = {
   record: (vars) => t("Record roll: {n}", vars),
   // APPROVED
   recorded: (vars) => t("{count} rolls recorded · Next: roll {next}", vars),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   recordedOne: (vars) => t("{count} roll recorded · Next: roll {next}", vars),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   full: (vars) => t("{count} rolls recorded. Secure entry holds up to {max} rolls.", vars),
   // APPROVED
   undo: () => t("Undo last roll"),
   // APPROVED
   undone: (vars) => t("Last roll removed. {count} rolls recorded.", vars),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   undoneOne: (vars) => t("Last roll removed. {count} roll recorded.", vars),
   // APPROVED
   review: () => t("Review one roll…"),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   reviewHeading: (vars) => t("Roll {n} of {total}", vars),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   positionLabel: () => t("Roll number"),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   showRoll: () => t("Show this roll"),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   reviewNote: () => t("Only this roll is shown, and only while “Show this roll” is on."),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   prev: () => t("Previous roll"),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   next: () => t("Next roll"),
-  // DRAFT (owner OK pending)
+  // APPROVED (owner 11-04)
   close: () => t("Close review"),
 };
 

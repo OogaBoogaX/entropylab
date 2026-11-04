@@ -1,7 +1,6 @@
 // Secure entry: the seed word picker (P2a). It owns the picker's DOM and
-// writes the caller's seed entry only through seedSet and seedUndo. P2b wires
-// it into the Key Station behind the preview flag and the Secure entry switch;
-// app.js does not import it yet.
+// writes the caller's seed entry only through seedSet and seedUndo. app.js
+// mounts it in the Key Station's seed form while Secure entry is on.
 //
 // Security contract: the picker never keeps a word string beyond the moment it
 // is shown, never speaks a word, zeroes every temporary index and entropy

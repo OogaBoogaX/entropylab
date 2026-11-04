@@ -123,7 +123,7 @@ const assertEntry = (entry, method) => {
 
 // The four entry kinds the module can hold. The boolean is the UI gate that
 // P1b reads through isSupported(); seeds are supported from P2b, keys from
-// P3b-2 and rolls from P4, so preview builds offer those three. Planning
+// P3b-2 and rolls from P4, so every build offers those three. Planning
 // recognises the kinds themselves: a method not listed here (a "hex" number
 // base, say) is never plannable.
 export const SUPPORTED_METHODS = Object.freeze({ seed: true, key: true, rolls: true, cards: false });

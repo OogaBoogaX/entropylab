@@ -1,4 +1,4 @@
-// Secure entry P3b-2: the masked private-key field (preview builds only).
+// Secure entry P3b-2: the masked private-key field.
 //
 // Contract: with Secure entry on, key mode and a non-brain kind, the private
 // key is typed into a vault-bound masked field and parsed from bytes; every

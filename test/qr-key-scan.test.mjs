@@ -800,18 +800,18 @@ test("every visible string is a t() literal the catalog sweep collects", async (
 
 
 
-test("the app wires the scan panel behind the preview flag", () => {
+test("the app wires the scan panel in every build", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
-  // The host is rendered only when the preview flag is set.
-  assert.match(app, /function hodlKeyScanHostMarkup\(\) \{\s*return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ \? '<div id="key-scan-host"><\/div>' : "";\s*\}/);
+  // The host ships in release builds too (Secure entry unhide, owner 11-04).
+  assert.match(app, /function hodlKeyScanHostMarkup\(\) \{\s*return '<div id="key-scan-host"><\/div>';\s*\}/);
   // It sits after the private-key shell and before the keyboard host.
   assert.match(app, /<\/textarea><\/div>\$\{hodlKeyScanHostMarkup\(\)\}<div class="passphrase-keyboard-host" id="private-keyboard-host" hidden>/);
-  // The import sits inside the same guard, so release builds never load it.
+  // The bind reads no preview flag: with a host on screen it imports the module.
   const start = app.indexOf("function hodlBindKeyScan()");
   assert.ok(start >= 0, "hodlBindKeyScan is missing");
   const body = app.slice(start, app.indexOf("\n}\n", start));
-  assert.match(body, /if \(typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__\) \{/);
-  assert.ok(body.indexOf('import("./qr-key-scan.js")') > body.indexOf("typeof __ENTROPYLAB_PREVIEW__"), "the import is outside the preview guard");
+  assert.doesNotMatch(body, /__ENTROPYLAB_PREVIEW__|PREVIEW/);
+  assert.ok(body.indexOf('import("./qr-key-scan.js")') > body.indexOf("if (!host)"), "the import comes after the no-host return");
   // The scan hands the key to the app as bytes, never to a text field.
   assert.match(body, /onKey: hodlKeyScanLoad,/);
   // The wipes drop the panel and retire its decoder.
