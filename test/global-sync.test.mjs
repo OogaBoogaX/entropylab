@@ -140,6 +140,23 @@ test("an over-long hex key goes invalid in sync instead of being truncated", () 
   assert.doesNotMatch(source, /\.slice\(0, 64\)/);
 });
 
+test("a hex key with a non-hex character goes invalid in sync instead of being cut off", () => {
+  // Stopping at the first non-hex character published the digits before it:
+  // a shorter key the private-key field rejects (the bitcoinjs/bip39
+  // GHSA-726r-qj3q-vrxm pattern). The whole key must be hex or nothing goes.
+  const source = loadSlice("hodlGlobalSyncCurrentBits");
+  const hexBranch = source.slice(source.indexOf('if (kind === "hex-key")'), source.indexOf('if (kind === "wif")'));
+  assert.match(hexBranch, /if \(!\/\^\[0-9a-fA-F\]\*\$\/\.test\(digits\)\) return null;/);
+  assert.doesNotMatch(hexBranch, /\bbreak\b/);
+  // Run the branch as written: a stray "g" yields null, a clean key all 256 bits.
+  const body = hexBranch.replace(/^if \(kind === "hex-key"\) \{/, "").replace(/\}\s*$/, "");
+  const run = new Function("value", `${body}\nreturn undefined;`);
+  const key = "1f".repeat(32);
+  assert.equal(run(key.slice(0, 10) + "g" + key.slice(11)), null);
+  assert.equal(run(`0x${key}`).length, 256);
+  assert.equal(run(key.slice(0, 40)).length, 160);
+});
+
 test("a minikey reports its payload keyspace, not its 256-bit digest", () => {
   // A minikey is SHA-256(text) exactly like a brain wallet, format-constrained
   // to S plus 21 or 29 base58 characters, so the accepted 22-character form

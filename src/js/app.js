@@ -6332,11 +6332,12 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
       // every other source publishes nothing when invalid.
       let digits = value.replace(/\s/g, "").replace(/^0x/i, "");
       if (digits.length > 64) return null;
+      // The same for a key with any character that is not hex: stopping at it
+      // published the digits before it, a cut-off key the private-key field
+      // itself rejects (the bitcoinjs/bip39 GHSA-726r-qj3q-vrxm pattern).
+      if (!/^[0-9a-fA-F]*$/.test(digits)) return null;
       let bits = "";
-      for (let digit of digits) {
-        if (!/^[0-9a-fA-F]$/.test(digit)) break;
-        bits += Number.parseInt(digit, 16).toString(2).padStart(4, "0");
-      }
+      for (let digit of digits) bits += Number.parseInt(digit, 16).toString(2).padStart(4, "0");
       return bits;
     }
     if (kind === "wif") return hodlBitsFromBytes(hodlDecodeWif(value.trim()).priv);
