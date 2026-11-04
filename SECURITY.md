@@ -821,7 +821,9 @@ extension that ignores them, or one written to steal.
 ## Release signing keys
 
 Releases are verified with the detached signatures in `SHA256SUMS.asc`
-(instructions in that file's header). The v1.0.0 signers and their keys:
+(instructions in that file's header). Each signer's public key is committed
+under [`keys/`](keys/); the production deploy imports keys only from there,
+never from a release's `KEYS` file. The v1.0.0 signers and their keys:
 
 | Signer | Key fingerprint | Status |
 | --- | --- | --- |

@@ -38,6 +38,7 @@ test("the guard sees the secret-reading jobs it is meant to cover", () => {
   // moved to the *-push jobs, so the guard must see those instead.
   for (const expected of [
     "ci-cd.yml:artifact",
+    "ci-cd.yml:preview",
     "ci-cd.yml:timestamp-push",
     "jev-adversarial.yml:adversarial",
     "ots-upgrade.yml:upgrade-push",

@@ -1,0 +1,9 @@
+# Release signers (issue #1406). A machine-readable copy of the list in
+# SECURITY.md "Release signing keys"; it is not a new trust root.
+# <40-hex primary fingerprint, no spaces> <name> <active|revoked>
+min-signers 3
+3428CBB54C369D8AF14EF600C801EE1D5285101E Portland.HODL active
+542ECCA3B5CB74CEC95729B392C21496202E3774 w-s-bitcoin active
+63EF760EE641A58516D54930F0B7D606C6FD9D52 timechainb active
+DB19EF73487443AAEAC2668717ABDC5F9867B54F MrHodlX active
+64434EE48A96C38E78B7875F4E7E416EE17D237C MrHodlX revoked

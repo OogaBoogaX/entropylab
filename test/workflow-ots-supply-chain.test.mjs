@@ -85,7 +85,7 @@ test("every pip install in CI takes only the hash-locked OTS wheels", () => {
       assert.doesNotMatch(line, /==/, `${name}: pins belong in ${lockPath}, not on the command line`);
     }
   }
-  assert.equal(installs, 3, "the timestamp, upgrade and release-asset jobs each install the client once");
+  assert.equal(installs, 4, "the timestamp, upgrade, release-asset and pages-release jobs each install the client once");
 });
 
 // The old guard checked that the push was a later *step* of the same job. A
@@ -106,8 +106,8 @@ test("no job that installs or runs the OTS client can reach a secret or the rele
   }
   assert.deepEqual(
     clientJobs.sort(),
-    ["ci-cd.yml:timestamp", "ots-upgrade.yml:upgrade", "release-assets.yml:check"],
-    "the timestamp, upgrade and release-asset jobs are the only ones that run the client",
+    ["ci-cd.yml:timestamp", "ots-upgrade.yml:upgrade", "pages-release.yml:ots", "release-assets.yml:check"],
+    "the timestamp, upgrade, release-asset and pages-release ots jobs are the only ones that run the client",
   );
 });
 
