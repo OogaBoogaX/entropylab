@@ -291,4 +291,4 @@ const entropyFromWordIndices = (indices) => {
   }
 };
 
-export { entropyToMnemonic, mnemonicToEntropy, mnemonicToSeedSync, seedFromEntropy, seedFromIndices, entropyFromWordIndices, validateMnemonic };
+export { entropyToMnemonic, mnemonicToEntropy, mnemonicToSeedSync, seedFromEntropy, seedFromIndices, entropyFromWordIndices, indicesFromEntropy, validateMnemonic };

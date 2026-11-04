@@ -138,3 +138,70 @@ test("long raw hex starting with 1, 2 or 3 stays a raw script", () => {
   // 60 characters is still address-shaped and errors rather than degrading.
   assert.throws(() => buildOutputScript("1" + "a".repeat(59)), /does not decode on mainnet/);
 });
+
+test("Base58 address typos with a forbidden character do not become outputs", () => {
+  const valid = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH";
+  assert.equal(buildOutputScript(valid).kind, "address");
+  for (const typo of ["0", "O", "I", "l"]) {
+    const input = valid.slice(0, -1) + typo;
+    assert.throws(() => buildOutputScript(input), /does not decode/);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn");
+  }
+  // More than one confusable, a punctuation typo, or a trailing paste
+  // artefact is still a mistyped address: intent follows the prefix and the
+  // shape of the token, not its alphabet. Explicit text mode still works.
+  for (const input of [valid.slice(0, -2) + "ll", valid.slice(0, -2) + "lO", valid.slice(0, -1) + "-", valid.slice(0, -1) + "_", valid.slice(0, -1) + "!", valid + ".", valid + ","]) {
+    assert.throws(() => buildOutputScript(input), /does not decode/, input);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn");
+  }
+  const testnet = "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn";
+  assert.equal(buildOutputScript(testnet, { network: "testnet" }).kind, "address");
+  for (const input of [testnet.slice(0, -2) + "0O", testnet + "."]) assert.throws(() => buildOutputScript(input, { network: "testnet" }), /does not decode on testnet/, input);
+  // Text keeps its intent: a short token, and anything carrying whitespace.
+  assert.equal(buildOutputScript("1hello").kind, "opreturn");
+  assert.equal(buildOutputScript("1 Dec 2026, proof of existence").kind, "opreturn");
+  assert.equal(buildOutputScript("1" + "a".repeat(32) + "0").kind, "raw");
+});
+
+// Audit M7, first character: a confusable or any other typo in the leading
+// character takes the token out of every prefix class, so the shape alone
+// must carry the intent. A whitespace-free run of letters and digits the
+// length of an address is a mistyped address, never OP_RETURN text.
+test("a typo in the first character of an address is still a mistyped address", () => {
+  const mainnet = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH";
+  for (const first of ["l", "I", "0", "O", "x"]) {
+    const input = first + mainnet.slice(1);
+    assert.throws(() => buildOutputScript(input), /does not decode on mainnet/, input);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn", input);
+  }
+  const testnet = "mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn";
+  assert.throws(() => buildOutputScript("M" + testnet.slice(1), { network: "testnet" }), /does not decode on testnet/);
+  // bech32 with a mistyped human-readable part: P2WPKH (42) and P2TR (62).
+  assert.throws(() => buildOutputScript("vc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"), /does not decode on mainnet/);
+  assert.throws(() => buildOutputScript("xc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr"), /does not decode on mainnet/);
+  // Digits only at address length is refused rather than silently text.
+  assert.throws(() => buildOutputScript("4" + "7".repeat(33)), /does not decode on mainnet/);
+  // Text keeps its intent below address length and when it carries
+  // punctuation; raw script keeps its reading behind a 0x prefix.
+  assert.equal(buildOutputScript("x" + "a".repeat(23)).kind, "opreturn");
+  assert.equal(buildOutputScript("https://example.com/proof-of-existence").kind, "opreturn");
+  assert.equal(buildOutputScript("0x" + "a".repeat(30)).kind, "raw");
+});
+
+// Audit M7, symbols: a stray symbol in the first position, or quotes and
+// brackets around the token from a chat or spreadsheet paste, must not turn
+// a mistyped address into text. Up to two symbols keep the address reading;
+// a URL or e-mail separator (/, : or @), or a third symbol, keeps text.
+test("a mistyped address wrapped in or starting with a symbol is still a mistyped address", () => {
+  const mainnet = "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH";
+  const bech32 = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+  for (const input of ["!" + mainnet.slice(1), "\"" + mainnet, "\"" + mainnet + "\"", "“" + mainnet + "”", "(" + mainnet + ")", "<" + mainnet + ">", "'" + bech32 + "'", "!" + bech32.slice(1)]) {
+    assert.throws(() => buildOutputScript(input), /does not decode on mainnet/, input);
+    assert.equal(buildOutputScript(input, { mode: "opreturn-text" }).kind, "opreturn", input);
+  }
+  assert.throws(() => buildOutputScript("[mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn]", { network: "testnet" }), /does not decode on testnet/);
+  // URLs, e-mail addresses and hyphenated phrases keep their text intent.
+  for (const input of ["https://example.com/proof-of-existence", "mailto:someone@example.com", "entropylab-proof-of-existence", "entropylab-reproducible-build-2026-11-03"]) {
+    assert.equal(buildOutputScript(input).kind, "opreturn", input);
+  }
+});

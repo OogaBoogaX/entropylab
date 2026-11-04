@@ -237,6 +237,8 @@ test("a language switch paints filled-in Key Station text again", () => {
   const apply = appSlice("hodlApplyLocale");
   assert.match(apply, /hodlRenderKeyTabs\(\);\s*hodlRenderMsigTabs\(\);\s*hodlRenderStationTabs\(hodlBip85Tabs\);\s*hodlRenderStationTabs\(hodlSpTabs\);\s*hodlPaintKeySummary\(\);/);
   assert.match(apply, /hodlUpdateHardeningHelp\(\);\s*hodlUpdateHardeningHelp\("msig-"\);\s*hodlUpdateAddressEstimate\(\);[\s\S]*hodlUpdateMsigAccount\(\);/);
+  // The paste controls' names fill in their field's name too.
+  assert.match(apply, /hodlDecorateAppPaste\(\);/);
 });
 
 test("the multisig account note, placeholder and warning follow the page language", () => {

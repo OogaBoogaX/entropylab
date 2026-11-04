@@ -6,10 +6,12 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { MiniDocument } from "./mini-dom.mjs";
 import { initPrivateCopy } from "../src/js/private-data.js";
+import { appClipboardClear, appClipboardText } from "../src/js/app-clipboard.js";
 import { initJournalReportViewer } from "../src/js/journal-report-viewer.js";
 
 const source = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
-const builder = source.match(/^function hodlPrivacyBarMarkup\([^]*?^}/m)[0];
+// The privacy bar is built by the shared switch-bar builder.
+const builder = [/^function hodlSwitchBarMarkup\([^]*?^}/m, /^function hodlPrivacyBarMarkup\([^]*?^}/m].map((pattern) => source.match(pattern)[0]).join("\n");
 const privacyMarkup = vm.runInNewContext(`${builder}; hodlPrivacyBarMarkup`, { hodlT: (text) => text });
 const PRIVATE_TEXT = "  imported recovery text <img src=x onerror=alert(1)>\nsecond line\t  ";
 
@@ -22,6 +24,7 @@ async function withViewer(run) {
   opener.focus = () => { document.activeElement = opener; };
   document.body.append(opener);
   const viewer = initJournalReportViewer({ privacyMarkup, copyIcon: () => "<svg></svg>" });
+  appClipboardClear();
   const stopCopy = initPrivateCopy();
   const el = (name) => document.getElementById(`journal-report-${name}`);
   const reveal = (value) => {
@@ -38,6 +41,7 @@ async function withViewer(run) {
     viewer.clear({ restoreFocus: false });
     clearTimeout(el("copy").copiedTimer);
     stopCopy();
+    appClipboardClear();
     for (const [name, descriptor] of Object.entries(saved)) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);
       else delete globalThis[name];
@@ -62,12 +66,14 @@ for (const kind of ["session-state", "session-log"]) test(`${kind} report is con
   assert.ok(el("readout").hasAttribute("data-i18n-skip"));
   assert.equal(el("readout").getAttribute("translate"), "no");
   await copy();
-  assert.deepEqual(writes, [PRIVATE_TEXT]);
+  assert.deepEqual(writes, []);
+  assert.equal(appClipboardText(), PRIVATE_TEXT);
   for (const value of el("copy").getAttributeNames().map((name) => el("copy").getAttribute(name))) assert.ok(!value.includes(PRIVATE_TEXT));
   reveal(false);
   assert.equal(el("readout").textContent, "");
+  appClipboardClear();
   await copy();
-  assert.equal(writes.length, 1);
+  assert.equal(appClipboardText(), "");
 }));
 
 test("report close, Escape, backdrop and explicit teardown erase text and prevent stale reveal/copy", () => withViewer(async ({ viewer, document, opener, el, reveal, copy, writes }) => {
@@ -88,6 +94,7 @@ test("report close, Escape, backdrop and explicit teardown erase text and preven
     assert.equal(el("readout").textContent, "");
   }
   assert.deepEqual(writes, []);
+  assert.equal(appClipboardText(), "");
   viewer.show({ kind: "session-log", content: PRIVATE_TEXT, opener });
   document.activeElement = null;
   viewer.clear({ restoreFocus: false });
@@ -142,7 +149,8 @@ test("opened snapshots annotate known private fields without interpreting text o
       assert.equal(el("readout").querySelector("[data-report-private-value]")?.textContent, secret);
     } else assert.equal(el("readout").querySelector("[data-report-private-label], [data-report-private-value]"), null);
     await copy();
-    assert.equal(writes.at(-1), snapshot);
+    assert.deepEqual(writes, []);
+    assert.equal(appClipboardText(), snapshot);
     reveal(false);
     assert.equal(el("readout").textContent, "");
     assert.equal(el("readout").children.length, 0);

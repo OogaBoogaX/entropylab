@@ -32,10 +32,18 @@ export const base58checkDecode = (text) => {
   if (typeof text !== "string") throw new Error("Base58Check input must be a string.");
   const bytes = textEncoder.encode(text);
   try {
-    const out = withInput(bytes, (p) => withOutput(DECODE_CAP, (o) => wasm().el_b58check_decode(p, bytes.length, o, DECODE_CAP)));
-    if (!out) throw new Error("Invalid Base58Check string.");
-    return out;
+    return base58checkDecodeBytes(bytes);
   } finally {
     bytes.fill(0);
   }
+};
+
+// The same decode from ASCII bytes the caller owns (a vault's copy), so a WIF
+// never becomes a string. The input is left as it was; the result is a fresh
+// array the caller owns.
+export const base58checkDecodeBytes = (bytes) => {
+  if (!(bytes instanceof Uint8Array)) throw new Error("Base58Check input must be a Uint8Array.");
+  const out = withInput(bytes, (p) => withOutput(DECODE_CAP, (o) => wasm().el_b58check_decode(p, bytes.length, o, DECODE_CAP)));
+  if (!out) throw new Error("Invalid Base58Check string.");
+  return out;
 };

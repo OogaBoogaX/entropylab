@@ -6,7 +6,10 @@ private keys into wallet recovery information without intentionally sending
 sensitive data to a server. The whole application is one HTML file, and its
 markup passes the W3C HTML validator with zero errors.
 
-Current version: **v1.0.0**
+Current version: **v1.1.0-dev**
+
+That is the development line on `rock`, which the website follows. The latest
+signed release is [v1.0.0](https://github.com/OogaBoogaX/entropylab/releases/tag/v1.0.0).
 
 Official website: [entropylab.online](https://entropylab.online)
 
@@ -133,6 +136,18 @@ an explicit error before those pairs are allocated.
   code is the text itself; a longer one is shown as an animated `ur:bytes`
   sequence, in the same fixed-rate UR parts the PSBT editor uses for
   `ur:crypto-psbt`. An extended private key never gets a code.
+- Encrypted multisig backup (BIP-138), in MultiSig's downloads and its
+  import panel. An encrypted backup is a scrambled copy of your multisig
+  wallet's descriptor: the recipe that turns your keys into addresses. A
+  multisig wallet can't be recovered without it, even with all the seeds, so
+  it's worth keeping spare copies. The encrypted copy can sit on a USB drive,
+  in email or in cloud storage without showing strangers your addresses or
+  keys. Anyone who holds one of the wallet's xpubs can open it, including
+  every cosigner and any app or service you shared an xpub with. It is not a
+  seed backup: it holds no private keys, can't spend anything, and won't help
+  if your seeds are lost. BIP-138 is still a draft standard, so keep a plain
+  copy of the descriptor somewhere you trust as well, and check that a saved
+  copy opens.
 - Inspects PSBT v0 transactions (paste, or upload a binary .psbt / hex or
   base64 text export; the loaded bytes download as .psbt or .txn), reports
   PSBT-provided amounts and fees, checks
@@ -153,6 +168,38 @@ an explicit error before those pairs are allocated.
   result whenever required data or support is missing. “Completed” describes
   only that check against the data in the file; it is not a claim that the
   transaction is safe or that PSBT-provided data is true.
+
+  Host randomness (rho) remains sensitive after signing. A malicious signer using
+  an operator-known base nonce can expose the signing key if its operator later
+  obtains rho and the signature. With the corresponding account xpub and a
+  non-hardened derivation path, compromise can extend to the account private key.
+  Do not save, share or record real transcripts or paste them on a shared/recorded
+  screen. Clipboard copies can persist outside this page.
+
+  In normal and preview builds, tab hide, idle timeout and print clear the pasted
+  transcript and last-inspection cache and close its disclosure. Plain window
+  blur preserves them so the opening or PSBT can be copied from another window;
+  other revealed secrets and visible result panes are still concealed. End
+  Session and pagehide clear field/cache. Clearing is best-effort; browser/OS
+  copies are outside reliable erasure. A successful transcript check does not
+  establish that host randomness stayed secret.
+  PSBT camera scans keep one stream across animated parts. A visible blur
+  while a permission prompt is pending does not cancel the request, but a
+  grant starts capture only when the page is visible and focused. Active
+  blur, tab hide, print, idle, cancellation, another PSBT scanner and teardown
+  stop capture and discard pending scan data.
+  A **Scan PSBT QR** control under the PSBT Inspector, Nonce Inspector and
+  PSBT Editor fields (and the fee-bump original, the PSBT sent to the signer
+  and the Editor's comparison PSBT) reads a PSBT shown as a QR code with the device camera:
+  one static code (base64 or hex), an animated `ur:crypto-psbt` sequence, or
+  PSBT BBQr (`H`, `2` and `Z` encodings).
+  Nothing is written to the field until the whole PSBT has arrived and it
+  starts with the PSBT magic; a QR that holds anything else is refused, and
+  a field that already has a PSBT asks before it is replaced.
+  The Editor and PSBT Inspector also accept pasted UR/BBQr frames separated
+  by whitespace. A paste must contain exactly one complete transfer: any
+  frame after completion is refused, including a duplicate. An in-progress
+  UR or BBQr transfer cannot be replaced by another transport without reset.
 - Accepts a fully signed raw Bitcoin transaction (hex or base64) in the same
   inspector: outputs, extracted ECDSA nonces, and inscription-envelope hints.
   Fee and RFC 6979 cannot be checked without previous outputs.
@@ -200,7 +247,20 @@ an explicit error before those pairs are allocated.
   shown as an animated `ur:crypto-psbt` fragment sequence for air-gapped
   scanning, and an **Insane editing** switch lifts the consensus-layer checks
   for deliberately broken files while still listing their problems. The
-  editor never signs anything.
+  editor never signs anything. Its output-script builder can interpret input
+  as an address, raw script, or OP_RETURN text; check the resulting script
+  carefully. In auto mode a whitespace-free token of 25 to 64 characters
+  with at most two symbols, and no `/`, `:` or `@`, is read as an address
+  and refused unless it decodes; a token starting with 1, 2, 3, m or n is
+  read as an address from 21 characters. A mistyped address of that shape
+  errors instead of becoming OP_RETURN text; one that is shorter, carries
+  three or more symbols, a `/`, `:` or `@`, or an inserted space still
+  reads as text. Bare hex is a raw script only when it is even-length,
+  contains an a-f digit and does not read as a Base58 address; a `0x`
+  prefix always marks raw script.
+  The Editor's input label is version-neutral; the decoded report identifies
+  the submitted PSBT version. The separate PSBT Inspector and Nonce Inspector
+  retain their v0-only input labels and parsing limits.
 - Verifies and extends Bitcoin Core descriptor wallets (Core Wallet tab):
   upload a SQLite `wallet.dat` (Bitcoin Core 23+; legacy Berkeley DB wallets
   are refused) and every record is decoded — client versions, wallet flags,
@@ -250,6 +310,16 @@ an explicit error before those pairs are allocated.
   DNS TXT to paste on a domain you control; paste that URI back on Send.
   Hybrid URIs with an ordinary Bitcoin fallback address still use Silent
   Payments; the results identify the fallback address as not used.
+- Privacy tab, BIP-47 payment codes station: derives your payment code and
+  notification address from the BIP-47 account (m/47'/coin'/0') of a seed or
+  root xprv, decodes a
+  contact's code with no private key, lists the pair addresses to pay or
+  receive (10 at a time, real indexes, skipped indexes listed), and checks a
+  pasted notification transaction offline (designated input found
+  automatically; a manual override is marked unverified). A receive key is
+  shown only on request; anyone who paid you there could rebuild your BIP-47
+  account key from it, so it must never be shared. Nothing is signed or
+  broadcast.
   This is a calculator: it does not scan the chain or resolve names.
 - Grinds vanity addresses for a Key Station key or a compatible BIP-85 child
   (Vanity tab), picked through the same chip picker as BIP-85 and Silent
@@ -612,6 +682,49 @@ through the [computer hardening checklist](docs/Computer_Hardening_Checklist.md)
 
 To build the HTML file yourself, see [Building from source](#building-from-source).
 
+### Anti-exfil QR observer
+
+Unexpected proof-verifier exceptions produce a STOP result and completion clears
+the capture. Oversized QR decode results are skipped so scanning can continue.
+Invalid/conflicting frames discard partial fragments for the current message;
+already completed messages remain available for the same exchange.
+
+The Nonce Inspector includes an experimental in-memory camera observer. First allow camera access and choose a camera, then scan
+`ur:x-btc-anti-exfil` stages 2/4 on the signer and stage 3 on Sparrow. It checks
+the AEXB proof and the supplied signatures against the embedded PSBT. It never
+signs or broadcasts. Completion clears captured messages before showing a
+blocking PASS or STOP result; only verdict metadata remains until acknowledgement.
+Animated UR assembly uses the shared collector from #1273 with the observer's
+existing bounds and canonical envelope checks. Worker cleanup requests a memory
+scrub and waits up to four seconds for a busy worker (250 ms when idle).
+An unresponsive worker may terminate before wiping transferred frames or WASM
+memory. The shared decoder returns a scrub result; the observer does not currently
+surface it. Immutable decoded strings and browser/OS copies also
+remain outside reliable erasure guarantees.
+Multipart CRC-32 fields accept the reference encoder's fixed-width uint32 form,
+including small values, as well as previously accepted minimal-width values.
+Other CBOR fields retain canonical encoding checks; message CRC validation is unchanged.
+This does not prove host honesty or randomness secrecy. The user reports successful local SeedSigner and Kern multisig sessions;
+broader compatibility qualification remains pending; see `docs/QR_CAPTURE_PROTOTYPE.md` for limits.
+
+The QR observer supports PSBT v0, SIGHASH_ALL, native P2WPKH, P2SH-P2WPKH,
+native P2WSH standard m-of-n multisig and P2SH-P2WSH standard m-of-n multisig.
+All input contexts are checked. Already-finalized inputs are refused with
+`TRANSACTION_ALREADY_FINALIZED`: a conservative observer scope limit, not a
+tamper finding. Existing partial signatures do not by themselves finalize an input.
+
+The pasted transcript follows the confidentiality lifecycle described above:
+plain window blur preserves it; tab hide, idle timeout and print retire it.
+QR capture still pauses on every conceal trigger, including blur. Incomplete
+captured messages remain in memory until Clear Capture, End Session or page exit.
+Clearing remains best-effort.
+Coverage counts/indexes retained in the result are transaction metadata, not
+cryptographic secrets; Clear Capture retires that result too.
+
+For the QR observer, scan the signer’s M4 into EntropyLab first. Only after EL
+shows PASS, scan that same M4 into Sparrow. Do not continue after an incomplete
+result or STOP. Sparrow’s own checks and broadcast decision remain necessary.
+
 ### iPhone home-screen app
 
 On iPhone, open [entropylab.online](https://entropylab.online) in Safari, then
@@ -634,6 +747,12 @@ file is still self-contained and never registers the hosted service worker.
 
 ### Verifying the download
 
+New to checksums and signatures? The step-by-step guide, with Windows, Mac and
+Linux commands, is [Verify your download](docs/Verify_Your_Download.md). A
+signed release also carries `SHA256SUMS.asc` and `KEYS`: run
+`gpg --import KEYS` and `gpg --verify SHA256SUMS.asc SHA256SUMS.txt`, and
+compare each signer's fingerprint with the guide's list.
+
 Every merge to `rock` publishes a `SHA256SUMS.txt` checksum manifest for
 `entropylab.html` (committed next to it in this repository), a matching
 `CID.txt` (CIDv1 raw sha2-256 of those same bytes), a
@@ -646,7 +765,8 @@ sha256sum -c SHA256SUMS.txt
 gh attestation verify entropylab.html -R OogaBoogaX/entropylab
 ```
 
-The three WASM modules embedded in the HTML are committed as
+The four WASM modules embedded in the HTML (secp256k1, PSBT, vanity and the
+QR decoder) are committed as
 `src/js/*-wasm-b64.js`; their digests are in `WASM-SHA256SUMS.txt`, committed
 next to `SHA256SUMS.txt`. From a checkout of the release commit:
 
@@ -700,7 +820,7 @@ stamped until `ots info entropylab.html.ots` shows a Bitcoin attestation.
 Then, on a machine with Bitcoin Core (a pruned node is fine):
 
 ```sh
-ots verify entropylab.html
+ots verify entropylab.html.ots
 ```
 
 On **Windows**, `opentimestamps-client`'s `python-bitcoinlib` dependency
@@ -711,8 +831,9 @@ is needed: Git for Windows already ships it. Copy
 `C:\Program Files\Git\mingw64\bin\` into any PATH directory as
 `libeay32.dll` and verification runs natively.
 
-EntropyLab itself never stamps, upgrades, or verifies `.ots` files and never
-talks to a calendar. The HTML stays air-gappable.
+EntropyLab itself never stamps or upgrades `.ots` files and never talks to a
+calendar. Its Verify tab checks a proof offline against a Bitcoin block header
+you supply. The HTML stays air-gappable.
 
 The CID is a self-describing name for the SHA-256, not a second hash. The
 calculator never talks to IPFS. To store or fetch the file on a **local**

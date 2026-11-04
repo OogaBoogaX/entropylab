@@ -91,6 +91,15 @@ const CLEARING_PATHS = [
     probe: (id) => assert.ok(lifecycle.includes(`"${id}"`), `#${id} missing from the lifecycle sweep`),
   },
   {
+    ids: ["bip47-key", "bip47-pass"],
+    why: "BIP-47 station: session key and passphrase (preview only)",
+    probe: (id) => {
+      assert.ok(fnBody("hodlBip47WipeSource").includes(`"${id}"`), `#${id} missing from the BIP-47 wipe`);
+      assert.match(fnBody("hodlBip47WipeMem"), /hodlBip47WipeSource\(\)/, "the full BIP-47 wipe includes the source wipe");
+      assert.match(lifecycle, /hodlBip47WipeMem\(\)/, "End Session and pagehide must reach the BIP-47 wipe");
+    },
+  },
+  {
     ids: ["ln-seed", "ln-pass", "ln-inv-input"],
     why: "Lightning: aezeed cipher seed and passphrase, and the pasted invoice/offer (a payment request that must not outlive the session)",
     probe: (id) => {
@@ -178,8 +187,8 @@ const CLEARING_PATHS = [
   {
     // File inputs hold no content once consumed, but the reset is what lets
     // "pick the same file again" work AND keeps the fake path off screen.
-    ids: ["psbt-file", "psbt-audit-file", "psbt-rbf-file", "nonce-file", "psbt-nonce-history-file", "journal-notes-file", "journal-keymanager-file"],
-    why: "file pickers for PSBT / nonce / journal / vault uploads (reset on consume)",
+    ids: ["psbt-file", "psbt-audit-file", "psbt-rbf-file", "nonce-file", "psbt-nonce-history-file", "journal-notes-file", "journal-keymanager-file", "msig-backup-file"],
+    why: "file pickers for PSBT / nonce / journal / vault / encrypted multisig backup uploads (reset on consume)",
     probe: (id) => assert.match(around(app, `getElementById("${id}")`), /value = ""/, `#${id} must be reset on consume`),
   },
   {
@@ -226,6 +235,10 @@ const PUBLIC_FIELDS = {
   "address-range": "address window setting",
   "address-start": "address window setting",
   "address-start-harden": "hardening toggle",
+  "bip47-contact": "a pasted payment code — public data, decoded offline with no key",
+  "bip47-notify-pub": "a manually supplied public key — public data, used only for the unverified override",
+  "bip47-notify-tx": "a pasted raw transaction — public data, decoded offline with no key",
+  "bip47-start": "BIP-47 payment-address start index setting",
   "bip85-bytes": "BIP-85 length setting",
   "bip85-index": "BIP-85 index setting",
   "bip85-pwdlen": "BIP-85 length setting",
@@ -243,6 +256,7 @@ const PUBLIC_FIELDS = {
   "msig-address-range": "derivation setting",
   "msig-address-start": "derivation setting",
   "msig-address-start-harden": "derivation setting",
+  "msig-backup-xpub": "one of the multisig's xpubs, typed only to open an encrypted backup; text that looks like a private key or seed is emptied at once",
   "msig-branch-range": "derivation setting",
   "msig-branch-start": "derivation setting",
   "msig-branch-start-harden": "derivation setting",

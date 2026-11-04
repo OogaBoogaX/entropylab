@@ -309,7 +309,7 @@ test("client: the Node fallback verifies in process when there is no source and 
 
 // ---- release build --------------------------------------------------------
 
-test("a release build ships neither the OTS worker source nor the worker bundle", () => {
+test("a release build ships the OTS worker bundle for the Verify workspace", () => {
   const out = mkdtempSync(join(tmpdir(), "entropylab-release-"));
   try {
     // CI checks the repository out shallow, where build-commit.mjs refuses to
@@ -319,15 +319,14 @@ test("a release build ships neither the OTS worker source nor the worker bundle"
     execFileSync(process.execPath, [join(root, "scripts/build.mjs"), "--out", out], { cwd: root, env, stdio: "pipe" });
     const page = readFileSync(join(out, "entropylab.html"), "utf8");
     assert.ok(workerSource.includes("OtsParseError"), "the worker bundle carries the parser");
-    // __OTS_WORKER_SOURCE__ is defined only in preview builds, so the worker
-    // bundle cannot reach a release page. (The rest of the Verify code does,
-    // as dead code: app.js declares PREVIEW with var, which esbuild does not
-    // fold, so preview-gated calls stay in the bundle.) esbuild prints a string
-    // literal's plain characters unchanged, so a run of plain code from the
-    // bundle would appear verbatim if the define were set.
+    // The Verify workspace ships in every build since its unhide (owner,
+    // 2026-10-29), so __OTS_WORKER_SOURCE__ is defined in release builds too;
+    // without it the release Verify card could not verify anything. esbuild
+    // prints a string literal's plain characters unchanged, so a run of plain
+    // code from the worker bundle appears verbatim in the page.
     const marker = workerSource.match(/[A-Za-z0-9_.(){}=,;:+*<>!&|? -]{60,}/g)?.sort((a, b) => b.length - a.length)[0];
     assert.ok(marker, "the worker bundle has a plain-code run to look for");
-    assert.ok(!page.includes(marker), "the release build carries no OTS worker bundle");
+    assert.ok(page.includes(marker), "the release build carries the OTS worker bundle");
   } finally {
     rmSync(out, { recursive: true, force: true });
   }

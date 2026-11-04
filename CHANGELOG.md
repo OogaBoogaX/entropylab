@@ -5,6 +5,31 @@ Release notes for EntropyLab. Each release is a single self-contained
 
 ## Unreleased
 
+- **Development builds say so**: `rock` (and so the live site) now carries
+  version `1.1.0-dev`, so its footer reads `v1.1.0-dev · commit …` instead of
+  the signed release's `v1.0.0` (#1406). A published release whose page
+  still says `-dev` fails the release-assets check.
+- **Release signing: MrHodlX's key `64434EE4…237C` is revoked** (it was on a
+  computer later found compromised). Don't trust signatures from it,
+  including its v1.0.0 block; v1.0.0 stays verifiable with the other three
+  signatures. See [SECURITY.md → Release signing keys](SECURITY.md#release-signing-keys).
+- **PSBT camera lifecycle**: keep one camera stream and one deadline across
+  animated parts. Preserve a pending permission prompt through visible blur,
+  but reject a grant while the page is hidden or unfocused. Stop capture on
+  cancellation or panel supersession, mark teardown stopped, and ignore late
+  grants and frames. The shared scanner remains one-shot by default.
+- **Scan PSBT QR**: the PSBT Inspector, Nonce Inspector and PSBT Editor
+  fields, the fee-bump check's original, the PSBT sent to the signer and the
+  Editor's comparison PSBT gain a camera control that reads a PSBT from one static QR code or
+  an animated `ur:crypto-psbt` sequence. Only a payload that starts with the
+  PSBT magic is written to the field, after the whole code has arrived.
+  Clearing a tool, leaving the Transactions workspace, a language switch and
+  End Session close an open scanner and stop its camera.
+- **PSBT QR transports**: add PSBT-only BBQr (`H`, `2`, `Z`) to the existing
+  reader and accept complete pasted UR/BBQr transfers in the Editor and
+  PSBT Inspector. Bound compressed and decoded data, reject mixed transfers
+  and all pasted parts after completion, and retain independent SeedSigner
+  and Coinkite interoperability vectors. Camera lifecycle changes are separate.
 - **Passphrases starting with U+FEFF derive a different wallet than in
   v1.0.0** (audit C2-E): the BIP39 salt now hashes the leading U+FEFF the way
   the BIP39 reference does, and key-file export/import round-trips it

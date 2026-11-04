@@ -51,11 +51,9 @@
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="ln-card" aria-label="Lightning"><span class="workspace-tab-full">Lightning</span><span class="workspace-tab-short">LN</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="core-card" aria-label="Core Wallet"><span class="workspace-tab-full">Core Wallet</span><span class="workspace-tab-short">Core</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="bip85-card" aria-label="BIP-85 Child" title="BIP-85 Child"><span class="workspace-tab-full">BIP-85</span><span class="workspace-tab-short">BIP-85</span></button>
-        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="sp-card" aria-label="Privacy"><span class="workspace-tab-full">Privacy</span><span class="workspace-tab-short">Privacy</span></button>
+        <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="sp-card bip47-card" aria-label="Privacy"><span class="workspace-tab-full">Privacy</span><span class="workspace-tab-short">Privacy</span></button>
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="vanity-card" aria-label="Vanity Address" title="Vanity Address"><span class="workspace-tab-full">Vanity</span><span class="workspace-tab-short">Vanity</span></button>
-        <!-- preview -->
         <button type="button" class="workspace-tab" role="tab" aria-selected="false" aria-controls="verify-card" aria-label="Verify"><span class="workspace-tab-full">Verify</span><span class="workspace-tab-short">Verify</span></button>
-        <!-- /preview -->
       </div>
     </nav>
       <div class="workspace-panel" id="workspace-panel">
@@ -80,6 +78,9 @@
       </div>
       <div class="key-lab" id="key-lab">
       <p class="edge-note is-public" id="key-edit-note" role="status" hidden></p>
+      <!-- preview -->
+      <div class="secure-entry-host" id="secure-entry-host" hidden></div>
+      <!-- /preview -->
       <div class="global-sync-host" id="global-sync-host"></div>
       <section class="seed-length-control" id="seed-length" aria-labelledby="seed-length-label">
         <h3 class="label" id="seed-length-label">Seed phrase length</h3>
@@ -125,6 +126,7 @@ words, pick one of the checksum words.</span></span>
         <label for="pass">Passphrase (optional)</label>
         <div class="passphrase-keyboard-tools" id="passphrase-keyboard-toggle-host" hidden></div>
         <div class="dice-input-shell passphrase-input-shell"><pre class="dice-input-highlight" id="passphrase-highlight" translate="no" aria-hidden="true"></pre><input id="pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none" aria-describedby="passphrase-bip39-status"></div>
+        <p class="field-note edge-note is-private" id="passphrase-length-note" hidden>Some hardware wallets cannot restore a passphrase longer than 50 characters. Check yours before relying on it.</p>
         <p class="field-note passphrase-bip39-status" id="passphrase-bip39-status" aria-live="polite" hidden></p>
       </div>
       <div class="passphrase-keyboard-host" id="passphrase-keyboard-host" hidden></div>
@@ -415,6 +417,13 @@ words, pick one of the checksum words.</span></span>
         <label class="field"><span class="muted label-value">Paste a wallet-exported multisig descriptor here — the quorum, script type, key order, and co-signer xpubs will be filled in below.</span>
           <textarea id="msig-descriptor" placeholder="wsh(sortedmulti(2,[fingerprint/48h/0h/0h/2h]Zpub…/0/*, …))" autocomplete="off" spellcheck="false" aria-describedby="msig-descriptor-help"></textarea>
         </label>
+        <div id="msig-descriptor-scan-host" class="text-scan-host" data-scan-field="msig-descriptor" data-scan-accept="descriptor"></div>
+        <button class="btn secondary" id="msig-backup-open" type="button">Open encrypted backup</button>
+        <input type="file" id="msig-backup-file" accept=".bip138,.txt" hidden>
+        <div id="msig-backup-xpub-row" hidden>
+          <label class="field">One of this wallet's xpubs<input id="msig-backup-xpub" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="msig-backup-status"></label>
+        </div>
+        <p class="edge-note is-private" id="msig-backup-status" role="status" hidden></p>
         <button class="btn secondary" id="msig-descriptor-import" type="button" disabled>Import Descriptor</button>
         <p class="field-note edge-note is-muted" id="msig-descriptor-help">Only accepts watch-only public keys; a descriptor carrying private keys will be refused.</p>
         <p class="hint" id="msig-descriptor-status" role="status" hidden></p>
@@ -515,15 +524,14 @@ words, pick one of the checksum words.</span></span>
       </div>
       <div id="msig-out"></div>
     </div>
-    <!-- preview -->
     <div class="key-manager no-print" id="privacy-manager" hidden>
       <div class="key-tab-strip">
         <div class="key-tabs" id="privacy-tool-tabs" role="tablist" aria-label="Privacy stations">
           <button class="tab key-tab active" id="privacy-sp-tab" type="button" role="tab" aria-selected="true" aria-controls="sp-card" data-privacy-tool="sp"><span class="key-tab-label">Silent Payments</span></button>
+          <button class="tab key-tab" id="privacy-bip47-tab" type="button" role="tab" aria-selected="false" aria-controls="bip47-card" data-privacy-tool="bip47"><span class="key-tab-label">BIP-47 payment codes</span></button>
         </div>
       </div>
     </div>
-    <!-- /preview -->
     <div class="tool-intro edge-note is-info" id="sp-tool-intro" hidden>
         <h2>Silent Payments, offline</h2>
         <p class="muted tool-intro-note" data-i18n-rich>Get an <code>sp1q…</code> address to reuse. Print the URI and DNS text if you want to publish it. Make a sender output or check pasted outputs against your scan key. No chain. No network.</p>
@@ -531,9 +539,94 @@ words, pick one of the checksum words.</span></span>
       <div class="key-manager no-print" id="sp-manager" hidden>
         <div class="key-tab-strip"><div class="key-tabs" id="sp-tabs" role="tablist" aria-label="Silent Payments"></div><div class="add-item-control"><button class="add-key" id="add-sp" type="button" aria-label="Open SP Station to derive another address" aria-describedby="add-sp-tooltip">+</button><span class="add-item-tooltip" id="add-sp-tooltip" role="tooltip">Open SP Station</span></div><div class="add-item-control"><button class="add-key remove-key" id="delete-sp" type="button" aria-label="Delete current silent payment address" aria-describedby="delete-sp-tooltip" disabled>−</button><span class="add-item-tooltip" id="delete-sp-tooltip" role="tooltip">Delete this silent payment address</span></div></div>
       </div>
+    <div class="card no-print tool-card" id="bip47-card" role="tabpanel" hidden>
+      <div data-bip47-section="intro">
+        <p class="edge-note is-info">A payment code lets a compatible wallet derive payment addresses for you. This station calculates them and checks pasted data offline. It never builds, signs or broadcasts transactions, and it does not check the blockchain.</p>
+      </div>
+      <div data-bip47-section="source">
+        <div class="station-key-source tool-section">
+          <p class="label">Use a key from Key Station</p>
+          <div class="session-key-picker" id="bip47-session-keys" role="group" aria-label="Compatible Key Station keys" hidden></div>
+          <p class="field-note" id="bip47-session-keys-note"></p>
+        </div>
+        <label class="field">Session key
+          <span class="field-note">BIP39 seed phrase or root xprv/tprv</span>
+          <textarea id="bip47-key" placeholder="Enter a seed phrase or root xprv/tprv" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <label class="field">Passphrase (optional)
+          <input id="bip47-pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none">
+        </label>
+        <div class="key-settings">
+          <div class="key-settings-row">
+            <label class="field">Address network
+              <select id="bip47-network"><option value="mainnet" selected>Bitcoin mainnet</option><option value="testnet">Testnet (practice)</option></select>
+            </label>
+          </div>
+        </div>
+        <p class="field-note">Payment codes do not name a network. Addresses use the network selected here.</p>
+        <p class="label">Account path</p>
+        <p class="mono" id="bip47-path">m/47'/0'/0'</p>
+        <div class="tool-actions">
+          <button class="btn primary" id="bip47-go" type="button">Derive</button>
+        </div>
+        <p class="err" id="bip47-error" role="alert"></p>
+        <p class="edge-note is-private">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      </div>
+      <div data-bip47-section="own">
+        <div id="bip47-own"></div>
+      </div>
+      <div data-bip47-section="counterparty">
+        <label class="label" for="bip47-contact">Payment code</label>
+        <p class="field-note">Decoding a payment code needs no private key.</p>
+        <textarea id="bip47-contact" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <div id="bip47-contact-scan-host" class="text-scan-host" data-scan-field="bip47-contact" data-scan-accept="payment-code"></div>
+        <div class="tool-actions">
+          <button class="btn" id="bip47-decode" type="button">Decode</button>
+        </div>
+        <div id="bip47-contact-out" aria-live="polite"></div>
+      </div>
+      <details class="derivation-advanced" id="bip47-pairs" data-bip47-section="pairs">
+        <summary>Payment addresses</summary>
+        <p class="field-note" id="bip47-pairs-needs">Choose a key and decode a contact's payment code first.</p>
+        <div class="row no-print segmented-control is-wide" id="bip47-directions" role="group">
+          <button class="tab active" type="button" data-direction="send" aria-pressed="true">Send to this contact</button>
+          <button class="tab" type="button" data-direction="receive" aria-pressed="false">Receive from this contact</button>
+        </div>
+        <label class="field">Start index
+          <input id="bip47-start" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="0">
+        </label>
+        <div class="row tool-actions">
+          <button class="btn primary" id="bip47-rows-go" type="button">Derive</button>
+          <button class="btn" id="bip47-rows-next" type="button" hidden>Next 10</button>
+        </div>
+        <div id="bip47-rows" aria-live="polite"></div>
+        <p class="edge-note is-info">These addresses have not been checked for previous use. Keep your own record of used indexes.</p>
+      </details>
+      <details class="derivation-advanced" id="bip47-notify" data-bip47-section="notify">
+        <summary>Check a notification transaction</summary>
+        <p class="field-note" id="bip47-notify-needs">Choose a key first.</p>
+        <label class="field">Raw transaction (hex)
+          <textarea id="bip47-notify-tx" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </label>
+        <details class="derivation-advanced" id="bip47-notify-manual">
+          <summary>Manual override (unverified)</summary>
+          <p class="edge-note is-info">Unverified override: this check uses the public key and input you selected. It does not verify that the key belongs to that input.</p>
+          <label class="field">Input that holds the public key
+            <select id="bip47-notify-input"><option value="" disabled selected></option></select>
+          </label>
+          <label class="field">Public key of that input (hex)
+            <input id="bip47-notify-pub" spellcheck="false" autocomplete="off" autocapitalize="off">
+          </label>
+        </details>
+        <div class="row tool-actions">
+          <button class="btn primary" id="bip47-notify-go" type="button">Check</button>
+        </div>
+        <div id="bip47-notify-out" aria-live="polite"></div>
+      </details>
+    </div>
       <div class="card no-print tool-card" id="sp-card" role="tabpanel" hidden>
       <div id="sp-bench">
-      <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      <p class="edge-note is-private">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       <p class="label" id="sp-mode-label">Mode</p>
       <div class="row no-print segmented-control is-wide" id="sp-modes" role="group" aria-labelledby="sp-mode-label">
         <button class="tab active" type="button" data-sp-mode="receive" aria-pressed="true">Receive</button>
@@ -578,6 +671,7 @@ words, pick one of the checksum words.</span></span>
           <textarea id="sp-recipients" placeholder="sp1qqgste7k9hx0q…&#10;bitcoin:?sp=sp1qqgste7k9hx0q…&#10;sp1qqgste7k9hx0q… 2" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
           <span class="field-note">Paste the code or a BIP-321 URI. Names like you@domain are not resolved here — look the TXT up on an online machine and paste the URI.</span>
         </label>
+        <div id="sp-recipients-scan-host" class="text-scan-host" data-scan-field="sp-recipients" data-scan-accept="sp" data-scan-mode="append"></div>
         <label class="field">Inputs (BIP-352 vin JSON)
           <textarea id="sp-send-vins" placeholder='[{"txid":"…","vout":0,"scriptSig":"…","txinwitness":"","prevout":{"scriptPubKey":{"hex":"…"}},"path":"m/86&#39;/1&#39;/0&#39;/0/0"}]' spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
           <span class="field-note">Same shape as the published BIP-352 send vectors, minus the keys: each eligible input's key is derived from the loaded session key. An input outside the session's known addresses needs a "path" field ("m/…", optional "fingerprint"). P2TR / P2WPKH / P2SH-P2WPKH / P2PKH only.</span>
@@ -641,6 +735,7 @@ words, pick one of the checksum words.</span></span>
       <label class="field">PSBT v0 or raw transaction (base64 or hex)
         <textarea id="psbt-text" placeholder="cHNidP8B… or 020000000001…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </label>
+      <div class="psbt-scan-host" id="psbt-scan-host"></div>
       <details class="derivation-advanced" id="psbt-key-options">
         <summary>Inspect with key (optional)</summary>
         <p class="muted label-description">Add a key to enhance the PSBT inspection features. When a key is entered the inspection results will highlight which transaction outputs belong to that key.</p>
@@ -656,12 +751,13 @@ words, pick one of the checksum words.</span></span>
         <label class="field"><span>Passphrase (optional)</span>
           <input id="psbt-pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none">
         </label>
-        <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+        <p class="edge-note is-private">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
       </details>
 <details class="derivation-advanced" id="psbt-rbf-options">
 <summary>Check a fee bump (RBF) (optional)</summary>
 <p class="muted label-description">Paste the original transaction you broadcast, then Inspect the fee-bump PSBT above. EntropyLab checks that the bump only raises the fee: the same payments to the same addresses, with the extra fee taken from your change. Use your own copy of the original — the one you signed or saved — not the one your wallet or server shows you now. A malicious server can change that copy.</p>
 <label class="field">Original transaction you broadcast (raw hex or PSBT)<textarea id="psbt-rbf-original" placeholder="cHNidP8B… or 0200000001…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea></label>
+<div class="psbt-scan-host" id="rbf-scan-host"></div>
 <div class="row tool-actions"><button class="btn secondary" id="psbt-rbf-upload" type="button">Upload original</button><input type="file" id="psbt-rbf-file" accept=".psbt,.txn,.txt,.hex" hidden></div>
 </details>
 <details class="derivation-advanced" id="psbt-audit-options">
@@ -670,6 +766,7 @@ words, pick one of the checksum words.</span></span>
         <label class="field">PSBT you sent (base64 or hex)
           <textarea id="psbt-audit-before" placeholder="cHNidP8B…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </label>
+        <div class="psbt-scan-host" id="audit-scan-host"></div>
         <div class="row tool-actions">
           <button class="btn secondary" id="psbt-audit-upload" type="button">Upload sent .psbt</button>
           <input type="file" id="psbt-audit-file" accept=".psbt,.txn,.txt,.hex" hidden>
@@ -694,6 +791,7 @@ words, pick one of the checksum words.</span></span>
         <label class="field">Descriptor
           <textarea id="descriptor-reuse-text" placeholder="wsh(sortedmulti(2,[…]xpub…/&lt;0;1&gt;/*,…))" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </label>
+        <div id="descriptor-reuse-scan-host" class="text-scan-host" data-scan-field="descriptor-reuse-text" data-scan-accept="descriptor"></div>
         <div class="row tool-actions">
           <button class="btn secondary" id="descriptor-reuse-go" type="button">Check</button>
         </div>
@@ -702,9 +800,10 @@ words, pick one of the checksum words.</span></span>
       </details>
     </div>
       <div class="card no-print tool-card" id="psbted-card" role="tabpanel" hidden>
-      <label class="field">PSBT v0 (base64 or hex)
+      <label class="field">PSBT (base64 or hex)
         <textarea id="psbted-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </label>
+      <div class="psbt-scan-host" id="psbted-scan-host"></div>
       <div class="row psbt-actions psbted-actions tool-actions current-item-actions">
         <button class="btn primary" id="psbted-load" type="button" disabled>Load PSBT</button>
         <button class="btn secondary" id="psbted-upload" type="button">Upload .psbt File</button>
@@ -721,6 +820,7 @@ words, pick one of the checksum words.</span></span>
         <label class="field">Other PSBT (base64 or hex)
           <textarea id="psbted-compare-text" placeholder="cHNidP8B..." spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </label>
+        <div class="psbt-scan-host" id="psbted-compare-scan-host"></div>
         <p class="label" id="psbted-compare-result-label">PSBT comparison result</p>
         <div class="tool-result" role="region" aria-labelledby="psbted-compare-result-label">
           <p class="field-note tool-result-empty">Paste a second PSBT and click Compare to view the differences here.</p>
@@ -737,8 +837,9 @@ words, pick one of the checksum words.</span></span>
       <label class="field">PSBT v0 or signed raw transaction (base64 or hex)
         <textarea id="nonce-text" placeholder="cHNidP8B… or 020000000001…" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </label>
-      <div class="derivation-advanced is-static" id="nonce-key-options">
-        <p class="label">Inspect with key</p>
+      <div class="psbt-scan-host" id="nonce-scan-host"></div>
+      <details class="derivation-advanced" id="nonce-key-options">
+        <summary>Inspect with key (optional)</summary>
         <p class="muted label-description">Add a key to check each signature against RFC 6979 and low-r grinding, so an unexpected nonce can be told apart from a deterministic one.</p>
         <label class="field">Session key
           <span class="field-note">Enter a BIP39 seed phrase, root xprv/tprv, WIF, or 64-character hex.</span>
@@ -752,12 +853,50 @@ words, pick one of the checksum words.</span></span>
         <label class="field"><span>Passphrase (optional)</span>
           <input id="nonce-pass" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Enter a passphrase, or leave blank for none">
         </label>
-        <p class="edge-note is-public">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
-      </div>
+        <p class="edge-note is-private">Session keys remain in this page only and are never intentionally stored or sent. Memory clearing is best-effort because browsers may retain internal copies; close the page before reconnecting the computer.</p>
+      </details>
       <details class="derivation-advanced" id="nonce-jade-options">
-        <summary>Anti-exfil transcript (Jade, BitBox02 or AEXB, optional)</summary>
+        <summary>Anti-exfil: paste a transcript (Jade, BitBox02 or AEXB, optional)</summary>
         <p class="field-note" id="psbt-ax-transcript-help">Paste a Jade or BitBox02 host nonce and opening, or the AEXB/AEXT messages of one session (stages 2 to 4) as hex, exported from your host software. The format is detected automatically.</p>
-        <textarea id="psbt-ax-transcript" aria-label="Anti-exfil transcript" aria-describedby="psbt-ax-transcript-help" placeholder="Host nonce and opening, or AEXB messages, as hex" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <p class="edge-note is-private" id="nonce-transcript-privacy">Host randomness (rho) remains sensitive even after signing. With a malicious signer, later disclosure can expose the signing key. Do not save, share or record real transcripts, or paste them on a recorded or shared screen. Clipboard copies may persist. End the session after checking; browser/OS memory clearing is best-effort.</p>
+        <textarea id="psbt-ax-transcript" aria-label="Anti-exfil transcript" aria-describedby="psbt-ax-transcript-help nonce-transcript-privacy" placeholder="Host nonce and opening, or AEXB messages, as hex" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      </details>
+      <details class="derivation-advanced" id="nonce-qr-capture">
+        <summary>Anti-exfil: scan a live QR ceremony (prototype)</summary>
+        <p class="field-note">Capture stages 2 and 4 from SeedSigner or Kern and stage 3 from Sparrow. Keep the same signing session open. This observer never signs or broadcasts.</p>
+        <p class="edge-note is-private">To protect stage 3's secret host randomness (rho), scan directly into this local inspector. Do not save, share or record real session transcripts, even after a successful check. Browser/OS memory clearing is best-effort.</p>
+        <div class="row tool-actions"><button class="btn blue" id="nonce-qr-access" type="button">Allow Camera Access</button></div>
+        <label class="field"><span>Camera</span><select id="nonce-qr-camera" disabled><option value="">Default camera (allow access to list cameras)</option></select></label>
+        <div id="nonce-qr-viewer" class="camera-viewer" hidden>
+          <video id="nonce-qr-video" class="camera-preview" muted playsinline hidden aria-label="QR camera preview"></video>
+          <div class="camera-progress-overlay">
+            <div id="nonce-qr-bars" class="camera-progress-bars" role="progressbar" aria-label="QR message assembly" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0"></div>
+            <span id="nonce-qr-scan-label" aria-live="polite">Point the camera at the QR code.</span>
+          </div>
+        </div>
+        <p class="field-note">Message 1 is not needed for this observer check.</p>
+        <div class="capture-stages" aria-label="Captured protocol messages">
+          <span id="nonce-qr-stage-2" data-captured="false">Message 2 · signer</span>
+          <span id="nonce-qr-stage-3" data-captured="false">Message 3 · Sparrow</span>
+          <span id="nonce-qr-stage-4" data-captured="false">Message 4 · signer</span>
+        </div>
+        <p class="field-note">Filled boxes mean captured, not verified. All three messages are needed.</p>
+        <p class="field-note" id="nonce-qr-remaining" data-remaining="3" aria-live="polite"></p>
+        <p class="field-note" id="nonce-qr-progress" aria-live="polite"></p>
+        <div class="edge-note is-info" id="nonce-qr-status" aria-live="polite">Click Allow Camera Access, choose your camera, then scan each displayed message.</div>
+        <p class="edge-note is-info">When your signer displays Message 4, scan it into EntropyLab first. Continue by scanning the same Message 4 into Sparrow only after EntropyLab shows PASS. If verification fails or is incomplete, do not continue to Sparrow. Message 4 is the signer's final anti-exfil QR.</p>
+        <div class="row tool-actions">
+          <button class="btn secondary" id="nonce-qr-start" type="button" disabled>Scan Message 2</button>
+          <button class="btn secondary" id="nonce-qr-stop" type="button" disabled>Stop camera</button>
+          <button class="btn secondary" id="nonce-qr-clear" type="button">Clear Capture</button>
+        </div>
+        <details class="derivation-advanced" id="nonce-qr-limits">
+          <summary>Capture clearing, supported transactions and limits</summary>
+          <p class="field-note">Captured messages stay in memory while scanning and are cleared automatically when verification finishes, whether it passes or fails. For an unfinished capture, use Clear Capture above, End Session, or close the tab. Switching tabs or idle conceal pauses the camera but keeps unfinished messages. Clearing capture also clears the separate pasted transcript and its last result.</p>
+          <p class="field-note">Captured messages are cleared before the result dialog appears. Acknowledge the result to start another capture. Sparrow remains responsible for its transaction checks and broadcast decision.</p>
+          <p class="field-note">Supported: PSBT v0, SIGHASH_ALL, native or wrapped P2WPKH, and native or wrapped P2WSH standard multisig. Already-finalized inputs are refused: this is a conservative observer limit, not a tamper finding. Existing partial signatures are not the same as finalized inputs.</p>
+          <p class="field-note">This observer checks the supplied signatures against signing hashes recomputed from the embedded PSBT and reports signature/input coverage. Inputs without supplied slots are not signature-checked. It does not establish wallet ownership, blockchain UTXO status or your approval of the destination and amount.</p>
+        </details>
       </details>
       <details class="derivation-advanced" id="nonce-history-options">
         <summary>Cross-session ECDSA nonce history</summary>
@@ -771,18 +910,18 @@ words, pick one of the checksum words.</span></span>
           <button class="btn secondary" id="psbt-nonce-history-clear" type="button" disabled>Clear Nonce History</button>
         </div>
       </details>
-      <p class="edge-note is-muted" id="nonce-session" aria-live="polite" hidden>No session key. Inspect-only mode.</p>
-      <p class="label" id="nonce-result-label">ECDSA nonce check result</p>
-      <div class="tool-result" role="region" aria-labelledby="nonce-result-label">
-        <p class="field-note tool-result-empty">Provide a PSBT or signed transaction and click Inspect Nonces to view the details here.</p>
-        <div class="tool-result-body" id="nonce-out" aria-live="polite"></div>
-      </div>
-      <p class="err" id="nonce-error" role="alert"></p>
       <div class="row psbt-actions tool-actions current-item-actions">
         <button class="btn primary" id="nonce-go" type="button" disabled>Inspect Nonces</button>
         <button class="btn secondary" id="nonce-upload" type="button">Upload .psbt File</button>
         <input type="file" id="nonce-file" accept=".psbt,.txn,.txt,.hex" hidden>
         <button class="btn red clear-current-action" id="nonce-wipe" type="button" disabled>Clear Inspectors</button>
+      </div>
+      <p class="err" id="nonce-error" role="alert"></p>
+      <p class="edge-note is-muted" id="nonce-session" aria-live="polite" hidden>No session key. Inspect-only mode.</p>
+      <p class="label" id="nonce-result-label">ECDSA nonce check result</p>
+      <div class="tool-result" role="region" aria-labelledby="nonce-result-label">
+        <p class="field-note tool-result-empty">Provide a PSBT or signed transaction and click Inspect Nonces to view the details here.</p>
+        <div class="tool-result-body" id="nonce-out" aria-live="polite"></div>
       </div>
     </div>
       <div class="tool-intro edge-note is-info" id="core-tool-intro" hidden>
@@ -799,6 +938,7 @@ words, pick one of the checksum words.</span></span>
           <span class="field-note">Ranged descriptors only, with a /* wildcard. A private (xprv) descriptor is stored neutered plus its key record, and only into a wallet that already holds private keys — or its watch-only form into an encrypted wallet, whose added key would otherwise sit unencrypted.</span>
           <textarea id="core-add-text" placeholder="wpkh([00000000/84'/0'/0']xpub…/0/*)" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
         </label>
+        <div id="core-add-scan-host" class="text-scan-host" data-scan-field="core-add-text" data-scan-accept="descriptor"></div>
         <div class="switch-row"><label class="switch-toggle"><input type="checkbox" id="core-add-active" aria-describedby="core-add-active-note"><span class="label">Set as the active descriptor for its type</span></label><p class="switch-note" id="core-add-active-note">New addresses of this type come from it. The descriptor it replaces stays in the wallet.</p></div>
         <div class="switch-row"><label class="switch-toggle"><input type="checkbox" id="core-add-internal" aria-describedby="core-add-internal-note"><span class="label">Change (internal) chain</span></label><p class="switch-note" id="core-add-internal-note">With the descriptor active, it becomes the change branch for its type rather than the receive branch.</p></div>
         <div class="row tool-actions">
@@ -819,8 +959,7 @@ words, pick one of the checksum words.</span></span>
         <button class="btn secondary" id="core-wipe" type="button" disabled aria-disabled="true">End Session / Clear Fields</button>
       </div>
     </section>
-      <!-- preview -->
-      <section class="card" id="verify-card" role="tabpanel" hidden>
+      <section class="card no-print tool-card" id="verify-card" role="tabpanel" hidden>
         <h2>Verify</h2>
         <p class="edge-note is-info">Check an OpenTimestamps proof against a Bitcoin block header you supply. Nothing leaves this page.</p>
         <section class="tool-section" id="ots-station">
@@ -842,7 +981,8 @@ words, pick one of the checksum words.</span></span>
           <textarea id="ots-header-hex" class="field" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="ots-header-note"></textarea>
           <p class="field-note" id="ots-header-note">The header is supplied by you and is not checked against the Bitcoin network.</p>
           <label class="label" for="ots-expected-digest">Expected digest (hex)</label>
-          <input type="text" id="ots-expected-digest" class="field" spellcheck="false" autocomplete="off" autocapitalize="off">
+          <input type="text" id="ots-expected-digest" class="field" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="ots-expected-note">
+          <p class="field-note" id="ots-expected-note">Optional. The original file or its expected digest checks that this proof is for that file. Without either, only the proof's path to the block header is checked.</p>
           <div class="row tool-actions">
             <button type="button" class="btn primary" id="ots-verify">Verify</button>
             <button type="button" class="btn" id="ots-clear">Clear</button>
@@ -850,7 +990,6 @@ words, pick one of the checksum words.</span></span>
           <div id="ots-result" aria-live="polite"></div>
         </section>
       </section>
-      <!-- /preview -->
       <div class="tool-intro edge-note is-info" id="ln-tool-intro" hidden>
         <h2>Lightning tools</h2>
         <p class="muted tool-intro-note">Decode BOLT11 invoices and BOLT12 offers, or derive a node key: LND seed → LND node key, BIP-39 seed → LDK node key. Does not create a seed. Nothing leaves this page.</p>
@@ -860,6 +999,7 @@ words, pick one of the checksum words.</span></span>
     <h2 id="ln-inv-heading">Decode an invoice or offer (BOLT11 / BOLT12)</h2>
     <label class="field" for="ln-inv-input">Invoice or offer</label>
     <textarea id="ln-inv-input" class="field" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Paste a BOLT11 invoice or BOLT12 offer"></textarea>
+    <div id="ln-inv-scan-host" class="text-scan-host" data-scan-field="ln-inv-input" data-scan-accept="lightning"></div>
     <div class="row">
       <button type="button" class="btn primary" id="ln-inv-decode">Decode</button>
       <button type="button" class="btn" id="ln-inv-clear">Clear</button>
@@ -880,11 +1020,8 @@ words, pick one of the checksum words.</span></span>
             <span class="field-note" id="ln-format-help">LND prints an aezeed cipher seed; ldk-node uses a BIP-39 phrase. Both use the same English wordlist.</span>
           </label>
           <label class="field" id="ln-network-field">Network
-            <select id="ln-network" aria-describedby="ln-network-help">
-              <option value="mainnet" selected>Mainnet</option>
-              <option value="testnet">Testnet</option>
-            </select>
-            <span class="field-note" id="ln-network-help">Selects the coin type in the LND identity path (0' mainnet, 1' testnet/signet/regtest). Changing it clears any derived result — re-derive after switching.</span>
+            <output id="ln-network-value" aria-describedby="ln-network-note"></output>
+            <span class="field-note" id="ln-network-note"></span>
           </label>
         </div>
         <label class="field">Seed phrase
@@ -978,7 +1115,7 @@ words, pick one of the checksum words.</span></span>
       <div class="journal-notes-wrap" id="journal-page-panel" role="tabpanel" data-font="mono" data-size="medium" data-spacing="comfortable">
         <div class="journal-notes-render" id="journal-notes-render" aria-hidden="true" data-i18n-skip translate="no"></div>
         <textarea class="journal-notes-text" id="journal-notes-text" aria-label="Session notes" aria-keyshortcuts="Control+Enter Meta+Enter" aria-describedby="journal-new-note-help" placeholder="Add new note" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-        <button class="copy-button boxed-copy-button journal-notes-copy" id="journal-notes-copy" type="button" aria-label="Copy notepad page" title="Copy notepad page" data-copy-label="Copy notepad page" data-copied-label="Notepad page copied" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button>
+        <button class="copy-button boxed-copy-button journal-notes-copy" id="journal-notes-copy" type="button" aria-label="Copy notepad page to EntropyLab's clipboard" title="Copy notepad page to EntropyLab's clipboard" data-copy-label="Copy notepad page to EntropyLab's clipboard" data-copied-label="Notepad page copied to EntropyLab's clipboard" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button>
       </div>
       </div>
       <details class="key-group" id="journal-notes-appearance">
@@ -1122,11 +1259,11 @@ words, pick one of the checksum words.</span></span>
       <div class="tool-intro edge-note is-info" id="journal-log-tool-intro">
         <p class="muted tool-intro-note">Debug history for navigation, settings, and tool actions. The app omits secret inputs; imported log text is unverified and may contain sensitive information.</p>
       </div>
-      <p class="field-note">Copy puts plain text on the clipboard. Export uses this Journal's password setting. Both capture all retained events when clicked; their outcome appears afterward. A download starting does not confirm that the file was saved.</p>
+      <p class="field-note">Copy puts the plain text on EntropyLab's clipboard only, not the system clipboard; it is cleared when you copy something else, switch to another browser tab, window or app, stay idle for 5 minutes, or end the session. Export uses this Journal's password setting. Both capture all retained events when clicked; their outcome appears afterward. A download starting does not confirm that the file was saved.</p>
       <p class="field-note" id="journal-log-status"></p>
       <p class="field-note">The size limit measures the log's UTF-8 JSON data. At either limit, the oldest events are removed. History stays in this browser session unless you download it.</p>
       <p class="edge-note is-info" id="journal-log-truncated" hidden></p>
-      <div class="field"><p class="label copy-field-label" id="journal-log-label">Debug events<button class="copy-button boxed-copy-button" id="journal-log-copy" type="button" aria-label="Copy debug log" title="Copy debug log" data-copy-label="Copy debug log" data-copied-label="Debug log copied"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button></p><pre class="journal-log" id="journal-log-out" tabindex="0" aria-labelledby="journal-log-label" data-i18n-skip translate="no">No events yet.</pre></div>
+      <div class="field"><p class="label copy-field-label" id="journal-log-label">Debug events<button class="copy-button boxed-copy-button" id="journal-log-copy" type="button" aria-label="Copy debug log to EntropyLab's clipboard" title="Copy debug log to EntropyLab's clipboard" data-copy-label="Copy debug log to EntropyLab's clipboard" data-copied-label="Debug log copied to EntropyLab's clipboard"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect class="seed-copy-icon-clip" x="8" y="2" width="8" height="4" rx="1"/><path class="seed-copy-icon-board" d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button></p><pre class="journal-log" id="journal-log-out" tabindex="0" aria-labelledby="journal-log-label" data-i18n-skip translate="no">No events yet.</pre></div>
       <p class="field-note" id="journal-log-range"></p>
       <div class="row tool-actions" id="journal-log-navigation" hidden>
         <button class="btn secondary" id="journal-log-earlier" type="button" aria-controls="journal-log-out">Earlier</button>
@@ -1158,7 +1295,7 @@ words, pick one of the checksum words.</span></span>
       <summary class="sources-heading">Important notes</summary>
       <ul>
         <li data-i18n-rich><strong>Your computer may save a copy of your keys to its drive</strong> without asking, and the browser can't stop it. For real funds, use an offline computer with an encrypted drive, and turn off hibernation in settings.</li>
-        <li data-i18n-rich><strong>Anything you copy or paste may be kept</strong> by clipboard history and synced to your other devices.</li>
+        <li data-i18n-rich><strong>Private values copy to EntropyLab's clipboard only</strong>, never the system clipboard. That clipboard is cleared when you copy something else, switch to another browser tab, window or app, stay idle for 5 minutes, or end the session. Anything else you copy or paste may be kept by clipboard history and synced to your other devices.</li>
         <li data-i18n-rich><strong>Your keys may stay in memory</strong> after you finish, so close the browser and restart the computer. It is a precaution, not a guarantee.</li>
         <li data-i18n-rich><strong>This page never connects to any network</strong> — the network preference choice sets the address formats, key versions, and validation checks the EntropyLab tools use.</li>
         <li id="translated-warning" hidden><span role="alert" data-i18n-rich><strong>Page translated:</strong> Your browser sent this page's text to an online translation service. EntropyLab withholds the seed words, keys and typed secrets it shows, but do not rely on that: turn translation off for this page and use EntropyLab's language menu instead.</span></li>

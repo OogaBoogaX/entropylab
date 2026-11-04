@@ -79,7 +79,10 @@ test("hashed methods publish one way without being overwritten", () => {
   const render = loadSlice("hodlRenderGlobalSyncControl");
   assert.match(render, /document\.getElementById\("global-sync-host"\)/);
   assert.doesNotMatch(render, /global-sync-hash-host/);
-  assert.doesNotMatch(loadSlice("hodlGlobalSyncControlMarkup"), /disabled/);
+  // Hashed methods never disable the switch; only Secure entry does.
+  const markup = loadSlice("hodlGlobalSyncControlMarkup");
+  assert.equal(markup.match(/disabled/g)?.length, 1);
+  assert.match(markup, /secure = hodlSecureEntryOn/);
 });
 
 test("each dice method has an isolated transcript", () => {
