@@ -7750,8 +7750,12 @@ function hodlKeyScanLoad(bytes) {
   if (state.globalSync && String(state.globalSyncSource || "").startsWith("key:")) {
     try { hodlClearGlobalSyncCopies(state); } catch {}
   }
-  hodlSetMode(hodlKeyMode);
-  hodlQueueMasterFingerprintPreview(0);
+  // The key is installed: a redraw that fails from here on must not make the
+  // panel say nothing was loaded, as in the seed scan (Kimi, #1439 gate r3).
+  try {
+    hodlSetMode(hodlKeyMode);
+    hodlQueueMasterFingerprintPreview(0);
+  } catch {}
 }
 function hodlBindSeedScan() {
   // The slice harness loads this with no scan host: return before anything

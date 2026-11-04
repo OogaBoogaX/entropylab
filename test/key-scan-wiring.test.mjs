@@ -117,6 +117,25 @@ test("the key scan clears Global sync copies of the old key, guarded", async () 
   bytes.fill(0);
 });
 
+// Once the vault holds the scanned key, a redraw that throws must not reach the
+// panel as "nothing was loaded", as in the seed scan (Kimi, #1439 gate r3).
+test("a redraw that throws after the key scan loads still reports the load", async () => {
+  const { mod, session, state } = await loadKeyScan({
+    stubs: {
+      hodlSetMode: () => { throw new Error("redraw failed"); },
+      hodlQueueMasterFingerprintPreview: () => { throw new Error("preview failed"); },
+    },
+  });
+  const wif = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
+  const bytes = Uint8Array.from(wif, (character) => character.charCodeAt(0));
+  assert.doesNotThrow(() => mod.hodlKeyScanLoad(bytes));
+  assert.equal(sessionGet(session, mod.hodlSecureKeyOf(state), "key").vault.text(), wif);
+  assert.equal(state.fields.keyKind, "wif");
+  bytes.fill(0);
+  const body = functionBody("hodlKeyScanLoad");
+  assert.match(body, /try \{\s*hodlSetMode\(hodlKeyMode\);\s*hodlQueueMasterFingerprintPreview\(0\);\s*\} catch \{\}/);
+});
+
 test("hodlKeyScanLoad throws, changing nothing, when it cannot load", async () => {
   const wif = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
   const bytes = () => Uint8Array.from(wif, (character) => character.charCodeAt(0));
