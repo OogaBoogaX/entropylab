@@ -2590,5 +2590,9 @@
   "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (unbekannte Währung {currency}: Einheitsgröße unbekannt, mit dem Aussteller bestätigen)",
   "seed set to 24 words": "Seed auf 24 Wörter gesetzt",
   "In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.": "In einer Wallet stellen diese Wörter eine andere Wallet wieder her, nicht diesen privaten Schlüssel. Sichern Sie den privaten Schlüssel selbst.",
-  "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "beansprucht {path}, ein ungewöhnlich tiefer Pfad, und diese PSBT hat die Prüfungen aufgebraucht. Nicht signieren."
+  "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "beansprucht {path}, ein ungewöhnlich tiefer Pfad, und diese PSBT hat die Prüfungen aufgebraucht. Nicht signieren.",
+  "A trailing path can have at most 16 steps.": "Ein nachgestellter Pfad kann maximal 16 Schritte haben.",
+  "A derivation path index after the extended key is out of range (0 to 2,147,483,647).": "Ein Ableitungspfad-Index nach dem erweiterten Schlüssel liegt außerhalb des Bereichs (0 bis 2.147.483.647).",
+  "A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.": "Ein BIP45-Schlüssel muss vor seinem Zweig einen einfachen Cosigner-Schritt 0 haben, wie z. B. /0/0/* oder /0/<0;1>/*. Dieses Tool leitet nur Cosigner 0 ab; ein anderer Cosigner-Schritt würde eine andere Wallet ableiten.",
+  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Auf einen Mehrfachpfad-Schritt wie <0;1> muss ein Sternchen (*) folgen, wie in /<0;1>/*."
 }
