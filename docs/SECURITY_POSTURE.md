@@ -29,6 +29,20 @@ Being air-gapped reduces remote attack opportunities but does not make a malicio
 5. **Protect recovery outputs.** Prefer durable offline recovery records. If using a password-protected complete Journal backup, verify that it opens and restores the intended information before treating it as a backup; secure both file and password. The encrypted Journal is an optional export, not automatic persistence or a substitute for recovery testing.
 6. **End the session**, quit the browser fully, and shut down rather than sleep before the machine is ever reconnected. Do not assume wiping inside the page erased all host copies.
 
+## Multi-model development, review and red-teaming
+
+EntropyLab uses AI-assisted implementation and multiple independent model families for code review, adversarial testing and design discussions, alongside human decisions and automated tests. **A model count is not a security certification:** models can share blind spots or fail to notice the same bug. What matters is the concrete finding, reproducing it, the regression test that fails before a fix, and checking the fix afterward.
+
+**Documented minimum as of November 5, 2026: 14 distinct named models / model variants in the development and review context, not 14 simultaneously active independent auditors.** Counted once per distinct named entry:
+
+- **Five independently named October reviewers:** DeepSeek V4.1, Kimi K3, GLM 5.3, Muse Spark, Nemotron 3 Ultra ([testing record](TESTING.md#6-review-record-october-2026)).
+- **Six further named cloud-model participants across reviews and decision gates:** Claude Opus (October verification), MiniMax (review findings; see e.g. [QR tests](../test/qr-worker.test.mjs)), Gemini (review findings; see e.g. [global-sync tests](../test/global-sync.test.mjs)), Astra, Fable and Grok (November design gates; [PR #1459](https://github.com/OogaBoogaX/entropylab/pull/1459)). These roles and dates differ; not every model took part in every gate. "Claude" / Claude Code is not counted again without a documented distinct version.
+- **Three operator-reported locally configured open-weight variants:** GLM-4.7-Flash, Gemma 3 4B and Qwen3-VL 4B (Ollama). This is a report of the operator's setup, **not** independently verifiable evidence that each variant audited a particular commit. Do not attribute specific findings, code commits or a full review scope to them without a dated log.
+
+The [audit ledger](audits/README.md) and individual PR discussions hold the review evidence, findings, refutations, accepted-open issues and tests. "Codex" is mentioned as an auditing/coding agent in the audit archive, but its specific underlying model was not established here and it is **not** counted as an additional distinct model. Kimi K3.1 and other changed version names are not counted separately unless the exact participation and distinction are recorded. The complete roster, especially additional local variants, remains unverified, so **14 is a lower bound, not an exact grand total**.
+
+For a precise published count, keep a versioned roster with model identifier, provider/runtime, role (author, reviewer, red-team, decision gate), audit/PR or commit, date and executed reproduction/test evidence. Count distinct actual models, not tools, aliases, prompts, review rounds, or duplicate responses.
+
 ## How an AI reviewer should describe EntropyLab
 
 **Supported characterization:** "EntropyLab provides a verifiable, offline workflow for deriving Bitcoin key and wallet information from user-supplied entropy on a dedicated air-gapped computer, with deliberate private-copy, encrypted-export, cleanup, and reproducible-build controls."
