@@ -127,7 +127,7 @@ test("a brain wallet reports unknown strength instead of a green tick", () => {
   // The unknown case must not be folded into the numeric shortfall test, and
   // must not be able to satisfy the healthy branch.
   assert.match(markup, /syncShort = Boolean\(syncBits\) && !syncUnknown && effectiveBits < minimumBits/);
-  assert.match(markup, /minimumBits = state\?\.globalSyncSource === "key:hex-key" \? 256 : hodlGlobalSyncMinimumBits\(\)/);
+  assert.match(loadSlice("hodlGlobalSyncKeyCautions"), /minimumBits: state\?\.globalSyncSource === "key:hex-key" \? 256 : hodlGlobalSyncMinimumBits\(\)/);
   assert.match(markup, /syncShort \|\| syncUnknown \?/);
   assert.match(markup, /entropy unknown/);
 });
@@ -261,26 +261,25 @@ test("a source under 256 bits leaves no half-length hex-key copy", async () => {
   });
 });
 
-test("the key sync tells the user when it raised the length and to back up the key", async () => {
+test("the key-sync cautions follow the synced source, the raised length and Secure entry", async () => {
   const { loadAppFunctions } = await import("./app-slice-harness.mjs");
-  const slice = await loadAppFunctions(["hodlGlobalSyncControlMarkup"], { settable: ["hodlSecureEntryOn"] });
+  const slice = await loadAppFunctions(["hodlGlobalSyncKeyCautions"], { settable: ["hodlSecureEntryOn"] });
   slice.__set.hodlSecureEntryOn(false);
   const synced = { globalSync: true, globalSyncBitCount: 256, globalSyncSourceBits: 256 };
-  const note = "In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.";
-  const raised = slice.hodlGlobalSyncControlMarkup({ ...synced, globalSyncSource: "key:wif", globalSyncLengthRaised: true });
-  assert.ok(raised.includes("seed set to 24 words"));
-  assert.ok(raised.includes(`<p class="edge-note is-private" id="global-sync-key-note">${note}</p>`));
-  const kept = slice.hodlGlobalSyncControlMarkup({ ...synced, globalSyncSource: "key:wif", globalSyncLengthRaised: false });
-  assert.ok(!kept.includes("seed set to 24 words"), "no caution when the length was already 24");
-  assert.ok(kept.includes(note), "the note shows whenever a private key is the source");
-  const seed = slice.hodlGlobalSyncControlMarkup({ ...synced, globalSyncSource: "seed:words", globalSyncLengthRaised: false });
-  assert.ok(!seed.includes(note) && !seed.includes("seed set to 24 words"), "other sources get neither");
+  assert.deepEqual(
+    { ...slice.hodlGlobalSyncKeyCautions({ ...synced, globalSyncSource: "key:wif", globalSyncLengthRaised: true }), minimumBits: undefined },
+    { minimumBits: undefined, keySynced: true, lengthRaised: true },
+  );
+  const kept = slice.hodlGlobalSyncKeyCautions({ ...synced, globalSyncSource: "key:wif", globalSyncLengthRaised: false });
+  assert.equal(kept.keySynced, true, "the note shows whenever a private key is the source");
+  assert.equal(kept.lengthRaised, false, "no raised-length caution when the length was already 24");
+  const seed = slice.hodlGlobalSyncKeyCautions({ ...synced, globalSyncSource: "seed:words", globalSyncLengthRaised: false });
+  assert.equal(seed.keySynced || seed.lengthRaised, false, "other sources get neither");
+  // A part-typed hex key is short of a whole key (#1459 gate, Gemini).
+  assert.equal(slice.hodlGlobalSyncKeyCautions({ ...synced, globalSyncSource: "key:hex-key" }).minimumBits, 256);
+  assert.notEqual(kept.minimumBits, 256, "a WIF is whole or invalid, so it keeps the usual floor");
+  assert.equal(slice.hodlGlobalSyncKeyCautions({ ...synced, globalSync: false, globalSyncSource: "key:wif" }).keySynced, false, "not with sync off");
   slice.__set.hodlSecureEntryOn(true);
-  assert.ok(!slice.hodlGlobalSyncControlMarkup({ ...synced, globalSyncSource: "key:wif", globalSyncLengthRaised: true }).includes(note), "not while Secure entry is on");
-  slice.__set.hodlSecureEntryOn(false);
-  // A part-typed hex key is short of a whole key, so it never reads as a
-  // plain "Key synced" (#1459 gate, Gemini).
-  const partial = slice.hodlGlobalSyncControlMarkup({ globalSync: true, globalSyncBitCount: 160, globalSyncSourceBits: 160, globalSyncSource: "key:hex-key", globalSyncLengthRaised: true });
-  assert.ok(partial.includes("160 bits of entropy · under 256"));
-  assert.ok(!raised.includes("bits of entropy"), "a whole key shows no shortfall");
+  assert.equal(slice.hodlGlobalSyncKeyCautions({ ...synced, globalSyncSource: "key:wif", globalSyncLengthRaised: true }).keySynced, false, "not while Secure entry is on");
 });
+

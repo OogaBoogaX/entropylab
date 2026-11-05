@@ -1444,7 +1444,7 @@
     // A private key syncs all 256 bits into a 24-word seed (red-team sweep of
     // 0eed735, #1459; owner 11-05). The 12-word target used to keep only the
     // key's first 128 bits while the status said "Key synced".
-    assert(document.getElementById("global-sync-status").textContent.includes("seed set to 24 words"), "The status did not say the key sync raised the seed length");
+    assert(document.querySelector("#global-sync-status [data-sync-length-raised]"), "The status did not say the key sync raised the seed length");
     assert(document.getElementById("global-sync-key-note"), "A synced private key did not show the not-a-backup note");
     await chooseMode("Number bases");
     document.querySelector('input[name="entropy-format"][value="hex"]').click();

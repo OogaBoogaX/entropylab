@@ -6511,6 +6511,19 @@ function hodlGlobalSyncFromCurrentInput() {
   hodlRenderGlobalSyncControl();
   return true;
 }
+// Which key-sync cautions apply (#1459): a part-typed hex key reads short
+// until all 256 bits are in; a synced private key gets the note that its
+// words restore a different wallet; and the status says when the sync raised
+// the hidden seed length to hold the whole key.
+function hodlGlobalSyncKeyCautions(state) {
+  let shown = !hodlSecureEntryOn && Boolean(state?.globalSync && state?.globalSyncBitCount),
+    keySynced = shown && String(state?.globalSyncSource || "").startsWith("key:");
+  return {
+    minimumBits: state?.globalSyncSource === "key:hex-key" ? 256 : hodlGlobalSyncMinimumBits(),
+    keySynced,
+    lengthRaised: keySynced && Boolean(state?.globalSyncLengthRaised),
+  };
+}
 function hodlGlobalSyncControlMarkup(state) {
   // Two rows: the switch and its title, then the explanation beneath. The
   // explanation describes the checkbox rather than naming it, so it stays out
@@ -6520,20 +6533,15 @@ function hodlGlobalSyncControlMarkup(state) {
     sourceBits = Number.isFinite(reported) ? Math.floor(reported) : null,
     effectiveBits = sourceBits === null ? syncBits : Math.min(syncBits, sourceBits),
     syncUnknown = Boolean(syncBits) && reported === hodlGlobalSyncUnknownBits,
-    // A hex key is the one private key that can be part-typed, and a key is
-    // only complete at 256 bits: under that it reads short, not "Key synced"
-    // over half a seed (#1459 gate, Gemini).
-    minimumBits = state?.globalSyncSource === "key:hex-key" ? 256 : hodlGlobalSyncMinimumBits(),
+    keyCautions = hodlGlobalSyncKeyCautions(state),
+    minimumBits = keyCautions.minimumBits,
     syncShort = Boolean(syncBits) && !syncUnknown && effectiveBits < minimumBits,
     caution = syncUnknown ? hodlT("entropy unknown · only as strong as the text") : hodlT("{n} bits of entropy · under {min}", { n: effectiveBits, min: minimumBits }),
     secure = hodlSecureEntryOn,
     checked = !secure && state?.globalSync,
     statusHidden = secure || !(state?.globalSync && syncBits),
-    // A private key synced into seed words: the words restore a different
-    // wallet, so the user is told to back up the key itself, and told when
-    // the sync raised the hidden seed length to hold the whole key.
-    keySynced = !statusHidden && String(state?.globalSyncSource || "").startsWith("key:"),
-    lengthRaised = keySynced && Boolean(state?.globalSyncLengthRaised),
+    keySynced = keyCautions.keySynced,
+    lengthRaised = keyCautions.lengthRaised,
     note = secure ? hodlT("Global sync is unavailable while Secure entry is on.") : hodlT("Keeps non-hashed methods synchronized. Hashed inputs update them one way and are never overwritten.");
   return `<div class="switch-row"><div class="global-sync-head"><label class="switch-toggle global-sync-toggle"><input type="checkbox" id="global-entropy-sync" aria-describedby="global-sync-note" ${checked ? "checked" : ""}${secure ? " disabled" : ""} /><span class="label">${hodlT("Sync entropy across methods")}</span></label><span class="global-sync-status" id="global-sync-status" aria-live="polite" ${statusHidden ? "hidden" : ""}>${hodlCopiedIconMarkup()}<span>${hodlT("Key synced")}</span>${syncShort || syncUnknown ? `<span class="global-sync-shortfall">${hodlSyncWarningIconMarkup()}<span>${caution}</span></span>` : ""}${lengthRaised ? `<span class="global-sync-shortfall" data-sync-length-raised>${hodlSyncWarningIconMarkup()}<span>${hodlT("seed set to 24 words")}</span></span>` : ""}</span></div><p class="switch-note" id="global-sync-note">${note}</p>${keySynced ? `<p class="edge-note is-private" id="global-sync-key-note">${hodlT("In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.")}</p>` : ""}</div>`;
 }
