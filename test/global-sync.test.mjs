@@ -109,6 +109,9 @@ test("pads and pickers that skip bubbling input events still trigger the sync", 
   // all of them. Seed-length buttons stay excluded: they never edit input,
   // and re-syncing from an empty active method there would wipe destinations.
   assert.match(app, /target\.matches\("\[data-lw\], \[data-d\], #card-undo"\)\) hodlGlobalSyncFromCurrentInput\(\)/);
+  // The final word picked from a select fires "change", not "click", so the
+  // change listener re-runs the sync for it (#1458 gate, MiniMax).
+  assert.match(app, /target\.matches\("select\[data-last-word-select\]"\)\) hodlGlobalSyncFromCurrentInput\(\)/);
 });
 
 test("a brain wallet reports unknown strength instead of a green tick", () => {

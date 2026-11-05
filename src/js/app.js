@@ -6841,6 +6841,9 @@ function hodlRenderLastWordPicker(container, candidates, selected, onPick, setti
   label.className = "field last-word-field";
   label.textContent = hodlTText("Valid final word ({n} choices)", { n: candidates.length });
   select.setAttribute("aria-label", hodlTText("Valid final word for {n}-word seed", { n: targetWords }));
+  // The panel's change listener finds this select by this hook: its label is
+  // translated, so matching the English text missed it in every other locale.
+  select.setAttribute("data-last-word-select", "");
   if (!selected) {
     let placeholder = document.createElement("option");
     placeholder.value = placeholderValue;
@@ -8563,7 +8566,11 @@ function hodlInitMasterFingerprintPreview() {
   ["focus", "blur"].forEach((type) => pass.addEventListener(type, () => hodlRenderPassphraseInputState(pass)));
   panel.addEventListener("change", (event) => {
     let target = event.target;
-    if (!(target instanceof Element) || !target.matches('input[name="dm"], input[name="card-method"], input[name="seed-method"], input[name="kk"], #seed-zero-index, input[name="entropy-format"], select[aria-label^="Valid final word"]')) return;
+    if (!(target instanceof Element) || !target.matches('input[name="dm"], input[name="card-method"], input[name="seed-method"], input[name="kk"], #seed-zero-index, input[name="entropy-format"], select[data-last-word-select]')) return;
+    // A final word picked from the select changes the seed without an input
+    // event, so Global sync re-runs here, as the click handler does for the
+    // [data-lw] buttons; otherwise every other method kept the old word.
+    if (target.matches("select[data-last-word-select]")) hodlGlobalSyncFromCurrentInput();
     hodlInvalidateLiveKeyResult();
     hodlRenderGlobalSyncControl();
     hodlQueueMasterFingerprintPreview();
