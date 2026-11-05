@@ -243,6 +243,30 @@ test("the BIP-85 root loader refuses multisig extended keys, like Key Station", 
   assert.ok(bip85.hodlBip85Root.privateKey, "the singlesig root still loads");
 });
 
+// The BIP-85 loader keeps the node the parse built and wipes it before every
+// refusal: it used to build a second node from the same key, and both were
+// dropped with their private keys (red-team sweep 0eed735, part08 #4).
+test("the BIP-85 root loader wipes the parsed node when it refuses a key, and keeps it when it loads", async () => {
+  const { hodlParseExtendedKey: parse } = await load(["hodlParseExtendedKey"]);
+  const parsedNodes = [];
+  const bip85 = await load(["hodlBip85LoadXprv", "hodlBip85Root"], {
+    hodlBip85WipeParent() {},
+    hodlParseExtendedKey: (value) => {
+      const parsed = parse(value);
+      parsedNodes.push(parsed.node);
+      return parsed;
+    },
+  });
+  const root = rootOf(VECTORS[0].words, "");
+  for (const [what, key] of [["a depth-1 key", root.deriveChild(0).privateExtendedKey], ["a Zprv", withVersion(root.privateExtendedKey, 0x02aa7a99)]]) {
+    assert.throws(() => bip85.hodlBip85LoadXprv(key), what);
+    assert.equal(parsedNodes.at(-1).privateKey, null, `${what}: the parsed node is wiped`);
+  }
+  bip85.hodlBip85LoadXprv(root.privateExtendedKey);
+  assert.equal(bip85.hodlBip85Root, parsedNodes.at(-1), "the parsed node is the parent kept");
+  assert.ok(bip85.hodlBip85Root.privateKey, "and it still holds its key");
+});
+
 // Station passphrase fields (SP, PSBT, Nonce) keep the passphrase in a vault.
 // The field shows bullets. Readers take UTF-8 bytes. The root must be the
 // published BIP39 vector (VECTORS[0], passphrase TREZOR) as @scure/bip32

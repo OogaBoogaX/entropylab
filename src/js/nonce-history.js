@@ -75,16 +75,19 @@ function normalizeRecord(record) {
   if (Object.keys(record).some((key) => !allowed.has(key))) {
     throw new Error("Nonce history records contain unsupported fields.");
   }
-  if (record.masterFingerprint !== null && !/^[0-9a-f]{8}$/.test(record.masterFingerprint || "")) {
+  // A pattern test coerces an array to its text, so ["<64 hex>"] passed and
+  // then missed every lookup by r (red-team sweep 0eed735, nonce-history #2).
+  const text = (value) => (typeof value === "string" ? value : "");
+  if (record.masterFingerprint !== null && !/^[0-9a-f]{8}$/.test(text(record.masterFingerprint))) {
     throw new Error("Nonce history master fingerprints must be null or 8 lowercase hexadecimal characters.");
   }
-  if (!hexPattern.test(record.keyTag || "")) {
+  if (!hexPattern.test(text(record.keyTag))) {
     throw new Error("Nonce history key tags must be 32-byte lowercase hex values.");
   }
-  if (!hexPattern.test(record.r || "")) {
+  if (!hexPattern.test(text(record.r))) {
     throw new Error("Nonce history r values must be 32-byte lowercase hex values.");
   }
-  if (record.messageTag !== null && !hexPattern.test(record.messageTag || "")) {
+  if (record.messageTag !== null && !hexPattern.test(text(record.messageTag))) {
     throw new Error("Nonce history message tags must be null or 32-byte lowercase hex values.");
   }
   if (typeof record.verified !== "boolean") throw new Error("Nonce history verified flags must be true or false.");

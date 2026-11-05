@@ -80,6 +80,28 @@ test("a path deeper than 255 levels costs no derivation", () => {
   assert.equal(ckds, 5);
 });
 
+// A path past 255 levels is not even parsed: signature rows re-read their
+// input's records, and re-walking a ~1.2M-step record for each of ~511 rows
+// froze the tab (red-team sweep 0eed735, part07 #10).
+test("a BIP32 record deeper than 255 levels is left unparsed; one within it reads in full", async () => {
+  const { hodlBip32 } = await loadAppFunctions(["hodlBip32"]);
+  const [deep, honest] = pubkeys(2);
+  const steps = (n) => {
+    const entry = bip32Entry(honest, 0x01020304, n);
+    for (let i = 0; i < n; i++) new DataView(entry.val.buffer).setUint32(4 + 4 * i, (0x80000000 + i) >>> 0, true);
+    return entry;
+  };
+  const [deepRecord] = hodlBip32([bip32Entry(deep, 0x01020304, 1_200_000)]);
+  // Compared as a boolean: a failure that carried the 1.2M-entry array hung
+  // the test reporter.
+  assert.equal(deepRecord.path === null, true, "a 1.2M-step path is not parsed");
+  assert.deepEqual([...deepRecord.fingerprint], [1, 2, 3, 4], "its fingerprint is still read");
+  const [full] = hodlBip32([steps(255)]);
+  assert.equal(full.path.length, 255);
+  assert.deepEqual(full.path.slice(0, 3), [0x80000000, 0x80000001, 0x80000002], "little-endian steps, in order");
+  assert.equal(hodlBip32([steps(256)])[0].path === null, true, "256 levels is past BIP32's limit");
+});
+
 test("signature rows share one input-side derivation budget per render", () => {
   const root = HDKey.fromMasterSeed(new Uint8Array(32).fill(7));
   // 25 rows of 200 steps each would be 5,000 CKDs; the budget covers 20 full

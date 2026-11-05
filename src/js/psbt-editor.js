@@ -366,8 +366,12 @@ export const dropSigningPairs = (doc) => {
 // commits to every input's amount and scriptPubKey. Editing a declaration in
 // the pair table changes those digests exactly like a transaction edit, so
 // the declarations join the rebuild anchor and stale signatures drop the same
-// way (issue #325).
-const UTXO_CLAIM_TYPES = new Set(["00", "01"]);
+// way (issue #325). The scripts and Taproot data a signature also commits to
+// join them: redeem (0x04) and witness (0x05) scripts, the Taproot leaf
+// scripts (0x15), the internal key (0x17) and the merkle root (0x18). Outside
+// safe mode, or on an input with no UTXO claim, editing one left its stale
+// signatures in place (red-team sweep 0eed735, psbt-editor #1).
+const UTXO_CLAIM_TYPES = new Set(["00", "01", "04", "05", "15", "17", "18"]);
 
 // Everything the input maps' signatures commit to, as one comparable string:
 // the unsigned transaction plus each input's UTXO declarations. Both sides
