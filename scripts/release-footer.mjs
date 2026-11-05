@@ -22,11 +22,18 @@ const FOOTER = /<span class="page-footer-build">v([0-9A-Za-z.+-]+) · commit <co
 // inside a parsed tag, so no element name or quoted ">" hides one (#1477
 // gate: Kimi, DeepSeek).
 const FOOTER_CLASS = /(?<![\w.-])page-footer-build(?![\w-])/g;
+// Numeric character references are decoded before the count, as the browser
+// decodes them: a class spelled page-footer-buil&#100; is a footer copy too
+// (#1477 r2 gate, Kimi).
+const decodeCharRefs = (text) => text.replace(/&#(?:x([0-9a-f]+)|(\d+));?/gi, (whole, hex, dec) => {
+  const code = hex ? Number.parseInt(hex, 16) : Number(dec);
+  return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+});
 
 export function releaseFooter(html) {
   const found = [...String(html).matchAll(FOOTER)].map(([, version, commit]) => ({ version, commit }));
   if (!found.length) return { error: "the page carries no build footer" };
-  if ((String(html).match(FOOTER_CLASS) || []).length !== found.length) return { error: "the page carries a build footer this parser cannot read" };
+  if ((decodeCharRefs(String(html)).match(FOOTER_CLASS) || []).length !== found.length) return { error: "the page carries a build footer this parser cannot read" };
   const distinct = new Set(found.map(({ version, commit }) => `${version} ${commit}`));
   if (distinct.size !== 1) return { error: "the page's build footers disagree" };
   return found[0];

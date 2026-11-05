@@ -59,6 +59,9 @@ test("a logo SVG with script, a handler or template-literal characters fails the
     "<script>globalThis.ran = 1</script>",
     '<g onload="globalThis.ran = 1"></g>',
     '<g/onload="globalThis.ran = 1"></g>',
+    '<rect id="x"onclick="globalThis.ran = 1"/>',
+    '<a href="java\tscript:void 0"></a>',
+    '<a href="java\nscript:void 0"></a>',
     '<a href="&#106;avascript:void 0"></a>',
     "<text>it's</text>",
     '<a href="javascript:void 0"></a>',
@@ -71,6 +74,10 @@ test("a logo SVG with script, a handler or template-literal characters fails the
       writeFileSync(path, readFileSync(path, "utf8").replace("</svg>", `${insert}</svg>`));
     }), insert);
   }
+});
+
+test("a stylesheet that would end its <style> element fails the build", { timeout: 300000 }, () => {
+  refused(buildWith((dir) => appendFileSync(join(dir, "src/css/styles.css"), "\n</style><script>globalThis.ran = 1</script><style>\n")), "</style in styles.css");
 });
 
 test("a symbolic link among the build inputs fails the build", { timeout: 300000 }, () => {

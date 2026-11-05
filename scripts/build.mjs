@@ -89,20 +89,25 @@ const template = applyPreviewBlocks(read("index.html"), preview);
 const shell = applyPreviewBlocks(read("shell.html"), preview);
 const workerTemplate = read("service-worker.js");
 const css = read("css/styles.css");
+// The stylesheet is inlined into a <style> element as it is: a "</style"
+// would end it and turn the rest into page markup (#1477 r2 gate, Kimi).
+if (/<\/style/i.test(css)) throw new Error("src/css/styles.css holds </style, which would end the page's inlined <style> element");
 // The header logo is inlined as SVG markup so the downloaded file shows it
 // without reaching for assets/ (which only exists on the hosted site). The
 // empty span is replaced in the template and in the runtime header template.
 // The SVG lands raw in the page, whose CSP allows inline script, and inside a
 // JS string literal in the bundle (a template literal today; esbuild picks the
 // quote). Refuse anything that could run or break out there: script elements,
-// foreignObject, event-handler attributes (after a space or a "/", which the
-// HTML parser also reads as a separator), javascript: URLs, any character
-// reference (one can spell javascript:), <!--, and the backtick, ${,
-// backslash and ' a string literal would read (red-team sweep 0eed735, build
-// #1; #1477 gate: Kimi, GLM, MiniMax, DeepSeek).
+// foreignObject, event-handler attributes (after any character that is not
+// part of a name: the HTML parser also splits attributes at a "/" or right
+// after a quoted value), javascript: URLs (tested with tabs and line breaks
+// removed, as the URL parser removes them), any character reference (one can
+// spell javascript:), <!--, and the backtick, ${, backslash and ' a string
+// literal would read (red-team sweep 0eed735, build #1; #1477 gate: Kimi,
+// GLM, MiniMax, DeepSeek).
 const logoSvg = (name) => {
   const svg = read(`assets/${name}.svg`).trim();
-  if (/<\/?script|<foreignObject|[\s/]on[a-z]+\s*=|javascript:|&|<!--|`|\$\{|\\|'/i.test(svg)) {
+  if (/<\/?script|<foreignObject|(?:^|[^a-z0-9_-])on[a-z]+\s*=|&|<!--|`|\$\{|\\|'/i.test(svg) || /javascript:/i.test(svg.replace(/[\t\n\r]/g, ""))) {
     throw new Error(`src/assets/${name}.svg holds something the inlined logo cannot carry: script, foreignObject, an on... handler, javascript:, an & character reference, <!--, a backtick, \${, a backslash or '`);
   }
   return svg.replace("<svg ", `<svg class="site-${name}" aria-hidden="true" focusable="false" `);

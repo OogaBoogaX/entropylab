@@ -1118,3 +1118,34 @@ test("a very long vanity counter is refused without BigInt reading every digit",
   assert.equal(errorFor("2147483647", "1"), null, "the last account index still parses");
   assert.equal(hodlVanityParseFields().start, 2147483647n);
 });
+
+// For passphrases of 12 characters or more the counter space (62^n) passes
+// 10^20, but every limit is capped at the 64-bit counter, which is below it,
+// so the 10^20 a 21-digit counter is read as is still refused (#1477 r2 gate,
+// GLM).
+test("a 21-digit vanity counter is refused for long passphrases too", async () => {
+  const values = { "vanity-length": "12", "vanity-count": "1" };
+  const { hodlVanityParseFields } = await loadAppFunctions(["hodlVanityParseFields"], { stubs: {
+    document: { getElementById: (id) => ({ value: values[id] ?? "" }) },
+    hodlVanityMethod: () => "passphrase",
+    hodlVanityScriptId: () => "p2wpkh",
+    hodlVanityPrefixValue: () => "bc1qa",
+  } });
+  const errorFor = (start, count = "1") => {
+    Object.assign(values, { "vanity-start": start, "vanity-count": count });
+    try {
+      hodlVanityParseFields();
+    } catch (error) {
+      return error.message;
+    }
+    return null;
+  };
+  const top = String((1n << 64n) - 1n);
+  for (const length of ["12", "20"]) {
+    values["vanity-length"] = length;
+    assert.ok(errorFor(top), `length ${length}: the 64-bit top is refused`);
+    assert.equal(errorFor("1" + "0".repeat(20)), errorFor(top), `length ${length}: a 21-digit start is refused the same way`);
+    assert.equal(errorFor("0", "9".repeat(25)), errorFor("0", top + "0"), `length ${length}: a 25-digit range is refused the same way`);
+  }
+});
+
