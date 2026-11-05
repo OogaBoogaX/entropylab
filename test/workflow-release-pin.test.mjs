@@ -198,6 +198,8 @@ test("the preview job publishes rock to the preview repository only", () => {
   assert.match(mint, /\n {8}if: vars\.PREVIEW_APP_ID != ''\n/, "no App set up, no mint");
   assert.match(mint, /\n {8}uses: actions\/create-github-app-token@[0-9a-f]{40} # v\d/, "the token action is pinned to a commit");
   assert.match(mint, /\n {10}app-id: \$\{\{ vars\.PREVIEW_APP_ID \}\}\n/);
+  // The key is wired into the mint itself, not only named in the notice (DeepSeek, #1453).
+  assert.match(mint, /\n {10}private-key: \$\{\{ secrets\.PREVIEW_APP_PRIVATE_KEY \}\}\n/, "the mint reads the App's private key");
   assert.match(mint, /\n {10}owner: OogaBoogaX\n {10}repositories: entropylab-preview\n {10}permission-contents: write\n/, "the token reaches the preview repository only, for contents only");
   assert.ok(job.includes('echo "::notice title=Preview not deployed::the preview App (vars.PREVIEW_APP_ID, secrets.PREVIEW_APP_PRIVATE_KEY) is not set up"'), "no token skips with a notice");
   // The token is passed in a per-command header and masked, never put in a URL.
