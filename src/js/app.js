@@ -18264,7 +18264,7 @@ function hodlCommitDerivedKey(action = "derive", decision = null) {
     // A manually corrected draft may reach the existing wallet through
     // different recovery inputs. Preserve both sources; display preferences
     // alone must not create another archive record.
-    let inputFields = ["mode", "diceMethod", "cardMethod", "seedMethod", "seedZeroIndexed", "entropyFormat", "globalSync", "globalSyncSource", "globalSyncBitCount", "globalSyncSourceBits", "globalSyncLengthRaised", "brainWalletOutput", "brainWalletTrim", "targetWords", "diceCoinPositions", "lastWord", "dplusLastWord", "accountId", "fields"];
+    let inputFields = ["mode", "diceMethod", "cardMethod", "seedMethod", "seedZeroIndexed", "entropyFormat", "globalSync", "globalSyncSource", "globalSyncBitCount", "globalSyncSourceBits", "brainWalletOutput", "brainWalletTrim", "targetWords", "diceCoinPositions", "lastWord", "dplusLastWord", "accountId", "fields"];
     if (!source || inputFields.some(field => JSON.stringify(snapshot[field]) !== JSON.stringify(source[field]))) reviewedSnapshot = snapshot;
   }
   let remaining = hodlKeyManagerStates().filter((state) => state !== imported && state !== hodlKeys[existing]).length;
