@@ -8841,7 +8841,9 @@ function hodlParseKeyOrigin(raw) {
   for (let token of tokens) {
     if (!/^(?:\*|<\d+(?:;\d+)*>|\d+[hH']?)$/.test(token)) throw hodlError("Trailing path steps must be numbers, a wildcard *, or a multipath step like <0;1>.");
   }
-  if (tokens.includes("*") && tokens[tokens.length - 1] !== "*") throw hodlError("A wildcard * is only allowed as the last trailing path step.");
+  // Only the last step may be the wildcard: a second one (xpub/*/*) reached
+  // the path map below and crashed with a TypeError (#1460 r4 gate, GLM).
+  if (tokens.slice(0, -1).includes("*")) throw hodlError("A wildcard * is only allowed as the last trailing path step.");
   let hadWildcard = tokens[tokens.length - 1] === "*";
   if (hadWildcard) tokens.pop();
   // Real exports carry one to four steps; the cap keeps a pasted key from

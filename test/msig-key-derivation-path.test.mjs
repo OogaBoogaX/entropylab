@@ -157,6 +157,15 @@ test("a multipath step without the wildcard is refused, for BIP45 keys and other
   assert.equal(hodlParseMultisigCosigner(`${EXPORT}/<0;1>/*`).derivationPath, "");
 });
 
+// #1460 r4 gate (GLM): a repeated wildcard reached the path map and crashed
+// with a TypeError; it is refused like any other misplaced wildcard.
+test("a repeated wildcard is refused, not crashed on", () => {
+  for (const tail of ["/*/*", "/0/*/*", "/<0;1>/*/*"]) {
+    assert.throws(() => hodlParseMultisigCosigner(`${EXPORT}${tail}`), (error) => !(error instanceof TypeError) && /only allowed as the last trailing path step/.test(error.message), tail);
+  }
+  assert.throws(() => hodlParseMultisigCosigner(`${BIP45_EXPORT}/0/*/*`), (error) => !(error instanceof TypeError), "BIP45 too");
+});
+
 test("an out-of-range index in the trailing path is refused, not dropped", () => {
   for (const tail of ["/2147483648/*", "/<0;2147483648>/*", "/0/2147483648/*"]) {
     assert.throws(() => hodlParseMultisigCosigner(`${EXPORT}${tail}`), /out of range/, tail);
