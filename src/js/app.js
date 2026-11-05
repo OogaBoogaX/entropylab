@@ -8567,6 +8567,10 @@ function hodlInitMasterFingerprintPreview() {
   panel.addEventListener("change", (event) => {
     let target = event.target;
     if (!(target instanceof Element) || !target.matches('input[name="dm"], input[name="card-method"], input[name="seed-method"], input[name="kk"], #seed-zero-index, input[name="entropy-format"], select[data-last-word-select]')) return;
+    // A final word picked from the select changes the seed without an input
+    // event, so Global sync re-runs here, as the click handler does for the
+    // [data-lw] buttons; otherwise every other method kept the old word.
+    if (target.matches("select[data-last-word-select]")) hodlGlobalSyncFromCurrentInput();
     hodlInvalidateLiveKeyResult();
     hodlRenderGlobalSyncControl();
     hodlQueueMasterFingerprintPreview();
