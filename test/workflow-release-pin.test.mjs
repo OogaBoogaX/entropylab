@@ -187,15 +187,25 @@ test("the preview job publishes rock to the preview repository only", () => {
   assert.ok(job, "ci-cd.yml has a preview job");
   assert.match(job, /^ {4}if: github\.ref == 'refs\/heads\/rock' && github\.event_name == 'push' && needs\.artifact\.outputs\.superseded != 'true'$/m, "push to rock only, and never a superseded build");
   assert.match(job, /^ {4}needs: \[[^\]]*\bartifact\]$/m, "it waits for the artifact job's superseded check");
-  assert.ok(job.includes(`trap 'rm -f "$KEY"' EXIT`), "the deploy key file is removed when the step ends");
   assert.match(job, /^ {4}environment: release$/m, "it reads a secret, so it runs in the release environment");
   assert.match(job, /^ {4}concurrency:\n {6}group: pages-preview$/m, "its own concurrency group");
   const secrets = [...job.matchAll(/secrets\.([A-Z0-9_]+)/g)].map(([, name]) => name);
-  assert.deepEqual([...new Set(secrets)], ["PREVIEW_DEPLOY_KEY"], "it reads only the preview deploy key");
-  assert.ok(job.includes('echo "::notice title=Preview not deployed::PREVIEW_DEPLOY_KEY is not set"'), "an unset key skips with a notice");
-  assert.ok(job.includes("StrictHostKeyChecking=yes"), "the host key is pinned");
-  assert.ok(job.includes("IdentitiesOnly=yes"), "only the deploy key is offered");
-  assert.ok(job.includes("git@github.com:OogaBoogaX/entropylab-preview.git"), "it targets the preview repository");
+  assert.deepEqual([...new Set(secrets)], ["PREVIEW_APP_PRIVATE_KEY"], "it reads only the preview App's key");
+  // The org has deploy keys turned off: a short-lived token from the preview
+  // GitHub App, scoped to entropylab-preview with Contents: write (owner 11-04).
+  const mint = steps(job).find((step) => step.startsWith("name: Mint the preview App token\n"));
+  assert.ok(mint, "the job mints the preview App token");
+  assert.match(mint, /\n {8}if: vars\.PREVIEW_APP_ID != ''\n/, "no App set up, no mint");
+  assert.match(mint, /\n {8}uses: actions\/create-github-app-token@[0-9a-f]{40} # v\d/, "the token action is pinned to a commit");
+  assert.match(mint, /\n {10}app-id: \$\{\{ vars\.PREVIEW_APP_ID \}\}\n/);
+  assert.match(mint, /\n {10}owner: OogaBoogaX\n {10}repositories: entropylab-preview\n {10}permission-contents: write\n/, "the token reaches the preview repository only, for contents only");
+  assert.ok(job.includes('echo "::notice title=Preview not deployed::the preview App (vars.PREVIEW_APP_ID, secrets.PREVIEW_APP_PRIVATE_KEY) is not set up"'), "no token skips with a notice");
+  // The token is passed in a per-command header and masked, never put in a URL.
+  assert.ok(job.includes('echo "::add-mask::$BASIC"'), "the encoded credential is masked");
+  assert.match(job, /git -c http\.https:\/\/github\.com\/\.extraheader="\$AUTH" clone --branch main --depth 1 https:\/\/github\.com\/OogaBoogaX\/entropylab-preview\.git /, "it clones the preview repository with the header");
+  assert.match(job, /git -c http\.https:\/\/github\.com\/\.extraheader="\$AUTH" push origin HEAD:main/, "it pushes with the header");
+  assert.doesNotMatch(job, /x-access-token:\$\{?PREVIEW_TOKEN\}?@|https:\/\/[^"\s]*\$PREVIEW_TOKEN/, "the token is never in a URL");
+  assert.doesNotMatch(job, /PREVIEW_DEPLOY_KEY|GIT_SSH_COMMAND/, "no deploy key is left");
   assert.ok(job.includes("! -name CNAME"), "the CNAME is kept");
   assert.doesNotMatch(job, /--force/, "it never force-pushes");
   assert.doesNotMatch(job, /actions\/deploy-pages@/, "it does not deploy production");
