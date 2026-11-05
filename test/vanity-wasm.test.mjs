@@ -1077,3 +1077,44 @@ test("a deferred grind chunk that throws wipes the key buffers and reports", asy
   assert.ok(bytes.slice(salt.at, salt.at + salt.size).every((byte) => byte === 0), "the starting passphrase was left in the worker heap");
   assert.ok(bytes.slice(key.at, key.at + key.size).every((byte) => byte === 0), "the mnemonic/node bytes were left in the worker heap");
 });
+
+// A counter field reads only the digits a counter limit can need: a pasted run
+// of digits reached BigInt whole on every keystroke (red-team sweep 0eed735,
+// part12 #4). Every limit is below 10^20, so a longer number is refused the
+// same way the first out-of-range one is.
+test("a very long vanity counter is refused without BigInt reading every digit", async () => {
+  const values = {}, lengths = [];
+  let method = "derivation";
+  const { hodlVanityParseFields } = await loadAppFunctions(["hodlVanityParseFields"], { stubs: {
+    document: { getElementById: (id) => ({ value: values[id] ?? "" }) },
+    hodlVanityMethod: () => method,
+    hodlVanityScriptId: () => "p2wpkh",
+    hodlVanityPrefixValue: () => "bc1qa",
+    BigInt: (text) => { lengths.push(String(text).length); return BigInt(text); },
+  } });
+  const errorFor = (start, count) => {
+    Object.assign(values, method === "derivation" ? { "vanity-account-start": start, "vanity-account-count": count } : { "vanity-start": start, "vanity-count": count });
+    try {
+      hodlVanityParseFields();
+    } catch (error) {
+      assert.ok(!(error instanceof TypeError) && !(error instanceof ReferenceError), String(error));
+      return error.message;
+    }
+    return null;
+  };
+  const million = 1_000_000;
+  for (const kind of ["derivation", "passphrase"]) {
+    method = kind;
+    values["vanity-length"] = "8";
+    Object.assign(values, kind === "derivation" ? { "vanity-account-start": "0".repeat(million) + "5", "vanity-account-count": "1" } : { "vanity-start": "0".repeat(million) + "5", "vanity-count": "1" });
+    assert.equal(hodlVanityParseFields().start, 5n, `${kind}: leading zeros keep the value`);
+    const firstTooLarge = kind === "derivation" ? "2147483648" : String(62n ** 8n);
+    assert.ok(errorFor(firstTooLarge, "1"), `${kind}: the first start past the limit is refused`);
+    assert.equal(errorFor("9".repeat(million), "1"), errorFor(firstTooLarge, "1"), `${kind}: a million-digit start is refused the same way`);
+    assert.equal(errorFor("0", "9".repeat(million)), errorFor("0", firstTooLarge + "0"), `${kind}: a million-digit range is refused the same way`);
+  }
+  assert.ok(Math.max(...lengths) <= 21, `BigInt read at most 21 characters, not ${Math.max(...lengths)}`);
+  method = "derivation";
+  assert.equal(errorFor("2147483647", "1"), null, "the last account index still parses");
+  assert.equal(hodlVanityParseFields().start, 2147483647n);
+});

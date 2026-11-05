@@ -38,6 +38,11 @@ test("the parser fails closed", () => {
   assert.ok(releaseFooter(good + footerHtml("1.1.0", "4567def")).error, "copies that disagree");
   assert.ok(releaseFooter('<span class="page-footer-build">v1.1.0 · commit 0123abc</span>').error, "a commit outside <code>");
   assert.ok(releaseFooter('<span class="page-footer-build">v1.1.0 · commit <code>xyz</code>').error, "a commit that is not hex");
+  // A copy the parser cannot read is an error, not skipped (red-team sweep
+  // 0eed735, release-footer #1).
+  assert.ok(releaseFooter(good + '<span class="page-footer-build" data-copy>v1.1.0 · commit <code>4567def</code></span>').error, "a copy with another attribute");
+  assert.ok(releaseFooter(good + footerHtml("1.1.0", "4567DEF")).error, "a copy with an uppercase commit");
+  assert.ok(releaseFooter(good + '<SPAN CLASS="page-footer-build">v1.1.0 · commit <code>4567def</code></SPAN>').error, "a copy in uppercase markup");
   assert.deepEqual(releaseFooter(good), { version: "1.1.0", commit: "0123abc" });
   assert.deepEqual(releaseFooter(footerHtml("1.1.0-dev", "0123abc")), { version: "1.1.0-dev", commit: "0123abc" });
 });

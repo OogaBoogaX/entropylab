@@ -13,9 +13,9 @@
 // `--test-hooks --out <dir>`: it compiles in the suite's test bridge (see
 // src/js/app.js) and writes the files outside the repository root. The
 // release build leaves the flag off, so no test code reaches entropylab.html.
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { buildCommit } from "./build-commit.mjs";
@@ -40,6 +40,17 @@ if (preview && outDir === root) {
 // build and drops the dead branch. Markup gates on the <!-- preview --> /
 // <!-- /preview --> comment blocks that applyPreviewBlocks strips from the
 // shell. A preview build is never deployed.
+
+// Build inputs are committed files. readFileSync and esbuild both follow a
+// symbolic link (or a Windows junction), so a committed link would pull a
+// file from outside the checkout into the artifact. Refuse any link among
+// the inputs before one is read (red-team sweep 0eed735, build #5).
+const refuseLinks = (path) => {
+  const stats = lstatSync(path);
+  if (stats.isSymbolicLink()) throw new Error(`Build input is a symbolic link: ${relative(root, path)}`);
+  if (stats.isDirectory()) for (const name of readdirSync(path)) refuseLinks(join(path, name));
+};
+for (const input of ["src", "assets", "manifest.webmanifest", "package.json"]) refuseLinks(join(root, input));
 
 const read = (path) => readFileSync(join(SRC, path), "utf8");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
@@ -81,9 +92,18 @@ const css = read("css/styles.css");
 // The header logo is inlined as SVG markup so the downloaded file shows it
 // without reaching for assets/ (which only exists on the hosted site). The
 // empty span is replaced in the template and in the runtime header template.
-const logoSvg = (name) =>
-  read(`assets/${name}.svg`).trim()
-    .replace("<svg ", `<svg class="site-${name}" aria-hidden="true" focusable="false" `);
+// The SVG lands raw in the page, whose CSP allows inline script, and inside a
+// JS template literal in the bundle. Refuse anything that could run or break
+// out there: script elements, foreignObject, event-handler attributes,
+// javascript: URLs, <!--, and the backtick, ${ and backslash a template
+// literal would read (red-team sweep 0eed735, build #1).
+const logoSvg = (name) => {
+  const svg = read(`assets/${name}.svg`).trim();
+  if (/<\/?script|<foreignObject|\son[a-z]+\s*=|javascript:|<!--|`|\$\{|\\/i.test(svg)) {
+    throw new Error(`src/assets/${name}.svg holds something the inlined logo cannot carry: script, foreignObject, an on... handler, javascript:, <!--, a backtick, \${ or a backslash`);
+  }
+  return svg.replace("<svg ", `<svg class="site-${name}" aria-hidden="true" focusable="false" `);
+};
 const siteLogoSpan = '<span class="site-logo" aria-hidden="true"></span>';
 const siteLogo = `<span class="site-logo" aria-hidden="true">${logoSvg("logo-dark")}${logoSvg("logo-light")}</span>`;
 // Inlined from the same files the site publishes, so the downloaded document
@@ -132,6 +152,14 @@ const wasmAezNotice = `/*!
 // module esbuild loads, so a release build hides the markup in both copies.
 // Plugins need the async API.
 const previewHtml = previewHtmlPlugin(preview);
+// The QR-capture license text goes into a JS comment ahead of the bundle: a
+// "*/" would end the comment and run the rest as code, and "</script" or
+// "<!--" would change where the page's script element ends (red-team sweep
+// 0eed735, build #3).
+const ur2License = readFileSync(join(root, "src/licenses/ur2.txt"), "utf8");
+if (/\*\/|<\/script|<!--/i.test(ur2License)) {
+  throw new Error("src/licenses/ur2.txt holds */, </script or <!--, which would break out of the bundle's license comment");
+}
 const jsMain = (await build({
   entryPoints: [join(SRC, "js/app.js")],
   bundle: true,
@@ -143,7 +171,7 @@ const jsMain = (await build({
   legalComments: "none",
   charset: "utf8",
   loader: { ".html": "text" },
-  banner: { js: wasmAezNotice + "\n/*! QR capture: Foundation Devices ur2-derived fragment selection, BSD-2-Clause-Patent.\n" + readFileSync(join(root, "src/licenses/ur2.txt"), "utf8") + "\n*/\n" },
+  banner: { js: wasmAezNotice + "\n/*! QR capture: Foundation Devices ur2-derived fragment selection, BSD-2-Clause-Patent.\n" + ur2License + "\n*/\n" },
   plugins: [previewHtml],
   define: {
     __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false", __LN_WORKER_SOURCE__: JSON.stringify(await (await import("./ln-worker-source.mjs")).buildLnWorkerSource()),
@@ -169,8 +197,12 @@ const jsRepeat = read("js/repeat-inputs.js");
 // The classic scripts are inlined verbatim: esbuild never sees them, so the
 // preview constant would be an undefined name there and break the release
 // page. Refuse it at build time; gate classic-script features from app.js.
+// Nothing escapes them either, so a "</script" (or a "<!--", which changes
+// where the element ends) would close their <script> element early and turn
+// the rest into page markup (red-team sweep 0eed735, build #2).
 for (const [name, text] of Object.entries({ jsSqliteWriter, jsSqliteReader, jsWalletExport, jsCoreWallet, jsOnline, jsNetwork, jsBrowserCheck, jsLifeHash, jsEnhanced, jsRepeat })) {
   if (text.includes("__ENTROPYLAB_PREVIEW__")) throw new Error(`${name}: classic scripts cannot use __ENTROPYLAB_PREVIEW__ (only ES modules bundled by esbuild see it)`);
+  if (/<\/script|<!--/i.test(text)) throw new Error(`${name}: classic scripts are inlined into <script> elements as they are, so they cannot contain </script or <!--`);
 }
 
 let html = template

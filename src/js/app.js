@@ -22766,7 +22766,12 @@ function hodlVanityParseFields() {
   let parseCounter = (id, label) => {
     let raw = document.getElementById(id).value.trim();
     if (!/^\d+$/.test(raw)) throw new Error(`${label} is a whole number (digits only).`);
-    return BigInt(raw);
+    // A pasted run of digits reached BigInt whole on every keystroke (red-team
+    // sweep 0eed735, part12 #4). Every counter limit is below 10^20, so a
+    // number with more than 20 digits is read as 10^20, which the range
+    // checks refuse the same way.
+    let digits = raw.replace(/^0+(?=\d)/, "");
+    return digits.length > 20 ? 10n ** 20n : BigInt(digits);
   };
   let workers = Math.max(1, Math.min(64, Number(document.getElementById("vanity-workers").value) || 1));
   if (method === "derivation") {

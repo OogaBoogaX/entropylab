@@ -15,10 +15,15 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const FOOTER = /<span class="page-footer-build">v([0-9A-Za-z.+-]+) · commit <code>([0-9a-f]{7,40})<\/code>/g;
+// Any element carrying the footer class. Every one must be a copy FOOTER
+// reads: one with another attribute or an uppercase commit was skipped, not
+// checked (red-team sweep 0eed735, release-footer #1).
+const FOOTER_CLASS = /<[a-z][a-z0-9]*\b[^>]*\bclass\s*=\s*["']?[^"'>]*\bpage-footer-build\b/gi;
 
 export function releaseFooter(html) {
   const found = [...String(html).matchAll(FOOTER)].map(([, version, commit]) => ({ version, commit }));
   if (!found.length) return { error: "the page carries no build footer" };
+  if ((String(html).match(FOOTER_CLASS) || []).length !== found.length) return { error: "the page carries a build footer this parser cannot read" };
   const distinct = new Set(found.map(({ version, commit }) => `${version} ${commit}`));
   if (distinct.size !== 1) return { error: "the page's build footers disagree" };
   return found[0];

@@ -279,6 +279,13 @@ jobs:
             echo "::error title=Service worker::the generated worker still carries an unsubstituted {{ token"
             exit 1
           fi
+          # git archive keeps a committed symbolic link, and the site publishes
+          # none (red-team sweep 0eed735, verify-site #2).
+          LINKS=$(find "$SITE" -type l)
+          if [ -n "$LINKS" ]; then
+            echo "::error title=Symbolic link::the site would publish symbolic links: $LINKS"
+            exit 1
+          fi
       - name: Upload the Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
