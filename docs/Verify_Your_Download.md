@@ -59,6 +59,16 @@ shasum -a 256 -c SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt
 ```
 
+### Known issue: v1.0.0
+
+`SHA256SUMS.txt` on v1.0.0 matches its page, and `sha256sum -c` passes, but
+the signatures in its `SHA256SUMS.asc` were made over an earlier rebuild and
+**do not verify**: `gpg --verify` reports `BAD signature` for every signer.
+The page is a rebuild of source commit `c1037ba3` with SHA-256
+`3804d57898224b8cfccfcacc8aa7c32cd93d514896de7e045e14ed35c22cf2f7`. If you
+are checking v1.0.0, compare the hash in Step 1 against that digest, or
+rebuild from the commit. Releases after v1.0.0 sign the manifest they ship.
+
 **A good result** on Mac and Linux is `entropylab.html: OK`. Anything else
 means the file is not the one that was published. Stop and don't use it.
 
