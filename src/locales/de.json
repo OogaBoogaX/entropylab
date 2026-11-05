@@ -2583,5 +2583,6 @@
   "Only this word is shown, and only while \"Show this word\" is on. Replacing it keeps every other word in its place.": "Nur dieses Wort wird angezeigt, und nur, solange \"Dieses Wort anzeigen\" aktiviert ist. Wenn Sie es ersetzen, bleiben alle anderen Wörter an ihrem Platz.",
   "Beginning of the replacement word": "Anfang des Ersatzworts",
   "Replace word": "Wort ersetzen",
-  "Word {n} replaced. Continue with word {next}.": "Wort {n} ersetzt. Fahren Sie mit Wort {next} fort."
+  "Word {n} replaced. Continue with word {next}.": "Wort {n} ersetzt. Fahren Sie mit Wort {next} fort.",
+  "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "<strong>Entwicklungs-Build — nicht signiert.</strong> Nur zum Testen. Nicht mit echtem Geld oder echten Seeds verwenden. Die signierte Version finden Sie unter entropylab.online."
 }
