@@ -1081,7 +1081,7 @@ jobs:
   # Production (entropylab.online) is deployed only by pages-release.yml from
   # a published, signed release. This job publishes the tested rock candidate
   # to preview.entropylab.online, which carries a -dev version and no release
-  # signatures. It skips with a notice until PREVIEW_DEPLOY_KEY is set.
+  # signatures. It skips with a notice until the preview App is set up.
 
   preview:
     name: Preview · deploy rock to preview.entropylab.online
@@ -1109,34 +1109,55 @@ jobs:
       - name: Prepare the preview site
         run: |
           mkdir _site
-          cp entropylab.html robots.txt sitemap.xml llms.txt _site/
+          cp entropylab.html _site/
           cp manifest.webmanifest service-worker.js _site/
           cp entropylab.html _site/index.html
           cp -r assets _site/assets
           touch _site/.nojekyll
+          # The preview is an unsigned -dev build: it stays out of search. Every
+          # -dev page carries <meta name="robots" content="noindex, nofollow">,
+          # and crawlers must be let in to read it (a Disallow would hide the
+          # tag and still let a linked URL be listed bare), so robots.txt only
+          # drops the sitemap. No sitemap or llms.txt is published.
+          cat > _site/robots.txt <<'ROBOTS'
+          User-agent: *
+          Allow: /
+          ROBOTS
+          # The page it publishes must carry both dev-build guardrails. A
+          # candidate without the banner or the noindex (a version without
+          # -dev on rock, say, once #494 numbers patches) is refused, not
+          # published as if it were a release.
+          grep -qF 'id="dev-build-warning"' _site/index.html || { echo "::error title=Preview guardrails::the candidate has no dev-build banner; it is not published as the preview"; exit 1; }
+          grep -qF '<meta name="robots" content="noindex, nofollow">' _site/index.html || { echo "::error title=Preview guardrails::the candidate has no noindex meta; it is not published as the preview"; exit 1; }
+      # A short-lived token from the preview GitHub App, installed only on
+      # entropylab-preview with Contents: write (owner 11-04). The org has
+      # deploy keys turned off, and an App token expires within the hour.
+      - name: Mint the preview App token
+        id: app
+        if: vars.PREVIEW_APP_ID != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.PREVIEW_APP_ID }}
+          private-key: ${{ secrets.PREVIEW_APP_PRIVATE_KEY }}
+          owner: OogaBoogaX
+          repositories: entropylab-preview
+          permission-contents: write
       - name: Deploy to the preview repository
         env:
-          PREVIEW_DEPLOY_KEY: ${{ secrets.PREVIEW_DEPLOY_KEY }}
+          PREVIEW_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -euo pipefail
-          if [ -z "$PREVIEW_DEPLOY_KEY" ]; then
-            echo "::notice title=Preview not deployed::PREVIEW_DEPLOY_KEY is not set"
+          if [ -z "$PREVIEW_TOKEN" ]; then
+            echo "::notice title=Preview not deployed::the preview App (vars.PREVIEW_APP_ID, secrets.PREVIEW_APP_PRIVATE_KEY) is not set up"
             exit 0
           fi
-          KEY="$RUNNER_TEMP/preview_deploy_key"
-          # The key file never outlives this step, whatever happens below.
-          trap 'rm -f "$KEY"' EXIT
-          (umask 077; printf '%s\n' "$PREVIEW_DEPLOY_KEY" > "$KEY")
-          chmod 600 "$KEY"
-          KNOWN_HOSTS="$RUNNER_TEMP/preview_known_hosts"
-          cat > "$KNOWN_HOSTS" <<'HOSTKEYS'
-          github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
-          github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
-          github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
-          HOSTKEYS
-          chmod 600 "$KNOWN_HOSTS"
-          export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN_HOSTS"
-          git clone --branch main --depth 1 git@github.com:OogaBoogaX/entropylab-preview.git "$RUNNER_TEMP/preview"
+          # The token rides in a per-command header, never in a URL or a git
+          # config file, the way actions/checkout passes its own; the encoded
+          # credential is masked too.
+          BASIC=$(printf 'x-access-token:%s' "$PREVIEW_TOKEN" | base64 -w0)
+          echo "::add-mask::$BASIC"
+          AUTH="AUTHORIZATION: basic $BASIC"
+          git -c http.https://github.com/.extraheader="$AUTH" clone --branch main --depth 1 https://github.com/OogaBoogaX/entropylab-preview.git "$RUNNER_TEMP/preview"
           cd "$RUNNER_TEMP/preview"
           find . -mindepth 1 -maxdepth 1 ! -name .git ! -name CNAME -exec rm -rf {} +
           cp -R "$GITHUB_WORKSPACE/_site/." .
@@ -1148,7 +1169,7 @@ jobs:
             exit 0
           fi
           git commit -m "Deploy rock ${GITHUB_SHA}"
-          git push origin HEAD:main
+          git -c http.https://github.com/.extraheader="$AUTH" push origin HEAD:main
 
   # ── Docker: build and push the dev container image ────────────────────────
 

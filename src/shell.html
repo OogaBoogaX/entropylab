@@ -17,6 +17,11 @@
       <div class="beta-warning-text" data-i18n-rich><strong>Experimental software</strong> EntropyLab is experimental and should be used only for testing and educational purposes.</div>
       <button type="button" class="beta-warning-dismiss" id="beta-warning-dismiss" aria-label="Dismiss the experimental software warning"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
+    <!-- dev-build -->
+    <div class="beta-warning" id="dev-build-warning" role="alert">
+      <div class="beta-warning-text" data-i18n-rich><strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.</div>
+    </div>
+    <!-- /dev-build -->
 <noscript>
       <div class="beta-warning no-print" role="alert">
         <div class="beta-warning-text"><strong>JavaScript is required</strong> EntropyLab performs wallet calculations locally inside your browser. With JavaScript disabled the calculator cannot derive keys or addresses. Enable JavaScript, then run this file offline on an air-gapped computer.</div>
@@ -83,9 +88,7 @@
       </div>
       <div class="key-lab" id="key-lab">
       <p class="edge-note is-public" id="key-edit-note" role="status" hidden></p>
-      <!-- preview -->
       <div class="secure-entry-host" id="secure-entry-host" hidden></div>
-      <!-- /preview -->
       <div class="global-sync-host" id="global-sync-host"></div>
       <section class="seed-length-control" id="seed-length" aria-labelledby="seed-length-label">
         <h3 class="label" id="seed-length-label">Seed phrase length</h3>

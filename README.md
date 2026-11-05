@@ -631,6 +631,24 @@ an explicit error before those pairs are allocated.
   its next complete character. Hashed inputs update the non-hashed methods in
   one direction; edits to non-hashed methods never overwrite hashed inputs.
   With sync off, every dice-roll method retains its own independent transcript.
+- An optional **Secure entry** switch in Key Station (off on every load, never
+  saved) limits copies of secrets during entry:
+  - Seed words go in one at a time through a word picker.
+  - A private key goes into a masked field.
+  - Hashed dice rolls go on a six-button pad.
+
+  None of them is kept as page text, and words and rolls can be reviewed one
+  at a time. Secrets still exist in memory while the page is open, so End
+  Session and closing the browser still matter. Turning it on with text
+  already typed asks whether to keep that text or clear it. Keep moves the
+  format on screen into Secure entry and clears the key's other saved
+  formats. Global sync is unavailable while Secure entry is on.
+- **Scan QR** in Key Station reads a seed (Standard SeedQR, CompactSeedQR or
+  BIP39 words) or a WIF private key from the camera or a photo, straight into
+  Secure entry. With Secure entry off, Scan first offers to turn it on. The
+  scanned secret never passes through a text field. A confirmation names the
+  format before anything loads, and warns that a QR from someone else's backup
+  derives someone else's wallet.
 - SLIP-132 extended-key display is a prefix swap only (same payload, new
   version bytes and checksum). Import/derive shows the key as pasted, the
   account xpub/tpub, any account private-key export, and the descriptor
@@ -809,6 +827,15 @@ remove the cached copy.
 For sensitive or long-term use, the recommended path remains the downloaded,
 verified `entropylab.html` on a dedicated air-gapped computer. The downloaded
 file is still self-contained and never registers the hosted service worker.
+
+Keep iOS fully updated. On an out-of-date iPhone, one malicious web page can
+take over the phone, and after that, turning networks off does not keep
+secrets on it safe. Even an updated phone is less safe than the air-gapped
+computer above. Never keep seed words, or a photo or screenshot of a seed or
+SeedQR, anywhere on the phone or in the cloud, including Notes, Photos or
+iCloud. Scan a SeedQR live with the camera, not from a saved photo. If a photo
+was saved, delete it, including from Recently Deleted and iCloud Photos;
+deleting it cannot undo exposure that already happened.
 
 ### Verifying the download
 
