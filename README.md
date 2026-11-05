@@ -763,6 +763,15 @@ For sensitive or long-term use, the recommended path remains the downloaded,
 verified `entropylab.html` on a dedicated air-gapped computer. The downloaded
 file is still self-contained and never registers the hosted service worker.
 
+Keep iOS fully updated. On an out-of-date iPhone, one malicious web page can
+take over the phone, and after that, turning networks off does not keep
+secrets on it safe. Even an updated phone is less safe than the air-gapped
+computer above. Never keep seed words, or a photo or screenshot of a seed or
+SeedQR, anywhere on the phone or in the cloud, including Notes, Photos or
+iCloud. Scan a SeedQR live with the camera, not from a saved photo. If a photo
+was saved, delete it, including from Recently Deleted and iCloud Photos;
+deleting it cannot undo exposure that already happened.
+
 ### Verifying the download
 
 New to checksums and signatures? The step-by-step guide, with Windows, Mac and
