@@ -23,6 +23,9 @@ const app = readFileSync(join(root, "..", "src/js/app.js"), "utf8");
 // reached. Stub every name it binds, or the emitted import collides with the
 // stub declaration of the same name.
 const secureEntryStubs = {
+  // Dropping a source's copies reads the form (hodlGlobalSyncSourceId), whose
+  // load-time element lookups need a DOM these slices do not have.
+  hodlGlobalSyncDropMirrors: () => {},
   createSecureSession: () => ({ marker: "fresh" }),
   sessionWipe: () => {},
   sessionDeleteKey: () => {},

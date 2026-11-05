@@ -731,6 +731,10 @@ export function mountKeyScan(host, {
   });
   cancelButton.addEventListener("click", onCancel);
   resumeButton.addEventListener("click", () => {
+    // A photo still decoding belongs to the operation Resume replaces: its
+    // reply must not land over the camera's result (red-team sweep 0eed735,
+    // qr-key-scan #9).
+    op += 1;
     if (!ensureScanner()) return;
     showStatus("scanning");
     try {

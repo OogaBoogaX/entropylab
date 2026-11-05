@@ -1114,3 +1114,24 @@ test("a throwing afterLoad does not break the panel", () => {
   assert.doesNotThrow(() => findById(seed.host, "seed-scan-continue").dispatchEvent({ type: "click" }));
   assert.equal(findById(seed.host, "seed-scan-panel").hidden, true);
 });
+
+// Resume starts a new operation: a photo still decoding belongs to the one it
+// replaced, and its reply landed over the camera's scan (red-team sweep
+// 0eed735, qr-key-scan #9).
+test("a photo that decodes after Resume is dropped and zeroed", async () => {
+  let finish = null;
+  const ctx = setup({ reply: () => new Promise((resolve) => { finish = resolve; }) });
+  openPanel(ctx);
+  const photo = findById(ctx.host, "key-scan-photo");
+  photo.files = [{ size: 10, type: "image/png" }];
+  photo.dispatchEvent({ type: "change" });
+  await tick();
+  assert.ok(finish, "the photo is decoding");
+  findById(ctx.host, "key-scan-resume").dispatchEvent({ type: "click" });
+  assert.equal(stateOf(ctx), "scanning");
+  const payload = Uint8Array.from(WIF, (character) => character.charCodeAt(0));
+  finish({ code: 1, payload });
+  await tick();
+  assert.equal(stateOf(ctx), "scanning", "the camera's scan goes on");
+  assert.ok(payload.every((byte) => byte === 0), "the dropped photo's payload is zeroed");
+});

@@ -168,3 +168,34 @@ test("a derived brain wallet does not outlive its acknowledgement or its output 
   assert.match(retract, /state\.result = null/);
   assert.match(retract, /state\.reveal = false/);
 });
+
+// The brain lab's SHA-256 preview goes when the lab hides: it outlived an edit
+// of the brain text while the output was not HD (red-team sweep 0eed735,
+// part04 #9).
+test("a hidden brain lab keeps no digest", async () => {
+  const { MiniDocument } = await import("./mini-dom.mjs");
+  const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+  const saved = globalThis.document;
+  const document = new MiniDocument();
+  const add = (tag, id) => Object.assign(document.body.appendChild(document.createElement(tag)), { id });
+  add("div", "brain-output");
+  add("input", "key").value = "correct horse";
+  const hex = add("p", "brain-lab-hex");
+  const digest = document.createElement("span");
+  digest.dataset.privateValue = "";
+  digest.textContent = "9f86d081884c7d659a2feaa0c55ad015";
+  hex.appendChild(digest);
+  globalThis.document = document;
+  try {
+    let output = "scalar";
+    const slice = await loadAppFunctions(["hodlSyncBrainOutput"], {
+      stubs: { hodlNormalizePrivateKeyKind: () => "brain", hodlBrainWalletOutput: () => output, hodlBrainAcked: () => true },
+    });
+    slice.hodlSyncBrainOutput();
+    assert.equal(hex.querySelector("[data-private-value]"), null, "the digest span is gone");
+    assert.ok(!hex.textContent.includes("9f86d081"), "no digest text is left");
+  } finally {
+    if (saved === undefined) delete globalThis.document;
+    else globalThis.document = saved;
+  }
+});

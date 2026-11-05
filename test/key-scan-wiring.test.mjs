@@ -114,6 +114,16 @@ test("the key scan clears Global sync copies of the old key, guarded", async () 
   state.globalSyncSource = "seed:words";
   mod.hodlKeyScanLoad(bytes);
   assert.deepEqual(cleared, ["key:hex-key"]);
+  // Secure entry turned the sync off: the copies the key left at turn-on are
+  // still this key's (#1439 post-merge check, Gemini).
+  state.globalSync = false;
+  state.globalSyncSource = "";
+  state.globalSyncCopiesFrom = "key:wif";
+  mod.hodlKeyScanLoad(bytes);
+  assert.deepEqual(cleared, ["key:hex-key", ""], "the copies the key left are cleared");
+  state.globalSyncCopiesFrom = "number:hex";
+  mod.hodlKeyScanLoad(bytes);
+  assert.equal(cleared.length, 2, "another source's copies stay");
   bytes.fill(0);
 });
 

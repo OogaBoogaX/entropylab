@@ -148,3 +148,24 @@ test("D++, BitBox wording and help strings render for every size", () => {
     assert.ok(api.hodlDPlusFinalHelp(words).length > 0, words);
   }
 });
+
+// The completion note names the side the coin bit used: faces 1-4 are Heads
+// (bit 0) and 5-8 Tails (bit 1), as the help, the keypad and the README say.
+// The note had them the other way round (red-team sweep 0eed735, part03 #3).
+test("the final D++ coin note names the side that selected the word", () => {
+  const words = 18;
+  const config = api.hodlSeedConfig(words);
+  for (const face of ["1", "2", "3", "4", "5", "6", "7", "8"]) {
+    const parsed = api.hodlDPlusRolls("10E".repeat(config.partialWords) + "A" + face, words);
+    assert.equal(parsed.waiting, "complete", face);
+    const index = parsed.candidates.indexOf(parsed.finalWord);
+    // The spec: (d16) * 2 + coin bit, so the bit is the index's parity.
+    const bit = index % 2;
+    assert.equal(bit, Number(face) >= 5 ? 1 : 0, `face ${face}: the spec's bit`);
+    const final = parsed.notes.find((note) => note && note.vars && Object.values(note.vars).some((value) => value && /read as/.test(value.key || "")));
+    assert.ok(final, `face ${face}: a final note with the coin detail`);
+    const coin = Object.values(final.vars).find((value) => value && /read as/.test(value.key || ""));
+    const side = coin.key.endsWith("Heads") ? 0 : coin.key.endsWith("Tails") ? 1 : null;
+    assert.equal(side, bit, `face ${face}: the note names the side the bit used`);
+  }
+});

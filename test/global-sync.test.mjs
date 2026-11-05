@@ -154,12 +154,24 @@ test("a hex key with a non-hex character goes invalid in sync instead of being c
   assert.doesNotMatch(hexBranch, /\bbreak\b/);
   // Run the branch as written: a stray "g" yields null, a clean key all 256 bits.
   const body = hexBranch.replace(/^if \(kind === "hex-key"\) \{/, "").replace(/\}\s*$/, "");
-  const run = new Function("value", `${body}\nreturn undefined;`);
+  const run = new Function("value", "hodlHex", "hodlAssertPrivateKey", `${body}\nreturn undefined;`);
   const key = "1f".repeat(32);
-  assert.equal(run(key.slice(0, 10) + "g" + key.slice(11)), null);
-  assert.equal(run(`0x${key}`).length, 256);
-  assert.equal(run(key.slice(0, 40)).length, 160);
+  const hex = { decode: (text) => Uint8Array.from(Buffer.from(text, "hex")) };
+  const assertKey = (bytes) => {
+    const scalar = BigInt("0x" + Buffer.from(bytes).toString("hex"));
+    if (scalar === 0n || scalar >= ORDER) throw new Error("not a private key");
+  };
+  assert.equal(run(key.slice(0, 10) + "g" + key.slice(11), hex, assertKey), null);
+  assert.equal(run(`0x${key}`, hex, assertKey).length, 256);
+  assert.equal(run(key.slice(0, 40), hex, assertKey).length, 160);
+  // A complete key that is not a private key publishes nothing either
+  // (red-team sweep 0eed735, part04 #8): zero, the group order, and above it.
+  for (const bad of ["00".repeat(32), ORDER.toString(16), "ff".repeat(32)]) {
+    assert.equal(run(bad, hex, assertKey), null, bad.slice(0, 8));
+  }
+  assert.equal(run((ORDER - 1n).toString(16), hex, assertKey).length, 256, "n - 1 is still a key");
 });
+const ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
 
 test("a minikey reports its payload keyspace, not its 256-bit digest", () => {
   // A minikey is SHA-256(text) exactly like a brain wallet, format-constrained
@@ -286,3 +298,104 @@ test("the key-sync cautions follow the synced source, the raised length and Secu
   assert.equal(slice.hodlGlobalSyncKeyCautions({ ...synced, globalSyncSource: "key:wif", globalSyncLengthRaised: true }).keySynced, false, "not while Secure entry is on");
 });
 
+// An emptied or invalid source publishes nothing: the copies it made go, the
+// field being typed in keeps its text, and the status no longer counts bits
+// (red-team sweep 0eed735, part04 #18).
+async function loadFromInput(stubs) {
+  const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+  return loadAppFunctions(["hodlGlobalSyncFromCurrentInput"], {
+    stubs: { hodlRenderGlobalSyncControl: () => {}, ...stubs },
+    settable: ["hodlKeys", "hodlActiveKey", "hodlSecureEntryOn"],
+  });
+}
+const mirroredState = () => ({
+  globalSync: true, globalSyncSource: "number:hex", globalSyncBitCount: 256, globalSyncLengthRaised: true, targetWords: 24,
+  fields: { hex: "12zz", bin: "0101", seed: "abandon abandon about", seedNumbers: "1 1 4", dplusDice: "1A2", directCards: "AS", bitboxDice: "123", privateKeys: { wif: "a-wif-copy", "hex-key": "ab".repeat(32), minikey: "", brain: "" } },
+});
+
+test("an invalid source drops the copies it made and keeps the text being typed", async () => {
+  await withDocument(async () => {
+    const slice = await loadFromInput({ hodlGlobalSyncCurrentBits: () => null, hodlGlobalSyncCurrentValue: () => "12zz", hodlGlobalSyncSourceId: () => "number:hex", hodlGlobalSyncIsHashedMode: () => false });
+    const state = mirroredState();
+    slice.__set.hodlKeys([state]);
+    slice.__set.hodlActiveKey(0);
+    slice.__set.hodlSecureEntryOn(false);
+    assert.equal(slice.hodlGlobalSyncFromCurrentInput(), false);
+    for (const name of ["bin", "seed", "seedNumbers", "dplusDice", "directCards", "bitboxDice"]) assert.equal(state.fields[name], "", `${name} copy dropped`);
+    assert.equal(state.fields.privateKeys.wif, "", "WIF copy dropped");
+    assert.equal(state.fields.privateKeys["hex-key"], "", "hex-key copy dropped");
+    assert.equal(state.fields.hex, "12zz", "the source field keeps what was typed");
+    assert.equal(state.globalSyncBitCount, 0, "no bits are counted");
+    assert.equal(state.globalSyncLengthRaised, true, "the caution stays with the length it describes");
+    assert.equal(state.globalSync, true, "sync stays on");
+  });
+});
+
+test("an emptied hashed source drops its copies and its count", async () => {
+  await withDocument(async () => {
+    const slice = await loadFromInput({ hodlGlobalSyncCurrentBits: () => { throw new Error("not reached"); }, hodlGlobalSyncCurrentValue: () => "", hodlGlobalSyncSourceId: () => "dice:coldcard", hodlGlobalSyncIsHashedMode: () => true });
+    const state = mirroredState();
+    state.globalSyncSource = "dice:coldcard";
+    slice.__set.hodlKeys([state]);
+    slice.__set.hodlActiveKey(0);
+    slice.__set.hodlSecureEntryOn(false);
+    slice.hodlGlobalSyncFromCurrentInput();
+    assert.equal(state.fields.seed, "");
+    assert.equal(state.fields.hex, "", "a number field is a copy for a dice source");
+    assert.equal(state.globalSyncBitCount, 0, "no \"Key synced\" over an empty field");
+  });
+});
+
+test("a private-key source that goes invalid keeps its own field", async () => {
+  await withDocument(async () => {
+    const slice = await loadFromInput({ hodlGlobalSyncCurrentBits: () => null, hodlGlobalSyncCurrentValue: () => "5Hue", hodlGlobalSyncSourceId: () => "key:wif", hodlGlobalSyncIsHashedMode: () => false });
+    const state = mirroredState();
+    state.globalSyncSource = "key:wif";
+    state.fields.privateKeys.wif = "5Hue";
+    slice.__set.hodlKeys([state]);
+    slice.__set.hodlActiveKey(0);
+    slice.__set.hodlSecureEntryOn(false);
+    slice.hodlGlobalSyncFromCurrentInput();
+    assert.equal(state.fields.privateKeys.wif, "5Hue", "the WIF being typed stays");
+    assert.equal(state.fields.privateKeys["hex-key"], "", "its hex-key copy goes");
+    assert.equal(state.fields.seed, "");
+  });
+});
+
+// The bytes a sync decodes are zeroed once read (red-team sweep 0eed735,
+// part04 #4 and #5).
+test("the sync zeroes the key bytes it decodes and the key bytes it writes from", async () => {
+  await withDocument(async () => {
+    const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+    const decoded = [];
+    const read = await loadAppFunctions(["hodlGlobalSyncCurrentBits"], {
+      stubs: {
+        hodlGlobalSyncCurrentValue: () => "a-wif",
+        hodlGlobalSyncIsHashedMode: () => false,
+        hodlNormalizePrivateKeyKind: () => "wif",
+        hodlDecodeWif: () => { const priv = new Uint8Array(32).fill(0x11); decoded.push(priv); return { priv }; },
+      },
+      settable: ["hodlKeyMode"],
+    });
+    read.__set.hodlKeyMode("key");
+    assert.equal(read.hodlGlobalSyncCurrentBits(24), "00010001".repeat(32), "the bits are read before the wipe");
+    assert.ok(decoded.length === 1 && decoded[0].every((byte) => byte === 0), "the decoded key is zeroed");
+    const written = [];
+    const apply = await loadAppFunctions(["hodlApplyGlobalSync"], {
+      stubs: {
+        hodlGlobalSyncCurrentValue: () => "",
+        hodlGlobalSyncSourceBits: () => 256,
+        hodlBytesFromBits: (bits) => { const bytes = Uint8Array.from(bits.match(/.{8}/g), (byte) => parseInt(byte, 2)); written.push(bytes); return bytes; },
+      },
+      settable: ["hodlKeys", "hodlActiveKey", "hodlSecureEntryOn", "hodlTargetWordCount"],
+    });
+    const state = { targetWords: 24, fields: {}, seedZeroIndexed: false };
+    apply.__set.hodlKeys([state]);
+    apply.__set.hodlActiveKey(0);
+    apply.__set.hodlSecureEntryOn(false);
+    apply.__set.hodlTargetWordCount(24);
+    apply.hodlApplyGlobalSync("00010001".repeat(32), "number:hex");
+    assert.ok(state.fields.privateKeys.wif.length > 0, "the WIF copy is still written");
+    assert.ok(written.length > 0 && written.every((bytes) => bytes.every((byte) => byte === 0)), "the key bytes are zeroed");
+  });
+});

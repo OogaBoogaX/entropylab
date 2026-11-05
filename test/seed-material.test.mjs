@@ -366,3 +366,49 @@ test("a seed wallet's bytes are recorded by the derivation that makes them", asy
   api.hodlSettleDerivationKeys(control);
   for (const name of ["entropy", "seed"]) assert.ok(wallet[name].every((byte) => byte === 0), `an uncommitted wallet kept its ${name}`);
 });
+
+// Every refusal of an imported extended key wipes the node the parse built:
+// they came before the derivation's own finally, so the private node waited
+// for the collector (red-team sweep 0eed735, part01 #5).
+test("a refused imported extended key has its parsed node wiped", async () => {
+  const { hodlParseExtendedKey: parse } = await load(["hodlParseExtendedKey"]);
+  const nodes = [];
+  const importer = await load(["hodlImportedWalletWithProgress"], {
+    hodlParseExtendedKey: (value) => {
+      const parsed = parse(value);
+      nodes.push(parsed.node);
+      return parsed;
+    },
+  });
+  const root = rootOf(VECTORS[0].words, "");
+  for (const [what, key, network] of [
+    ["a Zprv", withVersion(root.derive("m/48'/0'/0'/2'").privateExtendedKey, 0x02aa7a99), "mainnet"],
+    ["a mainnet key on testnet", root.derive("m/84'/0'/0'").privateExtendedKey, "testnet"],
+    ["a depth-1 key", root.deriveChild(0).privateExtendedKey, "mainnet"],
+  ]) {
+    await assert.rejects(() => importer.hodlImportedWalletWithProgress(key, network, 2, 0, 0, tracker, 84, 0), what);
+    assert.equal(nodes.at(-1).privateKey, null, `${what}: the parsed node is wiped`);
+  }
+});
+
+// The wallet.dat bytes are zeroed once the download's Blob holds its own copy:
+// with secrets shown they carry the spend descriptors (red-team sweep
+// 0eed735, part02 #9).
+test("the wallet.dat download zeroes its bytes once the Blob holds them", async () => {
+  const bytes = new Uint8Array(64).fill(7);
+  let clicked = false;
+  const download = await loadAppFunctions(["hodlDownloadWalletDat"], {
+    stubs: {
+      hodlWalletExport: { hasDescriptors: () => true, hasPrivateDescriptors: () => true, buildWalletDat: () => bytes, walletDatFilename: () => "wallet.dat" },
+      hodlWalletExportView: (result) => result,
+      hodlWalletDatDeps: () => ({}),
+      document: { createElement: () => ({ click() { clicked = true; } }) },
+    },
+    settable: ["hodlWalletResult", "hodlRevealPrivate"],
+  });
+  download.__set.hodlWalletResult({ kind: "hd" });
+  download.__set.hodlRevealPrivate(true);
+  download.hodlDownloadWalletDat();
+  assert.equal(clicked, true, "the download still starts");
+  assert.ok(bytes.every((byte) => byte === 0), "the wallet.dat bytes are zeroed");
+});
