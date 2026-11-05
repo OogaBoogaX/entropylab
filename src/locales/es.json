@@ -2587,5 +2587,6 @@
   "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "<strong>Compilación de desarrollo — sin firmar.</strong> Solo para pruebas. No la uses con fondos reales ni semillas reales. La versión firmada está en entropylab.online.",
   "Not checked:": "No comprobado:",
   "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "declara {path}, una ruta inusualmente profunda, y este PSBT agotó las comprobaciones. No firmar.",
-  "claims {path}, but this PSBT used up the checks. Do not sign.": "declara {path}, pero este PSBT agotó las comprobaciones. No firmar."
+  "claims {path}, but this PSBT used up the checks. Do not sign.": "declara {path}, pero este PSBT agotó las comprobaciones. No firmar.",
+  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (moneda no reconocida {currency}: tamaño de unidad desconocido, confirmar con el emisor)"
 }
