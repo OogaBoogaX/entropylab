@@ -2587,5 +2587,8 @@
   "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "7e49b38e77778c49ac36aa1f8b8b8fa83bb6b336e175272f256695ae3926c13a",
   "Not checked:": "47a2eca901929308281f62c95fdc960a6d094b0c1a7bee996f226d9e122dba7a",
   "claims {path}, but this PSBT used up the checks. Do not sign.": "cb44299ce30b5b87ed894c218fe5d0c7fdbdd921d043399de79b4ce60f62acfe",
-  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "a6ca9dd9f4c45e135f8866cc437a16b0c08fff5403b079e420429f0477acf5e9"
+  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "a6ca9dd9f4c45e135f8866cc437a16b0c08fff5403b079e420429f0477acf5e9",
+  "seed set to 24 words": "195d13e0b637d14564a3a5dfbf08d5ea2b764db34a5f7d3748d4f8352a360ae3",
+  "In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.": "35e727cb7b0d31c384acdf6186b2d29bbf2e5917d74bed166cba2b1f4614a337",
+  "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "9db0bd0dde9488b0ff62ddf9f93bd2ebd89d005e5927bac5f4aecd974fb67e37"
 }

@@ -2587,5 +2587,8 @@
   "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "<strong>Entwicklungs-Build — nicht signiert.</strong> Nur zum Testen. Nicht mit echtem Geld oder echten Seeds verwenden. Die signierte Version finden Sie unter entropylab.online.",
   "Not checked:": "Nicht geprüft:",
   "claims {path}, but this PSBT used up the checks. Do not sign.": "beansprucht {path}, aber diese PSBT hat die Prüfungen aufgebraucht. Nicht signieren.",
-  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (unbekannte Währung {currency}: Einheitsgröße unbekannt, mit dem Aussteller bestätigen)"
+  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (unbekannte Währung {currency}: Einheitsgröße unbekannt, mit dem Aussteller bestätigen)",
+  "seed set to 24 words": "Seed auf 24 Wörter gesetzt",
+  "In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.": "In einer Wallet stellen diese Wörter eine andere Wallet wieder her, nicht diesen privaten Schlüssel. Sichern Sie den privaten Schlüssel selbst.",
+  "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "beansprucht {path}, ein ungewöhnlich tiefer Pfad, und diese PSBT hat die Prüfungen aufgebraucht. Nicht signieren."
 }
