@@ -6417,11 +6417,30 @@ function hodlGlobalSyncBitBoxValue(bits, targetWords = hodlTargetWordCount) {
   }
   return tokens.map((token, index) => `${index && index % 6 === 0 ? " " : ""}${token}`).join("");
 }
+// A private key is 256 bits and only 24 words hold them all. Synced into a
+// shorter seed, the words came from part of the key while the status said
+// "Key synced" (red-team sweep of 0eed735). So every sync from a private key
+// uses 24 words, raising a shorter length first; the length dropdown is hidden
+// in Private key mode (the only mode with a key source), so the status says
+// when it was raised, and hodlSetMode redraws the dropdown on leaving. The
+// derived key result does not depend on the length and stays.
+function hodlGlobalSyncFitKeyLength(state, sourceId) {
+  let keySource = String(sourceId).startsWith("key:");
+  if (keySource && hodlSeedConfig(state.targetWords).words < 24) {
+    state.targetWords = 24;
+    hodlTargetWordCount = 24;
+    state.dplusLastWord = "";
+    state.globalSyncLengthRaised = true;
+  } else if (!keySource) {
+    state.globalSyncLengthRaised = false;
+  }
+}
 function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   // Sync writes words and hex into text fields.
   if (hodlSecureEntryOn) return false;
   let state = hodlKeys[hodlActiveKey];
   if (!state) return false;
+  hodlGlobalSyncFitKeyLength(state, sourceId);
   let config = hodlSeedConfig(state.targetWords), source = String(bits ?? "").slice(0, config.bits), sourceValue = String(hodlGlobalSyncCurrentValue()), fields = state.fields, privateKeys = hodlPrivateKeyValues(fields), mnemonic = hodlGlobalSyncMnemonic(source, config.words), words = mnemonic ? mnemonic.split(" ") : hodlGlobalSyncWordIndices(source, config.partialWords).map((index) => hodlBip39Wordlist[index]);
   Object.keys(hodlEntropyFormats).forEach((format) => fields[format] = hodlGlobalSyncNumberValue(source, format, config.words));
   fields.seed = words.join(" ");
@@ -6431,7 +6450,9 @@ function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   fields.bitboxDice = hodlGlobalSyncBitBoxValue(source, config.words);
   if (sourceId !== "dice:bitbox") state.diceCoinPositions = [];
   state.lastWord = mnemonic ? words.at(-1) : "";
-  privateKeys["hex-key"] = source.slice(0, 256).match(/.{4}/g)?.map((chunk) => Number.parseInt(chunk, 2).toString(16)).join("") || "";
+  // The hex-key copy is a whole 64-digit key or nothing: fewer bits are not
+  // a private key, and a 32-digit copy only looked like one.
+  privateKeys["hex-key"] = source.length >= 256 ? source.slice(0, 256).match(/.{4}/g).map((chunk) => Number.parseInt(chunk, 2).toString(16)).join("") : "";
   privateKeys.wif = "";
   if (source.length >= 256) {
     let bytes = hodlBytesFromBits(source.slice(0, 256));
@@ -6467,6 +6488,8 @@ function hodlClearGlobalSyncCopies(state) {
   fields.bitboxDice = "";
   privateKeys["hex-key"] = "";
   privateKeys.wif = "";
+  // The copies are gone, so the caution about the length they were made at goes too.
+  state.globalSyncLengthRaised = false;
 }
 function hodlGlobalSyncFromCurrentInput() {
   if (hodlSecureEntryOn) { hodlRenderGlobalSyncControl(); return false; }
@@ -6489,6 +6512,19 @@ function hodlGlobalSyncFromCurrentInput() {
   hodlRenderGlobalSyncControl();
   return true;
 }
+// Which key-sync cautions apply (#1459): a part-typed hex key reads short
+// until all 256 bits are in; a synced private key gets the note that its
+// words restore a different wallet; and the status says when the sync raised
+// the hidden seed length to hold the whole key.
+function hodlGlobalSyncKeyCautions(state) {
+  let shown = !hodlSecureEntryOn && Boolean(state?.globalSync && state?.globalSyncBitCount),
+    keySynced = shown && String(state?.globalSyncSource || "").startsWith("key:");
+  return {
+    minimumBits: state?.globalSyncSource === "key:hex-key" ? 256 : hodlGlobalSyncMinimumBits(),
+    keySynced,
+    lengthRaised: keySynced && Boolean(state?.globalSyncLengthRaised),
+  };
+}
 function hodlGlobalSyncControlMarkup(state) {
   // Two rows: the switch and its title, then the explanation beneath. The
   // explanation describes the checkbox rather than naming it, so it stays out
@@ -6498,13 +6534,17 @@ function hodlGlobalSyncControlMarkup(state) {
     sourceBits = Number.isFinite(reported) ? Math.floor(reported) : null,
     effectiveBits = sourceBits === null ? syncBits : Math.min(syncBits, sourceBits),
     syncUnknown = Boolean(syncBits) && reported === hodlGlobalSyncUnknownBits,
-    syncShort = Boolean(syncBits) && !syncUnknown && effectiveBits < hodlGlobalSyncMinimumBits(),
-    caution = syncUnknown ? hodlT("entropy unknown · only as strong as the text") : hodlT("{n} bits of entropy · under {min}", { n: effectiveBits, min: hodlGlobalSyncMinimumBits() }),
+    keyCautions = hodlGlobalSyncKeyCautions(state),
+    minimumBits = keyCautions.minimumBits,
+    syncShort = Boolean(syncBits) && !syncUnknown && effectiveBits < minimumBits,
+    caution = syncUnknown ? hodlT("entropy unknown · only as strong as the text") : hodlT("{n} bits of entropy · under {min}", { n: effectiveBits, min: minimumBits }),
     secure = hodlSecureEntryOn,
     checked = !secure && state?.globalSync,
     statusHidden = secure || !(state?.globalSync && syncBits),
+    keySynced = keyCautions.keySynced,
+    lengthRaised = keyCautions.lengthRaised,
     note = secure ? hodlT("Global sync is unavailable while Secure entry is on.") : hodlT("Keeps non-hashed methods synchronized. Hashed inputs update them one way and are never overwritten.");
-  return `<div class="switch-row"><div class="global-sync-head"><label class="switch-toggle global-sync-toggle"><input type="checkbox" id="global-entropy-sync" aria-describedby="global-sync-note" ${checked ? "checked" : ""}${secure ? " disabled" : ""} /><span class="label">${hodlT("Sync entropy across methods")}</span></label><span class="global-sync-status" id="global-sync-status" aria-live="polite" ${statusHidden ? "hidden" : ""}>${hodlCopiedIconMarkup()}<span>${hodlT("Key synced")}</span>${syncShort || syncUnknown ? `<span class="global-sync-shortfall">${hodlSyncWarningIconMarkup()}<span>${caution}</span></span>` : ""}</span></div><p class="switch-note" id="global-sync-note">${note}</p></div>`;
+  return `<div class="switch-row"><div class="global-sync-head"><label class="switch-toggle global-sync-toggle"><input type="checkbox" id="global-entropy-sync" aria-describedby="global-sync-note" ${checked ? "checked" : ""}${secure ? " disabled" : ""} /><span class="label">${hodlT("Sync entropy across methods")}</span></label><span class="global-sync-status" id="global-sync-status" aria-live="polite" ${statusHidden ? "hidden" : ""}>${hodlCopiedIconMarkup()}<span>${hodlT("Key synced")}</span>${syncShort || syncUnknown ? `<span class="global-sync-shortfall">${hodlSyncWarningIconMarkup()}<span>${caution}</span></span>` : ""}${lengthRaised ? `<span class="global-sync-shortfall" data-sync-length-raised>${hodlSyncWarningIconMarkup()}<span>${hodlT("seed set to 24 words")}</span></span>` : ""}</span></div><p class="switch-note" id="global-sync-note">${note}</p>${keySynced ? `<p class="edge-note is-private" id="global-sync-key-note">${hodlT("In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.")}</p>` : ""}</div>`;
 }
 function hodlRenderGlobalSyncControl() {
   let host = document.getElementById("global-sync-host"), state = hodlKeys[hodlActiveKey];
@@ -6516,6 +6556,7 @@ function hodlRenderGlobalSyncControl() {
     if (!toggle.checked) {
       state.globalSyncBitCount = 0;
       state.globalSyncSource = "";
+      state.globalSyncLengthRaised = false;
       hodlRenderGlobalSyncControl();
       hodlSyncKeyClearButton();
       return;
@@ -6943,6 +6984,8 @@ function hodlSetSeedLength(words) {
   hodlInvalidateActiveKeyOutput();
   if (state) {
     state.targetWords = config.words;
+    // A length the user chose is no longer one the key sync set.
+    state.globalSyncLengthRaised = false;
     state.diceMethod = hodlDiceMethod;
     state.lastWord = "";
     state.dplusLastWord = "";
@@ -8849,22 +8892,46 @@ function hodlParseKeyOrigin(raw) {
   for (let token of tokens) {
     if (!/^(?:\*|<\d+(?:;\d+)*>|\d+[hH']?)$/.test(token)) throw hodlError("Trailing path steps must be numbers, a wildcard *, or a multipath step like <0;1>.");
   }
-  if (tokens.includes("*") && tokens[tokens.length - 1] !== "*") throw hodlError("A wildcard * is only allowed as the last trailing path step.");
+  // Only the last step may be the wildcard: a second one (xpub/*/*) reached
+  // the path map below and crashed with a TypeError (#1460 r4 gate, GLM).
+  if (tokens.slice(0, -1).includes("*")) throw hodlError("A wildcard * is only allowed as the last trailing path step.");
   let hadWildcard = tokens[tokens.length - 1] === "*";
   if (hadWildcard) tokens.pop();
-  // A BIP45 descriptor carries its cosigner branch (always 0 here) as the
-  // first trailing step; the descriptor compose re-adds it, so it is
-  // decoration like the branch marker. A manually appended child path has
-  // no wildcard and must be honored in full.
-  if (hadWildcard && /^45h?$/.test(path.split("/")[0] || "") && tokens.length && /^\d+[hH']?$/.test(tokens[0])) tokens.shift();
+  // Real exports carry one to four steps; the cap keeps a pasted key from
+  // naming an absurd path (red-team sweep of 0eed735).
+  if (tokens.length > 16) throw hodlError("A trailing path can have at most 16 steps.");
+  // Every index, in a plain or a multipath step, is a BIP32 index; an
+  // out-of-range one was dropped as the branch marker instead of refused
+  // (#1460 gate, Gemini).
+  if (tokens.some((token) => (token.match(/\d+/g) || []).some((digits) => Number(digits) > 2147483647))) throw hodlError("A derivation path index after the extended key is out of range (0 to 2,147,483,647).");
+  // A BIP45 key derives as key/cosigner/branch/*, and the BIP45 compose always
+  // re-adds cosigner 0 (key/0/<branch>/*). So the descriptor's shape must be
+  // exactly plain 0, then the branch. Dropping any first step derived cosigner
+  // 0's addresses for /3/0/*, Copay's /2147483647/0/* or /0h/0/*, a different
+  // wallet, while the import panel already refused those shapes and a bare
+  // /0/* (issue #389; red-team sweep of 0eed735). A manually appended child
+  // path has no wildcard and is honored in full.
+  if (hadWildcard && /^45h?$/.test(path.split("/")[0] || "")) {
+    if (tokens.length !== 2 || !/^\d+$/.test(tokens[0]) || Number(tokens[0]) !== 0) throw hodlError("A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.");
+    tokens.shift();
+  }
   if (tokens.filter((token) => token.startsWith("<")).length > 1) throw hodlError("Only one multipath step like <0;1> is supported in a trailing path.");
   let multipathAt = tokens.findIndex((token) => token.startsWith("<"));
   if (multipathAt > 0 && tokens.slice(0, multipathAt).some((token) => !/^\d+[hH']?$/.test(token))) throw hodlError("A multipath step like <0;1> must follow plain number steps.");
   if (multipathAt >= 0 && multipathAt !== tokens.length - 1) throw hodlError("A multipath step like <0;1> must be the last trailing path step.");
+  // Without the wildcard a multipath step names fixed keys (BIP389: xpub/<0;1>
+  // is the keys at /0 and /1). This tool always derives a range below the key,
+  // so it can't reproduce that, and reading <0;1> as the branch marker gave a
+  // different wallet; BIP45 /3/<0;1> slipped past the cosigner rule the same
+  // way (#1460 gate, Gemini and GLM).
+  if (multipathAt >= 0 && !hadWildcard) throw hodlError("A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.");
   // Steps ahead of a multipath step are honored; the multipath step itself
   // is the branch position. Without one, a sole step ahead of the wildcard
   // is the branch marker and every other shape is honored as written.
-  let honoredTokens = multipathAt >= 0 ? tokens.slice(0, multipathAt) : hadWildcard && tokens.length === 1 ? [] : tokens;
+  // Only an unhardened sole step is a branch marker: a hardened one (/0h/*)
+  // stays in the path, where the unhardened-path check refuses it, instead of
+  // being dropped silently.
+  let honoredTokens = multipathAt >= 0 ? tokens.slice(0, multipathAt) : hadWildcard && tokens.length === 1 && /^\d+$/.test(tokens[0]) ? [] : tokens;
   let derivationPath = honoredTokens.map((token) => {
     let step = token.match(/^(\d+)([hH']?)$/); // shape guaranteed by the validation above
     let index = Number(step[1]);
@@ -13485,6 +13552,7 @@ async function hodlSecureEntryToggle(wanted) {
         state.globalSync = false;
         state.globalSyncBitCount = 0;
         state.globalSyncSource = "";
+        state.globalSyncLengthRaised = false;
       }
       hodlSetMode(hodlKeyMode);
       hodlSyncKeyClearButton();
@@ -18135,6 +18203,8 @@ function hodlCloneDerivedKey(source, existing) {
     // The entropy verdict must travel with the sync it describes, or a cloned
     // key falls back to reporting its digest length as counted entropy.
     globalSyncSourceBits: source.globalSyncSourceBits,
+    // The raised-length caution travels with the sync too (#1459 gate, Gemini).
+    globalSyncLengthRaised: source.globalSyncLengthRaised,
     seedAutocomplete: source.seedAutocomplete,
     passphraseBip39Words: source.passphraseBip39Words,
     brainWalletOutput: source.brainWalletOutput,

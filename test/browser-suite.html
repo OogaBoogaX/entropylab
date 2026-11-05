@@ -1483,14 +1483,21 @@
     await chooseMode("Private key");
     const uncompressedWif = "5HpHagT65TZzG1PH3CSu63k8DbpvD8s5ip4nEB3kEsreAnchuDf";
     input(document.getElementById("key"), uncompressedWif);
+    // A private key syncs all 256 bits into a 24-word seed (red-team sweep of
+    // 0eed735, #1459; owner 11-05). The 12-word target used to keep only the
+    // key's first 128 bits while the status said "Key synced".
+    assert(document.querySelector("#global-sync-status [data-sync-length-raised]"), "The status did not say the key sync raised the seed length");
+    assert(document.getElementById("global-sync-key-note"), "A synced private key did not show the not-a-backup note");
     await chooseMode("Number bases");
     document.querySelector('input[name="entropy-format"][value="hex"]').click();
     const wifHex = document.getElementById("hex").value;
-    equal(wifHex.length, 32, "A 12-word target did not truncate WIF entropy to 128 synced bits");
+    equal(wifHex.length, 64, "A private key did not sync all 256 bits");
     await chooseMode("Private key");
     equal(document.getElementById("key").value, uncompressedWif, "Global sync replaced the source WIF encoding");
 
     await chooseMode("Dice rolls");
+    // Back to 12 words for the hashed checks below, as a user would choose.
+    chooseSeedWords(12);
     document.querySelector('input[name="dm"][value="coldcard"]').click();
     let hashedToggle = document.getElementById("global-entropy-sync");
     assert(hashedToggle.closest("#global-sync-host"), "The global sync control moved away from the method button bar for a hashed input");
