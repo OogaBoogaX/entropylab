@@ -38,6 +38,12 @@ const refused = ({ status, log, wrote }, what) => {
   assert.equal(wrote, false, `${what}: no page is written`);
 };
 
+test("an unchanged copy of the sources builds, so the refusals below are not vacuous", { timeout: 300000 }, () => {
+  const { status, log, wrote } = buildWith(() => {});
+  assert.equal(status, 0, log);
+  assert.equal(wrote, true);
+});
+
 test("a license banner that would end its comment or its script fails the build", { timeout: 600000 }, () => {
   for (const text of ["*/ globalThis.ran = 1; /*", "</script><script>globalThis.ran = 1</script>", "<!-- <script>"]) {
     refused(buildWith((dir) => appendFileSync(join(dir, "src/licenses/ur2.txt"), `\n${text}\n`)), JSON.stringify(text));
@@ -52,6 +58,9 @@ test("a logo SVG with script, a handler or template-literal characters fails the
   for (const insert of [
     "<script>globalThis.ran = 1</script>",
     '<g onload="globalThis.ran = 1"></g>',
+    '<g/onload="globalThis.ran = 1"></g>',
+    '<a href="&#106;avascript:void 0"></a>',
+    "<text>it's</text>",
     '<a href="javascript:void 0"></a>',
     "<foreignObject></foreignObject>",
     "<text>`${globalThis.ran = 1}`</text>",
@@ -171,6 +180,14 @@ test("the Pages release step refuses to publish a committed symbolic link", { sk
     git(workspace, "add", "-A");
     git(workspace, "commit", "-qm", "a link");
     const linked = git(workspace, "rev-parse", "HEAD");
+    // A top-level file as a link: cp would follow it and publish its target.
+    git(workspace, "checkout", "-q", plain);
+    rmSync(join(workspace, "manifest.webmanifest"));
+    symlinkSync(join(temp, "outside.txt"), join(workspace, "manifest.webmanifest"));
+    writeFileSync(join(temp, "outside.txt"), "outside the repository\n");
+    git(workspace, "add", "-A");
+    git(workspace, "commit", "-qm", "a top-level link");
+    const topLinked = git(workspace, "rev-parse", "HEAD");
 
     const script = stepScript(".github/workflows/pages-release.yml", "Build the site");
     const run = (name, footerCommit) => {
@@ -186,6 +203,10 @@ test("the Pages release step refuses to publish a committed symbolic link", { sk
     const bad = run("linked", linked);
     assert.notEqual(bad.status, 0, "a committed link must stop the site build");
     assert.match(bad.log, /title=Symbolic link::/);
+    const top = run("top-linked", topLinked);
+    assert.notEqual(top.status, 0, "a top-level link must stop it before cp follows it");
+    assert.match(top.log, /title=Symbolic link::/);
+    assert.equal(existsSync(join(workspace, "_site/manifest.webmanifest")), false, "nothing was copied");
   } finally {
     remove(temp);
   }

@@ -256,6 +256,15 @@ jobs:
           # names, never from the default branch's or a tag's working tree.
           git -C "$GITHUB_WORKSPACE" archive "$FOOTER_COMMIT" robots.txt sitemap.xml llms.txt manifest.webmanifest assets src/service-worker.js \
             | tar -x -C "$STATIC"
+          # git archive keeps a committed symbolic link, and cp and sed below
+          # would follow one and publish its target's bytes. The site carries
+          # none (red-team sweep 0eed735, verify-site #2; checked before any
+          # copy, #1477 gate: Kimi, MiniMax, DeepSeek).
+          LINKS=$(find "$STATIC" -type l)
+          if [ -n "$LINKS" ]; then
+            echo "::error title=Symbolic link::the site would publish symbolic links: $LINKS"
+            exit 1
+          fi
           SITE="$GITHUB_WORKSPACE/_site"
           mkdir "$SITE"
           cp "$STATIC/robots.txt" "$STATIC/sitemap.xml" "$STATIC/llms.txt" "$STATIC/manifest.webmanifest" "$SITE/"
@@ -277,13 +286,6 @@ jobs:
           sed "s/{{PWA_VERSION}}/$VERSIONS/g" "$STATIC/src/service-worker.js" > "$SITE/service-worker.js"
           if grep -q '{{' "$SITE/service-worker.js"; then
             echo "::error title=Service worker::the generated worker still carries an unsubstituted {{ token"
-            exit 1
-          fi
-          # git archive keeps a committed symbolic link, and the site publishes
-          # none (red-team sweep 0eed735, verify-site #2).
-          LINKS=$(find "$SITE" -type l)
-          if [ -n "$LINKS" ]; then
-            echo "::error title=Symbolic link::the site would publish symbolic links: $LINKS"
             exit 1
           fi
       - name: Upload the Pages artifact

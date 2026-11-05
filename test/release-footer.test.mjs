@@ -43,6 +43,10 @@ test("the parser fails closed", () => {
   assert.ok(releaseFooter(good + '<span class="page-footer-build" data-copy>v1.1.0 · commit <code>4567def</code></span>').error, "a copy with another attribute");
   assert.ok(releaseFooter(good + footerHtml("1.1.0", "4567DEF")).error, "a copy with an uppercase commit");
   assert.ok(releaseFooter(good + '<SPAN CLASS="page-footer-build">v1.1.0 · commit <code>4567def</code></SPAN>').error, "a copy in uppercase markup");
+  assert.ok(releaseFooter(good + '<x-span class="page-footer-build">v9.9.9 · commit <code>4567def</code></x-span>').error, "a copy in a hyphenated element");
+  assert.ok(releaseFooter(good + '<span data-x=">" class="page-footer-build">v9.9.9 · commit <code>4567def</code></span>').error, "a copy behind a quoted >");
+  assert.ok(releaseFooter(good + "<span class='note page-footer-build'>v9.9.9 · commit <code>4567def</code></span>").error, "a copy with another class");
+  assert.deepEqual(releaseFooter(good + "<style>.page-footer-build code { color: red }</style><script>document.querySelector(\".page-footer-build\")</script>"), { version: "1.1.0", commit: "0123abc" }, "CSS and JS selectors are not copies");
   assert.deepEqual(releaseFooter(good), { version: "1.1.0", commit: "0123abc" });
   assert.deepEqual(releaseFooter(footerHtml("1.1.0-dev", "0123abc")), { version: "1.1.0-dev", commit: "0123abc" });
 });

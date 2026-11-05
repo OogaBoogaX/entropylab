@@ -93,14 +93,17 @@ const css = read("css/styles.css");
 // without reaching for assets/ (which only exists on the hosted site). The
 // empty span is replaced in the template and in the runtime header template.
 // The SVG lands raw in the page, whose CSP allows inline script, and inside a
-// JS template literal in the bundle. Refuse anything that could run or break
-// out there: script elements, foreignObject, event-handler attributes,
-// javascript: URLs, <!--, and the backtick, ${ and backslash a template
-// literal would read (red-team sweep 0eed735, build #1).
+// JS string literal in the bundle (a template literal today; esbuild picks the
+// quote). Refuse anything that could run or break out there: script elements,
+// foreignObject, event-handler attributes (after a space or a "/", which the
+// HTML parser also reads as a separator), javascript: URLs, any character
+// reference (one can spell javascript:), <!--, and the backtick, ${,
+// backslash and ' a string literal would read (red-team sweep 0eed735, build
+// #1; #1477 gate: Kimi, GLM, MiniMax, DeepSeek).
 const logoSvg = (name) => {
   const svg = read(`assets/${name}.svg`).trim();
-  if (/<\/?script|<foreignObject|\son[a-z]+\s*=|javascript:|<!--|`|\$\{|\\/i.test(svg)) {
-    throw new Error(`src/assets/${name}.svg holds something the inlined logo cannot carry: script, foreignObject, an on... handler, javascript:, <!--, a backtick, \${ or a backslash`);
+  if (/<\/?script|<foreignObject|[\s/]on[a-z]+\s*=|javascript:|&|<!--|`|\$\{|\\|'/i.test(svg)) {
+    throw new Error(`src/assets/${name}.svg holds something the inlined logo cannot carry: script, foreignObject, an on... handler, javascript:, an & character reference, <!--, a backtick, \${, a backslash or '`);
   }
   return svg.replace("<svg ", `<svg class="site-${name}" aria-hidden="true" focusable="false" `);
 };

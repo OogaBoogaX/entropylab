@@ -15,10 +15,13 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const FOOTER = /<span class="page-footer-build">v([0-9A-Za-z.+-]+) · commit <code>([0-9a-f]{7,40})<\/code>/g;
-// Any element carrying the footer class. Every one must be a copy FOOTER
-// reads: one with another attribute or an uppercase commit was skipped, not
-// checked (red-team sweep 0eed735, release-footer #1).
-const FOOTER_CLASS = /<[a-z][a-z0-9]*\b[^>]*\bclass\s*=\s*["']?[^"'>]*\bpage-footer-build\b/gi;
+// Every use of the footer class that is not a CSS or JS selector (".page-
+// footer-build"): each must be a copy FOOTER reads. One with another
+// attribute or an uppercase commit was skipped, not checked (red-team sweep
+// 0eed735, release-footer #1). The class is counted as a token rather than
+// inside a parsed tag, so no element name or quoted ">" hides one (#1477
+// gate: Kimi, DeepSeek).
+const FOOTER_CLASS = /(?<![\w.-])page-footer-build(?![\w-])/g;
 
 export function releaseFooter(html) {
   const found = [...String(html).matchAll(FOOTER)].map(([, version, commit]) => ({ version, commit }));
