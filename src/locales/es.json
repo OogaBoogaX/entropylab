@@ -2588,5 +2588,7 @@
   "Not checked:": "No comprobado:",
   "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "declara {path}, una ruta inusualmente profunda, y este PSBT agotó las comprobaciones. No firmar.",
   "claims {path}, but this PSBT used up the checks. Do not sign.": "declara {path}, pero este PSBT agotó las comprobaciones. No firmar.",
-  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (moneda no reconocida {currency}: tamaño de unidad desconocido, confirmar con el emisor)"
+  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (moneda no reconocida {currency}: tamaño de unidad desconocido, confirmar con el emisor)",
+  "seed set to 24 words": "semilla establecida a 24 palabras",
+  "In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.": "En una billetera, estas palabras restauran una billetera diferente, no esta clave privada. Haz una copia de seguridad de la clave privada en sí."
 }
