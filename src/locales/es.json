@@ -2588,5 +2588,11 @@
   "Not checked:": "No comprobado:",
   "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "declara {path}, una ruta inusualmente profunda, y este PSBT agotó las comprobaciones. No firmar.",
   "claims {path}, but this PSBT used up the checks. Do not sign.": "declara {path}, pero este PSBT agotó las comprobaciones. No firmar.",
-  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (moneda no reconocida {currency}: tamaño de unidad desconocido, confirmar con el emisor)"
+  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (moneda no reconocida {currency}: tamaño de unidad desconocido, confirmar con el emisor)",
+  "seed set to 24 words": "semilla establecida a 24 palabras",
+  "In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.": "En una billetera, estas palabras restauran una billetera diferente, no esta clave privada. Haz una copia de seguridad de la clave privada en sí.",
+  "A trailing path can have at most 16 steps.": "Una ruta final puede tener como máximo 16 pasos.",
+  "A derivation path index after the extended key is out of range (0 to 2,147,483,647).": "Un índice de ruta de derivación después de la clave extendida está fuera de rango (0 a 2,147,483,647).",
+  "A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.": "Una clave BIP45 debe tener un paso de cosigner simple 0 antes de su rama, como /0/0/* o /0/<0;1>/*. Esta herramienta deriva solo el cosigner 0; otro paso de cosigner derivaría una billetera diferente.",
+  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Un paso de ruta múltiple como <0;1> debe ir seguido del comodín *, como en /<0;1>/*."
 }
