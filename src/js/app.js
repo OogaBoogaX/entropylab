@@ -6416,11 +6416,30 @@ function hodlGlobalSyncBitBoxValue(bits, targetWords = hodlTargetWordCount) {
   }
   return tokens.map((token, index) => `${index && index % 6 === 0 ? " " : ""}${token}`).join("");
 }
+// A private key is 256 bits and only 24 words hold them all. Synced into a
+// shorter seed, the words came from part of the key while the status said
+// "Key synced" (red-team sweep of 0eed735). So every sync from a private key
+// uses 24 words, raising a shorter length first; the length dropdown is hidden
+// in Private key mode (the only mode with a key source), so the status says
+// when it was raised, and hodlSetMode redraws the dropdown on leaving. The
+// derived key result does not depend on the length and stays.
+function hodlGlobalSyncFitKeyLength(state, sourceId) {
+  let keySource = String(sourceId).startsWith("key:");
+  if (keySource && hodlSeedConfig(state.targetWords).words < 24) {
+    state.targetWords = 24;
+    hodlTargetWordCount = 24;
+    state.dplusLastWord = "";
+    state.globalSyncLengthRaised = true;
+  } else if (!keySource) {
+    state.globalSyncLengthRaised = false;
+  }
+}
 function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   // Sync writes words and hex into text fields.
   if (hodlSecureEntryOn) return false;
   let state = hodlKeys[hodlActiveKey];
   if (!state) return false;
+  hodlGlobalSyncFitKeyLength(state, sourceId);
   let config = hodlSeedConfig(state.targetWords), source = String(bits ?? "").slice(0, config.bits), sourceValue = String(hodlGlobalSyncCurrentValue()), fields = state.fields, privateKeys = hodlPrivateKeyValues(fields), mnemonic = hodlGlobalSyncMnemonic(source, config.words), words = mnemonic ? mnemonic.split(" ") : hodlGlobalSyncWordIndices(source, config.partialWords).map((index) => hodlBip39Wordlist[index]);
   Object.keys(hodlEntropyFormats).forEach((format) => fields[format] = hodlGlobalSyncNumberValue(source, format, config.words));
   fields.seed = words.join(" ");
@@ -6430,7 +6449,9 @@ function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   fields.bitboxDice = hodlGlobalSyncBitBoxValue(source, config.words);
   if (sourceId !== "dice:bitbox") state.diceCoinPositions = [];
   state.lastWord = mnemonic ? words.at(-1) : "";
-  privateKeys["hex-key"] = source.slice(0, 256).match(/.{4}/g)?.map((chunk) => Number.parseInt(chunk, 2).toString(16)).join("") || "";
+  // The hex-key copy is a whole 64-digit key or nothing: fewer bits are not
+  // a private key, and a 32-digit copy only looked like one.
+  privateKeys["hex-key"] = source.length >= 256 ? source.slice(0, 256).match(/.{4}/g).map((chunk) => Number.parseInt(chunk, 2).toString(16)).join("") : "";
   privateKeys.wif = "";
   if (source.length >= 256) {
     let bytes = hodlBytesFromBits(source.slice(0, 256));
@@ -6502,8 +6523,13 @@ function hodlGlobalSyncControlMarkup(state) {
     secure = hodlSecureEntryOn,
     checked = !secure && state?.globalSync,
     statusHidden = secure || !(state?.globalSync && syncBits),
+    // A private key synced into seed words: the words restore a different
+    // wallet, so the user is told to back up the key itself, and told when
+    // the sync raised the hidden seed length to hold the whole key.
+    keySynced = !statusHidden && String(state?.globalSyncSource || "").startsWith("key:"),
+    lengthRaised = keySynced && Boolean(state?.globalSyncLengthRaised),
     note = secure ? hodlT("Global sync is unavailable while Secure entry is on.") : hodlT("Keeps non-hashed methods synchronized. Hashed inputs update them one way and are never overwritten.");
-  return `<div class="switch-row"><div class="global-sync-head"><label class="switch-toggle global-sync-toggle"><input type="checkbox" id="global-entropy-sync" aria-describedby="global-sync-note" ${checked ? "checked" : ""}${secure ? " disabled" : ""} /><span class="label">${hodlT("Sync entropy across methods")}</span></label><span class="global-sync-status" id="global-sync-status" aria-live="polite" ${statusHidden ? "hidden" : ""}>${hodlCopiedIconMarkup()}<span>${hodlT("Key synced")}</span>${syncShort || syncUnknown ? `<span class="global-sync-shortfall">${hodlSyncWarningIconMarkup()}<span>${caution}</span></span>` : ""}</span></div><p class="switch-note" id="global-sync-note">${note}</p></div>`;
+  return `<div class="switch-row"><div class="global-sync-head"><label class="switch-toggle global-sync-toggle"><input type="checkbox" id="global-entropy-sync" aria-describedby="global-sync-note" ${checked ? "checked" : ""}${secure ? " disabled" : ""} /><span class="label">${hodlT("Sync entropy across methods")}</span></label><span class="global-sync-status" id="global-sync-status" aria-live="polite" ${statusHidden ? "hidden" : ""}>${hodlCopiedIconMarkup()}<span>${hodlT("Key synced")}</span>${syncShort || syncUnknown ? `<span class="global-sync-shortfall">${hodlSyncWarningIconMarkup()}<span>${caution}</span></span>` : ""}${lengthRaised ? `<span class="global-sync-shortfall" data-sync-length-raised>${hodlSyncWarningIconMarkup()}<span>${hodlT("seed set to 24 words")}</span></span>` : ""}</span></div><p class="switch-note" id="global-sync-note">${note}</p>${keySynced ? `<p class="edge-note is-private" id="global-sync-key-note">${hodlT("In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.")}</p>` : ""}</div>`;
 }
 function hodlRenderGlobalSyncControl() {
   let host = document.getElementById("global-sync-host"), state = hodlKeys[hodlActiveKey];
@@ -6515,6 +6541,7 @@ function hodlRenderGlobalSyncControl() {
     if (!toggle.checked) {
       state.globalSyncBitCount = 0;
       state.globalSyncSource = "";
+      state.globalSyncLengthRaised = false;
       hodlRenderGlobalSyncControl();
       hodlSyncKeyClearButton();
       return;
@@ -6939,6 +6966,8 @@ function hodlSetSeedLength(words) {
   hodlInvalidateActiveKeyOutput();
   if (state) {
     state.targetWords = config.words;
+    // A length the user chose is no longer one the key sync set.
+    state.globalSyncLengthRaised = false;
     state.diceMethod = hodlDiceMethod;
     state.lastWord = "";
     state.dplusLastWord = "";
@@ -13477,6 +13506,7 @@ async function hodlSecureEntryToggle(wanted) {
         state.globalSync = false;
         state.globalSyncBitCount = 0;
         state.globalSyncSource = "";
+        state.globalSyncLengthRaised = false;
       }
       hodlSetMode(hodlKeyMode);
       hodlSyncKeyClearButton();
