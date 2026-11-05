@@ -434,7 +434,8 @@ const finalScriptPushes = (script, limit = 128) => {
   for (let at = 0; at < script.length;) {
     const op = script[at++];
     let size;
-    if (op >= 0x01 && op <= 0x4b) size = op;
+    if (op === 0x00) size = 0; // OP_0 pushes the empty element (CHECKMULTISIG's dummy)
+    else if (op >= 0x01 && op <= 0x4b) size = op;
     else if (op === 0x4c) { if (at >= script.length) return null; size = script[at++]; }
     else if (op === 0x4d) { if (at + 1 >= script.length) return null; size = script[at] | (script[at + 1] << 8); at += 2; }
     else if (op === 0x4e) { if (at + 3 >= script.length) return null; size = new DataView(script.buffer, script.byteOffset + at, 4).getUint32(0, true); at += 4; }
@@ -500,7 +501,7 @@ const finalScriptKeys = (script) => {
     keys.push(script.subarray(at, at + size));
     at += size;
   }
-  if (at !== script.length - 1 || script[at] < 0x51 || script[at] > 0x60) return null;
+  if (at !== script.length - 2 || script[at] < 0x51 || script[at] > 0x60) return null;
   return { kind: "multi", required, keys };
 };
 

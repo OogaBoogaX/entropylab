@@ -181,6 +181,19 @@ const finalP2wshFixture = () => {
   tx.sign(PRIV);
   return { before, after: finalize(tx) };
 };
+const MULTI_PRIV = [hex("06".repeat(32)), hex("07".repeat(32))];
+const MULTI_PUB = MULTI_PRIV.map((key) => nobleSecp256k1.getPublicKey(key, true));
+const finalLegacyMultisigFixture = () => {
+  const redeem = spkOf(btc.p2ms(2, MULTI_PUB));
+  // A legacy spend may rest on the witness UTXO when told so; the fixture
+  // keeps the PSBT shape simple.
+  const tx = new btc.Transaction({ allowLegacyWitnessUtxo: true });
+  tx.addInput({ txid: "99".repeat(32), index: 0, redeemScript: redeem, witnessUtxo: { script: spkOf(btc.p2sh(btc.p2ms(2, MULTI_PUB))), amount: 100_000n } });
+  tx.addOutput({ script: DEST, amount: 90_000n });
+  const before = tx.toPSBT();
+  for (const key of MULTI_PRIV) tx.signIdx(key, 0);
+  return { before, after: finalize(tx) };
+};
 const finalLegacyFixture = () => {
   const prev = legacyPrevTx();
   const tx = new btc.Transaction();
@@ -813,4 +826,11 @@ test("a final field whose signature names no key is invalid", () => {
   witnessPair.value = hexOf(serializeWitness([items[0], other]));
   const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
   assert.equal(verification.signatures[0].valid, false);
+});
+
+test("a finalized legacy P2SH multisig input is verified", () => {
+  const { before, after } = finalLegacyMultisigFixture();
+  const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+  const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
+  assert.deepEqual(verification.signatures.map((entry) => [entry.name, entry.valid]), [["PSBT_IN_FINAL_SCRIPTSIG", true]]);
 });
