@@ -8847,6 +8847,10 @@ function hodlParseKeyOrigin(raw) {
   // Real exports carry one to four steps; the cap keeps a pasted key from
   // naming an absurd path (red-team sweep of 0eed735).
   if (tokens.length > 16) throw hodlError("A trailing path can have at most 16 steps.");
+  // Every index, in a plain or a multipath step, is a BIP32 index; an
+  // out-of-range one was dropped as the branch marker instead of refused
+  // (#1460 gate, Gemini).
+  if (tokens.some((token) => (token.match(/\d+/g) || []).some((digits) => Number(digits) > 2147483647))) throw hodlError("A derivation path index after the extended key is out of range (0 to 2,147,483,647).");
   // A BIP45 key derives as key/cosigner/branch/*, and the BIP45 compose always
   // re-adds cosigner 0 (key/0/<branch>/*). So the descriptor's shape must be
   // exactly plain 0, then the branch. Dropping any first step derived cosigner
@@ -8854,7 +8858,9 @@ function hodlParseKeyOrigin(raw) {
   // wallet, while the import panel already refused those shapes and a bare
   // /0/* (issue #389; red-team sweep of 0eed735). A manually appended child
   // path has no wildcard and is honored in full.
-  if (hadWildcard && /^45h?$/.test(path.split("/")[0] || "")) {
+  // The tail ends in a branch marker when it has the wildcard or ends in a
+  // multipath step (/0/<0;1> is still the branch position, #1460 gate, Gemini).
+  if ((hadWildcard || /^</.test(tokens[tokens.length - 1] || "")) && /^45h?$/.test(path.split("/")[0] || "")) {
     if (tokens.length !== 2 || !/^\d+$/.test(tokens[0]) || Number(tokens[0]) !== 0) throw hodlError("A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.");
     tokens.shift();
   }

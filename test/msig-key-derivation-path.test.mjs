@@ -145,3 +145,21 @@ test("a trailing path is capped at 16 steps", () => {
   assert.equal(hodlParseMultisigCosigner(`${EXPORT}/${steps(16)}/*`).derivationPath, steps(16));
   assert.throws(() => hodlParseMultisigCosigner(`${EXPORT}/${steps(17)}/*`), /at most 16 steps/);
 });
+
+// #1460 gate (Gemini): a BIP45 tail ending in a multipath step with no
+// wildcard is still at the branch position, and an out-of-range index is
+// refused rather than dropped as the branch marker.
+test("a BIP45 multipath tail without a wildcard gets the same cosigner rule", () => {
+  assert.equal(hodlParseMultisigCosigner(`${BIP45_EXPORT}/0/<0;1>`).derivationPath, "");
+  for (const tail of ["/3/<0;1>", "/<0;1>"]) {
+    assert.throws(() => hodlParseMultisigCosigner(`${BIP45_EXPORT}${tail}`), /must have plain cosigner step 0 before its branch/, tail);
+  }
+});
+
+test("an out-of-range index in the trailing path is refused, not dropped", () => {
+  for (const tail of ["/2147483648/*", "/<0;2147483648>/*", "/0/2147483648/*"]) {
+    assert.throws(() => hodlParseMultisigCosigner(`${EXPORT}${tail}`), /out of range/, tail);
+  }
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/2147483647/*`).derivationPath, "", "the top index is still a branch marker");
+});
+
