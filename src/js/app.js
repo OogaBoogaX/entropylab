@@ -16348,8 +16348,11 @@ function hodlDeclaredOutput(entries, script, network, budget = null) {
       let member = hodlScriptMembership(entries, script, node.publicKey);
       if (hodlForeignSingleKeyScript(entries, script)) return { state: "lie", path: label };
       // Otherwise the claim is unverifiable from this map — which is not a
-      // lie. A later record may still prove ownership.
-      if (!declared || declared.state !== "ours") {
+      // lie. A later record may still prove ownership. A claim left unchecked
+      // by the budget keeps its red verdict: a later unverifiable record must
+      // not turn it grey, or record order would decide the warning (#1457 r3
+      // gate, GLM and Kimi).
+      if (!declared || (declared.state !== "ours" && !declared.budget)) {
         let noted = member || Boolean(declared && declared.state === "unknown" && declared.member);
         declared = { state: "unknown", path: label, member: noted };
       }
@@ -16539,10 +16542,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // One PSBT output-derivation budget per render. An attacker-named path
     // costs one CKD per step; the inspector must not derive an unbounded
     // private subtree from an untrusted file (audit M3).
-    // Plus a reserve pool of the same size that each output can draw up to 16
-    // steps from once the main budget is spent (#1457), so an ordinary claim
-    // stays checked after padding; the render is bounded by the two together.
-    derivationBudget = { remaining: 4096, reserve: 4096 },
+    // The 4096 steps are split: 3072 shared, and a 1024-step reserve that
+    // each output can draw up to 16 from once the shared part is spent
+    // (#1457), so an ordinary claim stays checked after padding while the
+    // render stays bounded at 4096 in all.
+    derivationBudget = { remaining: 3072, reserve: 1024 },
     // The same for the session-key lookup on the input side. Only the rows a
     // digest was rebuilt for (signatureChecks) can use the key, so 4096 steps
     // covers 256 rows of ordinary paths.

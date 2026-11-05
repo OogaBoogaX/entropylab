@@ -387,18 +387,23 @@ test("the reserve pool is capped across outputs, and an unchecked claim is flagg
   }
 });
 
-test("a claim left unchecked renders as a red stop, not a grey note", () => {
-  const render = slice("hodlRenderOutputHtml");
-  const branch = render.indexOf('declared.state === "unknown" && declared.budget');
-  assert.ok(branch > 0, "the unchecked claim has its own branch");
-  assert.ok(branch < render.indexOf('} else if (declared && declared.state === "unknown") {'), "ahead of the grey unverifiable note");
-  const body = render.slice(branch, render.indexOf("} else if", branch + 1));
-  assert.match(body, /hodlT\("Not checked:"\)/);
-  assert.match(body, /declared\.deep\s*\?\s*hodlT\("claims \{path\}, an unusually deep path, and this PSBT used up the checks\. Do not sign\.", \{ path: declared\.path \}\)/);
-  assert.match(body, /: hodlT\("claims \{path\}, but this PSBT used up the checks\. Do not sign\.", \{ path: declared\.path \}\)/);
-  assert.match(body, /className = "psbt-bad"/);
-  assert.match(app, /derivationBudget = \{ remaining: 4096, reserve: 4096 \}/, "the render starts with a capped reserve pool");
-  assert.match(app, /index < outputsFrom && \(derivationBudget\.remaining > 0 \|\| derivationBudget\.reserve > 0\); index\+\+/, "Show more re-renders while either pool lasts");
+// #1457 r3 gate (GLM, Kimi): an unverifiable record after an unchecked one
+// must not turn the red "Not checked" verdict into the grey note.
+test("a later unverifiable record cannot downgrade an unchecked claim", () => {
+  hodlSetSession(hd);
+  const deep = derivation(changeNode, hd.fingerprint, [...changePath, ...Array(15).fill(0)]);
+  const budget = { remaining: 0, reserve: 1024 };
+  const result = hodlDeclaredOutput([deep, msigRecord, witnessField], p2wshScript(msigWitness), "mainnet", budget);
+  assert.equal(result.state, "unknown");
+  assert.equal(result.budget, true, "the unchecked claim keeps its verdict");
+  assert.equal(result.deep, true);
+});
+
+// The render's derivation bound stays at audit M3's 4096 steps in all: the
+// shared budget and the reserve pool split it.
+test("the render derives at most 4096 output steps in all", () => {
+  assert.match(app, /derivationBudget = \{ remaining: 3072, reserve: 1024 \}/);
+  assert.match(app, /index < outputsFrom && \(derivationBudget\.remaining > 0 \|\| derivationBudget\.reserve > 0\); index\+\+/, "Show more spends both parts the same way");
 });
 
 test("every private node created by an output derivation is wiped", () => {
