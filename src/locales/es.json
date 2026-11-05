@@ -2584,5 +2584,8 @@
   "Beginning of the replacement word": "Inicio de la palabra de reemplazo",
   "Replace word": "Reemplazar palabra",
   "Word {n} replaced. Continue with word {next}.": "Palabra {n} reemplazada. Continúa con la palabra {next}.",
-  "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "<strong>Compilación de desarrollo — sin firmar.</strong> Solo para pruebas. No la uses con fondos reales ni semillas reales. La versión firmada está en entropylab.online."
+  "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "<strong>Compilación de desarrollo — sin firmar.</strong> Solo para pruebas. No la uses con fondos reales ni semillas reales. La versión firmada está en entropylab.online.",
+  "Not checked:": "No comprobado:",
+  "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "declara {path}, una ruta inusualmente profunda, y este PSBT agotó las comprobaciones. No firmar.",
+  "claims {path}, but this PSBT used up the checks. Do not sign.": "declara {path}, pero este PSBT agotó las comprobaciones. No firmar."
 }
