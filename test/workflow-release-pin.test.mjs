@@ -4,7 +4,9 @@
 // text-level guards in the style of workflow-ots-supply-chain.test.mjs: they
 // cannot parse YAML, but they fail the moment any of these lines move.
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -197,6 +199,68 @@ test("the preview job publishes rock to the preview repository only", () => {
   assert.ok(job.includes("! -name CNAME"), "the CNAME is kept");
   assert.doesNotMatch(job, /--force/, "it never force-pushes");
   assert.doesNotMatch(job, /actions\/deploy-pages@/, "it does not deploy production");
+});
+
+// The preview is an unsigned -dev build, so it must stay out of search: the
+// real "Prepare the preview site" script runs here against a checkout that
+// holds every file the production site serves.
+const bash = process.platform !== "win32" && spawnSync("bash", ["--version"], { stdio: "ignore" }).status === 0;
+
+const DEV_PAGE = '<meta charset="utf-8"><meta name="robots" content="noindex, nofollow">\n<div class="beta-warning" id="dev-build-warning" role="alert"></div>\n';
+const previewPrepare = (page) => {
+  const prepare = steps(jobBlock(cicd, "preview")).find((step) => step.startsWith("name: Prepare the preview site\n"));
+  assert.ok(prepare, "the preview job prepares its site in one step");
+  const script = prepare.split(/\n +run: \|\n/)[1]?.replace(/^ {10}/gm, "");
+  assert.ok(script, "the step runs a script");
+  const checkout = mkdtempSync(join(tmpdir(), "preview-site-"));
+  for (const name of ["robots.txt", "sitemap.xml", "llms.txt", "manifest.webmanifest", "service-worker.js"]) {
+    writeFileSync(join(checkout, name), `${name}\n`);
+  }
+  writeFileSync(join(checkout, "entropylab.html"), page);
+  mkdirSync(join(checkout, "assets"));
+  writeFileSync(join(checkout, "assets/favicon.png"), "favicon\n");
+  // As the runner runs a step: bash, stopping at the first failure.
+  const result = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", script], { cwd: checkout, encoding: "utf8" });
+  return { checkout, result };
+};
+
+// A candidate without the dev-build banner or the noindex (a version without
+// -dev on rock, once #494 numbers patches) must not reach the preview as if
+// it were a release (red team, #1448).
+test("the preview refuses a candidate without the dev-build banner or the noindex", { skip: !bash && "needs bash" }, () => {
+  const pages = {
+    "no banner": '<meta charset="utf-8"><meta name="robots" content="noindex, nofollow">\n',
+    "no noindex": '<meta charset="utf-8">\n<div class="beta-warning" id="dev-build-warning" role="alert"></div>\n',
+    "a release page": '<meta charset="utf-8">\n',
+  };
+  for (const [label, page] of Object.entries(pages)) {
+    const { checkout, result } = previewPrepare(page);
+    try {
+      assert.notEqual(result.status, 0, `${label}: the step must fail`);
+      assert.match(`${result.stdout}${result.stderr}`, /Preview guardrails/, label);
+    } finally {
+      rmSync(checkout, { recursive: true, force: true });
+    }
+  }
+});
+
+test("the preview site lets crawlers read the noindex and publishes no sitemap or llms.txt", { skip: !bash && "needs bash" }, () => {
+  const { checkout, result } = previewPrepare(DEV_PAGE);
+  try {
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+    const site = join(checkout, "_site");
+    // Crawlers are let in so they read each page's noindex; no sitemap line.
+    assert.equal(readFileSync(join(site, "robots.txt"), "utf8"), "User-agent: *\nAllow: /\n", "robots.txt lets crawlers read the noindex and names no sitemap");
+    assert.ok(!existsSync(join(site, "sitemap.xml")), "no sitemap is published");
+    assert.ok(!existsSync(join(site, "llms.txt")), "no llms.txt is published");
+    // Everything else the step published before still ships.
+    for (const name of ["entropylab.html", "index.html", "manifest.webmanifest", "service-worker.js", ".nojekyll", "assets/favicon.png"]) {
+      assert.ok(existsSync(join(site, name)), `_site/${name} is published`);
+    }
+    assert.equal(readFileSync(join(site, "index.html"), "utf8"), DEV_PAGE, "the site root serves the candidate");
+  } finally {
+    rmSync(checkout, { recursive: true, force: true });
+  }
 });
 
 test("release-assets.yml checks the footer against the tag", () => {

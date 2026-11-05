@@ -1109,11 +1109,26 @@ jobs:
       - name: Prepare the preview site
         run: |
           mkdir _site
-          cp entropylab.html robots.txt sitemap.xml llms.txt _site/
+          cp entropylab.html _site/
           cp manifest.webmanifest service-worker.js _site/
           cp entropylab.html _site/index.html
           cp -r assets _site/assets
           touch _site/.nojekyll
+          # The preview is an unsigned -dev build: it stays out of search. Every
+          # -dev page carries <meta name="robots" content="noindex, nofollow">,
+          # and crawlers must be let in to read it (a Disallow would hide the
+          # tag and still let a linked URL be listed bare), so robots.txt only
+          # drops the sitemap. No sitemap or llms.txt is published.
+          cat > _site/robots.txt <<'ROBOTS'
+          User-agent: *
+          Allow: /
+          ROBOTS
+          # The page it publishes must carry both dev-build guardrails. A
+          # candidate without the banner or the noindex (a version without
+          # -dev on rock, say, once #494 numbers patches) is refused, not
+          # published as if it were a release.
+          grep -qF 'id="dev-build-warning"' _site/index.html || { echo "::error title=Preview guardrails::the candidate has no dev-build banner; it is not published as the preview"; exit 1; }
+          grep -qF '<meta name="robots" content="noindex, nofollow">' _site/index.html || { echo "::error title=Preview guardrails::the candidate has no noindex meta; it is not published as the preview"; exit 1; }
       - name: Deploy to the preview repository
         env:
           PREVIEW_DEPLOY_KEY: ${{ secrets.PREVIEW_DEPLOY_KEY }}
