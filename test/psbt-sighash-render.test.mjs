@@ -81,6 +81,41 @@ test("a finalized Taproot signature with SIGHASH_NONE is a policy problem", () =
   }
 });
 
+// A 0x13 field with the same r and s but a harmless sighash byte must not hide
+// the final witness's own suffix (#1479 gate, Gemini).
+test("a key-path signature field cannot hide the final witness's SIGHASH_NONE", () => {
+  const field = (suffix) => ({ type: 0x13, keydata: new Uint8Array(), val: signature(suffix) });
+  for (const benign of [null, 0x01]) {
+    assert.equal(policyState(psbtOf([witnessUtxo(1000, P2TR), field(benign), finalWitness(signature(0x02))])), "problem", benign === null ? "a 64-byte field" : "a SIGHASH_ALL field");
+  }
+  // The same signature, suffix included, in both places is checked once and
+  // still commits to everything.
+  assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2TR), field(0x01), finalWitness(signature(0x01))])), "problem");
+});
+
+// A finalized signature that does not parse under BIP341 is a policy problem,
+// as the same bytes in a 0x13 field are (#1479 gate, Gemini, MiniMax).
+test("a finalized key-path signature with an undefined sighash byte is a policy problem", () => {
+  for (const suffix of [0x00, 0x04, 0x7f]) {
+    assert.equal(policyState(psbtOf([witnessUtxo(1000, P2TR), finalWitness(signature(suffix))])), "problem", `suffix 0x${suffix.toString(16)}`);
+  }
+  assert.equal(policyState(psbtOf([witnessUtxo(1000, P2TR), finalWitness(new Uint8Array(40))])), "problem", "a 40-byte signature");
+});
+
+// A finalized pk() script-path spend: the signature, the leaf <key> OP_CHECKSIG
+// and a control block (#1479 gate, GLM: the script-path reader is covered too).
+const G = Uint8Array.from(Buffer.from("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798", "hex"));
+const scriptPathWitness = (sig) => {
+  const leaf = Uint8Array.of(0x20, ...G, 0xac), control = Uint8Array.of(0xc0, ...G);
+  return { type: 8, keydata: new Uint8Array(), val: Uint8Array.of(3, sig.length, ...sig, leaf.length, ...leaf, control.length, ...control) };
+};
+test("a finalized pk() script-path signature's sighash byte is checked too", () => {
+  assert.equal(policyState(psbtOf([witnessUtxo(1000, P2TR), scriptPathWitness(signature(0x02))])), "problem", "SIGHASH_NONE");
+  assert.equal(policyState(psbtOf([witnessUtxo(1000, P2TR), scriptPathWitness(signature(0x04))])), "problem", "an undefined byte");
+  assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2TR), scriptPathWitness(signature(0x01))])), "problem", "SIGHASH_ALL");
+  assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2TR), scriptPathWitness(signature(null))])), "problem", "64 bytes");
+});
+
 test("a finalized Taproot signature that commits to everything is not a policy problem", () => {
   for (const suffix of [null, 0x01]) {
     assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2TR), finalWitness(signature(suffix))])), "problem", suffix === null ? "64 bytes (DEFAULT)" : "SIGHASH_ALL");

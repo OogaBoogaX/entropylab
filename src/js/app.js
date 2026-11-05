@@ -12445,8 +12445,13 @@ function hodlFinalTapKeySig(entries, prevout) {
     return null;
   }
   let sig = stack.length === 1 ? stack[0] : stack.length === 2 && stack[1].length && stack[1][0] === 0x50 ? stack[0] : null;
-  let parsed = sig && hodlParseSchnorr(sig);
-  if (!parsed) return null;
+  if (!sig) return null;
+  let parsed = hodlParseSchnorr(sig);
+  // A key-path witness's one item is its signature, so one that does not
+  // parse under BIP341 (an undefined sighash byte, a wrong length) is kept with
+  // r null: a policy problem, as the same bytes in a 0x13 field are (#1479
+  // gate, Gemini, MiniMax).
+  if (!parsed) return { pubkey: prevout.script.slice(2), r: null, s: null, sighash: null, source: "tap-key" };
   return { pubkey: prevout.script.slice(2), r: parsed.r, s: parsed.s, sighash: parsed.sighash, source: "tap-key" };
 }
 // The Schnorr signatures of a finalized P2TR script-path input whose leaf is
@@ -16808,10 +16813,15 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       // when the two disagree, which leaves a key-path signature unkeyed.
       let finalTap = [hodlFinalTapKeySig(entries, claim)].concat(hodlFinalTapScriptSigs(entries, claim) || []).filter(Boolean);
       finalTap.forEach((record) => {
-        if (tapSignatures.some((tapSig) => tapSig.source === record.source && tapSig.r && record.r && hodlEq(tapSig.r, record.r) && hodlEq(tapSig.s, record.s) && (record.source === "tap-key" || hodlEq(tapSig.pubkey, record.pubkey)))) return;
+        let sameSignature = (tapSig) => tapSig.source === record.source && tapSig.r && record.r && hodlEq(tapSig.r, record.r) && hodlEq(tapSig.s, record.s) && (record.source === "tap-key" || hodlEq(tapSig.pubkey, record.pubkey));
+        // The witness's own sighash byte is policy-checked unless a field
+        // holds the same signature with the same byte: a field with the same
+        // r and s but a harmless byte hid a SIGHASH_NONE suffix in the final
+        // witness (#1479 gate, Gemini).
+        if (!tapSignatures.some((tapSig) => sameSignature(tapSig) && tapSig.sighash === record.sighash)) finalTapPolicy.push(record);
+        if (tapSignatures.some(sameSignature)) return;
         schnorrRecords.push(Object.assign({ input: index }, record));
         if (record.r) tapSignatureCount++;
-        finalTapPolicy.push(record);
       });
       // A finalized input whose fields yield no analyzable signature never
       // yields a clean or no-signatures verdict: a Taproot one counts as an
@@ -16901,7 +16911,13 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // flag (red-team sweep 0eed735, part09 #10). One also held in a 0x13 or
     // 0x14 field was checked above, so it is not listed here.
     finalTapPolicy.forEach((record) => {
-      if (!record.r) return;
+      if (!record.r) {
+        inputHasProblem = true;
+        policyIncomplete += 1;
+        policyProblems++;
+        warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n} carries a Schnorr signature that is not valid under BIP341 (64 bytes, or 65 with a defined sighash byte). Do not sign until its policy is known.", { n: index }) + "</p>");
+        return;
+      }
       hodlTapSighashProblems(declaredSighash, record.sighash, hodlSighashLabel).forEach((problem) => {
         inputHasProblem = true;
         policyProblems++;
