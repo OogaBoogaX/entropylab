@@ -477,7 +477,6 @@ const finalWitnessItems = (value, limit = 128) => {
 };
 
 const looksDerSignature = (item) => item.length >= 9 && item.length <= 73 && item[0] === 0x30;
-const looksPubkey = (item) => (item.length === 33 && (item[0] === 0x02 || item[0] === 0x03)) || (item.length === 65 && item[0] === 0x04);
 
 // The keys a legacy or witness script names as check targets: one for
 // <key> OP_CHECKSIG, the listed keys for OP_m ... OP_n OP_CHECKMULTISIG, and
@@ -512,8 +511,7 @@ const finalScriptKeys = (script) => {
 const finalEcdsa = (ctx, index, scriptCode, amount, sigs, keys) => {
   if (!sigs.length || !keys.length) return null;
   if (sigs.some((sig) => sig[sig.length - 1] !== 1)) return null; // only SIGHASH_ALL is reconstructed
-  if (scriptCode.some && sigs.some((sig) => containsBytes(scriptCode, sig))) return null;
-  if (!ctx.takeBudget()) return null;
+  if (sigs.some((sig) => containsBytes(scriptCode, sig))) return null;
   if (!ctx.takeDigestBytes(ctx.rawTx.length + scriptCode.length)) return null;
   const digest = amount === null
     ? legacyAllDigest(ctx.tx, index, scriptCode, sigs[0])
@@ -522,6 +520,9 @@ const finalEcdsa = (ctx, index, scriptCode, amount, sigs, keys) => {
   const used = new Set();
   let all = true;
   for (const sig of sigs) {
+    // One budget unit per signature, as a partial signature costs: a single
+    // final field can carry a whole multisig.
+    if (!ctx.takeBudget()) return null;
     let matched = false;
     for (let at = 0; at < keys.length && !matched; at++) {
       if (used.has(at)) continue;
@@ -536,7 +537,7 @@ const finalEcdsa = (ctx, index, scriptCode, amount, sigs, keys) => {
 
 // A witness script (P2WSH's last item, or a P2SH redeemScript) and the
 // stack items that precede it.
-const verifyFinalScript = (ctx, index, scriptCode, stack, amount, witness) => {
+const verifyFinalScript = (ctx, index, scriptCode, stack, amount) => {
   const shape = finalScriptKeys(scriptCode);
   if (!shape) return null;
   if (shape.kind === "p2pk") {
@@ -600,7 +601,7 @@ const verifyFinalField = (ctx, index, pair) => {
     return schnorrVerify(sig.subarray(0, 64), digest, spk.subarray(2));
   }
   // A native witness program this module does not reconstruct.
-  if (isWitnessProgram(spk) && !isP2sh(spk)) return null;
+  if (isWitnessProgram(spk)) return null;
   if (isP2sh(spk)) {
     // Wrapped segwit: the scriptSig is exactly the redeemScript push and the
     // witness is the real stack, so each field is checked on its own. When
