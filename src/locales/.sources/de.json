@@ -2584,5 +2584,7 @@
   "Beginning of the replacement word": "d952cb1e80a107ab0370db8de943dbfce3fef38bd61d69b24c9fb74d3e4fad8c",
   "Replace word": "fc5f83a4c7850df7c722d7d65c294953265f4a9de98bf33207344721222a9896",
   "Word {n} replaced. Continue with word {next}.": "b55a4d99fc7917e45a23298e1ba179006bace9b8f2e382aa477df039e08de455",
-  "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "7e49b38e77778c49ac36aa1f8b8b8fa83bb6b336e175272f256695ae3926c13a"
+  "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "7e49b38e77778c49ac36aa1f8b8b8fa83bb6b336e175272f256695ae3926c13a",
+  "Not checked:": "47a2eca901929308281f62c95fdc960a6d094b0c1a7bee996f226d9e122dba7a",
+  "claims {path}, but this PSBT used up the checks. Do not sign.": "cb44299ce30b5b87ed894c218fe5d0c7fdbdd921d043399de79b4ce60f62acfe"
 }
