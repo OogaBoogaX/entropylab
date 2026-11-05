@@ -97,18 +97,34 @@ if (/<\/style/i.test(css)) throw new Error("src/css/styles.css holds </style, wh
 // empty span is replaced in the template and in the runtime header template.
 // The SVG lands raw in the page, whose CSP allows inline script, and inside a
 // JS string literal in the bundle (a template literal today; esbuild picks the
-// quote). Refuse anything that could run or break out there: script elements,
-// foreignObject, event-handler attributes (after any character that is not
-// part of a name: the HTML parser also splits attributes at a "/" or right
-// after a quoted value), javascript: URLs (tested with tabs and line breaks
-// removed, as the URL parser removes them), any character reference (one can
-// spell javascript:), <!--, and the backtick, ${, backslash and ' a string
-// literal would read (red-team sweep 0eed735, build #1; #1477 gate: Kimi,
-// GLM, MiniMax, DeepSeek).
+// quote). A list of what to refuse kept missing shapes the HTML parser still
+// reads: a handler after "/" or straight after a quoted value, javascript:
+// split by a tab, and HTML elements such as <meta http-equiv=refresh> or
+// <div>, which the parser lifts out of the SVG into the page, where the CSP
+// does not stop a redirect (red-team sweep 0eed735, build #1; #1477 gate:
+// Kimi, GLM, MiniMax, DeepSeek). So the logo is checked against what it may
+// hold: plain shape elements with double-quoted presentation attributes, and
+// none of &, <!--, a backtick, ${, a backslash or ' (which the string
+// literal would read).
+const SVG_ELEMENTS = new Set(["svg", "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "title"]);
+const SVG_ATTRIBUTES = new Set(["xmlns", "viewBox", "width", "height", "d", "fill", "fill-rule", "fill-opacity", "clip-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-opacity", "opacity", "transform", "x", "y", "cx", "cy", "r", "rx", "ry", "x1", "y1", "x2", "y2", "points"]);
+const svgProblem = (svg) => {
+  if (/&|<!--|`|\$\{|\\|'/.test(svg)) return "an &, <!--, a backtick, ${, a backslash or '";
+  let problem = null;
+  const rest = svg.replace(/<(\/?)([A-Za-z][\w:-]*)((?:\s+[A-Za-z][\w:-]*="[^"<>]*")*)\s*\/?>/g, (tag, close, element, attributes) => {
+    if (!SVG_ELEMENTS.has(element)) problem ??= `the element <${element}>`;
+    for (const [, attribute] of attributes.matchAll(/\s([A-Za-z][\w:-]*)=/g)) {
+      if (close || !SVG_ATTRIBUTES.has(attribute)) problem ??= `the attribute ${attribute}`;
+    }
+    return "";
+  });
+  return problem ?? (/[<>]/.test(rest) ? "markup that is not a plain element with double-quoted attributes" : null);
+};
 const logoSvg = (name) => {
   const svg = read(`assets/${name}.svg`).trim();
-  if (/<\/?script|<foreignObject|(?:^|[^a-z0-9_-])on[a-z]+\s*=|&|<!--|`|\$\{|\\|'/i.test(svg) || /javascript:/i.test(svg.replace(/[\t\n\r]/g, ""))) {
-    throw new Error(`src/assets/${name}.svg holds something the inlined logo cannot carry: script, foreignObject, an on... handler, javascript:, an & character reference, <!--, a backtick, \${, a backslash or '`);
+  const problem = svgProblem(svg);
+  if (problem) {
+    throw new Error(`src/assets/${name}.svg holds ${problem}; the inlined logo may hold only ${[...SVG_ELEMENTS].join(", ")} elements with presentation attributes`);
   }
   return svg.replace("<svg ", `<svg class="site-${name}" aria-hidden="true" focusable="false" `);
 };

@@ -62,6 +62,13 @@ test("a logo SVG with script, a handler or template-literal characters fails the
     '<rect id="x"onclick="globalThis.ran = 1"/>',
     '<a href="java\tscript:void 0"></a>',
     '<a href="java\nscript:void 0"></a>',
+    // HTML elements the parser lifts out of the SVG into the page (#1477 r3
+    // gate, Kimi, GLM): a redirect and a full-page overlay.
+    '<meta http-equiv="refresh" content="0;url=/elsewhere"/>',
+    '<div style="position:fixed;inset:0">x</div>',
+    '<image href="x.png"/>',
+    '<path d="M0 0" style="fill:red"/>',
+    '<path d="M0 0" fill=red/>',
     '<a href="&#106;avascript:void 0"></a>',
     "<text>it's</text>",
     '<a href="javascript:void 0"></a>',
@@ -74,6 +81,20 @@ test("a logo SVG with script, a handler or template-literal characters fails the
       writeFileSync(path, readFileSync(path, "utf8").replace("</svg>", `${insert}</svg>`));
     }), insert);
   }
+  // Markup after the closing tag is checked too.
+  refused(buildWith((dir) => {
+    const path = join(dir, "src/assets/logo-dark.svg");
+    writeFileSync(path, readFileSync(path, "utf8").trim() + '<meta http-equiv="refresh" content="0;url=/elsewhere">');
+  }), "a meta element after </svg>");
+});
+
+test("a logo made of the allowed shapes and attributes still builds", { timeout: 300000 }, () => {
+  const { status, log, wrote } = buildWith((dir) => {
+    const path = join(dir, "src/assets/logo-dark.svg");
+    writeFileSync(path, readFileSync(path, "utf8").replace("</svg>", '<g transform="translate(1 1)"><circle cx="2" cy="2" r="1" fill="none" stroke="currentColor"/><title>Logo</title></g></svg>'));
+  });
+  assert.equal(status, 0, log);
+  assert.equal(wrote, true);
 });
 
 test("a stylesheet that would end its <style> element fails the build", { timeout: 300000 }, () => {
