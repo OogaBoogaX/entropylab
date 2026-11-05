@@ -309,7 +309,7 @@ async function loadFromInput(stubs) {
   });
 }
 const mirroredState = () => ({
-  globalSync: true, globalSyncSource: "number:hex", globalSyncBitCount: 256, globalSyncLengthRaised: true, targetWords: 24,
+  globalSync: true, globalSyncSource: "number:hex", globalSyncBitCount: 256, globalSyncLengthRaised: true, targetWords: 24, lastWord: "about",
   fields: { hex: "12zz", bin: "0101", seed: "abandon abandon about", seedNumbers: "1 1 4", dplusDice: "1A2", directCards: "AS", bitboxDice: "123", privateKeys: { wif: "a-wif-copy", "hex-key": "ab".repeat(32), minikey: "", brain: "" } },
 });
 
@@ -328,6 +328,7 @@ test("an invalid source drops the copies it made and keeps the text being typed"
     assert.equal(state.globalSyncBitCount, 0, "no bits are counted");
     assert.equal(state.globalSyncLengthRaised, true, "the caution stays with the length it describes");
     assert.equal(state.globalSync, true, "sync stays on");
+    assert.equal(state.lastWord, "", "the old phrase's last word goes too");
   });
 });
 
@@ -396,6 +397,10 @@ test("the sync zeroes the key bytes it decodes and the key bytes it writes from"
     apply.__set.hodlTargetWordCount(24);
     apply.hodlApplyGlobalSync("00010001".repeat(32), "number:hex");
     assert.ok(state.fields.privateKeys.wif.length > 0, "the WIF copy is still written");
+    // Zero entropy is no private key: no hex-key or WIF copy (#1480 gate, GLM).
+    apply.hodlApplyGlobalSync("0".repeat(256), "number:hex");
+    assert.equal(state.fields.privateKeys["hex-key"], "", "no hex-key copy of a zero key");
+    assert.equal(state.fields.privateKeys.wif, "", "no WIF copy of a zero key");
     assert.ok(written.length > 0 && written.every((bytes) => bytes.every((byte) => byte === 0)), "the key bytes are zeroed");
   });
 });

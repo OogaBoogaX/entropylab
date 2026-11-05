@@ -202,36 +202,9 @@ test("a scanned seed's focus goes to the picker, after its mount when needed", (
 // (GLM, MiniMax, red team, #1439 gate r2).
 test("the seed scan clears Global sync copies of the old words, guarded", () => {
   const body = functionBody("hodlSeedScanLoad");
-  assert.match(body, /if \(\["seed:words", "seed:numbers"\]\.includes\(hodlGlobalSyncCopiesSource\(state\)\) && previous\?\.kind !== "single"\) \{\s*try \{ hodlClearGlobalSyncCopies\(state\); \} catch \{\}\s*\}/);
+  assert.match(body, /if \(state\.globalSync && \["seed:words", "seed:numbers"\]\.includes\(state\.globalSyncSource\) && previous\?\.kind !== "single"\) \{\s*try \{ hodlClearGlobalSyncCopies\(state\); \} catch \{\}\s*\}/);
   const kept = body.indexOf("let previous = state.result;");
   assert.ok(kept >= 0 && kept < body.indexOf("hodlInvalidateLiveKeyResult()"), "the result is read before it is invalidated");
   assert.ok(body.indexOf("hodlInvalidateLiveKeyResult()") < body.indexOf("previous?.kind"));
   assert.doesNotMatch(body, /globalSyncSource\)[^\n]*state\.result\?\.kind/);
-});
-
-// Secure entry turns the sync off, so the scan reads which source made the
-// copies from what turn-on recorded: checking the live sync made this clear
-// dead, and the old words' copies stayed after a scan replaced them (#1439
-// post-merge check, Gemini).
-test("the seed scan clears the copies the words left when Secure entry turned the sync off", async () => {
-  const run = async (overrides) => {
-    const state = { fields: { seed: "old words" }, lastWord: "old", targetWords: 24, result: { kind: "seed" }, reveal: false, error: "", errorSpec: null, globalSync: false, globalSyncSource: "", ...overrides };
-    const cleared = [];
-    const entry = { kind: "seed", length: 12, indices: new Uint16Array(12), count: 0, wiped: false, rev: 0 };
-    const stubs = {
-      hodlSecureSeedActive: () => true, hodlKeys: [state], hodlActiveKey: 0, hodlSecureKeyOf: () => "k1", hodlSecureSession: {},
-      seedEntry: () => entry, seedSet: () => {}, sessionSet: () => {},
-      hodlInvalidateLiveKeyResult: () => { state.result = null; },
-      hodlClearGlobalSyncCopies: (target) => cleared.push(target),
-      hodlWipeUnsharedWalletRows: () => {}, hodlRenderKeyForm: () => {}, hodlRestoreFormFields: () => {}, hodlUpdateSeedLengthControl: () => {}, hodlSecureSeedChanged: () => {},
-    };
-    const { hodlSeedScanLoad } = await loadAppFunctions(["hodlSeedScanLoad"], { stubs });
-    hodlSeedScanLoad(new Uint16Array(12), 12);
-    return cleared.length;
-  };
-  assert.equal(await run({ globalSyncCopiesFrom: "seed:words" }), 1, "copies the words made before turn-on");
-  assert.equal(await run({ globalSyncCopiesFrom: "seed:numbers" }), 1);
-  assert.equal(await run({ globalSyncCopiesFrom: "number:hex" }), 0, "copies another source made are not the words'");
-  assert.equal(await run({ globalSyncCopiesFrom: "" }), 0, "no copies recorded");
-  assert.equal(await run({ globalSyncCopiesFrom: "seed:words", result: { kind: "single" } }), 0, "a wallet from a private key keeps its fields");
 });

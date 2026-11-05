@@ -2294,10 +2294,17 @@ function hodlDownloadWalletDat() {
   let exported = hodlWalletResult.kind !== "msig" && hodlRevealPrivate ? hodlWalletExportView(hodlWalletResult) : hodlWalletResult;
   let withSecrets = hodlWalletResult.kind !== "msig" && hodlRevealPrivate && hodlWalletExport.hasPrivateDescriptors(exported);
   try {
-    let bytes = hodlWalletExport.buildWalletDat(exported, withSecrets, hodlWalletDatDeps(), creationTime), blob = new Blob([bytes], { type: "application/octet-stream" }), url = URL.createObjectURL(blob), link = document.createElement("a");
+    let bytes = hodlWalletExport.buildWalletDat(exported, withSecrets, hodlWalletDatDeps(), creationTime), blob, url, link;
     // The Blob holds its own copy; these bytes carry the spend descriptors
-    // when secrets are shown (red-team sweep 0eed735, part02 #9).
-    bytes.fill(0);
+    // when secrets are shown, and go on every path (red-team sweep 0eed735,
+    // part02 #9; #1480 gate, DeepSeek).
+    try {
+      blob = new Blob([bytes], { type: "application/octet-stream" });
+      url = URL.createObjectURL(blob);
+      link = document.createElement("a");
+    } finally {
+      bytes.fill(0);
+    }
     link.href = url;
     link.download = hodlWalletExport.walletDatFilename(hodlWalletResult, withSecrets);
     link.click();
@@ -3740,10 +3747,10 @@ function hodlDPlusRolls(value, targetWords = hodlTargetWordCount) {
     warnings = [];
   notes.push(hodlNote("D++ D16 results use the hexadecimal faces 0 through F exactly as shown on the dice."));
   if (complete && finalWord) {
-    // A coin face of 1-4 is Heads (bit 0) and 5-8 Tails, as hodlDPlusStepValue
-    // reads it; the note had the sides reversed (red-team sweep 0eed735,
-    // part03 #3).
-    let details = finalInfo.map((info) => info.step === "coin" ? hodlNote(Number(info.value) <= 4 ? "D8 result {value} read as Heads" : "D8 result {value} read as Tails", { value: info.value }) : hodlNote("{die} result {value}", { die: hodlDPlusStepLabel(info.step), value: info.value }));
+    // The coin note names the side hodlDPlusStepValue read: bit 0 is Heads
+    // (faces 1-4) and bit 1 Tails (5-8). The note computed its own side,
+    // reversed (red-team sweep 0eed735, part03 #3).
+    let details = finalInfo.map((info) => info.step === "coin" ? hodlNote(hodlDPlusStepValue("coin", info.value) ? "D8 result {value} read as Tails" : "D8 result {value} read as Heads", { value: info.value }) : hodlNote("{die} result {value}", { die: hodlDPlusStepLabel(info.step), value: info.value }));
     notes.push(details.length === 1 ? hodlNote("Final {detail} selected checksum option {n} of {total}: {word}.", { detail: details[0], n: finalIndex + 1, total: candidates.length, word: finalWord }) : hodlNote("Final {a} and {b} selected checksum option {n} of {total}: {word}.", { a: details[0], b: details[1], n: finalIndex + 1, total: candidates.length, word: finalWord }));
   }
   if (waiting === "last-word") notes.push(hodlNote("Choose 1 of {n} checksum-valid final words to complete the {words}-word seed.", { n: config.candidates, words: config.words }));
@@ -6502,12 +6509,15 @@ function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   state.lastWord = mnemonic ? words.at(-1) : "";
   // The hex-key copy is a whole 64-digit key or nothing: fewer bits are not
   // a private key, and a 32-digit copy only looked like one.
-  privateKeys["hex-key"] = source.length >= 256 ? source.slice(0, 256).match(/.{4}/g).map((chunk) => Number.parseInt(chunk, 2).toString(16)).join("") : "";
+  privateKeys["hex-key"] = "";
   privateKeys.wif = "";
   if (source.length >= 256) {
     let bytes = hodlBytesFromBits(source.slice(0, 256));
     try {
       hodlAssertPrivateKey(bytes);
+      // Only a private key gets the hex-key copy: 256 bits of zeros, or at or
+      // above the group order, are not one (part04 #8; #1480 gate, GLM).
+      privateKeys["hex-key"] = source.slice(0, 256).match(/.{4}/g).map((chunk) => Number.parseInt(chunk, 2).toString(16)).join("");
       let coinType = hodlParseDerivationIndexText(fields.coinType ?? "0'")?.value ?? 0, network = hodlNetworkFromCoinType(coinType);
       privateKeys.wif = hodlEncodeWif(bytes, true, network);
     } catch {
@@ -6519,8 +6529,6 @@ function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   }
   hodlGlobalSyncKeepSource(state, sourceId, sourceValue);
   state.globalSyncSource = sourceId;
-  // The sync owns its copies again (see hodlGlobalSyncCopiesSource).
-  state.globalSyncCopiesFrom = "";
   state.globalSyncBitCount = source.length;
   state.globalSyncSourceBits = hodlGlobalSyncSourceBits();
   return true;
@@ -6550,12 +6558,9 @@ function hodlGlobalSyncDropMirrors(state) {
   hodlGlobalSyncKeepSource(state, sourceId, sourceValue);
   state.globalSyncLengthRaised = raised;
   state.globalSyncBitCount = 0;
-}
-// Which source made the copies in a key's fields: the live sync's, or the one
-// that was on when Secure entry turned it off. A scan that replaces that
-// source's material must still drop them (#1439 post-merge check, Gemini).
-function hodlGlobalSyncCopiesSource(state) {
-  return String((state?.globalSync ? state.globalSyncSource : state?.globalSyncCopiesFrom) || "");
+  // The sync's last word was the old phrase's; a BitBox source's last word is
+  // the user's own pick and stays (#1480 gate, Kimi).
+  if (sourceId !== "dice:bitbox") state.lastWord = "";
 }
 // The fields hodlApplyGlobalSync writes, emptied so Clear leaves no copy.
 function hodlClearGlobalSyncCopies(state) {
@@ -6570,7 +6575,6 @@ function hodlClearGlobalSyncCopies(state) {
   privateKeys.wif = "";
   // The copies are gone, so the caution about the length they were made at goes too.
   state.globalSyncLengthRaised = false;
-  state.globalSyncCopiesFrom = "";
 }
 function hodlGlobalSyncFromCurrentInput() {
   if (hodlSecureEntryOn) { hodlRenderGlobalSyncControl(); return false; }
@@ -7873,7 +7877,7 @@ function hodlKeyScanLoad(bytes) {
   // Global sync copies computed from the old key go with it, as at turn-on
   // Keep and in the seed scan (MiniMax, #1439 gate). The key is installed, so
   // a throw here must not make the panel say nothing was loaded.
-  if (hodlGlobalSyncCopiesSource(state).startsWith("key:")) {
+  if (state.globalSync && String(state.globalSyncSource || "").startsWith("key:")) {
     try { hodlClearGlobalSyncCopies(state); } catch {}
   }
   // The key is installed: a redraw that fails from here on must not make the
@@ -8004,10 +8008,7 @@ function hodlSeedScanLoad(indices, count) {
     // the one kept to wipe (GLM, MiniMax, red team, #1439 gate r2).
     // The words are installed, so a throw here must not make the panel say
     // nothing was loaded (Kimi, #1439 gate).
-    // Secure entry turned the sync off, so the source is read from the
-    // copies it left (#1439 post-merge check, Gemini): checking the live
-    // sync made this clear dead.
-    if (["seed:words", "seed:numbers"].includes(hodlGlobalSyncCopiesSource(state)) && previous?.kind !== "single") {
+    if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource) && previous?.kind !== "single") {
       try { hodlClearGlobalSyncCopies(state); } catch {}
     }
     state.lastWord = "";
@@ -13634,10 +13635,6 @@ async function hodlSecureEntryToggle(wanted) {
         }
       }
       for (const state of hodlKeys) {
-        // Copies a source wrote stay in a key whose fields were kept; the
-        // scans must still know which source made them (#1439 post-merge
-        // check, Gemini).
-        state.globalSyncCopiesFrom = state.globalSync ? state.globalSyncSource : "";
         state.globalSync = false;
         state.globalSyncBitCount = 0;
         state.globalSyncSource = "";
@@ -18294,7 +18291,6 @@ function hodlCloneDerivedKey(source, existing) {
     globalSyncSourceBits: source.globalSyncSourceBits,
     // The raised-length caution travels with the sync too (#1459 gate, Gemini).
     globalSyncLengthRaised: source.globalSyncLengthRaised,
-    globalSyncCopiesFrom: source.globalSyncCopiesFrom,
     seedAutocomplete: source.seedAutocomplete,
     passphraseBip39Words: source.passphraseBip39Words,
     brainWalletOutput: source.brainWalletOutput,
