@@ -58,7 +58,10 @@ const hodlReversionExtendedKey = new Function("hodlBase58Check", `${loadFunction
 const hodlReadExtendedKeyVersion = new Function("hodlBase58Check", `${loadFunction("hodlReadExtendedKeyVersion")}; return hodlReadExtendedKeyVersion;`)(hodlBase58Check);
 const hodlParseExtendedKey = new Function("hodlBase58Check", "hodlReadExtendedKeyVersion", "hodlReversionExtendedKey", "hodlExtendedKeyPrefixTable", "hodlHDKey", "hodlExtendedKeyVersions", `${loadFunction("hodlNodeHasPrivateKey")}; let hodlParseExtendedKey; ${extract("hodlParseExtendedKey = function(value)", "function hodlAccountExportFamily")}; return hodlParseExtendedKey;`)(hodlBase58Check, hodlReadExtendedKeyVersion, hodlReversionExtendedKey, hodlExtendedKeyPrefixTable, HDKey, hodlExtendedKeyVersions);
 const hodlNormalizeOriginPath = new Function(`${loadFunction("hodlNormalizeOriginPath")}; return hodlNormalizeOriginPath;`)();
-const hodlParseKeyOrigin = new Function("hodlNormalizeOriginPath", `${loadFunction("hodlParseKeyOrigin")}; return hodlParseKeyOrigin;`)(hodlNormalizeOriginPath);
+// The parser throws app errors (hodlError) for the shapes it refuses: the
+// English message, as the app shows it before translation.
+const hodlError = (key) => new Error(key);
+const hodlParseKeyOrigin = new Function("hodlNormalizeOriginPath", "hodlError", `${loadFunction("hodlParseKeyOrigin")}; return hodlParseKeyOrigin;`)(hodlNormalizeOriginPath, hodlError);
 const hodlStripDescriptorChecksum = new Function(`${loadFunction("hodlStripDescriptorChecksum")}; return hodlStripDescriptorChecksum;`)();
 const hodlDescriptorKeyExpressions = new Function("hodlStripDescriptorChecksum", `${loadFunction("hodlDescriptorKeyExpressions")}; return hodlDescriptorKeyExpressions;`)(hodlStripDescriptorChecksum);
 const hodlParseMultisigCosigner = new Function("hodlParseKeyOrigin", "hodlParseExtendedKey", "hodlDescriptorKeyExpressions", `${loadFunction("hodlParseMultisigCosigner")}; return hodlParseMultisigCosigner;`)(hodlParseKeyOrigin, hodlParseExtendedKey, hodlDescriptorKeyExpressions);
@@ -117,4 +120,28 @@ test("a manually appended BIP45 child path is not mistaken for descriptor decora
   assert.equal(parsed.derivationPath, "5");
   assert.equal(hodlMultisigKeyToken(parsed, "mainnet"), `${BIP45_EXPORT}/5`);
   assert.equal(hodlHex.encode(hodlMsigDerivedNode(parsed).publicKey), hodlHex.encode(bip45Node.derive("m/5").publicKey));
+});
+
+// Red-team sweep of 0eed735: the co-signer field dropped ANY first step after
+// a BIP45 origin, so /3/0/*, Copay's /2147483647/0/* and /0h/0/* all derived
+// cosigner 0's addresses while the field showed the key as valid. The import
+// panel already refused these shapes (issue #389); the field now matches.
+test("a BIP45 key in the field keeps only plain cosigner 0 ahead of its branch", () => {
+  assert.equal(hodlParseMultisigCosigner(`${BIP45_EXPORT}/0/0/*`).derivationPath, "");
+  assert.equal(hodlParseMultisigCosigner(`${BIP45_EXPORT}/0/<0;1>/*`).derivationPath, "");
+  for (const tail of ["/3/0/*", "/2147483647/0/*", "/0h/0/*", "/0/*", "/0/0/20/*", "/1/<0;1>/*"]) {
+    assert.throws(() => hodlParseMultisigCosigner(`${BIP45_EXPORT}${tail}`), /must have plain cosigner step 0 before its branch/, tail);
+  }
+});
+
+test("a sole hardened step before the wildcard is refused, not dropped as the branch", () => {
+  assert.throws(() => hodlParseMultisigCosigner(`${EXPORT}/0h/*`), /must be unhardened/);
+  assert.throws(() => hodlParseMultisigCosigner(`${EXPORT}/1'/*`), /must be unhardened/);
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/1/*`).derivationPath, "", "an unhardened sole step is still the branch marker");
+});
+
+test("a trailing path is capped at 16 steps", () => {
+  const steps = (n) => Array(n).fill("0").join("/");
+  assert.equal(hodlParseMultisigCosigner(`${EXPORT}/${steps(16)}/*`).derivationPath, steps(16));
+  assert.throws(() => hodlParseMultisigCosigner(`${EXPORT}/${steps(17)}/*`), /at most 16 steps/);
 });
