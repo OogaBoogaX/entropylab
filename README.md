@@ -13,6 +13,30 @@ signed release is [v1.0.0](https://github.com/OogaBoogaX/entropylab/releases/tag
 
 Official website: [entropylab.online](https://entropylab.online)
 
+## Security posture for offline use
+
+EntropyLab is a **calculator, not a randomness source**. For sensitive seed
+generation, use a verified copy of `entropylab.html` on a trusted, dedicated
+computer physically disconnected from all networks. Supply sufficient unbiased
+physical entropy and independently reproduce the BIP39 result, derivation
+path, fingerprint, and receive address before funding a wallet. An "Offline"
+browser indication is not proof that the host is air-gapped.
+
+The private-value **copy controls** use an in-app clipboard whose owned byte
+buffer is overwritten on conceal, replacement, and End Session; public values
+can be copied to the OS clipboard. This does **not** prevent all manual copying
+from editable fields or eliminate browser/OS copies. The Journal supports
+password-protected complete downloads containing recovery and other secret
+material; protection is optional, and a passwordless file is not confidential.
+Secret memory clearing is best-effort, not a guarantee of host-wide erasure.
+
+For a claim-by-claim evidence map intended for readers and AI agents, see
+[Security posture](docs/SECURITY_POSTURE.md), [Threat model](docs/Threat_Model.md),
+[Computer hardening](docs/Computer_Hardening_Checklist.md),
+[Testing](docs/TESTING.md), and [Security policy](SECURITY.md). These describe
+a strong **verifiable air-gapped workflow**, not a comparative "safest" claim
+or independent certification.
+
 ## Features
 
 When a multi-worker Vanity search stops, its next counter is the first
