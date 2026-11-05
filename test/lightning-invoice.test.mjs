@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { toWords } from "../src/js/bech32.js";
 import { hex } from "../src/js/coders.js";
 import { secp256k1Ready } from "../src/js/secp256k1.js";
-import { hodlInitLn, hodlLnWipeMem, lnInvNetworkName, hodlLnInvRenderResult } from "../src/js/lightning.js";
+import { hodlInitLn, hodlLnWipeMem, lnInvNetworkName, hodlLnInvRenderResult, lnOfferAmountHtml } from "../src/js/lightning.js";
+import { bolt12Decode } from "../src/js/bolt12.js";
 import { bolt11Decode } from "../src/js/bolt11.js";
 import { MiniDocument } from "./mini-dom.mjs";
 
@@ -651,3 +652,30 @@ test("app.js injects the QR renderer and the page network into hodlInitLn", () =
   assert.match(appSource, /hodlInitLn\(\{[^}]*qrSvg: hodlQrSvg/);
   assert.match(appSource, /hodlInitLn\(\{[^}]*pageNetwork: \(\) => hodlInspectorNetwork\(\)/);
 });
+
+// Red-team sweep of 0eed735 (lightning #5): with offer_currency, BOLT12's
+// offer_amount counts that currency's smallest unit, not millisatoshi. The
+// spec's own "$100.00 USD" offer read "10000 msat" (10 sats). Wording agreed
+// by Claude, Astra, Fable and Grok.
+test("a BOLT12 offer amount is shown in its currency, scaled by ISO 4217", () => {
+  assert.equal(lnOfferAmountHtml("10000"), "10000 msat", "no currency: millisatoshi as before");
+  assert.equal(lnOfferAmountHtml("10000", "USD"), "100.00 USD");
+  assert.equal(lnOfferAmountHtml("5", "USD"), "0.05 USD");
+  assert.equal(lnOfferAmountHtml("1000", "JPY"), "1000 JPY");
+  assert.equal(lnOfferAmountHtml("1250", "KWD"), "1.250 KWD");
+  assert.equal(lnOfferAmountHtml("12345", "CLF"), "1.2345 CLF");
+  const unknown = "10000 (unrecognized currency XYZ: unit size unknown, confirm with the issuer)";
+  assert.equal(lnOfferAmountHtml("10000", "XYZ"), unknown);
+  assert.equal(lnOfferAmountHtml("10000", "XAU"), unknown.replace("XYZ", "XAU"), "a code with no minor unit is not scaled");
+  assert.equal(lnOfferAmountHtml("10000", "usd"), unknown.replace("XYZ", "usd"), "codes are matched exactly");
+  assert.ok(!lnOfferAmountHtml("1", "<b>x</b>").includes("<b>"), "an offer's currency text is escaped");
+});
+
+test("the BOLT12 spec's USD offer decodes to $100.00, not 10 sats", () => {
+  const offer = "lno1qcp4256ypqpzwyq2p32x2um5ypmx2cm5dae8x93pqthvwfzadd7jejes8q9lhc4rvjxd022zv5l44g6qah82ru5rdpnpj";
+  const { fields } = bolt12Decode(offer);
+  assert.equal(fields.currency, "USD");
+  assert.equal(lnOfferAmountHtml(fields.amount, fields.currency), "100.00 USD");
+  assert.match(readFileSync(new URL("../src/js/lightning.js", import.meta.url), "utf8"), /lnInvRow\(hodlT\("Amount"\), lnOfferAmountHtml\(r\.fields\.amount, r\.fields\.currency\)\)/, "the offer view uses it");
+});
+
