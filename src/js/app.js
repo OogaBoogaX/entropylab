@@ -16291,9 +16291,12 @@ function hodlDeclaredOutput(entries, script, network, budget = null) {
     }
     // A PSBT is untrusted. Deriving an attacker-named path costs one CKD per
     // step and creates live private nodes; bound the whole render and mark an
-    // exhausted claim unverified instead of deriving it (audit M3).
+    // exhausted claim unverified instead of deriving it (audit M3). A skipped
+    // record costs nothing and leaves the budget to later records, as on the
+    // input side: zeroing it let one free 256-step record under this wallet's
+    // fingerprint turn every later output's "PSBT lies" into "cannot be
+    // verified" (red-team sweep of 0eed735).
     if (path.length > 255 || (budget && path.length > budget.remaining)) {
-      if (budget) budget.remaining = 0;
       if (!declared || declared.state !== "ours") declared = { state: "unknown", path: label, budget: true };
       continue;
     }

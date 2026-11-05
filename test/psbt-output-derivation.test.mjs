@@ -323,6 +323,31 @@ test("an output derivation path over budget is left unverified, not derived", ()
   }
 });
 
+// Red-team sweep of 0eed735 (part09 #8): a skipped record costs nothing, so
+// it must not empty the shared budget. Zeroing it let one free record under
+// the session fingerprint turn every later output's "PSBT lies" into a grey
+// "cannot be verified" (the input side was fixed the same way in 99194f47).
+test("a skipped oversized record leaves the budget for a later lying output", () => {
+  hodlSetSession(hd);
+  const budget = { remaining: 4096 };
+  const tooDeep = derivation(changeNode, hd.fingerprint, Array.from({ length: 256 }, () => 0));
+  const skipped = hodlDeclaredOutput([tooDeep], changeScript, "mainnet", budget);
+  assert.equal(skipped.state, "unknown");
+  assert.equal(skipped.budget, true);
+  assert.equal(budget.remaining, 4096, "a record that is never derived spends nothing");
+  assert.equal(hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", budget).state, "lie",
+    "the lying output after it is still reported as a lie");
+});
+
+test("a record over the remaining budget does not empty it for later outputs", () => {
+  hodlSetSession(hd);
+  const budget = { remaining: receivePath.length + 1 };
+  const overBudget = derivation(changeNode, hd.fingerprint, [...changePath, 0, 0]);
+  assert.equal(hodlDeclaredOutput([overBudget], changeScript, "mainnet", budget).budget, true);
+  assert.equal(budget.remaining, receivePath.length + 1, "the skipped record spent nothing");
+  assert.equal(hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", budget).state, "lie");
+});
+
 test("every private node created by an output derivation is wiped", () => {
   const created = [];
   const original = HDKey.prototype.deriveChild;
