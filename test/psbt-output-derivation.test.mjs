@@ -314,7 +314,9 @@ test("an output derivation path over budget is left unverified, not derived", ()
   };
   try {
     hodlSetSession(hd);
-    const result = hodlDeclaredOutput([validChangeRecord], changeScript, "mainnet", { remaining: 2 });
+    // 20 steps: past the output's 16-step reserve as well as the budget.
+    const deep = derivation(changeNode, hd.fingerprint, [...changePath, ...Array(15).fill(0)]);
+    const result = hodlDeclaredOutput([deep], changeScript, "mainnet", { remaining: 2 });
     assert.equal(result.state, "unknown");
     assert.equal(result.budget, true);
     assert.equal(calls.length, 0, "no CKD step may run for an over-budget path");
@@ -327,13 +329,11 @@ test("an output derivation path over budget is left unverified, not derived", ()
 // it must not empty the shared budget. Zeroing it let one free record under
 // the session fingerprint turn every later output's "PSBT lies" into a grey
 // "cannot be verified" (the input side was fixed the same way in 99194f47).
-test("a skipped oversized record leaves the budget for a later lying output", () => {
+test("a record past 255 levels is a lie and spends nothing", () => {
   hodlSetSession(hd);
   const budget = { remaining: 4096 };
   const tooDeep = derivation(changeNode, hd.fingerprint, Array.from({ length: 256 }, () => 0));
-  const skipped = hodlDeclaredOutput([tooDeep], changeScript, "mainnet", budget);
-  assert.equal(skipped.state, "unknown");
-  assert.equal(skipped.budget, true);
+  assert.equal(hodlDeclaredOutput([tooDeep], changeScript, "mainnet", budget).state, "lie", "no key exists past 255 levels");
   assert.equal(budget.remaining, 4096, "a record that is never derived spends nothing");
   assert.equal(hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", budget).state, "lie",
     "the lying output after it is still reported as a lie");
@@ -342,10 +342,32 @@ test("a skipped oversized record leaves the budget for a later lying output", ()
 test("a record over the remaining budget does not empty it for later outputs", () => {
   hodlSetSession(hd);
   const budget = { remaining: receivePath.length + 1 };
-  const overBudget = derivation(changeNode, hd.fingerprint, [...changePath, 0, 0]);
+  const overBudget = derivation(changeNode, hd.fingerprint, [...changePath, ...Array(15).fill(0)]);
   assert.equal(hodlDeclaredOutput([overBudget], changeScript, "mainnet", budget).budget, true);
   assert.equal(budget.remaining, receivePath.length + 1, "the skipped record spent nothing");
   assert.equal(hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", budget).state, "lie");
+});
+
+// #1457 gate (MiniMax): an attacker who knows the account xpub can spend the
+// shared budget with valid deep records. Each output's own 16-step reserve
+// still checks an ordinary claim, so a lie at a real wallet's depth stays red.
+test("a spent budget still checks an ordinary claim from the output's reserve", () => {
+  hodlSetSession(hd);
+  const spent = { remaining: 0 };
+  assert.equal(hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", spent).state, "lie");
+  assert.equal(hodlDeclaredOutput([validChangeRecord], changeScript, "mainnet", spent).state, "ours");
+  assert.equal(spent.remaining, 0, "the reserve is the output's own, not taken from the shared budget");
+});
+
+test("a claim left unchecked renders as a red stop, not a grey note", () => {
+  const render = slice("hodlRenderOutputHtml");
+  const branch = render.indexOf('declared.state === "unknown" && declared.budget');
+  assert.ok(branch > 0, "the unchecked claim has its own branch");
+  assert.ok(branch < render.indexOf('} else if (declared && declared.state === "unknown") {'), "ahead of the grey unverifiable note");
+  const body = render.slice(branch, render.indexOf("} else if", branch + 1));
+  assert.match(body, /hodlT\("Not checked:"\)/);
+  assert.match(body, /hodlT\("claims \{path\}, an unusually deep path, and this PSBT used up the checks\. Do not sign\.", \{ path: declared\.path \}\)/);
+  assert.match(body, /className = "psbt-bad"/);
 });
 
 test("every private node created by an output derivation is wiped", () => {

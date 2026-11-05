@@ -16274,6 +16274,11 @@ function hodlForeignSingleKeyScript(entries, script) {
 function hodlDeclaredOutput(entries, script, network, budget = null) {
   if (!hodlPsbtHd || !entries || !script) return null;
   let fingerprint = hodlFingerprintHex(hodlPsbtHd.fingerprint), declared = null;
+  // This output's own reserve for when the shared budget is spent: 16 steps,
+  // more than any real wallet path (5-7), so an ordinary claim here is always
+  // checked however many valid deep records the rest of the PSBT carries
+  // (#1457 gate, MiniMax).
+  let reserve = budget ? 16 : 0;
   for (let entry of hodlFind(entries, 2)) {
     if (entry.val.length < 4 || (entry.val.length - 4) % 4) continue;
     let fp = hodlHex.encode(entry.val.slice(0, 4));
@@ -16296,11 +16301,21 @@ function hodlDeclaredOutput(entries, script, network, budget = null) {
     // input side: zeroing it let one free 256-step record under this wallet's
     // fingerprint turn every later output's "PSBT lies" into "cannot be
     // verified" (red-team sweep of 0eed735).
-    if (path.length > 255 || (budget && path.length > budget.remaining)) {
-      if (!declared || declared.state !== "ours") declared = { state: "unknown", path: label, budget: true };
-      continue;
+    // A path past BIP32's 255 levels names no key, so a claim that this
+    // wallet's key is there is false.
+    if (path.length > 255) return { state: "lie", path: label };
+    if (budget && path.length > budget.remaining) {
+      // The shared budget is spent: the output's reserve pays for an ordinary
+      // claim. A deeper one stays unchecked, which only a padded PSBT causes,
+      // and renders red ("Not checked: ... Do not sign.").
+      if (path.length > reserve) {
+        if (!declared || declared.state !== "ours") declared = { state: "unknown", path: label, budget: true };
+        continue;
+      }
+      reserve -= path.length;
+    } else if (budget) {
+      budget.remaining -= path.length;
     }
-    if (budget) budget.remaining -= path.length;
     let node = hodlPsbtHd, derived = [];
     try {
       for (let index of path) {
@@ -16384,6 +16399,12 @@ function hodlRenderOutputHtml(output, index, network, map, entries, derivationBu
     let vars = { path: declared.path };
     extra = "<br>" + (declared.role === "change" ? hodlT("change · {path} (verified)", vars) : hodlT("this wallet · {path} (verified)", vars));
     className = "psbt-ok";
+  } else if (declared && declared.state === "unknown" && declared.budget) {
+    // A claim on this wallet left unchecked: only a PSBT padded with deep
+    // records gets here, so it reads as a red stop, not a grey note. Wording
+    // agreed by Claude, Astra, Fable and Grok (11-05).
+    extra = "<br><strong>" + hodlT("Not checked:") + "</strong> " + hodlT("claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.", { path: declared.path });
+    className = "psbt-bad";
   } else if (declared && declared.state === "unknown") {
     let vars = { path: declared.path };
     extra = "<br><span class='muted'>" + (declared.member
