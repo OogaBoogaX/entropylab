@@ -39,6 +39,24 @@ const taggedHash = (tag, ...messages) => {
 };
 const leafHashOf = (script, version = 0xc0) => taggedHash("TapLeaf", Uint8Array.of(version), Uint8Array.of(script.length), script);
 
+// A witness stack in its PSBT field form (CompactSize count, then each
+// item length-prefixed), built by hand so the fixture does not depend on the
+// code under test.
+const serializeWitness = (items) => concat(
+  Uint8Array.of(items.length),
+  ...items.flatMap((item) => [Uint8Array.of(item.length), item]),
+);
+const finalWitnessStack = (value) => {
+  const items = [];
+  let at = 1;
+  for (let left = value[0]; left > 0; left--) {
+    const size = value[at++];
+    items.push(value.subarray(at, at + size));
+    at += size;
+  }
+  return items;
+};
+
 const PRIV = hex("01".repeat(32));
 const PUB = nobleSecp256k1.getPublicKey(PRIV, true);
 // A known output script: @scure/btc-signer 2.x refuses unknown output
@@ -119,6 +137,70 @@ const legacyFixture = () => {
   const before = tx.toPSBT();
   tx.sign(PRIV);
   return { before, after: tx.toPSBT() };
+};
+
+// Finalizing moves the signatures from the partial records into
+// PSBT_IN_FINAL_SCRIPTSIG / PSBT_IN_FINAL_SCRIPTWITNESS. That is the common
+// success shape a signer returns, so the audit must verify it too or every
+// correctly signed result reads as a failure.
+const finalize = (tx) => {
+  tx.finalize();
+  return tx.toPSBT();
+};
+const finalSegwitFixture = () => {
+  const tx = new btc.Transaction();
+  tx.addInput({ txid: "55".repeat(32), index: 0, witnessUtxo: { script: spkOf(btc.p2wpkh(PUB)), amount: 100_000n } });
+  tx.addOutput({ script: DEST, amount: 90_000n });
+  const before = tx.toPSBT();
+  tx.sign(PRIV);
+  return { before, after: finalize(tx) };
+};
+const finalWrappedFixture = () => {
+  const redeem = spkOf(btc.p2wpkh(PUB));
+  const tx = new btc.Transaction();
+  tx.addInput({
+    txid: "66".repeat(32), index: 0,
+    redeemScript: redeem,
+    witnessUtxo: { script: spkOf(btc.p2sh(btc.p2wpkh(PUB))), amount: 100_000n },
+  });
+  tx.addOutput({ script: DEST, amount: 90_000n });
+  const before = tx.toPSBT();
+  tx.sign(PRIV);
+  return { before, after: finalize(tx) };
+};
+const finalP2wshFixture = () => {
+  const tx = new btc.Transaction();
+  const witnessScript = spkOf(btc.p2pk(PUB));
+  tx.addInput({
+    txid: "88".repeat(32), index: 0,
+    witnessScript,
+    witnessUtxo: { script: spkOf(btc.p2wsh(btc.p2pk(PUB))), amount: 100_000n },
+  });
+  tx.addOutput({ script: DEST, amount: 90_000n });
+  const before = tx.toPSBT();
+  tx.sign(PRIV);
+  return { before, after: finalize(tx) };
+};
+const finalLegacyFixture = () => {
+  const prev = legacyPrevTx();
+  const tx = new btc.Transaction();
+  tx.addInput({ txid: prev.txid, index: 0, nonWitnessUtxo: prev.bytes });
+  tx.addOutput({ script: DEST, amount: 90_000n });
+  const before = tx.toPSBT();
+  tx.sign(PRIV);
+  return { before, after: finalize(tx) };
+};
+const finalTaprootKeyFixture = () => {
+  const tx = new btc.Transaction();
+  tx.addInput({
+    txid: "77".repeat(32), index: 0,
+    witnessUtxo: { script: spkOf(btc.p2tr(TAP_INTERNAL)), amount: 50_000n },
+    tapInternalKey: TAP_INTERNAL,
+  });
+  tx.addOutput({ script: DEST, amount: 40_000n });
+  const before = tx.toPSBT();
+  tx.sign(TAP_PRIV);
+  return { before, after: finalize(tx) };
 };
 
 const TAP_PRIV = hex("03".repeat(32));
@@ -661,4 +743,74 @@ test("the shipped verifier does no curve math and imports no @noble code", () =>
   assert.ok(!/from\s*["']@noble/.test(source), "psbt-signer-audit-verify.js must not import @noble; BIP-340 runs on the WASM facade");
   assert.ok(!/FIELD_P|bip340Verify|bytesToInt/.test(source), "the hand-rolled BIP-340 path must be gone");
   assert.ok(/schnorr\.verify/.test(source), "BIP-340 verification goes through the facade's schnorr.verify");
+});
+
+test("a finalized segwit v0 input is verified, and the audit reports it finalized", () => {
+  const { before, after } = finalSegwitFixture();
+  const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+  const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
+  assert.deepEqual(verification.signatures, [{ index: 0, name: "PSBT_IN_FINAL_SCRIPTWITNESS", key: "08", pubkey: null, valid: true }]);
+  const report = auditSigner(beforeDoc, afterDoc, { verification });
+  assert.equal(report.verdict, "pass");
+  assert.ok(report.findings.some((f) => f.code === "FINALIZED"), "the finalization is accepted");
+  assert.ok(!report.findings.some((f) => f.code === "FINALIZATION_INVALID"));
+});
+
+test("a flipped byte inside a finalized signature is invalid, not unverified", () => {
+  const { before, after } = finalSegwitFixture();
+  const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+  const flippedDoc = psbtInspectDoc(withFlippedSignatureByte(after, afterDoc, "PSBT_IN_FINAL_SCRIPTWITNESS"));
+  const verification = psbtSignerAuditVerification(beforeDoc, flippedDoc);
+  assert.equal(verification.signatures[0].valid, false);
+  const report = auditSigner(beforeDoc, flippedDoc, { verification });
+  assert.equal(report.verdict, "fail");
+  assert.ok(report.findings.some((f) => f.code === "FINALIZATION_INVALID" && f.evidence.reason === "signature_invalid"));
+});
+
+test("a finalized wrapped P2SH-P2WPKH input is verified", () => {
+  const { before, after } = finalWrappedFixture();
+  const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+  const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
+  // The redeemScript push and the witness are separate added fields; both
+  // are checked and both must verify.
+  assert.deepEqual(verification.signatures.map((entry) => [entry.name, entry.valid]), [
+    ["PSBT_IN_FINAL_SCRIPTSIG", true],
+    ["PSBT_IN_FINAL_SCRIPTWITNESS", true],
+  ]);
+});
+
+test("a finalized taproot key-path input is verified", () => {
+  const { before, after } = finalTaprootKeyFixture();
+  const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+  const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
+  assert.equal(verification.signatures.length, 1);
+  assert.equal(verification.signatures[0].valid, true);
+});
+
+test("a finalized P2WSH P2PK input is verified", () => {
+  const { before, after } = finalP2wshFixture();
+  const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+  const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
+  assert.equal(verification.signatures.length, 1);
+  assert.equal(verification.signatures[0].valid, true);
+});
+
+test("a finalized legacy P2PKH input is verified", () => {
+  const { before, after } = finalLegacyFixture();
+  const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+  const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
+  assert.deepEqual(verification.signatures.map((entry) => [entry.name, entry.valid]), [["PSBT_IN_FINAL_SCRIPTSIG", true]]);
+});
+
+test("a final field whose signature names no key is invalid", () => {
+  // A P2WPKH witness whose public key does not hash to the output: the
+  // signature is still well formed, so this is a disagreement, not a skip.
+  const { before, after } = finalSegwitFixture();
+  const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+  const other = nobleSecp256k1.getPublicKey(hex("05".repeat(32)), true);
+  const witnessPair = afterDoc.inputs[0].find((pair) => pair.name === "PSBT_IN_FINAL_SCRIPTWITNESS");
+  const items = finalWitnessStack(hex(witnessPair.value));
+  witnessPair.value = hexOf(serializeWitness([items[0], other]));
+  const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
+  assert.equal(verification.signatures[0].valid, false);
 });
