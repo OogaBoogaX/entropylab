@@ -63,15 +63,24 @@ const ISO4217_DIGITS = { BHD: 3, BIF: 0, CLF: 4, CLP: 0, DJF: 0, GNF: 0, IQD: 3,
 // It read "10000 msat" for the spec's own $100.00 USD offer (red-team sweep
 // of 0eed735). A known code is scaled ("100.00 USD"); an unknown one says
 // the unit size is unknown. Wording agreed by Claude, Astra, Fable and Grok.
-export function lnOfferAmountHtml(amount, currency) {
+// The amount as data: { kind: "msat" | "currency" | "unknown", value, code }.
+export function lnOfferAmount(amount, currency) {
   let digits = String(amount);
-  if (currency === undefined) return `${escapeHtml(digits)} msat`;
+  if (currency === undefined) return { kind: "msat", value: digits };
   let code = String(currency);
-  if (!ISO4217_CODES.has(code) || !/^\d+$/.test(digits)) return hodlT("{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)", { amount: digits, currency: code });
+  if (!ISO4217_CODES.has(code) || !/^\d+$/.test(digits)) return { kind: "unknown", value: digits, code };
   let places = ISO4217_DIGITS[code] ?? 2;
-  if (!places) return `${digits} ${code}`;
+  if (!places) return { kind: "currency", value: digits, code };
   digits = digits.padStart(places + 1, "0");
-  return `${digits.slice(0, -places)}.${digits.slice(-places)} ${code}`;
+  return { kind: "currency", value: `${digits.slice(0, -places)}.${digits.slice(-places)}`, code };
+}
+
+// The Amount row's value. The offer's own text is escaped on every path.
+export function lnOfferAmountHtml(amount, currency) {
+  let shown = lnOfferAmount(amount, currency);
+  if (shown.kind === "msat") return `${escapeHtml(shown.value)} msat`;
+  if (shown.kind === "unknown") return hodlT("{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)", { amount: shown.value, currency: shown.code });
+  return escapeHtml(`${shown.value} ${shown.code}`);
 }
 
 let hodlLnLast = null; // the last derivation's public result
