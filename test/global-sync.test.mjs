@@ -126,7 +126,8 @@ test("a brain wallet reports unknown strength instead of a green tick", () => {
   assert.match(markup, /syncUnknown = Boolean\(syncBits\) && reported === hodlGlobalSyncUnknownBits/);
   // The unknown case must not be folded into the numeric shortfall test, and
   // must not be able to satisfy the healthy branch.
-  assert.match(markup, /syncShort = Boolean\(syncBits\) && !syncUnknown && effectiveBits < hodlGlobalSyncMinimumBits\(\)/);
+  assert.match(markup, /syncShort = Boolean\(syncBits\) && !syncUnknown && effectiveBits < minimumBits/);
+  assert.match(markup, /minimumBits = state\?\.globalSyncSource === "key:hex-key" \? 256 : hodlGlobalSyncMinimumBits\(\)/);
   assert.match(markup, /syncShort \|\| syncUnknown \?/);
   assert.match(markup, /entropy unknown/);
 });
@@ -178,6 +179,8 @@ test("cloning a derived key keeps the synced entropy verdict", () => {
   const clone = loadSlice("hodlCloneDerivedKey");
   assert.match(clone, /globalSyncBitCount: source\.globalSyncBitCount,/);
   assert.match(clone, /globalSyncSourceBits: source\.globalSyncSourceBits,/);
+  // So does the raised-length caution (#1459 gate, Gemini).
+  assert.match(clone, /globalSyncLengthRaised: source\.globalSyncLengthRaised,/);
 });
 
 // Red-team sweep of 0eed735 (highs #5): a 256-bit private key synced into a
@@ -274,4 +277,10 @@ test("the key sync tells the user when it raised the length and to back up the k
   assert.ok(!seed.includes(note) && !seed.includes("seed set to 24 words"), "other sources get neither");
   slice.__set.hodlSecureEntryOn(true);
   assert.ok(!slice.hodlGlobalSyncControlMarkup({ ...synced, globalSyncSource: "key:wif", globalSyncLengthRaised: true }).includes(note), "not while Secure entry is on");
+  slice.__set.hodlSecureEntryOn(false);
+  // A part-typed hex key is short of a whole key, so it never reads as a
+  // plain "Key synced" (#1459 gate, Gemini).
+  const partial = slice.hodlGlobalSyncControlMarkup({ globalSync: true, globalSyncBitCount: 160, globalSyncSourceBits: 160, globalSyncSource: "key:hex-key", globalSyncLengthRaised: true });
+  assert.ok(partial.includes("160 bits of entropy · under 256"));
+  assert.ok(!raised.includes("bits of entropy"), "a whole key shows no shortfall");
 });

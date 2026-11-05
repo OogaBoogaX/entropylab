@@ -6487,6 +6487,8 @@ function hodlClearGlobalSyncCopies(state) {
   fields.bitboxDice = "";
   privateKeys["hex-key"] = "";
   privateKeys.wif = "";
+  // The copies are gone, so the caution about the length they were made at goes too.
+  state.globalSyncLengthRaised = false;
 }
 function hodlGlobalSyncFromCurrentInput() {
   if (hodlSecureEntryOn) { hodlRenderGlobalSyncControl(); return false; }
@@ -6518,8 +6520,12 @@ function hodlGlobalSyncControlMarkup(state) {
     sourceBits = Number.isFinite(reported) ? Math.floor(reported) : null,
     effectiveBits = sourceBits === null ? syncBits : Math.min(syncBits, sourceBits),
     syncUnknown = Boolean(syncBits) && reported === hodlGlobalSyncUnknownBits,
-    syncShort = Boolean(syncBits) && !syncUnknown && effectiveBits < hodlGlobalSyncMinimumBits(),
-    caution = syncUnknown ? hodlT("entropy unknown · only as strong as the text") : hodlT("{n} bits of entropy · under {min}", { n: effectiveBits, min: hodlGlobalSyncMinimumBits() }),
+    // A hex key is the one private key that can be part-typed, and a key is
+    // only complete at 256 bits: under that it reads short, not "Key synced"
+    // over half a seed (#1459 gate, Gemini).
+    minimumBits = state?.globalSyncSource === "key:hex-key" ? 256 : hodlGlobalSyncMinimumBits(),
+    syncShort = Boolean(syncBits) && !syncUnknown && effectiveBits < minimumBits,
+    caution = syncUnknown ? hodlT("entropy unknown · only as strong as the text") : hodlT("{n} bits of entropy · under {min}", { n: effectiveBits, min: minimumBits }),
     secure = hodlSecureEntryOn,
     checked = !secure && state?.globalSync,
     statusHidden = secure || !(state?.globalSync && syncBits),
@@ -18121,6 +18127,8 @@ function hodlCloneDerivedKey(source, existing) {
     // The entropy verdict must travel with the sync it describes, or a cloned
     // key falls back to reporting its digest length as counted entropy.
     globalSyncSourceBits: source.globalSyncSourceBits,
+    // The raised-length caution travels with the sync too (#1459 gate, Gemini).
+    globalSyncLengthRaised: source.globalSyncLengthRaised,
     seedAutocomplete: source.seedAutocomplete,
     passphraseBip39Words: source.passphraseBip39Words,
     brainWalletOutput: source.brainWalletOutput,
@@ -18248,7 +18256,7 @@ function hodlCommitDerivedKey(action = "derive", decision = null) {
     // A manually corrected draft may reach the existing wallet through
     // different recovery inputs. Preserve both sources; display preferences
     // alone must not create another archive record.
-    let inputFields = ["mode", "diceMethod", "cardMethod", "seedMethod", "seedZeroIndexed", "entropyFormat", "globalSync", "globalSyncSource", "globalSyncBitCount", "globalSyncSourceBits", "brainWalletOutput", "brainWalletTrim", "targetWords", "diceCoinPositions", "lastWord", "dplusLastWord", "accountId", "fields"];
+    let inputFields = ["mode", "diceMethod", "cardMethod", "seedMethod", "seedZeroIndexed", "entropyFormat", "globalSync", "globalSyncSource", "globalSyncBitCount", "globalSyncSourceBits", "globalSyncLengthRaised", "brainWalletOutput", "brainWalletTrim", "targetWords", "diceCoinPositions", "lastWord", "dplusLastWord", "accountId", "fields"];
     if (!source || inputFields.some(field => JSON.stringify(snapshot[field]) !== JSON.stringify(source[field]))) reviewedSnapshot = snapshot;
   }
   let remaining = hodlKeyManagerStates().filter((state) => state !== imported && state !== hodlKeys[existing]).length;
