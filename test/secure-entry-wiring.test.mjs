@@ -180,6 +180,7 @@ test("hodlApplyGlobalSync is off while secure entry is on", async () => {
       hodlEncodeWif: () => "",
       hodlGlobalSyncSourceBits: () => "",
       hodlNewKeyState: () => ({}),
+      hodlGlobalSyncFitKeyLength: () => {},
     },
     settable: ["hodlSecureEntryOn", "hodlKeys", "hodlActiveKey"],
   });
