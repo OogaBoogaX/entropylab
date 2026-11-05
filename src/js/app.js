@@ -16274,10 +16274,11 @@ function hodlForeignSingleKeyScript(entries, script) {
 function hodlDeclaredOutput(entries, script, network, budget = null) {
   if (!hodlPsbtHd || !entries || !script) return null;
   let fingerprint = hodlFingerprintHex(hodlPsbtHd.fingerprint), declared = null;
-  // This output's own reserve for when the shared budget is spent: 16 steps,
-  // more than any real wallet path (5-7), so an ordinary claim here is always
-  // checked however many valid deep records the rest of the PSBT carries
-  // (#1457 gate, MiniMax).
+  // This output's own reserve for when the shared budget is spent: up to 16
+  // steps, more than any real wallet path (5-7), drawn from the render's
+  // capped reserve pool (budget.reserve). So an ordinary claim here is still
+  // checked after other records spend the main budget (#1457 gate, MiniMax),
+  // and the render stays bounded by remaining + reserve (#1457 r2 red team).
   let reserve = budget ? 16 : 0;
   for (let entry of hodlFind(entries, 2)) {
     if (entry.val.length < 4 || (entry.val.length - 4) % 4) continue;
@@ -16306,13 +16307,15 @@ function hodlDeclaredOutput(entries, script, network, budget = null) {
     if (path.length > 255) return { state: "lie", path: label };
     if (budget && path.length > budget.remaining) {
       // The shared budget is spent: the output's reserve pays for an ordinary
-      // claim. A deeper one stays unchecked, which only a padded PSBT causes,
-      // and renders red ("Not checked: ... Do not sign.").
-      if (path.length > reserve) {
-        if (!declared || declared.state !== "ours") declared = { state: "unknown", path: label, budget: true };
+      // claim while the pool lasts. Anything left unchecked, which only a
+      // padded PSBT causes, renders red ("Not checked: ... Do not sign.").
+      let pool = Number(budget.reserve) || 0;
+      if (path.length > reserve || path.length > pool) {
+        if (!declared || declared.state !== "ours") declared = { state: "unknown", path: label, budget: true, deep: path.length > 16 };
         continue;
       }
       reserve -= path.length;
+      budget.reserve = pool - path.length;
     } else if (budget) {
       budget.remaining -= path.length;
     }
@@ -16403,7 +16406,9 @@ function hodlRenderOutputHtml(output, index, network, map, entries, derivationBu
     // A claim on this wallet left unchecked: only a PSBT padded with deep
     // records gets here, so it reads as a red stop, not a grey note. Wording
     // agreed by Claude, Astra, Fable and Grok (11-05).
-    extra = "<br><strong>" + hodlT("Not checked:") + "</strong> " + hodlT("claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.", { path: declared.path });
+    extra = "<br><strong>" + hodlT("Not checked:") + "</strong> " + (declared.deep
+      ? hodlT("claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.", { path: declared.path })
+      : hodlT("claims {path}, but this PSBT used up the checks. Do not sign.", { path: declared.path }));
     className = "psbt-bad";
   } else if (declared && declared.state === "unknown") {
     let vars = { path: declared.path };
@@ -16534,7 +16539,10 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // One PSBT output-derivation budget per render. An attacker-named path
     // costs one CKD per step; the inspector must not derive an unbounded
     // private subtree from an untrusted file (audit M3).
-    derivationBudget = { remaining: 4096 },
+    // Plus a reserve pool of the same size that each output can draw up to 16
+    // steps from once the main budget is spent (#1457), so an ordinary claim
+    // stays checked after padding; the render is bounded by the two together.
+    derivationBudget = { remaining: 4096, reserve: 4096 },
     // The same for the session-key lookup on the input side. Only the rows a
     // digest was rebuilt for (signatureChecks) can use the key, so 4096 steps
     // covers 256 rows of ordinary paths.
@@ -16634,8 +16642,8 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   // exactly as in a full render of the grown window, which spends the
   // per-render derivation budget (audit M3) on the outputs above them first:
   // those are rendered again and discarded until the budget runs out (GLM
-  // 5.3's review of #1031). A spent budget stays spent, so the loop can stop.
-  for (let index = 0; only?.kind === "outputs" && index < outputsFrom && derivationBudget.remaining > 0; index++) {
+  // 5.3's review of #1031). A spent budget (main and reserve pool) stays spent, so the loop can stop.
+  for (let index = 0; only?.kind === "outputs" && index < outputsFrom && (derivationBudget.remaining > 0 || derivationBudget.reserve > 0); index++) {
     hodlRenderOutputHtml(tx.outputs[index], index, network, ownershipMap, psbt.outputs[index], derivationBudget);
   }
   for (let index = outputsFrom; index < shownOutputs; index++) {

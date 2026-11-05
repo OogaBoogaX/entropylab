@@ -349,14 +349,42 @@ test("a record over the remaining budget does not empty it for later outputs", (
 });
 
 // #1457 gate (MiniMax): an attacker who knows the account xpub can spend the
-// shared budget with valid deep records. Each output's own 16-step reserve
-// still checks an ordinary claim, so a lie at a real wallet's depth stays red.
-test("a spent budget still checks an ordinary claim from the output's reserve", () => {
+// main budget with valid deep records. Each output can still draw up to 16
+// steps from the render's reserve pool, so a lie at a real wallet's depth
+// stays red. The pool is shared and capped (#1457 r2 red team), so the render
+// stays bounded by the main budget plus the pool.
+test("a spent budget still checks an ordinary claim from the reserve pool", () => {
   hodlSetSession(hd);
-  const spent = { remaining: 0 };
+  const spent = { remaining: 0, reserve: 4096 };
   assert.equal(hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", spent).state, "lie");
   assert.equal(hodlDeclaredOutput([validChangeRecord], changeScript, "mainnet", spent).state, "ours");
-  assert.equal(spent.remaining, 0, "the reserve is the output's own, not taken from the shared budget");
+  assert.equal(spent.remaining, 0, "the main budget is not touched once spent");
+  assert.equal(spent.reserve, 4096 - receivePath.length - changePath.length, "reserve steps are counted against the pool");
+});
+
+test("the reserve pool is capped across outputs, and an unchecked claim is flagged", () => {
+  const calls = [];
+  const original = HDKey.prototype.deriveChild;
+  HDKey.prototype.deriveChild = function (index) {
+    calls.push(index);
+    return original.call(this, index);
+  };
+  try {
+    hodlSetSession(hd);
+    const budget = { remaining: 0, reserve: changePath.length * 2 };
+    for (let output = 0; output < 2; output++) {
+      assert.equal(hodlDeclaredOutput([validChangeRecord], changeScript, "mainnet", budget).state, "ours");
+    }
+    const unchecked = hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", budget);
+    assert.equal(unchecked.state, "unknown");
+    assert.equal(unchecked.budget, true);
+    assert.equal(unchecked.deep, false, "an ordinary-depth claim left unchecked is not called deep");
+    assert.equal(calls.length, changePath.length * 2, "no derivation runs past the pool");
+    const deep = derivation(changeNode, hd.fingerprint, [...changePath, ...Array(15).fill(0)]);
+    assert.equal(hodlDeclaredOutput([deep], changeScript, "mainnet", { remaining: 0, reserve: 4096 }).deep, true);
+  } finally {
+    HDKey.prototype.deriveChild = original;
+  }
 });
 
 test("a claim left unchecked renders as a red stop, not a grey note", () => {
@@ -366,8 +394,11 @@ test("a claim left unchecked renders as a red stop, not a grey note", () => {
   assert.ok(branch < render.indexOf('} else if (declared && declared.state === "unknown") {'), "ahead of the grey unverifiable note");
   const body = render.slice(branch, render.indexOf("} else if", branch + 1));
   assert.match(body, /hodlT\("Not checked:"\)/);
-  assert.match(body, /hodlT\("claims \{path\}, an unusually deep path, and this PSBT used up the checks\. Do not sign\.", \{ path: declared\.path \}\)/);
+  assert.match(body, /declared\.deep\s*\?\s*hodlT\("claims \{path\}, an unusually deep path, and this PSBT used up the checks\. Do not sign\.", \{ path: declared\.path \}\)/);
+  assert.match(body, /: hodlT\("claims \{path\}, but this PSBT used up the checks\. Do not sign\.", \{ path: declared\.path \}\)/);
   assert.match(body, /className = "psbt-bad"/);
+  assert.match(app, /derivationBudget = \{ remaining: 4096, reserve: 4096 \}/, "the render starts with a capped reserve pool");
+  assert.match(app, /index < outputsFrom && \(derivationBudget\.remaining > 0 \|\| derivationBudget\.reserve > 0\); index\+\+/, "Show more re-renders while either pool lasts");
 });
 
 test("every private node created by an output derivation is wiped", () => {
