@@ -196,6 +196,28 @@ html = html
   .split("{{COMMIT}}").join(commit)
   .split("{{COMMIT_SHORT}}").join(commit === "unknown" ? "unknown" : commit.slice(0, 7));
 
+// A -dev build (#1406) is an unsigned rock candidate, never a release. It keeps
+// the shell's <!-- dev-build --> block, a banner with no dismiss control, and
+// asks search engines not to index the page. A release build drops the block
+// whole and adds nothing. The shell reaches the page twice (injected for first
+// paint, bundled for the boot render), so the block must be found once in each
+// copy, its markers alone on their lines: anything else fails the build rather
+// than shipping a banner that boot puts back or takes away.
+const devBuild = version.includes("-dev");
+const devBlock = /^[ \t]*<!-- dev-build -->[ \t]*\r?\n([\s\S]*?)^[ \t]*<!-- \/dev-build -->[ \t]*\r?\n/gm;
+const devMarkers = html.match(/<!-- \/?dev-build -->/g)?.length ?? 0;
+const devBlocks = html.match(devBlock)?.length ?? 0;
+if (devMarkers !== 4 || devBlocks !== 2) {
+  throw new Error(`Expected one dev-build block in each shell copy, each marker alone on its line; found ${devBlocks} blocks and ${devMarkers} markers`);
+}
+html = html.replace(devBlock, (_, kept) => (devBuild ? kept : ""));
+if (devBuild) {
+  const charset = '<meta charset="utf-8">';
+  const at = html.indexOf(charset);
+  if (at === -1 || at > html.indexOf("</head>")) throw new Error("The template head has no charset meta for the robots meta to follow");
+  html = `${html.slice(0, at + charset.length)}<meta name="robots" content="noindex, nofollow">${html.slice(at + charset.length)}`;
+}
+
 // The hosted service-worker URL must change whenever the self-contained app
 // or its offline shell changes, even while several commits share one package
 // version. Hashing the pre-token artifact avoids a self-referential digest.

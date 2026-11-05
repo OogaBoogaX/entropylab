@@ -366,6 +366,15 @@ test("an encrypted wallet refuses a private descriptor that would land in plaint
   const doc = parseRecords([...REF_PRIVATE_RECORDS, crypted]);
   const unit = core.unitFromDescriptor(EXTRA_ACCOUNT.private, { internal: false }, coreDeps);
   assert.throws(() => core.appendDescriptorRows(doc, unit, coreDeps, REF_CREATION_TIME), /encrypted/);
+  // A wallet created blank and then encrypted holds only its master key record
+  // (mkey, nID 1), no crypted descriptor key yet: it is encrypted all the same.
+  const mkey = ["046d6b6579" + "01000000", "30" + "aa".repeat(48) + "08" + "bb".repeat(8) + "00000000" + "a0860100" + "00"];
+  const blankEncrypted = parseRecords([...REF_PRIVATE_RECORDS, mkey]);
+  assert.throws(() => core.appendDescriptorRows(blankEncrypted, unit, coreDeps, REF_CREATION_TIME), /encrypted/);
+  // Its watch-only form still goes in, as the refusal tells the user to do.
+  const watch = core.unitFromDescriptor(EXTRA_ACCOUNT.public, { internal: false }, coreDeps);
+  assert.ok(!watch.privateDescriptor);
+  assert.doesNotThrow(() => core.appendDescriptorRows(parseRecords([...REF_PRIVATE_RECORDS, mkey]), watch, coreDeps, REF_CREATION_TIME));
 });
 
 test("an out-of-range key secret reports a check instead of aborting verification", () => {
@@ -673,6 +682,12 @@ test("an encrypted Core wallet is refused, not guessed at", () => {
   const result = core.stationImports(doc, importDeps);
   assert.equal(result.reason, "encrypted");
   assert.deepEqual(result.imports, []);
+  // So does a master key record (mkey) alone, as in a wallet encrypted while
+  // it held no descriptor key yet.
+  const mkey = ["046d6b6579" + "01000000", "30" + "aa".repeat(48) + "08" + "bb".repeat(8) + "00000000" + "a0860100" + "00"];
+  const blank = core.stationImports(parseHex([...GENERATED_ROWS, mkey]), importDeps);
+  assert.equal(blank.reason, "encrypted");
+  assert.deepEqual(blank.imports, []);
 });
 
 test("a master key with a short path (not the standard account path) is refused", () => {

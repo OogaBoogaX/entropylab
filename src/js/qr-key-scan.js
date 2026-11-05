@@ -1,4 +1,5 @@
-// The Key Station's "Scan QR" panel (preview builds only). It owns the panel's
+// The Key Station's "Scan QR" panel (every build since the Secure entry
+// unhide, owner 11-04). It owns the panel's
 // DOM, one decoder and one camera scanner; the private-key field belongs to
 // the caller. A scan is only ever offered to the caller: nothing is loaded
 // until Continue, and a seed or an unknown payload is refused with nothing
@@ -11,6 +12,7 @@
 // concealed) and is dropped on Continue, Discard, conceal-on-leave and
 // destroy().
 
+import { t } from "./i18n.js";
 import { createQrDecoder, retireQrDecoders } from "./qr-scan.js";
 import { createQrScanner } from "./qr-scanner.js";
 import { classifyQrPayload } from "./qr-payload.js";
@@ -20,38 +22,41 @@ export { retireQrDecoders };
 
 const defaultWasmBytes = () => Uint8Array.from(atob(QR_WASM_B64), (character) => character.charCodeAt(0));
 
+// Each string is a thunk: it is looked up when it is shown, so a language
+// switch is honoured, and the catalog sweep still sees the literal.
 const STATUS_TEXT = {
-  scanning: "Point the camera at the QR code.",
-  "two-codes": "Two different QR codes are in view, so the scan was refused. Nothing was loaded. Show one code only and try again.",
-  timeout: "No QR code was found, so the camera stopped.",
-  stopped: "The camera is off.",
-  unsupported: "This browser cannot open the camera here. You can scan a photo instead.",
-  denied: "Camera access was blocked. Check this browser's camera permissions, or scan a photo instead.",
-  "no-camera": "No camera was found. You can scan a photo instead.",
-  error: "The scan failed. Nothing was loaded.",
-  wif: "WIF private key scanned. Review it before continuing.",
+  scanning: () => t("Point the camera at the QR code."),
+  "two-codes": () => t("Two different QR codes are in view, so the scan was refused. Nothing was loaded. Show one code only and try again."),
+  timeout: () => t("No QR code was found, so the camera stopped."),
+  stopped: () => t("The camera is off."),
+  unsupported: () => t("This browser cannot open the camera here. You can scan a photo instead."),
+  denied: () => t("Camera access was blocked. Check this browser's camera permissions, or scan a photo instead."),
+  "no-camera": () => t("No camera was found. You can scan a photo instead."),
+  error: () => t("The scan failed. Nothing was loaded."),
+  wif: () => t("WIF private key scanned. Review it before continuing."),
 };
 
-const CONFIRM_TEMPLATE = "{format}. Scanning cannot tell where a QR came from. If this QR is not from your own backup, it derives someone else's wallet.";
-const PHOTO_NOTE = "A photo of this QR is a copy of the secret. The camera app, photo library, cloud sync or thumbnails may keep it. Prefer the live camera. If you use a photo, delete it, including from the recently deleted folder or trash. Other copies may remain.";
-const SEED_REFUSAL = "This QR contains a seed. Only WIF private keys can be scanned here. Nothing was loaded.";
-const NOT_A_KEY_REFUSAL = "This QR does not hold a WIF private key. Nothing was loaded.";
-const SEED_MODE_KEY_REFUSAL = "This QR contains a private key. Only seeds can be scanned here. Nothing was loaded.";
-const SEED_MODE_NOT_A_SEED_REFUSAL = "This QR does not hold a seed. Nothing was loaded.";
-const SEED_REPLACE_NOTE = "This key already holds a seed phrase. Continue replaces it.";
-const KEY_REPLACE_NOTE = "This key already holds a private key. Continue replaces it.";
+const CONFIRM_TEMPLATE = (vars) => t("{format}. Scanning cannot tell where a QR came from. If this QR is not from your own backup, it derives someone else's wallet.", vars);
+const PHOTO_NOTE = () => t("A photo of this QR is a copy of the secret. The camera app, photo library, cloud sync or thumbnails may keep it. Prefer the live camera. If you use a photo, delete it, including from the recently deleted folder or trash. Other copies may remain.");
+const SEED_REFUSAL = () => t("This QR contains a seed. Only WIF private keys can be scanned here. Nothing was loaded.");
+const NOT_A_KEY_REFUSAL = () => t("This QR does not hold a WIF private key. Nothing was loaded.");
+const SEED_MODE_KEY_REFUSAL = () => t("This QR contains a private key. Only seeds can be scanned here. Nothing was loaded.");
+const SEED_MODE_NOT_A_SEED_REFUSAL = () => t("This QR does not hold a seed. Nothing was loaded.");
+const SEED_REPLACE_NOTE = () => t("This key already holds a seed phrase. Continue replaces it.");
+// APPROVED (owner 11-04)
+const KEY_REPLACE_NOTE = () => t("This key already holds a private key. Continue replaces it.");
 const SEED_FORMAT_TEXT = {
-  "standard-seedqr": "Standard SeedQR, {count} words",
-  "compact-seedqr": "CompactSeedQR, {count} words",
-  words: "BIP39 words, {count} words",
+  "standard-seedqr": (vars) => t("Standard SeedQR, {count} words", vars),
+  "compact-seedqr": (vars) => t("CompactSeedQR, {count} words", vars),
+  words: (vars) => t("BIP39 words, {count} words", vars),
 };
 const SEED_WORD_COUNTS = new Set([12, 15, 18, 21, 24]);
 const WORD_DOTS = "••••••";
-const NO_CODE_IN_PHOTO = "No QR code was found in this photo.";
+const NO_CODE_IN_PHOTO = () => t("No QR code was found in this photo.");
 const PHOTO_ERROR_TEXT = {
-  TOO_LARGE: "This image is too large. The limit is 10 MB.",
-  UNSUPPORTED_TYPE: "Use a PNG, JPEG, WebP or BMP image.",
-  UNREADABLE: "This image could not be read.",
+  TOO_LARGE: () => t("This image is too large. The limit is 10 MB."),
+  UNSUPPORTED_TYPE: () => t("Use a PNG, JPEG, WebP or BMP image."),
+  UNREADABLE: () => t("This image could not be read."),
 };
 const PHOTO_ERROR_STATE = {
   TOO_LARGE: "too-large",
@@ -67,8 +72,8 @@ export function mountKeyScan(host, {
   replacesSeed = () => false,
   onKey = () => { throw new Error("no key handler"); },
   replacesKey = () => false,
+  afterLoad = () => {},
   wordlist = null,
-  translate = (text) => text,
   privateValue = () => "",
   createDecoder = createQrDecoder,
   createScanner = createQrScanner,
@@ -80,12 +85,6 @@ export function mountKeyScan(host, {
   if (accept !== "wif" && accept !== "seed") throw new Error("Unknown scan mode.");
   if (accept === "seed" && (!Array.isArray(wordlist) || wordlist.length !== 2048)) throw new Error("A seed scan needs the 2048-word BIP39 list.");
   const prefix = String(idPrefix);
-  // A translation may or may not fill {placeholders}; fill any it leaves.
-  const say = (text, vars) => {
-    const translated = String(translate(text, vars) ?? "");
-    if (!vars) return translated;
-    return translated.replace(/\{(\w+)\}/g, (match, name) => (Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match));
-  };
 
   const make = (tag, props) => {
     const node = doc.createElement(tag);
@@ -103,7 +102,7 @@ export function mountKeyScan(host, {
   // buttons are `.btn` variants, and the secret warnings are red edge notes.
   // Styles live in styles.css (#key-scan-*), including `[hidden]` for `.btn`.
   const openRow = make("div", { class: "row tool-actions" });
-  const openButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-open`, "aria-expanded": "false", "aria-controls": `${prefix}-panel`, text: say("Scan QR") });
+  const openButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-open`, "aria-expanded": "false", "aria-controls": `${prefix}-panel`, text: t("Scan QR") });
   const panel = make("div", { id: `${prefix}-panel`, hidden: true });
   const statusLine = make("p", { class: "field-note", id: `${prefix}-status`, role: "status", "aria-live": "polite" });
   // Shown only while the camera runs, so an idle or blocked camera leaves no
@@ -111,14 +110,14 @@ export function mountKeyScan(host, {
   const video = make("video", { id: `${prefix}-video`, playsinline: "", muted: "", "aria-hidden": "true", hidden: true });
   const canvas = make("canvas", { id: `${prefix}-canvas`, hidden: true });
   const controls = make("div", { class: "row tool-actions" });
-  const stopButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-stop`, hidden: true, text: say("Stop camera") });
-  const resumeButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-resume`, hidden: true, text: say("Resume camera") });
+  const stopButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-stop`, hidden: true, text: t("Stop camera") });
+  const resumeButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-resume`, hidden: true, text: t("Resume camera") });
   // A styled button opens the file picker; the browser's own file control
   // stays hidden.
-  const photoButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-photo-open`, "aria-describedby": `${prefix}-photo-note`, text: say("Scan a photo instead") });
+  const photoButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-photo-open`, "aria-describedby": `${prefix}-photo-note`, text: t("Scan a photo instead") });
   const photoInput = make("input", { type: "file", id: `${prefix}-photo`, accept: "image/png,image/jpeg,image/webp,image/bmp", hidden: true, tabindex: "-1", "aria-hidden": "true" });
-  const cancelButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-cancel`, text: say("Cancel scan") });
-  const photoNote = make("p", { class: "field-note edge-note is-private", id: `${prefix}-photo-note`, text: say(PHOTO_NOTE) });
+  const cancelButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-cancel`, text: t("Cancel scan") });
+  const photoNote = make("p", { class: "field-note edge-note is-private", id: `${prefix}-photo-note`, text: PHOTO_NOTE() });
   const confirm = make("div", { id: `${prefix}-confirm`, hidden: true });
 
   openRow.appendChild(openButton);
@@ -209,7 +208,7 @@ export function mountKeyScan(host, {
   const showStatus = (code) => {
     const key = Object.prototype.hasOwnProperty.call(STATUS_TEXT, code) ? code : "error";
     statusLine.setAttribute("data-scan-state", key);
-    statusLine.textContent = say(STATUS_TEXT[key]);
+    statusLine.textContent = STATUS_TEXT[key]();
     if (key === "unsupported" || key === "no-camera") cameraUsable = false;
     else if (key === "scanning") cameraUsable = true;
     cameraRunning = key === "scanning" || key === "two-codes";
@@ -278,14 +277,14 @@ export function mountKeyScan(host, {
     confirmValue.replaceChildren();
     if (shown && typeof shown === "object" && typeof shown.nodeType === "number") confirmValue.appendChild(shown);
     else confirmValue.innerHTML = String(shown ?? "");
-    revealButton.textContent = revealed ? say("Hide key") : say("Show key");
+    revealButton.textContent = revealed ? t("Hide key") : t("Show key");
   };
 
   const buildConfirm = () => {
     confirm.replaceChildren();
     // The approved warning, as the red note for secrets and danger. It is
     // programmatically focusable so a photo result can land on it.
-    confirmIntro = make("p", { class: "edge-note is-private", id: `${prefix}-confirm-intro`, tabindex: "-1", text: say(CONFIRM_TEMPLATE, { format: say("WIF private key") }) });
+    confirmIntro = make("p", { class: "edge-note is-private", id: `${prefix}-confirm-intro`, tabindex: "-1", text: CONFIRM_TEMPLATE({ format: t("WIF private key") }) });
     confirmValue = make("div", { class: "key-scan-value" });
     revealButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-reveal` });
     revealButton.addEventListener("click", () => {
@@ -293,9 +292,9 @@ export function mountKeyScan(host, {
       revealed = !revealed;
       updateConfirm();
     });
-    const continueButton = make("button", { type: "button", class: "btn primary", id: `${prefix}-continue`, text: say("Continue") });
+    const continueButton = make("button", { type: "button", class: "btn primary", id: `${prefix}-continue`, text: t("Continue") });
     continueButton.addEventListener("click", onContinue);
-    const discardButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-discard`, text: say("Discard scan") });
+    const discardButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-discard`, text: t("Discard scan") });
     discardButton.addEventListener("click", onDiscard);
     const actions = make("div", { class: "row tool-actions" });
     actions.appendChild(revealButton);
@@ -304,7 +303,7 @@ export function mountKeyScan(host, {
     confirm.appendChild(confirmIntro);
     confirm.appendChild(confirmValue);
     // Continue replaces the key the key already holds: say so before it.
-    replaceNote = make("p", { class: "edge-note is-private", id: `${prefix}-confirm-replace`, hidden: !keyHoldsKey(), text: say(KEY_REPLACE_NOTE) });
+    replaceNote = make("p", { class: "edge-note is-private", id: `${prefix}-confirm-replace`, hidden: !keyHoldsKey(), text: KEY_REPLACE_NOTE() });
     confirm.appendChild(replaceNote);
     confirm.appendChild(actions);
     confirm.hidden = false;
@@ -343,7 +342,7 @@ export function mountKeyScan(host, {
       seedReviewWord?.replaceChildren();
       return;
     }
-    seedReviewHeading.textContent = say("Word {n} of {total}", { n: reviewPosition + 1, total: seedCount });
+    seedReviewHeading.textContent = t("Word {n} of {total}", { n: reviewPosition + 1, total: seedCount });
     if (seedReviewPrev) seedReviewPrev.disabled = reviewPosition <= 0;
     if (seedReviewNext) seedReviewNext.disabled = reviewPosition >= seedCount - 1;
     renderSeedReviewWord();
@@ -401,24 +400,25 @@ export function mountKeyScan(host, {
       try { seedIndicesBuffer.fill(0); } catch {}
     }
     endPanel();
+    try { afterLoad(); } catch {}
   };
 
   const buildSeedConfirm = () => {
     confirm.replaceChildren();
-    confirmIntro = make("p", { class: "edge-note is-private", id: `${prefix}-confirm-intro`, tabindex: "-1", text: say(CONFIRM_TEMPLATE, { format: say(SEED_FORMAT_TEXT[seedFormat], { count: seedCount }) }) });
+    confirmIntro = make("p", { class: "edge-note is-private", id: `${prefix}-confirm-intro`, tabindex: "-1", text: CONFIRM_TEMPLATE({ format: SEED_FORMAT_TEXT[seedFormat]({ count: seedCount }) }) });
     seedReview = make("div", { id: `${prefix}-review-panel`, hidden: true });
     seedReviewHeading = make("p", { class: "label", id: `${prefix}-review-heading`, tabindex: "-1" });
     seedReviewWord = make("div", { id: `${prefix}-review-word` });
-    seedReviewShow = make("button", { type: "button", class: "btn secondary", id: `${prefix}-review-show`, "aria-pressed": "false", text: say("Show this word") });
+    seedReviewShow = make("button", { type: "button", class: "btn secondary", id: `${prefix}-review-show`, "aria-pressed": "false", text: t("Show this word") });
     seedReviewShow.addEventListener("click", () => {
       if (!reviewing) return;
       reviewRevealed = !reviewRevealed;
       seedReviewShow.setAttribute("aria-pressed", reviewRevealed ? "true" : "false");
       renderSeedReviewWord();
     });
-    seedReviewPrev = make("button", { type: "button", class: "btn secondary", id: `${prefix}-review-prev`, text: say("Previous word") });
+    seedReviewPrev = make("button", { type: "button", class: "btn secondary", id: `${prefix}-review-prev`, text: t("Previous word") });
     seedReviewPrev.addEventListener("click", () => moveSeedReview(-1));
-    seedReviewNext = make("button", { type: "button", class: "btn secondary", id: `${prefix}-review-next`, text: say("Next word") });
+    seedReviewNext = make("button", { type: "button", class: "btn secondary", id: `${prefix}-review-next`, text: t("Next word") });
     seedReviewNext.addEventListener("click", () => moveSeedReview(1));
     const reviewActions = make("div", { class: "row tool-actions" });
     reviewActions.appendChild(seedReviewPrev);
@@ -427,11 +427,11 @@ export function mountKeyScan(host, {
     seedReview.appendChild(seedReviewWord);
     seedReview.appendChild(seedReviewShow);
     seedReview.appendChild(reviewActions);
-    const reviewButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-review`, text: say("Review words one by one") });
+    const reviewButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-review`, text: t("Review words one by one") });
     reviewButton.addEventListener("click", openSeedReview);
-    const continueButton = make("button", { type: "button", class: "btn primary", id: `${prefix}-continue`, text: say("Continue") });
+    const continueButton = make("button", { type: "button", class: "btn primary", id: `${prefix}-continue`, text: t("Continue") });
     continueButton.addEventListener("click", onSeedContinue);
-    const discardButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-discard`, text: say("Discard scan") });
+    const discardButton = make("button", { type: "button", class: "btn secondary", id: `${prefix}-discard`, text: t("Discard scan") });
     discardButton.addEventListener("click", onDiscard);
     const actions = make("div", { class: "row tool-actions" });
     actions.appendChild(reviewButton);
@@ -441,7 +441,7 @@ export function mountKeyScan(host, {
     // Continue replaces the words the key already holds: say so before it.
     // The note is always built and shown when the key holds words; Continue
     // checks again, for words entered after the scan.
-    replaceNote = make("p", { class: "edge-note is-private", id: `${prefix}-confirm-replace`, hidden: !keyHoldsWords(), text: say(SEED_REPLACE_NOTE) });
+    replaceNote = make("p", { class: "edge-note is-private", id: `${prefix}-confirm-replace`, hidden: !keyHoldsWords(), text: SEED_REPLACE_NOTE() });
     confirm.appendChild(replaceNote);
     confirm.appendChild(seedReview);
     confirm.appendChild(actions);
@@ -493,6 +493,7 @@ export function mountKeyScan(host, {
     }
     try { keyBytes.fill(0); } catch {}
     endPanel();
+    try { afterLoad(); } catch {}
   };
 
   const onDiscard = () => endPanel();
@@ -523,7 +524,7 @@ export function mountKeyScan(host, {
     if (accept === "seed") {
       if (result.format === "wif") {
         try { result.bytes?.fill?.(0); } catch {}
-        setStatus("key", say(SEED_MODE_KEY_REFUSAL));
+        setStatus("key", SEED_MODE_KEY_REFUSAL());
         return;
       }
       if (result.format === "standard-seedqr" || result.format === "compact-seedqr" || result.format === "words") {
@@ -531,7 +532,7 @@ export function mountKeyScan(host, {
         const indices = result.indices;
         if (!(indices instanceof Uint16Array) || !SEED_WORD_COUNTS.has(count) || indices.length !== count) {
           try { indices?.fill?.(0); } catch {}
-          setStatus("not-a-seed", say(SEED_MODE_NOT_A_SEED_REFUSAL));
+          setStatus("not-a-seed", SEED_MODE_NOT_A_SEED_REFUSAL());
           return;
         }
         let copy = null;
@@ -545,7 +546,7 @@ export function mountKeyScan(host, {
         } catch {
           try { copy?.fill(0); } catch {}
           try { indices.fill(0); } catch {}
-          setStatus("not-a-seed", say(SEED_MODE_NOT_A_SEED_REFUSAL));
+          setStatus("not-a-seed", SEED_MODE_NOT_A_SEED_REFUSAL());
           return;
         } finally {
           try { indices.fill(0); } catch {}
@@ -571,7 +572,7 @@ export function mountKeyScan(host, {
         return;
       }
       try { result.indices?.fill?.(0); } catch {}
-      setStatus("not-a-seed", say(SEED_MODE_NOT_A_SEED_REFUSAL));
+      setStatus("not-a-seed", SEED_MODE_NOT_A_SEED_REFUSAL());
       return;
     }
     if (result.format === "wif" && result.bytes instanceof Uint8Array && result.bytes.length) {
@@ -579,7 +580,7 @@ export function mountKeyScan(host, {
       revealed = false;
       buildConfirm();
       statusLine.setAttribute("data-scan-state", "wif");
-      statusLine.textContent = say(STATUS_TEXT.wif);
+      statusLine.textContent = STATUS_TEXT.wif();
       cameraRunning = false;
       cameraResumable = false;
       updateAcquisition();
@@ -597,10 +598,10 @@ export function mountKeyScan(host, {
       try { result.bytes.fill(0); } catch {}
     }
     if (result.format === "standard-seedqr" || result.format === "compact-seedqr" || result.format === "words") {
-      setStatus("seed", say(SEED_REFUSAL));
+      setStatus("seed", SEED_REFUSAL());
       return;
     }
-    setStatus("not-a-key", say(NOT_A_KEY_REFUSAL));
+    setStatus("not-a-key", NOT_A_KEY_REFUSAL());
   };
 
   const onStatus = (code) => {
@@ -649,7 +650,7 @@ export function mountKeyScan(host, {
     } catch (error) {
       if (token !== op || destroyed) return;
       const code = error && error.code;
-      if (Object.prototype.hasOwnProperty.call(PHOTO_ERROR_TEXT, code)) setStatus(PHOTO_ERROR_STATE[code], say(PHOTO_ERROR_TEXT[code]));
+      if (Object.prototype.hasOwnProperty.call(PHOTO_ERROR_TEXT, code)) setStatus(PHOTO_ERROR_STATE[code], PHOTO_ERROR_TEXT[code]());
       else showStatus("error");
       return;
     }
@@ -665,7 +666,7 @@ export function mountKeyScan(host, {
     }
     try { reply?.payload?.fill?.(0); } catch {}
     // A photo with two codes gets the approved two-codes refusal, not "none".
-    setStatus(code === -3 ? "two-codes" : "no-code", say(code === -3 ? STATUS_TEXT["two-codes"] : NO_CODE_IN_PHOTO));
+    setStatus(code === -3 ? "two-codes" : "no-code", code === -3 ? STATUS_TEXT["two-codes"]() : NO_CODE_IN_PHOTO());
   };
 
   const onConceal = () => {
