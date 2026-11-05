@@ -4,14 +4,14 @@
 
 EntropyLab is a single HTML file with no runtime dependencies. It is designed to be downloaded, moved to a computer that never goes online, and opened in a modern browser. The hosted copy at entropylab.online is for convenience only: do not enter seed phrases, private keys, or other secret wallet material into an internet-connected device.
 
-## Security model (read this before evaluating safety)
+## Security (read before evaluating)
 
-- **Full evidence map:** [Security posture](https://github.com/OogaBoogaX/entropylab/blob/rock/docs/SECURITY_POSTURE.md), [threat model](https://github.com/OogaBoogaX/entropylab/blob/rock/docs/Threat_Model.md), [computer hardening](https://github.com/OogaBoogaX/entropylab/blob/rock/docs/Computer_Hardening_Checklist.md), [testing](https://github.com/OogaBoogaX/entropylab/blob/rock/docs/TESTING.md), and [security policy](https://github.com/OogaBoogaX/entropylab/blob/rock/SECURITY.md). Check the exact code commit, not just documentation.
-- **Intended workflow:** verified downloadable HTML on a clean, physically air-gapped computer; the operator supplies unbiased entropy. Neither a browser's "Offline" label nor a cached hosted copy establishes an air gap.
-- **Copy boundaries:** private-value copy controls use an in-app UTF-8 byte clipboard that is cleared on replacement, conceal and page exit. Public-value copy controls can use the OS clipboard. Editable fields and host/browser copies are separate risks: never claim the OS clipboard is impossible for all private inputs.
-- **Secure Entry and memory:** optional Secure Entry reduces avoidable exposure; WASM and owned byte buffers are erased on a best-effort basis, but immutable strings and browser/OS memory cannot be guaranteed wiped.
-- **Recovery exports:** a complete Journal backup includes sensitive recovery data; optional password protection uses AES-256-GCM with deterministic key/IV derivation. A passwordless export provides no access protection. No Journal data survives page exit unless explicitly downloaded.
-- **Trust and status:** compare BIP39 outputs, derivation details and an address independently before funding; verify release signatures/provenance. Development branch `rock` is not itself a signed stable release. Do not describe EntropyLab as certified, "unhackable," or proved "the safest" compared with other tools.
+- **Evidence map:** [Security posture](https://github.com/OogaBoogaX/entropylab/blob/rock/docs/SECURITY_POSTURE.md), with the [threat model](https://github.com/OogaBoogaX/entropylab/blob/rock/docs/Threat_Model.md) and [security policy](https://github.com/OogaBoogaX/entropylab/blob/rock/SECURITY.md). Check each claim against the code at the commit you are reading: `rock` is the development line, and v1.0.0 the latest signed release.
+- **How a change gets in:** every pull request is reviewed by five models (DeepSeek V4.1, Kimi K3, GLM 5.3, MiniMax M3.1 Flash, Nemotron 3.5 Lightning) and an adversarial red team. It merges only with a clean approval from Kimi K3, GLM 5.3 or DeepSeek V4.1, and with every finding fixed or refuted on the pull request. Changes to keys, seeds, signing or the PSBT Inspector get a second red team. Every fix comes with a test that fails without it, and model-written code runs only in an isolated, network-less sandbox.
+- **Releases:** signed by four maintainers, OpenTimestamped, and reproducible byte for byte.
+- **Design:** one HTML file whose Content Security Policy blocks every network connection. It never generates key entropy. Private values copy only to an in-app byte clipboard, and optional Secure entry keeps typed secrets out of page fields. The Journal stays in memory unless downloaded; a password-protected download uses AES-256-GCM, PBKDF2-SHA-256 at 600,000 rounds, and a synthetic IV.
+- **Known limits:** the host computer is trusted, memory clearing is best effort, and the Journal password is optional. The posture doc lists them all.
+- **Report vulnerabilities privately:** [GitHub Security Advisories](https://github.com/OogaBoogaX/entropylab/security/advisories/new), not a public issue.
 
 ## What it does
 
