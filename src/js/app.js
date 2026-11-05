@@ -8891,22 +8891,46 @@ function hodlParseKeyOrigin(raw) {
   for (let token of tokens) {
     if (!/^(?:\*|<\d+(?:;\d+)*>|\d+[hH']?)$/.test(token)) throw hodlError("Trailing path steps must be numbers, a wildcard *, or a multipath step like <0;1>.");
   }
-  if (tokens.includes("*") && tokens[tokens.length - 1] !== "*") throw hodlError("A wildcard * is only allowed as the last trailing path step.");
+  // Only the last step may be the wildcard: a second one (xpub/*/*) reached
+  // the path map below and crashed with a TypeError (#1460 r4 gate, GLM).
+  if (tokens.slice(0, -1).includes("*")) throw hodlError("A wildcard * is only allowed as the last trailing path step.");
   let hadWildcard = tokens[tokens.length - 1] === "*";
   if (hadWildcard) tokens.pop();
-  // A BIP45 descriptor carries its cosigner branch (always 0 here) as the
-  // first trailing step; the descriptor compose re-adds it, so it is
-  // decoration like the branch marker. A manually appended child path has
-  // no wildcard and must be honored in full.
-  if (hadWildcard && /^45h?$/.test(path.split("/")[0] || "") && tokens.length && /^\d+[hH']?$/.test(tokens[0])) tokens.shift();
+  // Real exports carry one to four steps; the cap keeps a pasted key from
+  // naming an absurd path (red-team sweep of 0eed735).
+  if (tokens.length > 16) throw hodlError("A trailing path can have at most 16 steps.");
+  // Every index, in a plain or a multipath step, is a BIP32 index; an
+  // out-of-range one was dropped as the branch marker instead of refused
+  // (#1460 gate, Gemini).
+  if (tokens.some((token) => (token.match(/\d+/g) || []).some((digits) => Number(digits) > 2147483647))) throw hodlError("A derivation path index after the extended key is out of range (0 to 2,147,483,647).");
+  // A BIP45 key derives as key/cosigner/branch/*, and the BIP45 compose always
+  // re-adds cosigner 0 (key/0/<branch>/*). So the descriptor's shape must be
+  // exactly plain 0, then the branch. Dropping any first step derived cosigner
+  // 0's addresses for /3/0/*, Copay's /2147483647/0/* or /0h/0/*, a different
+  // wallet, while the import panel already refused those shapes and a bare
+  // /0/* (issue #389; red-team sweep of 0eed735). A manually appended child
+  // path has no wildcard and is honored in full.
+  if (hadWildcard && /^45h?$/.test(path.split("/")[0] || "")) {
+    if (tokens.length !== 2 || !/^\d+$/.test(tokens[0]) || Number(tokens[0]) !== 0) throw hodlError("A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.");
+    tokens.shift();
+  }
   if (tokens.filter((token) => token.startsWith("<")).length > 1) throw hodlError("Only one multipath step like <0;1> is supported in a trailing path.");
   let multipathAt = tokens.findIndex((token) => token.startsWith("<"));
   if (multipathAt > 0 && tokens.slice(0, multipathAt).some((token) => !/^\d+[hH']?$/.test(token))) throw hodlError("A multipath step like <0;1> must follow plain number steps.");
   if (multipathAt >= 0 && multipathAt !== tokens.length - 1) throw hodlError("A multipath step like <0;1> must be the last trailing path step.");
+  // Without the wildcard a multipath step names fixed keys (BIP389: xpub/<0;1>
+  // is the keys at /0 and /1). This tool always derives a range below the key,
+  // so it can't reproduce that, and reading <0;1> as the branch marker gave a
+  // different wallet; BIP45 /3/<0;1> slipped past the cosigner rule the same
+  // way (#1460 gate, Gemini and GLM).
+  if (multipathAt >= 0 && !hadWildcard) throw hodlError("A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.");
   // Steps ahead of a multipath step are honored; the multipath step itself
   // is the branch position. Without one, a sole step ahead of the wildcard
   // is the branch marker and every other shape is honored as written.
-  let honoredTokens = multipathAt >= 0 ? tokens.slice(0, multipathAt) : hadWildcard && tokens.length === 1 ? [] : tokens;
+  // Only an unhardened sole step is a branch marker: a hardened one (/0h/*)
+  // stays in the path, where the unhardened-path check refuses it, instead of
+  // being dropped silently.
+  let honoredTokens = multipathAt >= 0 ? tokens.slice(0, multipathAt) : hadWildcard && tokens.length === 1 && /^\d+$/.test(tokens[0]) ? [] : tokens;
   let derivationPath = honoredTokens.map((token) => {
     let step = token.match(/^(\d+)([hH']?)$/); // shape guaranteed by the validation above
     let index = Number(step[1]);
