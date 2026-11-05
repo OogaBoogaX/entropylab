@@ -2587,5 +2587,6 @@
   "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "<strong>Version de développement — non signée.</strong> Pour les tests uniquement. Ne l'utilisez pas avec de vrais fonds ou de vraies phrases secrètes. La version signée se trouve sur entropylab.online.",
   "Not checked:": "Non vérifié :",
   "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "revendique {path}, un chemin inhabituellement profond, et ce PSBT a épuisé les vérifications. Ne pas signer.",
-  "claims {path}, but this PSBT used up the checks. Do not sign.": "revendique {path}, mais ce PSBT a épuisé les vérifications. Ne pas signer."
+  "claims {path}, but this PSBT used up the checks. Do not sign.": "revendique {path}, mais ce PSBT a épuisé les vérifications. Ne pas signer.",
+  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (devise non reconnue {currency} : taille de l'unité inconnue, à confirmer auprès de l'émetteur)"
 }
