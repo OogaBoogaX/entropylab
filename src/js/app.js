@@ -8858,9 +8858,7 @@ function hodlParseKeyOrigin(raw) {
   // wallet, while the import panel already refused those shapes and a bare
   // /0/* (issue #389; red-team sweep of 0eed735). A manually appended child
   // path has no wildcard and is honored in full.
-  // The tail ends in a branch marker when it has the wildcard or ends in a
-  // multipath step (/0/<0;1> is still the branch position, #1460 gate, Gemini).
-  if ((hadWildcard || /^</.test(tokens[tokens.length - 1] || "")) && /^45h?$/.test(path.split("/")[0] || "")) {
+  if (hadWildcard && /^45h?$/.test(path.split("/")[0] || "")) {
     if (tokens.length !== 2 || !/^\d+$/.test(tokens[0]) || Number(tokens[0]) !== 0) throw hodlError("A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.");
     tokens.shift();
   }
@@ -8868,6 +8866,12 @@ function hodlParseKeyOrigin(raw) {
   let multipathAt = tokens.findIndex((token) => token.startsWith("<"));
   if (multipathAt > 0 && tokens.slice(0, multipathAt).some((token) => !/^\d+[hH']?$/.test(token))) throw hodlError("A multipath step like <0;1> must follow plain number steps.");
   if (multipathAt >= 0 && multipathAt !== tokens.length - 1) throw hodlError("A multipath step like <0;1> must be the last trailing path step.");
+  // Without the wildcard a multipath step names fixed keys (BIP389: xpub/<0;1>
+  // is the keys at /0 and /1). This tool always derives a range below the key,
+  // so it can't reproduce that, and reading <0;1> as the branch marker gave a
+  // different wallet; BIP45 /3/<0;1> slipped past the cosigner rule the same
+  // way (#1460 gate, Gemini and GLM).
+  if (multipathAt >= 0 && !hadWildcard) throw hodlError("A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.");
   // Steps ahead of a multipath step are honored; the multipath step itself
   // is the branch position. Without one, a sole step ahead of the wildcard
   // is the branch marker and every other shape is honored as written.
