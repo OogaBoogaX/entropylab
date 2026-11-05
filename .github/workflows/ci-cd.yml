@@ -1123,6 +1123,12 @@ jobs:
           User-agent: *
           Allow: /
           ROBOTS
+          # The page it publishes must carry both dev-build guardrails. A
+          # candidate without the banner or the noindex (a version without
+          # -dev on rock, say, once #494 numbers patches) is refused, not
+          # published as if it were a release.
+          grep -qF 'id="dev-build-warning"' _site/index.html || { echo "::error title=Preview guardrails::the candidate has no dev-build banner; it is not published as the preview"; exit 1; }
+          grep -qF '<meta name="robots" content="noindex, nofollow">' _site/index.html || { echo "::error title=Preview guardrails::the candidate has no noindex meta; it is not published as the preview"; exit 1; }
       - name: Deploy to the preview repository
         env:
           PREVIEW_DEPLOY_KEY: ${{ secrets.PREVIEW_DEPLOY_KEY }}

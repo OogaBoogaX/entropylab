@@ -206,20 +206,47 @@ test("the preview job publishes rock to the preview repository only", () => {
 // holds every file the production site serves.
 const bash = process.platform !== "win32" && spawnSync("bash", ["--version"], { stdio: "ignore" }).status === 0;
 
-test("the preview site turns every crawler away and publishes no sitemap or llms.txt", { skip: !bash && "needs bash" }, () => {
+const DEV_PAGE = '<meta charset="utf-8"><meta name="robots" content="noindex, nofollow">\n<div class="beta-warning" id="dev-build-warning" role="alert"></div>\n';
+const previewPrepare = (page) => {
   const prepare = steps(jobBlock(cicd, "preview")).find((step) => step.startsWith("name: Prepare the preview site\n"));
   assert.ok(prepare, "the preview job prepares its site in one step");
   const script = prepare.split(/\n +run: \|\n/)[1]?.replace(/^ {10}/gm, "");
   assert.ok(script, "the step runs a script");
   const checkout = mkdtempSync(join(tmpdir(), "preview-site-"));
-  try {
-    for (const name of ["entropylab.html", "robots.txt", "sitemap.xml", "llms.txt", "manifest.webmanifest", "service-worker.js"]) {
-      writeFileSync(join(checkout, name), `${name}\n`);
+  for (const name of ["robots.txt", "sitemap.xml", "llms.txt", "manifest.webmanifest", "service-worker.js"]) {
+    writeFileSync(join(checkout, name), `${name}\n`);
+  }
+  writeFileSync(join(checkout, "entropylab.html"), page);
+  mkdirSync(join(checkout, "assets"));
+  writeFileSync(join(checkout, "assets/favicon.png"), "favicon\n");
+  // As the runner runs a step: bash, stopping at the first failure.
+  const result = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", script], { cwd: checkout, encoding: "utf8" });
+  return { checkout, result };
+};
+
+// A candidate without the dev-build banner or the noindex (a version without
+// -dev on rock, once #494 numbers patches) must not reach the preview as if
+// it were a release (red team, #1448).
+test("the preview refuses a candidate without the dev-build banner or the noindex", { skip: !bash && "needs bash" }, () => {
+  const pages = {
+    "no banner": '<meta charset="utf-8"><meta name="robots" content="noindex, nofollow">\n',
+    "no noindex": '<meta charset="utf-8">\n<div class="beta-warning" id="dev-build-warning" role="alert"></div>\n',
+    "a release page": '<meta charset="utf-8">\n',
+  };
+  for (const [label, page] of Object.entries(pages)) {
+    const { checkout, result } = previewPrepare(page);
+    try {
+      assert.notEqual(result.status, 0, `${label}: the step must fail`);
+      assert.match(`${result.stdout}${result.stderr}`, /Preview guardrails/, label);
+    } finally {
+      rmSync(checkout, { recursive: true, force: true });
     }
-    mkdirSync(join(checkout, "assets"));
-    writeFileSync(join(checkout, "assets/favicon.png"), "favicon\n");
-    // As the runner runs a step: bash, stopping at the first failure.
-    const result = spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", script], { cwd: checkout, encoding: "utf8" });
+  }
+});
+
+test("the preview site lets crawlers read the noindex and publishes no sitemap or llms.txt", { skip: !bash && "needs bash" }, () => {
+  const { checkout, result } = previewPrepare(DEV_PAGE);
+  try {
     assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
     const site = join(checkout, "_site");
     // Crawlers are let in so they read each page's noindex; no sitemap line.
@@ -230,7 +257,7 @@ test("the preview site turns every crawler away and publishes no sitemap or llms
     for (const name of ["entropylab.html", "index.html", "manifest.webmanifest", "service-worker.js", ".nojekyll", "assets/favicon.png"]) {
       assert.ok(existsSync(join(site, name)), `_site/${name} is published`);
     }
-    assert.equal(readFileSync(join(site, "index.html"), "utf8"), "entropylab.html\n", "the site root serves the candidate");
+    assert.equal(readFileSync(join(site, "index.html"), "utf8"), DEV_PAGE, "the site root serves the candidate");
   } finally {
     rmSync(checkout, { recursive: true, force: true });
   }
