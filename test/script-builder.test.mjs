@@ -205,3 +205,42 @@ test("a mistyped address wrapped in or starting with a symbol is still a mistype
     assert.equal(buildOutputScript(input).kind, "opreturn", input);
   }
 });
+
+// Red-team sweep 0eed735, script-builder #2, #6, #10, #12, #13: the builder
+// refused each of these silently or not at all.
+test("a bare 0x is refused: it set an empty, anyone-can-spend script", () => {
+  assert.throws(() => buildOutputScript("0x"), /after 0x/);
+  assert.throws(() => buildOutputScript("  0X  "), /after 0x/);
+  assert.equal(buildOutputScript("0x51").scriptHex, "51", "a one-byte script still passes through");
+});
+
+test("raw script hex has the same 10,000-byte cap as ASM", () => {
+  assert.equal(buildOutputScript("0x" + "ab".repeat(10000)).kind, "raw");
+  assert.throws(() => buildOutputScript("0x" + "ab".repeat(10001)), /10,000-byte/);
+});
+
+test("a data push over 520 bytes is refused outside an OP_RETURN script", () => {
+  const data = (n) => "0x" + "ab".repeat(n);
+  assert.ok(assembleScriptAsm(`${data(520)} OP_DROP OP_TRUE`), "520 bytes is the limit, still allowed");
+  assert.throws(() => assembleScriptAsm(`${data(521)} OP_DROP OP_TRUE`), /exceeds 520 bytes/);
+  assert.throws(() => assembleScriptAsm(`OP_TRUE ${data(600)}`), /exceeds 520 bytes/, "anywhere in the script");
+  assert.throws(() => buildOutputScript(`OP_DUP ${data(521)}`), /exceeds 520 bytes/, "auto mode's ASM too");
+  assert.ok(assembleScriptAsm(`OP_RETURN ${data(600)}`).startsWith("6a4d5802"), "an OP_RETURN script may carry one");
+});
+
+test("a bare small integer in auto mode is OP_RETURN text, as every other number is", () => {
+  for (const number of ["5", "0", "16", "-1"]) {
+    assert.equal(buildOutputScript(number).kind, "opreturn", number);
+  }
+  assert.equal(buildOutputScript("OP_5").scriptHex, "55", "an OP_ name is still ASM");
+  assert.equal(buildOutputScript("5", { mode: "asm" }).scriptHex, "55", "the explicit ASM mode still reads 5 as OP_5");
+});
+
+test("a silent payment address is refused, not turned into OP_RETURN text", () => {
+  const address = "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqjuexzk6murw56suy3e0rd2cgqvycxttddwsvgxe2usfpxumr70xc9pkqwv";
+  for (const pasted of [address, "tsp1" + address.slice(3), "sprt1" + address.slice(3), address.toUpperCase()]) {
+    assert.throws(() => buildOutputScript(pasted), /Silent payment addresses/, pasted.slice(0, 6));
+  }
+  assert.equal(buildOutputScript("sp1 is a good name").kind, "opreturn", "text with spaces is still text");
+  assert.equal(buildOutputScript(address, { mode: "opreturn-text" }).kind, "opreturn", "the explicit text mode still takes it");
+});

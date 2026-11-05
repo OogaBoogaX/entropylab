@@ -702,3 +702,27 @@ test("the cross-check agrees with btc-signer on the full compressed key", () => 
   assert.equal(mine.length, 33);
   assert.equal(bytesToHex(mine), lower(vectors.aggregatePubkey));
 });
+
+// A commitment is not reported for a key the listed participants do not
+// aggregate to: "verified-output" beside keyAgg "mismatch" would read as
+// "these participants control the output" (red-team sweep 0eed735,
+// musig2-verify #3).
+test("swapped participants leave the output commitment not-checked, not verified", () => {
+  let checked = 0;
+  for (const { psbt } of psbtCases()) {
+    const field = musig2Field(psbt);
+    if (!field || field.length < 66) continue;
+    const value = lower(psbt).slice(field.valueStart, field.valueEnd);
+    if (value.slice(0, 66) === value.slice(66, 132)) continue;
+    const original = musig2PsbtEvidence(psbtInspectDoc(hexToBytes(psbt))).find((item) => item.participants === value);
+    if (!original || !String(original.commitment).startsWith("verified")) continue;
+    const swapped = value.slice(66, 132) + value.slice(0, 66) + value.slice(132);
+    const record = musig2PsbtEvidence(psbtInspectDoc(hexToBytes(replaceRange(lower(psbt), field.valueStart, field.valueEnd, swapped)))).find((item) => item.participants === swapped);
+    assert.ok(record, "the mutated field is reported");
+    assert.equal(record.keyAgg, "mismatch");
+    assert.equal(record.commitment, "not-checked", `was ${original.commitment} before the swap`);
+    assert.equal(record.commitmentReason, "key-aggregation");
+    checked += 1;
+  }
+  assert.ok(checked > 0, "fixture: a vector whose commitment verifies before the swap");
+});

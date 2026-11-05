@@ -613,6 +613,11 @@ async function hodlLnReadHsmFile() {
   if (seed) seed.value = "";
   let bytes = null;
   try {
+    // A type-2 hsm_secret is 32 bytes plus at most 24 words, under 300 bytes.
+    // A larger file is refused before it is read whole, as every other file
+    // input checks its size first (red-team sweep 0eed735, lightning #1); the
+    // worker would refuse its extra words the same way.
+    if (file.size > 1024) throw Object.assign(new Error("The mnemonic has trailing words."), { code: "hsm-secret-trailing", key: "The mnemonic has trailing words." });
     bytes = new Uint8Array(await file.arrayBuffer());
     if (run !== hodlLnHsmRun) {
       // Typing (or a wipe) during the read superseded the file: the load is

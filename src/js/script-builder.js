@@ -19,7 +19,10 @@
 // while a mistyped address outside it (shorter, three or more symbols, an
 // inserted space) still reads as text. Bare hex that reads as a Base58
 // address is an address; other even-length hex with an a-f digit is raw
-// script, and digit-only hex needs the 0x prefix — otherwise it is text.
+// script, and digit-only hex needs the 0x prefix — otherwise it is text. A
+// bare number is text too, even -1..16: ASM starts with an OP_ name or comes
+// from the explicit ASM mode. A silent payment address is refused: its output
+// key depends on the transaction's inputs.
 // The arms are spelled out above looksLikeAddress.
 import { Address as BtcAddress, NETWORK as BTC_MAINNET, TEST_NETWORK as BTC_TESTNET, OutScript, OP } from "@scure/btc-signer";
 import { hex as hexCoder } from "./coders.js";
@@ -60,12 +63,16 @@ const isHex = (text) => /^(?:[0-9a-f]{2})*$/i.test(text);
 
 // One ASM token: a small integer (-1..16), an opcode name, or hex data
 // (0x-prefixed, or containing an a-f digit so it cannot read as a number).
+// Returns the token's bytes and, for data, how many bytes it pushes.
 const assembleToken = (token) => {
-  if (SMALL_INTEGERS.has(token)) return Uint8Array.of(SMALL_INTEGERS.get(token));
+  if (SMALL_INTEGERS.has(token)) return { bytes: Uint8Array.of(SMALL_INTEGERS.get(token)), pushed: 0 };
   const name = token.toUpperCase().replace(/^OP_/, "");
-  if (OPCODES.has(name)) return Uint8Array.of(OPCODES.get(name));
+  if (OPCODES.has(name)) return { bytes: Uint8Array.of(OPCODES.get(name)), pushed: 0 };
   const hex = token.replace(/^0x/i, "");
-  if (isHex(hex) && (/^0x/i.test(token) || /[a-f]/i.test(hex))) return encodeDataPush(hexCoder.decode(hex.toLowerCase()));
+  if (isHex(hex) && (/^0x/i.test(token) || /[a-f]/i.test(hex))) {
+    const data = hexCoder.decode(hex.toLowerCase());
+    return { bytes: encodeDataPush(data), pushed: data.length };
+  }
   throw new Error(`Unknown script token "${token}" — use an OP_ name, a small integer -1..16, or hex data (0x-prefixed).`);
 };
 
@@ -73,13 +80,19 @@ export const assembleScriptAsm = (text) => {
   const tokens = String(text ?? "").trim().split(/\s+/).filter(Boolean);
   if (!tokens.length) throw new Error("Type the script as ASM: opcode names and hex data, space-separated.");
   const parts = tokens.map(assembleToken);
-  const size = parts.reduce((sum, part) => sum + part.length, 0);
+  // Consensus refuses to execute a push over 520 bytes, so a script holding
+  // one can never be spent; only an OP_RETURN script, never spent anyway, may
+  // carry one (red-team sweep 0eed735, script-builder #10).
+  if (parts[0].bytes[0] !== OP.RETURN && parts.some((part) => part.pushed > 520)) {
+    throw new Error("This data push exceeds 520 bytes, so the output cannot be spent. In this builder, only a script that starts with OP_RETURN may carry one, and that output cannot be spent either.");
+  }
+  const size = parts.reduce((sum, part) => sum + part.bytes.length, 0);
   if (size > 10000) throw new Error("The script would exceed the 10,000-byte maximum script size.");
   const script = new Uint8Array(size);
   let offset = 0;
-  for (const part of parts) {
-    script.set(part, offset);
-    offset += part.length;
+  for (const { bytes } of parts) {
+    script.set(bytes, offset);
+    offset += bytes.length;
   }
   return bytesToHex(script);
 };
@@ -131,6 +144,12 @@ export const buildOutputScript = (input, { network = "mainnet", mode = "auto" } 
   if (!text) throw new Error("Describe the script: paste an address, type ASM, or switch to an OP_RETURN mode.");
 
   // auto
+  // A BIP-352 address fell through to OP_RETURN text, burning any value: an
+  // address-like string must error (audit M7; red-team sweep 0eed735,
+  // script-builder #13).
+  if (/^(?:sp|tsp|sprt)1\S*$/i.test(text)) {
+    throw new Error("Silent payment addresses (sp1… or tsp1…) can't be paid from this builder: the output key depends on the transaction's inputs. Use the Silent Payments tool on the Privacy tab.");
+  }
   if (looksLikeAddress(text)) {
     try {
       return scriptFromAddress(text, network);
@@ -140,10 +159,18 @@ export const buildOutputScript = (input, { network = "mainnet", mode = "auto" } 
   }
   const first = text.split(/\s+/, 1)[0];
   // ASM intent is explicit; an unknown token surfaces instead of falling
-  // through to another interpretation.
-  if (/^OP_/i.test(first) || SMALL_INTEGERS.has(text)) return { scriptHex: assembleScriptAsm(text), kind: "asm", note: "assembled from ASM" };
+  // through to another interpretation. A bare small integer is not ASM
+  // intent: "5" became OP_5, an anyone-can-spend output, where every other
+  // number is text (red-team sweep 0eed735, script-builder #12).
+  if (/^OP_/i.test(first)) return { scriptHex: assembleScriptAsm(text), kind: "asm", note: "assembled from ASM" };
   const hex = text.replace(/^0x/i, "").replace(/\s/g, "");
-  if (isHex(hex) && (/^0x/i.test(text) || /[a-f]/i.test(hex)))
+  if (isHex(hex) && (/^0x/i.test(text) || /[a-f]/i.test(hex))) {
+    // A bare 0x was an empty, anyone-can-spend script, and raw hex had no
+    // size cap where ASM and OP_RETURN have one (red-team sweep 0eed735,
+    // script-builder #6 and #2).
+    if (!hex) throw new Error("Type the script hex after 0x.");
+    if (hex.length / 2 > 10000) throw new Error("The script would exceed the 10,000-byte maximum script size.");
     return { scriptHex: hex.toLowerCase(), kind: "raw", note: `raw script (${hex.length / 2} bytes)` };
+  }
   return { scriptHex: bytesToHex(buildOpReturnScript([new TextEncoder().encode(text)])), kind: "opreturn", note: `OP_RETURN text (${new TextEncoder().encode(text).length} bytes)` };
 };

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { classifyQrPayload } from "../src/js/qr-payload.js";
-import { bip39English } from "../src/js/bip39.js";
+import { bip39English, indicesFromEntropy } from "../src/js/bip39.js";
+import { randomBytes } from "node:crypto";
 
 // The app's SeedQR encoder, re-implemented from its few lines (app.js
 // hodlSeedQrDigits): each word becomes its 4-digit, zero-padded index.
@@ -240,4 +241,57 @@ test("an unknown payload is not echoed", () => {
   const secret = bytesOf("correct horse battery staple");
   const result = classifyQrPayload(secret);
   assert.deepEqual(result, { format: "unknown", length: secret.length });
+});
+
+// A words QR is matched byte for byte: decoding it made the scan path's only
+// string copies of the mnemonic (red-team sweep 0eed735, qr-payload #3).
+test("a words QR classifies without decoding the payload to text", () => {
+  const words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+  const decode = TextDecoder.prototype.decode, seen = [];
+  TextDecoder.prototype.decode = function (input, options) {
+    const text = decode.call(this, input, options);
+    seen.push(text);
+    return text;
+  };
+  let result;
+  try {
+    result = classifyQrPayload(new TextEncoder().encode(words));
+  } finally {
+    TextDecoder.prototype.decode = decode;
+  }
+  assert.equal(result.format, "words");
+  assert.deepEqual([...result.indices], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3]);
+  assert.ok(!seen.some((text) => text.includes("abandon")), "no decoded copy of the words");
+  for (const bad of [words.replace("about", "About"), words.replace(" about", "  about"), words + " ", words.replace("about", "abouT"), "\ufeff" + words]) {
+    assert.notEqual(classifyQrPayload(new TextEncoder().encode(bad)).format, "words", JSON.stringify(bad.slice(-8)));
+  }
+});
+
+test("the byte-level word match finds every word at its own index", () => {
+  // Random valid phrases of each length; their indices come from bip39.js,
+  // and the words from the published list.
+  let seen = 0;
+  for (let round = 0; round < 300; round += 1) {
+    const entropy = randomBytes([16, 20, 24, 28, 32][round % 5]);
+    const expected = [...indicesFromEntropy(entropy)];
+    const result = classifyQrPayload(new TextEncoder().encode(expected.map((index) => bip39English[index]).join(" ")));
+    assert.equal(result.format, "words", `round ${round}`);
+    assert.deepEqual([...result.indices], expected, `round ${round}`);
+    seen += expected.length;
+  }
+  assert.ok(seen > 4000, "the rounds cover the list widely");
+  // The first and last words of the list, which a sort slip would lose first.
+  for (const word of [bip39English[0], bip39English[2047]]) {
+    assert.ok(new Set(bip39English).has(word));
+  }
+});
+
+// Text with a tab or line break is text, not CompactSeedQR entropy (red-team
+// sweep 0eed735, qr-payload #5).
+test("16 or 32 bytes of text ending in a line break are not read as a CompactSeedQR", () => {
+  for (const text of ["my password!123\n", "my password!12\r\n", "tab\tseparated!!!", "x".repeat(31) + "\n"]) {
+    const bytes = new TextEncoder().encode(text);
+    assert.ok([16, 32].includes(bytes.length), `fixture length ${bytes.length}`);
+    assert.notEqual(classifyQrPayload(bytes).format, "compact-seedqr", JSON.stringify(text));
+  }
 });

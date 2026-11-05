@@ -631,3 +631,27 @@ test("after End Session the Lightning tool refuses to derive and terminates its 
     await cleanup();
   }
 });
+
+// An hsm_secret file over 1 KiB is refused before it is read whole, as every
+// other file input checks its size first (red-team sweep 0eed735, lightning #1).
+test("an oversized hsm_secret file is refused without being read", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    let read = false;
+    fileInput.files = [{ size: 5_000_000, arrayBuffer: async () => { read = true; return new ArrayBuffer(8); } }];
+    await fileInput.onchange();
+    assert.equal(read, false, "the oversized file was read whole");
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-trailing");
+    assert.equal(fileInput.value, "", "the file input was not reset");
+    // A real type-2 file, with its size, is still read.
+    const bytes = clnType2File(CLN_WORDS);
+    let readReal = false;
+    fileInput.files = [{ size: bytes.length, arrayBuffer: async () => { readReal = true; return bytes.buffer; } }];
+    await fileInput.onchange();
+    assert.equal(readReal, true, "a file of a real hsm_secret's size is read");
+  } finally {
+    await cleanup();
+  }
+});
