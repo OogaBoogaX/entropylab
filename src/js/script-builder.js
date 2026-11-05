@@ -172,5 +172,9 @@ export const buildOutputScript = (input, { network = "mainnet", mode = "auto" } 
     if (hex.length / 2 > 10000) throw new Error("The script would exceed the 10,000-byte maximum script size.");
     return { scriptHex: hex.toLowerCase(), kind: "raw", note: `raw script (${hex.length / 2} bytes)` };
   }
+  // 0x marks raw script hex, so a malformed one (0x5, 0x51z) is an error, not
+  // OP_RETURN text that burns the output's value (#1478 gate, Kimi). Text that
+  // really starts with 0x goes in through the OP_RETURN-text mode.
+  if (/^0x/i.test(text)) throw new Error("Script hex after 0x must be an even number of 0-9/a-f digits. To store this as text instead, use the OP_RETURN-text mode.");
   return { scriptHex: bytesToHex(buildOpReturnScript([new TextEncoder().encode(text)])), kind: "opreturn", note: `OP_RETURN text (${new TextEncoder().encode(text).length} bytes)` };
 };

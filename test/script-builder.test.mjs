@@ -214,6 +214,16 @@ test("a bare 0x is refused: it set an empty, anyone-can-spend script", () => {
   assert.equal(buildOutputScript("0x51").scriptHex, "51", "a one-byte script still passes through");
 });
 
+// 0x marks raw script hex: a malformed one is refused, not read as OP_RETURN
+// text that burns the output's value (#1478 gate, Kimi).
+test("malformed hex after 0x is refused, not turned into OP_RETURN text", () => {
+  for (const typed of ["0x5", "0x51z", "0xabc", "0xGG"]) {
+    assert.throws(() => buildOutputScript(typed), /even number of 0-9\/a-f digits/, typed);
+  }
+  assert.equal(buildOutputScript("0x51z", { mode: "opreturn-text" }).kind, "opreturn", "the text mode still takes it");
+  assert.equal(buildOutputScript("0x 51 ac").scriptHex, "51ac", "spaced hex still passes through");
+});
+
 test("raw script hex has the same 10,000-byte cap as ASM", () => {
   assert.equal(buildOutputScript("0x" + "ab".repeat(10000)).kind, "raw");
   assert.throws(() => buildOutputScript("0x" + "ab".repeat(10001)), /10,000-byte/);

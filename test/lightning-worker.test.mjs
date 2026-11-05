@@ -606,6 +606,32 @@ test("scripts/build.mjs injects the bundled worker source as __LN_WORKER_SOURCE_
   assert.match(build, /__LN_WORKER_SOURCE__: JSON\.stringify\(/, "the page bundle must carry the key worker source");
 });
 
+// An hsm_secret file over 1 KiB is refused before it is read whole, as every
+// other file input checks its size first (red-team sweep 0eed735, lightning #1).
+test("an oversized hsm_secret file is refused without being read", async () => {
+  const page = lnPage();
+  try {
+    page.getElementById("ln-format").value = "cln-hsm";
+    const fileInput = page.getElementById("ln-hsm-file");
+    let read = false;
+    fileInput.files = [{ size: 5_000_000, arrayBuffer: async () => { read = true; return new ArrayBuffer(8); } }];
+    await fileInput.onchange();
+    assert.equal(read, false, "the oversized file was read whole");
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-trailing");
+    assert.equal(fileInput.value, "", "the file input was not reset");
+    // A real type-2 file, with its size, still loads. This test runs before
+    // the End Session one, which retires the module for the rest of the run.
+    const bytes = clnType2File(CLN_WORDS);
+    fileInput.files = [{ size: bytes.length, arrayBuffer: async () => bytes.buffer }];
+    const idle = page.getElementById("ln-session").textContent;
+    await fileInput.onchange();
+    await until(() => page.getElementById("ln-session").textContent !== idle, "the hsm-loaded status");
+    assert.equal(page.getElementById("ln-error").dataset.code, "", "the earlier refusal is cleared");
+  } finally {
+    await cleanup();
+  }
+});
+
 // End Session retires the WebAssembly module for the rest of this process,
 // so this test must stay last: nothing after it can derive.
 test("after End Session the Lightning tool refuses to derive and terminates its live worker", async () => {
@@ -627,30 +653,6 @@ test("after End Session the Lightning tool refuses to derive and terminates its 
     assert.equal(page.getElementById("ln-out").innerHTML, "", "a retired session derived a node key");
     assert.equal(spawned.length, before, "a key worker was spawned after End Session");
     await until(() => live.terminated, "the retired session's live worker was terminated");
-  } finally {
-    await cleanup();
-  }
-});
-
-// An hsm_secret file over 1 KiB is refused before it is read whole, as every
-// other file input checks its size first (red-team sweep 0eed735, lightning #1).
-test("an oversized hsm_secret file is refused without being read", async () => {
-  const page = lnPage();
-  try {
-    page.getElementById("ln-format").value = "cln-hsm";
-    const fileInput = page.getElementById("ln-hsm-file");
-    let read = false;
-    fileInput.files = [{ size: 5_000_000, arrayBuffer: async () => { read = true; return new ArrayBuffer(8); } }];
-    await fileInput.onchange();
-    assert.equal(read, false, "the oversized file was read whole");
-    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-trailing");
-    assert.equal(fileInput.value, "", "the file input was not reset");
-    // A real type-2 file, with its size, is still read.
-    const bytes = clnType2File(CLN_WORDS);
-    let readReal = false;
-    fileInput.files = [{ size: bytes.length, arrayBuffer: async () => { readReal = true; return bytes.buffer; } }];
-    await fileInput.onchange();
-    assert.equal(readReal, true, "a file of a real hsm_secret's size is read");
   } finally {
     await cleanup();
   }

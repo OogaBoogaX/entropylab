@@ -280,10 +280,12 @@ test("the byte-level word match finds every word at its own index", () => {
     seen += expected.length;
   }
   assert.ok(seen > 4000, "the rounds cover the list widely");
-  // The first and last words of the list, which a sort slip would lose first.
-  for (const word of [bip39English[0], bip39English[2047]]) {
-    assert.ok(new Set(bip39English).has(word));
-  }
+  // The first and last words of the list, which a sort slip would lose first,
+  // found through the matcher itself (BIP39 vectors: all-zero and all-ones
+  // entropy; #1478 gate, Kimi, GLM, MiniMax).
+  const ends = (phrase) => [...classifyQrPayload(new TextEncoder().encode(phrase)).indices];
+  assert.deepEqual(ends("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"), [...Array(11).fill(0), bip39English.indexOf("about")]);
+  assert.deepEqual(ends("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"), [...Array(11).fill(2047), bip39English.indexOf("wrong")]);
 });
 
 // Text with a tab or line break is text, not CompactSeedQR entropy (red-team
