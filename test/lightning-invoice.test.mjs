@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { toWords } from "../src/js/bech32.js";
 import { hex } from "../src/js/coders.js";
 import { secp256k1Ready } from "../src/js/secp256k1.js";
-import { hodlInitLn, hodlLnWipeMem, lnInvNetworkName, hodlLnInvRenderResult } from "../src/js/lightning.js";
+import { hodlInitLn, hodlLnWipeMem, lnInvNetworkName, hodlLnInvRenderResult, lnOfferAmount, lnOfferAmountHtml } from "../src/js/lightning.js";
+import { bolt12Decode } from "../src/js/bolt12.js";
 import { bolt11Decode } from "../src/js/bolt11.js";
 import { MiniDocument } from "./mini-dom.mjs";
 
@@ -650,4 +651,35 @@ test("the QR block renders the user's own pasted string", () => {
 test("app.js injects the QR renderer and the page network into hodlInitLn", () => {
   assert.match(appSource, /hodlInitLn\(\{[^}]*qrSvg: hodlQrSvg/);
   assert.match(appSource, /hodlInitLn\(\{[^}]*pageNetwork: \(\) => hodlInspectorNetwork\(\)/);
+});
+
+// Red-team sweep of 0eed735 (lightning #5): with offer_currency, BOLT12's
+// offer_amount counts that currency's smallest unit, not millisatoshi. The
+// spec's own "$100.00 USD" offer read "10000 msat" (10 sats). Wording agreed
+// by Claude, Astra, Fable and Grok.
+test("a BOLT12 offer amount is read in its currency, scaled by ISO 4217", () => {
+  assert.deepEqual(lnOfferAmount("10000"), { kind: "msat", value: "10000" }, "no currency: millisatoshi as before");
+  assert.deepEqual(lnOfferAmount("10000", "USD"), { kind: "currency", value: "100.00", code: "USD" });
+  assert.deepEqual(lnOfferAmount("5", "USD"), { kind: "currency", value: "0.05", code: "USD" });
+  assert.deepEqual(lnOfferAmount("1000", "JPY"), { kind: "currency", value: "1000", code: "JPY" });
+  assert.deepEqual(lnOfferAmount("1250", "KWD"), { kind: "currency", value: "1.250", code: "KWD" });
+  assert.deepEqual(lnOfferAmount("12345", "CLF"), { kind: "currency", value: "1.2345", code: "CLF" });
+  for (const code of ["XYZ", "XAU", "usd"]) {
+    assert.deepEqual(lnOfferAmount("10000", code), { kind: "unknown", value: "10000", code }, `${code}: not in the ISO table, so not scaled`);
+  }
+});
+
+test("an offer's own currency text never reaches the page unescaped", () => {
+  for (const currency of ["<b>x</b>", "\"><img src=x>"]) {
+    const html = lnOfferAmountHtml("1", currency);
+    assert.ok(!/[<>"]/.test(html.replace(/&lt;|&gt;|&quot;|&amp;|&#39;/g, "")), currency);
+  }
+});
+
+test("the BOLT12 spec's USD offer decodes to $100.00, not 10 sats", () => {
+  // test/fixtures/bolt12-offers-test.json: "with currency", "amount is USD $100.00".
+  const offer = "lno1qcp4256ypqpzwyq2p32x2um5ypmx2cm5dae8x93pqthvwfzadd7jejes8q9lhc4rvjxd022zv5l44g6qah82ru5rdpnpj";
+  const { fields } = bolt12Decode(offer);
+  assert.deepEqual(lnOfferAmount(fields.amount, fields.currency), { kind: "currency", value: "100.00", code: "USD" });
+  assert.match(readFileSync(new URL("../src/js/lightning.js", import.meta.url), "utf8"), /lnOfferAmountHtml\(r\.fields\.amount, r\.fields\.currency\)/, "the offer view uses it");
 });

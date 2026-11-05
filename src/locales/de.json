@@ -2586,5 +2586,6 @@
   "Word {n} replaced. Continue with word {next}.": "Wort {n} ersetzt. Fahren Sie mit Wort {next} fort.",
   "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "<strong>Entwicklungs-Build — nicht signiert.</strong> Nur zum Testen. Nicht mit echtem Geld oder echten Seeds verwenden. Die signierte Version finden Sie unter entropylab.online.",
   "Not checked:": "Nicht geprüft:",
-  "claims {path}, but this PSBT used up the checks. Do not sign.": "beansprucht {path}, aber diese PSBT hat die Prüfungen aufgebraucht. Nicht signieren."
+  "claims {path}, but this PSBT used up the checks. Do not sign.": "beansprucht {path}, aber diese PSBT hat die Prüfungen aufgebraucht. Nicht signieren.",
+  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (unbekannte Währung {currency}: Einheitsgröße unbekannt, mit dem Aussteller bestätigen)"
 }
