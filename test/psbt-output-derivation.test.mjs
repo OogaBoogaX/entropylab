@@ -314,13 +314,96 @@ test("an output derivation path over budget is left unverified, not derived", ()
   };
   try {
     hodlSetSession(hd);
-    const result = hodlDeclaredOutput([validChangeRecord], changeScript, "mainnet", { remaining: 2 });
+    // 20 steps: past the output's 16-step reserve as well as the budget.
+    const deep = derivation(changeNode, hd.fingerprint, [...changePath, ...Array(15).fill(0)]);
+    const result = hodlDeclaredOutput([deep], changeScript, "mainnet", { remaining: 2 });
     assert.equal(result.state, "unknown");
     assert.equal(result.budget, true);
     assert.equal(calls.length, 0, "no CKD step may run for an over-budget path");
   } finally {
     HDKey.prototype.deriveChild = original;
   }
+});
+
+// Red-team sweep of 0eed735 (part09 #8): a skipped record costs nothing, so
+// it must not empty the shared budget. Zeroing it let one free record under
+// the session fingerprint turn every later output's "PSBT lies" into a grey
+// "cannot be verified" (the input side was fixed the same way in 99194f47).
+test("a record past 255 levels is a lie and spends nothing", () => {
+  hodlSetSession(hd);
+  const budget = { remaining: 4096 };
+  const tooDeep = derivation(changeNode, hd.fingerprint, Array.from({ length: 256 }, () => 0));
+  assert.equal(hodlDeclaredOutput([tooDeep], changeScript, "mainnet", budget).state, "lie", "no key exists past 255 levels");
+  assert.equal(budget.remaining, 4096, "a record that is never derived spends nothing");
+  assert.equal(hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", budget).state, "lie",
+    "the lying output after it is still reported as a lie");
+});
+
+test("a record over the remaining budget does not empty it for later outputs", () => {
+  hodlSetSession(hd);
+  const budget = { remaining: receivePath.length + 1 };
+  const overBudget = derivation(changeNode, hd.fingerprint, [...changePath, ...Array(15).fill(0)]);
+  assert.equal(hodlDeclaredOutput([overBudget], changeScript, "mainnet", budget).budget, true);
+  assert.equal(budget.remaining, receivePath.length + 1, "the skipped record spent nothing");
+  assert.equal(hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", budget).state, "lie");
+});
+
+// #1457 gate (MiniMax): an attacker who knows the account xpub can spend the
+// main budget with valid deep records. Each output can still draw up to 16
+// steps from the render's reserve pool, so a lie at a real wallet's depth
+// stays red. The pool is shared and capped (#1457 r2 red team), so the render
+// stays bounded by the main budget plus the pool.
+test("a spent budget still checks an ordinary claim from the reserve pool", () => {
+  hodlSetSession(hd);
+  const spent = { remaining: 0, reserve: 4096 };
+  assert.equal(hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", spent).state, "lie");
+  assert.equal(hodlDeclaredOutput([validChangeRecord], changeScript, "mainnet", spent).state, "ours");
+  assert.equal(spent.remaining, 0, "the main budget is not touched once spent");
+  assert.equal(spent.reserve, 4096 - receivePath.length - changePath.length, "reserve steps are counted against the pool");
+});
+
+test("the reserve pool is capped across outputs, and an unchecked claim is flagged", () => {
+  const calls = [];
+  const original = HDKey.prototype.deriveChild;
+  HDKey.prototype.deriveChild = function (index) {
+    calls.push(index);
+    return original.call(this, index);
+  };
+  try {
+    hodlSetSession(hd);
+    const budget = { remaining: 0, reserve: changePath.length * 2 };
+    for (let output = 0; output < 2; output++) {
+      assert.equal(hodlDeclaredOutput([validChangeRecord], changeScript, "mainnet", budget).state, "ours");
+    }
+    const unchecked = hodlDeclaredOutput([falseKeyRecord], foreignScript, "mainnet", budget);
+    assert.equal(unchecked.state, "unknown");
+    assert.equal(unchecked.budget, true);
+    assert.equal(unchecked.deep, false, "an ordinary-depth claim left unchecked is not called deep");
+    assert.equal(calls.length, changePath.length * 2, "no derivation runs past the pool");
+    const deep = derivation(changeNode, hd.fingerprint, [...changePath, ...Array(15).fill(0)]);
+    assert.equal(hodlDeclaredOutput([deep], changeScript, "mainnet", { remaining: 0, reserve: 4096 }).deep, true);
+  } finally {
+    HDKey.prototype.deriveChild = original;
+  }
+});
+
+// #1457 r3 gate (GLM, Kimi): an unverifiable record after an unchecked one
+// must not turn the red "Not checked" verdict into the grey note.
+test("a later unverifiable record cannot downgrade an unchecked claim", () => {
+  hodlSetSession(hd);
+  const deep = derivation(changeNode, hd.fingerprint, [...changePath, ...Array(15).fill(0)]);
+  const budget = { remaining: 0, reserve: 1024 };
+  const result = hodlDeclaredOutput([deep, msigRecord, witnessField], p2wshScript(msigWitness), "mainnet", budget);
+  assert.equal(result.state, "unknown");
+  assert.equal(result.budget, true, "the unchecked claim keeps its verdict");
+  assert.equal(result.deep, true);
+});
+
+// The render's derivation bound stays at audit M3's 4096 steps in all: the
+// shared budget and the reserve pool split it.
+test("the render derives at most 4096 output steps in all", () => {
+  assert.match(app, /derivationBudget = \{ remaining: 3072, reserve: 1024 \}/);
+  assert.match(app, /index < outputsFrom && \(derivationBudget\.remaining > 0 \|\| derivationBudget\.reserve > 0\); index\+\+/, "Show more spends both parts the same way");
 });
 
 test("every private node created by an output derivation is wiped", () => {

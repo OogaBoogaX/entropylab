@@ -94,6 +94,55 @@ test("hodlKeyScanLoad puts the WIF's code points in the key's vault", async () =
   bytes.fill(0);
 });
 
+// Global sync copies made from the old key go with it, as at turn-on Keep and
+// in the seed scan; a throw there must not reach the panel, since the key is
+// already installed (MiniMax, #1439 gate r2).
+test("the key scan clears Global sync copies of the old key, guarded", async () => {
+  const cleared = [];
+  const { mod, session, state, modes } = await loadKeyScan({
+    stubs: { hodlClearGlobalSyncCopies: (target) => { cleared.push(target.globalSyncSource); throw new Error("boom"); } },
+  });
+  const wif = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
+  const bytes = Uint8Array.from(wif, (character) => character.charCodeAt(0));
+  state.globalSync = true;
+  state.globalSyncSource = "key:hex-key";
+  mod.hodlKeyScanLoad(bytes);
+  assert.deepEqual(cleared, ["key:hex-key"]);
+  assert.equal(sessionGet(session, mod.hodlSecureKeyOf(state), "key").vault.text(), wif);
+  assert.deepEqual(modes, ["key"]);
+  // Copies made from another source are not this key's: they stay.
+  state.globalSyncSource = "seed:words";
+  mod.hodlKeyScanLoad(bytes);
+  assert.deepEqual(cleared, ["key:hex-key"]);
+  bytes.fill(0);
+});
+
+// Once the vault holds the scanned key, a redraw that throws must not reach the
+// panel as "nothing was loaded", as in the seed scan (Kimi, #1439 gate r3), and
+// a failed form redraw must not skip the fingerprint preview, so the fingerprint
+// on screen follows the new key (DeepSeek, MiniMax, #1441 gate).
+test("a redraw that throws after the key scan loads still reports the load", async () => {
+  const wif = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
+  const bytes = () => Uint8Array.from(wif, (character) => character.charCodeAt(0));
+
+  // The form redraw fails: the load still stands and the preview is queued.
+  const redraw = await loadKeyScan({ stubs: { hodlSetMode: () => { throw new Error("redraw failed"); } } });
+  const first = bytes();
+  assert.doesNotThrow(() => redraw.mod.hodlKeyScanLoad(first));
+  assert.equal(sessionGet(redraw.session, redraw.mod.hodlSecureKeyOf(redraw.state), "key").vault.text(), wif);
+  assert.equal(redraw.state.fields.keyKind, "wif");
+  assert.deepEqual(redraw.previews, [0]);
+  first.fill(0);
+
+  // The preview fails: the load still stands and the form was redrawn.
+  const preview = await loadKeyScan({ stubs: { hodlQueueMasterFingerprintPreview: () => { throw new Error("preview failed"); } } });
+  const second = bytes();
+  assert.doesNotThrow(() => preview.mod.hodlKeyScanLoad(second));
+  assert.equal(sessionGet(preview.session, preview.mod.hodlSecureKeyOf(preview.state), "key").vault.text(), wif);
+  assert.deepEqual(preview.modes, ["key"]);
+  second.fill(0);
+});
+
 test("hodlKeyScanLoad throws, changing nothing, when it cannot load", async () => {
   const wif = "KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn";
   const bytes = () => Uint8Array.from(wif, (character) => character.charCodeAt(0));
@@ -111,4 +160,10 @@ test("hodlKeyScanLoad throws, changing nothing, when it cannot load", async () =
   assert.throws(() => ascii.mod.hodlKeyScanLoad(Uint8Array.from([0x35, 0x80])));
   assert.equal(ascii.state.fields.keyKind, "hex-key");
   assert.equal(ascii.session.entries.size, 0);
+});
+
+test("the key scan focuses the masked key field after a load", () => {
+  const body = functionBody("hodlBindKeyScan");
+  assert.match(body, /afterLoad:/);
+  assert.match(body, /getElementById\("secure-key"\)\?\.focus\(\)/);
 });

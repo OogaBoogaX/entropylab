@@ -241,7 +241,9 @@ test("OpenTimestamps stamps the tested HTML off the Pages/test critical path", (
   assert.ok(jobNeeds(timestamp).includes("build"), "timestamp needs build (digest)");
   assert.ok(jobNeeds(timestamp).includes("artifact"), "timestamp runs after the HTML commit");
   assert.ok(!jobNeeds(workflowJob(workflow, "artifact")).includes("timestamp"), "calendars must not block the HTML commit");
-  assert.ok(!jobNeeds(workflowJob(workflow, "deploy")).includes("timestamp"), "calendars must not block Pages");
+  const preview = workflowJob(workflow, "preview");
+  assert.ok(preview, "ci-cd.yml deploys the preview site");
+  assert.ok(!jobNeeds(preview).includes("timestamp"), "calendars must not block the preview deploy");
   assert.doesNotMatch(timestamp, /npm run build/, "timestamp must not rebuild the wallet HTML");
   // `ots stamp` creates its output with an exclusive open, so a proof left
   // over from the previous release makes every later stamp fail.
@@ -622,7 +624,9 @@ test("third-party actions are immutable and deployment is test-gated", () => {
   assert.match(rebuild, IN_IMAGE_BUILD, "build-wasm rebuilds the bindings inside the pinned dev image");
   assert.deepEqual(wasmGateProblems(workflow), []);
   for (const dependency of ["build", "verify", "test-ci", "test-browser", "build-wasm", "fuzz-lifehash", "fuzz-lifehash-cpp", "fuzz-msig", "reproduce"]) {
-    assert.ok(jobNeeds(workflowJob(workflow, "deploy")).includes(dependency), `deploy needs ${dependency}`);
+    // #1406: rock no longer deploys production; what rock publishes is the
+    // preview site, and it still waits for every gate.
+    assert.ok(jobNeeds(workflowJob(workflow, "preview")).includes(dependency), `preview needs ${dependency}`);
   }
 });
 

@@ -350,7 +350,9 @@ test("turning on with seed text keeps or clears the words", async () => {
     const phrase2 = "legal winner thank year wave sausage worth useful legal winner thank yellow";
     const keys = [
       { id: 1, name: "Key 1", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase1 } },
-      { id: 2, name: "Key 2", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase2 } },
+      // A switch of the seed format saves the words as numbers too: Keep
+      // empties that copy, and the dialog says so (GLM, #1439 gate r2).
+      { id: 2, name: "Key 2", mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase2, seedNumbers: "1013 2004 1789 2043 1977 1532 2027 1925 1013 2004 1789 2044" } },
     ];
     let choice = "keep", lastOptions = null;
     const mod = await loadAppFunctions(["hodlSecureEntryToggle", "hodlSecureKeyOf", "hodlSecureEntryOn"], {
@@ -377,10 +379,12 @@ test("turning on with seed text keeps or clears the words", async () => {
     assert.equal(lastOptions.mode, "on");
     assert.equal(lastOptions.canKeep, true);
     assert.deepEqual(lastOptions.names, ["Key 1", "Key 2"]);
+    assert.equal(lastOptions.otherFormats, true);
     assert.equal(mod.hodlSecureEntryOn, true);
     assert.equal(session.on, true);
     for (const key of keys) {
       assert.equal(key.fields.seed, "");
+      assert.equal(key.fields.seedNumbers ?? "", "", key.name);
       const entry = sessionGet(session, mod.hodlSecureKeyOf(key), "seed");
       assert.ok(entry);
       assert.equal(entry.length, 12);
@@ -410,7 +414,7 @@ test("Clear marks a committed key and refuses Journal backup", async () => {
   try {
     const session = createSecureSession();
     const phrase = "abandon ability able about above absent absorb abstract absurd abuse access accident";
-    const committed = { id: 1, name: "Committed", isLab: false, mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase }, result: { masterFingerprint: "73c5da0a" } };
+    const committed = { id: 1, name: "Committed", isLab: false, mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase, seedNumbers: "1 2 3 4 5 6 7 8 9 10 11 12" }, result: { masterFingerprint: "73c5da0a" } };
     const editor = { id: 2, name: "Editor", isLab: true, mode: "seed", seedMethod: "words", targetWords: 12, fields: { seed: phrase }, result: null };
     const keys = [committed, editor];
     const tTextCalls = [];
@@ -440,6 +444,8 @@ test("Clear marks a committed key and refuses Journal backup", async () => {
     await mod.hodlSecureEntryToggle(true);
     assert.equal(committed.secureCleared, true);
     assert.equal(committed.fields.seed, "");
+    // Clear empties the word-numbers copy of the seed too (GLM, #1439 gate r2).
+    assert.equal(committed.fields.seedNumbers, "");
     assert.equal("secureCleared" in editor, false);
     assert.equal(editor.fields.seed, "");
     const refusal = mod.hodlSecureEntryBackupRefusal();

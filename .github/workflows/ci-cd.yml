@@ -121,19 +121,10 @@ jobs:
             src/js/qr-wasm-b64.js
           if-no-files-found: error
           retention-days: 7
-      - name: Prepare static site
-        run: |
-          mkdir _site
-          cp entropylab.html robots.txt sitemap.xml llms.txt _site/
-          cp manifest.webmanifest service-worker.js _site/
-          cp entropylab.html _site/index.html
-          cp -r assets _site/assets
-          touch _site/.nojekyll
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: _site
-          retention-days: 7
+      # No Pages artifact here: production is deployed only by
+      # pages-release.yml from a published, signed release (#1406), and the
+      # preview job below builds its own _site from this candidate. A merge to
+      # rock must never change entropylab.online.
 
   # Keyless Sigstore attestation of the exact tested wallet HTML. This is a
   # separate push-only job: a pull request must never run PR-controlled code
@@ -493,12 +484,12 @@ jobs:
     permissions:
       contents: read
     env:
-      # bitcoin-31.1-x86_64-linux-gnu.tar.gz from bitcoincore.org. The digest
-      # is the file's line in the release's SHA256SUMS, which carries 11
-      # builder signatures (fanquake, achow101, hebasto, Sjors, and others)
-      # from the bitcoin-core/guix.sigs builder keys.
-      BITCOIN_CORE_VERSION: "31.1"
-      BITCOIN_CORE_SHA256: "b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e"
+      # bitcoin-32.1-x86_64-linux-gnu.tar.gz from bitcoincore.org. The digest
+      # is the file's line in the release's SHA256SUMS, which carried 8
+      # builder signatures when pinned (fanquake, achow101, Sjors, guggero,
+      # willcl-ark, and others) from the bitcoin-core/guix.sigs builder keys.
+      BITCOIN_CORE_VERSION: "32.1"
+      BITCOIN_CORE_SHA256: "61545c17c3120fb7412f896d248b11993af04ec8817aad3649c55b2afb044963"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -1086,26 +1077,99 @@ jobs:
           FILES=$(git diff --name-only "origin/$PR_BASE"...HEAD | tr '\n' ' ')
           node scripts/i18n-gate.mjs --author "$PR_AUTHOR" --app-slug "$APP_SLUG" --base "$PR_BASE" --head "$PR_HEAD" --files $FILES
 
-  # ── Deploy: gated on a good build, a clean verify, and the reproduction ──
+  # ── Preview: publish rock to the -dev preview site (issue #1406) ─────────
+  # Production (entropylab.online) is deployed only by pages-release.yml from
+  # a published, signed release. This job publishes the tested rock candidate
+  # to preview.entropylab.online, which carries a -dev version and no release
+  # signatures. It skips with a notice until the preview App is set up.
 
-  deploy:
-    name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/rock' && github.event_name != 'pull_request'
-    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce, test-bitcoind]
+  preview:
+    name: Preview · deploy rock to preview.entropylab.online
+    # After the artifact job, and only when it was not superseded: a run for
+    # an older rock commit that finishes late must not replace a newer
+    # preview (the same rule the timestamp job follows).
+    if: github.ref == 'refs/heads/rock' && github.event_name == 'push' && needs.artifact.outputs.superseded != 'true'
+    needs: [build, verify, test-ci, test-browser, build-wasm, fuzz-lifehash, fuzz-lifehash-cpp, fuzz-msig, reproduce, test-bitcoind, artifact]
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages-preview
+      cancel-in-progress: false
     steps:
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - name: Deploy tested artifact
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Download the tested candidate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: entropylab-candidate
+      - name: Verify the candidate digest
+        run: echo "${{ needs.build.outputs.sha256 }}  entropylab.html" | sha256sum -c -
+      - name: Prepare the preview site
+        run: |
+          mkdir _site
+          cp entropylab.html _site/
+          cp manifest.webmanifest service-worker.js _site/
+          cp entropylab.html _site/index.html
+          cp -r assets _site/assets
+          touch _site/.nojekyll
+          # The preview is an unsigned -dev build: it stays out of search. Every
+          # -dev page carries <meta name="robots" content="noindex, nofollow">,
+          # and crawlers must be let in to read it (a Disallow would hide the
+          # tag and still let a linked URL be listed bare), so robots.txt only
+          # drops the sitemap. No sitemap or llms.txt is published.
+          cat > _site/robots.txt <<'ROBOTS'
+          User-agent: *
+          Allow: /
+          ROBOTS
+          # The page it publishes must carry both dev-build guardrails. A
+          # candidate without the banner or the noindex (a version without
+          # -dev on rock, say, once #494 numbers patches) is refused, not
+          # published as if it were a release.
+          grep -qF 'id="dev-build-warning"' _site/index.html || { echo "::error title=Preview guardrails::the candidate has no dev-build banner; it is not published as the preview"; exit 1; }
+          grep -qF '<meta name="robots" content="noindex, nofollow">' _site/index.html || { echo "::error title=Preview guardrails::the candidate has no noindex meta; it is not published as the preview"; exit 1; }
+      # A short-lived token from the preview GitHub App, installed only on
+      # entropylab-preview with Contents: write (owner 11-04). The org has
+      # deploy keys turned off, and an App token expires within the hour.
+      - name: Mint the preview App token
+        id: app
+        if: vars.PREVIEW_APP_ID != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.PREVIEW_APP_ID }}
+          private-key: ${{ secrets.PREVIEW_APP_PRIVATE_KEY }}
+          owner: OogaBoogaX
+          repositories: entropylab-preview
+          permission-contents: write
+      - name: Deploy to the preview repository
+        env:
+          PREVIEW_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PREVIEW_TOKEN" ]; then
+            echo "::notice title=Preview not deployed::the preview App (vars.PREVIEW_APP_ID, secrets.PREVIEW_APP_PRIVATE_KEY) is not set up"
+            exit 0
+          fi
+          # The token rides in a per-command header, never in a URL or a git
+          # config file, the way actions/checkout passes its own; the encoded
+          # credential is masked too.
+          BASIC=$(printf 'x-access-token:%s' "$PREVIEW_TOKEN" | base64 -w0)
+          echo "::add-mask::$BASIC"
+          AUTH="AUTHORIZATION: basic $BASIC"
+          git -c http.https://github.com/.extraheader="$AUTH" clone --branch main --depth 1 https://github.com/OogaBoogaX/entropylab-preview.git "$RUNNER_TEMP/preview"
+          cd "$RUNNER_TEMP/preview"
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name CNAME -exec rm -rf {} +
+          cp -R "$GITHUB_WORKSPACE/_site/." .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Preview is unchanged; nothing to push."
+            exit 0
+          fi
+          git commit -m "Deploy rock ${GITHUB_SHA}"
+          git -c http.https://github.com/.extraheader="$AUTH" push origin HEAD:main
 
   # ── Docker: build and push the dev container image ────────────────────────
 

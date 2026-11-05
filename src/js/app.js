@@ -6332,11 +6332,12 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
       // every other source publishes nothing when invalid.
       let digits = value.replace(/\s/g, "").replace(/^0x/i, "");
       if (digits.length > 64) return null;
+      // The same for a key with any character that is not hex: stopping at it
+      // published the digits before it, a cut-off key the private-key field
+      // itself rejects (the bitcoinjs/bip39 GHSA-726r-qj3q-vrxm pattern).
+      if (!/^[0-9a-fA-F]*$/.test(digits)) return null;
       let bits = "";
-      for (let digit of digits) {
-        if (!/^[0-9a-fA-F]$/.test(digit)) break;
-        bits += Number.parseInt(digit, 16).toString(2).padStart(4, "0");
-      }
+      for (let digit of digits) bits += Number.parseInt(digit, 16).toString(2).padStart(4, "0");
       return bits;
     }
     if (kind === "wif") return hodlBitsFromBytes(hodlDecodeWif(value.trim()).priv);
@@ -6840,6 +6841,9 @@ function hodlRenderLastWordPicker(container, candidates, selected, onPick, setti
   label.className = "field last-word-field";
   label.textContent = hodlTText("Valid final word ({n} choices)", { n: candidates.length });
   select.setAttribute("aria-label", hodlTText("Valid final word for {n}-word seed", { n: targetWords }));
+  // The panel's change listener finds this select by this hook: its label is
+  // translated, so matching the English text missed it in every other locale.
+  select.setAttribute("data-last-word-select", "");
   if (!selected) {
     let placeholder = document.createElement("option");
     placeholder.value = placeholderValue;
@@ -6955,7 +6959,7 @@ function hodlSetSeedLength(words) {
 // no flag, so the host is never rendered and the module is never imported.
 var hodlKeyScan = null, hodlKeyScanModule = null, hodlKeyScanImport = null, hodlKeyScanOpenAfterMount = false;
 var hodlSeedScan = null, hodlSeedScanOpenAfterMount = false;
-var hodlSeedPicker = null, hodlSeedPickerImport = null;
+var hodlSeedPicker = null, hodlSeedPickerImport = null, hodlSeedPickerFocusOnMount = false;
 var hodlSecureDicePad = null, hodlSecureDicePadImport = null;
 // The three PSBT scan panels are the same preview-only extra: release builds
 // strip their hosts and never import the module.
@@ -6968,10 +6972,10 @@ const hodlPsbtScanHosts = [
   ["rbf-scan-host", "psbt-rbf-original"], ["audit-scan-host", "psbt-audit-before"], ["psbted-compare-scan-host", "psbted-compare-text"],
 ];
 function hodlKeyScanHostMarkup() {
-  return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="key-scan-host"></div>' : "";
+  return '<div id="key-scan-host"></div>';
 }
 function hodlSeedScanHostMarkup() {
-  return typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__ ? '<div id="seed-scan-host"></div>' : "";
+  return '<div id="seed-scan-host"></div>';
 }
 function hodlRenderKeyForm() {
   // The form and its on-screen keyboards are replaced: the listeners they
@@ -6983,6 +6987,7 @@ function hodlRenderKeyForm() {
   hodlSeedScan = null;
   try { hodlSeedPicker?.destroy(); } catch {}
   hodlSeedPicker = null;
+  hodlSeedPickerFocusOnMount = false;
   try { hodlSecureDicePad?.destroy(); } catch {}
   hodlSecureDicePad = null;
   let config = hodlSeedConfig(), keyboardHost = document.getElementById("passphrase-keyboard-host"), toggleHost = document.getElementById("passphrase-keyboard-toggle-host");
@@ -7655,44 +7660,42 @@ function hodlRenderPrivateKeyInputState(input) {
 
 function hodlBindKeyScan() {
   // The slice harness loads this with no scan host: return before anything
-  // else, and never read the preview flag bare.
+  // else. Every build ships the scan (Secure entry unhide, owner 11-04).
   let host = document.getElementById("key-scan-host");
   // No host, no mount: an open request is dropped here too.
   if (!host) {
     hodlKeyScanOpenAfterMount = false;
     return;
   }
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    if (!hodlKeyScanImport) {
-      hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
-        hodlKeyScanModule = module;
-        return module;
-      }).catch(() => null);
-    }
-    hodlKeyScanImport.then((module) => {
-      // An open request belongs to this mount only: a mount that bails (the
-      // host gone, a panel already there) drops it, so a later mount never
-      // opens the camera without a Scan press.
-      let openNow = hodlKeyScanOpenAfterMount;
-      hodlKeyScanOpenAfterMount = false;
-      if (!module || hodlKeyScan || !host.isConnected || host.childNodes.length) return;
-      try {
-        hodlKeyScan = module.mountKeyScan(host, {
-          accept: "wif",
-          translate: hodlTText,
-          privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
-          beforeOpen: hodlKeyScanBeforeOpen,
-          onKey: hodlKeyScanLoad,
-          replacesKey: hodlKeyScanReplaces,
-        });
-      } catch {
-        return;
-      }
-      // Not for a page hidden while Secure entry was turning on: the camera
-      // would start out of sight.
-      if (openNow && document.visibilityState !== "hidden") try { hodlKeyScan.open(); } catch {}
-    }).catch(() => {});
+  if (!hodlKeyScanImport) {
+    hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
+      hodlKeyScanModule = module;
+      return module;
+    }).catch(() => null);
   }
+  hodlKeyScanImport.then((module) => {
+    // An open request belongs to this mount only: a mount that bails (the
+    // host gone, a panel already there) drops it, so a later mount never
+    // opens the camera without a Scan press.
+    let openNow = hodlKeyScanOpenAfterMount;
+    hodlKeyScanOpenAfterMount = false;
+    if (!module || hodlKeyScan || !host.isConnected || host.childNodes.length) return;
+    try {
+      hodlKeyScan = module.mountKeyScan(host, {
+        accept: "wif",
+        privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
+        beforeOpen: hodlKeyScanBeforeOpen,
+        onKey: hodlKeyScanLoad,
+        replacesKey: hodlKeyScanReplaces,
+        afterLoad: () => { try { document.getElementById("secure-key")?.focus(); } catch {} },
+      });
+    } catch {
+      return;
+    }
+    // Not for a page hidden while Secure entry was turning on: the camera
+    // would start out of sight.
+    if (openNow && document.visibilityState !== "hidden") try { hodlKeyScan.open(); } catch {}
+  }).catch(() => {});
 }
 
 async function hodlKeyScanBeforeOpen() {
@@ -7741,51 +7744,60 @@ function hodlKeyScanLoad(bytes) {
   state.fields.keyKind = "wif";
   let values = hodlPrivateKeyValues(state.fields);
   for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
-  hodlSetMode(hodlKeyMode);
-  hodlQueueMasterFingerprintPreview(0);
+  // Global sync copies computed from the old key go with it, as at turn-on
+  // Keep and in the seed scan (MiniMax, #1439 gate). The key is installed, so
+  // a throw here must not make the panel say nothing was loaded.
+  if (state.globalSync && String(state.globalSyncSource || "").startsWith("key:")) {
+    try { hodlClearGlobalSyncCopies(state); } catch {}
+  }
+  // The key is installed: a redraw that fails from here on must not make the
+  // panel say nothing was loaded, as in the seed scan (Kimi, #1439 gate r3).
+  // Each step has its own guard, so the fingerprint preview is queued even
+  // when the form redraw fails: the fingerprint on screen follows the key in
+  // the vault (DeepSeek, MiniMax, #1441 gate).
+  try { hodlSetMode(hodlKeyMode); } catch {}
+  try { hodlQueueMasterFingerprintPreview(0); } catch {}
 }
 function hodlBindSeedScan() {
   // The slice harness loads this with no scan host: return before anything
-  // else, and never read the preview flag bare.
+  // else. Every build ships the scan (Secure entry unhide, owner 11-04).
   let host = document.getElementById("seed-scan-host");
   // No host, no mount: an open request is dropped here too (GLM, round 1).
   if (!host) {
     hodlSeedScanOpenAfterMount = false;
     return;
   }
-  if (typeof __ENTROPYLAB_PREVIEW__ !== "undefined" && __ENTROPYLAB_PREVIEW__) {
-    if (!hodlKeyScanImport) {
-      hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
-        hodlKeyScanModule = module;
-        return module;
-      }).catch(() => null);
-    }
-    hodlKeyScanImport.then((module) => {
-      // An open request belongs to this mount only: a mount that bails (the
-      // host gone, a panel already there) drops it, so a later mount never
-      // opens the camera without a Scan press (Kimi, autofix review).
-      let openNow = hodlSeedScanOpenAfterMount;
-      hodlSeedScanOpenAfterMount = false;
-      if (!module || hodlSeedScan || !host.isConnected || host.childNodes.length) return;
-      try {
-        hodlSeedScan = module.mountKeyScan(host, {
-          accept: "seed",
-          idPrefix: "seed-scan",
-          translate: hodlTText,
-          wordlist: hodlBip39Wordlist,
-          privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
-          beforeOpen: hodlSeedScanBeforeOpen,
-          onSeed: hodlSeedScanLoad,
-          replacesSeed: hodlSeedScanReplaces,
-        });
-      } catch {
-        return;
-      }
-      // Not for a page hidden while Secure entry was turning on: the camera
-      // would start out of sight (K3.1, #1364 round 6).
-      if (openNow && document.visibilityState !== "hidden") try { hodlSeedScan.open(); } catch {}
-    }).catch(() => {});
+  if (!hodlKeyScanImport) {
+    hodlKeyScanImport = import("./qr-key-scan.js").then((module) => {
+      hodlKeyScanModule = module;
+      return module;
+    }).catch(() => null);
   }
+  hodlKeyScanImport.then((module) => {
+    // An open request belongs to this mount only: a mount that bails (the
+    // host gone, a panel already there) drops it, so a later mount never
+    // opens the camera without a Scan press (Kimi, autofix review).
+    let openNow = hodlSeedScanOpenAfterMount;
+    hodlSeedScanOpenAfterMount = false;
+    if (!module || hodlSeedScan || !host.isConnected || host.childNodes.length) return;
+    try {
+      hodlSeedScan = module.mountKeyScan(host, {
+        accept: "seed",
+        idPrefix: "seed-scan",
+        wordlist: hodlBip39Wordlist,
+        privateValue: (value, revealed) => hodlPrivateValue(value, "mono private-field-value", revealed),
+        beforeOpen: hodlSeedScanBeforeOpen,
+        onSeed: hodlSeedScanLoad,
+        replacesSeed: hodlSeedScanReplaces,
+        afterLoad: hodlSeedScanAfterLoad,
+      });
+    } catch {
+      return;
+    }
+    // Not for a page hidden while Secure entry was turning on: the camera
+    // would start out of sight (K3.1, #1364 round 6).
+    if (openNow && document.visibilityState !== "hidden") try { hodlSeedScan.open(); } catch {}
+  }).catch(() => {});
 }
 async function hodlSeedScanBeforeOpen() {
   if (hodlSecureSeedActive()) return true;
@@ -7809,6 +7821,16 @@ function hodlSeedScanReplaces() {
   let state = hodlKeys[hodlActiveKey];
   if (!state) return false;
   return hodlSecureSeedHasWords(hodlSecureKeyOf(state)) || Boolean(String(state.fields?.seed ?? "").trim()) || Boolean(String(state.fields?.seedNumbers ?? "").trim());
+}
+// After a scanned seed loads, focus moves to the word picker instead of falling
+// to the page. The load redraws the form and the new picker mounts once its
+// import resolves, so when it is not there yet the mount takes the focus.
+function hodlSeedScanAfterLoad() {
+  if (hodlSeedPicker) {
+    try { hodlSeedPicker.focus(); } catch {}
+    return;
+  }
+  hodlSeedPickerFocusOnMount = true;
 }
 function hodlSeedScanLoad(indices, count) {
   try {
@@ -7849,6 +7871,16 @@ function hodlSeedScanLoad(indices, count) {
     // The same seed typed as word numbers goes too: Continue replaces the
     // key's seed, whichever way it was entered (Kimi, round 5).
     state.fields.seedNumbers = "";
+    // Global sync copies computed from the old words go with them: the scan
+    // replaced those words, so every copy of them is stale. A wallet made
+    // from a private key keeps its fields, as at turn-on Keep: the words
+    // cannot rebuild it. The result was invalidated above, so the check reads
+    // the one kept to wipe (GLM, MiniMax, red team, #1439 gate r2).
+    // The words are installed, so a throw here must not make the panel say
+    // nothing was loaded (Kimi, #1439 gate).
+    if (state.globalSync && ["seed:words", "seed:numbers"].includes(state.globalSyncSource) && previous?.kind !== "single") {
+      try { hodlClearGlobalSyncCopies(state); } catch {}
+    }
     state.lastWord = "";
     // The D++ final word belonged to the old length, as on a word-count
     // change (Kimi, round 3).
@@ -8011,9 +8043,14 @@ function hodlMountSeedPicker() {
     try {
       hodlSeedPicker = module.mountSeedPicker(host, {
         entry, wordlist: hodlBip39Wordlist, seedSet, seedUndo, seedIndices,
-        entropyFromWordIndices: hodlEntropyFromWordIndices, translate: hodlTText,
+        entropyFromWordIndices: hodlEntropyFromWordIndices,
         onChange: hodlSecureSeedChanged,
       });
+      // A scanned seed asked for focus before this mount finished.
+      if (hodlSeedPickerFocusOnMount) {
+        hodlSeedPickerFocusOnMount = false;
+        try { hodlSeedPicker.focus(); } catch {}
+      }
     } catch {
       if (host.isConnected && hodlSecureSeedActive()) {
         host.innerHTML = "";
@@ -8529,7 +8566,11 @@ function hodlInitMasterFingerprintPreview() {
   ["focus", "blur"].forEach((type) => pass.addEventListener(type, () => hodlRenderPassphraseInputState(pass)));
   panel.addEventListener("change", (event) => {
     let target = event.target;
-    if (!(target instanceof Element) || !target.matches('input[name="dm"], input[name="card-method"], input[name="seed-method"], input[name="kk"], #seed-zero-index, input[name="entropy-format"], select[aria-label^="Valid final word"]')) return;
+    if (!(target instanceof Element) || !target.matches('input[name="dm"], input[name="card-method"], input[name="seed-method"], input[name="kk"], #seed-zero-index, input[name="entropy-format"], select[data-last-word-select]')) return;
+    // A final word picked from the select changes the seed without an input
+    // event, so Global sync re-runs here, as the click handler does for the
+    // [data-lw] buttons; otherwise every other method kept the old word.
+    if (target.matches("select[data-last-word-select]")) hodlGlobalSyncFromCurrentInput();
     hodlInvalidateLiveKeyResult();
     hodlRenderGlobalSyncControl();
     hodlQueueMasterFingerprintPreview();
@@ -13266,7 +13307,10 @@ async function hodlSecureEntryToggle(wanted) {
             if (String(text ?? "").trim()) {
               keys.push({ keyId: hodlSecureKeyOf(state, true), methods: { rolls: { text, method } } });
               names.push(state.name);
-              diceStates.push({ state, method });
+              let keptField = hodlDiceFieldName(method);
+              if (method === "coleman" && !Object.prototype.hasOwnProperty.call(state.fields || {}, "colemanDice")) keptField = "dice";
+              let otherFormats = ["dice", "colemanDice", "bitboxDice", "dplusDice"].some((name) => name !== keptField && String(state.fields?.[name] ?? "").trim());
+              diceStates.push({ state, method, otherFormats });
             }
           }
         }
@@ -13306,7 +13350,10 @@ async function hodlSecureEntryToggle(wanted) {
         commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
       } else {
         plan = planTurnOn(hodlSecureSession, keys, { seed: converter, key: keyConverter, rolls: ({ text, method }) => hodlSecureDiceEntryFromText(text, method) });
-        let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok, otherFormats: keyStates.some((item) => item.otherFormats) });
+        // A seed held as words can also hold word numbers (each switch of the
+        // seed format saves both): Keep empties them too, so the note shows.
+        let seedOtherFormats = states.some((state) => String(state.fields?.seedNumbers ?? "").trim());
+        let choice = await (await hodlSecureEntryDialog()).open({ mode: "on", names, canKeep: plan.ok, otherFormats: seedOtherFormats || keyStates.some((item) => item.otherFormats) || diceStates.some((item) => item.otherFormats) });
         if (choice === "keep" && plan.ok) {
           commitTurnOn(hodlSecureSession, plan);
           plan = null;
@@ -13322,6 +13369,9 @@ async function hodlSecureEntryToggle(wanted) {
               state.lastWord = "";
             }
             state.fields.seed = "";
+            // The same seed saved as word numbers is hidden plain text too
+            // (B1): a switch of the seed format saves both (GLM, #1439 gate).
+            state.fields.seedNumbers = "";
           }
           for (const { state } of keyStates) {
             // Global sync copies computed from this key go with it, as for
@@ -13334,10 +13384,20 @@ async function hodlSecureEntryToggle(wanted) {
             for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
           }
           for (const { state, method } of diceStates) {
-            let legacyColeman = method === "coleman" && !Object.prototype.hasOwnProperty.call(state.fields || {}, "colemanDice");
-            state.fields[hodlDiceFieldName(method)] = "";
-            if (legacyColeman) state.fields.dice = "";
-            if (state.globalSync && state.globalSyncSource === "dice:" + method) {
+            // Keep empties every dice text field the key holds, not only the
+            // one on screen: the others are hidden plain text (B1). The BitBox
+            // coin positions and the D++/BitBox picked last words are parts of
+            // those transcripts, so they go too (Kimi, #1439 gate). lastWord is
+            // BitBox's pick only when BitBox rolls were there; otherwise it can
+            // belong to the key's other inputs, and Keep leaves it.
+            let bitboxWord = method === "bitbox" || Boolean(String(state.fields?.bitboxDice ?? "").trim());
+            for (const name of ["dice", "colemanDice", "bitboxDice", "dplusDice"]) state.fields[name] = "";
+            state.diceCoinPositions = [];
+            state.dplusLastWord = "";
+            if (bitboxWord) state.lastWord = "";
+            // Every dice field was just emptied, so Global sync copies made from
+            // any of them go, not only from the kept method's (#1439 red team).
+            if (state.globalSync && String(state.globalSyncSource || "").startsWith("dice:")) {
               hodlClearGlobalSyncCopies(state);
               state.lastWord = "";
             }
@@ -13349,6 +13409,7 @@ async function hodlSecureEntryToggle(wanted) {
             if (state.result) state.secureCleared = true;
             if (state.globalSync) hodlClearGlobalSyncCopies(state);
             state.fields.seed = "";
+            state.fields.seedNumbers = "";
             // The last-word helper's copy of the wiped words goes too (GLM).
             state.lastWord = "";
           }
@@ -13361,12 +13422,16 @@ async function hodlSecureEntryToggle(wanted) {
             let values = hodlPrivateKeyValues(state.fields);
             for (const format of ["wif", "hex-key", "minikey", "brain"]) values[format] = "";
           }
-          for (const { state, method } of diceStates) {
+          for (const { state } of diceStates) {
             if (state.result) state.secureCleared = true;
             if (state.globalSync) hodlClearGlobalSyncCopies(state);
-            let legacyColeman = method === "coleman" && !Object.prototype.hasOwnProperty.call(state.fields || {}, "colemanDice");
-            state.fields[hodlDiceFieldName(method)] = "";
-            if (legacyColeman) state.fields.dice = "";
+            // Clear empties every dice text field the key holds, not only the
+            // one on screen: each is a secret, as are the coin positions and
+            // picked last words that belong to them.
+            for (const name of ["dice", "colemanDice", "bitboxDice", "dplusDice"]) state.fields[name] = "";
+            state.diceCoinPositions = [];
+            state.dplusLastWord = "";
+            state.lastWord = "";
           }
           commitTurnOn(hodlSecureSession, planTurnOn(hodlSecureSession, [], {}));
         } else {
@@ -13522,10 +13587,10 @@ async function hodlSecureEntryToggle(wanted) {
     hodlSecureEntryBusy = false;
   }
 }
-// Offered only in preview builds and only once a method can be entered
-// securely; seeds are supported from P2b, so preview builds show the switch.
+// Offered in every build once a method can be entered securely (Secure
+// entry unhide, owner 11-04: "Shouldn't that be a main feature by now?").
 function hodlSecureEntryAvailable() {
-  return Boolean(PREVIEW) && Object.values(hodlSecureSupported).some(Boolean);
+  return Object.values(hodlSecureSupported).some(Boolean);
 }
 // Ends secure entry for the session: the switch goes off and every entry and
 // pending plan is wiped. Leaving the page and End Session (which dispatches
@@ -13739,18 +13804,20 @@ function hodlSecureDiceApplies() {
 }
 
 function hodlSecureDiceEntryFromText(text, method) {
-  let entry = rollsEntry(method, hodlSecureDiceCapacity);
+  let value = String(text ?? ""), found = 0;
+  for (let i = 0; i < value.length; i++) {
+    let code = value.charCodeAt(i);
+    if (code >= 0x31 && code <= 0x36) found += 1;
+    else if (/\s|,|;|\|/.test(value[i])) continue;
+    else throw new Error("bad roll");
+  }
+  if (!found) throw new Error("no rolls");
+  let entry = rollsEntry(method, Math.max(hodlSecureDiceCapacity, found));
   try {
-    let found = 0, value = String(text ?? "");
     for (let i = 0; i < value.length; i++) {
       let code = value.charCodeAt(i);
-      if (code >= 0x31 && code <= 0x36) {
-        rollsPush(entry, code - 0x30);
-        found += 1;
-      } else if (/\s|,|;|\|/.test(value[i])) continue;
-      else throw new Error("bad roll");
+      if (code >= 0x31 && code <= 0x36) rollsPush(entry, code - 0x30);
     }
-    if (!found) throw new Error("no rolls");
     return entry;
   } catch (error) {
     try { entry.rolls.fill(0); } catch {}
@@ -13884,7 +13951,7 @@ function hodlMountSecureDicePad() {
     if (!entry) return;
     try {
       hodlSecureDicePad = module.mountSecureDicePad(host, {
-        entry, rollsPush, rollsUndo, rollAt, labelledBy: "dice-label", translate: hodlTText,
+        entry, rollsPush, rollsUndo, rollAt, labelledBy: "dice-label",
         onChange: hodlSecureDiceChanged,
       });
     } catch {
@@ -14045,7 +14112,7 @@ function hodlSecureKeyStatus() {
   }
   let lengths = hodlSecureKeyLengths(kind);
   if (!lengths.includes(count) && count < Math.max(...lengths)) {
-    line.textContent = hodlT("{count} characters", { count }); // DRAFT (owner OK pending)
+    line.textContent = hodlT("{count} characters", { count });
     // A complete key of another format can be shorter than this one (a WIF
     // under hex, a mini key under WIF or hex), so offer the switch here too
     // (Kimi K3, Grok, GLM and MiniMax, round 1).
@@ -14066,13 +14133,13 @@ function hodlSecureKeyStatus() {
   }
   try {
     if (kind === "hex-key") {
-      line.textContent = hodlT("Valid private-key value · Hex has no checksum to detect typing mistakes."); // DRAFT (owner OK pending)
+      line.textContent = hodlT("Valid private-key value · Hex has no checksum to detect typing mistakes.");
     } else if (kind === "minikey") {
-      line.textContent = hodlT("Mini key check passed"); // DRAFT (owner OK pending)
+      line.textContent = hodlT("Mini key check passed");
     } else {
       line.textContent = parsed.compressed
-        ? hodlT("WIF checksum passed · {network} · Compressed public key", { network: parsed.network }) // DRAFT (owner OK pending)
-        : hodlT("WIF checksum passed · {network} · Uncompressed public key", { network: parsed.network }); // DRAFT (owner OK pending)
+        ? hodlT("WIF checksum passed · {network} · Compressed public key", { network: parsed.network })
+        : hodlT("WIF checksum passed · {network} · Uncompressed public key", { network: parsed.network });
     }
   } finally {
     parsed.priv?.fill(0);
@@ -16214,6 +16281,12 @@ function hodlForeignSingleKeyScript(entries, script) {
 function hodlDeclaredOutput(entries, script, network, budget = null) {
   if (!hodlPsbtHd || !entries || !script) return null;
   let fingerprint = hodlFingerprintHex(hodlPsbtHd.fingerprint), declared = null;
+  // This output's own reserve for when the shared budget is spent: up to 16
+  // steps, more than any real wallet path (5-7), drawn from the render's
+  // capped reserve pool (budget.reserve). So an ordinary claim here is still
+  // checked after other records spend the main budget (#1457 gate, MiniMax),
+  // and the render stays bounded by remaining + reserve (#1457 r2 red team).
+  let reserve = budget ? 16 : 0;
   for (let entry of hodlFind(entries, 2)) {
     if (entry.val.length < 4 || (entry.val.length - 4) % 4) continue;
     let fp = hodlHex.encode(entry.val.slice(0, 4));
@@ -16231,13 +16304,28 @@ function hodlDeclaredOutput(entries, script, network, budget = null) {
     }
     // A PSBT is untrusted. Deriving an attacker-named path costs one CKD per
     // step and creates live private nodes; bound the whole render and mark an
-    // exhausted claim unverified instead of deriving it (audit M3).
-    if (path.length > 255 || (budget && path.length > budget.remaining)) {
-      if (budget) budget.remaining = 0;
-      if (!declared || declared.state !== "ours") declared = { state: "unknown", path: label, budget: true };
-      continue;
+    // exhausted claim unverified instead of deriving it (audit M3). A skipped
+    // record costs nothing and leaves the budget to later records, as on the
+    // input side: zeroing it let one free 256-step record under this wallet's
+    // fingerprint turn every later output's "PSBT lies" into "cannot be
+    // verified" (red-team sweep of 0eed735).
+    // A path past BIP32's 255 levels names no key, so a claim that this
+    // wallet's key is there is false.
+    if (path.length > 255) return { state: "lie", path: label };
+    if (budget && path.length > budget.remaining) {
+      // The shared budget is spent: the output's reserve pays for an ordinary
+      // claim while the pool lasts. Anything left unchecked, which only a
+      // padded PSBT causes, renders red ("Not checked: ... Do not sign.").
+      let pool = Number(budget.reserve) || 0;
+      if (path.length > reserve || path.length > pool) {
+        if (!declared || declared.state !== "ours") declared = { state: "unknown", path: label, budget: true, deep: path.length > 16 };
+        continue;
+      }
+      reserve -= path.length;
+      budget.reserve = pool - path.length;
+    } else if (budget) {
+      budget.remaining -= path.length;
     }
-    if (budget) budget.remaining -= path.length;
     let node = hodlPsbtHd, derived = [];
     try {
       for (let index of path) {
@@ -16267,8 +16355,11 @@ function hodlDeclaredOutput(entries, script, network, budget = null) {
       let member = hodlScriptMembership(entries, script, node.publicKey);
       if (hodlForeignSingleKeyScript(entries, script)) return { state: "lie", path: label };
       // Otherwise the claim is unverifiable from this map — which is not a
-      // lie. A later record may still prove ownership.
-      if (!declared || declared.state !== "ours") {
+      // lie. A later record may still prove ownership. A claim left unchecked
+      // by the budget keeps its red verdict: a later unverifiable record must
+      // not turn it grey, or record order would decide the warning (#1457 r3
+      // gate, GLM and Kimi).
+      if (!declared || (declared.state !== "ours" && !declared.budget)) {
         let noted = member || Boolean(declared && declared.state === "unknown" && declared.member);
         declared = { state: "unknown", path: label, member: noted };
       }
@@ -16321,6 +16412,14 @@ function hodlRenderOutputHtml(output, index, network, map, entries, derivationBu
     let vars = { path: declared.path };
     extra = "<br>" + (declared.role === "change" ? hodlT("change · {path} (verified)", vars) : hodlT("this wallet · {path} (verified)", vars));
     className = "psbt-ok";
+  } else if (declared && declared.state === "unknown" && declared.budget) {
+    // A claim on this wallet left unchecked: only a PSBT padded with deep
+    // records gets here, so it reads as a red stop, not a grey note. Wording
+    // agreed by Claude, Astra, Fable and Grok (11-05).
+    extra = "<br><strong>" + hodlT("Not checked:") + "</strong> " + (declared.deep
+      ? hodlT("claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.", { path: declared.path })
+      : hodlT("claims {path}, but this PSBT used up the checks. Do not sign.", { path: declared.path }));
+    className = "psbt-bad";
   } else if (declared && declared.state === "unknown") {
     let vars = { path: declared.path };
     extra = "<br><span class='muted'>" + (declared.member
@@ -16450,7 +16549,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // One PSBT output-derivation budget per render. An attacker-named path
     // costs one CKD per step; the inspector must not derive an unbounded
     // private subtree from an untrusted file (audit M3).
-    derivationBudget = { remaining: 4096 },
+    // The 4096 steps are split: 3072 shared, and a 1024-step reserve that
+    // each output can draw up to 16 from once the shared part is spent
+    // (#1457), so an ordinary claim stays checked after padding while the
+    // render stays bounded at 4096 in all.
+    derivationBudget = { remaining: 3072, reserve: 1024 },
     // The same for the session-key lookup on the input side. Only the rows a
     // digest was rebuilt for (signatureChecks) can use the key, so 4096 steps
     // covers 256 rows of ordinary paths.
@@ -16550,8 +16653,8 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
   // exactly as in a full render of the grown window, which spends the
   // per-render derivation budget (audit M3) on the outputs above them first:
   // those are rendered again and discarded until the budget runs out (GLM
-  // 5.3's review of #1031). A spent budget stays spent, so the loop can stop.
-  for (let index = 0; only?.kind === "outputs" && index < outputsFrom && derivationBudget.remaining > 0; index++) {
+  // 5.3's review of #1031). A spent budget (main and reserve pool) stays spent, so the loop can stop.
+  for (let index = 0; only?.kind === "outputs" && index < outputsFrom && (derivationBudget.remaining > 0 || derivationBudget.reserve > 0); index++) {
     hodlRenderOutputHtml(tx.outputs[index], index, network, ownershipMap, psbt.outputs[index], derivationBudget);
   }
   for (let index = outputsFrom; index < shownOutputs; index++) {
