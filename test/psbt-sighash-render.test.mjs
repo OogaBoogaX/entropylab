@@ -9,7 +9,6 @@
 // Run with `npm test` (part of the default suite).
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { t as tText } from "../src/js/i18n.js";
 import { loadAppFunctions } from "./app-slice-harness.mjs";
 
 const inertDom = new Proxy(function () {}, { get: (target, key) => (key === Symbol.toPrimitive ? () => "" : key === "then" ? undefined : inertDom), apply: () => inertDom, construct: () => inertDom });
@@ -25,7 +24,7 @@ const view = await loadAppFunctions(["hodlRenderPsbt", "hodlPsbtWipeMem"], {
   settable: ["hodlPsbtNonceHistory"],
   stubs: { hodlPsbtAnalysisSummary: (list) => ((checks = list), ""), hodlSessionOwnership: () => new Map() },
 });
-// The SIGHASH policy row, found by its label key.
+// The SIGHASH policy row, found by its id (not its label, which is copy).
 const policyState = (psbt) => {
   checks = null;
   view.__set.hodlPsbtNonceHistory([]);
@@ -34,7 +33,7 @@ const policyState = (psbt) => {
   } finally {
     view.hodlPsbtWipeMem();
   }
-  const row = checks?.find((check) => check.label === tText("SIGHASH policy"));
+  const row = checks?.find((check) => check.id === "sighash-policy");
   assert.ok(row, "the render lists a SIGHASH policy check");
   return row.state;
 };
@@ -114,6 +113,14 @@ test("a finalized pk() script-path signature's sighash byte is checked too", () 
   assert.equal(policyState(psbtOf([witnessUtxo(1000, P2TR), scriptPathWitness(signature(0x04))])), "problem", "an undefined byte");
   assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2TR), scriptPathWitness(signature(0x01))])), "problem", "SIGHASH_ALL");
   assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2TR), scriptPathWitness(signature(null))])), "problem", "64 bytes");
+});
+
+// A decoy ECDSA partial signature beside a finalized Taproot spend that was
+// not read must not make the row complete (#1479 r2 gate, Kimi).
+test("a decoy partial signature does not make an unread finalized Taproot spend complete", () => {
+  const partial = { type: 2, keydata: Uint8Array.of(0x02, ...G), val: Uint8Array.of(0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01) };
+  assert.equal(policyState(psbtOf([declared(1), internalKey, finalWitness(signature(0x02))])), "incomplete", "no previous output: the witness is not read");
+  assert.notEqual(policyState(psbtOf([declared(1), internalKey, partial, finalWitness(signature(0x02))])), "complete", "a decoy ECDSA signature beside it");
 });
 
 test("a finalized Taproot signature that commits to everything is not a policy problem", () => {

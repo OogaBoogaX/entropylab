@@ -16941,6 +16941,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     let oddTapFields = hodlFind(entries, 19).filter((entry) => entry.keydata.length).length + hodlFind(entries, 20).filter((entry) => entry.keydata.length !== 64).length;
     for (let odd = 0; odd < oddTapFields; odd++) schnorrRecords.push({ input: index, source: "tap-malformed", pubkey: new Uint8Array(), r: null, s: null });
     if (tapSignatures.length || (finalized && !signatures.length)) policyIncomplete++;
+    // A finalized Taproot spend whose signature was not read (no previous
+    // output to key it by) stays incomplete even when an ECDSA partial
+    // signature sits beside it: a decoy one made the row read complete over
+    // a final witness nobody checked (#1479 r2 gate, Kimi).
+    else if (finalized && !finalTapPolicy.length && hodlFinalIsTaproot(entries, claim)) policyIncomplete++;
     let derivationFingerprints = signatures.length ? hodlPsbtDerivationFingerprints(entries) : null;
     signatures.forEach(signature => {
       let parts = hodlSigParts(signature.der),
@@ -17315,6 +17320,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
           : hodlTText("One or more inputs have no witness UTXO amount, and available PSBT claims were not checked against previous transactions or the blockchain."),
     },
     {
+      id: "sighash-policy",
       label: hodlTText("SIGHASH policy"),
       state: policyProblems ? "problem" : policyIncomplete ? "incomplete" : "complete",
       detail: policyProblems
