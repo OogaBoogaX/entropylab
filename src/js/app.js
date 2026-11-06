@@ -12555,9 +12555,14 @@ function hodlFinalTapKeySig(entries, prevout) {
     return null;
   }
   let sig = stack.length === 1 ? stack[0] : stack.length === 2 && stack[1].length && stack[1][0] === 0x50 ? stack[0] : null;
-  let parsed = sig && hodlParseSchnorr(sig);
-  if (!parsed) return null;
-  return { pubkey: prevout.script.slice(2), r: parsed.r, s: parsed.s, source: "tap-key" };
+  if (!sig) return null;
+  let parsed = hodlParseSchnorr(sig);
+  // A key-path witness's one item is its signature, so one that does not
+  // parse under BIP341 (an undefined sighash byte, a wrong length) is kept with
+  // r null: a policy problem, as the same bytes in a 0x13 field are (#1479
+  // gate, Gemini, MiniMax).
+  if (!parsed) return { pubkey: prevout.script.slice(2), r: null, s: null, sighash: null, source: "tap-key" };
+  return { pubkey: prevout.script.slice(2), r: parsed.r, s: parsed.s, sighash: parsed.sighash, source: "tap-key" };
 }
 // The Schnorr signatures of a finalized P2TR script-path input whose leaf is
 // pk() or multi_a (psbt-schnorr.js reads the witness); null for any other
@@ -12686,13 +12691,30 @@ function hodlFinalSigs(entries, witnessUtxo, tx, index, signatureChecks) {
   }
   return { signatures, uninspected, malformed };
 }
+// Each BIP32 record is parsed once: signature rows re-read their input's
+// records, and re-parsing every record for each row still stalled the tab on
+// a large crafted PSBT (#1479 r4 gate, GLM). A row still filters by pubkey
+// before it parses, so a malformed record for another key leaves the row's
+// own records readable (#1479 r5 gate, MiniMax). Entries are built once per
+// parse and never changed in place, so a record can't go stale.
+var hodlBip32Parsed = new WeakMap();
 function hodlBip32(entries, pubkey) {
   return hodlFind(entries, 6).filter((entry) => !pubkey || hodlEq(entry.keydata, pubkey)).map((entry) => {
-    if (entry.val.length < 4 || (entry.val.length - 4) % 4) throw new Error("A BIP32 derivation path is malformed.");
-    let path = [];
-    for (let i = 4; i < entry.val.length; i += 4) path.push(new DataView(entry.val.buffer, entry.val.byteOffset + i, 4).getUint32(0, true));
-    return { pubkey: entry.keydata, fingerprint: entry.val.slice(0, 4), path };
+    let record = hodlBip32Parsed.get(entry);
+    if (!record) hodlBip32Parsed.set(entry, (record = hodlBip32Record(entry)));
+    return record;
   });
+}
+function hodlBip32Record(entry) {
+  if (entry.val.length < 4 || (entry.val.length - 4) % 4) throw new Error("A BIP32 derivation path is malformed.");
+  // A path past BIP32's 255 levels names no key, and every caller skips it,
+  // so it is left unparsed (path null). hodlPrivFromPath reads the records
+  // once per signature row, and re-walking a ~1.2M-step record for each of
+  // ~511 rows froze the tab (red-team sweep 0eed735, part07 #10).
+  if ((entry.val.length - 4) / 4 > 255) return { pubkey: entry.keydata, fingerprint: entry.val.slice(0, 4), path: null };
+  let view = new DataView(entry.val.buffer, entry.val.byteOffset, entry.val.length), path = [];
+  for (let i = 4; i < entry.val.length; i += 4) path.push(view.getUint32(i, true));
+  return { pubkey: entry.keydata, fingerprint: entry.val.slice(0, 4), path };
 }
 function hodlInputScriptCode(entries, witnessUtxo) {
   if (!witnessUtxo) return null;
@@ -13040,7 +13062,7 @@ function hodlPrivFromPath(entries, pubkey, budget = null) {
     // A skipped path costs nothing and leaves the budget to later rows: zeroing
     // it would let one free record turn off every later check (Muse Spark and
     // DeepSeek V4.1 on b31504d). Every walked step is still counted.
-    if (derivation.path.length > 255 || (budget && derivation.path.length > budget.remaining)) continue;
+    if (!derivation.path || (budget && derivation.path.length > budget.remaining)) continue;
     if (budget) budget.remaining -= derivation.path.length;
     let node = hodlPsbtHd;
     try {
@@ -13085,18 +13107,30 @@ function hodlPsbtWipeMem() {
   hodlNonceLast = null;
   hodlPsbtResetNonceInspection();
 }
+// A pasted single key becomes the session key only once it is a valid one;
+// a rejected one is zeroed.
+function hodlPsbtAcceptKey(priv) {
+  try {
+    hodlAssertPrivateKey(priv);
+  } catch (error) {
+    priv.fill(0);
+    throw error;
+  }
+  hodlPsbtPriv = priv;
+}
 function hodlLoadPsbtKey(text, passphrase) {
   hodlPsbtWipeMem();
   let value = text.trim(), hex = value.replace(/\s/g, "").replace(/^0x/i, "");
   if (!value) return;
   if (/^[5KL9c][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(value)) {
     let decoded = hodlDecodeWif(value);
-    hodlPsbtPriv = decoded.priv;
-    hodlAssertPrivateKey(hodlPsbtPriv);
+    // Checked before it becomes the session key: a rejected one stayed in
+    // hodlPsbtPriv, so the session line went red over "No session key" and
+    // every later Inspect threw (red-team sweep 0eed735, part07 #12).
+    hodlPsbtAcceptKey(decoded.priv);
     hodlPsbtSessionSpec = hodlNote("Session key: {network} WIF. Kept in page memory only.", { network: decoded.network });
   } else if (/^[0-9a-fA-F]{64}$/.test(hex)) {
-    hodlPsbtPriv = hodlHex.decode(hex.toLowerCase());
-    hodlAssertPrivateKey(hodlPsbtPriv);
+    hodlPsbtAcceptKey(hodlHex.decode(hex.toLowerCase()));
     hodlPsbtSessionSpec = hodlNote("Session key: 32-byte private key. Kept in page memory only.");
   } else {
     try {
@@ -13191,8 +13225,16 @@ var hodlPsbtCards = [
 // the session. Running it again on the same stamp would only repeat the
 // result on screen, so the card's run button waits for one of them to change.
 var hodlPsbtInspected = {};
+// The key fields are stamped by a digest of their text, as the passphrases
+// are: the stamp outlives the field, and a rejected key (often a mistyped real
+// one) stayed here after the user deleted it (red-team sweep 0eed735, part08 #2).
+var hodlPsbtKeyFields = new Set(["psbt-key", "nonce-key"]);
 function hodlPsbtRunStamp(card) {
-  let value = (id) => id === "psbt-pass" || id === "nonce-pass" ? hodlStationPassphraseStamp(id) : String(document.getElementById(id)?.value || "").trim();
+  let value = (id) => {
+    if (id === "psbt-pass" || id === "nonce-pass") return hodlStationPassphraseStamp(id);
+    let text = String(document.getElementById(id)?.value || "").trim();
+    return hodlPsbtKeyFields.has(id) && text ? hodlHex.encode(hodlSha256(new TextEncoder().encode(text))) : text;
+  };
   return JSON.stringify([value(card.text), ...card.fields.map(value), hodlPsbtSessionSpec]);
 }
 function hodlMarkPsbtInspected(go) {
@@ -14843,14 +14885,21 @@ function hodlBip85SyncOptions() {
   if (path) path.textContent = hodlBip85CurrentPath() || "\u2014";
 }
 function hodlBip85LoadXprv(text) {
-  let value = String(text || "").trim(), { xkey, isPrivate, scope, prefix } = hodlParseExtendedKey(value);
-  if (!isPrivate) throw new Error("BIP-85 needs a private root (xprv/tprv), not an extended public key.");
+  let value = String(text || "").trim(), { isPrivate, scope, prefix, node } = hodlParseExtendedKey(value);
+  // The parse already built the key's node: it is the one kept, and it is
+  // wiped before every refusal. A second node was built from the same key,
+  // and both were dropped with their private keys (red-team sweep 0eed735,
+  // part08 #4).
+  let refuse = (message) => {
+    node?.wipePrivateData?.();
+    throw new Error(message);
+  };
+  if (!isPrivate) refuse("BIP-85 needs a private root (xprv/tprv), not an extended public key.");
   // The same scope rule Key Station applies to an imported key: BIP-85
   // children are defined from a BIP32 root, and a multisig-prefixed key is
   // account-scoped, not a root to hang deterministic children on.
-  if (scope !== "singlesig") throw new Error(prefix + " is a multisig extended key. BIP-85 derives from a singlesig root xprv/tprv.");
-  let node = hodlHDKey.fromExtendedKey(xkey);
-  if (node.depth !== 0) throw new Error("BIP-85 starts at the BIP32 root. This extended key is not depth 0.");
+  if (scope !== "singlesig") refuse(prefix + " is a multisig extended key. BIP-85 derives from a singlesig root xprv/tprv.");
+  if (node.depth !== 0) refuse("BIP-85 starts at the BIP32 root. This extended key is not depth 0.");
   hodlBip85WipeParent();
   hodlBip85Root = node;
   hodlBip85Testnet = /^[tuvn]prv/i.test(value);
@@ -16864,7 +16913,14 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       declaredSighashError = exception.message || String(exception);
     }
     let declaredLabel = declaredSighashError ? "" : declaredSighash === null ? hodlTText("SIGHASH_ALL (default)") : hodlSighashLabel(declaredSighash);
-    let previous = tx.inputs[index], destination = claim ? hodlAddr(claim.script, network) : hodlTText("(previous output details unavailable)"), signatures = hodlPartialSigs(entries), tapSignatures = hodlTapSigsParsed(entries), finalized = hodlFinalized(entries), taprootish = entries.some((entry) => entry.type >= 0x13 && entry.type <= 0x18);
+    let previous = tx.inputs[index], destination = claim ? hodlAddr(claim.script, network) : hodlTText("(previous output details unavailable)"), signatures = hodlPartialSigs(entries), tapSignatures = hodlTapSigsParsed(entries), finalized = hodlFinalized(entries),
+      // Whether SIGHASH 0 is Taproot's DEFAULT: decided by the resolved
+      // previous output, so a P2WPKH input that merely carries a 0x13-0x18
+      // field still gets the undefined-policy note; field presence only when
+      // the previous output is unknown (red-team sweep 0eed735, part09 #9).
+      taprootish = claim ? isP2tr(claim.script) : entries.some((entry) => entry.type >= 0x13 && entry.type <= 0x18),
+      finalTapPolicy = [],
+      finalUnread = false;
     if (finalized) {
       // Finalized signatures moved into the final script fields must not
       // escape repeated-nonce analysis (issue #87).
@@ -16880,17 +16936,36 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       // when the two disagree, which leaves a key-path signature unkeyed.
       let finalTap = [hodlFinalTapKeySig(entries, claim)].concat(hodlFinalTapScriptSigs(entries, claim) || []).filter(Boolean);
       finalTap.forEach((record) => {
-        if (tapSignatures.some((tapSig) => tapSig.source === record.source && tapSig.r && record.r && hodlEq(tapSig.r, record.r) && hodlEq(tapSig.s, record.s) && (record.source === "tap-key" || hodlEq(tapSig.pubkey, record.pubkey)))) return;
+        // A key-path witness whose one item did not parse is a policy problem
+        // (below), and for the nonce check an unread Taproot input, as it was
+        // before it became a record (#1479 r3 gate, DeepSeek).
+        if (!record.r && record.source === "tap-key") {
+          finalTapPolicy.push(record);
+          tapUninspected++;
+          return;
+        }
+        let sameSignature = (tapSig) => tapSig.source === record.source && tapSig.r && record.r && hodlEq(tapSig.r, record.r) && hodlEq(tapSig.s, record.s) && (record.source === "tap-key" || hodlEq(tapSig.pubkey, record.pubkey));
+        // The witness's own sighash byte is policy-checked unless a field
+        // holds the same signature with the same byte: a field with the same
+        // r and s but a harmless byte hid a SIGHASH_NONE suffix in the final
+        // witness (#1479 gate, Gemini).
+        if (!tapSignatures.some((tapSig) => sameSignature(tapSig) && tapSig.sighash === record.sighash)) finalTapPolicy.push(record);
+        if (tapSignatures.some(sameSignature)) return;
         schnorrRecords.push(Object.assign({ input: index }, record));
         if (record.r) tapSignatureCount++;
       });
       // A finalized input whose fields yield no analyzable signature never
       // yields a clean or no-signatures verdict: a Taproot one counts as an
       // unchecked Taproot input, any other as an uninspected ECDSA one.
-      if (!signatures.length && !finalMaterial.signatures.length && !finalMaterial.uninspected && !finalTap.length) {
+      // Partial signatures are not the final material: a decoy one beside
+      // final fields that yield nothing readable left them counted as read,
+      // for the policy check and the Taproot nonce check alike (#1479 r4
+      // gate, Gemini).
+      if (!finalMaterial.signatures.length && !finalMaterial.uninspected && !finalTap.length) {
         if (hodlFinalIsTaproot(entries, claim)) tapUninspected++;
         else finalMaterial.uninspected = 1;
       }
+      finalUnread = Boolean(finalMaterial.uninspected || finalMaterial.malformed);
       signatures = signatures.concat(finalMaterial.signatures);
       uninspected += finalMaterial.uninspected + (finalMaterial.malformed ? 1 : 0);
       // Every ECDSA signature the finalized fields carry but this analysis
@@ -16967,6 +17042,24 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
         warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n}: {problem} Do not sign until its policy is known.", { n: index, problem }) + "</p>");
       });
     });
+    // A finalized Taproot signature's sighash byte joins the same check: a
+    // readable NONE or SINGLE suffix in the final witness was a missed red
+    // flag (red-team sweep 0eed735, part09 #10). One also held in a 0x13 or
+    // 0x14 field was checked above, so it is not listed here.
+    finalTapPolicy.forEach((record) => {
+      if (!record.r) {
+        inputHasProblem = true;
+        policyIncomplete += 1;
+        policyProblems++;
+        warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n} carries a Schnorr signature that is not valid under BIP341 (64 bytes, or 65 with a defined sighash byte). Do not sign until its policy is known.", { n: index }) + "</p>");
+        return;
+      }
+      hodlTapSighashProblems(declaredSighash, record.sighash, hodlSighashLabel).forEach((problem) => {
+        inputHasProblem = true;
+        policyProblems++;
+        warnings.push("<p class='psbt-bad'><strong>" + hodlT("Policy problem:") + "</strong> " + hodlT("input {n}: {problem} Do not sign until its policy is known.", { n: index, problem }) + "</p>");
+      });
+    });
     // BIP340 nonce inspection: one record per Taproot signature. A
     // script-path record's key is the x-only key in its keydata; a key-path
     // 0x13 record carries no key, so the key is the previous output's P2TR
@@ -16983,7 +17076,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // review of #1051).
     let oddTapFields = hodlFind(entries, 19).filter((entry) => entry.keydata.length).length + hodlFind(entries, 20).filter((entry) => entry.keydata.length !== 64).length;
     for (let odd = 0; odd < oddTapFields; odd++) schnorrRecords.push({ input: index, source: "tap-malformed", pubkey: new Uint8Array(), r: null, s: null });
-    if (tapSignatures.length || (finalized && !signatures.length)) policyIncomplete++;
+    // A partial ECDSA signature beside finalized material says nothing about
+    // that material. A decoy one made the row read complete over a finalized
+    // Taproot spend, read or not, and over final ECDSA signatures this check
+    // could not attribute or parse (#1479 r2 and r3 gates, Kimi, Gemini).
+    if (tapSignatures.length || finalUnread || (finalized && (!signatures.length || hodlFinalIsTaproot(entries, claim)))) policyIncomplete++;
     let derivationFingerprints = signatures.length ? hodlPsbtDerivationFingerprints(entries) : null;
     signatures.forEach(signature => {
       let parts = hodlSigParts(signature.der),
@@ -17358,6 +17455,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
           : hodlTText("One or more inputs have no witness UTXO amount, and available PSBT claims were not checked against previous transactions or the blockchain."),
     },
     {
+      id: "sighash-policy",
       label: hodlTText("SIGHASH policy"),
       state: policyProblems ? "problem" : policyIncomplete ? "incomplete" : "complete",
       detail: policyProblems

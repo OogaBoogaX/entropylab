@@ -221,3 +221,16 @@ test("End Session empties the nonce history", async () => {
     globalThis.document = previous;
   }
 });
+
+// A field read as hex must be a string: a pattern test coerces an array to its
+// text, so ["<64 hex>"] passed and then missed every lookup by r (red-team
+// sweep 0eed735, nonce-history #2).
+test("a history record whose hex fields are arrays is refused", () => {
+  const text = serializeNonceHistory([nonceHistoryRecord({ checkedAt: "2026-09-10T20:15:30.000Z", masterFingerprint: "a1b2c3d4", pubkey: bytes(`02${"11".repeat(32)}`), r: bytes("33".repeat(32)), sighash: bytes("44".repeat(32)), valid: true })]);
+  assert.equal(parseNonceHistory(text).length, 1, "the record as written parses");
+  for (const field of ["r", "keyTag", "messageTag", "masterFingerprint"]) {
+    const file = JSON.parse(text);
+    file.records[0][field] = [file.records[0][field]];
+    assert.throws(() => parseNonceHistory(JSON.stringify(file)), `${field} as an array`);
+  }
+});

@@ -78,6 +78,10 @@ DECLARED_VARS.forEach((name) => {
 // Render rows build their copy buttons through this module-scope seam, not a
 // `function hodl...` declaration, so the closure walk cannot find it.
 DECLARED.add("hodlPrivateCopyButtonHtml");
+// hodlBip32 caches each input's parsed records in a module-scope WeakMap
+// (#1479 r4 gate, GLM); the prelude gives the slice its own.
+assert.ok(app.includes("var hodlBip32Parsed = new WeakMap();"), "app.js still caches BIP32 records in hodlBip32Parsed");
+DECLARED.add("hodlBip32Parsed");
 
 function closure(names) {
   const seen = new Set(DECLARED);
@@ -127,6 +131,7 @@ const hodlNetworkChoice = "mainnet";
 var hodlPsbtPriv = null, hodlPsbtHd = null;
 const hodlPsbtRecordNonceInspection = () => {};
 const hodlPrivateCopyButtonHtml = () => "";
+const hodlBip32Parsed = new WeakMap();
 ${DECLARED_VARS.map((name) => `var ${name};`).join("\n")}
 export function hodlTestSetPriv(key) { hodlPsbtPriv = key; }
 ${closure(["hodlParsePsbt", "hodlRenderPsbt"])}
