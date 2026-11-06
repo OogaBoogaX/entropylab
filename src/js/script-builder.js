@@ -146,11 +146,16 @@ export const buildOutputScript = (input, { network = "mainnet", mode = "auto" } 
   // auto
   // A BIP-352 address fell through to OP_RETURN text, burning any value: an
   // address-like string must error (audit M7; red-team sweep 0eed735,
-  // script-builder #13).
-  if (/^(?:sp|tsp|sprt)1\S*$/i.test(text)) {
+  // script-builder #13). Silent payment addresses run to about 117
+  // characters, past the 64-character shape arms, so long bech32-shaped text
+  // is read here too, with up to two symbols a paste can leave around it
+  // (quotes, brackets) and whatever its prefix: a mistyped one (xp1…) is an
+  // address that does not decode, not text (#1478 r2 gate, Kimi).
+  const bech32Long = /^([A-Za-z]{1,8})1[02-9ac-hj-np-zAC-HJ-NP-Z]{50,}$/.exec(text.replace(/^[^0-9A-Za-z]{1,2}|[^0-9A-Za-z]{1,2}$/g, ""));
+  if (/^(?:sp|tsp|sprt)1\S*$/i.test(text) || (bech32Long && /^(?:sp|tsp|sprt)$/i.test(bech32Long[1]))) {
     throw new Error("Silent payment addresses (sp1… or tsp1…) can't be paid from this builder: the output key depends on the transaction's inputs. Use the Silent Payments tool on the Privacy tab.");
   }
-  if (looksLikeAddress(text)) {
+  if (looksLikeAddress(text) || bech32Long) {
     try {
       return scriptFromAddress(text, network);
     } catch {

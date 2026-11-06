@@ -252,5 +252,11 @@ test("a silent payment address is refused, not turned into OP_RETURN text", () =
     assert.throws(() => buildOutputScript(pasted), /Silent payment addresses/, pasted.slice(0, 6));
   }
   assert.equal(buildOutputScript("sp1 is a good name").kind, "opreturn", "text with spaces is still text");
+  // Wrapped by a paste, or with a mistyped prefix (#1478 r2 gate, Kimi).
+  for (const wrapped of [`"${address}"`, `<${address}>`, `(${address})`]) {
+    assert.throws(() => buildOutputScript(wrapped), /Silent payment addresses/, wrapped.slice(0, 6));
+  }
+  assert.throws(() => buildOutputScript("xp1" + address.slice(3)), /does not decode/, "a mistyped prefix is an address that does not decode");
+  assert.throws(() => buildOutputScript(`"xp1${address.slice(3)}"`), /does not decode/);
   assert.equal(buildOutputScript(address, { mode: "opreturn-text" }).kind, "opreturn", "the explicit text mode still takes it");
 });

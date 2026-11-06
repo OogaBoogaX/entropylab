@@ -617,7 +617,7 @@ test("an oversized hsm_secret file is refused without being read", async () => {
     fileInput.files = [{ size: 5_000_000, arrayBuffer: async () => { read = true; return new ArrayBuffer(8); } }];
     await fileInput.onchange();
     assert.equal(read, false, "the oversized file was read whole");
-    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-trailing");
+    assert.equal(page.getElementById("ln-error").dataset.code, "hsm-secret-too-large");
     assert.equal(fileInput.value, "", "the file input was not reset");
     // A real type-2 file, with its size, still loads. This test runs before
     // the End Session one, which retires the module for the rest of the run.
