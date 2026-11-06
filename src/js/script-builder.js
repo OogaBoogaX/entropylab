@@ -160,7 +160,9 @@ export const buildOutputScript = (input, { network = "mainnet", mode = "auto" } 
   const core = text.replace(/^[^0-9A-Za-z]{1,2}|[^0-9A-Za-z]{1,2}$/g, "");
   const rawHex = isHex(text) && /[a-f]/i.test(text);
   const bech32Long = !rawHex && /^[A-Za-z]{1,8}1[02-9ac-hj-np-zAC-HJ-NP-Z]{50,}$/.test(core);
-  if (/^(?:sp|tsp|sprt)1\S*$/i.test(text) || (!/\s/.test(text) && /(?:sp|tsp|sprt)1[0-9A-Za-z]{50,}/i.test(core))) {
+  // Both arms need address length (50+ characters after the prefix), so a
+  // short label such as "TSP1000XL" stays text (#1478 r4 gate, GLM).
+  if (/^(?:sp|tsp|sprt)1\S{50,}$/i.test(text) || (!/\s/.test(text) && /(?:sp|tsp|sprt)1[0-9A-Za-z]{50,}/i.test(core))) {
     throw new Error("Silent payment addresses (sp1… or tsp1…) can't be paid from this builder: the output key depends on the transaction's inputs. Use the Silent Payments tool on the Privacy tab.");
   }
   if (looksLikeAddress(text) || bech32Long || (!rawHex && core !== text && looksLikeAddress(core))) {

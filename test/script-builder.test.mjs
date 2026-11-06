@@ -268,6 +268,9 @@ test("a silent payment address is refused, not turned into OP_RETURN text", () =
     assert.throws(() => buildOutputScript(pasted), /Silent payment addresses/, pasted.slice(0, 6));
   }
   assert.equal(buildOutputScript("sp1 is a good name").kind, "opreturn", "text with spaces is still text");
+  for (const label of ["TSP1000XL", "sp1abc", "SPRT1-test"]) {
+    assert.equal(buildOutputScript(label).kind, "opreturn", `${label}: a short label stays text (#1478 r4 gate, GLM)`);
+  }
   // Wrapped by a paste, or with a mistyped prefix (#1478 r2 gate, Kimi).
   for (const wrapped of [`"${address}"`, `<${address}>`, `(${address})`]) {
     assert.throws(() => buildOutputScript(wrapped), /Silent payment addresses/, wrapped.slice(0, 6));
