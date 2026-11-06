@@ -86,6 +86,8 @@ test("a logo SVG with script, a handler or template-literal characters fails the
     // A U+00A0 is part of an HTML tag name, not whitespace (#1477 r7 gate, Kimi).
     '<title>x</title\u00a0><path d="M0 0"/>',
     '<path\u00a0d="M0 0"/>',
+    // A line break, which a quoted bundle string can't hold (#1477 r9 gate, DeepSeek).
+    "<g>\n</g>",
   ]) {
     refused(buildWith((dir) => {
       const path = join(dir, "src/assets/logo-dark.svg");
@@ -136,6 +138,11 @@ test("a symbolic link among the build inputs fails the build", { timeout: 300000
       remove(join(dir, "src/licenses"));
       symlinkSync(join(outside, "licenses"), join(dir, "src/licenses"), "junction");
     }), "src/licenses linked to a directory outside the checkout");
+    // The build's own modules are walked too (#1477 r9 gate, DeepSeek).
+    refused(buildWith((dir) => {
+      mkdirSync(join(outside, "modules"), { recursive: true });
+      symlinkSync(join(outside, "modules"), join(dir, "scripts/linked"), "junction");
+    }), "a directory under scripts/ linked outside the checkout");
   } finally {
     remove(outside);
   }

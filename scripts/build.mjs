@@ -53,7 +53,9 @@ const refuseLinks = (path) => {
   if (stats.isDirectory()) for (const name of readdirSync(path)) refuseLinks(join(path, name));
 };
 if (!process.argv.includes("--clean")) {
-  for (const input of ["src", "assets", "manifest.webmanifest", "package.json"]) refuseLinks(join(root, input));
+  // scripts/ too: the build imports its modules and inlines what the
+  // worker-source ones return (#1477 r9 gate, DeepSeek).
+  for (const input of ["src", "assets", "scripts", "manifest.webmanifest", "package.json"]) refuseLinks(join(root, input));
 }
 
 const read = (path) => readFileSync(join(SRC, path), "utf8");
@@ -116,7 +118,10 @@ const SVG_ATTRIBUTES = new Set(["xmlns", "viewBox", "width", "height", "d", "fil
 // element left open, or one after the closing tag, lands in the page's HTML,
 // where a <title> swallows the rest of the page as text (#1477 r4 gate, Kimi).
 const svgProblem = (svg) => {
-  if (/&|<!--|`|\$\{|\\|'/.test(svg)) return "an &, <!--, a backtick, ${, a backslash or '";
+  // A line break is refused too: it would end the bundle string the logo is
+  // spliced into if esbuild ever wrote the shell with quotes, not backticks.
+  // The logos are one line (#1477 r9 gate, DeepSeek).
+  if (/&|<!--|`|\$\{|\\|'|[\r\n]/.test(svg)) return "an &, <!--, a backtick, ${, a backslash, ' or a line break";
   // The root is written "<svg " with its attributes after a space: the build
   // adds the logo's class and ARIA attributes there, so another root shape
   // (a bare <svg>, a line break after the name) shipped without them
