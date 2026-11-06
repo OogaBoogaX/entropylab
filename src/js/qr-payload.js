@@ -87,8 +87,10 @@ const classifyStandard = (bytes) => {
   return { format: "standard-seedqr", words: count, indices };
 };
 
-// Valid UTF-8 with no control characters is text (digits, hex, a password, a
-// label in any language), not raw entropy.
+// Valid UTF-8 with no control characters other than tab, line feed and
+// carriage return is text (digits, hex, a password, a label in any language),
+// not raw entropy. A trailing newline left "my password!123\n" reading as
+// CompactSeedQR entropy (red-team sweep 0eed735, qr-payload #5).
 const isText = (bytes) => {
   let text;
   try {
@@ -98,7 +100,7 @@ const isText = (bytes) => {
   }
   for (const character of text) {
     const code = character.codePointAt(0);
-    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return false;
+    if ((code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) || (code >= 0x7f && code <= 0x9f)) return false;
   }
   return true;
 };
@@ -129,29 +131,56 @@ const classifyWif = (bytes) => {
   }
 };
 
-const classifyWords = (bytes) => {
-  let text = null;
-  try {
-    text = strictTextDecoder.decode(bytes);
-  } catch {
-    return null;
+// The English wordlist as bytes, sorted by byte order, for matching a words
+// QR without decoding it: the decoded text and its split words were the scan
+// path's only string copies of the mnemonic, and no wipe can clear a string
+// (red-team sweep 0eed735, qr-payload #3). The words are ASCII.
+const WORD_ENTRIES = bip39English
+  .map((word, index) => ({ bytes: Uint8Array.from(word, (character) => character.charCodeAt(0)), index }))
+  .sort((a, b) => compareBytes(a.bytes, 0, a.bytes.length, b.bytes));
+function compareBytes(bytes, start, end, word) {
+  const length = end - start;
+  for (let i = 0; i < length && i < word.length; i += 1) {
+    if (bytes[start + i] !== word[i]) return bytes[start + i] - word[i];
   }
-  const parts = text.split(" ");
-  if (!WORD_COUNTS.has(parts.length)) return null;
-  const indices = new Uint16Array(parts.length);
-  for (let i = 0; i < parts.length; i += 1) {
-    const index = bip39English.indexOf(parts[i]);
+  return length - word.length;
+}
+// The wordlist index of bytes[start, end), or -1.
+const wordIndexAt = (bytes, start, end) => {
+  let low = 0, high = WORD_ENTRIES.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1, order = compareBytes(bytes, start, end, WORD_ENTRIES[mid].bytes);
+    if (!order) return WORD_ENTRIES[mid].index;
+    if (order < 0) high = mid - 1;
+    else low = mid + 1;
+  }
+  return -1;
+};
+
+// Words separated by single spaces, matched byte for byte: a non-ASCII or
+// invalid UTF-8 byte, an empty word or any other separator matches no word,
+// as the decoded text's split did.
+const classifyWords = (bytes) => {
+  let count = 1;
+  for (const byte of bytes) if (byte === 0x20) count += 1;
+  if (!WORD_COUNTS.has(count)) return null;
+  const indices = new Uint16Array(count);
+  let start = 0, at = 0;
+  for (let i = 0; i <= bytes.length; i += 1) {
+    if (i < bytes.length && bytes[i] !== 0x20) continue;
+    const index = wordIndexAt(bytes, start, i);
     if (index < 0) {
       wipe(indices);
       return null;
     }
-    indices[i] = index;
+    indices[at++] = index;
+    start = i + 1;
   }
   if (!checksumValid(indices)) {
     wipe(indices);
     return null;
   }
-  return { format: "words", words: parts.length, indices };
+  return { format: "words", words: count, indices };
 };
 
 export function classifyQrPayload(bytes, { network } = {}) {
