@@ -83,6 +83,9 @@ test("a logo SVG with script, a handler or template-literal characters fails the
     // Markup inside a <title>, an HTML integration point (#1477 r6 gate, Kimi).
     '<title><title/></title><path d="M0 0"/>',
     "<title><g></g></title>",
+    // A U+00A0 is part of an HTML tag name, not whitespace (#1477 r7 gate, Kimi).
+    '<title>x</title\u00a0><path d="M0 0"/>',
+    '<path\u00a0d="M0 0"/>',
   ]) {
     refused(buildWith((dir) => {
       const path = join(dir, "src/assets/logo-dark.svg");

@@ -117,17 +117,20 @@ const SVG_ATTRIBUTES = new Set(["xmlns", "viewBox", "width", "height", "d", "fil
 // where a <title> swallows the rest of the page as text (#1477 r4 gate, Kimi).
 const svgProblem = (svg) => {
   if (/&|<!--|`|\$\{|\\|'/.test(svg)) return "an &, <!--, a backtick, ${, a backslash or '";
-  if (!/^<svg[\s>]/.test(svg)) return "something before the <svg> root";
+  // Tags are read with HTML's whitespace (tab, LF, FF, CR, space), not
+  // JavaScript's \s: HTML reads a U+00A0 as part of the tag name, so
+  // "</title\u00a0>" closes nothing (#1477 r7 gate, Kimi).
+  if (!/^<svg[\t\n\f\r >]/.test(svg)) return "something before the <svg> root";
   let problem = null, rootClosed = false;
   const open = [];
-  const rest = svg.replace(/<(\/?)([A-Za-z][\w:-]*)((?:\s+[A-Za-z][\w:-]*="[^"<>]*")*)\s*(\/?)>/g, (tag, close, element, attributes, selfClosing) => {
+  const rest = svg.replace(/<(\/?)([A-Za-z][\w:-]*)((?:[\t\n\f\r ]+[A-Za-z][\w:-]*="[^"<>]*")*)[\t\n\f\r ]*(\/?)>/g, (tag, close, element, attributes, selfClosing) => {
     if (!SVG_ELEMENTS.has(element)) problem ??= `the element <${element}>`;
     // A <title> is an HTML integration point: markup inside it is parsed as
     // HTML, where a nested <title> reads the rest as text and a self-closing
     // tag stays open, so the logo's root never closes (#1477 r6 gate, Kimi).
     // A title holds text only.
     if (open.at(-1) === "title" && !(close && element === "title")) problem ??= "markup inside a <title>";
-    for (const [, attribute] of attributes.matchAll(/\s([A-Za-z][\w:-]*)=/g)) {
+    for (const [, attribute] of attributes.matchAll(/[\t\n\f\r ]([A-Za-z][\w:-]*)=/g)) {
       if (close || !SVG_ATTRIBUTES.has(attribute)) problem ??= `the attribute ${attribute}`;
     }
     if (rootClosed) problem ??= "markup after the closing </svg>";
