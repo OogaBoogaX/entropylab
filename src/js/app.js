@@ -12581,30 +12581,30 @@ function hodlFinalSigs(entries, witnessUtxo, tx, index, signatureChecks) {
   }
   return { signatures, uninspected, malformed };
 }
-// Each input's BIP32 records, parsed once per entries array: signature rows
-// re-read them, and re-parsing every record for each row still stalled the
-// tab on a large crafted PSBT (#1479 r4 gate, GLM).
+// Each BIP32 record is parsed once: signature rows re-read their input's
+// records, and re-parsing every record for each row still stalled the tab on
+// a large crafted PSBT (#1479 r4 gate, GLM). A row still filters by pubkey
+// before it parses, so a malformed record for another key leaves the row's
+// own records readable (#1479 r5 gate, MiniMax). Entries are built once per
+// parse and never changed in place, so a record can't go stale.
 var hodlBip32Parsed = new WeakMap();
 function hodlBip32(entries, pubkey) {
-  let parsed = hodlBip32Parsed.get(entries);
-  if (!parsed) {
-    parsed = hodlBip32Records(entries);
-    hodlBip32Parsed.set(entries, parsed);
-  }
-  return pubkey ? parsed.filter((record) => hodlEq(record.pubkey, pubkey)) : parsed;
-}
-function hodlBip32Records(entries) {
-  return hodlFind(entries, 6).map((entry) => {
-    if (entry.val.length < 4 || (entry.val.length - 4) % 4) throw new Error("A BIP32 derivation path is malformed.");
-    // A path past BIP32's 255 levels names no key, and every caller skips it,
-    // so it is left unparsed (path null). hodlPrivFromPath reads the records
-    // once per signature row, and re-walking a ~1.2M-step record for each of
-    // ~511 rows froze the tab (red-team sweep 0eed735, part07 #10).
-    if ((entry.val.length - 4) / 4 > 255) return { pubkey: entry.keydata, fingerprint: entry.val.slice(0, 4), path: null };
-    let view = new DataView(entry.val.buffer, entry.val.byteOffset, entry.val.length), path = [];
-    for (let i = 4; i < entry.val.length; i += 4) path.push(view.getUint32(i, true));
-    return { pubkey: entry.keydata, fingerprint: entry.val.slice(0, 4), path };
+  return hodlFind(entries, 6).filter((entry) => !pubkey || hodlEq(entry.keydata, pubkey)).map((entry) => {
+    let record = hodlBip32Parsed.get(entry);
+    if (!record) hodlBip32Parsed.set(entry, (record = hodlBip32Record(entry)));
+    return record;
   });
+}
+function hodlBip32Record(entry) {
+  if (entry.val.length < 4 || (entry.val.length - 4) % 4) throw new Error("A BIP32 derivation path is malformed.");
+  // A path past BIP32's 255 levels names no key, and every caller skips it,
+  // so it is left unparsed (path null). hodlPrivFromPath reads the records
+  // once per signature row, and re-walking a ~1.2M-step record for each of
+  // ~511 rows froze the tab (red-team sweep 0eed735, part07 #10).
+  if ((entry.val.length - 4) / 4 > 255) return { pubkey: entry.keydata, fingerprint: entry.val.slice(0, 4), path: null };
+  let view = new DataView(entry.val.buffer, entry.val.byteOffset, entry.val.length), path = [];
+  for (let i = 4; i < entry.val.length; i += 4) path.push(view.getUint32(i, true));
+  return { pubkey: entry.keydata, fingerprint: entry.val.slice(0, 4), path };
 }
 function hodlInputScriptCode(entries, witnessUtxo) {
   if (!witnessUtxo) return null;

@@ -114,15 +114,34 @@ test("an input's BIP32 records are parsed once however many rows read them", asy
   try {
     const one = hodlBip32(entries, first);
     const parsedOnce = count;
-    const again = hodlBip32(entries, first), other = hodlBip32(entries, second);
-    assert.equal(count, parsedOnce, "later reads parse nothing");
+    const again = hodlBip32(entries, first);
+    assert.equal(count, parsedOnce, "a second read parses nothing");
     assert.equal(again[0].path, one[0].path, "the same parsed record is returned");
+    // A row parses only its own key's records (#1479 r5 gate, MiniMax).
+    const other = hodlBip32(entries, second);
+    const bothParsed = count;
+    assert.ok(bothParsed > parsedOnce, "the other key's record is parsed when it is read");
+    hodlBip32(entries, second);
+    assert.equal(hodlBip32(entries).length, 2);
+    assert.equal(count, bothParsed, "each record is parsed once");
     assert.equal(one.length, 1, "still filtered by pubkey");
     assert.equal(other.length, 1);
     assert.notEqual(other[0].pubkey, one[0].pubkey);
   } finally {
     DataView.prototype.getUint32 = reads;
   }
+});
+
+// A malformed record for another key does not stop a row reading its own
+// records; reading every record still refuses it (#1479 r5 gate, MiniMax).
+test("a malformed BIP32 record for another key leaves a row's own records readable", async () => {
+  const { hodlBip32 } = await loadAppFunctions(["hodlBip32"]);
+  const [first, second] = pubkeys(2);
+  const entries = [{ type: 6, keydata: first, val: new Uint8Array(2) }, bip32Entry(second, 0x01020304, 3)];
+  const own = hodlBip32(entries, second);
+  assert.equal(own.length, 1);
+  assert.equal(own[0].path.length, 3);
+  assert.throws(() => hodlBip32(entries), /malformed/);
 });
 
 test("signature rows share one input-side derivation budget per render", () => {
