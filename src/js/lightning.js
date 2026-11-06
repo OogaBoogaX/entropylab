@@ -613,6 +613,13 @@ async function hodlLnReadHsmFile() {
   if (seed) seed.value = "";
   let bytes = null;
   try {
+    // Every Core Lightning hsm_secret is under 1 KiB (32 bytes, 73 encrypted,
+    // or 32 bytes plus at most 24 words). A larger file is refused before it
+    // is read whole, as every other file input checks its size first
+    // (red-team sweep 0eed735, lightning #1), with its own code and message:
+    // reusing "trailing words" was false for a file never parsed (#1478 r2
+    // gate, DeepSeek, MiniMax).
+    if (file.size > 1024) throw Object.assign(new Error("This file is too large to be an hsm_secret. Choose the hsm_secret file from your Core Lightning node."), { code: "hsm-secret-too-large", key: "This file is too large to be an hsm_secret. Choose the hsm_secret file from your Core Lightning node." });
     bytes = new Uint8Array(await file.arrayBuffer());
     if (run !== hodlLnHsmRun) {
       // Typing (or a wipe) during the read superseded the file: the load is

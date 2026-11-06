@@ -23,8 +23,9 @@
 // need a hash collision to reach. The commitmentReason codes are
 // "witness-utxo", "output-script", "internal-key", "merkle-root",
 // "duplicate-field", "script-conflict", "not-taproot", "script-tree" and
-// "indirect"; the key-aggregation reasons include "participants-too-many" and
-// "budget".
+// "indirect" and "key-aggregation" (the commitment is not reported when the
+// participants do not verifiably aggregate to the key); the key-aggregation
+// reasons include "participants-too-many" and "budget".
 //
 // Curve arithmetic goes through the libsecp256k1 WASM facade
 // (./secp256k1.js), hashes through ./bip352.js's taggedHash, and the
@@ -413,6 +414,12 @@ const evidenceRecord = (where, aggregateHex, participantsHex, scriptPubKey, inte
     if (scriptPubKey) record.commitmentReason = "not-taproot";
   } else if (!aggregate) {
     record.commitment = "not-checked";
+  } else if (record.keyAgg !== "verified") {
+    // A commitment to a key the listed participants do not aggregate to
+    // would read as "these participants control the output" (red-team sweep
+    // 0eed735, musig2-verify #3).
+    record.commitment = "not-checked";
+    record.commitmentReason = "key-aggregation";
   } else {
     const aggregateXonly = aggregate.slice(1);
     const outputKey = taproot.slice(2);

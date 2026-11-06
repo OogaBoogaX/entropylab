@@ -641,7 +641,10 @@ export function mountKeyScan(host, {
       showStatus("error");
       return;
     }
-    // A running frame decode makes the decoder refuse with BUSY.
+    // A running frame decode makes the decoder refuse with BUSY. Each photo is
+    // its own operation: one still decoding must not land over a later one
+    // (#1480 r2 gate, Gemini).
+    op += 1;
     const token = op;
     try { scanner.stop(); } catch {}
     let reply = null;
@@ -731,6 +734,10 @@ export function mountKeyScan(host, {
   });
   cancelButton.addEventListener("click", onCancel);
   resumeButton.addEventListener("click", () => {
+    // A photo still decoding belongs to the operation Resume replaces: its
+    // reply must not land over the camera's result (red-team sweep 0eed735,
+    // qr-key-scan #9).
+    op += 1;
     if (!ensureScanner()) return;
     showStatus("scanning");
     try {

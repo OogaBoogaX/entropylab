@@ -148,3 +148,30 @@ test("D++, BitBox wording and help strings render for every size", () => {
     assert.ok(api.hodlDPlusFinalHelp(words).length > 0, words);
   }
 });
+
+// The completion note names the side the coin bit used. It computed its own
+// side, reversed (red-team sweep 0eed735, part03 #3); now it reads the bit
+// from hodlDPlusStepValue. Checked without reading the note's text
+// (AGENTS.md; #1480 gate, MiniMax): with the bit function inverted, the note
+// for the same face must change.
+test("the final D++ coin note follows the coin bit", async () => {
+  const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+  const { hodlDPlusStepValue: realValue } = await loadAppFunctions(["hodlDPlusStepValue"]);
+  const inverted = await loadAppFunctions(["hodlDPlusRolls", "hodlSeedConfig"], {
+    stubs: { hodlDPlusStepValue: (step, face) => (step === "coin" ? 1 - realValue(step, face) : realValue(step, face)) },
+  });
+  const words = 18;
+  const coinNote = (rolls, face) => {
+    const parsed = rolls.hodlDPlusRolls("10E".repeat(api.hodlSeedConfig(words).partialWords) + "A" + face, words);
+    const final = parsed.notes.find((note) => note && note.vars && Object.values(note.vars).some((value) => value && value.vars && "value" in value.vars && Object.keys(note.vars).length >= 1));
+    return Object.values(final.vars).find((value) => value && value.vars && String(value.vars.value) === face);
+  };
+  for (const face of ["1", "4", "5", "8"]) {
+    const index = (() => { const parsed = api.hodlDPlusRolls("10E".repeat(api.hodlSeedConfig(words).partialWords) + "A" + face, words); return parsed.candidates.indexOf(parsed.finalWord); })();
+    // The spec: the final index is d16 * 2 + the coin bit.
+    assert.equal(index % 2, Number(face) >= 5 ? 1 : 0, `face ${face}: the spec's bit`);
+    assert.notEqual(coinNote(inverted, face).key, coinNote(api, face).key, `face ${face}: the note follows the bit function`);
+  }
+  assert.equal(coinNote(api, "1").key, coinNote(api, "4").key, "faces 1-4 share a side");
+  assert.equal(coinNote(api, "5").key, coinNote(api, "8").key, "faces 5-8 share a side");
+});
