@@ -17,10 +17,10 @@ Official website: [entropylab.online](https://entropylab.online)
 
 EntropyLab is built to run on a computer that never goes online, with entropy
 you supply: it never generates key entropy, and its Content Security Policy
-blocks every network connection. Every change is reviewed by five models and an
-adversarial red team before it merges, model-written code runs only in an
-isolated sandbox, and releases are signed by four maintainers and reproducible
-byte for byte. The [security posture](docs/SECURITY_POSTURE.md) maps each claim
+lets the page open no network connections. Every pull request is reviewed by
+five models and an adversarial red team before it merges, model-written code
+runs only in an isolated sandbox, and releases are signed by four maintainers
+and reproducible byte for byte. The [security posture](docs/SECURITY_POSTURE.md) maps each claim
 to the code and tests behind it and lists the known limits. Report
 vulnerabilities privately through
 [GitHub Security Advisories](https://github.com/OogaBoogaX/entropylab/security/advisories/new).

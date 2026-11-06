@@ -4,7 +4,7 @@ EntropyLab is one self-contained HTML file that turns entropy you supply into Bi
 
 ## How a change gets in
 
-No change reaches `rock` on one author's word.
+No pull request reaches `rock` on one author's word. This is the maintainers' process, not a GitHub setting: the record of it is the triage comment on each pull request. Automated commits (the rebuilt site artifact, timestamp proofs, translation updates) are checked by CI instead.
 
 - **Five model reviewers and a red team on every pull request.** DeepSeek V4.1, Kimi K3, GLM 5.3, MiniMax M3.1 Flash and Nemotron 3.5 Lightning review each change. An adversarial red-team pass then tries to break it.
 - **A merge bar that can't be skipped.** A pull request merges only with a clean approval from at least one of Kimi K3, GLM 5.3 or DeepSeek V4.1. Every finding must first be fixed or refuted against the code, and the triage is posted on the pull request.
@@ -13,13 +13,14 @@ No change reaches `rock` on one author's word.
 - **Untrusted code never runs on a maintainer's machine.** Code written by a model, and code from outside pull requests, runs only in an isolated sandbox: a VM with no network and no access to the host's files, with each test run under gVisor.
 - **The full suite runs twice.** About 5,500 tests run in that sandbox before every push, and again in CI. CI also runs a browser test suite and a Bitcoin Core interoperability job.
 - **New user-facing text is agreed by four models from three labs:** Claude, Astra, Fable and Grok.
+- **Who does what:** the reviewers and red teams are open-weight and hosted models run by the maintainers. Claude coordinates, writes many of the fixes, and checks every finding by hand. Human maintainers sign the releases.
 
 ## Red-team sweeps
 
 Besides the per-change review, the whole repository is swept: each file is audited by several model families, and every claimed finding is then checked by hand against the code.
 
 - **21–22 October 2026:** a deep sweep of every source file, followed by delta sweeps of each change.
-- **4–5 November 2026,** before v1.1.0: 45 findings were claimed high and none held at that severity. Six were real mediums, fixed in [#1455](https://github.com/OogaBoogaX/entropylab/pull/1455) and [#1457](https://github.com/OogaBoogaX/entropylab/pull/1457) to [#1461](https://github.com/OogaBoogaX/entropylab/pull/1461). About 45 lows are being fixed in batches, a few of them after v1.1.0.
+- **4–5 November 2026,** before v1.1.0: 45 findings were claimed high and none held at that severity. Six were real mediums, fixed in [#1455](https://github.com/OogaBoogaX/entropylab/pull/1455) and [#1457](https://github.com/OogaBoogaX/entropylab/pull/1457) to [#1461](https://github.com/OogaBoogaX/entropylab/pull/1461). About 45 lows are being fixed in batches, a few of them after the v1.1.0 release.
 - **Other tools that test the tests:** mutation testing (Stryker), differential fuzzers against independent implementations (HD keys, PSBTs, sighashes), and a [residue harness](Residue_Audit.md) that captures browser memory at fixed checkpoints and searches it for a fixture's secrets.
 
 The rounds and the merged fixes are logged publicly in the [EntropyLab red-team log](https://github.com/MrHodlX/security-reviews/blob/main/entropylab-red-team.md). Findings still being fixed stay private until they merge.
@@ -39,18 +40,18 @@ How to check a download yourself: [Verifying the download](../README.md#verifyin
 
 | Property | How | Where to check |
 | --- | --- | --- |
-| **No network** | One HTML file, no runtime dependencies. The Content Security Policy blocks every network connection (`default-src 'none'; connect-src 'none'`). | `src/index.html`, [threat model](Threat_Model.md) |
+| **No network** | One HTML file, no runtime dependencies. The page opens no network connections: its Content Security Policy sets `default-src 'none'; connect-src 'none'`. | `src/index.html`, [threat model](Threat_Model.md) |
 | **Your entropy, not ours** | The app never generates key entropy. You supply dice, coins, cards, words or keys. For hashed dice it shows how many rolls a seed needs (100 D6 for 24 words). | [contribution rules](../CONTRIBUTING.md), [dice fairness tests](../test/dice-fairness.test.mjs) |
-| **Private values stay off the system clipboard** | Copy controls on private values copy into an in-app clipboard held as bytes, never the OS clipboard. It is overwritten on replacement, conceal and End Session, and private readouts can't be selected. Public values can go to the OS clipboard. | [clipboard rules](UI_Patterns.md#copying-to-the-clipboard), [`app-clipboard.js`](../src/js/app-clipboard.js), [clipboard tests](../test/app-clipboard.test.mjs) |
+| **Private values stay off the system clipboard** | The app's copy buttons for private values copy into an in-app clipboard held as bytes, never the OS clipboard. It is overwritten on replacement, conceal and End Session, and private readouts can't be selected. Public values can go to the OS clipboard. | [clipboard rules](UI_Patterns.md#copying-to-the-clipboard), [`app-clipboard.js`](../src/js/app-clipboard.js), [clipboard tests](../test/app-clipboard.test.mjs) |
 | **Secure entry** (optional, off by default) | Seed words, keys and dice can be entered on in-page pads that keep the values out of page text fields. | [seed picker](../src/js/seed-picker.js), [passphrase vault](../src/js/passphrase-vault.js), [secure dice pad](../src/js/secure-dice-pad.js), [wiring tests](../test/secure-entry-wiring.test.mjs) |
-| **Journal** | The Journal stays in page memory unless you download it. A password-protected download uses AES-256-GCM. Its key comes from PBKDF2-SHA-256 at 600,000 rounds, and its IV is synthetic: an HMAC-SHA-256 of the contents under a second derived key, so an IV repeats only for identical contents. | [`journal.js`](../src/js/journal.js), [backup tests](../test/journal-backup.test.mjs), [complete-backup tests](../test/journal-complete-backup.test.mjs) |
+| **Journal** | The Journal stays in page memory unless you download it. A password-protected download uses AES-256-GCM. Its key comes from PBKDF2-SHA-256 at 600,000 rounds, and its IV is synthetic: an HMAC-SHA-256 of the contents under a second derived key, so an IV repeats only for identical contents. The salt comes from the password: see Known limits. | [`journal.js`](../src/js/journal.js), [backup tests](../test/journal-backup.test.mjs), [complete-backup tests](../test/journal-complete-backup.test.mjs) |
 | **Cleanup** | End Session and leaving the page overwrite the secret bytes the app holds, including WebAssembly memory, and clear the in-app clipboard. Hiding the tab or going idle conceals revealed secrets. | [end-session tests](../test/end-session.test.mjs), [conceal tests](../test/conceal-on-leave.test.mjs), [residue harness](Residue_Audit.md) |
 
 ## Known limits
 
 These are stated once, here, so a review can weigh them:
 
-- **The host is trusted.** A browser's "offline" label is not an air gap. A compromised operating system, browser, extension, USB device or copy of the HTML file can see everything the page sees. Swap, hibernation and crash dumps can keep secrets on disk. See [Computer hardening](Computer_Hardening_Checklist.md).
+- **The host is trusted.** A browser's "offline" label is not an air gap, and loading the hosted site is itself a network request: for secrets, use the downloaded file on a computer that stays offline. A compromised operating system, browser, extension, USB device or copy of the HTML file can see everything the page sees. Swap, hibernation and crash dumps can keep secrets on disk. See [Computer hardening](Computer_Hardening_Checklist.md).
 - **Memory clearing is best effort.** It covers the bytes the app owns. JavaScript strings can't be overwritten, and the browser and OS keep copies of their own.
 - **The in-app clipboard covers the app's copy controls.** It doesn't stop you selecting and copying text from an editable field, and it can't control software on the host.
 - **The Journal password is optional.** A file saved without one is not protected. The PBKDF2 salt comes from the password, not from a random value, so one guessing run covers every Journal file at once, and the same contents under the same password give the same file. Use a long, unique password.
