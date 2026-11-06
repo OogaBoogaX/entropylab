@@ -117,10 +117,14 @@ const SVG_ATTRIBUTES = new Set(["xmlns", "viewBox", "width", "height", "d", "fil
 // where a <title> swallows the rest of the page as text (#1477 r4 gate, Kimi).
 const svgProblem = (svg) => {
   if (/&|<!--|`|\$\{|\\|'/.test(svg)) return "an &, <!--, a backtick, ${, a backslash or '";
+  // The root is written "<svg " with its attributes after a space: the build
+  // adds the logo's class and ARIA attributes there, so another root shape
+  // (a bare <svg>, a line break after the name) shipped without them
+  // (#1477 r8 gate, GLM).
+  if (!svg.startsWith("<svg ")) return "a root other than \"<svg \" and its attributes";
   // Tags are read with HTML's whitespace (tab, LF, FF, CR, space), not
   // JavaScript's \s: HTML reads a U+00A0 as part of the tag name, so
   // "</title\u00a0>" closes nothing (#1477 r7 gate, Kimi).
-  if (!/^<svg[\t\n\f\r >]/.test(svg)) return "something before the <svg> root";
   let problem = null, rootClosed = false;
   const open = [];
   const rest = svg.replace(/<(\/?)([A-Za-z][\w:-]*)((?:[\t\n\f\r ]+[A-Za-z][\w:-]*="[^"<>]*")*)[\t\n\f\r ]*(\/?)>/g, (tag, close, element, attributes, selfClosing) => {

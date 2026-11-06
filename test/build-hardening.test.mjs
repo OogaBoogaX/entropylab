@@ -102,6 +102,15 @@ test("a logo SVG with script, a handler or template-literal characters fails the
     const path = join(dir, "src/assets/logo-dark.svg");
     writeFileSync(path, readFileSync(path, "utf8").trim() + "AFTER-ROOT");
   }), "text after </svg>");
+  // A root other than "<svg " would ship without the class and ARIA
+  // attributes the build adds (#1477 r8 gate, GLM).
+  for (const root of ["<svg\n", "<svg\t"]) {
+    refused(buildWith((dir) => {
+      const path = join(dir, "src/assets/logo-dark.svg");
+      writeFileSync(path, readFileSync(path, "utf8").replace("<svg ", root));
+    }), JSON.stringify(root));
+  }
+  refused(buildWith((dir) => writeFileSync(join(dir, "src/assets/logo-dark.svg"), '<svg><path d="M0 0"/></svg>')), "a bare <svg>");
 });
 
 test("a logo made of the allowed shapes and attributes still builds", { timeout: 300000 }, () => {
