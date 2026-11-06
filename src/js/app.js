@@ -6323,7 +6323,8 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
     if (hodlKeyMode === "dice") {
       if (hashed) {
         let entropy = hodlDiceEntropy(value, hodlDiceMethod, config.words);
-        return entropy.ok ? bitsOf(entropy.bytes) : null;
+        // A failed decode's bytes are zeroed too (#1480 r4 gate, MiniMax).
+        return entropy.ok ? bitsOf(entropy.bytes) : (entropy.bytes?.fill?.(0), null);
       }
       if (hodlDiceMethod === "dplus") {
         let parsed = hodlDPlusRolls(value, config.words);
@@ -6340,7 +6341,7 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
     if (hodlKeyMode === "cards") {
       if (hodlCardMethod === "hashed") {
         let entropy = hodlCardsEntropy(value, config.words, hodlCardColemanSymbols);
-        return entropy.ok ? bitsOf(entropy.bytes) : null;
+        return entropy.ok ? bitsOf(entropy.bytes) : (entropy.bytes?.fill?.(0), null);
       }
       let parsed = hodlParseDirectCards(value, config.words);
       if (parsed.complete) return bitsOf(hodlMnemonicToEntropy([...parsed.wordSlots, parsed.finalWord].join(" "), hodlBip39Wordlist));
@@ -6393,7 +6394,18 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
       for (let digit of digits) bits += Number.parseInt(digit, 16).toString(2).padStart(4, "0");
       return bits;
     }
-    if (kind === "wif") return bitsOf(hodlDecodeWif(value.trim()).priv);
+    if (kind === "wif") {
+      // A WIF whose key is zero or at or above the group order is not a
+      // private key either, as for a hex key (#1480 r4 gate, GLM).
+      let priv = hodlDecodeWif(value.trim()).priv;
+      try {
+        hodlAssertPrivateKey(priv);
+      } catch {
+        priv.fill(0);
+        return null;
+      }
+      return bitsOf(priv);
+    }
     if (kind === "minikey") return bitsOf(hodlDecodeMiniKey(value.trim()));
     return bitsOf(hodlBrainWalletPrivateKey(value, hodlBrainWalletTrimEnabled()));
   } catch {

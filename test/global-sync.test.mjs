@@ -386,3 +386,30 @@ test("counting a dice or cards source's bits zeroes the entropy it decodes", asy
   });
 });
 
+// A WIF whose key is not a private key publishes nothing, and a failed dice
+// decode's bytes are zeroed (#1480 r4 gate, GLM, MiniMax).
+test("an out-of-range WIF publishes nothing, and a failed decode is zeroed", async () => {
+  await withDocument(async () => {
+    const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+    const decoded = [];
+    let mode = "key";
+    const read = await loadAppFunctions(["hodlGlobalSyncCurrentBits"], {
+      stubs: {
+        hodlGlobalSyncCurrentValue: () => "a-value",
+        hodlGlobalSyncIsHashedMode: () => mode === "dice",
+        hodlNormalizePrivateKeyKind: () => "wif",
+        hodlDecodeWif: () => { const priv = new Uint8Array(32).fill(0xff); decoded.push(priv); return { priv }; },
+        hodlDiceEntropy: () => { const bytes = new Uint8Array(32).fill(0xaa); decoded.push(bytes); return { ok: false, bytes }; },
+      },
+      settable: ["hodlKeyMode", "hodlDiceMethod"],
+    });
+    read.__set.hodlKeyMode("key");
+    assert.equal(read.hodlGlobalSyncCurrentBits(24), null, "0xff..ff is above the group order");
+    mode = "dice";
+    read.__set.hodlKeyMode("dice");
+    read.__set.hodlDiceMethod("coldcard");
+    assert.equal(read.hodlGlobalSyncCurrentBits(24), null, "a failed dice decode publishes nothing");
+    assert.equal(decoded.length, 2);
+    assert.ok(decoded.every((bytes) => bytes.every((byte) => byte === 0)), "both are zeroed");
+  });
+});
