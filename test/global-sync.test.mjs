@@ -404,3 +404,25 @@ test("the sync zeroes the key bytes it decodes and the key bytes it writes from"
     assert.ok(written.length > 0 && written.every((bytes) => bytes.every((byte) => byte === 0)), "the key bytes are zeroed");
   });
 });
+
+// Counting a dice or cards source's bits decodes its entropy a second time;
+// those bytes are zeroed too (#1480 r2 gate, Kimi, Gemini).
+test("counting a dice or cards source's bits zeroes the entropy it decodes", async () => {
+  await withDocument(async () => {
+    const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+    const decoded = [];
+    const entropy = () => { const bytes = new Uint8Array(32).fill(0xaa); decoded.push(bytes); return { ok: true, bytes, sourceBits: 256 }; };
+    const slice = await loadAppFunctions(["hodlGlobalSyncSourceBits"], {
+      stubs: { hodlGlobalSyncCurrentValue: () => "123456", hodlDiceEntropy: entropy, hodlCardsEntropy: entropy },
+      settable: ["hodlKeyMode", "hodlDiceMethod"],
+    });
+    for (const mode of ["dice", "cards"]) {
+      slice.__set.hodlKeyMode(mode);
+      slice.__set.hodlDiceMethod("coldcard");
+      assert.equal(slice.hodlGlobalSyncSourceBits(24), 256, `${mode}: the count is still read`);
+    }
+    assert.equal(decoded.length, 2);
+    assert.ok(decoded.every((bytes) => bytes.every((byte) => byte === 0)), "both decoded copies are zeroed");
+  });
+});
+

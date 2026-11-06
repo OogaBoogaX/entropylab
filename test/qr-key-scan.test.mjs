@@ -1135,3 +1135,28 @@ test("a photo that decodes after Resume is dropped and zeroed", async () => {
   assert.equal(stateOf(ctx), "scanning", "the camera's scan goes on");
   assert.ok(payload.every((byte) => byte === 0), "the dropped photo's payload is zeroed");
 });
+
+// Each photo is its own operation: a first photo still decoding must not land
+// over a second one picked meanwhile (#1480 r2 gate, Gemini).
+test("a photo that decodes after a second photo is picked is dropped and zeroed", async () => {
+  const finishes = [];
+  const ctx = setup({ reply: () => new Promise((resolve) => { finishes.push(resolve); }) });
+  openPanel(ctx);
+  const photo = findById(ctx.host, "key-scan-photo");
+  photo.files = [{ size: 10, type: "image/png" }];
+  photo.dispatchEvent({ type: "change" });
+  await tick();
+  photo.files = [{ size: 11, type: "image/png" }];
+  photo.dispatchEvent({ type: "change" });
+  await tick();
+  assert.equal(finishes.length, 2, "both photos are decoding");
+  const first = Uint8Array.from(WIF, (character) => character.charCodeAt(0));
+  finishes[0]({ code: 1, payload: first });
+  await tick();
+  assert.ok(first.every((byte) => byte === 0), "the first photo's late payload is zeroed, not shown");
+  const state = stateOf(ctx);
+  finishes[1]({ code: 1, payload: Uint8Array.from(WIF, (character) => character.charCodeAt(0)) });
+  await tick();
+  assert.notEqual(stateOf(ctx), state, "the second photo's result is the one shown");
+});
+

@@ -5495,6 +5495,8 @@ function hodlSyncBrainOutput() {
   }
   let hex = document.getElementById("brain-lab-hex");
   if (!hex) return;
+  let copy = document.getElementById("brain-lab-copy");
+  if (copy) copy.disabled = true;
   if (!brain || output !== "hd") {
     // The lab hides, and the digest it showed goes with it: it outlived an
     // edit of the brain text (red-team sweep 0eed735, part04 #9).
@@ -5504,8 +5506,6 @@ function hodlSyncBrainOutput() {
     }
     return;
   }
-  let copy = document.getElementById("brain-lab-copy");
-  if (copy) copy.disabled = true;
   if (!acked) {
     hex.textContent = hodlTText("Acknowledge the lab warning, then enter text. {derive} is still required.", { derive: hodlTText("Derive Key") });
     hex.className = "muted";
@@ -6279,16 +6279,18 @@ function hodlGlobalSyncSourceBits(targetWords = hodlTargetWordCount) {
   let value = hodlGlobalSyncCurrentValue(), config = hodlSeedConfig(targetWords);
   if (!String(value).length) return null;
   try {
-    if (hodlKeyMode === "dice") {
-      let entropy = hodlDiceEntropy(value, hodlDiceMethod, config.words);
-      if (entropy?.ok && Number.isFinite(entropy.sourceBits)) return entropy.sourceBits;
-      return null;
-    }
-    if (hodlKeyMode === "cards") {
-      let entropy = hodlCardsEntropy(value, config.words, hodlCardColemanSymbols);
-      if (entropy?.ok && Number.isFinite(entropy.sourceBits)) return entropy.sourceBits;
-      return null;
-    }
+    // The entropy is decoded only to count its bits; its bytes are zeroed,
+    // as hodlGlobalSyncCurrentBits zeroes its own copy (#1480 r2 gate, Kimi,
+    // Gemini).
+    let countOf = (entropy) => {
+      try {
+        return entropy?.ok && Number.isFinite(entropy.sourceBits) ? entropy.sourceBits : null;
+      } finally {
+        entropy?.bytes?.fill?.(0);
+      }
+    };
+    if (hodlKeyMode === "dice") return countOf(hodlDiceEntropy(value, hodlDiceMethod, config.words));
+    if (hodlKeyMode === "cards") return countOf(hodlCardsEntropy(value, config.words, hodlCardColemanSymbols));
     if (hodlKeyMode === "key") {
       let kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value, String(value));
       // A brain wallet is only as strong as the text.

@@ -185,6 +185,8 @@ test("a hidden brain lab keeps no digest", async () => {
   digest.dataset.privateValue = "";
   digest.textContent = "9f86d081884c7d659a2feaa0c55ad015";
   hex.appendChild(digest);
+  const copy = add("button", "brain-lab-copy");
+  copy.disabled = false;
   globalThis.document = document;
   try {
     let output = "scalar";
@@ -194,6 +196,7 @@ test("a hidden brain lab keeps no digest", async () => {
     slice.hodlSyncBrainOutput();
     assert.equal(hex.querySelector("[data-private-value]"), null, "the digest span is gone");
     assert.ok(!hex.textContent.includes("9f86d081"), "no digest text is left");
+    assert.equal(copy.disabled, true, "the hidden lab's copy control is disabled (#1480 r2 gate, Gemini)");
   } finally {
     if (saved === undefined) delete globalThis.document;
     else globalThis.document = saved;
