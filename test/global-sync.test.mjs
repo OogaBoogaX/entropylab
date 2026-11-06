@@ -154,12 +154,24 @@ test("a hex key with a non-hex character goes invalid in sync instead of being c
   assert.doesNotMatch(hexBranch, /\bbreak\b/);
   // Run the branch as written: a stray "g" yields null, a clean key all 256 bits.
   const body = hexBranch.replace(/^if \(kind === "hex-key"\) \{/, "").replace(/\}\s*$/, "");
-  const run = new Function("value", `${body}\nreturn undefined;`);
+  const run = new Function("value", "hodlHex", "hodlAssertPrivateKey", `${body}\nreturn undefined;`);
   const key = "1f".repeat(32);
-  assert.equal(run(key.slice(0, 10) + "g" + key.slice(11)), null);
-  assert.equal(run(`0x${key}`).length, 256);
-  assert.equal(run(key.slice(0, 40)).length, 160);
+  const hex = { decode: (text) => Uint8Array.from(Buffer.from(text, "hex")) };
+  const assertKey = (bytes) => {
+    const scalar = BigInt("0x" + Buffer.from(bytes).toString("hex"));
+    if (scalar === 0n || scalar >= ORDER) throw new Error("not a private key");
+  };
+  assert.equal(run(key.slice(0, 10) + "g" + key.slice(11), hex, assertKey), null);
+  assert.equal(run(`0x${key}`, hex, assertKey).length, 256);
+  assert.equal(run(key.slice(0, 40), hex, assertKey).length, 160);
+  // A complete key that is not a private key publishes nothing either
+  // (red-team sweep 0eed735, part04 #8): zero, the group order, and above it.
+  for (const bad of ["00".repeat(32), ORDER.toString(16), "ff".repeat(32)]) {
+    assert.equal(run(bad, hex, assertKey), null, bad.slice(0, 8));
+  }
+  assert.equal(run((ORDER - 1n).toString(16), hex, assertKey).length, 256, "n - 1 is still a key");
 });
+const ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
 
 test("a minikey reports its payload keyspace, not its 256-bit digest", () => {
   // A minikey is SHA-256(text) exactly like a brain wallet, format-constrained
@@ -286,3 +298,118 @@ test("the key-sync cautions follow the synced source, the raised length and Secu
   assert.equal(slice.hodlGlobalSyncKeyCautions({ ...synced, globalSyncSource: "key:wif", globalSyncLengthRaised: true }).keySynced, false, "not while Secure entry is on");
 });
 
+// An emptied hashed source no longer counts its bits, so the status stops
+// reading "Key synced" over an empty field; the other fields keep the last
+// valid sync, as the browser suite pins for an invalid source (red-team sweep
+// 0eed735, part04 #18).
+async function loadFromInput(stubs) {
+  const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+  return loadAppFunctions(["hodlGlobalSyncFromCurrentInput"], {
+    stubs: { hodlRenderGlobalSyncControl: () => {}, ...stubs },
+    settable: ["hodlKeys", "hodlActiveKey", "hodlSecureEntryOn"],
+  });
+}
+test("an emptied hashed source stops counting bits and keeps the last valid copies", async () => {
+  await withDocument(async () => {
+    const slice = await loadFromInput({ hodlGlobalSyncCurrentBits: () => { throw new Error("not reached"); }, hodlGlobalSyncCurrentValue: () => "", hodlGlobalSyncIsHashedMode: () => true });
+    const state = { globalSync: true, globalSyncSource: "dice:coldcard", globalSyncBitCount: 256, fields: { hex: "00", seed: "abandon" } };
+    slice.__set.hodlKeys([state]);
+    slice.__set.hodlActiveKey(0);
+    slice.__set.hodlSecureEntryOn(false);
+    assert.equal(slice.hodlGlobalSyncFromCurrentInput(), false);
+    assert.equal(state.globalSyncBitCount, 0, "no \"Key synced\" over an empty field");
+    assert.equal(state.fields.hex, "00", "the last valid sync stays in the other fields");
+    assert.equal(state.fields.seed, "abandon");
+  });
+});
+
+// The bytes a sync decodes are zeroed once read (red-team sweep 0eed735,
+// part04 #4 and #5).
+test("the sync zeroes the key bytes it decodes and the key bytes it writes from", async () => {
+  await withDocument(async () => {
+    const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+    const decoded = [];
+    const read = await loadAppFunctions(["hodlGlobalSyncCurrentBits"], {
+      stubs: {
+        hodlGlobalSyncCurrentValue: () => "a-wif",
+        hodlGlobalSyncIsHashedMode: () => false,
+        hodlNormalizePrivateKeyKind: () => "wif",
+        hodlDecodeWif: () => { const priv = new Uint8Array(32).fill(0x11); decoded.push(priv); return { priv }; },
+      },
+      settable: ["hodlKeyMode"],
+    });
+    read.__set.hodlKeyMode("key");
+    assert.equal(read.hodlGlobalSyncCurrentBits(24), "00010001".repeat(32), "the bits are read before the wipe");
+    assert.ok(decoded.length === 1 && decoded[0].every((byte) => byte === 0), "the decoded key is zeroed");
+    const written = [];
+    const apply = await loadAppFunctions(["hodlApplyGlobalSync"], {
+      stubs: {
+        hodlGlobalSyncCurrentValue: () => "",
+        hodlGlobalSyncSourceBits: () => 256,
+        hodlBytesFromBits: (bits) => { const bytes = Uint8Array.from(bits.match(/.{8}/g), (byte) => parseInt(byte, 2)); written.push(bytes); return bytes; },
+      },
+      settable: ["hodlKeys", "hodlActiveKey", "hodlSecureEntryOn", "hodlTargetWordCount"],
+    });
+    const state = { targetWords: 24, fields: {}, seedZeroIndexed: false };
+    apply.__set.hodlKeys([state]);
+    apply.__set.hodlActiveKey(0);
+    apply.__set.hodlSecureEntryOn(false);
+    apply.__set.hodlTargetWordCount(24);
+    apply.hodlApplyGlobalSync("00010001".repeat(32), "number:hex");
+    assert.ok(state.fields.privateKeys.wif.length > 0, "the WIF copy is still written");
+    // Zero entropy is no private key: no hex-key or WIF copy (#1480 gate, GLM).
+    apply.hodlApplyGlobalSync("0".repeat(256), "number:hex");
+    assert.equal(state.fields.privateKeys["hex-key"], "", "no hex-key copy of a zero key");
+    assert.equal(state.fields.privateKeys.wif, "", "no WIF copy of a zero key");
+    assert.ok(written.length > 0 && written.every((bytes) => bytes.every((byte) => byte === 0)), "the key bytes are zeroed");
+  });
+});
+
+// Counting a dice or cards source's bits decodes its entropy a second time;
+// those bytes are zeroed too (#1480 r2 gate, Kimi, Gemini).
+test("counting a dice or cards source's bits zeroes the entropy it decodes", async () => {
+  await withDocument(async () => {
+    const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+    const decoded = [];
+    const entropy = () => { const bytes = new Uint8Array(32).fill(0xaa); decoded.push(bytes); return { ok: true, bytes, sourceBits: 256 }; };
+    const slice = await loadAppFunctions(["hodlGlobalSyncSourceBits"], {
+      stubs: { hodlGlobalSyncCurrentValue: () => "123456", hodlDiceEntropy: entropy, hodlCardsEntropy: entropy },
+      settable: ["hodlKeyMode", "hodlDiceMethod"],
+    });
+    for (const mode of ["dice", "cards"]) {
+      slice.__set.hodlKeyMode(mode);
+      slice.__set.hodlDiceMethod("coldcard");
+      assert.equal(slice.hodlGlobalSyncSourceBits(24), 256, `${mode}: the count is still read`);
+    }
+    assert.equal(decoded.length, 2);
+    assert.ok(decoded.every((bytes) => bytes.every((byte) => byte === 0)), "both decoded copies are zeroed");
+  });
+});
+
+// A WIF whose key is not a private key publishes nothing, and a failed dice
+// decode's bytes are zeroed (#1480 r4 gate, GLM, MiniMax).
+test("an out-of-range WIF publishes nothing, and a failed decode is zeroed", async () => {
+  await withDocument(async () => {
+    const { loadAppFunctions } = await import("./app-slice-harness.mjs");
+    const decoded = [];
+    let mode = "key";
+    const read = await loadAppFunctions(["hodlGlobalSyncCurrentBits"], {
+      stubs: {
+        hodlGlobalSyncCurrentValue: () => "a-value",
+        hodlGlobalSyncIsHashedMode: () => mode === "dice",
+        hodlNormalizePrivateKeyKind: () => "wif",
+        hodlDecodeWif: () => { const priv = new Uint8Array(32).fill(0xff); decoded.push(priv); return { priv }; },
+        hodlDiceEntropy: () => { const bytes = new Uint8Array(32).fill(0xaa); decoded.push(bytes); return { ok: false, bytes }; },
+      },
+      settable: ["hodlKeyMode", "hodlDiceMethod"],
+    });
+    read.__set.hodlKeyMode("key");
+    assert.equal(read.hodlGlobalSyncCurrentBits(24), null, "0xff..ff is above the group order");
+    mode = "dice";
+    read.__set.hodlKeyMode("dice");
+    read.__set.hodlDiceMethod("coldcard");
+    assert.equal(read.hodlGlobalSyncCurrentBits(24), null, "a failed dice decode publishes nothing");
+    assert.equal(decoded.length, 2);
+    assert.ok(decoded.every((bytes) => bytes.every((byte) => byte === 0)), "both are zeroed");
+  });
+});

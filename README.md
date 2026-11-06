@@ -13,6 +13,21 @@ signed release is [v1.0.0](https://github.com/OogaBoogaX/entropylab/releases/tag
 
 Official website: [entropylab.online](https://entropylab.online)
 
+## Security
+
+EntropyLab is built to run on a computer that never goes online, with entropy
+you supply: it never generates key entropy, and its Content Security Policy
+lets the page make no network requests of its own (the hosted copy's service
+worker checks for updates). Under the maintainers' process, every pull request
+other than automated translation updates is reviewed by five models and an
+adversarial red team before it merges, and model-written code runs only in an
+isolated sandbox. Releases are signed by four maintainers and reproducible
+byte for byte inside the pinned build image. The
+[security posture](docs/SECURITY_POSTURE.md) maps each claim to the code and
+tests behind it and lists the known limits. Report vulnerabilities privately
+through
+[GitHub Security Advisories](https://github.com/OogaBoogaX/entropylab/security/advisories/new).
+
 ## Features
 
 When a multi-worker Vanity search stops, its next counter is the first
