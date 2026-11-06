@@ -91,6 +91,11 @@ test("a logo SVG with script, a handler or template-literal characters fails the
     const path = join(dir, "src/assets/logo-dark.svg");
     writeFileSync(path, readFileSync(path, "utf8").trim() + '<meta http-equiv="refresh" content="0;url=/elsewhere">');
   }), "a meta element after </svg>");
+  // And so is text (#1477 r5 gate, Kimi).
+  refused(buildWith((dir) => {
+    const path = join(dir, "src/assets/logo-dark.svg");
+    writeFileSync(path, readFileSync(path, "utf8").trim() + "AFTER-ROOT");
+  }), "text after </svg>");
 });
 
 test("a logo made of the allowed shapes and attributes still builds", { timeout: 300000 }, () => {
@@ -117,6 +122,27 @@ test("a symbolic link among the build inputs fails the build", { timeout: 300000
       symlinkSync(join(outside, "licenses"), join(dir, "src/licenses"), "junction");
     }), "src/licenses linked to a directory outside the checkout");
   } finally {
+    remove(outside);
+  }
+});
+
+// --clean builds nothing, so a link among the inputs does not stop it
+// removing the generated files (#1477 r5 gate, DeepSeek).
+test("a clean still removes the generated files from a tree with a linked input", { timeout: 300000 }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "entropylab-build-clean-"));
+  const outside = mkdtempSync(join(tmpdir(), "entropylab-outside-"));
+  try {
+    for (const path of COPIED) cpSync(join(root, path), join(dir, path), { recursive: true });
+    symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "junction");
+    cpSync(join(dir, "src/licenses"), join(outside, "licenses"), { recursive: true });
+    remove(join(dir, "src/licenses"));
+    symlinkSync(join(outside, "licenses"), join(dir, "src/licenses"), "junction");
+    writeFileSync(join(dir, "entropylab.html"), "generated");
+    const result = spawnSync(process.execPath, [join(dir, "scripts/build.mjs"), "--clean"], { cwd: dir, encoding: "utf8" });
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+    assert.equal(existsSync(join(dir, "entropylab.html")), false);
+  } finally {
+    remove(dir);
     remove(outside);
   }
 });

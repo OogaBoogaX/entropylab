@@ -44,13 +44,17 @@ if (preview && outDir === root) {
 // Build inputs are committed files. readFileSync and esbuild both follow a
 // symbolic link (or a Windows junction), so a committed link would pull a
 // file from outside the checkout into the artifact. Refuse any link among
-// the inputs before one is read (red-team sweep 0eed735, build #5).
+// the inputs before one is read (red-team sweep 0eed735, build #5). --clean
+// builds nothing, so it still removes the generated files from such a tree
+// (#1477 r5 gate, DeepSeek).
 const refuseLinks = (path) => {
   const stats = lstatSync(path);
   if (stats.isSymbolicLink()) throw new Error(`Build input is a symbolic link: ${relative(root, path)}`);
   if (stats.isDirectory()) for (const name of readdirSync(path)) refuseLinks(join(path, name));
 };
-for (const input of ["src", "assets", "manifest.webmanifest", "package.json"]) refuseLinks(join(root, input));
+if (!process.argv.includes("--clean")) {
+  for (const input of ["src", "assets", "manifest.webmanifest", "package.json"]) refuseLinks(join(root, input));
+}
 
 const read = (path) => readFileSync(join(SRC, path), "utf8");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
@@ -133,6 +137,8 @@ const svgProblem = (svg) => {
   });
   if (problem) return problem;
   if (/[<>]/.test(rest)) return "markup that is not a plain element with double-quoted attributes";
+  // Text after the root lands in the page too (#1477 r5 gate, Kimi).
+  if (rootClosed && !svg.endsWith("</svg>")) return "text after the closing </svg>";
   return open.length || !rootClosed ? `an unclosed <${open.at(-1) ?? "svg"}>` : null;
 };
 const logoSvg = (name) => {
