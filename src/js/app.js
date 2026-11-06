@@ -16797,7 +16797,8 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       // field still gets the undefined-policy note; field presence only when
       // the previous output is unknown (red-team sweep 0eed735, part09 #9).
       taprootish = claim ? isP2tr(claim.script) : entries.some((entry) => entry.type >= 0x13 && entry.type <= 0x18),
-      finalTapPolicy = [];
+      finalTapPolicy = [],
+      finalUnread = false;
     if (finalized) {
       // Finalized signatures moved into the final script fields must not
       // escape repeated-nonce analysis (issue #87).
@@ -16813,6 +16814,14 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       // when the two disagree, which leaves a key-path signature unkeyed.
       let finalTap = [hodlFinalTapKeySig(entries, claim)].concat(hodlFinalTapScriptSigs(entries, claim) || []).filter(Boolean);
       finalTap.forEach((record) => {
+        // A key-path witness whose one item did not parse is a policy problem
+        // (below), and for the nonce check an unread Taproot input, as it was
+        // before it became a record (#1479 r3 gate, DeepSeek).
+        if (!record.r && record.source === "tap-key") {
+          finalTapPolicy.push(record);
+          tapUninspected++;
+          return;
+        }
         let sameSignature = (tapSig) => tapSig.source === record.source && tapSig.r && record.r && hodlEq(tapSig.r, record.r) && hodlEq(tapSig.s, record.s) && (record.source === "tap-key" || hodlEq(tapSig.pubkey, record.pubkey));
         // The witness's own sighash byte is policy-checked unless a field
         // holds the same signature with the same byte: a field with the same
@@ -16830,6 +16839,7 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
         if (hodlFinalIsTaproot(entries, claim)) tapUninspected++;
         else finalMaterial.uninspected = 1;
       }
+      finalUnread = Boolean(finalMaterial.uninspected || finalMaterial.malformed);
       signatures = signatures.concat(finalMaterial.signatures);
       uninspected += finalMaterial.uninspected + (finalMaterial.malformed ? 1 : 0);
       // Every ECDSA signature the finalized fields carry but this analysis
@@ -16940,12 +16950,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
     // review of #1051).
     let oddTapFields = hodlFind(entries, 19).filter((entry) => entry.keydata.length).length + hodlFind(entries, 20).filter((entry) => entry.keydata.length !== 64).length;
     for (let odd = 0; odd < oddTapFields; odd++) schnorrRecords.push({ input: index, source: "tap-malformed", pubkey: new Uint8Array(), r: null, s: null });
-    if (tapSignatures.length || (finalized && !signatures.length)) policyIncomplete++;
-    // A finalized Taproot spend whose signature was not read (no previous
-    // output to key it by) stays incomplete even when an ECDSA partial
-    // signature sits beside it: a decoy one made the row read complete over
-    // a final witness nobody checked (#1479 r2 gate, Kimi).
-    else if (finalized && !finalTapPolicy.length && hodlFinalIsTaproot(entries, claim)) policyIncomplete++;
+    // A partial ECDSA signature beside finalized material says nothing about
+    // that material. A decoy one made the row read complete over a finalized
+    // Taproot spend, read or not, and over final ECDSA signatures this check
+    // could not attribute or parse (#1479 r2 and r3 gates, Kimi, Gemini).
+    if (tapSignatures.length || finalUnread || (finalized && (!signatures.length || hodlFinalIsTaproot(entries, claim)))) policyIncomplete++;
     let derivationFingerprints = signatures.length ? hodlPsbtDerivationFingerprints(entries) : null;
     signatures.forEach(signature => {
       let parts = hodlSigParts(signature.der),

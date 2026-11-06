@@ -123,6 +123,16 @@ test("a decoy partial signature does not make an unread finalized Taproot spend 
   assert.notEqual(policyState(psbtOf([declared(1), internalKey, partial, finalWitness(signature(0x02))])), "complete", "a decoy ECDSA signature beside it");
 });
 
+// The same decoy beside a finalized Taproot spend whose signature was read,
+// and beside final ECDSA material that could not be read (#1479 r3 gate,
+// Gemini).
+test("a decoy partial signature does not make read or unreadable finalized material complete", () => {
+  const partial = { type: 2, keydata: Uint8Array.of(0x02, ...G), val: Uint8Array.of(0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01) };
+  assert.equal(policyState(psbtOf([witnessUtxo(1000, P2TR), partial, finalWitness(signature(null))])), "incomplete", "a read 64-byte final Taproot signature");
+  const truncated = { type: 8, keydata: new Uint8Array(), val: Uint8Array.of(2, 5, 1, 2) };
+  assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2WPKH), partial, truncated])), "complete", "a final witness that does not parse");
+});
+
 test("a finalized Taproot signature that commits to everything is not a policy problem", () => {
   for (const suffix of [null, 0x01]) {
     assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2TR), finalWitness(signature(suffix))])), "problem", suffix === null ? "64 bytes (DEFAULT)" : "SIGHASH_ALL");
