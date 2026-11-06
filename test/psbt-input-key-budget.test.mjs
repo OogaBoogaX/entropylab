@@ -102,6 +102,29 @@ test("a BIP32 record deeper than 255 levels is left unparsed; one within it read
   assert.equal(hodlBip32([steps(256)])[0].path === null, true, "256 levels is past BIP32's limit");
 });
 
+// Signature rows re-read their input's records: they are parsed once per
+// input map, not once per row (#1479 r4 gate, GLM).
+test("an input's BIP32 records are parsed once however many rows read them", async () => {
+  const { hodlBip32 } = await loadAppFunctions(["hodlBip32"]);
+  const [first, second] = pubkeys(2);
+  const entries = [bip32Entry(first, 0x01020304, 200), bip32Entry(second, 0x01020304, 200)];
+  const reads = DataView.prototype.getUint32;
+  let count = 0;
+  DataView.prototype.getUint32 = function (...args) { count++; return reads.apply(this, args); };
+  try {
+    const one = hodlBip32(entries, first);
+    const parsedOnce = count;
+    const again = hodlBip32(entries, first), other = hodlBip32(entries, second);
+    assert.equal(count, parsedOnce, "later reads parse nothing");
+    assert.equal(again[0].path, one[0].path, "the same parsed record is returned");
+    assert.equal(one.length, 1, "still filtered by pubkey");
+    assert.equal(other.length, 1);
+    assert.notEqual(other[0].pubkey, one[0].pubkey);
+  } finally {
+    DataView.prototype.getUint32 = reads;
+  }
+});
+
 test("signature rows share one input-side derivation budget per render", () => {
   const root = HDKey.fromMasterSeed(new Uint8Array(32).fill(7));
   // 25 rows of 200 steps each would be 5,000 CKDs; the budget covers 20 full

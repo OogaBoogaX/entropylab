@@ -133,6 +133,15 @@ test("a decoy partial signature does not make read or unreadable finalized mater
   assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2WPKH), partial, truncated])), "complete", "a final witness that does not parse");
 });
 
+// Final fields that yield no readable signature stay unread with a decoy
+// partial signature beside them (#1479 r4 gate, Gemini).
+test("a decoy partial signature does not mark unreadable final fields as read", () => {
+  const partial = { type: 2, keydata: Uint8Array.of(0x02, ...G), val: Uint8Array.of(0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01) };
+  // A final witness of two items, neither a DER signature.
+  const odd = { type: 8, keydata: new Uint8Array(), val: Uint8Array.of(2, 65, ...new Uint8Array(65).fill(0x41), 33, 0x02, ...new Uint8Array(32).fill(0x07)) };
+  assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2WPKH), partial, odd])), "complete", "an unreadable final witness");
+});
+
 test("a finalized Taproot signature that commits to everything is not a policy problem", () => {
   for (const suffix of [null, 0x01]) {
     assert.notEqual(policyState(psbtOf([witnessUtxo(1000, P2TR), finalWitness(signature(suffix))])), "problem", suffix === null ? "64 bytes (DEFAULT)" : "SIGHASH_ALL");

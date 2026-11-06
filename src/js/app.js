@@ -12581,8 +12581,20 @@ function hodlFinalSigs(entries, witnessUtxo, tx, index, signatureChecks) {
   }
   return { signatures, uninspected, malformed };
 }
+// Each input's BIP32 records, parsed once per entries array: signature rows
+// re-read them, and re-parsing every record for each row still stalled the
+// tab on a large crafted PSBT (#1479 r4 gate, GLM).
+var hodlBip32Parsed = new WeakMap();
 function hodlBip32(entries, pubkey) {
-  return hodlFind(entries, 6).filter((entry) => !pubkey || hodlEq(entry.keydata, pubkey)).map((entry) => {
+  let parsed = hodlBip32Parsed.get(entries);
+  if (!parsed) {
+    parsed = hodlBip32Records(entries);
+    hodlBip32Parsed.set(entries, parsed);
+  }
+  return pubkey ? parsed.filter((record) => hodlEq(record.pubkey, pubkey)) : parsed;
+}
+function hodlBip32Records(entries) {
+  return hodlFind(entries, 6).map((entry) => {
     if (entry.val.length < 4 || (entry.val.length - 4) % 4) throw new Error("A BIP32 derivation path is malformed.");
     // A path past BIP32's 255 levels names no key, and every caller skips it,
     // so it is left unparsed (path null). hodlPrivFromPath reads the records
@@ -16835,7 +16847,11 @@ function hodlRenderPsbt(psbt, nonceSourceTag = new Uint8Array(), nonceCheckedAt 
       // A finalized input whose fields yield no analyzable signature never
       // yields a clean or no-signatures verdict: a Taproot one counts as an
       // unchecked Taproot input, any other as an uninspected ECDSA one.
-      if (!signatures.length && !finalMaterial.signatures.length && !finalMaterial.uninspected && !finalTap.length) {
+      // Partial signatures are not the final material: a decoy one beside
+      // final fields that yield nothing readable left them counted as read,
+      // for the policy check and the Taproot nonce check alike (#1479 r4
+      // gate, Gemini).
+      if (!finalMaterial.signatures.length && !finalMaterial.uninspected && !finalTap.length) {
         if (hodlFinalIsTaproot(entries, claim)) tapUninspected++;
         else finalMaterial.uninspected = 1;
       }
