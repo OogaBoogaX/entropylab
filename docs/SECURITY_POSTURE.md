@@ -6,7 +6,7 @@ EntropyLab is one self-contained HTML file that turns entropy you supply into Bi
 
 No pull request reaches `rock` on one author's word. This is the maintainers' process, not a GitHub setting: the record of it is the triage comment on each pull request. Automated changes (translation pull requests, the rebuilt site artifact, timestamp proofs) are checked by CI instead.
 
-- **Five model reviewers and a red team on every pull request a person or model writes.** DeepSeek V4.1, Kimi K3, GLM 5.3, MiniMax M3.1 Flash and Nemotron 3.5 Lightning review each change. An adversarial red-team pass then tries to break it.
+- **Five model reviewers and a red team on every pull request other than automated translation updates.** DeepSeek V4.1, Kimi K3, GLM 5.3, MiniMax M3.1 Flash and Nemotron 3.5 Lightning review each change. An adversarial red-team pass then tries to break it.
 - **A merge bar.** A pull request merges only with a clean approval from at least one of Kimi K3, GLM 5.3 or DeepSeek V4.1. Every finding must first be fixed or refuted against the code, and the triage is posted on the pull request.
 - **A second red team on anything that touches keys, seeds, signing or the PSBT Inspector,** by Gemini.
 - **A test that fails without the fix.** Every fix lands with a regression test, run against the code before the fix to show it fails there.
@@ -40,7 +40,7 @@ How to check a download yourself: [Verifying the download](../README.md#verifyin
 
 | Property | How | Where to check |
 | --- | --- | --- |
-| **No network** | One HTML file, no runtime dependencies. The page makes no network requests of its own: its Content Security Policy sets `default-src 'none'; connect-src 'none'; form-action 'none'`. Links to outside pages load only when you follow them, and the hosted copy's service worker checks for updates (see Known limits). | `src/index.html`, [threat model](Threat_Model.md) |
+| **No network** | One HTML file, no runtime dependencies. The page makes no network requests of its own: its Content Security Policy includes `default-src 'none'; connect-src 'none'; form-action 'none'`. Links to outside pages load only when you follow them, and the hosted copy's service worker checks for updates (see Known limits). | `src/index.html`, [threat model](Threat_Model.md) |
 | **Your entropy, not ours** | The app never generates key entropy. You supply dice, coins, cards, words or keys. For hashed dice it shows how many rolls it recommends (100 D6 for 24 words). | [contribution rules](../CONTRIBUTING.md), [dice fairness tests](../test/dice-fairness.test.mjs) |
 | **Private values stay off the system clipboard** | The app's copy buttons for private values copy into an in-app clipboard held as bytes, never the OS clipboard. It is overwritten on replacement, conceal and End Session, and private readouts can't be selected. Public values can go to the OS clipboard. | [clipboard rules](UI_Patterns.md#copying-to-the-clipboard), [`app-clipboard.js`](../src/js/app-clipboard.js), [clipboard tests](../test/app-clipboard.test.mjs) |
 | **Secure entry** (optional, off by default) | Seed words, keys and dice can be entered on in-page pads that keep the values out of page text fields. | [seed picker](../src/js/seed-picker.js), [passphrase vault](../src/js/passphrase-vault.js), [secure dice pad](../src/js/secure-dice-pad.js), [wiring tests](../test/secure-entry-wiring.test.mjs) |
