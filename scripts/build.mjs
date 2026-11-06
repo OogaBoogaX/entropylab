@@ -108,17 +108,32 @@ if (/<\/style/i.test(css)) throw new Error("src/css/styles.css holds </style, wh
 // literal would read).
 const SVG_ELEMENTS = new Set(["svg", "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "title"]);
 const SVG_ATTRIBUTES = new Set(["xmlns", "viewBox", "width", "height", "d", "fill", "fill-rule", "fill-opacity", "clip-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-opacity", "opacity", "transform", "x", "y", "cx", "cy", "r", "rx", "ry", "x1", "y1", "x2", "y2", "points"]);
+// The logo must also be one balanced <svg> element with nothing after it: an
+// element left open, or one after the closing tag, lands in the page's HTML,
+// where a <title> swallows the rest of the page as text (#1477 r4 gate, Kimi).
 const svgProblem = (svg) => {
   if (/&|<!--|`|\$\{|\\|'/.test(svg)) return "an &, <!--, a backtick, ${, a backslash or '";
-  let problem = null;
-  const rest = svg.replace(/<(\/?)([A-Za-z][\w:-]*)((?:\s+[A-Za-z][\w:-]*="[^"<>]*")*)\s*\/?>/g, (tag, close, element, attributes) => {
+  if (!/^<svg[\s>]/.test(svg)) return "something before the <svg> root";
+  let problem = null, rootClosed = false;
+  const open = [];
+  const rest = svg.replace(/<(\/?)([A-Za-z][\w:-]*)((?:\s+[A-Za-z][\w:-]*="[^"<>]*")*)\s*(\/?)>/g, (tag, close, element, attributes, selfClosing) => {
     if (!SVG_ELEMENTS.has(element)) problem ??= `the element <${element}>`;
     for (const [, attribute] of attributes.matchAll(/\s([A-Za-z][\w:-]*)=/g)) {
       if (close || !SVG_ATTRIBUTES.has(attribute)) problem ??= `the attribute ${attribute}`;
     }
+    if (rootClosed) problem ??= "markup after the closing </svg>";
+    else if (close) {
+      if (open.pop() !== element) problem ??= `an unbalanced </${element}>`;
+      if (!open.length) rootClosed = true;
+    } else if (!selfClosing) {
+      if (element === "svg" && open.length) problem ??= "a nested <svg>";
+      open.push(element);
+    } else if (!open.length) problem ??= "a self-closing root";
     return "";
   });
-  return problem ?? (/[<>]/.test(rest) ? "markup that is not a plain element with double-quoted attributes" : null);
+  if (problem) return problem;
+  if (/[<>]/.test(rest)) return "markup that is not a plain element with double-quoted attributes";
+  return open.length || !rootClosed ? `an unclosed <${open.at(-1) ?? "svg"}>` : null;
 };
 const logoSvg = (name) => {
   const svg = read(`assets/${name}.svg`).trim();

@@ -69,6 +69,11 @@ test("a logo SVG with script, a handler or template-literal characters fails the
     '<image href="x.png"/>',
     '<path d="M0 0" style="fill:red"/>',
     '<path d="M0 0" fill=red/>',
+    // Unbalanced markup that escapes the root (#1477 r4 gate, Kimi).
+    "</svg><title>",
+    "<g>",
+    "</g>",
+    '<svg viewBox="0 0 1 1"><path d="M0 0"/>',
     '<a href="&#106;avascript:void 0"></a>',
     "<text>it's</text>",
     '<a href="javascript:void 0"></a>',
