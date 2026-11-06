@@ -298,9 +298,10 @@ test("the key-sync cautions follow the synced source, the raised length and Secu
   assert.equal(slice.hodlGlobalSyncKeyCautions({ ...synced, globalSyncSource: "key:wif", globalSyncLengthRaised: true }).keySynced, false, "not while Secure entry is on");
 });
 
-// An emptied or invalid source publishes nothing: the copies it made go, the
-// field being typed in keeps its text, and the status no longer counts bits
-// (red-team sweep 0eed735, part04 #18).
+// An emptied hashed source no longer counts its bits, so the status stops
+// reading "Key synced" over an empty field; the other fields keep the last
+// valid sync, as the browser suite pins for an invalid source (red-team sweep
+// 0eed735, part04 #18).
 async function loadFromInput(stubs) {
   const { loadAppFunctions } = await import("./app-slice-harness.mjs");
   return loadAppFunctions(["hodlGlobalSyncFromCurrentInput"], {
@@ -308,58 +309,17 @@ async function loadFromInput(stubs) {
     settable: ["hodlKeys", "hodlActiveKey", "hodlSecureEntryOn"],
   });
 }
-const mirroredState = () => ({
-  globalSync: true, globalSyncSource: "number:hex", globalSyncBitCount: 256, globalSyncLengthRaised: true, targetWords: 24, lastWord: "about",
-  fields: { hex: "12zz", bin: "0101", seed: "abandon abandon about", seedNumbers: "1 1 4", dplusDice: "1A2", directCards: "AS", bitboxDice: "123", privateKeys: { wif: "a-wif-copy", "hex-key": "ab".repeat(32), minikey: "", brain: "" } },
-});
-
-test("an invalid source drops the copies it made and keeps the text being typed", async () => {
+test("an emptied hashed source stops counting bits and keeps the last valid copies", async () => {
   await withDocument(async () => {
-    const slice = await loadFromInput({ hodlGlobalSyncCurrentBits: () => null, hodlGlobalSyncCurrentValue: () => "12zz", hodlGlobalSyncSourceId: () => "number:hex", hodlGlobalSyncIsHashedMode: () => false });
-    const state = mirroredState();
+    const slice = await loadFromInput({ hodlGlobalSyncCurrentBits: () => { throw new Error("not reached"); }, hodlGlobalSyncCurrentValue: () => "", hodlGlobalSyncIsHashedMode: () => true });
+    const state = { globalSync: true, globalSyncSource: "dice:coldcard", globalSyncBitCount: 256, fields: { hex: "00", seed: "abandon" } };
     slice.__set.hodlKeys([state]);
     slice.__set.hodlActiveKey(0);
     slice.__set.hodlSecureEntryOn(false);
     assert.equal(slice.hodlGlobalSyncFromCurrentInput(), false);
-    for (const name of ["bin", "seed", "seedNumbers", "dplusDice", "directCards", "bitboxDice"]) assert.equal(state.fields[name], "", `${name} copy dropped`);
-    assert.equal(state.fields.privateKeys.wif, "", "WIF copy dropped");
-    assert.equal(state.fields.privateKeys["hex-key"], "", "hex-key copy dropped");
-    assert.equal(state.fields.hex, "12zz", "the source field keeps what was typed");
-    assert.equal(state.globalSyncBitCount, 0, "no bits are counted");
-    assert.equal(state.globalSyncLengthRaised, true, "the caution stays with the length it describes");
-    assert.equal(state.globalSync, true, "sync stays on");
-    assert.equal(state.lastWord, "", "the old phrase's last word goes too");
-  });
-});
-
-test("an emptied hashed source drops its copies and its count", async () => {
-  await withDocument(async () => {
-    const slice = await loadFromInput({ hodlGlobalSyncCurrentBits: () => { throw new Error("not reached"); }, hodlGlobalSyncCurrentValue: () => "", hodlGlobalSyncSourceId: () => "dice:coldcard", hodlGlobalSyncIsHashedMode: () => true });
-    const state = mirroredState();
-    state.globalSyncSource = "dice:coldcard";
-    slice.__set.hodlKeys([state]);
-    slice.__set.hodlActiveKey(0);
-    slice.__set.hodlSecureEntryOn(false);
-    slice.hodlGlobalSyncFromCurrentInput();
-    assert.equal(state.fields.seed, "");
-    assert.equal(state.fields.hex, "", "a number field is a copy for a dice source");
     assert.equal(state.globalSyncBitCount, 0, "no \"Key synced\" over an empty field");
-  });
-});
-
-test("a private-key source that goes invalid keeps its own field", async () => {
-  await withDocument(async () => {
-    const slice = await loadFromInput({ hodlGlobalSyncCurrentBits: () => null, hodlGlobalSyncCurrentValue: () => "5Hue", hodlGlobalSyncSourceId: () => "key:wif", hodlGlobalSyncIsHashedMode: () => false });
-    const state = mirroredState();
-    state.globalSyncSource = "key:wif";
-    state.fields.privateKeys.wif = "5Hue";
-    slice.__set.hodlKeys([state]);
-    slice.__set.hodlActiveKey(0);
-    slice.__set.hodlSecureEntryOn(false);
-    slice.hodlGlobalSyncFromCurrentInput();
-    assert.equal(state.fields.privateKeys.wif, "5Hue", "the WIF being typed stays");
-    assert.equal(state.fields.privateKeys["hex-key"], "", "its hex-key copy goes");
-    assert.equal(state.fields.seed, "");
+    assert.equal(state.fields.hex, "00", "the last valid sync stays in the other fields");
+    assert.equal(state.fields.seed, "abandon");
   });
 });
 

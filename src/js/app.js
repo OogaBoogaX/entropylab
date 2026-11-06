@@ -6549,21 +6549,6 @@ function hodlGlobalSyncKeepSource(state, sourceId, sourceValue) {
   else if (sourceId === "key:hex-key") privateKeys["hex-key"] = sourceValue;
   else if (sourceId === "key:wif") privateKeys.wif = sourceValue;
 }
-// An emptied or invalid source publishes nothing: the copies it made earlier
-// go, so they no longer mirror an old value, and the status no longer reads
-// "Key synced" over an empty field. The field being typed in keeps its text,
-// and the raised-length caution stays with the length it describes
-// (red-team sweep 0eed735, part04 #18).
-function hodlGlobalSyncDropMirrors(state) {
-  let sourceId = hodlGlobalSyncSourceId(), sourceValue = String(hodlGlobalSyncCurrentValue()), raised = state.globalSyncLengthRaised;
-  hodlClearGlobalSyncCopies(state);
-  hodlGlobalSyncKeepSource(state, sourceId, sourceValue);
-  state.globalSyncLengthRaised = raised;
-  state.globalSyncBitCount = 0;
-  // The sync's last word was the old phrase's; a BitBox source's last word is
-  // the user's own pick and stays (#1480 gate, Kimi).
-  if (sourceId !== "dice:bitbox") state.lastWord = "";
-}
 // The fields hodlApplyGlobalSync writes, emptied so Clear leaves no copy.
 function hodlClearGlobalSyncCopies(state) {
   let fields = state.fields, privateKeys = hodlPrivateKeyValues(fields);
@@ -6586,13 +6571,18 @@ function hodlGlobalSyncFromCurrentInput() {
     return false;
   }
   if (hodlGlobalSyncIsHashedMode() && !String(hodlGlobalSyncCurrentValue()).length) {
-    hodlGlobalSyncDropMirrors(state);
+    // The other fields keep the last valid sync, as they do for an invalid
+    // source (the browser suite pins it), but the status no longer counts its
+    // bits: "Key synced" stayed over an emptied field (red-team sweep
+    // 0eed735, part04 #18; round 1 dropped the copies too, which reverted
+    // that pinned behaviour, #1480 r3 CI).
+    state.globalSyncBitCount = 0;
     hodlRenderGlobalSyncControl();
     return false;
   }
   let bits = hodlGlobalSyncCurrentBits(state.targetWords);
   if (bits === null) {
-    hodlGlobalSyncDropMirrors(state);
+    state.globalSyncBitCount = 0;
     hodlRenderGlobalSyncControl();
     return false;
   }
