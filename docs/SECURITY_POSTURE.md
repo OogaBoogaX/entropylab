@@ -7,7 +7,7 @@ EntropyLab is one self-contained HTML file that turns entropy you supply into Bi
 No pull request reaches `rock` on one author's word. This is the maintainers' process, not a GitHub setting: the record of it is the triage comment on each pull request. Automated changes (translation pull requests, the rebuilt site artifact, timestamp proofs) are checked by CI instead.
 
 - **Five model reviewers and a red team on every pull request a person or model writes.** DeepSeek V4.1, Kimi K3, GLM 5.3, MiniMax M3.1 Flash and Nemotron 3.5 Lightning review each change. An adversarial red-team pass then tries to break it.
-- **A merge bar that can't be skipped.** A pull request merges only with a clean approval from at least one of Kimi K3, GLM 5.3 or DeepSeek V4.1. Every finding must first be fixed or refuted against the code, and the triage is posted on the pull request.
+- **A merge bar.** A pull request merges only with a clean approval from at least one of Kimi K3, GLM 5.3 or DeepSeek V4.1. Every finding must first be fixed or refuted against the code, and the triage is posted on the pull request.
 - **A second red team on anything that touches keys, seeds, signing or the PSBT Inspector,** by Gemini.
 - **A test that fails without the fix.** Every fix lands with a regression test, run against the code before the fix to show it fails there.
 - **Untrusted code never runs on a maintainer's machine.** Code written by a model, and code from outside pull requests, runs only in an isolated sandbox: a VM with no network and no access to the host's files, with each test run under gVisor.
@@ -30,7 +30,7 @@ To our knowledge (November 2026), no other open-source Bitcoin key tool publishe
 ## Releases you can verify
 
 - **Signed by four maintainers.** v1.0.0 carries 4 of 4 signatures (russeree, MrHodlX, w-s-bitcoin, timechainb) over its `SHA256SUMS.txt`, plus an OpenTimestamps proof.
-- **Byte-for-byte reproducible.** CI rebuilds the page in two environments and requires identical bytes. Rebuilds outside GitHub that matched the published hashes are logged in [Reproductions](Reproductions.md).
+- **Byte-for-byte reproducible inside the pinned build image.** CI rebuilds the page in two environments and requires identical bytes. The image itself is not bit-for-bit reproducible, and its compilers are trusted as a seed: see [Verifying the download](../README.md#verifying-the-download). Rebuilds outside GitHub that matched the published hashes are logged in [Reproductions](Reproductions.md).
 - **Checked before it is deployed.** The release workflow checks the signatures, and that the commit named in the page's footer is in the tag's history, before it publishes anything (`.github/workflows/pages-release.yml`).
 - **Development builds say so.** A `rock` build is an unsigned `-dev` build and shows a banner that cannot be dismissed.
 
