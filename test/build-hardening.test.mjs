@@ -80,6 +80,9 @@ test("a logo SVG with script, a handler or template-literal characters fails the
     "<foreignObject></foreignObject>",
     "<text>`${globalThis.ran = 1}`</text>",
     "<text>\\u0041</text>",
+    // Markup inside a <title>, an HTML integration point (#1477 r6 gate, Kimi).
+    '<title><title/></title><path d="M0 0"/>',
+    "<title><g></g></title>",
   ]) {
     refused(buildWith((dir) => {
       const path = join(dir, "src/assets/logo-dark.svg");

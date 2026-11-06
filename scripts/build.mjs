@@ -122,6 +122,11 @@ const svgProblem = (svg) => {
   const open = [];
   const rest = svg.replace(/<(\/?)([A-Za-z][\w:-]*)((?:\s+[A-Za-z][\w:-]*="[^"<>]*")*)\s*(\/?)>/g, (tag, close, element, attributes, selfClosing) => {
     if (!SVG_ELEMENTS.has(element)) problem ??= `the element <${element}>`;
+    // A <title> is an HTML integration point: markup inside it is parsed as
+    // HTML, where a nested <title> reads the rest as text and a self-closing
+    // tag stays open, so the logo's root never closes (#1477 r6 gate, Kimi).
+    // A title holds text only.
+    if (open.at(-1) === "title" && !(close && element === "title")) problem ??= "markup inside a <title>";
     for (const [, attribute] of attributes.matchAll(/\s([A-Za-z][\w:-]*)=/g)) {
       if (close || !SVG_ATTRIBUTES.has(attribute)) problem ??= `the attribute ${attribute}`;
     }
