@@ -389,6 +389,15 @@ test("a refused imported extended key has its parsed node wiped", async () => {
     await assert.rejects(() => importer.hodlImportedWalletWithProgress(key, network, 2, 0, 0, tracker, 84, 0), what);
     assert.equal(nodes.at(-1).privateKey, null, `${what}: the parsed node is wiped`);
   }
+  // A stopped import throws from the tracker before the derivation starts,
+  // and is wiped too (#1480 r5 gate, MiniMax).
+  const stopped = { setTotal() { throw new Error("stopped"); }, step() { throw new Error("stopped"); } };
+  await assert.rejects(() => importer.hodlImportedWalletWithProgress(root.derive("m/84'/0'/0'").privateExtendedKey, "mainnet", 2, 0, 0, stopped, 84, 0), /stopped/);
+  assert.equal(nodes.at(-1).privateKey, null, "a stopped import: the parsed node is wiped");
+  // And an import that completes leaves no private key in the parsed node.
+  const done = await importer.hodlImportedWalletWithProgress(root.derive("m/84'/0'/0'").privateExtendedKey, "mainnet", 2, 0, 0, tracker, 84, 0);
+  assert.equal(done.accounts.length, 1);
+  assert.equal(nodes.at(-1).privateKey, null, "a completed import: the parsed node is wiped");
 });
 
 // The wallet.dat bytes are zeroed once the download's Blob holds its own copy:

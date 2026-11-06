@@ -1519,35 +1519,30 @@ async function hodlEntropyWalletWithProgress(entropy, passphrase, network, count
 }
 async function hodlImportedWalletWithProgress(value, network, count, accountIndex, addressStart, tracker, purposeIndex, coinType = hodlCoinTypeFromNetwork(network), hardening = hodlDefaultHardening(), branchStart = 0, branchRange = 2, derivationPlan = null) {
   let importedValue = String(value ?? "").trim(), parsed = hodlParseExtendedKey(importedValue);
-  // The parse built the key's node: every refusal below wipes it first. They
-  // come before the derivation's own finally, so it waited for the collector
-  // (red-team sweep 0eed735, part01 #5).
-  let refuse = (key, vars) => {
+  // The parse built the key's node, and every way out wipes it: a refusal
+  // (red-team sweep 0eed735, part01 #5), a stopped import, which throws from
+  // the tracker before the derivation starts (#1480 r5 gate, MiniMax), and a
+  // result, which holds its own copy of the imported root or account node.
+  try {
+    return await hodlImportedWalletFromParsed(parsed, importedValue, network, count, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
+  } finally {
     parsed.node?.wipePrivateData?.();
-    return hodlError(key, vars);
-  };
-  if (parsed.scope !== "singlesig") throw refuse("{prefix} is a multisig extended key. Use it in Multi Signature, not Key Derivation.", { prefix: parsed.prefix });
-  if (parsed.network !== hodlNetworkFamily(network)) throw refuse("This {prefix} belongs to Bitcoin {network}. Change Network to {network} before deriving it.", { prefix: parsed.prefix, network: parsed.network });
+  }
+}
+async function hodlImportedWalletFromParsed(parsed, importedValue, network, count, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan) {
+  if (parsed.scope !== "singlesig") throw hodlError("{prefix} is a multisig extended key. Use it in Multi Signature, not Key Derivation.", { prefix: parsed.prefix });
+  if (parsed.network !== hodlNetworkFamily(network)) throw hodlError("This {prefix} belongs to Bitcoin {network}. Change Network to {network} before deriving it.", { prefix: parsed.prefix, network: parsed.network });
   let node = parsed.node, mismatch = hodlSinglesigScriptMismatch(parsed, hodlSelectedScriptType()), notes = [hodlNote(parsed.isPrivate ? "Imported an extended private key. Addresses and WIF keys are derived from it." : "Imported an extended public key. This is watch-only: it can derive addresses but cannot spend.")];
   if (node.depth === 0) {
-    if (!parsed.isPrivate && (derivationPlan ? derivationPlan.hasHardenedPrefix || hardening.branch || hardening.address : Object.values(hardening).some(Boolean))) throw refuse("A root extended public key cannot derive the selected hardened path. Turn every Harden option off, import an account-level public key, or use the root xprv/tprv offline.");
-    if (parsed.family !== "x") throw refuse("A BIP32 root private key must use the generic xprv/tprv prefix.");
-    try {
-      return await hodlRootWalletWithProgress(node, network, count, { entropy: null, passphraseUsed: false, passphrase: null, seed: null, notes, warnings: [] }, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
-    } finally {
-      node.wipePrivateData(); // the result holds its own copy of the imported root
-    }
+    if (!parsed.isPrivate && (derivationPlan ? derivationPlan.hasHardenedPrefix || hardening.branch || hardening.address : Object.values(hardening).some(Boolean))) throw hodlError("A root extended public key cannot derive the selected hardened path. Turn every Harden option off, import an account-level public key, or use the root xprv/tprv offline.");
+    if (parsed.family !== "x") throw hodlError("A BIP32 root private key must use the generic xprv/tprv prefix.");
+    return await hodlRootWalletWithProgress(node, network, count, { entropy: null, passphraseUsed: false, passphrase: null, seed: null, notes, warnings: [] }, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
   }
-  if (node.depth !== 3) throw refuse("This extended key is depth {depth}. Key Derivation accepts a BIP32 root private key (depth 0) or an account-level extended key (depth 3).", { depth: node.depth });
-  if ((hardening.branch || hardening.address) && !parsed.isPrivate) throw refuse(hardening.branch ? "Hardened address branches cannot be derived from an account extended public key. Turn off Harden or import the matching extended private key offline." : "Hardened address indexes cannot be derived from an account extended public key. Turn off Harden or import the matching extended private key offline.");
+  if (node.depth !== 3) throw hodlError("This extended key is depth {depth}. Key Derivation accepts a BIP32 root private key (depth 0) or an account-level extended key (depth 3).", { depth: node.depth });
+  if ((hardening.branch || hardening.address) && !parsed.isPrivate) throw hodlError(hardening.branch ? "Hardened address branches cannot be derived from an account extended public key. Turn off Harden or import the matching extended private key offline." : "Hardened address indexes cannot be derived from an account extended public key. Turn off Harden or import the matching extended private key offline.");
   let definition = hodlImportedScriptDefinition(parsed), addressCount = Math.min(Math.max(count, 1), hodlMaxAddressRange), parentFingerprint = hodlFingerprintHex(node.parentFingerprint), nodeFingerprint = hodlFingerprintHex(node.fingerprint);
   tracker.setTotal(addressCount * branchRange);
-  let account;
-  try {
-    account = await hodlAccountResultWithProgress(node, definition, network, addressCount, { accountPath: "Imported account key", accountIndex: null, imported: true, importedFamily: parsed.family, parentFingerprint, nodeFingerprint, addressStart, branchHardened: hardening.branch, addressHardened: hardening.address, branchStart, branchRange }, tracker);
-  } finally {
-    node.wipePrivateData(); // the account holds its own copy of the imported node; a stopped import wipes that copy too
-  }
+  let account = await hodlAccountResultWithProgress(node, definition, network, addressCount, { accountPath: "Imported account key", accountIndex: null, imported: true, importedFamily: parsed.family, parentFingerprint, nodeFingerprint, addressStart, branchHardened: hardening.branch, addressHardened: hardening.address, branchStart, branchRange }, tracker);
   return {
     kind: "hd",
     network,
