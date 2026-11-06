@@ -13,9 +13,9 @@
 // `--test-hooks --out <dir>`: it compiles in the suite's test bridge (see
 // src/js/app.js) and writes the files outside the repository root. The
 // release build leaves the flag off, so no test code reaches entropylab.html.
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { buildCommit } from "./build-commit.mjs";
@@ -40,6 +40,23 @@ if (preview && outDir === root) {
 // build and drops the dead branch. Markup gates on the <!-- preview --> /
 // <!-- /preview --> comment blocks that applyPreviewBlocks strips from the
 // shell. A preview build is never deployed.
+
+// Build inputs are committed files. readFileSync and esbuild both follow a
+// symbolic link (or a Windows junction), so a committed link would pull a
+// file from outside the checkout into the artifact. Refuse any link among
+// the inputs before one is read (red-team sweep 0eed735, build #5). --clean
+// builds nothing, so it still removes the generated files from such a tree
+// (#1477 r5 gate, DeepSeek).
+const refuseLinks = (path) => {
+  const stats = lstatSync(path);
+  if (stats.isSymbolicLink()) throw new Error(`Build input is a symbolic link: ${relative(root, path)}`);
+  if (stats.isDirectory()) for (const name of readdirSync(path)) refuseLinks(join(path, name));
+};
+if (!process.argv.includes("--clean")) {
+  // scripts/ too: the build imports its modules and inlines what the
+  // worker-source ones return (#1477 r9 gate, DeepSeek).
+  for (const input of ["src", "assets", "scripts", "manifest.webmanifest", "package.json"]) refuseLinks(join(root, input));
+}
 
 const read = (path) => readFileSync(join(SRC, path), "utf8");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
@@ -78,12 +95,77 @@ const template = applyPreviewBlocks(read("index.html"), preview);
 const shell = applyPreviewBlocks(read("shell.html"), preview);
 const workerTemplate = read("service-worker.js");
 const css = read("css/styles.css");
+// The stylesheet is inlined into a <style> element as it is: a "</style"
+// would end it and turn the rest into page markup (#1477 r2 gate, Kimi).
+if (/<\/style/i.test(css)) throw new Error("src/css/styles.css holds </style, which would end the page's inlined <style> element");
 // The header logo is inlined as SVG markup so the downloaded file shows it
 // without reaching for assets/ (which only exists on the hosted site). The
 // empty span is replaced in the template and in the runtime header template.
-const logoSvg = (name) =>
-  read(`assets/${name}.svg`).trim()
-    .replace("<svg ", `<svg class="site-${name}" aria-hidden="true" focusable="false" `);
+// The SVG lands raw in the page, whose CSP allows inline script, and inside a
+// JS string literal in the bundle (a template literal today; esbuild picks the
+// quote). A list of what to refuse kept missing shapes the HTML parser still
+// reads: a handler after "/" or straight after a quoted value, javascript:
+// split by a tab, and HTML elements such as <meta http-equiv=refresh> or
+// <div>, which the parser lifts out of the SVG into the page, where the CSP
+// does not stop a redirect (red-team sweep 0eed735, build #1; #1477 gate:
+// Kimi, GLM, MiniMax, DeepSeek). So the logo is checked against what it may
+// hold: plain shape elements with double-quoted presentation attributes, and
+// none of &, <!--, a backtick, ${, a backslash or ' (which the string
+// literal would read).
+const SVG_ELEMENTS = new Set(["svg", "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "title"]);
+const SVG_ATTRIBUTES = new Set(["xmlns", "viewBox", "width", "height", "d", "fill", "fill-rule", "fill-opacity", "clip-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-opacity", "opacity", "transform", "x", "y", "cx", "cy", "r", "rx", "ry", "x1", "y1", "x2", "y2", "points"]);
+// The logo must also be one balanced <svg> element with nothing after it: an
+// element left open, or one after the closing tag, lands in the page's HTML,
+// where a <title> swallows the rest of the page as text (#1477 r4 gate, Kimi).
+const svgProblem = (svg) => {
+  // A line break is refused too: it would end the bundle string the logo is
+  // spliced into if esbuild ever wrote the shell with quotes, not backticks.
+  // The logos are one line (#1477 r9 gate, DeepSeek).
+  if (/&|<!--|`|\$\{|\\|'|[\r\n]/.test(svg)) return "an &, <!--, a backtick, ${, a backslash, ' or a line break";
+  // The root is written "<svg " with its attributes after a space: the build
+  // adds the logo's class and ARIA attributes there, so another root shape
+  // (a bare <svg>, a line break after the name) shipped without them
+  // (#1477 r8 gate, GLM).
+  if (!svg.startsWith("<svg ")) return "a root other than \"<svg \" and its attributes";
+  // Tags are read with HTML's whitespace (tab, LF, FF, CR, space), not
+  // JavaScript's \s: HTML reads a U+00A0 as part of the tag name, so
+  // "</title\u00a0>" closes nothing (#1477 r7 gate, Kimi).
+  let problem = null, rootClosed = false;
+  const open = [];
+  const rest = svg.replace(/<(\/?)([A-Za-z][\w:-]*)((?:[\t\n\f\r ]+[A-Za-z][\w:-]*="[^"<>]*")*)[\t\n\f\r ]*(\/?)>/g, (tag, close, element, attributes, selfClosing) => {
+    if (!SVG_ELEMENTS.has(element)) problem ??= `the element <${element}>`;
+    // A <title> is an HTML integration point: markup inside it is parsed as
+    // HTML, where a nested <title> reads the rest as text and a self-closing
+    // tag stays open, so the logo's root never closes (#1477 r6 gate, Kimi).
+    // A title holds text only.
+    if (open.at(-1) === "title" && !(close && element === "title")) problem ??= "markup inside a <title>";
+    for (const [, attribute] of attributes.matchAll(/[\t\n\f\r ]([A-Za-z][\w:-]*)=/g)) {
+      if (close || !SVG_ATTRIBUTES.has(attribute)) problem ??= `the attribute ${attribute}`;
+    }
+    if (rootClosed) problem ??= "markup after the closing </svg>";
+    else if (close) {
+      if (open.pop() !== element) problem ??= `an unbalanced </${element}>`;
+      if (!open.length) rootClosed = true;
+    } else if (!selfClosing) {
+      if (element === "svg" && open.length) problem ??= "a nested <svg>";
+      open.push(element);
+    } else if (!open.length) problem ??= "a self-closing root";
+    return "";
+  });
+  if (problem) return problem;
+  if (/[<>]/.test(rest)) return "markup that is not a plain element with double-quoted attributes";
+  // Text after the root lands in the page too (#1477 r5 gate, Kimi).
+  if (rootClosed && !svg.endsWith("</svg>")) return "text after the closing </svg>";
+  return open.length || !rootClosed ? `an unclosed <${open.at(-1) ?? "svg"}>` : null;
+};
+const logoSvg = (name) => {
+  const svg = read(`assets/${name}.svg`).trim();
+  const problem = svgProblem(svg);
+  if (problem) {
+    throw new Error(`src/assets/${name}.svg holds ${problem}; the inlined logo may hold only ${[...SVG_ELEMENTS].join(", ")} elements with presentation attributes`);
+  }
+  return svg.replace("<svg ", `<svg class="site-${name}" aria-hidden="true" focusable="false" `);
+};
 const siteLogoSpan = '<span class="site-logo" aria-hidden="true"></span>';
 const siteLogo = `<span class="site-logo" aria-hidden="true">${logoSvg("logo-dark")}${logoSvg("logo-light")}</span>`;
 // Inlined from the same files the site publishes, so the downloaded document
@@ -132,6 +214,14 @@ const wasmAezNotice = `/*!
 // module esbuild loads, so a release build hides the markup in both copies.
 // Plugins need the async API.
 const previewHtml = previewHtmlPlugin(preview);
+// The QR-capture license text goes into a JS comment ahead of the bundle: a
+// "*/" would end the comment and run the rest as code, and "</script" or
+// "<!--" would change where the page's script element ends (red-team sweep
+// 0eed735, build #3).
+const ur2License = readFileSync(join(root, "src/licenses/ur2.txt"), "utf8");
+if (/\*\/|<\/script|<!--/i.test(ur2License)) {
+  throw new Error("src/licenses/ur2.txt holds */, </script or <!--, which would break out of the bundle's license comment");
+}
 const jsMain = (await build({
   entryPoints: [join(SRC, "js/app.js")],
   bundle: true,
@@ -143,7 +233,7 @@ const jsMain = (await build({
   legalComments: "none",
   charset: "utf8",
   loader: { ".html": "text" },
-  banner: { js: wasmAezNotice + "\n/*! QR capture: Foundation Devices ur2-derived fragment selection, BSD-2-Clause-Patent.\n" + readFileSync(join(root, "src/licenses/ur2.txt"), "utf8") + "\n*/\n" },
+  banner: { js: wasmAezNotice + "\n/*! QR capture: Foundation Devices ur2-derived fragment selection, BSD-2-Clause-Patent.\n" + ur2License + "\n*/\n" },
   plugins: [previewHtml],
   define: {
     __ENTROPYLAB_TEST_HOOKS__: testHooks ? "true" : "false", __LN_WORKER_SOURCE__: JSON.stringify(await (await import("./ln-worker-source.mjs")).buildLnWorkerSource()),
@@ -169,8 +259,12 @@ const jsRepeat = read("js/repeat-inputs.js");
 // The classic scripts are inlined verbatim: esbuild never sees them, so the
 // preview constant would be an undefined name there and break the release
 // page. Refuse it at build time; gate classic-script features from app.js.
+// Nothing escapes them either, so a "</script" (or a "<!--", which changes
+// where the element ends) would close their <script> element early and turn
+// the rest into page markup (red-team sweep 0eed735, build #2).
 for (const [name, text] of Object.entries({ jsSqliteWriter, jsSqliteReader, jsWalletExport, jsCoreWallet, jsOnline, jsNetwork, jsBrowserCheck, jsLifeHash, jsEnhanced, jsRepeat })) {
   if (text.includes("__ENTROPYLAB_PREVIEW__")) throw new Error(`${name}: classic scripts cannot use __ENTROPYLAB_PREVIEW__ (only ES modules bundled by esbuild see it)`);
+  if (/<\/script|<!--/i.test(text)) throw new Error(`${name}: classic scripts are inlined into <script> elements as they are, so they cannot contain </script or <!--`);
 }
 
 let html = template

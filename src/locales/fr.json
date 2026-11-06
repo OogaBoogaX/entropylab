@@ -2587,5 +2587,12 @@
   "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "<strong>Version de développement — non signée.</strong> Pour les tests uniquement. Ne l'utilisez pas avec de vrais fonds ou de vraies phrases secrètes. La version signée se trouve sur entropylab.online.",
   "Not checked:": "Non vérifié :",
   "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "revendique {path}, un chemin inhabituellement profond, et ce PSBT a épuisé les vérifications. Ne pas signer.",
-  "claims {path}, but this PSBT used up the checks. Do not sign.": "revendique {path}, mais ce PSBT a épuisé les vérifications. Ne pas signer."
+  "claims {path}, but this PSBT used up the checks. Do not sign.": "revendique {path}, mais ce PSBT a épuisé les vérifications. Ne pas signer.",
+  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (devise non reconnue {currency} : taille de l'unité inconnue, à confirmer auprès de l'émetteur)",
+  "seed set to 24 words": "graine définie sur 24 mots",
+  "In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.": "Dans un portefeuille, ces mots restaurent un portefeuille différent, pas cette clé privée. Sauvegardez la clé privée elle-même.",
+  "A trailing path can have at most 16 steps.": "Un chemin de fin peut comporter au plus 16 étapes.",
+  "A derivation path index after the extended key is out of range (0 to 2,147,483,647).": "Un index de chemin de dérivation après la clé étendue est hors de portée (0 à 2 147 483 647).",
+  "A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.": "Une clé BIP45 doit avoir une étape de cosignataire simple 0 avant sa branche, comme /0/0/* ou /0/<0;1>/*. Cet outil dérive uniquement le cosignataire 0 ; une autre étape de cosignataire dériverait un portefeuille différent.",
+  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Une étape multipath comme <0;1> doit être suivie du joker *, comme dans /<0;1>/*."
 }

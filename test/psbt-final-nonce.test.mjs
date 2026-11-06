@@ -289,8 +289,10 @@ test("the render loop merges final fields and never issues a clean verdict for u
   assert.match(render, /hodlFinalSigs\(entries, witnessUtxo, tx, index, signatureChecks\)/);
   assert.match(render, /uninspected \+= finalMaterial\.uninspected/);
   assert.match(render, /finalMaterial\.malformed/);
-  // An unsupported finalized input forces the incomplete-coverage warning.
-  assert.match(render, /!signatures\.length && !finalMaterial\.signatures\.length && !finalMaterial\.uninspected/);
+  // An unsupported finalized input forces the incomplete-coverage warning,
+  // read from the final material alone: a partial signature beside it is not
+  // what was finalized (#1479 r4 gate, Gemini).
+  assert.match(render, /!finalMaterial\.signatures\.length && !finalMaterial\.uninspected/);
   assert.match(app, /signatures carried by finalized scriptSig\/witness fields/);
 });
 
