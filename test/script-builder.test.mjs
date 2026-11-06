@@ -224,6 +224,22 @@ test("malformed hex after 0x is refused, not turned into OP_RETURN text", () => 
   assert.equal(buildOutputScript("0x 51 ac").scriptHex, "51ac", "spaced hex still passes through");
 });
 
+// Raw script hex that happens to look like "<letters>1<bech32 characters>"
+// keeps its raw reading (#1478 r3 gate, Kimi, GLM, DeepSeek, MiniMax, Gemini).
+test("raw script hex shaped like a long bech32 string is still raw script", () => {
+  for (const raw of ["face1" + "0".repeat(51), "ab1" + "cd".repeat(30) + "e", "deadbeef1" + "0".repeat(51)]) {
+    const built = buildOutputScript(raw);
+    assert.equal(built.kind, "raw", raw.slice(0, 10));
+    assert.equal(built.scriptHex, raw.toLowerCase());
+  }
+});
+
+test("a decimal opcode value is not an ASM token", () => {
+  for (const token of ["118", "172", "106"]) {
+    assert.throws(() => assembleScriptAsm(token), /Unknown script token/, token);
+  }
+});
+
 test("raw script hex has the same 10,000-byte cap as ASM", () => {
   assert.equal(buildOutputScript("0x" + "ab".repeat(10000)).kind, "raw");
   assert.throws(() => buildOutputScript("0x" + "ab".repeat(10001)), /10,000-byte/);
@@ -258,5 +274,15 @@ test("a silent payment address is refused, not turned into OP_RETURN text", () =
   }
   assert.throws(() => buildOutputScript("xp1" + address.slice(3)), /does not decode/, "a mistyped prefix is an address that does not decode");
   assert.throws(() => buildOutputScript(`"xp1${address.slice(3)}"`), /does not decode/);
+  // A mistyped character outside the bech32 alphabet, or a leading digit, still
+  // reads as a silent payment address (#1478 r3 gate, Kimi, Gemini, DeepSeek).
+  const typo = address.slice(0, 40) + "b" + address.slice(41);
+  for (const pasted of [`"${typo}"`, typo, "1" + address, `(1${typo})`]) {
+    assert.throws(() => buildOutputScript(pasted), /Silent payment addresses/, pasted.slice(0, 8));
+  }
+  // A wrapped regtest Taproot address past 64 characters, with a mistyped
+  // character, is an address that does not decode (#1478 r3 gate, Gemini).
+  const regtest = "bcrt1p" + "q".repeat(58);
+  assert.throws(() => buildOutputScript(`"${regtest.slice(0, 20)}b${regtest.slice(21)}"`, { network: "regtest" }), /does not decode/);
   assert.equal(buildOutputScript(address, { mode: "opreturn-text" }).kind, "opreturn", "the explicit text mode still takes it");
 });

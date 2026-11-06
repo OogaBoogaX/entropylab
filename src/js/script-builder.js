@@ -151,11 +151,19 @@ export const buildOutputScript = (input, { network = "mainnet", mode = "auto" } 
   // is read here too, with up to two symbols a paste can leave around it
   // (quotes, brackets) and whatever its prefix: a mistyped one (xp1…) is an
   // address that does not decode, not text (#1478 r2 gate, Kimi).
-  const bech32Long = /^([A-Za-z]{1,8})1[02-9ac-hj-np-zAC-HJ-NP-Z]{50,}$/.exec(text.replace(/^[^0-9A-Za-z]{1,2}|[^0-9A-Za-z]{1,2}$/g, ""));
-  if (/^(?:sp|tsp|sprt)1\S*$/i.test(text) || (bech32Long && /^(?:sp|tsp|sprt)$/i.test(bech32Long[1]))) {
+  // Raw script hex keeps its reading: "face1000…" is hex, not an address
+  // (#1478 r3 gate, Kimi, GLM, DeepSeek, MiniMax, Gemini). A silent payment
+  // address is found anywhere in a whitespace-free paste, with a mistyped
+  // character or a leading digit too, since "sp" can't occur in hex; and the
+  // address arms also read the paste without its wrapping symbols (#1478 r3
+  // gate, Kimi, Gemini, DeepSeek).
+  const core = text.replace(/^[^0-9A-Za-z]{1,2}|[^0-9A-Za-z]{1,2}$/g, "");
+  const rawHex = isHex(text) && /[a-f]/i.test(text);
+  const bech32Long = !rawHex && /^[A-Za-z]{1,8}1[02-9ac-hj-np-zAC-HJ-NP-Z]{50,}$/.test(core);
+  if (/^(?:sp|tsp|sprt)1\S*$/i.test(text) || (!/\s/.test(text) && /(?:sp|tsp|sprt)1[0-9A-Za-z]{50,}/i.test(core))) {
     throw new Error("Silent payment addresses (sp1… or tsp1…) can't be paid from this builder: the output key depends on the transaction's inputs. Use the Silent Payments tool on the Privacy tab.");
   }
-  if (looksLikeAddress(text) || bech32Long) {
+  if (looksLikeAddress(text) || bech32Long || (!rawHex && core !== text && looksLikeAddress(core))) {
     try {
       return scriptFromAddress(text, network);
     } catch {
