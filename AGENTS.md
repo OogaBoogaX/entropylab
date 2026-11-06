@@ -2,6 +2,14 @@
 
 Guidelines for AI coding agents.
 
+**Security work:** read [docs/SECURITY_POSTURE.md](docs/SECURITY_POSTURE.md)
+(the evidence map and the known limits),
+[docs/Threat_Model.md](docs/Threat_Model.md), [SECURITY.md](SECURITY.md) and
+[docs/TESTING.md](docs/TESTING.md) first. Check claims against the code at the
+commit you are on: `rock` is the development line, and a pending pull request
+is not shipped behaviour. Link every security claim, in code comments, docs or
+pull requests, to the code or test that backs it.
+
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. The short
   version: never generate entropy used for key material, no network egress, output stays a single
   self-contained `entropylab.html`.

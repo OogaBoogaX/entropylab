@@ -30,6 +30,15 @@ if (!/^\d+(?:\.\d+)*(?:-dev)?$/.test(version)) {
 const appFile = "entropylab.html";
 const workerFile = "service-worker.js";
 
+// The page, the worker, the manifest and the assets directory itself must be
+// real files: the checks below follow symbolic links, and the walk further
+// down lstats only the entries inside assets/ (red-team sweep 0eed735,
+// verify-site #2).
+for (const name of [appFile, "manifest.webmanifest", workerFile, "assets"]) {
+  const path = join(repoDir, name);
+  if (existsSync(path) && lstatSync(path).isSymbolicLink()) fail(`Site artifact is a symbolic link: ${name}`);
+}
+
 for (const name of [appFile, "manifest.webmanifest", "service-worker.js", "assets/favicon.png", "assets/entropylab-darkmode.png", "assets/pwa-icon-180.png", "assets/pwa-icon-192.png", "assets/pwa-icon-512.png"]) {
   const path = join(repoDir, name);
   if (!existsSync(path) || statSync(path).size === 0) {
