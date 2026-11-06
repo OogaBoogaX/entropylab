@@ -1519,28 +1519,30 @@ async function hodlEntropyWalletWithProgress(entropy, passphrase, network, count
 }
 async function hodlImportedWalletWithProgress(value, network, count, accountIndex, addressStart, tracker, purposeIndex, coinType = hodlCoinTypeFromNetwork(network), hardening = hodlDefaultHardening(), branchStart = 0, branchRange = 2, derivationPlan = null) {
   let importedValue = String(value ?? "").trim(), parsed = hodlParseExtendedKey(importedValue);
+  // The parse built the key's node, and every way out wipes it: a refusal
+  // (red-team sweep 0eed735, part01 #5), a stopped import, which throws from
+  // the tracker before the derivation starts (#1480 r5 gate, MiniMax), and a
+  // result, which holds its own copy of the imported root or account node.
+  try {
+    return await hodlImportedWalletFromParsed(parsed, importedValue, network, count, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
+  } finally {
+    parsed.node?.wipePrivateData?.();
+  }
+}
+async function hodlImportedWalletFromParsed(parsed, importedValue, network, count, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan) {
   if (parsed.scope !== "singlesig") throw hodlError("{prefix} is a multisig extended key. Use it in Multi Signature, not Key Derivation.", { prefix: parsed.prefix });
   if (parsed.network !== hodlNetworkFamily(network)) throw hodlError("This {prefix} belongs to Bitcoin {network}. Change Network to {network} before deriving it.", { prefix: parsed.prefix, network: parsed.network });
   let node = parsed.node, mismatch = hodlSinglesigScriptMismatch(parsed, hodlSelectedScriptType()), notes = [hodlNote(parsed.isPrivate ? "Imported an extended private key. Addresses and WIF keys are derived from it." : "Imported an extended public key. This is watch-only: it can derive addresses but cannot spend.")];
   if (node.depth === 0) {
     if (!parsed.isPrivate && (derivationPlan ? derivationPlan.hasHardenedPrefix || hardening.branch || hardening.address : Object.values(hardening).some(Boolean))) throw hodlError("A root extended public key cannot derive the selected hardened path. Turn every Harden option off, import an account-level public key, or use the root xprv/tprv offline.");
     if (parsed.family !== "x") throw hodlError("A BIP32 root private key must use the generic xprv/tprv prefix.");
-    try {
-      return await hodlRootWalletWithProgress(node, network, count, { entropy: null, passphraseUsed: false, passphrase: null, seed: null, notes, warnings: [] }, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
-    } finally {
-      node.wipePrivateData(); // the result holds its own copy of the imported root
-    }
+    return await hodlRootWalletWithProgress(node, network, count, { entropy: null, passphraseUsed: false, passphrase: null, seed: null, notes, warnings: [] }, accountIndex, addressStart, tracker, purposeIndex, coinType, hardening, branchStart, branchRange, derivationPlan);
   }
   if (node.depth !== 3) throw hodlError("This extended key is depth {depth}. Key Derivation accepts a BIP32 root private key (depth 0) or an account-level extended key (depth 3).", { depth: node.depth });
   if ((hardening.branch || hardening.address) && !parsed.isPrivate) throw hodlError(hardening.branch ? "Hardened address branches cannot be derived from an account extended public key. Turn off Harden or import the matching extended private key offline." : "Hardened address indexes cannot be derived from an account extended public key. Turn off Harden or import the matching extended private key offline.");
   let definition = hodlImportedScriptDefinition(parsed), addressCount = Math.min(Math.max(count, 1), hodlMaxAddressRange), parentFingerprint = hodlFingerprintHex(node.parentFingerprint), nodeFingerprint = hodlFingerprintHex(node.fingerprint);
   tracker.setTotal(addressCount * branchRange);
-  let account;
-  try {
-    account = await hodlAccountResultWithProgress(node, definition, network, addressCount, { accountPath: "Imported account key", accountIndex: null, imported: true, importedFamily: parsed.family, parentFingerprint, nodeFingerprint, addressStart, branchHardened: hardening.branch, addressHardened: hardening.address, branchStart, branchRange }, tracker);
-  } finally {
-    node.wipePrivateData(); // the account holds its own copy of the imported node; a stopped import wipes that copy too
-  }
+  let account = await hodlAccountResultWithProgress(node, definition, network, addressCount, { accountPath: "Imported account key", accountIndex: null, imported: true, importedFamily: parsed.family, parentFingerprint, nodeFingerprint, addressStart, branchHardened: hardening.branch, addressHardened: hardening.address, branchStart, branchRange }, tracker);
   return {
     kind: "hd",
     network,
@@ -2287,7 +2289,17 @@ function hodlDownloadWalletDat() {
   let exported = hodlWalletResult.kind !== "msig" && hodlRevealPrivate ? hodlWalletExportView(hodlWalletResult) : hodlWalletResult;
   let withSecrets = hodlWalletResult.kind !== "msig" && hodlRevealPrivate && hodlWalletExport.hasPrivateDescriptors(exported);
   try {
-    let bytes = hodlWalletExport.buildWalletDat(exported, withSecrets, hodlWalletDatDeps(), creationTime), blob = new Blob([bytes], { type: "application/octet-stream" }), url = URL.createObjectURL(blob), link = document.createElement("a");
+    let bytes = hodlWalletExport.buildWalletDat(exported, withSecrets, hodlWalletDatDeps(), creationTime), blob, url, link;
+    // The Blob holds its own copy; these bytes carry the spend descriptors
+    // when secrets are shown, and go on every path (red-team sweep 0eed735,
+    // part02 #9; #1480 gate, DeepSeek).
+    try {
+      blob = new Blob([bytes], { type: "application/octet-stream" });
+      url = URL.createObjectURL(blob);
+      link = document.createElement("a");
+    } finally {
+      bytes.fill(0);
+    }
     link.href = url;
     link.download = hodlWalletExport.walletDatFilename(hodlWalletResult, withSecrets);
     link.click();
@@ -3730,7 +3742,10 @@ function hodlDPlusRolls(value, targetWords = hodlTargetWordCount) {
     warnings = [];
   notes.push(hodlNote("D++ D16 results use the hexadecimal faces 0 through F exactly as shown on the dice."));
   if (complete && finalWord) {
-    let details = finalInfo.map((info) => info.step === "coin" ? hodlNote(Number(info.value) >= 5 ? "D8 result {value} read as Heads" : "D8 result {value} read as Tails", { value: info.value }) : hodlNote("{die} result {value}", { die: hodlDPlusStepLabel(info.step), value: info.value }));
+    // The coin note names the side hodlDPlusStepValue read: bit 0 is Heads
+    // (faces 1-4) and bit 1 Tails (5-8). The note computed its own side,
+    // reversed (red-team sweep 0eed735, part03 #3).
+    let details = finalInfo.map((info) => info.step === "coin" ? hodlNote(hodlDPlusStepValue("coin", info.value) ? "D8 result {value} read as Tails" : "D8 result {value} read as Heads", { value: info.value }) : hodlNote("{die} result {value}", { die: hodlDPlusStepLabel(info.step), value: info.value }));
     notes.push(details.length === 1 ? hodlNote("Final {detail} selected checksum option {n} of {total}: {word}.", { detail: details[0], n: finalIndex + 1, total: candidates.length, word: finalWord }) : hodlNote("Final {a} and {b} selected checksum option {n} of {total}: {word}.", { a: details[0], b: details[1], n: finalIndex + 1, total: candidates.length, word: finalWord }));
   }
   if (waiting === "last-word") notes.push(hodlNote("Choose 1 of {n} checksum-valid final words to complete the {words}-word seed.", { n: config.candidates, words: config.words }));
@@ -5474,9 +5489,18 @@ function hodlSyncBrainOutput() {
     if (keyboardToggle && home && keyboardToggle.parentElement !== home) home.append(keyboardToggle);
   }
   let hex = document.getElementById("brain-lab-hex");
-  if (!hex || !brain || output !== "hd") return;
+  if (!hex) return;
   let copy = document.getElementById("brain-lab-copy");
   if (copy) copy.disabled = true;
+  if (!brain || output !== "hd") {
+    // The lab hides, and the digest it showed goes with it: it outlived an
+    // edit of the brain text (red-team sweep 0eed735, part04 #9).
+    if (hex.querySelector("[data-private-value]")) {
+      hex.textContent = hodlTText("SHA-256 hex appears here. 24 words appear only after {derive}.", { derive: hodlTText("Derive Key") });
+      hex.className = "muted";
+    }
+    return;
+  }
   if (!acked) {
     hex.textContent = hodlTText("Acknowledge the lab warning, then enter text. {derive} is still required.", { derive: hodlTText("Derive Key") });
     hex.className = "muted";
@@ -6250,16 +6274,18 @@ function hodlGlobalSyncSourceBits(targetWords = hodlTargetWordCount) {
   let value = hodlGlobalSyncCurrentValue(), config = hodlSeedConfig(targetWords);
   if (!String(value).length) return null;
   try {
-    if (hodlKeyMode === "dice") {
-      let entropy = hodlDiceEntropy(value, hodlDiceMethod, config.words);
-      if (entropy?.ok && Number.isFinite(entropy.sourceBits)) return entropy.sourceBits;
-      return null;
-    }
-    if (hodlKeyMode === "cards") {
-      let entropy = hodlCardsEntropy(value, config.words, hodlCardColemanSymbols);
-      if (entropy?.ok && Number.isFinite(entropy.sourceBits)) return entropy.sourceBits;
-      return null;
-    }
+    // The entropy is decoded only to count its bits; its bytes are zeroed,
+    // as hodlGlobalSyncCurrentBits zeroes its own copy (#1480 r2 gate, Kimi,
+    // Gemini).
+    let countOf = (entropy) => {
+      try {
+        return entropy?.ok && Number.isFinite(entropy.sourceBits) ? entropy.sourceBits : null;
+      } finally {
+        entropy?.bytes?.fill?.(0);
+      }
+    };
+    if (hodlKeyMode === "dice") return countOf(hodlDiceEntropy(value, hodlDiceMethod, config.words));
+    if (hodlKeyMode === "cards") return countOf(hodlCardsEntropy(value, config.words, hodlCardColemanSymbols));
     if (hodlKeyMode === "key") {
       let kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value, String(value));
       // A brain wallet is only as strong as the text.
@@ -6278,32 +6304,42 @@ function hodlGlobalSyncSourceBits(targetWords = hodlTargetWordCount) {
 }
 function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
   let value = hodlGlobalSyncCurrentValue(), config = hodlSeedConfig(targetWords), hashed = hodlGlobalSyncIsHashedMode();
+  // Every array decoded below (entropy, a key) is zeroed once its bits are
+  // read: they were dropped unwiped (red-team sweep 0eed735, part04 #4).
+  let bitsOf = (bytes) => {
+    try {
+      return hodlBitsFromBytes(bytes);
+    } finally {
+      bytes?.fill?.(0);
+    }
+  };
   if (!String(value).length) return "";
   try {
     if (hodlKeyMode === "dice") {
       if (hashed) {
         let entropy = hodlDiceEntropy(value, hodlDiceMethod, config.words);
-        return entropy.ok ? hodlBitsFromBytes(entropy.bytes) : null;
+        // A failed decode's bytes are zeroed too (#1480 r4 gate, MiniMax).
+        return entropy.ok ? bitsOf(entropy.bytes) : (entropy.bytes?.fill?.(0), null);
       }
       if (hodlDiceMethod === "dplus") {
         let parsed = hodlDPlusRolls(value, config.words);
-        if (parsed.complete) return hodlBitsFromBytes(hodlMnemonicToEntropy([...parsed.wordSlots, parsed.finalWord].join(" "), hodlBip39Wordlist));
+        if (parsed.complete) return bitsOf(hodlMnemonicToEntropy([...parsed.wordSlots, parsed.finalWord].join(" "), hodlBip39Wordlist));
         return hodlGlobalSyncDPlusBits(value, config.words);
       }
       let parsed = hodlBitBoxRolls(value, config.words);
       if (parsed.waiting === "last-word" && hodlPickedLastWord) {
         let mnemonic = [...parsed.words, hodlPickedLastWord].join(" ");
-        if (hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist)) return hodlBitsFromBytes(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist));
+        if (hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist)) return bitsOf(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist));
       }
       return hodlGlobalSyncBitBoxBits(value, config.words);
     }
     if (hodlKeyMode === "cards") {
       if (hodlCardMethod === "hashed") {
         let entropy = hodlCardsEntropy(value, config.words, hodlCardColemanSymbols);
-        return entropy.ok ? hodlBitsFromBytes(entropy.bytes) : null;
+        return entropy.ok ? bitsOf(entropy.bytes) : (entropy.bytes?.fill?.(0), null);
       }
       let parsed = hodlParseDirectCards(value, config.words);
-      if (parsed.complete) return hodlBitsFromBytes(hodlMnemonicToEntropy([...parsed.wordSlots, parsed.finalWord].join(" "), hodlBip39Wordlist));
+      if (parsed.complete) return bitsOf(hodlMnemonicToEntropy([...parsed.wordSlots, parsed.finalWord].join(" "), hodlBip39Wordlist));
       return hodlGlobalSyncDirectCardBits(value, config.words);
     }
     if (hodlKeyMode === "hex") {
@@ -6322,7 +6358,7 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
       }
       else return null;
       let mnemonic = words.length === config.words ? words.join(" ") : "";
-      if (mnemonic) return hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist) ? hodlBitsFromBytes(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist)) : null;
+      if (mnemonic) return hodlIsValidMnemonic(mnemonic, hodlBip39Wordlist) ? bitsOf(hodlMnemonicToEntropy(mnemonic, hodlBip39Wordlist)) : null;
       return hodlGlobalSyncWordBits(words);
     }
     let kind = hodlNormalizePrivateKeyKind(document.querySelector('input[name="kk"]:checked')?.value || "wif", value);
@@ -6336,13 +6372,37 @@ function hodlGlobalSyncCurrentBits(targetWords = hodlTargetWordCount) {
       // published the digits before it, a cut-off key the private-key field
       // itself rejects (the bitcoinjs/bip39 GHSA-726r-qj3q-vrxm pattern).
       if (!/^[0-9a-fA-F]*$/.test(digits)) return null;
+      // A complete key that is zero or at or above the group order is not a
+      // private key, and the field rejects it: it publishes nothing either
+      // (red-team sweep 0eed735, part04 #8).
+      if (digits.length === 64) {
+        let key = hodlHex.decode(digits.toLowerCase());
+        try {
+          hodlAssertPrivateKey(key);
+        } catch {
+          return null;
+        } finally {
+          key.fill(0);
+        }
+      }
       let bits = "";
       for (let digit of digits) bits += Number.parseInt(digit, 16).toString(2).padStart(4, "0");
       return bits;
     }
-    if (kind === "wif") return hodlBitsFromBytes(hodlDecodeWif(value.trim()).priv);
-    if (kind === "minikey") return hodlBitsFromBytes(hodlDecodeMiniKey(value.trim()));
-    return hodlBitsFromBytes(hodlBrainWalletPrivateKey(value, hodlBrainWalletTrimEnabled()));
+    if (kind === "wif") {
+      // A WIF whose key is zero or at or above the group order is not a
+      // private key either, as for a hex key (#1480 r4 gate, GLM).
+      let priv = hodlDecodeWif(value.trim()).priv;
+      try {
+        hodlAssertPrivateKey(priv);
+      } catch {
+        priv.fill(0);
+        return null;
+      }
+      return bitsOf(priv);
+    }
+    if (kind === "minikey") return bitsOf(hodlDecodeMiniKey(value.trim()));
+    return bitsOf(hodlBrainWalletPrivateKey(value, hodlBrainWalletTrimEnabled()));
   } catch {
     return null;
   }
@@ -6362,7 +6422,14 @@ function hodlGlobalSyncNumberValue(bits, format, targetWords = hodlTargetWordCou
 function hodlGlobalSyncMnemonic(bits, targetWords = hodlTargetWordCount) {
   let config = hodlSeedConfig(targetWords), source = String(bits ?? "");
   if (source.length < config.bits) return null;
-  return hodlEntropyToMnemonic(hodlBytesFromBits(source.slice(0, config.bits)), hodlBip39Wordlist);
+  // The entropy bytes are dead once the words exist (red-team sweep 0eed735,
+  // part04 #5).
+  let bytes = hodlBytesFromBits(source.slice(0, config.bits));
+  try {
+    return hodlEntropyToMnemonic(bytes, hodlBip39Wordlist);
+  } finally {
+    bytes.fill(0);
+  }
 }
 function hodlGlobalSyncWordIndices(bits, limit = Infinity) {
   let source = String(bits ?? ""), count = Math.min(limit, Math.floor(source.length / 11)), indices = [];
@@ -6451,17 +6518,35 @@ function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   state.lastWord = mnemonic ? words.at(-1) : "";
   // The hex-key copy is a whole 64-digit key or nothing: fewer bits are not
   // a private key, and a 32-digit copy only looked like one.
-  privateKeys["hex-key"] = source.length >= 256 ? source.slice(0, 256).match(/.{4}/g).map((chunk) => Number.parseInt(chunk, 2).toString(16)).join("") : "";
+  privateKeys["hex-key"] = "";
   privateKeys.wif = "";
   if (source.length >= 256) {
     let bytes = hodlBytesFromBits(source.slice(0, 256));
     try {
       hodlAssertPrivateKey(bytes);
+      // Only a private key gets the hex-key copy: 256 bits of zeros, or at or
+      // above the group order, are not one (part04 #8; #1480 gate, GLM).
+      privateKeys["hex-key"] = source.slice(0, 256).match(/.{4}/g).map((chunk) => Number.parseInt(chunk, 2).toString(16)).join("");
       let coinType = hodlParseDerivationIndexText(fields.coinType ?? "0'")?.value ?? 0, network = hodlNetworkFromCoinType(coinType);
       privateKeys.wif = hodlEncodeWif(bytes, true, network);
     } catch {
+    } finally {
+      // The key bytes are dead once the WIF exists (red-team sweep 0eed735,
+      // part04 #5).
+      bytes.fill(0);
     }
   }
+  hodlGlobalSyncKeepSource(state, sourceId, sourceValue);
+  state.globalSyncSource = sourceId;
+  state.globalSyncBitCount = source.length;
+  state.globalSyncSourceBits = hodlGlobalSyncSourceBits();
+  return true;
+}
+
+// The source's own field holds what the user typed, never a copy: it is put
+// back after the copies are written or dropped.
+function hodlGlobalSyncKeepSource(state, sourceId, sourceValue) {
+  let fields = state.fields, privateKeys = hodlPrivateKeyValues(fields);
   if (sourceId.startsWith("number:")) fields[sourceId.slice(7)] = sourceValue;
   else if (sourceId === "seed:words") fields.seed = sourceValue;
   else if (sourceId === "seed:numbers") fields.seedNumbers = sourceValue;
@@ -6470,12 +6555,7 @@ function hodlApplyGlobalSync(bits, sourceId = hodlGlobalSyncSourceId()) {
   else if (sourceId === "cards:direct") fields.directCards = sourceValue;
   else if (sourceId === "key:hex-key") privateKeys["hex-key"] = sourceValue;
   else if (sourceId === "key:wif") privateKeys.wif = sourceValue;
-  state.globalSyncSource = sourceId;
-  state.globalSyncBitCount = source.length;
-  state.globalSyncSourceBits = hodlGlobalSyncSourceBits();
-  return true;
 }
-
 // The fields hodlApplyGlobalSync writes, emptied so Clear leaves no copy.
 function hodlClearGlobalSyncCopies(state) {
   let fields = state.fields, privateKeys = hodlPrivateKeyValues(fields);
@@ -6498,6 +6578,12 @@ function hodlGlobalSyncFromCurrentInput() {
     return false;
   }
   if (hodlGlobalSyncIsHashedMode() && !String(hodlGlobalSyncCurrentValue()).length) {
+    // The other fields keep the last valid sync, as they do for an invalid
+    // source (the browser suite pins it), but the status no longer counts its
+    // bits: "Key synced" stayed over an emptied field (red-team sweep
+    // 0eed735, part04 #18; round 1 dropped the copies too, which reverted
+    // that pinned behaviour, #1480 r3 CI).
+    state.globalSyncBitCount = 0;
     hodlRenderGlobalSyncControl();
     return false;
   }
