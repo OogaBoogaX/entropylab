@@ -28,6 +28,13 @@
 // engine's Phase F matches an entry only on index + name + that exact key,
 // so an entry without one never counts.
 //
+// The finalized shapes are verified too, or a returned PSBT that a signer
+// correctly finalized would read as unverified: a final entry covers its
+// whole field (key "07"/"08") and is true only when every signature in the
+// stack verified. Only the shapes an ordinary finalizer produces are
+// reconstructed — P2WPKH, P2WSH and P2SH-wrapped P2PK/P2PKH/multisig, and a
+// P2TR key path. A tapscript leaf or an unknown script stays unverified.
+//
 // Digests: segwit v0 SIGHASH_ALL comes from the same crypto-WASM export
 // the Inspector's BIP-143 path uses; legacy SIGHASH_ALL and BIP-341 (key
 // path, and script path with no OP_CODESEPARATOR, sighash DEFAULT/ALL)
@@ -54,6 +61,11 @@ export const SIGNER_AUDIT_MAX_SIGNATURE_CHECKS = 256;
 export const SIGNER_AUDIT_MAX_DIGEST_BYTES = 32 * 1024 * 1024;
 
 const SIG_NAMES = new Set(["PSBT_IN_PARTIAL_SIG", "PSBT_IN_TAP_KEY_SIG", "PSBT_IN_TAP_SCRIPT_SIG"]);
+// A finalizer moves the signatures out of those records into the final
+// scriptSig/witness (BIP-174 Input Finalizer), so a returned, signed PSBT is
+// normally only carrying these. They are verified here too, or every
+// successfully finalized input would read as unverified.
+const FINAL_FIELD_NAMES = new Set(["PSBT_IN_FINAL_SCRIPTSIG", "PSBT_IN_FINAL_SCRIPTWITNESS"]);
 // BIP-341's defined appended sighash bytes; SIGHASH_DEFAULT exists only as
 // the 64-byte implicit form (mirrors psbt-schnorr.js).
 const TAPROOT_SIGHASH_BYTES = new Set([0x01, 0x02, 0x03, 0x81, 0x82, 0x83]);
@@ -405,6 +417,247 @@ const verifyTapKeySig = (ctx, index, pair) => {
   return schnorrVerify(parsed.signature, digest, claim.scriptPubKey.slice(2));
 };
 
+// --- finalized inputs -------------------------------------------------------
+//
+// A final field carries the executed scriptSig / witness stack instead of
+// named signature records. The signatures are read back out and checked
+// against the same digests as a partial signature; the shapes below are the
+// ones a finalizer produces, and any other shape stays unverified (null)
+// rather than guessed. The engine matches a final entry on the field's own
+// name and (empty) key, so one entry covers the whole field and is true only
+// when every signature in it verified.
+
+// The data pushes of a push-only script, or null when the script is not
+// push-only, a push overruns it, or there are too many to check cheaply.
+const finalScriptPushes = (script, limit = 128) => {
+  const items = [];
+  for (let at = 0; at < script.length;) {
+    const op = script[at++];
+    let size;
+    if (op === 0x00) size = 0; // OP_0 pushes the empty element (CHECKMULTISIG's dummy)
+    else if (op >= 0x01 && op <= 0x4b) size = op;
+    else if (op === 0x4c) { if (at >= script.length) return null; size = script[at++]; }
+    else if (op === 0x4d) { if (at + 1 >= script.length) return null; size = script[at] | (script[at + 1] << 8); at += 2; }
+    else if (op === 0x4e) { if (at + 3 >= script.length) return null; size = new DataView(script.buffer, script.byteOffset + at, 4).getUint32(0, true); at += 4; }
+    else return null;
+    if (size > script.length - at) return null;
+    items.push(script.subarray(at, at + size));
+    at += size;
+    if (items.length > limit) return null;
+  }
+  return items;
+};
+
+// The items of a serialized witness stack (CompactSize count, then a
+// length-prefixed item each), or null when malformed.
+const finalWitnessItems = (value, limit = 128) => {
+  const readVarInt = (at) => {
+    const first = value[at];
+    if (first === undefined) return null;
+    if (first < 0xfd) return [first, at + 1];
+    const size = first === 0xfd ? 2 : first === 0xfe ? 4 : 8;
+    if (at + 1 + size > value.length) return null;
+    let out = 0;
+    for (let i = 0; i < size; i++) out += value[at + 1 + i] * 2 ** (8 * i);
+    return [out, at + 1 + size];
+  };
+  const [count, start] = readVarInt(0) ?? [];
+  if (count === undefined || count > limit) return null;
+  const items = [];
+  let at = start;
+  for (let i = 0; i < count; i++) {
+    const next = readVarInt(at);
+    if (!next) return null;
+    const [size, from] = next;
+    if (size > value.length - from) return null;
+    items.push(value.subarray(from, from + size));
+    at = from + size;
+  }
+  return at === value.length ? items : null;
+};
+
+const looksDerSignature = (item) => item.length >= 9 && item.length <= 73 && item[0] === 0x30;
+
+// The keys a legacy or witness script names as check targets: one for
+// <key> OP_CHECKSIG, the listed keys for OP_m ... OP_n OP_CHECKMULTISIG, and
+// the key hash for OP_DUP OP_HASH160 <hash> OP_EQUALVERIFY OP_CHECKSIG.
+// Null for any other script.
+const finalScriptKeys = (script) => {
+  if (script.length === 35 && script[0] === 0x21 && script[34] === 0xac) return { kind: "p2pk", keys: [script.subarray(1, 34)] };
+  if (script.length === 67 && script[0] === 0x41 && script[66] === 0xac) return { kind: "p2pk", keys: [script.subarray(1, 66)] };
+  if (script.length === 25 && script[0] === 0x76 && script[1] === 0xa9 && script[2] === 0x14 && script[23] === 0x88 && script[24] === 0xac) {
+    return { kind: "p2pkh", hash: script.subarray(3, 23) };
+  }
+  if (script[script.length - 1] !== 0xae) return null;
+  // OP_m <key>... OP_n OP_CHECKMULTISIG
+  let at = 0;
+  if (script[at] < 0x51 || script[at] > 0x60) return null;
+  const required = script[at++] - 0x50;
+  const keys = [];
+  while (at < script.length && script[at] >= 0x21 && script[at] <= 0x41) {
+    const size = script[at++];
+    if (size > script.length - at) return null;
+    keys.push(script.subarray(at, at + size));
+    at += size;
+  }
+  if (at !== script.length - 2 || script[at] < 0x51 || script[at] > 0x60) return null;
+  const declared = script[at] - 0x50;
+  if (keys.length !== declared || required < 1 || required > declared) return { kind: "invalid" };
+  return { kind: "multi", required, keys };
+};
+
+// Verify every signature in `sigs` against the remaining keys in script
+// order, as OP_CHECKMULTISIG requires, all against one digest. `scriptCode`
+// is the preimage script and `amount` the witness value (null for a legacy
+// digest). Any signature that matches no remaining key makes the field
+// invalid, never merely unverified.
+const finalEcdsa = (ctx, index, scriptCode, amount, sigs, keys) => {
+  if (!sigs.length || !keys.length) return null;
+  if (sigs.some((sig) => sig[sig.length - 1] !== 1)) return null; // only SIGHASH_ALL is reconstructed
+  if (sigs.some((sig) => containsBytes(scriptCode, sig))) return null;
+  if (!ctx.takeDigestBytes(ctx.rawTx.length + scriptCode.length)) return null;
+  const digest = amount === null
+    ? legacyAllDigest(ctx.tx, index, scriptCode, sigs[0])
+    : bip143AllDigest(ctx.rawTx, index, scriptCode, amount);
+  if (!digest) return null;
+  let firstKey = 0;
+  let all = true;
+  for (const sig of sigs) {
+    // One budget unit per signature, as a partial signature costs: a single
+    // final field can carry a whole multisig.
+    if (!ctx.takeBudget()) return null;
+    let matched = false;
+    for (let at = firstKey; at < keys.length && !matched; at++) {
+      const verdict = verifyEcdsa(sig.subarray(0, -1), digest, keys[at]);
+      if (verdict === null) return null;
+      if (verdict) { firstKey = at + 1; matched = true; }
+    }
+    if (!matched) all = false;
+  }
+  return all;
+};
+
+// A witness script (P2WSH's last item, or a P2SH redeemScript) and the
+// stack items that precede it.
+const verifyFinalScript = (ctx, index, scriptCode, stack, amount) => {
+  const shape = finalScriptKeys(scriptCode);
+  if (!shape) return null;
+  if (shape.kind === "invalid") return false;
+  if (shape.kind === "p2pk") {
+    if (stack.length !== 1) return false;
+    return finalEcdsa(ctx, index, scriptCode, amount, stack, shape.keys);
+  }
+  if (shape.kind === "p2pkh") {
+    if (stack.length !== 2) return false;
+    if (!eqBytes(hodlHash160(stack[1]), shape.hash)) return false;
+    return finalEcdsa(ctx, index, scriptCode, amount, [stack[0]], [stack[1]]);
+  }
+  // OP_CHECKMULTISIG pops a dummy element first. Legacy consensus ignores its
+  // contents; BIP-147 requires it to be empty only for witness spends.
+  if (stack.length < 2 || (amount !== null && stack[0].length !== 0)) return false;
+  const sigs = stack.slice(1);
+  if (sigs.length !== shape.required || sigs.some((sig) => !looksDerSignature(sig))) return false;
+  return finalEcdsa(ctx, index, scriptCode, amount, sigs, shape.keys);
+};
+
+// The verdict for one added final field. False only when the field was read
+// and disagreed with consensus; null whenever a shape or digest is beyond
+// this module (a tapscript leaf, an unknown script, a missing claim).
+const verifyFinalField = (ctx, index, pair) => {
+  const claim = ctx.claims[index], spent = ctx.beforeClaims[index];
+  if (!claim || !spent) return null;
+  const value = hexBytes(pair.value);
+  if (!value) return null;
+  const witness = pair.name === "PSBT_IN_FINAL_SCRIPTWITNESS" ? finalWitnessItems(value) : null;
+  const scriptSig = pair.name === "PSBT_IN_FINAL_SCRIPTSIG" ? finalScriptPushes(value) : null;
+  if (!witness && !scriptSig) return null;
+  const spk = spent.scriptPubKey;
+  // Every scriptSig stack element has the consensus 520-byte limit, including
+  // the legacy CHECKMULTISIG dummy and elements other than the redeem script.
+  if (scriptSig && scriptSig.some((item) => item.length > 520)) return false;
+  // Field-name presence alone is insufficient for a scriptSig sibling: a
+  // present but malformed witness is no more valid than an absent witness.
+  const finalWitnessField = mapPairs(ctx.afterDoc, index).find((field) => field?.name === "PSBT_IN_FINAL_SCRIPTWITNESS");
+  const hasFinalWitness = finalWitnessField
+    ? finalWitnessItems(hexBytes(finalWitnessField.value) ?? new Uint8Array()) !== null
+    : false;
+
+  if (isP2wpkh(spk)) {
+    if (scriptSig && scriptSig.length) return false;
+    if (!witness) return hasFinalWitness;
+    if (witness.length !== 2) return false;
+    const [sig, pub] = witness;
+    if (!eqBytes(hodlHash160(pub), spk.subarray(2))) return false;
+    return finalEcdsa(ctx, index, p2pkhScriptCode(spk.subarray(2)), claim.value, [sig], [pub]);
+  }
+  if (isP2wsh(spk)) {
+    if (scriptSig && scriptSig.length) return false;
+    if (!witness) return hasFinalWitness;
+    if (!witness.length) return false;
+    const script = witness[witness.length - 1];
+    if (!eqBytes(hodlSha256(script), spk.subarray(2))) return false;
+    return verifyFinalScript(ctx, index, script, witness.slice(0, -1), claim.value);
+  }
+  if (isP2tr(spk)) {
+    // Key path only, with no annex: a script path carries the leaf and
+    // control block, while an annex changes the BIP-341 digest. Both stay
+    // unverified rather than being checked against the wrong message.
+    if (scriptSig && scriptSig.length) return false;
+    if (!witness) return hasFinalWitness;
+    if (witness.length !== 1) return null;
+    const sig = witness[0];
+    if (sig.length !== 64 && sig.length !== 65) return false;
+    const sighash = sig.length === 65 ? sig[64] : 0;
+    if (sig.length === 65 && !TAPROOT_SIGHASH_BYTES.has(sighash)) return false;
+    if (sighash !== 0 && sighash !== 1) return null;
+    if (!ctx.takeBudget()) return null;
+    const digest = bip341Digest(ctx.bip341Shared(), index, sighash, null);
+    if (!digest) return null;
+    return schnorrVerify(sig.subarray(0, 64), digest, spk.subarray(2));
+  }
+  // A native witness program this module does not reconstruct.
+  if (isWitnessProgram(spk)) return null;
+  if (isP2sh(spk)) {
+    // Wrapped segwit: the scriptSig is exactly the redeemScript push and the
+    // witness is the real stack, so each field is checked on its own. When
+    // the witness field is checked alone, the redeemScript still comes from
+    // the input's final scriptSig (a finalizer drops PSBT_IN_REDEEM_SCRIPT).
+    const siblingField = pair.name === "PSBT_IN_FINAL_SCRIPTSIG" ? pair : mapPairs(ctx.afterDoc, index).find((field) => field?.name === "PSBT_IN_FINAL_SCRIPTSIG");
+    const sibling = scriptSig ?? siblingField;
+    const rawScriptSig = siblingField ? hexBytes(siblingField.value) : null;
+    const pushes = scriptSig ?? (siblingField ? finalScriptPushes(rawScriptSig ?? new Uint8Array()) : null);
+    const redeem = pushes?.length ? pushes[pushes.length - 1] : decodedField(ctx.afterDoc, index, "PSBT_IN_REDEEM_SCRIPT");
+    if (!redeem) return null;
+    if (!eqBytes(hodlHash160(redeem), spk.subarray(2, 22))) return false;
+    // BIP-16 executes the redeem script as a stack element, so the consensus
+    // 520-byte element limit applies here (but not to a P2WSH witness script).
+    if (redeem.length > 520) return false;
+    const canonicalRedeemPush = rawScriptSig?.length === redeem.length + 1 && rawScriptSig[0] === redeem.length && eqBytes(rawScriptSig.subarray(1), redeem);
+    if (isP2wpkh(redeem)) {
+      if (!pushes || pushes.length !== 1 || !canonicalRedeemPush) return false;
+      if (!witness) return hasFinalWitness;
+      if (witness.length !== 2) return false;
+      const [sig, pub] = witness;
+      if (!eqBytes(hodlHash160(pub), redeem.subarray(2))) return false;
+      return finalEcdsa(ctx, index, p2pkhScriptCode(redeem.subarray(2)), claim.value, [sig], [pub]);
+    }
+    if (isP2wsh(redeem)) {
+      if (!pushes || pushes.length !== 1 || !canonicalRedeemPush) return false;
+      if (!witness) return hasFinalWitness;
+      if (!witness.length) return false;
+      const script = witness[witness.length - 1];
+      if (!eqBytes(hodlSha256(script), redeem.subarray(2))) return false;
+      return verifyFinalScript(ctx, index, script, witness.slice(0, -1), claim.value);
+    }
+    if (isWitnessProgram(redeem)) return null;
+    if (!scriptSig) return null;
+    return verifyFinalScript(ctx, index, redeem, scriptSig.slice(0, -1), null);
+  }
+  // Legacy bare output: the scriptPubKey is the scriptCode.
+  if (!scriptSig) return null;
+  return verifyFinalScript(ctx, index, spk, scriptSig, null);
+};
+
 const verifyTapScriptSig = (ctx, index, pair) => {
   const parsed = tapSigBytes(pair);
   if (!parsed) return null;
@@ -587,7 +840,14 @@ export function psbtSignerAuditVerification(beforeDoc, afterDoc) {
       sameKeyLeaves.set(xonly, (sameKeyLeaves.get(xonly) ?? 0) + 1);
     }
     for (const pair of mapPairs(afterDoc, index)) {
-      if (!pair || !SIG_NAMES.has(pair.name) || beforeKeys.has(lower(pair.key))) continue;
+      if (!pair || beforeKeys.has(lower(pair.key))) continue;
+      if (FINAL_FIELD_NAMES.has(pair.name)) {
+        const valid = verifyFinalField(ctx, index, pair);
+        if (ctx.budgetExhausted) complete = false;
+        signatures.push({ index, name: pair.name, key: lower(pair.key), pubkey: null, valid });
+        continue;
+      }
+      if (!SIG_NAMES.has(pair.name)) continue;
       const recomputed = !rawTx ? null
         : pair.name === "PSBT_IN_PARTIAL_SIG" ? verifyPartialSig(ctx, index, pair)
         : pair.name === "PSBT_IN_TAP_KEY_SIG" ? verifyTapKeySig(ctx, index, pair)

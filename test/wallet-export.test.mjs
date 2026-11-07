@@ -560,57 +560,6 @@ test("an unsupported descriptor tail is reported, not left to throw on click", (
   assert.equal(bip388Supported(BIP45_WALLET), false, "BIP 388 only rewrites /0/* and /1/*");
 });
 
-test("a kept 'now' birthday becomes 0 for a BIP 45 Core JSON export", () => {
-  ui.setResult(MSIG_WALLET, false);
-  ui.setWalletDatBirthday("now");
-  ui.setResult(BIP45_WALLET, false);
-  const imported = JSON.parse(ui.hodlCoreImportDescriptorsJson());
-  assert.equal(imported.length, 2);
-  for (const record of imported) assert.equal(record.timestamp, 0, "recovery of an old BIP 45 wallet must scan from genesis");
-  ui.setResult(MSIG_WALLET, false);
-  for (const record of JSON.parse(ui.hodlCoreImportDescriptorsJson())) assert.equal(record.timestamp, "now", "a supported wallet keeps the choice");
-  ui.setWalletDatBirthday("genesis");
-});
-
-test("a BIP 45 result hides the wallet.dat and BIP 388 controls but keeps Core JSON", () => {
-  ui.setResult(BIP45_WALLET, false);
-  const json = ui.hodlMsigCoreImportDescriptorsMarkup();
-  assert.match(json, /id="msig-save-importdescriptors"/);
-  assert.match(json, /id="msig-copy-importdescriptors"/);
-  assert.doesNotMatch(json, /id="msig-download-wallet-dat"/);
-  assert.match(json, /data-wallet-dat-birthday/, "the Core JSON timestamp uses the birthday, so its picker stays");
-  assert.match(json, /id="msig-birthday-help"/, "and so does the recovery warning");
-  assert.equal(ui.msigBip388Markup(), "");
-
-  ui.setResult(MSIG_WALLET, false);
-  assert.match(ui.hodlMsigCoreImportDescriptorsMarkup(), /id="msig-download-wallet-dat"/);
-  assert.match(ui.msigBip388Markup(), /id="msig-save-bip388"/);
-});
-
-// The writer reads every co-signer's tail, not only the first: the Multisig
-// station honours a co-signer's trailing path ("…xpub/5" composes as
-// "…xpub/5/0/*"), so one deep key after the first must hide the controls too.
-const mixedTailBody = (branch) => `wsh(sortedmulti(2,${msigKey(0)}/${branch}/*,${msigKey(1)}/5/${branch}/*,${msigKey(2)}/${branch}/*))`;
-const MIXED_TAIL_WALLET = {
-  ...MSIG_WALLET,
-  receiveDescriptor: `${mixedTailBody(0)}#${descriptorChecksum(mixedTailBody(0))}`,
-  changeDescriptor: `${mixedTailBody(1)}#${descriptorChecksum(mixedTailBody(1))}`,
-};
-
-test("a deep tail on a later co-signer is unsupported too (R1003-2)", () => {
-  const { walletDatSupported, bip388Supported, buildWalletRecords } = loadModule();
-  assert.throws(() => buildWalletRecords(MIXED_TAIL_WALLET, false, msigDeps, 0), /unsupported descriptor path shape/, "the writer refuses the second co-signer's tail");
-  assert.equal(walletDatSupported(MIXED_TAIL_WALLET), false);
-  assert.equal(bip388Supported(MIXED_TAIL_WALLET), false);
-
-  ui.setResult(MIXED_TAIL_WALLET, false);
-  const json = ui.hodlMsigCoreImportDescriptorsMarkup();
-  assert.match(json, /id="msig-save-importdescriptors"/, "Core JSON still exports the shape");
-  assert.doesNotMatch(json, /id="msig-download-wallet-dat"/);
-  assert.equal(ui.msigBip388Markup(), "");
-  ui.setResult(MSIG_WALLET, false);
-});
-
 const msigDeps = {
   ...deps,
   canonicalizeDescriptor: (descriptor) => canonicalizeWatchDescriptor(descriptor, { decode: b58checkDecode, encode: b58checkEncode }),
@@ -912,6 +861,57 @@ const harnessPath = join(harnessDir, "wallet-export-harness.mjs");
 writeFileSync(harnessPath, harnessSource);
 const ui = await import(pathToFileURL(harnessPath).href);
 rmSync(harnessDir, { recursive: true });
+
+test("a kept 'now' birthday becomes 0 for a BIP 45 Core JSON export", () => {
+  ui.setResult(MSIG_WALLET, false);
+  ui.setWalletDatBirthday("now");
+  ui.setResult(BIP45_WALLET, false);
+  const imported = JSON.parse(ui.hodlCoreImportDescriptorsJson());
+  assert.equal(imported.length, 2);
+  for (const record of imported) assert.equal(record.timestamp, 0, "recovery of an old BIP 45 wallet must scan from genesis");
+  ui.setResult(MSIG_WALLET, false);
+  for (const record of JSON.parse(ui.hodlCoreImportDescriptorsJson())) assert.equal(record.timestamp, "now", "a supported wallet keeps the choice");
+  ui.setWalletDatBirthday("genesis");
+});
+
+test("a BIP 45 result hides the wallet.dat and BIP 388 controls but keeps Core JSON", () => {
+  ui.setResult(BIP45_WALLET, false);
+  const json = ui.hodlMsigCoreImportDescriptorsMarkup();
+  assert.match(json, /id="msig-save-importdescriptors"/);
+  assert.match(json, /id="msig-copy-importdescriptors"/);
+  assert.doesNotMatch(json, /id="msig-download-wallet-dat"/);
+  assert.match(json, /data-wallet-dat-birthday/, "the Core JSON timestamp uses the birthday, so its picker stays");
+  assert.match(json, /id="msig-birthday-help"/, "and so does the recovery warning");
+  assert.equal(ui.msigBip388Markup(), "");
+
+  ui.setResult(MSIG_WALLET, false);
+  assert.match(ui.hodlMsigCoreImportDescriptorsMarkup(), /id="msig-download-wallet-dat"/);
+  assert.match(ui.msigBip388Markup(), /id="msig-save-bip388"/);
+});
+
+// The writer reads every co-signer's tail, not only the first: the Multisig
+// station honours a co-signer's trailing path ("…xpub/5" composes as
+// "…xpub/5/0/*"), so one deep key after the first must hide the controls too.
+const mixedTailBody = (branch) => `wsh(sortedmulti(2,${msigKey(0)}/${branch}/*,${msigKey(1)}/5/${branch}/*,${msigKey(2)}/${branch}/*))`;
+const MIXED_TAIL_WALLET = {
+  ...MSIG_WALLET,
+  receiveDescriptor: `${mixedTailBody(0)}#${descriptorChecksum(mixedTailBody(0))}`,
+  changeDescriptor: `${mixedTailBody(1)}#${descriptorChecksum(mixedTailBody(1))}`,
+};
+
+test("a deep tail on a later co-signer is unsupported too (R1003-2)", () => {
+  const { walletDatSupported, bip388Supported, buildWalletRecords } = loadModule();
+  assert.throws(() => buildWalletRecords(MIXED_TAIL_WALLET, false, msigDeps, 0), /unsupported descriptor path shape/, "the writer refuses the second co-signer's tail");
+  assert.equal(walletDatSupported(MIXED_TAIL_WALLET), false);
+  assert.equal(bip388Supported(MIXED_TAIL_WALLET), false);
+
+  ui.setResult(MIXED_TAIL_WALLET, false);
+  const json = ui.hodlMsigCoreImportDescriptorsMarkup();
+  assert.match(json, /id="msig-save-importdescriptors"/, "Core JSON still exports the shape");
+  assert.doesNotMatch(json, /id="msig-download-wallet-dat"/);
+  assert.equal(ui.msigBip388Markup(), "");
+  ui.setResult(MSIG_WALLET, false);
+});
 
 test("controls render the wallet.dat button next to #save only when descriptors exist", () => {
   ui.setResult(WATCH_ONLY_WALLET, false);
