@@ -959,6 +959,24 @@ test("legacy CHECKMULTISIG accepts a non-empty dummy but witness CHECKMULTISIG r
   assert.deepEqual(psbtSignerAuditVerification(witnessBefore, witnessDoc).signatures.map((entry) => entry.valid), [false]);
 });
 
+test("legacy CHECKMULTISIG enforces the 520-byte limit on the dummy stack element", () => {
+  // Every legacy scriptSig stack element, including the ignored multisig
+  // dummy, is consensus-limited to 520 bytes. The independently generated
+  // signatures and their digest are unchanged by this mutation.
+  const { before, after } = finalLegacyMultisigFixture();
+  const beforeDoc = psbtInspectDoc(before);
+  for (const [size, expected] of [[520, true], [521, false]]) {
+    const afterDoc = psbtInspectDoc(after);
+    const pair = afterDoc.inputs[0].find((field) => field.name === "PSBT_IN_FINAL_SCRIPTSIG");
+    assert.ok(pair.value.startsWith("00"), "fixture: scure finalized an empty dummy");
+    const remainder = hex(pair.value).subarray(1);
+    const dummy = new Uint8Array(size).fill(1);
+    const push = concat(Uint8Array.of(0x4d, size & 0xff, size >>> 8), dummy);
+    pair.value = hexOf(concat(push, remainder));
+    assert.equal(psbtSignerAuditVerification(beforeDoc, afterDoc).signatures[0].valid, expected, `${size}-byte dummy`);
+  }
+});
+
 test("a finalized Taproot script-path input is unverified, never signature_invalid", () => {
   const { before, after } = finalTaprootScriptFixture();
   const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
@@ -1026,6 +1044,23 @@ test("a final scriptSig without its required segwit witness is invalid", () => {
       afterDoc.inputs[0].push({ key: "07", value: "", name: "PSBT_IN_FINAL_SCRIPTSIG", decoded: { hex: "" } });
     }
     afterDoc.inputs[0] = afterDoc.inputs[0].filter((field) => field.name !== "PSBT_IN_FINAL_SCRIPTWITNESS");
+    const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
+    const scriptSig = verification.signatures.find((entry) => entry.name === "PSBT_IN_FINAL_SCRIPTSIG");
+    assert.equal(scriptSig?.valid, false, fixture.name);
+  }
+});
+
+test("a malformed final witness cannot make its sibling scriptSig valid", () => {
+  const cases = [finalSegwitFixture, finalP2wshFixture, finalTaprootKeyFixture, finalWrappedFixture, () => finalSegwitMultisigFixture(true)];
+  for (const fixture of cases) {
+    const { before, after } = fixture();
+    const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+    if (!afterDoc.inputs[0].some((field) => field.name === "PSBT_IN_FINAL_SCRIPTSIG")) {
+      afterDoc.inputs[0].push({ key: "07", value: "", name: "PSBT_IN_FINAL_SCRIPTSIG", decoded: { hex: "" } });
+    }
+    // One declared witness item with no length byte is malformed. The sibling
+    // scriptSig cannot become valid merely because that field name exists.
+    afterDoc.inputs[0].find((field) => field.name === "PSBT_IN_FINAL_SCRIPTWITNESS").value = "01";
     const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
     const scriptSig = verification.signatures.find((entry) => entry.name === "PSBT_IN_FINAL_SCRIPTSIG");
     assert.equal(scriptSig?.valid, false, fixture.name);

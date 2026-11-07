@@ -572,7 +572,15 @@ const verifyFinalField = (ctx, index, pair) => {
   const scriptSig = pair.name === "PSBT_IN_FINAL_SCRIPTSIG" ? finalScriptPushes(value) : null;
   if (!witness && !scriptSig) return null;
   const spk = spent.scriptPubKey;
-  const hasFinalWitness = mapPairs(ctx.afterDoc, index).some((field) => field?.name === "PSBT_IN_FINAL_SCRIPTWITNESS");
+  // Every scriptSig stack element has the consensus 520-byte limit, including
+  // the legacy CHECKMULTISIG dummy and elements other than the redeem script.
+  if (scriptSig && scriptSig.some((item) => item.length > 520)) return false;
+  // Field-name presence alone is insufficient for a scriptSig sibling: a
+  // present but malformed witness is no more valid than an absent witness.
+  const finalWitnessField = mapPairs(ctx.afterDoc, index).find((field) => field?.name === "PSBT_IN_FINAL_SCRIPTWITNESS");
+  const hasFinalWitness = finalWitnessField
+    ? finalWitnessItems(hexBytes(finalWitnessField.value) ?? new Uint8Array()) !== null
+    : false;
 
   if (isP2wpkh(spk)) {
     if (scriptSig && scriptSig.length) return false;
