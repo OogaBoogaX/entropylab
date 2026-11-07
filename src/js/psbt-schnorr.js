@@ -189,7 +189,7 @@ export function hodlTapScriptPathSigs(stack) {
     if (!item.length) return;
     const parsed = hodlParseSchnorr(item);
     records.push(parsed
-      ? { pubkey, r: parsed.r, s: parsed.s, source: "tap-script" }
+      ? { pubkey, r: parsed.r, s: parsed.s, sighash: parsed.sighash, source: "tap-script" }
       : { pubkey, r: null, s: null, source: "tap-script" });
   });
   return records.length ? records : null;

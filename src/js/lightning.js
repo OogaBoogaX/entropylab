@@ -41,6 +41,48 @@ export { isKnownInternalVersion, deriveLndNode, deriveLdkNode } from "./lightnin
 
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// ISO 4217 minor-unit digits, from the official SIX list (list-one.xml,
+// published 2026-09-17): every active code that has a minor unit.
+// Most use 2; the ones below use 0, 3 or 4. Codes with no minor unit
+// (metals, SDR, test codes) are left out, so they read as unrecognized.
+const ISO4217_CODES = new Set((
+  "AED AFN ALL AMD AOA ARS AUD AWG AZN BAM BBD BDT BHD BIF BMD BND BOB BOV BRL " +
+  "BSD BTN BWP BYN BZD CAD CDF CHE CHF CHW CLF CLP CNY COP COU CRC CUP CVE CZK " +
+  "DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GNF GTQ GYD HKD " +
+  "HNL HTG HUF IDR ILS INR IQD IRR ISK JMD JOD JPY KES KGS KHR KMF KPW KRW KWD " +
+  "KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK MNT MOP MRU MUR MVR MWK " +
+  "MXN MXV MYR MZN NAD NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR " +
+  "RON RSD RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SOS SRD SSP STN SVC SYP SZL " +
+  "THB TJS TMT TND TOP TRY TTD TWD TZS UAH UGX USD USN UYI UYU UYW UZS VED VES " +
+  "VND VUV WST XAD XAF XCD XCG XOF XPF YER ZAR ZMW ZWG"
+).split(" "));
+const ISO4217_DIGITS = { BHD: 3, BIF: 0, CLF: 4, CLP: 0, DJF: 0, GNF: 0, IQD: 3, ISK: 0, JOD: 3, JPY: 0, KMF: 0, KRW: 0, KWD: 3, LYD: 3, OMR: 3, PYG: 0, RWF: 0, TND: 3, UGX: 0, UYI: 0, UYW: 4, VND: 0, VUV: 0, XAF: 0, XOF: 0, XPF: 0 };
+
+// A BOLT12 offer_amount is in millisatoshi only without offer_currency; with
+// one it counts that currency's smallest unit (BOLT12; ISO 4217 minor unit).
+// It read "10000 msat" for the spec's own $100.00 USD offer (red-team sweep
+// of 0eed735). A known code is scaled ("100.00 USD"); an unknown one says
+// the unit size is unknown. Wording agreed by Claude, Astra, Fable and Grok.
+// The amount as data: { kind: "msat" | "currency" | "unknown", value, code }.
+export function lnOfferAmount(amount, currency) {
+  let digits = String(amount);
+  if (currency === undefined) return { kind: "msat", value: digits };
+  let code = String(currency);
+  if (!ISO4217_CODES.has(code) || !/^\d+$/.test(digits)) return { kind: "unknown", value: digits, code };
+  let places = ISO4217_DIGITS[code] ?? 2;
+  if (!places) return { kind: "currency", value: digits, code };
+  digits = digits.padStart(places + 1, "0");
+  return { kind: "currency", value: `${digits.slice(0, -places)}.${digits.slice(-places)}`, code };
+}
+
+// The Amount row's value. The offer's own text is escaped on every path.
+export function lnOfferAmountHtml(amount, currency) {
+  let shown = lnOfferAmount(amount, currency);
+  if (shown.kind === "msat") return `${escapeHtml(shown.value)} msat`;
+  if (shown.kind === "unknown") return hodlT("{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)", { amount: shown.value, currency: shown.code });
+  return escapeHtml(`${shown.value} ${shown.code}`);
+}
+
 let hodlLnLast = null; // the last derivation's public result
 let hodlLnRevealed = null; // the secret text, only while it is revealed
 let hodlLnReveal = false;
@@ -571,6 +613,13 @@ async function hodlLnReadHsmFile() {
   if (seed) seed.value = "";
   let bytes = null;
   try {
+    // Every Core Lightning hsm_secret is under 1 KiB (32 bytes, 73 encrypted,
+    // or 32 bytes plus at most 24 words). A larger file is refused before it
+    // is read whole, as every other file input checks its size first
+    // (red-team sweep 0eed735, lightning #1), with its own code and message:
+    // reusing "trailing words" was false for a file never parsed (#1478 r2
+    // gate, DeepSeek, MiniMax).
+    if (file.size > 1024) throw Object.assign(new Error("This file is too large to be an hsm_secret. Choose the hsm_secret file from your Core Lightning node."), { code: "hsm-secret-too-large", key: "This file is too large to be an hsm_secret. Choose the hsm_secret file from your Core Lightning node." });
     bytes = new Uint8Array(await file.arrayBuffer());
     if (run !== hodlLnHsmRun) {
       // Typing (or a wipe) during the read superseded the file: the load is
@@ -771,7 +820,7 @@ function hodlLnInvRender() {
       parts.push(`<p class="muted" data-ln-inv-visibility="none">${hodlT("No recipient information in this {kind}.", { kind: kindNoun })}</p>`);
     }
     parts.push(lnInvRow(hodlT("Blinded paths"), `${escapeHtml(String(visibility.pathCount))} ${hodlT("(counted, never followed)")}`));
-    if (r.fields.amount !== undefined) parts.push(lnInvRow(hodlT("Amount"), `${escapeHtml(r.fields.amount)} msat`));
+    if (r.fields.amount !== undefined) parts.push(lnInvRow(hodlT("Amount"), lnOfferAmountHtml(r.fields.amount, r.fields.currency)));
     if (r.fields.description !== undefined) parts.push(lnInvRow(hodlT("Description"), escapeHtml(r.fields.description)));
     if (r.fields.currency !== undefined) parts.push(lnInvRow(hodlT("Currency"), escapeHtml(r.fields.currency)));
     if (r.fields.issuer !== undefined) parts.push(lnInvRow(hodlT("Issuer"), escapeHtml(r.fields.issuer)));

@@ -13,6 +13,21 @@ signed release is [v1.0.0](https://github.com/OogaBoogaX/entropylab/releases/tag
 
 Official website: [entropylab.online](https://entropylab.online)
 
+## Security
+
+EntropyLab is built to run on a computer that never goes online, with entropy
+you supply: it never generates key entropy, and its Content Security Policy
+lets the page make no network requests of its own (the hosted copy's service
+worker checks for updates). Under the maintainers' process, every pull request
+other than automated translation updates is reviewed by five models and an
+adversarial red team before it merges, and model-written code runs only in an
+isolated sandbox. Releases are signed by four maintainers and reproducible
+byte for byte inside the pinned build image. The
+[security posture](docs/SECURITY_POSTURE.md) maps each claim to the code and
+tests behind it and lists the known limits. Report vulnerabilities privately
+through
+[GitHub Security Advisories](https://github.com/OogaBoogaX/entropylab/security/advisories/new).
+
 ## Features
 
 When a multi-worker Vanity search stops, its next counter is the first
@@ -762,6 +777,15 @@ remove the cached copy.
 For sensitive or long-term use, the recommended path remains the downloaded,
 verified `entropylab.html` on a dedicated air-gapped computer. The downloaded
 file is still self-contained and never registers the hosted service worker.
+
+Keep iOS fully updated. On an out-of-date iPhone, one malicious web page can
+take over the phone, and after that, turning networks off does not keep
+secrets on it safe. Even an updated phone is less safe than the air-gapped
+computer above. Never keep seed words, or a photo or screenshot of a seed or
+SeedQR, anywhere on the phone or in the cloud, including Notes, Photos or
+iCloud. Scan a SeedQR live with the camera, not from a saved photo. If a photo
+was saved, delete it, including from Recently Deleted and iCloud Photos;
+deleting it cannot undo exposure that already happened.
 
 ### Verifying the download
 

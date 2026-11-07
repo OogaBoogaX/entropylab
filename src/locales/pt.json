@@ -2584,5 +2584,15 @@
   "Beginning of the replacement word": "Início da palavra de substituição",
   "Replace word": "Substituir palavra",
   "Word {n} replaced. Continue with word {next}.": "Palavra {n} substituída. Continue com a palavra {next}.",
-  "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "<strong>Build de desenvolvimento — sem assinatura.</strong> Apenas para testes. Não o utilize com fundos reais ou sementes reais. A versão assinada está em entropylab.online."
+  "<strong>Development build — unsigned.</strong> For testing only. Do not use it with real funds or real seeds. The signed release is at entropylab.online.": "<strong>Build de desenvolvimento — sem assinatura.</strong> Apenas para testes. Não o utilize com fundos reais ou sementes reais. A versão assinada está em entropylab.online.",
+  "Not checked:": "Não verificado:",
+  "claims {path}, an unusually deep path, and this PSBT used up the checks. Do not sign.": "reivindica {path}, um caminho incomumente profundo, e este PSBT esgotou as verificações. Não assine.",
+  "claims {path}, but this PSBT used up the checks. Do not sign.": "reivindica {path}, mas este PSBT esgotou as verificações. Não assine.",
+  "{amount} (unrecognized currency {currency}: unit size unknown, confirm with the issuer)": "{amount} (moeda não reconhecida {currency}: tamanho da unidade desconhecido, confirme com o emissor)",
+  "seed set to 24 words": "semente definida para 24 palavras",
+  "In a wallet, these words restore a different wallet, not this private key. Back up the private key itself.": "Em uma carteira, estas palavras restauram uma carteira diferente, não esta chave privada. Faça backup da própria chave privada.",
+  "A trailing path can have at most 16 steps.": "Um caminho final pode ter no máximo 16 passos.",
+  "A derivation path index after the extended key is out of range (0 to 2,147,483,647).": "Um índice de caminho de derivação após a chave estendida está fora do intervalo (0 a 2.147.483.647).",
+  "A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.": "Uma chave BIP45 deve ter um passo cosigner simples 0 antes de seu branch, como /0/0/* ou /0/<0;1>/*. Esta ferramenta deriva apenas o cosigner 0; outro passo cosigner derivaria uma carteira diferente.",
+  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Um passo multipath como <0;1> deve ser seguido pelo curinga *, como em /<0;1>/*."
 }

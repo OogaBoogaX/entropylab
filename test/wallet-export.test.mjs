@@ -816,8 +816,10 @@ const URL = {
   createObjectURL: (blob) => { captured.blob = blob; return "blob:mock"; },
   revokeObjectURL: () => {},
 };
+// A real Blob copies its parts (File API), so the page may zero its bytes
+// once the Blob exists; the fake copies them too.
 class Blob {
-  constructor(parts, options) { this.parts = parts; this.type = options?.type ?? ""; }
+  constructor(parts, options) { this.parts = parts.map((part) => (ArrayBuffer.isView(part) ? part.slice() : part)); this.type = options?.type ?? ""; }
 }
 const document = {
   createElement: () => ({ click() { captured.name = this.download; } }),
