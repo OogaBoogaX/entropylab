@@ -61,13 +61,21 @@ sha256sum -c SHA256SUMS.txt
 
 ### Known issue: v1.0.0
 
-`SHA256SUMS.txt` on v1.0.0 matches its page, and `sha256sum -c` passes, but
-the signatures in its `SHA256SUMS.asc` were made over an earlier rebuild and
-**do not verify**: `gpg --verify` reports `BAD signature` for every signer.
-The page is a rebuild of source commit `c1037ba3` with SHA-256
-`3804d57898224b8cfccfcacc8aa7c32cd93d514896de7e045e14ed35c22cf2f7`. If you
-are checking v1.0.0, compare the hash in Step 1 against that digest, or
-rebuild from the commit. Releases after v1.0.0 sign the manifest they ship.
+The v1.0.0 **release downloads are consistent**: `entropylab.html` and
+`SHA256SUMS.txt` name SHA-256
+`bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d`, and
+the release `SHA256SUMS.asc` verifies against that manifest.
+
+The anomaly is in the copies committed inside the v1.0.0 git tag (and its
+source archive). That tag-tree page is an earlier build with SHA-256
+`3804d57898224b8cfccfcacc8aa7c32cd93d514896de7e045e14ed35c22cf2f7` and
+footer commit `108becadc6824b08b59a34a721a33d7fcc6540c6`; its manifest
+matches that earlier page and its stale signature file does not verify.
+Verify the files downloaded together from the release page, not the tag-tree
+copies. Rebuilding source commit
+`c1037ba3a20d0c6db1b3265a7385b2944ce827e6` produces the release digest above.
+The tag-tree artifact and the release manifest and signatures are pinned by
+the [release-record regression test](../test/release-record.test.mjs).
 
 **A good result** on Mac and Linux is `entropylab.html: OK`. Anything else
 means the file is not the one that was published. Stop and don't use it.

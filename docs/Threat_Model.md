@@ -36,7 +36,7 @@ Assume it can be buggy, compromised, or leaking keys through its nonces.
 
 What EntropyLab checks:
 
-- **Signature validity.** ECDSA signatures on SegWit v0 inputs (P2WPKH and P2WSH, SIGHASH_ALL) are verified against a digest EntropyLab rebuilds from the PSBT. A signature on a script containing OP_CODESEPARATOR is reported as unverifiable rather than verified.
+- **Signature validity.** The [signer-audit verifier](../src/js/psbt-signer-audit-verify.js) checks supported legacy and SegWit v0 ECDSA signatures with SIGHASH_ALL, plus Taproot key-path and tapscript signature records with SIGHASH_DEFAULT or SIGHASH_ALL, against digests EntropyLab rebuilds from the PSBT. Unsupported script shapes and sighash types, finalized Taproot script paths, annex-carrying signatures, and scripts containing OP_CODESEPARATOR stay unverified rather than being reported valid.
 - **Repeated nonces.** A repeated ECDSA `r` for the same key within a file is flagged, because two such signatures on different messages reveal the private key. An optional nonce-history file, kept offline, extends the ECDSA check across files. Repeated BIP340 nonces among Taproot signatures (key path, and single-key or `multi_a` script path) are flagged too.
 - **Deterministic nonces (RFC 6979).** With the signing key loaded in the session, each supported ECDSA signature's nonce is recomputed with RFC 6979 (plain, with Bitcoin Core-style low-r grinding, or with 32 zero bytes of extra entropy). A nonce that matches none of them stands out. Without the key this check cannot run, and the report says so.
 - **Jade anti-exfil.** With a Jade transcript, the sign-to-contract commitment is verified, so host entropy provably went into the nonce.
@@ -46,8 +46,8 @@ What it does not check:
 
 - **A raw signed transaction against the PSBT you reviewed.** Compare works PSBT to PSBT. If the signer hands back a raw transaction, EntropyLab inspects its signatures and nonces but does not confirm it is the transaction you reviewed.
 - **Nonces without the key.** A signer that leaks a key through nonces that look random will pass the repeated-nonce checks. Only the RFC 6979 recompute, which needs the key, pins the nonce down.
-- **Taproot nonces and validity.** BIP340 signatures may mix in their own randomness, so their nonces cannot be recomputed; they are checked for sighash policy and repeated nonces only, and their validity is not verified here.
-- **Other signatures**, for example on legacy (non-SegWit) inputs, are not verified or recomputed.
+- **Taproot nonce recomputation.** BIP340 signatures may mix in their own randomness, so their nonces cannot be recomputed; validity checking and repeated-nonce detection do not remove that limit.
+- **Unsupported signature forms.** Other sighash types and script shapes, finalized Taproot script paths, and annex-carrying signatures are not verified. ECDSA nonce recomputation still requires a supported SegWit v0 digest.
 
 ### Whoever sends you a file
 

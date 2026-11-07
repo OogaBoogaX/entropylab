@@ -10,6 +10,7 @@
 // side, 4_194_304 pixels, 16 px quiet zone a side), not from the helper.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { photoFrameSize } from "../src/js/qr-scanner.js";
 
 const QUIET_ZONE = 16;
@@ -56,4 +57,17 @@ test("extreme aspect ratios still produce a padded frame", () => {
 
 test("a zero dimension cannot produce a zero frame", () => {
   assert.deepEqual(photoFrameSize(0, 0), { width: 1, height: 1 });
+});
+
+test("the photo clamp stays aligned with the decoder's constants", () => {
+  const scanner = readFileSync(new URL("../src/js/qr-scanner.js", import.meta.url), "utf8");
+  const decoder = readFileSync(new URL("../qr-wasm/src/lib.rs", import.meta.url), "utf8");
+  const constant = (source, name) => {
+    const match = source.match(new RegExp(`const ${name}[^=]*= ([\\d_]+);`));
+    assert.ok(match, `${name} is declared`);
+    return Number(match[1].replaceAll("_", ""));
+  };
+  for (const [jsName, rustName] of [["MAX_IMAGE_SIDE", "MAX_DIM"], ["MAX_IMAGE_PIXELS", "MAX_PIXELS"], ["QUIET_ZONE", "QUIET"]]) {
+    assert.equal(constant(scanner, jsName), constant(decoder, rustName), `${jsName} matches ${rustName}`);
+  }
 });

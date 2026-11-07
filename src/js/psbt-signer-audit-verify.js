@@ -501,13 +501,16 @@ const finalScriptKeys = (script) => {
     at += size;
   }
   if (at !== script.length - 2 || script[at] < 0x51 || script[at] > 0x60) return null;
+  const declared = script[at] - 0x50;
+  if (keys.length !== declared || required < 1 || required > declared) return { kind: "invalid" };
   return { kind: "multi", required, keys };
 };
 
-// Verify every signature in `sigs` against some key, each key used at most
-// once, all against one digest. `scriptCode` is the preimage script and
-// `amount` the witness value (null for a legacy digest). Any signature that
-// matches no key makes the field invalid, never merely unverified.
+// Verify every signature in `sigs` against the remaining keys in script
+// order, as OP_CHECKMULTISIG requires, all against one digest. `scriptCode`
+// is the preimage script and `amount` the witness value (null for a legacy
+// digest). Any signature that matches no remaining key makes the field
+// invalid, never merely unverified.
 const finalEcdsa = (ctx, index, scriptCode, amount, sigs, keys) => {
   if (!sigs.length || !keys.length) return null;
   if (sigs.some((sig) => sig[sig.length - 1] !== 1)) return null; // only SIGHASH_ALL is reconstructed
@@ -517,18 +520,17 @@ const finalEcdsa = (ctx, index, scriptCode, amount, sigs, keys) => {
     ? legacyAllDigest(ctx.tx, index, scriptCode, sigs[0])
     : bip143AllDigest(ctx.rawTx, index, scriptCode, amount);
   if (!digest) return null;
-  const used = new Set();
+  let firstKey = 0;
   let all = true;
   for (const sig of sigs) {
     // One budget unit per signature, as a partial signature costs: a single
     // final field can carry a whole multisig.
     if (!ctx.takeBudget()) return null;
     let matched = false;
-    for (let at = 0; at < keys.length && !matched; at++) {
-      if (used.has(at)) continue;
+    for (let at = firstKey; at < keys.length && !matched; at++) {
       const verdict = verifyEcdsa(sig.subarray(0, -1), digest, keys[at]);
       if (verdict === null) return null;
-      if (verdict) { used.add(at); matched = true; }
+      if (verdict) { firstKey = at + 1; matched = true; }
     }
     if (!matched) all = false;
   }
@@ -540,6 +542,7 @@ const finalEcdsa = (ctx, index, scriptCode, amount, sigs, keys) => {
 const verifyFinalScript = (ctx, index, scriptCode, stack, amount) => {
   const shape = finalScriptKeys(scriptCode);
   if (!shape) return null;
+  if (shape.kind === "invalid") return false;
   if (shape.kind === "p2pk") {
     if (stack.length !== 1) return false;
     return finalEcdsa(ctx, index, scriptCode, amount, stack, shape.keys);
@@ -549,8 +552,9 @@ const verifyFinalScript = (ctx, index, scriptCode, stack, amount) => {
     if (!eqBytes(hodlHash160(stack[1]), shape.hash)) return false;
     return finalEcdsa(ctx, index, scriptCode, amount, [stack[0]], [stack[1]]);
   }
-  // OP_CHECKMULTISIG pops a dummy element first (BIP-147 and legacy alike).
-  if (stack.length < 2 || stack[0].length !== 0) return false;
+  // OP_CHECKMULTISIG pops a dummy element first. Legacy consensus ignores its
+  // contents; BIP-147 requires it to be empty only for witness spends.
+  if (stack.length < 2 || (amount !== null && stack[0].length !== 0)) return false;
   const sigs = stack.slice(1);
   if (sigs.length !== shape.required || sigs.some((sig) => !looksDerSignature(sig))) return false;
   return finalEcdsa(ctx, index, scriptCode, amount, sigs, shape.keys);
@@ -568,10 +572,11 @@ const verifyFinalField = (ctx, index, pair) => {
   const scriptSig = pair.name === "PSBT_IN_FINAL_SCRIPTSIG" ? finalScriptPushes(value) : null;
   if (!witness && !scriptSig) return null;
   const spk = spent.scriptPubKey;
+  const hasFinalWitness = mapPairs(ctx.afterDoc, index).some((field) => field?.name === "PSBT_IN_FINAL_SCRIPTWITNESS");
 
   if (isP2wpkh(spk)) {
     if (scriptSig && scriptSig.length) return false;
-    if (!witness) return true;
+    if (!witness) return hasFinalWitness;
     if (witness.length !== 2) return false;
     const [sig, pub] = witness;
     if (!eqBytes(hodlHash160(pub), spk.subarray(2))) return false;
@@ -579,21 +584,23 @@ const verifyFinalField = (ctx, index, pair) => {
   }
   if (isP2wsh(spk)) {
     if (scriptSig && scriptSig.length) return false;
-    if (!witness) return true;
+    if (!witness) return hasFinalWitness;
     if (!witness.length) return false;
     const script = witness[witness.length - 1];
     if (!eqBytes(hodlSha256(script), spk.subarray(2))) return false;
     return verifyFinalScript(ctx, index, script, witness.slice(0, -1), claim.value);
   }
   if (isP2tr(spk)) {
-    // Key path only: one signature, or a signature and an annex. A script
-    // path also carries the leaf and control block and stays unverified.
+    // Key path only, with no annex: a script path carries the leaf and
+    // control block, while an annex changes the BIP-341 digest. Both stay
+    // unverified rather than being checked against the wrong message.
     if (scriptSig && scriptSig.length) return false;
-    if (!witness) return true;
-    const sig = witness.length === 1 ? witness[0]
-      : witness.length === 2 && witness[1].length && witness[1][0] === 0x50 ? witness[0] : null;
-    if (!sig || (sig.length !== 64 && sig.length !== 65)) return false;
+    if (!witness) return hasFinalWitness;
+    if (witness.length !== 1) return null;
+    const sig = witness[0];
+    if (sig.length !== 64 && sig.length !== 65) return false;
     const sighash = sig.length === 65 ? sig[64] : 0;
+    if (sig.length === 65 && !TAPROOT_SIGHASH_BYTES.has(sighash)) return false;
     if (sighash !== 0 && sighash !== 1) return null;
     if (!ctx.takeBudget()) return null;
     const digest = bip341Digest(ctx.bip341Shared(), index, sighash, null);
@@ -607,22 +614,28 @@ const verifyFinalField = (ctx, index, pair) => {
     // witness is the real stack, so each field is checked on its own. When
     // the witness field is checked alone, the redeemScript still comes from
     // the input's final scriptSig (a finalizer drops PSBT_IN_REDEEM_SCRIPT).
-    const sibling = scriptSig ?? mapPairs(ctx.afterDoc, index).find((field) => field?.name === "PSBT_IN_FINAL_SCRIPTSIG");
-    const pushes = scriptSig ?? (sibling ? finalScriptPushes(hexBytes(sibling.value) ?? new Uint8Array()) : null);
+    const siblingField = pair.name === "PSBT_IN_FINAL_SCRIPTSIG" ? pair : mapPairs(ctx.afterDoc, index).find((field) => field?.name === "PSBT_IN_FINAL_SCRIPTSIG");
+    const sibling = scriptSig ?? siblingField;
+    const rawScriptSig = siblingField ? hexBytes(siblingField.value) : null;
+    const pushes = scriptSig ?? (siblingField ? finalScriptPushes(rawScriptSig ?? new Uint8Array()) : null);
     const redeem = pushes?.length ? pushes[pushes.length - 1] : decodedField(ctx.afterDoc, index, "PSBT_IN_REDEEM_SCRIPT");
     if (!redeem) return null;
     if (!eqBytes(hodlHash160(redeem), spk.subarray(2, 22))) return false;
+    // BIP-16 executes the redeem script as a stack element, so the consensus
+    // 520-byte element limit applies here (but not to a P2WSH witness script).
+    if (redeem.length > 520) return false;
+    const canonicalRedeemPush = rawScriptSig?.length === redeem.length + 1 && rawScriptSig[0] === redeem.length && eqBytes(rawScriptSig.subarray(1), redeem);
     if (isP2wpkh(redeem)) {
-      if (!pushes || pushes.length !== 1) return false;
-      if (!witness) return true;
+      if (!pushes || pushes.length !== 1 || !canonicalRedeemPush) return false;
+      if (!witness) return hasFinalWitness;
       if (witness.length !== 2) return false;
       const [sig, pub] = witness;
       if (!eqBytes(hodlHash160(pub), redeem.subarray(2))) return false;
       return finalEcdsa(ctx, index, p2pkhScriptCode(redeem.subarray(2)), claim.value, [sig], [pub]);
     }
     if (isP2wsh(redeem)) {
-      if (!pushes || pushes.length !== 1) return false;
-      if (!witness) return true;
+      if (!pushes || pushes.length !== 1 || !canonicalRedeemPush) return false;
+      if (!witness) return hasFinalWitness;
       if (!witness.length) return false;
       const script = witness[witness.length - 1];
       if (!eqBytes(hodlSha256(script), redeem.subarray(2))) return false;
@@ -773,7 +786,7 @@ export function psbtSignerAuditVerification(beforeDoc, afterDoc) {
   const scriptCodes = new Map(), tapLeaves = new Map();
   ctx.scriptCodeFor = (index, claim) => {
     if (!scriptCodes.has(index)) {
-      const witness = decodedField(afterDoc, index, "PSBT_IN_WITNESS_SCRIPT"), redeem = decodedField(ctx.afterDoc, index, "PSBT_IN_REDEEM_SCRIPT");
+      const witness = decodedField(afterDoc, index, "PSBT_IN_WITNESS_SCRIPT"), redeem = decodedField(afterDoc, index, "PSBT_IN_REDEEM_SCRIPT");
       const resolved = ctx.takeDigestBytes((witness?.length ?? 0) + (redeem?.length ?? 0)) ? ecdsaScriptCode(afterDoc, index, claim) : null;
       scriptCodes.set(index, resolved && { ...resolved, codeSeparator: hasCodeSeparator(resolved.scriptCode) });
     }

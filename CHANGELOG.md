@@ -51,20 +51,18 @@ Release notes for EntropyLab. Each release is a single self-contained
 ## v1.0.0 — 2026-10-11
 
 First stable release. Source commit
-`c1037ba3a20d0c6db1b3265a7385b2944ce827e6`, the same commit as v1.0.0rc3.
-`entropylab.html` is a rebuild of it with SHA-256
-`3804d57898224b8cfccfcacc8aa7c32cd93d514896de7e045e14ed35c22cf2f7`.
-`SHA256SUMS.txt` matches that page.
+`c1037ba3a20d0c6db1b3265a7385b2944ce827e6`, the same commit as v1.0.0rc3:
+the `entropylab.html` release asset is byte-identical to rc3 (SHA-256
+`bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d`), so
+the release `SHA256SUMS.txt` and four rc3 signatures in `SHA256SUMS.asc`
+carry over unchanged.
 
-**The four signatures in `SHA256SUMS.asc` do not verify against it.** They
-were made over an earlier rebuild (artifact SHA-256
-`bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d`) and
-were carried over when the page was rebuilt without re-signing, so
-`gpg --verify` reports a bad signature for every signer. The tag is
-immutable; check the artifact against the digest above by hand, or rebuild
-the page from the source commit. The digest was also published wrong in an
-earlier revision of these notes. See
-[Verify your download](docs/Verify_Your_Download.md#known-issue-v100).
+The copies committed inside the v1.0.0 tag are from an earlier build, not
+those release assets. Their page has SHA-256
+`3804d57898224b8cfccfcacc8aa7c32cd93d514896de7e045e14ed35c22cf2f7`, and
+their stale signature file does not verify against their stale manifest.
+Use the release downloads; see
+[Verify your download → known issue](docs/Verify_Your_Download.md#known-issue-v100).
 
 No source changes since rc3. The release-candidate notes below describe what
 1.0.0 ships.
