@@ -303,6 +303,20 @@ test("the Android wrapper workflow drops its token and validates the Gradle wrap
   assert.ok(gradlew > validate, "wrapper validation runs before ./gradlew");
 });
 
+// Gradle 8.11.1 cannot run on the Java 25 default of newer hosted runners.
+// Select the installed JDK 21 before either Java checks or Gradle can run.
+test("the Android wrapper workflow selects JDK 21 before Java and Gradle", () => {
+  const workflow = read(".github/workflows/android-wrapper.yml");
+  const steps = workflowSteps(workflowJob(workflow, "apk"));
+  const select = steps.findIndex((step) => step.includes("JAVA_HOME_21_X64"));
+  assert.ok(select >= 0, "the workflow must select JDK 21 instead of the runner default");
+  assert.ok(select < steps.findIndex((step) => step.includes("javac --release")));
+  assert.ok(select < steps.findIndex((step) => step.includes("./gradlew")));
+  assert.ok(steps[select].includes('test -x "${JAVA_HOME_21_X64:?JDK 21 is required}/bin/java"'), "a missing JDK must fail instead of falling back");
+  assert.ok(steps[select].includes('echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"'), "Gradle uses JAVA_HOME");
+  assert.ok(steps[select].includes('echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"'), "Java checks use PATH");
+});
+
 // The Bitcoin Core interop job downloads a real node to test the exported
 // wallets and descriptors against. That binary is a supply-chain input like
 // the dev image's downloads above: pinned by digest, verified with

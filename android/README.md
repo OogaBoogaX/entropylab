@@ -45,7 +45,7 @@ For those flows, use the offline HTML (`entropylab.html` from the GitHub release
 
 ## Build
 
-JDK 17 or newer, and an Android SDK with platform 36. Point `ANDROID_HOME` at the SDK. From this directory:
+Use JDK 21 and an Android SDK with platform 36. Set `JAVA_HOME` and `PATH` to that JDK, and point `ANDROID_HOME` at the SDK. CI selects the runner’s installed JDK 21 explicitly; the pinned Gradle 8.11.1 does not support running on Java 25. From this directory:
 
 ```sh
 ./gradlew :app:assembleDebug

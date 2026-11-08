@@ -19,6 +19,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      # Gradle 8.11.1 does not support the hosted runner's Java 25 default.
+      - name: Select JDK 21
+        run: |
+          test -x "${JAVA_HOME_21_X64:?JDK 21 is required}/bin/java"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
       - name: Run standalone release pin checks
         working-directory: android
         run: |
