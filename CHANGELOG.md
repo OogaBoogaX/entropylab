@@ -52,13 +52,20 @@ Release notes for EntropyLab. Each release is a single self-contained
 
 First stable release. Source commit
 `c1037ba3a20d0c6db1b3265a7385b2944ce827e6`, the same commit as v1.0.0rc3:
-`entropylab.html` is byte-identical to rc3 (SHA-256
+the `entropylab.html` release asset is byte-identical to rc3 (SHA-256
 `bdf048ebbf9286a3b18998f28e1cccef1f9f9a0284a880c1864875f903adeb8d`), so
-`SHA256SUMS.txt` and the four rc3 signatures in `SHA256SUMS.asc` carry over
-unchanged.
+the release `SHA256SUMS.txt` and four rc3 signatures in `SHA256SUMS.asc`
+carry over unchanged.
 
-No changes since rc3. The release-candidate notes below describe what 1.0.0
-ships.
+The copies committed inside the v1.0.0 tag are from an earlier build, not
+those release assets. Their page has SHA-256
+`3804d57898224b8cfccfcacc8aa7c32cd93d514896de7e045e14ed35c22cf2f7`, and
+their stale signature file does not verify against their stale manifest.
+Use the release downloads; see
+[Verify your download → known issue](docs/Verify_Your_Download.md#known-issue-v100).
+
+No source changes since rc3. The release-candidate notes below describe what
+1.0.0 ships.
 
 ## v1.0.0rc3 — 2026-10-10
 

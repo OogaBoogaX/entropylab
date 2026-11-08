@@ -35,6 +35,10 @@ test("the signature step never imports the release's KEYS asset", () => {
   assert.doesNotMatch(script, /TAGTREE|REVIEWED/, "no tag's copy of the trust policy is read");
 });
 
+test("the release check verifies the signatures against the shipped manifest", () => {
+  const script = stepScript(".github/workflows/pages-release.yml", "Check the release signatures");
+  assert.match(script, /--verify SHA256SUMS\.asc SHA256SUMS\.txt/, "the manifest the assets ship is the one verified");
+});
 test("every active signer in release-signers.txt has a committed key", { skip: !tools && "needs bash and gpg" }, () => {
   const home = mkdtempSync(join(tmpdir(), "signer-keys-"));
   try {
