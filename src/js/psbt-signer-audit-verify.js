@@ -552,9 +552,11 @@ const verifyFinalScript = (ctx, index, scriptCode, stack, amount) => {
     if (!eqBytes(hodlHash160(stack[1]), shape.hash)) return false;
     return finalEcdsa(ctx, index, scriptCode, amount, [stack[0]], [stack[1]]);
   }
-  // OP_CHECKMULTISIG pops a dummy element first. Legacy consensus ignores its
-  // contents; BIP-147 requires it to be empty only for witness spends.
-  if (stack.length < 2 || (amount !== null && stack[0].length !== 0)) return false;
+  // OP_CHECKMULTISIG pops a dummy element first. BIP-147 NULLDUMMY requires
+  // it to be empty for every spend, legacy and witness alike: Bitcoin Core's
+  // GetBlockScriptFlags sets SCRIPT_VERIFY_NULLDUMMY for all scripts once
+  // segwit is active, and the interpreter's check ignores sigversion.
+  if (stack.length < 2 || stack[0].length !== 0) return false;
   const sigs = stack.slice(1);
   if (sigs.length !== shape.required || sigs.some((sig) => !looksDerSignature(sig))) return false;
   return finalEcdsa(ctx, index, scriptCode, amount, sigs, shape.keys);
@@ -573,7 +575,7 @@ const verifyFinalField = (ctx, index, pair) => {
   if (!witness && !scriptSig) return null;
   const spk = spent.scriptPubKey;
   // Every scriptSig stack element has the consensus 520-byte limit, including
-  // the legacy CHECKMULTISIG dummy and elements other than the redeem script.
+  // elements other than the redeem script.
   if (scriptSig && scriptSig.some((item) => item.length > 520)) return false;
   // Field-name presence alone is insufficient for a scriptSig sibling: a
   // present but malformed witness is no more valid than an absent witness.

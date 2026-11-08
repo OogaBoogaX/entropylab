@@ -940,16 +940,17 @@ test("a finalized legacy P2SH redeem script over 520 bytes is invalid even when 
   assert.ok(report.findings.some((finding) => finding.code === "FINALIZATION_INVALID" && finding.evidence.reason === "signature_invalid"));
 });
 
-test("legacy CHECKMULTISIG accepts a non-empty dummy but witness CHECKMULTISIG rejects it", () => {
-  // BIP-147 NULLDUMMY is a witness rule. In a legacy spend the ignored dummy
-  // may be non-empty under consensus (albeit non-standard); neither signature
-  // nor the digest changes when its encoding is changed here.
+test("CHECKMULTISIG rejects a non-empty dummy in legacy and witness spends alike", () => {
+  // BIP-147 NULLDUMMY is consensus for every OP_CHECKMULTISIG since segwit
+  // activation: Bitcoin Core's GetBlockScriptFlags sets SCRIPT_VERIFY_NULLDUMMY
+  // for all scripts, and the interpreter's check ignores sigversion. Neither
+  // signature nor the digest changes when the dummy's encoding is changed here.
   const legacy = finalLegacyMultisigFixture();
   const beforeDoc = psbtInspectDoc(legacy.before), legacyDoc = psbtInspectDoc(legacy.after);
   const legacyPair = legacyDoc.inputs[0].find((field) => field.name === "PSBT_IN_FINAL_SCRIPTSIG");
   assert.ok(legacyPair.value.startsWith("00"), "fixture: scure finalized an empty dummy");
   legacyPair.value = "0101" + legacyPair.value.slice(2);
-  assert.deepEqual(psbtSignerAuditVerification(beforeDoc, legacyDoc).signatures.map((entry) => entry.valid), [true]);
+  assert.deepEqual(psbtSignerAuditVerification(beforeDoc, legacyDoc).signatures.map((entry) => entry.valid), [false]);
 
   const witness = finalSegwitMultisigFixture();
   const witnessBefore = psbtInspectDoc(witness.before), witnessDoc = psbtInspectDoc(witness.after);
@@ -959,13 +960,13 @@ test("legacy CHECKMULTISIG accepts a non-empty dummy but witness CHECKMULTISIG r
   assert.deepEqual(psbtSignerAuditVerification(witnessBefore, witnessDoc).signatures.map((entry) => entry.valid), [false]);
 });
 
-test("legacy CHECKMULTISIG enforces the 520-byte limit on the dummy stack element", () => {
-  // Every legacy scriptSig stack element, including the ignored multisig
-  // dummy, is consensus-limited to 520 bytes. The independently generated
-  // signatures and their digest are unchanged by this mutation.
+test("legacy CHECKMULTISIG rejects a large dummy stack element on either side of the 520-byte limit", () => {
+  // A non-empty dummy fails NULLDUMMY (BIP-147) whatever its size; one over
+  // 520 bytes also breaks the scriptSig element limit. The independently
+  // generated signatures and their digest are unchanged by this mutation.
   const { before, after } = finalLegacyMultisigFixture();
   const beforeDoc = psbtInspectDoc(before);
-  for (const [size, expected] of [[520, true], [521, false]]) {
+  for (const [size, expected] of [[520, false], [521, false]]) {
     const afterDoc = psbtInspectDoc(after);
     const pair = afterDoc.inputs[0].find((field) => field.name === "PSBT_IN_FINAL_SCRIPTSIG");
     assert.ok(pair.value.startsWith("00"), "fixture: scure finalized an empty dummy");
