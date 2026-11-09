@@ -7112,6 +7112,7 @@ function hodlBindSeedQrCheck() {
       hodlSeedQrCheck = module.mountSeedQrCheck(host, {
         translate: hodlTText,
         privateValue: (value, revealed) => hodlPrivateValue(value, "secret private-field-value", revealed),
+        network: () => hodlNetworkChoice,
       });
     }).catch(() => {});
   }
@@ -24296,6 +24297,8 @@ function hodlApplyLocale() {
   document.querySelectorAll("#msig-keys textarea").forEach((ta) => {
     if (ta.value) hodlCheckXpub(ta);
   });
+  // Check a SeedQR copy relabels in place: re-mounting would drop the copy.
+  try { hodlSeedQrCheck?.retranslate(); } catch {}
   try { hodlDestroyTextScans(); } catch {}
   try { hodlBindTextScans(); } catch {}
   // These three hosts are static, so a language switch re-mounts the panels

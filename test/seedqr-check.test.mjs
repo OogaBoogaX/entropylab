@@ -2,9 +2,11 @@
 //
 // Security contract: a seed (words, fingerprint, addresses) is shown only
 // for a copy that decodes, words only after Show words and never after
-// conceal(), and clear() leaves no entered square, pasted text, passphrase,
-// word or derived value behind. The panel writes no storage, console or
-// network. Exact, wrong-squares and failed results are distinct states.
+// conceal(), conceal() also takes the entered squares, the pasted digits and
+// the picture off the page, and clear() leaves no entered square, pasted
+// text, passphrase, word or derived value behind. The panel writes no
+// storage, console or network. Exact, wrong-squares and failed results are
+// distinct states. Addresses follow the page's network.
 //
 // Expected fingerprints and addresses come from @scure/bip39, @scure/bip32
 // and @scure/btc-signer (the repo's pinned reference libraries), not from
@@ -17,7 +19,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { HDKey as ScureHDKey } from "@scure/bip32";
-import { p2wpkh } from "@scure/btc-signer";
+import { TEST_NETWORK, p2wpkh } from "@scure/btc-signer";
 import { MiniDocument } from "./mini-dom.mjs";
 import { mountSeedQrCheck, seedQrCopyGridMarkup, seedQrCopyGridSvg } from "../src/js/seedqr-check.js";
 import { seedQrLayout } from "../src/js/seedqr-grid.js";
@@ -27,12 +29,15 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const spec = JSON.parse(readFileSync(join(root, "test/fixtures/seedqr/spec-vectors.json"), "utf8"));
 const vector = (name) => spec.vectors.find((entry) => entry.name === name);
 
-const reference = (mnemonic, passphrase = "") => {
+// Signet shares testnet's encodings; regtest differs only in its bech32 HRP.
+const REGTEST = { ...TEST_NETWORK, bech32: "bcrt" };
+const reference = (mnemonic, passphrase = "", network = "mainnet") => {
   const master = ScureHDKey.fromMasterSeed(mnemonicToSeedSync(mnemonic, passphrase));
-  const branch = master.derive("m/84'/0'/0'/0");
+  const branch = master.derive(network === "mainnet" ? "m/84'/0'/0'/0" : "m/84'/1'/0'/0");
+  const encoding = network === "mainnet" ? undefined : network === "regtest" ? REGTEST : TEST_NETWORK;
   return {
     fingerprint: master.fingerprint.toString(16).padStart(8, "0"),
-    addresses: [0, 1, 2].map((i) => p2wpkh(branch.deriveChild(i).publicKey).address),
+    addresses: [0, 1, 2].map((i) => p2wpkh(branch.deriveChild(i).publicKey, encoding).address),
   };
 };
 
@@ -53,7 +58,9 @@ function mount(options = {}) {
     }
   };
   const tap = (row, col) => doc.querySelector(`[data-seedqr-cell="${row * Number($("seedqr-check-grid").getAttribute("data-size")) + col}"]`).click();
-  return { doc, host, panel, $, cells, choose, enter, tap, state: () => $("seedqr-check-result").getAttribute("data-state") };
+  const pressed = () => cells().filter((cell) => cell.getAttribute("aria-pressed") === "true").map((cell) => cell.getAttribute("data-seedqr-cell"));
+  const addresses = () => $("seedqr-check-addresses").querySelectorAll("li").map((item) => item.textContent);
+  return { doc, host, panel, $, cells, choose, enter, tap, pressed, addresses, state: () => $("seedqr-check-result").getAttribute("data-state") };
 }
 
 const flipRows = (rows, cells) => {
@@ -137,8 +144,9 @@ test("wrong squares: a distinct state, and every wrong square listed by row and 
   assert.equal(ui.$("seedqr-check-fingerprint").textContent, reference(v.words).fingerprint);
   // The wrong squares are marked on the entry grid; fixing them all and
   // checking again gives an exact match.
-  assert.equal(ui.doc.querySelectorAll(".is-wrong").length, 3);
+  assert.deepEqual(ui.doc.querySelectorAll("[data-seedqr-wrong]").map((cell) => Number(cell.getAttribute("data-seedqr-cell"))).sort((a, b) => a - b), picks.map(([row, col]) => row * 25 + col).sort((a, b) => a - b));
   for (const [row, col] of picks) ui.tap(row, col);
+  assert.equal(ui.doc.querySelectorAll("[data-seedqr-wrong]").length, 0);
   assert.equal(ui.state(), "stale");
   assert.equal(ui.$("seedqr-check-seed").hidden, true);
   ui.$("seedqr-check-run").click();
@@ -158,6 +166,111 @@ test("past the correction limit: failed, and no seed, word or fingerprint anywhe
   assert.equal(ui.$("seedqr-check-addresses").querySelectorAll("li").length, 0);
   ui.$("seedqr-check-reveal").click();
   assert.ok(!v.words.split(" ").slice(0, 3).some((word) => ui.host.innerHTML.includes(word)));
+});
+
+test("conceal() takes the entered squares and the picture off the page until Show my copy", () => {
+  const v = vector("vector 4 standard");
+  const ui = mount();
+  // Nothing entered: nothing to hide, and the grid stays.
+  ui.panel.conceal();
+  assert.equal(ui.cells().length, 625);
+  assert.equal(ui.$("seedqr-check-concealed").hidden, true);
+  ui.enter(v.rows);
+  ui.$("seedqr-check-run").click();
+  const before = ui.pressed(), picture = ui.$("seedqr-check-picture").innerHTML;
+  assert.ok(before.length > 0 && picture.length > 0);
+  ui.panel.conceal();
+  assert.equal(ui.cells().length, 0);
+  assert.equal(ui.$("seedqr-check-picture").innerHTML, "");
+  assert.equal(ui.$("seedqr-check-picture").hidden, true);
+  assert.equal(ui.$("seedqr-check-concealed").hidden, false);
+  assert.ok(!ui.host.innerHTML.includes(v.words));
+  // The result and the public values stay; the copy comes back unchanged.
+  assert.equal(ui.state(), "exact");
+  assert.equal(ui.$("seedqr-check-fingerprint").textContent, reference(v.words).fingerprint);
+  ui.$("seedqr-check-unconceal").click();
+  assert.deepEqual(ui.pressed(), before);
+  assert.equal(ui.$("seedqr-check-picture").innerHTML, picture);
+  assert.equal(ui.$("seedqr-check-concealed").hidden, true);
+  // Hidden while unchecked too: a copy half entered is the seed in part.
+  ui.panel.clear();
+  ui.tap(0, 0);
+  ui.panel.conceal();
+  assert.equal(ui.cells().length, 0);
+  ui.$("seedqr-check-unconceal").click();
+  assert.deepEqual(ui.pressed(), ["0"]);
+});
+
+test("conceal() blanks pasted digits, checked or not, and Clear drops what it held", () => {
+  const v = vector("vector 2 standard");
+  const ui = mount();
+  ui.choose("seedqr-check-mode", "text");
+  ui.$("seedqr-check-text").value = v.digits;
+  ui.panel.conceal();
+  assert.equal(ui.$("seedqr-check-text").value, "");
+  assert.equal(ui.$("seedqr-check-concealed").hidden, false);
+  ui.$("seedqr-check-unconceal").click();
+  assert.equal(ui.$("seedqr-check-text").value, v.digits);
+  ui.$("seedqr-check-text-run").click();
+  assert.equal(ui.state(), "parsed");
+  ui.panel.conceal();
+  assert.equal(ui.$("seedqr-check-text").value, "");
+  assert.equal(ui.$("seedqr-check-picture").innerHTML, "");
+  assert.ok(!ui.host.innerHTML.includes(v.digits));
+  ui.$("seedqr-check-unconceal").click();
+  assert.equal(ui.$("seedqr-check-text").value, v.digits);
+  assert.notEqual(ui.$("seedqr-check-picture").innerHTML, "");
+  // Clear while hidden forgets the held copy as well.
+  ui.panel.conceal();
+  ui.$("seedqr-check-clear").click();
+  assert.equal(ui.$("seedqr-check-concealed").hidden, true);
+  assert.equal(ui.$("seedqr-check-text").value, "");
+  assert.equal(ui.state(), "empty");
+});
+
+test("the addresses follow the page's network and change with it", () => {
+  const v = vector("vector 4 standard");
+  let network = "testnet";
+  const ui = mount({ network: () => network });
+  ui.enter(v.rows);
+  ui.$("seedqr-check-run").click();
+  assert.deepEqual(ui.addresses(), reference(v.words, "", "testnet").addresses);
+  for (network of ["regtest", "signet", "mainnet"]) {
+    ui.doc.dispatchEvent({ type: "hodl:network-default" });
+    assert.deepEqual(ui.addresses(), reference(v.words, "", network).addresses, network);
+  }
+  // The fingerprint is the seed's, on every network.
+  assert.equal(ui.$("seedqr-check-fingerprint").textContent, reference(v.words).fingerprint);
+  ui.panel.destroy();
+  assert.equal(ui.doc.listenerCount("hodl:network-default"), 0);
+});
+
+test("a language switch relabels the panel and keeps the copy and its result", () => {
+  const v = vector("vector 5 standard");
+  const { order } = seedQrLayout(25);
+  const picks = [order[3], order[8 * 20 + 1]].map((cell) => [Math.floor(cell / 25), cell % 25]);
+  let language = "en";
+  const ui = mount({ translate: (text) => (language === "en" ? text : `[${language}] ${text}`) });
+  ui.enter(flipRows(v.rows, picks));
+  ui.$("seedqr-check-run").click();
+  const before = ui.pressed(), fingerprint = ui.$("seedqr-check-fingerprint").textContent;
+  language = "xx";
+  ui.panel.retranslate();
+  const translated = (text) => text.startsWith("[xx] ");
+  for (const id of ["seedqr-check-run", "seedqr-check-fixed", "seedqr-check-clear", "seedqr-check-reveal", "seedqr-check-status", "seedqr-check-size"]) {
+    assert.ok(translated(ui.$(id).textContent), id);
+  }
+  assert.ok(translated(ui.$("seedqr-check-mode").getAttribute("aria-label")));
+  assert.ok(translated(ui.cells()[0].getAttribute("aria-label")));
+  assert.ok(ui.$("seedqr-check-differences").querySelectorAll("li").every((item) => translated(item.textContent)));
+  assert.equal(ui.state(), "wrong-squares");
+  assert.deepEqual(ui.pressed(), before);
+  assert.equal(ui.$("seedqr-check-fingerprint").textContent, fingerprint);
+  // A hidden copy stays hidden.
+  ui.panel.conceal();
+  ui.panel.retranslate();
+  assert.equal(ui.cells().length, 0);
+  assert.ok(translated(ui.$("seedqr-check-unconceal").textContent));
 });
 
 test("Fill in the fixed patterns sets exactly the finder, timing, alignment and dark squares", () => {

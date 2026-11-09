@@ -7,10 +7,11 @@
 // Security contract: the entered squares, the pasted text, the passphrase
 // and everything decoded from them live only in this closure and the
 // panel's own DOM: nothing goes to storage, the clipboard, the console or
-// the network. Words appear only after Show words, and conceal() hides them
-// again. clear() (the panel's Clear, Clear Fields, End Session and pagehide)
-// empties every field and the result and zeroes every buffer the panel
-// owns; a copy past the correction limit never shows a seed.
+// the network. Words appear only after Show words. conceal() hides them
+// again and takes the entered squares, the pasted digits and the picture off
+// the page until Show my copy. clear() (the panel's Clear, Clear Fields, End
+// Session and pagehide) empties every field and the result and zeroes every
+// buffer the panel owns; a copy past the correction limit never shows a seed.
 
 import { SEEDQR_GRID_SIZES, checkSeedQrGrid, parseSeedQrText, seedQrLayout, seedQrReferenceGrid } from "./seedqr-grid.js";
 import { bip39English, seedFromIndices } from "./bip39.js";
@@ -18,7 +19,7 @@ import { HDKey } from "./hdkey.js";
 import { addressFor } from "./addresses.js";
 
 const ADDRESS_COUNT = 3;
-const ACCOUNT_PATH = "m/84'/0'/0'/0";
+const coinType = (network) => (network === "mainnet" ? 0 : 1);
 
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 
@@ -84,20 +85,21 @@ function sayWith(translate) {
   };
 }
 
-// Master fingerprint and the first m/84'/0'/0'/0/i addresses, from the
-// indices alone; every seed and private key buffer is wiped before return.
-function defaultDerive(indices, passphrase) {
+// Master fingerprint and the first m/84'/coin'/0'/0/i addresses on the
+// page's network (coin type 1' and tb1/bcrt1 off mainnet), from the indices
+// alone; every seed and private key buffer is wiped before return.
+function defaultDerive(indices, passphrase, network = "mainnet") {
   const seed = seedFromIndices(indices, passphrase);
   let master = null, branch = null;
   try {
     master = HDKey.fromMasterSeed(seed);
     const fingerprint = (master.fingerprint >>> 0).toString(16).padStart(8, "0");
-    branch = master.derive(ACCOUNT_PATH);
+    branch = master.derive(`m/84'/${coinType(network)}'/0'/0`);
     const addresses = [];
     for (let i = 0; i < ADDRESS_COUNT; i++) {
       const child = branch.deriveChild(i);
       try {
-        addresses.push(addressFor("p2wpkh", child.publicKey, "mainnet"));
+        addresses.push(addressFor("p2wpkh", child.publicKey, network));
       } finally {
         child.wipePrivateData();
       }
@@ -114,25 +116,42 @@ export function mountSeedQrCheck(host, {
   translate = (text) => text,
   privateValue = (value) => escapeHtml(value),
   derive = defaultDerive,
+  network = () => "mainnet",
   doc = document,
   win = window,
 } = {}) {
   const say = sayWith(translate);
+  // Text set once is kept as a function, so retranslate() can set it again
+  // in the new language. Text that renders again (the grid, the list, the
+  // seed) is plain and is redrawn instead.
+  const live = new Map();
+  const T = (text, vars) => () => say(text, vars);
+  const apply = (node, name, value) => {
+    if (name === "text") node.textContent = value;
+    else if (name === "class") node.className = value;
+    else if (name === "hidden") node.hidden = !!value;
+    else node.setAttribute(name, value);
+  };
+  const relabel = (node, name, text) => {
+    if (!live.has(node)) live.set(node, new Map());
+    live.get(node).set(name, text);
+    apply(node, name, text());
+  };
+  const refresh = (node) => {
+    for (const [name, text] of live.get(node) ?? []) apply(node, name, text());
+  };
   const make = (tag, props) => {
     const node = doc.createElement(tag);
     if (props) for (const name of Object.keys(props)) {
-      const value = props[name];
-      if (name === "text") node.textContent = value;
-      else if (name === "class") node.className = value;
-      else if (name === "hidden") node.hidden = !!value;
-      else node.setAttribute(name, value);
+      if (typeof props[name] === "function") relabel(node, name, props[name]);
+      else apply(node, name, props[name]);
     }
     return node;
   };
   const segmented = (id, label, options) => {
-    const group = make("div", { class: "segmented-control", id, role: "group", "aria-label": say(label) });
+    const group = make("div", { class: "segmented-control", id, role: "group", "aria-label": T(label) });
     const buttons = options.map(([value, text]) => {
-      const button = make("button", { type: "button", class: "tab", "data-value": value, "aria-pressed": "false", text: say(text) });
+      const button = make("button", { type: "button", class: "tab", "data-value": value, "aria-pressed": "false", text: T(text) });
       group.appendChild(button);
       return button;
     });
@@ -148,16 +167,20 @@ export function mountSeedQrCheck(host, {
   const gridPanel = make("div", { id: "seedqr-check-grid-panel" });
   const sizeNote = make("p", { class: "field-note", id: "seedqr-check-size", "aria-live": "polite" });
   const gridNode = make("div", { class: "seedqr-entry-grid", id: "seedqr-check-grid", role: "group" });
-  const fixedNote = make("p", { class: "field-note", text: say("The finder, timing and alignment squares and the dark square are the same in every SeedQR of this size, so they can be filled in for you. Check them on your copy anyway: a scanner needs them. The format squares beside the finders depend on the mask, so enter those from your copy.") });
+  const fixedNote = make("p", { class: "field-note", text: T("The finder, timing and alignment squares and the dark square are the same in every SeedQR of this size, so they can be filled in for you. Check them on your copy anyway: a scanner needs them. The format squares beside the finders depend on the mask, so enter those from your copy.") });
   const gridActions = make("div", { class: "row tool-actions" });
-  const fixedButton = make("button", { type: "button", class: "btn secondary", id: "seedqr-check-fixed", text: say("Fill in the fixed patterns") });
-  const checkButton = make("button", { type: "button", class: "btn primary", id: "seedqr-check-run", text: say("Check copy") });
+  const fixedButton = make("button", { type: "button", class: "btn secondary", id: "seedqr-check-fixed", text: T("Fill in the fixed patterns") });
+  const checkButton = make("button", { type: "button", class: "btn primary", id: "seedqr-check-run", text: T("Check copy") });
   const textPanel = make("div", { id: "seedqr-check-text-panel", hidden: true });
-  const textLabel = make("label", { class: "label", for: "seedqr-check-text", text: say("SeedQR digits (48 or 96) or CompactSeedQR hex") });
+  const textLabel = make("label", { class: "label", for: "seedqr-check-text", text: T("SeedQR digits (48 or 96) or CompactSeedQR hex") });
   const textInput = make("textarea", { id: "seedqr-check-text", class: "field", rows: "3", spellcheck: "false", autocomplete: "off", autocapitalize: "off", inputmode: "numeric" });
   const textActions = make("div", { class: "row tool-actions" });
-  const textButton = make("button", { type: "button", class: "btn primary", id: "seedqr-check-text-run", text: say("Check digits") });
-  const clearButton = make("button", { type: "button", class: "btn secondary", id: "seedqr-check-clear", text: say("Clear") });
+  const textButton = make("button", { type: "button", class: "btn primary", id: "seedqr-check-text-run", text: T("Check digits") });
+  const concealedBlock = make("div", { id: "seedqr-check-concealed", hidden: true });
+  const concealedNote = make("p", { class: "edge-note is-muted", text: T("Your copy was hidden when you left the page or stopped using it. Show it again to carry on.") });
+  const concealedActions = make("div", { class: "row tool-actions" });
+  const unconcealButton = make("button", { type: "button", class: "btn secondary", id: "seedqr-check-unconceal", text: T("Show my copy") });
+  const clearButton = make("button", { type: "button", class: "btn secondary", id: "seedqr-check-clear", text: T("Clear") });
   const result = make("div", { id: "seedqr-check-result", "data-state": "empty" });
   const status = make("p", { class: "edge-note", id: "seedqr-check-status", role: "status", "aria-live": "polite" });
   const list = make("ol", { class: "seedqr-check-list", id: "seedqr-check-differences", hidden: true });
@@ -167,37 +190,72 @@ export function mountSeedQrCheck(host, {
   const seedSummary = make("p", { class: "label", id: "seedqr-check-summary" });
   const wordsRow = make("div", { class: "row" });
   const wordsValue = make("div", { id: "seedqr-check-words-value", translate: "no" });
-  const revealButton = make("button", { type: "button", class: "btn secondary", id: "seedqr-check-reveal", "aria-pressed": "false", text: say("Show words") });
-  const passLabel = make("label", { class: "label", for: "seedqr-check-pass", text: say("Passphrase (optional)") });
+  const revealButton = make("button", { type: "button", class: "btn secondary", id: "seedqr-check-reveal", "aria-pressed": "false", text: T("Show words") });
+  const passLabel = make("label", { class: "label", for: "seedqr-check-pass", text: T("Passphrase (optional)") });
   const passInput = make("input", { id: "seedqr-check-pass", class: "field", autocomplete: "off", spellcheck: "false", autocapitalize: "off" });
-  const fingerprintLabel = make("p", { class: "label", text: say("Master fingerprint") });
+  const fingerprintLabel = make("p", { class: "label", text: T("Master fingerprint") });
   const fingerprintValue = make("p", { class: "addr-text", id: "seedqr-check-fingerprint", "data-public-value": "", "data-i18n-skip": "", translate: "no" });
-  const addressLabel = make("p", { class: "label", text: say("First receive addresses (Native SegWit, m/84'/0'/0'/0/0 to /2)") });
+  const addressLabel = make("p", { class: "label", id: "seedqr-check-address-label", text: () => say("First receive addresses (Native SegWit, m/84'/{coin}'/0'/0/0 to /2)", { coin: coinType(currentNetwork()) }) });
   const addressList = make("ol", { class: "seedqr-check-addresses", id: "seedqr-check-addresses", start: "0", "data-i18n-skip": "", translate: "no" });
-  const finalNote = make("p", { class: "edge-note is-info", id: "seedqr-check-final", text: say(FINAL_CHECK) });
+  const finalNote = make("p", { class: "edge-note is-info", id: "seedqr-check-final", text: T(FINAL_CHECK) });
 
   gridActions.append(fixedButton, checkButton);
   gridPanel.append(kind.group, words.group, sizeNote, view.group, gridNode, fixedNote, gridActions);
   textActions.append(textButton);
   textPanel.append(textLabel, textInput, textActions);
+  concealedActions.append(unconcealButton);
+  concealedBlock.append(concealedNote, concealedActions);
   wordsRow.append(wordsValue, revealButton);
   seedBlock.append(seedSummary, wordsRow, passLabel, passInput, fingerprintLabel, fingerprintValue, addressLabel, addressList, finalNote);
   result.append(status, list, picture, pictureNote, seedBlock);
   const clearRow = make("div", { class: "row tool-actions" });
   clearRow.append(clearButton);
-  host.replaceChildren(mode.group, gridPanel, textPanel, clearRow, result);
+  host.replaceChildren(mode.group, gridPanel, textPanel, concealedBlock, clearRow, result);
 
   // ── State ────────────────────────────────────────────────────────────────
   let entry = "grid", format = "standard", wordCount = 12, part = "all";
   let size = SEEDQR_GRID_SIZES[format][wordCount];
   let grid = new Uint8Array(size * size);
   let wrong = new Set();
+  let shownDifferences = [];
   let seed = null; // { format, words, indices } once a copy or pasted text decodes
+  let drawPicture = null; // redraws the result's picture, which is the seed too
   let revealed = false;
+  // conceal() takes the copy off the page until Show my copy: the grid is
+  // not drawn, the picture is emptied and the pasted text waits here.
+  let concealed = false, heldText = "";
   let destroyed = false;
+
+  function currentNetwork() {
+    try {
+      return network();
+    } catch {
+      return "mainnet";
+    }
+  }
 
   const press = (group, value) => {
     for (const button of group.buttons) button.setAttribute("aria-pressed", String(button.getAttribute("data-value") === value));
+  };
+
+  const setStatus = (className, text) => {
+    status.className = className;
+    relabel(status, "text", text);
+  };
+  const setPictureNote = (text) => {
+    relabel(pictureNote, "text", text ?? (() => ""));
+    pictureNote.hidden = !text;
+  };
+
+  // What is on the page follows the entry mode and conceal(); the picture
+  // is drawn only while it is shown.
+  const layout = () => {
+    mode.group.hidden = concealed;
+    gridPanel.hidden = concealed || entry !== "grid";
+    textPanel.hidden = concealed || entry !== "text";
+    concealedBlock.hidden = !concealed;
+    picture.hidden = concealed || !drawPicture;
+    picture.innerHTML = picture.hidden ? "" : drawPicture();
   };
 
   const dropSeed = () => {
@@ -214,14 +272,14 @@ export function mountSeedQrCheck(host, {
   const resetResult = () => {
     dropSeed();
     wrong = new Set();
-    status.textContent = "";
-    status.className = "edge-note";
+    shownDifferences = [];
+    setStatus("edge-note", () => "");
     list.replaceChildren();
     list.hidden = true;
+    drawPicture = null;
     picture.innerHTML = "";
     picture.hidden = true;
-    pictureNote.textContent = "";
-    pictureNote.hidden = true;
+    setPictureNote(null);
     result.setAttribute("data-state", "empty");
   };
 
@@ -235,10 +293,15 @@ export function mountSeedQrCheck(host, {
   const cellLabel = (row, col) => say("Row {row}, column {col}", { row: row + 1, col: col + 1 });
   const paintCell = (button, cell) => {
     button.setAttribute("aria-pressed", String(grid[cell] === 1));
-    button.classList.toggle("is-wrong", wrong.has(cell));
+    if (wrong.has(cell)) button.setAttribute("data-seedqr-wrong", "");
+    else button.removeAttribute("data-seedqr-wrong");
   };
 
   const renderGrid = () => {
+    if (concealed) {
+      gridNode.replaceChildren();
+      return;
+    }
     const { rows, cols } = visible();
     const columns = cols[1] - cols[0];
     gridNode.setAttribute("aria-label", say("SeedQR copy, {size} by {size} squares", { size }));
@@ -258,7 +321,7 @@ export function mountSeedQrCheck(host, {
         });
         paintCell(button, cell);
         button.onclick = () => {
-          if (destroyed) return;
+          if (destroyed || concealed) return;
           grid[cell] ^= 1;
           wrong.delete(cell);
           paintCell(button, cell);
@@ -274,8 +337,7 @@ export function mountSeedQrCheck(host, {
   const markStale = () => {
     dropSeed();
     result.setAttribute("data-state", "stale");
-    status.className = "edge-note is-muted";
-    status.textContent = say("The copy changed. Check it again.");
+    setStatus("edge-note is-muted", T("The copy changed. Check it again."));
   };
 
   const setSize = () => {
@@ -287,6 +349,7 @@ export function mountSeedQrCheck(host, {
       size = next;
       grid = new Uint8Array(size * size);
       resetResult();
+      layout();
     }
     renderGrid();
   };
@@ -296,7 +359,7 @@ export function mountSeedQrCheck(host, {
     const name = seed.format === "compact-seedqr" ? "CompactSeedQR" : "SeedQR";
     seedSummary.textContent = say("{format} · {words} words", { format: name, words: seed.words });
     wordsValue.innerHTML = privateValue(revealed ? Array.from(seed.indices, (index) => bip39English[index]).join(" ") : "•".repeat(seed.words * 4), revealed);
-    revealButton.textContent = say(revealed ? "Hide words" : "Show words");
+    relabel(revealButton, "text", T(revealed ? "Hide words" : "Show words"));
     revealButton.setAttribute("aria-pressed", String(revealed));
     renderDerived();
     seedBlock.hidden = false;
@@ -306,7 +369,7 @@ export function mountSeedQrCheck(host, {
     if (!seed) return;
     let derived;
     try {
-      derived = derive(seed.indices, passInput.value);
+      derived = derive(seed.indices, passInput.value, currentNetwork());
     } catch {
       fingerprintValue.textContent = say("Unavailable");
       addressList.replaceChildren();
@@ -317,6 +380,7 @@ export function mountSeedQrCheck(host, {
   };
 
   const showDifferences = (differences) => {
+    shownDifferences = differences;
     const items = differences.slice(0, MAX_LISTED).map(({ row, col, dark, region }) => make("li", {
       "data-seedqr-row": String(row + 1),
       "data-seedqr-col": String(col + 1),
@@ -333,32 +397,25 @@ export function mountSeedQrCheck(host, {
     wrong = new Set(outcome.differences.map(({ row, col }) => row * size + col));
     for (const button of gridNode.querySelectorAll("[data-seedqr-cell]")) paintCell(button, Number(button.getAttribute("data-seedqr-cell")));
     showDifferences(outcome.differences);
-    picture.innerHTML = seedQrCopyGridSvg(grid, size, { wrong, label: say("Your copy, wrong squares marked") });
-    picture.hidden = false;
+    drawPicture = () => seedQrCopyGridSvg(grid, size, { wrong, label: say("Your copy, wrong squares marked") });
+    layout();
     if (!outcome.ok) {
       result.setAttribute("data-state", "failed");
-      status.className = "edge-note is-private";
-      status.textContent = say(FAILURE_TEXT[outcome.reason] ?? FAILURE_TEXT["not-seedqr"], { ecc: outcome.ecc ?? "" });
-      if (outcome.differences.length) {
-        pictureNote.textContent = say("The squares listed can be checked without decoding: they are the same in every SeedQR of this size.");
-        pictureNote.hidden = false;
-      }
+      setStatus("edge-note is-private", T(FAILURE_TEXT[outcome.reason] ?? FAILURE_TEXT["not-seedqr"], { ecc: outcome.ecc ?? "" }));
+      if (outcome.differences.length) setPictureNote(T("The squares listed can be checked without decoding: they are the same in every SeedQR of this size."));
       return;
     }
     seed = { format: outcome.format, words: outcome.words, indices: outcome.indices };
     const count = outcome.differences.length;
-    pictureNote.textContent = say("Mask pattern {mask}, read from the copy's format squares.", { mask: outcome.mask });
-    pictureNote.hidden = false;
+    setPictureNote(T("Mask pattern {mask}, read from the copy's format squares.", { mask: outcome.mask }));
     if (count === 0) {
       result.setAttribute("data-state", "exact");
-      status.className = "edge-note is-public";
-      status.textContent = say("Exact match. Every square matches a fresh encoding of what this copy decodes to.");
+      setStatus("edge-note is-public", T("Exact match. Every square matches a fresh encoding of what this copy decodes to."));
     } else {
       result.setAttribute("data-state", "wrong-squares");
-      status.className = "edge-note is-private";
-      status.textContent = outcome.correctedCodewords
-        ? say("This copy decodes, but {count} squares are wrong. A scanner would hide this: error correction fixed {fixed} of {total} codewords, and at most {max} can be fixed. Correct the squares listed.", { count, fixed: outcome.correctedCodewords, total: outcome.totalCodewords, max: outcome.maxCorrectable })
-        : say("This copy decodes, but {count} squares are wrong. Correct the squares listed.", { count });
+      setStatus("edge-note is-private", outcome.correctedCodewords
+        ? T("This copy decodes, but {count} squares are wrong. A scanner would hide this: error correction fixed {fixed} of {total} codewords, and at most {max} can be fixed. Correct the squares listed.", { count, fixed: outcome.correctedCodewords, total: outcome.totalCodewords, max: outcome.maxCorrectable })
+        : T("This copy decodes, but {count} squares are wrong. Correct the squares listed.", { count }));
     }
     renderSeed();
   };
@@ -368,29 +425,57 @@ export function mountSeedQrCheck(host, {
     const parsed = parseSeedQrText(textInput.value);
     if (!parsed) {
       result.setAttribute("data-state", "failed");
-      status.className = "edge-note is-private";
-      status.textContent = say("These are not SeedQR digits (48 or 96 digits) or CompactSeedQR hex (32 or 64 characters) with a valid checksum. No seed is shown.");
+      setStatus("edge-note is-private", T("These are not SeedQR digits (48 or 96 digits) or CompactSeedQR hex (32 or 64 characters) with a valid checksum. No seed is shown."));
       return;
     }
     seed = { format: parsed.format, words: parsed.words, indices: parsed.indices };
     result.setAttribute("data-state", "parsed");
-    status.className = "edge-note is-public";
-    status.textContent = say("These digits are a valid SeedQR.");
+    setStatus("edge-note is-public", T("These digits are a valid SeedQR."));
+    const drawn = seed;
+    drawPicture = () => {
+      const reference = seedQrReferenceGrid(drawn.format, drawn.indices);
+      try {
+        return seedQrCopyGridSvg(reference.grid, reference.size, { label: say("SeedQR copy grid, {size} by {size} squares", { size: reference.size }) });
+      } finally {
+        reference.grid.fill(0);
+      }
+    };
     const reference = seedQrReferenceGrid(seed.format, seed.indices);
-    picture.innerHTML = seedQrCopyGridSvg(reference.grid, reference.size, { label: say("SeedQR copy grid, {size} by {size} squares", { size: reference.size }) });
     reference.grid.fill(0);
-    picture.hidden = false;
-    pictureNote.textContent = `${say("This is how EntropyLab draws this SeedQR: mask pattern {mask}.", { mask: reference.mask })} ${say(MASK_NOTE)}`;
-    pictureNote.hidden = false;
+    setPictureNote(() => `${say("This is how EntropyLab draws this SeedQR: mask pattern {mask}.", { mask: reference.mask })} ${say(MASK_NOTE)}`);
+    layout();
     renderSeed();
   };
 
   const setEntry = (next) => {
     entry = next;
     press(mode, entry);
-    gridPanel.hidden = entry !== "grid";
-    textPanel.hidden = entry !== "text";
     resetResult();
+    layout();
+    renderGrid();
+  };
+
+  // Something of the copy is on the page: squares, text, a result or its picture.
+  const holdsCopy = () => grid.includes(1) || textInput.value !== "" || seed !== null || drawPicture !== null;
+  const conceal = () => {
+    if (destroyed) return;
+    if (revealed) {
+      revealed = false;
+      renderSeed();
+    }
+    if (concealed || !holdsCopy()) return;
+    concealed = true;
+    heldText = textInput.value;
+    textInput.value = "";
+    layout();
+    renderGrid();
+  };
+  const unconceal = () => {
+    if (destroyed || !concealed) return;
+    concealed = false;
+    textInput.value = heldText;
+    heldText = "";
+    layout();
     renderGrid();
   };
 
@@ -427,14 +512,26 @@ export function mountSeedQrCheck(host, {
     renderSeed();
   };
   passInput.oninput = renderDerived;
+  unconcealButton.onclick = unconceal;
 
   const clear = () => {
+    concealed = false;
+    heldText = "";
     grid.fill(0);
     textInput.value = "";
     resetResult();
+    layout();
     renderGrid();
   };
   clearButton.onclick = clear;
+
+  // The header's network picker: the addresses and their path follow it.
+  const onNetwork = () => {
+    if (destroyed) return;
+    refresh(addressLabel);
+    renderDerived();
+  };
+  doc.addEventListener("hodl:network-default", onNetwork);
 
   // Phones get a quarter at a time, so the squares are big enough to tap.
   let narrow = false;
@@ -450,14 +547,22 @@ export function mountSeedQrCheck(host, {
 
   return {
     clear,
-    conceal() {
-      if (!revealed) return;
-      revealed = false;
+    conceal,
+    // A language switch sets every label again and redraws the grid and the
+    // result; what was entered, checked and hidden stays as it was.
+    retranslate() {
+      if (destroyed) return;
+      for (const node of live.keys()) refresh(node);
+      renderGrid();
+      showDifferences(shownDifferences);
       renderSeed();
+      layout();
     },
     destroy() {
       clear();
       destroyed = true;
+      try { doc.removeEventListener("hodl:network-default", onNetwork); } catch {}
+      live.clear();
       host.replaceChildren();
     },
   };

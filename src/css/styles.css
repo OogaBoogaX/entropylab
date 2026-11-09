@@ -2666,7 +2666,7 @@ label.field.journal-format-control { min-width: 0; margin-top: 0; }
 .seedqr-entry-cell.is-group-end-col { border-right: 2px solid var(--image-ink); }
 .seedqr-entry-cell.is-group-end-row { border-bottom: 2px solid var(--image-ink); }
 .seedqr-entry-cell[aria-pressed="true"] { background: var(--image-ink); }
-.seedqr-entry-cell.is-wrong { box-shadow: inset 0 0 0 3px var(--danger-bright); }
+.seedqr-entry-cell[data-seedqr-wrong] { box-shadow: inset 0 0 0 3px var(--danger-bright); }
 .seedqr-entry-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .seedqr-check-picture svg, .seedqr-copy-grid-image svg { width: 100%; max-width: 420px; height: auto; }
 #seedqr-check-words-value { flex: 1 1 auto; min-width: 0; }
