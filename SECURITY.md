@@ -219,7 +219,17 @@ material. Its security posture rests on the following model:
   legacy and SegWit v0 ECDSA signatures with SIGHASH_ALL, plus Taproot key-path
   and tapscript signature records with SIGHASH_DEFAULT or SIGHASH_ALL. Other
   script shapes and sighash types, finalized Taproot script paths, and
-  annex-carrying signatures stay unverified. Repeated BIP340 nonces are still
+  annex-carrying signatures stay unverified. Finalized-field checks also
+  validate sibling scriptSig/witness fields already present in the sent PSBT,
+  require matching sent/returned UTXO claims, and never report valid when the
+  transaction cannot be serialized or the decoder caps verification. Their
+  decoding, script resolution and signatures share bounded work, with sibling
+  results reused rather than charging signatures twice. These checks follow
+  consensus, not relay policy: uncompressed SegWit v0 keys and unused legacy
+  stack items may be valid, while witness CLEANSTACK, NULLDUMMY and scriptSig
+  size limits still apply. See the `final follow-up` regression cases in
+  [the verifier tests](test/psbt-signer-audit-verify.test.mjs).
+  Repeated BIP340 nonces are still
   checked, although those nonces cannot be replayed like RFC 6979 nonces.
   The report marks these cases
   incomplete; a completed individual check is not a security conclusion for

@@ -1067,3 +1067,240 @@ test("a malformed final witness cannot make its sibling scriptSig valid", () => 
     assert.equal(scriptSig?.valid, false, fixture.name);
   }
 });
+
+// #1485 contract: a supported final spend is valid only with its actual
+// sibling fields, one coherent UTXO claim, a serializable transaction and
+// available verification budgets. BIP-141/147 stack rules remain consensus
+// rules, not relay policy. Signatures below come from scure/noble above.
+const finalField = (doc, name) => doc.inputs[0].find((pair) => pair.name === name);
+const emptyFinalScriptSig = () => ({ key: "07", name: "PSBT_IN_FINAL_SCRIPTSIG", value: "", decoded: { hex: "" } });
+const FINAL_FIXTURES = [finalSegwitFixture, finalP2wshFixture, finalTaprootKeyFixture, finalWrappedFixture, () => finalSegwitMultisigFixture(true), finalLegacyFixture, finalLegacyMultisigFixture];
+
+test("final follow-up: a sent witness is verified before its newly added scriptSig", () => {
+  for (const fixture of FINAL_FIXTURES.slice(0, 5)) {
+    for (const corrupt of [false, true]) {
+      const { before, after } = fixture();
+      const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+      if (!finalField(afterDoc, "PSBT_IN_FINAL_SCRIPTSIG")) afterDoc.inputs[0].push(emptyFinalScriptSig());
+      const witness = finalField(afterDoc, "PSBT_IN_FINAL_SCRIPTWITNESS");
+      if (corrupt) {
+        const items = finalWitnessStack(hex(witness.value));
+        const signature = items.find((item) => item.length >= 64);
+        signature[10] ^= 1;
+        witness.value = hexOf(serializeWitness(items));
+      }
+      beforeDoc.inputs[0].push(structuredClone(witness));
+      const result = psbtSignerAuditVerification(beforeDoc, afterDoc);
+      assert.deepEqual(result.signatures.map((entry) => entry.valid), [!corrupt], `${fixture.name}, corrupt=${corrupt}`);
+    }
+  }
+});
+
+test("final follow-up: a native witness checks a sent scriptSig's actual bytes", () => {
+  for (const fixture of [finalSegwitFixture, finalP2wshFixture, finalTaprootKeyFixture]) {
+    for (const [value, expected] of [["", true], ["00", false], ["4c", false], ["zz", null]]) {
+      const { before, after } = fixture();
+      const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+      const scriptSig = { ...emptyFinalScriptSig(), value };
+      beforeDoc.inputs[0].push(scriptSig);
+      afterDoc.inputs[0].push(scriptSig);
+      assert.equal(psbtSignerAuditVerification(beforeDoc, afterDoc).signatures[0].valid, expected, `${fixture.name}, ${value}`);
+    }
+  }
+});
+
+test("final follow-up: a sent unsupported Taproot witness leaves its scriptSig unverified", () => {
+  for (const fixture of [finalTaprootKeyFixture, finalTaprootScriptFixture]) {
+    const { before, after } = fixture();
+    const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+    const witness = finalField(afterDoc, "PSBT_IN_FINAL_SCRIPTWITNESS");
+    if (fixture === finalTaprootKeyFixture) witness.value = hexOf(serializeWitness([...finalWitnessStack(hex(witness.value)), Uint8Array.of(0x50, 0x01)]));
+    beforeDoc.inputs[0].push(structuredClone(witness));
+    afterDoc.inputs[0].push(emptyFinalScriptSig());
+    assert.deepEqual(psbtSignerAuditVerification(beforeDoc, afterDoc).signatures.map((entry) => entry.valid), [null]);
+  }
+});
+
+test("final follow-up: an unserializable transaction never throws or verifies a final field", () => {
+  const mutations = [
+    (tx) => { tx.outputs[0].value = "not-an-amount"; },
+    (tx) => { tx.outputs[0].scriptPubKey = "0"; },
+    (tx) => { tx.inputs[0].txid = "00"; },
+    (tx) => { tx.inputs[0].sequence = -1; },
+    (tx) => { tx.locktime = -1; },
+  ];
+  for (const fixture of FINAL_FIXTURES) {
+    const { before, after } = fixture();
+    for (const mutate of mutations) {
+      const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+      mutate(afterDoc.tx);
+      assert.ok(psbtSignerAuditVerification(beforeDoc, afterDoc).signatures.every((entry) => entry.valid === null), fixture.name);
+    }
+  }
+});
+
+test("final follow-up: decoder budget caps valid finals but preserves invalid signatures", () => {
+  for (const fixture of FINAL_FIXTURES) {
+    const { before, after } = fixture();
+    const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+    afterDoc.problems.push({ code: "verification_budget", scope: "psbt", message: "budget exhausted" });
+    const result = psbtSignerAuditVerification(beforeDoc, afterDoc);
+    assert.equal(result.complete, false);
+    assert.ok(result.signatures.every((entry) => entry.valid === null), fixture.name);
+  }
+  const { before, after } = finalSegwitFixture();
+  const afterDoc = psbtInspectDoc(after);
+  const flipped = psbtInspectDoc(withFlippedSignatureByte(after, afterDoc, "PSBT_IN_FINAL_SCRIPTWITNESS"));
+  flipped.problems.push({ code: "verification_budget", scope: "psbt", message: "budget exhausted" });
+  assert.equal(psbtSignerAuditVerification(psbtInspectDoc(before), flipped).signatures[0].valid, false);
+});
+
+test("final follow-up: returned UTXO claims cannot replace the spent amount or script", () => {
+  for (const fixture of FINAL_FIXTURES.filter((fixture) => fixture !== finalLegacyFixture)) {
+    const { before, after } = fixture();
+    for (const field of ["value", "scriptPubKey"]) {
+      const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+      // Mutate the sent claim, leaving the independently signed returned
+      // transaction valid against its own claim. Mixing the two is unsound.
+      const utxo = finalField(beforeDoc, "PSBT_IN_WITNESS_UTXO");
+      if (field === "value") { utxo.decoded.value = "1"; utxo.value = "0100000000000000" + utxo.value.slice(16); }
+      else { utxo.decoded.scriptPubKey = "51"; utxo.value = utxo.value.slice(0, 16) + "0151"; }
+      const verification = psbtSignerAuditVerification(beforeDoc, afterDoc);
+      assert.ok(verification.signatures.every((entry) => entry.valid === null), `${fixture.name}, ${field}`);
+      const audit = auditSigner(beforeDoc, afterDoc, { verification });
+      assert.ok(audit.findings.some((finding) => finding.code === "UTXO_DECLARATION_CHANGED" && finding.severity === "critical"));
+    }
+  }
+});
+
+// BIP-144/174 CompactSize for a large witness item. This is serialization of
+// fixture data, not a digest oracle.
+const largeWitness = (script) => hexOf(concat(Uint8Array.of(1, 0xfe), u32le(script.length), script));
+test("final follow-up: final P2WSH resolution spends the work budget even without signatures", () => {
+  for (const wrapped of [false, true]) {
+    for (const wrongHash of [false, true]) {
+      const { before, after } = finalSegwitMultisigFixture(wrapped);
+      const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+      const script = new Uint8Array(1024 * 1024).fill(0x61); // unsupported OP_NOP script
+      const program = concat(Uint8Array.of(0, 32), hodlSha256(wrongHash ? Uint8Array.of(0x51) : script));
+      const spk = wrapped ? concat(Uint8Array.of(0xa9, 20), hodlHash160(program), Uint8Array.of(0x87)) : program;
+      for (const doc of [beforeDoc, afterDoc]) {
+        const utxo = finalField(doc, "PSBT_IN_WITNESS_UTXO");
+        utxo.decoded.scriptPubKey = hexOf(spk);
+        utxo.value = hexOf(concat(u64le(100_000n), Uint8Array.of(spk.length), spk));
+        if (wrapped && finalField(doc, "PSBT_IN_FINAL_SCRIPTSIG")) finalField(doc, "PSBT_IN_FINAL_SCRIPTSIG").value = hexOf(concat(Uint8Array.of(program.length), program));
+        doc.tx.inputs = Array.from({ length: 40 }, () => ({ ...doc.tx.inputs[0] }));
+      }
+      finalField(afterDoc, "PSBT_IN_FINAL_SCRIPTWITNESS").value = largeWitness(script);
+      for (const doc of [beforeDoc, afterDoc]) doc.inputs = Array.from({ length: 40 }, () => doc.inputs[0]);
+      const result = psbtSignerAuditVerification(beforeDoc, afterDoc);
+      assert.equal(result.complete, false, `wrapped=${wrapped}, wrongHash=${wrongHash}`);
+      assert.equal(result.signatures.at(-1).valid, null);
+      assert.ok(result.signatures.every((entry) => entry.valid !== true));
+    }
+  }
+});
+
+test("final follow-up: a wrapped witness's signature budget is spent once for its two fields", () => {
+  // 128 independent 2-of-3 witnesses use exactly 256 signature checks.
+  const multi = btc.p2ms(2, FINAL_MULTI_PUB), payment = btc.p2sh(btc.p2wsh(multi));
+  const tx = new btc.Transaction();
+  for (let index = 0; index < SIGNER_AUDIT_MAX_SIGNATURE_CHECKS / 2; index++) tx.addInput({
+    txid: index.toString(16).padStart(64, "0"), index: 0,
+    redeemScript: spkOf(btc.p2wsh(multi)), witnessScript: spkOf(multi),
+    witnessUtxo: { script: spkOf(payment), amount: 100_000n },
+  });
+  tx.addOutput({ script: DEST, amount: 90_000n });
+  const before = tx.toPSBT();
+  for (const key of FINAL_MULTI_PRIV.slice(0, 2)) tx.sign(key);
+  const after = finalize(tx);
+  const result = psbtSignerAuditVerification(psbtInspectDoc(before), psbtInspectDoc(after));
+  assert.equal(result.complete, true);
+  assert.equal(result.signatures.length, SIGNER_AUDIT_MAX_SIGNATURE_CHECKS);
+  assert.ok(result.signatures.every((entry) => entry.valid === true));
+});
+
+test("final follow-up: legacy extra stack items are not witness CLEANSTACK", () => {
+  // Bitcoin Core's CLEANSTACK is policy for legacy but BIP-141 consensus for
+  // v0 witness. In multisig the dummy is immediately below the signatures,
+  // not the bottom of a legacy stack containing unused items.
+  for (const fixture of [finalLegacyFixture, finalLegacyMultisigFixture]) {
+    const { before, after } = fixture();
+    const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+    finalField(afterDoc, "PSBT_IN_FINAL_SCRIPTSIG").value = "0101" + finalField(afterDoc, "PSBT_IN_FINAL_SCRIPTSIG").value;
+    assert.equal(psbtSignerAuditVerification(beforeDoc, afterDoc).signatures[0].valid, true, fixture.name);
+  }
+  for (const fixture of [finalP2wshFixture, finalSegwitMultisigFixture]) {
+    const { before, after } = fixture();
+    const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+    const witness = finalField(afterDoc, "PSBT_IN_FINAL_SCRIPTWITNESS");
+    witness.value = hexOf(serializeWitness([Uint8Array.of(1), ...finalWitnessStack(hex(witness.value))]));
+    assert.equal(psbtSignerAuditVerification(beforeDoc, afterDoc).signatures[0].valid, false);
+  }
+});
+
+test("final follow-up: legacy spends reject unexpected witness data but allow an empty witness", () => {
+  for (const fixture of [finalLegacyFixture, finalLegacyMultisigFixture]) {
+    const { before, after } = fixture();
+    for (const [value, expected] of [["00", true], ["010101", false], ["01", null]]) {
+      const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+      const witness = { key: "08", name: "PSBT_IN_FINAL_SCRIPTWITNESS", value, decoded: {} };
+      beforeDoc.inputs[0].push(witness);
+      afterDoc.inputs[0].push(witness);
+      assert.equal(psbtSignerAuditVerification(beforeDoc, afterDoc).signatures[0].valid, expected, `${fixture.name}, ${value}`);
+    }
+  }
+});
+
+test("final follow-up: legacy extra stack items still obey the 10000-byte script limit", () => {
+  const { before, after } = finalLegacyFixture();
+  const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+  const pair = finalField(afterDoc, "PSBT_IN_FINAL_SCRIPTSIG");
+  const push = "4d0802" + "01".repeat(520);
+  pair.value = push.repeat(20) + pair.value;
+  assert.ok(pair.value.length / 2 > 10000);
+  assert.equal(psbtSignerAuditVerification(beforeDoc, afterDoc).signatures[0].valid, false);
+});
+
+test("final follow-up: uncompressed v0 witness keys are consensus-valid, not relay policy", () => {
+  // Core SCRIPT_VERIFY_WITNESS_PUBKEYTYPE is standardness policy, not a
+  // mandatory consensus flag. Scure supplies each BIP-143 digest and noble
+  // signs it; the witness is explicit because finalizers prefer compressed keys.
+  const pub = nobleSecp256k1.getPublicKey(PRIV, false);
+  for (const p2wsh of [false, true]) {
+    const code = p2wsh ? concat(Uint8Array.of(65), pub, Uint8Array.of(0xac))
+      : concat(Uint8Array.of(0x76, 0xa9, 20), hodlHash160(pub), Uint8Array.of(0x88, 0xac));
+    const spk = p2wsh ? concat(Uint8Array.of(0, 32), hodlSha256(code))
+      : concat(Uint8Array.of(0, 20), hodlHash160(pub));
+    const tx = new btc.Transaction(SCURE_ANY);
+    tx.addInput({ txid: "ad".repeat(32), index: 0, witnessUtxo: { script: spk, amount: 100_000n }, ...(p2wsh ? { witnessScript: code } : {}) });
+    tx.addOutput({ script: DEST, amount: 90_000n });
+    const before = tx.toPSBT();
+    const digest = tx.preimageWitnessV0(0, code, btc.SigHash.ALL, 100_000n);
+    const sig = concat(nobleSecp256k1.sign(digest, PRIV, { prehash: false, format: "der" }), Uint8Array.of(1));
+    tx.updateInput(0, { finalScriptWitness: p2wsh ? [sig, code] : [sig, pub] }, true);
+    const after = tx.toPSBT(), beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+    assert.equal(psbtSignerAuditVerification(beforeDoc, afterDoc).signatures[0].valid, true, `p2wsh=${p2wsh}`);
+    const flipped = psbtInspectDoc(withFlippedSignatureByte(after, afterDoc, "PSBT_IN_FINAL_SCRIPTWITNESS"));
+    assert.equal(psbtSignerAuditVerification(beforeDoc, flipped).signatures[0].valid, false);
+  }
+});
+
+test("final follow-up: legacy scriptSig size is accepted at 10000 bytes and rejected at 10001", () => {
+  for (const fixture of [finalLegacyFixture, finalLegacyMultisigFixture]) {
+    const { before, after } = fixture();
+    for (const [size, expected] of [[10000, true], [10001, false]]) {
+      const beforeDoc = psbtInspectDoc(before), afterDoc = psbtInspectDoc(after);
+      const pair = finalField(afterDoc, "PSBT_IN_FINAL_SCRIPTSIG"), original = hex(pair.value);
+      const padding = size - original.length, full = Math.floor(padding / 523), remainder = padding % 523;
+      const item = concat(Uint8Array.of(0x4d, 8, 2), new Uint8Array(520));
+      const header = remainder <= 76 ? Uint8Array.of(remainder - 1)
+        : remainder <= 257 ? Uint8Array.of(0x4c, remainder - 2)
+          : Uint8Array.of(0x4d, (remainder - 3) & 255, (remainder - 3) >>> 8);
+      const last = remainder ? concat(header, new Uint8Array(remainder - header.length)) : new Uint8Array();
+      pair.value = hexOf(concat(...Array(full).fill(item), last, original));
+      assert.equal(pair.value.length / 2, size);
+      assert.equal(psbtSignerAuditVerification(beforeDoc, afterDoc).signatures[0].valid, expected, `${fixture.name}, ${size}`);
+    }
+  }
+});
