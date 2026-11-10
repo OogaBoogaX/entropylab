@@ -474,13 +474,15 @@ test("the audit checks block is open when the tier is not pass", () => {
 
 const insertOverall = evaluate("hodlPsbtInsertOverall", { hodlT: interpolate });
 
-function overallHarness({ tier, analysis }) {
+function overallHarness({ tier, analysis, rbf }) {
   const section = fakeElement({ dataset: tier ? { auditTier: tier } : {} });
   const analysisElement = analysis ? { dataset: { psbtAnalysisOverall: analysis } } : null;
+  const rbfElement = rbf ? { dataset: { rbfVerdict: rbf } } : null;
   const output = fakeElement({
     querySelector(selector) {
       if (selector === "[data-audit-section]") return section;
       if (selector === "[data-psbt-analysis-overall]") return analysisElement;
+      if (selector === "[data-rbf-verdict]") return rbfElement;
       return null;
     },
   });
@@ -511,6 +513,15 @@ test("the overall line is amber otherwise", () => {
 
 test("no overall line without an audit", () => {
   assert.equal(overallState({ tier: undefined, analysis: "complete" }), null);
+});
+
+test("the overall line counts the RBF verdict", () => {
+  assert.equal(overallState({ tier: "pass", analysis: "complete", rbf: "red" }), "bad", "a red fee-bump verdict is never green");
+  assert.equal(overallState({ tier: "pass", analysis: "complete", rbf: "amber" }), "warn", "an amber fee-bump verdict is never green");
+  assert.equal(overallState({ tier: "pass", analysis: "complete", rbf: "green" }), "ok");
+  assert.equal(overallState({ tier: "pass", analysis: "complete", rbf: "neutral" }), "ok");
+  assert.equal(overallState({ tier: "pass", analysis: "complete" }), "ok", "no note changes nothing");
+  assert.equal(overallState({ tier: "fail", analysis: "complete", rbf: "green" }), "bad", "a green note never softens a failed audit");
 });
 
 test("with no key loaded and no other problem the overall line is not amber", () => {

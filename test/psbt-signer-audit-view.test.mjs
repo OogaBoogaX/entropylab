@@ -682,6 +682,62 @@ test("retiring a shown verdict removes the combined overall line", async () => {
   assert.equal(overall.removed, true, "the overall line is removed with it");
 });
 
+test("a language change paints the RBF verdict again, after the audit", async () => {
+  const outputs = { "psbt-out": fakeOutput(), "nonce-out": fakeOutput() };
+  const painted = [];
+  const app = await loadAppFunctions(["hodlRefreshPsbtLocale"], { settable: ["hodlPsbtLast", "hodlNonceLast"], stubs: {
+    document: { getElementById: (id) => outputs[id] ?? null },
+    hodlPaintPsbtSession: () => {},
+    hodlPaintPsbtKeyNotes: () => {},
+    hodlSetPsbtError: () => {},
+    hodlSetNonceError: () => {},
+    hodlPsbtSyncNonceHistoryControls: () => {},
+    hodlRenderPsbt: () => "inspection",
+    hodlRenderRawTx: () => "inspection",
+    hodlPsbtPaintSignerAudit: () => { painted.push("audit"); },
+    hodlPsbtPaintRbf: (output, rbf, network) => { painted.push(["rbf", rbf, network]); },
+  } });
+  const rbf = { verdict: "red", entries: [{ code: "payment-removed", item: { code: "payment-removed" } }] };
+  const last = { kind: "psbt", parsed: {}, sourceTag: new Uint8Array([1]), checkedAt: "t", network: "mainnet", audit: { report: { verdict: "fail" } }, rbf };
+  app.__set.hodlPsbtLast(last);
+  app.__set.hodlNonceLast(null);
+  app.hodlRefreshPsbtLocale();
+  assert.deepEqual(painted.map((entry) => (Array.isArray(entry) ? entry[0] : entry)), ["audit", "rbf"], "the RBF verdict is painted after the audit");
+  assert.equal(painted[1][1], rbf, "the stored record is painted");
+  assert.equal(painted[1][2], "mainnet", "with the run's network");
+
+  // A run with no RBF verdict paints none.
+  painted.length = 0;
+  last.rbf = null;
+  app.hodlRefreshPsbtLocale();
+  assert.deepEqual(painted, ["audit"]);
+});
+
+test("Show more's full repaint keeps the RBF verdict, after the audit", async () => {
+  const output = fakeOutput();
+  Object.assign(output, { hasAttribute: () => true, setAttribute() {}, focus() {} });
+  const painted = [];
+  const app = await loadAppFunctions(["hodlPsbtShowMore"], { settable: ["hodlPsbtLast"], stubs: {
+    document: { getElementById: (id) => (id === "psbt-out" ? output : null) },
+    hodlRenderPsbt: () => "inspection",
+    hodlRenderRawTx: () => "inspection",
+    hodlPsbtPaintSignerAudit: () => { painted.push("audit"); },
+    hodlPsbtPaintRbf: (target, rbf, network) => { painted.push(["rbf", rbf, network]); },
+  } });
+  const rbf = { verdict: "red", entries: [] };
+  const last = { kind: "psbt", parsed: {}, sourceTag: new Uint8Array([1]), checkedAt: "t", network: "mainnet", limits: { inputs: 50, outputs: 50, step: 50 }, audit: { report: { verdict: "fail" } }, rbf };
+  app.__set.hodlPsbtLast(last);
+  app.hodlPsbtShowMore({ target: { closest: () => ({ dataset: { psbtMore: "inputs" } }) } });
+  assert.deepEqual(painted.map((entry) => (Array.isArray(entry) ? entry[0] : entry)), ["audit", "rbf"], "the full repaint keeps the RBF verdict above the inspection");
+  assert.equal(painted[1][1], rbf, "the stored record is painted");
+  assert.equal(painted[1][2], "mainnet", "with the run's network");
+
+  painted.length = 0;
+  last.rbf = null;
+  app.hodlPsbtShowMore({ target: { closest: () => ({ dataset: { psbtMore: "inputs" } }) } });
+  assert.deepEqual(painted, ["audit"]);
+});
+
 test("a language change paints the audit after the answer block and recomputes the overall line", async () => {
   const answer = { inserted: [], insertAdjacentHTML(position, html) { this.inserted.push({ position, html }); } };
   const output = {

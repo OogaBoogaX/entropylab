@@ -12135,6 +12135,7 @@ function hodlRefreshPsbtLocale() {
       // vanish on a language switch, and the combined overall line must
       // come back with it.
       if (last.audit) hodlPsbtPaintSignerAudit(output, last.audit);
+      if (last.rbf) hodlPsbtPaintRbf(output, last.rbf, last.network);
     } catch {
       // The run rendered this once; if it cannot again, the shown result stays.
     }
@@ -13394,6 +13395,7 @@ function hodlPsbtShowMore(event) {
     let inputsOpen = output.querySelector?.("[data-psbt-inputs]")?.open;
     output.innerHTML = render(options);
     if (last.audit) hodlPsbtPaintSignerAudit(output, last.audit);
+    if (last.rbf) hodlPsbtPaintRbf(output, last.rbf, last.network);
     if (inputsOpen) {
       let details = output.querySelector?.("[data-psbt-inputs]");
       if (details) details.open = true;
@@ -15264,9 +15266,10 @@ function hodlPsbtSignerAuditMarkup(audit) {
 function hodlPsbtInsertOverall(output) {
   let section = output.querySelector?.("[data-audit-section]"), tier = section?.dataset?.auditTier;
   if (!tier) return;
-  let analysis = output.querySelector?.("[data-psbt-analysis-overall]")?.dataset?.psbtAnalysisOverall || "",
+  let rbf = output.querySelector?.("[data-rbf-verdict]")?.dataset?.rbfVerdict || "",
+    analysis = output.querySelector?.("[data-psbt-analysis-overall]")?.dataset?.psbtAnalysisOverall || "",
     problem = analysis === "problem",
-    state = tier === "fail" || problem ? "bad" : tier === "pass" && analysis === "complete" ? "ok" : "warn",
+    state = tier === "fail" || problem || rbf === "red" ? "bad" : tier === "pass" && analysis === "complete" && rbf !== "amber" ? "ok" : "warn",
     text = state === "bad" ? hodlT("Overall: do not broadcast — see the checks below.") : state === "ok" ? hodlT("Overall: no problems in the listed checks.") : hodlT("Overall: review the warnings below.");
   output.querySelector?.("[data-psbt-overall]")?.remove?.();
   section.insertAdjacentHTML("beforebegin", "<p data-psbt-overall data-psbt-overall-state='" + state + "' class='psbt-" + state + "'><strong>" + text + "</strong></p>");
@@ -15336,7 +15339,10 @@ function hodlPsbtRetireRbfUploads() {
 // from: any change to either side retires it, so a green verdict can never
 // sit next to a different original.
 function hodlPsbtClearRbfVerdict() {
-  document.getElementById("psbt-out")?.querySelector("[data-rbf-verdict]")?.remove();
+  let output = document.getElementById("psbt-out");
+  output?.querySelector("[data-rbf-verdict]")?.remove();
+  if (hodlPsbtLast) hodlPsbtLast.rbf = null;
+  if (output) hodlPsbtInsertOverall(output);
 }
 
 function hodlPsbtLoadRbfUpload(file) {
@@ -15472,16 +15478,41 @@ function hodlPsbtRbfNote(verdict, lines) {
   return html;
 }
 
+// Paints a stored RBF verdict. The lines are built here, at paint time, so a
+// language switch re-translates them; the record itself holds no text.
+function hodlPsbtPaintRbf(output, rbf, network) {
+  output.querySelector?.("[data-rbf-verdict]")?.remove?.();
+  let verdict = rbf.verdict, lines;
+  try {
+    lines = rbf.entries.map((entry) => {
+      if (entry.item) return { code: entry.code, message: hodlPsbtRbfItemLine(entry.item, network) };
+      if (entry.code === "replacement-raw") return { code: entry.code, message: hodlT("Inspect the fee-bump PSBT, not a raw transaction.") };
+      if (entry.code === "original-unreadable") return { code: entry.code, message: hodlT("The original transaction could not be read. Check the paste and Inspect again.") };
+      return null;
+    }).filter(Boolean);
+  } catch {
+    // A line that cannot be written must not take the verdict with it: the
+    // note is painted without its list, and a green one is not kept.
+    lines = [];
+    if (verdict === "green") verdict = "amber";
+  }
+  output.insertAdjacentHTML("afterbegin", hodlPsbtRbfNote(verdict, lines));
+  hodlPsbtInsertOverall(output);
+}
+
 // The fee-bump check (preview): compare the transaction the user broadcast
 // with the replacement PSBT being inspected and fail closed — a bump is
 // clean only when the payments are provably intact and the extra fee comes
 // out of the user's own change (Electrum GHSA-6jp4-8v48-cc5v).
-function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network) {
+function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network, keep) {
   let raw = String(document.getElementById("psbt-rbf-original")?.value || "").trim();
-  if (!raw) return null;
-  let result = null, note;
+  if (!raw) {
+    if (keep && typeof keep === "object") keep.rbf = null;
+    return null;
+  }
+  let result = null, record = { verdict: "amber", entries: [] };
   if (kind !== "psbt") {
-    note = hodlPsbtRbfNote("amber", [{ code: "replacement-raw", message: hodlT("Inspect the fee-bump PSBT, not a raw transaction.") }]);
+    record = { verdict: "amber", entries: [{ code: "replacement-raw", item: null }] };
   } else {
     let original = null;
     try {
@@ -15490,7 +15521,7 @@ function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network) {
     } catch {
       // The original is the only side this failure can be blamed on.
       result = null;
-      note = hodlPsbtRbfNote("amber", [{ code: "original-unreadable", message: hodlT("The original transaction could not be read. Check the paste and Inspect again.") }]);
+      record = { verdict: "amber", entries: [{ code: "original-unreadable", item: null }] };
     }
     if (original) {
       try {
@@ -15498,17 +15529,17 @@ function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network) {
         let ownership = hodlSessionOwnership(network);
         let ownsScript = ownership.size === 0 ? null : (scriptHex) => matchOwnership(ownership, hodlHex.decode(scriptHex)).state === "ours";
         result = hodlCheckRbfReplacement({ original, replacement, ownsScript });
-        let lines = result.verdict === "neutral" ? [] : result.items.map((item) => ({ code: item.code, message: hodlPsbtRbfItemLine(item, network) }));
-        note = hodlPsbtRbfNote(result.verdict, lines);
+        record = { verdict: result.verdict, entries: result.verdict === "neutral" ? [] : result.items.map((item) => ({ code: item.code, item })) };
       } catch {
         // The inspected PSBT failed to normalize or compare: never blame the
         // original, and never pass.
         result = null;
-        note = hodlPsbtRbfNote("amber", []);
+        record = { verdict: "amber", entries: [] };
       }
     }
   }
-  output.insertAdjacentHTML("afterbegin", note);
+  if (keep && typeof keep === "object") keep.rbf = record;
+  hodlPsbtPaintRbf(output, record, network);
   return result;
 }
 async function hodlPsbtLoadAuditUpload(chosen) {
@@ -15580,8 +15611,9 @@ function hodlRunPsbt() {
     let audit = hodlPsbtPrependSignerAudit(output, bytes, kind, network);
     // The RBF verdict is prepended after the audit so it
     // renders above it (Electrum GHSA-6jp4-8v48-cc5v).
-    hodlPsbtPrependRbfCheck(output, bytes, kind, network);
-    hodlPsbtLast = { kind, parsed, sourceTag, checkedAt, network, limits, audit };
+    let keep = {};
+    hodlPsbtPrependRbfCheck(output, bytes, kind, network, keep);
+    hodlPsbtLast = { kind, parsed, sourceTag, checkedAt, network, limits, audit, rbf: keep.rbf ?? null };
     hodlJournalLog("inspect", kind, "psbt");
   } catch (exception) {
     hodlPsbtLast = null;
