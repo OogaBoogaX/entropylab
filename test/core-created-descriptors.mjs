@@ -27,3 +27,24 @@ export const CORE_CREATED_DESCRIPTORS = [
   { descriptor: "wpkh(tpubD6NzVbkrYhZ4XRXcqdzHxWiWi9SqzQ16EsXxdYb5Bn3AtFu8iT7269RzdcSeabw3gN31TmLUNa16jxJ1UBiQ1gRs9HMtNEKB6mY7AgHGBtk/84h/1h/0h/1/*)#p6la26vh",
     id: "998e4918ab5a34896501a1702793ab6b1382864453b2e741d7803125ebecb558" },
 ];
+
+// Five more records from the same Bitcoin Core v32.1.0, on a regtest node with
+// no network connections: descriptors given to `importdescriptors` in a blank
+// wallet. The private keys were throwaways; only the stored public text and the
+// record id are kept. They cover shapes a created wallet does not have: a
+// hardened wildcard, an origin together with hardened steps after the key, a
+// multisig with two keys, and a descriptor already written with apostrophes.
+// (Core refuses an uppercase H marker: "Key path value '44H' is not a valid
+// uint32", so no record can carry one.)
+export const CORE_IMPORTED_DESCRIPTORS = [
+  { descriptor: "tr(tpubD6NzVbkrYhZ4Y2Ssyik4tEUuzfDrqQa9sTeuteKq3Q7v8q4tSXfw6u2CrEvFYhf2f42wRCSfk8TXFA1wUsNCsQE96P7AXnavmPQUrhKctjv/86h/1h/9h/0/*)#yvaat0x2",
+    id: "8042c99cca6d83f531cbd4eca6a05be5b62573e0b55b7a8f753b0d44bc7e0224" },
+  { descriptor: "wpkh([deadbeef/84h/1h/0h]tpubD6NzVbkrYhZ4Y2Ssyik4tEUuzfDrqQa9sTeuteKq3Q7v8q4tSXfw6u2CrEvFYhf2f42wRCSfk8TXFA1wUsNCsQE96P7AXnavmPQUrhKctjv/7h/0/*)#j6ke5lkj",
+    id: "1094fa950f6939a6ca08f03b7fcfb4ed07a75bceaddea8804b857a359b95c7d8" },
+  { descriptor: "wpkh(tpubD6NzVbkrYhZ4Y2Ssyik4tEUuzfDrqQa9sTeuteKq3Q7v8q4tSXfw6u2CrEvFYhf2f42wRCSfk8TXFA1wUsNCsQE96P7AXnavmPQUrhKctjv/84'/1'/6'/0/*)#f7q40gm4",
+    id: "f1dd39cc2712ee04dc56d7ae70eda29d36190ad58d1dababd1a40708fe061808" },
+  { descriptor: "wpkh(tpubD6NzVbkrYhZ4Y2Ssyik4tEUuzfDrqQa9sTeuteKq3Q7v8q4tSXfw6u2CrEvFYhf2f42wRCSfk8TXFA1wUsNCsQE96P7AXnavmPQUrhKctjv/84h/1h/5h/0/*h)#kjjm3tp3",
+    id: "53fda2c5334ba37cd299d2f5e0b371030f904f448dce3e15f70fff207ea4c2bb" },
+  { descriptor: "wsh(sortedmulti(1,tpubD6NzVbkrYhZ4Y2Ssyik4tEUuzfDrqQa9sTeuteKq3Q7v8q4tSXfw6u2CrEvFYhf2f42wRCSfk8TXFA1wUsNCsQE96P7AXnavmPQUrhKctjv/48h/1h/0h/2h/0/*,tpubD6NzVbkrYhZ4Y2Ssyik4tEUuzfDrqQa9sTeuteKq3Q7v8q4tSXfw6u2CrEvFYhf2f42wRCSfk8TXFA1wUsNCsQE96P7AXnavmPQUrhKctjv/48h/1h/1h/2h/0/*))#6q8y0fq4",
+    id: "37ee7f2519d4f39f97753f6da839f7ab1c172f69abfea63da89d6f78f1ee5010" },
+];

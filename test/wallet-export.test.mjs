@@ -69,7 +69,7 @@ import {
   unserPub,
 } from "./wallet-export-harness.mjs";
 import { BITCOIND, CHAIN_FIXTURES, waitForChainNodeExit, withChainNode } from "./bitcoind-harness.mjs";
-import { CORE_CREATED_BY, CORE_CREATED_DESCRIPTORS } from "./core-created-descriptors.mjs";
+import { CORE_CREATED_BY, CORE_CREATED_DESCRIPTORS, CORE_IMPORTED_DESCRIPTORS } from "./core-created-descriptors.mjs";
 
 const sqliteSrc = read("src/js/sqlite-writer.js");
 const walletSrc = read("src/js/wallet-export.js");
@@ -2027,6 +2027,28 @@ test("the compat form gives Core's own DescriptorID for a wallet Bitcoin Core cr
     const compat = toCompatForm(body);
     assert.equal(idOf(`${compat}#${descriptorChecksum(compat)}`), id, `record id of ${body.slice(0, body.indexOf("(") + 9)}…`);
     assert.ok(!compat.includes("h/") && compat.includes("'/"), "every hardened step is written with an apostrophe");
+  }
+});
+
+// The same check for shapes a created wallet does not have, again against
+// records Bitcoin Core wrote: a hardened wildcard, an origin together with
+// hardened steps after the key, a two-key multisig, taproot, and a descriptor
+// that was already written with apostrophes.
+test("the compat form gives Core's DescriptorID for descriptors Core imported", () => {
+  const { toCompatForm } = loadModule();
+  const idOf = (text) => bytesToHex(sha256(new TextEncoder().encode(text)));
+  assert.equal(CORE_IMPORTED_DESCRIPTORS.length, 5);
+  const bodies = CORE_IMPORTED_DESCRIPTORS.map(({ descriptor }) => descriptor.slice(0, descriptor.lastIndexOf("#")));
+  assert.ok(bodies.some((body) => body.endsWith("/*h)")), "fixture: a hardened wildcard");
+  assert.ok(bodies.some((body) => body.includes("]") && body.includes("h/0/*")), "fixture: an origin and a hardened step after the key");
+  assert.ok(bodies.some((body) => body.startsWith("wsh(sortedmulti(")), "fixture: a multisig");
+  assert.ok(bodies.some((body) => body.includes("'/") && !body.includes("h/")), "fixture: apostrophes as stored");
+  for (const { descriptor, id } of CORE_IMPORTED_DESCRIPTORS) {
+    const hash = descriptor.lastIndexOf("#");
+    const body = descriptor.slice(0, hash);
+    assert.equal(descriptorChecksum(body), descriptor.slice(hash + 1), "fixture: the stored checksum is the descriptor's own");
+    const compat = toCompatForm(body);
+    assert.equal(idOf(`${compat}#${descriptorChecksum(compat)}`), id, `record id of ${body.slice(0, body.indexOf("(") + 9)}…`);
   }
 });
 
