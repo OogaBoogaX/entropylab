@@ -45,7 +45,7 @@ const app = await (async () => {
   Object.assign(globalThis, { __ENTROPYLAB_TEST_HOOKS__: false, document: inert });
   try {
     return await loadAppFunctions(
-      ["hodlCalculateKey", "hodlSelectKey", "hodlCaptureKey", "hodlInvalidateDerivation", "hodlAssertDerivationActive", "hodlBuildMsig", "hodlSelectMsig", "hodlCaptureMsig", "hodlKeyManagerIgnore"],
+      ["hodlCalculateKey", "hodlSelectKey", "hodlCaptureKey", "hodlInvalidateDerivation", "hodlStopDerivation", "hodlAssertDerivationActive", "hodlBuildMsig", "hodlSelectMsig", "hodlCaptureMsig", "hodlKeyManagerIgnore"],
       {
         stubs: {
           HodlDerivationCancelledError,
@@ -144,7 +144,7 @@ const app = await (async () => {
           hodlAssertPrivateKeyKind: unused("hodlAssertPrivateKeyKind"),
           hodlSingleKeyWallet: unused("hodlSingleKeyWallet"),
         },
-        settable: ["hodlKeys", "hodlActiveKey", "hodlMsigs", "hodlActiveMsig", "hodlKeyMode", "hodlWorkspace"],
+        settable: ["hodlKeys", "hodlActiveKey", "hodlMsigs", "hodlActiveMsig", "hodlKeyMode", "hodlWorkspace", "hodlActiveDerivation"],
       },
     );
   } finally {
@@ -280,4 +280,75 @@ test("archiving the active station key mid-derivation is refused and the result 
   assert.equal(origin.result, wallet, "the result did not commit to its originating key");
   assert.deepEqual(adjacent, adjacentBefore, "the derivation overwrote the adjacent key");
   assert.deepEqual(keyCommits, ["key"], "the derivation must commit exactly once");
+});
+
+// --- edits that change the key's inputs while its derivation runs ----------
+//
+// Red team 2026-11-09. A derivation reads its inputs once, then yields while
+// it works; its commit captures the form as it stands. Typing in a field
+// already stops it. Four actions changed the inputs without stopping it: the
+// Method dropdown and the seed-length dropdown (both stop their own click,
+// so the form's click handler never sees them), a word replaced in the
+// Secure entry picker, and "Import into Key Station" from the Core Wallet
+// tab. Each could leave a key whose stored inputs are not the ones its
+// wallet was derived from, so a key file or backup of it restores another
+// wallet. They now call hodlStopDerivation("key") first.
+
+const appSource = (await import("node:fs")).readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
+const sourceOf = (start, end) => {
+  const from = appSource.indexOf(start);
+  assert.ok(from >= 0, `app.js has ${start}`);
+  return appSource.slice(from, appSource.indexOf(end, from + start.length));
+};
+
+test("stopping the key derivation mid-flight cancels the commit", async () => {
+  const keys = keyStation(1);
+  keyCommits.length = 0;
+  const control = { kind: "key", buttonId: null, cancelled: false, rowKeys: [], nodes: [] };
+  app.__set.hodlActiveDerivation(control);
+  try {
+    const wallet = { kind: "wallet", network: "mainnet", masterFingerprint: "aaaa0040" };
+    const { enteredPromise, release } = gatedDerivation(wallet);
+    const pending = app.hodlCalculateKey({ setTotal() {}, step() {} });
+    await enteredPromise;
+    app.hodlStopDerivation("key"); // what each of the four edits now does first
+    assert.equal(control.cancelled, true);
+    release();
+    const result = await outcome(pending);
+    assert.ok(result instanceof HodlDerivationCancelledError, "the derivation must not commit once an edit stopped it; instead it committed");
+    assert.equal(keys[0].result, null, "the key keeps no result from the inputs that were replaced");
+    assert.equal(keyCommits.length, 0, "no key commit ran for the stopped derivation");
+  } finally {
+    app.__set.hodlActiveDerivation(null);
+  }
+});
+
+test("stopping the key derivation leaves a multisig build alone", () => {
+  const control = { kind: "msig", buttonId: null, cancelled: false, rowKeys: [], nodes: [] };
+  app.__set.hodlActiveDerivation(control);
+  try {
+    app.hodlStopDerivation("key");
+    assert.equal(control.cancelled, false, "a key edit does not cancel the multisig workspace's build");
+  } finally {
+    app.__set.hodlActiveDerivation(null);
+  }
+});
+
+test("each edit that replaces the key's inputs stops the running derivation first", () => {
+  const stop = 'hodlStopDerivation("key")';
+  // The Method dropdown: only on a real change, and before the form is redrawn.
+  const method = sourceOf("hodlKeyModeSelectEl.onchange = () => {", "\n};");
+  assert.ok(method.indexOf("=== hodlKeyMode) return;") >= 0 && method.indexOf("=== hodlKeyMode) return;") < method.indexOf(stop), "an unchanged Method stops nothing");
+  assert.ok(method.indexOf(stop) >= 0 && method.indexOf(stop) < method.indexOf("hodlSetMode("), "the Method dropdown stops the derivation before it switches");
+  // The seed length: after the two early returns (locked, unchanged), before the capture.
+  const length = sourceOf("function hodlSetSeedLength(words) {", "\n}\n");
+  assert.equal(length.split(stop).length, 2, "one stop in hodlSetSeedLength");
+  assert.ok(length.lastIndexOf("return;", length.indexOf(stop)) >= 0, "the early returns come first: a refused or unchanged length stops nothing");
+  assert.ok(length.indexOf(stop) < length.indexOf("hodlCaptureKey();"), "the seed-length change stops the derivation before it captures the form");
+  // A word picked, replaced or removed in the Secure entry picker.
+  const picker = sourceOf("function hodlSecureSeedChanged() {", "\n}\n");
+  assert.ok(picker.indexOf(stop) >= 0 && picker.indexOf(stop) < picker.indexOf("hodlInvalidateActiveKeyOutput();"), "the seed picker stops the derivation first");
+  // The Core Wallet import: after its argument check, before it touches the Key Station.
+  const core = sourceOf("function hodlCoreImportIntoStation(item) {", "\n}\n");
+  assert.ok(core.indexOf(stop) >= 0 && core.indexOf(stop) < core.indexOf("hodlFillLabFromKey("), "the Core import stops the derivation before it fills the Key Station");
 });

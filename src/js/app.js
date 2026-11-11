@@ -880,7 +880,15 @@ hodlKeyModes.forEach((mode) => {
 });
 hodlKeyModeSelectEl.entropylabOptionIcon = (value) => hodlCreateKeyMethodIcon(value);
 hodlKeyModeSelectEl.onchange = () => {
-  if (hodlKeyModeSelectEl.value !== hodlKeyMode) hodlSetMode(hodlKeyModeSelectEl.value);
+  if (hodlKeyModeSelectEl.value === hodlKeyMode) return;
+  // A derivation that is still running read its inputs under the old
+  // method, and its commit captures the form as it stands: left alone, the
+  // key would store this method with a wallet derived from the other one,
+  // and a key file or backup of it would restore a different wallet. The
+  // dropdown stops its own click, so the form's click handler (which stops
+  // a derivation on other edits) never sees this one.
+  hodlStopDerivation("key");
+  hodlSetMode(hodlKeyModeSelectEl.value);
 };
 hodlModesEl.appendChild(hodlKeyModeSelectEl);
 // Every path that changes the method moves the control with it. Sync, not
@@ -2247,6 +2255,10 @@ function hodlWalletDatDeps() {
 // "Load inputs to derive" flow (hodlKeyManagerUseInStation).
 function hodlCoreImportIntoStation(item) {
   if (!item?.xprv || typeof item.xprv !== "string") return;
+  // The import replaces the Key Station's inputs. A key derivation still
+  // running from the earlier inputs would otherwise commit into them: a tab
+  // holding this wallet's key with another wallet's addresses.
+  hodlStopDerivation("key");
   let family = /^xprv/.test(item.xprv) ? "mainnet" : "testnet";
   // The wallet's own chain goes to the header picker, the same call a picker
   // click makes, so a regtest wallet derives bcrt1… rather than tb1…. A chain
@@ -7063,6 +7075,9 @@ function hodlSetSeedLength(words) {
     hodlQueueMasterFingerprintPreview(0);
     return;
   }
+  // The length is about to change: a derivation still running from the old
+  // length must not commit (see the Method dropdown's handler).
+  hodlStopDerivation("key");
   hodlCaptureKey();
   let state = hodlKeys[hodlActiveKey];
   hodlTargetWordCount = config.words;
@@ -8189,6 +8204,9 @@ function hodlMountSeedPicker() {
   }).catch(() => {});
 }
 function hodlSecureSeedChanged() {
+  // A word was picked, replaced or removed: a derivation still running took
+  // its copy of the words before this change and must not commit them.
+  hodlStopDerivation("key");
   hodlInvalidateActiveKeyOutput();
   hodlUpdateSeedLengthControl();
   hodlSyncKeyClearButton();
