@@ -15263,13 +15263,18 @@ function hodlPsbtSignerAuditMarkup(audit) {
 // own tier from the rendered section and the analysis's overall state from
 // the summary, so it can never disagree with either. It appears only when
 // the audit ran (an error section carries no tier).
-function hodlPsbtInsertOverall(output) {
+function hodlPsbtInsertOverall(output, rbfStored = "") {
   let section = output.querySelector?.("[data-audit-section]"), tier = section?.dataset?.auditTier;
   if (!tier) return;
-  let rbf = output.querySelector?.("[data-rbf-verdict]")?.dataset?.rbfVerdict || "",
+  // The RBF verdict counts as painted, or as handed in by a paint whose note
+  // could not be written, so a red one is never lost. Only "green", "neutral"
+  // and no verdict at all leave "no problems" open; anything else is at best
+  // a warning, as the note itself shows it.
+  let rbf = output.querySelector?.("[data-rbf-verdict]")?.dataset?.rbfVerdict || rbfStored || "",
+    rbfClear = rbf === "" || rbf === "green" || rbf === "neutral",
     analysis = output.querySelector?.("[data-psbt-analysis-overall]")?.dataset?.psbtAnalysisOverall || "",
     problem = analysis === "problem",
-    state = tier === "fail" || problem || rbf === "red" ? "bad" : tier === "pass" && analysis === "complete" && rbf !== "amber" ? "ok" : "warn",
+    state = tier === "fail" || problem || rbf === "red" ? "bad" : tier === "pass" && analysis === "complete" && rbfClear ? "ok" : "warn",
     text = state === "bad" ? hodlT("Overall: do not broadcast — see the checks below.") : state === "ok" ? hodlT("Overall: no problems in the listed checks.") : hodlT("Overall: review the warnings below.");
   output.querySelector?.("[data-psbt-overall]")?.remove?.();
   section.insertAdjacentHTML("beforebegin", "<p data-psbt-overall data-psbt-overall-state='" + state + "' class='psbt-" + state + "'><strong>" + text + "</strong></p>");
@@ -15339,10 +15344,19 @@ function hodlPsbtRetireRbfUploads() {
 // from: any change to either side retires it, so a green verdict can never
 // sit next to a different original.
 function hodlPsbtClearRbfVerdict() {
-  let output = document.getElementById("psbt-out");
-  output?.querySelector("[data-rbf-verdict]")?.remove();
+  let output = document.getElementById("psbt-out"), note = output?.querySelector("[data-rbf-verdict]"),
+    retired = Boolean(note || hodlPsbtLast?.rbf);
+  note?.remove();
   if (hodlPsbtLast) hodlPsbtLast.rbf = null;
   if (output) hodlPsbtInsertOverall(output);
+  // A retired verdict must be one the user can compute again. The run stamp
+  // ignores surrounding whitespace, so an edit that is undone still matches
+  // it and Inspect would stay off: forget the stamp and let the ordinary
+  // input sync decide, as retiring the signer audit does.
+  if (retired) {
+    delete hodlPsbtInspected["psbt-go"];
+    hodlSyncPsbtControls();
+  }
 }
 
 function hodlPsbtLoadRbfUpload(file) {
@@ -15481,23 +15495,29 @@ function hodlPsbtRbfNote(verdict, lines) {
 // Paints a stored RBF verdict. The lines are built here, at paint time, so a
 // language switch re-translates them; the record itself holds no text.
 function hodlPsbtPaintRbf(output, rbf, network) {
-  output.querySelector?.("[data-rbf-verdict]")?.remove?.();
-  let verdict = rbf.verdict, lines;
+  let verdict = rbf.verdict;
   try {
-    lines = rbf.entries.map((entry) => {
-      if (entry.item) return { code: entry.code, message: hodlPsbtRbfItemLine(entry.item, network) };
-      if (entry.code === "replacement-raw") return { code: entry.code, message: hodlT("Inspect the fee-bump PSBT, not a raw transaction.") };
-      if (entry.code === "original-unreadable") return { code: entry.code, message: hodlT("The original transaction could not be read. Check the paste and Inspect again.") };
-      return null;
-    }).filter(Boolean);
-  } catch {
-    // A line that cannot be written must not take the verdict with it: the
-    // note is painted without its list, and a green one is not kept.
-    lines = [];
-    if (verdict === "green") verdict = "amber";
+    output.querySelector?.("[data-rbf-verdict]")?.remove?.();
+    let lines;
+    try {
+      lines = rbf.entries.map((entry) => {
+        if (entry.item) return { code: entry.code, message: hodlPsbtRbfItemLine(entry.item, network) };
+        if (entry.code === "replacement-raw") return { code: entry.code, message: hodlT("Inspect the fee-bump PSBT, not a raw transaction.") };
+        if (entry.code === "original-unreadable") return { code: entry.code, message: hodlT("The original transaction could not be read. Check the paste and Inspect again.") };
+        return null;
+      }).filter(Boolean);
+    } catch {
+      // A line that cannot be written must not take the verdict with it: the
+      // note is painted without its list, and a green one is not kept.
+      lines = [];
+      if (verdict === "green") verdict = "amber";
+    }
+    output.insertAdjacentHTML("afterbegin", hodlPsbtRbfNote(verdict, lines));
+  } finally {
+    // Even if the note itself could not be painted, the Overall line counts
+    // the verdict it stands for.
+    hodlPsbtInsertOverall(output, verdict);
   }
-  output.insertAdjacentHTML("afterbegin", hodlPsbtRbfNote(verdict, lines));
-  hodlPsbtInsertOverall(output);
 }
 
 // The fee-bump check (preview): compare the transaction the user broadcast

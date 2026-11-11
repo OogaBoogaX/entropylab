@@ -559,14 +559,22 @@ test("editing the RBF original retires the rendered verdict", () => {
   let removed = 0;
   const verdict = { remove: () => { removed += 1; } };
   const out = { querySelector: (selector) => (selector === "[data-rbf-verdict]" ? verdict : null) };
+  let synced = 0;
   const context = vm.createContext({
     document: { getElementById: (id) => (id === "psbt-out" ? out : null) },
     hodlPsbtLast: null,
     hodlPsbtInsertOverall: () => {},
+    hodlPsbtInspected: { "psbt-go": "stamp", "nonce-go": "other" },
+    hodlSyncPsbtControls: () => { synced += 1; },
   });
   vm.runInContext(extract("hodlPsbtClearRbfVerdict"), context);
   context.hodlPsbtClearRbfVerdict();
   assert.equal(removed, 1);
+  // The retired verdict can be computed again: an edit that is undone leaves
+  // the run stamp matching, so the stamp goes and the input sync decides.
+  assert.equal("psbt-go" in context.hodlPsbtInspected, false, "the Inspector's run stamp is forgotten");
+  assert.equal(context.hodlPsbtInspected["nonce-go"], "other", "the other card's stamp is untouched");
+  assert.equal(synced, 1, "the controls are synced once");
 });
 
 test("retiring the signer audit also retires the RBF verdict", () => {
@@ -730,6 +738,8 @@ test("retiring the RBF verdict retires the record and recomputes the overall lin
     document: { getElementById: (id) => (id === "psbt-out" ? out : null) },
     hodlPsbtLast: { rbf: { verdict: "red", entries: [] } },
     hodlPsbtInsertOverall: () => { overall += 1; },
+    hodlPsbtInspected: { "psbt-go": "stamp" },
+    hodlSyncPsbtControls: () => {},
   });
   vm.runInContext(extract("hodlPsbtClearRbfVerdict"), context);
   context.hodlPsbtClearRbfVerdict();
@@ -737,24 +747,53 @@ test("retiring the RBF verdict retires the record and recomputes the overall lin
   assert.equal(context.hodlPsbtLast.rbf, null, "the record is retired");
   assert.equal(overall, 1, "the overall line is recomputed");
 
-  // No #psbt-out: nothing throws, the record is still retired.
+  // No #psbt-out: nothing throws, the record is still retired, and a record
+  // with no note on screen still counts as a retired verdict.
+  let missingSynced = 0;
   const missing = vm.createContext({
     document: { getElementById: () => null },
     hodlPsbtLast: { rbf: { verdict: "red", entries: [] } },
     hodlPsbtInsertOverall: () => { throw new Error("must not run without #psbt-out"); },
+    hodlPsbtInspected: { "psbt-go": "stamp" },
+    hodlSyncPsbtControls: () => { missingSynced += 1; },
   });
   vm.runInContext(extract("hodlPsbtClearRbfVerdict"), missing);
   missing.hodlPsbtClearRbfVerdict();
   assert.equal(missing.hodlPsbtLast.rbf, null);
+  assert.equal("psbt-go" in missing.hodlPsbtInspected, false);
+  assert.equal(missingSynced, 1);
 
-  // No cached run: nothing throws.
+  // No cached run and no note: nothing was retired, so nothing throws, the
+  // run stamp stays and Inspect is not re-enabled by typing in the field.
   const none = vm.createContext({
     document: { getElementById: () => null },
     hodlPsbtLast: null,
     hodlPsbtInsertOverall: () => { throw new Error("must not run without #psbt-out"); },
+    hodlPsbtInspected: { "psbt-go": "stamp" },
+    hodlSyncPsbtControls: () => { throw new Error("nothing was retired: the controls must not be synced"); },
   });
   vm.runInContext(extract("hodlPsbtClearRbfVerdict"), none);
   none.hodlPsbtClearRbfVerdict();
+  assert.equal(none.hodlPsbtInspected["psbt-go"], "stamp");
+});
+
+test("a repaint over an existing inspection puts the note on top, as the first paint does", () => {
+  const { context } = rbfHarness([OURS_HEX]);
+  const output = noteOutput("<div data-psbt-answer>answer</div><div data-audit-section>audit</div><div>inspection</div>");
+  context.hodlPsbtPaintRbf(output, { verdict: "red", entries: [] }, "mainnet");
+  assert.ok(output.html.startsWith('<div class="edge-note is-private" data-rbf-verdict="red">'), "the note is the first thing in the output");
+  assert.ok(output.html.endsWith("<div data-psbt-answer>answer</div><div data-audit-section>audit</div><div>inspection</div>"), "nothing after it moved");
+});
+
+test("the Overall line is handed the verdict even when the note cannot be painted", () => {
+  const { context } = rbfHarness([OURS_HEX]);
+  const handed = [];
+  context.hodlPsbtInsertOverall = (output, stored) => { handed.push(stored); };
+  context.hodlPsbtPaintRbf(noteOutput(), { verdict: "red", entries: [] }, "mainnet");
+  assert.deepEqual(handed, ["red"], "a normal paint hands the verdict over");
+  const broken = { querySelector: () => null, insertAdjacentHTML() { throw new Error("paint failed"); } };
+  assert.throws(() => context.hodlPsbtPaintRbf(broken, { verdict: "red", entries: [] }, "mainnet"), /paint failed/);
+  assert.deepEqual(handed, ["red", "red"], "a failed paint still hands the verdict over");
 });
 
 test("a line that cannot be written never takes the verdict with it, and never leaves green", () => {
