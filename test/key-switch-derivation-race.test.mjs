@@ -352,3 +352,78 @@ test("each edit that replaces the key's inputs stops the running derivation firs
   const core = sourceOf("function hodlCoreImportIntoStation(item) {", "\n}\n");
   assert.ok(core.indexOf(stop) >= 0 && core.indexOf(stop) < core.indexOf("hodlFillLabFromKey("), "the Core import stops the derivation before it fills the Key Station");
 });
+
+// The same two edits, run for real: the app's own hodlSetSeedLength and
+// hodlSecureSeedChanged with the app's own hodlStopDerivation, against a
+// derivation control of the kind hodlDeriveWithProgress registers for the
+// Key Station ({ kind: "key", ... } from hodlHandleDerivationButton("key", ...)).
+const editHandlers = await loadAppFunctions(["hodlSetSeedLength", "hodlSecureSeedChanged", "hodlStopDerivation"], {
+  stubs: {
+    hodlSetDerivationButtonState: () => {},
+    hodlSeedLengths: { 12: { words: 12 }, 24: { words: 24 } },
+    hodlDiceMethod: "coldcard",
+    hodlSecureSeedHasWords: () => true,
+    hodlSecureKeyOf: () => "owner",
+    hodlUpdateSeedLengthControl: () => {},
+    hodlCaptureKey: () => {},
+    hodlInvalidateActiveKeyOutput: () => {},
+    hodlRenderKeyForm: () => {},
+    hodlRestoreFormFields: () => {},
+    hodlQueueMasterFingerprintPreview: () => {},
+    hodlSyncKeyClearButton: () => {},
+    hodlSyncDeriveButton: () => {},
+  },
+  settable: ["hodlActiveDerivation", "hodlKeys", "hodlActiveKey", "hodlTargetWordCount", "hodlSecureEntryOn"],
+});
+const runningDerivation = (kind = "key") => {
+  const control = { kind, buttonId: null, cancelled: false, rowKeys: [], nodes: [] };
+  editHandlers.__set.hodlActiveDerivation(control);
+  return control;
+};
+
+test("changing the seed length cancels a running key derivation; a refused or unchanged length does not", () => {
+  editHandlers.__set.hodlKeys([{ id: 1, fields: {} }]);
+  editHandlers.__set.hodlActiveKey(0);
+  try {
+    // A real change: 24 words to 12.
+    editHandlers.__set.hodlSecureEntryOn(false);
+    editHandlers.__set.hodlTargetWordCount(24);
+    let control = runningDerivation();
+    editHandlers.hodlSetSeedLength(12);
+    assert.equal(control.cancelled, true, "the derivation running from the 24-word form is stopped");
+
+    // The same length again: nothing changes, nothing is stopped.
+    editHandlers.__set.hodlTargetWordCount(24);
+    control = runningDerivation();
+    editHandlers.hodlSetSeedLength(24);
+    assert.equal(control.cancelled, false, "an unchanged length stops nothing");
+
+    // Secure entry holds words for this key: the change is refused.
+    editHandlers.__set.hodlSecureEntryOn(true);
+    control = runningDerivation();
+    editHandlers.hodlSetSeedLength(12);
+    assert.equal(control.cancelled, false, "a refused length change stops nothing");
+
+    // A multisig build is not the Key Station's derivation.
+    editHandlers.__set.hodlSecureEntryOn(false);
+    editHandlers.__set.hodlTargetWordCount(24);
+    control = runningDerivation("msig");
+    editHandlers.hodlSetSeedLength(12);
+    assert.equal(control.cancelled, false, "a multisig build is left alone");
+  } finally {
+    editHandlers.__set.hodlActiveDerivation(null);
+  }
+});
+
+test("a word change in the Secure entry picker cancels a running key derivation", () => {
+  try {
+    let control = runningDerivation();
+    editHandlers.hodlSecureSeedChanged();
+    assert.equal(control.cancelled, true, "the derivation that copied the earlier words is stopped");
+    control = runningDerivation("msig");
+    editHandlers.hodlSecureSeedChanged();
+    assert.equal(control.cancelled, false, "a multisig build is left alone");
+  } finally {
+    editHandlers.__set.hodlActiveDerivation(null);
+  }
+});
