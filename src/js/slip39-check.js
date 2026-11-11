@@ -90,7 +90,6 @@ const SET_FAILURE = {
   digest: "The shares do not fit together: the digest check failed. At least one share is wrong or from another backup.",
   passphrase: "SLIP-39 passphrases use printable ASCII only: letters, digits, punctuation and spaces.",
   "iteration-exponent": "This backup's iteration exponent is {exponent}, which needs {iterations} PBKDF2 iterations. This page decrypts up to exponent {max}, so it does not freeze. The randomness test does not decrypt and works with any exponent.",
-  "shared-share": "The same share is in both sets. Enter shares of two different wallets.",
   "no-random-values": "{set} has no random values to compare: its thresholds are all 1. Make share sets that need 2 or more shares.",
 };
 const PATTERN_TEXT = {

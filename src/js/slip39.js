@@ -393,13 +393,15 @@ export function compareSlip39Randomness(a, b) {
   return { findings, checked };
 }
 
-const sameShare = (x, y) => COMMON.every(([key]) => x[key] === y[key]) && x.groupIndex === y.groupIndex && x.memberIndex === y.memberIndex && x.memberThreshold === y.memberThreshold && equalBytes(x.value, y.value);
 const shapeOf = ({ identifier, extendable, iterationExponent, groupThreshold, groupCount, length, groups }) => ({ identifier, extendable, iterationExponent, groupThreshold, groupCount, length, groups });
 
 // Two threshold sets, from two throwaway wallets, to the comparison of their
 // random values; or a refusal naming the set ("a" or "b") that does not
-// combine or has no random values, or "shared-share" for a share in both.
-// No passphrase is needed: the random values sit above the encryption.
+// combine or has no random values. A share that is in both sets is not
+// refused: a generator restarted from the same state gives two wallets the
+// same random share, word for word, so it is compared like any other value
+// (one set entered twice shows as "same-backup"). No passphrase is needed:
+// the random values sit above the encryption.
 export function testSlip39Randomness(sharesA, sharesB) {
   const a = slip39RandomValues(sharesA);
   if (!a.ok) return { ...a, set: "a" };
@@ -409,7 +411,6 @@ export function testSlip39Randomness(sharesA, sharesB) {
     return { ...b, set: "b" };
   }
   try {
-    if (sharesA.some((x) => sharesB.some((y) => sameShare(x, y)))) return refuse("shared-share");
     if (!a.values.length) return refuse("no-random-values", { set: "a" });
     if (!b.values.length) return refuse("no-random-values", { set: "b" });
     return { ok: true, ...compareSlip39Randomness(a, b), a: shapeOf(a), b: shapeOf(b) };

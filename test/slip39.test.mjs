@@ -330,11 +330,14 @@ test("the randomness test refuses a set that does not combine, naming the set", 
   assert.equal(outcome.findings, undefined);
 });
 
-test("the randomness test refuses a share entered in both sets, and a set with no random values", () => {
+test("one set entered twice is reported as one backup, never refused; a set with no random values is refused", () => {
+  // The same share in both sets is not refused: a generator restarted from
+  // the same state gives two wallets the same random share, word for word
+  // (test/slip39-reference.test.mjs), and refusing it would hide that.
   const pair = parseAll(vectors[3][1]).shares;
-  const overlap = testSlip39Randomness(pair, parseAll(vectors[3][1]).shares);
-  assert.equal(overlap.ok, false);
-  assert.equal(overlap.reason, "shared-share");
+  const twice = testSlip39Randomness(pair, parseAll(vectors[3][1]).shares);
+  assert.equal(twice.ok, true);
+  assert.deepEqual(twice.findings.map((finding) => finding.kind), ["same-backup"]);
   const single = testSlip39Randomness(parseAll(vectors[0][1]).shares, pair);
   assert.equal(single.ok, false);
   assert.equal(single.set, "a");

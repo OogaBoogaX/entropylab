@@ -326,17 +326,20 @@ test("the randomness test: two different official wallets share nothing", () => 
   showsNothing(ui);
 });
 
-test("the randomness test refuses a set that does not combine, and one share in both sets", () => {
+test("the randomness test refuses a set that does not combine, and reports one set entered twice", () => {
   const ui = mount();
   ui.choose("randomness");
   ui.fill("a", vector(4).mnemonics);
   ui.fill("b", vector(13).mnemonics);
   ui.$("slip39-check-compare").click();
   assert.equal(ui.state(), "failed");
+  assert.deepEqual(ui.findings(), []);
+  // The same shares in both sets: one backup, or a device that made the
+  // same wallet twice. Reported, not refused.
   ui.fill("b", vector(4).mnemonics);
   ui.$("slip39-check-compare").click();
-  assert.equal(ui.state(), "failed");
-  assert.deepEqual(ui.findings(), []);
+  assert.equal(ui.state(), "repeats");
+  assert.deepEqual(ui.findings(), ["same-backup"]);
   // A share that fails to read is marked on its own set's field.
   ui.fill("b", vector(2).mnemonics);
   ui.$("slip39-check-compare").click();

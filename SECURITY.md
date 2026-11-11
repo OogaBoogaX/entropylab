@@ -669,8 +669,12 @@ share and, where 3 or more shares are needed, the shares drawn at random)
 and reports runs of 8 or more bytes repeated between or within the sets,
 a repeated identifier or encrypted secret, and trivial values (all zero,
 one byte repeated, a short block repeated, a counter). It decrypts nothing
-and needs no passphrase. It is a tripwire for generators that repeat or are
-broken, not a measure of randomness: a generator that never repeats can
+and needs no passphrase, and a share entered in both sets is compared, not
+refused: a generator restarted from the same state gives two wallets the
+same random share word for word. The rebuilt values are checked against the
+draws of the SLIP-0039 reference implementation
+(`test/slip39-reference.test.mjs`). It is a tripwire for generators that
+repeat or are broken, not a measure of randomness: a generator that never repeats can
 still be predictable. The panel tells the user to enter throwaway wallets
 only.
 
