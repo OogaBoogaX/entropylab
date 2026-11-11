@@ -152,10 +152,24 @@ var hodlWalletExport = (() => {
   // re-rendering prints the fingerprint and a hex Taproot internal key with
   // HexStr — lowercase — so both are lowercased here and nowhere else:
   // base58 is case-sensitive, and an xpub can contain hex-looking runs.
+  //
+  // The wallet verifier (core-wallet.js) runs this on files this exporter did
+  // not write. A wallet Bitcoin Core creates itself stores its descriptors
+  // with the hardened steps AFTER the key and no origin, for example
+  // wpkh(tpub…/84h/1h/0h/0/*), and Core's compat form writes those steps
+  // with ' as well (checked against bitcoin-wallet v32.1.0: all eight record
+  // ids of a created wallet are the hash of that text). Rewriting only the
+  // origin made every such wallet fail "Descriptor id". A path step is
+  // safe to rewrite where the whole-body substitution above is not: it is a
+  // "/" (or the "<" / ";" of a multipath step), then digits or the "*"
+  // wildcard, then the marker, then "/", ")", ",", "]", ";" or ">". Base58
+  // and hex key text contain none of "/", "<" or ";", so the digits before
+  // a marker inside a key are never preceded by one.
   const toCompatForm = (body) =>
     body
       .replace(/\[[0-9a-fA-F]{8}(?:\/\d+[h'H]?)*\]/g, (origin) =>
         origin.slice(0, 9).toLowerCase() + origin.slice(9).replace(/\d+[h'H](?=[/\]])/g, (step) => `${step.slice(0, -1)}'`))
+      .replace(/([/<;])(\d+|\*)[hH](?=[/),\];>])/g, "$1$2'")
       .replace(/tr\([0-9a-fA-F]{64},/g, (nums) => `tr(${nums.slice(3, 67).toLowerCase()},`);
 
   const stripChecksum = (descriptor) => {

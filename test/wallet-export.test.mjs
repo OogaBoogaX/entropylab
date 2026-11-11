@@ -69,6 +69,7 @@ import {
   unserPub,
 } from "./wallet-export-harness.mjs";
 import { BITCOIND, CHAIN_FIXTURES, waitForChainNodeExit, withChainNode } from "./bitcoind-harness.mjs";
+import { CORE_CREATED_BY, CORE_CREATED_DESCRIPTORS, CORE_IMPORTED_DESCRIPTORS } from "./core-created-descriptors.mjs";
 
 const sqliteSrc = read("src/js/sqlite-writer.js");
 const walletSrc = read("src/js/wallet-export.js");
@@ -2002,6 +2003,76 @@ test("multisig thresholds and key counts outside Core's limits fail closed", () 
   // The limits themselves are inclusive: 20 keys in wsh, 15 in sh still export.
   assert.ok(buildWalletRecords(msigWallet("p2wsh", wshBody(20)), false, deps, 0).length > 0);
   assert.ok(buildWalletRecords(msigWallet("p2sh", shBody(15)), false, deps, 0).length > 0);
+});
+
+// Red team 2026-11-09: toCompatForm rewrote hardened markers only inside a
+// [fingerprint/path] origin. That is right for everything this exporter
+// writes, but the wallet verifier runs it on uploaded files too, and a wallet
+// Bitcoin Core creates itself keeps its hardened steps AFTER the key with no
+// origin. Core's compat form writes those with ' as well, so every such
+// wallet failed "Descriptor id" and its import and download stayed locked.
+// The records below are real: see test/core-created-descriptors.mjs.
+test("the compat form gives Core's own DescriptorID for a wallet Bitcoin Core created", () => {
+  const { toCompatForm } = loadModule();
+  const idOf = (text) => bytesToHex(sha256(new TextEncoder().encode(text)));
+  assert.equal(CORE_CREATED_DESCRIPTORS.length, 8, `eight descriptors from ${CORE_CREATED_BY}`);
+  for (const { descriptor, id } of CORE_CREATED_DESCRIPTORS) {
+    const hash = descriptor.lastIndexOf("#");
+    const body = descriptor.slice(0, hash);
+    assert.equal(descriptorChecksum(body), descriptor.slice(hash + 1), "fixture: the stored checksum is the descriptor's own");
+    assert.ok(body.includes("h/") && !body.includes("["), "fixture: hardened steps after the key, no origin");
+    // What Core hashes is not the stored text...
+    assert.notEqual(idOf(descriptor), id, "the stored text does not hash to the record id");
+    // ...but the compat form with its own checksum.
+    const compat = toCompatForm(body);
+    assert.equal(idOf(`${compat}#${descriptorChecksum(compat)}`), id, `record id of ${body.slice(0, body.indexOf("(") + 9)}…`);
+    assert.ok(!compat.includes("h/") && compat.includes("'/"), "every hardened step is written with an apostrophe");
+  }
+});
+
+// The same check for shapes a created wallet does not have, again against
+// records Bitcoin Core wrote: a hardened wildcard, an origin together with
+// hardened steps after the key, a two-key multisig, taproot, and a descriptor
+// that was already written with apostrophes.
+test("the compat form gives Core's DescriptorID for descriptors Core imported", () => {
+  const { toCompatForm } = loadModule();
+  const idOf = (text) => bytesToHex(sha256(new TextEncoder().encode(text)));
+  assert.equal(CORE_IMPORTED_DESCRIPTORS.length, 5);
+  const bodies = CORE_IMPORTED_DESCRIPTORS.map(({ descriptor }) => descriptor.slice(0, descriptor.lastIndexOf("#")));
+  assert.ok(bodies.some((body) => body.endsWith("/*h)")), "fixture: a hardened wildcard");
+  assert.ok(bodies.some((body) => body.includes("]") && body.includes("h/0/*")), "fixture: an origin and a hardened step after the key");
+  assert.ok(bodies.some((body) => body.startsWith("wsh(sortedmulti(")), "fixture: a multisig");
+  assert.ok(bodies.some((body) => body.includes("'/") && !body.includes("h/")), "fixture: apostrophes as stored");
+  for (const { descriptor, id } of CORE_IMPORTED_DESCRIPTORS) {
+    const hash = descriptor.lastIndexOf("#");
+    const body = descriptor.slice(0, hash);
+    assert.equal(descriptorChecksum(body), descriptor.slice(hash + 1), "fixture: the stored checksum is the descriptor's own");
+    const compat = toCompatForm(body);
+    assert.equal(idOf(`${compat}#${descriptorChecksum(compat)}`), id, `record id of ${body.slice(0, body.indexOf("(") + 9)}…`);
+  }
+});
+
+test("the compat form rewrites path steps and never key text", () => {
+  const { toCompatForm } = loadModule();
+  // Key-shaped text that ends in a digit and "h" right before the path: the
+  // case a body-wide substitution corrupts. toCompatForm works on text, so
+  // these need not be valid keys.
+  const key = `xpub${"A".repeat(100)}7h`;
+  const other = `tpub${"B".repeat(100)}3H`;
+  for (const [body, compat] of [
+    [`wpkh(${key}/84h/0h/0h/0/*)`, `wpkh(${key}/84'/0'/0'/0/*)`],
+    [`wpkh(${key}/84H/0h/0'/1/*)`, `wpkh(${key}/84'/0'/0'/1/*)`],
+    [`pkh(${key}/0/*h)`, `pkh(${key}/0/*')`],
+    [`wpkh(${key}/0/*)`, `wpkh(${key}/0/*)`],
+    [`wsh(sortedmulti(2,${key}/1h/*,${other}/2h/0/*))`, `wsh(sortedmulti(2,${key}/1'/*,${other}/2'/0/*))`],
+    [`wpkh(${key}/84h/<0h;1h>/*)`, `wpkh(${key}/84'/<0';1'>/*)`],
+    [`wpkh([0000AAAA/84h/0h/0h]${key}/0/*)`, `wpkh([0000aaaa/84'/0'/0']${key}/0/*)`],
+    [`tr(${key}/86h/0h/0h/0/*)`, `tr(${key}/86'/0'/0'/0/*)`],
+  ]) {
+    assert.equal(toCompatForm(body), compat, body.slice(0, 5));
+    // Idempotent: the compat form of a compat form is itself.
+    assert.equal(toCompatForm(compat), compat);
+  }
 });
 
 // PR1034-4: Core's compat form re-renders the key origin from parsed bytes,
