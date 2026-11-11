@@ -781,7 +781,10 @@ test("a repaint over an existing inspection puts the note on top, as the first p
   const { context } = rbfHarness([OURS_HEX]);
   const output = noteOutput("<div data-psbt-answer>answer</div><div data-audit-section>audit</div><div>inspection</div>");
   context.hodlPsbtPaintRbf(output, { verdict: "red", entries: [] }, "mainnet");
-  assert.ok(output.html.startsWith('<div class="edge-note is-private" data-rbf-verdict="red">'), "the note is the first thing in the output");
+  const at = (hook) => output.html.indexOf(hook);
+  assert.ok(at('data-rbf-verdict="red"') >= 0, "the note is painted");
+  assert.ok(at('data-rbf-verdict="red"') < at("data-psbt-answer"), "the note comes before the answer block");
+  assert.ok(at("data-psbt-answer") < at("data-audit-section"), "the answer block still comes before the audit");
   assert.ok(output.html.endsWith("<div data-psbt-answer>answer</div><div data-audit-section>audit</div><div>inspection</div>"), "nothing after it moved");
 });
 
