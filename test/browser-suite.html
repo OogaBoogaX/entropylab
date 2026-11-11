@@ -916,6 +916,31 @@
     if (!keyboard.hidden) toggle.click();
   });
 
+  await test("a derived private key keeps its format and input, not the WIF slot's", async () => {
+    const wifA = "L2GrQmPNBLNTcWQpz2LpX3XbNiSowwPg2tGzMjYLdwHAxwyGaQFt";
+    const hexB = "b30b812614dadbdbc64fc33d7778371ec0edc69ebcff907edc5537bd6aa15da0";
+    await chooseMode("Private key");
+    await until(() => document.getElementById("key"), "private-key input");
+    document.querySelector('input[name="kk"][value="wif"]').click();
+    input(document.getElementById("key"), wifA);
+    document.querySelector('input[name="kk"][value="hex-key"]').click();
+    input(document.getElementById("key"), hexB);
+    await until(() => !document.getElementById("go").disabled, "Derive Key to enable");
+    document.getElementById("go").click();
+    await until(() => document.getElementById("calc-card").classList.contains("is-result-view"), "the result view");
+    equal(document.querySelector('input[name="kk"]:checked').value, "hex-key");
+    equal(document.getElementById("key").value, hexB);
+    document.getElementById("key-edit-inputs").click();
+    await until(() => !document.getElementById("calc-card").classList.contains("is-result-view"), "the edit view");
+    equal(document.querySelector('input[name="kk"]:checked').value, "hex-key");
+    equal(document.getElementById("key").value, hexB);
+    document.querySelector('input[name="kk"][value="wif"]').click();
+    equal(document.getElementById("key").value, wifA);
+    await until(() => !document.getElementById("wipe").disabled, "Wipe to enable");
+    document.getElementById("wipe").click();
+    await wait(0);
+  });
+
   await test("hex, seed, and private-key inputs cannot inject markup", async () => {
     const payload = '<img src=x onerror="window.__browserTestInjected=true">';
     await chooseMode("Number bases");

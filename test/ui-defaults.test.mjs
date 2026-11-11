@@ -675,7 +675,11 @@ test("seed phrase mode has a lowercase Jade-style on-screen keyboard", () => {
   assert.match(app, /function hodlHexPrivateKeyPrefix\(value\)/);
   assert.match(app, /function hodlWifPrivateKeyPrefix\(value,network\)/);
   assert.match(app, /function hodlMiniPrivateKeyPrefix\(value\)/);
-  assert.match(app, /name="kk" value="wif" checked/);
+  assert.doesNotMatch(app, /name="kk" value="wif" checked/);
+  assert.match(app, /plainKind=hodlNormalizePrivateKeyKind\(hodlKeys\[hodlActiveKey\]\?\.fields\?\.keyKind\)/);
+  for (const kind of ["wif", "hex-key", "minikey", "brain"]) {
+    assert.ok(app.includes(`name="kk" value="${kind}"\${plainChecked("${kind}")}`), `the plain ${kind} radio takes the stored format`);
+  }
   assert.match(app, /name="kk" value="hex-key"/);
   assert.match(app, /hodlT\("WIF"\)/);
   assert.match(app, /hodlT\("Private key hex"\)/);
