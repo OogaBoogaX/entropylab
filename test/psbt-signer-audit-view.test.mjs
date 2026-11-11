@@ -714,16 +714,25 @@ test("a language change paints the RBF verdict again, after the audit", async ()
 
   // A retired verdict that held the Overall line off keeps it off: the
   // audit is painted again, and the line it brings back is removed.
-  let overallRemoved = 0;
+  let overallRemoved = 0, lineState = "ok";
   const output = outputs["psbt-out"], find = output.querySelector?.bind(output);
-  output.querySelector = (selector) => (selector === "[data-psbt-overall]" ? { remove() { overallRemoved += 1; } } : find ? find(selector) : null);
+  output.querySelector = (selector) => (selector === "[data-psbt-overall]" ? { dataset: { psbtOverallState: lineState }, remove() { overallRemoved += 1; } } : find ? find(selector) : null);
   app.hodlRefreshPsbtLocale();
   assert.equal(overallRemoved, 0, "nothing is held: the line stays");
-  last.overallHeld = true;
+  last.overallHeld = "bad";
   painted.length = 0;
   app.hodlRefreshPsbtLocale();
   assert.deepEqual(painted, ["audit"], "the audit is still painted");
-  assert.equal(overallRemoved, 1, "the held Overall line is removed after the repaint");
+  assert.equal(overallRemoved, 1, "a line milder than the held one is removed after the repaint");
+  lineState = "warn";
+  app.hodlRefreshPsbtLocale();
+  assert.equal(overallRemoved, 2, "a warning is still milder than a held do-not-broadcast");
+  lineState = "bad";
+  app.hodlRefreshPsbtLocale();
+  assert.equal(overallRemoved, 2, "a line as severe as the held one stays");
+  last.overallHeld = "warn";
+  app.hodlRefreshPsbtLocale();
+  assert.equal(overallRemoved, 2, "a more severe line than the held one stays");
 });
 
 test("Show more's full repaint keeps the RBF verdict, after the audit", async () => {
@@ -751,14 +760,17 @@ test("Show more's full repaint keeps the RBF verdict, after the audit", async ()
   assert.deepEqual(painted, ["audit"]);
 
   // The same hold on the full Show-more repaint.
-  let overallRemoved = 0;
+  let overallRemoved = 0, lineState = "ok";
   const find = output.querySelector?.bind(output);
-  output.querySelector = (selector) => (selector === "[data-psbt-overall]" ? { remove() { overallRemoved += 1; } } : find ? find(selector) : null);
-  last.overallHeld = true;
+  output.querySelector = (selector) => (selector === "[data-psbt-overall]" ? { dataset: { psbtOverallState: lineState }, remove() { overallRemoved += 1; } } : find ? find(selector) : null);
+  last.overallHeld = "bad";
   painted.length = 0;
   app.hodlPsbtShowMore({ target: { closest: () => ({ dataset: { psbtMore: "inputs" } }) } });
   assert.deepEqual(painted, ["audit"], "the audit is still painted");
-  assert.equal(overallRemoved, 1, "the held Overall line is removed after the repaint");
+  assert.equal(overallRemoved, 1, "a line milder than the held one is removed after the repaint");
+  lineState = "bad";
+  app.hodlPsbtShowMore({ target: { closest: () => ({ dataset: { psbtMore: "inputs" } }) } });
+  assert.equal(overallRemoved, 1, "a line as severe as the held one stays");
 });
 
 test("a language change paints the audit after the answer block and recomputes the overall line", async () => {

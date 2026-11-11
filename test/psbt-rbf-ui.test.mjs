@@ -800,15 +800,16 @@ test("retiring a verdict never turns the Overall line more favourable without a 
     });
     vm.runInContext(extract("hodlPsbtClearRbfVerdict"), context);
     context.hodlPsbtClearRbfVerdict();
-    const held = context.hodlPsbtLast.overallHeld === true;
-    if (line.removed) return held ? "removed, held" : "removed, NOT held";
-    return held ? line.dataset.psbtOverallState + ", held" : line.dataset.psbtOverallState;
+    const held = context.hodlPsbtLast.overallHeld;
+    if (line.removed) return "removed, held " + held;
+    return held ? line.dataset.psbtOverallState + ", held " + held : line.dataset.psbtOverallState;
   };
   // A red or amber verdict over a passing audit: the line goes, it does not turn green.
-  assert.equal(retire("bad", "ok"), "removed, held", "do-not-broadcast never becomes no-problems by an edit");
-  assert.equal(retire("warn", "ok"), "removed, held", "a warning never becomes no-problems by an edit");
-  assert.equal(retire("bad", "warn"), "removed, held", "do-not-broadcast never becomes a mere warning by an edit");
-  // ("held": the run remembers it, so a repaint does not bring the line back.)
+  assert.equal(retire("bad", "ok"), "removed, held bad", "do-not-broadcast never becomes no-problems by an edit");
+  assert.equal(retire("warn", "ok"), "removed, held warn", "a warning never becomes no-problems by an edit");
+  assert.equal(retire("bad", "warn"), "removed, held bad", "do-not-broadcast never becomes a mere warning by an edit");
+  // ("held bad"/"held warn": the run remembers the state that was on screen, so a
+  // repaint does not bring a milder line back.)
   // The audit itself still says so: the line stays as it was.
   assert.equal(retire("bad", "bad"), "bad");
   assert.equal(retire("warn", "warn"), "warn");
@@ -846,7 +847,16 @@ test("a line that cannot be written never takes the verdict with it, and never l
   assert.match(red.html, /data-rbf-verdict="red"/, "a red verdict is still painted");
   assert.doesNotMatch(red.html, /data-rbf-item=/, "without the list it could not write");
   const green = noteOutput();
-  context.hodlPsbtPaintRbf(green, { verdict: "green", entries: [{ code: "fee-increased", item: { code: "fee-increased" } }] }, "mainnet");
+  const greenRecord = { verdict: "green", entries: [{ code: "fee-increased", item: { code: "fee-increased" } }] };
+  context.hodlPsbtPaintRbf(green, greenRecord, "mainnet");
   assert.match(green.html, /data-rbf-verdict="amber"/, "a green verdict whose lines fail is shown amber");
   assert.doesNotMatch(green.html, /data-rbf-verdict="green"/);
+  // The record keeps the downgrade: a later repaint whose lines can be
+  // written does not bring the green note back without a new Inspect.
+  assert.equal(greenRecord.verdict, "amber");
+  context.hodlPsbtRbfItemLine = () => "a line";
+  const again = noteOutput();
+  context.hodlPsbtPaintRbf(again, greenRecord, "mainnet");
+  assert.match(again.html, /data-rbf-verdict="amber"/, "the repaint stays amber");
+  assert.doesNotMatch(again.html, /data-rbf-verdict="green"/);
 });

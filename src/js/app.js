@@ -12137,9 +12137,13 @@ function hodlRefreshPsbtLocale() {
       if (last.audit) hodlPsbtPaintSignerAudit(output, last.audit);
       if (last.rbf) hodlPsbtPaintRbf(output, last.rbf, last.network);
       // A retired RBF verdict that had made the Overall line worse holds
-      // that line off until the next Inspect: a repaint of the audit must
-      // not bring a milder one back (hodlPsbtClearRbfVerdict).
-      if (last.overallHeld) output.querySelector?.("[data-psbt-overall]")?.remove?.();
+      // it off until the next Inspect: a repaint of the audit must not
+      // bring back a line milder than the one that was shown with the
+      // verdict (hodlPsbtClearRbfVerdict). A line at least that severe stays.
+      if (last.overallHeld) {
+        let rank = { bad: 2, warn: 1, ok: 0 }, line = output.querySelector?.("[data-psbt-overall]");
+        if (line && (rank[line.dataset?.psbtOverallState] ?? 0) < (rank[last.overallHeld] ?? 0)) line.remove?.();
+      }
     } catch {
       // The run rendered this once; if it cannot again, the shown result stays.
     }
@@ -13400,8 +13404,11 @@ function hodlPsbtShowMore(event) {
     output.innerHTML = render(options);
     if (last.audit) hodlPsbtPaintSignerAudit(output, last.audit);
     if (last.rbf) hodlPsbtPaintRbf(output, last.rbf, last.network);
-    // As on a language change: a held Overall line stays off.
-    if (last.overallHeld) output.querySelector?.("[data-psbt-overall]")?.remove?.();
+    // As on a language change: a line milder than the held one stays off.
+    if (last.overallHeld) {
+      let rank = { bad: 2, warn: 1, ok: 0 }, line = output.querySelector?.("[data-psbt-overall]");
+      if (line && (rank[line.dataset?.psbtOverallState] ?? 0) < (rank[last.overallHeld] ?? 0)) line.remove?.();
+    }
     if (inputsOpen) {
       let details = output.querySelector?.("[data-psbt-inputs]");
       if (details) details.open = true;
@@ -15366,8 +15373,10 @@ function hodlPsbtClearRbfVerdict() {
     let line = output.querySelector("[data-psbt-overall]"), now = line?.dataset?.psbtOverallState;
     if (line && shown && (rank[now] ?? 0) < (rank[shown] ?? 0)) {
       line.remove();
-      // Held off until the next Inspect, repaints included.
-      if (hodlPsbtLast) hodlPsbtLast.overallHeld = true;
+      // Held off until the next Inspect, repaints included: the run keeps
+      // the state that was on screen, and a repaint only removes a line
+      // milder than that.
+      if (hodlPsbtLast) hodlPsbtLast.overallHeld = shown;
     }
   }
   // A retired verdict must be one the user can compute again. The run stamp
@@ -15529,9 +15538,11 @@ function hodlPsbtPaintRbf(output, rbf, network) {
       }).filter(Boolean);
     } catch {
       // A line that cannot be written must not take the verdict with it: the
-      // note is painted without its list, and a green one is not kept.
+      // note is painted without its list, and a green one is not kept. The
+      // record keeps the downgrade, so a later repaint cannot turn the note
+      // or the Overall line more favourable without a new Inspect.
       lines = [];
-      if (verdict === "green") verdict = "amber";
+      if (verdict === "green") verdict = rbf.verdict = "amber";
     }
     output.insertAdjacentHTML("afterbegin", hodlPsbtRbfNote(verdict, lines));
   } finally {
