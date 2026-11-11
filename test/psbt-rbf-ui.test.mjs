@@ -777,6 +777,42 @@ test("retiring the RBF verdict retires the record and recomputes the overall lin
   assert.equal(none.hodlPsbtInspected["psbt-go"], "stamp");
 });
 
+test("retiring a verdict never turns the Overall line more favourable without a new Inspect", () => {
+  // The Overall line on screen counted the verdict; the double for
+  // hodlPsbtInsertOverall replaces it with the state the line would have
+  // without the verdict, as the real function does.
+  const retire = (shown, without) => {
+    const makeLine = (state) => ({ dataset: { psbtOverallState: state }, removed: false, remove() { this.removed = true; } });
+    let line = makeLine(shown);
+    const out = {
+      querySelector: (selector) => {
+        if (selector === "[data-rbf-verdict]") return { remove() {} };
+        if (selector === "[data-psbt-overall]") return line && !line.removed ? line : null;
+        return null;
+      },
+    };
+    const context = vm.createContext({
+      document: { getElementById: (id) => (id === "psbt-out" ? out : null) },
+      hodlPsbtLast: { rbf: { verdict: "red", entries: [] } },
+      hodlPsbtInsertOverall: () => { line = makeLine(without); },
+      hodlPsbtInspected: { "psbt-go": "stamp" },
+      hodlSyncPsbtControls: () => {},
+    });
+    vm.runInContext(extract("hodlPsbtClearRbfVerdict"), context);
+    context.hodlPsbtClearRbfVerdict();
+    return line.removed ? "removed" : line.dataset.psbtOverallState;
+  };
+  // A red or amber verdict over a passing audit: the line goes, it does not turn green.
+  assert.equal(retire("bad", "ok"), "removed", "do-not-broadcast never becomes no-problems by an edit");
+  assert.equal(retire("warn", "ok"), "removed", "a warning never becomes no-problems by an edit");
+  assert.equal(retire("bad", "warn"), "removed", "do-not-broadcast never becomes a mere warning by an edit");
+  // The audit itself still says so: the line stays as it was.
+  assert.equal(retire("bad", "bad"), "bad");
+  assert.equal(retire("warn", "warn"), "warn");
+  // A green or neutral verdict never changed the line: it stays.
+  assert.equal(retire("ok", "ok"), "ok");
+});
+
 test("a repaint over an existing inspection puts the note on top, as the first paint does", () => {
   const { context } = rbfHarness([OURS_HEX]);
   const output = noteOutput("<div data-psbt-answer>answer</div><div data-audit-section>audit</div><div>inspection</div>");

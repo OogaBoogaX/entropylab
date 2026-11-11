@@ -15348,7 +15348,18 @@ function hodlPsbtClearRbfVerdict() {
     retired = Boolean(note || hodlPsbtLast?.rbf);
   note?.remove();
   if (hodlPsbtLast) hodlPsbtLast.rbf = null;
-  if (output) hodlPsbtInsertOverall(output);
+  if (output && retired) {
+    // The Overall line counted the verdict that is gone. It is worked out
+    // again without it, but never into something more favourable than what
+    // was on screen: a line that would go from "do not broadcast" or a
+    // warning to a milder one without a new Inspect is removed instead. Even
+    // an edit that leaves the same transactions (a trailing space) retires
+    // the verdict, so nothing here may read as a fresh result.
+    let rank = { bad: 2, warn: 1, ok: 0 }, shown = output.querySelector("[data-psbt-overall]")?.dataset?.psbtOverallState;
+    hodlPsbtInsertOverall(output);
+    let line = output.querySelector("[data-psbt-overall]"), now = line?.dataset?.psbtOverallState;
+    if (line && shown && (rank[now] ?? 0) < (rank[shown] ?? 0)) line.remove();
+  }
   // A retired verdict must be one the user can compute again. The run stamp
   // ignores surrounding whitespace, so an edit that is undone still matches
   // it and Inspect would stay off: forget the stamp and let the ordinary
