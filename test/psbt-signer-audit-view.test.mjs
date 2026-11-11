@@ -711,6 +711,19 @@ test("a language change paints the RBF verdict again, after the audit", async ()
   last.rbf = null;
   app.hodlRefreshPsbtLocale();
   assert.deepEqual(painted, ["audit"]);
+
+  // A retired verdict that held the Overall line off keeps it off: the
+  // audit is painted again, and the line it brings back is removed.
+  let overallRemoved = 0;
+  const output = outputs["psbt-out"], find = output.querySelector?.bind(output);
+  output.querySelector = (selector) => (selector === "[data-psbt-overall]" ? { remove() { overallRemoved += 1; } } : find ? find(selector) : null);
+  app.hodlRefreshPsbtLocale();
+  assert.equal(overallRemoved, 0, "nothing is held: the line stays");
+  last.overallHeld = true;
+  painted.length = 0;
+  app.hodlRefreshPsbtLocale();
+  assert.deepEqual(painted, ["audit"], "the audit is still painted");
+  assert.equal(overallRemoved, 1, "the held Overall line is removed after the repaint");
 });
 
 test("Show more's full repaint keeps the RBF verdict, after the audit", async () => {
@@ -736,6 +749,16 @@ test("Show more's full repaint keeps the RBF verdict, after the audit", async ()
   last.rbf = null;
   app.hodlPsbtShowMore({ target: { closest: () => ({ dataset: { psbtMore: "inputs" } }) } });
   assert.deepEqual(painted, ["audit"]);
+
+  // The same hold on the full Show-more repaint.
+  let overallRemoved = 0;
+  const find = output.querySelector?.bind(output);
+  output.querySelector = (selector) => (selector === "[data-psbt-overall]" ? { remove() { overallRemoved += 1; } } : find ? find(selector) : null);
+  last.overallHeld = true;
+  painted.length = 0;
+  app.hodlPsbtShowMore({ target: { closest: () => ({ dataset: { psbtMore: "inputs" } }) } });
+  assert.deepEqual(painted, ["audit"], "the audit is still painted");
+  assert.equal(overallRemoved, 1, "the held Overall line is removed after the repaint");
 });
 
 test("a language change paints the audit after the answer block and recomputes the overall line", async () => {

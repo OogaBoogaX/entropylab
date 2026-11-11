@@ -800,12 +800,15 @@ test("retiring a verdict never turns the Overall line more favourable without a 
     });
     vm.runInContext(extract("hodlPsbtClearRbfVerdict"), context);
     context.hodlPsbtClearRbfVerdict();
-    return line.removed ? "removed" : line.dataset.psbtOverallState;
+    const held = context.hodlPsbtLast.overallHeld === true;
+    if (line.removed) return held ? "removed, held" : "removed, NOT held";
+    return held ? line.dataset.psbtOverallState + ", held" : line.dataset.psbtOverallState;
   };
   // A red or amber verdict over a passing audit: the line goes, it does not turn green.
-  assert.equal(retire("bad", "ok"), "removed", "do-not-broadcast never becomes no-problems by an edit");
-  assert.equal(retire("warn", "ok"), "removed", "a warning never becomes no-problems by an edit");
-  assert.equal(retire("bad", "warn"), "removed", "do-not-broadcast never becomes a mere warning by an edit");
+  assert.equal(retire("bad", "ok"), "removed, held", "do-not-broadcast never becomes no-problems by an edit");
+  assert.equal(retire("warn", "ok"), "removed, held", "a warning never becomes no-problems by an edit");
+  assert.equal(retire("bad", "warn"), "removed, held", "do-not-broadcast never becomes a mere warning by an edit");
+  // ("held": the run remembers it, so a repaint does not bring the line back.)
   // The audit itself still says so: the line stays as it was.
   assert.equal(retire("bad", "bad"), "bad");
   assert.equal(retire("warn", "warn"), "warn");

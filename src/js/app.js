@@ -12136,6 +12136,10 @@ function hodlRefreshPsbtLocale() {
       // come back with it.
       if (last.audit) hodlPsbtPaintSignerAudit(output, last.audit);
       if (last.rbf) hodlPsbtPaintRbf(output, last.rbf, last.network);
+      // A retired RBF verdict that had made the Overall line worse holds
+      // that line off until the next Inspect: a repaint of the audit must
+      // not bring a milder one back (hodlPsbtClearRbfVerdict).
+      if (last.overallHeld) output.querySelector?.("[data-psbt-overall]")?.remove?.();
     } catch {
       // The run rendered this once; if it cannot again, the shown result stays.
     }
@@ -13396,6 +13400,8 @@ function hodlPsbtShowMore(event) {
     output.innerHTML = render(options);
     if (last.audit) hodlPsbtPaintSignerAudit(output, last.audit);
     if (last.rbf) hodlPsbtPaintRbf(output, last.rbf, last.network);
+    // As on a language change: a held Overall line stays off.
+    if (last.overallHeld) output.querySelector?.("[data-psbt-overall]")?.remove?.();
     if (inputsOpen) {
       let details = output.querySelector?.("[data-psbt-inputs]");
       if (details) details.open = true;
@@ -15358,7 +15364,11 @@ function hodlPsbtClearRbfVerdict() {
     let rank = { bad: 2, warn: 1, ok: 0 }, shown = output.querySelector("[data-psbt-overall]")?.dataset?.psbtOverallState;
     hodlPsbtInsertOverall(output);
     let line = output.querySelector("[data-psbt-overall]"), now = line?.dataset?.psbtOverallState;
-    if (line && shown && (rank[now] ?? 0) < (rank[shown] ?? 0)) line.remove();
+    if (line && shown && (rank[now] ?? 0) < (rank[shown] ?? 0)) {
+      line.remove();
+      // Held off until the next Inspect, repaints included.
+      if (hodlPsbtLast) hodlPsbtLast.overallHeld = true;
+    }
   }
   // A retired verdict must be one the user can compute again. The run stamp
   // ignores surrounding whitespace, so an edit that is undone still matches
