@@ -7,9 +7,11 @@
 // Security contract: the entered squares, the pasted text, the passphrase
 // and everything decoded from them live only in this closure and the
 // panel's own DOM: nothing goes to storage, the clipboard, the console or
-// the network. Words appear only after Show words. conceal() hides them
-// again and takes the entered squares, the pasted digits and the picture off
-// the page until Show my copy. clear() (the panel's Clear, Clear Fields, End
+// the network. The passphrase field shows bullets only (PassphraseVault, as
+// the app's other passphrase fields). Words appear only after Show words.
+// conceal() hides them again and takes the entered squares, the pasted
+// digits, the picture, the list of wrong squares and the mask note off the
+// page until Show my copy. clear() (the panel's Clear, Clear Fields, End
 // Session and pagehide) empties every field and the result and zeroes every
 // buffer the panel owns; a copy past the correction limit never shows a seed.
 
@@ -17,6 +19,7 @@ import { SEEDQR_GRID_SIZES, checkSeedQrGrid, parseSeedQrText, seedQrLayout, seed
 import { bip39English, seedFromIndices } from "./bip39.js";
 import { HDKey } from "./hdkey.js";
 import { addressFor } from "./addresses.js";
+import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
 
 const ADDRESS_COUNT = 3;
 const coinType = (network) => (network === "mainnet" ? 0 : 1);
@@ -87,7 +90,8 @@ function sayWith(translate) {
 
 // Master fingerprint and the first m/84'/coin'/0'/0/i addresses on the
 // page's network (coin type 1' and tb1/bcrt1 off mainnet), from the indices
-// alone; every seed and private key buffer is wiped before return.
+// and the passphrase's UTF-8 bytes; every seed and private key buffer is
+// wiped before return (the caller owns and wipes the passphrase).
 function defaultDerive(indices, passphrase, network = "mainnet") {
   const seed = seedFromIndices(indices, passphrase);
   let master = null, branch = null;
@@ -192,7 +196,9 @@ export function mountSeedQrCheck(host, {
   const wordsValue = make("div", { id: "seedqr-check-words-value", translate: "no" });
   const revealButton = make("button", { type: "button", class: "btn secondary", id: "seedqr-check-reveal", "aria-pressed": "false", text: T("Show words") });
   const passLabel = make("label", { class: "label", for: "seedqr-check-pass", text: T("Passphrase (optional)") });
-  const passInput = make("input", { id: "seedqr-check-pass", class: "field", autocomplete: "off", spellcheck: "false", autocapitalize: "off" });
+  const passInput = make("input", { id: "seedqr-check-pass", class: "field", autocomplete: "off", spellcheck: "false", autocapitalize: "off", "data-i18n-skip": "", translate: "no" });
+  const passVault = new PassphraseVault();
+  const passField = bindVaultField(passInput, passVault);
   const fingerprintLabel = make("p", { class: "label", text: T("Master fingerprint") });
   const fingerprintValue = make("p", { class: "addr-text", id: "seedqr-check-fingerprint", "data-public-value": "", "data-i18n-skip": "", translate: "no" });
   const addressLabel = make("p", { class: "label", id: "seedqr-check-address-label", text: () => say("First receive addresses (Native SegWit, m/84'/{coin}'/0'/0/0 to /2)", { coin: coinType(currentNetwork()) }) });
@@ -220,6 +226,7 @@ export function mountSeedQrCheck(host, {
   let shownDifferences = [];
   let seed = null; // { format, words, indices } once a copy or pasted text decodes
   let drawPicture = null; // redraws the result's picture, which is the seed too
+  let pictureNoteText = null; // the note under it (the mask is part of the copy)
   let revealed = false;
   // conceal() takes the copy off the page until Show my copy: the grid is
   // not drawn, the picture is emptied and the pasted text waits here.
@@ -243,12 +250,17 @@ export function mountSeedQrCheck(host, {
     relabel(status, "text", text);
   };
   const setPictureNote = (text) => {
-    relabel(pictureNote, "text", text ?? (() => ""));
-    pictureNote.hidden = !text;
+    pictureNoteText = text ?? null;
+    renderPictureNote();
+  };
+  const renderPictureNote = () => {
+    const shown = !concealed && pictureNoteText !== null;
+    relabel(pictureNote, "text", shown ? pictureNoteText : () => "");
+    pictureNote.hidden = !shown;
   };
 
-  // What is on the page follows the entry mode and conceal(); the picture
-  // is drawn only while it is shown.
+  // What is on the page follows the entry mode and conceal(); the picture,
+  // the list and the note are built only while they are shown.
   const layout = () => {
     mode.group.hidden = concealed;
     gridPanel.hidden = concealed || entry !== "grid";
@@ -256,13 +268,14 @@ export function mountSeedQrCheck(host, {
     concealedBlock.hidden = !concealed;
     picture.hidden = concealed || !drawPicture;
     picture.innerHTML = picture.hidden ? "" : drawPicture();
+    renderList();
+    renderPictureNote();
   };
 
   const dropSeed = () => {
     if (seed?.indices) seed.indices.fill(0);
     seed = null;
     revealed = false;
-    passInput.value = "";
     wordsValue.innerHTML = "";
     fingerprintValue.textContent = "";
     addressList.replaceChildren();
@@ -274,8 +287,7 @@ export function mountSeedQrCheck(host, {
     wrong = new Set();
     shownDifferences = [];
     setStatus("edge-note", () => "");
-    list.replaceChildren();
-    list.hidden = true;
+    renderList();
     drawPicture = null;
     picture.innerHTML = "";
     picture.hidden = true;
@@ -334,8 +346,14 @@ export function mountSeedQrCheck(host, {
     sizeNote.textContent = say("{size} by {size} squares. Rows and columns are numbered from 1 at the top left, with a heavier line after every 5th square.", { size });
   };
 
+  // The copy changed: nothing of the last check stays on the page except the
+  // marks on squares not yet changed, which show what is left to fix.
   const markStale = () => {
     dropSeed();
+    shownDifferences = [];
+    drawPicture = null;
+    pictureNoteText = null;
+    layout();
     result.setAttribute("data-state", "stale");
     setStatus("edge-note is-muted", T("The copy changed. Check it again."));
   };
@@ -367,13 +385,16 @@ export function mountSeedQrCheck(host, {
 
   const renderDerived = () => {
     if (!seed) return;
-    let derived;
+    let derived, passphrase = null;
     try {
-      derived = derive(seed.indices, passInput.value, currentNetwork());
+      passphrase = passVault.bytes();
+      derived = derive(seed.indices, passphrase, currentNetwork());
     } catch {
       fingerprintValue.textContent = say("Unavailable");
       addressList.replaceChildren();
       return;
+    } finally {
+      passphrase?.fill(0);
     }
     fingerprintValue.textContent = derived.fingerprint;
     addressList.replaceChildren(...derived.addresses.map((address) => make("li", { class: "addr-text", "data-public-value": "", text: address })));
@@ -381,6 +402,10 @@ export function mountSeedQrCheck(host, {
 
   const showDifferences = (differences) => {
     shownDifferences = differences;
+    renderList();
+  };
+  const renderList = () => {
+    const differences = concealed ? [] : shownDifferences;
     const items = differences.slice(0, MAX_LISTED).map(({ row, col, dark, region }) => make("li", {
       "data-seedqr-row": String(row + 1),
       "data-seedqr-col": String(col + 1),
@@ -511,7 +536,8 @@ export function mountSeedQrCheck(host, {
     revealed = !revealed;
     renderSeed();
   };
-  passInput.oninput = renderDerived;
+  // After the vault's own input listener, so the edit is in the vault.
+  passInput.addEventListener("input", renderDerived);
   unconcealButton.onclick = unconceal;
 
   const clear = () => {
@@ -519,6 +545,7 @@ export function mountSeedQrCheck(host, {
     heldText = "";
     grid.fill(0);
     textInput.value = "";
+    passField.clear();
     resetResult();
     layout();
     renderGrid();

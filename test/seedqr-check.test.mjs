@@ -2,9 +2,11 @@
 //
 // Security contract: a seed (words, fingerprint, addresses) is shown only
 // for a copy that decodes, words only after Show words and never after
-// conceal(), conceal() also takes the entered squares, the pasted digits and
-// the picture off the page, and clear() leaves no entered square, pasted
-// text, passphrase, word or derived value behind. The panel writes no
+// conceal(), conceal() also takes the entered squares, the pasted digits,
+// the picture, the list of wrong squares and the mask note off the page, the
+// passphrase is only ever shown as bullets (PassphraseVault), and clear()
+// leaves no entered square, pasted text, passphrase, word or derived value
+// behind. A changed copy shows nothing of the previous check but its marks. The panel writes no
 // storage, console or network. Exact, wrong-squares and failed results are
 // distinct states. Addresses follow the page's network.
 //
@@ -20,7 +22,9 @@ import { fileURLToPath } from "node:url";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { HDKey as ScureHDKey } from "@scure/bip32";
 import { TEST_NETWORK, p2wpkh } from "@scure/btc-signer";
+import { renderSVG } from "uqr";
 import { MiniDocument } from "./mini-dom.mjs";
+import { VAULT_MASK } from "../src/js/passphrase-vault.js";
 import { mountSeedQrCheck, seedQrCopyGridMarkup, seedQrCopyGridSvg } from "../src/js/seedqr-check.js";
 import { seedQrLayout } from "../src/js/seedqr-grid.js";
 import { bip39English } from "../src/js/bip39.js";
@@ -60,7 +64,14 @@ function mount(options = {}) {
   const tap = (row, col) => doc.querySelector(`[data-seedqr-cell="${row * Number($("seedqr-check-grid").getAttribute("data-size")) + col}"]`).click();
   const pressed = () => cells().filter((cell) => cell.getAttribute("aria-pressed") === "true").map((cell) => cell.getAttribute("data-seedqr-cell"));
   const addresses = () => $("seedqr-check-addresses").querySelectorAll("li").map((item) => item.textContent);
-  return { doc, host, panel, $, cells, choose, enter, tap, pressed, addresses, state: () => $("seedqr-check-result").getAttribute("data-state") };
+  // Typing into the passphrase field, as a script-set value plus its input event.
+  const typePassphrase = (text) => {
+    const field = $("seedqr-check-pass");
+    field.value = text;
+    field.dispatchEvent({ type: "input" });
+  };
+  const listed = () => $("seedqr-check-differences").querySelectorAll("li").map((item) => `${item.getAttribute("data-seedqr-row")},${item.getAttribute("data-seedqr-col")}`);
+  return { doc, host, panel, $, cells, choose, enter, tap, pressed, addresses, typePassphrase, listed, state: () => $("seedqr-check-result").getAttribute("data-state") };
 }
 
 const flipRows = (rows, cells) => {
@@ -120,9 +131,7 @@ test("the passphrase changes the fingerprint and addresses, as the reference doe
   ui.choose("seedqr-check-words", "24");
   ui.enter(v.rows);
   ui.$("seedqr-check-run").click();
-  const pass = ui.$("seedqr-check-pass");
-  pass.value = "TREZOR";
-  pass.oninput();
+  ui.typePassphrase("TREZOR");
   const expected = reference(v.words, "TREZOR");
   assert.equal(ui.$("seedqr-check-fingerprint").textContent, expected.fingerprint);
   assert.deepEqual(ui.$("seedqr-check-addresses").querySelectorAll("li").map((item) => item.textContent), expected.addresses);
@@ -199,6 +208,73 @@ test("conceal() takes the entered squares and the picture off the page until Sho
   assert.equal(ui.cells().length, 0);
   ui.$("seedqr-check-unconceal").click();
   assert.deepEqual(ui.pressed(), ["0"]);
+});
+
+// A copy of vector 5 with two wrong data squares, in different codewords.
+const twoWrong = () => {
+  const v = vector("vector 5 standard");
+  const { order } = seedQrLayout(25);
+  const picks = [order[3], order[8 * 20 + 1]].map((cell) => [Math.floor(cell / 25), cell % 25]);
+  return { v, picks, rows: flipRows(v.rows, picks) };
+};
+
+test("conceal() also takes the list of wrong squares and the mask note off the page", () => {
+  const { picks, rows } = twoWrong();
+  const ui = mount();
+  ui.enter(rows);
+  ui.$("seedqr-check-run").click();
+  assert.equal(ui.state(), "wrong-squares");
+  const before = ui.listed(), note = ui.$("seedqr-check-picture-note").textContent;
+  assert.equal(before.length, picks.length);
+  assert.notEqual(note, "");
+  ui.panel.conceal();
+  assert.equal(ui.listed().length, 0);
+  assert.equal(ui.$("seedqr-check-differences").hidden, true);
+  assert.equal(ui.$("seedqr-check-picture-note").textContent, "");
+  assert.equal(ui.$("seedqr-check-picture-note").hidden, true);
+  ui.$("seedqr-check-unconceal").click();
+  assert.deepEqual(ui.listed(), before);
+  assert.equal(ui.$("seedqr-check-picture-note").textContent, note);
+});
+
+test("a changed copy shows nothing of the previous check but the marks on squares not yet changed", () => {
+  const { picks, rows } = twoWrong();
+  const ui = mount();
+  ui.enter(rows);
+  ui.$("seedqr-check-run").click();
+  ui.tap(...picks[0]);
+  assert.equal(ui.state(), "stale");
+  assert.equal(ui.$("seedqr-check-picture").innerHTML, "");
+  assert.equal(ui.$("seedqr-check-picture").hidden, true);
+  assert.equal(ui.listed().length, 0);
+  assert.equal(ui.$("seedqr-check-picture-note").textContent, "");
+  // The square still to fix keeps its mark, so the copy can be finished.
+  assert.deepEqual(ui.doc.querySelectorAll("[data-seedqr-wrong]").map((cell) => Number(cell.getAttribute("data-seedqr-cell"))), [picks[1][0] * 25 + picks[1][1]]);
+});
+
+test("the passphrase shows only as bullets, survives checks and edits, and only Clear drops it", () => {
+  const { v, picks, rows } = twoWrong();
+  const ui = mount();
+  ui.enter(rows);
+  ui.$("seedqr-check-run").click();
+  ui.typePassphrase("TREZOR");
+  const field = ui.$("seedqr-check-pass");
+  assert.equal(field.value, VAULT_MASK.repeat(6));
+  assert.ok(!ui.host.innerHTML.includes("TREZOR"));
+  const withPassphrase = reference(v.words, "TREZOR");
+  assert.equal(ui.$("seedqr-check-fingerprint").textContent, withPassphrase.fingerprint);
+  // Fixing the copy and checking again keeps it.
+  for (const pick of picks) ui.tap(...pick);
+  assert.equal(field.value, VAULT_MASK.repeat(6));
+  ui.$("seedqr-check-run").click();
+  assert.equal(ui.state(), "exact");
+  assert.equal(ui.$("seedqr-check-fingerprint").textContent, withPassphrase.fingerprint);
+  assert.deepEqual(ui.addresses(), withPassphrase.addresses);
+  ui.panel.clear();
+  assert.equal(field.value, "");
+  ui.enter(v.rows);
+  ui.$("seedqr-check-run").click();
+  assert.equal(ui.$("seedqr-check-fingerprint").textContent, reference(v.words).fingerprint);
 });
 
 test("conceal() blanks pasted digits, checked or not, and Clear drops what it held", () => {
@@ -324,6 +400,38 @@ test("clear() leaves nothing entered, pasted, typed, decoded or derived", () => 
   assert.ok(ui.cells().every((cell) => cell.getAttribute("aria-pressed") === "false"));
   ui.panel.destroy();
   assert.equal(ui.host.childNodes.length, 0);
+});
+
+// The Key Station draws each SeedQR with uqr's renderSVG; its copy grid must
+// be that same code square for square, for every size. The render options
+// are read from app.js, so a change to either side fails here.
+test("the Key Station copy grid is the SeedQR drawn beside it, square for square, at every size", () => {
+  const app = readFileSync(join(root, "src/js/app.js"), "utf8");
+  const exportStart = app.indexOf("function hodlSeedQrExport(");
+  const exportSource = app.slice(exportStart, app.indexOf("\nfunction ", exportStart + 1));
+  const options = {};
+  for (const [, payload, literal] of exportSource.matchAll(/hodlUqrRenderSvg\((digits|bytes), (\{[^}]*\})\)/g)) options[payload] = new Function(`return (${literal});`)();
+  assert.deepEqual(Object.keys(options).sort(), ["bytes", "digits"]);
+  const darkOf = (svg, pixel, offset) => {
+    const cells = new Set();
+    for (const [, x, y] of svg.matchAll(pixel)) cells.add(`${Number(y) - offset},${Number(x) - offset}`);
+    return cells;
+  };
+  const sizes = new Set();
+  for (const v of spec.vectors.filter((entry) => entry.compactHex)) {
+    const indices = Uint16Array.from(v.words.split(" "), (word) => bip39English.indexOf(word));
+    const compact = v.kind === "compact";
+    const opts = compact ? options.bytes : options.digits;
+    // As hodlCompactSeedQrBytes hands it over: a plain array of byte values.
+    const drawn = renderSVG(compact ? Array.from(Buffer.from(v.compactHex, "hex")) : v.digits, opts);
+    const step = opts.pixelSize, border = opts.border;
+    const fromCode = new Set([...drawn.matchAll(/M(\d+),(\d+)h/g)].map(([, x, y]) => `${Number(y) / step - border},${Number(x) / step - border}`));
+    const markup = seedQrCopyGridMarkup(compact ? "compact-seedqr" : "standard-seedqr", indices);
+    const fromGrid = darkOf(markup, /M(\d+) (\d+)h1v1h-1z/g, 2);
+    assert.deepEqual([...fromGrid].sort(), [...fromCode].sort(), v.name);
+    sizes.add(v.size);
+  }
+  assert.deepEqual([...sizes].sort((a, b) => a - b), [21, 25, 29]);
 });
 
 test("the copy grid shows the mask its code uses and numbers every row and column", () => {

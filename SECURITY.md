@@ -653,11 +653,13 @@ first address with the wallet. The entered squares, pasted text, passphrase
 and decoded words live in page memory and the panel's DOM only. There are no
 storage, clipboard or console writes. Words show only after Show words and
 are hidden again by every conceal trigger, which also takes the entered
-squares, the pasted digits and the picture off the page until the user asks
-for them again. The addresses follow the page's network. Clear, Clear Fields,
-End Session and page exit empty the panel and zero its buffers, best effort
-as above: the digit string handed to the encoder and the DOM's own copies
-cannot be zeroed.
+squares, the pasted digits, the picture, the list of wrong squares and the
+mask note off the page until the user asks for them again. The passphrase
+field shows bullets only, like the Key Station's (see "What the page can and
+cannot erase" below). The addresses follow the page's network. Clear, Clear
+Fields, End Session and page exit empty the panel and zero its buffers, best
+effort as above: the digit string handed to the encoder and the DOM's own
+copies cannot be zeroed.
 
 ## What the page can and cannot erase
 
