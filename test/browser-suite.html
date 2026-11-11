@@ -941,6 +941,35 @@
     await wait(0);
   });
 
+  await test("an Inspector edit that changes nothing keeps the verdicts; a real edit clears the result", async () => {
+    const original = "cHNidP8BAHECAAAAARERERERERERERERERERERERERERERERERERERERERERAAAAAAD9////AqCGAQAAAAAAFgAUIiIiIiIiIiIiIiIiIiIiIiIiIiJQwwAAAAAAABYAFBERERERERERERERERERERERERERAAAAAAABAR/YTQIAAAAAABYAFBERERERERERERERERERERERERERAAAA";
+    const replacement = "cHNidP8BAHECAAAAARERERERERERERERERERERERERERERERERERERERERERAAAAAAD9////AqCGAQAAAAAAFgAUMzMzMzMzMzMzMzMzMzMzMzMzMzNovwAAAAAAABYAFBERERERERERERERERERERERERERAAAAAAABAR/YTQIAAAAAABYAFBERERERERERERERERERERERERERAAAA";
+    document.querySelector('#workspace [data-workspace="psbt"]').click();
+    await until(() => !document.getElementById("psbt-manager").hidden, "the PSBT manager");
+    document.getElementById("psbt-inspector-tab").click();
+    input(document.getElementById("psbt-text"), replacement);
+    document.getElementById("psbt-rbf-options").open = true;
+    input(document.getElementById("psbt-rbf-original"), original);
+    await until(() => !document.getElementById("psbt-go").disabled, "Inspect to enable");
+    document.getElementById("psbt-go").click();
+    await until(() => document.querySelector("#psbt-out [data-rbf-verdict]"), "the fee-bump verdict");
+    equal(document.querySelector("#psbt-out [data-rbf-verdict]").dataset.rbfVerdict, "red");
+    for (const value of [original + " ", original + "\n"]) {
+      input(document.getElementById("psbt-rbf-original"), value);
+      assert(document.querySelector("#psbt-out [data-rbf-verdict]"), "the verdict went on an edit that changed nothing");
+      assert(document.getElementById("psbt-go").disabled, "Inspect returned for the inputs it had already inspected");
+    }
+    input(document.getElementById("psbt-text"), replacement + " ");
+    assert(document.querySelector("#psbt-out [data-rbf-verdict]"), "the verdict went on a trailing space in the PSBT");
+    assert(document.getElementById("psbt-go").disabled, "Inspect returned for a trailing space in the PSBT");
+    input(document.getElementById("psbt-text"), original);
+    equal(document.getElementById("psbt-out").childElementCount, 0, "the result stayed on screen after a real edit");
+    assert(!document.getElementById("psbt-go").disabled, "Inspect did not return after the result was cleared");
+    document.getElementById("psbt-wipe").click();
+    document.querySelector('#workspace [data-workspace="calc"]').click();
+    await until(() => !document.getElementById("calc-card").hidden, "key workspace");
+  });
+
   await test("hex, seed, and private-key inputs cannot inject markup", async () => {
     const payload = '<img src=x onerror="window.__browserTestInjected=true">';
     await chooseMode("Number bases");
@@ -5746,8 +5775,10 @@
       assert(!on("psbt-go") && on("psbt-download"), "Inspect stayed available for inputs it had just inspected");
       input(document.getElementById("psbt-pass"), "x");
       assert(on("psbt-go"), "Inspect did not return after an input changed");
+      equal(document.getElementById("psbt-out").childElementCount, 0, "the result stayed on screen after an input changed");
       input(document.getElementById("psbt-pass"), "");
-      assert(!on("psbt-go"), "Inspect returned for the inputs it had already inspected");
+      // The edit cleared the result, so the same inputs can be inspected again.
+      assert(on("psbt-go"), "Inspect did not stay available after the result was cleared");
     } finally {
       document.getElementById("psbt-wipe").click();
     }

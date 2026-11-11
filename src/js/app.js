@@ -14765,11 +14765,11 @@ function hodlInitPsbt() {
   };
   document.getElementById("nonce-text").addEventListener("input", hodlPsbtResetNonceInspection);
   document.getElementById("psbt-card").addEventListener("input", hodlSyncPsbtControls);
-  // Editing either PSBT field (or the key fields) retires a shown
-  // signer-audit verdict immediately — it belongs to the exact pair of
-  // PSBTs it was computed from, and a stale verdict must never stay on
-  // screen. The next Inspect re-runs it.
-  document.getElementById("psbt-card").addEventListener("input", hodlPsbtClearSignerAudit);
+  // An edit in the card either changes nothing the run read or it changes
+  // the result. While the fields still match the run stamp every verdict
+  // stays on screen; once they differ the whole result goes, because it was
+  // computed from fields that are no longer there.
+  document.getElementById("psbt-card").addEventListener("input", hodlPsbtCardEdited);
   document.getElementById("nonce-card").addEventListener("input", hodlSyncPsbtControls);
   hodlPsbtSyncNonceHistoryControls();
   // Page hide ends the whole session: the key bytes, the paste fields, and
@@ -15667,6 +15667,21 @@ function hodlPsbtClearSignerAudit() {
   // (or a trailing space) still matches it: forget the stamp, then let the
   // ordinary input sync decide, so a field that does not decode never
   // enables Inspect (Wicked's review of #1118).
+  delete hodlPsbtInspected["psbt-go"];
+  hodlSyncPsbtControls();
+}
+
+// An input event in the Inspector card either changes nothing the run read
+// or it changes the result. While the fields still match the stamp the run
+// was made with, every verdict stays on screen. Once they differ the whole
+// result goes: it was computed from fields that are no longer there.
+function hodlPsbtCardEdited() {
+  let output = document.getElementById("psbt-out"), stamp = hodlPsbtInspected["psbt-go"];
+  if (stamp === undefined && !hodlPsbtLast && !output?.childElementCount) return;
+  if (stamp !== undefined && stamp === hodlPsbtRunStamp(hodlPsbtCards.find((entry) => entry.go === "psbt-go"))) return;
+  hodlPsbtClearSignerAudit();
+  output?.replaceChildren?.();
+  hodlPsbtLast = null;
   delete hodlPsbtInspected["psbt-go"];
   hodlSyncPsbtControls();
 }
