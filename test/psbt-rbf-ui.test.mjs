@@ -238,11 +238,11 @@ const extract = (name) => {
   return match[0];
 };
 
-const rbfHarness = (sessionScripts = []) => {
+const rbfHarness = (sessionScripts = [], { hodlT: translate = hodlT } = {}) => {
   const session = new Map(sessionScripts.map((hex) => [hex, true]));
   const elements = { "psbt-rbf-original": { value: "" } };
   const context = vm.createContext({
-    hodlT,
+    hodlT: translate,
     hodlTText,
     bytesToHex,
     hodlHex,
@@ -257,6 +257,7 @@ const rbfHarness = (sessionScripts = []) => {
     hodlSessionOwnership: () => session,
     matchOwnership: (map, script) => ({ state: map.has(bytesToHex(script)) ? "ours" : "theirs" }),
     document: { getElementById: (id) => elements[id] ?? null },
+    hodlPsbtInsertOverall: () => {},
   });
   for (const name of [
     "hodlPsbtRbfAmount",
@@ -266,6 +267,7 @@ const rbfHarness = (sessionScripts = []) => {
     "hodlPsbtRbfNormalizePsbt",
     "hodlPsbtRbfItemLine",
     "hodlPsbtRbfNote",
+    "hodlPsbtPaintRbf",
     "hodlPsbtPrependRbfCheck",
   ]) {
     vm.runInContext(extract(name), context);
@@ -444,13 +446,13 @@ test("no shared inputs is neutral and says it is not a direct replacement", () =
 
 test("scripts render as addresses when they decode for the network, else as hex", () => {
   const { context } = rbfHarness();
-  context.hodlAddressFromScript = (script, network) => {
+  context.addressFromScript = (script, network) => {
     assert.equal(network, "mainnet");
     return bytesToHex(script) === OURS_HEX ? "bc1qexample" : null;
   };
   assert.equal(context.hodlPsbtRbfShowScript(OURS_HEX, "mainnet"), "bc1qexample");
   assert.equal(context.hodlPsbtRbfShowScript(THEIRS_HEX, "mainnet"), THEIRS_HEX, "a script the decoder cannot place stays hex");
-  context.hodlAddressFromScript = () => {
+  context.addressFromScript = () => {
     throw new Error("not an address");
   };
   assert.equal(context.hodlPsbtRbfShowScript(OURS_HEX, "mainnet"), OURS_HEX, "a decoder failure falls back to hex");
@@ -557,12 +559,22 @@ test("editing the RBF original retires the rendered verdict", () => {
   let removed = 0;
   const verdict = { remove: () => { removed += 1; } };
   const out = { querySelector: (selector) => (selector === "[data-rbf-verdict]" ? verdict : null) };
+  let synced = 0;
   const context = vm.createContext({
     document: { getElementById: (id) => (id === "psbt-out" ? out : null) },
+    hodlPsbtLast: null,
+    hodlPsbtInsertOverall: () => {},
+    hodlPsbtInspected: { "psbt-go": "stamp", "nonce-go": "other" },
+    hodlSyncPsbtControls: () => { synced += 1; },
   });
   vm.runInContext(extract("hodlPsbtClearRbfVerdict"), context);
   context.hodlPsbtClearRbfVerdict();
   assert.equal(removed, 1);
+  // The retired verdict can be computed again: an edit that is undone leaves
+  // the run stamp matching, so the stamp goes and the input sync decides.
+  assert.equal("psbt-go" in context.hodlPsbtInspected, false, "the Inspector's run stamp is forgotten");
+  assert.equal(context.hodlPsbtInspected["nonce-go"], "other", "the other card's stamp is untouched");
+  assert.equal(synced, 1, "the controls are synced once");
 });
 
 test("retiring the signer audit also retires the RBF verdict", () => {
@@ -581,7 +593,7 @@ test("retiring the signer audit also retires the RBF verdict", () => {
 
 test("finding lines are HTML-escaped, never raw text", () => {
   const { context } = rbfHarness();
-  context.hodlAddressFromScript = () => '<img src=x onerror="alert(1)">';
+  context.addressFromScript = () => '<img src=x onerror="alert(1)">';
   const line = context.hodlPsbtRbfItemLine({ code: "payment-removed", script: THEIRS_HEX, before: 100000n }, "mainnet");
   assert.doesNotMatch(line, /<img/);
   assert.match(line, /&lt;img/);
@@ -592,4 +604,330 @@ test("a replacement PSBT that does not normalize is amber without blaming the or
   assert.equal(result, null);
   assert.match(html, /data-rbf-verdict="amber"/);
   assert.doesNotMatch(html, /The original transaction could not be read\./);
+});
+
+// --- the verdict survives a repaint --------------------------------------
+
+// A fake #psbt-out that holds the note it was given, so a repaint is graded
+// on the markup it leaves behind.
+const noteOutput = (initial = "") => {
+  let note = "";
+  const output = {
+    html: initial,
+    insertAdjacentHTML(position, html) {
+      assert.equal(position, "afterbegin", "the RBF note is always prepended");
+      note = html;
+      this.html = html + this.html;
+    },
+    querySelector(selector) {
+      if (selector !== "[data-rbf-verdict]" || !note) return null;
+      return { remove() { output.html = output.html.replace(note, ""); note = ""; } };
+    },
+  };
+  return output;
+};
+
+const redPair = () => psbtPair(
+  [{ amount: 100000n, script: THEIRS }, { amount: 50000n, script: OURS }],
+  [{ amount: 100000n, script: ATTACKER }, { amount: 49000n, script: OURS }],
+);
+
+test("the RBF verdict is recorded language-neutrally, in the painted order", () => {
+  const { original, replacement } = redPair();
+  const { context, elements } = rbfHarness([OURS_HEX]);
+  elements["psbt-rbf-original"].value = b64(original);
+  const output = noteOutput();
+  const keep = {};
+  const result = context.hodlPsbtPrependRbfCheck(output, replacement, "psbt", "mainnet", keep);
+  assert.equal(result.verdict, "red");
+  assert.equal(keep.rbf.verdict, "red");
+  const painted = [...output.html.matchAll(/data-rbf-item="([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(painted.length > 0, "fixture: the note carries item lines");
+  assert.deepEqual(Array.from(keep.rbf.entries, (entry) => entry.code), painted);
+  assert.ok(Array.from(keep.rbf.entries).every((entry) => entry.item && entry.item.code === entry.code), "each entry keeps its item");
+});
+
+test("an empty original records no verdict and paints nothing", () => {
+  const { context } = rbfHarness();
+  const output = noteOutput("<div>inspection</div>");
+  const keep = { rbf: { verdict: "red", entries: [] } };
+  const result = context.hodlPsbtPrependRbfCheck(output, CLEAN.replacement, "psbt", "mainnet", keep);
+  assert.equal(result, null);
+  assert.equal(keep.rbf, null);
+  assert.equal(output.html, "<div>inspection</div>");
+});
+
+test("repainting the record reproduces the first paint, and painting twice leaves one note", () => {
+  const { original, replacement } = redPair();
+  const { context, elements } = rbfHarness([OURS_HEX]);
+  elements["psbt-rbf-original"].value = b64(original);
+  const output = noteOutput();
+  const keep = {};
+  context.hodlPsbtPrependRbfCheck(output, replacement, "psbt", "mainnet", keep);
+  const first = output.html;
+  const fresh = noteOutput();
+  context.hodlPsbtPaintRbf(fresh, keep.rbf, "mainnet");
+  assert.equal(fresh.html, first, "the repaint is byte-identical to the first paint");
+  context.hodlPsbtPaintRbf(fresh, keep.rbf, "mainnet");
+  assert.equal((fresh.html.match(/data-rbf-verdict=/g) || []).length, 1, "one note, not two");
+});
+
+test("the record holds no translated text: a repaint re-translates every line", () => {
+  const marked = (text, params) => "«" + hodlT(text, params) + "»";
+  const { original, replacement } = redPair();
+  const { context, elements } = rbfHarness([OURS_HEX], { hodlT: marked });
+  elements["psbt-rbf-original"].value = b64(original);
+  const output = noteOutput();
+  const keep = {};
+  context.hodlPsbtPrependRbfCheck(output, replacement, "psbt", "mainnet", keep);
+  const strings = [];
+  const walk = (value) => {
+    if (typeof value === "string") strings.push(value);
+    else if (value && typeof value === "object") for (const key of Object.keys(value)) walk(value[key]);
+  };
+  walk(keep.rbf);
+  assert.ok(!strings.some((text) => text.includes("«")), "the record holds no translated text");
+  const fresh = noteOutput();
+  context.hodlPsbtPaintRbf(fresh, keep.rbf, "mainnet");
+  assert.match(fresh.html, /«A payment was changed or removed\.»/);
+  assert.match(fresh.html, /«A payment of 0\.00100000 BTC to /);
+});
+
+test("a raw-transaction replacement records the fixed amber entry and repaints it", () => {
+  const rawReplacement = buildRawTx({ inputs: [{ txid: TXID_A, vout: 0 }], outputs: [{ amount: 100000n, script: THEIRS }, { amount: 49000n, script: OURS }] });
+  const { context, elements } = rbfHarness([OURS_HEX]);
+  elements["psbt-rbf-original"].value = b64(CLEAN.original);
+  const output = noteOutput();
+  const keep = {};
+  context.hodlPsbtPrependRbfCheck(output, rawReplacement, "transaction", "mainnet", keep);
+  assert.equal(keep.rbf.verdict, "amber");
+  assert.equal(keep.rbf.entries.length, 1);
+  assert.equal(keep.rbf.entries[0].code, "replacement-raw");
+  assert.equal(keep.rbf.entries[0].item, null);
+  const fresh = noteOutput();
+  context.hodlPsbtPaintRbf(fresh, keep.rbf, "mainnet");
+  assert.equal(fresh.html, output.html);
+});
+
+test("an unreadable original records the fixed amber entry and repaints it", () => {
+  const { context, elements } = rbfHarness([OURS_HEX]);
+  elements["psbt-rbf-original"].value = "02000000";
+  const output = noteOutput();
+  const keep = {};
+  context.hodlPsbtPrependRbfCheck(output, CLEAN.replacement, "psbt", "mainnet", keep);
+  assert.equal(keep.rbf.verdict, "amber");
+  assert.equal(keep.rbf.entries.length, 1);
+  assert.equal(keep.rbf.entries[0].code, "original-unreadable");
+  assert.equal(keep.rbf.entries[0].item, null);
+  const fresh = noteOutput();
+  context.hodlPsbtPaintRbf(fresh, keep.rbf, "mainnet");
+  assert.equal(fresh.html, output.html);
+});
+
+test("the run stores the RBF record for a repaint", () => {
+  const runStart = app.indexOf("function hodlRunPsbt(");
+  const run = app.slice(runStart, app.indexOf("\nfunction ", runStart));
+  assert.match(run, /hodlPsbtLast = \{[^}]*\brbf:/, "hodlRunPsbt stores the RBF record in hodlPsbtLast");
+});
+
+test("retiring the RBF verdict retires the record and recomputes the overall line", () => {
+  let removed = 0, overall = 0;
+  const verdict = { remove: () => { removed += 1; } };
+  const out = { querySelector: (selector) => (selector === "[data-rbf-verdict]" ? verdict : null) };
+  const context = vm.createContext({
+    document: { getElementById: (id) => (id === "psbt-out" ? out : null) },
+    hodlPsbtLast: { rbf: { verdict: "red", entries: [] } },
+    hodlPsbtInsertOverall: () => { overall += 1; },
+    hodlPsbtInspected: { "psbt-go": "stamp" },
+    hodlSyncPsbtControls: () => {},
+  });
+  vm.runInContext(extract("hodlPsbtClearRbfVerdict"), context);
+  context.hodlPsbtClearRbfVerdict();
+  assert.equal(removed, 1, "the note is removed");
+  assert.equal(context.hodlPsbtLast.rbf, null, "the record is retired");
+  assert.equal(overall, 1, "the overall line is recomputed");
+
+  // No #psbt-out: nothing throws, the record is still retired, and a record
+  // with no note on screen still counts as a retired verdict.
+  let missingSynced = 0;
+  const missing = vm.createContext({
+    document: { getElementById: () => null },
+    hodlPsbtLast: { rbf: { verdict: "red", entries: [] } },
+    hodlPsbtInsertOverall: () => { throw new Error("must not run without #psbt-out"); },
+    hodlPsbtInspected: { "psbt-go": "stamp" },
+    hodlSyncPsbtControls: () => { missingSynced += 1; },
+  });
+  vm.runInContext(extract("hodlPsbtClearRbfVerdict"), missing);
+  missing.hodlPsbtClearRbfVerdict();
+  assert.equal(missing.hodlPsbtLast.rbf, null);
+  assert.equal("psbt-go" in missing.hodlPsbtInspected, false);
+  assert.equal(missingSynced, 1);
+
+  // No cached run and no note: nothing was retired, so nothing throws, the
+  // run stamp stays and Inspect is not re-enabled by typing in the field.
+  const none = vm.createContext({
+    document: { getElementById: () => null },
+    hodlPsbtLast: null,
+    hodlPsbtInsertOverall: () => { throw new Error("must not run without #psbt-out"); },
+    hodlPsbtInspected: { "psbt-go": "stamp" },
+    hodlSyncPsbtControls: () => { throw new Error("nothing was retired: the controls must not be synced"); },
+  });
+  vm.runInContext(extract("hodlPsbtClearRbfVerdict"), none);
+  none.hodlPsbtClearRbfVerdict();
+  assert.equal(none.hodlPsbtInspected["psbt-go"], "stamp");
+});
+
+test("retiring a verdict never turns the Overall line more favourable without a new Inspect", () => {
+  // The Overall line on screen counted the verdict; the double for
+  // hodlPsbtInsertOverall replaces it with the state the line would have
+  // without the verdict, as the real function does.
+  const retire = (shown, without) => {
+    const makeLine = (state) => ({ dataset: { psbtOverallState: state }, removed: false, remove() { this.removed = true; } });
+    let line = makeLine(shown);
+    const out = {
+      querySelector: (selector) => {
+        if (selector === "[data-rbf-verdict]") return { remove() {} };
+        if (selector === "[data-psbt-overall]") return line && !line.removed ? line : null;
+        return null;
+      },
+    };
+    const context = vm.createContext({
+      document: { getElementById: (id) => (id === "psbt-out" ? out : null) },
+      hodlPsbtLast: { rbf: { verdict: "red", entries: [] } },
+      hodlPsbtInsertOverall: () => { line = makeLine(without); },
+      hodlPsbtInspected: { "psbt-go": "stamp" },
+      hodlSyncPsbtControls: () => {},
+    });
+    vm.runInContext(extract("hodlPsbtClearRbfVerdict"), context);
+    context.hodlPsbtClearRbfVerdict();
+    const held = context.hodlPsbtLast.overallHeld;
+    if (line.removed) return "removed, held " + held;
+    return held ? line.dataset.psbtOverallState + ", held " + held : line.dataset.psbtOverallState;
+  };
+  // A red or amber verdict over a passing audit: the line goes, it does not turn green.
+  assert.equal(retire("bad", "ok"), "removed, held bad", "do-not-broadcast never becomes no-problems by an edit");
+  assert.equal(retire("warn", "ok"), "removed, held warn", "a warning never becomes no-problems by an edit");
+  assert.equal(retire("bad", "warn"), "removed, held bad", "do-not-broadcast never becomes a mere warning by an edit");
+  // ("held bad"/"held warn": the run remembers the state that was on screen, so a
+  // repaint does not bring a milder line back.)
+  // The audit itself still says so: the line stays as it was.
+  assert.equal(retire("bad", "bad"), "bad");
+  assert.equal(retire("warn", "warn"), "warn");
+  // A green or neutral verdict never changed the line: it stays.
+  assert.equal(retire("ok", "ok"), "ok");
+});
+
+test("a repaint over an existing inspection puts the note on top, as the first paint does", () => {
+  const { context } = rbfHarness([OURS_HEX]);
+  const output = noteOutput("<div data-psbt-answer>answer</div><div data-audit-section>audit</div><div>inspection</div>");
+  context.hodlPsbtPaintRbf(output, { verdict: "red", entries: [] }, "mainnet");
+  const at = (hook) => output.html.indexOf(hook);
+  assert.ok(at('data-rbf-verdict="red"') >= 0, "the note is painted");
+  assert.ok(at('data-rbf-verdict="red"') < at("data-psbt-answer"), "the note comes before the answer block");
+  assert.ok(at("data-psbt-answer") < at("data-audit-section"), "the answer block still comes before the audit");
+  assert.ok(output.html.endsWith("<div data-psbt-answer>answer</div><div data-audit-section>audit</div><div>inspection</div>"), "nothing after it moved");
+});
+
+test("the Overall line is handed the verdict even when the note cannot be painted", () => {
+  const { context } = rbfHarness([OURS_HEX]);
+  const handed = [];
+  context.hodlPsbtInsertOverall = (output, stored) => { handed.push(stored); };
+  context.hodlPsbtPaintRbf(noteOutput(), { verdict: "red", entries: [] }, "mainnet");
+  assert.deepEqual(handed, ["red"], "a normal paint hands the verdict over");
+  const broken = { querySelector: () => null, insertAdjacentHTML() { throw new Error("paint failed"); } };
+  assert.throws(() => context.hodlPsbtPaintRbf(broken, { verdict: "red", entries: [] }, "mainnet"), /paint failed/);
+  assert.deepEqual(handed, ["red", "red"], "a failed paint still hands the verdict over");
+});
+
+test("a line that cannot be written never takes the verdict with it, and never leaves green", () => {
+  const { context } = rbfHarness([OURS_HEX]);
+  context.hodlPsbtRbfItemLine = () => { throw new Error("line failed"); };
+  const red = noteOutput();
+  context.hodlPsbtPaintRbf(red, { verdict: "red", entries: [{ code: "payment-removed", item: { code: "payment-removed" } }] }, "mainnet");
+  assert.match(red.html, /data-rbf-verdict="red"/, "a red verdict is still painted");
+  assert.doesNotMatch(red.html, /data-rbf-item=/, "without the list it could not write");
+  const green = noteOutput();
+  const greenRecord = { verdict: "green", entries: [{ code: "fee-increased", item: { code: "fee-increased" } }] };
+  context.hodlPsbtPaintRbf(green, greenRecord, "mainnet");
+  assert.match(green.html, /data-rbf-verdict="amber"/, "a green verdict whose lines fail is shown amber");
+  assert.doesNotMatch(green.html, /data-rbf-verdict="green"/);
+  // The record keeps the downgrade: a later repaint whose lines can be
+  // written does not bring the green note back without a new Inspect.
+  assert.equal(greenRecord.verdict, "amber");
+  context.hodlPsbtRbfItemLine = () => "a line";
+  const again = noteOutput();
+  context.hodlPsbtPaintRbf(again, greenRecord, "mainnet");
+  assert.match(again.html, /data-rbf-verdict="amber"/, "the repaint stays amber");
+  assert.doesNotMatch(again.html, /data-rbf-verdict="green"/);
+});
+
+// --- an edit that changes nothing retires nothing ------------------------
+
+test("the check hands over the trimmed original, and the run stores it", () => {
+  const { original, replacement } = redPair();
+  const { context, elements } = rbfHarness([OURS_HEX]);
+  elements["psbt-rbf-original"].value = "  " + b64(original) + "\n";
+  const keep = {};
+  context.hodlPsbtPrependRbfCheck(noteOutput(), replacement, "psbt", "mainnet", keep);
+  assert.equal(keep.original, b64(original), "the text the verdict was computed from, trimmed");
+  const empty = rbfHarness();
+  const none = { original: "stale" };
+  empty.context.hodlPsbtPrependRbfCheck(noteOutput(), CLEAN.replacement, "psbt", "mainnet", none);
+  assert.equal(none.original, "", "no original, nothing to compare against");
+  const runStart = app.indexOf("function hodlRunPsbt(");
+  const run = app.slice(runStart, app.indexOf("\nfunction ", runStart));
+  assert.match(run, /hodlPsbtLast = \{[^}]*\brbfOriginal:/, "hodlRunPsbt stores the inspected original with the run");
+});
+
+test("typing that leaves the original as inspected keeps the verdict; a real edit retires it", () => {
+  const retireWith = (event, { rbf = { verdict: "red", entries: [] } } = {}) => {
+    let removed = 0, synced = 0;
+    const note = { remove: () => { removed += 1; } };
+    const out = { querySelector: (selector) => (selector === "[data-rbf-verdict]" ? note : null) };
+    const context = vm.createContext({
+      document: { getElementById: (id) => (id === "psbt-out" ? out : null) },
+      hodlPsbtLast: { rbf, rbfOriginal: "ORIGINAL" },
+      hodlPsbtInsertOverall: () => {},
+      hodlPsbtInspected: { "psbt-go": "stamp" },
+      hodlSyncPsbtControls: () => { synced += 1; },
+    });
+    vm.runInContext(extract("hodlPsbtClearRbfVerdict"), context);
+    context.hodlPsbtClearRbfVerdict(event);
+    return { removed, synced, record: context.hodlPsbtLast.rbf, stamp: context.hodlPsbtInspected["psbt-go"] };
+  };
+  const field = (value) => ({ target: { id: "psbt-rbf-original", value } });
+
+  // A trailing space, a line break, leading blanks: the same transactions.
+  for (const value of ["ORIGINAL", "ORIGINAL ", "\n ORIGINAL\n"]) {
+    const kept = retireWith(field(value));
+    assert.equal(kept.removed, 0, "the note stays for " + JSON.stringify(value));
+    assert.notEqual(kept.record, null, "the record stays");
+    assert.equal(kept.stamp, "stamp", "the run stamp stays: nothing changed");
+    assert.equal(kept.synced, 0);
+  }
+
+  // Any other text is a different original: the verdict goes.
+  for (const value of ["ORIGINALX", "ORIGINA", "", "original"]) {
+    const gone = retireWith(field(value));
+    assert.equal(gone.removed, 1, "the note is retired for " + JSON.stringify(value));
+    assert.equal(gone.record, null);
+    assert.equal(gone.stamp, undefined, "Inspect can run again");
+  }
+
+  // Every other caller retires without looking at the field: an upload, an
+  // edit elsewhere in the card (called with no event), another field's event.
+  assert.equal(retireWith(undefined).removed, 1);
+  assert.equal(retireWith({ target: { id: "psbt-text", value: "ORIGINAL" } }).removed, 1);
+
+  // With no record left, the same text does not hold a leftover note on screen.
+  assert.equal(retireWith(field("ORIGINAL"), { rbf: null }).removed, 1);
+});
+
+test("the note's address lookup uses the function app.js imports", () => {
+  const start = app.indexOf("function hodlPsbtRbfShowScript(");
+  const body = app.slice(start, app.indexOf("\nfunction ", start));
+  const called = body.match(/let address = (\w+)\(/)[1];
+  // Until 1.1.0 this called a name that existed only in this test's
+  // harness, so the shipped page always fell back to the script hex.
+  assert.ok(new RegExp("import \\{[^}]*\\b" + called + "\\b[^}]*\\} from \"\\./addresses\\.js\"").test(app), called + " is imported from addresses.js");
 });
