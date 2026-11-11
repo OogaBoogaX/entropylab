@@ -446,13 +446,13 @@ test("no shared inputs is neutral and says it is not a direct replacement", () =
 
 test("scripts render as addresses when they decode for the network, else as hex", () => {
   const { context } = rbfHarness();
-  context.hodlAddressFromScript = (script, network) => {
+  context.addressFromScript = (script, network) => {
     assert.equal(network, "mainnet");
     return bytesToHex(script) === OURS_HEX ? "bc1qexample" : null;
   };
   assert.equal(context.hodlPsbtRbfShowScript(OURS_HEX, "mainnet"), "bc1qexample");
   assert.equal(context.hodlPsbtRbfShowScript(THEIRS_HEX, "mainnet"), THEIRS_HEX, "a script the decoder cannot place stays hex");
-  context.hodlAddressFromScript = () => {
+  context.addressFromScript = () => {
     throw new Error("not an address");
   };
   assert.equal(context.hodlPsbtRbfShowScript(OURS_HEX, "mainnet"), OURS_HEX, "a decoder failure falls back to hex");
@@ -593,7 +593,7 @@ test("retiring the signer audit also retires the RBF verdict", () => {
 
 test("finding lines are HTML-escaped, never raw text", () => {
   const { context } = rbfHarness();
-  context.hodlAddressFromScript = () => '<img src=x onerror="alert(1)">';
+  context.addressFromScript = () => '<img src=x onerror="alert(1)">';
   const line = context.hodlPsbtRbfItemLine({ code: "payment-removed", script: THEIRS_HEX, before: 100000n }, "mainnet");
   assert.doesNotMatch(line, /<img/);
   assert.match(line, /&lt;img/);
@@ -859,4 +859,75 @@ test("a line that cannot be written never takes the verdict with it, and never l
   context.hodlPsbtPaintRbf(again, greenRecord, "mainnet");
   assert.match(again.html, /data-rbf-verdict="amber"/, "the repaint stays amber");
   assert.doesNotMatch(again.html, /data-rbf-verdict="green"/);
+});
+
+// --- an edit that changes nothing retires nothing ------------------------
+
+test("the check hands over the trimmed original, and the run stores it", () => {
+  const { original, replacement } = redPair();
+  const { context, elements } = rbfHarness([OURS_HEX]);
+  elements["psbt-rbf-original"].value = "  " + b64(original) + "\n";
+  const keep = {};
+  context.hodlPsbtPrependRbfCheck(noteOutput(), replacement, "psbt", "mainnet", keep);
+  assert.equal(keep.original, b64(original), "the text the verdict was computed from, trimmed");
+  const empty = rbfHarness();
+  const none = { original: "stale" };
+  empty.context.hodlPsbtPrependRbfCheck(noteOutput(), CLEAN.replacement, "psbt", "mainnet", none);
+  assert.equal(none.original, "", "no original, nothing to compare against");
+  const runStart = app.indexOf("function hodlRunPsbt(");
+  const run = app.slice(runStart, app.indexOf("\nfunction ", runStart));
+  assert.match(run, /hodlPsbtLast = \{[^}]*\brbfOriginal:/, "hodlRunPsbt stores the inspected original with the run");
+});
+
+test("typing that leaves the original as inspected keeps the verdict; a real edit retires it", () => {
+  const retireWith = (event, { rbf = { verdict: "red", entries: [] } } = {}) => {
+    let removed = 0, synced = 0;
+    const note = { remove: () => { removed += 1; } };
+    const out = { querySelector: (selector) => (selector === "[data-rbf-verdict]" ? note : null) };
+    const context = vm.createContext({
+      document: { getElementById: (id) => (id === "psbt-out" ? out : null) },
+      hodlPsbtLast: { rbf, rbfOriginal: "ORIGINAL" },
+      hodlPsbtInsertOverall: () => {},
+      hodlPsbtInspected: { "psbt-go": "stamp" },
+      hodlSyncPsbtControls: () => { synced += 1; },
+    });
+    vm.runInContext(extract("hodlPsbtClearRbfVerdict"), context);
+    context.hodlPsbtClearRbfVerdict(event);
+    return { removed, synced, record: context.hodlPsbtLast.rbf, stamp: context.hodlPsbtInspected["psbt-go"] };
+  };
+  const field = (value) => ({ target: { id: "psbt-rbf-original", value } });
+
+  // A trailing space, a line break, leading blanks: the same transactions.
+  for (const value of ["ORIGINAL", "ORIGINAL ", "\n ORIGINAL\n"]) {
+    const kept = retireWith(field(value));
+    assert.equal(kept.removed, 0, "the note stays for " + JSON.stringify(value));
+    assert.notEqual(kept.record, null, "the record stays");
+    assert.equal(kept.stamp, "stamp", "the run stamp stays: nothing changed");
+    assert.equal(kept.synced, 0);
+  }
+
+  // Any other text is a different original: the verdict goes.
+  for (const value of ["ORIGINALX", "ORIGINA", "", "original"]) {
+    const gone = retireWith(field(value));
+    assert.equal(gone.removed, 1, "the note is retired for " + JSON.stringify(value));
+    assert.equal(gone.record, null);
+    assert.equal(gone.stamp, undefined, "Inspect can run again");
+  }
+
+  // Every other caller retires without looking at the field: an upload, an
+  // edit elsewhere in the card (called with no event), another field's event.
+  assert.equal(retireWith(undefined).removed, 1);
+  assert.equal(retireWith({ target: { id: "psbt-text", value: "ORIGINAL" } }).removed, 1);
+
+  // With no record left, the same text does not hold a leftover note on screen.
+  assert.equal(retireWith(field("ORIGINAL"), { rbf: null }).removed, 1);
+});
+
+test("the note's address lookup uses the function app.js imports", () => {
+  const start = app.indexOf("function hodlPsbtRbfShowScript(");
+  const body = app.slice(start, app.indexOf("\nfunction ", start));
+  const called = body.match(/let address = (\w+)\(/)[1];
+  // Until 1.1.0 this called a name that existed only in this test's
+  // harness, so the shipped page always fell back to the script hex.
+  assert.ok(new RegExp("import \\{[^}]*\\b" + called + "\\b[^}]*\\} from \"\\./addresses\\.js\"").test(app), called + " is imported from addresses.js");
 });

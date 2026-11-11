@@ -15355,8 +15355,14 @@ function hodlPsbtRetireRbfUploads() {
 
 // The rendered verdict belongs to the exact pair of PSBTs it was computed
 // from: any change to either side retires it, so a green verdict can never
-// sit next to a different original.
-function hodlPsbtClearRbfVerdict() {
+// sit next to a different original. Typing in the original field that
+// leaves its trimmed text as it was inspected (a trailing space or line
+// break) changes neither side, so the verdict stays: a red one must not
+// vanish through an edit that changed nothing. The field's input listener
+// passes its event; every other caller retires unconditionally.
+function hodlPsbtClearRbfVerdict(event) {
+  if (event?.target?.id === "psbt-rbf-original" && hodlPsbtLast?.rbf
+    && String(event.target.value || "").trim() === hodlPsbtLast.rbfOriginal) return;
   let output = document.getElementById("psbt-out"), note = output?.querySelector("[data-rbf-verdict]"),
     retired = Boolean(note || hodlPsbtLast?.rbf);
   note?.remove();
@@ -15424,7 +15430,7 @@ function hodlPsbtRbfBtc(sats) {
 
 function hodlPsbtRbfShowScript(scriptHex, network) {
   try {
-    let address = hodlAddressFromScript(hodlHex.decode(scriptHex), network);
+    let address = addressFromScript(hodlHex.decode(scriptHex), network);
     if (address) return address;
   } catch {
     // A script that does not decode on this network is shown as hex.
@@ -15559,7 +15565,10 @@ function hodlPsbtPaintRbf(output, rbf, network) {
 function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network, keep) {
   let raw = String(document.getElementById("psbt-rbf-original")?.value || "").trim();
   if (!raw) {
-    if (keep && typeof keep === "object") keep.rbf = null;
+    if (keep && typeof keep === "object") {
+      keep.rbf = null;
+      keep.original = "";
+    }
     return null;
   }
   let result = null, record = { verdict: "amber", entries: [] };
@@ -15590,7 +15599,12 @@ function hodlPsbtPrependRbfCheck(output, returnedBytes, kind, network, keep) {
       }
     }
   }
-  if (keep && typeof keep === "object") keep.rbf = record;
+  if (keep && typeof keep === "object") {
+    keep.rbf = record;
+    // The trimmed text the verdict was computed from, so the retire can
+    // tell an edit that changed it from one that did not.
+    keep.original = raw;
+  }
   hodlPsbtPaintRbf(output, record, network);
   return result;
 }
@@ -15665,7 +15679,7 @@ function hodlRunPsbt() {
     // renders above it (Electrum GHSA-6jp4-8v48-cc5v).
     let keep = {};
     hodlPsbtPrependRbfCheck(output, bytes, kind, network, keep);
-    hodlPsbtLast = { kind, parsed, sourceTag, checkedAt, network, limits, audit, rbf: keep.rbf ?? null };
+    hodlPsbtLast = { kind, parsed, sourceTag, checkedAt, network, limits, audit, rbf: keep.rbf ?? null, rbfOriginal: keep.original ?? "" };
     hodlJournalLog("inspect", kind, "psbt");
   } catch (exception) {
     hodlPsbtLast = null;
