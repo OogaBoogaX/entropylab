@@ -680,7 +680,8 @@ only.
 
 Typed shares, the passphrase and everything combined from them live in page
 memory and the panel's DOM only; there are no storage, clipboard or console
-writes (`test/slip39-check.test.mjs`). Every conceal trigger takes the typed
+writes (`test/slip39-check.test.mjs`). The master fingerprint and addresses
+are public readouts and copy like the Key Station's. Every conceal trigger takes the typed
 shares off the page until the user asks for them again, and Clear, Clear
 Fields, End Session and page exit empty the panel. This is best effort, as
 below: the fields' own text and the strings handed to the parser cannot be

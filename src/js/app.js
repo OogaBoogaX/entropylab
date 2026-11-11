@@ -7123,7 +7123,13 @@ function hodlBindSlip39Check() {
     import("./slip39-check.js").then((module) => {
       let host = document.getElementById("slip39-check-host");
       if (!host || hodlSlip39Check) return;
-      hodlSlip39Check = module.mountSlip39Check(host, { translate: hodlTText, network: () => hodlNetworkChoice });
+      hodlSlip39Check = module.mountSlip39Check(host, {
+        translate: hodlTText,
+        network: () => hodlNetworkChoice,
+        // The Key Station's own readouts: a copyable field and the address table.
+        fieldHtml: (label, value) => hodlPublicFieldHtml(label, value),
+        addressTableHtml: (rows) => hodlAddressTable(rows, hodlTText("First receive addresses"), false, "slip39-receive"),
+      });
     }).catch(() => {});
   }
 }

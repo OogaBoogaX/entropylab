@@ -66,21 +66,23 @@ function mount(options = {}) {
     field.value = text;
     field.dispatchEvent({ type: "input" });
   };
-  const addresses = () => $("slip39-check-addresses").querySelectorAll("li").map((item) => item.textContent);
+  // The readouts are the builders' markup; their values carry data-public-value.
+  const addresses = () => $("slip39-check-addresses").querySelectorAll("[data-public-value]").map((item) => item.textContent);
+  const fingerprint = () => $("slip39-check-fingerprint").querySelector("[data-public-value]")?.textContent ?? "";
   const findings = () => $("slip39-check-findings").querySelectorAll("li").map((item) => item.getAttribute("data-slip39-finding"));
-  return { doc, host, panel, $, fields, statusOf, choose, fill, typePassphrase, addresses, findings, state: () => $("slip39-check-result").getAttribute("data-state") };
+  return { doc, host, panel, $, fields, statusOf, choose, fill, typePassphrase, addresses, fingerprint, findings, state: () => $("slip39-check-result").getAttribute("data-state") };
 }
 
 const restores = (ui, secretHex, network = "mainnet") => {
   const expected = reference(secretHex, network);
   assert.equal(ui.state(), "restored");
   assert.equal(ui.$("slip39-check-restored").hidden, false);
-  assert.equal(ui.$("slip39-check-fingerprint").textContent, expected.fingerprint);
+  assert.equal(ui.fingerprint(), expected.fingerprint);
   assert.deepEqual(ui.addresses(), expected.addresses);
 };
 const showsNothing = (ui) => {
   assert.equal(ui.$("slip39-check-restored").hidden, true);
-  assert.equal(ui.$("slip39-check-fingerprint").textContent, "");
+  assert.equal(ui.fingerprint(), "");
   assert.equal(ui.addresses().length, 0);
 };
 
@@ -128,6 +130,67 @@ test("a two-level set with a blank field in between restores", () => {
   restores(ui, v.secret);
 });
 
+test("the readouts come from the builders the app passes, with English labels and every address's path", () => {
+  // app.js passes the Key Station's field and address table builders.
+  const v = vector(4);
+  const calls = [];
+  let network = "testnet";
+  const ui = mount({
+    network: () => network,
+    fieldHtml: (label, value) => {
+      calls.push(["field", label, value]);
+      return `<span data-public-value>${value}</span>`;
+    },
+    addressTableHtml: (rows) => {
+      calls.push(["table", rows]);
+      return rows.map((row) => `<span data-public-value>${row.address}</span>`).join("");
+    },
+  });
+  ui.fill("backup", v.mnemonics);
+  ui.typePassphrase(VECTOR_PASSPHRASE);
+  ui.$("slip39-check-run").click();
+  restores(ui, v.secret, "testnet");
+  const expected = reference(v.secret, "testnet");
+  assert.deepEqual(calls[0], ["field", "Master fingerprint", expected.fingerprint]);
+  assert.deepEqual(calls[1], ["table", expected.addresses.map((address, index) => ({ index, path: `m/84'/1'/0'/0/${index}`, address }))]);
+  network = "mainnet";
+  ui.doc.dispatchEvent({ type: "hodl:network-default" });
+  assert.deepEqual(calls.at(-1)[1].map((row) => row.path), ["m/84'/0'/0'/0/0", "m/84'/0'/0'/0/1", "m/84'/0'/0'/0/2"]);
+});
+
+test("each share counts its words as it is typed; a check replaces the count with its result", () => {
+  const v = vector(4);
+  const ui = mount();
+  const note = ui.statusOf("backup", "1");
+  assert.equal(note.hidden, true);
+  ui.fill("backup", [v.mnemonics[0].split(" ").slice(0, 7).join(" ")]);
+  assert.equal(note.hidden, false);
+  assert.ok(note.textContent.includes("7"));
+  assert.equal(note.getAttribute("data-slip39-share-state"), null);
+  ui.fill("backup", v.mnemonics);
+  ui.$("slip39-check-run").click();
+  assert.equal(note.getAttribute("data-slip39-share-state"), "ok");
+  ui.fill("backup", ["", ""]);
+  assert.equal(note.hidden, true);
+});
+
+test("Clear sits in the action row on show: beside Combine, beside Compare, beside Show my shares", () => {
+  const ui = mount();
+  const rowOf = (id) => ui.$(id).parentElement;
+  assert.equal(rowOf("slip39-check-clear"), rowOf("slip39-check-run"));
+  ui.choose("randomness");
+  assert.equal(rowOf("slip39-check-clear"), rowOf("slip39-check-compare"));
+  ui.fill("a", vector(4).mnemonics);
+  ui.panel.conceal();
+  assert.equal(rowOf("slip39-check-clear"), rowOf("slip39-check-unconceal"));
+  ui.$("slip39-check-unconceal").click();
+  assert.equal(rowOf("slip39-check-clear"), rowOf("slip39-check-compare"));
+  // Only one Clear, after the row's own action.
+  assert.equal(ui.doc.querySelectorAll("#slip39-check-clear").length, 1);
+  const row = rowOf("slip39-check-clear").children;
+  assert.ok(row.indexOf(ui.$("slip39-check-compare")) < row.indexOf(ui.$("slip39-check-clear")));
+});
+
 test("the passphrase shows only as bullets; changing it drops the result until combined again", () => {
   const v = vector(4);
   const ui = mount();
@@ -143,7 +206,7 @@ test("the passphrase shows only as bullets; changing it drops the result until c
   showsNothing(ui);
   ui.$("slip39-check-run").click();
   assert.equal(ui.state(), "restored");
-  assert.notEqual(ui.$("slip39-check-fingerprint").textContent, reference(v.secret).fingerprint);
+  assert.notEqual(ui.fingerprint(), reference(v.secret).fingerprint);
 });
 
 test("refused sets show no wallet and name the failing share's field", () => {
@@ -296,7 +359,7 @@ test("a language switch relabels the panel and keeps the shares and the result",
   ui.fill("backup", v.mnemonics);
   ui.typePassphrase(VECTOR_PASSPHRASE);
   ui.$("slip39-check-run").click();
-  const fingerprint = ui.$("slip39-check-fingerprint").textContent;
+  const fingerprint = ui.fingerprint();
   language = "xx";
   ui.panel.retranslate();
   const translated = (text) => text.startsWith("[xx] ");
@@ -307,7 +370,7 @@ test("a language switch relabels the panel and keeps the shares and the result",
   assert.ok(translated(ui.doc.querySelector(`label[for="${ui.fields("backup")[0].id}"]`).textContent));
   assert.ok(translated(ui.statusOf("backup", "1").textContent));
   assert.deepEqual(ui.fields("backup").map((field) => field.value), v.mnemonics);
-  assert.equal(ui.$("slip39-check-fingerprint").textContent, fingerprint);
+  assert.equal(ui.fingerprint(), fingerprint);
   assert.equal(ui.state(), "restored");
 });
 

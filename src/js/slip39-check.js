@@ -8,7 +8,9 @@
 // Security contract (test/slip39-check.test.mjs): the typed shares, the
 // passphrase and everything combined from them live only in this closure,
 // the panel's own DOM and slip39.js's buffers, which are zeroed after each
-// run. Nothing goes to storage, the clipboard, the console or the network.
+// run. None of it goes to storage, a clipboard, the console or the network;
+// only the public fingerprint and addresses copy, through the app's shared
+// public readouts.
 // The master secret is used once, to derive the fingerprint and the
 // addresses for every network, and is zeroed before anything is shown: a
 // network change redraws stored public addresses. A refused set shows no
@@ -22,6 +24,7 @@ import { combineSlip39, parseSlip39Share, testSlip39Randomness, wipeSlip39 } fro
 import { HDKey } from "./hdkey.js";
 import { addressFor } from "./addresses.js";
 import { PassphraseVault, bindVaultField } from "./passphrase-vault.js";
+import { publicFieldHtml, publicValueHtml } from "./public-data.js";
 
 const ADDRESS_COUNT = 3;
 const NETWORKS = ["mainnet", "testnet", "signet", "regtest"];
@@ -31,6 +34,14 @@ const MAX_ITERATION_EXPONENT = 6;
 const START_FIELDS = 2;
 const MAX_FIELDS = 32;
 const coinType = (network) => (network === "mainnet" ? 0 : 1);
+const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+
+// The app hands in its own readout builders (the Key Station's copyable
+// field and its address table, with copy and QR controls), so the result
+// reads like every other readout. These plain ones stand in when the panel
+// is mounted on its own. `label` is English; the builder translates it.
+const defaultFieldHtml = (label, value) => publicFieldHtml(escapeHtml(label), value);
+const defaultAddressTableHtml = (rows) => `<ol start="0">${rows.map((row) => `<li>${publicValueHtml(row.address, { clipboard: false })}</li>`).join("")}</ol>`;
 
 // Master fingerprint and the first m/84'/coin'/0'/0/i addresses on every
 // network (coin type 1' and tb1/bcrt1 off mainnet). The SLIP-39 master
@@ -112,6 +123,8 @@ export function mountSlip39Check(host, {
   translate = (text) => text,
   derive = defaultDerive,
   testRandomness = testSlip39Randomness,
+  fieldHtml = defaultFieldHtml,
+  addressTableHtml = defaultAddressTableHtml,
   maxIterationExponent = MAX_ITERATION_EXPONENT,
   network = () => "mainnet",
   doc = document,
@@ -167,11 +180,12 @@ export function mountSlip39Check(host, {
   };
 
   const backupPanel = make("div", { id: "slip39-check-backup-panel" });
-  const backupNote = make("p", { class: "field-note", text: T("One share per field, as written: 20 words, or 33 for a 256-bit backup. Blank fields are skipped. Enter exactly the shares a recovery needs.") });
   const backupShares = shareList("backup");
+  const backupNote = make("p", { class: "field-note", text: T("One share per field, as written. Blank fields are skipped. Enter exactly the shares a recovery needs.") });
   const backupAddRow = make("div", { class: "row tool-actions" });
-  const passLabel = make("label", { class: "label", for: "slip39-check-pass", text: T("Passphrase (optional)") });
-  const passInput = make("input", { id: "slip39-check-pass", class: "field", autocomplete: "off", spellcheck: "false", autocapitalize: "off", autocorrect: "off", "data-i18n-skip": "", translate: "no" });
+  const passLabel = make("label", { class: "field", for: "slip39-check-pass" });
+  const passText = make("span", { text: T("Passphrase (optional)") });
+  const passInput = make("input", { id: "slip39-check-pass", autocomplete: "off", spellcheck: "false", autocapitalize: "off", autocorrect: "off", "data-i18n-skip": "", translate: "no", placeholder: T("Enter a passphrase, or leave blank for none") });
   const passVault = new PassphraseVault();
   const passField = bindVaultField(passInput, passVault);
   const runRow = make("div", { class: "row tool-actions" });
@@ -180,10 +194,10 @@ export function mountSlip39Check(host, {
   const randomPanel = make("div", { id: "slip39-check-random-panel", hidden: true });
   const randomIntro = make("p", { class: "edge-note is-info", id: "slip39-check-random-intro", text: T("On the device, make two share sets for two different throwaway wallets, turning it off and on in between, and enter a full recovery set of each. The shares carry the random values the device split each secret with; a working generator never repeats them between wallets. This is a tripwire for generators that repeat or are broken, not proof of good randomness.") });
   const randomWarning = make("p", { class: "edge-note is-private", id: "slip39-check-random-warning", text: T("Use throwaway wallets only. Never enter shares of a wallet that holds, or will hold, funds. No passphrase is needed.") });
-  const setALabel = make("p", { class: "label", text: T("First wallet's shares") });
+  const setALabel = make("p", { class: "label section-band", text: T("First wallet's shares") });
   const setA = shareList("a");
   const setAAddRow = make("div", { class: "row tool-actions" });
-  const setBLabel = make("p", { class: "label", text: T("Second wallet's shares") });
+  const setBLabel = make("p", { class: "label section-band", text: T("Second wallet's shares") });
   const setB = shareList("b");
   const setBAddRow = make("div", { class: "row tool-actions" });
   const compareRow = make("div", { class: "row tool-actions" });
@@ -193,34 +207,39 @@ export function mountSlip39Check(host, {
   const concealedNote = make("p", { class: "edge-note is-muted", text: T("Your shares were hidden when you left the page or stopped using it. Show them again to carry on.") });
   const concealedActions = make("div", { class: "row tool-actions" });
   const unconcealButton = make("button", { type: "button", class: "btn secondary", id: "slip39-check-unconceal", text: T("Show my shares") });
-  const clearRow = make("div", { class: "row tool-actions" });
+  // One Clear, beside whichever action is showing (layout() moves it).
   const clearButton = make("button", { type: "button", class: "btn secondary", id: "slip39-check-clear", text: T("Clear") });
 
   const result = make("div", { id: "slip39-check-result", "data-state": "empty" });
-  const status = make("p", { class: "edge-note", id: "slip39-check-status", role: "status", "aria-live": "polite" });
+  // The verdict is one note, as the fee-bump check's: a headline, then the
+  // findings and what was compared, when there are any.
+  const status = make("div", { class: "edge-note", id: "slip39-check-status", role: "status", "aria-live": "polite", hidden: true });
+  const headline = make("p");
+  const headlinePlain = make("span");
+  const headlineStrong = make("strong");
   const restoredBlock = make("div", { id: "slip39-check-restored", hidden: true });
-  const summary = make("p", { class: "label", id: "slip39-check-summary" });
-  const fingerprintLabel = make("p", { class: "label", text: T("Master fingerprint") });
-  const fingerprintValue = make("p", { class: "addr-text", id: "slip39-check-fingerprint", "data-public-value": "", "data-i18n-skip": "", translate: "no" });
-  const addressLabel = make("p", { class: "label", id: "slip39-check-address-label", text: () => say("First receive addresses (Native SegWit, m/84'/{coin}'/0'/0/0 to /2)", { coin: coinType(currentNetwork()) }) });
-  const addressList = make("ol", { id: "slip39-check-addresses", start: "0", "data-i18n-skip": "", translate: "no" });
+  const summary = make("p", { class: "muted", id: "slip39-check-summary" });
+  const fingerprintBlock = make("div", { id: "slip39-check-fingerprint" });
+  const addressLabel = make("p", { class: "label", id: "slip39-check-address-label", text: T("First receive addresses (Native SegWit)") });
+  const addressBlock = make("div", { id: "slip39-check-addresses" });
   const finalNote = make("p", { class: "edge-note is-info", id: "slip39-check-final", text: T("Compare the master fingerprint and the first address with your wallet. That is the final check: SLIP-39 accepts any passphrase and cannot tell you it is wrong, so only the right one gives your wallet.") });
-  const findingList = make("ol", { id: "slip39-check-findings", hidden: true });
-  const checkedNote = make("p", { class: "field-note", id: "slip39-check-checked", hidden: true });
+  const findingList = make("ul", { id: "slip39-check-findings", hidden: true });
+  const checkedNote = make("p", { id: "slip39-check-checked", hidden: true });
 
   backupAddRow.append(backupShares.add);
   runRow.append(runButton);
-  backupPanel.append(backupNote, backupShares.container, backupAddRow, passLabel, passInput, runRow);
+  passLabel.append(passText, passInput);
+  backupPanel.append(backupShares.container, backupNote, backupAddRow, passLabel, runRow);
   setAAddRow.append(setA.add);
   setBAddRow.append(setB.add);
   compareRow.append(compareButton);
   randomPanel.append(randomIntro, randomWarning, setALabel, setA.container, setAAddRow, setBLabel, setB.container, setBAddRow, compareRow);
   concealedActions.append(unconcealButton);
   concealedBlock.append(concealedNote, concealedActions);
-  clearRow.append(clearButton);
-  restoredBlock.append(summary, fingerprintLabel, fingerprintValue, addressLabel, addressList, finalNote);
-  result.append(status, restoredBlock, findingList, checkedNote);
-  host.replaceChildren(mode, backupPanel, randomPanel, concealedBlock, clearRow, result);
+  restoredBlock.append(make("hr", { class: "result-divider" }), summary, fingerprintBlock, addressLabel, addressBlock, finalNote);
+  status.append(headline, findingList, checkedNote);
+  result.append(status, restoredBlock);
+  host.replaceChildren(mode, backupPanel, randomPanel, concealedBlock, result);
 
   // ── State ────────────────────────────────────────────────────────────────
   let current = "backup";
@@ -242,39 +261,58 @@ export function mountSlip39Check(host, {
     const list = lists[set];
     if (destroyed || concealed || list.entries.length >= MAX_FIELDS) return;
     const n = list.entries.length + 1, id = `slip39-check-${set}-share-${n}`;
-    const label = make("label", { class: "label", for: id, text: T("Share {n}", { n }) });
-    const field = make("textarea", { id, class: "field", rows: "3", spellcheck: "false", autocomplete: "off", autocapitalize: "off", autocorrect: "off", "data-slip39-set": set, "data-slip39-share": String(n), "aria-describedby": `${id}-status` });
-    const note = make("p", { class: "field-note", id: `${id}-status`, "data-slip39-share-status": "", "data-slip39-set": set, "data-slip39-share": String(n), hidden: true });
+    // As the Key Station's seed field: the name, a line under it that counts
+    // the words (and after a check, says whether the share reads), the field.
+    const label = make("label", { class: "field", for: id });
+    const name = make("span", { text: T("Share {n}", { n }) });
+    const note = make("span", { class: "field-note", id: `${id}-status`, "data-slip39-share-status": "", "data-slip39-set": set, "data-slip39-share": String(n), hidden: true });
+    const cue = make("span");
+    note.append(cue);
+    const field = make("textarea", { id, rows: "3", spellcheck: "false", autocomplete: "off", autocapitalize: "off", autocorrect: "off", "data-slip39-set": set, "data-slip39-share": String(n), "aria-describedby": `${id}-status` });
+    const entry = { label, field, note, cue };
     field.oninput = () => {
+      if (concealed) return;
       if (result.getAttribute("data-state") !== "empty") markStale(T(current === "backup" ? "The shares changed. Combine them again." : "The shares changed. Compare the sets again."));
+      else countWords(entry);
     };
-    list.entries.push({ label, field, note });
-    list.container.append(label, field, note);
+    label.append(name, note, field);
+    list.entries.push(entry);
+    list.container.append(label);
     list.add.disabled = list.entries.length >= MAX_FIELDS;
   }
 
   function resetList(set) {
     const list = lists[set];
-    for (const { label, field, note } of list.entries) {
+    for (const { label, field } of list.entries) {
       field.value = "";
-      for (const node of [label, field, note]) {
-        forget(node);
-        node.remove();
-      }
+      forget(label);
+      label.remove();
     }
     list.entries = [];
     list.add.disabled = false;
     while (list.entries.length < START_FIELDS) addField(set);
   }
 
+  // A share's line: its result after a check (the shared green or red cue),
+  // or else how many words it holds, as the Key Station counts a seed.
   const setNote = (entry, state, text) => {
-    if (state) entry.note.setAttribute("data-slip39-share-state", state);
-    else entry.note.removeAttribute("data-slip39-share-state");
-    relabel(entry.note, "text", text ?? (() => ""));
-    entry.note.hidden = !state;
+    if (!state) return countWords(entry);
+    entry.note.setAttribute("data-slip39-share-state", state);
+    entry.cue.className = state === "error" ? "meta-cue is-error" : "meta-cue";
+    entry.field.classList.toggle("bad", state === "error");
+    relabel(entry.cue, "text", text);
+    entry.note.hidden = false;
   };
+  function countWords(entry) {
+    const words = entry.field.value.trim().split(/\s+/).filter(Boolean).length;
+    entry.note.removeAttribute("data-slip39-share-state");
+    entry.cue.className = "";
+    entry.field.classList.remove("bad");
+    relabel(entry.cue, "text", T("{entered} of {words} SLIP-39 words entered", { entered: words, words: words > 20 ? 33 : 20 }));
+    entry.note.hidden = words === 0;
+  }
   const clearNotes = () => {
-    for (const list of Object.values(lists)) for (const entry of list.entries) setNote(entry, null);
+    for (const list of Object.values(lists)) for (const entry of list.entries) countWords(entry);
   };
 
   // Reads one set's non-blank fields: the shares, their field numbers, and
@@ -305,28 +343,35 @@ export function mountSlip39Check(host, {
   };
 
   // ── Result ───────────────────────────────────────────────────────────────
+  // The headline is bold when findings or a tally follow it in the note.
   const setStatus = (className, text) => {
     status.className = className;
-    relabel(status, "text", text);
+    const detailed = !findingList.hidden || !checkedNote.hidden;
+    headline.replaceChildren(detailed ? headlineStrong : headlinePlain);
+    relabel(headlinePlain, "text", detailed ? () => "" : text);
+    relabel(headlineStrong, "text", detailed ? text : () => "");
+    status.hidden = !text();
   };
   const setState = (state) => result.setAttribute("data-state", state);
 
+  // The builders' markup carries the readouts' copy and QR controls; it is
+  // drawn again, in the page's language, on a network or language change.
   const renderRestored = () => {
     restoredBlock.hidden = !restored;
     if (!restored) {
       relabel(summary, "text", () => "");
-      fingerprintValue.textContent = "";
-      addressList.replaceChildren();
+      fingerprintBlock.innerHTML = "";
+      addressBlock.innerHTML = "";
       return;
     }
-    fingerprintValue.textContent = restored.fingerprint;
+    fingerprintBlock.innerHTML = fieldHtml("Master fingerprint", restored.fingerprint);
     refresh(addressLabel);
     renderAddresses();
   };
   const renderAddresses = () => {
     if (!restored) return;
-    const shown = restored.addresses[currentNetwork()] ?? restored.addresses.mainnet;
-    addressList.replaceChildren(...shown.map((address) => make("li", { class: "addr-text", "data-public-value": "", text: address })));
+    const network = currentNetwork(), shown = restored.addresses[network] ?? restored.addresses.mainnet;
+    addressBlock.innerHTML = addressTableHtml(shown.map((address, index) => ({ index, path: `m/84'/${coinType(network)}'/0'/0/${index}`, address })));
   };
 
   const setFindings = (items) => {
@@ -480,6 +525,7 @@ export function mountSlip39Check(host, {
     backupPanel.hidden = concealed || current !== "backup";
     randomPanel.hidden = concealed || current !== "randomness";
     concealedBlock.hidden = !concealed;
+    (concealed ? concealedActions : current === "backup" ? runRow : compareRow).append(clearButton);
     for (const button of modeButtons) button.setAttribute("aria-pressed", String(button.getAttribute("data-value") === current));
   };
 
@@ -549,6 +595,7 @@ export function mountSlip39Check(host, {
     retranslate() {
       if (destroyed) return;
       for (const node of live.keys()) refresh(node);
+      renderRestored();
     },
     destroy() {
       clear();
