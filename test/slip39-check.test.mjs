@@ -101,6 +101,17 @@ test("the backup check starts with two empty share fields, and Add a share adds 
   assert.equal(ui.state(), "empty");
 });
 
+test("a set grows to the largest recovery set SLIP-39 allows, 16 groups of 16 shares, and no further", () => {
+  // Group threshold and member thresholds are at most 16 each (4-bit fields).
+  const ui = mount();
+  for (const set of ["backup", "b"]) {
+    const add = ui.$(`slip39-check-add-${set}`);
+    for (let clicks = 0; clicks < 300 && !add.disabled; clicks++) add.click();
+    assert.equal(ui.fields(set).length, 16 * 16, set);
+    assert.equal(add.disabled, true, set);
+  }
+});
+
 test("share fields opt out of the browser's text services", () => {
   const ui = mount();
   for (const field of [...ui.fields("backup"), ...ui.fields("a"), ...ui.fields("b")]) {

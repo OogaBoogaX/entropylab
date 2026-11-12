@@ -32,7 +32,9 @@ const NETWORKS = ["mainnet", "testnet", "signet", "regtest"];
 // exponent doubles it: exponent 6 takes about two seconds.
 const MAX_ITERATION_EXPONENT = 6;
 const START_FIELDS = 2;
-const MAX_FIELDS = 32;
+// The largest recovery set SLIP-39 allows: the group threshold and each
+// member threshold are 4-bit fields, so at most 16 groups of 16 shares.
+const MAX_FIELDS = 16 * 16;
 const coinType = (network) => (network === "mainnet" ? 0 : 1);
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 
