@@ -160,7 +160,7 @@ maintainer's own published key.
 
 ## Step 3 (optional): check that GitHub's CI built it
 
-With the [GitHub CLI](https://cli.github.com/):
+With the [GitHub CLI](https://cli.github.com/), version 2.68.0 or later:
 
 ```sh
 gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/.github/workflows/ci-cd.yml --source-ref refs/heads/rock
@@ -173,7 +173,8 @@ checks that (see below).
 
 Keep the two extra options. Without `--signer-workflow` and `--source-ref`
 the check would also accept an attestation made by any other workflow or
-branch in this repository.
+branch in this repository. An older GitHub CLI stops with
+`unknown flag: --source-ref`. Update it; do not drop the option.
 
 ## Step 4 (optional): check the Bitcoin timestamp
 

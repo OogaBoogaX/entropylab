@@ -810,7 +810,8 @@ gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow
 The two extra options matter. `--signer-workflow` and `--source-ref` accept
 only an attestation made by this repository's CI workflow for the `rock`
 branch. Without them the check would also accept an attestation made by any
-other workflow or branch in this repository.
+other workflow or branch in this repository. They need GitHub CLI
+2.68.0 or later; an older one stops with `unknown flag: --source-ref`.
 
 The four WASM modules embedded in the HTML (secp256k1, PSBT, vanity and the
 QR decoder) are committed as
