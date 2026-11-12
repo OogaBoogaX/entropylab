@@ -643,6 +643,34 @@ permission-prompt exception. Supersession and destruction leave the capture
 stopped, and activation callbacks that stop it cannot allocate a stale timer.
 Browser/OS copies and camera buffers remain outside reliable erasure.
 
+### Preview-only SeedQR copy check
+
+Check a SeedQR copy (Verify tab) reads a hand-copied Standard or Compact
+SeedQR from squares the user taps, or from pasted digits. It has no camera or
+photo path. Its reader (`src/js/seedqr-grid.js`) is written from ISO/IEC 18004
+and shares no code with the encoder it compares against (uqr) or with any
+wallet: format information (BCH), masks, module placement, Reed-Solomon over
+GF(256), numeric and byte modes, for 21, 25 and 29 squares at level L. A copy
+shows a seed only when the format information decodes unambiguously, at most
+2, 4 or 7 codewords need correcting (the limit that keeps the specification's
+misdecode-protection codewords), and the payload is a SeedQR with a valid
+BIP39 checksum. Past that limit nothing is shown. The reader then re-encodes
+what it decoded with the copy's own mask and lists every square that
+differs, including squares a scanner would correct silently. A copy that
+decodes is still not proof that it is the wallet's seed: a 12-word checksum
+is 4 bits, so the panel asks the user to compare the master fingerprint and
+first address with the wallet. The entered squares, pasted text, passphrase
+and decoded words live in page memory and the panel's DOM only. There are no
+storage, clipboard or console writes. Words show only after Show words and
+are hidden again by every conceal trigger, which also takes the entered
+squares, the pasted digits, the picture, the list of wrong squares and the
+mask note off the page until the user asks for them again. The passphrase
+field shows bullets only, like the Key Station's (see "What the page can and
+cannot erase" below). The addresses follow the page's network. Clear, Clear
+Fields, End Session and page exit empty the panel and zero its buffers, best
+effort as above: the digit string handed to the encoder and the DOM's own
+copies cannot be zeroed.
+
 ## What the page can and cannot erase
 
 EntropyLab overwrites the secrets it holds once you are done with them, on a
