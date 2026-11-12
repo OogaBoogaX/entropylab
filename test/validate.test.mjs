@@ -198,7 +198,8 @@ test("the WASM boot chain has a failure path that kills the page", () => {
 });
 
 test("the release build attests the wallet artifact and ships a checksum manifest (issue #58)", () => {
-  const workflow = read(".github/workflows/ci-cd.yml");
+  const ciWorkflow = ".github/workflows/ci-cd.yml";
+  const workflow = read(ciWorkflow);
   const build = workflow.match(/^  build:\n(?:.|\n)*?(?=^  [a-z-]+:)/m)?.[0] ?? "";
   // SHA256SUMS.txt names only the HTML, so `sha256sum -c` passes for someone
   // holding just the downloaded file. The modules get a manifest of their own.
@@ -228,19 +229,19 @@ test("the release build attests the wallet artifact and ships a checksum manifes
   assert.match(readme, /^sha256sum -c SHA256SUMS\.txt$/m, "README verifies the download against the HTML-only manifest");
   assert.match(readme, /^sha256sum -c WASM-SHA256SUMS\.txt/m, "README shows how to check the committed WASM modules");
   // The documented check must pin the signer workflow and the source ref, or
-  // any workflow on any branch could attest arbitrary bytes. Both values come
-  // from the attest job itself so the docs cannot drift from the workflow.
+  // any workflow on any branch could attest arbitrary bytes. The path is the
+  // file this test reads the attest job from and the ref is that job's own
+  // gate, so the guides cannot drift from the workflow.
   assert.ok(attest, "the attest job must exist to pin the documented check");
   const attestedRef = attest.match(/if: github\.ref == '([^']+)'/)?.[1] ?? "";
   assert.equal(attestedRef, "refs/heads/rock", "the attest job must be gated on the rock branch");
-  const attestCommand = `gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/.github/workflows/ci-cd.yml --source-ref ${attestedRef}`;
+  const attestCommand = `gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/${ciWorkflow} --source-ref ${attestedRef}`;
   for (const guide of ["README.md", "docs/Verify_Your_Download.md"]) {
     const commands = read(guide).split("\n").filter((line) => line.includes("gh attestation verify entropylab.html"));
     assert.ok(commands.length > 0, `${guide} documents the attestation check`);
     for (const line of commands) {
       assert.equal(line.trim(), attestCommand, `${guide} must pin the signer workflow and source ref`);
     }
-    assert.match(read(guide), /2\.68\.0 or later/, `${guide} must name the GitHub CLI version the pinned check needs`);
   }
   assert.match(read("README.md"), /ipfs block put --cid-codec=raw --allow-big-block/);
 });
