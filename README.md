@@ -804,8 +804,13 @@ for the exact bytes built by CI, and an OpenTimestamps proof
 
 ```sh
 sha256sum -c SHA256SUMS.txt
-gh attestation verify entropylab.html -R OogaBoogaX/entropylab
+gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/.github/workflows/ci-cd.yml --source-ref refs/heads/rock
 ```
+
+The two extra options matter. `--signer-workflow` and `--source-ref` accept
+only an attestation made by this repository's CI workflow for the `rock`
+branch. Without them the check would also accept an attestation made by any
+other workflow or branch in this repository.
 
 The four WASM modules embedded in the HTML (secp256k1, PSBT, vanity and the
 QR decoder) are committed as

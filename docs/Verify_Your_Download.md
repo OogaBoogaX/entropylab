@@ -163,12 +163,17 @@ maintainer's own published key.
 With the [GitHub CLI](https://cli.github.com/):
 
 ```sh
-gh attestation verify entropylab.html -R OogaBoogaX/entropylab
+gh attestation verify entropylab.html -R OogaBoogaX/entropylab --signer-workflow OogaBoogaX/entropylab/.github/workflows/ci-cd.yml --source-ref refs/heads/rock
 ```
 
 A good result says the verification succeeded. It shows that this
-repository's CI built exactly these bytes, but not which source it built them
-from. Rebuilding the file yourself checks that (see below).
+repository's CI workflow, running on the `rock` branch, built exactly these
+bytes, but not which source it built them from. Rebuilding the file yourself
+checks that (see below).
+
+Keep the two extra options. Without `--signer-workflow` and `--source-ref`
+the check would also accept an attestation made by any other workflow or
+branch in this repository.
 
 ## Step 4 (optional): check the Bitcoin timestamp
 
