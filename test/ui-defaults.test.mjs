@@ -1733,7 +1733,7 @@ test("workspace tabs ship every tool, with Lightning after Transactions", () => 
     ["msig", "Multi Signature", "MultiSig", "MultiSig"],
     ["psbt", "Transactions", "Txns", "Transactions"],
     ["ln", "Lightning", "LN", "Lightning"],
-    ["core", "Core Wallet", "Core", "Core Wallet"],
+    ["core", "Bitcoin Core", "Core", "Bitcoin Core"],
     ["bip85", "BIP-85 Child", "BIP-85", "BIP-85"],
     ["sp", "Privacy", "Privacy", "Privacy"],
     ["vanity", "Vanity Address", "Vanity", "Vanity"],
@@ -2070,7 +2070,7 @@ test("Silent Payments is a registered tool with its own card", () => {
   }
   for (const entry of [/\["calc", "Keys", "Keys"\]/, /\["vanity", "Vanity Address", "Vanity", "Vanity"\]/, /\["bip85", "BIP-85 Child", "BIP-85", "BIP-85"\]/,
     /\["msig", "Multi Signature", "MultiSig", "MultiSig"\]/, /\["sp", "Privacy", "Privacy"\]/, /\["psbt", "Transactions", "Txns"\]/,
-    /\["core", "Core Wallet", "Core"\]/,
+    /\["core", "Bitcoin Core", "Core"\]/,
     /\["journal", "Journal", "Journal"\]/]) {
     assert.match(appSource, entry);
   }
@@ -2117,7 +2117,7 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   // wide label (the full name, or the short one where nine full names would
   // not fit) and the short form narrow screens show instead.
   const escape = (text) => text.replace(/[$()*+.?[\]^{|}]/g, "\\$&");
-  for (const [full, short, wide = full] of [["Keys", "Keys"], ["Vanity Address", "Vanity", "Vanity"], ["BIP-85 Child", "BIP-85", "BIP-85"], ["Multi Signature", "MultiSig", "MultiSig"], ["Privacy", "Privacy"], ["Transactions", "Txns"], ["Core Wallet", "Core"], ["Lightning", "LN"], ["Verify", "Verify"]]) {
+  for (const [full, short, wide = full] of [["Keys", "Keys"], ["Vanity Address", "Vanity", "Vanity"], ["BIP-85 Child", "BIP-85", "BIP-85"], ["Multi Signature", "MultiSig", "MultiSig"], ["Privacy", "Privacy"], ["Transactions", "Txns"], ["Bitcoin Core", "Core"], ["Lightning", "LN"], ["Verify", "Verify"]]) {
     assert.ok(
       shell.includes(`aria-label="${full}"`) && shell.includes(`<span class="workspace-tab-full">${wide}</span><span class="workspace-tab-short">${short}</span>`),
       `${full} is missing from the workspace strip`,
@@ -2131,7 +2131,7 @@ test("the workspace switcher keeps every tool on screen as a tab strip", () => {
   assert.match(appSource, /button\.setAttribute\("aria-label", hodlTText\(label\)\);/);
   // A shortened wide label keeps the full name as the accessible name and the
   // hover title.
-  for (const [full, wide = full] of [["Keys"], ["Vanity Address", "Vanity"], ["BIP-85 Child", "BIP-85"], ["Multi Signature", "MultiSig"], ["Privacy"], ["Transactions"], ["Core Wallet"], ["Lightning"]]) {
+  for (const [full, wide = full] of [["Keys"], ["Vanity Address", "Vanity"], ["BIP-85 Child", "BIP-85"], ["Multi Signature", "MultiSig"], ["Privacy"], ["Transactions"], ["Bitcoin Core"], ["Lightning"]]) {
     const title = wide === full ? "" : ` title="${full}"`;
     assert.match(shell, new RegExp(`aria-label="${full}"${title}>[\\s\\S]*?<span class="workspace-tab-full">${wide}</span>`), `${full} tab needs its accessible name`);
   }

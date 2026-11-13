@@ -276,7 +276,7 @@ an explicit error before those pairs are allocated.
   The Editor's input label is version-neutral; the decoded report identifies
   the submitted PSBT version. The separate PSBT Inspector and Nonce Inspector
   retain their v0-only input labels and parsing limits.
-- Verifies and extends Bitcoin Core descriptor wallets (Core Wallet tab):
+- Verifies and extends Bitcoin Core descriptor wallets (Bitcoin Core tab):
   upload a SQLite `wallet.dat` (Bitcoin Core 23+; legacy Berkeley DB wallets
   are refused) and every record is decoded — client versions, wallet flags,
   sync locators, descriptors with their cached branch parents and private-key
