@@ -1896,7 +1896,6 @@
   "Clear debug log": "Debug-Protokoll löschen",
   "Entropy Journal: AES-256-GCM from an optional typed password (Web Crypto) — PBKDF2-SHA-256, 600,000 rounds, with the salt derived from the password itself; the IV is HMAC-SHA-256 of the plaintext, so the same password and entries always reproduce the same file. An empty password preserves the file format but provides no access protection. No relays, no accounts, no localStorage for secrets.": "Entropy Journal: AES-256-GCM aus einem optionalen eingegebenen Passwort (Web Crypto) — PBKDF2-SHA-256, 600.000 Runden, mit dem Salt, das vom Passwort selbst abgeleitet wird; das IV ist HMAC-SHA-256 des Klartextes, sodass dasselbe Passwort und dieselben Einträge immer dieselbe Datei reproduzieren. Ein leeres Passwort bewahrt das Dateiformat, bietet aber keinen Zugriffsschutz. Keine Relais, keine Konten, kein localStorage für Geheimnisse.",
   "The saved network does not match these derivation inputs. Review the network and path in Key Station.": "Das gespeicherte Netzwerk stimmt nicht mit diesen Ableitungseingaben überein. Überprüfen Sie das Netzwerk und den Pfad in der Schlüsselstation.",
-  "Core Wallet": "Core Wallet",
   "Core": "Core",
   "Wallets only look about 20 unused addresses ahead. If coins arrive at index {n}, raise your wallet's gap limit above that, or the balance will show as zero (Sparrow: Settings → Advanced → Gap limit). EntropyLab's Bitcoin Core export already covers this window.": "Wallets prüfen nur etwa 20 ungenutzte Adressen im Voraus. Wenn Coins an Index {n} ankommen, erhöhen Sie das Gap-Limit Ihrer Wallet darüber, sonst wird der Saldo als Null angezeigt (Sparrow: Einstellungen → Erweitert → Gap-Limit). Der Bitcoin Core Export von EntropyLab deckt dieses Fenster bereits ab.",
   "Read errors": "Lesefehler",
@@ -2594,5 +2593,6 @@
   "A trailing path can have at most 16 steps.": "Ein nachgestellter Pfad kann maximal 16 Schritte haben.",
   "A derivation path index after the extended key is out of range (0 to 2,147,483,647).": "Ein Ableitungspfad-Index nach dem erweiterten Schlüssel liegt außerhalb des Bereichs (0 bis 2.147.483.647).",
   "A BIP45 key must have plain cosigner step 0 before its branch, like /0/0/* or /0/<0;1>/*. This tool derives only cosigner 0; another cosigner step would derive a different wallet.": "Ein BIP45-Schlüssel muss vor seinem Zweig einen einfachen Cosigner-Schritt 0 haben, wie z. B. /0/0/* oder /0/<0;1>/*. Dieses Tool leitet nur Cosigner 0 ab; ein anderer Cosigner-Schritt würde eine andere Wallet ableiten.",
-  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Auf einen Mehrfachpfad-Schritt wie <0;1> muss ein Sternchen (*) folgen, wie in /<0;1>/*."
+  "A multipath step like <0;1> must be followed by the wildcard *, as in /<0;1>/*.": "Auf einen Mehrfachpfad-Schritt wie <0;1> muss ein Sternchen (*) folgen, wie in /<0;1>/*.",
+  "Bitcoin Core": "Bitcoin Core"
 }
