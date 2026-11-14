@@ -787,6 +787,22 @@ iCloud. Scan a SeedQR live with the camera, not from a saved photo. If a photo
 was saved, delete it, including from Recently Deleted and iCloud Photos;
 deleting it cannot undo exposure that already happened.
 
+### Android wrapper (experimental)
+
+The `android/` directory builds a debug APK that embeds the pinned v1.0.0
+release `entropylab.html` (vendored at `android/app/src/main/assets/`, SHA-256
+checked against `android/ENTROPYLAB_HTML.sha256` at build time and again
+before the calculator opens). The app requests no Android permissions —
+including `INTERNET` — blocks network loads in its WebView, and only ever
+displays the bundled asset, so its offline guarantee comes from the platform,
+not from the page alone. The trade-off is that the Android WebView (Chromium)
+becomes part of the trusted computing base. It is a locally built debug
+package, not a distributed app, and has not been tested on a physical device.
+Rotation redraws the same in-memory WebView; genuine backgrounding ends the
+process and returns to a cold launch. No calculator state is serialized for
+activity or process restoration. Build instructions and the pin-update procedure are in
+[android/README.md](android/README.md).
+
 ### Verifying the download
 
 New to checksums and signatures? The step-by-step guide, with Windows, Mac and
