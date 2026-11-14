@@ -95,9 +95,13 @@ material. Its security posture rests on the following model:
    GitHub: Windows with WSL2 and bare-metal Linux on x86_64, and macOS on
    ARM64 (the image under Rosetta). v1.0.0's `psbt-wasm` module, and every
    module rock has published since (`qr-wasm` included), have no recorded
-   rebuild outside GitHub. The page's footer names the source commit to
-   rebuild it from. The v1.0.0 release page has been rebuilt from that
-   commit only by its author so far, on Windows and on Linux.
+   rebuild outside GitHub. A release page's footer names the source commit
+   to rebuild it from. The page committed inside the v1.0.0 git tag is an
+   earlier build with a different footer and is not the release. See the
+   [known issue](docs/Verify_Your_Download.md#known-issue-v100).
+   The v1.0.0 release page has been rebuilt from that
+   commit only by its author so far, on Windows and on Linux. No independent
+   rebuild of it is recorded.
    [docs/Reproductions.md](docs/Reproductions.md)
    records each rebuild by commit. Build-host paths are remapped out of the
    binary. The image is the boundary: the page and the modules are
